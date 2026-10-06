@@ -13,6 +13,13 @@ every `file:line` below is on that head. Other heads cited:
 `docs/plan/2026-10-05-feat-engine-reopen-plan.md` and
 `docs/plan/2026-10-05-feat-stem-history-replay-plan.md`.
 
+Status: reviewed 2026-10-06 (PR #1207, "request changes": H1, M1-M5, L1-L8).
+Every finding is applied in this text; section 14 maps each to where. Parts 1
+and 2 are built (PRs #1222, #1223; section 12 records how the build departed
+from the first text). Rebased on `origin/claude/segno-integration` at
+`097e1ef68`, which carries #1198 Part 1 (`le_digest_file`,
+`le_fs_sync_dir`).
+
 Owner decisions applied: the settings tray and Bluetooth page are retired (this
 plan adds nothing to them); DAW export lives under Library > Audio; USB gadget
 mode is out of scope; saved v7 sessions migrate on open (#1196), so this plan's
@@ -137,9 +144,22 @@ interaction study `docs/design/2026-09-08-backing-playback-ux.md` and
 the pedal roles and the Next/selection-following rules below come from
 `assignments()` and `run()` there).
 
-**Deviations the build must write back into the pen** (none planned beyond):
-the Mixer dialog subtitle for Backing shows the loaded file's name when one is
-loaded and `Prepared audio` otherwise (the pen draws only the latter).
+**Deviations the build must write back into the pen** (repo rule: a shipped
+departure updates the pen; this plan does not edit it):
+
+1. The Mixer dialog subtitle for Backing shows the loaded file's name when one
+   is loaded and `Prepared audio` otherwise (the pen draws only the latter).
+2. 18/07 `EM37x` draws `Save audio` (top right), `Export to USB` and
+   `Use in loop`; 18/01 `bx7vK` draws `Export to USB` and `Use in loop`. Part 8
+   omits all of them until their features exist (`Save audio` is E7-10,
+   `Use in loop` is E7-9, `Export to USB` of a backing asset is E7-13), so no
+   control does nothing. Each is drawn by the part that builds its feature.
+3. The pen gives 18/05 `Backing track / Ready` no entry point. Part 8 reaches
+   it two ways: `Use as backing` opens it (the file now loaded), and the
+   Prepared audio page (18/07) gets a `Backing track` button beside `Perform`
+   when a file is loaded. Both are new controls the pen must draw.
+4. `Play selected` shows `Loading <name>…` in the status line of 18/05 and
+   18/08-18/09 while it decodes (review L4); the pen draws no loading state.
 
 ## 3. Decisions
 
@@ -161,13 +181,17 @@ from RAM. Reasons:
    tracks are the norm on performance players.
 3. The cost is bounded and measurable. Stereo float32 is 23 MB per minute at
    48 kHz and 46 MB per minute at 96 kHz. `LE_BACKING_MAX_SECONDS` is 900
-   (15 minutes: 346 MB at 48 kHz, 691 MB at 96 kHz per buffer). At most two
-   full buffers are resident: the loaded one plus either the staged Next or a
-   pending `Play selected` decode, never both, because starting a
-   `Play selected` decode first releases the staged Next (it belongs to the
-   outgoing file and is re-staged for whichever file ends up loaded). A
-   replaced buffer outlives its replacement by at most one audio block. A
-   file over the cap is refused at import with the reason, never truncated.
+   (15 minutes: 346 MB at 48 kHz, 691 MB at 96 kHz per buffer). The engine
+   enforces the backing's share: at most `LE_BACKING_BUDGET_BYTES` (1.5 GiB)
+   of PCM and four buffers owned at once (Part 1, as built). In the owner's
+   flows at most two full buffers are resident: the loaded one plus either
+   the staged Next or a pending `Play selected` decode, never both, because
+   starting a `Play selected` decode first releases the staged Next (it
+   belongs to the outgoing file and is re-staged for whichever file ends up
+   loaded). Import never holds a third: it probes, retaining no PCM (D2).
+   A decode's own peak (its source read plus its output) is checked against
+   `MemAvailable` before it allocates (D11). A file over the cap is refused
+   at import with the reason, never truncated.
 
 Selection does not pre-decode: `Play selected` decodes on demand while the
 current file keeps playing, then switches (AB 6.4 "Selecting a different
@@ -175,54 +199,97 @@ backing file leaves the current one playing until Play"; the library study's
 "The old file stays loaded until the new load or copy succeeds"). Only an
 `At end: Next` decodes ahead, because gapless continuation needs it.
 
-### D2 Decode path: miniaudio's decoders, natively, in a Dart background isolate
+### D2 Decode path: the app's one decoder, native, in a Dart background isolate
 
-- **Formats:** WAV (PCM 8/16/24/32, float 32/64), FLAC and MP3, the three
-  decoders miniaudio already vendors (dr_wav, dr_flac, dr_mp3) and that
-  `MA_NO_DECODING` (`miniaudio_impl.c:10`) compiles out today. The pen shows
-  `.wav` and `.mp3` (18/02). Mono files play dual-mono; files with more than
-  two channels are refused ("Only mono and stereo files can be used."), not
-  silently downmixed. Anything else, a damaged file, or a file over the cap is
-  refused at import with its reason and listed with `—` (18/02's damaged row).
-  `MA_NO_ENCODING`, `MA_NO_RESOURCE_MANAGER` and the rest stay.
-- **Where:** one pure native function, `le_backing_decode_file` (no engine
-  handle, never on the audio thread), called from `Isolate.run` in Dart with
-  the library opened by the existing top-level `_openLibrary()`
-  (`packages/segno_engine/lib/src/native_audio_engine.dart:39-48`). The UI
-  isolate never decodes; no new native thread is added. The function returns
-  an owned `le_backing_buffer*` (address crossing the isolate boundary as an
-  integer) plus 512 peak buckets for the waveform. Ownership passes to the
-  engine on a successful `load`/`stage_next`; every other path frees it
-  explicitly.
-- **Validation at import:** importing decodes once to prove the file plays and
-  to record its duration and peaks (`info.json`, D7). A file that cannot
-  decode never enters `Backing tracks`, so a performance never meets a
-  damaged file first.
+- **One decoder for the app (review M3, rule 4).** `le_backing_decode_file`
+  (Part 2, `src/core/engine_decode.c`) is the only audio-file decoder: the
+  backing player, the Library preview (its Part 6b, instead of a WAV-only
+  Dart reader) and #1198's recording parts all read through it. Its bounded
+  form takes a start frame (source rate) and a maximum output length and says
+  whether it stopped early, which is what a preview and a recording part
+  need; at the engine rate it is sample-exact. `le_backing_probe_file`
+  decodes a whole file in 4096-frame chunks, keeping no PCM, to validate it
+  and compute peaks. The coordinator has told the Library and #1198.
+- **Formats:** WAV (PCM 8/16/24/32, float 32/64) and MP3, through miniaudio's
+  built-in dr_wav and dr_mp3 (`MA_NO_DECODING` removed). The FLAC decoder
+  stays compiled out (`MA_NO_FLAC`) because CVE-2024-41147, an out-of-bounds
+  write in `ma_dr_flac__decode_samples__lpc`, affects the vendored 0.11.21
+  and was fixed in 0.11.22. The pen shows only `.wav` and `.mp3` (18/02).
+  Mono plays dual mono; more than two channels is refused ("Only mono and
+  stereo files can be used."), never downmixed. Anything refused is listed
+  with `—` and its reason (18/02's damaged row).
+- **Where:** `Isolate.run` in Dart, with the library opened by the existing
+  top-level `_openLibrary()` (`native_audio_engine.dart:39-48`). The UI
+  isolate never decodes and no native thread is added. The returned
+  `le_backing_buffer*` crosses the isolate boundary as an address; ownership
+  passes to the engine on a successful `load`/`stage_next`, and every other
+  path frees it.
+- **Import validates by streaming.** Import probes the copied file (whole
+  decode, no PCM retained, 512 peaks and the decoded length into `info.json`)
+  and keeps it only if that succeeds, so a performance never meets a file
+  that has not decoded cleanly once, and import never holds a full buffer.
 
-### D3 Sample-rate conversion: offline windowed sinc from the vendored Signalsmith DSP
+### D2a Untrusted files (review M2)
 
-The pitch/time plan's resampling is the wrong tool here, checked piece by piece:
-its read head is a two-tap fractional read for real-time varispeed (D1 there),
-whose imaging and aliasing are acceptable for a performance effect but not for
-a whole file converted once; `le_stretch_render_offline` is a phase vocoder
-that would smear transients for a ratio near 1; the half-band pair converts
-2:1 only. What it does give us is the vendored, already compiled
-`signalsmith::delay::InterpolatorKaiserSincN` (`third_party/signalsmith-stretch/dsp/delay.h`,
-`InterpolatorKaiserSincN<Sample, n>`), a Kaiser-windowed sinc with a
-configurable pass and stop band.
+The decoders parse whatever a performer brings on a drive, inside the app's
+process. As built (Part 2):
 
-`le_resample_offline` is added to `src/stretch/le_stretch.cpp` (it stays the
-one TU that includes Signalsmith): a 64-tap `InterpolatorKaiserSincN<float, 64>`
-read at `t · in_rate / out_rate`, with pass/stop at `0.42 r` / `0.55 r` where
-`r = min(1, out_rate / in_rate)` and the output scaled by `pass + stop` so DC
-gain stays 1. Ratios below 0.5 first decimate through `le_halfband_decimate`
-until `r >= 0.5` (a 192 kHz file on a 48 kHz engine). Equal rates copy
-bit-exactly. Output length is `floor(in_frames · out_rate / in_rate)`.
-Aliases from the transition band fold only above `0.45 · out_rate` (above
-19.8 kHz at 44.1 kHz). Offline cost is 64 MACs per output sample per channel;
-on a Pi 5 a five-minute file at 96 kHz is about 58 M output samples, under a
-second of CPU (measured on the appliance in Part 2). This is the decode-time
-converter; the audio thread never resamples.
+- every header value is checked before it sizes anything: the source rate
+  must be 8-384 kHz and the channels 1-2, and the stated length must fit what
+  the file could hold (at most 512 decoded float bytes per file byte; an
+  8 kb/s MP3 at 48 kHz stereo expands 384x), so a lying header cannot
+  request a huge allocation;
+- the 15-minute cap applies to the decoded frames as well as the stated
+  ones, and a whole-file decode that yields a different length than the file
+  states is refused as damaged (truncated data, a mid-stream decoder error);
+- the WAV decoder runs without its metadata parser (`ma_decoder` opens WAV
+  with `ma_dr_wav_init_file`, flags 0, `miniaudio.h:61571`), so
+  CVE-2026-32837 (an out-of-bounds read in the BEXT parser, open through
+  0.11.25) is unreachable; MP3 has no published CVE against 0.11.21; FLAC is
+  out (above);
+- a decoder fuzz target (`src/test/fuzz_backing_decode.c`) runs a fixed-seed
+  mutation loop over WAV, MP3 and FLAC seeds (bogus sizes, rates, chunk
+  lengths, truncations, ID3 garbage) in every native configuration, so the
+  ASan job fuzzes it on every push; the same file is a libFuzzer entry point
+  for longer local campaigns. 20,000 inputs under ASan: no finding.
+
+**Residual risk, recorded.** A decoder fault would still end the app, and
+with it the audio. A child process would contain it, but forking from the app
+is exactly what #710's root cause was: `Process.run` forks copy the page
+tables under the RT audio thread's lock and produce audible clicks
+(`loopy-click-root-cause-fork-cow`), so a decode helper would need a separate
+long-lived process started at boot, which the appliance image does not have.
+Decoding happens at import, before a performance, and later decodes read only
+managed copies that already passed and whose digest is verified first (D7).
+**Follow-up (no issue yet; the main session files it):** update the vendored
+miniaudio to the current 0.11.x, re-applying the `SEGNO PATCH` hunks in its
+ALSA backend, then re-enable FLAC.
+
+### D3 Sample-rate conversion: an offline polyphase windowed sinc
+
+The pitch/time plan's resampling is the wrong tool here, checked piece by
+piece: its read head is a two-tap fractional read for real-time varispeed
+(D1 there), whose imaging and aliasing are acceptable for a performance effect
+but not for a whole file converted once; `le_stretch_render_offline` is a
+phase vocoder that would smear transients for a ratio near 1; the half-band
+pair converts 2:1 only. The vendored Signalsmith `InterpolatorKaiserSincN`
+was the first choice and was measured in Part 2: it forces exact zeros at
+integer offsets, which is only right when its cutoff is the input Nyquist, so
+built for any reduction its DC gain is 1 at phase 0 and 1.09 to 2.0 elsewhere
+(48 to 44.1 kHz: 4 % DC ripple, -43 dB residual). miniaudio's own resampler
+is linear interpolation behind a low-order filter.
+
+So `le_resample_offline` (`src/core/engine_decode.c`, internal, not FFI) is a
+polyphase Kaiser-windowed sinc (beta 10.06, about 100 dB stop band) of
+half-width `ceil(32 / r)` input samples, `r = min(1, out / in)`, with exact
+rational phases (`out / gcd(in, out)`, refused above 8192) each normalized to
+unity DC gain. Its transition is 0.45 r to 0.55 r of the input rate, so
+aliases fold only above `0.45 · out_rate`. Reductions below one half first
+halve through `le_halfband_decimate`. Equal rates copy exactly. It reads and
+writes strided channels, so a decode converts straight from the interleaved
+source into the interleaved output. Measured: a five-minute 44.1 kHz MP3
+decodes and converts in 0.58 s at 48 kHz and 1.01 s at 96 kHz on the dev
+machine; the Pi 5 figure is a hardware criterion of Part 2.
 
 ### D4 Transport, seek and End semantics (accepted 6.4, section 4's Backing row)
 
@@ -230,8 +297,10 @@ converter; the audio thread never resamples.
   loaded file. Loading a new selection while another plays keeps the old one
   audible until the new buffer is installed, then switches at a block
   boundary with a 5 ms fade-out of the old file (`LE_BACKING_RAMP_MS 5`); the
-  new file starts at frame 0 unfaded. A failed decode leaves the old file
-  loaded and playing and reports the reason.
+  new file starts at frame 0 unfaded; since Part 1 as built, the old file's
+  fade-out overlaps the new file's start. While the decode runs the status
+  line reads `Loading <name>…` (deviation 4). A failed decode leaves the old
+  file loaded and playing and reports the reason.
 - **Pause** fades out over 5 ms and keeps the position; resume fades in over
   5 ms. **Stop** fades out over 5 ms and rewinds to 0. Stop also cancels a
   pending `Play selected` decode (its result is freed; the old file stays
@@ -294,21 +363,30 @@ click volume.
 Backing never plays from a drive: `Add to prepared` and `Use as backing` copy a
 USB file into Internal first (18/02's caption; AB 6.5 "makes a managed
 internal copy, independent of drive removal"). So eject never interrupts a
-performance and the player never holds a removable volume. The store is
-`<exportsRoot>/Backing tracks/<id>/<original file name>` plus a derived
-`info.json` (`name`, `sourceRate`, `sourceChannels`, `seconds`, 512 `peaks`),
-where `id` is the first 16 hex digits of the file's SHA-256. The id is the
-stable identity AB 6.9 and 6.10 require ("same name is not enough"):
-importing identical bytes again reuses the existing copy (the study's "reuses
-its copy"), two files with the same name and different bytes coexist, and a
-session references assets by id. The copy itself is #1177's `copyFile`
-(`.part`, fsync, rename) to `StorageDestination.internal()`, so a full disk or
-a failed write leaves nothing behind. A USB source is held for the copy's
-duration by a **read hold** (D8). `info.json` is derived; a missing or
-unreadable one lists the asset as unavailable with `—` until it re-validates.
-There is no Delete for audio in the accepted design, so no reference check is
-needed yet (Library D6's note); when E7-7 adds one, it must check every saved
-session's prepared ids.
+performance and the player never holds a removable volume.
+
+- **Identity (review M3, rule 4):** the full SHA-256 of the file's bytes, as
+  `sha256:<64 hex>`, computed with #1198's `le_digest_file(path, 0,
+  UINT64_MAX, out)` (#1198 Part 1, on the trunk; one SHA-256
+  implementation in the app, not Dart `crypto`). It is stored in `info.json` and in the session's prepared
+  list, and verified before every load (a mismatch is `Damaged`, never
+  played). The directory name is the first 16 hex digits, for short paths
+  only; a directory whose `info.json` names a different digest is ignored.
+- **Layout:** `<exportsRoot>/Backing tracks/<16 hex>/<original file name>`
+  plus `info.json` (`digest`, `name`, `sourceRate`, `sourceChannels`,
+  `sourceFrames`, 512 `peaks`). It stays under `exportsRoot` (review L6
+  considered a sibling root) because #1177's `copyFile` writes Internal copies
+  relative to that root, and reusing its `.part`, fsync and rename protocol
+  is the rule-4 call. Boot salvage and the Library's `listCaptures` already
+  skip directories without `performance.json`; Part 4 adds a test that a
+  `Backing tracks` directory is never listed as a capture.
+- **Dedupe:** importing identical bytes again reuses the existing copy (the
+  study's "reuses its copy"); two files with the same name and different
+  bytes coexist. A failed copy, a refused probe or a full disk leaves nothing
+  behind. A USB source is held for the copy's duration by a read hold (D8).
+- **Delete:** there is no Delete for audio in the accepted design, so no
+  reference check is needed yet (Library D6's note); when E7-7 adds one, it
+  must check every saved session's prepared digests.
 
 ### D8 Eject: a read hold on the source drive
 
@@ -334,8 +412,14 @@ always restores **stopped at 0** (the playback study: "Playback itself always
 starts stopped after reload"; AB 6.1 "Restored transport starts stopped").
 New Loop keeps the whole prepared setup and stops the player (AB 6.1
 "prepared backing remains stopped"). A recalled id with no file is a
-`Missing` row that cannot be loaded and says so (repair is E7-16); it is never
-dropped silently and never matched by name. Level, pan, mask and End follow
+`Missing` row that cannot be loaded and says so; it is never dropped silently
+and never matched by name. **The repair row is #1198's (review M5):** pen 36
+(`b28GI1` `2 audio files to find`, `w9WB8`, `sra8u`, `LaqVi`) draws
+`Evening lights.wav · Prepared audio · Backing track · Find audio` in Open
+recovery; #1198's Part 14 inspects prepared backing references as
+`missingBacking` items and its Part 15 draws the row, accepting a candidate
+only by this plan's identity (the full digest of D7). This plan supplies the
+identity and the session field (Part 5); it builds no repair UI. Level, pan, mask and End follow
 the click-volume lifecycle exactly (a #1159 family: checkpoint plus session
 capture plus recall replace); the prepared order and loaded id are captured
 and recalled with the session only, like the pedal remap.
@@ -345,133 +429,121 @@ and recalled with the session only, like the pedal remap.
 A **configure** (rate or cap change) frees every backing buffer with the
 callback stopped (material, `le_engine_reset_material`); a **retained reopen**
 at the same rate keeps the buffers but returns the transport to Stopped at 0
-(runtime, `le_engine_reset_runtime`, `engine.c:500`); both bump
-`backing_epoch`. The repository sees the epoch change, replays mask, level,
-pan and End (as `LooperRepository` replays the click,
-`looper_repository.dart:2540-2560`) and, after a configure, re-decodes the
-loaded item (and the staged Next) at the new rate, stopped at 0, with the
-notice "Backing stopped: the audio interface changed." (rule 3; pen 28 says
-backing stops). A decode failure there leaves the item listed and unloaded
-with its reason (rule 2).
+(runtime, `le_engine_reset_runtime`); both bump `backing_epoch`. The backing
+settings (mask, level, pan, End, click pan) persist across both (Part 1 as
+built). The repository sees the epoch change and:
+
+- after a configure, re-decodes the loaded item (and the staged Next) at the
+  new rate, stopped at 0;
+- after either, if the backing was playing, shows "Backing stopped: the audio
+  interface changed." (rule 3; review L2: a retained reopen also stops it);
+- frees a decode that finishes after the rate changed (its `load` reads
+  `LE_ERR_INVALID` for the stale rate) and decodes again at the new rate
+  (review L3);
+- leaves an item that fails to decode listed and unloaded with its reason
+  (rule 2).
+
+### D11 The appliance memory budget (review M1)
+
+Pi 5, 8 GB, no swap (nothing in `deploy/yocto` configures one), one process
+for the UI and the engine. The budget names every large consumer, its bound
+and who enforces it. Figures at 96 kHz.
+
+| Consumer | Bound | Enforced by |
+|---|---|---|
+| OS, compositor, Flutter app baseline | about 1.2 GB (to measure) | hardware criterion of Part 2 |
+| Floor kept free for everything else | 512 MiB of `MemAvailable` | `LE_MEM_RESERVE_BYTES`: every decode checks its own peak against it before allocating (Part 2) |
+| Backing buffers (loaded + staged + one in transit) | 1.5 GiB of PCM | `LE_BACKING_BUDGET_BYTES` in the engine's registry (Part 1); loads past it are refused |
+| One decode in flight (source read + output) | about 1.0 GB worst case (15 min, 44.1 kHz stereo source to 96 kHz) | allocated once, from the stated length, after the floor check |
+| Import | 32 KiB of decode scratch | the probe keeps no PCM (Part 2) |
+| Library preview (audition voice) | 120 s: 92 MB, plus a bounded decode of the same size | the bounded decode (`max_frames`) and the floor check |
+| Recording capture rings (#1198) | up to 264 MiB | #1198's ring sizing |
+| Loop-stage wet cache | 64 MiB | `LE_CACHE_DEFAULT_CAP_BYTES` |
+| Loops (lanes x undo layers) | grows with use: one buffer is `max_loop_frames` x 4 B (11.5 MB at the 30 s default) | not bounded today; see section 8 |
+| Instruments (#1197) | not stated by #1197 | #1197 must take a share of this table |
+
+The floor check is the backstop: whatever loops and instruments have taken, a
+decode never starts that would leave less than 512 MiB available, and says
+"Not enough memory to load this file." Hardware criterion (Part 2): peak RSS
+while A plays, B is staged and C is imported, all at 96 kHz, with eight
+tracks recorded, stays under 6.5 GB, and no xrun is logged while a 96 kHz
+decode runs with loops playing (review L4).
 
 ## 4. Architecture
 
-### 4.1 Native contract (`segno_engine_api.h`, Part 1 and Part 2)
+### 4.1 Native contract, as built (`segno_engine_api.h`, Parts 1 and 2)
+
+The header is the reference (`#1200` blocks beside the click). In outline:
 
 ```c
-/* ---- backing player (#1200) ----
- * One engine-owned stereo voice played from RAM. It sums into its masked
- * output channels after the live monitors and BEFORE the output buses, like
- * the click: output FX, level, Mono and mute process it; master gain, the
- * limiter, output metering and the Record performance tap of the captured bus
- * see it. Never perf-logged: stems, the renderer's master and loop takes never
- * contain it. Buffers move by atomic pointer, never through the ring; freed
- * only on the control thread after the callback acknowledged them. */
+#define LE_BACKING_MAX_BUFFERS 4
+#define LE_BACKING_BUDGET_BYTES (1536ll * 1024 * 1024)
+#define LE_BACKING_RAMP_MS 5
+typedef struct le_backing_buffer le_backing_buffer;  /* interleaved stereo f32 */
+le_backing_buffer_from_pcm(pcm, frames, channels, rate, &out);
+le_backing_buffer_frames / _rate / _peaks / _pcm / _free;
+le_engine_backing_load(e, buf, item, play);          /* ring: LE_CMD_BACKING_LOAD 88 */
+le_engine_backing_stage_next(e, buf_or_NULL, item);  /* ring: 89 */
+le_engine_backing_clear(e);                          /* ring: 90 */
+le_engine_backing_transport(e, PLAY | PAUSE | STOP); /* ring: 91 */
+le_engine_backing_seek(e, frame);                    /* ring: 92 */
+le_engine_backing_set_end / _set_output / _set_level / _set_pan;  /* direct stores */
+le_engine_set_click_pan(e, pan);                     /* direct store */
+le_engine_backing_state(e, &state);                  /* reads, and collects returns */
+/* Part 2: the app's decoder */
 #define LE_BACKING_MAX_SECONDS 900
-typedef struct le_backing_buffer le_backing_buffer;
-LE_EXPORT int32_t le_backing_buffer_from_pcm(const float* interleaved,
-    int32_t frames, int32_t channels, int32_t sample_rate,
-    le_backing_buffer** out);                          /* 1 or 2 channels */
-LE_EXPORT int32_t le_backing_decode_file(const char* path, int32_t sample_rate,
-    le_backing_buffer** out, int32_t* source_rate,
-    int32_t* source_channels);                         /* Part 2; any thread but audio */
-LE_EXPORT int32_t le_backing_buffer_frames(const le_backing_buffer* b);
-LE_EXPORT int32_t le_backing_buffer_peaks(const le_backing_buffer* b,
-    float* out, int32_t buckets);
-LE_EXPORT void le_backing_buffer_free(le_backing_buffer* b);
-
-typedef enum le_backing_transport { LE_BACKING_STOPPED = 0,
-    LE_BACKING_PLAYING = 1, LE_BACKING_PAUSED = 2 } le_backing_transport;
-typedef enum le_backing_end { LE_BACKING_END_STOP = 0,
-    LE_BACKING_END_REPEAT = 1, LE_BACKING_END_NEXT = 2 } le_backing_end;
-typedef enum le_backing_end_event { LE_BACKING_EV_NONE = 0,
-    LE_BACKING_EV_STOPPED = 1, LE_BACKING_EV_REPEATED = 2,
-    LE_BACKING_EV_ADVANCED = 3, LE_BACKING_EV_NEXT_MISSING = 4 } le_backing_end_event;
-
-/* Takes ownership on LE_OK. `item` is the caller's token, reported back.
- * play=1 starts at frame 0 once installed. LE_ERR_INVALID: NULL, rate !=
- * engine rate, frames 0. LE_ERR_NOT_RUNNING: not configured.
- * LE_ERR_NOT_READY: a retired buffer still awaits its ack (retry after one
- * block). */
-LE_EXPORT int32_t le_engine_backing_load(le_engine*, le_backing_buffer*,
-                                         int32_t item, int32_t play);
-LE_EXPORT int32_t le_engine_backing_stage_next(le_engine*,
-                                   le_backing_buffer* /* NULL clears */, int32_t item);
-LE_EXPORT int32_t le_engine_backing_clear(le_engine*);
-LE_EXPORT int32_t le_engine_backing_transport(le_engine*, int32_t op);   /* ring */
-LE_EXPORT int32_t le_engine_backing_seek(le_engine*, int32_t frame);     /* ring */
-LE_EXPORT int32_t le_engine_backing_set_end(le_engine*, int32_t mode);   /* ring */
-LE_EXPORT int32_t le_engine_backing_set_output(le_engine*, int32_t mask);/* ring */
-LE_EXPORT int32_t le_engine_backing_set_level(le_engine*, float gain);   /* 0..LE_MAX_GAIN */
-LE_EXPORT int32_t le_engine_backing_set_pan(le_engine*, float pan);      /* -1..1 */
-LE_EXPORT int32_t le_engine_set_click_pan(le_engine*, float pan);        /* -1..1 */
-
-typedef struct le_backing_state {
-  uint32_t epoch;          /* bumps at configure and at every reopen */
-  int32_t item, next_item; /* tokens; -1 none */
-  int32_t transport;       /* le_backing_transport */
-  int32_t position, frames;
-  int32_t end_mode;        /* le_backing_end */
-  uint32_t end_count;      /* bumps on every end-of-file handling */
-  int32_t last_end;        /* le_backing_end_event of the latest */
-  uint32_t mask; float level, pan, click_pan;
-} le_backing_state;
-/* Reads the state and frees every acknowledged retired buffer (the collect
- * point, like le_cache_collect). Control thread. */
-LE_EXPORT int32_t le_engine_backing_state(le_engine*, le_backing_state* out);
+#define LE_MEM_RESERVE_BYTES (512ll * 1024 * 1024)
+le_backing_decode_file(path, rate, start_frame, max_frames, &out, &info);
+le_backing_probe_file(path, &info, peaks, buckets);
+/* LE_ERR_TOO_LONG = -12 */
 ```
 
-Mechanics:
+**Handoff protocol (review H1, as built).** The review's three races are
+races between a control-side pointer swap and the callback's advance. The
+built protocol has no control-side swap:
 
-- **Slots.** `_Atomic(le_backing_buffer*) a_backing_cur` and `a_backing_next`
-  with a generation each, an audio-thread `a_backing_ack` stored with release
-  **after the block's last mixed frame** (the Library plan's review edit E4
-  and `engine_private.h`'s note that a plain command ack lands before the
-  block's frames finish), and two retired slots. A replace parks the old
-  pointer; the control thread frees it once `a_backing_ack` reaches the
-  retiring generation, or at once when `a_running == 0`
-  (`engine_private.h:1452`). An automatic Next swap is done by the callback:
-  it moves the finished buffer into the callback-owned `ended` slot, which the
-  next `le_engine_backing_state` frees after the ack. Nothing allocates or
-  frees on the audio thread.
-- **One slot helper, shared with Library audition.** The publish/retire/ack
-  logic lives in a new `src/core/engine_voice.h` (static inline, C atomics
-  only, so it passes the C++ shim repro in `docs/PROGRESS.md`). If the Library's
-  Part 6a lands first, Part 1 extracts its slot into this header and both
-  voices use it; otherwise Part 6a builds on it (rule 4).
-- **Commands.** Transport, seek, End and output mask go through the command
-  ring so they apply at a block boundary in order; they take the next free
-  `le_command_code` values at landing (the trunk ends at 83; Peel and Multiply
-  may take more; never reuse a value, never collide). Level, pan and click pan
-  are direct atomic stores read once per block, like click volume
-  (`engine_process.c:6386-6391`). None is perf-logged. Raw ring posts of these
-  codes are refused, as raw click-mode posts are.
-- **Callback.** Per block: load the two pointers (acquire), mask
-  `& out_enabled`, level, pan gains. Per frame after `click_frame`: if playing
-  or ramping, read `(l, r)` at `pos` (dual mono for one channel), apply the
-  5 ms linear ramp state (fade-out then the pending action: pause, stop,
-  seek, switch; fade-in on resume and after a seek), multiply by level and the
-  pan gains, `le_fx_route_frame` into the masked channels, advance. At
-  `pos == frames`: Stop → stopped, `pos = 0`, `EV_STOPPED`; Repeat → `pos = 0`,
-  `EV_REPEATED`; Next with a staged buffer → swap at this exact frame (the
-  next frame is its frame 0), `EV_ADVANCED`; Next without → stopped, `pos = 0`,
-  `EV_NEXT_MISSING`. Publish position, transport, item ids and the end event
-  per block. `handle_cut_sound` sets Stopped, `pos = 0`, with no ramp.
-- **Lifetimes.** `le_engine_reset_material` frees both slots and the retired
-  ones (configure); `le_engine_reset_runtime` sets Stopped at 0, clears mask,
-  level 1, pan 0, End Stop, click pan 0, and bumps `a_backing_epoch` (both
-  paths). `le_engine_destroy` frees everything.
-- **Decode (Part 2).** `le_backing_decode_file` opens with
-  `ma_decoder_init_file` (output format f32, native channels and rate),
-  refuses more than two channels and anything over `LE_BACKING_MAX_SECONDS`
-  at the source rate (reading the length first where the format reports it,
-  and stopping the read at the cap otherwise), reads in chunks into a
-  growable buffer, converts through `le_resample_offline` when the rates
-  differ, interleaves stereo, and computes nothing else. Errors:
-  `LE_ERR_INVALID` (unreadable, unsupported, damaged, too many channels),
-  `LE_ERR_TOO_LONG` (a new `le_result` value, the next free negative code at
-  landing; the trunk ends at `LE_ERR_REVERSED = -9`, `segno_engine_api.h:39-52`),
-  `LE_ERR_CAPACITY` for an allocation failure.
+1. Only the audio thread changes which buffer is loaded or staged. `load`,
+   `stage_next` and `clear` travel the command ring with the buffer pointer
+   (the ring's release push and acquire pop order the buffer's contents),
+   and the End = Next advance happens inside the callback. A load or stage
+   and an advance therefore never interleave: each applies whole, in ring
+   order, at a block boundary or a frame. There is no `a_backing_next` for
+   the control thread to exchange and nothing it parks.
+2. A buffer the callback will never read again goes back through one of
+   `LE_BACKING_MAX_BUFFERS` return slots (compare-exchange from NULL, release).
+   The control thread exchanges each slot back to NULL (acquire) and only
+   then frees, in `le_engine_backing_state` and before every load or stage.
+   A buffer is in at most one place (loaded, staged, the fade voice that owns
+   it, a return slot, or the ring), and only a return-slot exchange or a
+   stopped-callback release frees it, so it is freed exactly once and never
+   while the callback can reach it.
+3. The registry admits a buffer only while fewer than four are owned and the
+   owned PCM stays within the byte budget, and every buffer in a return slot
+   is owned and distinct, so a return slot is always free. The advance still
+   checks: with no free slot (forced by a test) it refuses, stops and reports
+   `LE_BACKING_EV_NEXT_MISSING`; it never overwrites or drops a buffer.
+4. Nothing needs a per-block ack: a return slot is filled only after the
+   callback's last read of that buffer (the fade voice keeps a shared buffer
+   until its own ramp ends), so a stopped voice holds nothing back and a
+   replace is never stuck in `NOT_READY` (that code means only "a buffer is
+   in transit; retry after one block").
+5. Configure, reopen and destroy release with the callback stopped,
+   including any buffer still queued in the ring (which they reset).
+
+Proof: `test_backing_handoff_races` (`src/test/test_backing_races.c`) runs
+`le_engine_process` on one thread in blocks of 1 to 61 frames with End =
+Next and 1-200-frame buffers, so advances land inside blocks continuously,
+while the control thread performs 20,000 random loads, stages, clears,
+seeks, transports and collects, checking the registry bounds after each. It
+runs before the races-only exit of `run_native_tests.sh`, so CI's
+`native-tests-tsan` job (`NATIVE_TESTS_ONLY=races`, `-fsanitize=thread`) and
+the ASan job both run it. Checked against mutations: letting a replaced
+buffer go back while the fade voice still reads it is caught by ASan
+(heap-use-after-free in `backing_frame`).
+
+**Mix point and capture.** As D5. A capture whose captured bus carried the
+backing records `"backing_in_master": true` in its sidecar (review L8), so
+the DAW export can say the stems lack it.
 
 ### 4.2 Dart ownership
 
@@ -494,7 +566,7 @@ and P8 merges second. Every part leaves the app working, adds no control that do
 nothing, and runs normal, ASAN and telemetry-off native suites where it
 touches native code.
 
-### Part 1: native backing voice and click pan (about 560 lines)
+### Part 1: native backing voice and click pan (built: PR #1222, about 850 lines)
 
 Files: `src/core/engine_voice.h` (new), `engine_private.h` (backing fields
 beside the click block), `engine_core.h` if a helper must reach
@@ -564,12 +636,13 @@ SUCCESS CRITERIA:
 - Buffers are freed only on the control thread after the block-end ack; configure, reopen and destroy leak nothing; sanitizer and telemetry-off builds pass. | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" bash packages/segno_engine/src/test/run_native_tests.sh
 - master.pcm contains the routed backing; stems and events.log do not; existing click tests are unchanged at pan 0. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - Bindings are regenerated and formatted, symbol parity holds, and the C++ shim repro compiles. | verify: (cd packages/segno_engine && dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart && git diff --stat lib/src/generated) && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)"
+- The handoff stress test passes under ThreadSanitizer (no report) and AddressSanitizer; the byte budget, the refused advance and the capture marker hold. | verify: NATIVE_TESTS_ONLY=races EXTRA_CFLAGS="-fsanitize=thread -g" bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh
 NON-GOALS:
 - File decoding, resampling, Dart, UI, sessions.
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
-### Part 2: decode and resample (about 330 lines)
+### Part 2: decode and resample (built: PR #1223, about 600 lines)
 
 Files: `src/miniaudio/miniaudio_impl.c:10` (drop `MA_NO_DECODING` only),
 new `src/core/backing_decode.c` (`le_backing_decode_file`, `le_backing_buffer_peaks`),
@@ -604,14 +677,15 @@ Tests (`test_engine_backing_decode.h`):
 - `test_decode_peaks`: 512 buckets of a literal ramp equal the per-bucket max.
 
 ```success-criteria
-GOAL: WAV, FLAC and MP3 files decode off the audio thread into stereo float buffers at the engine rate through a bandlimited windowed-sinc converter, and unusable files are refused with a typed reason.
+GOAL: WAV and MP3 files decode off the audio thread into stereo float buffers at the engine rate through a band-limited converter, whole or bounded, with untrusted headers checked before they size anything, a streaming probe for import, and a memory floor every decode respects.
 SUCCESS CRITERIA:
-- Identity is bit-exact; DC, 1 kHz amplitude, spurious-component floor and output length meet the literal bounds for 44.1, 48, 96 and 192 kHz sources. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- WAV variants decode to exact ramps; MP3 and FLAC fixtures decode within their bounds; refusals return the documented codes and allocate nothing past the cap. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- Sanitizer, telemetry-off, shim repro and symbol parity pass. | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" bash packages/segno_engine/src/test/run_native_tests.sh && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)"
-- Appliance: a five-minute 44.1 kHz MP3 decodes at the device rate in under 3 s, and a 15-minute 96 kHz decode stays within 2 x 691 MB RSS growth. | verify: manual on the console with a timing log line around the decode and /proc/self/status VmRSS before and after. [HARDWARE]
+- Identity is exact; DC, 1 kHz level, residual, alias, image and alignment meet the literal bounds for 44.1, 48, 88.2, 96 and 192 kHz sources. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- WAV variants decode to exact ramps; the MP3 fixture decodes to its exact length; FLAC is refused; bounded reads are exact at the engine rate and report truncation; the probe validates and peaks with no PCM retained. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Out-of-range rates and channels, a stated length the file cannot hold, a length mismatch, a file over the cap (before allocation) and a decode that would breach the memory floor are refused with their codes. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- The fuzz driver finds nothing under ASan; telemetry-off, shim repro and symbol parity pass. | verify: EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" bash packages/segno_engine/src/test/run_native_tests.sh && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)"
+- Appliance: a five-minute 44.1 kHz MP3 decodes at the device rate in under 3 s; peak RSS with A playing, B staged and C importing, all at 96 kHz, with eight tracks recorded, stays under 6.5 GB; no xrun is logged while a 96 kHz decode runs with loops playing. | verify: manual on the console: a timing log line around the decode, VmRSS from /proc/self/status, xrun count from the callback telemetry. [HARDWARE]
 NON-GOALS:
-- Streaming, Ogg/AIFF/AAC, multichannel downmix, tempo or pitch change.
+- Streaming, FLAC (until miniaudio is updated), Ogg/AIFF/AAC, multichannel downmix, tempo or pitch change, a decode helper process.
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
@@ -619,7 +693,8 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh
 
 Files: `packages/segno_engine/lib/src/audio_engine.dart` (`BackingControl`
 role, composed into `AudioEngine`), `native_audio_engine.dart` (FFI calls;
-`decodeBackingFile(path, sampleRate)` runs `Isolate.run` around
+`decodeAudioFile(path, sampleRate, {startFrame, maxFrames})` and
+`probeAudioFile(path)` run `Isolate.run` around
 `SegnoEngineBindings(_openLibrary())` and returns a `BackingBuffer`; the
 `notReady` retry once after one block period), `mock_audio_engine.dart`
 (an in-memory voice with the same transport and End rules, counting frees),
@@ -644,14 +719,19 @@ VERIFICATION COMMAND: (cd packages/segno_engine && /Users/Tomas/development/flut
 
 ### Part 4: `backing_repository`: the asset store and the player (about 620 lines)
 
-Files: new `packages/backing_repository` (Very Good package template:
-`pubspec.yaml` with `crypto` as a direct dependency, `analysis_options.yaml`),
-`lib/src/backing_asset_store.dart` (`list()`, `import(sourcePath, {name,
-keepDecoded})`: streaming SHA-256 in `Isolate.run`, reuse on an existing id,
-`copyFile` to `Backing tracks/<id>/<name>` through an injected `BackingCopier`
-with the #1177 signature, decode-validate at the engine rate, `info.json`
-written as `.part` then renamed, the directory removed on any refusal;
-`resolve(id)`), `lib/src/backing_repository.dart` (desired mix and End,
+Uses #1198 Part 1's `le_digest_file` and `le_fs_sync_dir` (on the trunk)
+through their Dart seam. Files:
+new `packages/backing_repository` (Very Good package template,
+`analysis_options.yaml`; no `crypto` dependency),
+`lib/src/backing_asset_store.dart` (`list()`, `import(sourcePath, {name})`:
+the digest through `le_digest_file` in `Isolate.run`, reuse on an existing
+digest, `copyFile` to `Backing tracks/<16 hex>/<name>` through an injected
+`BackingCopier` with the #1177 signature, `probeAudioFile` on the copy,
+`info.json` (`digest`, `name`, `sourceRate`, `sourceChannels`,
+`sourceFrames`, `peaks`) written as `.part`, renamed, then the asset
+directory made durable with `le_fs_sync_dir`, the directory removed on any
+refusal; `resolve(digest)`, which re-digests before handing a
+path to a load), `lib/src/backing_repository.dart` (desired mix and End,
 `load(id, {play})`, `stageNext(id?)`, `clear()`, `play()`, `pause()`,
 `stop()`, `seek(seconds)`, state polling at 20 Hz only while playing or
 loading and on demand otherwise, epoch replay and post-configure re-decode
@@ -660,7 +740,9 @@ with the notice event, failure stream with typed reasons), models
 (the package's test job and a coverage floor of 95%), `.github/cspell.json`.
 
 Tests (fake `BackingControl`, temp directories, a recording `BackingCopier`):
-import hashes and copies once, a second import of the same bytes reuses the
+import digests and copies once, a load of an asset whose bytes changed is
+refused as damaged, a `Backing tracks` directory is never listed by
+`PerformanceRepository.listCaptures`, a second import of the same bytes reuses the
 id with no copy, a different file with the same name gets its own id; a
 refused decode leaves no directory; `copyFile` failures (`full`, `io`) leave
 no directory and report the failure; `list()` marks a missing or corrupt
@@ -697,10 +779,11 @@ level, pan, mask, End; `ClickPanFamily`), new
 `lib/looper/application/backing_settings.dart` (owners, beside
 `TempoSettings`), `packages/settings_repository` (checkpoint keys),
 `packages/session_repository/lib/src/models/session.dart` (`SessionBacking`
-{`prepared: [{id, name}]`, `loaded`, `endMode`, `level`, `pan`, `outputMask`}
-and `clickPan`; the version after the last landed bump, 14 if Peel 12 and
-Reverse 13 are the only ones ahead, plus its migration step into #1196's
-chain defaulting an empty prepared list, nothing loaded, End Stop, level 1,
+{`prepared: [{digest, name}]`, `loaded` (a digest), `endMode`, `level`, `pan`, `outputMask`}
+and `clickPan`; the next free version at landing, assigned in landing order
+by the main session's ledger (Peel 12 and Reverse 13 are taken; #1198 also
+bumps, so the number is not known until merge), plus its migration step
+into #1196's chain defaulting an empty prepared list, nothing loaded, End Stop, level 1,
 pan 0, mask 0 and click pan 0, recorded as defaulted fields),
 `lib/session/session_mapping.dart` (`settingsFromLooper` `:103-170` and the
 bundle mapper `:300-330`),
@@ -840,10 +923,13 @@ the Audio tab, `Clear backing` with its confirm, kind and duration, the
 waveform from `info.json` peaks as the seek slider with the D4 touch,
 encoder and double-tap rules, Level and Pan with `−` `+` `Unity`/`Center`,
 `Stop`, `Play`), `library_cubit.dart` (navigation and import progress),
-l10n. `Preview` on backing items reuses the Library audition voice (its Part
-6a) fed by `decodeBackingFile` truncated to the audition cap; without Part
-6a the `Preview` control is not drawn. `Export to USB` and `Use in loop` are
-not drawn here (E7-13 and E7-9).
+l10n. `Preview` on backing items plays through the Library audition voice
+(its Part 6a), fed by a bounded `decodeAudioFile` (`maxFrames` = the audition
+cap), so a preview never decodes a whole file; without Part 6a the `Preview`
+control is not drawn. `Export to USB`, `Use in loop` and `Save audio` are not
+drawn (section 2, deviation 2). 18/05 is reached from `Use as backing` and
+from a `Backing track` button on 18/07 (deviation 3); `Play selected` shows
+`Loading <name>…` while it decodes (deviation 4).
 
 Tests: `test/library/view/library_audio_tab_test.dart` (the group, the two
 actions, progress, a refused import's reason), `prepared_audio_page_test.dart`
@@ -871,9 +957,11 @@ Needs #1177 Part 4 behind the Library port. Files:
 per D8, beside `withWriteLease` `:192-207`), the Library port
 `lib/library/application/removable_volumes.dart` (same method;
 `InternalOnlyVolumes` throws `unsupported`), `library_audio_tab.dart`
-(18/02: the drive's folders and audio files by extension, `—` for a file
-that fails a header probe, the "Copies to Internal" caption; 18/06 when no
-drive), `backing_asset_store.dart` (import from a removable source runs
+(18/02: the drive's folders and audio files by extension, listed by name
+without parsing them; a file's duration, or `—` with its reason, appears when
+it is selected and `probeAudioFile` has run on it, so listing a drive never
+runs a decoder over every file; the "Copies to Internal" caption; 18/06 when
+no drive), `backing_asset_store.dart` (import from a removable source runs
 inside the read hold and aborts on `lost`), progress, `Cancel` and the
 interruption copy "USB drive disconnected. Nothing was changed." with
 `Retry`, l10n.
@@ -911,6 +999,8 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && (cd p
 
 ## 7. Hardware-only evidence
 
+Also: the memory-budget run of D11 (peak RSS, no xrun during a decode).
+
 Decode time and memory on the Pi 5 (Part 2), audible routing, pan and output
 FX on real jacks (Part 6), footswitch roles, holds and LEDs (Part 7),
 gapless Next and Repeat by ear (Part 8), FAT32/exFAT copies with eject and
@@ -921,25 +1011,44 @@ the idle-dimming owner lands it must read `BackingPlayerState.playing`.
 
 ## 8. Findings outside this plan (no product-direction question identified)
 
-- `segno_engine_api.h:242-246` and `:2218-2226` still say the click bypasses
+- `segno_engine_api.h:242-246` and `:2218-2226` said the click bypasses
   master gain and never appears in captures; slice 3b changed both
-  (`engine_process.c:4296-4302`). Part 1 corrects them because its own
-  contract sits beside them.
+  (`engine_process.c:4296-4302`). Part 1 corrected them.
 - The Library plan's D8 playback predicate and D9 field-table test predate the
   backing; Part 5 extends both if those parts landed first, otherwise the
   Library parts must include the backing fields when they land.
-- The Library plan's Part 6b decodes WAV in Dart and refuses a rate mismatch;
-  `decodeBackingFile` (Part 3) decodes WAV, FLAC and MP3 at any rate, so that
-  part can adopt it instead of a second decoder (rule 4).
+- **One decoder (review M3).** The Library's Part 6b and #1198's bounded part
+  reader read through `le_backing_decode_file` (D2), not a Dart WAV decoder;
+  the coordinator has told both plans.
+- **Vendored miniaudio is 0.11.21** with two published decoder CVEs
+  (CVE-2024-41147, FLAC, fixed in 0.11.22; CVE-2026-32837, WAV BEXT, open
+  through 0.11.25). Part 2 compiles FLAC out and never enables WAV metadata.
+  Updating miniaudio means re-applying the `SEGNO PATCH` hunks in its ALSA
+  backend; it is a separate change the main session should file.
+- **Loop memory is unbounded.** Lane buffers and undo layers allocate on
+  demand with no budget (D11); the decode floor protects decodes from loops,
+  not loops from each other. The loop owner's issue, not this plan's.
 - A session backup to USB (Library Part 8) carries no backing files; restoring
   it on another appliance shows `Missing` rows until the complete appliance
-  backup (E7-15) carries `Backing tracks`. That follows AB 6.8's split and is
-  recorded, not changed.
+  backup (E7-15) carries `Backing tracks`. That follows AB 6.8's split.
+- **#1198 oracle (review L7).** `test_backing_in_master_capture` compares the
+  float master capture sample for sample. #1198's Part 2 replaces
+  `master.pcm` with 24-bit parts; whichever lands second re-bases that test
+  to a one-LSB (2^-23) tolerance.
+- **DAW export (review L8).** The live master contains a routed backing; the
+  stems and `project.als` cannot (the backing is not perf-logged, by AB
+  3.11). Part 1 records `"backing_in_master": true` in the capture sidecar;
+  Part 8 makes the Library's `DAW project` and `Export to USB` (DAW package)
+  say "Backing audio is in the recording but not in the stems." when it is
+  set (rule 3). Logging backing transport for the package is not done: the
+  accepted design excludes backing from renders.
 
 ## 9. Defaults taken under the owner rules
 
-- 15-minute file cap and at most two resident buffers (D1; rule 2, bounded
-  memory, refusal with a reason rather than truncation).
+- 15-minute file cap, a 1.5 GiB backing budget and a 512 MiB decode floor
+  (D1, D11; rule 2, bounded memory, refusal with a reason rather than
+  truncation or the OOM killer).
+- FLAC refused until miniaudio is updated (D2; rule 2).
 - More than two channels refused rather than downmixed (rule 3).
 - Stop during a pending `Play selected` cancels it (rule 2: the last press
   wins and leaves a known state).
@@ -952,7 +1061,8 @@ the idle-dimming owner lands it must read `BackingPlayerState.playing`.
 
 ## 10. Budget and review ceiling
 
-Estimates: 560, 330, 420, 620, 640, 470, 640, 650, 380 production lines.
+Estimates: 850 and 600 (Parts 1 and 2, as built, comments included; Part 1 over
+the 700 ceiling, see section 12), then 420, 620, 640, 470, 640, 680, 400.
 Stop for review on any change to the output-bus order, a perf-log code, a
 second decoder, a second lease registry or a second selection owner. Each
 part gets independent architecture, test-quality and adversarial review
@@ -972,99 +1082,101 @@ next free version at landing and adds its step to the #1196 migration chain.
 
 ## 12. Build record
 
-### Part 1 (`claude/backing-1200-p1`)
+### Part 1 (`claude/backing-1200-p1`, PR #1222)
 
-Built as specified in section 4.1 except where noted. Production diff about
-780 added lines over `packages/segno_engine` (about 160 of them the API
-header's contract comments), slightly over the 700 ceiling; the voice, its
-lifetimes and the click pan did not split along a reviewable seam.
+Built as section 4.1 describes. About 850 production lines over
+`packages/segno_engine`, about 180 of them the header's contract comments:
+over the 700 ceiling; the voice, its lifetimes, the review's memory and
+handoff fixes and the click pan did not split along a reviewable seam.
+Departures from the first text, each recorded in 4.1 or D1:
 
-- **Buffers travel through the command ring, not atomic slots.** LOAD and
-  STAGE_NEXT carry the buffer pointer, so a load and a following seek or
-  transport command apply in the order they were posted (an atomic slot
-  publication would race the ring and make "load, then seek" order-dependent).
-  A control-thread registry (`backing_owned`, at most
-  `LE_BACKING_MAX_BUFFERS` = 4) owns every accepted buffer, so a buffer still
-  queued when configure or reopen resets the ring is freed rather than
-  lost; the callback hands finished buffers back through four
-  `a_backing_dead` return slots, which `le_engine_backing_state` (the collect
-  point) and every load or stage drain. Nothing allocates or frees on the
-  audio thread. The `engine_voice.h` helper shared with the Library audition
-  was therefore not created: the audition (its Part 6a) has no ordering
-  constraint with transport commands and can keep its own slot.
+- **Buffers travel through the command ring, not atomic slots** (4.1, the
+  handoff protocol), so the Library audition's `engine_voice.h` helper was not
+  needed; the audition keeps its own slot (it has no ordering constraint with
+  transport commands).
 - **New translation unit `src/core/engine_backing.c`** for the buffers, the
-  registry and the control API (`engine*.c` glob in the native runner, CMake,
-  and the two macOS forwarders). The audio-thread voice stays in
-  `engine_process.c`.
-- **A replace overlaps.** The outgoing file fades out over 5 ms on the fade
-  voice while the new file starts at its frame 0 (section 4.1 described a
-  fade-out followed by the new file); a seek while playing is the same
-  crossfade within one buffer. Overlap needs no queued action and leaves no
-  gap.
-- **Settings are direct stores that persist across configure**, seeded at
-  create like the click settings (mask, level, pan, End, click pan), rather
-  than reset by the runtime reset; only the transport resets. The owner's
-  epoch replay (Part 4) still works and simply rewrites the same values.
-- **Raw posts of 88-92 are refused** (LOAD carries a pointer a raw
-  `{arg_i, arg_f}` post cannot express).
-- The stale click comments (`segno_engine_api.h:242-246`, `:2218-2226`) are
-  corrected.
+  registry and the control API (picked up by the `engine*.c` glob of the
+  native runner and `build_test_lib.sh`; listed in CMake; two macOS
+  forwarders). The audio-thread voice stays in `engine_process.c`.
+- **A replace overlaps** (old fades out while the new starts at frame 0); a
+  seek while playing is the same crossfade within one buffer.
+- **Settings persist across configure** (seeded at create, like the click's);
+  only the transport resets.
+- **Raw posts of 88-92 are refused** (LOAD carries a pointer).
+- **Review fixes:** the byte budget (`LE_BACKING_BUDGET_BYTES`,
+  `owned_bytes` in the state), the guarded advance, the capture marker
+  (`backing_in_master`, counted per block into `a_perf_backing_blocks`, reset
+  at arm), and the handoff stress test.
 
-Tests: `src/test/test_engine_backing.h`, 13 cases with exact-sample oracles
-(ramp buffers, `==` comparisons computed with the voice's own float
-operations), including the master-capture and stem-render legs. Every new
-behaviour was checked against a reverting mutation (17 mutations: Cut sound,
-Repeat, Next, pause/resume/replace ramps, seek clamp, level, pan, click pan,
-output gate, retained reopen, epoch, restaging, perf logging, the registry
-bound, raw posts); each fails at least one oracle.
+Tests: `src/test/test_engine_backing.h` (16 cases, exact-sample oracles) and
+`src/test/test_backing_races.c`. Mutations reverted one at a time, each
+caught: Cut sound, Repeat, Next, the pause, resume and replace ramps, the seek
+clamp, level, pan, click pan, the output gate, the retained reopen, the
+epoch, restaging, perf logging, the registry bound, raw posts, the byte
+budget, the advance guard, the capture marker, and (stress test under ASan)
+returning a buffer the fade voice still reads.
 
-### Part 2 (`claude/backing-1200-p2`, stacked on Part 1)
+### Part 2 (`claude/backing-1200-p2`, PR #1223, stacked on Part 1)
 
-- **The converter is the repo's own polyphase windowed sinc, not
-  Signalsmith's kernel (D3 changed).** Measured: the vendored
-  `InterpolatorKaiserSincN` forces exact zeros at integer offsets, which is
-  only right when its cutoff is the input Nyquist; built with a cutoff below
-  it (any reduction) its DC gain is 1 at phase 0 and 1.09 to 2.0 elsewhere
-  (48 to 44.1 kHz read DC with 4 % ripple and a -43 dB residual; 96 to 48 kHz
-  halved the level). The replacement in `engine_backing.c` is a Kaiser
-  (beta 10.06) windowed `r * sinc(r x)` of half-width `ceil(32 / r)` input
-  samples with exact rational phases (`out / gcd`, refused above 8192) and
-  per-phase unity DC; `le_resample_frames`/`le_resample_offline` are internal
-  (`engine_core.h`), not part of the FFI. Reductions below one half halve
-  first through `le_halfband_decimate`.
-- **Measured oracles** (dev machine; all literal): DC within 1e-6 for
-  44.1/48, 48/44.1, 96/48, 44.1/96, 48/96 and 88.2/48; a 1 kHz tone within
-  0.01 dB with a residual below -90 dB for each; an 18 kHz alias of a 30 kHz
-  tone (96 to 48 kHz) and a 34.1 kHz image of a 10 kHz tone (44.1 to 96 kHz)
-  each below -80 dB; a 192 kHz file decoded at 48 kHz keeps a 1 kHz tone and
-  leaves no 8 kHz alias of a 40 kHz tone (below -80 dB); an impulse at 1000
-  lands at 2000 when doubling.
+About 600 production lines. As D2, D2a, D3 and D11 describe; departures from
+the first text:
+
+- **The converter is the repo's own** (D3), in the new
+  `src/core/engine_decode.c` with the decoder (forwarders and CMake as for
+  Part 1). `le_resample_frames`/`le_resample_offline` are internal.
+- **Bounded reads, the probe, the memory floor, the header checks, FLAC off
+  and the fuzz driver** are the review's M1-M3 (D2, D2a, D11).
 - **MP3 encoder delay and padding stay in.** miniaudio's MP3 decoder does not
   read the LAME gapless tag: the one-second fixture decodes to 47232 frames at
   44.1 kHz (ffmpeg trims to 44100), about 25 ms of leading and 45 ms of
-  trailing silence. Gapless End = Next is sample-exact over the decoded
-  buffers, so an MP3 set carries those gaps; WAV and FLAC do not. Recorded as
-  a finding, not worked around (no second decoder).
-- Fixtures: `src/test/fixtures/backing/` (a stereo MP3 and a mono FLAC,
-  generated by the ffmpeg commands in its README); WAV cases are written by
-  the tests.
-- Decode cost on the dev machine (Apple silicon, the test library): a
-  five-minute 44.1 kHz stereo MP3 decodes and converts in 0.58 s at 48 kHz
-  and 1.01 s at 96 kHz. The Pi 5 figure is still the hardware criterion.
-  Peak memory during a decode is about twice the decoded size at the source
-  rate (the interleaved read, then the planes), before conversion.
-- Mutations: removing the window, the band limit, the per-phase
-  normalization, the halving, the stated-length cap, the channel refusal or
-  the decoders, or shifting the taps by one, each fails an oracle (the
-  channel refusal one by crashing the run).
+  trailing silence. End = Next is sample-exact over the decoded buffers, so
+  an MP3 set carries those gaps; WAV does not. Recorded, not worked around.
+- Fixtures: `src/test/fixtures/backing/` (a stereo MP3 and a mono FLAC, the
+  latter now to prove FLAC is refused; generated by the ffmpeg commands in
+  its README); WAV cases are written by the tests.
+
+Measured (dev machine; all literal oracles): DC within 1e-6 for 44.1/48,
+48/44.1, 96/48, 44.1/96, 48/96 and 88.2/48; a 1 kHz tone within 0.01 dB with a
+residual below -90 dB for each; an 18 kHz alias of a 30 kHz tone (96 to 48),
+a 34.1 kHz image of a 10 kHz tone (44.1 to 96) and an 8 kHz alias of a 40 kHz
+tone (192 to 48) each below -80 dB; an impulse lands exactly when doubling;
+a five-minute MP3 decodes in 0.58 s at 48 kHz, 1.01 s at 96 kHz; 20,000
+fuzz inputs under ASan, no finding. Mutations reverted one at a time, each
+caught: the window, the band limit, the phase normalization, the halving, the
+stated-length cap (observable through the memory floor), the phase offset,
+the rate range, the file-size bound, both length-match checks, the memory
+floor, the truncation flag, the bounded length, and FLAC back on.
 
 ### Verification (both parts, on their pushed heads)
 
-Native suite plain, ASan and telemetry-off, each in its own `TMPDIR`: all
-pass (Part 1: 13 backing cases; Part 2: 20). `dart analyze --fatal-infos lib
-test packages` clean; `bloc lint lib test packages` 0 issues; the app suite
-(3341 passed, 49 skipped) and the `segno_engine` suite (370) pass against the
-freshly built test library; bindings regenerated and formatted; every bound
-symbol is exported by the built library (only the MIDI entry points, which
-the test library does not link, are absent, as before); the C++ shim repro
-compiles with the changed headers.
+Recorded in the PR bodies and the main session's report: the native suite
+plain, ASan and telemetry-off, each in its own `TMPDIR`; the races-only pass
+under ThreadSanitizer; `dart analyze --fatal-infos lib test packages`;
+`bloc lint lib test packages`; the app suite and the `segno_engine` suite
+against a freshly built test library; regenerated, formatted bindings; the
+C++ shim repro with the changed headers.
+
+## 13. Hardware still owed
+
+Decode time and memory on the Pi 5, no xrun during a decode with loops
+playing (Part 2); audible routing and the backing in a real performance
+capture (Parts 1, 6).
+
+## 14. Review map (PR #1207, 2026-10-06)
+
+| Finding | Where it is answered |
+|---|---|
+| H1 auto-advance race | 4.1 handoff protocol (as built: no control-side swap, guarded advance, stress test under ThreadSanitizer and ASan); Part 1 criteria |
+| M1 memory | D1, D11 (budget table, enforcement), Part 1 byte budget, Part 2 floor, probe and bounded reads, hardware criterion |
+| M2 untrusted files | D2a (header checks, decoded-length cap, length match, FLAC off for CVE-2024-41147, WAV metadata off for CVE-2026-32837, fuzz driver, residual risk and why no helper process); section 8 (miniaudio update) |
+| M3 consolidation | D2 (one decoder, bounded form for preview and #1198), D7 (`le_digest_file`, full digest, verified at load) |
+| M4 pen deviations | section 2, deviations 2-4; Part 8 |
+| M5 recovery row | D9 (#1198 Parts 14-15 own it, by this plan's digest) |
+| L1 merge conflict | rebased on `097e1ef68`; `.github/cspell.json` resolved as a union |
+| L2 reopen notice | D10 |
+| L3 rate change during a decode | D10 |
+| L4 Play selected latency | D4, deviation 4, D11 hardware criterion |
+| L5 schema number | Part 5 (landing order, the main session's ledger) |
+| L6 store location | D7 (stays under `exportsRoot` to reuse `copyFile`; capture listing skips it, tested in Part 4) |
+| L7 #1198 oracle | section 8 |
+| L8 DAW export | 4.1 and section 8 (`backing_in_master`, the export says so) |
