@@ -49,6 +49,7 @@
 #include "engine_internal.h"
 #include "engine_restore.h" /* le_restore_commit_layer (#697 S9 restore tests) */
 #include "engine_private.h"   /* LE_POOL_SLOTS (per-pass undo pool cap) */
+#include "engine_read_head.h"  /* the fractional read coordinate (#1179) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
 #include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
 #include "fft.h"              /* le_fft, le_rfft_fwd, le_rfft_inv, le_hann_init */
@@ -59,6 +60,7 @@
 #include "restore_halfband.h" /* 2:1 half-band resampler (#697 S8) */
 #include "rnnoise.h" /* vendored third_party/rnnoise (#697 S7 smoke test) */
 #include "segno_engine_api.h"
+#include "../stretch/le_stretch.h" /* C shim over Signalsmith Stretch (#1179) */
 #include "tempo_grid.h" /* le_tempo_grid, le_grid_* (pure grid math) */
 
 /* Ordinary musical setup awaits the pair's zero-frame publication. Tests of
@@ -33540,6 +33542,8 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_fade.h"
 #include "test_engine_reopen.h"
 #include "test_engine_history_replay.h"
+#include "test_engine_read_head.h"
+#include "test_engine_stretch.h"
 #include "test_engine_reverse.h"
 #include "test_engine_peel.h"
 
@@ -34353,6 +34357,15 @@ int main(void) {
   test_restore_noop_when_disabled();
   test_restore_cancel_and_single_job();
   test_restore_denoise_completes_finite();
+  test_read_head_identity_is_exact();
+  test_read_head_fractional_rates();
+  test_read_head_reorigin_and_wrap();
+  test_read_head_turn_mix_and_q32();
+  test_stretch_lifecycle_and_latency();
+  test_stretch_offline_exact_length_and_pitch();
+  test_stretch_offline_deterministic_and_guards();
+  test_stretch_offline_click_alignment();
+  test_stretch_offline_cyclic_seam();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");
