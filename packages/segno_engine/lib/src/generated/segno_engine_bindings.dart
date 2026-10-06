@@ -2758,8 +2758,10 @@ class SegnoEngineBindings {
 
   /// Copies [frames] interleaved frames of [channels] (1 or 2) at [sample_rate]
   /// into a new stereo buffer (mono is duplicated into both sides). Any thread.
-  /// LE_ERR_INVALID on NULL, frames <= 0, channels outside 1..2 or a
-  /// non-positive rate; LE_ERR_CAPACITY when the allocation fails.
+  /// LE_ERR_INVALID on NULL, frames <= 0, channels outside 1..2, a
+  /// non-positive rate or any non-finite sample (a NaN or Inf would poison the
+  /// output-bus FX state for good); LE_ERR_CAPACITY when the allocation
+  /// fails.
   int le_backing_buffer_from_pcm(
     ffi.Pointer<ffi.Float> interleaved,
     int frames,
@@ -2883,7 +2885,9 @@ class SegnoEngineBindings {
   /// else Stopped. [item] is the caller's token, reported back in the state.
   /// LE_ERR_INVALID: NULL, a buffer the engine already owns, a rate other than
   /// the engine's, or the command ring full. LE_ERR_NOT_RUNNING: not
-  /// configured. LE_ERR_NOT_READY: LE_BACKING_MAX_BUFFERS already owned.
+  /// configured. Past LE_BACKING_MAX_BUFFERS or LE_BACKING_BUDGET_BYTES:
+  /// LE_ERR_NOT_READY while a buffer is in transit, else LE_ERR_CAPACITY (see
+  /// Buffers above).
   int le_engine_backing_load(
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_backing_buffer> buffer,

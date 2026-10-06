@@ -2253,6 +2253,7 @@ static void le_backing_drop_cur(le_engine* e) {
   if (b == NULL) return;
   if (e->backing_fade.buf == b) {
     e->backing_fade.owns = 1;
+    atomic_store_explicit(&e->a_backing_fade_owns, 1, memory_order_relaxed);
   } else {
     le_backing_return(e, b);
   }
@@ -2260,7 +2261,10 @@ static void le_backing_drop_cur(le_engine* e) {
 
 /* Ends the fade voice at once. */
 static void le_backing_end_fade(le_engine* e) {
-  if (e->backing_fade.owns) le_backing_return(e, e->backing_fade.buf);
+  if (e->backing_fade.owns) {
+    le_backing_return(e, e->backing_fade.buf);
+    atomic_store_explicit(&e->a_backing_fade_owns, 0, memory_order_release);
+  }
   e->backing_fade = (le_backing_voice){0};
 }
 
@@ -2352,6 +2356,11 @@ static void le_backing_apply(le_engine* e, const le_command* cmd) {
     }
     default:
       break;
+  }
+  if ((cmd->code == LE_CMD_BACKING_LOAD ||
+       cmd->code == LE_CMD_BACKING_STAGE_NEXT) &&
+      cmd->backing.buffer != NULL) {
+    atomic_fetch_add_explicit(&e->a_backing_applied, 1u, memory_order_release);
   }
   le_backing_publish(e);
 }
