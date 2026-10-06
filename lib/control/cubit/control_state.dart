@@ -13,7 +13,7 @@ class ControlState extends Equatable {
   /// Creates a [ControlState].
   const ControlState({
     this.mode = InteractionMode.record,
-    this.defaultMode = InteractionMode.record,
+    this.retiredBootMode,
     this.pedalSetup = const PedalSetup(),
     this.pedalSetupUnavailable = false,
     this.pedalSetupPersistenceUncertain = false,
@@ -23,6 +23,8 @@ class ControlState extends Equatable {
     this.footFade = const FootFadeSelection(),
     this.footFadeFailure = 0,
     this.footReverseFailure = 0,
+    this.footPeelFailure = 0,
+    this.footPeelRefusal = FootPeelRefusal.failed,
     this.footLengthFailure = 0,
     this.footLengthRefusal = FootLengthRefusal.failed,
     this.cursor = 0,
@@ -83,8 +85,12 @@ class ControlState extends Equatable {
   /// explicit mode actions (clear-all counts: a whole-rig reset → record).
   final InteractionMode mode;
 
-  /// The persisted mode the system boots into.
-  final InteractionMode defaultMode;
+  /// The mode an earlier build booted into instead of Record, once, at the
+  /// first start since the boot-default setting was retired; null otherwise.
+  ///
+  /// Set only by the boot restore, never cleared: it exists so the app can
+  /// say once that the console now starts in Record.
+  final InteractionMode? retiredBootMode;
 
   /// The built-in footswitch setup: what MODE's press and hold reach, what a
   /// Record / Play or track hold adds, and the Custom-controls map.
@@ -115,11 +121,20 @@ class ControlState extends Equatable {
   /// Transient Fade time selection; the visible bank is [activeBank].
   final FootFadeSelection footFade;
 
-  /// Each refused Fade gesture notifies the current flow once.
+  /// Each refused Fade gesture, and each assigned Fade that reached no
+  /// track, notifies the current flow once.
   final int footFadeFailure;
 
-  /// Each refused Reverse gesture notifies the current flow once.
+  /// Each refused Reverse gesture, and each assigned Reverse that reached
+  /// no track, notifies the current flow once.
   final int footReverseFailure;
+
+  /// Each refused Peel press notifies the current flow once; the notice
+  /// reads [footPeelRefusal].
+  final int footPeelFailure;
+
+  /// Why the latest refused Peel press removed nothing.
+  final FootPeelRefusal footPeelRefusal;
 
   /// Each Multiply / Divide that changed nothing on a recorded track, from
   /// the surface or an assigned action in any mode, notifies the current
@@ -233,7 +248,7 @@ class ControlState extends Equatable {
   /// Returns a copy with the given fields replaced.
   ControlState copyWith({
     InteractionMode? mode,
-    InteractionMode? defaultMode,
+    InteractionMode? retiredBootMode,
     PedalSetup? pedalSetup,
     bool? pedalSetupUnavailable,
     bool? pedalSetupPersistenceUncertain,
@@ -243,6 +258,8 @@ class ControlState extends Equatable {
     FootFadeSelection? footFade,
     int? footFadeFailure,
     int? footReverseFailure,
+    int? footPeelFailure,
+    FootPeelRefusal? footPeelRefusal,
     int? footLengthFailure,
     FootLengthRefusal? footLengthRefusal,
     int? cursor,
@@ -266,7 +283,7 @@ class ControlState extends Equatable {
     Map<MidiSource, MidiControlEvent>? midiLevels,
   }) => ControlState(
     mode: mode ?? this.mode,
-    defaultMode: defaultMode ?? this.defaultMode,
+    retiredBootMode: retiredBootMode ?? this.retiredBootMode,
     pedalSetup: pedalSetup ?? this.pedalSetup,
     pedalSetupUnavailable: pedalSetupUnavailable ?? this.pedalSetupUnavailable,
     pedalSetupRuntimeUnsaved:
@@ -278,6 +295,8 @@ class ControlState extends Equatable {
     footFade: footFade ?? this.footFade,
     footFadeFailure: footFadeFailure ?? this.footFadeFailure,
     footReverseFailure: footReverseFailure ?? this.footReverseFailure,
+    footPeelFailure: footPeelFailure ?? this.footPeelFailure,
+    footPeelRefusal: footPeelRefusal ?? this.footPeelRefusal,
     footLengthFailure: footLengthFailure ?? this.footLengthFailure,
     footLengthRefusal: footLengthRefusal ?? this.footLengthRefusal,
     cursor: cursor ?? this.cursor,
@@ -305,7 +324,7 @@ class ControlState extends Equatable {
   @override
   List<Object?> get props => [
     mode,
-    defaultMode,
+    retiredBootMode,
     pedalSetup,
     pedalSetupUnavailable,
     pedalSetupPersistenceUncertain,
@@ -315,6 +334,8 @@ class ControlState extends Equatable {
     footFade,
     footFadeFailure,
     footReverseFailure,
+    footPeelFailure,
+    footPeelRefusal,
     footLengthFailure,
     footLengthRefusal,
     cursor,

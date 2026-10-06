@@ -5292,7 +5292,7 @@ static void test_session_import_restores_musical_grid_without_resizing(void) {
   float pcm[3500] = {0};
   pcm[2345] = 0.5f;
   CHECK(le_engine_import_track_lane(e, 0, 0, pcm, 3500) == LE_OK);
-  CHECK(le_engine_commit_session(e, 3500, 1) == LE_OK);
+  CHECK(le_engine_commit_session(e, 3500, 7) == LE_OK); /* one 7/8 bar */
   CHECK(le_engine_play(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_snapshot snapshot;
@@ -5300,6 +5300,7 @@ static void test_session_import_restores_musical_grid_without_resizing(void) {
   CHECK(snapshot.tempo_source == LE_TEMPO_SOURCE_TAPPED);
   CHECK(snapshot.ts_num == 7 && snapshot.ts_den == 8);
   CHECK(snapshot.loop_bars == 1); /* BPM counts denominator-note beats */
+  CHECK(snapshot.loop_beats == 7);
   CHECK(snapshot.master_length_frames == 3500);
   CHECK(snapshot.tracks[0].length_frames == 3500);
   float exported[3500];
@@ -5342,7 +5343,8 @@ static void test_session_import_preserves_actual_bar_count(void) {
     tg_advance(e, 1);
     CHECK(le_engine_restore_tempo(e, saved.tempo_bpm, saved.tempo_source) == LE_OK);
     CHECK(le_engine_import_track_lane(e, 0, 0, pcm, 100) == LE_OK);
-    CHECK(le_engine_commit_session(e, 100, saved.loop_bars) == LE_OK);
+    CHECK(saved.loop_beats == saved.loop_bars * saved.ts_num);
+    CHECK(le_engine_commit_session(e, 100, saved.loop_beats) == LE_OK);
     CHECK(le_engine_play(e, 0) == LE_OK);
     tg_advance(e, 1);
     le_snapshot restored;
@@ -5350,6 +5352,7 @@ static void test_session_import_preserves_actual_bar_count(void) {
     CHECK(restored.tempo_bpm == saved.tempo_bpm);
     CHECK(restored.tempo_source == saved.tempo_source);
     CHECK(restored.loop_bars == saved.loop_bars);
+    CHECK(restored.loop_beats == saved.loop_beats);
     CHECK(restored.master_length_frames == 100);
     float exported[100];
     CHECK(le_engine_export_track_lane(e, 0, 0, exported, 100) == 100);
@@ -6253,7 +6256,7 @@ static void test_commit_session_rebuilds_stale_grid(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.loop_bars == 2);
 
-  CHECK(le_engine_commit_session(e, 6000, 3) == LE_OK);
+  CHECK(le_engine_commit_session(e, 6000, 12) == LE_OK); /* 3 bars of 4 */
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.master_length_frames == 6000);
@@ -18801,6 +18804,81 @@ static void test_tuner_arm_and_detect(void) {
   le_engine_destroy(e);
 }
 
+/* The tuner's device-rate refinement ring is CIRCULAR, and this pins that the
+ * change of representation changed nothing the reader sees.
+ *
+ * It used to be a shifting FIFO — memmove the whole 2048-sample buffer down by
+ * one, every frame — whose postcondition was simply "index 0 is the oldest of
+ * the last LE_TUNER_RAW samples, index RAW-1 the newest". The ring reaches the
+ * same postcondition with one store per frame instead of 8188 bytes moved, and
+ * le_tuner_raw_window is where the wrap is untangled. So the claim under test
+ * is that postcondition, asserted ACROSS a wrap (the case a shifting buffer
+ * never had and therefore the only case the rewrite could get wrong) and at a
+ * write index in the middle of the buffer (not the degenerate pos == 0, where
+ * the second memcpy is skipped and a broken one would go unnoticed).
+ *
+ * A unique per-frame value makes any misordering — an off-by-one, a swapped
+ * pair of halves, a stale tail — a hard mismatch rather than a plausible-
+ * looking waveform. */
+static void test_tuner_raw_ring_wrap(void) {
+  printf("test_tuner_raw_ring_wrap\n");
+  enum { FRAMES = 100, PUSHED = 4 * LE_TUNER_RAW };
+  le_engine* e = le_engine_create();
+  CHECK(e != NULL);
+  le_engine_configure(e, 48000, 2, 2, 1000);
+
+  float in[FRAMES * 2];
+  float out[FRAMES * 2];
+  /* PUSHED is not a multiple of FRAMES, so the last block overshoots it. */
+  float* ref = (float*)malloc(sizeof(float) * (PUSHED + FRAMES));
+  float* win = (float*)malloc(sizeof(float) * LE_TUNER_RAW); /* what it hands back */
+  CHECK(ref != NULL && win != NULL);
+
+  /* Arming resets the ring, and the reset lands in the command drain at the
+   * top of the very block that follows — so every frame from the first block
+   * onwards is ring content, and `ref` is the whole history. */
+  CHECK(le_engine_set_tuner_input(e, 0) == LE_OK);
+
+  int total = 0;
+  int checks = 0;
+  while (total < PUSHED) {
+    for (int f = 0; f < FRAMES; ++f) {
+      /* Distinct, bounded, and exactly representable: k * 2^-14. */
+      const float v = (float)(total + f) * 6.103515625e-05f;
+      ref[total + f] = v;
+      in[f * 2] = v;
+      in[f * 2 + 1] = 0.0f;
+    }
+    le_engine_process(e, out, in, FRAMES);
+    total += FRAMES;
+
+    if (total < LE_TUNER_RAW) {
+      /* Until the ring has filled once there is no window to hand out, and the
+       * caller's buffer is left alone rather than half-filled. */
+      win[0] = -1.0f;
+      CHECK(le_tuner_raw_window(e, win) == 0);
+      CHECK(win[0] == -1.0f);
+      continue;
+    }
+
+    /* 100 does not divide 2048, so the write index walks and this asserts at
+     * a different wrap offset on every block — including offsets either side
+     * of the wrap point. */
+    CHECK(le_tuner_raw_window(e, win) == 1);
+    for (int k = 0; k < LE_TUNER_RAW; ++k) {
+      CHECK(win[k] == ref[total - LE_TUNER_RAW + k]);
+    }
+    ++checks;
+  }
+  printf("  %d windows verified across %d frames (%d full wraps)\n", checks,
+         total, total / LE_TUNER_RAW);
+  CHECK(checks > 0);
+
+  free(win);
+  free(ref);
+  le_engine_destroy(e);
+}
+
 /* PSOLA pitch detector (YIN): the engine-internal le_psola_detect reports the true
  * period within tolerance across the vocal band with NO octave error (the half/
  * double-period trap that plain autocorrelation falls into), reads noise as
@@ -19339,6 +19417,53 @@ static void test_sha256_known_answers(void) {
   uint8_t d[32];
   CHECK(le_digest_bytes("abc", 3, NULL) == LE_ERR_INVALID);
   CHECK(le_digest_bytes(NULL, 1, d) == LE_ERR_INVALID);
+
+  /* Lengths around the padding boundaries (55: the length still fits the
+   * block; 56: it spills; 63/64/65 and 119/120 one and two blocks in), from
+   * an independent implementation (Python's hashlib) as literal hex. */
+  static const struct {
+    size_t n;
+    const char* hex;
+  } kRuns[] = {
+      {55, "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318"},
+      {56, "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a"},
+      {63, "7d3e74a05d7db15bce4ad9ec0658ea98e3f06eeecf16b4c6fff2da457ddc2f34"},
+      {64, "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb"},
+      {65, "635361c48bb9eab14198e76ea8ab7f1a41685d6ad62aa9146d301d4f17eb0ae0"},
+      {119, "31eba51c313a5c08226adf18d4a359cfdfd8d2e816b13f4af952f7ea6584dcfb"},
+      {120, "2f3d335432c70b580af0e8e1b3674a7c020d683aa5f73aaaedfdc55af904c21c"},
+  };
+  char a_run[120];
+  memset(a_run, 'a', sizeof(a_run));
+  for (size_t i = 0; i < sizeof(kRuns) / sizeof(kRuns[0]); ++i) {
+    CHECK(digest_bytes_is(a_run, kRuns[i].n, kRuns[i].hex));
+  }
+
+  /* The exported incremental API, fed in uneven pieces, over 5000 bytes of
+   * (i * 31 + 7) mod 256 — hashlib's answer as the oracle. */
+  unsigned char pattern[5000];
+  for (int i = 0; i < 5000; ++i) pattern[i] = (unsigned char)((i * 31 + 7) & 255);
+  uint64_t state[LE_DIGEST_STATE_BYTES / 8];
+  CHECK(le_digest_begin(state, sizeof(state)) == LE_OK);
+  size_t at = 0;
+  size_t piece = 3;
+  while (at < sizeof(pattern)) {
+    const size_t n = piece < sizeof(pattern) - at ? piece : sizeof(pattern) - at;
+    CHECK(le_digest_update(state, pattern + at, n) == LE_OK);
+    at += n;
+    piece = piece * 7 % 97 + 1;
+  }
+  CHECK(le_digest_end(state, d) == LE_OK);
+  char got[65];
+  digest_to_hex(d, got);
+  CHECK(strcmp(got,
+               "1e92fd98f113aba0a78e0830ca06e2775912370feab112dfc57bf3258b810595") ==
+        0);
+  CHECK(le_digest_begin(state, LE_DIGEST_STATE_BYTES - 1) == LE_ERR_INVALID);
+  CHECK(le_digest_begin(NULL, sizeof(state)) == LE_ERR_INVALID);
+  CHECK(le_digest_update(state, NULL, 1) == LE_ERR_INVALID);
+  CHECK(le_digest_update(NULL, "a", 1) == LE_ERR_INVALID);
+  CHECK(le_digest_end(state, NULL) == LE_ERR_INVALID);
 }
 
 static void digest_test_write(const char* path, const char* bytes, size_t n) {
@@ -19383,9 +19508,9 @@ static void test_digest_file_ranges(void) {
   CHECK(memcmp(d, def, 32) == 0);
 
   /* A file shorter than the range it should hold is damaged: no digest. */
-  CHECK(le_digest_file(path, 3, 7, d) == LE_ERR_DEVICE);
-  CHECK(le_digest_file(path, 10, 0, d) == LE_ERR_DEVICE);
-  CHECK(le_digest_file(path, 10, UINT64_MAX, d) == LE_ERR_DEVICE);
+  CHECK(le_digest_file(path, 3, 7, d) == LE_ERR_TRUNCATED);
+  CHECK(le_digest_file(path, 10, 0, d) == LE_ERR_TRUNCATED);
+  CHECK(le_digest_file(path, 10, UINT64_MAX, d) == LE_ERR_TRUNCATED);
 
   /* A file longer than the 64 KiB read chunk: 200000 'a' bytes, digested as a
    * range and compared with the in-memory digest of the same bytes. */
@@ -19408,7 +19533,12 @@ static void test_digest_file_ranges(void) {
   char missing[600];
   snprintf(missing, sizeof(missing), "%s/digest_missing.bin", perf_test_dir());
   remove(missing);
-  CHECK(le_digest_file(missing, 0, UINT64_MAX, d) == LE_ERR_DEVICE);
+  /* Missing, a missing directory on the path, and not a file at all: the
+   * first two are "not there", the last is neither missing nor damaged. */
+  CHECK(le_digest_file(missing, 0, UINT64_MAX, d) == LE_ERR_NOT_FOUND);
+  char under_file[700];
+  snprintf(under_file, sizeof(under_file), "%s/x", path);
+  CHECK(le_digest_file(under_file, 0, UINT64_MAX, d) == LE_ERR_NOT_FOUND);
   CHECK(le_digest_file(perf_test_dir(), 0, UINT64_MAX, d) == LE_ERR_DEVICE);
   CHECK(le_digest_file(NULL, 0, 0, d) == LE_ERR_INVALID);
   CHECK(le_digest_file("", 0, 0, d) == LE_ERR_INVALID);
@@ -33801,6 +33931,10 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_length.h"
 
 int main(void) {
+  if (getenv("SEGNO_FADE_STAGING_TESTS_ONLY")) {
+    test_fade_restore_staging_and_manifest_capacity();
+    return g_failures ? 1 : 0;
+  }
   run_reverse_tests();
   if (getenv("SEGNO_REVERSE_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_reopen_same_rate_retains_material();
@@ -34290,6 +34424,7 @@ int main(void) {
   test_octaver_psola_pitch_detect();
   test_tuner_detect_band();
   test_tuner_arm_and_detect();
+  test_tuner_raw_ring_wrap();
   test_octaver_psola_voice_and_fallback();
   test_octaver_psola_no_chatter();
   test_octaver_added_latency();

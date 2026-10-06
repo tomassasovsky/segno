@@ -1,0 +1,42 @@
+{
+  "version": 7,
+  "sampleRate": 48000,
+  "channels": 1,
+  "baseLengthFrames": 0,
+  "tracks": [],
+  "laneChains": [
+    {
+      "channel": 3,
+      "lane": 0,
+      "encoded": "{\"chainEnabled\":true,\"entries\":[{\"type\":5,\"params\":[0.25,0.5,0.5,0.0],\"slotId\":\"204f9ee7-6\"}]}"
+    }
+  ],
+  "monitors": [
+    {
+      "input": 1,
+      "enabled": true,
+      "outputMask": 3,
+      "volume": 1.0,
+      "muted": false,
+      "encoded": "{\"chainEnabled\":true,\"entries\":[]}",
+      "mode": "on"
+    }
+  ],
+  "trackChains": [],
+  "masterChain": "",
+  "tempoBpm": 0.0,
+  "tempoSource": "none",
+  "tsNum": 4,
+  "tsDen": 4,
+  "quantizeDiv": "off",
+  "clickMode": "off",
+  "clickOutputMask": 0,
+  "clickVolume": 1.0,
+  "countInBars": 0,
+  "looperMode": "multi",
+  "primaryTrack": -1,
+  "oneShotChannels": [
+    4
+  ],
+  "pedalBindings": ""
+}

@@ -73,7 +73,7 @@ void main() {
           engine.importTrack(1, Float32List(4096)..fillRange(0, 4096, .125)),
           EngineResult.ok,
         );
-        expect(engine.commitSession(4096, loopBars: 0), EngineResult.ok);
+        expect(engine.commitSession(4096, loopBeats: 0), EngineResult.ok);
         expect(engine.play(channel: 1), EngineResult.ok);
         engine.pump(frames: 0);
         expect(

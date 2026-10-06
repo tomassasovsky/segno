@@ -1193,7 +1193,15 @@ class NativeAudioEngine implements AudioEngine {
       nullptr,
       0,
     );
-    if (frames <= 0) return Float32List(0);
+    // A slot shorter than its image is torn: fail the save at capture rather
+    // than write an empty layer the next read would refuse (#1168).
+    if (frames < 0) {
+      throw StateError(
+        'layer $ordinal of track $channel lane $lane is torn: '
+        '${EngineResult.fromCode(frames).name}',
+      );
+    }
+    if (frames == 0) return Float32List(0);
     final buf = calloc<Float>(frames);
     try {
       final n = _bindings.le_engine_export_layer(
@@ -1344,10 +1352,10 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_commit_session(_engine, baseFrames, loopBars),
+      _bindings.le_engine_commit_session(_engine, baseFrames, loopBeats),
     );
   }
 

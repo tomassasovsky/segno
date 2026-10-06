@@ -215,6 +215,38 @@ void main() {
       expect(track.wholeBars(transport: grid, sampleRate: 48000), 8);
     });
 
+    test('a sub-bar grid counts beats, not bars (#1168)', () {
+      // A sole 1-bar loop of 4/4 halved: 2 beats over 48000 frames.
+      const halved = TransportState(
+        masterLengthFrames: 48000,
+        loopBeats: 2,
+        tempoBpm: 120,
+        tempoSource: TempoSource.manual,
+      );
+      const track = Track(state: TrackState.playing, lengthFrames: 48000);
+      expect(track.wholeBars(transport: halved, sampleRate: 48000), isNull);
+      expect(track.wholeBeats(transport: halved, sampleRate: 48000), 2);
+      // Six beats of a halved 3-bar loop; a doubled track holds 3 bars.
+      const six = TransportState(masterLengthFrames: 144000, loopBeats: 6);
+      expect(
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 144000,
+        ).wholeBeats(transport: six, sampleRate: 0),
+        6,
+      );
+      expect(
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 288000,
+          multiple: 2,
+        ).wholeBars(transport: six, sampleRate: 0),
+        3,
+      );
+      // A whole-bar grid reads the same from either count.
+      expect(track.wholeBeats(transport: grid, sampleRate: 0), 2);
+    });
+
     test('the established audio grid wins over nominal BPM', () {
       const track = Track(state: TrackState.stopped, lengthFrames: 100000);
       const transport = TransportState(

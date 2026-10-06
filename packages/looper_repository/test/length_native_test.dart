@@ -45,7 +45,7 @@ void main() {
       EngineResult.ok,
     );
     expect(engine.importTrack(1, positional), EngineResult.ok);
-    expect(engine.commitSession(128, loopBars: 0), EngineResult.ok);
+    expect(engine.commitSession(128, loopBeats: 0), EngineResult.ok);
     expect(engine.play(), EngineResult.ok);
     engine.pump(frames: 0);
     // The callback answers the receipt while the test awaits it.
@@ -176,6 +176,7 @@ void main() {
           tracks: [
             SessionRigTrack(
               fadeAmount: 1,
+              reversed: false,
               channel: 0,
               lanes: [
                 lane([base], TrackHistory.none),
@@ -183,6 +184,7 @@ void main() {
             ),
             SessionRigTrack(
               fadeAmount: 1,
+              reversed: false,
               channel: 1,
               lanes: [lane(layers, history)],
             ),
@@ -265,6 +267,7 @@ void main() {
       tracks: [
         SessionRigTrack(
           fadeAmount: 1,
+          reversed: false,
           channel: 0,
           lanes: [
             SessionRigLane(

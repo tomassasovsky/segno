@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
@@ -44,7 +45,7 @@ void main() {
             engine.importTrack(0, Float32List.fromList(List.filled(128, .5))),
             EngineResult.ok,
           );
-          expect(engine.commitSession(128, loopBars: 0), EngineResult.ok);
+          expect(engine.commitSession(128, loopBeats: 0), EngineResult.ok);
           expect(engine.play(), EngineResult.ok);
           engine.pump(frames: 0);
           // Retain an earlier public projection while native audio advances.
@@ -55,7 +56,10 @@ void main() {
           );
           engine.pump(frames: 8000);
           expect(earlierProjection.tracks[0].fade.amount, 1);
-          final sessions = SessionRepository(engine: engine);
+          final sessions = SessionRepository(
+            guards: GuardRegistry(),
+            engine: engine,
+          );
           final saved = await sessions.save(
             directory.path,
             settings: const SessionSettings(),
@@ -105,7 +109,7 @@ void main() {
           engine.importTrack(0, Float32List.fromList(List.filled(128, .5))),
           EngineResult.ok,
         );
-        expect(engine.commitSession(128, loopBars: 0), EngineResult.ok);
+        expect(engine.commitSession(128, loopBeats: 0), EngineResult.ok);
         expect(engine.play(), EngineResult.ok);
         engine.pump(frames: 0);
         final before = engine.snapshot().tracks[0];

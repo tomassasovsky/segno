@@ -2,13 +2,12 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/control/control_tab.dart';
-import 'package:segno/network/network_tab.dart';
 import 'package:segno/system/system_tab.dart';
 
 part 'settings_tray_state.dart';
 
 /// Drives the console's slide-down quick-access tray (Settings / Signal
-/// graph / WiFi / Bluetooth / Tuner / brightness) — the touch-reachable
+/// graph / WiFi / Tuner / brightness) — the touch-reachable
 /// counterpart to the `S`/`G` keyboard shortcuts on console/kiosk builds,
 /// where the on-screen toolbar is hidden entirely.
 ///
@@ -62,32 +61,17 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
     }
   }
 
-  /// Opens the tray at the Audio domain's Device tab — the device-lost
-  /// banner's **Open setup** action (#453). The one caller that may set a
-  /// domain's tab from outside it: the banner's whole point is the picker,
-  /// and landing on whichever tab Audio was left on would bury it.
-  void openAudioDevice() => emit(
-    state.copyWith(
-      dragProgress: 1,
-      destination: SettingsTrayDestination.audio,
-      audioTab: AudioTab.device,
-    ),
-  );
-
-  /// Moves the Network domain's tab.
+  /// Moves the Control domain's tab.
   ///
   /// Deliberately does NOT touch `destination`: the strip is only reachable
-  /// while Network is already showing, so writing a destination here would
+  /// while Control is already showing, so writing a destination here would
   /// give a tab a say in which domain is up.
-  void showNetworkTab(NetworkTab tab) => emit(state.copyWith(networkTab: tab));
-
-  /// Moves the Control domain's tab. Same rule as [showNetworkTab].
   void showControlTab(ControlTab tab) => emit(state.copyWith(controlTab: tab));
 
-  /// Moves the Audio domain's tab. Same rule as [showNetworkTab].
+  /// Moves the Audio domain's tab. Same rule as [showControlTab].
   void showAudioTab(AudioTab tab) => emit(state.copyWith(audioTab: tab));
 
-  /// Moves the System domain's tab. Same rule as [showNetworkTab].
+  /// Moves the System domain's tab. Same rule as [showControlTab].
   void showSystemTab(SystemTab tab) => emit(state.copyWith(systemTab: tab));
 
   /// Returns to the landing destination.

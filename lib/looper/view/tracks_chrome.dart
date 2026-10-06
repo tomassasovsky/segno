@@ -6,8 +6,8 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
 /// A full-width affordance shown when the engine isn't running (no first-run
-/// gate exists anymore). Tapping it opens settings, where the engine can be
-/// (re)started by choosing a device.
+/// gate exists anymore). Tapping it opens the Device settings page, where the
+/// engine can be (re)started by choosing a device.
 class AudioNotRunningBanner extends StatelessWidget {
   /// Creates an [AudioNotRunningBanner].
   const AudioNotRunningBanner({super.key});
@@ -21,7 +21,7 @@ class AudioNotRunningBanner extends StatelessWidget {
       child: InkWell(
         key: const Key('tracks_audioNotRunning'),
         borderRadius: BorderRadius.circular(10),
-        onTap: () => unawaited(openSegnoSettings()),
+        onTap: () => unawaited(openDeviceSettings()),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(

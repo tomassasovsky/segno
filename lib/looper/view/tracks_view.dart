@@ -9,6 +9,7 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_length.dart';
+import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -18,6 +19,7 @@ import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/foot_fade_view.dart';
 import 'package:segno/looper/view/foot_length_view.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
+import 'package:segno/looper/view/foot_peel_view.dart';
 import 'package:segno/looper/view/foot_reverse_view.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/settings_tray.dart';
@@ -58,6 +60,7 @@ class _TracksViewState extends State<TracksView> {
     dismissAppToast(AppToastId.footMixerFailure);
     dismissAppToast(AppToastId.footFadeFailure);
     dismissAppToast(AppToastId.footReverseFailure);
+    dismissAppToast(AppToastId.footPeelRefused);
     dismissAppToast(AppToastId.footLengthRefused);
     super.dispose();
   }
@@ -122,6 +125,7 @@ class _TracksViewState extends State<TracksView> {
         if (overlay.bankContains(channel)) channel,
     ];
     int? barsOf(int channel) => chrome.bars[channel];
+    int? beatsOf(int channel) => chrome.beats[channel];
 
     // Settings are reachable from the top bar's gear and the tray handle,
     // and on the desktop by right-clicking anywhere or pressing `S` (and from
@@ -141,9 +145,9 @@ class _TracksViewState extends State<TracksView> {
             ),
           ),
           BlocListener<ControlCubit, ControlState>(
+            // The Fade surface and an assigned Fade in any mode.
             listenWhen: (before, after) =>
-                before.footFadeFailure != after.footFadeFailure &&
-                after.mode == InteractionMode.fade,
+                before.footFadeFailure != after.footFadeFailure,
             listener: (context, _) => showAppToast(
               id: AppToastId.footFadeFailure,
               type: ToastificationType.error,
@@ -152,13 +156,29 @@ class _TracksViewState extends State<TracksView> {
             ),
           ),
           BlocListener<ControlCubit, ControlState>(
+            // The Reverse surface and an assigned Reverse in any mode.
             listenWhen: (before, after) =>
-                before.footReverseFailure != after.footReverseFailure &&
-                after.mode == InteractionMode.reverse,
+                before.footReverseFailure != after.footReverseFailure,
             listener: (context, _) => showAppToast(
               id: AppToastId.footReverseFailure,
               type: ToastificationType.error,
               title: Text(context.l10n.footReverseFailure),
+              autoCloseDuration: const Duration(seconds: 5),
+            ),
+          ),
+          BlocListener<ControlCubit, ControlState>(
+            // Every refused Peel says why, whether the press came from the
+            // Peel surface or from an assigned Peel in another mode.
+            listenWhen: (before, after) =>
+                before.footPeelFailure != after.footPeelFailure,
+            listener: (context, state) => showAppToast(
+              id: AppToastId.footPeelRefused,
+              type: state.footPeelRefusal == FootPeelRefusal.failed
+                  ? ToastificationType.error
+                  : ToastificationType.warning,
+              title: Text(
+                footPeelRefusalText(context.l10n, state.footPeelRefusal),
+              ),
               autoCloseDuration: const Duration(seconds: 5),
             ),
           ),
@@ -194,11 +214,15 @@ class _TracksViewState extends State<TracksView> {
             // different result, which must not reopen the dialog — and the
             // show function refuses to double-open while it is already up).
             // Percent ticks are Rendering-to-Rendering and do not re-fire.
+            // Every refused arm fires too: each one is a new idle state
+            // (PerformanceRecorderIdle.refusal), so each press gets a toast.
             listenWhen: (previous, current) =>
                 (current is PerformanceRecorderRendering &&
                     previous is! PerformanceRecorderRendering) ||
                 (current is PerformanceRecorderCompleted &&
-                    previous is! PerformanceRecorderCompleted),
+                    previous is! PerformanceRecorderCompleted) ||
+                (current is PerformanceRecorderIdle &&
+                    (current.lowDiskBlocked || current.refusedBy != null)),
             listener: onPerformanceRecorderState,
           ),
           BlocListener<ControlCubit, ControlState>(
@@ -241,6 +265,8 @@ class _TracksViewState extends State<TracksView> {
                             ? const FootFadeView()
                             : mode == InteractionMode.reverse
                             ? const FootReverseView()
+                            : mode == InteractionMode.peel
+                            ? const FootPeelView()
                             : mode == InteractionMode.length
                             ? const FootLengthView()
                             : Column(
@@ -327,6 +353,7 @@ class _TracksViewState extends State<TracksView> {
                                                           channel ==
                                                           chrome.primaryTrack,
                                                       bars: barsOf(channel),
+                                                      beats: beatsOf(channel),
                                                       quantizeDiv:
                                                           chrome.quantizeDiv,
                                                       recDub: chrome.recDub,
@@ -358,6 +385,7 @@ class _TracksViewState extends State<TracksView> {
                                                     channel ==
                                                     chrome.primaryTrack,
                                                 bars: barsOf(channel),
+                                                beats: beatsOf(channel),
                                               ),
                                           ],
                                         ),
@@ -406,6 +434,9 @@ class _TracksViewState extends State<TracksView> {
                                                               chrome
                                                                   .primaryTrack,
                                                           bars: barsOf(channel),
+                                                          beats: beatsOf(
+                                                            channel,
+                                                          ),
                                                         ),
                                                     ],
                                                   ),
@@ -484,6 +515,7 @@ class _ChromeState extends Equatable {
   const _ChromeState({
     required this.channels,
     required this.bars,
+    required this.beats,
     required this.isConnected,
     required this.primaryTrack,
     required this.quantizeDiv,
@@ -500,6 +532,10 @@ class _ChromeState extends Equatable {
             sampleRate: state.status.sampleRate,
           ),
       ],
+      // A loop with no whole bars still counts its beats (#1168).
+      beats: [
+        for (final track in state.tracks) _beatsWithoutBars(track, state),
+      ],
       isConnected: state.status.isConnected,
       primaryTrack: state.transport.primaryTrack,
       quantizeDiv: state.transport.quantizeDiv,
@@ -507,8 +543,19 @@ class _ChromeState extends Equatable {
     );
   }
 
+  /// A track's whole beats when it has no whole bars, else null.
+  static int? _beatsWithoutBars(Track track, LooperState state) {
+    final transport = state.transport;
+    final sampleRate = state.status.sampleRate;
+    if (track.wholeBars(transport: transport, sampleRate: sampleRate) != null) {
+      return null;
+    }
+    return track.wholeBeats(transport: transport, sampleRate: sampleRate);
+  }
+
   final List<int> channels;
   final List<int?> bars;
+  final List<int?> beats;
   final bool isConnected;
   final int primaryTrack;
   final GridDivision quantizeDiv;
@@ -518,6 +565,7 @@ class _ChromeState extends Equatable {
   List<Object?> get props => [
     channels,
     bars,
+    beats,
     isConnected,
     primaryTrack,
     quantizeDiv,
@@ -543,6 +591,7 @@ class _TrackSlot extends StatelessWidget {
     required this.mode,
     required this.isPrimary,
     required this.bars,
+    required this.beats,
     required this.quantizeDiv,
     required this.recDub,
   });
@@ -553,6 +602,10 @@ class _TrackSlot extends StatelessWidget {
   final InteractionMode mode;
   final bool isPrimary;
   final int? bars;
+
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
   final GridDivision quantizeDiv;
   final bool recDub;
 
@@ -579,6 +632,7 @@ class _TrackSlot extends StatelessWidget {
         mode: mode,
         isPrimary: isPrimary,
         bars: bars,
+        beats: beats,
         quantizeDiv: quantizeDiv,
         recDub: recDub,
       ),
@@ -597,6 +651,7 @@ class _MixerSlot extends StatelessWidget {
     required this.mode,
     required this.isPrimary,
     required this.bars,
+    required this.beats,
   });
 
   final int channel;
@@ -605,6 +660,10 @@ class _MixerSlot extends StatelessWidget {
   final InteractionMode mode;
   final bool isPrimary;
   final int? bars;
+
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
 
   @override
   Widget build(BuildContext context) {
@@ -626,6 +685,7 @@ class _MixerSlot extends StatelessWidget {
         mode: mode,
         isPrimary: isPrimary,
         bars: bars,
+        beats: beats,
       ),
     );
   }
@@ -641,6 +701,7 @@ class _WaveSlot extends StatelessWidget {
     required this.mode,
     required this.isPrimary,
     required this.bars,
+    required this.beats,
   });
 
   final int channel;
@@ -649,6 +710,10 @@ class _WaveSlot extends StatelessWidget {
   final InteractionMode mode;
   final bool isPrimary;
   final int? bars;
+
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
 
   @override
   Widget build(BuildContext context) {
@@ -665,6 +730,7 @@ class _WaveSlot extends StatelessWidget {
         mode: mode,
         isPrimary: isPrimary,
         bars: bars,
+        beats: beats,
       ),
     );
   }

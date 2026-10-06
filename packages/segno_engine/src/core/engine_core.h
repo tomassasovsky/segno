@@ -143,27 +143,37 @@ static inline void le_seam_fold_head(float* head, const float* continuation,
   }
 }
 
+/* Whether a recalled track of `len` frames fits a Session's `base`: a whole
+ * multiple, or exactly half or a quarter of it (a Sync division, #1168). */
+static inline int le_session_length_fits(int32_t base, int32_t len) {
+  if (base <= 0 || len <= 0) return 0;
+  return len % base == 0 || (int64_t)len * 2 == base ||
+         (int64_t)len * 4 == base;
+}
+
 /* What a length edit or its Undo/Redo (#1168) makes of one track: the new
  * length, its multiple or Sync division, `reclock` (the new master when the
- * rig re-clocks, else 0) and the bar count the re-clocked grid keeps. */
+ * rig re-clocks, else 0) and the beat count the re-clocked grid keeps. */
 typedef struct {
-  int32_t len, multiple, divisor, reclock, bars;
+  int32_t len, multiple, divisor, reclock, beats;
 } le_length_fit;
 
-/* The re-clock bar rule (#1212 review M2), the only place it lives: a track
- * that is the rig's only content re-clocks the master to its new length `len`
- * and keeps the tempo, so a grid of `bars` bars over `base` frames must come
- * out a whole bar count over `len` (within a frame per bar, the odd length's
- * half frame). Returns the kept bar count, or 0 when the length would change
- * the tempo or the beat rate: the edit is then refused as incompatible. Half of
- * 1 or 3 bars is refused; half of 2 bars and every Double keep whole bars. To
- * accept such a length instead, this is the function to change. */
-static inline int32_t le_reclock_whole_bars(int32_t base, int32_t bars,
-                                            int32_t len) {
-  const int64_t beats = (int64_t)bars * len; /* bars * base frames */
-  const int64_t kept = (beats + base / 2) / base;
-  const int64_t off = kept * base - beats;
-  if (kept < 1 || (off < 0 ? -off : off) > bars) return 0;
+/* The re-clock beat rule (#1212 review M2; owner decision 2026-10-06), the
+ * only place it lives: a track that is the rig's only content re-clocks the
+ * master to its new length `len` and keeps the tempo, so a grid of `beats`
+ * beats over `base` frames must come out a whole beat count over `len`
+ * (within a frame per beat, the odd length's half frame). Returns the kept
+ * beat count, or 0 when a fraction of a beat would remain: that edit is
+ * refused as incompatible. A 1-bar loop in 4/4 halves to 2 beats and a 3-bar
+ * loop to 6 beats; a 1-beat loop cannot halve. */
+static inline int32_t le_reclock_whole_beats(int32_t base, int32_t beats,
+                                             int32_t len) {
+  const int64_t span = (int64_t)beats * len; /* beats * base frames */
+  const int64_t kept = (span + base / 2) / base;
+  const int64_t off = kept * base - span;
+  if (kept < 1 || kept > INT32_MAX / 15 || (off < 0 ? -off : off) > beats) {
+    return 0;
+  }
   return (int32_t)kept;
 }
 
@@ -172,28 +182,28 @@ static inline int32_t le_reclock_whole_bars(int32_t base, int32_t bars,
  * only disagree when the rig changed in between. `others`: another track holds
  * or is capturing content; `primary`: this track is the crowned primary.
  * Free/Song spans are independent. With no other content the master follows
- * the track, keeping the tempo, under le_reclock_whole_bars. A crowned
- * Sync/Band primary with
+ * the track, keeping the tempo, under le_reclock_whole_beats (`beats` is the
+ * grid's beat count, 0 for none). A crowned Sync/Band primary with
  * dependents is refused (a Double would end Sync quantization, a half would
  * re-clock every dependent); any other track must fit the mode's span rule
  * against the unchanged base. */
 static inline int32_t le_length_fit_check(int32_t mode, int32_t base,
-                                          int32_t bars, int others,
+                                          int32_t beats, int others,
                                           int primary, int32_t len,
                                           int32_t cap, le_length_fit* out) {
   out->len = len;
   out->multiple = 1;
   out->divisor = 0;
   out->reclock = 0;
-  out->bars = 0;
+  out->beats = 0;
   if (len <= 0) return LE_ERR_INVALID;
   if (len > cap) return LE_ERR_CAPACITY;
   if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) return LE_OK;
   if (!others) {
     out->reclock = len;
-    if (bars > 0 && base > 0) {
-      out->bars = le_reclock_whole_bars(base, bars, len);
-      if (out->bars == 0) return LE_ERR_MODE_MISMATCH;
+    if (beats > 0 && base > 0) {
+      out->beats = le_reclock_whole_beats(base, beats, len);
+      if (out->beats == 0) return LE_ERR_MODE_MISMATCH;
     }
     return LE_OK;
   }

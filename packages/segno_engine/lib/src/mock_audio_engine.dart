@@ -1655,7 +1655,7 @@ class MockAudioEngine implements AudioEngine {
   }) => _requireRunning();
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) =>
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) =>
       _requireRunning();
 
   /// The `captureDir` passed to the most recent [perfArm] call, for test

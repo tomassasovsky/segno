@@ -132,6 +132,24 @@ void main() {
       expect(track.refusal, FootLengthRefusal.busy, reason: '$channel');
     }
     expect(projection.tracks[7].bars, isNull, reason: 'not whole bars');
+    expect(projection.tracks[7].beats, isNull, reason: 'nor whole beats');
+    // A sole 1-bar loop halved keeps 2 beats and no whole bar (#1168).
+    final halved = projectFootLength(
+      const LooperState(
+        transport: TransportState(
+          isRunning: true,
+          masterLengthFrames: 48000,
+          loopBeats: 2,
+        ),
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 48000),
+        ],
+        status: EngineStatus(sampleRate: 48000),
+      ),
+      bank: 0,
+      cursor: 0,
+    ).tracks[0];
+    expect((halved.bars, halved.beats), (null, 2));
   });
 
   test('each engine verdict names its refusal', () {

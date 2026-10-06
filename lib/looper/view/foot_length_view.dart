@@ -283,7 +283,7 @@ String footLengthRefusalText(
 };
 
 /// Reads one track's length: whole bars when the grid counts them, else
-/// seconds, or Empty.
+/// whole beats (a halved sole loop), else seconds, or Empty.
 String _lengthWord(
   AppLocalizations l10n,
   FootLengthTrack track,
@@ -292,6 +292,8 @@ String _lengthWord(
   if (!track.hasContent) return l10n.readoutStateEmpty;
   final bars = track.bars;
   if (bars != null) return l10n.stageBarsFigure(bars);
+  final beats = track.beats;
+  if (beats != null) return l10n.stageBeatsFigure(beats);
   if (sampleRate <= 0) return l10n.stageNoBarsFigure;
   return l10n.footLengthSeconds(track.lengthFrames / sampleRate);
 }
