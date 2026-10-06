@@ -19,9 +19,11 @@
 #   detach <kname>    unmount (lazily if the device is gone), remove the mount
 #                     point, delete the JSON. Always exits 0 — an ejected
 #                     volume being unplugged is not a failure.
-#   serve-requests    for every non-dot file under requests/: sync, umount
+#   serve-requests    for every <id>.json under requests/: sync, umount
 #                     (non-lazy), record the outcome in the volume's JSON,
 #                     delete the request.
+#
+# attach, detach and serve-requests run one at a time (take_lock).
 #   status            print every volume JSON as one array.
 #   probe <dir>       print write bytes/second measured with a temp file, or
 #                     `null` when the measurement failed.
@@ -52,11 +54,23 @@ log() { echo "segno-usb-ctl: $*" >&2; }
 # ---- small JSON helpers -----------------------------------------------------
 
 # Escapes a string for a JSON string literal: backslash, double quote, and
-# the control characters a label could carry. Non-ASCII bytes pass through
-# (JSON allows raw UTF-8).
+# every control byte below 0x20 (TAB, CR and LF included) as \u00XX, because
+# a raw control character is illegal inside a JSON string. Other bytes pass
+# through: JSON allows raw UTF-8, and decode_enc only produces valid UTF-8.
 json_escape() {
-    tab=$(printf '\t'); cr=$(printf '\r')
-    printf '%s' "$1" | sed "s/\\\\/\\\\\\\\/g; s/\"/\\\\\"/g; s/$tab/\\\\t/g; s/$cr/\\\\r/g" | tr -d '\n'
+    printf '%s' "$1" | LC_ALL=C awk '
+        BEGIN { for (i = 1; i < 32; i++) ctl[sprintf("%c", i)] = sprintf("\\u%04x", i) }
+        {
+            if (NR > 1) printf "%s", "\\u000a"
+            n = length($0)
+            for (i = 1; i <= n; i++) {
+                c = substr($0, i, 1)
+                if (c == "\\") printf "%s", "\\\\"
+                else if (c == "\"") printf "%s", "\\\""
+                else if (c in ctl) printf "%s", ctl[c]
+                else printf "%s", c
+            }
+        }'
 }
 
 # json_str VALUE — a JSON string literal, or null for an empty value where the
@@ -64,7 +78,10 @@ json_escape() {
 json_str() { printf '"%s"' "$(json_escape "$1")"; }
 
 # json_get KEY FILE — the raw value of a top-level scalar key the helper wrote
-# itself (string without quotes, or the literal null/number/true/false).
+# itself (string without quotes, or the literal null/number/true/false). Only
+# \" and \\ are undone, so it is for keys whose values are plain text (kname,
+# mountPoint, status, generation, request); a label is never read back and
+# re-encoded (see serve_one).
 # Extended regex (`sed -E`) on purpose: BSD, GNU and busybox sed all take it,
 # while `\|` alternation in a basic regex is GNU-only.
 json_get() {
@@ -80,19 +97,54 @@ prop() { printf '%s\n' "$props" | sed -n "s/^$1=//p" | head -n1; }
 
 # udev's ID_FS_LABEL replaces spaces by underscores; ID_FS_LABEL_ENC keeps the
 # real bytes as \xNN escapes. Decode the latter so the app shows the label the
-# user gave the drive.
+# user gave the drive, but only where the bytes form valid UTF-8: a FAT label
+# written on Windows is in an OEM codepage (`MÚSICA` with one byte 0xE9), and
+# a raw 0xE9 makes the whole JSON file invalid UTF-8, which hides the volume
+# from the app. A byte that is not part of a valid UTF-8 sequence stays as its
+# `\xNN` text, whether it arrived escaped or raw. \x00 is never decoded (a
+# shell string cannot hold it).
 decode_enc() {
     printf '%s' "$1" | LC_ALL=C awk '
-        BEGIN { for (i = 0; i < 256; i++) ord[sprintf("%02x", i)] = i }
+        # The length of the valid UTF-8 sequence starting at byte k, or 0.
+        function seqlen(k,   c, need, lo, hi, j) {
+            c = b[k]
+            if (c < 128) return 1
+            if (c >= 194 && c <= 223) need = 1
+            else if (c >= 224 && c <= 239) need = 2
+            else if (c >= 240 && c <= 244) need = 3
+            else return 0
+            if (k + need > n) return 0
+            lo = 128; hi = 191
+            if (c == 224) lo = 160
+            else if (c == 237) hi = 159
+            else if (c == 240) lo = 144
+            else if (c == 244) hi = 143
+            if (b[k + 1] < lo || b[k + 1] > hi) return 0
+            for (j = 2; j <= need; j++) if (b[k + j] < 128 || b[k + j] > 191) return 0
+            return need + 1
+        }
+        BEGIN {
+            for (i = 0; i < 256; i++) { hex[sprintf("%02x", i)] = i; chr[i] = sprintf("%c", i) }
+            for (i = 1; i < 256; i++) ord[chr[i]] = i
+        }
         {
-            s = $0; out = ""
-            while ((i = index(s, "\\x")) > 0) {
-                out = out substr(s, 1, i - 1)
-                h = tolower(substr(s, i + 2, 2))
-                if (h in ord) out = out sprintf("%c", ord[h]); else out = out "?"
-                s = substr(s, i + 4)
+            s = $0; n = 0; split("", b)
+            while (s != "") {
+                h = tolower(substr(s, 3, 2))
+                if (substr(s, 1, 2) == "\\x" && (h in hex) && hex[h] > 0) {
+                    b[++n] = hex[h]; s = substr(s, 5)
+                } else {
+                    b[++n] = ord[substr(s, 1, 1)]; s = substr(s, 2)
+                }
             }
-            printf "%s", out s
+            out = ""; k = 1
+            while (k <= n) {
+                len = seqlen(k)
+                if (len == 0) { out = out sprintf("\\x%02x", b[k]); k++; continue }
+                for (j = 0; j < len; j++) out = out chr[b[k + j]]
+                k += len
+            }
+            printf "%s", out
         }'
 }
 
@@ -104,6 +156,22 @@ safe_name() {
     s=$(printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._-' '_')
     [ -n "$s" ] || s=$2
     printf '%s' "$s"
+}
+
+# ---- serialisation ----------------------------------------------------------
+
+# take_lock — hold an exclusive flock on $RUN_DIR/.lock for the rest of this
+# process. systemd starts one segno-usb-mount@ instance per partition in
+# parallel (a two-partition stick, a multi-slot reader, two sticks at boot),
+# and the eject service can run at the same moment. Unserialised, two
+# attaches read the same .generation and one record overwrites the other (its
+# mount then leaks, because detach cannot find it), and attach's second write
+# can overwrite an eject's outcome. The kernel releases a flock when the
+# process exits, however it exits, so no stale lock survives a crash.
+take_lock() {
+    mkdir -p "$RUN_DIR"
+    exec 9>"$RUN_DIR/.lock"
+    flock 9
 }
 
 # ---- volume records ---------------------------------------------------------
@@ -147,16 +215,17 @@ volume_file_for_kname() {
 # ---- mount policy -----------------------------------------------------------
 
 # mount_opts FSTYPE RW|RO — the option string for a filesystem we support, or
-# nothing for one we do not.
+# nothing for one we do not. Every row carries nosuid,nodev: the drive is
+# untrusted media, and no setuid program or device node on it is honoured.
 mount_opts() {
     case "$1:$2" in
-        vfat:rw)  echo "rw,noatime,flush,utf8=1,uid=0,gid=0,fmask=0022,dmask=0022" ;;
-        vfat:ro)  echo "ro,noatime,utf8=1,uid=0,gid=0,fmask=0022,dmask=0022" ;;
-        exfat:rw) echo "rw,noatime,uid=0,gid=0,fmask=0022,dmask=0022" ;;
-        exfat:ro) echo "ro,noatime,uid=0,gid=0,fmask=0022,dmask=0022" ;;
-        ext2:*|ext3:*|ext4:*) echo "$2,noatime" ;;
-        ntfs:rw)  echo "rw,noatime,uid=0,gid=0" ;;
-        ntfs:ro)  echo "ro,noatime,uid=0,gid=0" ;;
+        vfat:rw)  echo "rw,nosuid,nodev,noatime,flush,utf8=1,uid=0,gid=0,fmask=0022,dmask=0022" ;;
+        vfat:ro)  echo "ro,nosuid,nodev,noatime,utf8=1,uid=0,gid=0,fmask=0022,dmask=0022" ;;
+        exfat:rw) echo "rw,nosuid,nodev,noatime,uid=0,gid=0,fmask=0022,dmask=0022" ;;
+        exfat:ro) echo "ro,nosuid,nodev,noatime,uid=0,gid=0,fmask=0022,dmask=0022" ;;
+        ext2:*|ext3:*|ext4:*) echo "$2,nosuid,nodev,noatime" ;;
+        ntfs:rw)  echo "rw,nosuid,nodev,noatime,uid=0,gid=0" ;;
+        ntfs:ro)  echo "ro,nosuid,nodev,noatime,uid=0,gid=0" ;;
         *) return 1 ;;
     esac
 }
@@ -182,6 +251,9 @@ uptime_cs() {
     frac=${up#*.}
     [ "$frac" = "$up" ] && frac=0
     frac=$(printf '%s00' "$frac" | cut -c1-2)
+    # A leading zero makes shell arithmetic read the digits as octal, where 08
+    # and 09 are errors and 01-07 only happen to be right: strip it.
+    frac=${frac#0}
     echo $((whole * 100 + frac))
 }
 
@@ -280,12 +352,19 @@ do_detach() {
 }
 
 # serve_one REQUEST_FILE
+# The outcome is written by editing the record in place (status and eject
+# only), never by reading every field back and re-encoding it: json_get does
+# not undo \u00XX escapes, so a label with a TAB or CR would not survive that
+# round trip.
 serve_one() {
     req=$1
     gen=$(json_get generation "$req")
     id=$(json_get request "$req")
     rm -f "$req"
     case "$gen" in ''|*[!0-9]*) log "request $(basename "$req"): malformed"; return 0 ;; esac
+    # The id goes back into the record through sed, so it is held to the
+    # characters of the app's hex ids.
+    case "$id" in ''|*[!A-Za-z0-9._-]*) log "request $(basename "$req"): malformed id"; return 0 ;; esac
     f="$VOLUMES/$gen.json"
     [ -f "$f" ] || { log "request $id: generation $gen unknown"; return 0; }
     mp=$(json_get mountPoint "$f")
@@ -302,21 +381,20 @@ serve_one() {
             log "eject $id: umount $mp failed: $(printf '%s\n' "$err" | head -n1)"
         fi
     fi
-    eject=$(printf '{"request":%s,"ok":%s,"reason":%s}' "$(json_str "$id")" "$ok" "$reason")
-    bps=$(json_get writeBytesPerSecond "$f")
-    failure=$(json_get failureReason "$f")
-    [ -n "$failure" ] || failure=null
-    write_volume "$gen" "$(json_get kname "$f")" "$(json_get fingerprint "$f")" \
-        "$(json_get label "$f")" "$(json_get fsType "$f")" "$mp" \
-        "$(json_get sizeBytes "$f")" "$status" "$(json_get readOnly "$f")" \
-        "$bps" "$failure" "$eject"
+    eject="{\"request\":\"$id\",\"ok\":$ok,\"reason\":$reason}"
+    # `"status":"` and `"eject":` cannot occur inside a string value (its
+    # quotes are escaped), so the first match is the key; eject is the last.
+    tmp="$VOLUMES/.$gen.json.tmp"
+    sed -E "s/\"status\":\"[A-Za-z]*\"/\"status\":\"$status\"/; s/\"eject\":.*\$/\"eject\":$eject}/" "$f" > "$tmp"
+    mv -f "$tmp" "$f"
 }
 
 do_serve_requests() {
     mkdir -p "$REQUESTS" "$VOLUMES"
-    for req in "$REQUESTS"/*; do
+    # *.json, the same glob as segno-usb-eject.path's PathExistsGlob= (which
+    # skips the app's .<id>.json.tmp dotfiles).
+    for req in "$REQUESTS"/*.json; do
         [ -f "$req" ] || continue
-        case "$(basename "$req")" in .*) continue ;; esac
         serve_one "$req"
     done
 }
@@ -334,9 +412,9 @@ do_status() {
 }
 
 case "${1:-}" in
-    attach)         [ -n "${2:-}" ] || { log "attach needs a kernel name"; exit 2; }; do_attach "$2" ;;
-    detach)         [ -n "${2:-}" ] || { log "detach needs a kernel name"; exit 2; }; do_detach "$2" ;;
-    serve-requests) do_serve_requests ;;
+    attach)         [ -n "${2:-}" ] || { log "attach needs a kernel name"; exit 2; }; take_lock; do_attach "$2" ;;
+    detach)         [ -n "${2:-}" ] || { log "detach needs a kernel name"; exit 2; }; take_lock; do_detach "$2" ;;
+    serve-requests) take_lock; do_serve_requests ;;
     status)         do_status ;;
     probe)          [ -d "${2:-}" ] || { log "probe needs a directory"; exit 2; }; do_probe "$2" ;;
     *) log "usage: segno-usb-ctl {attach <kname>|detach <kname>|serve-requests|status|probe <dir>}"; exit 2 ;;

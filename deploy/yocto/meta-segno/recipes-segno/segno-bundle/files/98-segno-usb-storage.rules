@@ -12,17 +12,36 @@
 # ID_BUS=usb is set by udev's usb_id builtin for USB mass-storage and UAS
 # devices. The boot NVMe and any SD card are excluded by kernel name as well,
 # so a future USB-attached boot disk cannot be mounted twice.
+#
+# `change` as well as `add`: a card inserted into a USB reader that is
+# already plugged in raises `change` on the reader's sdX, not `add`. A card
+# with a partition table adds partitions (an `add` each); a superfloppy card
+# (a filesystem on the whole device) only changes sdX. systemd starts the
+# units a `change` adds to SYSTEMD_WANTS when they were not wanted before,
+# and an empty slot (size 0, the last rule) wants nothing, so each insertion
+# is a new want.
 
 # A filesystem on a partition, or on a whole device without a partition table
-# (a "superfloppy" stick).
-ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{DEVTYPE}=="partition|disk", \
+# (a "superfloppy" stick or card).
+ACTION=="add|change", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{DEVTYPE}=="partition|disk", \
   ENV{ID_FS_USAGE}=="filesystem", KERNEL!="nvme*|mmcblk*", \
   TAG+="systemd", ENV{SYSTEMD_WANTS}+="segno-usb-mount@%k.service"
 
 # A blank whole device (no filesystem, no partition table): attach it too, so
 # the app can say "not formatted" instead of nothing. Partitions are excluded
 # here on purpose; an unformatted partition of a partitioned stick is not the
-# drive being blank.
-ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{DEVTYPE}=="disk", \
-  ENV{ID_FS_USAGE}!="filesystem", ENV{ID_PART_TABLE_TYPE}=="", KERNEL!="nvme*|mmcblk*", \
+# drive being blank. A size of 0 is an empty card-reader slot, not a blank
+# drive.
+ACTION=="add|change", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{DEVTYPE}=="disk", \
+  ENV{ID_FS_USAGE}!="filesystem", ENV{ID_PART_TABLE_TYPE}=="", ATTR{size}!="0", \
+  KERNEL!="nvme*|mmcblk*", \
   TAG+="systemd", ENV{SYSTEMD_WANTS}+="segno-usb-mount@%k.service"
+
+# An empty card-reader slot: tell systemd the disk is not there. Pulling a
+# superfloppy card out of a reader leaves sdX in place with size 0; without
+# this its device unit stays plugged and the mount unit (BindsTo=) would keep
+# a mount of a card that is gone. With it, the unit stops, `detach` runs, and
+# the next card is a fresh plug.
+ACTION=="add|change", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{DEVTYPE}=="disk", \
+  ATTR{size}=="0", KERNEL!="nvme*|mmcblk*", \
+  ENV{SYSTEMD_READY}="0"

@@ -119,7 +119,7 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   bluez5 ddcutil \
                   iw \
                   weston-examples \
-                  util-linux-mount util-linux-umount util-linux-blkid \
+                  util-linux-mount util-linux-umount util-linux-blkid util-linux-flock \
                   coreutils"
 
 inherit systemd
@@ -293,6 +293,7 @@ do_install() {
     # has no [Install] section, so only the .path is enabled. util-linux
     # mount/umount/blkid are RDEPENDS: the helper passes per-filesystem
     # option strings and parses util-linux's error vocabulary, not busybox's.
+    # util-linux flock serialises the helper's verbs (parallel attaches).
     install -m 0755 ${UNPACKDIR}/segno-usb-ctl ${D}${bindir}/segno-usb-ctl
     install -m 0644 ${UNPACKDIR}/segno-usb-mount@.service ${D}${systemd_system_unitdir}/segno-usb-mount@.service
     install -m 0644 ${UNPACKDIR}/segno-usb-eject.path ${D}${systemd_system_unitdir}/segno-usb-eject.path
