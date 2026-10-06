@@ -1015,3 +1015,37 @@ human merge gate stays.
 | L10 citations | §1.6 re-anchored to LibP5, trunk and `57a5324b8` |
 | L11 recorder failed-save state | repository's held status carries `saveFailed` |
 | Notes | #692 history quoted in Part 2; pen 04 multi-rack as a non-goal; `FxNames` resolver; goldens regenerated in Part 1; `Not monitored` dropped |
+
+## 10. Build record
+
+### Part 1 (branch `claude/foot-surfaces-1229-p1`)
+
+- Built as planned: `ControlState.pendingHolds` and `holdThreshold`;
+  `_armGesture` takes a `cue` (null only for the CTRL jacks) and
+  `_HoldGesture.press` an `onSettled` that runs once on hold, release or
+  cancel; `_setHoldPending` is silent once the cubit is closing.
+  `PerformancePedal` times the bar from its own `AnimationController`, and
+  the Mixer and Fade faces pass the cue.
+- **Departure: no golden moves.** The plan expected the 3 px bar slot to
+  shift every face by 3 px. The pen puts the bar 5 px under the face inside
+  the 16 px gap the app already leaves before the caption, so the slot is
+  5 + 3 + 8 px and the layout is unchanged; the Mixer, Fade and Reverse
+  goldens pass byte-identical (the full app suite ran them: 3484 passed, 56 skipped).
+- The bar is two `ColoredBox`es, not a `LinearProgressIndicator`, so it adds
+  no progress semantics and does not collide with the Mixer face's level bar.
+- Teardown order: `close` first retires input, which cancels the gestures
+  while the cubit is still open, so the cue clears with one ordinary emit;
+  the `_closing`/`isClosed` guard covers any settle after that.
+
+### Part 4 (branch `claude/foot-surfaces-1229-p4`, on `claude/tuner-latency-909-trunk`)
+
+- Built as planned, rebased cleanly onto the #912 trunk port (`c54865297`):
+  the mask reset sits in the `LE_CMD_SET_TUNER_INPUT` handler beside the
+  port's `tuner_raw_pos` and `tuner_pass.phase` resets.
+- **Departure (D12):** `le_engine_reset_runtime` already disarms the tuner and
+  resets every monitor on configure and on a retained reopen, so the mask is
+  cleared there (`engine.c:800`), and every `LE_CMD_SET_TUNER_INPUT` clears
+  it, not only a disarm.
+- The mock engine follows the native rules; `LooperRepository.setTunerMute`
+  refuses while disarmed or for an input outside `0..31`, and every
+  `setTunerInput` clears the remembered mask.
