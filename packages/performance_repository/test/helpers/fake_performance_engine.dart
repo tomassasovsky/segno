@@ -24,7 +24,7 @@ class _FakeTrack {
 /// models per-lane PCM/state closely enough to exercise arm/disarm/
 /// persistLiveLanes without the native engine, plus the perf-capture surface
 /// (armed flag, captureDir, forced result codes).
-class FakePerformanceEngine implements AudioEngine {
+class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
   FakePerformanceEngine({this.sampleRate = 48000});
 
   final int sampleRate;

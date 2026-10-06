@@ -6,7 +6,7 @@ import 'package:segno_engine/segno_engine.dart';
 ///
 /// Records interactions and returns scripted results/snapshots, so cubit and
 /// widget tests never touch the native audio device.
-class FakeAudioEngine implements AudioEngine {
+class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   @override
   OutputFxSnapshot outputFxSnapshot({required int bus}) =>
       const OutputFxSnapshot();

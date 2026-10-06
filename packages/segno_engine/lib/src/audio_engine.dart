@@ -1663,6 +1663,8 @@ abstract interface class AudioEngine
         EffectsControl,
         MonitorControl,
         InputConditioningControl,
+        InstrumentHost,
+        MidiInputSink,
         EnginePluginHosting,
         EnginePerformanceCapture,
         SessionIo {}

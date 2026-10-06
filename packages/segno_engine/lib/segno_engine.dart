@@ -99,6 +99,8 @@ export 'src/plugin_descriptor.dart'
         PluginParamInfo,
         PluginScanProgress,
         PluginSlotHandle;
+export 'src/simulated_instruments.dart'
+    show SimulatedInstruments, SimulatedVoice;
 export 'src/storage_io.dart' show NativeStorageIo, StorageIo;
 export 'src/synth_catalogue.dart'
     show
