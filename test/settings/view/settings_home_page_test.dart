@@ -17,6 +17,7 @@ import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import 'destination_harness.dart';
 
@@ -25,6 +26,8 @@ class _MockPowerOffCubit extends MockCubit<PowerOffState>
 
 class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
+
+class _MockStorageRepository extends Mock implements StorageRepository {}
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit {}
@@ -129,8 +132,11 @@ void main() {
       for (final destination in SettingsDestination.values) {
         final art = find.byKey(Key('settings_tile_art_${destination.key}'));
         final image = tester.widget<Image>(art);
+        // Decoded at the drawn size, so the provider is a resize of the asset.
+        final provider = image.image as ResizeImage;
+        expect(provider.width, 128);
         expect(
-          (image.image as AssetImage).assetName,
+          (provider.imageProvider as AssetImage).assetName,
           'assets/settings/${destination.key}.png',
         );
         expect(tester.getSize(art), const Size(128, 128));
@@ -192,14 +198,11 @@ void main() {
       for (final destination in SettingsDestination.values) {
         expect(
           tester.getSemantics(tile(destination)),
-          matchesSemantics(
+          isSemantics(
             label: destination.label(l10n(tester)),
             isButton: true,
-            isEnabled: true,
-            hasEnabledState: true,
             hasTapAction: true,
             isFocusable: true,
-            hasFocusAction: true,
             isFocused: destination == SettingsDestination.effects,
           ),
         );
@@ -229,6 +232,54 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pump();
       expect(focused(SettingsDestination.network), isTrue);
+    });
+
+    testWidgets('the focused tile draws the encoder amber inside its edge', (
+      tester,
+    ) async {
+      FocusManager.instance.highlightStrategy =
+          FocusHighlightStrategy.alwaysTraditional;
+      addTearDown(
+        () => FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.automatic,
+      );
+      await pumpHome(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+
+      final image = (await tester.runAsync(
+        () => captureImage(tester.element(find.byType(SettingsHomePage))),
+      ))!;
+      final bytes = (await tester.runAsync(image.toByteData))!;
+      Color pixel(Offset at) {
+        final i = (at.dy.round() * image.width + at.dx.round()) * 4;
+        return Color.fromARGB(
+          bytes.getUint8(i + 3),
+          bytes.getUint8(i),
+          bytes.getUint8(i + 1),
+          bytes.getUint8(i + 2),
+        );
+      }
+
+      // A column inside the left edge of a tile, halfway down: the tile's
+      // own 1 px line is the first column, the 3 px ring covers three.
+      Offset edge(SettingsDestination destination, double inset) {
+        final rect = tester.getRect(tile(destination));
+        return Offset(rect.left + inset, rect.center.dy);
+      }
+
+      const surface = SurfaceTheme.dark;
+      expect(pixel(edge(SettingsDestination.loop, 0)), surface.encoderFocus);
+      expect(pixel(edge(SettingsDestination.loop, 2)), surface.encoderFocus);
+      expect(
+        pixel(edge(SettingsDestination.effects, 0)),
+        surface.menuArtLine,
+      );
+      expect(
+        pixel(edge(SettingsDestination.effects, 2)),
+        surface.menuArtGround,
+      );
+      image.dispose();
     });
 
     testWidgets('Back from a destination returns focus to its tile', (
@@ -298,7 +349,10 @@ void main() {
       expect(find.byKey(const Key('settings_power')), findsNothing);
     });
 
-    testWidgets('Power asks as the rear button does', (tester) async {
+    Future<_MockPowerOffCubit> pumpWithPower(
+      WidgetTester tester, {
+      StorageRepository? storage,
+    }) async {
       final power = _MockPowerOffCubit();
       whenListen(
         power,
@@ -326,16 +380,29 @@ void main() {
       await pumpHome(
         tester,
         powerAvailable: true,
-        wrap: (app) => MultiBlocProvider(
-          providers: [
-            BlocProvider<PowerOffCubit>.value(value: power),
-            BlocProvider<LooperBloc>.value(value: looper),
-            BlocProvider<SessionCubit>.value(value: session),
-            BlocProvider<PerformanceRecorderCubit>.value(value: recorder),
-          ],
-          child: app,
-        ),
+        wrap: (app) {
+          final blocs = MultiBlocProvider(
+            providers: [
+              BlocProvider<PowerOffCubit>.value(value: power),
+              BlocProvider<LooperBloc>.value(value: looper),
+              BlocProvider<SessionCubit>.value(value: session),
+              BlocProvider<PerformanceRecorderCubit>.value(value: recorder),
+            ],
+            child: app,
+          );
+          return storage == null
+              ? blocs
+              : RepositoryProvider<StorageRepository>.value(
+                  value: storage,
+                  child: blocs,
+                );
+        },
       );
+      return power;
+    }
+
+    testWidgets('Power asks as the rear button does', (tester) async {
+      final power = await pumpWithPower(tester);
 
       final button = find.byKey(const Key('settings_power'));
       expect(button, findsOneWidget);
@@ -350,6 +417,22 @@ void main() {
         session: const SessionState(currentSessionName: 'Evening loop'),
       );
       verify(() => power.press(expected)).called(1);
+    });
+
+    testWidgets('Power during a USB transfer is refused, as the rear button '
+        'is', (tester) async {
+      final storage = _MockStorageRepository();
+      when(() => storage.transferInFlight).thenReturn(true);
+      final power = await pumpWithPower(tester, storage: storage);
+
+      await tester.tap(find.byKey(const Key('settings_power')));
+      await tester.pump();
+
+      final pressed =
+          verify(() => power.press(captureAny())).captured.single
+              as PowerOffSnapshot;
+      expect(pressed.transferInFlight, isTrue);
+      expect(powerOffGate(pressed), PowerOffDisposition.refuse);
     });
   });
 }
