@@ -133,9 +133,24 @@ void main() {
     }, skip: skip);
 
     test('refusals throw their reason', () async {
+      // Not a format the decoder accepts: refused before any decoder runs.
       File('${dir.path}/text.wav').writeAsStringSync('not audio');
       await expectLater(
         NativeAudioDecoder().decode('${dir.path}/text.wav', sampleRate: 48000),
+        throwsA(
+          isA<EngineException>().having(
+            (e) => e.result,
+            'result',
+            EngineResult.unsupported,
+          ),
+        ),
+      );
+      // A WAV header with no chunks: damaged.
+      File(
+        '${dir.path}/empty.wav',
+      ).writeAsStringSync('RIFF\x00\x00\x00\x00WAVE');
+      await expectLater(
+        NativeAudioDecoder().probe('${dir.path}/empty.wav'),
         throwsA(
           isA<EngineException>().having(
             (e) => e.result,
