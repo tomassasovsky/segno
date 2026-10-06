@@ -60,6 +60,8 @@ dependencies:
   update_repository:
     path: packages/update_repository
   url_launcher: ^6.3.0
+  usb_storage_client:
+    path: packages/usb_storage_client
   wifi_repository:
     path: packages/wifi_repository
   window_manager: ^0.5.2
