@@ -35,6 +35,10 @@ LimitMEMLOCK=infinity
 # leave nothing behind. The dump lands on /data via the coredump bind mount, and
 # coredump.conf.d caps how much of it is kept.
 LimitCORE=infinity
+# The app reads USB volumes at the paths segno-usb-mount@.service mounts them
+# (/run/media/segno/<generation>-<label>, #1177), so it must stay in the root
+# mount namespace: no PrivateMounts=, ProtectSystem=, PrivateTmp= or
+# MountFlags= on this unit. run_usb_ctl_tests.sh checks that.
 ExecStart=/usr/bin/segno-kiosk-launch
 Restart=always
 # Back off between failed starts while Weston recovers (#970).
