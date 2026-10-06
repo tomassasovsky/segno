@@ -1943,3 +1943,60 @@ round:
   native test through the real engine).
 - **Mutations.** Each failed its test: the held-result refusal, the freeze
   timeout, the bars default and the once-cut mapping.
+
+### Part 4a (`claude/render-1202-p4a`, stacked on Part 2)
+
+Built as 5.2 to 5.4 describe for Keep sources: `LE_HIST_BOUNCE = 5` with
+`group_id`, `cleared_mask`, `divisor`, `reversed` and `start_iter` in
+`le_hist_entry`; `le_engine_bounce` (113) and `le_engine_bounce_recover`
+(114) through the receipt table; the install and its reset in one drain;
+Undo/Redo of the destination alone; the export cut; the raw-post refusals;
+and Peel P2's validators extended with kind 5. Dart's `HistoryKind` carries
+explicit codes (`fromCode`), so kind 4 stays reserved for #1168.
+
+Where the build departs from the text above, and why:
+
+- **Names.** `le_mode_base_channel_excluding` is `le_ctl_mode_base_excluding`
+  (control side, next to the other `le_ctl_` helpers). The render job is
+  consumed in place through `le_render_take`, which also hands over the
+  freeze's iteration as the destination's `start_iter`.
+- **Spare overdub shadows do not refuse a Bounce.** A track that has been
+  overdubbed keeps spare shadows armed for its next punch-in, so refusing on
+  them refused every Bounce into such a track. The install drops them on the
+  callback (they are sized for the old length) and `le_bounce_collect`
+  reclaims their slots when it files the result, as a Clear does. Until then
+  they stay outstanding, so no slot the callback may hold is reused.
+- **Bounce recovery with a newer edit on top** is refused `INVALID`, not
+  `TRACKS_CHANGED`: the top is not a Bounce, and plain Undo takes the layer
+  first (tested).
+- **Slot pins.** The incoming image and the replaced live slot are pinned
+  while a Bounce is in flight. A loop-close restoration
+  (`le_restore_commit_layer`) can commit in that window, so the pins are
+  reachable and tested.
+
+Tests (`test_engine_bounce.h`, literal PCM from real Part 1 jobs): install
+into an empty destination, replace and restore (gain, Drive, Reverse, mute),
+phase continuity with a kept source, mode fit and re-clock, refusals and
+history, the export cut and the validator, abandonment by configure, the
+slot pins, a layer on top undone first, a PLAYING destination grown to two
+lanes with a pending lane-count change refused (Bounce and recovery), the
+staged image named by 322 at the swap with no lost provenance and an overdub
+after the Bounce, and reopen dropping an unapplied Bounce with the mask.
+
+Not built as listed:
+
+- the undo-stack-full refusal (the pool's eviction keeps the stack below its
+  cap through the API);
+- a Sync division result and the Free/Song own clock;
+- a probe at the apply frame for a block played through the old chains (the
+  reset is checked after the drain that installs the image);
+- the recall round trips through `finalize_history` (the cut and the
+  validator's refusal of kind 5 are tested);
+- "the added lane plays and records nothing while Redo holds it".
+
+Mutations, each failing its test: the destination reset skipped, plain Undo
+of a grouped top allowed, the export cut removed, the re-clock removed, the
+slot pins removed, the image staging removed, the shadow reclaim removed, and
+the state-command mark removed (reopen). Removing the lane-growth term from
+the busy rule survives: the routing preparation and the cache's readiness
+gate refuse the same case first, so the term is a second guard.
