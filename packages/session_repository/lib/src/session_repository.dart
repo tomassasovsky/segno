@@ -1114,6 +1114,16 @@ class SessionRepository {
   @visibleForTesting
   static void Function(String path)? debugOnSaveWrite;
 
+  /// Called with each directory a save or a recovery fsyncs, just before the
+  /// fsync, so a test can see what is on disk at that moment.
+  @visibleForTesting
+  static void Function(String path)? debugOnDirectorySync;
+
+  static void _syncDirectory(String path) {
+    debugOnDirectorySync?.call(path);
+    syncDirectory(path);
+  }
+
   /// Writes the layers, the manifest and the mixdown of [captured] into the
   /// directory [path], each flushed to the device, and prunes layer files
   /// the manifest does not reference.
@@ -1227,12 +1237,12 @@ class SessionRepository {
       staging.renameSync(target.path);
     } on Object {
       retired.renameSync(target.path);
-      syncDirectory(target.parent.path);
+      _syncDirectory(target.parent.path);
       rethrow;
     }
     // The swap is durable before the save reports success, and before
     // the previous save is retired.
-    syncDirectory(target.parent.path);
+    _syncDirectory(target.parent.path);
     _retire(retired, live: target);
   }
 
@@ -1397,7 +1407,7 @@ class SessionRepository {
             _retire(entity, live: Directory(live));
           } else {
             entity.renameSync(live);
-            syncDirectory(dir.path);
+            _syncDirectory(dir.path);
           }
         } else if (path.endsWith(_stagingSuffix)) {
           if (!inFlight.contains(path)) entity.deleteSync(recursive: true);
