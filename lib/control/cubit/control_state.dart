@@ -13,7 +13,7 @@ class ControlState extends Equatable {
   /// Creates a [ControlState].
   const ControlState({
     this.mode = InteractionMode.record,
-    this.defaultMode = InteractionMode.record,
+    this.retiredBootMode,
     this.pedalSetup = const PedalSetup(),
     this.pedalSetupUnavailable = false,
     this.pedalSetupPersistenceUncertain = false,
@@ -80,8 +80,12 @@ class ControlState extends Equatable {
   /// explicit mode actions (clear-all counts: a whole-rig reset → record).
   final InteractionMode mode;
 
-  /// The persisted mode the system boots into.
-  final InteractionMode defaultMode;
+  /// The mode an earlier build booted into instead of Record, once, at the
+  /// first start since the boot-default setting was retired; null otherwise.
+  ///
+  /// Set only by the boot restore, never cleared: it exists so the app can
+  /// say once that the console now starts in Record.
+  final InteractionMode? retiredBootMode;
 
   /// The built-in footswitch setup: what MODE's press and hold reach, what a
   /// Record / Play or track hold adds, and the Custom-controls map.
@@ -219,7 +223,7 @@ class ControlState extends Equatable {
   /// Returns a copy with the given fields replaced.
   ControlState copyWith({
     InteractionMode? mode,
-    InteractionMode? defaultMode,
+    InteractionMode? retiredBootMode,
     PedalSetup? pedalSetup,
     bool? pedalSetupUnavailable,
     bool? pedalSetupPersistenceUncertain,
@@ -249,7 +253,7 @@ class ControlState extends Equatable {
     Map<MidiSource, MidiControlEvent>? midiLevels,
   }) => ControlState(
     mode: mode ?? this.mode,
-    defaultMode: defaultMode ?? this.defaultMode,
+    retiredBootMode: retiredBootMode ?? this.retiredBootMode,
     pedalSetup: pedalSetup ?? this.pedalSetup,
     pedalSetupUnavailable: pedalSetupUnavailable ?? this.pedalSetupUnavailable,
     pedalSetupRuntimeUnsaved:
@@ -285,7 +289,7 @@ class ControlState extends Equatable {
   @override
   List<Object?> get props => [
     mode,
-    defaultMode,
+    retiredBootMode,
     pedalSetup,
     pedalSetupUnavailable,
     pedalSetupPersistenceUncertain,
