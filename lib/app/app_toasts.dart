@@ -44,6 +44,10 @@ abstract final class AppToastId {
 
   /// Persistent Fade duration storage recovery.
   static const fadeSettings = 'app_fadeSettings_error';
+
+  /// Persistent backing mix and click pan storage recovery (#1200).
+  static const backingMixSettings = 'app_backingMixSettings_error';
+  static const clickPanSettings = 'app_clickPanSettings_error';
 }
 
 final Map<String, ToastificationItem> _active = {};

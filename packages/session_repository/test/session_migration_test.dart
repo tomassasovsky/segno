@@ -292,8 +292,56 @@ void main() {
       });
     }
 
+    test('v13_reverse_576826cfa keeps the live backing setup and click pan '
+        '(schema 14, #1200)', () async {
+      const item = SessionBackingItem(
+        digest:
+            'sha256:0123456789abcdef0123456789abcdef'
+            '0123456789abcdef0123456789abcdef',
+        name: 'Evening lights.wav',
+      );
+      const live = SessionSettings(
+        backing: SessionBacking(
+          prepared: [item],
+          loaded: item,
+          endMode: BackingEnd.repeat,
+          level: 0.6,
+          pan: 0.2,
+          outputMask: 0x3,
+        ),
+        clickPan: -0.5,
+      );
+      final (:bundle, :conversion) = await repo().open(
+        copyFixture('v13_reverse_576826cfa'),
+        liveSettings: () => live,
+      );
+      expect(conversion!.fromVersion, 13);
+      expect(bundle.session.backing, live.backing);
+      expect(bundle.session.clickPan, -0.5);
+      expect(
+        conversion.notes,
+        containsAll([
+          'backing: taken from the live setting',
+          'clickPan: taken from the live setting',
+        ]),
+      );
+      // Its own values are untouched.
+      expect(bundle.session.tracks.map((t) => t.reversed), [
+        false,
+        true,
+        false,
+        false,
+      ]);
+      // Without a live player: an empty, silent backing and a centred click.
+      final (bundle: plain, conversion: _) = await repo().open(
+        copyFixture('v13_reverse_576826cfa'),
+      );
+      expect(plain.session.backing, const SessionBacking());
+      expect(plain.session.clickPan, 0);
+    });
+
     test('the current schema opens with no conversion', () async {
-      final dir = copyFixture('v13_reverse_576826cfa');
+      final dir = copyFixture('v14_backing_p5');
       final before = snapshotOf(dir);
       final (:bundle, :conversion) = await repo().open(dir);
       expect(conversion, isNull);
@@ -312,7 +360,7 @@ void main() {
 
     test('the current schema stays strict: a track without a direction is '
         'refused, not defaulted', () {
-      final manifest = manifestOf(copyFixture('v13_reverse_576826cfa'));
+      final manifest = manifestOf(copyFixture('v14_backing_p5'));
       ((manifest['tracks'] as List)[1] as Map).remove('reversed');
       expect(
         () => decodeSessionManifest(jsonEncode(manifest)),
@@ -412,7 +460,7 @@ void main() {
     }
 
     test('newer than this build', () async {
-      final dir = copyFixture('v13_reverse_576826cfa');
+      final dir = copyFixture('v14_backing_p5');
       rewrite(dir, (m) => m['version'] = Session.formatVersion + 1);
       await expectRefused(dir, isA<SessionUnsupportedVersion>());
     });

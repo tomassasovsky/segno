@@ -9,6 +9,7 @@ export 'fake_record_start_control.dart';
 export 'fake_record_timing_control.dart';
 export 'pump_app.dart';
 export 'screenshot_fonts.dart';
+export 'test_backing.dart';
 export 'test_fade_settings.dart';
 export 'test_mix_settings.dart';
 export 'toast_test_helpers.dart';

@@ -37,6 +37,19 @@ class BackingRepository {
     _cachedRate = _metering.snapshot().sampleRate;
   }
 
+  /// The repository over one engine object that both plays the voice and
+  /// reports its rate: the app's engine.
+  factory BackingRepository.forEngine(
+    AudioEngine engine, {
+    required AudioDecoder decoder,
+    required BackingAssetStore store,
+  }) => BackingRepository(
+    engine: engine,
+    metering: engine,
+    decoder: decoder,
+    store: store,
+  );
+
   final BackingControl _engine;
   final EngineMetering _metering;
   final AudioDecoder _decoder;
@@ -69,6 +82,10 @@ class BackingRepository {
   double _level = 1;
   double _pan = 0;
   int _output = 0;
+  double _clickPan = 0;
+
+  /// The managed store the player loads from.
+  BackingAssetStore get store => _store;
 
   /// The player now.
   BackingPlayerState get state => _state;
@@ -282,6 +299,12 @@ class BackingRepository {
     refresh();
   }
 
+  /// The click's balance (it sums where the backing does, plan D6).
+  void setClickPan(double pan) {
+    _clickPan = pan;
+    _engine.setClickPan(pan);
+  }
+
   /// Reads the engine's voice now: maps its tokens back to digests, replays
   /// the settings and reloads after an engine restart, and keeps polling
   /// while anything is playing or loading.
@@ -335,7 +358,8 @@ class BackingRepository {
       ..setBackingEnd(_end)
       ..setBackingLevel(_level)
       ..setBackingPan(_pan)
-      ..setBackingOutput(_output);
+      ..setBackingOutput(_output)
+      ..setClickPan(_clickPan);
     if (wasPlaying) _notices.add(BackingNotice.interfaceChanged);
     final kept = s.item >= 0 && _tokens.containsKey(s.item);
     _emit(_state.copyWith(transport: BackingTransport.stopped, position: 0));

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:backing_repository/backing_repository.dart'
+    show BackingEnd, BackingTransport;
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -11,6 +13,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
+import 'package:segno/backing/application/session_backing.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
@@ -29,6 +32,7 @@ import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
+import '../../helpers/backing_fixture.dart';
 import '../../helpers/fake_key_value_store.dart';
 
 class _MockSessionRepository extends Mock implements SessionRepository {}
@@ -2069,6 +2073,103 @@ void main() {
         await closing;
       },
     );
+  });
+
+  group('SessionCubit backing (#1200)', () {
+    late BackingFixture backing;
+    setUp(() async {
+      backing = BackingFixture();
+      await backing.start();
+      addTearDown(backing.dispose);
+    });
+
+    SessionSettingsCoordinator withBacking() => SessionSettingsCoordinator(
+      fade: fade,
+      looper: looper,
+      mix: mixSettings,
+      fx: fxPersistence,
+      owners: SettingsOwners([
+        _LengthOwner(looper),
+        ...fade.owners,
+        ...backing.settings.owners,
+      ]),
+      tempo: _TempoOwner(),
+      playback: _PlaybackOwner(looper),
+      record: _RecordOwner(looper),
+      timing: _TimingOwner(looper),
+      backing: SessionBackingPort(
+        player: backing.player,
+        settings: backing.settings,
+      ),
+    );
+
+    test('Open stops the backing and installs the session setup, loaded '
+        'again stopped at 0; capture reads it back', () async {
+      final a = await backing.asset('a.wav');
+      final b = await backing.asset('b.wav');
+      await backing.player.addToPrepared(a);
+      await backing.player.play();
+      await backing.advance(50);
+      final saved = SessionBacking(
+        prepared: [SessionBackingItem(digest: b.digest, name: 'b.wav')],
+        loaded: SessionBackingItem(digest: b.digest, name: 'b.wav'),
+        endMode: BackingEnd.repeat,
+        level: 0.4,
+        pan: 0.25,
+        outputMask: 0x3,
+      );
+      when(
+        () => repository.bundlePathOf(any()),
+      ).thenAnswer((_) async => '/b/X');
+      when(
+        () => repository.open(any(), liveSettings: any(named: 'liveSettings')),
+      ).thenAnswer(
+        _opened(
+          (_) async => (
+            session: Session(
+              sampleRate: 48000,
+              channels: 1,
+              baseLengthFrames: 0,
+              tracks: const [],
+              backing: saved,
+              clickPan: -0.5,
+            ),
+            laneStems: <(int, int), List<Float32List>>{},
+          ),
+        ),
+      );
+      when(() => looper.applySession(any())).thenAnswer((_) async {});
+      when(repository.listSessions).thenAnswer((_) async => const []);
+      final coordinator = withBacking();
+      final cubit = SessionCubit(
+        captureSettings: coordinator,
+        fxPersistence: fxPersistence,
+        settings: settings,
+        repository: repository,
+        looper: looper,
+        performance: performance,
+        mixSettings: mixSettings,
+        mixPersistence: mixPersistence,
+        guards: GuardRegistry(),
+      );
+      addTearDown(cubit.close);
+
+      await cubit.open('X');
+
+      expect(cubit.state.status, isNot(SessionStatus.failure));
+      final state = backing.player.state;
+      expect(state.prepared.map((i) => i.name), ['b.wav']);
+      expect(state.loaded?.digest, b.digest);
+      expect(backing.repository.state.loaded, b.digest);
+      expect(backing.repository.state.transport, BackingTransport.stopped);
+      expect(backing.repository.state.position, 0);
+      expect(backing.settings.mix.level, 0.4);
+      expect(backing.settings.clickPan, -0.5);
+      expect(backing.engine.backingState().endMode, BackingEnd.repeat);
+      final current = coordinator.current();
+      expect(current.backing, saved);
+      expect(current.clickPan, -0.5);
+    });
   });
 
   group('SessionCubit pedal remap (part 6b)', () {
