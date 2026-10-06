@@ -2942,6 +2942,19 @@ int32_t le_engine_set_follow_tempo(le_engine* e, int32_t channel,
   return le_request_admit(e, &cmd, &cmd.follow.slot, request);
 }
 
+/* Pitch across a retime (#1179 Part 4a-ii): see le_engine_set_pitch_mode's
+ * contract. A setting, admitted whenever configured, like Follow tempo. */
+int32_t le_engine_set_pitch_mode(le_engine* e, int32_t channel, int32_t value,
+                                 uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request || channel < -1 || channel >= e->track_count ||
+      value < (channel < 0 ? 0 : -1) || value > 1) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  le_command cmd = {.code = LE_CMD_SET_PITCH_MODE,
+                    .follow = {channel, 0, value}};
+  return le_request_admit(e, &cmd, &cmd.follow.slot, request);
+}
+
 int32_t le_engine_set_transpose_bypass(le_engine* e, int32_t on,
                                        uint64_t* request) {
   if (request) *request = 0;

@@ -535,8 +535,9 @@ typedef enum le_command_code {
   LE_CMD_TRANSPOSE_BYPASS = 87, /* checked internal Transpose bypass */
   /* 88-119 are held by other plans (the central numbering ledger). */
   LE_CMD_SET_FOLLOW_TEMPO = 120, /* checked internal Follow tempo setting
-                                  * (#1179 Part 4a); 121-123 are held for
-                                  * #1179's later parts */
+                                  * (#1179 Part 4a) */
+  LE_CMD_SET_PITCH_MODE = 121, /* checked internal Pitch setting (#1179 Part
+                                * 4a-ii); 122-123 are held for #1179 */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -978,6 +979,14 @@ typedef struct le_track_snapshot {
    * inherits le_snapshot.follow_tempo, 0 keeps its recorded speed, 1 follows
    * the song tempo). */
   int32_t follow_override;
+  /* Trailing (#1179 Part 4a-ii): this track's Pitch override (-1 inherits
+   * le_snapshot.pitch_follows_speed, 0 Unchanged, 1 Follows speed), and the
+   * pitch the tempo retime puts on what it sounds now, in cents: 0 at its
+   * own span or once a stretch render plays (within the 0.5 % tolerance,
+   * about 9 cents), the varispeed's shift while that render is pending or
+   * with Follows speed. Speed and Transpose are not included. */
+  int32_t pitch_override;
+  int32_t pitch_effective_cents;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1405,6 +1414,9 @@ typedef struct le_snapshot {
   float recorded_tempo_bpm;
   int32_t follow_tempo;
   int32_t tempo_follow;
+  /* Trailing (#1179 Part 4a-ii): the Pitch default every track inherits
+   * (0 Unchanged, the default; 1 Follows speed). */
+  int32_t pitch_follows_speed;
 } le_snapshot;
 
 /* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part
@@ -3446,6 +3458,20 @@ LE_EXPORT int32_t le_engine_get_transpose_cache(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_follow_tempo(le_engine* engine,
                                             int32_t channel, int32_t value,
                                             uint64_t* request);
+/* Pitch across a retime (#1179 Part 4a-ii). A following track that plays
+ * over another span than its take's either keeps its pitch (0 Unchanged,
+ * the default): the cache worker renders the take time-stretched to the
+ * span (with its Transpose pitch, one render) and the track crossfades to
+ * it at the same position; until it lands the take plays through the
+ * varispeed head, timing exact, its pitch off by the tempo ratio and
+ * reported in le_track_snapshot.pitch_effective_cents. A render within
+ * 0.5 % of the span serves it (the head absorbs the rest), so a small tempo
+ * move does not re-render. Or its pitch follows the ratio (1 Follows
+ * speed), with no render. [channel] -1 sets the default ([value] 0/1); a
+ * track sets its override (-1 inherits). LE_ERR_INVALID for a bad channel
+ * or value. */
+LE_EXPORT int32_t le_engine_set_pitch_mode(le_engine* engine, int32_t channel,
+                                          int32_t value, uint64_t* request);
 /* Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
  * callback publication, INVALID for an absent/consumed/retired id; otherwise
  * OK and fills result. */

@@ -9183,7 +9183,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 10
+#define LE_TEST_EVENTS_VERSION 11
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -33896,6 +33896,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_speed.h"
 #include "test_engine_transpose.h"
 #include "test_engine_tempo_follow.h"
+#include "test_engine_pitch_keep.h"
 #include "test_engine_peel.h"
 
 int main(void) {
@@ -33911,6 +33912,8 @@ int main(void) {
   if (getenv("SEGNO_TRANSPOSE_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_tempo_follow_tests();
   if (getenv("SEGNO_FOLLOW_TESTS_ONLY")) return g_failures ? 1 : 0;
+  run_pitch_keep_tests();
+  if (getenv("SEGNO_PITCH_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_reopen_same_rate_retains_material();
   test_reopen_drops_partial_first_take();
   test_reopen_reverts_partial_overdub_pass();

@@ -207,7 +207,13 @@ typedef enum le_perf_log_code {
   LE_PLOG_RETIME = 330, /* retime_log: a song-tempo change that retimed the
                          * shared clock with content (#1179 Part 4a): the new
                          * length and the position it continues from. */
-  /* 331 is held by #1179 for its later parts. */
+  LE_PLOG_SOURCE_LEN = 331, /* lanei {channel, 0, out_len}: the length of the
+                             * render a track sounds (#1179 Part 4a-ii,
+                             * events.log version 11), 0 for the take itself
+                             * or a render of its own length; logged just
+                             * before every 328, so a stretch render (Pitch
+                             * Unchanged across a retime) replays at its
+                             * length. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's
@@ -281,6 +287,7 @@ static inline int le_log_extract(const le_command* command, le_log_command* out)
       command->code == LE_CMD_TRANSPOSE ||
       command->code == LE_CMD_TRANSPOSE_BYPASS ||
       command->code == LE_CMD_SET_FOLLOW_TEMPO ||
+      command->code == LE_CMD_SET_PITCH_MODE ||
       command->code == LE_CMD_SET_MIX ||
       command->code == LE_CMD_RECORD_IMAGE ||
       command->code == LE_CMD_SET_LENGTH_PRESETS) return 0;
