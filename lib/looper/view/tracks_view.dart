@@ -175,11 +175,15 @@ class _TracksViewState extends State<TracksView> {
             // different result, which must not reopen the dialog — and the
             // show function refuses to double-open while it is already up).
             // Percent ticks are Rendering-to-Rendering and do not re-fire.
+            // Every refused arm fires too: each one is a new idle state
+            // (PerformanceRecorderIdle.refusal), so each press gets a toast.
             listenWhen: (previous, current) =>
                 (current is PerformanceRecorderRendering &&
                     previous is! PerformanceRecorderRendering) ||
                 (current is PerformanceRecorderCompleted &&
-                    previous is! PerformanceRecorderCompleted),
+                    previous is! PerformanceRecorderCompleted) ||
+                (current is PerformanceRecorderIdle &&
+                    (current.lowDiskBlocked || current.refusedBy != null)),
             listener: onPerformanceRecorderState,
           ),
           BlocListener<ControlCubit, ControlState>(

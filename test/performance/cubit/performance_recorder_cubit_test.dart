@@ -1296,6 +1296,27 @@ void main() {
       },
     );
 
+    test('each refused press emits its own state, so each gets an answer '
+        '(#1198)', () async {
+      final cubit = build(
+        freeSpaceBytes: (_) async =>
+            PerformanceRecorderCubit.lowDiskThresholdBytes - 1,
+      );
+      addTearDown(cubit.close);
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
+      addTearDown(sub.cancel);
+
+      await cubit.toggleArm();
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      expect(states, const [
+        PerformanceRecorderIdle(lowDiskBlocked: true, refusal: 1),
+        PerformanceRecorderIdle(lowDiskBlocked: true, refusal: 2),
+      ]);
+    });
+
     test(
       'defaults to the repository, which asks the engine — never a subprocess '
       '(#806)',
@@ -1679,20 +1700,31 @@ void main() {
         purpose: 'opening a session',
       );
 
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
+      addTearDown(sub.cancel);
+
       await cubit.toggleArm();
       await pumpEventQueue();
-      expect(
-        cubit.state,
-        const PerformanceRecorderIdle(refusedBy: GuardKind.sessionApply),
-      );
+      expect(states, const [
+        PerformanceRecorderIdle(
+          refusedBy: GuardKind.sessionApply,
+          refusal: 1,
+        ),
+      ]);
       expect(engine.perfArmCalls, 0);
 
       // The pedal reaches the repository directly, with no cubit in front.
+      // Its refusal is a second, distinct state: the toast answers it too.
       await guarded.arm();
       await pumpEventQueue();
+      expect(states, hasLength(2));
       expect(
-        cubit.state,
-        const PerformanceRecorderIdle(refusedBy: GuardKind.sessionApply),
+        states.last,
+        const PerformanceRecorderIdle(
+          refusedBy: GuardKind.sessionApply,
+          refusal: 2,
+        ),
       );
       expect(engine.perfArmCalls, 0);
 
