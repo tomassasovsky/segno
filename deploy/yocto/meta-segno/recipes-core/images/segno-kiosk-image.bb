@@ -48,10 +48,12 @@ IMAGE_INSTALL:remove = "psplash psplash-raspberrypi"
 BAD_RECOMMENDATIONS += "psplash psplash-raspberrypi"
 PACKAGE_EXCLUDE += "psplash psplash-raspberrypi"
 # Bluetooth was retired (#1199): no BlueZ, so nothing powers the controller,
-# advertises or reconnects a paired device. Excluded rather than only left out,
-# so a package that hard-depends on it fails the build instead of quietly
-# pulling it back. The pairings an earlier image kept stay on /data/bluetooth,
-# where a fallback to the previous slot finds them again.
+# advertises or reconnects a paired device. kas-segno-common.yml removes the
+# `bluetooth` distro feature, which is what keeps packagegroup-base from
+# pulling bluez5 in; this exclusion is the guard that fails the build if any
+# package hard-depends on it again. The pairings an earlier image kept stay
+# on /data/bluetooth, where a fallback to the previous slot finds them again,
+# until the next update overwrites that slot.
 PACKAGE_EXCLUDE += "bluez5"
 # Audio: DIRECT ALSA, no PipeWire/JACK/Pulse. This is a single-app appliance that
 # owns the sound card, so the engine drives ALSA directly (SEGNO_ALSA_ONLY, set by
