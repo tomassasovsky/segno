@@ -6198,6 +6198,82 @@ class SegnoEngineBindings {
       >('le_engine_render_cancel');
   late final _le_engine_render_cancel = _le_engine_render_cancelPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Admits a bounce. Returns LE_OK with *request (read the callback outcome
+  /// with le_engine_read_request_result), LE_ERR_NOT_READY (the render is not a
+  /// finished memory job, or the destination is busy: capturing, armed, a
+  /// pending command, a layer in flight, a previous bounce not yet filed, or
+  /// a full undo stack), LE_ERR_TRACKS_CHANGED (a source changed after the
+  /// render froze it), LE_ERR_MODE_MISMATCH (the length does not fit the loop
+  /// mode), LE_ERR_CAPACITY (no slot or buffer), LE_ERR_UNSUPPORTED (Clear
+  /// sources) or LE_ERR_INVALID. The history entry is filed when the outcome is
+  /// collected (the next le_engine_drain_events after the callback applied).
+  int le_engine_bounce(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_bounce_request> request,
+    ffi.Pointer<ffi.Uint64> receipt,
+  ) {
+    return _le_engine_bounce(
+      engine,
+      request,
+      receipt,
+    );
+  }
+
+  late final _le_engine_bouncePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_bounce_request>,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_bounce');
+  late final _le_engine_bounce = _le_engine_bouncePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_bounce_request>,
+          ffi.Pointer<ffi.Uint64>,
+        )
+      >();
+
+  /// Undoes or redoes a whole bounce in one callback drain. Plain le_engine_undo
+  /// and le_engine_redo refuse a BOUNCE entry on top (LE_ERR_INVALID), so no path
+  /// restores part of one. Returns LE_OK with *receipt, LE_ERR_INVALID (no
+  /// bounce on top), LE_ERR_NOT_READY (busy, as le_engine_bounce),
+  /// LE_ERR_MODE_MISMATCH or a ring refusal.
+  int le_engine_bounce_recover(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_bounce_recover_request> request,
+    ffi.Pointer<ffi.Uint64> receipt,
+  ) {
+    return _le_engine_bounce_recover(
+      engine,
+      request,
+      receipt,
+    );
+  }
+
+  late final _le_engine_bounce_recoverPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_bounce_recover_request>,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_bounce_recover');
+  late final _le_engine_bounce_recover = _le_engine_bounce_recoverPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_bounce_recover_request>,
+          ffi.Pointer<ffi.Uint64>,
+        )
+      >();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -6704,7 +6780,16 @@ enum le_command_code {
 
   /// render recipe (#1202): the callback records
   /// every source's read law; never raw-posted
-  LE_CMD_RENDER_FREEZE(112);
+  LE_CMD_RENDER_FREEZE(112),
+
+  /// Bounce (#1202): installs a rendered result on
+  /// the destination in one drain; checked,
+  /// never raw-posted
+  LE_CMD_BOUNCE(113),
+
+  /// Bounce Undo/Redo (#1202): reinstalls the
+  /// other side of a bounce; never raw-posted
+  LE_CMD_BOUNCE_RECOVER(114);
 
   final int value;
   const le_command_code(this.value);
@@ -6793,6 +6878,8 @@ enum le_command_code {
     82 => LE_CMD_RESET_TRANSFORMS,
     83 => LE_CMD_REVERSE,
     112 => LE_CMD_RENDER_FREEZE,
+    113 => LE_CMD_BOUNCE,
+    114 => LE_CMD_BOUNCE_RECOVER,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -8220,6 +8307,65 @@ final class le_render_plan extends ffi.Struct {
   /// sources heard through a not-yet-ready transform
   @ffi.Uint32()
   external int pending_mask;
+}
+
+/// ---- Bounce (#1202, Part 4a: Keep sources) ----
+///
+/// Installs a finished memory render (le_engine_render_begin with
+/// LE_RENDER_TARGET_MEMORY) on one destination track in ONE callback drain:
+/// the image as a stereo pair (lanes 0 and 1, image pans -1/+1, the other
+/// lanes silent), its length and clock, STOPPED, and the destination's
+/// processing reset — unity gain, unity lane levels, centred lane pans, mutes
+/// off, Fade and direction reset, and the chains given here (empty when NULL).
+/// `topology` (optional) is the destination's lane count, routing and mix,
+/// applied first through the ordinary mix path; the reset values then win.
+/// The destination's previous state becomes one LE_HIST_BOUNCE history entry;
+/// le_engine_bounce_recover undoes or redoes it whole.
+final class le_bounce_request extends ffi.Struct {
+  /// a DONE memory render
+  @ffi.Uint32()
+  external int job;
+
+  /// the track that receives the result
+  @ffi.Int32()
+  external int destination;
+
+  /// must be 1 until Clear sources lands (Part 4b)
+  @ffi.Int32()
+  external int keep_sources;
+
+  /// NULL: keep lane count and routing
+  external ffi.Pointer<le_mix_settings> topology;
+
+  /// lane_fx_count recipes; NULL: empty chains
+  external ffi.Pointer<le_fx_recipe> lane_fx;
+
+  @ffi.Int32()
+  external int lane_fx_count;
+
+  /// NULL: an empty track chain
+  external ffi.Pointer<le_fx_recipe> track_fx;
+}
+
+final class le_bounce_recover_request extends ffi.Struct {
+  @ffi.Int32()
+  external int destination;
+
+  /// 0: undo the bounce on top of the undo stack;
+  /// 1: redo the one on top of the redo stack
+  @ffi.Int32()
+  external int redo;
+
+  /// the side being restored
+  external ffi.Pointer<le_mix_settings> topology;
+
+  /// its chains; NULL: empty
+  external ffi.Pointer<le_fx_recipe> lane_fx;
+
+  @ffi.Int32()
+  external int lane_fx_count;
+
+  external ffi.Pointer<le_fx_recipe> track_fx;
 }
 
 const int LE_MAX_CHANNELS = 32;

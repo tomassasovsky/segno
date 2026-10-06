@@ -29,6 +29,7 @@
 
 #include "audio_ring.h"  /* le_audio_ring_alloc/release (capture rings) */
 #include "engine_cache.h" /* le_cache_tick (wet-cache scheduler heartbeat) */
+#include "engine_render.h" /* le_render_take (Bounce, #1202) */
 #include "engine_restore.h" /* le_restore_tick + le_restore_commit_layer (#697) */
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
@@ -149,6 +150,8 @@ static int track_select_slot(le_track* t, int undo_count, int redo_count,
   const int live = load_i32(&t->lanes[0].a_live);
   for (int i = 0; i < LE_POOL_SLOTS; ++i) {
     if (i == live) continue;
+    /* A Bounce in flight (#1202) holds two slots no stack names yet. */
+    if (t->bounce_pin[0] == i + 1 || t->bounce_pin[1] == i + 1) continue;
     int used = 0;
     for (int k = 0; k < undo_count && !used; ++k) {
       if (t->undo_stack[k].slot == i) used = 1;
@@ -635,6 +638,11 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
   le_track* t = &engine->tracks[channel];
   while (t->queued_undo > 0) {
     t->queued_undo--;
+    /* A Bounce is undone whole, by le_engine_bounce_recover only (#1202). */
+    if (t->undo_count > 0 &&
+        t->undo_stack[t->undo_count - 1].kind == LE_HIST_BOUNCE) {
+      break;
+    }
     if (t->undo_count > 0) {
       le_undo_swap(engine, t);
       continue;
@@ -925,6 +933,7 @@ void le_engine_drain_events(le_engine* engine) {
   while (le_ring_pop(&engine->evt_ring, &evt)) {
     le_handle_event(engine, &evt, 1);
   }
+  le_bounce_collect(engine);
   /* Queued undo taps apply once their track's flight flag clears. The audio
    * thread pushes the final retire event BEFORE clearing the flag (the push is
    * the release), so after an acquire-load reads 0 one more pop pass is
@@ -1620,6 +1629,7 @@ static int32_t le_record_preflight(le_engine* e, int channel,
   if (channel < 0 || channel >= e->track_count ||
       (image && !le_image_valid(e, channel, image))) return LE_ERR_INVALID;
   le_engine_drain_events(e);
+  if (e->tracks[channel].bounce_inflight) return LE_ERR_NOT_READY; /* #1202 */
   const le_record_admission kind = le_classify_record(e, channel);
   if (kind == LE_RECORD_REFUSE) return LE_ERR_INVALID;
   if (kind == LE_RECORD_ACQUIRE && e->record_start_command >
@@ -2138,6 +2148,7 @@ static int32_t le_clear_track(le_engine* engine, int32_t channel,
   }
   le_engine_drain_events(engine);
   le_track* t = &engine->tracks[channel];
+  if (t->bounce_inflight) return LE_ERR_NOT_READY; /* #1202 */
   /* An undoable nonempty Clear must never silently become destructive when
    * history cannot hold its point. Layer slots plus the pinned live slot bound
    * ordinary reachable history below this limit, including pending retirements. */
@@ -2433,7 +2444,9 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   le_engine_drain_events(engine);
   le_track* t = &engine->tracks[channel];
   if (load_i32(&t->a_pending_launch)) return le_engine_cancel_arm(engine, channel);
-  if (t->clear_restore_pending || t->cancel_pending) return LE_ERR_NOT_READY;
+  if (t->clear_restore_pending || t->cancel_pending || t->bounce_inflight) {
+    return LE_ERR_NOT_READY;
+  }
   const int32_t st = le_effective_state(t);
   if (st == LE_TRACK_OVERDUBBING) {
     /* Accepted design (slice 2): undo mid-pass removes the pass. Punch out
@@ -2489,6 +2502,11 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
    * layer. Checked before the layer path: the layers beneath the mark are the
    * erased take's, and they only become peelable again once it is restored. */
   if (le_history_is_cleared(t)) return le_restore_clear(engine, channel);
+  /* A Bounce is undone whole, by le_engine_bounce_recover only (#1202). */
+  if (t->undo_count > 0 &&
+      t->undo_stack[t->undo_count - 1].kind == LE_HIST_BOUNCE) {
+    return LE_ERR_INVALID;
+  }
   if (t->undo_count > 0) {
     le_undo_swap(engine, t);
     le_plog_push_ctrl(engine,
@@ -2555,7 +2573,9 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   le_engine_drain_events(engine);
   le_track* t = &engine->tracks[channel];
-  if (t->clear_restore_pending || t->cancel_pending) return LE_ERR_NOT_READY;
+  if (t->clear_restore_pending || t->cancel_pending || t->bounce_inflight) {
+    return LE_ERR_NOT_READY;
+  }
   const int32_t st = le_effective_state(t);
   if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) {
     return LE_ERR_INVALID;
@@ -2564,6 +2584,10 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
     return LE_ERR_INVALID; /* a fresh dub is in flight: nothing to redo */
   }
   if (t->redo_count == 0) return LE_ERR_INVALID;
+  /* A Bounce is redone whole, by le_engine_bounce_recover only (#1202). */
+  if (t->redo_stack[t->redo_count - 1].kind == LE_HIST_BOUNCE) {
+    return LE_ERR_INVALID;
+  }
   /* Redo of a restored clear: re-apply the clear the undo took back. It rides
    * the same undoable path, so the restore point returns to the undo stack and
    * the pair stays symmetric under repeated undo/redo. */
@@ -2665,7 +2689,7 @@ int32_t le_engine_peel(le_engine* engine, int32_t channel) {
    * any pending state command, cancel or Clear report is refused untouched,
    * and the host shows the refusal as an unlit LED. */
   if (load_i32(&t->a_pending_launch) || t->clear_restore_pending ||
-      t->cancel_pending) {
+      t->cancel_pending || t->bounce_inflight) {
     return LE_ERR_NOT_READY;
   }
   const int32_t st = le_effective_state(t);
@@ -3061,13 +3085,24 @@ int32_t le_engine_set_sync_tempo(le_engine* engine, int32_t on) {
  *
  * Returns the channel, or -1 when nothing is recorded; *out_len carries its
  * length and is 0 in that case. */
+static int32_t le_ctl_mode_base_excluding(le_engine* engine, int32_t mode,
+                                          uint32_t exclude, int32_t* out_len);
 static int32_t le_ctl_mode_base(le_engine* engine, int32_t mode,
                                 int32_t* out_len) {
+  return le_ctl_mode_base_excluding(engine, mode, 0, out_len);
+}
+
+/* The same pick over every track but those in `exclude` (#1202: a Bounce
+ * destination is measured against the rig it joins, not the take it
+ * replaces). */
+static int32_t le_ctl_mode_base_excluding(le_engine* engine, int32_t mode,
+                                          uint32_t exclude, int32_t* out_len) {
   *out_len = 0;
   if (mode == LE_LOOPER_MODE_MULTI) {
     int32_t best = -1;
     int32_t best_len = 0;
     for (int32_t c = 0; c < engine->track_count; ++c) {
+      if (exclude & (1u << c)) continue;
       const int32_t len = le_effective_len(&engine->tracks[c]);
       if (len <= 0) continue;
       if (best < 0 || len < best_len) {
@@ -3079,7 +3114,8 @@ static int32_t le_ctl_mode_base(le_engine* engine, int32_t mode,
     return best;
   }
   const int32_t crowned = load_i32(&engine->a_primary_track);
-  if (crowned >= 0 && crowned < engine->track_count) {
+  if (crowned >= 0 && crowned < engine->track_count &&
+      !(exclude & (1u << crowned))) {
     const int32_t len = le_effective_len(&engine->tracks[crowned]);
     if (len > 0) {
       *out_len = len;
@@ -3087,6 +3123,7 @@ static int32_t le_ctl_mode_base(le_engine* engine, int32_t mode,
     }
   }
   for (int32_t c = 0; c < engine->track_count; ++c) {
+    if (exclude & (1u << c)) continue;
     const int32_t len = le_effective_len(&engine->tracks[c]);
     if (len > 0) {
       *out_len = len;
@@ -4851,4 +4888,310 @@ int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
   const size_t popped = le_audio_ring_pop(&engine->perf.monitor_ring[input],
                                           out, (size_t)max_frames * 2);
   return (int32_t)(popped / 2);
+}
+
+/* ---- Bounce (#1202, Part 4a) ---- */
+
+/* The busy rule every Bounce admission shares: nothing may be capturing,
+ * armed, launching, draining a layer, holding shadows, or waiting on another
+ * state command, clear report or bounce on [t]. A content track must also be
+ * readable by the callback's own end-of-block verdict (no seam or punch
+ * tail), so the install can never meet a writer. */
+static int le_bounce_busy(le_engine* engine, int32_t channel) {
+  le_track* t = &engine->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) return 1;
+  if (t->bounce_inflight || t->clear_restore_pending || t->cancel_pending ||
+      t->queued_undo || t->outstanding_count > 0 || engine->armed[channel] ||
+      load_i32(&t->a_pending) || load_i32(&t->a_pending_launch) ||
+      atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire) ||
+      t->state_cmds_posted >
+          atomic_load_explicit(&t->a_state_acks, memory_order_acquire) ||
+      engine->lane_growth_command >
+          atomic_load_explicit(&engine->a_commands_published,
+                               memory_order_acquire)) {
+    return 1;
+  }
+  return st != LE_TRACK_EMPTY && !le_cache_source_ready(engine, channel);
+}
+
+/* The lane count after `topology` applies. */
+static int32_t le_bounce_lanes_after(le_engine* engine, int32_t channel,
+                                     const le_mix_settings* topology) {
+  if (topology != NULL && (topology->lane_count_mask & (1u << channel))) {
+    return topology->lane_count[channel];
+  }
+  return le_lanes_active(&engine->tracks[channel]);
+}
+
+/* Validates and prepares the optional topology and the two chain bundles
+ * into [b]; LE_OK or the refusal, with nothing left prepared on failure. */
+static int32_t le_bounce_prepare(le_engine* engine, le_bounce_bundle* b,
+                                 const le_mix_settings* topology,
+                                 const le_fx_recipe* lane_fx,
+                                 int32_t lane_fx_count,
+                                 const le_fx_recipe* track_fx,
+                                 int32_t lanes_after) {
+  if (topology != NULL) {
+    if (!le_mix_valid(engine, topology)) return LE_ERR_INVALID;
+    const int32_t prepared = le_prepare_routing(engine, topology);
+    if (prepared != LE_OK) return prepared;
+    b->mix = *topology;
+    b->has_mix = 1;
+  }
+  b->lane_fx = le_fx_prepare_chains(engine, LE_FX_OWNER_LANE, b->channel,
+                                    lanes_after, lane_fx, lane_fx_count);
+  b->track_fx = le_fx_prepare_chains(engine, LE_FX_OWNER_TRACK, b->channel, 1,
+                                     track_fx, track_fx != NULL ? 1 : 0);
+  if (b->lane_fx == NULL || b->track_fx == NULL) {
+    le_fx_recipe_abandon(b->lane_fx);
+    le_fx_recipe_abandon(b->track_fx);
+    b->lane_fx = b->track_fx = NULL;
+    return LE_ERR_INVALID;
+  }
+  return LE_OK;
+}
+
+/* Posts [b] through the receipt table and, on acceptance, takes the track
+ * into its in-flight window. */
+static int32_t le_bounce_post(le_engine* engine, le_bounce_bundle* b,
+                              int32_t code, int32_t pin_a, int32_t pin_b,
+                              uint64_t* receipt) {
+  le_track* t = &engine->tracks[b->channel];
+  le_command cmd = {.code = code};
+  cmd.bounce.bundle = b;
+  const int32_t rc = le_request_admit(engine, &cmd, &cmd.bounce.slot, receipt);
+  if (rc != LE_OK) {
+    le_fx_recipe_abandon(b->lane_fx);
+    le_fx_recipe_abandon(b->track_fx);
+    free(b);
+    return rc;
+  }
+  le_fx_recipe_admitted(engine, b->lane_fx, 0);
+  le_fx_recipe_admitted(engine, b->track_fx, 0);
+  if (b->has_mix && b->mix.lane_count_mask) {
+    engine->lane_growth_command = engine->commands_posted;
+  }
+  t->bounce_inflight = b;
+  t->bounce_pin[0] = pin_a >= 0 ? pin_a + 1 : 0;
+  t->bounce_pin[1] = pin_b >= 0 ? pin_b + 1 : 0;
+  if (b->target.state == LE_TRACK_EMPTY) {
+    /* The Clear body runs on the callback: mirror its generation bump so a
+     * retire event from before it reads as stale. */
+    t->dub_generation++;
+    le_mark_empty_cmd(engine, t);
+  } else {
+    le_mark_state_cmd(t, b->target.state);
+    t->pending_len = b->target.len;
+    t->pending_master_len = b->reclock_to > 0
+                                ? b->reclock_to
+                                : le_effective_master_len(engine, t);
+  }
+  return LE_OK;
+}
+
+/* Files every collected Bounce outcome (control thread, each drain): the
+ * callback's `prev` becomes the history entry on the side the motion leaves.
+ * A refused install files nothing and releases its pins. */
+void le_bounce_collect(le_engine* engine) {
+  if (engine == NULL) return;
+  for (int32_t ch = 0; ch < engine->track_count; ++ch) {
+    le_track* t = &engine->tracks[ch];
+    le_bounce_bundle* b = t->bounce_inflight;
+    if (b == NULL) continue;
+    const int32_t result =
+        atomic_load_explicit(&b->a_result, memory_order_acquire);
+    if (result == 1) continue;
+    if (result == LE_OK) {
+      le_hist_entry prev = b->prev;
+      prev.kind = LE_HIST_BOUNCE;
+      prev.group_id = b->target.group_id;
+      if (b->op == LE_BOUNCE_UNDO) {
+        t->undo_count--;
+        (void)le_redo_push(t, prev);
+      } else {
+        if (b->op == LE_BOUNCE_REDO) {
+          t->redo_count--;
+        } else {
+          le_clear_redo(t); /* a new audio edit retires the Redo branch */
+        }
+        t->undo_stack[t->undo_count++] = prev;
+      }
+      le_publish_undo_depth(t);
+      store_i32(&t->a_redo_depth, t->redo_count);
+    }
+    t->bounce_inflight = NULL;
+    t->bounce_pin[0] = t->bounce_pin[1] = 0;
+    free(b);
+  }
+}
+
+void le_bounce_abandon_all(le_engine* engine) {
+  if (engine == NULL) return;
+  for (int32_t ch = 0; ch < LE_MAX_TRACKS; ++ch) {
+    le_track* t = &engine->tracks[ch];
+    /* Called with the audio thread stopped: a bundle still pending never
+     * applied and never will (the ring is reset or quiesced). */
+    if (t->bounce_inflight != NULL &&
+        atomic_load_explicit(&t->bounce_inflight->a_result,
+                             memory_order_acquire) != 1) {
+      le_bounce_collect(engine);
+      continue;
+    }
+    free(t->bounce_inflight);
+    t->bounce_inflight = NULL;
+    t->bounce_pin[0] = t->bounce_pin[1] = 0;
+  }
+}
+
+int32_t le_engine_bounce(le_engine* engine, const le_bounce_request* request,
+                         uint64_t* receipt) {
+  if (receipt) *receipt = 0;
+  if (engine == NULL || request == NULL || receipt == NULL) {
+    return LE_ERR_INVALID;
+  }
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  const int32_t ch = request->destination;
+  if (ch < 0 || ch >= engine->track_count) return LE_ERR_INVALID;
+  if (!request->keep_sources) return LE_ERR_UNSUPPORTED; /* Part 4b */
+  le_engine_drain_events(engine);
+  le_track* t = &engine->tracks[ch];
+  const float* pcm = NULL;
+  int32_t len = 0;
+  uint64_t i_ref = 0;
+  const int32_t taken = le_render_take(engine, request->job, &pcm, &len, &i_ref);
+  if (taken != LE_OK) return taken;
+  if (len <= 0 || len > engine->max_loop_frames) return LE_ERR_CAPACITY;
+  if (le_bounce_busy(engine, ch)) return LE_ERR_NOT_READY;
+  if (t->undo_count >= LE_POOL_SLOTS) return LE_ERR_NOT_READY;
+
+  /* Mode fit against the rig the destination joins. */
+  const int32_t mode = load_i32(&engine->a_looper_mode);
+  int32_t reclock_to = 0;
+  if (mode != LE_LOOPER_MODE_FREE && mode != LE_LOOPER_MODE_SONG) {
+    int32_t base = 0;
+    const int32_t base_ch =
+        le_ctl_mode_base_excluding(engine, mode, 1u << ch, &base);
+    if (base_ch >= 0) {
+      if (!le_mode_span_fits(mode, base, len)) return LE_ERR_MODE_MISMATCH;
+    } else {
+      const int32_t master = le_effective_master_len(engine, t);
+      if (master > 0 && !le_mode_span_fits(mode, master, len)) {
+        reclock_to = len; /* the sole content takes the master with it */
+      }
+    }
+  }
+
+  const int32_t lanes_after =
+      le_bounce_lanes_after(engine, ch, request->topology);
+  if (lanes_after < 2 || lanes_after > LE_MAX_LANES) return LE_ERR_INVALID;
+  le_bounce_bundle* b = (le_bounce_bundle*)calloc(1, sizeof(*b));
+  if (b == NULL) return LE_ERR_CAPACITY;
+  b->channel = ch;
+  b->op = LE_BOUNCE_APPLY;
+  atomic_store_explicit(&b->a_result, 1, memory_order_relaxed);
+  int32_t rc = le_bounce_prepare(engine, b, request->topology,
+                                 request->lane_fx, request->lane_fx_count,
+                                 request->track_fx, lanes_after);
+  if (rc != LE_OK) {
+    free(b);
+    return rc;
+  }
+  /* The incoming image: one slot, the pair on lanes 0 and 1, silence on the
+   * others (lanes share slot indices in lockstep). */
+  const int32_t slot = track_acquire_slot(t);
+  const int32_t want = le_layer_slot_frames(engine, len);
+  rc = slot < 0 ? LE_ERR_CAPACITY : LE_OK;
+  for (int32_t l = 0; rc == LE_OK && l < lanes_after; ++l) {
+    le_lane* ln = &t->lanes[l];
+    if (!le_lane_ensure_slot(ln, slot, want)) {
+      rc = LE_ERR_CAPACITY;
+      break;
+    }
+    float* dst = ln->pool[slot];
+    if (l < 2) {
+      for (int32_t f = 0; f < len; ++f) dst[f] = pcm[2 * f + l];
+    } else {
+      memset(dst, 0, (size_t)len * sizeof(float));
+    }
+  }
+  if (rc != LE_OK) {
+    le_fx_recipe_abandon(b->lane_fx);
+    le_fx_recipe_abandon(b->track_fx);
+    free(b);
+    return rc;
+  }
+  if (engine->bounce_next_group == UINT32_MAX) engine->bounce_next_group = 0;
+  le_hist_entry g = {LE_HIST_BOUNCE, slot};
+  g.len = len;
+  g.state = LE_TRACK_STOPPED; /* Keep sources: the destination waits */
+  g.fade_amount = 1.0f;
+  g.start_iter = i_ref;
+  g.group_id = ++engine->bounce_next_group;
+  b->target = g;
+  b->reclock_to = reclock_to;
+  /* Staged before the push (#1143): the callback names this image at the
+   * first frame it mixes it. */
+  (void)le_stage_source_image(engine, ch, slot, len);
+  return le_bounce_post(engine, b, LE_CMD_BOUNCE, slot,
+                        load_i32(&t->lanes[0].a_live), receipt);
+}
+
+int32_t le_engine_bounce_recover(le_engine* engine,
+                                 const le_bounce_recover_request* request,
+                                 uint64_t* receipt) {
+  if (receipt) *receipt = 0;
+  if (engine == NULL || request == NULL || receipt == NULL) {
+    return LE_ERR_INVALID;
+  }
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  const int32_t ch = request->destination;
+  if (ch < 0 || ch >= engine->track_count) return LE_ERR_INVALID;
+  le_engine_drain_events(engine);
+  le_track* t = &engine->tracks[ch];
+  const int redo = request->redo != 0;
+  const int32_t count = redo ? t->redo_count : t->undo_count;
+  const le_hist_entry* stack = redo ? t->redo_stack : t->undo_stack;
+  if (count == 0 || stack[count - 1].kind != LE_HIST_BOUNCE) {
+    return LE_ERR_INVALID;
+  }
+  if (le_bounce_busy(engine, ch)) return LE_ERR_NOT_READY;
+  if (!redo && t->redo_count >= LE_POOL_SLOTS) return LE_ERR_NOT_READY;
+  const le_hist_entry g = stack[count - 1];
+  /* The restored side must fit the rig as it is now. */
+  const int32_t mode = load_i32(&engine->a_looper_mode);
+  if (g.state != LE_TRACK_EMPTY && g.master_len == 0 &&
+      mode != LE_LOOPER_MODE_FREE && mode != LE_LOOPER_MODE_SONG) {
+    int32_t base = 0;
+    if (le_ctl_mode_base_excluding(engine, mode, 1u << ch, &base) >= 0 &&
+        !le_mode_span_fits(mode, base, g.len)) {
+      return LE_ERR_MODE_MISMATCH;
+    }
+  }
+  const int32_t lanes_after =
+      le_bounce_lanes_after(engine, ch, request->topology);
+  if (lanes_after < 1 || lanes_after > LE_MAX_LANES) return LE_ERR_INVALID;
+  le_bounce_bundle* b = (le_bounce_bundle*)calloc(1, sizeof(*b));
+  if (b == NULL) return LE_ERR_CAPACITY;
+  b->channel = ch;
+  b->op = redo ? LE_BOUNCE_REDO : LE_BOUNCE_UNDO;
+  b->target = g;
+  b->reclock_to = g.master_len;
+  atomic_store_explicit(&b->a_result, 1, memory_order_relaxed);
+  const int32_t rc = le_bounce_prepare(engine, b, request->topology,
+                                       request->lane_fx, request->lane_fx_count,
+                                       request->track_fx, lanes_after);
+  if (rc != LE_OK) {
+    free(b);
+    return rc;
+  }
+  if (g.state != LE_TRACK_EMPTY && g.slot >= 0) {
+    (void)le_stage_source_image(engine, ch, g.slot, g.len);
+  }
+  return le_bounce_post(engine, b, LE_CMD_BOUNCE_RECOVER, g.slot,
+                        load_i32(&t->lanes[0].a_live), receipt);
 }

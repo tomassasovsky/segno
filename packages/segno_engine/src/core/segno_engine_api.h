@@ -525,6 +525,11 @@ typedef enum le_command_code {
   LE_CMD_REVERSE = 83, /* checked internal Reverse request; never raw-posted */
   LE_CMD_RENDER_FREEZE = 112, /* render recipe (#1202): the callback records
                                * every source's read law; never raw-posted */
+  LE_CMD_BOUNCE = 113,         /* Bounce (#1202): installs a rendered result on
+                                * the destination in one drain; checked,
+                                * never raw-posted */
+  LE_CMD_BOUNCE_RECOVER = 114, /* Bounce Undo/Redo (#1202): reinstalls the
+                                * other side of a bounce; never raw-posted */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -3537,6 +3542,60 @@ LE_EXPORT int32_t le_engine_render_copy(le_engine* engine, uint32_t job,
 /* Cancels and releases job `job` (any state). A file target leaves no
  * partial file. Returns LE_OK or LE_ERR_INVALID for an unknown job. */
 LE_EXPORT int32_t le_engine_render_cancel(le_engine* engine, uint32_t job);
+
+/* ---- Bounce (#1202, Part 4a: Keep sources) ----
+ *
+ * Installs a finished memory render (le_engine_render_begin with
+ * LE_RENDER_TARGET_MEMORY) on one destination track in ONE callback drain:
+ * the image as a stereo pair (lanes 0 and 1, image pans -1/+1, the other
+ * lanes silent), its length and clock, STOPPED, and the destination's
+ * processing reset — unity gain, unity lane levels, centred lane pans, mutes
+ * off, Fade and direction reset, and the chains given here (empty when NULL).
+ * `topology` (optional) is the destination's lane count, routing and mix,
+ * applied first through the ordinary mix path; the reset values then win.
+ * The destination's previous state becomes one LE_HIST_BOUNCE history entry;
+ * le_engine_bounce_recover undoes or redoes it whole. */
+typedef struct le_bounce_request {
+  uint32_t job;          /* a DONE memory render */
+  int32_t destination;   /* the track that receives the result */
+  int32_t keep_sources;  /* must be 1 until Clear sources lands (Part 4b) */
+  const le_mix_settings* topology; /* NULL: keep lane count and routing */
+  const le_fx_recipe* lane_fx; /* lane_fx_count recipes; NULL: empty chains */
+  int32_t lane_fx_count;
+  const le_fx_recipe* track_fx; /* NULL: an empty track chain */
+} le_bounce_request;
+
+/* Admits a bounce. Returns LE_OK with *request (read the callback outcome
+ * with le_engine_read_request_result), LE_ERR_NOT_READY (the render is not a
+ * finished memory job, or the destination is busy: capturing, armed, a
+ * pending command, a layer in flight, a previous bounce not yet filed, or
+ * a full undo stack), LE_ERR_TRACKS_CHANGED (a source changed after the
+ * render froze it), LE_ERR_MODE_MISMATCH (the length does not fit the loop
+ * mode), LE_ERR_CAPACITY (no slot or buffer), LE_ERR_UNSUPPORTED (Clear
+ * sources) or LE_ERR_INVALID. The history entry is filed when the outcome is
+ * collected (the next le_engine_drain_events after the callback applied). */
+LE_EXPORT int32_t le_engine_bounce(le_engine* engine,
+                                   const le_bounce_request* request,
+                                   uint64_t* receipt);
+
+typedef struct le_bounce_recover_request {
+  int32_t destination;
+  int32_t redo;          /* 0: undo the bounce on top of the undo stack;
+                          * 1: redo the one on top of the redo stack */
+  const le_mix_settings* topology; /* the side being restored */
+  const le_fx_recipe* lane_fx;     /* its chains; NULL: empty */
+  int32_t lane_fx_count;
+  const le_fx_recipe* track_fx;
+} le_bounce_recover_request;
+
+/* Undoes or redoes a whole bounce in one callback drain. Plain le_engine_undo
+ * and le_engine_redo refuse a BOUNCE entry on top (LE_ERR_INVALID), so no path
+ * restores part of one. Returns LE_OK with *receipt, LE_ERR_INVALID (no
+ * bounce on top), LE_ERR_NOT_READY (busy, as le_engine_bounce),
+ * LE_ERR_MODE_MISMATCH or a ring refusal. */
+LE_EXPORT int32_t le_engine_bounce_recover(
+    le_engine* engine, const le_bounce_recover_request* request,
+    uint64_t* receipt);
 
 #ifdef __cplusplus
 }

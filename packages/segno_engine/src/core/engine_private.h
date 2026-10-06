@@ -791,6 +791,15 @@ typedef enum {
   LE_HIST_PROCESSED = 3, /* a loop-close restoration commit (#697 S9): the raw
                           * take beneath a conditioned live image. Undo/Redo
                           * swap it like a LAYER; Peel never consumes it. */
+  /* 4 is Multiply/Divide's LENGTH (#1168). */
+  LE_HIST_BOUNCE = 5, /* a Bounce (#1202): the whole track as it was on the
+                       * other side of the bounce — image (slot, -1 for none),
+                       * length, state, mutes, Fade, direction and segment
+                       * origin — filed on the undo stack by the bounce and on
+                       * the redo stack by its undo. Only le_engine_bounce_
+                       * recover moves it (plain Undo/Redo refuse it), Peel
+                       * stops at it, and a saved Session never carries it:
+                       * export cuts the history at it on both sides. */
 } le_hist_kind;
 
 /* One entry on a track's undo/redo history (control-thread-owned). A bare pool
@@ -817,6 +826,16 @@ typedef struct {
                     * peel consumed. Undo re-inserts that LAYER `skipped`
                     * entries below the PEEL's position (clamped to the
                     * bottom), restoring the exact pre-peel stack. */
+  /* BOUNCE (#1202) only, besides len/state/master_len/muted_mask/fade_amount:
+   * the Sync divisor, the read direction, the segment origin, and the
+   * bounce's group (one per bounce; Clear sources joins sources in Part 4b).
+   * master_len is the master to re-establish when installing this side
+   * re-clocks the rig, else 0. */
+  int32_t divisor;
+  int32_t reversed;
+  uint32_t group_id;
+  uint32_t cleared_mask;
+  uint64_t start_iter;
 } le_hist_entry;
 
 /* Positional aggregate init, not the designated initializer the rest of the
@@ -967,6 +986,12 @@ typedef struct le_track {
 
   /* ---- control-thread-owned undo bookkeeping ---- */
   int32_t outstanding_slots[4]; /* shadow slots posted, not yet retired */
+  /* A Bounce install in flight (#1202): the bundle, and the two slots it
+   * names that no stack holds yet (the incoming image and the outgoing live
+   * slot), pinned against reuse until its outcome is filed. Every other
+   * history motion on the track waits for it (LE_ERR_NOT_READY). */
+  struct le_bounce_bundle* bounce_inflight;
+  int32_t bounce_pin[2]; /* slot + 1; 0 = none */
   int outstanding_count;
   int queued_undo;   /* undo taps deferred until the in-flight layer retires */
   /* An undo's overdub punch-out has been posted and not yet applied.
@@ -1442,6 +1467,26 @@ typedef struct le_record_timing_readback {
  * control-allocated record and published by a_done (release). base0 is the
  * source's clock position at the top of the iteration the freeze lands in;
  * render frame f reads le_direction_index(reversed, offset, base0 + f, len). */
+/* What LE_CMD_BOUNCE / LE_CMD_BOUNCE_RECOVER install (#1202, Part 4a): one
+ * control-allocated bundle per request, retained until its callback outcome
+ * is collected (le_engine_drain_events). The callback installs `target` on
+ * `channel` in one drain — topology (lane count, routing, mix), chains, image,
+ * length, clock, state, mutes, Fade, direction — and first records the track
+ * as it was into `prev`, which control files as the history entry. */
+enum { LE_BOUNCE_APPLY = 0, LE_BOUNCE_UNDO = 1, LE_BOUNCE_REDO = 2 };
+typedef struct le_bounce_bundle {
+  int32_t channel;
+  int32_t op;         /* LE_BOUNCE_APPLY / _UNDO / _REDO */
+  le_hist_entry target; /* slot -1 with state EMPTY = install an empty track */
+  int32_t reclock_to; /* > 0: the master becomes this length (keeps running) */
+  int32_t has_mix;
+  le_mix_settings mix; /* the destination's topology and mix */
+  struct le_prepared_fx* lane_fx;
+  struct le_prepared_fx* track_fx;
+  le_hist_entry prev; /* callback-written: the track before the install */
+  _Atomic int32_t a_result; /* 1 while pending, then LE_OK / LE_ERR_NOT_READY */
+} le_bounce_bundle;
+
 typedef struct le_render_freeze_src {
   int64_t base0;
   int32_t reversed, offset, len, slot, state;
@@ -1844,6 +1889,8 @@ struct le_engine {
    * seq_cst so a retirement can never free a job the worker still holds). */
   struct le_render_job* render_job;
   struct le_render_job* render_retired;
+  /* Bounce groups (#1202): one id per bounce, never 0. */
+  uint32_t bounce_next_group;
   le_render_freeze render_freeze;
   struct le_render_job* _Atomic a_render_runnable;
   _Atomic int32_t a_render_worker_busy;

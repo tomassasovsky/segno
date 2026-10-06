@@ -4,19 +4,39 @@ import 'package:meta/meta.dart';
 /// values are the engine's `le_hist_kind`.
 enum HistoryKind {
   /// A retired overdub pass: the image from before the pass.
-  layer,
+  layer(0),
 
   /// A Clear restore point. Captured only as the deepest Redo entry, where
   /// Redo re-clears the track.
-  clear,
+  clear(1),
 
   /// A Peel. On the Undo side it holds the image the Peel removed; on the
   /// Redo side it is a marker without an image that re-peels.
-  peel,
+  peel(2),
 
   /// A loop-close restoration: the raw take beneath a conditioned image.
   /// Undo and Redo swap it like a layer; Peel never consumes it.
-  processed,
+  processed(3),
+
+  /// A Bounce (#1202): the whole track on the other side of a bounce. It is
+  /// never saved — export cuts the history at it — so a Session that carries
+  /// one is malformed.
+  bounce(5);
+
+  const HistoryKind(this.code);
+
+  /// The engine's `le_hist_kind` value. Not the enum index: the engine
+  /// reserves 4 (Multiply/Divide's length edit) between [processed] and
+  /// [bounce].
+  final int code;
+
+  /// The kind for an engine `le_hist_kind`, or `null` when unknown.
+  static HistoryKind? fromCode(int code) {
+    for (final kind in values) {
+      if (kind.code == code) return kind;
+    }
+    return null;
+  }
 }
 
 /// One entry of a track's audio history (#1164).
@@ -95,12 +115,16 @@ class TrackHistory {
   ///   it, unless that run reaches the bottom (pool eviction removes the
   ///   oldest entries, and Undo clamps its re-insertion there);
   /// - a Redo-side Peel marker would find no layer to peel when Redo reaches
-  ///   it.
+  ///   it;
+  /// - a Bounce entry, which a saved history never holds.
   String? get malformation {
     if (undoCount < 0 || undoCount > entries.length) {
       return 'undo count $undoCount outside ${entries.length} entries';
     }
     for (final (i, entry) in entries.indexed) {
+      if (entry.kind == HistoryKind.bounce) {
+        return 'entry $i is a Bounce, which a Session never carries';
+      }
       if (entry.skipped < 0 || entry.skipped >= maxImages) {
         return 'entry $i has an invalid skipped count ${entry.skipped}';
       }

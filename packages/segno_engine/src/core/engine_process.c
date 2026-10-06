@@ -2729,6 +2729,197 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
 static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
   apply_command_image(e, cmd, frame, 0);
 }
+
+/* SET_MIX's effect without its revision publication: routing (refusing the
+ * whole batch, as le_apply_routing does), then gains, lane and image mixes,
+ * monitors, trims, solos and outputs. Shared with the Bounce install (#1202),
+ * whose own receipt is the confirmation. Returns 0 when routing refused. */
+static int le_apply_mix(le_engine* e, const le_mix_settings* mix,
+                        uint64_t frame) {
+  if (!le_apply_routing(e, mix, frame)) return 0;
+  for (int ch = 0; ch < e->track_count; ++ch) {
+    if (!(mix->track_gain_mask & (1u << ch))) continue;
+    store_f32(&e->tracks[ch].a_gain_bits, mix->track_gain[ch]);
+    le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_VOLUME,
+        .arg_i = ch, .arg_f = mix->track_gain[ch]});
+  }
+  /* Emit only applied primitive facts; events.log's 16-byte payload must
+   * never receive the much larger in-process batch arm. */
+  for (int i = 0; i < LE_MAX_TRACKS * LE_MAX_LANES; ++i) {
+    const uint64_t bit = UINT64_C(1) << i;
+    if (!((mix->lane_mask | mix->image_mask) & bit)) continue;
+    const int ch = i / LE_MAX_LANES, l = i % LE_MAX_LANES;
+    le_lane* ln = &e->tracks[ch].lanes[l];
+    if (mix->lane_mask & bit) {
+      ln->live_level = mix->lane_gain[i];
+      ln->live_pan = mix->lane_pan[i];
+    }
+    if (mix->image_mask & bit) {
+      ln->image_gain = mix->image_gain[i];
+      ln->image_pan = mix->image_pan[i];
+    }
+    le_publish_lane_mix(e, ch, l, frame, 1, 1);
+  }
+  for (int i = 0; i < LE_MAX_CHANNELS; ++i) {
+    if (mix->monitor_mask & (1u << i)) {
+      le_command c = {.code = LE_CMD_SET_MONITOR_INPUT_VOLUME,
+                      .arg_i = i, .arg_f = mix->monitor_gain[i]};
+      apply_command(e, &c, frame);
+      c = (le_command){.code = LE_CMD_SET_MONITOR_INPUT_PAN,
+                       .lanef = {i, 0, mix->monitor_pan[i]}};
+      apply_command(e, &c, frame);
+    }
+    if (mix->trim_mask & (1u << i)) store_f32(&e->a_in_trim_bits[i], mix->input_trim[i]);
+  }
+  for (int i = 0; i < e->track_count; ++i) {
+    if (!(mix->solo_mask & (1u << i))) continue;
+    const le_command c = {.code = LE_CMD_SET_TRACK_SOLO, .arg_i = i,
+                          .arg_f = (mix->solo_values & (1u << i)) ? 1.0f : 0.0f};
+    apply_command(e, &c, frame);
+  }
+  for (int i = 0; i < LE_MAX_OUTPUT_BUSES; ++i) {
+    if (!(mix->output_mask & (1u << i))) continue;
+    le_command c = {.code = LE_CMD_SET_OUTPUT_LEVEL,
+                     .lanef = {i, 0, mix->output_level[i]}};
+    apply_command(e, &c, frame);
+    c = (le_command){.code = LE_CMD_SET_OUTPUT_MUTE,
+                      .lanef = {i, 0, (mix->output_muted & (1u << i)) != 0}};
+    apply_command(e, &c, frame);
+    c = (le_command){.code = LE_CMD_SET_OUTPUT_MONO,
+                      .lanef = {i, 0, (mix->output_mono & (1u << i)) != 0}};
+    apply_command(e, &c, frame);
+    c = (le_command){.code = LE_CMD_SET_OUTPUT_BALANCE,
+                      .lanef = {i, 0, mix->output_balance[i]}};
+    apply_command(e, &c, frame);
+  }
+  return 1;
+}
+/* LE_CMD_BOUNCE / LE_CMD_BOUNCE_RECOVER (#1202): installs the bundle's target
+ * on its track in this one drain. It first records the track as it is into
+ * b->prev (the history entry control files), then applies the topology and
+ * chains, the image, length and clock, state, mutes, Fade and direction —
+ * and, for a bounce or its redo, the destination reset (unity gain and lane
+ * levels, centred lane pans, image pans -1/+1 on the stereo pair). Refused
+ * whole (LE_ERR_NOT_READY, nothing written) when the track is capturing or a
+ * routing change would be blocked; control's admission makes that
+ * unreachable, and the refusal is the fail-safe. */
+static int32_t le_bounce_install(le_engine* e, le_bounce_bundle* b,
+                                 uint64_t frame) {
+  const int32_t ch = b->channel;
+  if (!valid_channel(e, ch)) return LE_ERR_INVALID;
+  le_track* t = &e->tracks[ch];
+  const int32_t st = load_i32(&t->a_state);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+      t->pending_record || t->seam_capture || t->xfade_capture ||
+      t->od_gain != 0.0f || load_i32(&t->a_layer_in_flight) ||
+      e->launch_action[ch] != 0) {
+    return LE_ERR_NOT_READY;
+  }
+  /* The other side, recorded before anything moves. */
+  le_hist_entry prev = {LE_HIST_BOUNCE, load_i32(&t->lanes[0].a_live)};
+  prev.len = st == LE_TRACK_EMPTY ? 0 : load_i32(&t->lanes[0].a_len);
+  prev.state = st;
+  prev.multiple = load_i32(&t->a_multiple);
+  prev.divisor = load_i32(&t->a_sync_divisor);
+  prev.reversed = t->reversed;
+  prev.start_iter = t->start_iter;
+  prev.fade_amount = (float)t->fade.amount;
+  prev.master_len = b->reclock_to > 0 ? e->clock.length : 0;
+  prev.group_id = b->target.group_id;
+  for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+    if (load_i32(&t->lanes[l].a_muted)) prev.muted_mask |= 1u << l;
+  }
+  if (b->has_mix && !le_apply_mix(e, &b->mix, frame)) return LE_ERR_NOT_READY;
+  le_fx_recipe_apply(e, b->lane_fx, frame);
+  le_fx_recipe_apply(e, b->track_fx, frame);
+  b->prev = prev;
+
+  const le_hist_entry* g = &b->target;
+  if (g->state == LE_TRACK_EMPTY) {
+    /* Back to an empty track: the Clear body (transport, Fade, direction,
+     * clocks, mutes, and the master when the rig is now empty), then its own
+     * live slot again. */
+    handle_clear(e, ch, 0, frame);
+    if (g->slot >= 0) le_track_publish_live(t, g->slot);
+    return LE_OK;
+  }
+  le_dub_drop_armed(t);
+  le_transform_reset(e, t, frame); /* provenance first: the image is named
+                                    * by the staged id at its first mix */
+  le_reset_track_playback(t);
+  le_track_publish_live(t, g->slot);
+  le_track_set_len(t, g->len);
+  const int32_t mode = load_i32(&e->a_looper_mode);
+  if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) {
+    le_loop_clock_set_length(&t->free_clock, g->len);
+    t->free_iteration = 0;
+    store_i32(&t->a_multiple, 1);
+    store_i32(&t->a_sync_divisor, 0);
+  } else {
+    const int32_t master = b->reclock_to > 0 ? b->reclock_to
+                           : e->clock.length > 0 ? 0 : g->len;
+    if (master > 0) {
+      /* The rig keeps running at the same song position: only the master
+       * length changes, and the iteration count carries on. */
+      /* Frames since the top of the iteration the target's segment 0
+       * starts at: the render's frame 0 for a bounce. */
+      int64_t elapsed = 0;
+      if (e->clock.length > 0) {
+        elapsed = ((int64_t)e->loop_iteration - (int64_t)g->start_iter) *
+                      e->clock.length +
+                  e->clock.position;
+        if (elapsed < 0) elapsed = e->clock.position;
+      }
+      le_plog_push(e, frame, (le_command){.code = LE_PLOG_LOOP_LENGTH_LOCKED,
+                                         .arg_i = master});
+      le_loop_clock_set_length(&e->clock, master);
+      e->clock.position = (int32_t)(elapsed % master);
+      store_i32(&e->a_master_len, master);
+      sync_grid_to_loop(e, master);
+    }
+    le_restore_multiple_or_divisor(t, e->clock.length, g->len);
+    t->start_iter = master > 0 ? e->loop_iteration : g->start_iter;
+  }
+  if (g->reversed) {
+    t->reversed = 1;
+    store_i32(&t->a_reversed, 1);
+    le_reverse_log(e, t, frame, le_track_read_index(e, t), 0);
+  }
+  t->fade = (le_fade){g->fade_amount, g->fade_amount, 0};
+  t->fade_sample = g->fade_amount;
+  if (t->fade_generation != UINT64_MAX) ++t->fade_generation;
+  le_fade_log(e, ch, frame);
+  for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+    const int32_t muted = (g->muted_mask >> l) & 1u;
+    t->lanes[l].pending_mute = 0;
+    if (load_i32(&t->lanes[l].a_muted) == muted) continue;
+    store_i32(&t->lanes[l].a_muted, muted);
+    le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_LANE_MUTE,
+                                       .lanef = {ch, l, (float)muted}});
+  }
+  if (b->op != LE_BOUNCE_UNDO) {
+    /* The destination reset: the result already carries its sources'
+     * levels and pans, so nothing applies them twice. */
+    store_f32(&t->a_gain_bits, 1.0f);
+    le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_VOLUME,
+                                       .arg_i = ch, .arg_f = 1.0f});
+    const int32_t lanes = le_lanes_active(t);
+    for (int32_t l = 0; l < lanes; ++l) {
+      le_lane* ln = &t->lanes[l];
+      ln->live_level = 1.0f;
+      ln->live_pan = 0.0f;
+      ln->image_gain = 1.0f;
+      if (l < 2) ln->image_pan = l == 0 ? -1.0f : 1.0f;
+      le_publish_lane_mix(e, ch, l, frame, 1, 1);
+    }
+  }
+  store_i32(&t->a_state, g->state);
+  reset_track_viz(e, ch);
+  e->trk_play_pos[ch] = le_track_read_index(e, t);
+  le_primary_reconcile(e);
+  return LE_OK;
+}
+
 static void apply_command_image(le_engine* e, const le_command* cmd,
                                 uint64_t frame, int preserve_image) {
   switch (cmd->code) {
@@ -2742,62 +2933,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
     }
     case LE_CMD_SET_MIX: {
       const le_mix_settings* mix = &cmd->mix;
-      if (!le_apply_routing(e, mix, frame)) break;
-      for (int ch = 0; ch < e->track_count; ++ch) {
-        if (!(mix->track_gain_mask & (1u << ch))) continue;
-        store_f32(&e->tracks[ch].a_gain_bits, mix->track_gain[ch]);
-        le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_VOLUME,
-            .arg_i = ch, .arg_f = mix->track_gain[ch]});
-      }
-      /* Emit only applied primitive facts; events.log's 16-byte payload must
-       * never receive the much larger in-process batch arm. */
-      for (int i = 0; i < LE_MAX_TRACKS * LE_MAX_LANES; ++i) {
-        const uint64_t bit = UINT64_C(1) << i;
-        if (!((mix->lane_mask | mix->image_mask) & bit)) continue;
-        const int ch = i / LE_MAX_LANES, l = i % LE_MAX_LANES;
-        le_lane* ln = &e->tracks[ch].lanes[l];
-        if (mix->lane_mask & bit) {
-          ln->live_level = mix->lane_gain[i];
-          ln->live_pan = mix->lane_pan[i];
-        }
-        if (mix->image_mask & bit) {
-          ln->image_gain = mix->image_gain[i];
-          ln->image_pan = mix->image_pan[i];
-        }
-        le_publish_lane_mix(e, ch, l, frame, 1, 1);
-      }
-      for (int i = 0; i < LE_MAX_CHANNELS; ++i) {
-        if (mix->monitor_mask & (1u << i)) {
-          le_command c = {.code = LE_CMD_SET_MONITOR_INPUT_VOLUME,
-                          .arg_i = i, .arg_f = mix->monitor_gain[i]};
-          apply_command(e, &c, frame);
-          c = (le_command){.code = LE_CMD_SET_MONITOR_INPUT_PAN,
-                           .lanef = {i, 0, mix->monitor_pan[i]}};
-          apply_command(e, &c, frame);
-        }
-        if (mix->trim_mask & (1u << i)) store_f32(&e->a_in_trim_bits[i], mix->input_trim[i]);
-      }
-      for (int i = 0; i < e->track_count; ++i) {
-        if (!(mix->solo_mask & (1u << i))) continue;
-        const le_command c = {.code = LE_CMD_SET_TRACK_SOLO, .arg_i = i,
-                              .arg_f = (mix->solo_values & (1u << i)) ? 1.0f : 0.0f};
-        apply_command(e, &c, frame);
-      }
-      for (int i = 0; i < LE_MAX_OUTPUT_BUSES; ++i) {
-        if (!(mix->output_mask & (1u << i))) continue;
-        le_command c = {.code = LE_CMD_SET_OUTPUT_LEVEL,
-                         .lanef = {i, 0, mix->output_level[i]}};
-        apply_command(e, &c, frame);
-        c = (le_command){.code = LE_CMD_SET_OUTPUT_MUTE,
-                          .lanef = {i, 0, (mix->output_muted & (1u << i)) != 0}};
-        apply_command(e, &c, frame);
-        c = (le_command){.code = LE_CMD_SET_OUTPUT_MONO,
-                          .lanef = {i, 0, (mix->output_mono & (1u << i)) != 0}};
-        apply_command(e, &c, frame);
-        c = (le_command){.code = LE_CMD_SET_OUTPUT_BALANCE,
-                          .lanef = {i, 0, mix->output_balance[i]}};
-        apply_command(e, &c, frame);
-      }
+      if (!le_apply_mix(e, mix, frame)) break;
       atomic_store_explicit(&e->a_mix_revision, mix->revision, memory_order_release);
       break;
     }
@@ -3271,6 +3407,20 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       atomic_store_explicit(&e->receipts[cmd->fade.slot].result,
                              accepted ? LE_OK : LE_ERR_INVALID, memory_order_relaxed);
+      break;
+    }
+    case LE_CMD_BOUNCE:
+    case LE_CMD_BOUNCE_RECOVER: {
+      le_bounce_bundle* b = cmd->bounce.bundle;
+      const int32_t result = le_bounce_install(e, b, frame);
+      atomic_store_explicit(&e->receipts[cmd->bounce.slot].result, result,
+                            memory_order_release);
+      if (valid_channel(e, b->channel)) {
+        atomic_fetch_add_explicit(&e->tracks[b->channel].a_state_acks, 1,
+                                  memory_order_release);
+      }
+      /* Last: control frees the bundle once it reads this. */
+      atomic_store_explicit(&b->a_result, result, memory_order_release);
       break;
     }
     case LE_CMD_RENDER_FREEZE:
