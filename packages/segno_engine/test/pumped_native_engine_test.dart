@@ -720,6 +720,7 @@ void main() {
       );
       expect(sidecar, contains('"volume_generation": 7,'));
       expect(sidecar, contains('"ring_seconds": 3,'));
+      expect(engine.snapshot().perfRingSeconds, 3);
       expect(
         File('${captureDir.path}/performance.json').existsSync(),
         isFalse,

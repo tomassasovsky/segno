@@ -34,6 +34,7 @@
 #include <wchar.h>
 #if !defined(_WIN32)
 #include <sys/statvfs.h> /* the oracle for test_volume_space */
+#include <fcntl.h>         /* F_GETFD, FD_CLOEXEC (WAV writer) */
 #endif
 #if defined(__linux__)
 #include <dirent.h>     /* /proc/self/fd walk (probe FD leak, #721) */
@@ -48,6 +49,7 @@
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
 #include "engine_core.h"      /* le_push (raw ring pushes for the tempo tests) */
 #include "engine_digest.h"    /* le_sha256_ctx (#1198 streaming digests) */
+#include "engine_wav.h"       /* le_wav_writer (close-on-exec, torn-tail seal) */
 #include "engine_fx.h" /* LE_FX_ENABLE_RAMP_MS (FX enable-flag tests) */
 #include "engine_cache.h" /* LE_CACHE_SETTLE_MS (wet-cache tests) */
 #include "engine_internal.h"
@@ -10834,6 +10836,136 @@ static void test_perf_zero_fill_crosses_part_boundaries(void) {
   }
   for (int i = 0; i < 7; ++i) CHECK(all[i] == 1.0f);
   for (int i = 7; i < 32; ++i) CHECK(all[i] == 0.0f);
+  /* Each part's recorded digest covers its padding too. */
+  char json[16384];
+  char path[700];
+  snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
+  CHECK(read_file_for_test(path, json, sizeof(json)) > 0);
+  for (int p = 0; p < 4; ++p) {
+    snprintf(path, sizeof(path), "%s/master-%03d.wav", perf_test_dir(), p + 1);
+    uint8_t digest[32];
+    CHECK(le_digest_file(path, 84, UINT64_MAX, digest) == LE_OK);
+    char hex[65];
+    for (int i = 0; i < 32; ++i) snprintf(hex + 2 * i, 3, "%02x", digest[i]);
+    char expected[160];
+    snprintf(expected, sizeof(expected), "\"sha256\": \"%s\"", hex);
+    CHECK(strstr(json, expected) != NULL);
+  }
+  le_engine_destroy(e);
+}
+
+/* Every file the one WAV writer opens is close-on-exec, so a child process
+ * the app starts while a take is open never inherits a writable descriptor
+ * onto it. */
+static void test_wav_writer_opens_close_on_exec(void) {
+  printf("test_wav_writer_opens_close_on_exec\n");
+#if defined(_WIN32)
+  printf("  (skipped: the handle is opened _O_NOINHERIT on Windows)\n");
+#else
+  char path[700];
+  snprintf(path, sizeof(path), "%s/cloexec.wav", perf_test_dir());
+  le_wav_writer w;
+  CHECK(le_wav_open(&w, path, 48000, 2, NULL, NULL, 0));
+  CHECK(w.file != NULL);
+  if (w.file != NULL) {
+    CHECK((fcntl(fileno(w.file), F_GETFD) & FD_CLOEXEC) != 0);
+  }
+  le_wav_abandon(&w);
+  remove(path);
+#endif
+}
+
+/* A part sealed after a write the disk never took back: the torn partial
+ * frame is cut, so the file is exactly its header and its whole frames, and
+ * the final pass seals it even though the write failed. */
+static void test_perf_seal_after_failed_write_cuts_torn_tail(void) {
+  printf("test_perf_seal_after_failed_write_cuts_torn_tail\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000); /* stereo master */
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  le_perf_drain_set_write_budget_for_test(12); /* one frame and a half */
+  float out[64 * 2];
+  process_const(e, 0.5f, 64, out);
+  CHECK(poll_drain_self_stopped_for_test(e->perf.drain, 3000));
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_drain_set_write_budget_for_test(-1);
+
+  char path[700];
+  snprintf(path, sizeof(path), "%s/master-001.wav", perf_test_dir());
+  CHECK(file_size_for_test(path) == 84 + 8);
+  unsigned char header[84];
+  CHECK(read_binary_file_for_test(path, header, 84) == 84);
+  CHECK(le32_at(header + 4) == 84 - 8 + 8);
+  CHECK(le32_at(header + 80) == 8);
+  le_engine_destroy(e);
+}
+
+/* Part indexes past 255 use both bytes of the sgno field, and a take that
+ * would outgrow the parts list stops with every part on disk sealed and
+ * listed: 2-frame parts, 512 of them, the last sealed by the final pass. */
+static void test_perf_part_list_limit(void) {
+  printf("test_perf_part_list_limit\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000); /* mono master */
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 84 + 8, NULL, 0) ==
+        LE_OK);
+  drain(e);
+  float out[50];
+  for (int base = 0; base < 1100; base += 50) process_const(e, 0.25f, 50, out);
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[700];
+  unsigned char header[84];
+  snprintf(path, sizeof(path), "%s/master-256.wav", perf_test_dir());
+  CHECK(read_binary_file_for_test(path, header, 84) == 84);
+  CHECK(header[62] == 0 && header[63] == 1); /* part 256 */
+  snprintf(path, sizeof(path), "%s/master-512.wav", perf_test_dir());
+  CHECK(read_binary_file_for_test(path, header, 84) == 84);
+  CHECK(header[62] == 0 && header[63] == 2); /* part 512 */
+  CHECK(le32_at(header + 80) == 8);          /* sealed */
+  snprintf(path, sizeof(path), "%s/master-513.wav", perf_test_dir());
+  CHECK(file_size_for_test(path) == -1);
+  static char json[262144];
+  snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
+  CHECK(read_file_for_test(path, json, sizeof(json)) > 0);
+  CHECK(strstr(json, "\"index\": 512, \"file\": \"master-512.wav\", "
+                     "\"frames\": 2, \"bytes\": 92, \"overs\": 0, "
+                     "\"sha256\": ") != NULL);
+  CHECK(strstr(json, "\"stopped_early\": \"disk_full\"") != NULL);
+  le_engine_destroy(e);
+}
+
+/* The live sidecar's take `overs` counts the open part too, so a take reads
+ * its overs while it runs, not only once a part seals. */
+static void test_perf_live_overs_include_the_open_part(void) {
+  printf("test_perf_live_overs_include_the_open_part\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  drain(e);
+  float in[4] = {1.0f, -1.0f, 1.5f, -2.0f}; /* two overs, as above */
+  float out[4];
+  le_engine_process(e, out, in, 4);
+
+  char path[700];
+  snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
+  const char* expected = "\"overs\": 2,\n  \"parts\": [";
+  int seen = 0;
+  for (int i = 0; i < 300 && !seen; ++i) {
+    char json[16384];
+    if (read_file_for_test(path, json, sizeof(json)) > 0 &&
+        strstr(json, expected) != NULL) {
+      seen = 1;
+    }
+    if (!seen) test_sleep_ms(10);
+  }
+  CHECK(seen); /* while armed: nothing has sealed yet */
+  CHECK(e->perf.drain != NULL);
+  CHECK(le_perf_disarm(e) == LE_OK);
   le_engine_destroy(e);
 }
 
@@ -10892,8 +11024,20 @@ static void test_perf_ring_seconds_are_capped(void) {
     char expected[64];
     snprintf(expected, sizeof(expected), "\"ring_seconds\": %d,", granted[k]);
     CHECK(strstr(json, expected) != NULL);
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.perf_ring_seconds == granted[k]);
     le_engine_destroy(e);
   }
+  /* Past LE_PERF_RING_SECONDS_MAX is refused, not lowered one at a time. */
+  le_engine* e = make_configured_engine();
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 0, NULL,
+                                 LE_PERF_RING_SECONDS_MAX + 1) ==
+        LE_ERR_INVALID);
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 0, NULL, INT32_MAX) ==
+        LE_ERR_INVALID);
+  CHECK(e->perf.drain == NULL);
+  le_engine_destroy(e);
 }
 
 /* A live sidecar directory apart from the take (a USB take's Internal
@@ -34352,6 +34496,10 @@ int main(void) {
   test_perf_parts_roll_over_and_seal();
   test_perf_zero_fill_crosses_part_boundaries();
   test_perf_input_stream_parts();
+  test_wav_writer_opens_close_on_exec();
+  test_perf_seal_after_failed_write_cuts_torn_tail();
+  test_perf_part_list_limit();
+  test_perf_live_overs_include_the_open_part();
   test_perf_ring_seconds_are_capped();
   test_perf_live_sidecar_elsewhere();
   test_perf_arm_rejects_bad_target();

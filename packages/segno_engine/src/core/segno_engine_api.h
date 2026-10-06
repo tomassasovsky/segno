@@ -1359,6 +1359,9 @@ typedef struct le_snapshot {
   uint32_t record_timing_revision;
   int32_t record_timing_result;
   int32_t record_timing_overrides[LE_MAX_TRACKS];
+  /* Seconds each capture ring of the most recent take was granted
+   * (le_perf_target.ring_seconds after the memory cap); 0 before any arm. */
+  int32_t perf_ring_seconds;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -2982,10 +2985,13 @@ typedef struct le_perf_target {
    * LE_PERF_PART_BYTES. Must leave room for at least one stereo frame and fit
    * the 32-bit RIFF size field. */
   uint64_t part_bytes;
-  /* Seconds of audio each capture ring holds; 0 means
-   * LE_PERF_RING_SECONDS_DEFAULT. Lowered (never below the default) so that
-   * every ring together stays within LE_PERF_RING_BYTES_MAX; the sidecar's
-   * `ring_seconds` reports what was granted. */
+  /* Seconds of audio each capture ring holds, 1 to LE_PERF_RING_SECONDS_MAX;
+   * 0 means LE_PERF_RING_SECONDS_DEFAULT. Lowered (never below the default,
+   * nor below the request) so that every ring together stays within
+   * LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 stereo inputs
+   * at 96 kHz take 33 rings of 2^19 samples, 66 MiB. The sidecar's
+   * `ring_seconds` and le_snapshot.perf_ring_seconds report what was
+   * granted. */
   int32_t ring_seconds;
 } le_perf_target;
 
@@ -2994,6 +3000,7 @@ typedef struct le_perf_target {
 #define LE_PERF_PART_BYTES 2000000000ULL
 #define LE_PERF_PART_HEADER_BYTES 84
 #define LE_PERF_RING_SECONDS_DEFAULT 2
+#define LE_PERF_RING_SECONDS_MAX 8
 #define LE_PERF_RING_BYTES_MAX (64u * 1024u * 1024u)
 
 /* Arms performance-recording capture: allocates the master + per-monitor
@@ -3004,8 +3011,8 @@ typedef struct le_perf_target {
  * armed session keeps its original target; the repeat call's target must
  * still be valid but is otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING
  * (not configured), LE_ERR_INVALID (null target, null/empty `capture_dir`, a
- * `part_bytes` with no room for a frame or past the RIFF limit, a negative
- * `ring_seconds`, no output enabled to capture, or ring allocation failure),
+ * `part_bytes` with no room for a frame or past the RIFF limit, a
+ * `ring_seconds` outside 0 to LE_PERF_RING_SECONDS_MAX, no output enabled to capture, or ring allocation failure),
  * or LE_ERR_DEVICE (the drain thread could not be started — e.g. a directory
  * could not be created — or a previous disarm's quiescent wait bailed out and
  * left a stale drain session still live). */

@@ -4520,8 +4520,9 @@ static size_t le_perf_ring_capacity(int32_t channels, int32_t sample_rate,
   return le_perf_next_pow2(want < 2 ? 2 : want);
 }
 
-/* The ring seconds an arm grants (#1198): the requested seconds, lowered one
- * at a time — never below LE_PERF_RING_SECONDS_DEFAULT — until every ring of
+/* The ring seconds an arm grants (#1198): the requested seconds (at most
+ * LE_PERF_RING_SECONDS_MAX, checked by the caller), lowered one at a time —
+ * never below LE_PERF_RING_SECONDS_DEFAULT — until every ring of
  * the take together fits LE_PERF_RING_BYTES_MAX. A take on a removable volume
  * asks for more than the default to ride out flash stalls; with many captured
  * inputs at a high rate the cap keeps arm from allocating (and prefaulting)
@@ -4586,7 +4587,8 @@ static void le_perf_free_unpublished(le_engine* e, uint32_t monitors_done) {
 
 int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
   if (engine == NULL || target == NULL || target->capture_dir == NULL ||
-      target->capture_dir[0] == '\0' || target->ring_seconds < 0) {
+      target->capture_dir[0] == '\0' || target->ring_seconds < 0 ||
+      target->ring_seconds > LE_PERF_RING_SECONDS_MAX) {
     return LE_ERR_INVALID;
   }
   /* A part must hold at least one stereo frame after its header, and its
@@ -4645,6 +4647,8 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
       target->ring_seconds > 0 ? target->ring_seconds
                                : LE_PERF_RING_SECONDS_DEFAULT,
       found, input_count, sr);
+  atomic_store_explicit(&engine->a_perf_ring_seconds, ring_seconds,
+                        memory_order_relaxed);
 
   const size_t master_cap = le_perf_ring_capacity(found, sr, ring_seconds);
   if (!le_audio_ring_alloc(&engine->perf.master_ring, master_cap)) {

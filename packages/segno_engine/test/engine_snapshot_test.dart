@@ -1261,6 +1261,11 @@ void main() {
       expect(build(), isNot(equals(build(perfZeroFilledFrames: 128))));
     });
 
+    test('perfRingSeconds participates in equality', () {
+      const base = EngineSnapshot.initial();
+      expect(base, isNot(equals(base.copyWith(perfRingSeconds: 8))));
+    });
+
     test('tempoBpm participates in equality', () {
       expect(build(), isNot(equals(build(tempoBpm: 120))));
     });
@@ -1635,6 +1640,7 @@ void main() {
         'perfOverruns',
         'perfZeroFilledFrames',
         'perfStopped',
+        'perfRingSeconds',
         'tempoBpm',
         'tempoSource',
         'tsNum',
