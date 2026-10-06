@@ -139,7 +139,12 @@ void main() {
             looper: looper,
             mix: mix,
             fx: projection,
-            owners: SettingsOwners(tempo.owners),
+            owners: SettingsOwners([
+              ...tempo.owners,
+              ...playback.owners,
+              ...record.owners,
+              ...timing.owners,
+            ]),
             tempo: tempo,
             playback: playback,
             record: record,
@@ -266,7 +271,8 @@ void main() {
       );
 
       test(
-        'unconfirmed pair cannot overwrite the previous session file',
+        'a Sound edit refused at storage leaves the stored pair, and Save '
+        'keeps it while Count-in is unavailable',
         () async {
           await session.saveAs('Protected');
           expect(session.state.status, SessionStatus.success);
@@ -281,9 +287,20 @@ void main() {
             enabled: true,
           );
           expect(edit.status, RecordStartStatus.recoveryRequired);
+          // Session capture uses the confirmed durable pair, so Save proceeds
+          // while Count-in is unavailable and never writes Sound on.
+          expect(
+            tempo.recordStartOwner.durable,
+            RecordStartSettings(countInBars: 0, soundStart: false),
+          );
           await session.save();
-          expect(session.state.status, isNot(SessionStatus.success));
+          expect(session.state.status, SessionStatus.success);
           expect(await manifest.readAsBytes(), before);
+          final saved = await sessions.read(
+            await sessions.bundlePath('Protected'),
+          );
+          expect(saved.session.countInBars, 0);
+          expect(saved.session.autoRecord, isFalse);
           store.refuseWrite = false;
           expect((await tempo.recordStartOwner.recover()).isOk, isTrue);
           await session.save();
@@ -293,6 +310,50 @@ void main() {
           );
           expect(bundle.session.countInBars, 0);
           expect(bundle.session.autoRecord, isFalse);
+        },
+      );
+
+      test(
+        'an owed pair is saved as requested, and recall re-applies it with '
+        'a receipt',
+        () async {
+          // Withhold the receipt: an unpumped engine consumes no command.
+          pump.cancel();
+          final edit = await tempo.recordStartControl.setCountInBars(4);
+          expect(edit.status, RecordStartStatus.recoveryRequired);
+          expect(looper.recordStartRecoveryRequired, isTrue);
+          expect(
+            tempo.recordStartOwner.durable,
+            RecordStartSettings(countInBars: 4, soundStart: false),
+          );
+          pump = Timer.periodic(
+            const Duration(milliseconds: 1),
+            (_) => engine.pump(frames: 0),
+          );
+          await session.saveAs('Owed pair');
+          expect(session.state.status, SessionStatus.success);
+          final bundle = await sessions.read(
+            await sessions.bundlePath('Owed pair'),
+          );
+          expect(bundle.session.countInBars, 4);
+          expect(bundle.session.autoRecord, isFalse);
+
+          // Settle the obligation, then move away from the saved pair.
+          expect((await tempo.recordStartOwner.recover()).isOk, isTrue);
+          expect(
+            (await tempo.recordStartControl.setCountInBars(1)).isOk,
+            isTrue,
+          );
+          expect(engine.snapshot().countInBars, 1);
+          await session.loadNamed('Owed pair');
+          expect(session.state.status, SessionStatus.success);
+          expect(looper.recordStartRecoveryRequired, isFalse);
+          expect(looper.recordStartSettingsSettled, isTrue);
+          expect(engine.snapshot().countInBars, 4);
+          expect(
+            tempo.recordStartControl.recordStartSnapshot?.settings.countInBars,
+            4,
+          );
         },
       );
     },

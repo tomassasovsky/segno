@@ -110,7 +110,6 @@ void main() {
     recordStartSettled = true;
     when(() => repository.sessionRevision).thenAnswer((_) => sessionRevision);
     when(() => repository.mixGeneration).thenReturn(0);
-    when(() => repository.decayReplayResult).thenReturn(EngineResult.ok);
     when(
       () => repository.defaultOverdubDecay,
     ).thenAnswer((_) => confirmedDecay);
@@ -130,6 +129,9 @@ void main() {
     when(() => repository.oneShotSettingsSettled).thenReturn(true);
     when(() => repository.oneShotRecoveryRequired).thenReturn(false);
     when(
+      () => repository.oneShotFailures,
+    ).thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(
       () => repository.settleOneShot(),
     ).thenAnswer((_) async => EngineResult.ok);
     when(() => repository.oneShotRestartIntent).thenAnswer(
@@ -139,37 +141,16 @@ void main() {
       ),
     );
     when(
-      () => repository.setOneShotRestartIntent(
-        defaultOneShot: any(named: 'defaultOneShot'),
-        trackOverrides: any(named: 'trackOverrides'),
-      ),
-    ).thenAnswer((_) {});
-    when(
       () => repository.setOneShotSnapshot(
         defaultOneShot: any(named: 'defaultOneShot'),
         trackOverrides: any(named: 'trackOverrides'),
+        released: any(named: 'released'),
       ),
     ).thenAnswer((call) {
       confirmedOneShot = call.namedArguments[#defaultOneShot] as bool;
       confirmedTrackOneShot = Map.of(
         call.namedArguments[#trackOverrides] as Map<int, bool>,
       );
-      return EngineResult.ok;
-    });
-    when(
-      () => repository.setOneShot(
-        channel: any(named: 'channel'),
-        oneShot: any(named: 'oneShot'),
-        releasedOneShot: any(named: 'releasedOneShot'),
-      ),
-    ).thenAnswer((call) {
-      final channel = call.namedArguments[#channel] as int;
-      final value = call.namedArguments[#oneShot] as bool?;
-      if (value == null) {
-        confirmedTrackOneShot.remove(channel);
-      } else {
-        confirmedTrackOneShot[channel] = value;
-      }
       return EngineResult.ok;
     });
 
@@ -298,6 +279,8 @@ void main() {
         defaultTiming: any(named: 'defaultTiming'),
         rememberedDivision: any(named: 'rememberedDivision'),
         trackOverrides: any(named: 'trackOverrides'),
+        released: any(named: 'released'),
+        editMask: any(named: 'editMask'),
       ),
     ).thenAnswer((call) {
       confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
@@ -392,13 +375,30 @@ void main() {
         defaultBars: any(named: 'defaultBars'),
         overrides: any(named: 'overrides'),
         mode: any(named: 'mode'),
+        released: any(named: 'released'),
       ),
     ).thenAnswer((call) {
-      confirmedLength = call.namedArguments[#defaultBars] as int;
-      confirmedTrackLengths = Map.of(
-        call.namedArguments[#overrides] as Map<int, int>,
-      );
-      confirmedMode = call.namedArguments[#mode] as LooperMode;
+      final bars = call.namedArguments[#defaultBars] as int;
+      final overrides = call.namedArguments[#overrides] as Map<int, int>;
+      final mode = call.namedArguments[#mode] as LooperMode?;
+      // A length edit (no mode switch) changes one address; route it to that
+      // address's stub, which the cases below override to refuse.
+      if (mode == null) {
+        if (bars != confirmedLength) {
+          return repository.setDefaultLengthPreset(bars);
+        }
+        for (var channel = 0; channel < 8; channel++) {
+          if (overrides[channel] != confirmedTrackLengths[channel]) {
+            return repository.setTrackLengthPreset(
+              channel: channel,
+              bars: overrides[channel],
+            );
+          }
+        }
+      }
+      confirmedLength = bars;
+      confirmedTrackLengths = Map.of(overrides);
+      confirmedMode = mode ?? confirmedMode;
       return EngineResult.ok;
     });
     when(
@@ -452,16 +452,6 @@ void main() {
             () => repository.setOverdubDecay(any()),
           ).thenAnswer((call) {
             confirmedDecay = call.positionalArguments.single as int;
-            return EngineResult.ok;
-          }),
-      () =>
-          when(
-            () => repository.setDefaultOneShot(
-              oneShot: any(named: 'oneShot'),
-              releasedOneShot: any(named: 'releasedOneShot'),
-            ),
-          ).thenAnswer((call) {
-            confirmedOneShot = call.namedArguments[#oneShot] as bool;
             return EngineResult.ok;
           }),
     ]) {
@@ -718,7 +708,9 @@ void main() {
     );
     expect(options.state.defaultLengthBars, 0);
     expect(await settings.loadDefaultLengthPreset(), 0);
-    verifyNever(() => repository.settleLengthSettings());
+    // Only the settle before admission: a refused admission awaits no
+    // receipt.
+    verify(() => repository.settleLengthSettings()).called(1);
   });
 
   for (final remount in [false, true]) {
@@ -933,9 +925,9 @@ void main() {
       expect(find.text(l10n.loopModeMultiDesc), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_mode_free')));
       await tester.pumpAndSettle();
-      verify(
-        () => bloc.add(const LooperModeChanged(LooperMode.free)),
-      ).called(1);
+      // The page writes the mode through the Record length owner.
+      expect(confirmedMode, LooperMode.free);
+      expect(store.values['looper.mode'], LooperMode.free.code);
     });
 
     testWidgets('a refused mode shows its reason and dispatches nothing', (
@@ -953,7 +945,7 @@ void main() {
       expect(find.text(l10n.modeChangeBlockedCapturing), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_mode_multi')));
       await tester.pumpAndSettle();
-      verifyNever(() => bloc.add(any(that: isA<LooperModeChanged>())));
+      expect(confirmedMode, isNot(LooperMode.multi));
     });
 
     testWidgets('playing loops ask before the switch, in the pen dialog', (
@@ -970,15 +962,13 @@ void main() {
       expect(find.text(l10n.modeChangeStopBody), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_mode_confirm_cancel')));
       await tester.pumpAndSettle();
-      verifyNever(() => bloc.add(any(that: isA<LooperModeChanged>())));
+      expect(confirmedMode, isNot(LooperMode.multi));
 
       await tester.tap(find.byKey(const Key('loop_mode_multi')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('loop_mode_confirm_switch')));
       await tester.pumpAndSettle();
-      verify(
-        () => bloc.add(const LooperModeChanged(LooperMode.multi)),
-      ).called(1);
+      expect(confirmedMode, LooperMode.multi);
     });
   });
 
@@ -1728,11 +1718,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('loop_timing_bar')));
       await tester.pumpAndSettle();
-      verify(
-        () => bloc.add(
-          const LooperTrackRecordTimingChanged(1, timing: RecordTiming.bar),
-        ),
-      ).called(1);
+      // The page writes the track through the Record timing owner.
+      expect(confirmedTrackTiming[1], RecordTiming.bar);
+      expect(
+        (await settings.readRecordTimingCheckpoint()).trackOverrides[1],
+        RecordTiming.bar.code,
+      );
       await tester.tap(find.byKey(const Key('loop_length_auto')));
       await tester.pumpAndSettle();
       expect(options.state.trackLengthPresetOverrides[1], 0);
@@ -1780,11 +1771,7 @@ void main() {
       expect(await settings.loadTrackLengthPreset(1), isNull);
       await tester.tap(find.byKey(const Key('loop_timing_use_default')));
       await tester.pumpAndSettle();
-      verify(
-        () => bloc.add(
-          const LooperTrackRecordTimingChanged(1, timing: null),
-        ),
-      ).called(1);
+      expect(confirmedTrackTiming.containsKey(1), isFalse);
     });
 
     testWidgets('in Multi a track shares the default length', (
@@ -1802,9 +1789,7 @@ void main() {
       expect(find.byKey(const Key('loop_length_use_default')), findsNothing);
       await tester.tap(find.byKey(const Key('loop_length_auto')));
       await tester.pumpAndSettle();
-      verifyNever(
-        () => bloc.add(any(that: isA<LooperTrackLengthPresetChanged>())),
-      );
+      expect(confirmedTrackLengths, isEmpty);
     });
 
     testWidgets('a capture locks the page', (tester) async {
@@ -1841,9 +1826,11 @@ void main() {
       expect(find.text(l10nOf(tester).loopOriginCustom), findsNWidgets(2));
       await tester.tap(find.byKey(const Key('loop_decay_use_default')));
       await tester.pumpAndSettle();
+      // The page writes the track through the Decay owner, not a Bloc event.
       verify(
-        () => bloc.add(const LooperTrackOverdubDecayChanged(1, percent: null)),
+        () => repository.setTrackOverdubDecay(channel: 1, percent: null),
       ).called(1);
+      expect(store.values.containsKey('track_overdub_decay.1'), isFalse);
     });
 
     testWidgets('decay draft cancels on Back and double tap resets', (
@@ -1900,7 +1887,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(playback.state.overdubDecay, 0);
       verifyNever(
-        () => bloc.add(any(that: isA<LooperTrackOverdubDecayChanged>())),
+        () => repository.setTrackOverdubDecay(
+          channel: any(named: 'channel'),
+          percent: any(named: 'percent'),
+        ),
       );
     });
 
@@ -1940,9 +1930,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('loop_playback_loop')));
       await tester.pumpAndSettle();
-      verify(
-        () => bloc.add(const LooperOneShotToggled(2, oneShot: false)),
-      ).called(1);
+      // The page writes the track through the Loop/Once owner.
+      expect(playback.state.trackOneShotOverrides, {2: false});
+      expect(store.values['track_one_shot.2'], isFalse);
     });
 
     testWidgets('the decay slider writes a percent', (tester) async {

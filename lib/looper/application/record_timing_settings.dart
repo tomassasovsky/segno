@@ -1,219 +1,117 @@
 import 'dart:async';
 
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/looper/application/settings_families.dart';
+import 'package:segno/looper/application/settings_owner.dart';
+import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-/// Serial owner of storage, native receipts, and Released timing projection.
+/// Presents the Record timing owner: ControlCubit's port, the page's edits
+/// and the [RecordTimingState] projection. The transaction is the owner's.
 class RecordTimingSettings implements RecordTimingControl {
+  /// Builds the owner over [repository] and [settings].
   RecordTimingSettings({
     required LooperRepository repository,
     required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings {
-    _subscription = repository.looperState.listen(_onLooperState);
-    _receiptFailures = repository.recordTimingFailures.listen((result) {
-      if (!_applying && !_closing) {
-        _report(
-          RecordTimingOutcome(
-            repository.recordTimingRecoveryRequired
-                ? RecordTimingStatus.recoveryRequired
-                : RecordTimingStatus.rejected,
-            engineResult: result,
-          ),
-        );
-      }
-    });
+  }) : owner = SettingsOwner(
+         repository: repository,
+         family: RecordTimingFamily(repository: repository, settings: settings),
+       ) {
+    _subscriptions = [
+      repository.looperState.listen((_) => _sync()),
+      owner.changes.listen((_) => _sync()),
+    ];
   }
-  RecordTimingState _state = const RecordTimingState();
+
+  /// The Record timing transaction.
+  final SettingsOwner<RecordTimingVector, Object?> owner;
+
+  /// The owners in the registry's fixed order.
+  List<SettingsOwner<Object, Object?>> get owners => [owner];
+
   final _states = StreamController<RecordTimingState>.broadcast(sync: true);
+  late final List<StreamSubscription<void>> _subscriptions;
+  RecordTimingState _state = const RecordTimingState();
+  Future<void>? _closeFuture;
 
   /// The last confirmed publication, including current edit availability.
   RecordTimingState get state => _state;
 
-  /// Read-only publications for presentation; transaction ownership stays here.
+  /// Read-only publications for presentation.
   Stream<RecordTimingState> get stream => _states.stream;
 
-  void _emit(RecordTimingState next) {
-    if (_state == next) return;
+  /// Restores the stored timing once.
+  Future<void> load() => owner.load();
+
+  void _sync() {
+    if (_states.isClosed) return;
+    final live = owner.live;
+    final next = RecordTimingState(
+      defaultTiming: live.defaultTiming,
+      rememberedDivision: live.rememberedDivision,
+      trackOverrides: live.trackOverrides,
+      captureLocked: owner.captureLocked,
+      recordTimingReady: owner.ready,
+    );
+    if (next == _state) return;
     _state = next;
     _states.add(next);
   }
 
-  final LooperRepository _repository;
-  final SettingsRepository _settings;
-  late final StreamSubscription<LooperState> _subscription;
-  late final StreamSubscription<EngineResult> _receiptFailures;
-  Future<void>? _loadFuture;
-  Future<void>? _closeFuture;
-  Future<void> _tail = Future.value();
-  bool _initialized = false;
-  bool _closing = false;
-  bool _applying = false;
-  RecordTimingLifetime? _lifetime;
-  final _revisions = <RecordTimingAddress, int>{};
-  final _ordinary =
-      StreamController<
-        ({RecordTimingAddress address, RecordTiming? timing})
-      >.broadcast(sync: true);
-  final _failures = StreamController<RecordTimingOutcome>.broadcast(sync: true);
-  RecordTimingOutcome _last = const RecordTimingOutcome(
-    RecordTimingStatus.rejected,
-  );
-  RecordTimingCheckpoint? _storeRecovery;
-
   @override
   RecordTimingSnapshot? get recordTimingSnapshot => state.recordTimingSnapshot;
+
   @override
   RecordTimingSnapshot get durableRecordTimingSnapshot {
-    final intent = _repository.recordTimingRestartIntent;
+    final durable = owner.durable;
     return RecordTimingSnapshot(
-      defaultTiming: intent.defaultTiming,
-      rememberedDivision: intent.rememberedDivision,
-      trackOverrides: intent.trackOverrides,
-      captureLocked: _repository.recordTimingCaptureLocked,
+      defaultTiming: durable.defaultTiming,
+      rememberedDivision: durable.rememberedDivision,
+      trackOverrides: durable.trackOverrides,
+      captureLocked: owner.captureLocked,
     );
   }
 
   @override
-  RecordTimingLifetime get recordTimingLifetime => (
-    sessionRevision: _repository.sessionRevision,
-    mixGeneration: _repository.mixGeneration,
-  );
+  RecordTimingLifetime get recordTimingLifetime => owner.lifetime;
+
   @override
   int recordTimingRevision(RecordTimingAddress address) =>
-      _revisions[address] ?? 0;
+      owner.revisionOf(address);
+
   @override
   Stream<({RecordTimingAddress address, RecordTiming? timing})>
-  get ordinaryRecordTimingChanges => _ordinary.stream;
-  Stream<RecordTimingOutcome> get recordTimingFailures => _failures.stream;
+  get ordinaryRecordTimingChanges => owner.ordinaryChanges.map((change) {
+    final address = change.address! as RecordTimingAddress;
+    return (address: address, timing: change.value.at(address));
+  });
 
-  RecordTimingOutcome _report(RecordTimingOutcome outcome) {
-    if (outcome.status == RecordTimingStatus.superseded) return outcome;
-    _last = outcome;
-    if (outcome.status == RecordTimingStatus.recoveryRequired) {
-      _publish(ready: false);
-    }
-    if (!outcome.isOk && !_closing) _failures.add(outcome);
-    return outcome;
-  }
+  /// [live] with [address] set to [timing]. A default without a gate takes
+  /// the durable remembered division, so a released hold does not keep the
+  /// held division.
+  RecordTimingVector _with(
+    RecordTimingVector live,
+    RecordTimingAddress address,
+    RecordTiming? timing,
+  ) => address.channel == null && timing != null && !timing.quantize
+      ? RecordTimingVector(
+          defaultTiming: timing,
+          rememberedDivision: owner.durable.rememberedDivision,
+          trackOverrides: live.trackOverrides,
+        )
+      : live.withValue(address, timing);
 
-  void _publish({bool? ready}) {
-    if (_closing) return;
-    _emit(
-      RecordTimingState(
-        defaultTiming: _repository.defaultRecordTiming,
-        rememberedDivision: _repository.sessionTransport.quantizeDiv,
-        trackOverrides: Map.unmodifiable(
-          _repository.trackRecordTimingOverrides,
-        ),
-        captureLocked: _repository.recordTimingCaptureLocked,
-        recordTimingReady: ready ?? _initialized,
-      ),
-    );
-  }
+  /// Changes the ordinary default.
+  Future<RecordTimingOutcome> setTiming(RecordTiming timing) async => _convert(
+    await owner.update(
+      (live) => _with(live, const RecordTimingAddress.defaults(), timing),
+      address: const RecordTimingAddress.defaults(),
+      edit: const RecordTimingAddress.defaults(),
+    ),
+  );
 
-  void _onLooperState(LooperState _) {
-    if (_closing) return;
-    if (_applying) return;
-    final replaced = _lifetime != recordTimingLifetime;
-    if (replaced) {
-      _lifetime = recordTimingLifetime;
-      _revisions.clear();
-    }
-    if (_initialized &&
-        _storeRecovery == null &&
-        !_repository.recordTimingRecoveryRequired &&
-        _repository.recordTimingSettingsSettled) {
-      _publish();
-      if (replaced && _storeRecovery == null) {
-        _last = const RecordTimingOutcome(RecordTimingStatus.applied);
-      }
-    } else {
-      _publish(ready: false);
-    }
-  }
-
-  Future<T> _queue<T>(Future<T> Function() operation) {
-    final result = _tail.then((_) => operation());
-    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
-    return result;
-  }
-
-  Future<void> load() => _loadFuture ??= _restore();
-  Future<void> _restore() async {
-    final startupSession = _repository.sessionRevision;
-    try {
-      final saved = await _settings.readRecordTimingCheckpoint();
-      while (!_closing) {
-        final origin = recordTimingLifetime;
-        final done = await _queue(() async {
-          if (_closing) return true;
-          if (origin != recordTimingLifetime) return false;
-          _applying = true;
-          try {
-            await _repository.settleRecordTimingSettings();
-            if (_closing) return true;
-            if (origin != recordTimingLifetime) return false;
-            if (_repository.recordTimingRecoveryRequired) {
-              _report(
-                const RecordTimingOutcome(RecordTimingStatus.recoveryRequired),
-              );
-              return true;
-            }
-            if (origin.sessionRevision == startupSession) {
-              final division = GridDivision.fromCode(saved.division ?? 0);
-              var result = _repository.setRecordTimingSettings(
-                defaultTiming: RecordTiming.of(
-                  quantize: saved.quantize ?? false,
-                  division: division,
-                ),
-                rememberedDivision: division,
-                trackOverrides: {
-                  for (final e in saved.trackOverrides.entries)
-                    e.key: RecordTiming.values[e.value],
-                },
-              );
-              if (result.isOk) {
-                result = await _repository.settleRecordTimingSettings();
-              }
-              if (_closing) return true;
-              if (origin != recordTimingLifetime) return false;
-              if (!result.isOk) {
-                _report(
-                  RecordTimingOutcome(
-                    RecordTimingStatus.recoveryRequired,
-                    engineResult: result,
-                  ),
-                );
-                return true;
-              }
-            }
-            _initialized = true;
-            _lifetime = recordTimingLifetime;
-            _publish();
-            _report(const RecordTimingOutcome(RecordTimingStatus.applied));
-            return true;
-          } finally {
-            _applying = false;
-          }
-        });
-        if (done) return;
-      }
-    } on Object catch (error) {
-      if (!_closing) {
-        _report(
-          RecordTimingOutcome(
-            RecordTimingStatus.recoveryRequired,
-            error: error,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<RecordTimingOutcome> setTiming(RecordTiming timing) =>
-      _write(const RecordTimingAddress.defaults(), timing, ordinary: true);
+  /// Toggles the gate while keeping the confirmed remembered division.
   Future<RecordTimingOutcome> setEnabled({required bool value}) async {
     await load();
     return setTiming(
@@ -225,7 +123,17 @@ class RecordTimingSettings implements RecordTimingControl {
   Future<RecordTimingOutcome> setTrackTiming({
     required int channel,
     required RecordTiming? timing,
-  }) => _write(RecordTimingAddress.track(channel), timing, ordinary: true);
+  }) async {
+    final address = RecordTimingAddress.track(channel);
+    return _convert(
+      await owner.update(
+        (live) => _with(live, address, timing),
+        address: address,
+        edit: address,
+      ),
+    );
+  }
+
   @override
   Future<RecordTimingOutcome> setControllerTiming(
     RecordTimingAddress address,
@@ -233,279 +141,35 @@ class RecordTimingSettings implements RecordTimingControl {
     required RecordTimingLifetime lifetime,
     required int revision,
     RecordTiming? releasedTiming,
-  }) => _write(
-    address,
-    timing,
-    lifetime: lifetime,
-    revision: revision,
-    releasedTiming: releasedTiming,
+  }) async => _convert(
+    await owner.updateController(
+      (live) => _with(live, address, timing),
+      address: address,
+      edit: address,
+      lifetime: lifetime,
+      revision: revision,
+      released: releasedTiming == null
+          ? null
+          : (held) => held.withValue(address, releasedTiming),
+    ),
   );
 
-  Future<RecordTimingOutcome> _write(
-    RecordTimingAddress address,
-    RecordTiming? timing, {
-    bool ordinary = false,
-    RecordTimingLifetime? lifetime,
-    int? revision,
-    RecordTiming? releasedTiming,
-  }) async {
-    if (!address.isValid || (address.channel == null && timing == null)) {
-      return _report(
-        const RecordTimingOutcome(
-          RecordTimingStatus.rejected,
-          engineResult: EngineResult.invalid,
-        ),
+  static RecordTimingOutcome _convert(SettingOutcome outcome) =>
+      RecordTimingOutcome(
+        RecordTimingStatus.values.byName(outcome.status.name),
+        deferred: outcome.deferred,
+        engineResult: outcome.engineResult,
+        error: outcome.error,
       );
-    }
-    final origin = lifetime ?? recordTimingLifetime;
-    await load();
-    return _queue(() async {
-      bool current() =>
-          origin == recordTimingLifetime &&
-          (revision == null || revision == recordTimingRevision(address));
-      if (!current()) {
-        return const RecordTimingOutcome(RecordTimingStatus.superseded);
-      }
-      if (_closing ||
-          !_initialized ||
-          _storeRecovery != null ||
-          _repository.recordTimingRecoveryRequired ||
-          _repository.recordTimingCaptureLocked) {
-        return _report(
-          RecordTimingOutcome(
-            _storeRecovery != null || _repository.recordTimingRecoveryRequired
-                ? RecordTimingStatus.recoveryRequired
-                : RecordTimingStatus.rejected,
-            engineResult: EngineResult.notReady,
-          ),
-        );
-      }
-      RecordTimingCheckpoint? checkpoint;
-      var attempted = false;
-      try {
-        checkpoint = await _settings.readRecordTimingCheckpoint();
-        if (!current() || _closing) {
-          return const RecordTimingOutcome(RecordTimingStatus.superseded);
-        }
-        final durable = releasedTiming ?? timing;
-        final defaultAddress = address.channel == null;
-        final overrides = Map.of(checkpoint.trackOverrides);
-        if (!defaultAddress) {
-          if (durable == null) {
-            overrides.remove(address.channel);
-          } else {
-            overrides[address.channel!] = durable.code;
-          }
-        }
-        final next = (
-          quantize: defaultAddress ? durable!.quantize : checkpoint.quantize,
-          division: defaultAddress && durable!.quantize
-              ? durable.division.code
-              : checkpoint.division,
-          trackOverrides: Map<int, int>.unmodifiable(overrides),
-        );
-        attempted = true;
-        await _settings.restoreRecordTimingCheckpoint(next);
-        if (!current() || _closing) {
-          throw const _TimingRefusal(RecordTimingStatus.superseded);
-        }
-        if (_repository.recordTimingCaptureLocked) {
-          throw const _TimingRefusal(RecordTimingStatus.rejected);
-        }
-        _applying = true;
-        try {
-          var result = defaultAddress
-              ? _repository.setRecordTiming(
-                  timing!,
-                  releasedTiming: releasedTiming,
-                )
-              : _repository.setTrackRecordTiming(
-                  channel: address.channel!,
-                  timing: timing,
-                  releasedTiming: releasedTiming,
-                );
-          if (result.isOk) {
-            result = await _repository.settleRecordTimingSettings();
-          }
-          if (!current() || _closing) {
-            throw const _TimingRefusal(RecordTimingStatus.superseded);
-          }
-          if (!result.isOk) {
-            throw _TimingRefusal(RecordTimingStatus.rejected, result: result);
-          }
-          _publish();
-          if (ordinary) {
-            _revisions[address] = recordTimingRevision(address) + 1;
-            _ordinary.add((address: address, timing: timing));
-          }
-          return _report(
-            RecordTimingOutcome(
-              RecordTimingStatus.applied,
-              deferred: !_repository.state.status.isConnected,
-            ),
-          );
-        } finally {
-          _applying = false;
-        }
-      } on Object catch (error) {
-        if (attempted) {
-          try {
-            await _settings.restoreRecordTimingCheckpoint(checkpoint!);
-          } on Object catch (rollbackError) {
-            _storeRecovery = checkpoint;
-            return _report(
-              RecordTimingOutcome(
-                RecordTimingStatus.recoveryRequired,
-                error: rollbackError,
-              ),
-            );
-          }
-        }
-        if (_repository.recordTimingRecoveryRequired) {
-          return _report(
-            RecordTimingOutcome(
-              RecordTimingStatus.recoveryRequired,
-              error: error,
-            ),
-          );
-        }
-        if (!current() || _closing) {
-          return const RecordTimingOutcome(RecordTimingStatus.superseded);
-        }
-        return _report(
-          RecordTimingOutcome(
-            _repository.recordTimingRecoveryRequired
-                ? RecordTimingStatus.recoveryRequired
-                : error is _TimingRefusal
-                ? error.status
-                : RecordTimingStatus.rejected,
-            engineResult: error is _TimingRefusal ? error.result : null,
-            error: error,
-          ),
-        );
-      }
-    });
-  }
 
-  Future<RecordTimingOutcome> flushRecordTiming() async {
-    await load();
-    await _tail;
-    final wasSettled = _repository.recordTimingSettingsSettled;
-    final result = await _repository.settleRecordTimingSettings();
-    if (!_initialized ||
-        !state.recordTimingReady ||
-        _storeRecovery != null ||
-        _repository.recordTimingRecoveryRequired) {
-      return _report(
-        RecordTimingOutcome(
-          RecordTimingStatus.recoveryRequired,
-          engineResult: result,
-        ),
-      );
-    }
-    if (!wasSettled && !result.isOk) {
-      return _report(
-        RecordTimingOutcome(
-          RecordTimingStatus.rejected,
-          engineResult: result,
-        ),
-      );
-    }
-    // A settled, exactly compensated edit still reports its refusal to the
-    // caller. That past attempt is not an outstanding persistence obligation.
-    return RecordTimingOutcome(
-      RecordTimingStatus.applied,
-      deferred: !_repository.state.status.isConnected,
-    );
-  }
-
-  Future<RecordTimingOutcome> recoverRecordTiming() async {
-    await load();
-    final outcome = await _queue(() async {
-      if (_closing) {
-        return const RecordTimingOutcome(RecordTimingStatus.rejected);
-      }
-      try {
-        final recovery = _storeRecovery;
-        if (recovery != null) {
-          await _settings.restoreRecordTimingCheckpoint(recovery);
-          if (_closing) {
-            return const RecordTimingOutcome(RecordTimingStatus.superseded);
-          }
-          _storeRecovery = null;
-        }
-        if (_repository.recordTimingRecoveryRequired) {
-          final result = _repository.recoverRecordTimingSettings();
-          if (!result.isOk) {
-            return _report(
-              RecordTimingOutcome(
-                RecordTimingStatus.recoveryRequired,
-                engineResult: result,
-              ),
-            );
-          }
-        }
-        if (!_initialized) {
-          return const RecordTimingOutcome(RecordTimingStatus.applied);
-        }
-        if (!_repository.recordTimingSettingsSettled) {
-          return _report(
-            const RecordTimingOutcome(RecordTimingStatus.rejected),
-          );
-        }
-        _publish();
-        return _report(
-          RecordTimingOutcome(
-            RecordTimingStatus.applied,
-            deferred: !_repository.state.status.isConnected,
-          ),
-        );
-      } on Object catch (error) {
-        return _report(
-          RecordTimingOutcome(
-            RecordTimingStatus.recoveryRequired,
-            error: error,
-          ),
-        );
-      }
-    });
-    if (outcome.isOk && !_initialized) {
-      await _restore();
-      return _last;
-    }
-    return outcome;
-  }
-
-  Future<T> runRecordTimingExclusive<T>(Future<T> Function() operation) async {
-    await load();
-    return _queue(() async {
-      await _repository.settleRecordTimingSettings();
-      if (!_initialized ||
-          _closing ||
-          _storeRecovery != null ||
-          _repository.recordTimingRecoveryRequired) {
-        throw StateError('Record timing is not confirmed');
-      }
-      return operation();
-    });
-  }
-
-  /// Retires publication and waits for admitted work before closing streams.
+  /// Lets admitted work finish, then disposes the owner.
   Future<void> close() => _closeFuture ??= _close();
+
   Future<void> _close() async {
-    _closing = true;
-    await _subscription.cancel();
-    await _receiptFailures.cancel();
-    await _loadFuture;
-    await _tail;
-    await _ordinary.close();
-    await _failures.close();
+    await Future.wait([
+      for (final subscription in _subscriptions) subscription.cancel(),
+    ]);
+    await owner.close();
     await _states.close();
   }
-}
-
-final class _TimingRefusal implements Exception {
-  const _TimingRefusal(this.status, {this.result});
-  final RecordTimingStatus status;
-  final EngineResult? result;
 }

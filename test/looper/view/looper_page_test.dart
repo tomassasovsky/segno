@@ -130,10 +130,6 @@ void main() {
                   settings: settings,
                   mixSettings: mixSettings,
                   fxPersistence: fxPersistence,
-                  decayControl: playback,
-                  oneShotControl: playback,
-                  recordLengthControl: recordOptions,
-                  recordTimingControl: timing,
                 ),
               ),
               BlocProvider<TempoCubit>(
@@ -162,8 +158,8 @@ void main() {
               BlocProvider<ControlCubit>(
                 create: (_) => ControlCubit(
                   fadeSettings: testFadeSettings(),
-                  decayControl: playback,
-                  oneShotControl: playback,
+                  decayControl: playback.decayControl,
+                  oneShotControl: playback.oneShotControl,
                   recordLengthControl: recordOptions,
                   recordTimingControl: timing,
                   clickVolumeControl: tempo.clickVolumeControl,
@@ -191,7 +187,12 @@ void main() {
                     looper: repository,
                     mix: mixSettings,
                     fx: fxPersistence,
-                    owners: SettingsOwners(tempo.owners),
+                    owners: SettingsOwners([
+                      ...tempo.owners,
+                      ...playback.owners,
+                      ...recordOptions.owners,
+                      ...timing.owners,
+                    ]),
                     tempo: tempo,
                     playback: playback,
                     record: recordOptions,

@@ -95,6 +95,13 @@ void main() {
       (_) => const Stream<EngineResult>.empty(),
     );
     when(() => looper.recordLengthCaptureLocked).thenReturn(false);
+    when(() => looper.lengthRestartIntent).thenAnswer(
+      (_) => (
+        defaultBars: confirmedLength,
+        trackOverrides: const <int, int>{},
+        mode: LooperMode.multi,
+      ),
+    );
     when(() => looper.recordTimingFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
@@ -118,6 +125,8 @@ void main() {
         defaultTiming: any(named: 'defaultTiming'),
         rememberedDivision: any(named: 'rememberedDivision'),
         trackOverrides: any(named: 'trackOverrides'),
+        released: any(named: 'released'),
+        editMask: any(named: 'editMask'),
       ),
     ).thenAnswer((call) {
       confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
@@ -142,6 +151,7 @@ void main() {
       () => looper.setLengthSettings(
         defaultBars: any(named: 'defaultBars'),
         overrides: any(named: 'overrides'),
+        released: any(named: 'released'),
         mode: any(named: 'mode'),
       ),
     ).thenAnswer((call) {
@@ -345,6 +355,8 @@ void main() {
           defaultTiming: any(named: 'defaultTiming'),
           rememberedDivision: any(named: 'rememberedDivision'),
           trackOverrides: any(named: 'trackOverrides'),
+          released: any(named: 'released'),
+          editMask: any(named: 'editMask'),
         ),
       );
     });
@@ -374,6 +386,7 @@ void main() {
         () => looper.setLengthSettings(
           defaultBars: any(named: 'defaultBars'),
           overrides: any(named: 'overrides'),
+          released: any(named: 'released'),
           mode: any(named: 'mode'),
         ),
       );

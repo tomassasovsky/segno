@@ -184,10 +184,6 @@ void main() {
         settings: settings,
         mixSettings: mix,
         fxPersistence: fx,
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
-        recordLengthControl: FakeRecordLengthControl(),
-        recordTimingControl: FakeRecordTimingControl(),
       );
       addTearDown(() async {
         await bloc.close();
@@ -550,10 +546,6 @@ void main() {
           settings: settings,
           mixSettings: mix,
           fxPersistence: fx,
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
-          recordLengthControl: FakeRecordLengthControl(),
-          recordTimingControl: FakeRecordTimingControl(),
         );
         addTearDown(() async {
           await bloc.close();

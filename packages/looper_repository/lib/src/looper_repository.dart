@@ -79,54 +79,15 @@ class _TimingIntent {
   final Map<int, RecordTiming> overrides;
 }
 
-class _PendingTiming {
-  _PendingTiming({
-    required this.intent,
-    required this.restart,
-    required this.recovery,
-    required this.recoveryRestart,
-    required this.expectedRevision,
-    required this.prior,
-    required this.startup,
-  });
-  final _TimingIntent intent;
-  final _TimingIntent restart;
-  final _TimingIntent recovery;
-  final _TimingIntent recoveryRestart;
-  final int expectedRevision;
-  final EngineSnapshot prior;
-  final bool startup;
-  final observation = ReceiptObservation();
-}
-
 class _LengthIntent {
   _LengthIntent(this.defaultBars, Map<int, int> overrides, this.mode)
     : overrides = Map.unmodifiable(overrides);
   final int defaultBars;
   final Map<int, int> overrides;
   final LooperMode mode;
-}
 
-class _PendingLengthSettings {
-  _PendingLengthSettings({
-    required this.intent,
-    required this.restart,
-    required this.recovery,
-    required this.recoveryRestart,
-    required this.bars,
-    required this.priorBars,
-    required this.priorMode,
-    required this.startup,
-  });
-  final _LengthIntent intent;
-  final _LengthIntent restart;
-  final _LengthIntent recovery;
-  final _LengthIntent recoveryRestart;
-  final List<int> bars;
-  final List<int> priorBars;
-  final LooperMode priorMode;
-  final bool startup;
-  final observation = ReceiptObservation();
+  _LengthIntent withMode(LooperMode next) =>
+      _LengthIntent(defaultBars, overrides, next);
 }
 
 /// Builds the production [AudioEngine] backed by the native segno engine.
@@ -286,13 +247,13 @@ class LooperRepository {
   /// first be set with it stopped. Scanning does not touch the device.
   Future<List<PluginDescriptor>>? _restoredPluginScan;
 
-  /// The desired quantize-recording state, re-applied to the engine on every
+  /// The accepted quantize-recording state, re-applied to the engine on every
   /// successful (re)start so it survives device changes and reconnects.
-  bool _quantize = false;
+  bool get _quantize => _timing.live.defaultTiming.quantize;
 
-  /// Per-track record timing overrides (absent => follow the default).
-  /// Remembered and re-applied on every successful (re)start.
-  final Map<int, RecordTiming> _trackRecordTiming = {};
+  /// Accepted per-track record timing overrides (absent => follow the
+  /// default). Re-applied on every successful (re)start.
+  Map<int, RecordTiming> get _trackRecordTiming => _timing.live.overrides;
 
   /// The default overdub decay in percent and the per-track overrides
   /// (absent => follow the default). Remembered and re-applied on every
@@ -302,10 +263,6 @@ class LooperRepository {
   final Map<int, int> _trackOverdubDecay = {};
   int _restartOverdubDecay = 0;
   final Map<int, int> _restartTrackOverdubDecay = {};
-  EngineResult _decayReplayResult = EngineResult.ok;
-
-  /// Last atomic decay replay result from an engine start.
-  EngineResult get decayReplayResult => _decayReplayResult;
 
   /// Durable default and override membership to replay after device
   /// replacement.
@@ -333,36 +290,25 @@ class LooperRepository {
       ..addAll(trackOverrides);
   }
 
-  bool _restartOneShot = false;
-  final Map<int, bool> _restartTrackOneShot = {};
-  _PendingOneShot? _pendingOneShot;
-  _OneShotIntent? _oneShotRecoveryIntent;
-  _OneShotIntent? _oneShotRecoveryRestart;
-  EngineResult _lastOneShotResult = EngineResult.ok;
+  late final _oneShot = SettingsReceipt<_OneShotIntent>(
+    _OneShotIntent(const {}, defaultValue: false),
+    send: _sendOneShot,
+    running: () => _intendRunning,
+    publish: () => _reproject(forcePublication: true),
+  );
 
-  /// Whether an uncertain callback requires explicit recovery before replay.
-  bool get oneShotRecoveryRequired => _oneShotRecoveryIntent != null;
+  /// An uncertain receipt owes its Released vector until Retry or restart.
+  bool get oneShotRecoveryRequired => _oneShot.recoveryRequired;
 
   /// Durable membership for engine restart and named session capture.
   ({bool defaultOneShot, Map<int, bool> trackOverrides})
   get oneShotRestartIntent => (
-    defaultOneShot: _restartOneShot,
-    trackOverrides: Map.unmodifiable(_restartTrackOneShot),
+    defaultOneShot: _oneShot.restart.defaultValue,
+    trackOverrides: _oneShot.restart.overrides,
   );
 
-  /// Sets authored Released intent without changing audible playback.
-  void setOneShotRestartIntent({
-    required bool defaultOneShot,
-    required Map<int, bool> trackOverrides,
-  }) {
-    if (trackOverrides.keys.any((c) => c < 0 || c >= 8)) {
-      throw ArgumentError('Invalid playback track');
-    }
-    _restartOneShot = defaultOneShot;
-    _restartTrackOneShot
-      ..clear()
-      ..addAll(trackOverrides);
-  }
+  /// Playback refusals and autonomous restart uncertainty.
+  Stream<EngineResult> get oneShotFailures => _oneShot.failures;
 
   /// Per-track forced loop multiples (absent => auto). The global rec/dub and
   /// auto-record (sound-activated) flags. All re-applied on every (re)start.
@@ -425,7 +371,7 @@ class LooperRepository {
   int _tsNum = 4;
   int _tsDen = 4;
   bool _syncTempo = true;
-  GridDivision _quantizeDiv = GridDivision.off;
+  GridDivision get _quantizeDiv => _timing.live.rememberedDivision;
   late final _clickMode = SettingsReceipt<ClickMode>(
     ClickMode.off,
     send: _sendClickMode,
@@ -460,7 +406,7 @@ class LooperRepository {
   /// Never reset on [clear]: the plan specifies no engine-side "revert to
   /// Multi" event, so the mode simply persists across a clear-all the same
   /// way it persists across a device restart.
-  LooperMode _looperMode = LooperMode.multi;
+  LooperMode get _looperMode => _length.live.mode;
 
   /// An explicit crown ([crownPrimary]) requested while the engine was not
   /// running, held until the next start pushes it; `null` when nothing is
@@ -473,29 +419,34 @@ class LooperRepository {
   /// Future-recording length: absent track overrides inherit the default;
   /// explicit zero is Custom Auto. Multi shares the default while retaining
   /// independent-mode overrides without applying them.
-  int _defaultLengthPreset = 0;
-  final Map<int, int> _trackLengthPreset = {};
-  _LengthIntent _lengthRestart = _LengthIntent(0, {}, LooperMode.multi);
-  _LengthIntent? _lengthRecovery;
-  _LengthIntent? _lengthRecoveryRestart;
+  int get _defaultLengthPreset => _length.live.defaultBars;
+  Map<int, int> get _trackLengthPreset => _length.live.overrides;
 
-  /// Whether an uncertain length receipt blocks restart until recovery.
-  bool get lengthRecoveryRequired => _lengthRecovery != null;
+  /// Whether an uncertain length receipt owes its vector until Retry or a
+  /// restart lands it.
+  bool get lengthRecoveryRequired => _length.recoveryRequired;
 
   /// Durable presets for restart and session capture, projected to Released.
   ({int defaultBars, Map<int, int> trackOverrides, LooperMode mode})
   get lengthRestartIntent => (
-    defaultBars: _lengthRestart.defaultBars,
-    trackOverrides: _lengthRestart.overrides,
-    mode: _lengthRestart.mode,
+    defaultBars: _length.restart.defaultBars,
+    trackOverrides: _length.restart.overrides,
+    mode: _length.restart.mode,
   );
 
-  /// Actual capture lock, including any track recording or overdubbing.
-  bool get recordLengthCaptureLocked => _engine.snapshot().tracks.any(
-    (track) =>
-        track.state == TrackState.recording ||
-        track.state == TrackState.overdubbing,
-  );
+  /// Whether a take is capturing: a running engine with a track recording or
+  /// overdubbing. A stopped engine's last snapshot never locks a setting.
+  /// Armed and counting-in tracks do not lock.
+  bool get captureLocked =>
+      _intendRunning &&
+      _engine.snapshot().tracks.any(
+        (track) =>
+            track.state == TrackState.recording ||
+            track.state == TrackState.overdubbing,
+      );
+
+  /// Capture locks Record length; see [captureLocked].
+  bool get recordLengthCaptureLocked => captureLocked;
 
   static int _clampPresetBars(int bars) => bars.clamp(0, 64);
 
@@ -796,7 +747,6 @@ class LooperRepository {
     bool replay = false,
     bool startup = false,
   }) {
-    if (recordTimingRecoveryRequired) return EngineResult.notReady;
     if (_pendingMix != null) return _mixFailure(EngineResult.notReady);
     if (!next.input.isValid || !next.output.isValid) {
       return _mixFailure(EngineResult.invalid);
@@ -854,12 +804,12 @@ class LooperRepository {
       _clickMode,
       _clickVolume,
       _recordStart,
+      _oneShot,
+      _timing,
+      _length,
     ]) {
       receipt.cancel();
     }
-    _cancelTiming();
-    _cancelLengthSettings();
-    _cancelOneShot();
     _cancelMix();
     _mixGeneration++;
     if (_pendingImages.isNotEmpty) _snapshotAndSettleImages();
@@ -1207,34 +1157,27 @@ class LooperRepository {
     return snapshot;
   }
 
-  _PendingTiming? _pendingTiming;
-  _TimingIntent _timingRestart = _TimingIntent(
-    RecordTiming.immediately,
-    GridDivision.off,
-    {},
+  late final _timing = SettingsReceipt<_TimingIntent>(
+    _TimingIntent(RecordTiming.immediately, GridDivision.off, const {}),
+    send: _sendTiming,
+    running: () => _intendRunning,
+    publish: () => _reproject(forcePublication: true),
   );
-  _TimingIntent? _timingRecovery;
-  _TimingIntent? _timingRecoveryRestart;
-  EngineResult _lastTimingResult = EngineResult.ok;
-  final _timingFailures = StreamController<EngineResult>.broadcast();
+
+  /// Which fields the next timing command edits; a full vector is `0x1ff`.
+  int _timingEditMask = 0x1ff;
 
   /// Callback refusal or uncertainty from both explicit edits and reconnects.
-  Stream<EngineResult> get recordTimingFailures => _timingFailures.stream;
+  Stream<EngineResult> get recordTimingFailures => _timing.failures;
 
   /// No timing vector is awaiting its complete callback receipt.
-  bool get recordTimingSettingsSettled => _pendingTiming == null;
+  bool get recordTimingSettingsSettled => _timing.settled;
 
-  /// Uncertain callback state must be explicitly recovered before new edits.
-  bool get recordTimingRecoveryRequired => _timingRecovery != null;
+  /// An uncertain receipt owes its Released vector until Retry or restart.
+  bool get recordTimingRecoveryRequired => _timing.recoveryRequired;
 
-  /// Capturing audio locks future timing; waiting arms alone do not.
-  bool get recordTimingCaptureLocked =>
-      _intendRunning &&
-      _engine.snapshot().tracks.any(
-        (t) =>
-            t.state == TrackState.recording ||
-            t.state == TrackState.overdubbing,
-      );
+  /// Capture locks Record timing; see [captureLocked].
+  bool get recordTimingCaptureLocked => captureLocked;
 
   /// Released restart intent, independent of a temporary live Held value.
   ({
@@ -1243,83 +1186,67 @@ class LooperRepository {
     Map<int, RecordTiming> trackOverrides,
   })
   get recordTimingRestartIntent => (
-    defaultTiming: _timingRestart.defaultTiming,
-    rememberedDivision: _timingRestart.rememberedDivision,
-    trackOverrides: _timingRestart.overrides,
+    defaultTiming: _timing.restart.defaultTiming,
+    rememberedDivision: _timing.restart.rememberedDivision,
+    trackOverrides: _timing.restart.overrides,
   );
-
-  EngineResult _reportTiming(EngineResult result) {
-    if (!_timingFailures.isClosed) _timingFailures.add(result);
-    return result;
-  }
-
-  void _cancelTiming() {
-    final pending = _pendingTiming;
-    _pendingTiming = null;
-
-    if (pending != null) {
-      _lastTimingResult = EngineResult.notReady;
-      pending.observation.complete(EngineResult.notReady);
-    }
-  }
-
-  void _acceptTiming(_TimingIntent intent, _TimingIntent restart) {
-    _quantize = intent.defaultTiming.quantize;
-    _quantizeDiv = intent.rememberedDivision;
-    _trackRecordTiming
-      ..clear()
-      ..addAll(intent.overrides);
-    _timingRestart = restart;
-  }
 
   EngineResult _requestTiming(
     _TimingIntent intent, {
     required int editMask,
     _TimingIntent? restart,
-    bool startup = false,
   }) {
-    if (_pendingTiming != null || recordTimingRecoveryRequired) {
-      return _reportTiming(EngineResult.notReady);
-    }
-    final durable = restart ?? intent;
-    if (!_intendRunning) {
-      _acceptTiming(intent, durable);
-      _lastTimingResult = EngineResult.ok;
-      _reproject();
-      return EngineResult.ok;
-    }
-    if (recordTimingCaptureLocked) return _reportTiming(EngineResult.invalid);
+    _timingEditMask = editMask;
+    final result = _timing.request(intent, restart: restart);
+    _timingEditMask = 0x1ff;
+    _reproject();
+    return result.isOk && _timing.settled ? _timing.lastResult : result;
+  }
+
+  ({EngineResult result, ReceiptCheck? check}) _sendTiming(
+    _TimingIntent intent,
+  ) {
+    if (captureLocked) return (result: EngineResult.invalid, check: null);
     final prior = _engine.snapshot();
     final result = _engine.setRecordTimingSettings(
       defaultTiming: intent.defaultTiming,
       rememberedDivision: intent.rememberedDivision,
       trackOverrides: intent.overrides,
-      editMask: editMask,
+      editMask: _timingEditMask,
     );
-    if (!result.isOk) return _reportTiming(result);
-    final pending = _PendingTiming(
-      intent: intent,
-      restart: durable,
-      recovery: startup
-          ? intent
-          : _TimingIntent(
-              defaultRecordTiming,
-              _quantizeDiv,
-              _trackRecordTiming,
+    final expected = (prior.recordTimingRevision + 2) & 0xffffffff;
+    final before = _TimingIntent(
+      RecordTiming.of(quantize: prior.quantize, division: prior.quantizeDiv),
+      prior.quantizeDiv,
+      {
+        for (var c = 0; c < prior.tracks.length; c++)
+          if (prior.tracks[c].quantizeOverride != null)
+            c: RecordTiming.of(
+              quantize: prior.tracks[c].quantizeOverride!,
+              division: prior.tracks[c].quantizeDivOverride ?? GridDivision.off,
             ),
-      recoveryRestart: startup ? durable : _timingRestart,
-      expectedRevision: (prior.recordTimingRevision + 2) & 0xffffffff,
-      prior: prior,
-      startup: startup,
+      },
     );
-    _pendingTiming = pending;
-    _watchReceipt(
-      pending.observation,
-      settle: _settleTiming,
-      expire: () => _failTiming(pending, EngineResult.notReady),
+    return (
+      result: result,
+      // The revision fences the receipt; the vector must match exactly.
+      check: () {
+        if (!_engine.commandsSettled) return null;
+        final snapshot = _engine.snapshot();
+        if (snapshot.recordTimingRevision != expected) return null;
+        final result = EngineResult.fromCode(snapshot.recordTimingResult);
+        if (result.isOk && _timingMatches(snapshot, intent)) {
+          return (verdict: ReceiptVerdict.accepted, result: result);
+        }
+        if (!result.isOk && _timingMatches(snapshot, before)) {
+          return (verdict: ReceiptVerdict.refused, result: result);
+        }
+        return (
+          verdict: ReceiptVerdict.uncertain,
+          result: result.isOk ? EngineResult.invalid : result,
+        );
+      },
     );
-    if (!startup) _reproject();
-    return _pendingTiming == null ? _lastTimingResult : EngineResult.ok;
   }
 
   bool _timingMatches(EngineSnapshot snapshot, _TimingIntent intent) {
@@ -1339,283 +1266,178 @@ class LooperRepository {
     return true;
   }
 
-  bool _settleTiming() {
-    final pending = _pendingTiming;
-    if (pending == null || !_engine.commandsSettled) return false;
-    final snapshot = _engine.snapshot();
-    if (snapshot.recordTimingRevision != pending.expectedRevision) return false;
-    final result = EngineResult.fromCode(snapshot.recordTimingResult);
-    if (result.isOk && _timingMatches(snapshot, pending.intent)) {
-      _pendingTiming = null;
-
-      _acceptTiming(pending.intent, pending.restart);
-      _lastTimingResult = EngineResult.ok;
-      pending.observation.complete(EngineResult.ok);
-    } else if (!result.isOk &&
-        _timingMatches(
-          snapshot,
-          _TimingIntent(
-            RecordTiming.of(
-              quantize: pending.prior.quantize,
-              division: pending.prior.quantizeDiv,
-            ),
-            pending.prior.quantizeDiv,
-            {
-              for (var c = 0; c < pending.prior.tracks.length; c++)
-                if (pending.prior.tracks[c].quantizeOverride != null)
-                  c: RecordTiming.of(
-                    quantize: pending.prior.tracks[c].quantizeOverride!,
-                    division:
-                        pending.prior.tracks[c].quantizeDivOverride ??
-                        GridDivision.off,
-                  ),
-            },
-          ),
-        ) &&
-        !pending.startup) {
-      _pendingTiming = null;
-
-      _lastTimingResult = result;
-      pending.observation.complete(result);
-      _reportTiming(result);
-    } else {
-      _failTiming(pending, EngineResult.invalid);
-    }
-    return true;
-  }
-
-  void _failTiming(_PendingTiming pending, EngineResult result) {
-    if (!identical(_pendingTiming, pending)) return;
-    _pendingTiming = null;
-
-    _timingRecovery = pending.recovery;
-    _timingRecoveryRestart = pending.recoveryRestart;
-    _lastTimingResult = result;
-    pending.observation.complete(result);
-    // A take is never stopped to clean up future settings. Retry can repair
-    // after capture exits; a callback that resumes will refuse this vector.
-    if (!recordTimingCaptureLocked) stopEngine();
-    _reportTiming(result);
-  }
-
   /// Awaits the exact revision/result/vector, with a bounded callback deadline.
   Future<EngineResult> settleRecordTimingSettings({
     Duration pollInterval = const Duration(milliseconds: 10),
     int attempts = 50,
-  }) async {
-    final pending = _pendingTiming;
-    if (pending == null) return _lastTimingResult;
-    return pending.observation.wait(
-      pollInterval: pollInterval,
-      attempts: attempts,
-    );
-  }
+  }) => _timing.settle(pollInterval: pollInterval, attempts: attempts);
 
-  /// Explicit Retry repairs only the current lifetime's retained obligation.
+  /// Retry re-requests the owed vector while running and stages it stopped.
+  /// Never stops audio.
   EngineResult recoverRecordTimingSettings() {
-    final intent = _timingRecovery;
-    if (intent == null) return _lastTimingResult;
-    if (recordTimingCaptureLocked) return EngineResult.notReady;
-    if (_intendRunning) stopEngine();
-    _acceptTiming(intent, _timingRecoveryRestart!);
-    _timingRecovery = null;
-    _timingRecoveryRestart = null;
-    _lastTimingResult = EngineResult.ok;
+    final result = _timing.recover();
     _reproject();
-    return EngineResult.ok;
+    return result;
   }
 
-  /// Stages the complete validated startup or recalled session vector.
+  /// Stages or requests a complete timing vector, with an optional Released
+  /// vector for restart. [editMask] names the fields an edit changes; a
+  /// startup, Session or restore vector edits all of them.
   EngineResult setRecordTimingSettings({
     required RecordTiming defaultTiming,
     required GridDivision rememberedDivision,
     required Map<int, RecordTiming> trackOverrides,
+    ({
+      RecordTiming defaultTiming,
+      GridDivision rememberedDivision,
+      Map<int, RecordTiming> trackOverrides,
+    })?
+    released,
+    int editMask = 0x1ff,
   }) {
-    if (trackOverrides.keys.any((c) => c < 0 || c >= 8) ||
-        (defaultTiming.quantize &&
-            defaultTiming.division != rememberedDivision)) {
+    bool invalid(
+      RecordTiming timing,
+      GridDivision remembered,
+      Map<int, RecordTiming> overrides,
+    ) =>
+        overrides.keys.any((c) => c < 0 || c >= 8) ||
+        (timing.quantize && timing.division != remembered);
+    if (invalid(defaultTiming, rememberedDivision, trackOverrides) ||
+        (released != null &&
+            invalid(
+              released.defaultTiming,
+              released.rememberedDivision,
+              released.trackOverrides,
+            ))) {
       return EngineResult.invalid;
     }
     return _requestTiming(
       _TimingIntent(defaultTiming, rememberedDivision, trackOverrides),
-      editMask: 0x1ff,
+      editMask: editMask,
+      restart: released == null
+          ? null
+          : _TimingIntent(
+              released.defaultTiming,
+              released.rememberedDivision,
+              released.trackOverrides,
+            ),
     );
   }
 
-  _PendingLengthSettings? _pendingLengthSettings;
-  EngineResult _lastLengthResult = EngineResult.ok;
-  final _lengthSettingsFailures = StreamController<EngineResult>.broadcast();
+  late final _length = SettingsReceipt<_LengthIntent>(
+    _LengthIntent(0, const {}, LooperMode.multi),
+    send: _sendLength,
+    running: () => _intendRunning,
+    publish: () => _reproject(forcePublication: true),
+  );
 
-  /// Refused length or mode requests, including immediate validation/queue
-  /// refusal and a failed startup replay. Supersession and cancellation are
-  /// quiet.
-  Stream<EngineResult> get lengthSettingsFailures =>
-      _lengthSettingsFailures.stream;
+  /// Whether the next length command also switches the looper mode.
+  bool _lengthChangeMode = false;
 
-  EngineResult _reportLengthSettingsFailure(EngineResult result) {
-    if (!_lengthSettingsFailures.isClosed) {
-      _lengthSettingsFailures.add(result);
-    }
-    return result;
-  }
+  /// Refused length or mode receipts and autonomous restart uncertainty.
+  Stream<EngineResult> get lengthSettingsFailures => _length.failures;
 
   /// No native request is outstanding; recovery is a separate admission gate.
-  bool get lengthSettingsSettled => _pendingLengthSettings == null;
-
-  void _cancelLengthSettings() {
-    final pending = _pendingLengthSettings;
-    _pendingLengthSettings = null;
-
-    if (pending != null) {
-      _lastLengthResult = EngineResult.notReady;
-      pending.observation.complete(EngineResult.notReady);
-    }
-  }
-
-  void _acceptLength(_LengthIntent intent, _LengthIntent restart) {
-    _defaultLengthPreset = intent.defaultBars;
-    _trackLengthPreset
-      ..clear()
-      ..addAll(intent.overrides);
-    _looperMode = intent.mode;
-    _lengthRestart = restart;
-  }
+  bool get lengthSettingsSettled => _length.settled;
 
   EngineResult _requestLengthSettings({
     required int defaultBars,
     required Map<int, int> overrides,
     required LooperMode mode,
     bool changeMode = false,
-    bool startup = false,
     _LengthIntent? restart,
   }) {
-    if (_pendingLengthSettings != null || lengthRecoveryRequired) {
-      return _reportLengthSettingsFailure(EngineResult.notReady);
-    }
-    final intent = _LengthIntent(defaultBars, overrides, mode);
-    final durable = restart ?? intent;
-    if (!_intendRunning) {
-      _acceptLength(intent, durable);
-      _lastLengthResult = EngineResult.ok;
-      _reproject();
-      return EngineResult.ok;
-    }
-    if (recordLengthCaptureLocked) {
-      return _reportLengthSettingsFailure(EngineResult.invalid);
-    }
-    final snapshot = _engine.snapshot();
+    _lengthChangeMode = changeMode;
+    final result = _length.request(
+      _LengthIntent(defaultBars, overrides, mode),
+      restart: restart,
+    );
+    _lengthChangeMode = false;
+    _reproject();
+    return result.isOk && _length.settled ? _length.lastResult : result;
+  }
+
+  ({EngineResult result, ReceiptCheck? check}) _sendLength(
+    _LengthIntent intent,
+  ) {
+    if (captureLocked) return (result: EngineResult.invalid, check: null);
+    final prior = _engine.snapshot();
     final bars = _lengthPresetsFor(
-      mode,
-      defaultBars: defaultBars,
-      overrides: overrides,
+      intent.mode,
+      defaultBars: intent.defaultBars,
+      overrides: intent.overrides,
     );
-    final result = changeMode
-        ? _engine.setLooperModeWithPresets(mode, bars)
+    final result = _lengthChangeMode
+        ? _engine.setLooperModeWithPresets(intent.mode, bars)
         : _engine.setTrackLengthPresets(bars);
-    if (!result.isOk) return _reportLengthSettingsFailure(result);
-    final pending = _PendingLengthSettings(
-      intent: intent,
-      restart: durable,
-      recovery: startup
-          ? intent
-          : _LengthIntent(
-              _defaultLengthPreset,
-              _trackLengthPreset,
-              _looperMode,
-            ),
-      recoveryRestart: startup ? durable : _lengthRestart,
-      bars: bars,
-      priorBars: [for (final track in snapshot.tracks) track.lengthPresetBars],
-      priorMode: snapshot.looperMode,
-      startup: startup,
+    final priorBars = [
+      for (final track in prior.tracks) track.lengthPresetBars,
+    ];
+    final priorMode = prior.looperMode;
+    return (
+      result: result,
+      check: () {
+        if (!_engine.commandsSettled) return null;
+        final snapshot = _engine.snapshot();
+        bool matches(List<int> expected, LooperMode mode) {
+          if (snapshot.looperMode != mode ||
+              snapshot.tracks.length != 8 ||
+              expected.length != 8) {
+            return false;
+          }
+          for (var c = 0; c < 8; c++) {
+            if (snapshot.tracks[c].lengthPresetBars != expected[c]) {
+              return false;
+            }
+          }
+          return true;
+        }
+
+        // A capture that began after the vector landed does not undo it.
+        // When the vector equals the prior one, a capture leaves it unknown
+        // whether the callback applied it, so it reads as refused.
+        final unchanged =
+            intent.mode == priorMode &&
+            [for (var c = 0; c < 8; c++) c].every(
+              (c) => c < priorBars.length && bars[c] == priorBars[c],
+            );
+        final capturing = snapshot.tracks.any(
+          (t) =>
+              t.state == TrackState.recording ||
+              t.state == TrackState.overdubbing,
+        );
+        if (matches(bars, intent.mode) && !(unchanged && capturing)) {
+          return (verdict: ReceiptVerdict.accepted, result: EngineResult.ok);
+        }
+        // A guarded callback left the old vector whole.
+        if (matches(priorBars, priorMode)) {
+          return (
+            verdict: ReceiptVerdict.refused,
+            result: EngineResult.invalid,
+          );
+        }
+        return (
+          verdict: ReceiptVerdict.uncertain,
+          result: EngineResult.invalid,
+        );
+      },
     );
-    _pendingLengthSettings = pending;
-    _watchReceipt(
-      pending.observation,
-      settle: _settlePendingLengthSettings,
-      expire: () => _failLength(pending, EngineResult.notReady),
-    );
-    if (!startup) _reproject();
-    return _pendingLengthSettings == null ? _lastLengthResult : EngineResult.ok;
-  }
-
-  bool _settlePendingLengthSettings() {
-    final pending = _pendingLengthSettings;
-    if (pending == null || !_engine.commandsSettled) return false;
-    final snapshot = _engine.snapshot();
-    bool matches(List<int> bars, LooperMode mode) {
-      if (snapshot.looperMode != mode ||
-          snapshot.tracks.length != 8 ||
-          bars.length != 8) {
-        return false;
-      }
-      for (var c = 0; c < 8; c++) {
-        if (snapshot.tracks[c].lengthPresetBars != bars[c]) return false;
-      }
-      return true;
-    }
-
-    final capturing = snapshot.tracks.any(
-      (t) =>
-          t.state == TrackState.recording || t.state == TrackState.overdubbing,
-    );
-    if (!capturing && matches(pending.bars, pending.intent.mode)) {
-      _pendingLengthSettings = null;
-
-      _acceptLength(pending.intent, pending.restart);
-      _lastLengthResult = EngineResult.ok;
-      pending.observation.complete(EngineResult.ok);
-    } else if (matches(pending.priorBars, pending.priorMode) &&
-        !pending.startup) {
-      // A guarded callback left the old vector whole. Refuse without stopping
-      // a healthy take or publishing new override membership/priority.
-      _pendingLengthSettings = null;
-
-      _lastLengthResult = EngineResult.invalid;
-      pending.observation.complete(EngineResult.invalid);
-      _reportLengthSettingsFailure(EngineResult.invalid);
-    } else {
-      _failLength(pending, EngineResult.invalid);
-    }
-    return true;
-  }
-
-  void _failLength(_PendingLengthSettings pending, EngineResult result) {
-    if (!identical(_pendingLengthSettings, pending)) return;
-    _pendingLengthSettings = null;
-
-    _lengthRecovery = pending.recovery;
-    _lengthRecoveryRestart = pending.recoveryRestart;
-    _lastLengthResult = result;
-    pending.observation.complete(result);
-    stopEngine();
-    _reportLengthSettingsFailure(result);
   }
 
   /// Waits for raw vector/mode publication, with a lifetime-bound deadline.
   Future<EngineResult> settleLengthSettings({
     Duration pollInterval = const Duration(milliseconds: 10),
     int attempts = 50,
-  }) async {
-    final pending = _pendingLengthSettings;
-    if (pending == null) return _lastLengthResult;
-    return pending.observation.wait(
-      pollInterval: pollInterval,
-      attempts: attempts,
-    );
-  }
+  }) => _length.settle(pollInterval: pollInterval, attempts: attempts);
 
-  /// Explicit recovery adopts only the current repository obligation.
+  /// Retry re-requests the owed vector while running and stages it stopped.
+  /// Never stops audio.
   EngineResult recoverLengthSettings() {
-    final intent = _lengthRecovery;
-    if (intent == null) return _lastLengthResult;
-    if (_intendRunning) return EngineResult.notReady;
-    _acceptLength(intent, _lengthRecoveryRestart!);
-    _lengthRecovery = null;
-    _lengthRecoveryRestart = null;
-    _lastLengthResult = EngineResult.ok;
+    _lengthChangeMode = true;
+    final result = _length.recover();
+    _lengthChangeMode = false;
     _reproject();
-    return EngineResult.ok;
+    return result;
   }
 
   /// Playback default and explicit track overrides, independent of audio.
@@ -1624,9 +1446,6 @@ class LooperRepository {
 
   /// Changes when session recall takes ownership from startup preferences.
   int get sessionRevision => _sessionRevision;
-
-  bool _defaultOneShot = false;
-  final Map<int, bool> _trackOneShot = {};
 
   /// Future recording presets, including empty tracks.
   Map<int, int> get trackLengthPresetOverrides =>
@@ -1656,7 +1475,7 @@ class LooperRepository {
       quantize: _quantize,
       recordTiming: defaultRecordTiming,
       overdubDecay: _overdubDecay,
-      defaultOneShot: _defaultOneShot,
+      defaultOneShot: defaultOneShot,
       defaultLengthPresetBars: _defaultLengthPreset,
       defaultMultiple: _defaultMultiple,
       looperMode: _looperMode,
@@ -1665,10 +1484,10 @@ class LooperRepository {
   }
 
   /// Shared playback default: true plays each pass once, false loops.
-  bool get defaultOneShot => _defaultOneShot;
+  bool get defaultOneShot => _oneShot.live.defaultValue;
 
   /// Explicit playback overrides, including custom Loop values.
-  Map<int, bool> get trackOneShotOverrides => Map.unmodifiable(_trackOneShot);
+  Map<int, bool> get trackOneShotOverrides => _oneShot.live.overrides;
 
   /// Explicit record timing overrides, including values equal to the default.
   Map<int, RecordTiming> get trackRecordTimingOverrides =>
@@ -2213,12 +2032,12 @@ class LooperRepository {
   bool _observeSettingsReceipts() {
     var changed = _drainFades();
     for (final observation in [
-      _pendingOneShot?.observation,
+      _oneShot.observation,
       _clickVolume.observation,
       _clickMode.observation,
       _recordStart.observation,
-      _pendingTiming?.observation,
-      _pendingLengthSettings?.observation,
+      _timing.observation,
+      _length.observation,
       _pendingMix?.observation,
     ]) {
       if (observation?.check() ?? false) changed = true;
@@ -2431,7 +2250,7 @@ class LooperRepository {
       quantize: _quantize,
       autoRecord: _recordStart.live.soundStart,
       overdubDecay: _overdubDecay,
-      defaultOneShot: _defaultOneShot,
+      defaultOneShot: defaultOneShot,
       defaultLengthPresetBars: _defaultLengthPreset,
       defaultMultiple: _defaultMultiple,
       recordTiming: RecordTiming.of(
@@ -2470,8 +2289,8 @@ class LooperRepository {
               lengthPresetOverride: _trackLengthPreset[i],
               recordTimingOverride: _trackRecordTiming[i],
               overdubDecayOverride: _trackOverdubDecay[i],
-              oneShot: _trackOneShot[i] ?? _defaultOneShot,
-              oneShotOverride: _trackOneShot[i],
+              oneShot: _oneShot.live.effective(i),
+              oneShotOverride: _oneShot.live.overrides[i],
               multiple: s.tracks[i].multiple,
               inputMask: s.tracks[i].inputMask,
               outputMask: s.tracks[i].outputMask,
@@ -2578,10 +2397,7 @@ class LooperRepository {
   bool get _startRefused =>
       _applyingSessionRevision != null ||
       _sessionBootStartBlocked ||
-      _mixRecoveryStartBlocked ||
-      oneShotRecoveryRequired ||
-      lengthRecoveryRequired ||
-      recordTimingRecoveryRequired;
+      _mixRecoveryStartBlocked;
 
   /// Opens the audio device and starts processing.
   EngineResult startEngine(EngineConfig config) {
@@ -2693,11 +2509,8 @@ class LooperRepository {
       }
       // A fresh start resets the engine's quantize flag and monitor masks;
       // re-apply the desired state so it survives device changes / reconnects.
-      final timingResult = _requestTiming(
-        _timingRestart,
-        editMask: 0x1ff,
-        startup: true,
-      );
+      // An owed timing vector replays here, so a reconnect resolves it.
+      final timingResult = _timing.replay();
       if (!timingResult.isOk) {
         stopEngine();
         return timingResult;
@@ -2746,13 +2559,9 @@ class LooperRepository {
         stopEngine();
         return modeResult;
       }
-      final lengthResult = _requestLengthSettings(
-        defaultBars: _lengthRestart.defaultBars,
-        overrides: _lengthRestart.overrides,
-        mode: _lengthRestart.mode,
-        changeMode: true,
-        startup: true,
-      );
+      _lengthChangeMode = true;
+      final lengthResult = _length.replay();
+      _lengthChangeMode = false;
       if (!lengthResult.isOk) {
         stopEngine();
         return lengthResult;
@@ -2768,34 +2577,29 @@ class LooperRepository {
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
       );
-      final onceResult = _requestOneShot(
-        _OneShotIntent(_restartTrackOneShot, defaultValue: _restartOneShot),
-        0xff,
-        replay: true,
-        startup: true,
-      );
+      final onceResult = _oneShot.replay();
       if (!onceResult.isOk) {
         stopEngine();
         return onceResult;
       }
-      _decayReplayResult = _engine.setOverdubFeedback(
+      var decayReplay = _engine.setOverdubFeedback(
         feedbackOfDecay(_restartOverdubDecay),
       );
-      if (_decayReplayResult.isOk) {
+      if (decayReplay.isOk) {
         // Replay all fixed slots, including inherited ones. An absent entry
         // explicitly clears a former override instead of assuming native reset.
         for (var channel = 0; channel < 8; channel++) {
           final percent = _restartTrackOverdubDecay[channel];
-          _decayReplayResult = _engine.setTrackOverdubFeedback(
+          decayReplay = _engine.setTrackOverdubFeedback(
             channel: channel,
             feedback: percent == null ? null : feedbackOfDecay(percent),
           );
-          if (!_decayReplayResult.isOk) break;
+          if (!decayReplay.isOk) break;
         }
       }
-      if (!_decayReplayResult.isOk) {
+      if (!decayReplay.isOk) {
         stopEngine();
-        return _decayReplayResult;
+        return decayReplay;
       }
       _overdubDecay = _restartOverdubDecay;
       _trackOverdubDecay
@@ -4036,18 +3840,12 @@ class LooperRepository {
       }
     }
 
-    _lengthRecovery = null;
-    _lengthRecoveryRestart = null;
-    _lastLengthResult = EngineResult.ok;
-    _timingRecovery = null;
-    _timingRecoveryRestart = null;
-    _lastTimingResult = EngineResult.ok;
+    _length.reset();
+    _timing.reset();
     _clickMode.reset();
     _clickVolume.reset();
     _recordStart.reset();
-    _oneShotRecoveryIntent = null;
-    _oneShotRecoveryRestart = null;
-    _lastOneShotResult = EngineResult.ok;
+    _oneShot.reset();
     // Own the settings before the first await. Callers may reuse their maps.
     final recordTimingOverrides = Map.of(rig.trackRecordTimingOverrides);
     final overdubDecayOverrides = Map.of(rig.trackOverdubDecayOverrides);
@@ -4104,8 +3902,9 @@ class LooperRepository {
     // `le_engine_set_one_shot`'s doc), so a track this session does not mark
     // One Shot must be explicitly turned off below or a prior session/live
     // flag would bleed into the freshly loaded one.
-    _trackOneShot.clear();
-    _restartTrackOneShot.clear();
+    _oneShot.adopt(
+      _OneShotIntent(const {}, defaultValue: _oneShot.live.defaultValue),
+    );
     // Same for the record timing and decay overrides (slice 2b): per-track
     // settings that survive `clear`, reset below and re-armed from the rig.
     _trackOverdubDecay.clear();
@@ -5591,7 +5390,7 @@ class LooperRepository {
   }) {
     if (channel < 0 || channel >= 8) return EngineResult.invalid;
     final live = Map.of(_trackRecordTiming);
-    final durable = Map.of(_timingRestart.overrides);
+    final durable = Map.of(_timing.restart.overrides);
     if (timing == null) {
       live.remove(channel);
       durable.remove(channel);
@@ -5603,8 +5402,8 @@ class LooperRepository {
       _TimingIntent(defaultRecordTiming, _quantizeDiv, live),
       editMask: 2 << channel,
       restart: _TimingIntent(
-        _timingRestart.defaultTiming,
-        _timingRestart.rememberedDivision,
+        _timing.restart.defaultTiming,
+        _timing.restart.rememberedDivision,
         durable,
       ),
     );
@@ -7445,18 +7244,18 @@ class LooperRepository {
   }) {
     final remembered = timing.quantize
         ? timing.division
-        : _timingRestart.rememberedDivision;
+        : _timing.restart.rememberedDivision;
     final durable = releasedTiming ?? timing;
     final durableDivision = durable.quantize
         ? durable.division
-        : _timingRestart.rememberedDivision;
+        : _timing.restart.rememberedDivision;
     return _requestTiming(
       _TimingIntent(timing, remembered, _trackRecordTiming),
       editMask: 1,
       restart: _TimingIntent(
         durable,
         durableDivision,
-        _timingRestart.overrides,
+        _timing.restart.overrides,
       ),
     );
   }
@@ -7544,7 +7343,7 @@ class LooperRepository {
   bool get recordStartRecoveryRequired => _recordStart.recoveryRequired;
 
   /// Actual capture locks future start settings; waiting arms remain editable.
-  bool get recordStartCaptureLocked => clickModeCaptureLocked;
+  bool get recordStartCaptureLocked => captureLocked;
 
   /// Pair refusals and autonomous restart uncertainty.
   Stream<EngineResult> get recordStartSettingsFailures => _recordStart.failures;
@@ -7689,14 +7488,8 @@ class LooperRepository {
   /// An uncertain receipt owes its Released choice until Retry or restart.
   bool get clickModeRecoveryRequired => _clickMode.recoveryRequired;
 
-  /// Actual capture locks Hear click; armed/count-in alone remains editable.
-  bool get clickModeCaptureLocked =>
-      _intendRunning &&
-      _engine.snapshot().tracks.any(
-        (t) =>
-            t.state == TrackState.recording ||
-            t.state == TrackState.overdubbing,
-      );
+  /// Capture locks Hear click; see [captureLocked].
+  bool get clickModeCaptureLocked => captureLocked;
 
   /// Refusals/uncertainty from explicit edits and autonomous replay.
   Stream<EngineResult> get clickModeFailures => _clickMode.failures;
@@ -7831,10 +7624,10 @@ class LooperRepository {
         (bars != null && (bars < 0 || bars > 64)) ||
         (releasedBars != null && (releasedBars < 0 || releasedBars > 64)) ||
         (_intendRunning && channel >= _engine.snapshot().tracks.length)) {
-      return _reportLengthSettingsFailure(EngineResult.invalid);
+      return EngineResult.invalid;
     }
     final overrides = Map.of(_trackLengthPreset);
-    final durable = Map.of(_lengthRestart.overrides);
+    final durable = Map.of(_length.restart.overrides);
     if (bars == null) {
       overrides.remove(channel);
       durable.remove(channel);
@@ -7846,29 +7639,44 @@ class LooperRepository {
       defaultBars: _defaultLengthPreset,
       overrides: overrides,
       mode: _looperMode,
-      restart: _LengthIntent(_lengthRestart.defaultBars, durable, _looperMode),
+      restart: _LengthIntent(_length.restart.defaultBars, durable, _looperMode),
     );
   }
 
-  /// Complete startup/session vector; nullable membership was validated before
-  /// admission and explicit Auto remains stored.
+  /// A complete length vector; nullable membership was validated before
+  /// admission and explicit Auto remains stored. A [mode] switches the looper
+  /// mode in the same command. [released] is the durable vector when this one
+  /// is temporary.
   EngineResult setLengthSettings({
     required int defaultBars,
     required Map<int, int> overrides,
     LooperMode? mode,
+    ({int defaultBars, Map<int, int> trackOverrides, LooperMode mode})?
+    released,
   }) {
-    if (defaultBars < 0 ||
-        defaultBars > 64 ||
-        overrides.entries.any(
+    bool invalid(int bars, Map<int, int> custom) =>
+        bars < 0 ||
+        bars > 64 ||
+        custom.entries.any(
           (e) => e.key < 0 || e.key >= 8 || e.value < 0 || e.value > 64,
-        )) {
-      return _reportLengthSettingsFailure(EngineResult.invalid);
+        );
+    if (invalid(defaultBars, overrides) ||
+        (released != null &&
+            invalid(released.defaultBars, released.trackOverrides))) {
+      return EngineResult.invalid;
     }
     return _requestLengthSettings(
       defaultBars: defaultBars,
       overrides: overrides,
       mode: mode ?? _looperMode,
       changeMode: mode != null,
+      restart: released == null
+          ? null
+          : _LengthIntent(
+              released.defaultBars,
+              released.trackOverrides,
+              released.mode,
+            ),
     );
   }
 
@@ -7877,7 +7685,7 @@ class LooperRepository {
     if (bars < 0 ||
         bars > 64 ||
         (releasedBars != null && (releasedBars < 0 || releasedBars > 64))) {
-      return _reportLengthSettingsFailure(EngineResult.invalid);
+      return EngineResult.invalid;
     }
     return _requestLengthSettings(
       defaultBars: bars,
@@ -7885,7 +7693,7 @@ class LooperRepository {
       mode: _looperMode,
       restart: _LengthIntent(
         releasedBars ?? bars,
-        _lengthRestart.overrides,
+        _length.restart.overrides,
         _looperMode,
       ),
     );
@@ -7893,7 +7701,7 @@ class LooperRepository {
 
   /// The confirmed mode, unavailable while a coupled vector is pending.
   LooperMode? get settledLooperMode =>
-      !_intendRunning || _pendingLengthSettings == null ? _looperMode : null;
+      !_intendRunning || _length.settled ? _looperMode : null;
 
   /// Mode and latent track retirement land in the same native transaction.
   EngineResult setLooperMode(
@@ -7908,7 +7716,7 @@ class LooperRepository {
               entry.value < 0 ||
               entry.value > 64,
         )) {
-      return _reportLengthSettingsFailure(EngineResult.invalid);
+      return EngineResult.invalid;
     }
     return _requestLengthSettings(
       defaultBars: _defaultLengthPreset,
@@ -7916,25 +7724,26 @@ class LooperRepository {
       mode: mode,
       changeMode: true,
       restart: _LengthIntent(
-        _lengthRestart.defaultBars,
-        trackOverrides ?? _lengthRestart.overrides,
+        _length.restart.defaultBars,
+        trackOverrides ?? _length.restart.overrides,
         mode,
       ),
     );
   }
 
-  /// Outside a pending transaction the published mode owns the live rig.
+  /// Outside a pending or owed transaction the published mode owns the live
+  /// rig.
   void _rememberLooperMode(LooperState next, LooperMode reported) {
     if (!_intendRunning ||
         !next.status.isConnected ||
-        _pendingLengthSettings != null) {
+        !_length.settled ||
+        _length.recoveryRequired ||
+        (_length.live.mode == reported && _length.restart.mode == reported)) {
       return;
     }
-    _looperMode = reported;
-    _lengthRestart = _LengthIntent(
-      _lengthRestart.defaultBars,
-      _lengthRestart.overrides,
-      reported,
+    _length.adopt(
+      _length.live.withMode(reported),
+      restart: _length.restart.withMode(reported),
     );
   }
 
@@ -7959,221 +7768,90 @@ class LooperRepository {
     return _engine.crownPrimary(channel: channel);
   }
 
-  /// Sets a playback override. `null` removes only this override, making
-  /// the track follow [defaultOneShot] again. Audio and history are unchanged.
-  EngineResult setOneShot({
-    required int channel,
-    required bool? oneShot,
-    bool? releasedOneShot,
-  }) {
-    if (channel < 0 || channel >= 8) return EngineResult.invalid;
-    final overrides = Map<int, bool>.of(_trackOneShot);
-    if (oneShot == null) {
-      overrides.remove(channel);
-    } else {
-      overrides[channel] = oneShot;
-    }
-    final durable = Map<int, bool>.of(_restartTrackOneShot);
-    final released = releasedOneShot ?? oneShot;
-    if (released == null) {
-      durable.remove(channel);
-    } else {
-      durable[channel] = released;
-    }
-    return _requestOneShot(
-      _OneShotIntent(overrides, defaultValue: _defaultOneShot),
-      1 << channel,
-      restart: _OneShotIntent(durable, defaultValue: _restartOneShot),
-    );
-  }
-
-  /// Changes the default for inheritors; Custom false remains Custom.
-  EngineResult setDefaultOneShot({
-    required bool oneShot,
-    bool? releasedOneShot,
-  }) {
-    var mask = 0;
-    for (var c = 0; c < 8; c++) {
-      if (!_trackOneShot.containsKey(c)) mask |= 1 << c;
-    }
-    return _requestOneShot(
-      _OneShotIntent(_trackOneShot, defaultValue: oneShot),
-      mask,
-      restart: _OneShotIntent(
-        _restartTrackOneShot,
-        defaultValue: releasedOneShot ?? oneShot,
-      ),
-    );
-  }
-
-  /// Applies one coherent default/override vector for startup or session recall.
+  /// Stages a stopped vector or requests one callback-confirmed vector, with
+  /// an optional Released vector for restart. Every request sends the whole
+  /// vector and confirms all eight slots.
   EngineResult setOneShotSnapshot({
     required bool defaultOneShot,
     required Map<int, bool> trackOverrides,
+    ({bool defaultOneShot, Map<int, bool> trackOverrides})? released,
   }) {
-    if (trackOverrides.keys.any((c) => c < 0 || c >= 8)) {
+    if (trackOverrides.keys.any((c) => c < 0 || c >= 8) ||
+        (released?.trackOverrides.keys.any((c) => c < 0 || c >= 8) ?? false)) {
       return EngineResult.invalid;
     }
-    return _requestOneShot(
+    final result = _oneShot.request(
       _OneShotIntent(trackOverrides, defaultValue: defaultOneShot),
-      0xff,
-      replay: true,
+      restart: released == null
+          ? null
+          : _OneShotIntent(
+              released.trackOverrides,
+              defaultValue: released.defaultOneShot,
+            ),
     );
+    _reproject();
+    return result.isOk && _oneShot.settled ? _oneShot.lastResult : result;
   }
 
-  void _acceptOneShot(_OneShotIntent intent, {_OneShotIntent? restart}) {
-    _defaultOneShot = intent.defaultValue;
-    _trackOneShot
-      ..clear()
-      ..addAll(intent.overrides);
-    setOneShotRestartIntent(
-      defaultOneShot: (restart ?? intent).defaultValue,
-      trackOverrides: (restart ?? intent).overrides,
-    );
-  }
-
-  EngineResult _requestOneShot(
+  ({EngineResult result, ReceiptCheck? check}) _sendOneShot(
     _OneShotIntent intent,
-    int mask, {
-    bool replay = false,
-    bool startup = false,
-    _OneShotIntent? restart,
-  }) {
-    if (_pendingOneShot != null || oneShotRecoveryRequired) {
-      return EngineResult.notReady;
-    }
-    if (!_intendRunning || mask == 0) {
-      _acceptOneShot(intent, restart: restart);
-      _lastOneShotResult = EngineResult.ok;
-      _reproject();
-      return EngineResult.ok;
-    }
+  ) {
     var admitted = false;
     for (final choice in [false, true]) {
-      var choiceMask = 0;
+      var mask = 0;
       for (var c = 0; c < 8; c++) {
-        if ((mask & (1 << c)) != 0 && intent.effective(c) == choice) {
-          choiceMask |= 1 << c;
-        }
+        if (intent.effective(c) == choice) mask |= 1 << c;
       }
-      if (choiceMask == 0) continue;
-      final result = _engine.setOneShotMask(
-        channels: choiceMask,
-        oneShot: choice,
-      );
+      if (mask == 0) continue;
+      final result = _engine.setOneShotMask(channels: mask, oneShot: choice);
       if (!result.isOk) {
-        if (admitted) {
-          _oneShotRecoveryIntent = replay
-              ? intent
-              : _OneShotIntent(_trackOneShot, defaultValue: _defaultOneShot);
-          _oneShotRecoveryRestart = replay
-              ? (restart ?? intent)
-              : _OneShotIntent(
-                  _restartTrackOneShot,
-                  defaultValue: _restartOneShot,
-                );
-          _lastOneShotResult = result;
-          stopEngine();
-        }
-        return result;
+        // A refusal after the first group was admitted leaves the vector
+        // half-applied: the receipt owes it rather than reporting a refusal.
+        return admitted
+            ? (
+                result: EngineResult.ok,
+                check: () => (
+                  verdict: ReceiptVerdict.uncertain,
+                  result: result,
+                ),
+              )
+            : (result: result, check: null);
       }
       admitted = true;
     }
-    final pending = _PendingOneShot(
-      intent,
-      mask,
-      replay
-          ? intent
-          : _OneShotIntent(_trackOneShot, defaultValue: _defaultOneShot),
-      restart ?? intent,
-      replay
-          ? (restart ?? intent)
-          : _OneShotIntent(_restartTrackOneShot, defaultValue: _restartOneShot),
+    return (
+      result: EngineResult.ok,
+      // True only after actual callback bits match the whole vector.
+      check: () {
+        if (!_engine.commandsSettled) return null;
+        final tracks = _engine.snapshot().tracks;
+        for (var c = 0; c < 8; c++) {
+          if (c >= tracks.length || tracks[c].oneShot != intent.effective(c)) {
+            return (
+              verdict: ReceiptVerdict.uncertain,
+              result: EngineResult.invalid,
+            );
+          }
+        }
+        return (verdict: ReceiptVerdict.accepted, result: EngineResult.ok);
+      },
     );
-    _pendingOneShot = pending;
-    // Autonomous replay has a deadline even without a UI poll or later edit.
-    _watchReceipt(
-      pending.observation,
-      settle: _settlePendingOneShot,
-      expire: () => _failOneShot(pending, EngineResult.notReady),
-    );
-    if (!startup) _reproject();
-    return EngineResult.ok;
   }
 
-  /// True only after actual callback bits match the admitted effective vector.
-  bool get oneShotSettingsSettled =>
-      _pendingOneShot == null &&
-      _lastOneShotResult.isOk &&
-      !oneShotRecoveryRequired;
-
-  bool _settlePendingOneShot() {
-    final pending = _pendingOneShot;
-    if (pending == null || !_engine.commandsSettled) return false;
-    final tracks = _engine.snapshot().tracks;
-    for (var c = 0; c < 8; c++) {
-      if ((pending.mask & (1 << c)) != 0 &&
-          (c >= tracks.length ||
-              tracks[c].oneShot != pending.intent.effective(c))) {
-        _failOneShot(pending, EngineResult.invalid);
-        return true;
-      }
-    }
-    _pendingOneShot = null;
-
-    _acceptOneShot(pending.intent, restart: pending.restart);
-    _lastOneShotResult = EngineResult.ok;
-    pending.observation.complete(EngineResult.ok);
-    return true;
-  }
-
-  void _failOneShot(_PendingOneShot pending, EngineResult result) {
-    if (!identical(_pendingOneShot, pending)) return;
-    _pendingOneShot = null;
-
-    _oneShotRecoveryIntent = pending.recovery;
-    _oneShotRecoveryRestart = pending.recoveryRestart;
-    _lastOneShotResult = result;
-    pending.observation.complete(result);
-    stopEngine();
-  }
-
-  void _cancelOneShot() {
-    final pending = _pendingOneShot;
-    _pendingOneShot = null;
-
-    if (pending != null) {
-      _lastOneShotResult = EngineResult.notReady;
-      pending.observation.complete(EngineResult.notReady);
-    }
-  }
+  /// No playback vector is awaiting its callback receipt.
+  bool get oneShotSettingsSettled => _oneShot.settled;
 
   /// Waits for a callback receipt, with a lifetime-bound timeout.
   Future<EngineResult> settleOneShot({
     Duration pollInterval = const Duration(milliseconds: 10),
     int attempts = 50,
-  }) async {
-    final pending = _pendingOneShot;
-    if (pending == null) return _lastOneShotResult;
-    return pending.observation.wait(
-      pollInterval: pollInterval,
-      attempts: attempts,
-    );
-  }
+  }) => _oneShot.settle(pollInterval: pollInterval, attempts: attempts);
 
-  /// Explicitly makes a stopped uncertain rig coherent and safe to restart.
-  /// This does not claim the device is running or replay a prior lifetime.
+  /// Retry re-requests the owed vector while running and stages it stopped.
   EngineResult recoverOneShotSettings() {
-    final recovery = _oneShotRecoveryIntent;
-    if (recovery == null) return _lastOneShotResult;
-    if (_intendRunning) return EngineResult.notReady;
-    final restart = _oneShotRecoveryRestart;
-    _oneShotRecoveryIntent = null;
-    _oneShotRecoveryRestart = null;
-    _acceptOneShot(recovery, restart: restart);
-    _lastOneShotResult = EngineResult.ok;
+    final result = _oneShot.recover();
     _reproject();
-    return EngineResult.ok;
+    return result;
   }
 
   void _requireSessionSetting(EngineResult result) {
@@ -8202,8 +7880,8 @@ class LooperRepository {
     await _fxReplayConfirmed.close();
     await _rigReplaced.close();
     await _recoveryRefusals.close();
-    await _lengthSettingsFailures.close();
-    await _timingFailures.close();
+    await _timing.dispose();
+    await _length.dispose();
     await _clickMode.dispose();
     await _clickVolume.dispose();
     await _recordStart.dispose();
@@ -8393,20 +8071,4 @@ final class _OneShotIntent {
   final bool defaultValue;
   final Map<int, bool> overrides;
   bool effective(int channel) => overrides[channel] ?? defaultValue;
-}
-
-final class _PendingOneShot {
-  _PendingOneShot(
-    this.intent,
-    this.mask,
-    this.recovery,
-    this.restart,
-    this.recoveryRestart,
-  );
-  final _OneShotIntent intent;
-  final int mask;
-  final _OneShotIntent recovery;
-  final _OneShotIntent restart;
-  final _OneShotIntent recoveryRestart;
-  final observation = ReceiptObservation();
 }

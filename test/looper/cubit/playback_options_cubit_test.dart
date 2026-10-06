@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/playback_options.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -70,12 +71,18 @@ void main() {
     act: (cubit) async {
       await owner.load();
       await cubit.close();
-      expect((await owner.setOverdubDecay(35)).isOk, isTrue);
+      expect(
+        (await owner.decayControl.setOverdubDecay(
+          const DecayAddress.defaults(),
+          35,
+        )).isOk,
+        isTrue,
+      );
       final reopened = PlaybackOptionsCubit(settings: owner);
       expect(reopened.state, same(owner.state));
       expect(reopened.state.overdubDecay, 35);
       await reopened.setDefaultOneShot(value: true);
-      expect(owner.oneShotSnapshot!.defaultOneShot, isTrue);
+      expect(owner.oneShotControl.oneShotSnapshot!.defaultOneShot, isTrue);
       await reopened.close();
     },
   );
@@ -94,9 +101,9 @@ void main() {
       gate.complete();
       await pending;
       expect(cubit.state, same(closedState));
-      expect(owner.oneShotSnapshot!.defaultOneShot, isTrue);
+      expect(owner.oneShotControl.oneShotSnapshot!.defaultOneShot, isTrue);
       expect(store.values['looper.default_one_shot'], isTrue);
-      expect((await owner.flushOneShot()).isOk, isTrue);
+      expect((await owner.oneShotOwner.flush()).isOk, isTrue);
     },
   );
 }

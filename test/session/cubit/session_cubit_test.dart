@@ -98,6 +98,19 @@ class _RecordStartOwner extends Fake
       RecordStartSettings(countInBars: 0, soundStart: false);
 }
 
+/// The Record length owner's Session exclusion as the registry runs it:
+/// it waits for a pending receipt, whatever the receipt's result.
+class _LengthOwner extends Fake implements SettingsOwner<Object, Object?> {
+  _LengthOwner(this.looper);
+  final LooperRepository looper;
+
+  @override
+  Future<T> runExclusive<T>(Future<T> Function() operation) async {
+    if (!looper.lengthSettingsSettled) await looper.settleLengthSettings();
+    return operation();
+  }
+}
+
 class _TempoOwner extends Fake implements TempoSettings {
   @override
   final clickVolumeOwner = _ClickVolumeOwner();
@@ -109,34 +122,44 @@ class _TempoOwner extends Fake implements TempoSettings {
   final recordStartOwner = _RecordStartOwner();
 }
 
-class _PlaybackOwner extends Fake implements PlaybackSettings {
-  _PlaybackOwner(this.looper);
+class _DecayOwner extends Fake implements SettingsOwner<DecaySnapshot, int?> {
+  _DecayOwner(this.looper);
   final LooperRepository looper;
 
   @override
-  Future<T> runPlaybackExclusive<T>(Future<T> Function() operation) =>
-      operation();
-
-  @override
-  DecaySnapshot get durableDecaySnapshot => DecaySnapshot(
+  DecaySnapshot get durable => DecaySnapshot(
     defaultPercent: looper.defaultOverdubDecay,
     trackOverrides: looper.trackOverdubDecayOverrides,
   );
+}
+
+class _OneShotOwner extends Fake
+    implements SettingsOwner<OneShotSnapshot, bool?> {
+  _OneShotOwner(this.looper);
+  final LooperRepository looper;
 
   @override
-  OneShotSnapshot get durableOneShotSnapshot => OneShotSnapshot(
+  OneShotSnapshot get durable => OneShotSnapshot(
     defaultOneShot: looper.defaultOneShot,
     trackOverrides: looper.trackOneShotOverrides,
   );
 }
 
+class _PlaybackOwner extends Fake implements PlaybackSettings {
+  _PlaybackOwner(LooperRepository looper)
+    : decayOwner = _DecayOwner(looper),
+      oneShotOwner = _OneShotOwner(looper);
+
+  @override
+  final SettingsOwner<DecaySnapshot, int?> decayOwner;
+
+  @override
+  final SettingsOwner<OneShotSnapshot, bool?> oneShotOwner;
+}
+
 class _RecordOwner extends Fake implements RecordSettings {
   _RecordOwner(this.looper);
   final LooperRepository looper;
-
-  @override
-  Future<T> runRecordExclusive<T>(Future<T> Function() operation) =>
-      operation();
 
   @override
   RecordLengthSnapshot get durableRecordLengthSnapshot => RecordLengthSnapshot(
@@ -150,10 +173,6 @@ class _RecordOwner extends Fake implements RecordSettings {
 class _TimingOwner extends Fake implements RecordTimingSettings {
   _TimingOwner(this.looper);
   final LooperRepository looper;
-
-  @override
-  Future<T> runRecordTimingExclusive<T>(Future<T> Function() operation) =>
-      operation();
 
   @override
   RecordTimingSnapshot get durableRecordTimingSnapshot => RecordTimingSnapshot(
@@ -187,7 +206,7 @@ void main() {
     looper: looper,
     mix: mixSettings,
     fx: fxPersistence,
-    owners: const SettingsOwners([]),
+    owners: SettingsOwners([_LengthOwner(looper)]),
     tempo: _TempoOwner(),
     playback: _PlaybackOwner(looper),
     record: _RecordOwner(looper),
@@ -263,7 +282,8 @@ void main() {
 
   for (final accepted in [true, false]) {
     test(
-      'session save waits for length confirmation accepted=$accepted',
+      'Save waits for a pending length receipt, and writes the requested '
+      'value even when it ends owed; accepted=$accepted',
       () async {
         final settled = Completer<EngineResult>();
         when(() => looper.lengthSettingsSettled).thenReturn(false);
@@ -303,36 +323,21 @@ void main() {
         ).thenReturn(const TransportState(defaultLengthPresetBars: 8));
         settled.complete(accepted ? EngineResult.ok : EngineResult.invalid);
         await save;
-        expect(
-          cubit.state.status,
-          accepted ? SessionStatus.success : SessionStatus.failure,
-        );
-        if (accepted) {
-          final settings =
-              verify(
-                    () => repository.save(
-                      '/tmp/pending',
-                      chains: any(named: 'chains'),
-                      settings: captureAny(named: 'settings'),
-                      pedalBindings: any(named: 'pedalBindings'),
+        // An owed value is the durable one: Save never refuses it.
+        expect(cubit.state.status, SessionStatus.success);
+        final settings =
+            verify(
+                  () => repository.save(
+                    '/tmp/pending',
+                    chains: any(named: 'chains'),
+                    settings: captureAny(named: 'settings'),
+                    pedalBindings: any(named: 'pedalBindings'),
 
-                      captureStillValid: any(named: 'captureStillValid'),
-                    ),
-                  ).captured.single
-                  as SessionSettings;
-          expect(settings.defaultLengthPresetBars, 8);
-        } else {
-          verifyNever(
-            () => repository.save(
-              any(),
-              chains: any(named: 'chains'),
-              settings: any(named: 'settings'),
-              pedalBindings: any(named: 'pedalBindings'),
-
-              captureStillValid: any(named: 'captureStillValid'),
-            ),
-          );
-        }
+                    captureStillValid: any(named: 'captureStillValid'),
+                  ),
+                ).captured.single
+                as SessionSettings;
+        expect(settings.defaultLengthPresetBars, 8);
       },
     );
   }

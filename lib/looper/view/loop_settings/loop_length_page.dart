@@ -107,9 +107,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
     if (scope == null) {
       unawaited(owner.setTiming(timing!));
     } else {
-      context.read<LooperBloc>().add(
-        LooperTrackRecordTimingChanged(scope, timing: timing),
-      );
+      unawaited(owner.setTrackTiming(channel: scope, timing: timing));
     }
   }
 

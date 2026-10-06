@@ -51,16 +51,10 @@ class SessionSettingsCoordinator {
   Future<T> runExclusive<T>(Future<T> Function() operation) =>
       _fade.runExclusive(
         (admittedEdits) => _mix.runExclusive(
-          () => _owners.runExclusive(
-            () => _playback.runPlaybackExclusive(
-              () => _record.runRecordExclusive(
-                () => _timing.runRecordTimingExclusive(() async {
-                  await admittedEdits;
-                  return operation();
-                }),
-              ),
-            ),
-          ),
+          () => _owners.runExclusive(() async {
+            await admittedEdits;
+            return operation();
+          }),
         ),
       );
 
@@ -73,13 +67,10 @@ class SessionSettingsCoordinator {
   Future<({SessionChains chains, SessionSettings settings})> capture({
     required bool Function() stillOwned,
   }) async {
+    // Every owned family's pending receipt settled inside [runExclusive].
+    // Save writes each durable requested value, also one owed after an
+    // uncertain receipt: storage holds it and a restart or recall replays it.
     if (!stillOwned()) throw StateError('session changed before save');
-    if (!_looper.lengthSettingsSettled) {
-      final result = await _looper.settleLengthSettings();
-      if (!result.isOk || !stillOwned()) {
-        throw StateError('length settings did not settle before session save');
-      }
-    }
     if (!_looper.mixSettingsSettled) {
       final result = await _looper.settleMixSettings();
       if (!result.isOk || !stillOwned()) {
@@ -101,8 +92,8 @@ class SessionSettingsCoordinator {
         clickVolume: _tempo.clickVolumeOwner.durable,
         clickMode: _tempo.clickModeOwner.durable,
         recordStart: _tempo.recordStartOwner.durable,
-        decay: _playback.durableDecaySnapshot,
-        oneShot: _playback.durableOneShotSnapshot,
+        decay: _playback.decayOwner.durable,
+        oneShot: _playback.oneShotOwner.durable,
         recordLength: _record.durableRecordLengthSnapshot,
         recordTiming: _timing.durableRecordTimingSnapshot,
         fade: _fade.confirmed,

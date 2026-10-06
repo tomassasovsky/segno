@@ -40,6 +40,8 @@ void stubScreenshotSettings(LooperRepository repository) {
       defaultTiming: any(named: 'defaultTiming'),
       rememberedDivision: any(named: 'rememberedDivision'),
       trackOverrides: any(named: 'trackOverrides'),
+      released: any(named: 'released'),
+      editMask: any(named: 'editMask'),
     ),
   ).thenAnswer((call) {
     timing = call.namedArguments[#defaultTiming] as RecordTiming;

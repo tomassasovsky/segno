@@ -133,8 +133,8 @@ class _Rig {
       clickVolumeControl: FakeClickVolumeControl(),
       clickModeControl: FakeClickModeControl(),
       recordStartControl: FakeRecordStartControl(),
-      decayControl: owner,
-      oneShotControl: owner,
+      decayControl: owner.decayControl,
+      oneShotControl: owner.oneShotControl,
       recordLengthControl: FakeRecordLengthControl(),
       recordTimingControl: FakeRecordTimingControl(),
       takeLocked: () => powerUp,
@@ -160,9 +160,10 @@ class _Rig {
   late final ControllerRepository controller;
   late final PerformanceRepository performance;
   late final ControlCubit cubit;
-  int get live =>
-      owner.decaySnapshot!.effectivePercent(const DecayAddress.track(0));
-  int? get durable => owner.durableDecaySnapshot.trackOverrides[0];
+  int get live => owner.decayControl.decaySnapshot!.effectivePercent(
+    const DecayAddress.track(0),
+  );
+  int? get durable => owner.decayControl.durableDecaySnapshot.trackOverrides[0];
   void pump() {
     for (var i = 0; i < 20; i++) {
       clock
@@ -231,7 +232,9 @@ class _Rig {
   }
 
   void ordinary(int? value) {
-    unawaited(owner.setTrackOverdubDecay(channel: 0, percent: value));
+    unawaited(
+      owner.decayControl.setTrackOverdubDecay(channel: 0, percent: value),
+    );
     pump();
   }
 
@@ -310,7 +313,12 @@ void main() {
             r.note(127);
           }
           r.ordinary(null);
-          unawaited(r.owner.setOverdubDecay(40));
+          unawaited(
+            r.owner.decayControl.setOverdubDecay(
+              const DecayAddress.defaults(),
+              40,
+            ),
+          );
           r.pump();
           final writes = r.engine.decayWrites;
           expect(r.live, 40);

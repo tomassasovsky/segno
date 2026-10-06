@@ -405,7 +405,7 @@ void main() {
           );
           expect(r.durable, external ? 1 : 0);
           r.store.fail = false;
-          unawaited(r.owner.recoverRecordTiming());
+          unawaited(r.owner.owner.recover());
           r.pump();
           unawaited(r.cubit.flushMidiConfiguration(retireControls: true));
           r.pump();
