@@ -537,7 +537,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   }
 
   /// Ends the standing material notice ([DeviceConnectivity.restoredCleared])
-  /// once the user has acted on it — opened the Sessions manager from its
+  /// once the user has acted on it — opened the Library from its
   /// action — the way a deliberate re-apply ends every connectivity condition.
   void dismissReopenNotice() {
     if (state.deviceConnectivity != DeviceConnectivity.restoredCleared) return;

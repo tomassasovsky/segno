@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
@@ -130,7 +131,15 @@ void main() {
         expect(session.monitors.map((m) => m.mode), ['auto', 'on']);
         expect(session.monitors.map((m) => m.volume), [1, 0.75]);
         expect(session.monitors[1].muted, isTrue);
-        expect(session.pedalBindings, original['pedalBindings']);
+        // The pedal bound to the Master chain follows it to All tracks.
+        expect(_bindingTargets(session.pedalBindings), [
+          {'stage': 'loop', 'index': 0, 'lane': 0},
+          {'stage': 'allTracks', 'index': 0},
+        ]);
+        expect(conversion!.changes, {
+          SessionConversionChange.masterEffectsMoved,
+          SessionConversionChange.monitorLevelLowered,
+        });
 
         // Tempo and grid as saved.
         expect(session.tempoBpm, 100);
@@ -156,7 +165,8 @@ void main() {
         expect(session.autoRecord, isTrue);
         expect(session.defaultMultiple, 4);
         expect(session.recordTiming, RecordTiming.loopStart);
-        expect(session.trackRecordTimingOverrides, {3: RecordTiming.bar});
+        // Master had no per-track timing; the live session's does not leak.
+        expect(session.trackRecordTimingOverrides, isEmpty);
         expect(session.overdubDecay, 0);
         expect(session.trackOverdubDecayOverrides, isEmpty);
         expect(session.defaultFadeDurationMs, 4000);
@@ -166,7 +176,7 @@ void main() {
         expect(session.inputSetup, const SessionInputSetup());
         expect(session.outputSetup, const SessionOutputSetup());
 
-        expect(conversion!.fromVersion, 7);
+        expect(conversion.fromVersion, 7);
         expect(
           conversion.notes,
           containsAll([
@@ -212,6 +222,7 @@ void main() {
       ('v9_slices_95dcea0d8', 9, 1),
       ('v9_trunk_623a5a7ba', 9, 1),
       ('v10_trunk_a921bd9a9', 10, 1),
+      ('v11_trunk_5c163d11f', 11, 1),
     ]) {
       test('$name opens with its saved values', () async {
         final dir = copyFixture(name);
@@ -245,8 +256,17 @@ void main() {
         );
         expect(session.monitors.map((m) => m.mode), ['auto', 'on']);
         expect(session.monitors[0].volume, lessThanOrEqualTo(1));
-        expect(session.pedalBindings, original['pedalBindings']);
-        expect(session.defaultFadeDurationMs, version == 10 ? 6000 : 4000);
+        // In schemas 8 and 9 the Master stage was output bus 0, and so its
+        // pedal. From 10 on a Master binding was already inert as written.
+        expect(_bindingTargets(session.pedalBindings).last, {
+          'stage': version <= 9 ? 'output' : 'master',
+          'index': 0,
+        });
+        expect(session.defaultFadeDurationMs, version >= 10 ? 6000 : 4000);
+        expect(
+          session.tracks[0].lanes.single.history.entries.map((e) => e.kind),
+          [HistoryKind.layer, HistoryKind.layer],
+        );
         if (name.contains('trunk')) {
           // Saved explicitly from schema 8 on; the slices kept them global.
           expect(session.recDub, isTrue);
@@ -262,7 +282,7 @@ void main() {
     }
 
     test('the current schema opens with no conversion', () async {
-      final dir = copyFixture('v11_trunk_5c163d11f');
+      final dir = copyFixture('v12_peel_097e1ef68');
       final before = snapshotOf(dir);
       final (:bundle, :conversion) = await repo().open(dir);
       expect(conversion, isNull);
@@ -364,17 +384,17 @@ void main() {
     }
 
     test('newer than this build', () async {
-      final dir = copyFixture('v11_trunk_5c163d11f');
+      final dir = copyFixture('v12_peel_097e1ef68');
       rewrite(dir, (m) => m['version'] = Session.formatVersion + 1);
       await expectRefused(dir, isA<SessionUnsupportedVersion>());
     });
 
     test('older than the oldest convertible schema', () async {
       final dir = copyFixture('v7_master_full');
-      rewrite(dir, (m) => m['version'] = 6);
+      rewrite(dir, (m) => m['version'] = 0);
       await expectRefused(
         dir,
-        isA<SessionUnconvertible>().having((e) => e.version, 'version', 6),
+        isA<SessionUnconvertible>().having((e) => e.version, 'version', 0),
       );
     });
 
@@ -405,14 +425,229 @@ void main() {
     });
   });
 
-  test('saving over an older manifest keeps it as the backup', () async {
+  group('the original survives saving the converted session', () {
+    /// An engine holding different audio under the same layer names.
+    FakeSessionEngine newTake() =>
+        FakeSessionEngine()
+          ..seedTrack(0, Float32List.fromList(List.filled(2400, -0.5)));
+
+    Future<void> expectOriginalOpens(String backup, String fixture) async {
+      final opened = await repo().open(backup);
+      expect(opened.conversion, isNotNull);
+      for (final name in snapshotOf('$_fixtures/$fixture').keys) {
+        if (name == Session.manifestName || name == 'mixdown.wav') continue;
+        expect(
+          File('$backup/$name').readAsBytesSync(),
+          File('$_fixtures/$fixture/$name').readAsBytesSync(),
+          reason: name,
+        );
+      }
+    }
+
+    test('after the conversion was written back', () async {
+      final dir = copyFixture('v7_master_full');
+      final repository = repo();
+      await repository.commitConversion(
+        dir,
+        (await repository.open(dir)).conversion!,
+      );
+
+      await SessionRepository(
+        engine: newTake(),
+      ).save(dir, settings: const SessionSettings());
+
+      expect(File('$dir/session.v7.json').existsSync(), isFalse);
+      await expectOriginalOpens('$dir/session.v7', 'v7_master_full');
+      expect(manifestOf(dir)['version'], Session.formatVersion);
+      // A second save keeps the backup folder as it is.
+      await SessionRepository(
+        engine: newTake(),
+      ).save(dir, settings: const SessionSettings());
+      await expectOriginalOpens('$dir/session.v7', 'v7_master_full');
+    });
+
+    test('when the write-back never happened', () async {
+      final dir = copyFixture('v7_master_full');
+
+      await SessionRepository(
+        engine: newTake(),
+      ).save(dir, settings: const SessionSettings());
+
+      await expectOriginalOpens('$dir/session.v7', 'v7_master_full');
+      expect(manifestOf(dir)['version'], Session.formatVersion);
+    });
+
+    test('for a schema-1 bundle, whose stems are not layer files', () async {
+      final dir = copyFixture('v1_loopy_8547affe7');
+
+      await SessionRepository(
+        engine: newTake(),
+      ).save(dir, settings: const SessionSettings());
+
+      await expectOriginalOpens('$dir/session.v1', 'v1_loopy_8547affe7');
+      expect(File('$dir/track1.wav').existsSync(), isFalse);
+    });
+
+    test('a failed save leaves the original bundle as it was', () async {
+      final dir = copyFixture('v7_master_full');
+      final before = snapshotOf(dir);
+      SessionRepository.debugOnSaveWrite = (path) {
+        if (path.endsWith(Session.manifestName)) {
+          throw const FileSystemException('disk full');
+        }
+      };
+      addTearDown(() => SessionRepository.debugOnSaveWrite = null);
+
+      await expectLater(
+        SessionRepository(
+          engine: newTake(),
+        ).save(dir, settings: const SessionSettings()),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(snapshotOf(dir), before);
+    });
+  });
+
+  group('commitConversion order', () {
+    test(
+      'a backup that cannot be kept leaves the manifest unchanged',
+      () async {
+        final dir = copyFixture('v7_master_full');
+        final repository = repo();
+        final conversion = (await repository.open(dir)).conversion!;
+        // A directory where the backup goes makes keeping it fail.
+        Directory('$dir/session.v7.json').createSync();
+        final before = File('$dir/${Session.manifestName}').readAsBytesSync();
+
+        await expectLater(
+          repository.commitConversion(dir, conversion),
+          throwsA(isA<FileSystemException>()),
+        );
+
+        expect(File('$dir/${Session.manifestName}').readAsBytesSync(), before);
+      },
+    );
+
+    test(
+      'the manifest is replaced by a rename, not rewritten in place',
+      () async {
+        final dir = copyFixture('v7_master_full');
+        final repository = repo();
+        final conversion = (await repository.open(dir)).conversion!;
+        // A read-only manifest cannot be rewritten, only replaced.
+        await Process.run('chmod', ['444', '$dir/${Session.manifestName}']);
+
+        await repository.commitConversion(dir, conversion);
+
+        expect(manifestOf(dir)['version'], Session.formatVersion);
+        expect(File('$dir/${Session.manifestName}.tmp').existsSync(), isFalse);
+      },
+    );
+  });
+
+  test('a converted bundle with a broken layer stack reports it', () async {
     final dir = copyFixture('v7_master_full');
-    final original = File('$dir/${Session.manifestName}').readAsBytesSync();
+    final manifest = manifestOf(dir);
+    final lane = (_first(manifest['tracks'])['lanes'] as List).first as Map;
+    (lane['layers'] as List).removeLast();
+    File(
+      '$dir/${Session.manifestName}',
+    ).writeAsStringSync(jsonEncode(manifest));
 
-    await repo().save(dir, settings: const SessionSettings());
+    await expectLater(
+      repo().open(dir),
+      throwsA(isA<SessionCorruptLayers>()),
+    );
+  });
 
-    expect(File('$dir/session.v7.json').readAsBytesSync(), original);
-    expect(manifestOf(dir)['version'], Session.formatVersion);
+  group('a schema older than 7 written by its own commit', () {
+    test('1: the saved transport settings, and each stem as lane 0', () async {
+      final (:bundle, :conversion) = await repo().open(
+        copyFixture('v1_loopy_8547affe7'),
+        liveSettings: () => _live,
+      );
+      final session = bundle.session;
+      expect(conversion!.fromVersion, 1);
+      expect(session.tempoBpm, 96);
+      expect(session.tempoSource, TempoSource.manual);
+      expect((session.tsNum, session.tsDen), (4, 4));
+      expect(session.syncTempo, isTrue);
+      expect(session.recordTiming, RecordTiming.quarter);
+      expect(session.quantizeDiv, GridDivision.quarter);
+      expect(session.clickMode, ClickMode.playRec);
+      expect(session.countInBars, 1);
+      expect(session.laneChains, isEmpty);
+      expect(session.monitors, isEmpty);
+      final lane = session.tracks[1].lanes.single;
+      expect(lane.layers.single.file, 'track1.wav');
+      expect((lane.volume, lane.muted, lane.outputMask), (0.5, true, 0x3));
+      expect(lane.inputChannel, -1);
+      expect(bundle.laneStems[(1, 0)]!.single, hasLength(4800));
+    });
+
+    for (final (name, version) in const [
+      ('v2_loopy_93f2f0cb5', 2),
+      ('v3_loopy_319a7dc9d', 3),
+    ]) {
+      test('$version: a tempo derived from the loop', () async {
+        final (:bundle, :conversion) = await repo().open(
+          copyFixture(name),
+          liveSettings: () => _live,
+        );
+        final session = bundle.session;
+        expect(conversion!.fromVersion, version);
+        // 2400 frames at 48 kHz is shorter than one 4/4 bar at 300 bpm, so
+        // the engine's rule takes one bar at 300.
+        expect(session.tempoBpm, 300);
+        expect(session.tempoSource, TempoSource.derived);
+        expect(session.loopBars, 1);
+        // Bare-array chains of these schemas are kept as written.
+        expect(session.laneChains.single.encoded, startsWith('['));
+        expect(session.monitors.single.mode, 'on');
+        expect(session.monitors.single.volume, 1);
+        expect(session.trackChains, isEmpty);
+        expect(session.allTracksChain, '');
+        expect(session.syncTempo, _live.syncTempo);
+      });
+    }
+
+    test('a loop of whole bars derives the tempo nearest 120', () {
+      final manifest = manifestOf(copyFixture('v3_loopy_319a7dc9d'))
+        ..['baseLengthFrames'] = 96000;
+      final session = decodeSessionManifest(jsonEncode(manifest)).session;
+      // 2 s at 48 kHz: one 4/4 bar is 120 bpm.
+      expect((session.tempoBpm, session.loopBars), (120, 1));
+    });
+
+    for (final (name, version) in const [
+      ('v4_loopy_fb8d7cc2b', 4),
+      ('v5_loopy_b52c3d276', 5),
+      ('v6_loopy_4dc33ac10', 6),
+    ]) {
+      test('$version: its saved grid, Once tracks and chains', () async {
+        final dir = copyFixture(name);
+        final original = manifestOf(dir);
+        final (:bundle, :conversion) = await repo().open(dir);
+        final session = bundle.session;
+        expect(conversion!.fromVersion, version);
+        expect(session.tempoBpm, 110);
+        expect(session.tempoSource, TempoSource.manual);
+        expect(session.tsNum, 3);
+        expect(session.looperMode, LooperMode.sync);
+        expect(session.trackOneShotOverrides, {1: true});
+        expect(session.tracks[0].lanes.single.undoCount, 1);
+        expect(
+          session.allTracksChain,
+          version >= 5 ? original['masterChain'] : '',
+        );
+        expect(session.trackChains, hasLength(version >= 5 ? 1 : 0));
+        expect(
+          _bindingTargets(session.pedalBindings),
+          version == 6 ? hasLength(2) : isEmpty,
+        );
+      });
+    }
   });
 
   group('steps', () {
@@ -477,6 +712,15 @@ void main() {
     });
   });
 }
+
+/// The decoded target of every pedal binding in a session blob.
+List<Map<String, dynamic>> _bindingTargets(String blob) => blob.isEmpty
+    ? const []
+    : [
+        for (final binding in jsonDecode(blob) as List<dynamic>)
+          jsonDecode((binding as Map<String, dynamic>)['target'] as String)
+              as Map<String, dynamic>,
+      ];
 
 Map<String, dynamic> _first(Object? list) =>
     (list! as List<dynamic>).first as Map<String, dynamic>;
