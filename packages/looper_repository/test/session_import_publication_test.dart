@@ -24,6 +24,13 @@ class _ImportEngine extends PumpedNativeEngine {
   bool holdFade = false;
   bool fadePosted = false;
   int? refusedFadeChannel;
+  bool holdReverse = false;
+  bool reversePosted = false;
+  int? refusedReverseChannel;
+
+  /// Installs forward whatever the rig asked: an OK receipt for a direction
+  /// the commit must then refuse to publish.
+  bool installForward = false;
 
   @override
   EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
@@ -45,6 +52,22 @@ class _ImportEngine extends PumpedNativeEngine {
     return result;
   }
 
+  @override
+  RequestAdmission installReverse({
+    required int channel,
+    required bool reversed,
+  }) {
+    if (channel == refusedReverseChannel) {
+      return (result: EngineResult.notReady, request: 0);
+    }
+    final result = super.installReverse(
+      channel: channel,
+      reversed: reversed && !installForward,
+    );
+    if (result.result.isOk) reversePosted = true;
+    return result;
+  }
+
   bool holdCommit = false;
   bool holdSettings = false;
   bool settingsPosted = false;
@@ -59,7 +82,8 @@ class _ImportEngine extends PumpedNativeEngine {
       (!holdCommit || !committed) &&
       (!holdSettings || !settingsPosted) &&
       (!holdFinalization || !finalized) &&
-      (!holdFade || !fadePosted);
+      (!holdFade || !fadePosted) &&
+      (!holdReverse || !reversePosted);
 
   @override
   EngineResult setRecordStartSettings({
@@ -114,12 +138,14 @@ SessionRig _rig({
   bool secondTrack = false,
   double amount = 1,
   double pcm = .25,
+  Set<int> reversed = const {},
 }) => SessionRig(
   baseLengthFrames: 256,
   tracks: [
     for (final channel in [0, if (secondTrack) 1])
       SessionRigTrack(
         fadeAmount: channel == 0 ? amount : 0,
+        reversed: reversed.contains(channel),
         channel: channel,
         lanes: [
           SessionRigLane(
@@ -361,6 +387,105 @@ void main() {
       );
       await repository.applySession(_rig(amount: .6));
       expect(engine.snapshot().tracks[0].fade.amount, closeTo(.6, 1e-6));
+    });
+
+    List<bool> directions() => [
+      for (final channel in [0, 1]) engine.snapshot().tracks[channel].reversed,
+    ];
+
+    test('a refused direction install clears the partial vector', () async {
+      engine.refusedReverseChannel = 1;
+      await expectLater(
+        repository.applySession(_rig(secondTrack: true, reversed: {0, 1})),
+        throwsStateError,
+      );
+      expect(engine.reversePosted, isTrue, reason: 'track 1 was installed');
+      expect(engine.committed, isFalse);
+      expect(
+        repository.state.tracks.every((t) => t.state == TrackState.empty),
+        isTrue,
+      );
+      expect(directions(), [false, false]);
+      states.forEach(_coherent);
+      engine.refusedReverseChannel = null;
+      await repository.applySession(_rig(secondTrack: true));
+      expect(directions(), [false, false]);
+      await repository.applySession(_rig(secondTrack: true, reversed: {1}));
+      expect(directions(), [false, true]);
+    });
+
+    test('an engine stop during the direction install cannot reverse the '
+        'next material', () async {
+      engine.holdReverse = true;
+      final loading = repository.applySession(_rig(reversed: {0}));
+      final failed = expectLater(loading, throwsStateError);
+      await _until(() => engine.reversePosted);
+      repository.stopEngine();
+      engine
+        ..holdReverse = false
+        ..pump(frames: 0);
+      await failed;
+      expect(engine.committed, isFalse);
+      expect(
+        repository.startEngine(const EngineConfig(maxLoopFrames: 8192)),
+        EngineResult.ok,
+      );
+      await repository.applySession(_rig());
+      expect(directions(), [false, false]);
+      expect(repository.state.tracks[0].reversed, isFalse);
+    });
+
+    test('a superseded load never installs its direction on the '
+        'replacement', () async {
+      engine.holdReverse = true;
+      final first = repository.applySession(_rig(reversed: {0}));
+      final rejected = expectLater(first, throwsStateError);
+      await _until(() => engine.reversePosted);
+      engine.holdReverse = false;
+      await repository.applySession(_rig(secondTrack: true));
+      await rejected;
+      expect(repository.state.tracks[0].lengthFrames, 256);
+      expect(repository.state.tracks[1].lengthFrames, 256);
+      expect(directions(), [false, false]);
+      expect(repository.state.tracks[0].reversed, isFalse);
+      expect(engine.stops, 0);
+      states.forEach(_coherent);
+    });
+
+    test('a timed-out direction install cannot reverse the next '
+        'material', () async {
+      engine.holdReverse = true;
+      final loading = repository.applySession(
+        _rig(reversed: {0}),
+        clearPollInterval: const Duration(milliseconds: 1),
+      );
+      await _until(() => engine.reversePosted);
+      await expectLater(loading, throwsStateError);
+      expect(engine.committed, isFalse);
+      expect(engine.stops, greaterThan(0));
+      engine
+        ..holdReverse = false
+        ..pump(frames: 0);
+      expect(
+        repository.startEngine(const EngineConfig(maxLoopFrames: 8192)),
+        EngineResult.ok,
+      );
+      await repository.applySession(_rig());
+      expect(directions(), [false, false]);
+    });
+
+    test('the commit refuses a track that came back the wrong way', () async {
+      engine.installForward = true;
+      await expectLater(
+        repository.applySession(_rig(reversed: {0})),
+        throwsStateError,
+      );
+      expect(engine.reversePosted, isTrue);
+      expect(
+        repository.state.tracks.every((t) => t.state == TrackState.empty),
+        isTrue,
+      );
+      states.forEach(_coherent);
     });
 
     test(

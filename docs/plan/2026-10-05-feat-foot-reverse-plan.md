@@ -294,7 +294,8 @@ same-buffer fallback (`:5534-5535`), accepted.
   performance intent of a different moment; the LED and the Tracks marker show the
   restored track forward, so nothing is silent. Fade's restoration exists because a
   faded-out track restored at unity is a level surprise.
-- Session: `SessionTrack.reversed` (bool, required, schema 11 -> 12,
+- Session: `SessionTrack.reversed` (bool, required, schema 12 -> 13 after Peel
+  takes 12; see "Part 2 as built",
   `session.dart:184-262`), captured at `session_repository.dart:710` from the same
   detached `EngineSnapshot` track as `fadeAmount`, carried through
   `session_mapping.dart:365-400` and `SessionRigTrack` (`session_rig.dart:72-86`),
@@ -438,7 +439,8 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
 
 ### Part 2. Session, reopen and lifetime composition (about 300 production lines)
 
-- `SessionTrack.reversed`, schema 12, strict decode (`session.dart:184-262`);
+- `SessionTrack.reversed`, schema 13 (Peel Part 2 takes 12), strict decode
+  (`session.dart:184-262`);
   capture at `session_repository.dart:710`; `SessionRigTrack.reversed`
   (`session_rig.dart:72-86`); mapping and preflight (`session_mapping.dart:365-400`);
   install after Fade installs and before commit (`looper_repository.dart:4428-4458`)
@@ -483,13 +485,29 @@ Status: built (branch `claude/reverse-1162-p2`, on the trunk `68ed3f957`).
   track's published direction to match the rig.
 - Reopen: direction is already material in `le_engine_reset_material`
   (Part 1); a native test now proves a retained reopen keeps a reversed
-  track reversed and STOPPED, and Play reads it from `len-1`.
+  track reversed and STOPPED, and Play reads it from `len-1`. Its second
+  half reverses a later take inside its trailing seam fold, which the reopen
+  drops: the track comes back EMPTY and forward (it fails against a drop
+  path that keeps the direction).
+- `SessionRigTrack.reversed` is required, like `fadeAmount`: a rig builder
+  that forgets direction does not compile.
 - Tests: schema round trip and strict decode; capture; mapping; an
   actual-native recall of a reversed and a forward track (stopped, then
   Play reads `pcm[len-1]` downward and the forward track from 0); an
   actual-native lifetime test (undo to empty, redo from empty, Clear and
   Clear Undo all read forward). Each fails with its fix reverted (the
   lifetime test against a native mutation of the direction reset).
+- Recall failures (review lows), against the actual native engine: a
+  refused install clears the partially installed vector and the next loads
+  read forward; an engine stop during the install, a load superseded during
+  it, and a timed-out receipt all leave the next material forward; and a
+  track whose OK receipt still publishes forward fails the commit check
+  (the test fails with the check's direction clause removed). The fake
+  engine in `looper_repository` now accepts `installReverse` and publishes
+  the direction at commit, so fake-engine recall tests can carry a
+  reversed track. The fence after the install receipt is not killed on its
+  own: the commit wait's own fence catches the same superseded and stopped
+  loads in these tests.
 - Not here: the record-refusal notice for a reversed track is
   `LooperRepository.overdubRefusals`, built with Part 3 (#1162 P3).
 
@@ -537,7 +555,7 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
    configure, New Loop when it exists); Clear Undo restores forward. Rule 5.
 6. The reverse-then-forward phase offset persists until the transport hold or a
    relaunch, exactly as Once's offset does. Rule 4: one origin field, one reset.
-7. Session saves `reversed` (schema 12), not the origin; recall is stopped at the
+7. Session saves `reversed` (schema 13), not the origin; recall is stopped at the
    lap start. Rule 3: what the player saved comes back. Rule 1 is unaffected: the
    project accepts only the current schema (`session.dart:688`).
 8. Reopen keeps direction (material column) and parks the origin (runtime), composing

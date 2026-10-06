@@ -75,7 +75,7 @@ class SessionRigTrack {
     required this.channel,
     required this.fadeAmount,
     required this.lanes,
-    this.reversed = false,
+    required this.reversed,
   });
 
   /// Track channel index.
