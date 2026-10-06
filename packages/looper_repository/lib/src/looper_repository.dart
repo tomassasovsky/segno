@@ -2018,6 +2018,16 @@ class LooperRepository {
     () => _engine.installReverse(channel: channel, reversed: reversed),
   );
 
+  /// Plays every recorded track at [factor] of its recorded speed, its pitch
+  /// following (Speed, #1179). Completes with the exact callback outcome:
+  /// [EngineResult.notReady] while any track records, overdubs, is armed or
+  /// launching, or a count-in runs. A request for the factor in force is
+  /// accepted and changes nothing. [LooperState.speed] follows the published
+  /// factor; while it is not [SpeedFactor.normal], [record] refuses a record
+  /// or punch-in with [EngineResult.transformed].
+  Future<EngineResult> setSpeed(SpeedFactor factor) =>
+      _requestReceipt(() => _engine.setSpeed(factor));
+
   void _watchReceipt(
     ReceiptObservation observation, {
     required bool Function() settle,
@@ -2336,6 +2346,7 @@ class LooperRepository {
             s.tracks[ch].state == TrackState.overdubbing)
           ch,
     }),
+    speed: s.speed,
     outputBusCount: s.outputBusCount,
     tailResetRev: s.tailResetRev,
     // Sized by the engine to the channels the device has.

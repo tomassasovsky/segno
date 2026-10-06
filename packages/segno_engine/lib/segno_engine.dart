@@ -43,6 +43,7 @@ export 'src/engine_snapshot.dart'
         PendingLaunchAction,
         RecordStartEditKind,
         RecordTiming,
+        SpeedFactor,
         TempoSource,
         TrackRestoreState,
         TrackSnapshot,

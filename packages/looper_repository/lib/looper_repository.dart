@@ -27,6 +27,7 @@ export 'package:segno_engine/segno_engine.dart'
         RecordStartEditKind,
         RecordTiming,
         ReopenOutcome,
+        SpeedFactor,
         TempoSource,
         TrackHistory,
         TrackState,

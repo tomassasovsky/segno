@@ -815,6 +815,25 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  RequestAdmission setSpeed(SpeedFactor factor) {
+    _checkAlive();
+    final request = calloc<Uint64>();
+    try {
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_set_speed(
+          _engine,
+          factor.numer,
+          factor.denom,
+          request,
+        ),
+      );
+      return (result: result, request: request.value);
+    } finally {
+      calloc.free(request);
+    }
+  }
+
+  @override
   EngineResult? readRequestResult(int request) {
     _checkAlive();
     final result = calloc<Int32>();

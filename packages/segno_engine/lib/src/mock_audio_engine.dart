@@ -237,6 +237,9 @@ class MockAudioEngine implements AudioEngine {
     _measuredLatencyMs = -1;
     _masterGain = 1; // unity on every fresh start, mirroring the native engine
     _perfArmed = false; // disarmed on every fresh start/reconfigure
+    // Speed resets with the material at configure; receipts die with it.
+    _speed = SpeedFactor.normal;
+    _requestResults.clear();
     _perfFrames = 0;
     // The output destinations go back to their defaults on a fresh start,
     // like the native engine's configure. The capture policy deliberately
@@ -314,6 +317,7 @@ class MockAudioEngine implements AudioEngine {
     final inputs = _running ? _negotiatedInputs : 0;
     final outputs = _running ? _negotiatedOutputs : 0;
     return EngineSnapshot(
+      speed: _speed,
       mixRevision: _mixRevision,
       isRunning: _running,
       devicePresent: _running,
@@ -661,8 +665,26 @@ class MockAudioEngine implements AudioEngine {
     result: _running ? EngineResult.invalid : EngineResult.notRunning,
     request: 0,
   );
+  // Speed is global, so the mock models it: a running engine accepts any
+  // factor (it has no capture to refuse it), publishes it in the snapshot and
+  // answers the receipt once; record refuses capture while it is not 1x.
+  SpeedFactor _speed = SpeedFactor.normal;
+  int _nextRequest = 0;
+  final _requestResults = <int, EngineResult>{};
+
   @override
-  EngineResult? readRequestResult(int request) => EngineResult.invalid;
+  RequestAdmission setSpeed(SpeedFactor factor) {
+    final result = _requireRunning();
+    if (!result.isOk) return (result: result, request: 0);
+    _speed = factor;
+    final request = ++_nextRequest;
+    _requestResults[request] = EngineResult.ok;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  EngineResult? readRequestResult(int request) =>
+      _requestResults.remove(request) ?? EngineResult.invalid;
 
   @override
   EngineResult setMix(EngineMixSettings settings) {
@@ -734,7 +756,11 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult record({int channel = 0}) => _requireRunning();
+  EngineResult record({int channel = 0}) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    return _speed == SpeedFactor.normal ? result : EngineResult.transformed;
+  }
 
   @override
   EngineResult stopTrack({int channel = 0}) => _requireRunning();

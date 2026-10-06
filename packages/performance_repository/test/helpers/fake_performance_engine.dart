@@ -414,6 +414,10 @@ class FakePerformanceEngine implements AudioEngine {
   }) => (result: EngineResult.invalid, request: 0);
 
   @override
+  RequestAdmission setSpeed(SpeedFactor factor) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
   EngineResult? readRequestResult(int request) => EngineResult.invalid;
 
   @override
