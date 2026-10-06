@@ -555,6 +555,10 @@ final class DecayFamily implements SettingsFamily<DecaySnapshot, int?> {
   @override
   EngineResult request(DecaySnapshot live, DecaySnapshot durable, Object? _) {
     final prior = this.live;
+    // Captured before any send: each send also moves the repository's
+    // restart values, so reading them after a send-back would make a held
+    // temporary value durable.
+    final priorDurable = this.durable;
     final sent = <DecayAddress>[];
     EngineResult apply(DecayAddress address, int? percent) =>
         switch (address.channel) {
@@ -568,12 +572,15 @@ final class DecayFamily implements SettingsFamily<DecaySnapshot, int?> {
       if (live.at(address) == prior.at(address)) continue;
       final result = apply(address, live.at(address));
       if (!result.isOk) {
+        // Send-back results are not checked: the repository's values change
+        // only on an accepted send, so a refused send-back leaves them equal
+        // to what the engine holds, and the owner reports the refusal.
         for (final undo in sent) {
           apply(undo, prior.at(undo));
         }
         _repository.setDecayRestartIntent(
-          defaultPercent: this.durable.defaultPercent,
-          trackOverrides: this.durable.trackOverrides,
+          defaultPercent: priorDurable.defaultPercent,
+          trackOverrides: priorDurable.trackOverrides,
         );
         return result;
       }

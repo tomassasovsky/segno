@@ -4,6 +4,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/application/settings_families.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/application/settings_owners.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
@@ -764,6 +765,40 @@ void main() {
       stored: const {'looper.overdub_decay': 80, 'track_overdub_decay.3': 20},
       arm: (engine) => engine.refuseDecayTrack = 3,
     );
+  });
+
+  check('a refused multi-address Decay request never makes a held value '
+      'durable', (r) {
+    final family = DecayFamily(
+      repository: r.looper,
+      settings: SettingsRepository(store: r.store),
+    );
+    // Track 2 is held at 90 with Released 10.
+    expect(
+      family.request(
+        DecaySnapshot(defaultPercent: 0, trackOverrides: const {2: 90}),
+        DecaySnapshot(defaultPercent: 0, trackOverrides: const {2: 10}),
+        null,
+      ),
+      EngineResult.ok,
+    );
+    expect(r.looper.decayRestartIntent.trackOverrides, {2: 10});
+    // Default and track 2 are sent; track 5 is refused, so both go back.
+    r.engine.refuseDecayTrack = 5;
+    expect(
+      family.request(
+        DecaySnapshot(defaultPercent: 40, trackOverrides: const {2: 50, 5: 30}),
+        DecaySnapshot(defaultPercent: 40, trackOverrides: const {2: 10, 5: 30}),
+        null,
+      ),
+      EngineResult.invalid,
+    );
+    expect(
+      family.live,
+      DecaySnapshot(defaultPercent: 0, trackOverrides: const {2: 90}),
+    );
+    expect(r.looper.decayRestartIntent.defaultPercent, 0);
+    expect(r.looper.decayRestartIntent.trackOverrides, {2: 10});
   });
 
   group('per-address writes', () {
