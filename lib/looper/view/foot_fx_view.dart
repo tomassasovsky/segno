@@ -26,9 +26,17 @@ class FootFxView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final control = context.read<ControlCubit>();
+    final repository = context.read<LooperRepository>();
     final controlState = context.watch<ControlCubit>().state;
-    final looper = context.watch<LooperBloc>().state;
-    final pedals = projectFootFx(controlState, looper);
+    // An Equatable projection, so meter and playhead ticks do not redraw the
+    // ten pedals (the stage's #638 budget).
+    final pedals = context.select<LooperBloc, FootFxProjection>(
+      (bloc) => projectFootFx(
+        controlState,
+        bloc.state,
+        chainAt: repository.chainEntriesAt,
+      ),
+    );
     final l10n = context.l10n;
     final surface = context.surface;
 
@@ -112,13 +120,13 @@ class FootFxView extends StatelessWidget {
                         start: 480,
                         top: 56,
                         width: 180,
-                        child: _FootFxPedal(pedal: pedals[PedalButton.clear]!),
+                        child: _FootFxPedal(pedal: pedals[PedalButton.clear]),
                       ),
                       PositionedDirectional(
                         start: 700,
                         top: 56,
                         width: 180,
-                        child: _FootFxPedal(pedal: pedals[PedalButton.bank]!),
+                        child: _FootFxPedal(pedal: pedals[PedalButton.bank]),
                       ),
                       PositionedDirectional(
                         start: 40,
@@ -131,7 +139,7 @@ class FootFxView extends StatelessWidget {
                             for (final button in front)
                               SizedBox(
                                 width: 180,
-                                child: _FootFxPedal(pedal: pedals[button]!),
+                                child: _FootFxPedal(pedal: pedals[button]),
                               ),
                           ],
                         ),
@@ -156,7 +164,6 @@ class _FootFxPedal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final control = context.read<ControlCubit>();
-    final repository = context.read<LooperRepository>();
     final trackNames = context.watch<TracksCubit>().state.names;
     final bank = context.select<ControlCubit, int>(
       (cubit) => cubit.state.activeBank,
@@ -166,6 +173,10 @@ class _FootFxPedal extends StatelessWidget {
     final binding = pedal.binding;
     final target = pedal.target;
 
+    String slotName() => l10n.footFxSlot(
+      bank == 0 ? 'A' : 'B',
+      button.index - PedalButton.track1.index + 1,
+    );
     final String title;
     var detail = '';
     var hint = '';
@@ -184,22 +195,22 @@ class _FootFxPedal extends StatelessWidget {
         };
       case FootFxRole.trackChain:
         final channel = pedal.channel!;
-        final effects = pedal.effects;
-        title = effects.isEmpty
-            ? l10n.footFxSlot(
-                bank == 0 ? 'A' : 'B',
-                button.index - PedalButton.track1.index + 1,
-              )
-            : fxBlockName(l10n, effects.first);
+        title = _chainName(l10n, pedal.effects) ?? slotName();
         detail = l10n.footFxToggle;
         hint = l10n.trackName(trackNames, channel);
       case FootFxRole.binding:
         if (pedal.stale || target == null) {
           title = l10n.footFxTargetMissing;
         } else {
+          final entries = pedal.targetEntries;
           title =
-              _targetName(l10n, repository, target) ??
-              bindingTargetLabel(l10n, trackNames, target);
+              _targetName(l10n, target, entries) ??
+              // A chain of several racks reads as the pedal's own slot.
+              (entries != null &&
+                      entries.isNotEmpty &&
+                      PedalBindingKey.trackButtons.contains(button)
+                  ? slotName()
+                  : bindingTargetLabel(l10n, trackNames, target));
         }
         detail = binding!.behavior == BindingBehavior.momentary
             ? l10n.footFxHold
@@ -207,7 +218,7 @@ class _FootFxPedal extends StatelessWidget {
         final holdTarget = binding.decodeHoldTarget();
         hint = holdTarget != null
             ? l10n.footFxHoldAction(
-                _targetName(l10n, repository, holdTarget) ??
+                _targetName(l10n, holdTarget, pedal.holdEntries) ??
                     bindingTargetLabel(l10n, trackNames, holdTarget),
               )
             : target == null || pedal.stale
@@ -252,25 +263,35 @@ class _FootFxPedal extends StatelessWidget {
   }
 }
 
-/// The name of what [target] drives: the effect a slot target names, or the
-/// first effect of the chain a chain target names; null when the chain is
-/// empty or gone.
+/// What a chain is called on the face (pen 10/03 names racks: `Funk Wah`):
+/// the rack's name when every entry belongs to one rack, the effect's name
+/// for a single standalone effect, and null when the chain is empty or spans
+/// several racks.
+String? _chainName(AppLocalizations l10n, List<TrackEffect> entries) {
+  if (entries.isEmpty) return null;
+  final rack = entries.first.rack;
+  if (rack != null && entries.every((entry) => entry.rack?.id == rack.id)) {
+    return rack.name;
+  }
+  if (entries.length == 1) return fxBlockName(l10n, entries.single);
+  return null;
+}
+
+/// The name of what [target] drives: the chain's rack or effect for a chain
+/// target, the one effect a slot target names; null when [entries] (the
+/// chain the target reaches) is empty, gone or spans several racks.
 String? _targetName(
   AppLocalizations l10n,
-  LooperRepository repository,
   FxBindingTarget target,
+  List<TrackEffect>? entries,
 ) {
-  final entries = repository.chainEntriesAt(target.address);
   if (entries == null || entries.isEmpty) return null;
   return switch (target) {
-    FxChainTarget() => fxBlockName(l10n, entries.first),
+    FxChainTarget() => _chainName(l10n, entries),
     FxSlotTarget(:final slotId) => switch (entries.where(
       (entry) => entry.slotId == slotId,
     )) {
-      final matches when matches.isNotEmpty => fxBlockName(
-        l10n,
-        matches.first,
-      ),
+      final matches when matches.isNotEmpty => fxBlockName(l10n, matches.first),
       _ => null,
     },
   };

@@ -5963,6 +5963,27 @@
     "@footFxStopChanged": {
         "description": "One-time notice on the first FX-mode entry after the FX Stop panic was removed (#1229)."
     },
+    "footFxModeChanged": "MODE now leaves FX mode. Its {press} still works in the other modes.",
+    "@footFxModeChanged": {
+        "description": "Second line of the one-time FX notice: MODE in FX mode now exits instead of running the player's MODE assignment (#1229, D13). {press} is the mode MODE switches to.",
+        "placeholders": {
+            "press": {
+                "type": "String"
+            }
+        }
+    },
+    "footFxModeChangedHold": "MODE now leaves FX mode. Its {press} and Hold · {hold} still work in the other modes.",
+    "@footFxModeChangedHold": {
+        "description": "As footFxModeChanged, for a MODE switch with a Hold assignment.",
+        "placeholders": {
+            "press": {
+                "type": "String"
+            },
+            "hold": {
+                "type": "String"
+            }
+        }
+    },
     "footFxToggle": "Toggle",
     "@footFxToggle": {
         "description": "FX face: the line under a switch whose binding toggles (stays on until pressed again)."

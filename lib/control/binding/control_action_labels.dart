@@ -31,6 +31,17 @@ String controlActionLabel(
   ),
 };
 
+/// The second line of the one-time FX notice (#1229, D13): MODE now leaves
+/// FX mode, and the player's MODE assignment in [setup] runs only in the
+/// other modes.
+String footFxModeChangedText(AppLocalizations l10n, PedalSetup setup) {
+  final press = _modeLabel(l10n, setup.modePress);
+  final hold = setup.modeHold;
+  return hold == null
+      ? l10n.footFxModeChanged(press)
+      : l10n.footFxModeChangedHold(press, _modeLabel(l10n, hold));
+}
+
 /// What an unassigned gesture reads as.
 String controlActionNone(AppLocalizations l10n) => l10n.actionNone;
 

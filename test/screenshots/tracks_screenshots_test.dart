@@ -559,23 +559,36 @@ void main() {
   // and two Hold, the held one lit while its contact is down (#1229).
   for (final scene in ['default', 'held', 'spanish']) {
     testWidgets('Foot FX $scene accepted scene', (tester) async {
-      const effects = [
-        TrackEffectType.reverb,
-        TrackEffectType.drive,
-        TrackEffectType.filter,
-        TrackEffectType.delay,
+      // The pen's racks: pedal 1's chain spans two racks, so it reads as
+      // its slot (`FX A1`); the others are one rack each.
+      List<TrackEffect> rack(
+        String id,
+        String name,
+        List<TrackEffectType> types,
+      ) => [
+        for (final type in types)
+          BuiltInEffect(
+            type: type,
+            rack: FxRack(id: id, name: name),
+          ),
+      ];
+      final effects = [
+        [
+          ...rack('r0', 'Clean Boost', [TrackEffectType.drive]),
+          ...rack('r1', 'Room', [TrackEffectType.reverb]),
+        ],
+        rack('r2', 'Light FX 1', [TrackEffectType.delay]),
+        rack('r3', 'Funk Wah', [TrackEffectType.filter, TrackEffectType.drive]),
+        rack('r4', 'Ballad', [TrackEffectType.reverb, TrackEffectType.delay]),
       ];
       when(repository.allMonitors).thenReturn({
         for (var input = 0; input < 4; input++)
-          input: InputMonitor(
-            input: input,
-            effects: [BuiltInEffect(type: effects[input])],
-          ),
+          input: InputMonitor(input: input, effects: effects[input]),
       });
       for (var input = 0; input < 4; input++) {
         when(
           () => repository.monitorEffects(input),
-        ).thenReturn([BuiltInEffect(type: effects[input])]);
+        ).thenReturn(effects[input]);
         // Input 1 and 4 are on; the momentary ones rest off.
         when(
           () => repository.monitorChainEnabled(input),
