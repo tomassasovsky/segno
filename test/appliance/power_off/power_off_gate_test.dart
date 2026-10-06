@@ -15,6 +15,20 @@ void main() {
       );
     });
 
+    test('a transfer in flight (a copy, an export, a USB eject) → refuse, '
+        'with or without content to lose', () {
+      expect(
+        powerOffGate(const PowerOffSnapshot(transferInFlight: true)),
+        PowerOffDisposition.refuse,
+      );
+      expect(
+        powerOffGate(
+          const PowerOffSnapshot(transferInFlight: true, anyHasContent: true),
+        ),
+        PowerOffDisposition.refuse,
+      );
+    });
+
     test('hasContent and idle → confirm', () {
       expect(
         powerOffGate(const PowerOffSnapshot(anyHasContent: true)),
@@ -131,6 +145,25 @@ void main() {
         ).takeInFlight,
         isFalse,
       );
+    });
+
+    test('carries the storage transfer flag it is given, and none by '
+        'default', () {
+      PowerOffSnapshot read({bool? transfer}) => transfer == null
+          ? powerOffSnapshotOf(
+              looper: const LooperState(),
+              recorder: const PerformanceRecorderIdle(),
+              session: const SessionState(),
+            )
+          : powerOffSnapshotOf(
+              looper: const LooperState(),
+              recorder: const PerformanceRecorderIdle(),
+              session: const SessionState(),
+              transferInFlight: transfer,
+            );
+      expect(read().transferInFlight, isFalse);
+      expect(read(transfer: true).transferInFlight, isTrue);
+      expect(read(transfer: true).takeInFlight, isFalse);
     });
 
     test('maps currentSessionName', () {

@@ -3358,6 +3358,11 @@ enum ConsoleDialogTone {
   /// warning amber, not the destructive red: nothing is destroyed, but the
   /// tap was intercepted and this is the button that lets it land.
   warning,
+
+  /// The one thing a card is for — Storage's Eject. Solid in the accent:
+  /// unlike [accent] it does commit something, and it sits beside a
+  /// [neutral] sibling (Browse) that must not read as its equal.
+  primary,
 }
 
 /// A 40px button at the foot of a panel or sheet.
@@ -3414,6 +3419,11 @@ class ConsoleDialogButton extends StatelessWidget {
         surface.warning,
         surface.background,
       ),
+      ConsoleDialogTone.primary => (
+        surface.accent,
+        surface.accent,
+        surface.onAccent,
+      ),
     };
     return FocusableTapTarget(
       onTap: onPressed,
@@ -3438,11 +3448,13 @@ class ConsoleDialogButton extends StatelessWidget {
               fontSize: 15,
               height: 1.2,
               leadingDistribution: TextLeadingDistribution.even,
-              // Both solid tones carry their weight; the outlined ones stay
-              // regular — the pen draws `Switch off` at 600 like `Delete`.
+              // The solid tones carry their weight; the outlined ones stay
+              // regular — the pen draws `Switch off` at 600 like `Delete`,
+              // and Storage's `Eject` at 700.
               fontWeight:
                   tone == ConsoleDialogTone.destructive ||
-                      tone == ConsoleDialogTone.warning
+                      tone == ConsoleDialogTone.warning ||
+                      tone == ConsoleDialogTone.primary
                   ? FontWeight.w600
                   : FontWeight.normal,
             ),

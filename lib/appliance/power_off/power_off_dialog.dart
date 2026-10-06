@@ -72,7 +72,10 @@ class PowerOffDialog extends StatelessWidget {
                           : null,
                     )
                   : refuse
-                  ? _RefuseBody(onKeepPlaying: () => _keepPlaying(context))
+                  ? _RefuseBody(
+                      transfer: _transferOnly(),
+                      onKeepPlaying: () => _keepPlaying(context),
+                    )
                   : _ConfirmBody(
                       failed: state.phase == PowerOffPhase.saveFailed,
                       onKeepPlaying: () => _keepPlaying(context),
@@ -88,6 +91,13 @@ class PowerOffDialog extends StatelessWidget {
         );
       },
     );
+  }
+
+  /// Refused for a transfer and not for a take: the take's words would send
+  /// the player looking for a recording that is not running.
+  bool _transferOnly() {
+    final reading = snapshot();
+    return reading.transferInFlight && !reading.takeInFlight;
   }
 
   void _keepPlaying(BuildContext context) {
@@ -166,8 +176,9 @@ class _FlushFailedBody extends StatelessWidget {
 }
 
 class _RefuseBody extends StatelessWidget {
-  const _RefuseBody({required this.onKeepPlaying});
+  const _RefuseBody({required this.transfer, required this.onKeepPlaying});
 
+  final bool transfer;
   final VoidCallback onKeepPlaying;
 
   @override
@@ -179,7 +190,7 @@ class _RefuseBody extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         AppText(
-          l10n.powerOffRefuseTitle,
+          transfer ? l10n.powerOffTransferTitle : l10n.powerOffRefuseTitle,
           style: TextStyle(
             color: surface.warning,
             fontSize: 19,
@@ -190,7 +201,7 @@ class _RefuseBody extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         AppText(
-          l10n.powerOffRefuseBody,
+          transfer ? l10n.powerOffTransferBody : l10n.powerOffRefuseBody,
           style: TextStyle(
             color: surface.textSecondary,
             fontSize: 16,

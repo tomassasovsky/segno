@@ -1009,6 +1009,8 @@
     "mountpoint",
     "ntfs",
     "ntfs3",
+    "nodev",
+    "nosuid",
     "RRECOMMENDS",
     "statvfs",
     "superfloppy",

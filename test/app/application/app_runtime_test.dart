@@ -21,6 +21,8 @@ import 'package:segno/session/session.dart';
 import 'package:segno_engine/segno_engine.dart' show FxOwner, TrackSnapshot;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -132,6 +134,11 @@ void main() {
       pedal: pedal,
       performance: performance,
       sessions: sessions,
+      storage: StorageRepository(
+        client: const UnsupportedUsbStorageClient(),
+        exportsRoot: () async => '.',
+        volumeSpace: performance.volumeSpace,
+      ),
       powerOff: () async => halts++,
     );
     addTearDown(() async {

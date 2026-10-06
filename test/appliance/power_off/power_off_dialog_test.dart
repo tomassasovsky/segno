@@ -7,6 +7,7 @@ import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_dialog.dart';
 import 'package:segno/appliance/power_off/power_off_gate.dart';
 import 'package:segno/common/console_surface.dart';
+import 'package:segno/l10n/l10n.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -55,6 +56,40 @@ void main() {
             .tone,
         ConsoleDialogTone.warning,
       );
+    });
+
+    testWidgets('a transfer refuses with its own words and only Keep '
+        'playing; a take wins when both are in flight', (tester) async {
+      final cubit = _cubit();
+      addTearDown(cubit.close);
+      await _pump(
+        tester,
+        cubit,
+        snapshot: const PowerOffSnapshot(transferInFlight: true),
+      );
+      final l10n = AppLocalizations.of(
+        tester.element(find.byType(PowerOffDialog)),
+      );
+
+      expect(find.text(l10n.powerOffTransferTitle), findsOneWidget);
+      expect(find.text(l10n.powerOffTransferBody), findsOneWidget);
+      expect(find.text(l10n.powerOffRefuseTitle), findsNothing);
+      expect(find.byKey(const Key('power_off_keep_playing')), findsOneWidget);
+      expect(find.byKey(const Key('power_off_save')), findsNothing);
+      expect(find.byKey(const Key('power_off_discard')), findsNothing);
+
+      cubit.keepPlaying();
+      await tester.pumpAndSettle();
+      await _pump(
+        tester,
+        cubit,
+        snapshot: const PowerOffSnapshot(
+          takeInFlight: true,
+          transferInFlight: true,
+        ),
+      );
+      expect(find.text(l10n.powerOffRefuseTitle), findsOneWidget);
+      expect(find.text(l10n.powerOffTransferTitle), findsNothing);
     });
 
     testWidgets(

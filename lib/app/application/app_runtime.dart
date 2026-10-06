@@ -21,8 +21,10 @@ import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/session/application/session_settings_coordinator.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/storage/cubit/storage_cubit.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 /// Owns the running rig's transaction actors and their disposal order.
 ///
@@ -39,6 +41,7 @@ class AppRuntime {
     required PedalRepository pedal,
     required PerformanceRepository performance,
     required SessionRepository sessions,
+    required StorageRepository storage,
     required Future<void> Function() powerOff,
     required GuardRegistry guards,
   }) {
@@ -61,6 +64,11 @@ class AppRuntime {
       ...timing.owners,
       ...fade.owners,
     ]);
+    // App-wide: shutdown asks it about transfers outside the Storage page.
+    this.storage = StorageCubit(
+      repository: storage,
+      sampleRate: () => repository.state.status.sampleRate,
+    );
     power = PowerOffCubit(
       flush: prepareShutdown,
       pedalGoodbye: pedal.goodbye,
@@ -149,6 +157,9 @@ class AppRuntime {
   late final SessionCubit session;
   late final PowerOffCubit power;
 
+  /// Volumes, capacity, eject, and whether a transfer is in flight.
+  late final StorageCubit storage;
+
   bool _closing = false;
   Future<void>? _startFuture;
   Future<void>? _closeFuture;
@@ -231,6 +242,7 @@ class AppRuntime {
       () => sessionClosed,
       control.close,
       looper.close,
+      storage.close,
       // UI teardown starts debounced saves; confirm them while their owners
       // and the repository still live. A failure must not skip disposal.
       fxPersistence.flush,

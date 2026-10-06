@@ -15,6 +15,8 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/session/cubit/session_cubit.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 import 'fake_power_key_source.dart';
@@ -90,7 +92,10 @@ void main() {
       await pedalEvents.close();
     });
 
-    Future<void> pumpHost(WidgetTester tester) async {
+    Future<void> pumpHost(
+      WidgetTester tester, {
+      StorageRepository? storage,
+    }) async {
       tester.view.physicalSize = const Size(1920, 1080);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -100,6 +105,8 @@ void main() {
           providers: [
             RepositoryProvider<PowerKeySource>.value(value: keys),
             RepositoryProvider<PedalRepository>.value(value: pedal),
+            if (storage != null)
+              RepositoryProvider<StorageRepository>.value(value: storage),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -163,6 +170,44 @@ void main() {
       expect(find.byKey(const Key('power_off_dialog')), findsNothing);
       expect(find.byKey(const Key('power_off_host_child')), findsOneWidget);
       expect(log, isEmpty);
+    });
+
+    testWidgets('press while a copy holds a drive refuses with the transfer '
+        'words, and halts nothing', (tester) async {
+      final repository = StorageRepository(
+        client: FakeUsbStorageClient(),
+        exportsRoot: () async => '/data/exports',
+        volumeSpace: (_) => null,
+      );
+      addTearDown(() => unawaited(repository.dispose()));
+      // No Storage page has read since the lease was taken: the host must
+      // ask at the press, not trust a page's last state.
+      final lease = repository.acquire(
+        const StorageDestination.internal(),
+        'backup',
+      );
+
+      await pumpHost(tester, storage: repository);
+      await tester.pump();
+      keys.emitPress();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(cubit.state.phase, PowerOffPhase.refuse);
+      expect(find.text('Wait for the transfer'), findsOneWidget);
+      expect(find.byKey(const Key('power_off_save')), findsNothing);
+      expect(find.byKey(const Key('power_off_discard')), findsNothing);
+      expect(log, isEmpty);
+
+      // Once the copy is done, the same press asks the usual question.
+      await tester.tap(find.byKey(const Key('power_off_keep_playing')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      lease.release();
+      keys.emitPress();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(cubit.state.phase, PowerOffPhase.confirm);
     });
 
     testWidgets('Keep playing pops only the power-off dialog', (tester) async {

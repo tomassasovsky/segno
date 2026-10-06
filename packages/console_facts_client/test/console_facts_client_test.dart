@@ -32,7 +32,6 @@ void main() {
       expect(client.isSupported, isFalse);
       expect((await client.storage()).known, isFalse);
       expect(await client.facts(), ConsoleFacts.unknown);
-      expect(await client.exportDestination(), isEmpty);
       expect(await client.deleteCapturesOlderThan(30), 0);
       expect(await client.retiredBluetoothPairings(), 0);
     });
@@ -93,14 +92,6 @@ void main() {
       final client = FakeConsoleFactsClient(latency: Duration.zero);
       await client.deleteCapturesOlderThan(30);
       expect(await client.deleteCapturesOlderThan(30), 0);
-    });
-
-    test('an unmounted export volume reports nowhere to export', () async {
-      final client = FakeConsoleFactsClient(
-        latency: Duration.zero,
-        exportVolumeMounted: false,
-      );
-      expect(await client.exportDestination(), isEmpty);
     });
 
     test('it answers with the rig the mockups draw', () async {
@@ -246,7 +237,6 @@ void main() {
       expect(client.isSupported, isTrue);
       expect(() async {
         expect(await client.facts(), ConsoleFacts.unknown);
-        expect(await client.exportDestination(), isEmpty);
         expect(await client.deleteCapturesOlderThan(30), 0);
       }, returnsNormally);
     });
