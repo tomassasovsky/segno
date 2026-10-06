@@ -111,6 +111,9 @@ void main() {
     when(() => sessions.bundlePathOf(any())).thenAnswer((_) async => '/test');
     when(sessions.listSessions).thenAnswer((_) async => []);
     when(sessions.newSessionId).thenAnswer((_) async => 'new');
+    when(
+      () => sessions.releaseSessionId(any()),
+    ).thenAnswer((_) async {});
     exportsDirectory = '.';
     performance = PerformanceRepository(
       engine: engine,

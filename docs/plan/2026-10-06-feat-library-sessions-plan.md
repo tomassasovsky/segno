@@ -163,13 +163,32 @@ the `.als` all remain reachable.
 - **D1 Identity is a directory id; the name is manifest metadata.** A bundle
   is `sessions/[<folder>/]<id>/`. New bundles take `s-YYYYMMDD-HHMMSS`
   (plus `-2`, `-3` on a same-second collision), the convention
-  `performance_slug.dart` already uses for captures. The manifest gains an
+  `performance_slug.dart` already uses for captures. An id is taken when
+  any directory at the root or one level down has that name (a bundle, a
+  folder, an interrupted save, a reservation), and `newSessionId` creates
+  the bundle directory when it issues the id, so a same-second Save as and
+  Duplicate, or a folder named like an id, cannot share a directory; a save
+  that then writes nothing gives the empty directory back
+  (`releaseSessionId`), since an empty directory is a folder (Part 1 review,
+  finding 1). The manifest gains an
   optional `name` field read leniently; absent, the name is the directory
   basename, which is exactly what every existing bundle shows today (rule 1,
   one line, no migration pass). `formatVersion` stays 11: a bump would turn
   every installed session into `SessionUnsupportedVersion`
   (`session.dart:756-760`). Rename rewrites `name` only (accepted 6.2,
-  "Rename is metadata-only"); it never moves audio.
+  "Rename is metadata-only"); it never moves audio. It writes the manifest
+  to `session.json.tmp`, flushes it and renames it over `session.json`, so a
+  power cut leaves the old name or the new one, never a torn manifest that
+  cannot be opened (Part 1 review note).
+  **Name collisions are case-sensitive (decided under rule 1, Part 1 review
+  finding 3).** Save as, Duplicate and Rename refuse a display name another
+  session carries exactly, and accept one that differs only by case. Before
+  this plan the name was the directory, and the appliance's ext4 is
+  case-sensitive, so `Song` and `song` could both be saved; refusing that now
+  would turn a Save as that worked into an error, and installs may already
+  hold such pairs. Automatic names (D4) still skip numbers case-insensitively,
+  which never refuses anything and keeps `New loop 2` from appearing beside
+  `new loop 2`.
 - **D2 Folders are directories, one level.** `sessions/<folder>/` with no
   manifest is a folder; bundles directly under the root are `Unfiled`. Move
   is a same-filesystem `rename`. No index file (rule 4: the filesystem is the
@@ -179,7 +198,9 @@ the `.als` all remain reachable.
   manifest-less directory that contains layer WAVs (`track*_lane*_L*.wav`) or
   `mixdown.wav` is an interrupted save, not a folder: it is excluded from the
   chips and from the catalog, and left in place (rule 2; cleaning it up is
-  E7-19's transaction work).
+  E7-19's transaction work). Deleting a folder is therefore refused while
+  any directory inside it holds anything, an interrupted save included, not
+  only while it holds a bundle (Part 1 review finding 2).
 - **D3 Listing reads the manifest leniently.** `listSessions` today never
   parses a manifest so that a newer-version bundle still lists
   (`session_repository.dart:330-335`). The row now needs name, tempo,
@@ -370,7 +391,9 @@ Repository surface (ids everywhere a name was): `listSessions()`,
 the empty-mix `mixdown.wav` deletion, `read(path)` unchanged,
 `exportMixdown(id, destinationPath)` and `exportStems(id, destinationDir)`
 re-based on the saved bundle (D13). Name collisions are checked on display
-names, case-insensitively, and still raise `SessionNameCollision`.
+names, case-sensitively (D1), and still raise `SessionNameCollision`.
+`newSessionId()` reserves the directory it names; `releaseSessionId(id)`
+removes it again while it is empty.
 
 ### 4.3 The removable-volumes port
 

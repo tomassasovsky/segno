@@ -117,7 +117,7 @@ Future<String?> _promptName(
     ).showSnackBar(SnackBar(content: AppText(l10n.sessionNameInvalid)));
     return null;
   }
-  if (taken.map((n) => n.toLowerCase()).contains(slug.toLowerCase())) {
+  if (taken.contains(slug)) {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: AppText(l10n.sessionNameDuplicate(slug))));

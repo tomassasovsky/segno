@@ -79,9 +79,9 @@ class SessionCorruptLayers extends SessionException {
 }
 
 /// A save-as, rename, duplicate or new folder targeted a name another session
-/// or folder already carries (compared case-insensitively on the sanitized
-/// [slug]). The catalog never silently overwrites, so the caller must pick
-/// another name.
+/// or folder already carries (compared case-sensitively on the sanitized
+/// [slug], as on the appliance's case-sensitive file system). The catalog
+/// never silently overwrites, so the caller must pick another name.
 class SessionNameCollision extends SessionException {
   /// Creates a [SessionNameCollision] for the colliding [slug].
   const SessionNameCollision({required this.slug});
@@ -93,8 +93,9 @@ class SessionNameCollision extends SessionException {
   String toString() => 'a session named "$slug" already exists';
 }
 
-/// A folder delete targeted a folder that still holds sessions. Move or delete
-/// them first; the catalog never removes audio as a side effect.
+/// A folder delete targeted a folder that still holds sessions or an
+/// interrupted save. Move or delete them first; the catalog never removes
+/// audio as a side effect.
 class SessionFolderNotEmpty extends SessionException {
   /// Creates a [SessionFolderNotEmpty] for [folder].
   const SessionFolderNotEmpty({required this.folder});
