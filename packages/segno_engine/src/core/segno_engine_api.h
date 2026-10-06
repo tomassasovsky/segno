@@ -42,7 +42,9 @@ typedef enum le_result {
   LE_ERR_DEVICE = -4,        /* miniaudio failed to init/start the device */
   LE_ERR_UNSUPPORTED = -5,   /* a plugin's bus topology is not a stereo (or
                               * mono-adaptable) effect — instrument / multi-bus /
-                              * sidechain / wrong channel count (D-BUS) */
+                              * sidechain / wrong channel count (D-BUS); an
+                              * audio file outside the decoder's whitelist
+                              * (#1200) */
   LE_ERR_CAPACITY = -6,      /* a requested allocation would exceed engine
                               * capacity (A6, D17): N bars of the current
                               * signature at the slowest possible tempo (30
@@ -2336,12 +2338,22 @@ LE_EXPORT int32_t le_backing_buffer_rate(const le_backing_buffer* buffer);
  * whole buffer into [out]; returns the count written, or LE_ERR_INVALID. */
 LE_EXPORT int32_t le_backing_buffer_peaks(const le_backing_buffer* buffer,
                                           float* out, int32_t buckets);
-/* ---- the audio-file decoder (#1200; the app's only one: the backing
- * player, the Library preview and recording recovery all read files here) --
- * WAV (8/16/24/32-bit PCM, 32/64-bit float) and MP3. FLAC is compiled out
- * until the vendored miniaudio carries the fix for CVE-2024-41147. Sources
- * must be 8-384 kHz, mono or stereo. Any thread but the audio thread; no
- * engine handle; nothing here touches engine state. */
+/* ---- the audio-file decoder (#1200; the app's one decoder of audio
+ * samples: the backing player, the Library preview and recording recovery
+ * all read files here) --
+ * Accepted, by our own header check before any decoder sees the file: WAV
+ * (RIFF) with 16/24/32-bit PCM or 32-bit float, plain or EXTENSIBLE, and
+ * MPEG Layer III. Sources must be mono or stereo, 8-192 kHz, at a rate the
+ * converter reaches from every engine rate (44.1, 48, 88.2 and 96 kHz).
+ * Everything else is LE_ERR_UNSUPPORTED: 8-bit or 64-bit WAV, ADPCM, mu-law,
+ * A-law, RIFX, RF64, BW64, Wave64, AIFF, FLAC (compiled out until #1235),
+ * Ogg, MPEG Layer I/II, more channels or another rate. A file that claims an
+ * accepted format but is inconsistent (a chunk past the end of the file, a
+ * short `fact` chunk, a block align that does not match, a length other than
+ * the one stated, a non-finite float sample) is LE_ERR_INVALID. No input can
+ * make these loop: reads and seeks stay inside the file and stop after a
+ * bounded amount of work. Any thread but the audio thread; no engine handle;
+ * nothing here touches engine state. */
 
 /* The longest whole file accepted, in seconds of source audio. */
 #define LE_BACKING_MAX_SECONDS 900
@@ -2363,15 +2375,17 @@ typedef struct le_backing_decode_info {
  * Whole file (start_frame 0, max_frames 0): refused past
  * LE_BACKING_MAX_SECONDS (LE_ERR_TOO_LONG, before reading when the length is
  * stated), and refused as damaged when it decodes to a length other than the
- * one it states. Bounded read (a preview, a recording part): starts at
- * [start_frame] (source frames) and keeps at most [max_frames] output frames,
- * setting info->truncated when the file goes on.
+ * one it states. Bounded read (a preview, a recording part): starts at the
+ * first output frame at or after [start_frame] (source frames) and keeps at
+ * most [max_frames] output frames, setting info->truncated when the file goes
+ * on; its samples are exactly the whole-file decode's at the same positions.
  *
- * Refuses with LE_ERR_CAPACITY when the decode's peak (source plus output)
- * would leave less than LE_MEM_RESERVE_BYTES available, or an allocation
- * fails. LE_ERR_INVALID: bad arguments, a missing, unreadable, unsupported or
- * damaged file, a rate or channel count out of range, a decode error mid-
- * stream. [info] (may be NULL) is filled as far as the file was read. */
+ * Refuses with LE_ERR_CAPACITY when the decode's peak (the source, the
+ * planes a halving works on, and the output) would leave less than
+ * LE_MEM_RESERVE_BYTES available, or an allocation fails. LE_ERR_UNSUPPORTED
+ * and LE_ERR_INVALID as above; LE_ERR_INVALID also for bad arguments and a
+ * missing or unreadable file. [info] (may be NULL) is filled as far as the
+ * file was read. */
 LE_EXPORT int32_t le_backing_decode_file(const char* path, int32_t sample_rate,
                                          int64_t start_frame,
                                          int32_t max_frames,
@@ -2381,7 +2395,8 @@ LE_EXPORT int32_t le_backing_decode_file(const char* path, int32_t sample_rate,
 /* Decodes all of [path] in small chunks, retaining no PCM, to prove it plays
  * and to measure it: fills [info] and [buckets] per-bucket absolute peaks
  * (max of both sides; buckets may be 0). The same refusals as a whole-file
- * decode, minus the memory one. What an import runs before it keeps a file. */
+ * decode, minus the memory one; a file it accepts decodes at every engine
+ * rate. What an import runs before it keeps a file. */
 LE_EXPORT int32_t le_backing_probe_file(const char* path,
                                         le_backing_decode_info* info,
                                         float* peaks, int32_t buckets);

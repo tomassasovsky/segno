@@ -258,6 +258,9 @@ int32_t le_resample_offline(const float* in, int32_t in_stride,
 #ifdef LE_NATIVE_TESTS
 /* Overrides the decoder's MemAvailable reading (bytes; -1 = unknown). */
 extern int64_t (*le_test_mem_available_hook)(void);
+/* Overrides the decoder's I/O work budget (bytes read plus seeks) when
+ * positive, so a test can prove the bound exists. */
+extern int64_t le_test_decode_budget;
 #endif
 
 /* One bounded timing read. refresh_cache is only true for full snapshots. */
