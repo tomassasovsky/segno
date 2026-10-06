@@ -24,6 +24,7 @@ export 'package:segno_engine/segno_engine.dart'
         PluginScanProgress,
         RecordStartEditKind,
         RecordTiming,
+        ReopenOutcome,
         TempoSource,
         TrackState,
         inputTrimGainOfDb,
@@ -49,6 +50,7 @@ export 'src/models/audio_config.dart'
         LatencyState,
         LoopbackInfo,
         LoopbackKind;
+export 'src/models/engine_reopened.dart';
 export 'src/models/engine_status.dart';
 // The stage-addressed FX model (FX v3 part 3a): the four-stage address + its
 // canonical JSON (R19), the chain wire envelope (R13/R15), and the stable

@@ -834,6 +834,61 @@ void le_engine_drain_events(le_engine* engine) {
   le_restore_tick(engine);
 }
 
+/* Retained reopen (#1140), control-side half — see engine_core.h. The device
+ * is closed and the workers are joined, so every field below is owned here;
+ * le_engine_reopen_outcome has already ruled out a pending state command, a
+ * pending cancel and a pending Clear mailbox. */
+/* Files one complete pre-pass image the audio thread could not hand off as a
+ * committed layer, exactly as its retire event would have been. */
+static void le_reopen_file_slot(le_engine* engine, int32_t ch, int32_t slot) {
+  const le_command synth = {.code = LE_EVT_LAYER_RETIRED,
+                            .evt = {ch, slot, engine->tracks[ch].dub_gen_audio}};
+  le_handle_retired(engine, &synth, 0);
+}
+
+void le_engine_reopen_file_retired(le_engine* engine, uint32_t drop_mask) {
+  if (engine == NULL) return;
+  le_command evt;
+  /* Events the audio thread pushed before the loss: file them as usual, but
+   * replenish nothing — a shadow posted now would go into a ring the runtime
+   * reset is about to re-initialise. */
+  while (le_ring_pop(&engine->evt_ring, &evt)) le_handle_event(engine, &evt, 0);
+  for (int32_t ch = 0; ch < engine->track_count; ++ch) {
+    le_track* t = &engine->tracks[ch];
+    if (drop_mask & (1u << ch)) continue; /* dropped whole by the settle */
+    /* A Clear that applied in its last block but whose report was never
+     * collected: complete its restore point now, while the mailbox and
+     * clear_cmd_ack are intact (the runtime reset zeroes both). */
+    le_collect_clear(engine, t);
+    /* Complete pre-pass images the audio thread could not hand off yet are
+     * committed layers. With the event ring full across two pass boundaries
+     * there can be TWO: the older pass parked in dub_retire_slot and the
+     * newer one frozen complete in the armed slot (le_dub_boundary returns
+     * early while a retire is stuck). File oldest first, so the undo order
+     * matches the order the passes were played. The live slot keeps whatever
+     * was written un-backed after them (the same merge spare starvation
+     * produces). */
+    if (t->dub_retire_slot >= 0) {
+      le_reopen_file_slot(engine, ch, t->dub_retire_slot);
+      t->dub_retire_slot = -1;
+    }
+    if (t->dub_slot >= 0 && t->dub_len > 0 && t->dub_count >= t->dub_len) {
+      le_reopen_file_slot(engine, ch, t->dub_slot);
+      t->dub_slot = -1;
+    }
+    /* The dub session ends with the device: posted-but-unarmed shadows return
+     * to the pool, an undo tap queued behind the in-flight layer is dropped
+     * with the pass it waited on, and the punch-out latch has nothing left
+     * to guard. */
+    t->outstanding_count = 0;
+    t->queued_undo = 0;
+    t->dub_punch_out_posted = 0;
+    t->depth_republish = 0;
+    t->pending_lane_trim = 0;
+    le_publish_undo_depth(t);
+  }
+}
+
 /* Zeroes every active lane's live buffer (control thread) before a fresh capture
  * over an existing master, so any unrecorded tail of a rounded-up multi-loop
  * length plays as silence. The track is EMPTY, so the audio thread is not

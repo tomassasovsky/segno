@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:equatable/equatable.dart';
 
 import 'package:looper_repository/src/models/audio_config.dart';
+import 'package:looper_repository/src/models/engine_reopened.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
@@ -255,6 +256,20 @@ class LooperRepository {
       _importTracks != null ||
       _sessionBootStartBlocked;
   EngineConfig? _lastEngineConfig;
+
+  /// The last reconnect's verdict on the recorded loops, projected onto
+  /// [EngineStatus.reopen]. `null` from a deliberate [startEngine] on, and
+  /// from the moment a NEW device loss is observed: a verdict belongs to the
+  /// reopen that produced it, never to a later return the engine handles by
+  /// itself (a reroute or interruption the backend absorbs without a reopen).
+  EngineReopened? _lastReopen;
+
+  /// The last reopen's rig replay was refused and rolled back through
+  /// [stopEngine], so no device return will ever show its verdict. The next
+  /// successful [startEngine] carries it instead of clearing it, so the
+  /// player is still told what happened to the loops (rule 3: no silent
+  /// changes). One start only; the one after clears as usual.
+  bool _reopenVerdictPending = false;
 
   /// Whether the user intends the engine to be running (set on a successful
   /// [startEngine], cleared on [stopEngine]). The reconnect supervisor only
@@ -972,35 +987,70 @@ class LooperRepository {
         keys.add((channel, lane));
       }
     }
-    for (final key in keys) {
-      final desired = _historyFx[key];
-      if (_restoreFxStaged.contains(key.$1) || desired?.restoring == true) {
-        _laneEffects.remove(key);
-        _laneChainEnabled.remove(key);
-        _laneChainMeta.remove(key);
-      } else if (desired != null) {
-        if (desired.effects.isEmpty) {
-          _laneEffects.remove(key);
-        } else {
-          _laneEffects[key] = desired.effects;
-        }
-        if (desired.enabled) {
-          _laneChainEnabled.remove(key);
-        } else {
-          _laneChainEnabled[key] = false;
-        }
-        if (desired.inheritedFrom.isEmpty) {
-          _laneChainMeta.remove(key);
-        } else {
-          _laneChainMeta[key] = desired.inheritedFrom;
-        }
-      }
-    }
+    keys.forEach(_foldHistoryFxKey);
     _historyFx.clear();
     _restoreFxStaged.clear();
     _pendingClearUndo.clear();
     _pendingClearAllUndo = const {};
     return keys;
+  }
+
+  /// The same fold, confined to [channels]: the tracks a partially retained
+  /// reopen dropped (#1140). Their native history is gone, so their queued
+  /// Clear/Undo recipes fold into the remembered rig and their pending
+  /// Clear/Undo bookkeeping is forgotten; every other track keeps its queued
+  /// recipes for [_drainHistoryFx] to republish after the replay.
+  Set<(int, int)> _foldHistoryFxForChannels(Set<int> channels) {
+    final keys = <(int, int)>{
+      for (final key in _historyFx.keys)
+        if (channels.contains(key.$1)) key,
+    };
+    for (final channel in channels) {
+      if (!_restoreFxStaged.contains(channel)) continue;
+      for (final lane in _clearRestore[channel]?.keys ?? const <int>[]) {
+        keys.add((channel, lane));
+      }
+    }
+    for (final key in keys) {
+      _foldHistoryFxKey(key);
+      _historyFx.remove(key);
+    }
+    for (final channel in channels) {
+      _restoreFxStaged.remove(channel);
+      _pendingClearUndo.remove(channel);
+      if (_pendingClearAllUndo.contains(channel)) {
+        _pendingClearAllUndo = const {};
+      }
+    }
+    return keys;
+  }
+
+  /// Folds one lane's queued history recipe into the remembered rig: a staged
+  /// restore drops the lane's chain outright (its audible restore was never
+  /// admitted), an accepted Clear keeps its latest effects, flag and lineage.
+  void _foldHistoryFxKey((int, int) key) {
+    final desired = _historyFx[key];
+    if (_restoreFxStaged.contains(key.$1) || desired?.restoring == true) {
+      _laneEffects.remove(key);
+      _laneChainEnabled.remove(key);
+      _laneChainMeta.remove(key);
+    } else if (desired != null) {
+      if (desired.effects.isEmpty) {
+        _laneEffects.remove(key);
+      } else {
+        _laneEffects[key] = desired.effects;
+      }
+      if (desired.enabled) {
+        _laneChainEnabled.remove(key);
+      } else {
+        _laneChainEnabled[key] = false;
+      }
+      if (desired.inheritedFrom.isEmpty) {
+        _laneChainMeta.remove(key);
+      } else {
+        _laneChainMeta[key] = desired.inheritedFrom;
+      }
+    }
   }
 
   bool _clearUndoFxReady(int channel) {
@@ -2241,6 +2291,13 @@ class LooperRepository {
 
   void _startReconnectPolling() {
     _lastAttemptSignature = null; // a fresh loss may retry immediately
+    // A new loss episode: whatever the previous reopen decided about the
+    // loops is not what THIS return will mean. A return the backend produces
+    // on its own (a reroute, an interruption ending) reopens nothing and must
+    // read as a plain restore, not re-raise a stale "tracks dropped" or
+    // "loops cleared" notice over an intact rig.
+    _lastReopen = null;
+    _reopenVerdictPending = false;
     final ticker = _reconnectTicker;
     if (ticker != null) {
       _reconnectSub = ticker.listen((_) => _attemptReconnect());
@@ -2259,18 +2316,25 @@ class LooperRepository {
     _reconnectTimer = null;
   }
 
-  /// Reopens the pinned device once it reappears in enumeration. A restart is
+  /// Reopens the pinned device once it reappears in enumeration. A reopen is
   /// attempted at most once per distinct device list: if it fails, we wait for
   /// the list to change (e.g. a re-plug) before retrying, so a present-but-
   /// unopenable device cannot thrash the engine. (Engine calls are synchronous,
   /// so no re-entrancy guard is needed.)
+  ///
+  /// A refused attempt is not an attempt: while the admission predicate holds
+  /// the engine open (a Session apply, a boot fence, a settings recovery) the
+  /// device list is NOT recorded as tried and the dead device is NOT released,
+  /// so the next admissible tick reopens on the very same list. Recording the
+  /// signature before the refusal used to suppress every later attempt until
+  /// the hardware was re-plugged.
   void _attemptReconnect() {
-    if (_applyingSessionRevision != null) return;
     final config = _lastEngineConfig;
     if (config == null || !_isPinned) {
       _stopReconnectPolling();
       return;
     }
+    if (_startRefused) return;
     final devices = _engine
         .enumerateDevices()
         .map(audioDeviceFromEngine)
@@ -2282,18 +2346,17 @@ class LooperRepository {
         .map((d) => '${d.isInput ? 'i' : 'o'}:${d.id}')
         .join('|');
     if (signature == _lastAttemptSignature) return; // already tried this set
-    _lastAttemptSignature = signature;
     // Release the dead device with a RAW stop (not stopEngine(), which would
     // clear _intendRunning and disarm this supervisor), then reopen through
-    // startEngine — NOT a raw _engine.start — so the remembered rig (lanes,
-    // monitors, mix, effects, output gate, hosted plugins) is re-applied to the
-    // freshly-configured engine. A raw start comes back at engine defaults,
-    // silently dropping the live rig on every reconnect. The new configure
-    // discards queued commands, so cancel their waiter before replaying the
-    // confirmed settings without disarming reconnect supervision.
+    // the engine's material-preserving path (#1140): the recorded loops come
+    // back stopped, and the remembered rig (lanes, monitors, mix, effects,
+    // output gate, hosted plugins) is replayed onto them exactly as after a
+    // start. The reopen discards queued commands, so its retire step cancels
+    // their waiters before the confirmed settings replay, without disarming
+    // reconnect supervision.
     _engine.stop();
-    _retireEngineLifetime();
-    if (startEngine(config).isOk) {
+    _lastAttemptSignature = signature;
+    if (_reopenEngine(config).isOk) {
       _stopReconnectPolling();
     }
   }
@@ -2460,6 +2523,7 @@ class LooperRepository {
       recordOffsetFrames: s.recordOffsetFrames,
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
       activeBackend: audioBackendFromEngine(s.activeBackend),
+      reopen: _lastReopen,
     ),
     // From the repository's own re-apply CACHE, not `s.outputEnabledMask`, on
     // the same reasoning as the quantize override above: the gate is re-applied
@@ -2493,22 +2557,112 @@ class LooperRepository {
   List<AudioDevice> asioDrivers() =>
       _engine.enumerateAsioDrivers().map(audioDeviceFromEngine).toList();
 
+  /// Whether a device (re)open must be refused right now: a Session apply or
+  /// boot fence is up, or a settings owner still owes its recovery. The one
+  /// predicate [startEngine], [_reopenEngine] and the reconnect supervisor
+  /// share, so a refused attempt is refused the same way everywhere.
+  bool get _startRefused =>
+      _applyingSessionRevision != null ||
+      _sessionBootStartBlocked ||
+      _mixRecoveryStartBlocked ||
+      oneShotRecoveryRequired ||
+      lengthRecoveryRequired ||
+      recordTimingRecoveryRequired;
+
   /// Opens the audio device and starts processing.
   EngineResult startEngine(EngineConfig config) {
-    if (_applyingSessionRevision != null ||
-        _sessionBootStartBlocked ||
-        _mixRecoveryStartBlocked ||
-        oneShotRecoveryRequired ||
-        lengthRecoveryRequired ||
-        recordTimingRecoveryRequired) {
-      return EngineResult.notReady;
-    }
+    if (_startRefused) return EngineResult.notReady;
     _retireEngineLifetime();
     final replayedPriorEngine = _hasOpenedEngine;
     final result = _engine.start(engineConfigToEngine(config));
-    if (result.isOk) {
-      if (_audioCleared(_engine.snapshot())) _importTracks = null;
-      final foldedHistory = _foldHistoryFxAtQuiescence();
+    if (!result.isOk) return result;
+    // A deliberate start, not a reconnect — unless the last reconnect's
+    // replay rolled back before its verdict could be shown.
+    if (!_reopenVerdictPending) _lastReopen = null;
+    _reopenVerdictPending = false;
+    if (_audioCleared(_engine.snapshot())) _importTracks = null;
+    final foldedHistory = _foldHistoryFxAtQuiescence();
+    return _replayRig(
+      config,
+      replayedPriorEngine: replayedPriorEngine,
+      foldedHistory: foldedHistory,
+    );
+  }
+
+  /// Reopens the pinned device after a loss WITHOUT discarding the recorded
+  /// loops (#1140): the engine's own `reopen` keeps every lane's PCM, history,
+  /// multiples and Fade envelopes at the same negotiated sample rate and loop
+  /// cap, brings the content tracks back stopped at the loop head, drops only
+  /// a take that was still capturing or a track whose Clear/Undo/Redo/cancel
+  /// never applied (reported in [EngineReopened.droppedTracks]), and clears
+  /// everything exactly as a start would only when the device came back at
+  /// another rate or cap. The remembered rig is replayed as after any start.
+  ///
+  /// Dart-side history state follows the engine's verdict: on a full
+  /// retention nothing is folded — the native history survived, so pending
+  /// Clear/Undo recipes republish after the replay; on a partial retention
+  /// only the dropped tracks' history is folded; on a clear the whole fold a
+  /// start performs runs. Same admission predicate as [startEngine]; retired
+  /// settings waiters complete `notReady` once; `mixGeneration` steps once;
+  /// `sessionRevision` is untouched (only a Session load moves it);
+  /// [fxReplayConfirmed] fires after the replayed recipes confirm.
+  ///
+  /// The verdict rides [EngineStatus.reopen] for the device return that
+  /// follows. A replay refusal rolls the start back through [stopEngine], so
+  /// no such return comes; the verdict is then carried through the next
+  /// successful [startEngine] (see [_reopenVerdictPending]) and surfaced by
+  /// the audio setup's re-apply instead.
+  EngineResult _reopenEngine(EngineConfig config) {
+    if (_startRefused) return EngineResult.notReady;
+    // The stopped engine still reports the rate the loops were recorded at.
+    final previousRate = _engine.snapshot().sampleRate;
+    _retireEngineLifetime();
+    final reopened = _engine.reopen(engineConfigToEngine(config));
+    if (!reopened.result.isOk) return reopened.result;
+    final snapshot = _engine.snapshot();
+    final verdict = EngineReopened(
+      outcome: reopened.outcome,
+      droppedTracks: reopened.droppedTracks,
+      previousSampleRate: previousRate,
+      sampleRate: snapshot.sampleRate,
+    );
+    _lastReopen = verdict;
+    final foldedHistory = switch (verdict.outcome) {
+      ReopenOutcome.retained => const <(int, int)>{},
+      ReopenOutcome.retainedPartial => _foldHistoryFxForChannels(
+        verdict.droppedChannels.toSet(),
+      ),
+      ReopenOutcome.clearedRate ||
+      ReopenOutcome.clearedCap => _foldHistoryFxAtQuiescence(),
+    };
+    // An import the engine dropped (its commit never applied) or a cleared
+    // rig: the staged public vector no longer describes anything.
+    if (!verdict.retainedAll || _audioCleared(snapshot)) _importTracks = null;
+    final result = _replayRig(
+      config,
+      replayedPriorEngine: true,
+      foldedHistory: foldedHistory,
+    );
+    // The surviving tracks' pending history recipes publish on top of the
+    // replayed chains, now that no replay target is pending on them.
+    if (result.isOk && verdict.keepsMaterial) _drainHistoryFx();
+    // Rolled back: the device will not read present again until a deliberate
+    // start, which must still tell the player what this reopen did.
+    if (!result.isOk) _reopenVerdictPending = true;
+    return result;
+  }
+
+  /// The post-open replay shared by [startEngine] and [_reopenEngine]: every
+  /// remembered setting, route, chain, monitor and gate is pushed onto the
+  /// freshly opened engine, and the start is rolled back ([stopEngine]) on
+  /// the first refusal. [foldedHistory] names the lanes whose folded Clear the
+  /// settings owner must be told about once their dry replay was admitted.
+  EngineResult _replayRig(
+    EngineConfig config, {
+    required bool replayedPriorEngine,
+    required Set<(int, int)> foldedHistory,
+  }) {
+    {
       _fxSlots.clear();
       _fxPending.clear();
       _laneSlots.clear();
@@ -2759,7 +2913,7 @@ class LooperRepository {
         unawaited(_announceFxReplayAfterConfirmation());
       }
     }
-    return result;
+    return EngineResult.ok;
   }
 
   Future<void> _announceFxReplayAfterConfirmation() async {

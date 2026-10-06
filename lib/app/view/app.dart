@@ -1002,18 +1002,44 @@ class _AppViewState extends State<_AppView> {
   ///
   /// The *lost* branch is gone (#453): loss is a standing condition, held by
   /// the stage's `ConnectivityBanners` until the hardware returns; a toast is
-  /// for the restored *event* only.
+  /// for the restored *event* only. A return that dropped some tracks (#1140:
+  /// a Clear/Undo/Redo/cancel on them was still unapplied at the loss) is the
+  /// same event with one fact added, so it is one transient warning toast
+  /// naming those tracks — low stakes, the rig plays on — not a second
+  /// notice. A return that cleared every loop is a standing condition and is
+  /// the stage banner's, never a toast (#860: one notice per cause).
   void _showDeviceRestoredToast(AudioSetupState state) {
-    if (state.deviceConnectivity != DeviceConnectivity.restored) return;
     final l10n = _l10n;
     final name = state.connectivityDeviceName.isEmpty
         ? l10n.audioDeviceFallbackName
         : state.connectivityDeviceName;
-    showAppSnackToast(
-      id: AppToastId.deviceRestored,
-      title: AppText(l10n.deviceReconnectedSnackbar(name)),
-      icon: const Icon(Icons.check_circle_outline),
-    );
+    switch (state.deviceConnectivity) {
+      case DeviceConnectivity.restored:
+        showAppSnackToast(
+          id: AppToastId.deviceRestored,
+          title: AppText(l10n.deviceReconnectedSnackbar(name)),
+          icon: const Icon(Icons.check_circle_outline),
+        );
+      case DeviceConnectivity.restoredPartial:
+        final dropped = state.engineStatus.reopen?.droppedChannels ?? const [];
+        showAppToast(
+          id: AppToastId.deviceRestoredPartial,
+          type: ToastificationType.warning,
+          title: AppText(l10n.deviceReconnectedSnackbar(name)),
+          description: AppText(
+            l10n.deviceRestoredPartialToastBody(
+              dropped.length,
+              dropped.map((channel) => '${channel + 1}').join(', '),
+            ),
+          ),
+          icon: const Icon(Icons.layers_clear_outlined),
+          autoCloseDuration: const Duration(seconds: 10),
+        );
+      case DeviceConnectivity.none:
+      case DeviceConnectivity.lost:
+      case DeviceConnectivity.restoredCleared:
+        return;
+    }
   }
 
   /// The MIDI controller's connectivity, surfaced as a transient toast.

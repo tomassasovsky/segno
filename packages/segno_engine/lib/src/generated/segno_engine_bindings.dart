@@ -1045,6 +1045,70 @@ class SegnoEngineBindings {
   late final _le_engine_stop = _le_engine_stopPtr
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
+  /// Reopens the audio device after a loss WITHOUT discarding the recorded loops
+  /// (#1140). Requires a stopped (le_engine_stop) engine that was started
+  /// before: LE_ERR_ALREADY_RUNNING while running, LE_ERR_NOT_RUNNING when never
+  /// configured (a cold engine goes through le_engine_start). Opens the device
+  /// like le_engine_start, then — at the same negotiated sample rate and loop
+  /// cap — keeps every lane's PCM, the undo/redo history, loop multiples, take
+  /// ids and the crown, and brings each content track back STOPPED at the loop
+  /// head with its Fade frozen (the ramp resumes toward its target at the
+  /// original full-travel rate on the next Play). A take still capturing at the
+  /// loss is dropped: a first recording leaves its track EMPTY, an in-progress
+  /// overdub pass is reverted sample-exactly (committed layers stay), a take
+  /// still in its seam crossfade or trailing fold goes with it. Recording never
+  /// resumes. A track whose Clear/Undo/Redo/cancel or Session commit the audio
+  /// thread never applied is dropped the same way — EMPTY, its history gone —
+  /// and named in *dropped_track_mask (bit t = track t, NULL to not ask), with
+  /// *outcome LE_REOPEN_RETAINED_PARTIAL; every other track is retained. A
+  /// drop that empties the rig resets the master as a clear does. Only another
+  /// sample rate or loop cap clears the whole engine, exactly as le_engine_start
+  /// does, with *outcome LE_REOPEN_CLEARED_RATE / _CAP and a zero mask. A
+  /// running performance capture ends with DEVICE_CHANGED either way. Every
+  /// setting the host replays after a start (routing, mix, FX, monitors,
+  /// conditioning, output gates) is reset here too; routes to inputs or outputs
+  /// the new device lacks stay silent.
+  ///
+  /// Returns LE_OK or an le_result error. A failed open changes nothing (the
+  /// material is still held, still stopped, *outcome and the mask untouched), so
+  /// the caller may retry. A failed start returns LE_ERR_DEVICE with the material
+  /// already settled per *outcome — still retained and stopped on
+  /// LE_REOPEN_RETAINED / _PARTIAL.
+  int le_engine_reopen(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_config> config,
+    ffi.Pointer<ffi.Int32> outcome,
+    ffi.Pointer<ffi.Int32> dropped_track_mask,
+  ) {
+    return _le_engine_reopen(
+      engine,
+      config,
+      outcome,
+      dropped_track_mask,
+    );
+  }
+
+  late final _le_engine_reopenPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_config>,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_engine_reopen');
+  late final _le_engine_reopen = _le_engine_reopenPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_config>,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
+
   /// Allocates/resets the track buffers and marks the engine configured, without
   /// opening a device. `max_loop_frames <= 0` selects the default (30 s).
   int le_engine_configure(
@@ -1077,6 +1141,77 @@ class SegnoEngineBindings {
       >('le_engine_configure');
   late final _le_engine_configure = _le_engine_configurePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int, int)>();
+
+  /// le_engine_reopen without the device: the retention decision, the material
+  /// settle and the runtime reset, on an engine le_engine_configure (or a
+  /// previous start) already configured. `max_loop_frames <= 0` selects the
+  /// default, as in le_engine_configure. Same preconditions, results, *outcome
+  /// values and dropped-track mask as le_engine_reopen.
+  int le_engine_reopen_configured(
+    ffi.Pointer<le_engine> engine,
+    int sample_rate,
+    int input_channels,
+    int output_channels,
+    int max_loop_frames,
+    ffi.Pointer<ffi.Int32> outcome,
+    ffi.Pointer<ffi.Int32> dropped_track_mask,
+  ) {
+    return _le_engine_reopen_configured(
+      engine,
+      sample_rate,
+      input_channels,
+      output_channels,
+      max_loop_frames,
+      outcome,
+      dropped_track_mask,
+    );
+  }
+
+  late final _le_engine_reopen_configuredPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_engine_reopen_configured');
+  late final _le_engine_reopen_configured = _le_engine_reopen_configuredPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          int,
+          int,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
+
+  /// Flips the published device-present flag to 0 while the engine keeps
+  /// running — what the backend's device-lost notification does — so a host
+  /// driving the device-free pump can rehearse its reconnect path (a stop,
+  /// then le_engine_reopen_configured) without a device to unplug.
+  void le_engine_mark_device_lost(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_engine_mark_device_lost(
+      engine,
+    );
+  }
+
+  late final _le_engine_mark_device_lostPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<le_engine>)>>(
+        'le_engine_mark_device_lost',
+      );
+  late final _le_engine_mark_device_lost = _le_engine_mark_device_lostPtr
+      .asFunction<void Function(ffi.Pointer<le_engine>)>();
 
   /// Processes one block exactly like the device callback: drains the command
   /// ring, records/mixes `frames` frames from `input` (interleaved f32, may be
@@ -7339,6 +7474,35 @@ final class le_plugin_param_info extends ffi.Struct {
   /// le_plugin_param_flags bitmask
   @ffi.Uint32()
   external int flags;
+}
+
+/// What le_engine_reopen did with the recorded material (#1140).
+enum le_reopen_outcome {
+  /// loops, history, Fade kept; tracks STOPPED
+  LE_REOPEN_RETAINED(0),
+
+  /// the device negotiated another sample rate
+  LE_REOPEN_CLEARED_RATE(1),
+
+  /// max_loop_frames differs from the buffers
+  LE_REOPEN_CLEARED_CAP(2),
+
+  /// retained, except the tracks named in the
+  /// dropped mask: a Clear/Undo/Redo/cancel or
+  /// Session commit on them was still
+  /// unapplied at the loss
+  LE_REOPEN_RETAINED_PARTIAL(3);
+
+  final int value;
+  const le_reopen_outcome(this.value);
+
+  static le_reopen_outcome fromValue(int value) => switch (value) {
+    0 => LE_REOPEN_RETAINED,
+    1 => LE_REOPEN_CLEARED_RATE,
+    2 => LE_REOPEN_CLEARED_CAP,
+    3 => LE_REOPEN_RETAINED_PARTIAL,
+    _ => throw ArgumentError('Unknown value for le_reopen_outcome: $value'),
+  };
 }
 
 /// Per-lane cache telemetry states (le_lane_cache_info.state).

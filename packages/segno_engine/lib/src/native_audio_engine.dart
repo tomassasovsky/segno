@@ -135,6 +135,35 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  ReopenResult reopen(EngineConfig config) {
+    _checkAlive();
+    final cfgPtr = calloc<le_config>();
+    final outcomePtr = calloc<Int32>();
+    final droppedPtr = calloc<Int32>();
+    try {
+      config.writeTo(cfgPtr);
+      // RETAINED (0), nothing dropped, until the native side writes a
+      // decision: a failed open never reaches the settle step and leaves the
+      // material in place.
+      outcomePtr.value = 0;
+      droppedPtr.value = 0;
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_reopen(_engine, cfgPtr, outcomePtr, droppedPtr),
+      );
+      return (
+        result: result,
+        outcome: ReopenOutcome.fromCode(outcomePtr.value),
+        droppedTracks: droppedPtr.value,
+      );
+    } finally {
+      calloc
+        ..free(cfgPtr)
+        ..free(outcomePtr)
+        ..free(droppedPtr);
+    }
+  }
+
+  @override
   bool get commandsSettled {
     _checkAlive();
     return _bindings.le_engine_commands_settled(_engine) != 0;
@@ -2372,7 +2401,9 @@ class PumpedNativeEngine extends NativeAudioEngine {
   @override
   EngineResult start(EngineConfig config) {
     _checkAlive();
-    _sampleRate = config.sampleRate > 0 ? config.sampleRate : 48000;
+    _sampleRate =
+        simulatedSampleRate ??
+        (config.sampleRate > 0 ? config.sampleRate : 48000);
     _inputChannels = config.inputChannels > 0 ? config.inputChannels : 1;
     _outputChannels = config.outputChannels > 0 ? config.outputChannels : 1;
     return EngineResult.fromCode(
@@ -2389,6 +2420,85 @@ class PumpedNativeEngine extends NativeAudioEngine {
   /// No device to stop; the configuration (and all content) stays live.
   @override
   EngineResult stop() => EngineResult.ok;
+
+  bool _deviceLost = false;
+
+  /// When set, what [enumerateDevices] reports instead of the host's devices:
+  /// a device-free harness drives a pinned-device reconnect by unplugging and
+  /// re-plugging this list.
+  List<AudioDevice>? simulatedDevices;
+
+  @override
+  List<AudioDevice> enumerateDevices() {
+    final simulated = simulatedDevices;
+    if (simulated != null) {
+      _checkAlive();
+      return List.unmodifiable(simulated);
+    }
+    return super.enumerateDevices();
+  }
+
+  /// When set, the sample rate the simulated device negotiates on [start]
+  /// and [reopen] regardless of the requested one — the way a real interface
+  /// that switched its clock while unplugged comes back at another rate.
+  int? simulatedSampleRate;
+
+  /// Rehearses a device loss: the next [snapshot] reports the device absent
+  /// (as the backend's device-lost notification would) until [reopen]
+  /// succeeds. The engine itself keeps running the pump — there is no device
+  /// to lose — so a caller's reconnect path (stop, then reopen) can be driven
+  /// end to end without hardware.
+  void simulateDeviceLoss() {
+    _checkAlive();
+    _deviceLost = true;
+    _bindings.le_engine_mark_device_lost(_engine);
+  }
+
+  /// The device-free twin of [NativeAudioEngine.reopen]: the same retention
+  /// decision, material settle and runtime reset through
+  /// `le_engine_reopen_configured`, with [config]'s shape standing in for the
+  /// negotiated device parameters. Clears a pending [simulateDeviceLoss].
+  @override
+  ReopenResult reopen(EngineConfig config) {
+    _checkAlive();
+    final sampleRate =
+        simulatedSampleRate ??
+        (config.sampleRate > 0 ? config.sampleRate : 48000);
+    final inputs = config.inputChannels > 0 ? config.inputChannels : 1;
+    final outputs = config.outputChannels > 0 ? config.outputChannels : 1;
+    final outcomePtr = calloc<Int32>();
+    final droppedPtr = calloc<Int32>();
+    try {
+      outcomePtr.value = 0;
+      droppedPtr.value = 0;
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_reopen_configured(
+          _engine,
+          sampleRate,
+          inputs,
+          outputs,
+          config.maxLoopFrames,
+          outcomePtr,
+          droppedPtr,
+        ),
+      );
+      if (result.isOk) {
+        _sampleRate = sampleRate;
+        _inputChannels = inputs;
+        _outputChannels = outputs;
+        _deviceLost = false;
+      }
+      return (
+        result: result,
+        outcome: ReopenOutcome.fromCode(outcomePtr.value),
+        droppedTracks: droppedPtr.value,
+      );
+    } finally {
+      calloc
+        ..free(outcomePtr)
+        ..free(droppedPtr);
+    }
+  }
 
   /// Processes [frames] frames of constant [input] through the engine's block
   /// processor — the audio callback, minus the device. `frames == 0` still
@@ -2416,13 +2526,14 @@ class PumpedNativeEngine extends NativeAudioEngine {
 
   /// The pump reports a live, present "device": without this the repository's
   /// reconnect supervisor would read the never-started engine as a lost
-  /// device and stop/start it mid-test, resetting every track.
+  /// device and stop/start it mid-test, resetting every track. Only
+  /// [simulateDeviceLoss] makes it read absent, until the next [reopen].
   @override
   EngineSnapshot snapshot() {
     final s = super.snapshot();
     return s.copyWith(
       isRunning: true,
-      devicePresent: true,
+      devicePresent: !_deviceLost,
       sampleRate: s.sampleRate > 0 ? s.sampleRate : _sampleRate,
     );
   }
