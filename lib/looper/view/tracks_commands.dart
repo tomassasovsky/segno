@@ -213,8 +213,8 @@ class TracksCommands {
         redo(selected);
         return KeyEventResult.handled;
       }
-      // Cmd/Ctrl+S writes back to the open session (falls back to Save-As via
-      // the view's session listener when nothing is open).
+      // Cmd/Ctrl+S writes back to the open session, or saves a rig that has
+      // none as the next New loop (plan D4).
       if (key == LogicalKeyboardKey.keyS) {
         unawaited(context.read<SessionCubit>().save());
         return KeyEventResult.handled;
@@ -387,6 +387,8 @@ void showSessionOutcome(BuildContext context, SessionState state) {
       SessionOutcome.duplicated ||
       SessionOutcome.moved ||
       SessionOutcome.folderCreated ||
+      SessionOutcome.folderRenamed ||
+      SessionOutcome.folderDeleted ||
       null => null,
     },
     SessionStatus.failure => switch (state.error) {
@@ -396,6 +398,7 @@ void showSessionOutcome(BuildContext context, SessionState state) {
       SessionError.bootPersistence => null,
       SessionError.saveFailed => l10n.librarySaveFailed,
       SessionError.currentSessionProtected => l10n.libraryDeleteCurrentRefused,
+      SessionError.folderNotEmpty => l10n.libraryFolderNotEmpty,
       // nameCollision is answered inside the Library's name sheet; here it
       // falls back to the generic error. corruptLayers is a
       // rare corrupt/foreign-bundle refusal — the generic message (carrying the

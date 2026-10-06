@@ -1,6 +1,7 @@
 @Tags(['screenshots'])
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -119,8 +120,7 @@ void main() {
   Future<void> pump(
     WidgetTester tester, {
     required String current,
-    SessionStatus status = SessionStatus.idle,
-    SessionError? error,
+    Stream<SessionState> states = const Stream.empty(),
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -131,12 +131,10 @@ void main() {
     when(session.refreshSessions).thenAnswer((_) async {});
     whenListen(
       session,
-      const Stream<SessionState>.empty(),
+      states,
       initialState: SessionState(
-        status: status,
-        error: error,
         currentSessionId: current,
-        currentSessionName: current,
+        currentSessionName: _catalog.firstWhere((s) => s.id == current).name,
         sessions: _catalog,
         folders: const ['Gigs'],
       ),
@@ -218,12 +216,21 @@ void main() {
   }, skip: !hasScreenshotFonts);
 
   testWidgets('19/05 a failed save', (tester) async {
-    await pump(
-      tester,
-      current: 's-1',
-      status: SessionStatus.failure,
-      error: SessionError.saveFailed,
+    // The line reports a save taken while the Library is open.
+    final states = StreamController<SessionState>();
+    addTearDown(states.close);
+    await pump(tester, current: 's-1', states: states.stream);
+    states.add(
+      SessionState(
+        status: SessionStatus.failure,
+        error: SessionError.saveFailed,
+        currentSessionId: 's-1',
+        currentSessionName: 'Evening loop',
+        sessions: _catalog,
+        folders: const ['Gigs'],
+      ),
     );
+    await tester.pumpAndSettle();
     await shot('save_failed');
   }, skip: !hasScreenshotFonts);
 }

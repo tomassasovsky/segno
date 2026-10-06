@@ -50,6 +50,13 @@ a directory rename. A manifest-less directory that holds layer WAVs or a
 `mixdown.wav` is an interrupted save, not a folder: the catalog lists it
 nowhere and leaves it alone, and a folder holding one cannot be deleted.
 
+**Saving over a bundle.** A save never edits an existing bundle in place.
+It writes the whole new bundle beside it as `<id>.saving`, then renames the
+old one to `<id>.old`, the new one to `<id>`, and deletes `<id>.old`. A
+failure before the renames leaves the previous save untouched. The catalog
+lists neither suffix, and on its next read it undoes a swap a power cut
+interrupted (`<id>.old` without `<id>` is put back) and removes leftovers.
+
 **Mixdown.** `mixdown.wav` is written when the saved mix has any audible
 content and deleted when it has none (every track empty or muted), so a
 re-save of an emptied rig never leaves audio the session no longer holds.

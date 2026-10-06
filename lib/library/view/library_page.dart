@@ -49,15 +49,33 @@ class LibraryPage extends StatelessWidget {
 /// every catalog action the selection is re-read: a Save as or an automatic
 /// save selects the new current session, and a deleted selection falls back
 /// to the current one.
-class LibraryView extends StatelessWidget {
+///
+/// The 19/05 line reports only failures of actions taken while this page is
+/// open. A failure other than a save is dropped once another row is
+/// selected; a failed save stays until a later action, as it stays true.
+class LibraryView extends StatefulWidget {
   /// Creates the Library view.
   const LibraryView({super.key});
 
-  static void _toTracks(BuildContext context) =>
-      Navigator.popUntil(context, (route) => route.isFirst);
+  @override
+  State<LibraryView> createState() => _LibraryViewState();
+}
 
-  static void _reselect(BuildContext context, SessionState session) {
+class _LibraryViewState extends State<LibraryView> {
+  /// The session state whose failure the line does not show: the one the
+  /// page opened onto, or the one a later selection moved past.
+  late SessionState _dismissed = context.read<SessionCubit>().state;
+
+  void _toTracks() => Navigator.popUntil(context, (route) => route.isFirst);
+
+  void _reselect(BuildContext context, SessionState session) {
     final library = context.read<LibraryCubit>();
+    if (library.state.folderFilter case FolderSessions(
+      :final folder,
+    ) when !session.folders.contains(folder)) {
+      // The chip's folder was renamed or deleted.
+      library.filterFolder(const AllSessions());
+    }
     final selected = library.state.selectedId;
     final current = session.currentSessionId;
     final SessionId? next;
@@ -76,18 +94,32 @@ class LibraryView extends StatelessWidget {
     }
   }
 
+  void _dismissOnSelection(BuildContext context, LibraryState _) {
+    final session = context.read<SessionCubit>().state;
+    if (libraryFailureOf(session) case final failure?
+        when failure != LibraryFailure.saveFailed) {
+      setState(() => _dismissed = session);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final failed = context.select<SessionCubit, bool>(
-      (c) => libraryFailureOf(c.state) != null,
-    );
+    final session = context.watch<SessionCubit>().state;
+    final failure = identical(session, _dismissed)
+        ? null
+        : libraryFailureOf(session);
     return MultiBlocListener(
       listeners: [
         BlocListener<LibraryCubit, LibraryState>(
           listenWhen: (previous, current) =>
               !previous.dismissalRequested && current.dismissalRequested,
-          listener: (context, _) => _toTracks(context),
+          listener: (context, _) => _toTracks(),
+        ),
+        BlocListener<LibraryCubit, LibraryState>(
+          listenWhen: (previous, current) =>
+              previous.selectedId != current.selectedId,
+          listener: _dismissOnSelection,
         ),
         BlocListener<SessionCubit, SessionState>(
           listenWhen: (previous, current) =>
@@ -111,7 +143,7 @@ class LibraryView extends StatelessWidget {
           title: l10n.libraryTitle,
           titleLeft: 64,
           onBack: () => Navigator.pop(context),
-          onStage: () => _toTracks(context),
+          onStage: _toTracks,
           actions: const LibraryActions(),
           children: [
             // 19/05 shortens the layout by 60 to make room for the line.
@@ -119,16 +151,16 @@ class LibraryView extends StatelessWidget {
               left: 64,
               top: 128,
               width: 1792,
-              height: failed ? 760 : 820,
+              height: failure != null ? 760 : 820,
               child: const LibrarySessionsTab(),
             ),
-            if (failed)
-              const Positioned(
+            if (failure != null)
+              Positioned(
                 left: 64,
                 top: 916,
                 width: 1792,
                 height: 33,
-                child: LibraryFailureLine(),
+                child: LibraryFailureLine(failure: failure),
               ),
           ],
         ),
@@ -145,6 +177,9 @@ enum LibraryFailure {
 
   /// The open session was asked to be deleted.
   deleteCurrentRefused,
+
+  /// A folder that still holds sessions was asked to be deleted.
+  folderNotEmpty,
 
   /// Any other catalog action failed.
   actionFailed,
@@ -163,6 +198,7 @@ LibraryFailure? libraryFailureOf(SessionState state) {
     SessionError.unsupportedVersion => LibraryFailure.actionFailed,
     SessionError.saveFailed => LibraryFailure.saveFailed,
     SessionError.currentSessionProtected => LibraryFailure.deleteCurrentRefused,
+    SessionError.folderNotEmpty => LibraryFailure.folderNotEmpty,
     SessionError.nameCollision ||
     SessionError.corruptLayers ||
     SessionError.unknown ||
@@ -174,19 +210,20 @@ LibraryFailure? libraryFailureOf(SessionState state) {
 /// loop. Nothing was changed." for a failed save, and the same place for
 /// any other failed catalog action.
 class LibraryFailureLine extends StatelessWidget {
-  /// Creates the failure line.
-  const LibraryFailureLine({super.key});
+  /// Creates the line for [failure].
+  const LibraryFailureLine({required this.failure, super.key});
+
+  /// What failed.
+  final LibraryFailure failure;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final failure = context.select<SessionCubit, LibraryFailure?>(
-      (c) => libraryFailureOf(c.state),
-    );
     final message = switch (failure) {
       LibraryFailure.saveFailed => l10n.librarySaveFailed,
       LibraryFailure.deleteCurrentRefused => l10n.libraryDeleteCurrentRefused,
-      LibraryFailure.actionFailed || null => l10n.libraryActionFailed,
+      LibraryFailure.folderNotEmpty => l10n.libraryFolderNotEmpty,
+      LibraryFailure.actionFailed => l10n.libraryActionFailed,
     };
     return Semantics(
       liveRegion: true,

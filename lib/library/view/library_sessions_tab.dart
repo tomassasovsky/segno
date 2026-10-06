@@ -248,6 +248,12 @@ class LibraryFolderChips extends StatelessWidget {
               label: label,
               selected: value == filter,
               onTap: () => cubit.filterFolder(value),
+              onLongPress: switch (value) {
+                FolderSessions(:final folder) => () => unawaited(
+                  showFolderManage(context, folder),
+                ),
+                _ => null,
+              },
             ),
           ],
         ],
@@ -263,6 +269,7 @@ class LibraryChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.onLongPress,
     super.key,
   });
 
@@ -274,6 +281,9 @@ class LibraryChip extends StatelessWidget {
 
   /// Makes this chip the filter.
   final VoidCallback onTap;
+
+  /// Opens the folder's options; null for `All` and `Unfiled`.
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -297,6 +307,7 @@ class LibraryChip extends StatelessWidget {
           child: InkWell(
             canRequestFocus: false,
             onTap: onTap,
+            onLongPress: onLongPress,
             child: SizedBox(
               height: 56,
               child: Padding(
