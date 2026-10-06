@@ -4588,7 +4588,8 @@ static void le_perf_free_unpublished(le_engine* e, uint32_t monitors_done) {
 int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
   if (engine == NULL || target == NULL || target->capture_dir == NULL ||
       target->capture_dir[0] == '\0' || target->ring_seconds < 0 ||
-      target->ring_seconds > LE_PERF_RING_SECONDS_MAX) {
+      target->ring_seconds > LE_PERF_RING_SECONDS_MAX ||
+      target->checkpoint_ms < 0) {
     return LE_ERR_INVALID;
   }
   /* A part must hold at least one stereo frame after its header, and its
@@ -4691,6 +4692,8 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
                         memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overs, 0u, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_first_drop_frame, UINT64_MAX,
+                        memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_checkpoint_failures, 0u,
                         memory_order_relaxed);
   /* Reset both perf-log rings so a fresh session never sees a stale entry
    * left over from a previous one — safe here (before LE_CMD_PERF_ARM is

@@ -307,3 +307,73 @@ writes it to its own crash-survival file, `arm-snapshot.json`, right at arm
 time, and only folds it into `performance.json` (deleting `arm-snapshot.json`)
 once finalize actually runs — normal disarm, or `recoverCapture` reading it
 back after a crash.
+
+## Checkpoints (`checkpoint-a.json`, `checkpoint-b.json`; #1198 D4, #727)
+
+`performance.json` says what the drain has handed the operating system, not
+what is on the device: nothing in the drain syncs, and after a power cut the
+page cache it relied on is gone. The checkpoint is the durable record.
+
+**What is owed.** After a power cut at most the last checkpoint interval of a
+take is lost (5 seconds for a real take, `le_perf_target.checkpoint_ms`).
+After an app crash on a volume that stayed mounted nothing written is lost.
+
+**How one is written.** A checkpoint thread, started and stopped with the
+take, never makes the drain wait on the device. After each cycle's flush the
+drain publishes its progress (each stream's open part, how many parts are
+sealed, how many layer files are written, `events.log`'s length, the frames
+every stream holds). Every interval the thread copies that, syncs (fdatasync) every
+file it names, syncs the take directory, then rewrites one slot file in
+place: truncate, write, fsync. The slots alternate, and a slot whose write
+fails is written again next time, so the other slot always stands. Neither
+slot is ever renamed over: FAT and exFAT do not make a rename over a file
+atomic. A final checkpoint is written whenever the take stops: a disarm, the
+take stopping itself (written before any disarm, in case the app dies), or
+the audio device changing. A failed sync or slot write is counted in
+`le_snapshot.perf_checkpoint_failures`; the take goes on.
+
+**The slot.** JSON, then a checksum:
+
+```jsonc
+{
+  "version": 1,
+  "sequence": 12,
+  "take_id": "000102030405060708090a0b0c0d0e0f",
+  "boot_id": "b5c4b7e5-6f0f-4f69-9d7f-6a9a3a8d2c11",
+  "volume_generation": -1,
+  "sample_rate": 48000,
+  "encoding": "f32",
+  "frames": 2000,
+  "overs": 0,
+  "streams": [
+    {"stream": 0, "channels": 2, "parts": [
+      {"index": 1, "file": "master-001.wav", "frames": 2000, "bytes": 16084, "overs": 0}]}
+  ],
+  "events_bytes": 40,
+  "layers": ["layer-1-4800-4.pcm"],
+  "written_at_ms": 1791244800000,
+  "checksum": "…"
+}
+```
+
+`checksum` is the SHA-256, 64 lowercase hex digits, of every byte before the
+`"checksum"` key. A reader takes the valid slot (checksum matches, it
+parses) with the higher `sequence`; a torn slot fails its checksum and the
+other one stands. A sealed part carries its `sha256`; the open part does not.
+`frames` per part is what the device is known to hold; `boot_id` is the boot
+the slot was written in (empty where the platform has none).
+
+**The mirror.** A take on a removable volume names an Internal `mirror_dir`:
+each checkpoint goes to the same slot there, from the same bytes, after the
+stick's. The mirror wins when both are valid and disagree (it is on ext4,
+written second), and the live `performance.json` is kept there too, so the
+stick's take directory receives no per-cycle file.
+
+**What recovery trusts.** The files as written (every whole frame present in
+every stream) only when the slot's `boot_id` is the current boot, the volume
+stayed mounted for the whole take (Internal, or the same
+`volume_generation`), and recovery is not reading the mirror alone.
+Otherwise only the checkpoint's counts: after a power cut or a pulled stick,
+a size on a FAT or exFAT volume can cover clusters that never received the
+audio. That is the copy the app shows: "The saved checkpoint can be
+recovered. Audio after it may be unavailable."

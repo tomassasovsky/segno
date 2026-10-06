@@ -6,7 +6,9 @@
  * run over it would check nothing about the threads that actually share the
  * capture: the audio callback pushing into the rings and publishing
  * a_perf_frames, the drain thread popping them and rolling parts over, and a
- * control thread reading snapshots. This binary runs those three at once on
+ * control thread reading snapshots, plus the checkpoint thread copying the
+ * drain's published progress and syncing its parts (#1198 D4). This binary
+ * runs them all at once on
  * the production engine (no test hooks compiled in), with parts small enough
  * that the drain seals and opens many of them mid-take, then checks that
  * every frame landed in a sealed part whose header sizes match its file.
@@ -241,6 +243,9 @@ int main(void) {
   target.reserve_bytes = UINT64_MAX; /* no budget unless a test sets one */
   target.part_bytes =
       LE_PERF_PART_HEADER_BYTES + (uint64_t)RACE_PART_FRAMES * 2 * 4;
+  /* The checkpoint thread runs too, often, so it reads the published
+   * progress and syncs parts while the drain seals and opens them. */
+  target.checkpoint_ms = 5;
   CHECK(le_perf_arm(g_engine, &target) == LE_OK);
   le_engine_process(g_engine, out, in, 0); /* apply the arm */
 

@@ -1383,6 +1383,10 @@ typedef struct le_snapshot {
    * nothing could be captured. */
   int32_t perf_capture_streams;
   uint32_t perf_capture_frame_bytes;
+  /* Checkpoints of the most recent take that could not be written (a failed
+   * sync or slot write); each leaves the other slot standing and the take
+   * running. Reset by the next arm. */
+  uint32_t perf_checkpoint_failures;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -2998,7 +3002,20 @@ LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output
  *     queue ends the take there, with no padding and nothing after it
  *     (`slow_storage`). Frames counted but never tapped (#710) are not a
  *     storage fault: they are still filled with silence and the take goes on;
- *   - a write fails (`disk_full`, kept for every bundle already on disk). */
+ *   - a write fails (`disk_full`, kept for every bundle already on disk).
+ *
+ * DURABILITY (#727, #1198 D4). A checkpoint thread, started and stopped with
+ * the take, makes the take durable every `checkpoint_ms` without ever making
+ * the drain wait on the device: it copies the progress the drain has
+ * flushed, fdatasyncs every part, events.log and layer file that progress
+ * names, syncs the take directory, then rewrites one of two fixed slot
+ * files, `checkpoint-a.json` and `checkpoint-b.json`, alternately, in place
+ * (truncate, write, fsync; never a rename, which FAT and exFAT do not make
+ * atomic). Each slot names the take, the boot it was written in, its parts
+ * with their frames, and ends with `"checksum"`: the SHA-256 hex of every
+ * byte before that key. With `mirror_dir` the same bytes go to the same slot
+ * there too. A final checkpoint is written when the take stops, on every
+ * path. After a power cut at most the last `checkpoint_ms` is lost. */
 
 /* Where and how one take is written (#1198). */
 typedef struct le_perf_target {
@@ -3033,6 +3050,13 @@ typedef struct le_perf_target {
    * volume a small floor. UINT64_MAX means no budget: the take stops only on
    * a failed write. */
   uint64_t reserve_bytes;
+  /* An Internal directory that receives a copy of every checkpoint, for a
+   * take on a removable volume (the mirror wins over the stick's own slots);
+   * NULL or empty for none. Created if missing. */
+  const char* mirror_dir;
+  /* How often the checkpoint thread makes the take durable, in ms (5000 for
+   * a real take); 0 checkpoints only when the take stops. */
+  int32_t checkpoint_ms;
 } le_perf_target;
 
 /* 2,000,000,000 bytes: under FAT32's 4 GiB file limit, RIFF's 32-bit size
@@ -3066,7 +3090,8 @@ typedef enum le_perf_stop_reason {
  * still be valid but is otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING
  * (not configured), LE_ERR_INVALID (null target, null/empty `capture_dir`, a
  * `part_bytes` with no room for a frame or past the RIFF limit, a
- * `ring_seconds` outside 0 to LE_PERF_RING_SECONDS_MAX, no output enabled to capture, or ring allocation failure),
+ * `ring_seconds` outside 0 to LE_PERF_RING_SECONDS_MAX, a negative
+ * `checkpoint_ms`, no output enabled to capture, or ring allocation failure),
  * or LE_ERR_DEVICE (the drain thread could not be started — e.g. a directory
  * could not be created — or a previous disarm's quiescent wait bailed out and
  * left a stale drain session still live). */

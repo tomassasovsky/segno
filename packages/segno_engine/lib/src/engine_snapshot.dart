@@ -1302,6 +1302,7 @@ class EngineSnapshot {
     this.perfOvers = 0,
     this.perfCaptureStreams = 0,
     this.perfCaptureFrameBytes = 0,
+    this.perfFailedCheckpoints = 0,
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -1385,6 +1386,7 @@ class EngineSnapshot {
       perfOvers = 0,
       perfCaptureStreams = 0,
       perfCaptureFrameBytes = 0,
+      perfFailedCheckpoints = 0,
       tempoBpm = 0,
       tempoSource = TempoSource.none,
       tsNum = 4,
@@ -1483,6 +1485,7 @@ class EngineSnapshot {
       perfOvers: native.perf_overs,
       perfCaptureStreams: native.perf_capture_streams,
       perfCaptureFrameBytes: native.perf_capture_frame_bytes,
+      perfFailedCheckpoints: native.perf_checkpoint_failures,
       tempoBpm: native.tempo_bpm,
       tempoSource: TempoSource.fromCode(native.tempo_source),
       tsNum: native.ts_num,
@@ -1574,6 +1577,7 @@ class EngineSnapshot {
     int? perfOvers,
     int? perfCaptureStreams,
     int? perfCaptureFrameBytes,
+    int? perfFailedCheckpoints,
     double? tempoBpm,
     TempoSource? tempoSource,
     int? tsNum,
@@ -1654,6 +1658,7 @@ class EngineSnapshot {
     perfOvers: perfOvers ?? this.perfOvers,
     perfCaptureStreams: perfCaptureStreams ?? this.perfCaptureStreams,
     perfCaptureFrameBytes: perfCaptureFrameBytes ?? this.perfCaptureFrameBytes,
+    perfFailedCheckpoints: perfFailedCheckpoints ?? this.perfFailedCheckpoints,
     tempoBpm: tempoBpm ?? this.tempoBpm,
     tempoSource: tempoSource ?? this.tempoSource,
     tsNum: tsNum ?? this.tsNum,
@@ -1872,6 +1877,10 @@ class EngineSnapshot {
 
   /// The bytes one frame of every [perfCaptureStreams] stream takes.
   final int perfCaptureFrameBytes;
+
+  /// Checkpoints of the most recent take that could not be written: each
+  /// leaves the other slot standing and the take running (#1198 D4).
+  final int perfFailedCheckpoints;
 
   // ---- tempo grid (A1) ----
 
@@ -2121,6 +2130,7 @@ class EngineSnapshot {
           perfOvers == other.perfOvers &&
           perfCaptureStreams == other.perfCaptureStreams &&
           perfCaptureFrameBytes == other.perfCaptureFrameBytes &&
+          perfFailedCheckpoints == other.perfFailedCheckpoints &&
           tempoBpm == other.tempoBpm &&
           tempoSource == other.tempoSource &&
           tsNum == other.tsNum &&
@@ -2203,6 +2213,7 @@ class EngineSnapshot {
     perfOvers,
     perfCaptureStreams,
     perfCaptureFrameBytes,
+    perfFailedCheckpoints,
     tempoBpm,
     tempoSource,
     tsNum,

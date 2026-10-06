@@ -11442,22 +11442,112 @@ static void test_perf_slow_storage_stops_at_first_drop(void) {
   le_engine_destroy(e);
 }
 
-/* Waits until the drain has flushed a cycle covering `frames` (its sidecar
- * says so). */
-static int perf_wait_flushed(const char* sidecar_dir, unsigned long long frames) {
-  char path[800];
-  snprintf(path, sizeof(path), "%s/performance.json", sidecar_dir);
-  char needle[64];
-  snprintf(needle, sizeof(needle), "\"capture_frames\": %llu,", frames);
-  for (int i = 0; i < 400; ++i) {
-    char json[16384];
-    if (read_file_for_test(path, json, sizeof(json)) > 0 &&
-        strstr(json, needle) != NULL) {
-      return 1;
-    }
-    test_sleep_ms(10);
+/* ---- durable two-slot checkpoints (#1198 D4) ---- */
+
+/* One slot as a reader sees it: valid when its checksum (SHA-256 hex of
+ * every byte before the "checksum" key) matches and it parses. */
+typedef struct {
+  int valid;
+  unsigned long long sequence;
+  unsigned long long frames;
+  unsigned long long events_bytes;
+  unsigned long long master_part1_frames;
+  unsigned long long master_part1_bytes;
+  int master_parts;
+  int master_last_sealed; /* the last master part carries a sha256 */
+  unsigned long long sealed_frames; /* master frames in sealed parts */
+} perf_slot;
+
+static perf_slot perf_read_slot_at(const char* path) {
+  perf_slot slot;
+  memset(&slot, 0, sizeof(slot));
+  static char text[1 << 20];
+  const size_t n = read_file_for_test(path, text, sizeof(text));
+  if (n == 0) return slot;
+  /* The last "checksum" key: everything before it is covered. */
+  char* at = NULL;
+  for (char* p = strstr(text, "\"checksum\""); p != NULL;
+       p = strstr(p + 1, "\"checksum\"")) {
+    at = p;
   }
-  return 0;
+  if (at == NULL) return slot;
+  uint8_t digest[32];
+  if (le_digest_bytes(text, (uint64_t)(at - text), digest) != LE_OK) {
+    return slot;
+  }
+  char hex[65];
+  for (int i = 0; i < 32; ++i) snprintf(hex + 2 * i, 3, "%02x", digest[i]);
+  char expected[96];
+  snprintf(expected, sizeof(expected), "\"checksum\": \"%s\"", hex);
+  if (strncmp(at, expected, strlen(expected)) != 0) return slot;
+  static le_json_value nodes[1 << 15];
+  le_json_arena arena = {.nodes = nodes, .capacity = 1 << 15, .used = 0};
+  const le_json_value* root = le_json_parse(text, &arena);
+  if (root == NULL) return slot;
+  slot.sequence = (unsigned long long)le_json_number(le_json_get(root, "sequence"), 0);
+  slot.frames = (unsigned long long)le_json_number(le_json_get(root, "frames"), 0);
+  slot.events_bytes =
+      (unsigned long long)le_json_number(le_json_get(root, "events_bytes"), 0);
+  const le_json_value* streams = le_json_get(root, "streams");
+  for (int k = 0; k < le_json_length(streams); ++k) {
+    const le_json_value* st = le_json_at(streams, k);
+    if (le_json_number(le_json_get(st, "stream"), -1) != 0) continue;
+    const le_json_value* parts = le_json_get(st, "parts");
+    slot.master_parts = le_json_length(parts);
+    for (int i = 0; i < slot.master_parts; ++i) {
+      const le_json_value* part = le_json_at(parts, i);
+      const unsigned long long frames =
+          (unsigned long long)le_json_number(le_json_get(part, "frames"), 0);
+      const int sealed = le_json_get(part, "sha256") != NULL;
+      if (i == 0) {
+        slot.master_part1_frames = frames;
+        slot.master_part1_bytes =
+            (unsigned long long)le_json_number(le_json_get(part, "bytes"), 0);
+      }
+      if (sealed) slot.sealed_frames += frames;
+      if (i == slot.master_parts - 1) slot.master_last_sealed = sealed;
+    }
+  }
+  slot.valid = 1;
+  return slot;
+}
+
+static perf_slot perf_read_slot(const char* dir, char which) {
+  char path[800];
+  snprintf(path, sizeof(path), "%s/checkpoint-%c.json", dir, which);
+  return perf_read_slot_at(path);
+}
+
+/* The newest valid slot, as recovery reads it. */
+static perf_slot perf_newest_slot(const char* dir) {
+  const perf_slot a = perf_read_slot(dir, 'a');
+  const perf_slot b = perf_read_slot(dir, 'b');
+  if (!a.valid) return b;
+  if (!b.valid) return a;
+  return a.sequence > b.sequence ? a : b;
+}
+
+static void perf_remove_slots(const char* dir) {
+  char path[800];
+  snprintf(path, sizeof(path), "%s/checkpoint-a.json", dir);
+  remove(path);
+  snprintf(path, sizeof(path), "%s/checkpoint-b.json", dir);
+  remove(path);
+}
+
+static int32_t perf_arm_checkpointed(le_engine* e, const char* dir,
+                                     const char* sidecar, const char* mirror,
+                                     int32_t checkpoint_ms) {
+  le_perf_target target;
+  memset(&target, 0, sizeof(target));
+  target.capture_dir = dir;
+  target.live_sidecar_dir = sidecar;
+  target.mirror_dir = mirror;
+  for (int i = 0; i < 16; ++i) target.take_id[i] = (uint8_t)i;
+  target.volume_generation = -1;
+  target.reserve_bytes = UINT64_MAX;
+  target.checkpoint_ms = checkpoint_ms;
+  return le_perf_arm(e, &target);
 }
 
 /* Counts the drain's cycles from its mid-cycle hook. */
@@ -11476,6 +11566,24 @@ static int perf_wait_self_stopped(le_engine* e) {
   for (int i = 0; i < 300; ++i) {
     le_engine_get_snapshot(e, &s);
     if (s.perf_stopped) return 1;
+    test_sleep_ms(10);
+  }
+  return 0;
+}
+
+/* Waits until the drain has flushed a cycle covering `frames` (its sidecar
+ * says so). */
+static int perf_wait_flushed(const char* sidecar_dir, unsigned long long frames) {
+  char path[800];
+  snprintf(path, sizeof(path), "%s/performance.json", sidecar_dir);
+  char needle[64];
+  snprintf(needle, sizeof(needle), "\"capture_frames\": %llu,", frames);
+  for (int i = 0; i < 400; ++i) {
+    char json[16384];
+    if (read_file_for_test(path, json, sizeof(json)) > 0 &&
+        strstr(json, needle) != NULL) {
+      return 1;
+    }
     test_sleep_ms(10);
   }
   return 0;
@@ -11651,6 +11759,280 @@ static void test_perf_reserve_rereads_the_volume(void) {
   le_perf_drain_set_free_sample_cycles_for_test(0);
   CHECK(perf_test_file_size("master-001.wav") == 84 + 500 * 4);
   CHECK(perf_sidecar_contains("\"stopped_early\": \"reserve_reached\""));
+  le_engine_destroy(e);
+}
+
+static void perf_pump_stereo(le_engine* e, int frames) {
+  float out[50 * 2]; /* process_const takes at most 64 frames */
+  for (int done = 0; done < frames; done += 50) {
+    process_const(e, 0.25f, frames - done < 50 ? frames - done : 50, out);
+  }
+}
+
+static void test_perf_checkpoint_slots_alternate(void) {
+  printf("test_perf_checkpoint_slots_alternate\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000); /* stereo master */
+  const char* dir = perf_test_dir();
+  perf_remove_slots(dir);
+  CHECK(perf_arm_checkpointed(e, dir, NULL, NULL, 0) == LE_OK);
+  drain(e);
+  perf_pump_stereo(e, 1500);
+  CHECK(perf_wait_flushed(dir, 1500));
+  CHECK(le_perf_checkpoint_now_for_test(e) == 1);
+
+  char path[800];
+  snprintf(path, sizeof(path), "%s/events.log", dir);
+  const perf_slot first = perf_read_slot(dir, 'a');
+  CHECK(first.valid);
+  CHECK(first.sequence == 1);
+  CHECK(first.frames == 1500);
+  CHECK(first.master_part1_frames == 1500);
+  CHECK(first.master_part1_bytes == 84 + 8 * 1500);
+  CHECK(first.events_bytes == (unsigned long long)file_size_for_test(path));
+  CHECK(!perf_read_slot(dir, 'b').valid);
+
+  perf_pump_stereo(e, 500);
+  CHECK(perf_wait_flushed(dir, 2000));
+  CHECK(le_perf_checkpoint_now_for_test(e) == 1);
+  const perf_slot second = perf_read_slot(dir, 'b');
+  CHECK(second.valid && second.sequence == 2 && second.frames == 2000);
+  const perf_slot again = perf_read_slot(dir, 'a');
+  CHECK(again.valid && again.sequence == 1 && again.frames == 1500);
+  CHECK(perf_newest_slot(dir).sequence == 2);
+
+  /* A torn newest slot fails its checksum; the older one stands. */
+  snprintf(path, sizeof(path), "%s/checkpoint-b.json", dir);
+  FILE* f = fopen(path, "r+b");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    fseek(f, 20, SEEK_SET);
+    const int c = fgetc(f);
+    fseek(f, 20, SEEK_SET);
+    fputc(c ^ 0x01, f);
+    fclose(f);
+  }
+  CHECK(!perf_read_slot(dir, 'b').valid);
+  CHECK(perf_newest_slot(dir).sequence == 1);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_engine_destroy(e);
+}
+
+#if defined(LE_TEST_HAS_ALLOC_INTERPOSER)
+/* Renames whose target is under g_test_rename_watch and already exists: a
+ * rename over a file, which FAT and exFAT do not make atomic. */
+static char g_test_rename_watch[800];
+static _Atomic int g_test_renames_over_files = 0;
+typedef int (*test_rename_fn)(const char*, const char*);
+int rename(const char* from, const char* to) {
+  static _Atomic(test_rename_fn) real_fn = NULL;
+  test_rename_fn real = atomic_load(&real_fn);
+  if (real == NULL) {
+    real = (test_rename_fn)dlsym(RTLD_NEXT, "rename");
+    atomic_store(&real_fn, real);
+  }
+  const size_t n = strlen(g_test_rename_watch);
+  if (n > 0 && strncmp(to, g_test_rename_watch, n) == 0) {
+    FILE* existing = fopen(to, "rb");
+    if (existing != NULL) {
+      fclose(existing);
+      atomic_fetch_add(&g_test_renames_over_files, 1);
+    }
+  }
+  return real == NULL ? -1 : real(from, to);
+}
+#endif
+
+/* A take whose live sidecar and checkpoint copy go to an Internal mirror
+ * (a USB take's layout): the mirror's slots are the same bytes, and the
+ * take directory sees no rename over a file. Without a mirror nothing else
+ * is written. */
+static void test_perf_checkpoint_mirror(void) {
+  printf("test_perf_checkpoint_mirror\n");
+  char take[700];
+  char mirror[700];
+  snprintf(take, sizeof(take), "%s/stick-take", perf_test_dir());
+  snprintf(mirror, sizeof(mirror), "%s/stick-mirror", perf_test_dir());
+  perf_remove_slots(take);
+  perf_remove_slots(mirror);
+#if defined(LE_TEST_HAS_ALLOC_INTERPOSER)
+  snprintf(g_test_rename_watch, sizeof(g_test_rename_watch), "%s/", take);
+  atomic_store(&g_test_renames_over_files, 0);
+#endif
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000);
+  CHECK(perf_arm_checkpointed(e, take, mirror, mirror, 0) == LE_OK);
+  drain(e);
+  perf_pump_stereo(e, 600);
+  CHECK(perf_wait_flushed(mirror, 600));
+  CHECK(le_perf_checkpoint_now_for_test(e) == 1);
+  perf_pump_stereo(e, 400);
+  CHECK(perf_wait_flushed(mirror, 1000));
+  CHECK(le_perf_checkpoint_now_for_test(e) == 1);
+  for (int k = 0; k < 2; ++k) {
+    char a[800];
+    char b[800];
+    snprintf(a, sizeof(a), "%s/checkpoint-%c.json", take, k == 0 ? 'a' : 'b');
+    snprintf(b, sizeof(b), "%s/checkpoint-%c.json", mirror, k == 0 ? 'a' : 'b');
+    static char x[1 << 16];
+    static char y[1 << 16];
+    const size_t nx = read_file_for_test(a, x, sizeof(x));
+    const size_t ny = read_file_for_test(b, y, sizeof(y));
+    CHECK(nx > 0 && nx == ny && memcmp(x, y, nx) == 0);
+  }
+  CHECK(le_perf_disarm(e) == LE_OK);
+#if defined(LE_TEST_HAS_ALLOC_INTERPOSER)
+  CHECK(atomic_load(&g_test_renames_over_files) == 0);
+  g_test_rename_watch[0] = '\0';
+#endif
+  le_engine_destroy(e);
+
+  /* No mirror: no directory named for one appears. */
+  char absent[800];
+  snprintf(absent, sizeof(absent), "%s/no-mirror", perf_test_dir());
+  e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000);
+  CHECK(perf_arm_checkpointed(e, take, NULL, NULL, 0) == LE_OK);
+  drain(e);
+  perf_pump_stereo(e, 100);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  CHECK(file_size_for_test(absent) == -1);
+  le_engine_destroy(e);
+}
+
+/* A checkpoint names only what the drain has flushed: with the drain held
+ * between its ring pops and its flush, a checkpoint taken meanwhile reads
+ * the previous cycle's frames. */
+static void test_perf_checkpoint_never_ahead_of_the_flush(void) {
+  printf("test_perf_checkpoint_never_ahead_of_the_flush\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000);
+  const char* dir = perf_test_dir();
+  perf_remove_slots(dir);
+  CHECK(perf_arm_checkpointed(e, dir, NULL, NULL, 0) == LE_OK);
+  drain(e);
+  perf_pump_stereo(e, 100);
+  CHECK(perf_wait_flushed(dir, 100));
+
+  perf_stall_ctx ctx;
+  atomic_init(&ctx.entered, 0);
+  atomic_init(&ctx.released, 0);
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_stall, &ctx);
+  perf_pump_stereo(e, 200);
+  for (int i = 0; i < 2000 && !atomic_load(&ctx.entered); ++i) test_sleep_ms(1);
+  CHECK(atomic_load(&ctx.entered));
+  CHECK(le_perf_checkpoint_now_for_test(e) == 1);
+  CHECK(perf_newest_slot(dir).frames == 100);
+  atomic_store(&ctx.released, 1);
+  CHECK(perf_wait_flushed(dir, 300));
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  CHECK(perf_newest_slot(dir).frames == 300);
+  le_engine_destroy(e);
+}
+
+/* A refused slot write leaves the other slot standing, is counted, and the
+ * take goes on; the next checkpoint reuses the slot that failed. */
+static void test_perf_checkpoint_failure_keeps_the_other_slot(void) {
+  printf("test_perf_checkpoint_failure_keeps_the_other_slot\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000);
+  const char* dir = perf_test_dir();
+  perf_remove_slots(dir);
+  CHECK(perf_arm_checkpointed(e, dir, NULL, NULL, 0) == LE_OK);
+  drain(e);
+  perf_pump_stereo(e, 100);
+  CHECK(perf_wait_flushed(dir, 100));
+  CHECK(le_perf_checkpoint_now_for_test(e) == 1); /* seq 1 in a */
+  perf_pump_stereo(e, 100);
+  CHECK(perf_wait_flushed(dir, 200));
+  le_perf_checkpoint_fail_slot_writes_for_test(1);
+  CHECK(le_perf_checkpoint_now_for_test(e) == 0);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_checkpoint_failures == 1);
+  CHECK(s.perf_armed == 1);
+  const perf_slot standing = perf_newest_slot(dir);
+  CHECK(standing.sequence == 1 && standing.frames == 100);
+  CHECK(le_perf_checkpoint_now_for_test(e) == 1);
+  const perf_slot b = perf_read_slot(dir, 'b');
+  CHECK(b.valid && b.sequence == 2 && b.frames == 200);
+  CHECK(perf_read_slot(dir, 'a').sequence == 1);
+  le_perf_checkpoint_fail_slot_writes_for_test(0);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_engine_destroy(e);
+}
+
+/* Every way a take stops leaves a final checkpoint naming exactly its sealed
+ * frames: a disarm, a self-stop (before any disarm), and a reconfigure. */
+static void test_perf_checkpoint_on_every_stop(void) {
+  printf("test_perf_checkpoint_on_every_stop\n");
+  const char* dir = perf_test_dir();
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000);
+  perf_remove_slots(dir);
+  CHECK(perf_arm_checkpointed(e, dir, NULL, NULL, 0) == LE_OK);
+  drain(e);
+  perf_pump_stereo(e, 1000);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  perf_slot last = perf_newest_slot(dir);
+  CHECK(last.valid && last.frames == 1000 && last.sealed_frames == 1000);
+  CHECK(last.master_last_sealed);
+  le_engine_destroy(e);
+
+  e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000);
+  perf_remove_slots(dir);
+  CHECK(perf_arm_checkpointed(e, dir, NULL, NULL, 0) == LE_OK);
+  drain(e);
+  perf_pump_stereo(e, 500);
+  CHECK(perf_wait_flushed(dir, 500));
+  le_perf_drain_force_write_failure_for_test(1);
+  perf_pump_stereo(e, 100);
+  CHECK(poll_drain_self_stopped_for_test(e->perf.drain, 3000));
+  int ok = 0;
+  for (int i = 0; i < 300 && !ok; ++i) {
+    last = perf_newest_slot(dir);
+    ok = last.valid && last.master_last_sealed;
+    if (!ok) test_sleep_ms(10);
+  }
+  CHECK(ok); /* written by the take's own end, no disarm yet */
+  CHECK(last.frames == last.sealed_frames && last.frames >= 500);
+  le_perf_drain_force_write_failure_for_test(0);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_engine_destroy(e);
+
+  e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000);
+  perf_remove_slots(dir);
+  CHECK(perf_arm_checkpointed(e, dir, NULL, NULL, 0) == LE_OK);
+  drain(e);
+  perf_pump_stereo(e, 700);
+  le_engine_configure(e, 48000, 1, 2, 1000); /* the device changed */
+  last = perf_newest_slot(dir);
+  CHECK(last.valid && last.frames == 700 && last.sealed_frames == 700);
+  le_engine_destroy(e);
+}
+
+/* With an interval, the thread checkpoints on its own. */
+static void test_perf_checkpoint_on_its_interval(void) {
+  printf("test_perf_checkpoint_on_its_interval\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000);
+  const char* dir = perf_test_dir();
+  perf_remove_slots(dir);
+  CHECK(perf_arm_checkpointed(e, dir, NULL, NULL, 50) == LE_OK);
+  drain(e);
+  perf_pump_stereo(e, 300);
+  int seen = 0;
+  for (int i = 0; i < 300 && !seen; ++i) {
+    const perf_slot slot = perf_newest_slot(dir);
+    seen = slot.valid && slot.frames == 300 && slot.sequence >= 1;
+    if (!seen) test_sleep_ms(10);
+  }
+  CHECK(seen);
+  CHECK(le_perf_disarm(e) == LE_OK);
   le_engine_destroy(e);
 }
 
@@ -35073,6 +35455,12 @@ int main(void) {
   test_perf_reserve_counts_layer_files();
   test_perf_layer_past_the_budget_stops_the_take();
   test_perf_reserve_rereads_the_volume();
+  test_perf_checkpoint_slots_alternate();
+  test_perf_checkpoint_mirror();
+  test_perf_checkpoint_never_ahead_of_the_flush();
+  test_perf_checkpoint_failure_keeps_the_other_slot();
+  test_perf_checkpoint_on_every_stop();
+  test_perf_checkpoint_on_its_interval();
   test_perf_drain_steady_state_cycle_is_allocation_free();
   test_perf_drain_disk_full_stops_cleanly();
   test_perf_drain_files_are_crash_consistent_mid_capture();

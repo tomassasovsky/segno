@@ -395,6 +395,18 @@ void le_perf_drain_set_volume_free_for_test(int64_t bytes);
  * reset it before the next test runs. Not part of the FFI surface. */
 void le_perf_drain_set_free_sample_cycles_for_test(int cycles);
 
+/* Writes one checkpoint of the armed take now, on the calling thread, from
+ * the progress the drain last published (#1198 D4). Returns 1 when it was
+ * written, 0 when there is no take or a step failed (counted in
+ * perf_checkpoint_failures). Not part of the FFI surface. */
+struct le_engine;
+int le_perf_checkpoint_now_for_test(struct le_engine* engine);
+
+/* The next `count` checkpoint slot writes fail as a refused write would
+ * (perf_checkpoint.c). Process-global; reset with 0. Not part of the FFI
+ * surface. */
+void le_perf_checkpoint_fail_slot_writes_for_test(int count);
+
 /* ---- perf-render test seams (perf_render.c; part 8) ---- */
 
 /* Forces the offline render worker's dry-stem write (only) to fail for a
