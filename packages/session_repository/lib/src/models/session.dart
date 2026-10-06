@@ -41,10 +41,12 @@ class SessionLayer {
 ///
 /// [history] is the track's audio history (schema v12, #1164): the
 /// [undoCount] undo entries oldest first, then the [redoCount] redo entries
-/// newest-adjacent first, each with its kind. [layers] holds the images they
-/// name oldest→newest: one per undo entry, the live buffer at
-/// `layers[liveIndex]` (== [undoCount]), then one per redo entry except a
-/// Peel marker, which holds no image ([TrackHistory.imageCount]).
+/// newest-adjacent first, each with its kind and, for a length edit (schema
+/// v13, #1168), its playhead map. [layers] holds the images they name
+/// oldest→newest: one per undo entry, the live buffer at `layers[liveIndex]`
+/// (== [undoCount]), then one per redo entry except a Peel marker, which
+/// holds no image ([TrackHistory.imageCount]). A length edit's images differ
+/// in length from the live one ([TrackHistory.lengthMalformation]).
 @immutable
 class SessionLane {
   /// Creates a [SessionLane].
@@ -151,7 +153,11 @@ class SessionLane {
     if (balance != 1) 'balance': balance,
     'history': [
       for (final e in history.entries)
-        {'kind': e.kind.name, 'skipped': e.skipped},
+        {
+          'kind': e.kind.name,
+          'skipped': e.skipped,
+          if (e.kind == HistoryKind.length || e.start != 0) 'start': e.start,
+        },
     ],
     'undoCount': undoCount,
     'redoCount': redoCount,
@@ -685,7 +691,7 @@ class SessionOutputSetup {
 }
 
 /// A saved Segno session, paired with per-lane, per-layer WAV files in a
-/// `.segno` bundle directory. Only the current schema 12 is accepted.
+/// `.segno` bundle directory. Only the current schema 13 is accepted.
 ///
 /// Track settings are session-level maps, independent of audio entries.
 /// Missing entries inherit the session default; explicit values, including
@@ -846,7 +852,9 @@ class Session {
   }
 
   /// The current manifest schema stores per-track settings and all FX stages.
-  static const int formatVersion = 12;
+  /// Schema 13 (#1168) carries length edits in a lane's history, each with
+  /// its playhead map (`start`); schema-12 manifests convert unchanged.
+  static const int formatVersion = 13;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -1225,12 +1233,24 @@ T _readEnum<T extends Enum>(Object? raw, List<T> values) {
 }
 
 /// Decodes a lane's history entries: each exactly `{kind, skipped}` with a
-/// known kind name and an integer count.
+/// known kind name and an integer count, plus an integer `start` (the
+/// playhead map, #1168) where one is set.
 List<HistoryEntry> _readHistory(Object? raw) {
   if (raw is! List) throw const FormatException('lane history must be a list');
   return [
     for (final entry in raw)
       switch (entry) {
+        {
+          'kind': final String kind,
+          'skipped': final int skipped,
+          'start': final int start,
+        }
+            when entry.length == 3 =>
+          HistoryEntry(
+            _readEnum(kind, HistoryKind.values),
+            skipped: skipped,
+            start: start,
+          ),
         {'kind': final String kind, 'skipped': final int skipped}
             when entry.length == 2 =>
           HistoryEntry(_readEnum(kind, HistoryKind.values), skipped: skipped),

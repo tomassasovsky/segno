@@ -115,6 +115,107 @@ void main() {
     skip: skip,
   );
 
+  test(
+    'length edits survive save and recall: Redo and Undo put back each '
+    'image at its own length (#1168 Part 2)',
+    () async {
+      final subscription = repository.looperState.listen((_) {});
+      addTearDown(subscription.cancel);
+      await Future<void>.delayed(Duration.zero);
+      Future<void> settle(int lengthFrames) async {
+        for (var i = 0; i < 50; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+          ticks.add(null);
+          if (engine.snapshot().tracks[1].lengthFrames == lengthFrames) break;
+        }
+        expect(engine.snapshot().tracks[1].lengthFrames, lengthFrames);
+      }
+
+      expect(
+        await repository.editLength(channel: 1, edit: LengthEdit.doubled),
+        EngineResult.ok,
+      );
+      final doubled = engine.exportTrack(1);
+      expect(
+        await repository.editLength(channel: 1, edit: LengthEdit.lastHalf),
+        EngineResult.ok,
+      );
+      expect(repository.undo(channel: 1), EngineResult.ok);
+      await settle(256);
+
+      // Save: each image at its own length, each edit with its map.
+      final history = engine.exportHistory(1);
+      expect(
+        history,
+        const TrackHistory([
+          HistoryEntry(HistoryKind.length),
+          HistoryEntry(HistoryKind.length, start: 128),
+        ], undoCount: 1),
+      );
+      final layers = [
+        for (var o = 0; o < history.imageCount; o++)
+          engine.exportLayer(1, 0, o),
+      ];
+      expect([for (final l in layers) l.length], [128, 256, 128]);
+      expect(history.lengthMalformation([128, 256, 128]), isNull);
+      final base = engine.exportTrack(0);
+
+      SessionRigLane lane(List<Float32List> layers, TrackHistory history) =>
+          SessionRigLane(
+            lane: 0,
+            layers: layers,
+            volume: 1,
+            muted: false,
+            outputMask: 1,
+            inputChannel: 0,
+            history: history,
+          );
+      await repository.applySession(
+        SessionRig(
+          baseLengthFrames: 128,
+          tracks: [
+            SessionRigTrack(
+              fadeAmount: 1,
+              channel: 0,
+              lanes: [
+                lane([base], TrackHistory.none),
+              ],
+            ),
+            SessionRigTrack(
+              fadeAmount: 1,
+              channel: 1,
+              lanes: [lane(layers, history)],
+            ),
+          ],
+        ),
+      );
+      var recalled = engine.snapshot().tracks[1];
+      expect(recalled.state, TrackState.stopped);
+      expect(recalled.lengthFrames, 256);
+      expect(recalled.multiple, 2);
+      expect(recalled.undoDepth, 1);
+      expect(recalled.redoDepth, 1);
+      expect(engine.exportHistory(1), history);
+      expect(engine.exportTrack(1), doubled);
+
+      // Redo re-applies the Last half; two Undos walk back to the original.
+      expect(repository.redo(channel: 1), EngineResult.ok);
+      await settle(128);
+      expect(engine.exportTrack(1), positional);
+      expect(repository.undo(channel: 1), EngineResult.ok);
+      await settle(256);
+      expect(engine.exportTrack(1), doubled);
+      expect(repository.undo(channel: 1), EngineResult.ok);
+      await settle(128);
+      expect(engine.exportTrack(1), positional);
+      recalled = engine.snapshot().tracks[1];
+      expect(recalled.undoDepth, 0);
+      expect(recalled.redoDepth, 2);
+      expect(recalled.multiple, 1);
+    },
+    skip: skip,
+  );
+
   test('a length edit is refused while a Session is being applied', () async {
     final rig = SessionRig(
       baseLengthFrames: 128,

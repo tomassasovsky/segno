@@ -1440,7 +1440,11 @@ class FakeAudioEngine implements AudioEngine {
   TrackHistory exportHistory(int channel) => TrackHistory.none;
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) {
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) {
     _importedDepths[channel] = (history.undoCount, history.redoCount);
     return EngineResult.ok;
   }

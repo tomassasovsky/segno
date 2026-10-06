@@ -1648,8 +1648,11 @@ class MockAudioEngine implements AudioEngine {
   TrackHistory exportHistory(int channel) => TrackHistory.none;
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) =>
-      _requireRunning();
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) => _requireRunning();
 
   @override
   EngineResult commitSession(int baseFrames, {required int loopBars}) =>

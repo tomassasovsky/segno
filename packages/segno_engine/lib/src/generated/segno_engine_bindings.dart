@@ -5336,10 +5336,13 @@ class SegnoEngineBindings {
   /// `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_count)` are the
   /// undo snapshots, `undo_count` is the live buffer, and the redo snapshots
   /// follow, newest-adjacent first; a redo-side peel marker holds no image and
-  /// takes no ordinal (le_engine_export_history). Returns the frames written (the
-  /// loop length, clamped to `max_frames`), 0 for an empty layer, or
-  /// LE_ERR_INVALID for an out-of-range channel/lane/ordinal or non-positive
-  /// `max_frames`. Control thread; call when the track is not capturing.
+  /// takes no ordinal (le_engine_export_history). Each image has its own length
+  /// (a length edit's images differ, #1168): `max_frames` 0 returns that length
+  /// without copying (`out` may then be NULL). Returns the frames written (the
+  /// image's length, clamped to `max_frames`), 0 for an empty layer, or
+  /// LE_ERR_INVALID for an out-of-range channel/lane/ordinal, a negative
+  /// `max_frames`, or a slot shorter than its image. Control thread; call when
+  /// the track is not capturing.
   int le_engine_export_layer(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -5386,8 +5389,9 @@ class SegnoEngineBindings {
   /// Loads `frames` mono frames into track `channel`'s lane `lane` at image
   /// `ordinal` (which becomes the pool slot index), staging a reconstruction into
   /// an EMPTY track. Call once per (lane, ordinal) — ordinals contiguous from 0 —
-  /// then le_engine_finalize_history, then le_engine_commit_session. Importing a
-  /// lane >= the active count activates it. Returns LE_OK, or LE_ERR_INVALID for a
+  /// then le_engine_finalize_history, which publishes the live image's length
+  /// over the staged one, then le_engine_commit_session. Importing a lane >= the
+  /// active count activates it. Returns LE_OK, or LE_ERR_INVALID for a
   /// non-EMPTY track, an `ordinal` past the pool cap, or an oversized `frames`.
   int le_engine_import_layer(
     ffi.Pointer<le_engine> engine,
@@ -5433,36 +5437,47 @@ class SegnoEngineBindings {
       >();
 
   /// Publishes a track reconstructed by le_engine_import_layer with its history
-  /// (#1164): `count` entries in le_engine_export_history order (`kinds[i]`,
-  /// `skipped[i]`), the first `undo_count` of them on the undo stack and the rest
-  /// on the redo stack top-down. Image-bearing entries take slot == image ordinal,
-  /// the live buffer is slot `undo_count`, and a redo-side peel entry becomes a
-  /// marker without an image; every active lane is republished in lockstep with
-  /// its undo, redo and peel depths. Strict: LE_ERR_INVALID for a non-EMPTY
-  /// track, an unknown kind or a length edit (its images differ in length,
-  /// which a Session does not carry yet), a `skipped` outside [0, LE_POOL_SLOTS) or nonzero on
-  /// a kind other than peel, a clear restore point anywhere but the last entry
-  /// on the redo side, an undo-side peel whose `skipped` exceeds the run of peel
-  /// entries directly beneath it (unless that run reaches the bottom: pool
-  /// eviction), a redo-side peel marker that would find no layer to peel when
-  /// Redo reaches it, more images than LE_POOL_SLOTS, or a torn reconstruction
-  /// (an image ordinal not staged on every active lane, or lanes at different
-  /// lengths). Returns LE_OK otherwise.
+  /// (#1164, #1168): `count` entries in le_engine_export_history order
+  /// (`kinds[i]`, `skipped[i]`, `starts[i]`), the first `undo_count` of them on
+  /// the undo stack and the rest on the redo stack top-down, and the length of
+  /// each of its `images` images by ordinal (`lens`; the live image is ordinal
+  /// `undo_count`). Image-bearing entries take slot == image ordinal and a
+  /// redo-side peel entry becomes a marker without an image; every active lane
+  /// is republished in lockstep with the live length and the undo, redo and peel
+  /// depths. Strict: LE_ERR_INVALID for a non-EMPTY track, an unknown kind, a
+  /// `skipped` outside [0, LE_POOL_SLOTS) or nonzero on a kind other than peel,
+  /// a `starts` outside +-max_loop_frames or nonzero on a kind other than a
+  /// length edit, a clear restore point anywhere but the last entry on the redo
+  /// side, an undo-side peel whose `skipped` exceeds the run of peel entries
+  /// directly beneath it (unless that run reaches the bottom: pool eviction), a
+  /// redo-side peel marker that would find no layer to peel when Redo reaches
+  /// it, `images` not the history's image count or more than LE_POOL_SLOTS, an
+  /// image length outside (0, max_loop_frames] or other than its lineage gives
+  /// (an image is as long as the nearest length edit at or nearer live on its
+  /// stack names, else as long as the live image), or a torn reconstruction (an
+  /// image not staged at its length on every active lane). Returns LE_OK
+  /// otherwise.
   int le_engine_finalize_history(
     ffi.Pointer<le_engine> engine,
     int channel,
     ffi.Pointer<ffi.Int32> kinds,
     ffi.Pointer<ffi.Int32> skipped,
+    ffi.Pointer<ffi.Int32> starts,
     int count,
     int undo_count,
+    ffi.Pointer<ffi.Int32> lens,
+    int images,
   ) {
     return _le_engine_finalize_history(
       engine,
       channel,
       kinds,
       skipped,
+      starts,
       count,
       undo_count,
+      lens,
+      images,
     );
   }
 
@@ -5474,7 +5489,10 @@ class SegnoEngineBindings {
             ffi.Int32,
             ffi.Pointer<ffi.Int32>,
             ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
             ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
             ffi.Int32,
           )
         >
@@ -5486,7 +5504,10 @@ class SegnoEngineBindings {
           int,
           ffi.Pointer<ffi.Int32>,
           ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
           int,
+          int,
+          ffi.Pointer<ffi.Int32>,
           int,
         )
       >();
@@ -5494,10 +5515,10 @@ class SegnoEngineBindings {
   /// Lists track `channel`'s history entries in image-ordinal order (#1164):
   /// the undo stack oldest first, then the redo stack top-down. `kinds[i]` is the
   /// entry's kind (0 overdub layer, 1 clear restore point, 2 peel, 3 loop-close
-  /// restoration, 4 length edit) and `skipped[i]` its peel payload (0 for every
-  /// other kind). A
-  /// redo-side peel entry is a marker without an image: le_engine_export_layer's
-  /// ordinals count image-bearing entries only, so a track's image count is
+  /// restoration, 4 length edit), `skipped[i]` its peel payload and `starts[i]`
+  /// a length edit's playhead map (0 for every other kind). A redo-side peel
+  /// entry is a marker without an image: le_engine_export_layer's ordinals count
+  /// image-bearing entries only, so a track's image count is
   /// `undo_count + 1 + (redo entries that are not peel markers)`. Writes at most
   /// `max` entries, stores the undo stack's entry count in `*undo_count` (the
   /// first `*undo_count` entries are the undo side and ordinal `*undo_count` is
@@ -5512,6 +5533,7 @@ class SegnoEngineBindings {
     int channel,
     ffi.Pointer<ffi.Int32> kinds,
     ffi.Pointer<ffi.Int32> skipped,
+    ffi.Pointer<ffi.Int32> starts,
     int max,
     ffi.Pointer<ffi.Int32> undo_count,
   ) {
@@ -5520,6 +5542,7 @@ class SegnoEngineBindings {
       channel,
       kinds,
       skipped,
+      starts,
       max,
       undo_count,
     );
@@ -5531,6 +5554,7 @@ class SegnoEngineBindings {
           ffi.Int32 Function(
             ffi.Pointer<le_engine>,
             ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
             ffi.Pointer<ffi.Int32>,
             ffi.Pointer<ffi.Int32>,
             ffi.Int32,
@@ -5545,6 +5569,7 @@ class SegnoEngineBindings {
           int,
           ffi.Pointer<ffi.Int32>,
           ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
           int,
           ffi.Pointer<ffi.Int32>,
         )
@@ -5552,7 +5577,8 @@ class SegnoEngineBindings {
 
   /// Establishes the master loop at `base_frames` and parks every imported track
   /// (EMPTY with a loaded length) STOPPED at its whole-loop multiple
-  /// (length / base_frames). Restores exactly `loop_bars` musical bars over that
+  /// (length / base_frames; a base/2 or base/4 track is that Sync division).
+  /// Restores exactly `loop_bars` musical bars over that
   /// span; zero keeps the loop grid-free even when a tempo is known. The caller
   /// restores tempo/source/signature before this commit. Does not infer bars
   /// from BPM or change audio length. Requires base_frames > 0 and loop_bars in
