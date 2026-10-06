@@ -834,10 +834,6 @@
     "@trayWifiLabel": {
         "description": "Label for the settings tray's WiFi shortcut button (stub — no real functionality yet)."
     },
-    "trayBluetoothLabel": "Bluetooth",
-    "@trayBluetoothLabel": {
-        "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
-    },
     "trayBrightnessPercent": "{percent}%",
     "trayBrightLabel": "Brillo",
     "@trayBrightLabel": {
@@ -1020,10 +1016,6 @@
     "@wifiJoinAction": {
         "description": "Confirm button on the WiFi password dialog."
     },
-    "bluetoothUnsupportedBody": "Bluetooth solo está disponible en la consola Segno.",
-    "@bluetoothUnsupportedBody": {
-        "description": "Shown on the Bluetooth page when segno-bt-ctl is not present."
-    },
     "bluetoothIntro": "Haz que esta consola sea visible para que un teléfono o sidecar la encuentre. El emparejamiento llega después.",
     "@bluetoothIntro": {
         "description": "Intro copy on the Bluetooth page (discovery/broadcast only)."
@@ -1036,37 +1028,9 @@
     "@bluetoothPoweredLabel": {
         "description": "Bluetooth powered table label."
     },
-    "bluetoothDiscoverableTitle": "Visible",
-    "@bluetoothDiscoverableTitle": {
-        "description": "Toggle title for classic Bluetooth discoverable."
-    },
-    "bluetoothDiscoverableSubtitle": "Otros dispositivos pueden ver esta consola",
-    "@bluetoothDiscoverableSubtitle": {
-        "description": "Toggle subtitle for classic Bluetooth discoverable."
-    },
-    "bluetoothAdvertiseTitle": "Transmitir",
-    "@bluetoothAdvertiseTitle": {
-        "description": "Toggle title for BLE advertising."
-    },
-    "bluetoothAdvertiseSubtitle": "Anunciar como Segno por Bluetooth LE",
-    "@bluetoothAdvertiseSubtitle": {
-        "description": "Toggle subtitle for BLE advertising."
-    },
-    "bluetoothScanTitle": "Buscar dispositivos",
-    "@bluetoothScanTitle": {
-        "description": "Bluetooth scan action title."
-    },
     "bluetoothScanSubtitle": "Encontrar dispositivos Bluetooth cercanos",
     "@bluetoothScanSubtitle": {
         "description": "Bluetooth scan action subtitle when idle."
-    },
-    "bluetoothScanningSubtitle": "Buscando…",
-    "@bluetoothScanningSubtitle": {
-        "description": "Bluetooth scan action subtitle while scanning."
-    },
-    "bluetoothEmptyDevices": "Aún no hay dispositivos. Toca buscar para explorar.",
-    "@bluetoothEmptyDevices": {
-        "description": "Empty state when a Bluetooth scan returns nothing."
     },
     "trayNetworkLabel": "Red",
     "@trayNetworkLabel": {
@@ -1083,10 +1047,6 @@
     "networkStateOpen": "abierta",
     "@networkStateOpen": {
         "description": "State word for a WiFi network that needs no passphrase."
-    },
-    "networkStatePaired": "emparejado",
-    "@networkStatePaired": {
-        "description": "State word for a Bluetooth device this console holds a pairing for."
     },
     "consoleKeepIt": "Conservar",
     "@consoleKeepIt": {
@@ -1179,98 +1139,6 @@
     "wifiForgetConfirmAction": "Olvidar red",
     "@wifiForgetConfirmAction": {
         "description": "Destructive action on the forget-network confirmation."
-    },
-    "bluetoothNotInRange": "fuera de alcance",
-    "@bluetoothNotInRange": {
-        "description": "Row subtitle for a paired device the last discovery did not see."
-    },
-    "bluetoothDiscoverableState": "detectable",
-    "@bluetoothDiscoverableState": {
-        "description": "Row subtitle for a device the scan can see but bluez reports no kind for."
-    },
-    "bluetoothKindHeadphones": "auriculares",
-    "@bluetoothKindHeadphones": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindSpeaker": "altavoz",
-    "@bluetoothKindSpeaker": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindPhone": "teléfono",
-    "@bluetoothKindPhone": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindComputer": "ordenador",
-    "@bluetoothKindComputer": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindKeyboard": "teclado",
-    "@bluetoothKindKeyboard": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindMouse": "ratón",
-    "@bluetoothKindMouse": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothKindGamepad": "mando",
-    "@bluetoothKindGamepad": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
-    },
-    "bluetoothConnectAction": "Conectar",
-    "@bluetoothConnectAction": {
-        "description": "Action inside an opened Bluetooth row: links an already-paired device."
-    },
-    "bluetoothDisconnectAction": "Desconectar",
-    "@bluetoothDisconnectAction": {
-        "description": "Action inside an opened Bluetooth row: drops the link but keeps the pairing."
-    },
-    "bluetoothForgetAction": "Olvidar",
-    "@bluetoothForgetAction": {
-        "description": "Destructive action inside an opened Bluetooth row."
-    },
-    "bluetoothPairingShort": "emparejando con {name}",
-    "@bluetoothPairingShort": {
-        "description": "Live-state line beside the Bluetooth face's title while a pairing is in flight.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
-    "bluetoothPairFailedShort": "no se pudo emparejar con {name}",
-    "@bluetoothPairFailedShort": {
-        "description": "Live-state line beside the Bluetooth face's title after a pairing failed.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
-    "bluetoothPairingBanner": "Emparejando con {name}… confírmalo en el dispositivo.",
-    "@bluetoothPairingBanner": {
-        "description": "In-flight banner while a pairing waits on a human at the far device.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
-    "bluetoothForgetTitleNamed": "¿Olvidar “{name}”?",
-    "@bluetoothForgetTitleNamed": {
-        "description": "Title of the forget-device confirmation.",
-        "placeholders": {
-            "name": {
-                "type": "String"
-            }
-        }
-    },
-    "bluetoothForgetBody": "El emparejamiento se elimina de esta consola. El dispositivo tendrá que volver a ponerse en modo de emparejamiento.",
-    "@bluetoothForgetBody": {
-        "description": "Body of the forget-device confirmation — says what is actually destroyed."
-    },
-    "bluetoothForgetConfirmAction": "Olvidar dispositivo",
-    "@bluetoothForgetConfirmAction": {
-        "description": "Destructive action on the forget-device confirmation."
     },
     "trayControlLabel": "Control",
     "@trayControlLabel": {
@@ -2554,5 +2422,6 @@
     "settingsAboutSubtitle": "Nombre, versión, controlador y licencias",
     "settingsMidiTitle": "MIDI",
     "settingsPower": "Apagado",
-    "bootModeRetiredNotice": "Segno ahora siempre inicia en modo Grabar. Pulsa Modo para pasar a Silenciar."
+    "bootModeRetiredNotice": "Segno ahora siempre inicia en modo Grabar. Pulsa Modo para pasar a Silenciar.",
+    "bluetoothRetiredNotice": "{count, plural, =1{Bluetooth ya no está disponible. El dispositivo emparejado con esta consola no volverá a conectarse.} other{Bluetooth ya no está disponible. Los {count} dispositivos emparejados con esta consola no volverán a conectarse.}}"
 }

@@ -707,6 +707,18 @@ class SettingsRepository {
   Future<void> saveBrightness(double value) =>
       _store.setDouble(_brightnessKey, value.clamp(0.0, 1.0));
 
+  static const String _bluetoothRetiredNoticeKey = 'bluetooth.retired_notice';
+
+  /// Whether the app has told this install that its Bluetooth pairings will
+  /// not reconnect. Defaults to `false`.
+  Future<bool> loadBluetoothRetiredNoticeShown() async =>
+      await _store.getBool(_bluetoothRetiredNoticeKey) ?? false;
+
+  /// Records that the Bluetooth retirement notice was shown, so it is shown
+  /// once.
+  Future<void> saveBluetoothRetiredNoticeShown() =>
+      _store.setBool(_bluetoothRetiredNoticeKey, value: true);
+
   static const String _defaultInteractionModeKey = 'looper.default_mode';
 
   /// Returns the boot-default interaction mode an earlier build stored (an

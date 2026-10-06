@@ -61,13 +61,16 @@ class LocalConsoleFactsClient implements ConsoleFactsClient {
     required Future<String> Function() sessionsRoot,
     required Future<String> Function() capturesRoot,
     required Future<DiskSpace?> Function(String path) diskSpace,
+    String bluetoothState = kRetiredBluetoothState,
   }) : _sessionsRoot = sessionsRoot,
        _capturesRoot = capturesRoot,
-       _diskSpace = diskSpace;
+       _diskSpace = diskSpace,
+       _bluetoothState = bluetoothState;
 
   final Future<String> Function() _sessionsRoot;
   final Future<String> Function() _capturesRoot;
   final Future<DiskSpace?> Function(String path) _diskSpace;
+  final String _bluetoothState;
 
   @override
   bool get isSupported => true;
@@ -126,7 +129,45 @@ class LocalConsoleFactsClient implements ConsoleFactsClient {
 
   @override
   Future<void> exportEverything(String destination) async {}
+
+  /// Counts the device records BlueZ kept under [kRetiredBluetoothState]:
+  /// `<adapter address>/<device address>/info`. Anything else in the tree
+  /// (the adapter's `settings`, its `cache` directory) is not a pairing.
+  /// An unreadable tree counts as none: there is nothing it could be shown
+  /// to have held.
+  @override
+  Future<int> retiredBluetoothPairings() async {
+    final root = Directory(_bluetoothState);
+    if (!root.existsSync()) return 0;
+    try {
+      var count = 0;
+      for (final adapter in root.listSync().whereType<Directory>()) {
+        if (!_bluetoothAddress.hasMatch(_name(adapter))) continue;
+        for (final device in adapter.listSync().whereType<Directory>()) {
+          if (_bluetoothAddress.hasMatch(_name(device)) &&
+              File('${device.path}/info').existsSync()) {
+            count++;
+          }
+        }
+      }
+      return count;
+    } on FileSystemException {
+      return 0;
+    }
+  }
 }
+
+/// Where the appliance kept BlueZ's pairings so they survived an update; the
+/// retired Bluetooth service bound it over `/var/lib/bluetooth`.
+const kRetiredBluetoothState = '/data/bluetooth';
+
+/// A Bluetooth device address as BlueZ names its directories.
+final _bluetoothAddress = RegExp(r'^[0-9A-F]{2}(:[0-9A-F]{2}){5}$');
+
+String _name(Directory dir) => dir.uri.pathSegments.lastWhere(
+  (segment) => segment.isNotEmpty,
+  orElse: () => '',
+);
 
 /// The nearest existing directory at or above [path], or `null` if even the
 /// filesystem root is unreadable. Lets the capacity reader measure the right

@@ -8,6 +8,9 @@ import '../../helpers/helpers.dart';
 
 /// A client that reads fine and refuses every write.
 class _FailingWriteClient implements ConsoleFactsClient {
+  @override
+  Future<int> retiredBluetoothPairings() async => 0;
+
   final _inner = FakeConsoleFactsClient(latency: Duration.zero);
 
   @override
@@ -33,6 +36,9 @@ class _FailingWriteClient implements ConsoleFactsClient {
 
 /// A client that throws every read.
 class _FailingClient implements ConsoleFactsClient {
+  @override
+  Future<int> retiredBluetoothPairings() async => 0;
+
   @override
   bool get isSupported => true;
 
