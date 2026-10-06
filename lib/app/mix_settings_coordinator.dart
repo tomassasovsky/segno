@@ -175,8 +175,30 @@ class MixSettingsCoordinator {
        _persistence = persistence,
        _device = device {
     _syncControllerTopology();
-    _topologySub = repository.looperState.listen(
-      (_) => _syncControllerTopology(),
+    _topologySub = repository.looperState.listen((_) {
+      if (_owedReported && !_repository.mixRecoveryRequired) {
+        _owedReported = false;
+      }
+      _syncControllerTopology();
+    });
+    _owedSub = repository.mixSettingsFailures.listen((_) => _reportOwed());
+  }
+
+  late final StreamSubscription<EngineResult> _owedSub;
+
+  /// Whether the current owed vector already has a notice. Cleared once the
+  /// repository no longer owes one.
+  bool _owedReported = false;
+
+  /// A restart or reconnect replay that goes unconfirmed owes the vector with
+  /// no edit of ours to report it; this surfaces it with the Retry notice.
+  void _reportOwed() {
+    if (_closed || _owedReported || !_repository.mixRecoveryRequired) return;
+    _report(
+      const MixSettingsOutcome(
+        MixSettingsStatus.recoveryRequired,
+        engineResult: EngineResult.notReady,
+      ),
     );
   }
 
@@ -197,8 +219,14 @@ class MixSettingsCoordinator {
   bool get acceptingEdits =>
       !_closed && _exclusiveCount == 0 && _recovery == null;
 
-  /// Whether the last durable rollback still needs explicit recovery.
-  bool get recoveryRequired => _recovery != null;
+  /// Whether the last durable rollback, or an owed mix receipt, still needs
+  /// explicit recovery.
+  bool get recoveryRequired =>
+      _recovery != null || _repository.mixRecoveryRequired;
+
+  /// Whether audio was stopped because a durable rollback failed. An owed
+  /// mix receipt keeps audio running.
+  bool get stoppedForRecovery => _recovery != null;
   (String, String?)? _recoveryCheckpoint;
 
   /// Accepted ordinary intent, in the same normalized domain as assignments.
@@ -411,6 +439,10 @@ class MixSettingsCoordinator {
   Stream<MixSettingsOutcome> get failures => _failures.stream;
 
   MixSettingsOutcome _report(MixSettingsOutcome result) {
+    if (result.status == MixSettingsStatus.recoveryRequired &&
+        _repository.mixRecoveryRequired) {
+      _owedReported = true;
+    }
     if (!result.isOk && !_failures.isClosed) _failures.add(result);
     return result;
   }
@@ -582,6 +614,15 @@ class MixSettingsCoordinator {
     Map<MixValueTarget, double>? releasedProjection,
     MixSettingsSnapshot? priorDurable,
   }) async {
+    // Storage holds the owed vector, which Retry and the next start land. A
+    // new candidate written now would leave storage and the engine apart, so
+    // it is refused, as the owners refuse writes while a value is owed.
+    if (_repository.mixRecoveryRequired) {
+      return const MixSettingsOutcome(
+        MixSettingsStatus.recoveryRequired,
+        engineResult: EngineResult.notReady,
+      );
+    }
     final durableCurrent = priorDurable ?? durableSnapshot;
     final nextReleased =
         Map<MixValueTarget, double>.of(
@@ -658,6 +699,17 @@ class MixSettingsCoordinator {
     // A successful settlement means the repository published this candidate.
     // A stop or restart after that publication cannot undo it; rolling back
     // only storage would make the next startup replay a different mix.
+    if (!settled.isOk && _repository.mixRecoveryRequired) {
+      // Uncertain: the repository owes this candidate, so storage keeps it;
+      // Retry or the next start lands it. Audio keeps running.
+      _releasedValues
+        ..clear()
+        ..addAll(nextReleased);
+      return MixSettingsOutcome(
+        MixSettingsStatus.recoveryRequired,
+        engineResult: settled,
+      );
+    }
     if (!settled.isOk) {
       final failure = MixSettingsOutcome(
         _current(generation, device)
@@ -715,9 +767,14 @@ class MixSettingsCoordinator {
     );
   }
 
-  /// Waits for every currently queued final control value.
-  Future<MixSettingsOutcome> flush() =>
-      _draining ?? Future.value(_recovery ?? _applied);
+  /// Waits for every currently queued final control value. Fails only while
+  /// storage does not hold the value a start replays (a failed rollback): an
+  /// owed vector or a refused edit leaves storage and the next start in
+  /// agreement, as for every settings owner.
+  Future<MixSettingsOutcome> flush() async {
+    if (_draining case final draining?) await draining;
+    return _recovery ?? _applied;
+  }
 
   /// Orders session replacement, boot restore and key synchronization after
   /// pending edits. Controls are refused explicitly until the boundary exits.
@@ -749,6 +806,20 @@ class MixSettingsCoordinator {
   /// Retries the exact failed durable rollback. Audio stays stopped; app
   /// device controls may reopen it only after this reports success.
   Future<MixSettingsOutcome> recover() => _exclusive(() async {
+    if (_repository.mixRecoveryRequired) {
+      final admitted = _repository.recoverMixSettings();
+      final settled = admitted.isOk
+          ? await _repository.settleMixSettings()
+          : admitted;
+      if (!settled.isOk || _repository.mixRecoveryRequired) {
+        return _report(
+          MixSettingsOutcome(
+            MixSettingsStatus.recoveryRequired,
+            engineResult: settled,
+          ),
+        );
+      }
+    }
     final checkpoint = _recoveryCheckpoint;
     if (checkpoint == null) return _applied;
     try {
@@ -773,6 +844,7 @@ class MixSettingsCoordinator {
     await flush();
     await _exclusiveTail;
     await _topologySub.cancel();
+    await _owedSub.cancel();
     await _failures.close();
   }
 

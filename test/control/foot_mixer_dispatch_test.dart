@@ -7,6 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/audio_bootstrap.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
@@ -84,21 +85,26 @@ class _Rig {
       engine: engine,
       exportsRoot: () async => Directory.systemTemp.path,
     );
+    final ownedFade = testFadeSettings();
     control = ControlCubit(
-      fadeSettings: testFadeSettings(),
       looper: looper,
       pedal: pedal,
       settings: settings,
       performance: performance,
       mixSettings: mix,
       fxPersistence: persistence,
-      clickVolumeControl: FakeClickVolumeControl(),
-      clickModeControl: FakeClickModeControl(),
-      recordStartControl: FakeRecordStartControl(),
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
-      recordLengthControl: FakeRecordLengthControl(),
-      recordTimingControl: FakeRecordTimingControl(),
+      fadeSettings: ownedFade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: FakeRecordStartControl(),
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: ownedFade,
+      ),
     );
     link.hello();
   }

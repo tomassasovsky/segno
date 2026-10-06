@@ -82,6 +82,10 @@ void main() {
     final store = SettingsRepository(store: FakeKeyValueStore());
     await store.saveFadeDurations(FadeDurations(overrides: const {1: 8000}));
     settings = FadeSettings(
+      repository: LooperRepository(
+        engine: FakeAudioEngine(),
+        ticker: const Stream.empty(),
+      ),
       settings: store,
       blocked: () => false,
       sessionBlocked: () => false,

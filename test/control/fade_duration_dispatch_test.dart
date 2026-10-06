@@ -10,6 +10,7 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/control/binding/external_controls.dart';
@@ -20,7 +21,7 @@ import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show EngineSnapshot, FadeAdmission, TrackSnapshot;
+    show EngineSnapshot, RequestAdmission, TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -31,15 +32,15 @@ class _Engine extends FakeAudioEngine {
   final _results = <int, EngineResult>{};
 
   @override
-  FadeAdmission toggleFade({required int channel, required double seconds}) {
+  RequestAdmission toggleFade({required int channel, required double seconds}) {
     toggles.add((channel, seconds));
     _results[toggles.length] = EngineResult.ok;
     return (result: EngineResult.ok, request: toggles.length);
   }
 
   @override
-  EngineResult? readFadeResult(int request) =>
-      _results.remove(request) ?? super.readFadeResult(request);
+  EngineResult? readRequestResult(int request) =>
+      _results.remove(request) ?? super.readRequestResult(request);
 }
 
 class _Midi extends MidiDeviceRepository {
@@ -96,6 +97,7 @@ class _Rig {
         .encode();
     settings = SettingsRepository(store: store);
     fade = FadeSettings(
+      repository: looper,
       settings: settings,
       blocked: () => false,
       sessionBlocked: () => false,
@@ -111,23 +113,27 @@ class _Rig {
     );
     persistence = FxChainPersistence(looper: looper);
     cubit = ControlCubit(
-      fadeSettings: fade,
       looper: looper,
       pedal: pedal,
       settings: settings,
       performance: performance,
       mixSettings: mix,
       fxPersistence: persistence,
-      clickVolumeControl: FakeClickVolumeControl(),
-      clickModeControl: FakeClickModeControl(),
-      recordStartControl: FakeRecordStartControl(),
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
-      recordLengthControl: FakeRecordLengthControl(),
-      recordTimingControl: FakeRecordTimingControl(),
       controller: controller,
       midiDevices: midi,
       midiClock: () => clock.elapsed,
+      fadeSettings: fade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: FakeRecordStartControl(),
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: fade,
+      ),
     );
     link.hello();
     unawaited(cubit.load());

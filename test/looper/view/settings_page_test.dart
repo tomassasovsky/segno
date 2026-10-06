@@ -9,6 +9,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
@@ -159,6 +160,9 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => repository.lengthSettingsFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );
@@ -239,21 +243,26 @@ void main() {
       repository: repository,
       settings: settings,
     );
+    final ownedFade = testFadeSettings();
     control = ControlCubit(
-      fadeSettings: testFadeSettings(),
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
-      recordLengthControl: FakeRecordLengthControl(),
-      recordTimingControl: quantizeOwner,
-      clickVolumeControl: FakeClickVolumeControl(),
-      clickModeControl: FakeClickModeControl(),
-      recordStartControl: tempoOwner.recordStartControl,
       fxPersistence: fxPersistence,
       looper: repository,
       mixSettings: mixSettings,
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
+      fadeSettings: ownedFade,
+      ownedValues: OwnedValuePort(
+        looper: repository,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: tempoOwner.recordStartControl,
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: quantizeOwner,
+        fade: ownedFade,
+      ),
     );
     addTearDown(() => unawaited(control.close()));
     // The Audio tab embeds the pedal output picker, driven by PedalCubit.

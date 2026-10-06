@@ -789,7 +789,7 @@ class Session {
       clickMode: _readEnum(json['clickMode'], ClickMode.values),
       clickOutputMask: (json['clickOutputMask'] as num).toInt(),
       clickVolume: (json['clickVolume'] as num).toDouble(),
-      countInBars: (json['countInBars'] as num).toInt(),
+      countInBars: _readCountIn(json['countInBars']),
       looperMode: _readEnum(json['looperMode'], LooperMode.values),
       primaryTrack: (json['primaryTrack'] as num).toInt(),
       defaultFadeDurationMs: _fadeDuration(json['defaultFadeDurationMs']),
@@ -798,23 +798,23 @@ class Session {
       ),
       defaultOneShot: json['defaultOneShot'] as bool,
       defaultLengthPresetBars: (json['defaultLengthPresetBars'] as num).toInt(),
-      trackRecordTimingOverrides: _readOverrides(
+      trackRecordTimingOverrides: _readTrackOverrides(
         json['trackRecordTimingOverrides'] as Map<String, dynamic>,
         (value) => RecordTiming.values.byName(value! as String),
       ),
-      trackOverdubDecayOverrides: _readOverrides(
+      trackOverdubDecayOverrides: _readTrackOverrides(
         json['trackOverdubDecayOverrides'] as Map<String, dynamic>,
         (value) => (value! as num).toInt(),
       ),
-      trackOneShotOverrides: _readOverrides(
+      trackOneShotOverrides: _readTrackOverrides(
         json['trackOneShotOverrides'] as Map<String, dynamic>,
         (value) => value! as bool,
       ),
-      trackLengthPresetOverrides: _readOverrides(
+      trackLengthPresetOverrides: _readTrackOverrides(
         json['trackLengthPresetOverrides'] as Map<String, dynamic>,
         (value) => (value! as num).toInt(),
       ),
-      trackPans: _readOverrides(
+      trackPans: _readTrackOverrides(
         json['trackPans'],
         (value) => (value! as num).toDouble(),
       ),
@@ -1265,6 +1265,24 @@ Map<int, T> _readOverrides<T>(Object? json, T Function(Object?) decode) => {
   for (final entry in (json as Map<String, dynamic>? ?? const {}).entries)
     int.parse(entry.key): decode(entry.value),
 };
+
+/// A per-track map whose keys must name one of the eight fixed tracks, so a
+/// bad Session is refused at decode, before the rig is cleared.
+Map<int, T> _readTrackOverrides<T>(Object? json, T Function(Object?) decode) {
+  final values = _readOverrides(json, decode);
+  if (values.keys.any((channel) => channel < 0 || channel >= 8)) {
+    throw const FormatException('invalid session track override');
+  }
+  return values;
+}
+
+/// Count-in is Off or 1, 2 or 4 bars.
+int _readCountIn(Object? raw) {
+  if (raw is! num || !const [0, 1, 2, 4].contains(raw)) {
+    throw const FormatException('invalid session count-in');
+  }
+  return raw.toInt();
+}
 
 Map<int, double> _readTrackLevels(Object? raw) {
   final values = _readOverrides(raw, (value) {

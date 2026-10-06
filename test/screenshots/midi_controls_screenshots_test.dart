@@ -15,6 +15,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
@@ -150,6 +151,10 @@ void main() {
     when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
     when(() => looper.fxRecipesSettled).thenReturn(true);
     when(() => looper.mixSettingsSettled).thenReturn(true);
+    when(() => looper.mixRecoveryRequired).thenReturn(false);
+    when(
+      () => looper.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => looper.allMonitors()).thenReturn(const {});
     when(() => looper.allLaneChains()).thenReturn(const {});
     when(() => looper.allTracksEffects).thenReturn(const []);
@@ -324,14 +329,6 @@ void main() {
     final fade = testFadeSettings();
     addTearDown(() => unawaited(fade.close()));
     control = ControlCubit(
-      fadeSettings: fade,
-      decayControl: decay,
-      oneShotControl: decay,
-      recordLengthControl: record,
-      recordTimingControl: timingOwner,
-      clickVolumeControl: tempo,
-      clickModeControl: tempo,
-      recordStartControl: tempo,
       looper: looper,
       pedal: pedal,
       settings: settings,
@@ -339,6 +336,18 @@ void main() {
       mixSettings: mix,
       fxPersistence: FxChainPersistence(looper: looper),
       midiDevices: devices,
+      fadeSettings: fade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: tempo,
+        clickMode: tempo,
+        recordStart: tempo,
+        decay: decay,
+        oneShot: decay,
+        recordLength: record,
+        recordTiming: timingOwner,
+        fade: fade,
+      ),
     );
     final tracks = TracksCubit(settings: settings);
     final midi = MidiSetupCubit(repository: devices);

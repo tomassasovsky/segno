@@ -23,8 +23,8 @@ class FootFadeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = context.read<FadeSettings>();
-    return StreamBuilder<Object?>(
-      stream: settings.results,
+    return StreamBuilder<void>(
+      stream: settings.changes,
       builder: (context, _) => _FootFadeContent(
         durations: settings.needsRecovery ? null : settings.live,
       ),

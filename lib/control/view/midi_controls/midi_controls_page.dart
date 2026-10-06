@@ -956,7 +956,16 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     final l10n = context.l10n;
     setState(() {
       _draft = replacing == null
-          ? draft.withControl(MidiParameterControl(key: key, low: 0, high: 1))
+          ? draft.withControl(
+              MidiParameterControl(
+                key: key,
+                low: 0,
+                high: switch (target) {
+                  final ControlValueTarget value => value.mappingTop,
+                  _ => 1,
+                },
+              ),
+            )
           : draft.repointing(replacing, key);
       _notice = repaired ? l10n.midiRepairReady : null;
       _replacing = null;
