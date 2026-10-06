@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:segno_engine/src/audio_device.dart';
 import 'package:segno_engine/src/audio_engine.dart';
+import 'package:segno_engine/src/audition.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_fingerprint.dart';
@@ -976,6 +978,39 @@ class MockAudioEngine implements AudioEngine {
   @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       _requireRunning();
+
+  /// The preview the mock is "playing": its length in frames, 0 when none.
+  /// The mock decodes nothing: any existing file plays as one second.
+  int _auditionFrames = 0;
+  int _auditionBus = -1;
+
+  @override
+  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async {
+    final running = _requireRunning();
+    if (!running.isOk) return AuditionStart(result: running);
+    if (!File(path).existsSync()) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    final rate = _activeConfig?.sampleRate ?? 48000;
+    _auditionFrames = rate;
+    _auditionBus = bus;
+    return AuditionStart(
+      result: EngineResult.ok,
+      frames: rate,
+      sourceRate: rate,
+    );
+  }
+
+  @override
+  EngineResult auditionStop() {
+    _auditionFrames = 0;
+    _auditionBus = -1;
+    return EngineResult.ok;
+  }
+
+  @override
+  AuditionState auditionState() =>
+      AuditionState(frames: _auditionFrames, bus: _auditionBus);
 
   @override
   EngineResult setOutputEnabled({

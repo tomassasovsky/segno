@@ -2374,12 +2374,60 @@ static void le_backing_cut(le_engine* e) {
   le_backing_publish(e);
 }
 
+/* ---- Library audition voice, audio thread (#1178; contract in
+ * segno_engine_api.h, ownership in engine_audition.c) ----
+ *
+ * One read head over an engine-owned stereo buffer, summed into one output
+ * pair after the output buses and before the master bus. A buffer the
+ * callback will never read again goes back through an a_audition_dead slot;
+ * the callback never frees. Nothing here is perf-logged. */
+
+/* Hands [b] back to the control thread. Never full: the engine owns at most
+ * LE_AUDITION_MAX_BUFFERS audition buffers in total. */
+static void le_audition_return(le_engine* e, le_backing_buffer* b) {
+  if (b == NULL) return;
+  for (int i = 0; i < LE_AUDITION_MAX_BUFFERS; ++i) {
+    le_backing_buffer* expected = NULL;
+    if (atomic_compare_exchange_strong_explicit(
+            &e->a_audition_dead[i], &expected, b, memory_order_release,
+            memory_order_relaxed)) {
+      return;
+    }
+  }
+}
+
+static void le_audition_publish(le_engine* e) {
+  store_i32(&e->a_audition_frames,
+            e->audition_buf != NULL ? e->audition_buf->frames : 0);
+  store_i32(&e->a_audition_position, e->audition_pos);
+  store_i32(&e->a_audition_bus, e->audition_buf != NULL ? e->audition_bus : -1);
+}
+
+/* Silences the voice and hands its buffer back. */
+static void le_audition_clear(le_engine* e) {
+  le_audition_return(e, e->audition_buf);
+  e->audition_buf = NULL;
+  e->audition_pos = 0;
+  e->audition_bus = -1;
+  le_audition_publish(e);
+}
+
+static void le_audition_apply(le_engine* e, const le_command* cmd) {
+  le_audition_clear(e);
+  if (cmd->code == LE_CMD_AUDITION_START) {
+    e->audition_buf = cmd->backing.buffer;
+    e->audition_bus = cmd->backing.item;
+    le_audition_publish(e);
+  }
+}
+
 static void handle_cut_sound(le_engine* e, uint64_t frame) {
   /* Retire the pulse already sounding. Future beats still follow the
    * existing scheduler and click preferences. */
   e->click_remaining = 0;
   e->click_phase = 0.0f;
   le_backing_cut(e);
+  le_audition_clear(e); /* #1178: a preview is sound too */
   const int fx_cap = e->fx_delay_frames;
   for (int32_t ch = 0; ch < e->track_count; ++ch) {
     le_track* t = &e->tracks[ch];
@@ -4053,6 +4101,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
     case LE_CMD_BACKING_SEEK:
       le_backing_apply(e, cmd);
       break;
+    /* Audition (#1178): never perf-logged, never in any capture. */
+    case LE_CMD_AUDITION_START:
+    case LE_CMD_AUDITION_STOP:
+      le_audition_apply(e, cmd);
+      break;
     case LE_CMD_SET_MONITOR_INPUT_OUTPUT: {
       const int32_t input = cmd->trackmask.channel;
       if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) break;
@@ -4150,6 +4203,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       e->perf.armed = 1;
       atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
+      /* A performance arm ends a Library preview (#1178): the take starts
+       * with the rig alone sounding. */
+      le_audition_clear(e);
       /* Transport fact (#262): the master loop phase at THIS frame — capture
        * frame 0 (le_perf_arm reset a_perf_frames to 0 before posting this
        * command, so `frame` is 0 here). Logged AFTER e->perf.armed flips so
@@ -4742,6 +4798,30 @@ static inline void backing_frame(le_engine* e, float* out, uint32_t f,
     r *= level;
     le_fx_route_frame(out + (size_t)f * (size_t)ch_out, ch_out, mask, l * gl,
                       r * gr);
+  }
+}
+
+/* One frame of the audition voice (#1178) into its pair: after the output
+ * buses, before the master bus. A disabled channel of the pair stays
+ * untouched; a single-channel last pair takes the mid. The preview ends after
+ * its last frame and hands its buffer back. The caller skips it while no
+ * preview plays. */
+static inline void audition_frame(le_engine* e, float* out, uint32_t f,
+                                  int ch_out, uint32_t out_enabled) {
+  le_backing_buffer* b = e->audition_buf;
+  const float l = b->pcm[2 * e->audition_pos];
+  const float r = b->pcm[2 * e->audition_pos + 1];
+  float* o = out + (size_t)f * (size_t)ch_out;
+  const int c0 = 2 * e->audition_bus;
+  const int c1 = c0 + 1;
+  if (c0 < ch_out && (out_enabled & (1u << c0))) {
+    o[c0] += c1 < ch_out ? l : 0.5f * (l + r);
+  }
+  if (c1 < ch_out && (out_enabled & (1u << c1))) o[c1] += r;
+  if (++e->audition_pos >= b->frames) {
+    le_audition_return(e, b);
+    e->audition_buf = NULL;
+    e->audition_bus = -1;
   }
 }
 
@@ -7050,6 +7130,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const uint32_t out_enabled =
       atomic_load_explicit(&e->a_output_enabled_mask, memory_order_relaxed);
 
+  /* Audition voice (#1178): dormant cost one compare per frame. */
+  int audition_live = e->audition_buf != NULL;
+  const int audition_ran = audition_live;
+
   /* Backing player settings (#1200), read once per block like the click's. */
   int backing_live = e->backing_fade.buf != NULL ||
                      (e->backing_cur.buf != NULL &&
@@ -7208,6 +7292,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       if (!obus[k].active && !tap_here) continue;
       output_bus_frame(e, out, f, ch_out, sr, fx_cap, k, &obus[k], tap_here);
     }
+    /* The audition (#1178) joins here, past every bus and its capture tap:
+     * no destination level, mute or chain, no performance capture; the
+     * master gain and the limiter below still shape it. */
+    if (audition_live) {
+      audition_frame(e, out, f, ch_out, out_enabled);
+      audition_live = e->audition_buf != NULL;
+    }
     master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
                      lim_release, &out_sumsq, &frame_out_peak, out_peak_ch);
     if (frame_out_peak > out_peak) out_peak = frame_out_peak;
@@ -7227,6 +7318,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                                 memory_order_relaxed);
     }
   }
+  if (audition_ran) le_audition_publish(e);
 
   /* Input RMS is normalised by the active (non-loopback) channel count only. */
   const uint32_t total_in = frames * (uint32_t)active_in;
