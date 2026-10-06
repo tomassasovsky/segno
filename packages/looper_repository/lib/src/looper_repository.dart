@@ -2009,6 +2009,22 @@ class LooperRepository {
   Future<EngineResult> toggleReverse({required int channel}) =>
       _requestReceipt(() => _engine.toggleReverse(channel: channel));
 
+  /// Doubles or halves track [channel] as one history entry (#1168).
+  /// Completes with the exact callback outcome; refused before any change
+  /// with [EngineResult.modeMismatch], [EngineResult.capacity],
+  /// [EngineResult.invalid] or [EngineResult.notReady] (also while a
+  /// Session is being applied). [undo] restores the other length; the
+  /// projection's `Track.lengthFrames`, `multiple` and `syncDivisor` follow.
+  Future<EngineResult> editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) {
+    if (_sessionAudioReserved) return Future.value(EngineResult.notReady);
+    return _requestReceipt(
+      () => _engine.editLength(channel: channel, edit: edit),
+    );
+  }
+
   /// Installs an explicit direction (Session recall, before the commit).
   Future<EngineResult> installReverse({
     required int channel,
@@ -2294,6 +2310,7 @@ class LooperRepository {
               oneShot: _oneShot.live.effective(i),
               oneShotOverride: _oneShot.live.overrides[i],
               multiple: s.tracks[i].multiple,
+              syncDivisor: s.tracks[i].syncDivisor,
               inputMask: s.tracks[i].inputMask,
               outputMask: s.tracks[i].outputMask,
               lanes: [

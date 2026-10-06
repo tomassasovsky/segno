@@ -292,6 +292,25 @@ void main() {
       expect(peeled.hashCode, isNot(peelable.hashCode));
     });
 
+    test('sync divisor is projected from the native field and compared', () {
+      final ptr = calloc<le_track_snapshot>();
+      addTearDown(() => calloc.free(ptr));
+      ptr.ref
+        ..quantize_override = -1
+        ..quantize_div_override = -1
+        ..overdub_feedback_override = -1
+        ..multiple = 1
+        ..sync_divisor = 4;
+      final division = TrackSnapshot.fromNative(ptr.ref);
+      expect(division.syncDivisor, 4);
+      expect(const TrackSnapshot.empty().syncDivisor, 0);
+      ptr.ref.sync_divisor = 0;
+      final whole = TrackSnapshot.fromNative(ptr.ref);
+      expect(whole.syncDivisor, 0);
+      expect(whole, isNot(division));
+      expect(whole.hashCode, isNot(division.hashCode));
+    });
+
     test('global native record settings each participate in equality', () {
       final ptr = calloc<le_snapshot>();
       addTearDown(() => calloc.free(ptr));

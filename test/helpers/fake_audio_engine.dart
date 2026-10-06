@@ -271,6 +271,12 @@ class FakeAudioEngine implements AudioEngine {
       (result: EngineResult.invalid, request: 0);
 
   @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) => (result: EngineResult.invalid, request: 0);
+
+  @override
   RequestAdmission installReverse({
     required int channel,
     required bool reversed,

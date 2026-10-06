@@ -612,6 +612,7 @@ class TrackSnapshot {
     this.redoDepth = 0,
     this.peelDepth = 0,
     this.multiple = 1,
+    this.syncDivisor = 0,
     this.inputMask = 0x1,
     this.outputMask = 0x3,
     this.layerInFlight = false,
@@ -650,6 +651,7 @@ class TrackSnapshot {
       rms = 0,
       peak = 0,
       multiple = 1,
+      syncDivisor = 0,
       inputMask = 0x1,
       outputMask = 0x3,
       layerInFlight = false,
@@ -700,6 +702,7 @@ class TrackSnapshot {
     rms: native.rms,
     peak: native.peak,
     multiple: native.multiple,
+    syncDivisor: native.sync_divisor,
     inputMask: native.input_mask,
     outputMask: native.output_mask,
     layerInFlight: native.layer_in_flight != 0,
@@ -754,6 +757,10 @@ class TrackSnapshot {
 
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
+
+  /// A Sync/Band division of the base loop (`2` or `4`), else `0`; while
+  /// nonzero [multiple] is an inert `1`.
+  final int syncDivisor;
 
   /// Available undo steps (overdub layers).
   final int undoDepth;
@@ -895,6 +902,7 @@ class TrackSnapshot {
           muted == other.muted &&
           lengthFrames == other.lengthFrames &&
           multiple == other.multiple &&
+          syncDivisor == other.syncDivisor &&
           undoDepth == other.undoDepth &&
           redoDepth == other.redoDepth &&
           peelDepth == other.peelDepth &&
@@ -929,6 +937,7 @@ class TrackSnapshot {
     muted,
     lengthFrames,
     multiple,
+    syncDivisor,
     undoDepth,
     redoDepth,
     peelDepth,

@@ -988,6 +988,14 @@ void main() {
             1,
             2,
           ),
+          // A length edit (#1168): its images' lengths are not carried yet.
+          (
+            [
+              {'kind': 'length', 'skipped': 0},
+            ],
+            1,
+            2,
+          ),
           // A skipped count on a kind that has none, and a negative one.
           (
             [

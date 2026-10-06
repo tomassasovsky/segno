@@ -652,6 +652,15 @@ class MockAudioEngine implements AudioEngine {
     result: _running ? EngineResult.invalid : EngineResult.notRunning,
     request: 0,
   );
+  // So does a length edit.
+  @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
   @override
   RequestAdmission installReverse({
     required int channel,

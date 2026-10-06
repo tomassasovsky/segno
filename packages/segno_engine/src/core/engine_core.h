@@ -131,6 +131,60 @@ static inline int32_t le_peel_depth(const le_track* t) {
   return depth;
 }
 
+/* The equal-gain head fold every seam gets (#728): morphs head[0, F) from the
+ * continuation of the sample that wraps into it, so the wrap is continuous.
+ * Linear weights sum to 1, so correlated material passes at unity. Shared by
+ * the finalize fold, its dub-shadow twin and the length edits' halves. */
+static inline void le_seam_fold_head(float* head, const float* continuation,
+                                     int32_t F) {
+  for (int32_t i = 0; i < F; ++i) {
+    const float x = (float)i / (float)F; /* 0..1 across the fade */
+    head[i] = continuation[i] * (1.0f - x) + head[i] * x;
+  }
+}
+
+/* What a length edit or its Undo/Redo (#1168) makes of one track: the new
+ * length, its multiple or Sync division, and `reclock` (the new master when
+ * the rig re-clocks, else 0). */
+typedef struct {
+  int32_t len, multiple, divisor, reclock;
+} le_length_fit;
+
+/* The one verdict for a new length `len`, shared by control admission (its
+ * effective view) and the callback recheck (the applied rig), so the two can
+ * only disagree when the rig changed in between. `others`: another track holds
+ * or is capturing content; `primary`: this track is the crowned primary.
+ * Free/Song spans are independent. With no other content the master follows
+ * the track. A crowned Sync/Band primary with dependents is refused (a Double
+ * would end Sync quantization, a half would re-clock every dependent); any
+ * other track must fit the mode's span rule against the unchanged base. */
+static inline int32_t le_length_fit_check(int32_t mode, int32_t base,
+                                          int others, int primary, int32_t len,
+                                          int32_t cap, le_length_fit* out) {
+  out->len = len;
+  out->multiple = 1;
+  out->divisor = 0;
+  out->reclock = 0;
+  if (len <= 0) return LE_ERR_INVALID;
+  if (len > cap) return LE_ERR_CAPACITY;
+  if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) return LE_OK;
+  if (!others) {
+    out->reclock = len;
+    return LE_OK;
+  }
+  if (base <= 0) return LE_ERR_NOT_READY;
+  if (primary && (mode == LE_LOOPER_MODE_SYNC || mode == LE_LOOPER_MODE_BAND)) {
+    return LE_ERR_MODE_MISMATCH;
+  }
+  if (!le_mode_span_fits(mode, base, len)) return LE_ERR_MODE_MISMATCH;
+  if (len >= base) {
+    out->multiple = len / base;
+  } else {
+    out->divisor = base / len;
+  }
+  return LE_OK;
+}
+
 /* The control thread's view of a track's read direction (#1162): the
  * direction the posted-but-unapplied REVERSE commands predict, or the
  * published a_reversed once the callback has processed every one of them.

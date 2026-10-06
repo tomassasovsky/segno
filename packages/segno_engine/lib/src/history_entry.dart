@@ -17,6 +17,10 @@ enum HistoryKind {
   /// A loop-close restoration: the raw take beneath a conditioned image.
   /// Undo and Redo swap it like a layer; Peel never consumes it.
   processed,
+
+  /// A length edit (#1168): the image to put back at its own length. A
+  /// Session cannot carry one yet; its finalize refuses it.
+  length,
 }
 
 /// One entry of a track's audio history in image-ordinal order: the Undo

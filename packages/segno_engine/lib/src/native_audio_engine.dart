@@ -820,6 +820,23 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) {
+    _checkAlive();
+    final request = calloc<Uint64>();
+    try {
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_edit_length(_engine, channel, edit.index, request),
+      );
+      return (result: result, request: request.value);
+    } finally {
+      calloc.free(request);
+    }
+  }
+
+  @override
   RequestAdmission installReverse({
     required int channel,
     required bool reversed,

@@ -186,6 +186,10 @@ typedef enum le_perf_log_code {
                           * reset logs forward with read_index -1; a reversed
                           * track also logs its index at PERF_ARM. 325 is
                           * reserved for Peel; do not take it. */
+  LE_PLOG_LENGTH = 326, /* length_log: a length edit, or its Undo/Redo,
+                         * applied (#1168) — {channel, slot now live, len,
+                         * image_id}; the callback's 322 at the same frame
+                         * names the same staged image. events.log version 9. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's
@@ -220,6 +224,7 @@ typedef struct le_log_command {
     struct { int32_t channel, reversed, read_index, turn_frames; } reverse_log;
     struct { int32_t channel; uint32_t image_id; int32_t state, phase; } restore_log;
     struct { int32_t channel, slot, previous; uint32_t generation; } peel_log;
+    struct { int32_t channel, slot, len; uint32_t image_id; } length_log;
     struct { int32_t position, master_len, iteration; } perf_arm;
     struct { int32_t value; uint32_t sequence; } clock;
     struct { int32_t base_frames, loop_bars; } session;
@@ -231,6 +236,7 @@ typedef struct le_log_command {
 static inline int le_log_extract(const le_command* command, le_log_command* out) {
   if (command->code == LE_CMD_RESET_TRANSFORMS || command->code == LE_CMD_FADE ||
       command->code == LE_CMD_REVERSE || command->code == LE_CMD_SET_MIX ||
+      command->code == LE_CMD_SET_LENGTH ||
       command->code == LE_CMD_RECORD_IMAGE ||
       command->code == LE_CMD_SET_LENGTH_PRESETS) return 0;
   out->code = command->code;

@@ -150,16 +150,37 @@ int32_t le_engine_import_track(le_engine* engine, int32_t channel,
  * newest-adjacent-first (redo_stack[redo_count-1] is the layer immediately
  * above live — see le_undo_swap in engine_commands.c). Image-bearing entries
  * only: a redo-side PEEL marker (slot -1, #1164) holds no image and is skipped,
- * so an ordinal never tears on one. Returns -1 for an ordinal past the end. */
+ * so an ordinal never tears on one. Returns -1 for an ordinal past the end.
+ *
+ * *len is that image's own length (#1168): a LENGTH entry names the length of
+ * its image, and every image on the same stack between it and live (through
+ * the next LENGTH entry) was made at that length, so the nearest LENGTH entry
+ * at or nearer live than the image decides; none means the live length. */
+static int32_t le_hist_len_at(const le_hist_entry* stack, int32_t count,
+                              int32_t i, int32_t live_len) {
+  for (int32_t j = i; j < count; ++j) {
+    if (stack[j].kind == LE_HIST_LENGTH) return stack[j].len;
+  }
+  return live_len;
+}
+
 static int32_t le_layer_slot_for_ordinal(const le_track* t, int32_t ordinal,
-                                          int32_t live) {
+                                          int32_t live, int32_t live_len,
+                                          int32_t* len) {
   const int32_t undo_c = t->undo_count;
-  if (ordinal < undo_c) return t->undo_stack[ordinal].slot;
+  *len = live_len;
+  if (ordinal < undo_c) {
+    *len = le_hist_len_at(t->undo_stack, undo_c, ordinal, live_len);
+    return t->undo_stack[ordinal].slot;
+  }
   if (ordinal == undo_c) return live;
   int32_t j = ordinal - undo_c - 1; /* 0-based into the post-live images */
   for (int32_t k = t->redo_count - 1; k >= 0; --k) {
     if (t->redo_stack[k].slot < 0) continue;
-    if (j-- == 0) return t->redo_stack[k].slot;
+    if (j-- == 0) {
+      *len = le_hist_len_at(t->redo_stack, t->redo_count, k, live_len);
+      return t->redo_stack[k].slot;
+    }
   }
   return -1;
 }
@@ -197,13 +218,15 @@ int32_t le_engine_export_layer(le_engine* engine, int32_t channel, int32_t lane,
   /* a_live is written in lockstep across lanes, so any lane's copy names the
    * shared live slot; the undo/redo stacks are track-owned slot indices. An
    * ordinal past the image-bearing entries maps to -1. */
-  const int32_t slot =
-      le_layer_slot_for_ordinal(t, ordinal, load_i32(&ln->a_live));
+  int32_t n;
+  const int32_t slot = le_layer_slot_for_ordinal(
+      t, ordinal, load_i32(&ln->a_live), load_i32(&ln->a_len), &n);
   if (slot < 0) return LE_ERR_INVALID;
-  int32_t n = load_i32(&ln->a_len);
-  if (n > max_frames) n = max_frames;
   if (n <= 0) return 0;
   if (ln->pool[slot] == NULL) return 0;
+  /* Never read past the slot: an image shorter than its entry names is torn. */
+  if (ln->pool_cap[slot] < n) return LE_ERR_INVALID;
+  if (n > max_frames) n = max_frames;
   memcpy(out, ln->pool[slot], (size_t)n * sizeof(float));
   return n;
 }

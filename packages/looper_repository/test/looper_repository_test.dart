@@ -1606,6 +1606,38 @@ void main() {
       expect(track.multiple, 2);
       expect(track.isMultiple, isTrue);
       expect(track.lengthFrames, 96000);
+      expect(track.syncDivisor, 0);
+    });
+
+    test('projects a Sync division from the snapshot (#1168)', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        masterLengthFrames: 48000,
+        tracks: [
+          TrackSnapshot(
+            state: TrackState.playing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 12000,
+            undoDepth: 1,
+            rms: 0,
+            peak: 0,
+            syncDivisor: 4,
+          ),
+        ],
+      );
+      final track = buildRepo().state.tracks.first;
+      expect(track.syncDivisor, 4);
+      expect(track.multiple, 1);
     });
 
     test('initial snapshot projects an empty looper', () {
