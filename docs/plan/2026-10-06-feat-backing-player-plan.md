@@ -725,7 +725,7 @@ NON-GOALS:
 VERIFICATION COMMAND: (cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter test) && dart analyze --fatal-infos lib test packages
 ```
 
-### Part 4: `backing_repository`: the asset store and the player (about 620 lines)
+### Part 4: `backing_repository`: the asset store and the player (built: `claude/backing-1200-p4`, about 650 code lines)
 
 Uses #1198 Part 1's `le_digest_file` and `le_fs_sync_dir` (on the trunk)
 through their Dart seam. Files:
@@ -1069,8 +1069,8 @@ the idle-dimming owner lands it must read `BackingPlayerState.playing`.
 
 ## 10. Budget and review ceiling
 
-Estimates: 850, 600 and 840 (Parts 1 to 3, as built; Parts 1 and 3 over the
-700 ceiling, see section 12), then 620, 640, 470, 640, 680, 400.
+Estimates: 850, 600, 840 and 650 (Parts 1 to 4, as built; Parts 1 and 3 over
+the 700 ceiling, see section 12), then 640, 470, 640, 680, 400.
 Stop for review on any change to the output-bus order, a perf-log code, a
 second decoder, a second lease registry or a second selection owner. Each
 part gets independent architecture, test-quality and adversarial review
@@ -1181,9 +1181,52 @@ moment it joins `AudioEngine`. Departures from the first text:
   double dispose, and the `tooLong` mapping.
 
 Verified on the pushed head: `dart analyze --fatal-infos lib test packages`
-clean; `bloc lint` 0 issues; `segno_engine` (404), looper (3416),
-session (189), performance (806) and app (3469) suites pass against a
+clean; `bloc lint` 0 issues; `segno_engine` (404), looper (806),
+session (189), performance (130) and app (3469) suites pass against a
 freshly built test library; formatting unchanged. No native change.
+
+### Part 4 (`claude/backing-1200-p4`, stacked on Part 3)
+
+A new package, `packages/backing_repository`: about 650 lines of Dart code
+(900 with doc comments). Departures from the Part 4 text:
+
+- **`BackingCopier` is `(sourcePath, relativePath)`.** The app wires it to
+  `StorageRepository.copyFile(source, StorageDestination.internal(),
+  relativePath, onConflict: ConflictPolicy.replace)`; the repository does not
+  depend on `storage_repository` (no repository-to-repository import).
+- **The digest and the directory sync are `StorageIo`'s** (#1198 Part 1):
+  `digestFile` in `Isolate.run`, `syncDirectory` after `info.json` is renamed
+  into place and again on the store. Both are injectable for tests.
+- **The repository takes `BackingControl` and `EngineMetering`** (the same
+  engine object in production; the metering role supplies the rate).
+- **Engine tokens are pruned by age, not by what the engine reports.** A
+  load the engine has accepted is applied at its next block, so a read made
+  in between still shows the old token; pruning by the report would lose the
+  new one. The native test proves it (`native_backing_repository_test.dart`,
+  over the pump).
+- **`NOT_READY` is retried once after 25 ms** (about one block), then
+  reported as `busy`; a load whose decode finished after the rate changed is
+  decoded again once (L3); a superseded or cancelled load frees its result.
+- **Refusal reasons:** a decoder `invalid` reads as `unsupported` when the
+  name is not `.wav`/`.mp3`, else `damaged`; an asset with an unreadable
+  `info.json` is listed as `damaged` with a placeholder digest built from its
+  directory id (it can never resolve; import of the same bytes replaces it).
+- **No `listCaptures` exists on the trunk yet** (it is Library Part 7); the
+  test that the store is never taken for a capture is on
+  `PerformanceRepository.findUnfinalized`, the boot salvage scan.
+- **CI:** a `backing-repository` package job (coverage floor 95%; 96.7%
+  measured without the library, 98.8% with it) and the native test in the
+  `fuzz` job, which builds the library.
+
+Verified on the pushed head: `dart analyze --fatal-infos lib test packages`
+clean; `bloc lint` 0 issues; formatting unchanged; `backing_repository`
+(34), `segno_engine` (404), performance (131) and app (3469) suites pass
+against a freshly built test library. No native change.
+- Mutations reverted one at a time, each caught: pruning by report, the
+  retry, Stop cancelling a load, freeing a superseded decode, the settings
+  replay, the reload after a configure, the notice, the re-decode after a
+  rate change, dedupe, the copy-digest check, cleanup on failure, the digest
+  check in `resolve`, and the store sync.
 
 ### Verification (Parts 1 and 2, on their pushed heads)
 
