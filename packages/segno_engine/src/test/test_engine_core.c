@@ -13916,6 +13916,35 @@ static void test_shared_count_in_images_retire_by_member(void) {
   le_engine_destroy(e);
 }
 
+/* A Stop read during the countdown but posted after the commit and its
+ * one-drain grace (the control thread was descheduled in between) must not
+ * finalize the just-launched defining take into a tiny master. */
+static void stop_after_commit_hook(le_engine* e, int stage) {
+  if (stage != 1) return;
+  le_test_stop_record_hook = NULL;
+  tg_advance(e, 16000 + 512); /* 4/4 at 120 BPM, 8 kHz: one bar, then more */
+}
+
+static void test_count_in_stop_landing_after_commit_keeps_take(void) {
+  printf("test_count_in_stop_landing_after_commit_keeps_take\n");
+  le_engine* e = tg_make_engine(8000);
+  CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  le_test_stop_record_hook = stop_after_commit_hook;
+  CHECK(le_engine_stop_record_control(e, 1) == LE_OK);
+  CHECK(le_test_stop_record_hook == NULL); /* the hook really ran */
+  tg_advance(e, 256);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.master_length_frames == 0);
+  le_engine_destroy(e);
+}
+
 static void test_shared_count_in_stop_intents_do_not_acquire(void) {
   printf("test_shared_count_in_stop_intents_do_not_acquire\n");
   le_engine* e = tg_make_engine(8000);
@@ -33160,6 +33189,7 @@ int main(void) {
   test_shared_count_in_metric_capacity_and_grace_stop();
   test_shared_count_in_sections_and_capture_authority();
   test_shared_count_in_images_retire_by_member();
+  test_count_in_stop_landing_after_commit_keeps_take();
   test_shared_count_in_stop_intents_do_not_acquire();
   test_count_in_delays_defining_record();
   test_count_in_record_press_cancels();
