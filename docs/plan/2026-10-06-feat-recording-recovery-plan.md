@@ -278,6 +278,11 @@ same frame:
   (`segno_engine_api.h:670`), so the arm caps the total ring memory at
   64 MiB by lowering `ring_seconds` (never below 2) as the stream count
   grows, and the snapshot reports the seconds actually granted (review L5).
+  As built (Part 2, PR #1245 review L6): a request is 1 to 8 seconds
+  (0 = default 2; outside that the arm is refused), lowered at most six
+  times. Where the floor and the cap disagree the floor wins: 32 stereo
+  inputs at 96 kHz take 33 rings of 2^19 samples, 66 MiB. A request of 1 is
+  kept as asked; only tests use it (Part 3's slow-storage criterion).
 - **Write failure** (ENOSPC from another writer, EIO, EROFS, a pulled
   drive) keeps today's self-stop and `stopped_early: "disk_full"` string
   (`perf_drain.c:1269-1271`), which every existing bundle on disk uses; the
@@ -807,6 +812,27 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
   the parts instead of `master.pcm` only far enough to keep crash salvage
   working (it writes no `master.wav`; Part 8 replaces it).
 
+As built, changes from the text above (PR #1245 and its review):
+
+- `le_perf_target` has no inert fields: `reserve_bytes` arrives with
+  Part 3, `mirror_dir` and `checkpoint_ms` with Part 4, each with the part
+  that uses it (AGENTS.md: no field before its behaviour).
+- A bundle from before this part (`master.pcm` / `input-<n>.pcm`, no
+  `master-001.wav`) is still converted to `master.wav` / `live-input-<n>.wav`
+  at finalize exactly as before (rule 1). One whose raw file is larger than
+  1 GiB is left unfinalized in place, never finalized without audio, for
+  Part 8's bounded conversion (#1078's 38 GB capture among them).
+- The 30-day prune of `recovered/` is removed here rather than in Part 8:
+  without it a legacy take's only audio could age out (owner decision,
+  recovered takes are kept).
+- A sealed part is truncated to its header and data, so a torn tail from a
+  failed write never outlives the seal.
+- **Release order.** Segno Transfer (`apps/segno_transfer`) reads the
+  bundle over SSH with a helper that ships inside the Mac app, so an
+  appliance update cannot fix it. Transfer 0.2.0 lists `master-NNN.wav`
+  parts (and still lists `master.wav`); it must be released before any
+  appliance build that contains this part.
+
 Native tests (in `test_engine_core.c`, beside `test_perf_drain_writes_master_pcm_byte_identical` `:9917`):
 
 ```success-criteria
@@ -1040,9 +1066,9 @@ VERIFICATION COMMAND: (cd packages/session_repository && /Users/Tomas/developmen
 - `unfinishedTakes()` (D9, review M5) replaces the silent boot salvage for
   new takes: Internal bundles without a finalized manifest become held takes
   at start; `.discarding-*` are finished. Bundles already in `recovered/`
-  stay there; the 30-day prune (`:868-899`) is removed (owner decision:
-  recovered takes are kept; the Library's Delete for recordings frees
-  space, Library Part 7, review M9).
+  stay there; the 30-day prune was already removed in Part 2 (owner
+  decision: recovered takes are kept; the Library's Delete for recordings
+  frees space, Library Part 7, review M9).
 - `listCaptures()` (Library Part 7's method, if already merged; otherwise
   added here with Library Part 7's signature) returns duration and `overs`
   from `parts` and includes `recovered/` takes marked `recovered: true` (pen
