@@ -51,6 +51,11 @@ typedef enum le_result {
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
   LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
                               * is unavailable while Reverse is on */
+  /* -10 .. -17 are assigned to other work (the numbering ledger). */
+  LE_ERR_NOT_FOUND = -18,    /* the file (or a directory on its path) does not
+                              * exist (#1198) */
+  LE_ERR_TRUNCATED = -19,    /* the file exists but is shorter than the range
+                              * it must hold (#1198) */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -3044,11 +3049,29 @@ LE_EXPORT int32_t le_digest_bytes(const void* data, uint64_t length,
  * byte `offset`; `length` = UINT64_MAX means through the end of the file.
  * Reads in 64 KiB chunks, so a multi-gigabyte recording costs no memory.
  * Returns LE_OK; LE_ERR_INVALID for a NULL or empty `path` or NULL `out`;
- * LE_ERR_DEVICE when the file cannot be opened, is not a regular file, is
- * shorter than `offset` + `length` (a damaged file never yields a digest of
- * what happens to be left), or a read fails. */
+ * LE_ERR_NOT_FOUND when nothing exists at `path`; LE_ERR_TRUNCATED when the
+ * file is shorter than `offset` + `length` (a damaged file never yields a
+ * digest of what happens to be left); LE_ERR_DEVICE when it cannot be opened
+ * for another reason, is not a regular file, or a read fails. The codes tell
+ * a missing recording from a damaged one without a separate stat that the
+ * file could change under. */
 LE_EXPORT int32_t le_digest_file(const char* path, uint64_t offset,
                                  uint64_t length, uint8_t* out);
+
+/* Incremental SHA-256 over memory the caller feeds in pieces, so a large
+ * buffer in another language's heap is hashed through a small native window
+ * instead of being copied whole. `state` is caller-owned, at least
+ * LE_DIGEST_STATE_BYTES long and 8-byte aligned; begin initialises it,
+ * update adds `length` bytes, end writes the 32-byte digest to `out` (the
+ * state must be begun again before reuse). Each returns LE_OK, or
+ * LE_ERR_INVALID for a NULL state or out, a `state_bytes` below
+ * LE_DIGEST_STATE_BYTES, NULL `data` with a non-zero length, or a length this
+ * platform cannot address. */
+#define LE_DIGEST_STATE_BYTES 128
+LE_EXPORT int32_t le_digest_begin(void* state, uint64_t state_bytes);
+LE_EXPORT int32_t le_digest_update(void* state, const void* data,
+                                   uint64_t length);
+LE_EXPORT int32_t le_digest_end(void* state, uint8_t* out);
 
 /* Makes the directory entries of `path` durable: open + fsync on POSIX, which
  * is what makes a rename into that directory survive a power cut (fsync on
