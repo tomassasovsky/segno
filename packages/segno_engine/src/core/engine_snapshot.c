@@ -462,8 +462,10 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     out->output_mono[k] = load_i32(&engine->outputs[k].a_mono);
     out->output_balance[k] = load_f32(&engine->outputs[k].a_balance_bits);
   }
-  out->speed_numer = load_i32(&engine->a_speed_numer); /* #1179 */
-  out->speed_denom = load_i32(&engine->a_speed_denom);
+  /* #1179: one load, so the pair is always one factor the callback set. */
+  const int32_t speed = load_i32(&engine->a_speed_ratio);
+  out->speed_numer = le_speed_numer_of(speed);
+  out->speed_denom = le_speed_denom_of(speed);
   out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);
   const int perf_armed =

@@ -154,8 +154,8 @@ static inline int le_effective_speed_one(le_engine* e) {
       atomic_load_explicit(&e->a_speed_applied, memory_order_acquire)) {
     return e->speed_pending_one;
   }
-  return atomic_load_explicit(&e->a_speed_numer, memory_order_acquire) ==
-         atomic_load_explicit(&e->a_speed_denom, memory_order_acquire);
+  return atomic_load_explicit(&e->a_speed_ratio, memory_order_acquire) ==
+         le_speed_pack(1, 1);
 }
 
 /* Publishes pool slot [slot] as every active lane's live buffer AND bumps the
