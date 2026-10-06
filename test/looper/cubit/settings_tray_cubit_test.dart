@@ -1,8 +1,7 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:segno/audio_setup/audio_tab.dart';
+import 'package:segno/control/control_tab.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/network/network_tab.dart';
 
 void main() {
   SettingsTrayCubit buildCubit() => SettingsTrayCubit();
@@ -21,24 +20,6 @@ void main() {
         const SettingsTrayState(),
         const SettingsTrayState(dragProgress: 1),
         const SettingsTrayState(),
-      ],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'openAudioDevice opens at Audio on the Device tab — the device-lost '
-      'banner action (#453)',
-      build: buildCubit,
-      // Park Audio on a different tab first: the banner's whole point is the
-      // picker, so the action must move the tab, not land on a leftover.
-      act: (cubit) => cubit
-        ..showAudioTab(AudioTab.recording)
-        ..openAudioDevice(),
-      expect: () => [
-        const SettingsTrayState(audioTab: AudioTab.recording),
-        const SettingsTrayState(
-          dragProgress: 1,
-          destination: SettingsTrayDestination.audio,
-        ),
       ],
     );
 
@@ -63,23 +44,18 @@ void main() {
       build: buildCubit,
       act: (cubit) => cubit
         ..open()
-        ..showDestination(SettingsTrayDestination.network)
-        ..showNetworkTab(NetworkTab.bluetooth)
+        ..showDestination(SettingsTrayDestination.control)
+        ..showControlTab(ControlTab.controllers)
         ..closeTray(),
       expect: () => [
         const SettingsTrayState(dragProgress: 1),
         const SettingsTrayState(
           dragProgress: 1,
-          destination: SettingsTrayDestination.network,
-        ),
-        const SettingsTrayState(
-          dragProgress: 1,
-          destination: SettingsTrayDestination.network,
-          networkTab: NetworkTab.bluetooth,
+          controlTab: ControlTab.controllers,
         ),
         // Closing puts the destination back to the landing face and leaves
-        // the tab where it was: reopening Network lands on Bluetooth.
-        const SettingsTrayState(networkTab: NetworkTab.bluetooth),
+        // the tab where it was: reopening Control lands on Controllers.
+        const SettingsTrayState(controlTab: ControlTab.controllers),
       ],
     );
 
@@ -115,15 +91,15 @@ void main() {
     );
 
     blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'showNetworkTab moves the tab and does NOT touch the destination — the '
-      'strip is only reachable while Network is already showing',
+      'showControlTab moves the tab and does NOT touch the destination — the '
+      'strip is only reachable while Control is already showing',
       build: buildCubit,
       seed: () => const SettingsTrayState(dragProgress: 1),
-      act: (cubit) => cubit.showNetworkTab(NetworkTab.bluetooth),
+      act: (cubit) => cubit.showControlTab(ControlTab.controllers),
       expect: () => [
         const SettingsTrayState(
           dragProgress: 1,
-          networkTab: NetworkTab.bluetooth,
+          controlTab: ControlTab.controllers,
         ),
       ],
     );

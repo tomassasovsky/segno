@@ -13,7 +13,7 @@
 #
 # It lives on /data, not in /etc, because a RAUC A/B update replaces the whole
 # rootfs — a matrix written into /etc is silently lost on the next OTA. Same
-# reason as segno-nm-persist / segno-bt-persist / segno-ssh-persist.
+# reason as segno-nm-persist / segno-ssh-persist.
 #
 # Weston does the measuring: weston-touch-calibrator draws the crosshairs and
 # computes the matrix, then calls the `calibration_helper` from weston.ini

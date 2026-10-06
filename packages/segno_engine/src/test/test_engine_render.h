@@ -4,6 +4,7 @@
  * the source indices it came from. The engine runs two outputs, so a live
  * output pair is directly comparable with the rendered pair. */
 #include "engine_render.h" /* le_render_worker_choice, LE_RENDER_MAX_YIELDS */
+#include "engine_wav.h"    /* le_wav_flush, le_wav_patch_sizes */
 
 #define RR_SR 48000
 
@@ -451,10 +452,18 @@ static void test_render_refusals(void) {
   CHECK(le_engine_render_begin(e, &q, &other) == LE_OK);
   CHECK(le_engine_render_poll(e, id, NULL, NULL, NULL) == LE_ERR_INVALID);
   CHECK(le_engine_render_cancel(e, other) == LE_OK);
-  /* Over the cache's byte cap. */
+  /* Over the recipe's own budget: 256 bars at 30 BPM in memory is
+   * 98,304,000 stereo frames (786 MB). The wet cache's cap plays no part. */
+  CHECK(le_engine_set_tempo(e, 30.0f) == LE_OK);
+  drain(e);
+  le_render_request huge = rr_request(0x3, LE_RENDER_CUT);
+  huge.length_bars = 256;
+  le_render_plan big;
+  CHECK(le_engine_render_measure(e, &huge, &big) == LE_OK);
+  CHECK(le_engine_render_begin(e, &huge, &id) == LE_ERR_CAPACITY);
   CHECK(le_engine_set_fx_cache_cap(e, 64) == LE_OK);
-  CHECK(le_engine_render_begin(e, &q, &id) == LE_ERR_CAPACITY);
-  CHECK(le_engine_set_fx_cache_cap(e, LE_CACHE_DEFAULT_CAP_BYTES) == LE_OK);
+  CHECK(le_engine_render_begin(e, &q, &other) == LE_OK);
+  CHECK(le_engine_render_cancel(e, other) == LE_OK);
   /* Without the render worker. */
   struct le_fx_cache* cache = e->cache;
   e->cache = NULL;
@@ -574,6 +583,46 @@ static void test_render_file_target_wav(void) {
   le_engine_destroy(e);
 }
 
+/* A finished job holds only its result (review M1): a DONE memory job its
+ * stereo output, a DONE file job nothing. */
+static int64_t rr_settled_bytes(le_engine* e, int64_t want) {
+  for (int k = 0; k < 2000 && le_render_held_bytes(e) != want; ++k) {
+    le_render_tick(e);
+    test_sleep_ms(1);
+  }
+  return le_render_held_bytes(e);
+}
+
+static void test_render_done_releases_bytes(void) {
+  printf("test_render_done_releases_bytes\n");
+  le_engine* e = rr_fixture();
+  le_render_request q = rr_request(0x3, LE_RENDER_CUT);
+  uint32_t id = 0;
+  int32_t result = LE_OK;
+  CHECK(le_engine_render_begin(e, &q, &id) == LE_OK);
+  CHECK(le_render_held_bytes(e) > 2 * 48 * (int64_t)sizeof(float));
+  drain(e);
+  CHECK(rr_wait(e, id, &result) == LE_RENDER_DONE);
+  CHECK(rr_settled_bytes(e, 2 * 48 * (int64_t)sizeof(float)) ==
+        2 * 48 * (int64_t)sizeof(float));
+  float out[2 * 48];
+  CHECK(le_engine_render_copy(e, id, out, 48) == 48);
+  CHECK(out[0] == rr_a(0) + rr_b(0));
+  CHECK(le_engine_render_cancel(e, id) == LE_OK);
+  char path[512];
+  snprintf(path, sizeof(path), "%s/rr_release_%d.wav", rr_tmp(),
+           (int)test_getpid());
+  q.target = LE_RENDER_TARGET_FILE;
+  q.path = path;
+  CHECK(le_engine_render_begin(e, &q, &id) == LE_OK);
+  drain(e);
+  CHECK(rr_wait(e, id, &result) == LE_RENDER_DONE);
+  CHECK(rr_settled_bytes(e, 0) == 0);
+  CHECK(le_engine_render_cancel(e, id) == LE_OK);
+  remove(path);
+  le_engine_destroy(e);
+}
+
 static void test_render_plugin_mask(void) {
   printf("test_render_plugin_mask\n");
   le_engine* e = rr_fixture();
@@ -589,6 +638,348 @@ static void test_render_plugin_mask(void) {
   e->tracks[1].lanes[0].a_fx_count = 0;
   e->tracks[1].lanes[0].a_fx_type[0] = LE_FX_NONE;
   le_engine_destroy(e);
+}
+
+/* A reversed source with a Pre delay renders what the live rig plays: the
+ * live chain runs forward over the backward read (a print never engages on a
+ * reversed track), so the echo follows each note (review H1). */
+static void test_render_reversed_pre_live_parity(void) {
+  printf("test_render_reversed_pre_live_parity\n");
+  le_engine* e = rr_engine();
+  static float pcm[6000];
+  memset(pcm, 0, sizeof(pcm));
+  pcm[5000] = 1.0f;
+  CHECK(le_engine_import_track(e, 0, pcm, 6000) == LE_OK);
+  CHECK(le_engine_commit_session(e, 6000, 0) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 1) == LE_OK); /* Pre */
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0,
+                                    2400.0f / (float)(RR_SR - 1)) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.0f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 0.25f) == LE_OK);
+  drain(e);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  uint64_t rq;
+  CHECK(le_engine_toggle_reverse(e, 0, &rq) == LE_OK);
+  rr_pump(e, NULL, 6000 * 4 + 1234, 64); /* past the turn, to steady state */
+  le_render_request q = rr_request(0x1, LE_RENDER_CUT);
+  uint32_t id = 0;
+  CHECK(le_engine_render_begin(e, &q, &id) == LE_OK);
+  static float live[2 * 6000];
+  rr_pump(e, live, 6000, 64); /* the first block applies the freeze */
+  int32_t result;
+  CHECK(rr_wait(e, id, &result) == LE_RENDER_DONE);
+  static float out[2 * 6000];
+  CHECK(le_engine_render_copy(e, id, out, 6000) == 6000);
+  const int top = (6000 * 4 + 1234) % 6000;
+  for (int m = 0; m < 6000; ++m) {
+    CHECK(fabsf(live[2 * m] - out[2 * ((top + m) % 6000)]) < 1e-6f);
+  }
+  /* The echo comes after its impulse in the read order: with the read
+   * running backward from the impulse at index 5000, the echo lands 2,400
+   * read frames later. */
+  int impulse = -1;
+  for (int f = 0; f < 6000; ++f) {
+    if (out[2 * f] > 0.5f) impulse = f; /* dry 0.75; the echo is 0.25 */
+  }
+  CHECK(impulse >= 0);
+  float after = 0.0f;
+  for (int k = 2350; k < 2450; ++k) after += fabsf(out[2 * ((impulse + k) % 6000)]);
+  CHECK(after > 0.1f);
+  le_engine_destroy(e);
+}
+
+/* Once on a chosen length (review M3): one pass from its start, then
+ * silence, whatever the window. A pass crossing the window end continues at
+ * the window start from its own phase; a window shorter than the span holds
+ * one pass cut at the window end. */
+static void rr_once_fixture(le_engine** pe, int32_t base, int32_t span,
+                            float* a) {
+  le_engine* e = rr_engine();
+  float* zeros = (float*)calloc((size_t)base, sizeof(float));
+  for (int32_t i = 0; i < span; ++i) a[i] = (float)(i + 1);
+  CHECK(le_engine_import_track(e, 0, zeros, base) == LE_OK);
+  CHECK(le_engine_import_track(e, 1, a, span) == LE_OK);
+  CHECK(le_engine_commit_session(e, base, 0) == LE_OK);
+  CHECK(le_engine_set_one_shot_mask(e, 1u << 1, 1) == LE_OK);
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK); /* 1 bar = 38,400 frames */
+  drain(e);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  rr_pump(e, NULL, base + 7, 512); /* into iteration 1: track 1 at segment 1 */
+  free(zeros);
+  *pe = e;
+}
+
+static void test_render_once_chosen_length(void) {
+  printf("test_render_once_chosen_length\n");
+  static float a[60000];
+  static float out[2 * 38400];
+  /* Span 30,000 (k = 2 over 15,000) at segment 1: its pass starts 15,000
+   * frames into the 38,400-frame window and wraps 6,600 frames. */
+  le_engine* e;
+  rr_once_fixture(&e, 15000, 30000, a);
+  le_render_request q = rr_request(0x2, LE_RENDER_CUT);
+  q.length_bars = 1;
+  CHECK(rr_render(e, &q, out, 38400) == 38400);
+  for (int f = 0; f < 38400; ++f) {
+    const float want = f >= 15000 ? a[f - 15000]
+                       : f < 6600 ? a[f + 23400]
+                                  : 0.0f;
+    CHECK(out[2 * f] == want);
+  }
+  le_engine_destroy(e);
+  /* Span 60,000 (k = 2 over 30,000) at segment 1: the pass starts 30,000
+   * frames in and the window ends 8,400 frames later. */
+  rr_once_fixture(&e, 30000, 60000, a);
+  CHECK(rr_render(e, &q, out, 38400) == 38400);
+  for (int f = 0; f < 38400; ++f) {
+    CHECK(out[2 * f] == (f >= 30000 ? a[f - 30000] : 0.0f));
+  }
+  le_engine_destroy(e);
+}
+
+/* The whole-track print path: every part wholly Pre and a track Pre delay,
+ * so the track's take is its print over the parts at their levels and pans
+ * (review M4). The oracle prints the same material with the cache's own
+ * function; Cut keeps the wrapped echo because it is the take. */
+static void test_render_whole_track_print(void) {
+  printf("test_render_whole_track_print\n");
+  le_engine* e = rr_engine();
+  static float pcm[6000];
+  memset(pcm, 0, sizeof(pcm));
+  pcm[5000] = 1.0f;
+  CHECK(le_engine_import_track(e, 0, pcm, 6000) == LE_OK);
+  CHECK(le_engine_commit_session(e, 6000, 0) == LE_OK);
+  CHECK(le_engine_set_lane_pan(e, 0, 0, 0.5f) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 1) == LE_OK); /* track Pre */
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 0,
+                                     2400.0f / (float)(RR_SR - 1)) == LE_OK);
+  drain(e);
+  static float out[2 * 6000];
+  le_render_request q = rr_request(0x1, LE_RENDER_CUT);
+  CHECK(rr_render(e, &q, out, 6000) == 6000);
+  float gl, gr;
+  le_pan_gains(0.5f, &gl, &gr);
+  static float src[2 * 6000], print[2 * 6000];
+  for (int f = 0; f < 6000; ++f) {
+    src[2 * f] = pcm[f] * gl;
+    src[2 * f + 1] = pcm[f] * gr;
+  }
+  le_fx_frozen_chain chain;
+  LE_FX_FROZEN_CAPTURE(&chain, &e->tracks[0].bus);
+  CHECK(le_fx_print(&chain, chain.pre, src, 1, 1.0f, 6000, RR_SR,
+                    e->fx_delay_frames, print, NULL, NULL) == LE_OK);
+  CHECK(memcmp(out, print, sizeof(print)) == 0);
+  le_engine_destroy(e);
+}
+
+/* A live track chain (Post) with track gain 0.5 inside it: the live pair
+ * from the loop top equals the Cut render sample for sample (review M4). */
+static void test_render_track_post_gain_live_parity(void) {
+  printf("test_render_track_post_gain_live_parity\n");
+  le_engine* e = rr_engine();
+  static float pcm[4000];
+  for (int i = 0; i < 4000; ++i) pcm[i] = (float)((i * 5) % 11) / 11.0f - 0.4f;
+  CHECK(le_engine_import_track(e, 0, pcm, 4000) == LE_OK);
+  CHECK(le_engine_commit_session(e, 4000, 0) == LE_OK);
+  CHECK(le_engine_set_track_fx_count(e, 0, 1, 0) == LE_OK); /* track Post */
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 0,
+                                     300.0f / (float)(RR_SR - 1)) == LE_OK);
+  le_mix_settings gain;
+  memset(&gain, 0, sizeof(gain));
+  gain.revision = 1;
+  gain.track_gain_mask = 1u;
+  gain.track_gain[0] = 0.5f;
+  CHECK(le_engine_set_mix(e, &gain) == LE_OK);
+  drain(e);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  static float live[2 * 3000];
+  rr_pump(e, live, 3000, 64);
+  le_render_request q = rr_request(0x1, LE_RENDER_CUT);
+  static float out[2 * 4000];
+  CHECK(rr_render(e, &q, out, 4000) == 4000);
+  for (int f = 0; f < 3000; ++f) {
+    CHECK(live[2 * f] == out[2 * f]);
+    CHECK(live[2 * f + 1] == out[2 * f + 1]);
+  }
+  le_engine_destroy(e);
+}
+
+/* The freeze and the staging both refuse material that moved: a length that
+ * changed before the freeze landed, and a source whose revision moved after
+ * its last chunk was copied (review M4). */
+static void test_render_freeze_and_completion_checks(void) {
+  printf("test_render_freeze_and_completion_checks\n");
+  le_engine* e = rr_fixture();
+  le_render_request q = rr_request(0x3, LE_RENDER_CUT);
+  uint32_t id = 0;
+  CHECK(le_engine_render_begin(e, &q, &id) == LE_OK);
+  /* An edit that lands before the freeze changes the span (a length edit,
+   * #1168): stood in for by publishing another length. */
+  store_i32(&e->tracks[0].lanes[0].a_len, 8);
+  drain(e);
+  int32_t result = LE_OK;
+  CHECK(rr_wait(e, id, &result) == LE_RENDER_FAILED);
+  CHECK(result == LE_ERR_TRACKS_CHANGED);
+  store_i32(&e->tracks[0].lanes[0].a_len, 16);
+  CHECK(le_engine_render_cancel(e, id) == LE_OK);
+  /* Staging: track 0 is copied by the first heartbeat, track 1 by the
+   * second; a revision bump on track 0 after that is caught at completion. */
+  CHECK(le_engine_render_begin(e, &q, &id) == LE_OK);
+  drain(e);
+  int32_t state = LE_RENDER_NONE;
+  CHECK(le_engine_render_poll(e, id, &state, NULL, NULL) == LE_OK);
+  CHECK(le_engine_render_poll(e, id, &state, NULL, NULL) == LE_OK);
+  CHECK(state == LE_RENDER_STAGING);
+  atomic_fetch_add(&e->tracks[0].a_audio_rev, 1u);
+  CHECK(rr_wait(e, id, &result) == LE_RENDER_FAILED);
+  CHECK(result == LE_ERR_TRACKS_CHANGED);
+  le_engine_destroy(e);
+}
+
+/* Starting a render never unpublishes a print a playing lane plays (review
+ * M1): the recipe has its own budget, even with the cache at its cap. */
+static void test_render_keeps_published_prints(void) {
+  printf("test_render_keeps_published_prints\n");
+  le_engine* e = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(e, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 1) == LE_OK); /* Pre */
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  drain(e);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(e, 0, 0, &info); /* registers the key */
+  pump_frames(e, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(e, 0, 0, LE_CACHE_CACHED, 3000));
+  pump_frames(e, 0.0f, CACHE_LOOP); /* engages at the next loop top */
+  CHECK(cache_engaged(e, 0, 0) == 1);
+  /* The cache holds exactly what it uses: no room left. */
+  CHECK(le_engine_set_fx_cache_cap(e, le_engine_fx_cache_used_bytes(e)) ==
+        LE_OK);
+  le_render_request q = rr_request(0x1, LE_RENDER_CUT);
+  uint32_t id = 0;
+  CHECK(le_engine_render_begin(e, &q, &id) == LE_OK);
+  CHECK(atomic_load(&e->tracks[0].lanes[0].a_wet) != NULL);
+  pump_frames(e, 0.0f, 64);
+  int32_t result;
+  CHECK(rr_wait(e, id, &result) == LE_RENDER_DONE);
+  CHECK(atomic_load(&e->tracks[0].lanes[0].a_wet) != NULL);
+  CHECK(cache_engaged(e, 0, 0) == 1);
+  le_engine_destroy(e);
+}
+
+/* A configure during a recipe's lane print returns without waiting for the
+ * print (review M2): the print's abort check reads the cache's shutdown flag.
+ * The undisturbed render's time is dominated by one 30 s Pre reverb print,
+ * so a configure that waited for it would take most of that time. */
+static void test_render_configure_mid_print(void) {
+  printf("test_render_configure_mid_print\n");
+  le_engine* e = rr_engine();
+  const int32_t len = 30 * RR_SR;
+  float* pcm = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(pcm != NULL);
+  if (pcm == NULL) return;
+  for (int32_t i = 0; i < len; i += RR_SR / 4) pcm[i] = 0.5f;
+  CHECK(le_engine_import_track(e, 0, pcm, len) == LE_OK);
+  free(pcm);
+  CHECK(le_engine_commit_session(e, len, 0) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 1) == LE_OK); /* Pre */
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_REVERB) == LE_OK);
+  drain(e);
+  le_render_request q = rr_request(0x1, LE_RENDER_CUT);
+  uint32_t id = 0;
+  int32_t state = LE_RENDER_NONE;
+  int32_t result = LE_OK;
+  /* The whole render, undisturbed. */
+  CHECK(le_engine_render_begin(e, &q, &id) == LE_OK);
+  drain(e);
+  for (int k = 0; k < 20000 && state < LE_RENDER_RENDERING; ++k) {
+    CHECK(le_engine_render_poll(e, id, &state, NULL, NULL) == LE_OK);
+  }
+  const uint64_t t0 = le_now_ns();
+  CHECK(rr_wait(e, id, &result) == LE_RENDER_DONE);
+  const uint64_t whole = le_now_ns() - t0;
+  CHECK(le_engine_render_cancel(e, id) == LE_OK);
+  /* The same render, interrupted a quarter of the way through its print. */
+  CHECK(le_engine_render_begin(e, &q, &id) == LE_OK);
+  drain(e);
+  state = LE_RENDER_NONE;
+  for (int k = 0; k < 20000 && state < LE_RENDER_RENDERING; ++k) {
+    CHECK(le_engine_render_poll(e, id, &state, NULL, NULL) == LE_OK);
+  }
+  test_sleep_ms((int)(whole / 4000000u));
+  const uint64_t t1 = le_now_ns();
+  CHECK(le_engine_configure(e, RR_SR, 1, 2, 0) == LE_OK);
+  const uint64_t configure = le_now_ns() - t1;
+  CHECK(configure * 2 < whole);
+  CHECK(le_engine_render_poll(e, id, &state, NULL, &result) == LE_OK);
+  CHECK(state == LE_RENDER_FAILED && result == LE_ERR_DEVICE);
+  le_engine_destroy(e);
+}
+
+/* The writer's flush and size patch, as the capture drain and its recovery
+ * use them (review L4): a flushed but unsealed file with a torn last frame
+ * is repaired to its whole frames, then cut back to a trusted length. */
+static void test_wav_flush_and_patch_sizes(void) {
+  printf("test_wav_flush_and_patch_sizes\n");
+  char path[512];
+  snprintf(path, sizeof(path), "%s/rr_patch_%d.wav", rr_tmp(),
+           (int)test_getpid());
+  const unsigned char chunk[4] = {1, 2, 3, 4};
+  le_wav_writer w;
+  CHECK(le_wav_open(&w, path, 48000, 2, "sgno", chunk, 3) == 0); /* odd */
+  le_wav_abandon(&w);
+  CHECK(le_wav_open(&w, path, 48000, 2, "sgno", chunk, 4) == 1);
+  const uint32_t header = 44 + 12; /* fmt, data and the 12-byte sgno chunk */
+  CHECK(w.header_bytes == header);
+  float pcm[20];
+  for (int i = 0; i < 20; ++i) pcm[i] = (float)(i + 1);
+  CHECK(le_wav_append(&w, pcm, 10) == 1);
+  CHECK(le_wav_flush(&w) == 1);
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  fseek(f, 0, SEEK_END);
+  CHECK(ftell(f) == (long)(header + 80)); /* every sample reached the OS */
+  fclose(f);
+  le_wav_abandon(&w); /* a crash: the sizes were never patched */
+  f = fopen(path, "ab");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  fwrite(pcm, 1, 3, f); /* a torn last frame */
+  fclose(f);
+  uint64_t kept = 0;
+  CHECK(le_wav_patch_sizes(path, UINT64_MAX, &kept) == 1 && kept == 10);
+  unsigned char bytes[56 + 80 + 8];
+  f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  size_t n = fread(bytes, 1, sizeof(bytes), f);
+  fclose(f);
+  CHECK(n == header + 80);
+  CHECK(bytes[4] == (unsigned char)(header + 80 - 8) && bytes[5] == 0);
+  CHECK(bytes[header - 4] == 80 && bytes[header - 3] == 0);
+  CHECK(memcmp(bytes + header, pcm, 80) == 0);
+  /* Cut back to a checkpoint of four frames. */
+  CHECK(le_wav_patch_sizes(path, 4, &kept) == 1 && kept == 4);
+  f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  n = fread(bytes, 1, sizeof(bytes), f);
+  fclose(f);
+  CHECK(n == header + 32);
+  CHECK(bytes[4] == (unsigned char)(header + 32 - 8));
+  CHECK(bytes[header - 4] == 32);
+  CHECK(memcmp(bytes + header, pcm, 32) == 0);
+  /* Not this layout: refused, untouched. */
+  f = fopen(path, "wb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  fwrite("not a wav file at all", 1, 21, f);
+  fclose(f);
+  CHECK(le_wav_patch_sizes(path, UINT64_MAX, &kept) == 0 && kept == 0);
+  remove(path);
 }
 
 static void test_render_worker_choice(void) {
@@ -624,4 +1015,13 @@ static void run_render_tests(void) {
   test_render_file_target_wav();
   test_render_plugin_mask();
   test_render_worker_choice();
+  test_render_reversed_pre_live_parity();
+  test_render_once_chosen_length();
+  test_render_whole_track_print();
+  test_render_track_post_gain_live_parity();
+  test_render_freeze_and_completion_checks();
+  test_render_keeps_published_prints();
+  test_render_configure_mid_print();
+  test_render_done_releases_bytes();
+  test_wav_flush_and_patch_sizes();
 }

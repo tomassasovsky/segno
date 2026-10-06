@@ -25,8 +25,19 @@ typedef struct le_render_job le_render_job;
  * the recipe's next slice goes first (aging). */
 #define LE_RENDER_MAX_YIELDS 8
 
+/* The most a render job may hold at once: staged sources, prints, effect
+ * states and its output (a file job holds one slice of output). The recipe's
+ * own budget, apart from the wet cache's (plan 4.7): eight stereo 30 s tracks
+ * at 96 kHz stage about 176 MiB of dry audio, and a Bounce's 30 s stereo
+ * result is about 22 MiB more. Memory is held only while a job runs. */
+#define LE_RENDER_BUDGET_BYTES (256ll * 1024 * 1024)
+
 /* Frames of one source lane the control thread stages per heartbeat. */
 #define LE_RENDER_COPY_CHUNK_FRAMES 48000
+
+/* Control thread: the bytes the current job holds (0 without one). A
+ * finished job holds only a memory result. */
+int64_t le_render_held_bytes(le_engine* engine);
 
 /* Control thread, from the cache tick: advances freezing and staging, and
  * collects the worker's outcome. */

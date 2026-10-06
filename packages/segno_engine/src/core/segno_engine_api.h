@@ -51,11 +51,16 @@ typedef enum le_result {
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
   LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
                               * is unavailable while Reverse is on */
+  /* -10 .. -15 are assigned to other work (the numbering ledger). */
   LE_ERR_NO_COMMON_CYCLE = -16, /* render recipe (#1202): the selected tracks'
                                  * lengths share no common cycle within the
                                  * cap; a chosen length is required */
   LE_ERR_TRACKS_CHANGED = -17,  /* render recipe (#1202): a source's material
                                  * changed after the render froze it */
+  LE_ERR_NOT_FOUND = -18,    /* the file (or a directory on its path) does not
+                              * exist (#1198) */
+  LE_ERR_TRUNCATED = -19,    /* the file exists but is shorter than the range
+                              * it must hold (#1198) */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -3056,11 +3061,31 @@ LE_EXPORT int32_t le_digest_bytes(const void* data, uint64_t length,
  * byte `offset`; `length` = UINT64_MAX means through the end of the file.
  * Reads in 64 KiB chunks, so a multi-gigabyte recording costs no memory.
  * Returns LE_OK; LE_ERR_INVALID for a NULL or empty `path` or NULL `out`;
- * LE_ERR_DEVICE when the file cannot be opened, is not a regular file, is
- * shorter than `offset` + `length` (a damaged file never yields a digest of
- * what happens to be left), or a read fails. */
+ * LE_ERR_NOT_FOUND when nothing exists at `path`; LE_ERR_TRUNCATED when the
+ * file is shorter than `offset` + `length` (a damaged file never yields a
+ * digest of what happens to be left); LE_ERR_DEVICE when it cannot be opened
+ * for another reason, is not a regular file, or a read fails. The codes tell
+ * a missing recording from a damaged one without a separate stat that the
+ * file could change under. */
 LE_EXPORT int32_t le_digest_file(const char* path, uint64_t offset,
                                  uint64_t length, uint8_t* out);
+
+/* Incremental SHA-256 over memory the caller feeds in pieces, so a large
+ * buffer in another language's heap is hashed through a small native window
+ * instead of being copied whole. `state` is caller-owned, at least
+ * LE_DIGEST_STATE_BYTES long and 8-byte aligned; begin initialises it,
+ * update adds `length` bytes, end writes the 32-byte digest to `out` (the
+ * state must be begun again before reuse). Each returns LE_OK, or
+ * LE_ERR_INVALID for a NULL state or out, a `state_bytes` below
+ * LE_DIGEST_STATE_BYTES, NULL `data` with a non-zero length, or a length this
+ * platform cannot address. */
+/* Keep this a plain number: ffigen only exports a macro that is a literal,
+ * and the Dart side sizes its state buffer from the generated constant. */
+#define LE_DIGEST_STATE_BYTES 128
+LE_EXPORT int32_t le_digest_begin(void* state, uint64_t state_bytes);
+LE_EXPORT int32_t le_digest_update(void* state, const void* data,
+                                   uint64_t length);
+LE_EXPORT int32_t le_digest_end(void* state, uint8_t* out);
 
 /* Makes the directory entries of `path` durable: open + fsync on POSIX, which
  * is what makes a rename into that directory survive a power cut (fsync on
@@ -3508,9 +3533,9 @@ typedef struct le_render_plan {
 /* Admission only: the verdict and the plan, with no job. Returns LE_OK,
  * LE_ERR_NO_COMMON_CYCLE, LE_ERR_CAPACITY (over max_frames), LE_ERR_INVALID
  * (no sources, an empty source, a chosen length without a tempo, a file
- * target without a path), LE_ERR_NOT_READY (a source is recording,
- * overdubbing, has a layer in flight or an unacknowledged state command) or
- * LE_ERR_NOT_RUNNING. */
+ * target without a path), LE_ERR_NOT_READY (a source is recording or
+ * overdubbing, counting a posted command that will make it so, or has a
+ * layer in flight) or LE_ERR_NOT_RUNNING. */
 LE_EXPORT int32_t le_engine_render_measure(le_engine* engine,
                                            const le_render_request* request,
                                            le_render_plan* plan);
@@ -3527,7 +3552,8 @@ LE_EXPORT int32_t le_engine_render_begin(le_engine* engine,
 /* Progress of job `job`: *state (le_render_state), *permille (0..1000) and,
  * once FAILED, *result (LE_ERR_TRACKS_CHANGED, LE_ERR_CAPACITY,
  * LE_ERR_INVALID on an effect allocation failure, LE_ERR_DEVICE on a write
- * failure or a configure/stop that joined the worker). Also the staging
+ * failure or a configure/stop that joined the worker; a file whose
+ * directory sync alone failed is published and reads DONE). Also the staging
  * heartbeat: call it from the control thread until DONE or FAILED. Returns
  * LE_OK, or LE_ERR_INVALID for an unknown job. */
 LE_EXPORT int32_t le_engine_render_poll(le_engine* engine, uint32_t job,
