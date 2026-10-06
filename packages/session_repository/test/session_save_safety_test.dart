@@ -20,6 +20,7 @@ void main() {
   });
   tearDown(() {
     SessionRepository.debugOnSaveWrite = null;
+    SessionRepository.debugOnDirectorySync = null;
     root.deleteSync(recursive: true);
   });
 
@@ -150,6 +151,27 @@ void main() {
     // A file a save does not write itself is carried through.
     expect(File('${bundle()}/notes.txt').readAsStringSync(), 'kept');
   });
+
+  test(
+    'the swap is made durable before the previous save is retired',
+    () async {
+      await savedOldThenEdited();
+      final seen = <String>[];
+      SessionRepository.debugOnDirectorySync = (path) =>
+          seen.add('$path: ${rootEntries().join(', ')}');
+
+      await repo().save(
+        bundle(),
+        settings: const SessionSettings(),
+        name: 'New',
+      );
+
+      // The fsync of the root ran with the new bundle in place and the
+      // previous one still beside it: retiring it comes after.
+      expect(seen, ['${root.path}: s-a, s-a.old']);
+      expect(rootEntries(), ['s-a']);
+    },
+  );
 
   test('a catalog read during a write-back leaves its stage alone', () async {
     await savedOldThenEdited();
