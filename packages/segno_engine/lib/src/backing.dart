@@ -347,15 +347,17 @@ class DecodedAudio {
   }
 }
 
-/// The app's one audio-file decoder (#1200 Part 2): WAV and MP3, at any rate
-/// from 8 to 384 kHz, converted to the engine rate.
+/// The app's one reader of audio samples (#1200 Part 2): WAV (16/24/32-bit
+/// PCM or 32-bit float) and MP3 (MPEG Layer III), mono or stereo, 8 to
+/// 192 kHz, converted to the engine rate.
 ///
 /// Engine-free, so a repository can hold one beside its `AudioEngine`. Every
 /// decode runs off the calling isolate. Refusals throw an [EngineException]
-/// whose result says why: [EngineResult.invalid] (missing, unreadable,
-/// unsupported or damaged, or more than two channels), [EngineResult.tooLong]
-/// (over 15 minutes), [EngineResult.capacity] (the memory floor, or an
-/// allocation failure).
+/// whose result says why: [EngineResult.unsupported] (a format, container,
+/// channel count or rate outside the whitelist, checked before any decoder
+/// sees the file), [EngineResult.invalid] (missing, unreadable or damaged,
+/// including a non-finite sample), [EngineResult.tooLong] (over 15 minutes),
+/// [EngineResult.capacity] (the memory floor, or an allocation failure).
 abstract interface class AudioDecoder {
   /// Decodes [path] for an engine running at [sampleRate].
   ///
