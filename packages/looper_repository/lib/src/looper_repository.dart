@@ -4355,7 +4355,6 @@ class LooperRepository {
         final finalized = _engine.finalizeHistory(
           track.channel,
           primary.history,
-          primary.undoCount,
         );
         if (!finalized.isOk) {
           throw StateError(

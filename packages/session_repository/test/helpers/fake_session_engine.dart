@@ -9,9 +9,9 @@ class _FakeLane {
   bool muted = false;
   double pan = 0;
 
-  /// Ordinal-ordered layer buffers (undo… live … redo). Its length matches the
-  /// owning track's `undoDepth + 1 + redoDepth`; a single-layer lane holds just
-  /// the live buffer.
+  /// Ordinal-ordered layer buffers (undo… live … redo). Its length is the
+  /// owning track's image count; a single-layer lane holds just the live
+  /// buffer.
   List<Float32List> layers = [Float32List(0)];
 }
 
@@ -19,16 +19,23 @@ class _FakeTrack {
   TrackState state = TrackState.empty;
   int multiple = 1;
   int lengthFrames = 0;
-  int undoDepth = 0;
+
+  /// The raw undo stack count: the split of [history] and the live ordinal.
+  int undoCount = 0;
   int redoDepth = 0;
 
+  /// The undo depth the snapshot publishes when it differs from [undoCount]
+  /// (the engine reads 0 while a Clear restore is in flight); null publishes
+  /// [undoCount].
+  int? publishedUndoDepth;
+
   /// The track's history entries ([AudioEngine.exportHistory] order); its
-  /// length is `undoDepth + redoDepth`.
+  /// length is `undoCount + redoDepth`.
   List<HistoryEntry> history = const [];
   bool solo = false;
   final List<_FakeLane> lanes = [_FakeLane()];
 
-  int get liveIndex => undoDepth;
+  int get liveIndex => undoCount;
 
   // Lane-0 conveniences (the single-lane accessors the setters/seed use).
   double volume = 1;
@@ -113,8 +120,9 @@ class FakeSessionEngine implements AudioEngine {
       ..state = TrackState.playing
       ..multiple = multiple
       ..lengthFrames = frames
-      ..undoDepth = 0
+      ..undoCount = 0
       ..redoDepth = 0
+      ..publishedUndoDepth = null
       ..history = const [];
     track.lanes[0]
       ..layers = [pcm]
@@ -128,12 +136,15 @@ class FakeSessionEngine implements AudioEngine {
   /// and its shared [undoDepth] / [redoDepth] — exercises overdub-layer capture.
   /// The live buffer is `layers[undoDepth]`. [history] defaults to one overdub
   /// layer per undo/redo entry; a history with redo-side Peel markers names
-  /// fewer images than entries.
+  /// fewer images than entries. [publishedUndoDepth] makes the snapshot
+  /// publish a different undo depth than the raw [undoDepth], as the engine
+  /// does while a Clear restore is in flight.
   void seedLayers(
     int channel,
     List<Float32List> layers, {
     int undoDepth = 0,
     int redoDepth = 0,
+    int? publishedUndoDepth,
     List<HistoryEntry>? history,
     int multiple = 1,
     double volume = 1,
@@ -144,8 +155,9 @@ class FakeSessionEngine implements AudioEngine {
       ..state = TrackState.playing
       ..multiple = multiple
       ..lengthFrames = frames
-      ..undoDepth = undoDepth
+      ..undoCount = undoDepth
       ..redoDepth = redoDepth
+      ..publishedUndoDepth = publishedUndoDepth
       ..history =
           history ??
           List.filled(
@@ -223,7 +235,7 @@ class FakeSessionEngine implements AudioEngine {
           volume: t.volume,
           muted: t.muted,
           lengthFrames: t.lengthFrames,
-          undoDepth: t.undoDepth,
+          undoDepth: t.publishedUndoDepth ?? t.undoCount,
           redoDepth: t.redoDepth,
           rms: 0,
           peak: 0,
@@ -305,14 +317,14 @@ class FakeSessionEngine implements AudioEngine {
   }
 
   @override
-  List<HistoryEntry> exportHistory(int channel) => _tracks[channel].history;
+  TrackHistory exportHistory(int channel) => TrackHistory(
+    _tracks[channel].history,
+    undoCount: _tracks[channel].undoCount,
+  );
 
   @override
-  EngineResult finalizeHistory(
-    int channel,
-    List<HistoryEntry> history,
-    int undoCount,
-  ) => EngineResult.ok;
+  EngineResult finalizeHistory(int channel, TrackHistory history) =>
+      EngineResult.ok;
 
   @override
   EngineResult commitSession(int baseFrames, {required int loopBars}) {
@@ -334,8 +346,9 @@ class FakeSessionEngine implements AudioEngine {
       ..state = TrackState.empty
       ..multiple = 1
       ..lengthFrames = 0
-      ..undoDepth = 0
+      ..undoCount = 0
       ..redoDepth = 0
+      ..publishedUndoDepth = null
       ..history = const []
       ..lanes.clear();
     _tracks[channel].lanes.add(_FakeLane());

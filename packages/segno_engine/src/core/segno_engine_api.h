@@ -3134,7 +3134,7 @@ LE_EXPORT int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel
 /* ---- overdub-layer (undo/redo) persistence ---- *
  * A track's full history is its list of entries (le_engine_export_history)
  * plus the ordered set of pool buffers per lane they name:
- * undo_stack[0..undo_depth) (oldest first), then the live buffer, then the
+ * undo_stack[0..undo_count) (oldest first), then the live buffer, then the
  * redo stack read top-down. le_engine_export_layer reads the buffers by a
  * linear image `ordinal`, and le_engine_import_layer + le_engine_finalize_history
  * rebuild them with their kinds. The stacks are track-owned and shared across
@@ -3142,8 +3142,8 @@ LE_EXPORT int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel
  * ordinals. */
 
 /* Copies up to `max_frames` frames of track `channel`'s lane `lane` image at
- * `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_depth)` are the
- * undo snapshots, `undo_depth` is the live buffer, and the redo snapshots
+ * `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_count)` are the
+ * undo snapshots, `undo_count` is the live buffer, and the redo snapshots
  * follow, newest-adjacent first; a redo-side peel marker holds no image and
  * takes no ordinal (le_engine_export_history). Returns the frames written (the
  * loop length, clamped to `max_frames`), 0 for an empty layer, or
@@ -3170,10 +3170,14 @@ LE_EXPORT int32_t le_engine_import_layer(le_engine* engine, int32_t channel,
  * the live buffer is slot `undo_count`, and a redo-side peel entry becomes a
  * marker without an image; every active lane is republished in lockstep with
  * its undo, redo and peel depths. Strict: LE_ERR_INVALID for a non-EMPTY
- * track, an unknown kind, a negative `skipped` or a nonzero one on a kind other
- * than peel, a clear restore point on the undo side, more images than
- * LE_POOL_SLOTS, or a torn reconstruction (an image ordinal not staged on every
- * active lane, or lanes at different lengths). Returns LE_OK otherwise. */
+ * track, an unknown kind, a `skipped` outside [0, LE_POOL_SLOTS) or nonzero on
+ * a kind other than peel, a clear restore point anywhere but the last entry
+ * on the redo side, an undo-side peel whose `skipped` exceeds the run of peel
+ * entries directly beneath it (unless that run reaches the bottom: pool
+ * eviction), a redo-side peel marker that would find no layer to peel when
+ * Redo reaches it, more images than LE_POOL_SLOTS, or a torn reconstruction
+ * (an image ordinal not staged on every active lane, or lanes at different
+ * lengths). Returns LE_OK otherwise. */
 LE_EXPORT int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
                                              const int32_t* kinds,
                                              const int32_t* skipped,
@@ -3186,12 +3190,17 @@ LE_EXPORT int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
  * redo-side peel entry is a marker without an image: le_engine_export_layer's
  * ordinals count image-bearing entries only, so a track's image count is
  * `undo_count + 1 + (redo entries that are not peel markers)`. Writes at most
- * `max` entries and returns the track's TOTAL entry count (which may exceed
- * `max`), or LE_ERR_INVALID for a bad handle, channel, NULL array or negative
- * `max`. Control thread. */
+ * `max` entries, stores the undo stack's entry count in `*undo_count` (the
+ * first `*undo_count` entries are the undo side and ordinal `*undo_count` is
+ * the live image), and returns the track's TOTAL entry count (which may exceed
+ * `max`), or LE_ERR_INVALID for a bad handle, channel, NULL pointer or
+ * negative `max`. `*undo_count` is the raw stack count, not the snapshot's
+ * undo_depth: that one reads 0 while a content-giving command (a clear
+ * restore) is in flight, so a Session capture must split by this value.
+ * Control thread. */
 LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
                                            int32_t* kinds, int32_t* skipped,
-                                           int32_t max);
+                                           int32_t max, int32_t* undo_count);
 
 /* Establishes the master loop at `base_frames` and parks every imported track
  * (EMPTY with a loaded length) STOPPED at its whole-loop multiple

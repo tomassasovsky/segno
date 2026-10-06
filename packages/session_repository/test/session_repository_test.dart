@@ -46,6 +46,7 @@ void main() {
                 outputMask: 3,
                 inputChannel: 0,
                 layers: [SessionLayer(file: 'missing.wav')],
+                history: TrackHistory.none,
               ),
             ],
           ),
@@ -861,15 +862,16 @@ void main() {
     'save then read round-trips a redo-side Peel marker and a restoration '
     'entry with their kinds (#1164)',
     () async {
-      // Undo side: the original, then a loop-close restoration's raw take.
-      // Redo side: an undone Peel (a marker, no image) above the live image.
+      // Undo side: a loop-close restoration's raw take, then the
+      // conditioned image beneath one overdub. Redo side: that overdub's
+      // undone Peel (a marker, no image) above the live image.
       final original = Float32List.fromList([1, 1, 1, 1]);
       final raw = Float32List.fromList([1.5, 1.5, 1.5, 1.5]);
       final live = Float32List.fromList([.125, .125, .125, .125]);
       const history = [
-        HistoryEntry(HistoryKind.layer),
         HistoryEntry(HistoryKind.processed),
-        HistoryEntry(HistoryKind.peel, skipped: 1),
+        HistoryEntry(HistoryKind.layer),
+        HistoryEntry(HistoryKind.peel),
       ];
       final source = FakeSessionEngine()
         ..seedLayers(
@@ -888,11 +890,51 @@ void main() {
 
       final bundle = await repoFor(FakeSessionEngine()).read(dir);
       final lane = bundle.session.tracks.single.lanes.single;
-      expect(lane.history, history);
+      expect(lane.history.entries, history);
       expect(lane.undoCount, 2);
       expect(lane.redoCount, 1);
       expect(lane.liveIndex, 2);
       expect(bundle.laneStems[(0, 0)], [original, raw, live]);
+    },
+  );
+
+  test(
+    'save splits the history by the raw undo count while the published '
+    'undo depth reads 0 (#1164 review finding 1)',
+    () async {
+      // Undo restored a Clear: the audio side applied it, but no drain has
+      // republished the depth yet, so the snapshot still reads 0 while the
+      // stacks hold two undo entries and the Clear point on the redo side.
+      final undo0 = Float32List.fromList([1, 1, 1, 1]);
+      final undo1 = Float32List.fromList([1.5, 1.5, 1.5, 1.5]);
+      final live = Float32List.fromList([2, 2, 2, 2]);
+      final clear = Float32List.fromList([2, 2, 2, 2]);
+      const history = [
+        HistoryEntry(HistoryKind.layer),
+        HistoryEntry(HistoryKind.layer),
+        HistoryEntry(HistoryKind.clear),
+      ];
+      final source = FakeSessionEngine()
+        ..seedLayers(
+          0,
+          [undo0, undo1, live, clear],
+          undoDepth: 2,
+          redoDepth: 1,
+          publishedUndoDepth: 0,
+          history: history,
+        );
+      final dir = '${tempDir.path}/gated_depth';
+      final saved = await repoFor(
+        source,
+      ).save(dir, settings: const SessionSettings());
+
+      // The track is saved, not dropped, with the live image at ordinal 2.
+      expect(saved.tracks, hasLength(1));
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      final lane = bundle.session.tracks.single.lanes.single;
+      expect(lane.history, const TrackHistory(history, undoCount: 2));
+      expect(lane.liveIndex, 2);
+      expect(bundle.laneStems[(0, 0)], [undo0, undo1, live, clear]);
     },
   );
 

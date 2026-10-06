@@ -1431,15 +1431,11 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  List<HistoryEntry> exportHistory(int channel) => const [];
+  TrackHistory exportHistory(int channel) => TrackHistory.none;
 
   @override
-  EngineResult finalizeHistory(
-    int channel,
-    List<HistoryEntry> history,
-    int undoCount,
-  ) {
-    _importedDepths[channel] = (undoCount, history.length - undoCount);
+  EngineResult finalizeHistory(int channel, TrackHistory history) {
+    _importedDepths[channel] = (history.undoCount, history.redoCount);
     return EngineResult.ok;
   }
 

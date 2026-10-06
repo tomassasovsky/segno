@@ -8,10 +8,10 @@ import 'package:segno_engine/segno_engine.dart'
     show
         ClickMode,
         GridDivision,
-        HistoryEntry,
         LooperMode,
         RecordTiming,
-        TempoSource;
+        TempoSource,
+        TrackHistory;
 
 /// One lane's restored audio, routing, and mix inside a [SessionRigTrack].
 ///
@@ -30,8 +30,7 @@ class SessionRigLane {
     required this.inputChannel,
     this.pan = 0,
     this.balance = 1,
-    this.history = const [],
-    this.undoCount = 0,
+    this.history = TrackHistory.none,
   });
 
   /// The lane's recorded image (slice 3): where its input sat when the take
@@ -47,7 +46,7 @@ class SessionRigLane {
 
   /// The lane's mono audio images, oldest undo → live → newest redo: one per
   /// [history] entry except redo-side Peel markers, plus the live image
-  /// ([HistoryEntry.imageCount]).
+  /// ([TrackHistory.imageCount]).
   final List<Float32List> layers;
 
   /// Playback gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
@@ -62,16 +61,15 @@ class SessionRigLane {
   /// Hardware input channel this lane records (`-1` = none).
   final int inputChannel;
 
-  /// The track's audio history in image-ordinal order (#1164): the first
-  /// [undoCount] entries are the undo side, the rest the redo side top-down.
-  /// Shared by every lane of the track.
-  final List<HistoryEntry> history;
+  /// The track's audio history in image-ordinal order (#1164), shared by
+  /// every lane of the track.
+  final TrackHistory history;
 
   /// Number of leading [history] entries (and [layers]) on the undo side.
-  final int undoCount;
+  int get undoCount => history.undoCount;
 
   /// Number of trailing [history] entries on the redo side.
-  int get redoCount => history.length - undoCount;
+  int get redoCount => history.redoCount;
 
   /// Index into [layers] of the live (currently playing) buffer.
   int get liveIndex => undoCount;

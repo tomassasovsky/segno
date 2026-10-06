@@ -33,12 +33,14 @@ void main() {
     });
 
     test('keeps no history to export; finalize needs a running engine', () {
-      const history = [HistoryEntry(HistoryKind.layer)];
-      expect(engine.exportHistory(0), isEmpty);
-      expect(engine.finalizeHistory(0, history, 1), EngineResult.notRunning);
+      const history = TrackHistory([
+        HistoryEntry(HistoryKind.layer),
+      ], undoCount: 1);
+      expect(engine.exportHistory(0), TrackHistory.none);
+      expect(engine.finalizeHistory(0, history), EngineResult.notRunning);
       expect(engine.start(engine.defaultConfig), EngineResult.ok);
-      expect(engine.finalizeHistory(0, history, 1), EngineResult.ok);
-      expect(engine.exportHistory(0), isEmpty);
+      expect(engine.finalizeHistory(0, history), EngineResult.ok);
+      expect(engine.exportHistory(0), TrackHistory.none);
     });
 
     test('restores exact internal tempo and clears an unset grid', () {

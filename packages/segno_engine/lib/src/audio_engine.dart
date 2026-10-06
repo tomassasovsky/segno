@@ -1273,18 +1273,18 @@ abstract interface class SessionIo {
 
   /// Copies track [channel]'s lane [lane] history image at [ordinal] out for
   /// session export, or an empty list for an empty layer / out-of-range
-  /// argument. Ordinals run oldest→newest: `[0, undoDepth)` are the undo
-  /// snapshots, `undoDepth` is the live buffer, then the redo snapshots; a
+  /// argument. Ordinals run oldest→newest: `[0, undoCount)` are the undo
+  /// snapshots, `undoCount` is the live buffer, then the redo snapshots; a
   /// redo-side Peel marker holds no image and takes no ordinal
-  /// ([exportHistory], [HistoryEntry.imageCount]). Read-only — call when not
+  /// ([exportHistory], [TrackHistory.imageCount]). Read-only — call when not
   /// capturing.
   Float32List exportLayer(int channel, int lane, int ordinal);
 
-  /// Lists track [channel]'s history entries in image-ordinal order: the undo
-  /// stack oldest first, then the redo stack newest-adjacent first, so the
-  /// first `undoDepth` entries are the undo side. Empty for an out-of-range
-  /// [channel]. Read-only.
-  List<HistoryEntry> exportHistory(int channel);
+  /// Lists track [channel]'s history in image-ordinal order with its raw
+  /// split ([TrackHistory.undoCount]): split the images by that count, never
+  /// by the snapshot's `undoDepth`, which reads 0 while a Clear restore is in
+  /// flight. [TrackHistory.none] for an out-of-range [channel]. Read-only.
+  TrackHistory exportHistory(int channel);
 
   /// Stages [pcm] as track [channel]'s lane [lane] image at [ordinal] into an
   /// EMPTY track (the ordinal is the pool slot). Call once per `(lane,
@@ -1294,19 +1294,14 @@ abstract interface class SessionIo {
   EngineResult importLayer(int channel, int lane, int ordinal, Float32List pcm);
 
   /// Publishes a track reconstructed via [importLayer] with its [history]
-  /// ([exportHistory] order; the first [undoCount] entries are the undo side):
-  /// rebuilds the undo/redo stacks with their kinds and points playback at the
-  /// live image (ordinal [undoCount]), every active lane in lockstep.
-  /// [HistoryEntry.imageCount] images must already be staged on every active
-  /// lane at one length. Returns [EngineResult.invalid] for a non-empty track,
-  /// a malformed history (a Clear point on the undo side, a negative or
-  /// misplaced skipped count, more images than the pool), or a torn
-  /// (missing-image or mismatched-length) reconstruction.
-  EngineResult finalizeHistory(
-    int channel,
-    List<HistoryEntry> history,
-    int undoCount,
-  );
+  /// ([exportHistory] order): rebuilds the undo/redo stacks with their kinds
+  /// and points playback at the live image (ordinal
+  /// [TrackHistory.undoCount]), every active lane in lockstep.
+  /// [TrackHistory.imageCount] images must already be staged on every active
+  /// lane at one length. Returns [EngineResult.invalid] for a non-empty
+  /// track, a history the engine could not hold ([TrackHistory.malformation]),
+  /// or a torn (missing-image or mismatched-length) reconstruction.
+  EngineResult finalizeHistory(int channel, TrackHistory history);
 
   /// Establishes the master loop at [baseFrames] and leaves every imported
   /// track stopped at its whole-loop multiple. Launch with [AudioEngine.play].

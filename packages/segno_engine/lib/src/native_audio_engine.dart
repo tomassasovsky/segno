@@ -1244,8 +1244,9 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  List<HistoryEntry> exportHistory(int channel) {
+  TrackHistory exportHistory(int channel) {
     _checkAlive();
+    final undoCount = calloc<Int32>();
     final empty = calloc<Int32>();
     try {
       // A zero-capacity call returns the entry count (or a negative error).
@@ -1255,8 +1256,10 @@ class NativeAudioEngine implements AudioEngine {
         empty,
         empty,
         0,
+        undoCount,
       );
-      if (count <= 0) return const [];
+      if (count < 0) return TrackHistory.none;
+      if (count == 0) return TrackHistory(const [], undoCount: undoCount.value);
       final kinds = calloc<Int32>(count);
       final skipped = calloc<Int32>(count);
       try {
@@ -1266,39 +1269,42 @@ class NativeAudioEngine implements AudioEngine {
           kinds,
           skipped,
           count,
+          undoCount,
         );
         if (n != count) {
           throw StateError('history of track $channel changed while read');
         }
-        return [
-          for (var i = 0; i < count; i++)
-            HistoryEntry(HistoryKind.values[kinds[i]], skipped: skipped[i]),
-        ];
+        return TrackHistory(
+          [
+            for (var i = 0; i < count; i++)
+              HistoryEntry(HistoryKind.values[kinds[i]], skipped: skipped[i]),
+          ],
+          undoCount: undoCount.value,
+        );
       } finally {
         calloc
           ..free(kinds)
           ..free(skipped);
       }
     } finally {
-      calloc.free(empty);
+      calloc
+        ..free(undoCount)
+        ..free(empty);
     }
   }
 
   @override
-  EngineResult finalizeHistory(
-    int channel,
-    List<HistoryEntry> history,
-    int undoCount,
-  ) {
+  EngineResult finalizeHistory(int channel, TrackHistory history) {
     _checkAlive();
-    final count = history.length;
+    final entries = history.entries;
+    final count = entries.length;
     // One element at least: the allocator refuses a zero-byte request.
     final kinds = calloc<Int32>(count == 0 ? 1 : count);
     final skipped = calloc<Int32>(count == 0 ? 1 : count);
     try {
       for (var i = 0; i < count; i++) {
-        kinds[i] = history[i].kind.index;
-        skipped[i] = history[i].skipped;
+        kinds[i] = entries[i].kind.index;
+        skipped[i] = entries[i].skipped;
       }
       return EngineResult.fromCode(
         _bindings.le_engine_finalize_history(
@@ -1307,7 +1313,7 @@ class NativeAudioEngine implements AudioEngine {
           kinds,
           skipped,
           count,
-          undoCount,
+          history.undoCount,
         ),
       );
     } finally {
