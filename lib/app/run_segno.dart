@@ -26,6 +26,7 @@ import 'package:segno/visualizer/waveform_window_args.dart';
 import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 import 'package:update_repository/update_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
@@ -100,6 +101,7 @@ Future<void> runSegno(
     performance = PerformanceRepository(
       engine: engine,
       exportsRoot: defaultExportDirectory,
+      reserveBytes: StorageRepository.internalReserveBytes,
     );
   } else {
     looper = repository;

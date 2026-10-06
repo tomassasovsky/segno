@@ -272,6 +272,8 @@ class _PerformanceCompletionSheetState
         switch (reason) {
           PerformanceStopReason.diskFull => l10n.perfStoppedDiskFull,
           PerformanceStopReason.deviceChanged => l10n.perfStoppedDeviceChange,
+          PerformanceStopReason.reserveReached => l10n.perfStoppedReserve,
+          PerformanceStopReason.slowStorage => l10n.perfStoppedSlowStorage,
         },
         ConsoleBannerTone.failure,
       ),

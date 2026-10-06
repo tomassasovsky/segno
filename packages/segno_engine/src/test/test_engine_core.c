@@ -8905,6 +8905,7 @@ static int32_t perf_arm_dir(le_engine* e, const char* dir) {
   memset(&target, 0, sizeof(target));
   target.capture_dir = dir;
   target.volume_generation = -1;
+  target.reserve_bytes = UINT64_MAX; /* no budget unless a test sets one */
   return le_perf_arm(e, &target);
 }
 
@@ -10044,12 +10045,19 @@ static void test_perf_drain_writes_master_pcm_byte_identical(void) {
   le_engine_destroy(e);
 }
 
-/* A ring overrun (tiny ring capacity via a tiny sample rate, mirroring
- * test_perf_overflow_counts_and_drops) leaves the drain thread's file behind
- * wall-clock elapsed frames; it silence-fills the gap so the file stays
- * sample-consistent and records the gap in the sidecar. */
-static void test_perf_drain_silence_fills_overrun_gap(void) {
-  printf("test_perf_drain_silence_fills_overrun_gap\n");
+/* A tap gap (#710): frames counted as elapsed that no capture tap pushed.
+ * Stands in for the audio thread, publishing with the same RELEASE add. This
+ * is the zero-fill's cause now that a ring overflow ends the take instead
+ * (#1198, test_perf_ring_overflow_ends_the_take). */
+static void perf_tap_gap_for_test(le_engine* e, uint64_t frames) {
+  atomic_fetch_add_explicit(&e->a_perf_frames, frames, memory_order_release);
+}
+
+/* A tap gap leaves the drain thread's file behind wall-clock elapsed frames;
+ * it silence-fills the gap so the file stays sample-consistent and records
+ * the gap in the sidecar. */
+static void test_perf_drain_silence_fills_tap_gap(void) {
+  printf("test_perf_drain_silence_fills_tap_gap\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 4, 1, 1, 1000); /* tiny rate -> tiny ring, 7 usable frames */
 
@@ -10063,12 +10071,13 @@ static void test_perf_drain_silence_fills_overrun_gap(void) {
   drain(e);
 
   float big_out[32];
-  process_const(e, 0.0f, 32, big_out); /* 7 pushes succeed, 25 drop (overrun) */
+  process_const(e, 0.0f, 7, big_out); /* 7 frames reach the ring */
+  perf_tap_gap_for_test(e, 25);        /* ...and 25 are never tapped */
 
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_frames == 32);
-  CHECK(s.perf_overruns == 32 - 7);
+  CHECK(s.perf_overruns == 0);
 
   /* Disarm (blocks until the final flush, which does the same catch-up
    * logic as any other cycle) rather than sleeping past one — a hard
@@ -10108,6 +10117,50 @@ static void test_perf_drain_silence_fills_overrun_gap(void) {
   le_engine_destroy(e);
 }
 
+/* A ring that overflows ends the take at the first frame it could not take
+ * (#1198): the 7 frames that fit, no padding over the 25 that did not, and
+ * `slow_storage`. The deterministic small case of
+ * test_perf_slow_storage_stops_at_first_drop. */
+static void test_perf_ring_overflow_ends_the_take(void) {
+  printf("test_perf_ring_overflow_ends_the_take\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 4, 1, 1, 1000); /* tiny rate -> 7 usable ring frames */
+  le_engine_record(e, 0);
+  float out[LOOP_N];
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  float big_out[32];
+  process_const(e, 0.0f, 32, big_out); /* 7 pushes succeed, 25 drop */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_overruns == 32 - 7);
+  CHECK(s.perf_first_drop_frame == 7);
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/master-001.wav", perf_test_dir());
+  unsigned char whole[256];
+  CHECK(read_binary_file_for_test(path, whole, sizeof(whole)) == 84 + 7 * 4);
+  float buf[7] = {0};
+  CHECK(read_payload_file_for_test(path, (unsigned char*)buf, sizeof(buf)) ==
+        sizeof(buf));
+  for (int i = 0; i < 7; ++i) CHECK(buf[i] == 1.0f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_zero_filled_frames == 0);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_SLOW_STORAGE);
+  char json[4096];
+  snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
+  CHECK(read_file_for_test(path, json, sizeof(json)) > 0);
+  CHECK(strstr(json, "\"stopped_early\": \"slow_storage\"") != NULL);
+  CHECK(strstr(json, "\"capture_frames\": 7,") != NULL);
+  CHECK(strstr(json, "\"zero_filled_frames\": 0,") != NULL);
+  le_engine_destroy(e);
+}
+
 /* #710, honesty half: the zero-fill counter reaches the SNAPSHOT while the
  * capture is still armed — the app latches its glitch flag from the armed
  * poll, so a counter that only surfaced in the sidecar (which the app reads
@@ -10127,7 +10180,8 @@ static void test_perf_zero_fill_counter_visible_while_armed(void) {
   drain(e);
 
   float big_out[32];
-  process_const(e, 0.0f, 32, big_out); /* 7 pushes succeed, 25 drop */
+  process_const(e, 0.0f, 7, big_out); /* 7 frames reach the ring */
+  perf_tap_gap_for_test(e, 25);        /* ...and 25 are never tapped */
 
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
@@ -10212,7 +10266,8 @@ static void test_perf_zero_fill_counts_only_silence_actually_written(void) {
   drain(e);
 
   float big_out[32];
-  process_const(e, 0.0f, 32, big_out); /* 7 pushes succeed, 25 drop */
+  process_const(e, 0.0f, 7, big_out); /* 7 frames reach the ring */
+  perf_tap_gap_for_test(e, 25);        /* ...and 25 are never tapped */
 
   perf_pad_fail_ctx ctx = {0};
   le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_fail_the_pad, &ctx);
@@ -10223,7 +10278,7 @@ static void test_perf_zero_fill_counts_only_silence_actually_written(void) {
   CHECK(ctx.fired == 1);
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
-  CHECK(s.perf_overruns == 32 - 7); /* the drop really did happen... */
+  CHECK(s.perf_frames == 32);            /* the gap really is there... */
   CHECK(s.perf_zero_filled_frames == 0); /* ...but no silence reached disk */
 
   char json[4096];
@@ -10472,12 +10527,13 @@ static void test_perf_zero_fill_short_write_does_not_desync_file(void) {
   le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_short_pad, &ctx);
 
   float big_out[32];
-  process_const(e, 0.0f, 32, big_out); /* 7 pushes succeed, 25 drop */
+  process_const(e, 0.0f, 7, big_out); /* 7 frames reach the ring */
+  perf_tap_gap_for_test(e, 25);        /* ...and 25 are never tapped */
 
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_frames == 32);
-  CHECK(s.perf_overruns == 32 - 7);
+  CHECK(s.perf_overruns == 0);
 
   /* The partial pad fails the cycle, so the thread self-stops and then runs
    * its final cycle; the disarm below joins it, which is what guarantees that
@@ -10667,6 +10723,7 @@ static int32_t perf_arm_target_for_test(le_engine* e, const char* dir,
   target.live_sidecar_dir = sidecar_dir;
   for (int i = 0; i < 16; ++i) target.take_id[i] = (uint8_t)i;
   target.volume_generation = -1;
+  target.reserve_bytes = UINT64_MAX; /* no budget unless a test sets one */
   target.part_bytes = part_bytes;
   target.ring_seconds = ring_seconds;
   return le_perf_arm(e, &target);
@@ -10816,7 +10873,8 @@ static void test_perf_zero_fill_crosses_part_boundaries(void) {
         LE_OK);
   drain(e);
   float big_out[32];
-  process_const(e, 0.0f, 32, big_out); /* 7 land, 25 are dropped */
+  process_const(e, 0.0f, 7, big_out); /* 7 land */
+  perf_tap_gap_for_test(e, 25);        /* 25 are never tapped */
   CHECK(le_perf_disarm(e) == LE_OK);
 
   le_snapshot s;
@@ -10884,6 +10942,14 @@ static void test_perf_seal_after_failed_write_cuts_torn_tail(void) {
   le_engine_configure(e, 48000, 1, 2, 1000); /* stereo master */
   CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
+  /* The drain writes the event log before the audio (#1198): let it take
+   * the arm's events first, so the budget below meets the audio. */
+  char events[700];
+  snprintf(events, sizeof(events), "%s/events.log", perf_test_dir());
+  for (int i = 0; i < 300 && file_size_for_test(events) < 12 + 28; ++i) {
+    test_sleep_ms(10);
+  }
+  CHECK(file_size_for_test(events) >= 12 + 28);
   le_perf_drain_set_write_budget_for_test(12); /* one frame and a half */
   float out[64 * 2];
   process_const(e, 0.5f, 64, out);
@@ -11088,6 +11154,294 @@ static void test_perf_arm_rejects_bad_target(void) {
   le_engine_destroy(e);
 }
 
+/* ---- stop at whole frames: the reserve and slow storage (#1198) ---- */
+
+static int32_t perf_arm_reserve_for_test(le_engine* e, uint64_t part_bytes,
+                                         uint64_t reserve_bytes,
+                                         int32_t ring_seconds) {
+  le_perf_target target;
+  memset(&target, 0, sizeof(target));
+  target.capture_dir = perf_test_dir();
+  for (int i = 0; i < 16; ++i) target.take_id[i] = (uint8_t)i;
+  target.volume_generation = -1;
+  target.part_bytes = part_bytes;
+  target.ring_seconds = ring_seconds;
+  target.reserve_bytes = reserve_bytes;
+  return le_perf_arm(e, &target);
+}
+
+/* A test value that tells frames apart and stays clear of the limiter. */
+static float perf_indexed_sample(int frame) {
+  return (float)(frame % 4096) * (1.0f / 8192.0f);
+}
+
+/* One take at 48 kHz on a mono output: the input is monitored to the output,
+ * from before the arm when `with_input` (so it is also captured, stereo) or
+ * from just after it. `frames` indexed frames are pumped and the engine's
+ * output kept in `out_all`; the take is disarmed and the engine returned for
+ * the caller to inspect and destroy. */
+/* Removes the parts, sidecar and event log an earlier take left in the test
+ * directory, so a take's file count is its own. */
+static void perf_clear_test_dir(void) {
+  char path[700];
+  for (int p = 1; p <= 9; ++p) {
+    snprintf(path, sizeof(path), "%s/master-%03d.wav", perf_test_dir(), p);
+    remove(path);
+    for (int c = 0; c < 4; ++c) {
+      snprintf(path, sizeof(path), "%s/input-%d-%03d.wav", perf_test_dir(), c,
+               p);
+      remove(path);
+    }
+  }
+  snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
+  remove(path);
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  remove(path);
+}
+
+static le_engine* perf_reserve_take(int with_input, uint64_t part_bytes,
+                                    uint64_t reserve_bytes, int frames,
+                                    float* out_all) {
+  perf_clear_test_dir();
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  if (with_input) {
+    CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+    CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+    drain(e);
+  }
+  CHECK(perf_arm_reserve_for_test(e, part_bytes, reserve_bytes, 0) == LE_OK);
+  drain(e);
+  if (!with_input) {
+    CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+    CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+    drain(e);
+  }
+  for (int base = 0; base < frames; base += 50) {
+    float in[50];
+    for (int i = 0; i < 50; ++i) in[i] = perf_indexed_sample(base + i);
+    le_engine_process(e, out_all + base, in, 50);
+  }
+  CHECK(le_perf_disarm(e) == LE_OK);
+  return e;
+}
+
+static long perf_test_file_size(const char* name) {
+  char path[700];
+  snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), name);
+  return file_size_for_test(path);
+}
+
+static int perf_sidecar_contains(const char* needle) {
+  static char json[65536];
+  char path[700];
+  snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
+  if (read_file_for_test(path, json, sizeof(json)) == 0) return 0;
+  return strstr(json, needle) != NULL;
+}
+
+/* The payload of the part `name` holds exactly the first `frames` frames of
+ * `expected`, interleaved `channels` wide. */
+static int perf_part_holds(const char* name, const float* expected, int frames,
+                           int channels) {
+  char path[700];
+  snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), name);
+  if (file_size_for_test(path) !=
+      84 + (long)frames * channels * (long)sizeof(float)) {
+    return 0;
+  }
+  uint8_t from_file[32];
+  uint8_t want[32];
+  if (le_digest_file(path, 84, UINT64_MAX, from_file) != LE_OK) return 0;
+  if (le_digest_bytes(expected, (uint64_t)frames * channels * sizeof(float),
+                      want) != LE_OK) {
+    return 0;
+  }
+  return memcmp(from_file, want, 32) == 0;
+}
+
+/* The bytes a take with no budget puts in events.log: what the budgeted run
+ * of the same take spends on its event log before its audio. */
+static long perf_events_bytes_for(int with_input, uint64_t part_bytes,
+                                  int frames, float* scratch) {
+  le_engine* e =
+      perf_reserve_take(with_input, part_bytes, UINT64_MAX, frames, scratch);
+  const long events = perf_test_file_size("events.log");
+  le_engine_destroy(e);
+  CHECK(events > 0);
+  return events;
+}
+
+static void test_perf_reserve_stops_at_whole_frames(void) {
+  printf("test_perf_reserve_stops_at_whole_frames\n");
+  static float out[1000];
+  const uint64_t reserve = 1000000;
+  const long events = perf_events_bytes_for(0, 0, 1000, out);
+  le_perf_drain_set_volume_free_for_test(
+      (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + (uint64_t)events + 84 +
+                4 * 700));
+  le_engine* e = perf_reserve_take(0, 0, reserve, 1000, out);
+  le_perf_drain_set_volume_free_for_test(-1);
+
+  CHECK(perf_part_holds("master-001.wav", out, 700, 1));
+  CHECK(perf_test_file_size("master-002.wav") == -1);
+  CHECK(perf_sidecar_contains("\"stopped_early\": \"reserve_reached\""));
+  CHECK(perf_sidecar_contains("\"capture_frames\": 700,"));
+  CHECK(perf_sidecar_contains("\"zero_filled_frames\": 0,"));
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_RESERVE_REACHED);
+  CHECK(s.perf_zero_filled_frames == 0);
+  CHECK(s.perf_bytes_written == (uint64_t)events + 84 + 4 * 700);
+  le_engine_destroy(e);
+}
+
+/* Every stream ends at the same frame: a mono master (4 bytes a frame) and a
+ * stereo input (8) share the budget 12 bytes a frame. */
+static void test_perf_reserve_stops_every_stream_together(void) {
+  printf("test_perf_reserve_stops_every_stream_together\n");
+  static float out[1000];
+  const uint64_t reserve = 1000000;
+  const long events = perf_events_bytes_for(1, 0, 1000, out);
+  le_perf_drain_set_volume_free_for_test(
+      (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + (uint64_t)events + 84 +
+                84 + 12 * 500));
+  le_engine* e = perf_reserve_take(1, 0, reserve, 1000, out);
+  le_perf_drain_set_volume_free_for_test(-1);
+
+  CHECK(perf_part_holds("master-001.wav", out, 500, 1));
+  CHECK(perf_test_file_size("input-0-001.wav") == 84 + 500 * 8);
+  CHECK(perf_sidecar_contains("\"stopped_early\": \"reserve_reached\""));
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_RESERVE_REACHED);
+  le_engine_destroy(e);
+}
+
+/* The budget pays for the header of every part a stream would still open:
+ * room for 300 frames, one more header and one frame ends at 301 frames in
+ * two parts. */
+static void test_perf_reserve_counts_the_next_part_header(void) {
+  printf("test_perf_reserve_counts_the_next_part_header\n");
+  static float out[1000];
+  const uint64_t reserve = 1000000;
+  const uint64_t part_bytes = 84 + 4 * 300;
+  const long events = perf_events_bytes_for(0, part_bytes, 1000, out);
+  le_perf_drain_set_volume_free_for_test(
+      (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + (uint64_t)events + 84 +
+                4 * 300 + 84 + 4));
+  le_engine* e = perf_reserve_take(0, part_bytes, reserve, 1000, out);
+  le_perf_drain_set_volume_free_for_test(-1);
+
+  CHECK(perf_part_holds("master-001.wav", out, 300, 1));
+  CHECK(perf_part_holds("master-002.wav", out + 300, 1, 1));
+  CHECK(perf_test_file_size("master-003.wav") == -1);
+  CHECK(perf_sidecar_contains("\"stopped_early\": \"reserve_reached\""));
+  le_engine_destroy(e);
+}
+
+/* No reserve, or a volume that cannot be read: no budget, so even a volume
+ * reading no free bytes at all never ends the take. A refused write still
+ * stops it, as `disk_full`. */
+static void test_perf_no_budget_never_stops_on_space(void) {
+  printf("test_perf_no_budget_never_stops_on_space\n");
+  static float out[1000];
+  le_perf_drain_set_volume_free_for_test(0);
+  le_engine* e = perf_reserve_take(0, 0, UINT64_MAX, 1000, out);
+  CHECK(perf_part_holds("master-001.wav", out, 1000, 1));
+  CHECK(!perf_sidecar_contains("stopped_early"));
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_DISARM);
+  le_engine_destroy(e);
+
+  le_perf_drain_set_volume_free_for_test(LE_PD_VOLUME_FREE_UNREADABLE);
+  e = perf_reserve_take(0, 0, 1000000, 1000, out);
+  le_perf_drain_set_volume_free_for_test(-1);
+  CHECK(perf_part_holds("master-001.wav", out, 1000, 1));
+  CHECK(!perf_sidecar_contains("stopped_early"));
+  le_engine_destroy(e);
+
+  e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  CHECK(perf_arm_reserve_for_test(e, 0, 1000000, 0) == LE_OK);
+  drain(e);
+  le_perf_drain_force_write_failure_for_test(1);
+  process_const(e, 0.5f, 64, out);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_drain_force_write_failure_for_test(0);
+  CHECK(perf_sidecar_contains("\"stopped_early\": \"disk_full\""));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_WRITE_FAILED);
+  le_engine_destroy(e);
+}
+
+/* Holds the drain thread inside its cycle until released, standing in for
+ * storage that stalls. */
+typedef struct {
+  _Atomic int entered;
+  _Atomic int released;
+} perf_stall_ctx;
+
+static void perf_mid_cycle_stall(void* raw) {
+  perf_stall_ctx* ctx = (perf_stall_ctx*)raw;
+  if (ctx == NULL) return;
+  atomic_store(&ctx->entered, 1);
+  while (!atomic_load(&ctx->released)) test_sleep_ms(1);
+}
+
+/* The storage falls behind: with the drain stalled and a 1 s ring, 3 s of
+ * audio overflows it. The take ends at the first frame the ring could not
+ * take, F, with nothing padded and nothing after it — not a hole followed by
+ * more audio. */
+static void test_perf_slow_storage_stops_at_first_drop(void) {
+  printf("test_perf_slow_storage_stops_at_first_drop\n");
+  static float out[144000];
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  perf_stall_ctx ctx;
+  atomic_init(&ctx.entered, 0);
+  atomic_init(&ctx.released, 0);
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_stall, &ctx);
+  CHECK(perf_arm_reserve_for_test(e, 0, UINT64_MAX, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  drain(e);
+  for (int i = 0; i < 2000 && !atomic_load(&ctx.entered); ++i) test_sleep_ms(1);
+  CHECK(atomic_load(&ctx.entered));
+
+  for (int base = 0; base < 144000; base += 480) {
+    float in[480];
+    for (int i = 0; i < 480; ++i) in[i] = perf_indexed_sample(base + i);
+    le_engine_process(e, out + base, in, 480);
+  }
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  const uint64_t first_drop = s.perf_first_drop_frame;
+  CHECK(first_drop > 0 && first_drop < 144000);
+
+  atomic_store(&ctx.released, 1);
+  /* The drain stops the take on its own, before any disarm. */
+  for (int i = 0; i < 3000; ++i) {
+    le_engine_get_snapshot(e, &s);
+    if (s.perf_stopped) break;
+    test_sleep_ms(1);
+  }
+  CHECK(s.perf_stopped == 1);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_SLOW_STORAGE);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+
+  CHECK(perf_part_holds("master-001.wav", out, (int)first_drop, 1));
+  CHECK(perf_sidecar_contains("\"stopped_early\": \"slow_storage\""));
+  CHECK(perf_sidecar_contains("\"zero_filled_frames\": 0,"));
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_zero_filled_frames == 0);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_SLOW_STORAGE);
+  le_engine_destroy(e);
+}
+
 /* THE STEADY-STATE DRAIN CYCLE IS ALLOCATION-FREE (#722).
  *
  * An invariant, not a bug fix: the drain used to malloc + free a 512 KB
@@ -11134,9 +11488,10 @@ static void test_perf_arm_rejects_bad_target(void) {
  * SCOPE, precisely: the cycles are driven hard enough to take
  * le_pd_drain_ring's loop-again branch (more than LE_PD_SCRATCH_SAMPLES
  * available per cycle) and, once, le_pd_catch_up's chunked zero-fill — from
- * an un-backed gap that cycle 4's hook forces directly (#823), with a
- * best-effort real ring-overflow burst layered on top for
- * production-geometry coverage. It does NOT cover le_pd_write_staged_layer
+ * an un-backed gap that cycle 4's hook forces directly (#823). A ring
+ * overflow is not driven here: it ends the take (#1198), which
+ * test_perf_slow_storage_stops_at_first_drop covers at production geometry.
+ * It does NOT cover le_pd_write_staged_layer
  * — that needs a retired overdub layer, and the layer tests below cover
  * that path's own allocation handoff. */
 typedef struct {
@@ -11226,9 +11581,8 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   le_engine* e = le_engine_create();
   /* Real ring, sized so the steady per-tick pushes do not drop at the
    * nominal 250 ms cadence (~800 ms of backlog headroom). A drain cycle
-   * stretched past that CAN still drop them — the 15 s budget tolerates
-   * cycles up to ~1.9 s — which is harmless here: nothing asserts on
-   * perf_overruns, and drops only add zero-fill on top of the forced gap. */
+   * stretched past that would drop them, which ends the take (#1198) and
+   * shows up below as a cadence shortfall, reported as exactly that. */
   le_engine_configure(e, 48000, 1, 1, 1000);
 
   /* Static, not stack: if le_perf_disarm ever failed, the drain thread — and
@@ -11291,27 +11645,9 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
    * counted ones have genuine work: multi-buffer ring pops, PCM writes, an
    * events.log append, a sidecar rewrite and rename. */
   int waited = 0;
-  int burst_pushed_once = 0;
   while (atomic_load(&ctx.cycles) < LE_TEST_ALLOC_WATCH_CYCLES &&
          waited < LE_TEST_ALLOC_WATCH_TIMEOUT_MS) {
     push_frames_for_test(e, 0.25f, LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK);
-    /* Once, mid-run: hand the ring more than it can hold in a single tick.
-     * COVERAGE, not the zero-fill proof: this is the suite's one
-     * production-geometry ring-full drive against the live drain thread —
-     * the tiny-ring overrun tests all run at sample_rate 4. (Plain native
-     * runs only: the ASAN job compiles this whole test out, since the
-     * interposer is disabled under sanitizers.) Whether it actually drops
-     * depends on outrunning the drain — under load it loses that race
-     * (#823) — so NO assertion depends on it: the zero-fill proof runs off
-     * the hook's forced gap, and this burst's real drops only add to the
-     * same counter. The note printed after the snapshot below keeps the
-     * coverage visible when the race is lost. Latched best-effort; a
-     * starved poll that watches cycles jump past the window skips it,
-     * costing that run the burst's coverage and nothing else. */
-    if (!burst_pushed_once && atomic_load(&ctx.cycles) >= 4) {
-      burst_pushed_once = 1;
-      push_frames_for_test(e, 0.25f, 48000 * (LE_PERF_RING_SECONDS_DEFAULT + 1));
-    }
     test_sleep_ms(25);
     waited += 25;
   }
@@ -11344,17 +11680,20 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   /* The zero-fill really ran, and completely: the whole forced gap must come
-   * back as padded frames (the final pass's top-up makes the floor exact),
-   * with the burst's real drops, when it won its race, only adding on top.
+   * back as padded frames (the final pass's top-up makes the floor exact).
    * Gated on cadence: without cycle 4 there IS no forced gap, and that
    * failure is already reported above as what it is. */
-  if (observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES) {
-    CHECK(s.perf_zero_filled_frames >= LE_TEST_ALLOC_GAP_FRAMES);
+  /* A drain slow enough to overflow the ring ends the take at the first
+   * dropped frame (#1198), which can come before the gap is padded: that run
+   * is a slow machine, reported as such, not a zero-fill failure. */
+  const int dropped = s.perf_first_drop_frame != UINT64_MAX;
+  if (dropped) {
+    printf("  the ring overflowed at frame %llu — too slow a machine; the "
+           "zero-fill floor is not checked this run\n",
+           (unsigned long long)s.perf_first_drop_frame);
   }
-  if (s.perf_overruns == 0) {
-    printf(
-        "  note: the burst never overflowed the ring this run — "
-        "production-geometry drop coverage did not execute\n");
+  if (observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES && !dropped) {
+    CHECK(s.perf_zero_filled_frames >= LE_TEST_ALLOC_GAP_FRAMES);
   }
 
   if (atomic_load(&g_test_alloc_count) != 0) {
@@ -34484,7 +34823,8 @@ int main(void) {
   test_perf_monitor_tap_pads_silence_when_disabled();
   test_perf_arm_skips_inputs_the_device_does_not_have();
   test_perf_drain_writes_master_pcm_byte_identical();
-  test_perf_drain_silence_fills_overrun_gap();
+  test_perf_drain_silence_fills_tap_gap();
+  test_perf_ring_overflow_ends_the_take();
   test_perf_zero_fill_counter_visible_while_armed();
   test_perf_zero_fill_counts_only_silence_actually_written();
   test_perf_zero_fill_short_write_does_not_desync_file();
@@ -34503,6 +34843,11 @@ int main(void) {
   test_perf_ring_seconds_are_capped();
   test_perf_live_sidecar_elsewhere();
   test_perf_arm_rejects_bad_target();
+  test_perf_reserve_stops_at_whole_frames();
+  test_perf_reserve_stops_every_stream_together();
+  test_perf_reserve_counts_the_next_part_header();
+  test_perf_no_budget_never_stops_on_space();
+  test_perf_slow_storage_stops_at_first_drop();
   test_perf_drain_steady_state_cycle_is_allocation_free();
   test_perf_drain_disk_full_stops_cleanly();
   test_perf_drain_files_are_crash_consistent_mid_capture();

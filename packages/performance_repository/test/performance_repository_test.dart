@@ -156,6 +156,23 @@ void main() {
   });
 
   group('arm', () {
+    test('passes the reserve to the engine, and none when not given '
+        '(#1198)', () async {
+      await repo.arm();
+      expect(engine.lastPerfTarget!.reserveBytes, isNull);
+      clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+      await repo.disarm();
+
+      final reserved = PerformanceRepository(
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock.add(const Duration(minutes: 1)),
+        reserveBytes: 1000000000,
+      );
+      await reserved.arm();
+      expect(engine.lastPerfTarget!.reserveBytes, 1000000000);
+    });
+
     test('a settled snapshot write failure keeps live capture owned until '
         'the engine confirms a stop', () async {
       var snapshotWrites = 0;
@@ -2513,10 +2530,12 @@ void main() {
 
   group('captureProgress', () {
     test('reads zero/false when not armed', () {
-      expect(
-        repo.captureProgress,
-        (elapsed: Duration.zero, overrun: false, selfStopped: false),
-      );
+      expect(repo.captureProgress, (
+        elapsed: Duration.zero,
+        overrun: false,
+        selfStopped: false,
+        stopReason: PerfStopReason.none,
+      ));
     });
 
     test('reads elapsed time and overrun from the engine snapshot', () {
@@ -2539,6 +2558,16 @@ void main() {
         ..perfZeroFilledFrames = 128;
 
       expect(repo.captureProgress.overrun, isTrue);
+    });
+
+    test('carries why the engine stopped the take (#1198)', () {
+      engine
+        ..perfStopped = true
+        ..perfStopReason = PerfStopReason.slowStorage;
+
+      final progress = repo.captureProgress;
+      expect(progress.selfStopped, isTrue);
+      expect(progress.stopReason, PerfStopReason.slowStorage);
     });
   });
 

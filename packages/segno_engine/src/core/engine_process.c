@@ -4130,11 +4130,24 @@ static void le_latency_resolve(le_engine* e, int sr) {
 
 /* The same push for the master capture from a bus's pair before its level
  * (slice 3b): the default tap, so the PA's level does not reach the take. */
+/* A capture ring could not take this frame: count it, and keep the earliest
+ * frame any ring dropped (#1198). The take ends there, so nothing queued after
+ * it may follow a hole. The audio thread is the only writer; the RELEASE add
+ * of a_perf_frames at the end of the block publishes it to the drain. */
+static inline void perf_note_drop(le_engine* e) {
+  atomic_fetch_add_explicit(&e->a_perf_overruns, 1u, memory_order_relaxed);
+  if (e->perf.tap_frame < atomic_load_explicit(&e->a_perf_first_drop_frame,
+                                               memory_order_relaxed)) {
+    atomic_store_explicit(&e->a_perf_first_drop_frame, e->perf.tap_frame,
+                          memory_order_relaxed);
+  }
+}
+
 static inline void perf_push_master(le_engine* e, const float s[2]) {
   if (!e->perf.armed) return;
   if (!le_audio_ring_push_frame(&e->perf.master_ring, s,
                                 (size_t)e->perf.master_channels)) {
-    atomic_fetch_add_explicit(&e->a_perf_overruns, 1u, memory_order_relaxed);
+    perf_note_drop(e);
   }
 }
 
@@ -4289,7 +4302,7 @@ static inline void perf_tap_monitor_frame(le_engine* e, int input, float l,
                                           float r) {
   const float s[2] = {l, r};
   if (!le_audio_ring_push_frame(&e->perf.monitor_ring[input], s, 2)) {
-    atomic_fetch_add_explicit(&e->a_perf_overruns, 1u, memory_order_relaxed);
+    perf_note_drop(e);
   }
 }
 
@@ -6678,6 +6691,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * grid and count-in starts can publish another image inside this block. */
   e->capture_image_dirty = 0;
   for (uint32_t f = 0; f < frames; ++f) {
+    e->perf.tap_frame = perf_frame_base + f;
     for (int t = 0; t < tc; ++t)
       e->tracks[t].fade_sample = le_fade_tick(&e->tracks[t].fade, sr);
     /* Input metering + sound-activated record + latency harness. When the harness

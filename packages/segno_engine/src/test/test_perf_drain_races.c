@@ -133,6 +133,7 @@ int main(void) {
   memset(&target, 0, sizeof(target));
   target.capture_dir = dir;
   target.volume_generation = -1;
+  target.reserve_bytes = UINT64_MAX; /* no budget unless a test sets one */
   target.part_bytes =
       LE_PERF_PART_HEADER_BYTES + (uint64_t)RACE_PART_FRAMES * 2 * 4;
   CHECK(le_perf_arm(g_engine, &target) == LE_OK);
