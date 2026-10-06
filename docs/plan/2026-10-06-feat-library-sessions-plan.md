@@ -6,6 +6,9 @@ one new native voice: verifiable here, but taste and blast radius are the
 owner's). Base: `origin/claude/segno-integration` at `c3714abc2`. Unless a
 branch is named, every `file:line` below is on that head. Precedent for the
 format: `docs/plan/2026-10-05-feat-engine-reopen-plan.md`.
+Status: approved 2026-10-06 with required review edits E1-E8, which are
+applied in this text (the review and the coordinator's preservation decision
+are recorded in section 3 and section 8).
 
 Owner decisions applied (planner brief, 2026-10-06): the settings tray and the
 Bluetooth page are retired (not this plan's work; this plan stops adding to
@@ -62,7 +65,11 @@ before #1177 lands.
   and it is summed before the output buses (`engine_process.c:6563-6579`);
   the performance tap sits inside `output_bus_frame` (`:6580-6586`,
   `perf_tap_master_pair` `:4004-4009`) and the master gain and limiter run
-  after it (`master_bus_frame` `:6588-6589`, `:4096-4130`).
+  after it (`master_bus_frame` `:6588-6589`, `:4096-4130`). Engine paths in
+  this document are under `packages/segno_engine/src/core/` unless a `src/test`
+  path is given. `save` writes `mixdown.wav` only when the mix is non-empty and
+  `_pruneOrphanLayers` never touches it (`session_repository.dart:495-511`), so
+  a re-save of an emptied rig leaves the previous mixdown on disk.
 - **Legacy exports.** `SessionRepository.exportMixdown`/`exportStems`
   (`session_repository.dart:593-628`) and `SessionCubit.exportMixdown`/
   `exportStems` (`session_cubit.dart:104-115`) have no caller outside the cubit
@@ -71,7 +78,12 @@ before #1177 lands.
   performance completion sheet's **Re-export** (`performance_completion_sheet.dart:345-353`),
   which calls `PerformanceRecorderCubit.reExport` (`performance_recorder_cubit.dart:592-635`)
   to write `project.als` and `fx-chains.txt` into the finished capture bundle
-  through `daw_export` (`:637-656`).
+  through `daw_export` (`:637-656`), where the user cannot reach them. The
+  capture bundle already holds `master.wav` (the mixdown) and the
+  `live-input-N.wav` stems (`performance_repository.dart:979-1000`).
+  `DawManifestReader` reads `performance.json`
+  (`packages/daw_export/lib/src/manifest_reader.dart:28`), so `.als` is
+  capture-only; a session bundle has no DAW project.
 - **Storage facts are internal only.** `ConsoleFactsClient.exportDestination`
   returns `''` on every real platform (`packages/console_facts_client/lib/src/local_console_facts_client.dart:116-121`);
   only the fake mounts `/media/usb0` (`fake_console_facts_client.dart:28`).
@@ -98,11 +110,12 @@ Screens this work must match (node ids in parentheses):
 | 19/04 `Session name` (`cPmYI`) | Rename and Save as use the fixed bottom keyboard sheet with `Cancel` / `Done` (the existing `showConsoleRenameSheet`). |
 | 19/05 `Session save / Storage error` (`lb1U1`) | The failure banner in the Library: "Could not save your current loop. Nothing was changed." |
 | 34 `Backup in Library`, `Inline copy progress`, `USB session list`, `Matching backup name`, `Restored session selected`, `Retry an interrupted copy` (`npwR1`, `mdwSD`, `C0Mogf`, `ZECDn`, `f2sBAc`, `vzH8N`) | Sessions > USB: `Back up to USB` with inline progress and `Cancel`; the USB list (`Session` / `Saved` columns, `Restore to Library`, "Adds a new session to Library."); name match `Cancel` / `Keep both` / `Replace`; a restored copy named `Evening loop (2)`; interruption "USB drive disconnected. Nothing was changed." `Cancel` / `Retry`. |
-| 18/01 `Audio library / Internal` (`bx7vK`), 18/06 `USB disconnected` (`jsmae`), 20/07 `Export a recording` (`KGCxw`), 20/09 `Matching filename`, 20/10 `Connect USB drive`, 20/11 `Export storage error`, 20/12 `Export complete` | The Audio tab geometry (1061-wide file list with a group heading such as `Performances`, 684-wide preview card with kind, name, waveform, controls and actions) and the USB export dialogs. |
+| 18/01 `Audio library / Internal` (`bx7vK`), 18/06 `USB disconnected` (`jsmae`), 20/07 `Export a recording` (`KGCxw`), 20/09 `Matching filename`, 20/10 `Connect USB drive`, 20/11 `Export storage error`, 20/12 `Export complete` | The Audio tab geometry (title `Audio library` with the sub-nav row `Prepared audio` / `Save audio` / `Record performance` (`Lr5u5`), `Internal` / `USB drive`, `Search audio`, a 1061-wide file list with group headings such as `Performances`, a 684-wide preview card with kind, name, waveform, a `Preview` control and actions) and the USB export dialogs (20/12 has `Show on USB` and `Done`). |
 
-Only the Sessions tab, the Audio tab's `Performances` group with Export to USB
-and the re-homed DAW export, and section 34 are in this plan. 18/02-18/05 and
-18/07-18/15 (prepared audio, backing, Save audio, track import) are E7-7..E7-10.
+Only the Sessions tab, the Audio tab's `Performances` and `Sessions` groups
+with Export to USB and the re-homed DAW export, and section 34 are in this
+plan. 18/02-18/05 and 18/07-18/15 (prepared audio, backing, Save audio, track
+import) are E7-7..E7-10.
 
 **Deviations the build must write back into the pen** (a shipped departure is
 a design change; this plan does not edit the pen):
@@ -113,10 +126,21 @@ a design change; this plan does not edit the pen):
    but not the sheet. Section 34's tiles label the same button `Rename`; the
    build follows 19/01.
 2. The Audio tab's preview gains a `DAW project` action for a performance
-   recording (the owner's re-home of the `.als` export). The pen's four actions
-   (`Add to prepared`, `Export to USB`, `Use as backing`, `Use in loop`) stay
-   where they are; the two that belong to E7-7/E7-9 are not drawn until those
-   parts exist (no disabled stand-ins for features that do not exist).
+   recording (the owner's re-home of the `.als` export), and its `Export to
+   USB` offers two packages for a recording (the single WAV, or the DAW
+   package: the whole bundle). The pen's four actions (`Add to prepared`,
+   `Export to USB`, `Use as backing`, `Use in loop`) stay where they are; the
+   two that belong to E7-7/E7-9 are not drawn until those parts exist (no
+   disabled stand-ins for features that do not exist).
+3. The Audio tab's sub-nav row (`Prepared audio`, `Save audio`, `Record
+   performance`) belongs to E7-8, E7-10 and E7-11; this plan draws the title
+   row without it until those parts exist. The pen's audio preview button
+   reads `Preview`; the build uses `Preview` on the Audio tab and `Listen` on
+   the Sessions tab, as drawn. 20/12's `Show on USB` is not built: there is no
+   file browser on the appliance to show it in; `Done` alone closes it.
+4. A `Sessions` group under Library > Audio lists each saved session's
+   mixdown (E1 of the review): the pen has group headings (`Backing tracks`,
+   `Performances`) but not this one.
 
 ## 3. Decisions
 
@@ -124,6 +148,17 @@ Owner decisions are repeated inline above. The rest are taken under the
 standing rules (1 preserve installs, 2 fail safe, 3 no silent change,
 4 consolidate, 5 drop uncertain native state with a notice); the build
 records any departure.
+
+Owner answers recorded from the plan review (2026-10-06): (1) Save with no
+identity saves as `New loop N`, no prompt (D4 stands). (2) Open and New loop
+preserve by saving first (D7 stands); the review's note that an unnamed rig
+without recorded content is not preserved is superseded by the coordinator's
+decision under rule 2, written into D7: any rig with unsaved changes since its
+last save, open or New loop is preserved, whatever kind of change, and an
+unchanged rig is not re-saved. (3) The DAW project action lives on the
+recording preview under Library > Audio and the completion sheet's Re-export
+goes now (D13), amended by review edit E1 so that the mixdown, the stems and
+the `.als` all remain reachable.
 
 - **D1 Identity is a directory id; the name is manifest metadata.** A bundle
   is `sessions/[<folder>/]<id>/`. New bundles take `s-YYYYMMDD-HHMMSS`
@@ -140,7 +175,11 @@ records any departure.
   is a same-filesystem `rename`. No index file (rule 4: the filesystem is the
   one truth; `session-bundle-format.md` already says the manifest is the only
   truth inside a bundle). An empty folder persists until deleted from
-  `Manage`; the folder chips are the directory list, nothing else.
+  `Manage`; the folder chips are the directory list, nothing else. A
+  manifest-less directory that contains layer WAVs (`track*_lane*_L*.wav`) or
+  `mixdown.wav` is an interrupted save, not a folder: it is excluded from the
+  chips and from the catalog, and left in place (rule 2; cleaning it up is
+  E7-19's transaction work).
 - **D3 Listing reads the manifest leniently.** `listSessions` today never
   parses a manifest so that a newer-version bundle still lists
   (`session_repository.dart:330-335`). The row now needs name, tempo,
@@ -160,34 +199,60 @@ records any departure.
   rig under a new identity and makes it current. `Duplicate` copies the
   **selected saved** bundle under a new identity and leaves the current
   pointer alone. All three are the existing repository methods with ids in
-  place of names (`session_repository.dart:385-398`, `:451-511`).
+  place of names (`session_repository.dart:385-398`, `:451-511`). A duplicated
+  bundle's manifest is rewritten with the new `name` (a copy that still
+  carried the source's name would list under it); the same holds for a
+  restored backup (Part 8).
 - **D6 Delete protection.** `Delete` is disabled in `Manage` for the current
   session, and `SessionCubit.deleteSession` refuses it too (the cubit is the
   authority, the sheet is fast feedback). Nothing else needs protecting yet:
   every bundle owns its audio files (duplicate copies them); the first shared
   reference arrives with backing (E7-7/E7-8), which must then add a
   reference check before deleting an audio item. Recorded as a non-goal.
-- **D7 Preserve outgoing work by saving it.** `Open` and `New loop` first
-  save the outgoing rig: to its identity when it has one, under an automatic
-  name when it has none and holds recorded content, nothing when it is empty
-  and unnamed. A failed save stops the operation before anything else changes
-  (19/05, rule 2). The cost is a redundant write-back when nothing changed;
-  the engine exposes per-track `audio_rev` (`segno_engine_api.h:2892-2895`),
-  so a later part can skip the audio files when every rev matches the last
-  save, but settings and chains have no single revision, so the manifest
-  would still be rewritten. Not this plan.
-- **D8 Interruption confirm.** `Open session` while the transport is running
-  (`LooperState.transport.isRunning`) asks `Stop playback and open <name>?`
-  with `Cancel` / `Open`. `New loop` always asks (19/02). Neither asks when
-  stopped. Restored transport starts stopped (#1134).
+- **D7 Preserve outgoing work by saving it (coordinator decision, rule 2).**
+  `Open` and `New loop` first save the outgoing rig whenever it has unsaved
+  changes since its last save, open or New loop: recorded content, FX, mixer
+  or any other rig edit. A named rig is saved to its identity; an unnamed rig
+  is saved under an automatic name. An unchanged rig is not re-saved, so a
+  fresh untouched rig writes nothing and a fresh rig with an FX edit becomes
+  `New loop N`. A failed save stops the operation before anything else changes
+  (19/05, rule 2). Change detection is a **fingerprint**, not a dirty flag:
+  `SessionCubit` runs the same capture a save runs
+  (`SessionSettingsCoordinator.capture`, inside `runExclusive`), builds the
+  manifest JSON the save would write (`_sessionFrom`, no file I/O) with each
+  track's layer list replaced by its per-track content revision
+  (`le_engine_track_audio_rev`, `segno_engine_api.h:2892-2895`, exposed on
+  `AudioEngine` and on the `LooperState` track in Part 4 if it is not already)
+  and the pedal remap string, and compares it with the fingerprint recorded
+  after the last successful save, open or New loop. Equal means unchanged.
+  Settings, chains, mix, routing, pedal remap and audio are all inside that
+  JSON, so no edit can escape it; the capture itself is what a save does
+  first, so an unchanged rig costs one capture and no write.
+- **D8 Interruption confirm.** `Open session` while any track is playing or
+  capturing (`LooperState.tracks.any((t) => t.state == TrackState.playing ||
+  t.isCapturing)`, `packages/looper_repository/lib/src/models/track.dart:222`)
+  asks `Stop playback and open <name>?` with `Cancel` / `Open`.
+  `TransportState.isRunning` is the audio device being open
+  (`models/transport_state.dart:43-44`), not playback, and must not be the
+  predicate. `New loop` always asks (19/02). Neither asks when every track is
+  stopped or empty. Restored transport starts stopped (#1134).
 - **D9 New loop is `applySession` of an empty rig.** The new rig keeps every
   manifest field except `tracks` (none), `baseLengthFrames` and `loopBars`
   (0: an empty rig with a grid would lock the next take's length, the hazard
   `session_repository.dart:733-739` already names), `primaryTrack` (-1; the
   crown dies with the content) and `laneMix` (per captured lane). It keeps
-  tempo, signature, mode, record and playback defaults, click, count-in, Fade
-  durations, track levels and pans, lane inputs/outputs/counts, input and
-  output setup, all four FX stages and the pedal remap. The apply path
+  every other manifest key: `tempoBpm`, `tempoSource`, `tsNum`, `tsDen`,
+  `syncTempo`, `quantizeDiv`, `looperMode`, `recordTiming`, `overdubDecay`,
+  `defaultOneShot`, `defaultLengthPresetBars`, `defaultFadeDurationMs`,
+  `trackFadeDurationOverrides`, `trackRecordTimingOverrides`,
+  `trackOverdubDecayOverrides`, `trackOneShotOverrides`,
+  `trackLengthPresetOverrides`, `clickMode`, `clickOutputMask`, `clickVolume`,
+  `countInBars`, `recDub`, `autoRecord`, `defaultMultiple`, `trackLevels`,
+  `trackPans`, `laneInputs`, `laneOutputs`, `laneCounts`, `inputSetup`,
+  `outputSetup`, `monitors`, `laneChains`, `trackChains`, `outputChains`,
+  `allTracksChain`, `pedalBindings`, `sampleRate`, `channels` (all of them
+  owned settings per `settingsFromLooper`, `lib/session/session_mapping.dart:103-135`,
+  or the live chains). The apply path
   already forgets lane mutes with the clear and resets Fade with the material
   (`looper_repository.dart:3884-3885`, `LE_CMD_RESET_FADE` applied at `engine_process.c:3159`,
   `segno_engine_api.h:516`). Reverse, Transpose and Speed do not exist yet;
@@ -199,33 +264,60 @@ records any departure.
   accepted behavior wants audition isolated from the rig and not loading the
   session (6.3). The engine owns the only output device, so the voice must be
   native. It is one interleaved buffer the control thread publishes and the
-  callback sums into one output pair **after** the performance tap and
+  callback sums into one output pair **after** the output-bus loop (so after
+  the performance tap, and untouched by any output bus's level or mute) and
   **before** the master bus, so stems and `master.pcm` never contain it and
-  the limiter still protects (`engine_process.c:6580-6589`). No resampling:
-  a file at another rate is refused and the panel says so (the same honesty
-  as `SessionSampleRateMismatch`). Audition ends on navigation, on `Open`,
-  `New loop`, performance arm and any track entering recording. For a
-  performance recording the same voice plays its `master.wav`.
+  only the master gain and limiter shape it (`engine_process.c:6580-6589`).
+  **The voice is bounded**: `kAuditionMaxSeconds = 120`, so the buffer is at
+  most 120 s x rate x channels floats (46 MB at 48 kHz stereo, 23 MB for a
+  mono mixdown); the file is decoded in `Isolate.run`, reading at most that
+  many frames from disk (`WavCodec.decodeFloat32` gains a `maxFrames` bound
+  and the repository reads only the header plus that payload), and the panel
+  says `Preview plays the first 2:00` when the file is longer. A `mixdown.wav`
+  is an LCM period and a performance `master.wav` can be a 2 GB part; neither
+  may be read whole on the UI isolate. A streamed ring (the perf ring's shape
+  reversed) is the upgrade if a longer audition is ever wanted; not this plan.
+  No resampling: a file at another rate is refused and the panel says so (the
+  same honesty as `SessionSampleRateMismatch`). Audition ends on navigation,
+  on `Open`, `New loop`, performance arm, any track entering recording, and a
+  device reopen or reconfigure (#1158: configure frees the buffer, so the
+  cubit ends Listen when `audition_frames` reads 0 before the progress reached
+  the end). For a performance recording the same voice plays its `master.wav`.
 - **D11 The waveform is real or absent.** Preview lanes draw peaks decoded
   from the lane-0 live layer WAV (`track{c}_lane0_L{undoCount}.wav`) in an
   isolate; until Part 6 lands, lane rows draw length only (the clip's width
   share), never a placeholder waveform (accepted 6.3, "missing waveform data
   is explicit").
-- **D12 USB through a port.** The Library depends on
+- **D12 USB through a port shaped like #1177.** The Library depends on
   `RemovableVolumes` (section 4.3), an interface this plan defines in the app
-  layer, with `InternalOnlyVolumes` as the shipped default. #1177's service
-  provides the adapter; until then the `USB` segment shows the pen's
-  "Connect a USB drive" state (18/06) and every USB action is unavailable
-  with that reason. No fake drive outside tests.
-- **D13 DAW export moves, legacy session exports go.** The completion
-  sheet's `Re-export` button, `PerformanceRecorderCubit.reExport`,
-  `isReExporting` and `reExportFailed` are removed; the `.als` and
-  `fx-chains.txt` writer becomes a shared app-layer function the capture
-  pipeline and the Library > Audio `DAW project` action both call.
-  `SessionRepository.exportMixdown`/`exportStems` and the two `SessionCubit`
-  methods and outcomes are deleted (unreachable today; D3 in the inventory
-  resolved by the owner's re-home). The `mixdown.wav` write stays: Listen
-  needs it.
+  layer with the exact model shapes of #1177's `storage_repository`
+  (`claude/usb-storage-plan-1177` section 2.3 and Part 4), with
+  `InternalOnlyVolumes` as the shipped default. #1177's `StorageRepository`
+  implements the port directly or through a one-file adapter; until then the
+  `USB` segment shows the pen's "Connect a USB drive" state (18/06) and every
+  USB action is unavailable with that reason. File copies to a drive go
+  through the port's `copyFile` (the `.part` + fsync + rename protocol and the
+  `Keep both` suffixing live in #1177, once); this plan's repositories keep
+  only bundle-level orchestration. Directory listing of a drive stays here
+  (#1177's Part 4 names it this plan's). No fake drive outside tests.
+- **D13 DAW export moves; mixdown and stems exports are re-based on saved
+  bundles (review E1).** The completion sheet's `Re-export` button,
+  `PerformanceRecorderCubit.reExport`, `isReExporting` and `reExportFailed`
+  are removed; the `.als` and `fx-chains.txt` writer becomes a shared
+  app-layer function the capture pipeline and the Library > Audio `DAW
+  project` action both call, and `Export to USB` on a recording offers the
+  DAW package (the whole bundle: `master.wav`, the `live-input-N.wav` stems,
+  `project.als`, `fx-chains.txt`) or the single WAV. `.als` stays
+  capture-only. The live-rig `SessionRepository.exportMixdown`/`exportStems`
+  (`session_repository.dart:593-628`) are not deleted but re-based on a saved
+  bundle: `exportMixdown(id, destination)` copies the bundle's `mixdown.wav`,
+  `exportStems(id, destinationDir)` copies each lane's live layer
+  `track{c}_lane{l}_L{undoCount}.wav` as `track{c}_lane{l}_L0.wav`; the two
+  `SessionCubit` methods and outcomes that exported the live rig are removed
+  (unreachable today) and the Library > Audio `Sessions` group reaches the
+  re-based exports with `Export to USB` (mixdown) and `Export stems`. The
+  `mixdown.wav` write stays: Listen and the mixdown export need it; a save
+  whose mix is empty deletes it (review E5).
 - **D14 Footswitch in the Library.** A footswitch press while the Library is
   open returns to Tracks before it acts, as the dialog does today
   (`sessions_manager_cubit.dart:28-33`), and stops any audition. Encoder
@@ -238,12 +330,12 @@ records any departure.
 
 | Concern | Owner | Notes |
 |---|---|---|
-| Catalog layout, ids, folders, lenient summaries, previews, backup and restore file I/O, audition file read | `SessionRepository` (`packages/session_repository`) | Path-addressed; knows nothing about USB or the engine's transport. |
+| Catalog layout, ids, folders, lenient summaries, previews, re-based mixdown and stems exports, backup and restore bundle orchestration, audition file read | `SessionRepository` (`packages/session_repository`) | Path-addressed; knows nothing about USB or the engine's transport. Drive-side file copies go through the port's `copyFile`. |
 | Audition voice | `AudioEngine` (`packages/segno_engine`), new `EngineAudition` role interface | Native contract in 4.4. |
 | Current identity, Save / Save as / Duplicate / Rename / Delete / Move, Open with preservation, New loop | `SessionCubit` | Already composes the session, looper and performance repositories and the settings coordinator (`session_cubit.dart:25-67`). Keeps its `_run` envelope, boot-recovery fence and `runExclusive` ordering. |
 | Library presentation state: tab, location, search text, folder filter, selected id, preview facts and peaks, audition progress, pedal dismissal | new `LibraryCubit` (`lib/library/cubit/`) | Replaces `SessionsManagerCubit`. Reads `SessionCubit` state through the view, never the other way round. |
 | Removable volumes | `RemovableVolumes` port (`lib/library/application/removable_volumes.dart`) | Default `InternalOnlyVolumes`; #1177 supplies the adapter. |
-| Finished recordings list, their facts and export copy | `PerformanceRepository` (`packages/performance_repository`) | Gains `listCaptures()`; the bundle shape is already fixed (`performance_repository.dart:979-1000`, `manifestName`). |
+| Finished recordings list, their facts, the DAW package file list | `PerformanceRepository` (`packages/performance_repository`) | Gains `listCaptures()` and `dawPackageFiles(path)`; the bundle shape is already fixed (`performance_repository.dart:979-1000`, `manifestName`). Copies go through the port. |
 
 ### 4.2 Catalog model (session_repository)
 
@@ -274,112 +366,180 @@ Repository surface (ids everywhere a name was): `listSessions()`,
 `moveSession(id, {String? folder})`, `renameSession(id, name)` (metadata),
 `duplicateSession(id, name) -> SessionId`, `deleteSession(id)`,
 `bundlePathOf(id)`, `readPreview(id)`, `nextAutomaticName(prefix)`,
-`newSessionId(now)`, `save(path, …)` unchanged plus a `name:` argument,
-`read(path)` unchanged. Name collisions are checked on display names,
-case-insensitively, and still raise `SessionNameCollision`.
+`newSessionId(now)`, `save(path, …)` unchanged plus a `name:` argument and
+the empty-mix `mixdown.wav` deletion, `read(path)` unchanged,
+`exportMixdown(id, destinationPath)` and `exportStems(id, destinationDir)`
+re-based on the saved bundle (D13). Name collisions are checked on display
+names, case-insensitively, and still raise `SessionNameCollision`.
 
 ### 4.3 The removable-volumes port
 
+The port reuses #1177's model shapes verbatim (its section 2.3), so that
+`StorageRepository` can implement it without translation: volumes are keyed by
+`generation` (a replug is `generation + 1`, so a stale callback can never
+address the new drive), the mount is `mountPoint`, space is a call, a lease
+carries its `purpose` (the Storage page shows it on the disabled Eject), and
+failures are #1177's typed `StorageFailure`.
+
 ```dart
 abstract interface class RemovableVolumes {
-  /// Mounted, readable drives; empty when none. Emits on every change.
+  /// #1177's RemovableVolume{generation, fingerprint, label, fsType, mountPoint,
+  /// sizeBytes, status, writeBytesPerSecond, failureReason}; emits on change.
   Stream<List<RemovableVolume>> get volumes;
   List<RemovableVolume> get current;
-  /// Runs [body] while the drive is leased for writing: the storage service
-  /// refuses Eject for the lease's duration and the body receives the mount
-  /// path. Throws [VolumeUnavailable] when the drive is gone before or during.
-  Future<T> withWriteLease<T>(String volumeId, Future<T> Function(String mountPath) body);
+  /// #1177's VolumeSpace{totalBytes, freeBytes}; null when unknown.
+  Future<VolumeSpace?> space(StorageDestination destination);
+  /// Holds a WriteLease{target, purpose} for [body]'s duration, so Eject is
+  /// refused naming [purpose]; completes with StorageFailure.volumeLost when
+  /// the drive goes away before or during.
+  Future<T> withWriteLease<T>(StorageDestination target, String purpose,
+      Future<T> Function(String mountPoint) body);
+  /// #1177's copyFile: `.part` + fsync + rename, ConflictPolicy.ask throws
+  /// NameConflict(existingPath) before writing, keepBoth suffixes ` (2)`,
+  /// replace renames over; typed failures full / readOnly / volumeLost /
+  /// unsupported / io; the part file is deleted on any failure.
+  Future<String> copyFile(String sourcePath, StorageDestination destination,
+      String relativePath, {required ConflictPolicy onConflict});
 }
-@immutable class RemovableVolume { final String id, label, mountPath; final int? freeBytes; final bool writable; }
-class VolumeUnavailable implements Exception { final String volumeId; }
-class InternalOnlyVolumes implements RemovableVolumes { /* always empty */ }
+class InternalOnlyVolumes implements RemovableVolumes { /* no volumes; copyFile to a removable destination throws StorageFailure.unsupported */ }
 ```
 
+Until #1177's package exists, the model types (`RemovableVolume`,
+`RemovableVolumeStatus`, `StorageDestination`, `VolumeSpace`, `WriteLease`,
+`ConflictPolicy`, `NameConflict`, `StorageFailure`) are declared beside the
+port in `lib/library/application/` with #1177's fields and names; when
+`packages/storage_repository` lands, that file imports them from there and the
+local declarations are deleted (one commit, no behavior change).
+
 Library layout on a drive: `<mount>/Segno/Sessions/<id>/` (a bundle copy with
-its manifest) and `<mount>/Segno/Performances/<file>.wav` (20/12 "USB drive /
-Performances"). #1177's adapter implements the port over its service; nothing
-in this plan imports that service.
+its manifest) and `<mount>/Segno/Performances/<name>.wav` or
+`<mount>/Segno/Performances/<name>/` for a DAW package (20/12 "USB drive /
+Performances"). Reading a drive's `Segno/Sessions/` listing is this plan's
+(`listBackups`); #1177 leaves browsing to the Library. Nothing in this plan
+imports #1177's client.
 
 ### 4.4 Native audition contract (`segno_engine_api.h`)
 
 ```c
 /* Audition: the Library's isolated preview voice. Control thread. Copies
- * `frames` interleaved float32 samples (`channels` 1 or 2) into an engine-owned
- * buffer and plays it once (no loop) into output pair `bus`, summed AFTER the
- * performance tap and BEFORE the master bus (gain, limiter, metering), so
- * stems and master.pcm never contain it. Refused with LE_ERR_INVALID when
- * frames <= 0, channels not 1 or 2, sample_rate != the engine rate, bus out of
- * range, or performance capture is armed; LE_ERR_NOT_RUNNING when not
- * configured. A second start replaces the first at the next block. */
+ * `frames` interleaved float32 samples (`channels` 1 or 2, frames <=
+ * LE_AUDITION_MAX_SECONDS * sample_rate) into an engine-owned buffer and plays
+ * it once (no loop) into output pair `bus`, summed AFTER the output-bus loop
+ * (so after the performance tap; no output bus level or mute touches it) and
+ * BEFORE the master bus (gain, limiter, metering), so stems and master.pcm
+ * never contain it. Refused with LE_ERR_INVALID when frames <= 0 or over the
+ * cap, channels not 1 or 2, sample_rate != the engine rate, bus out of range,
+ * or performance capture is armed; LE_ERR_NOT_RUNNING when not configured;
+ * LE_ERR_NOT_READY while a previously replaced buffer still awaits the audio
+ * thread's release (retry after one block). A second start replaces the
+ * first at the next block. */
 LE_EXPORT int32_t le_engine_audition_start(le_engine*, const float* pcm,
     int32_t frames, int32_t channels, int32_t sample_rate, int32_t bus);
 LE_EXPORT int32_t le_engine_audition_stop(le_engine*);
 /* le_snapshot: int32_t audition_frames (0 = none); int32_t audition_pos. */
 ```
 
-Mechanics: `_Atomic(le_audition*) a_audition` plus an audio-thread
-`a_audition_ack` generation, the same publish/ack shape the state commands
-use (`engine_private.h:1019-1036`). The callback loads the pointer once per
-block, mixes `frames - pos` samples (or to the block end) and advances
-`audition_pos`; at the end it publishes `audition_frames = 0`. `stop`,
-`start` (replace), `le_engine_perf_arm` and configure park the old buffer and
-free it on the control thread once the ack passes the generation; nothing is
-freed on the audio thread and nothing allocates there. `le_engine_perf_arm`
-also clears the pointer, and the mixer skips the voice while `e->perf.armed`,
-so a race cannot put audition samples into a capture. `LE_CMD_AUDITION_STOP`
-is not needed: publication is an atomic pointer swap, not a command.
+Mechanics (review E4): `_Atomic(le_audition*) a_audition` with a generation,
+and an audio-thread `a_audition_ack`. The callback loads the pointer once per
+block with acquire, mixes `frames - pos` samples (or to the block end),
+advances `audition_pos`, and stores `a_audition_ack = generation` with
+release **after the last mixed sample of the block**, never at block entry:
+`engine_private.h:1033-1035` records that a plain command ack lands before the
+block's frames finish, so an ack at entry would let the control thread free a
+buffer the block is still reading. At the end of the material it publishes
+`audition_frames = 0`. `stop` and `start` (replace) park the old buffer in one
+`audition_retired` slot; the control thread frees it when `a_audition_ack`
+has reached the retiring generation, or immediately when the callback is not
+running (`a_running == 0`, `engine_private.h:1420`: no block can hold the
+pointer). While the slot is occupied and unacked, a further `start` returns
+`LE_ERR_NOT_READY` (the existing "a pending report prevents a safe decision"
+code, `segno_engine_api.h:51`) and the Dart seam retries once after one block
+period; `stop` with an occupied slot waits for that ack on the control thread
+(bounded by one block period) and then frees both. `le_perf_arm`
+(`engine_process.c:3819`, applied on the audio thread) is preceded on the
+control side by the same park, and the mixer skips the voice while
+`e->perf.armed`, so a race cannot put audition samples into a capture.
+`le_engine_quiesce_workers` (`engine.c:358`, run by configure and reopen)
+frees both slots with the callback stopped. Nothing is freed on the audio
+thread and nothing allocates there. No new command code: publication is an
+atomic pointer swap, not a ring command.
 
 ## 5. Parts
 
 Sizes are production lines (Dart or C), excluding tests, generated bindings
-and docs. Dependencies: P1 -> P2 -> P3 -> P4 -> P5; P6 after P2; P7 after P2
-(Listen on recordings after P6); P8 after P3. Every part leaves the app
-working end to end and ships its own tests.
+and docs. Dependencies: P1 -> P2 -> P3 -> P4 -> P5; P6a -> P6b, both after P2;
+P7 after P2 (Preview on recordings after P6b); P8 after P3. Every part leaves
+the app working end to end and ships its own tests.
 
-### Part 1: catalog identity, folders, lenient summaries, previews (about 420 lines)
+### Part 1: catalog identity, folders, lenient summaries, previews, and the SessionCubit id migration (about 520 lines)
 
-Files: `packages/session_repository/lib/src/models/session_summary.dart`
+Files, package: `packages/session_repository/lib/src/models/session_summary.dart`
 (replace), new `models/session_preview.dart`, `session_repository.dart`
-(`:303-427` catalog block rewritten for ids and folders; `save` gains `name`;
-`:593-628` `exportMixdown`/`exportStems` deleted; `_sessionFrom` writes
-`name`), `models/session.dart` (optional `name`, read at `:745-775`, written at
-`:1018-1020`, `formatVersion` unchanged), `session_name.dart` (`sessionSlug`
-stays for display-name sanitizing; the slug is no longer a path), new
-`session_id.dart` (`newSessionId`, pattern `performance_slug.dart`),
-`docs/design/session-bundle-format.md` (layout and `name`).
+(`:303-427` catalog block rewritten for ids and folders; `save` gains `name`
+and deletes `mixdown.wav` when the mix is empty (E5); `:593-628`
+`exportMixdown`/`exportStems` re-based on a saved bundle (D13); `_sessionFrom`
+writes `name`), `models/session.dart` (optional `name`, read at `:745-775`,
+written at `:1018-1020`, `formatVersion` unchanged), `session_name.dart`
+(`sessionSlug` stays for display-name sanitizing; the slug is no longer a
+path), new `session_id.dart` (`newSessionId`, pattern `performance_slug.dart`),
+`docs/design/session-bundle-format.md` (layout, `name`, the empty-mix rule).
 
-Behavior: listing walks one level (section 3 D2), reads each manifest as a
-JSON map for the summary keys (D3) and sorts by `modifiedAt` descending;
+Files, app (the id migration the review moved here out of Part 2, so that the
+package change and the one caller change land together and the app keeps
+compiling): `lib/session/cubit/session_cubit.dart` (`currentSessionId` beside
+`currentSessionName`; `loadNamed(name)` becomes `open(id)` with the same body;
+`renameSession`, `duplicateSession`, `deleteSession` take ids; `saveAs` creates
+`newSessionId` and passes `name:`; the live-rig `exportMixdown`/`exportStems`
+methods and their two outcomes removed, `saveAsRequested` kept until Part 3),
+`session_state.dart`, `lib/session/view/sessions_manager_dialog.dart` (rows
+keyed and loaded by id, highlight by id; otherwise unchanged, it is retired in
+Part 2), `lib/looper/view/tracks_commands.dart:389-391` (the two export
+outcome strings go), `app_en.arb`/`app_es.arb` (`mixdownExported`,
+`stemsExported` removed).
+
+Behavior: listing walks one level (section 3 D2), skips manifest-less
+directories that hold layer WAVs or a mixdown, reads each manifest as a JSON
+map for the summary keys (D3) and sorts by `modifiedAt` descending;
 `readPreview` uses `Session.fromJson` and derives bars from `lengthFrames`,
 `tempoBpm`, `tsNum`/`tsDen` and the sample rate (0 when `tempoBpm == 0`).
 Automatic names count every catalog name. Folder and name validation reuse
-`sessionSlug` (letters, digits, space, hyphen, underscore).
+`sessionSlug` (letters, digits, space, hyphen, underscore). Duplicate
+rewrites `name` in the copy's manifest. The dialog behaves exactly as before
+for the user; only its keys change.
 
 Tests (`packages/session_repository/test/session_catalog_test.dart` rewritten,
-`session_repository_test.dart` extended): a legacy `sessions/<slug>/` bundle
-lists with `id == name == slug`; a bundle with `name` lists by its name; an
-unparseable manifest lists `unreadable` by basename and `readPreview` throws
-the typed refusal; folders list and bundles inside them carry `folder`; a
-nested second level is ignored; `moveSession` to and from `Unfiled`;
-`renameSession` changes only the manifest and keeps every WAV byte-identical;
-duplicate and delete by id; `nextAutomaticName` skips `New loop 1` and
-`new loop 3` to return `New loop 2`; `deleteFolder` refuses a non-empty
-folder; `newSessionId` same-second suffixing; the mixdown is still written
-and the two export methods are gone (compile-time).
+`session_repository_test.dart` extended, `test/session/cubit/session_cubit_test.dart`
+and `test/session/view/sessions_manager_dialog_test.dart` adapted to ids):
+a legacy `sessions/<slug>/` bundle lists with `id == name == slug`; a bundle
+with `name` lists by its name; an unparseable manifest lists `unreadable` by
+basename and `readPreview` throws the typed refusal; folders list and bundles
+inside them carry `folder`; a manifest-less directory holding
+`track0_lane0_L0.wav` is neither a folder nor a session; a nested second level
+is ignored; `moveSession` to and from `Unfiled`; `renameSession` changes only
+the manifest and keeps every WAV byte-identical; duplicate rewrites the copy's
+`name` and deletes by id; `nextAutomaticName` skips `New loop 1` and `new loop
+3` to return `New loop 2`; `deleteFolder` refuses a non-empty folder;
+`newSessionId` same-second suffixing; a save whose captured mix is empty
+deletes a stale `mixdown.wav` and a non-empty one rewrites it;
+`exportMixdown(id, path)` copies the bundle's mixdown byte-identically and
+`exportStems(id, dir)` writes `track{c}_lane{l}_L0.wav` equal to the bundle's
+live layer for every lane; the cubit opens, renames, duplicates and deletes by
+id and the dialog highlights by id.
 
 ```success-criteria
-GOAL: Sessions have a stable directory identity, a renameable display name and one level of folders, listed without loading anything, and every installed bundle still lists and loads unchanged.
+GOAL: Sessions have a stable directory identity, a renameable display name and one level of folders, listed without loading anything; every installed bundle still lists and loads unchanged; the saved bundle is the source for the mixdown and stems exports; and the app compiles and behaves as before on ids.
 SUCCESS CRITERIA:
 - A pre-existing `sessions/<slug>/` bundle with no `name` field lists under its slug, previews and loads exactly as before; a bundle saved with `name` lists under that name and keeps `version: 11`. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test)
-- Rename touches only `session.json`; every layer WAV and `mixdown.wav` is byte-identical before and after. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test test/session_catalog_test.dart)
-- Folders are directories: create, move in and out, refuse deleting a non-empty folder, ignore a second level; summaries carry name, folder, saved time, track count, tempo, signature and FX count without a full decode. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test)
-- `exportMixdown` and `exportStems` no longer exist; the package coverage floor of 89% holds. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test --coverage) && dart analyze --fatal-infos packages/session_repository
+- Rename touches only `session.json`; every layer WAV and `mixdown.wav` is byte-identical before and after; a duplicate carries the new name in its own manifest. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test test/session_catalog_test.dart)
+- Folders are directories: create, move in and out, refuse deleting a non-empty folder, ignore a second level, never list an interrupted save as a folder; summaries carry name, folder, saved time, track count, tempo, signature and FX count without a full decode. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test)
+- A save with an empty mix removes a stale `mixdown.wav`; `exportMixdown(id, …)` and `exportStems(id, …)` read the saved bundle, never the live engine; the package coverage floor of 89% holds. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test --coverage) && dart analyze --fatal-infos packages/session_repository
+- The app's session cubit and dialog work on ids with unchanged user-visible behaviour; the live-rig export methods and outcomes are gone. | verify: /Users/Tomas/development/flutter/bin/flutter test test/session test/app/view/app_test.dart test/looper/view && ! grep -rn "mixdownExported\|stemsExported" lib && dart analyze --fatal-infos && bloc lint lib test packages
 NON-GOALS:
-- UI, the cubit, shared audio references, migration of directory names, waveform peaks.
-VERIFICATION COMMAND: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test --coverage) && dart analyze --fatal-infos packages/session_repository
+- The Library page, folders UI, shared audio references, migration of directory names, waveform peaks, USB.
+VERIFICATION COMMAND: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test --coverage) && /Users/Tomas/development/flutter/bin/flutter test test/session test/app/view/app_test.dart test/looper/view && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
-### Part 2: the Library shell replaces the Sessions dialog (about 650 lines)
+### Part 2: the Library shell replaces the Sessions dialog (about 560 lines)
 
 Files: new `lib/library/view/library_page.dart` (`LibraryPage` in
 `LoopSettingsFrame`, crumb tabs, `Stage`), `library_sessions_tab.dart`
@@ -392,9 +552,7 @@ with the duplicate guard and route name `segno/library`),
 `lib/app/view/app.dart` (provide `RemovableVolumes`; `InternalOnlyVolumes` in
 every composition root, `lib/app/run_segno.dart`), `stage_top_bar.dart:54`,
 `connectivity_banners.dart:91` and `tracks_commands.dart:371-375` repointed to
-`openLibrary`; `SessionCubit` moves to ids (`currentSessionId` plus
-`currentSessionName` for the header; `loadNamed` becomes `open(id)` in Part 4,
-here only renamed to take an id); delete
+`openLibrary` (the cubit is already on ids after Part 1); delete
 `lib/session/view/sessions_manager_dialog.dart`,
 `lib/session/cubit/sessions_manager_cubit.dart`, their tests, and the
 `sessionsManagerTitle`, `sessionsEmpty`, `sessionNewTitle`, `sessionManage`
@@ -402,10 +560,13 @@ strings in `app_en.arb`/`app_es.arb` (new `library*` keys replace them).
 
 Behavior: the Library opens on the Sessions tab with the current session
 selected; a tap on a row selects and previews (never loads); the footer reads
-`Return to tracks` for the current session and `Open session` otherwise
-(`Open` itself is Part 4: until then the button is `Return to tracks` for the
-current session and absent for others, so no row can load by accident); the
-`Audio` crumb is present and opens the Part 7 tab (until Part 7 the crumb is
+`Return to tracks` for the current session and `Open session` otherwise, and
+`Open session` calls `SessionCubit.open(id)`, the existing load body by id
+(review E6: there must be a way to switch sessions between this part and
+Part 4; the D7 preservation and the D8 confirm layer onto this same call in
+Part 4, so until then Open behaves as the retired dialog's row tap did, minus
+the accidental tap); the `Audio` crumb is present and opens the Part 7 tab
+(until Part 7 the crumb is
 not drawn: nothing is shown that does not work); `USB` is shown and, with
 `InternalOnlyVolumes`, selecting it shows "Connect a USB drive" with "Your
 internal sessions are still available." (18/06 wording adapted); `New loop`
@@ -428,11 +589,11 @@ the Library), `test/looper/view/stage_top_bar_test.dart` if present.
 GOAL: The Library is a full-screen page with Sessions and Audio crumbs, Internal and USB locations, search, folders and a preview that never loads, and the Sessions dialog is gone.
 SUCCESS CRITERIA:
 - Tapping the stage Library mark pushes `segno/library` drawn to pen 19/01 (topbar, 709/1028 split, row and preview geometry) and no `sessions_manager` key exists anywhere in `lib/`. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library test/app/view/app_test.dart && ! grep -rn "sessions_manager\|showSessionsManager" lib
-- Selecting a row changes the preview and footer only; `LooperRepository.applySession` is never called by a selection (mock verify). | verify: /Users/Tomas/development/flutter/bin/flutter test test/library
+- Selecting a row changes the preview and footer only; `LooperRepository.applySession` is never called by a selection (mock verify); `Open session` on a non-current row calls `SessionCubit.open(id)` once and the loaded session lands stopped. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library
 - Search, `All`/`Unfiled`/folder chips and the `USB` location with the default port behave as specified; a footswitch press pops the page. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library test/app/view/app_test.dart
 - Analyzer, Bloc lint, formatting and the root 90% coverage floor stay green. | verify: dart analyze --fatal-infos && bloc lint lib test packages && /Users/Tomas/development/flutter/bin/flutter test --coverage
 NON-GOALS:
-- Manage actions, Open, New loop, Listen, the Audio tab's contents, USB backup.
+- Manage actions, preservation and the interruption confirm on Open, New loop, Listen, the Audio tab's contents, USB backup.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
@@ -444,9 +605,9 @@ error banner 19/05), `lib/session/cubit/session_cubit.dart` (`save` with
 automatic name, `saveAs(name)`, `duplicateSession(id, name)`,
 `renameSession(id, name)`, `moveSession(id, folder)`, `deleteSession(id)`
 refusing the current id with new `SessionError.currentSessionProtected`;
-`saveAsRequested`, `mixdownExported`, `stemsExported` removed from
-`session_state.dart:19-42`), `tracks_commands.dart:371-395` (the quick Save
-toast names the automatic name; no prompt), l10n keys.
+`saveAsRequested` removed from `session_state.dart:19-42`),
+`tracks_commands.dart:371-395` (the quick Save toast names the automatic
+name; no prompt), l10n keys.
 
 Behavior per D4, D5, D6. Name prompts use `showConsoleRenameSheet` (19/04)
 with the inline collision check kept as fast feedback; the cubit stays the
@@ -469,44 +630,52 @@ GOAL: Every identity operation is explicit and distinct, naming is optional, and
 SUCCESS CRITERIA:
 - Save on an unnamed rig creates `New loop N` without a prompt; Save as creates a new current identity; Duplicate copies a saved session without touching the current pointer; Rename is metadata-only; Delete refuses the current session. | verify: /Users/Tomas/development/flutter/bin/flutter test test/session/cubit/session_cubit_test.dart
 - A failed save shows "Could not save your current loop. Nothing was changed." and the catalog, current pointer and every bundle on disk are unchanged. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library test/session
-- `saveAsRequested`, `mixdownExported` and `stemsExported` no longer exist. | verify: ! grep -rn "saveAsRequested\|mixdownExported\|stemsExported" lib && dart analyze --fatal-infos
+- `saveAsRequested` no longer exists. | verify: ! grep -rn "saveAsRequested" lib && dart analyze --fatal-infos
 NON-GOALS:
 - Open, New loop, USB, shared-audio reference checks.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
-### Part 4: explicit Open that preserves outgoing work and confirms interruption (about 260 lines)
+### Part 4: Open preserves outgoing work and confirms interruption (about 300 lines)
 
-Files: `session_cubit.dart` (`open(id)`: the preservation step of D7, then the
-existing load body `:231-384` with the id-based path; the no-op when
-`id == currentSessionId`), `library_sessions_tab.dart` (`Open session`
-footer, the D8 confirm dialog via `showConsoleConfirmDialog`
-`console_surface.dart:2960`, the 19/05 banner on a preservation failure),
-`library_cubit.dart` (stop audition hook for Part 6), l10n.
+Files: `session_cubit.dart` (`open(id)` gains the D7 preservation step with
+the fingerprint, recorded after every successful save, open and New loop; the
+no-op when `id == currentSessionId`), `packages/segno_engine/lib/src/audio_engine.dart`
+and `native_audio_engine.dart` (`trackAudioRev(channel)` over
+`le_engine_track_audio_rev` if the snapshot does not already carry it; the
+mock and fakes count it up on every write), `library_sessions_tab.dart` (the
+D8 confirm dialog via `showConsoleConfirmDialog` `console_surface.dart:2960`,
+the 19/05 banner on a preservation failure), `library_cubit.dart` (stop
+audition hook for Part 6), l10n.
 
-Behavior: `Open` runs inside one `runExclusive` scope: preserve (save or
-automatic save or nothing) -> read the target -> disarm capture -> apply
-stopped -> make current. A preservation failure aborts before the read and
-shows 19/05; a target refusal (rate, version, corrupt layers) shows the
-existing localized banners in the preview and leaves the outgoing rig and
-its just-written save in place. While running, the transport is asked first
-(D8); `Cancel` changes nothing.
+Behavior: `Open` runs inside one `runExclusive` scope: capture and fingerprint
+-> save when changed (identity or automatic name) -> read the target -> disarm
+capture -> apply stopped -> make current -> record the new fingerprint. A
+preservation failure aborts before the read and shows 19/05; a target refusal
+(rate, version, corrupt layers) shows the existing localized banners in the
+preview and leaves the outgoing rig and its just-written save in place.
+While any track plays or captures, the player is asked first (D8); `Cancel`
+changes nothing.
 
-Tests: `session_cubit_test.dart` (outgoing named rig is saved before the
-target applies, verified by call order on the mocks; an unnamed rig with
-content is saved under an automatic name; an empty unnamed rig writes nothing;
+Tests: `session_cubit_test.dart` (an outgoing named rig with a changed track
+rev is saved before the target applies, verified by call order on the mocks;
+an outgoing named rig whose fingerprint matches is not saved; an unnamed rig
+with only an FX chain change is saved under an automatic name; an unnamed rig
+with only a mixer level change is saved; a fresh untouched rig writes nothing;
 a preservation failure applies nothing and the state carries the error; a
 target `SessionSampleRateMismatch` after a successful preservation leaves the
-current pointer on the outgoing session), `library_page_test.dart` (running
-transport shows the confirm; `Cancel` calls nothing; stopped transport opens
-without asking; the current session's footer is `Return to tracks`).
+current pointer on the outgoing session), `library_page_test.dart` (a
+fixture with one track in `TrackState.playing` shows the confirm; one in
+`TrackState.recording` shows it; all tracks stopped or empty with
+`transport.isRunning == true` does not; `Cancel` calls nothing; the current
+session's footer is `Return to tracks`).
 
 ```success-criteria
-GOAL: Opening a session is an explicit act that never loses the outgoing work and never interrupts playback without asking.
+GOAL: Opening a session is an explicit act that never loses outgoing work of any kind, never re-saves an unchanged rig, and never interrupts playback without asking.
 SUCCESS CRITERIA:
-- With a named outgoing session, Open saves it first and then applies the target stopped; with unnamed recorded content it saves `New loop N` first; with an empty unnamed rig it saves nothing. | verify: /Users/Tomas/development/flutter/bin/flutter test test/session/cubit/session_cubit_test.dart
+- A changed outgoing rig (audio, FX, mixer or settings) is saved first, to its identity or as `New loop N`; an unchanged rig is not re-saved; a fresh untouched rig writes nothing. | verify: /Users/Tomas/development/flutter/bin/flutter test test/session/cubit/session_cubit_test.dart
 - A failed preservation shows the 19/05 banner and applies nothing; a refused target after preservation keeps the outgoing session current and its save on disk. | verify: /Users/Tomas/development/flutter/bin/flutter test test/session test/library
-- A running transport is asked before Open; Cancel changes nothing; a stopped transport is not asked. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library
+- A playing or capturing track is asked before Open; Cancel changes nothing; stopped tracks on a running device are not asked. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library
 - Round trip on the real engine: save, record on another identity, Open the first; the first plays back byte-exact from the head after Play. | verify: /Users/Tomas/development/flutter/bin/flutter test test/session/session_layers_roundtrip_test.dart
 NON-GOALS:
 - Dirty detection, New loop, audition.
@@ -527,9 +696,17 @@ Tests: `session_cubit_test.dart` (the applied rig has no tracks, `baseLengthFram
 `loopBars 0`, `primaryTrack -1`, and the outgoing tempo, signature, mode,
 defaults, click, count-in, Fade durations, levels, pans, lane routing, input
 and output setup, all four chain stages and the pedal remap; the outgoing
-session is saved first; the new identity is `New loop N` and current; a
-preservation failure applies nothing), `test/session/session_mapping_test.dart`
-(`rigForNewLoop` field table), `library_page_test.dart` (the sheet's copy
+session is saved first when changed; the new identity is `New loop N` and
+current; a preservation failure applies nothing), `test/session/session_mapping_test.dart`
+(the field-table test, review E8: build a `Session` with every field at a
+non-default value, including every `track*Overrides` map, `monitors`, chains
+and `pedalBindings`; run it through the bundle mapper and `rigForNewLoop` and
+back through `_sessionFrom`/`toJson`; assert that the resulting key set equals
+the source key set minus exactly `{tracks, baseLengthFrames, loopBars,
+primaryTrack}` plus those four at their reset values, and that every remaining
+key's value equals the source's. A field added to `Session` later appears in
+the source key set and not in the drop set, so the equality fails until its
+New loop fate is written down), `library_page_test.dart` (the sheet's copy
 names the outgoing session; `Cancel` calls nothing), and one real-engine test
 in `test/session/` (record two tracks with a muted lane and a mid-fade, New
 loop, then: every track EMPTY, no lane muted, every Fade at unity, master
@@ -539,7 +716,7 @@ byte-exact).
 ```success-criteria
 GOAL: New loop preserves the current session, clears every track and its history, keeps the sound, tempo and pedal setup, and resets the performance transforms, by foot or touch later through one cubit method.
 SUCCESS CRITERIA:
-- The applied rig keeps every D9 field and drops tracks, grid, crown and lane mix (field table test). | verify: /Users/Tomas/development/flutter/bin/flutter test test/session/session_mapping_test.dart test/session/cubit/session_cubit_test.dart
+- The applied rig keeps every D9 key with its value and drops exactly `tracks`, `baseLengthFrames`, `loopBars` and `primaryTrack` (key-set equality against a fully non-default `Session`; a new manifest field fails it). | verify: /Users/Tomas/development/flutter/bin/flutter test test/session/session_mapping_test.dart test/session/cubit/session_cubit_test.dart
 - On the real engine, after New loop every track is EMPTY with no mute and Fade at unity, the master length is 0 and the tempo and mode are unchanged; the outgoing session reloads byte-exact. | verify: /Users/Tomas/development/flutter/bin/flutter test test/session
 - The stage header reads the automatic name and the Library lists it as the current session. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library test/looper/view
 NON-GOALS:
@@ -547,120 +724,179 @@ NON-GOALS:
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
-### Part 6: Listen and the preview waveform (native about 190 lines, Dart about 380 lines)
+### Part 6a: the native audition voice and its Dart seam (native about 200 lines, Dart about 120 lines)
 
-Files, native: `segno_engine_api.h` (section 4.4 contract, snapshot fields),
-`engine_private.h` (`a_audition`, `a_audition_ack`, parked buffer),
-`engine_commands.c` (start/stop/park/free), `engine_process.c` (one mix step
-between `output_bus_frame` and `master_bus_frame` at `:6580-6589`, the
-`perf.armed` skip), `engine.c` (free on configure and quiesce),
-`engine_snapshot.c`, new `src/test/test_engine_audition.h` included from
-`test_engine_core.c` like `test_engine_reopen.h` (`:33541`). Dart engine:
-`audio_engine.dart` (`EngineAudition` role on `AudioEngine`),
-`native_audio_engine.dart`, `pumped_native_engine.dart`, `mock_audio_engine.dart`
-and the test fakes; bindings regenerated and formatted (`ffigen.yaml`,
-`dart format` per `docs/PROGRESS.md`). Repository: `session_repository.dart`
-(`startAudition(path)` decoding with `WavCodec.decodeFloat32`
-(`packages/wav_codec/lib/src/wav.dart:90`), `stopAudition()`,
-`auditionProgress()`; `readPeaks(id, channel, buckets)` in `Isolate.run`).
-App: `library_cubit.dart` (Listen state, a 100 ms progress timer while
-playing, stop on navigation, Open, New loop, pedal press, capture arm and any
-track recording via `LooperBloc` state), `library_preview_card.dart`
-(`Listen`/`Stop` 160 x 64 with progress; lane peaks).
+Files, native (`packages/segno_engine/src/core/`): `segno_engine_api.h`
+(section 4.4 contract, `LE_AUDITION_MAX_SECONDS 120`, snapshot fields),
+`engine_private.h` (`a_audition`, `a_audition_ack`, `audition_retired`),
+`engine_commands.c` (start/stop/park/free, the `LE_ERR_NOT_READY` path, the
+pre-arm park), `engine_process.c` (one mix step between the output-bus loop
+and `master_bus_frame` at `:6580-6589`, the block-end release store of the
+ack, the `perf.armed` skip), `engine.c` (`le_engine_quiesce_workers` frees
+both slots), `engine_snapshot.c`, new `src/test/test_engine_audition.h`
+included from `test_engine_core.c` like `test_engine_reopen.h` (`:33541`).
+Dart engine (`packages/segno_engine/lib/src/`): `audio_engine.dart`
+(`EngineAudition` role on `AudioEngine`: `auditionStart(Float32List
+interleaved, {channels, sampleRate, bus})`, `auditionStop()`, the snapshot's
+`auditionFrames`/`auditionPosition`, and a one-retry wrapper for
+`notReady`), `native_audio_engine.dart`, `pumped_native_engine.dart`,
+`mock_audio_engine.dart` and the test fakes; bindings regenerated and
+formatted (`ffigen.yaml`, `dart format` per `docs/PROGRESS.md`).
 
 Native tests (literal oracles, `test_engine_audition.h`): a 64-frame mono
 ramp into bus 0 appears exactly once on both channels of the pair and the
 next block is silent, `audition_pos` advances by the block and
 `audition_frames` reads 0 after the end; a stereo buffer keeps L/R
 interleave; stop between blocks silences the next block and the parked
-buffer is freed (ASAN); a second start replaces the first with no leak; with
-`perf` armed the start is refused and an armed capture after a start finds
-the voice cleared, the master ring containing no audition sample; master gain
-0.5 halves the voice and a ceiling of 0.25 limits it; with a playing loop the
-output equals loop plus voice sample-exactly; a rate mismatch, channels 3 and
-frames 0 are refused; configure frees the buffer; a track recording while the
-voice plays records none of it (the lane capture reads inputs, not outputs,
+buffer is freed (ASAN); a second start replaces the first with no leak; a
+third start while the replaced buffer is unacked returns `LE_ERR_NOT_READY`
+and succeeds after one block; the ack is observed only after the block's
+last frame (a test harness that inspects `a_audition_ack` mid-block through
+the per-frame hook sees the old generation); with the callback stopped,
+`stop` frees immediately; with `perf` armed the start is refused and an armed
+capture after a start finds the voice cleared, the master ring containing no
+audition sample; master gain 0.5 halves the voice and a ceiling of 0.25
+limits it; an output bus at level 0 or muted leaves the voice at unity; with
+a playing loop the output equals loop plus voice sample-exactly; a rate
+mismatch, channels 3, frames 0 and frames over the cap are refused;
+configure and reopen free both slots; a track recording while the voice
+plays records none of it (the lane capture reads inputs, not outputs,
 `engine_process.c:6539-6557`).
 
-Dart tests: `pumped_native_engine_test.dart` (start, progress, stop through
-the real FFI), `session_repository_test.dart` (`startAudition` of a bundle's
-`mixdown.wav` hands the decoded frames at the bundle rate; a 44.1 kHz file on a
-48 kHz engine is refused with a typed error; `readPeaks` of a known ramp),
-`library_cubit_test.dart` (Listen ends on each of the six triggers),
-`library_page_test.dart` (the button and progress; lanes draw peaks when
-present and length-only when the read fails).
+Dart tests: `pumped_native_engine_test.dart` (start, progress, stop, the
+`notReady` retry through the real FFI), `audio_engine` fakes.
 
 ```success-criteria
-GOAL: Listen plays a session's saved preview through an isolated native voice that never reaches stems, captures or recordings, and the preview lanes draw real peaks or nothing.
+GOAL: An isolated, bounded native preview voice that never reaches stems, captures or recordings and never frees a buffer the audio thread may still read.
 SUCCESS CRITERIA:
-- Native: the voice sums exactly once into the chosen pair after the performance tap and before the master bus; stop, replace, perf arm and configure free the buffer on the control thread; refusals match the contract. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Native: the voice sums exactly once into the chosen pair after the output-bus loop and before the master bus; the ack lands after the block's last mixed frame; stop, replace, perf arm, configure and reopen free the buffers on the control thread; a replace while a retired buffer is unacked reads `LE_ERR_NOT_READY`; refusals match the contract. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - Sanitizer and telemetry-off builds pass; bindings and symbol parity are clean. | verify: EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh && (cd packages/segno_engine && dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart && git diff --exit-code lib/src/generated)
-- Audition ends on navigation, Open, New loop, a footswitch press, performance arm and a track entering recording; a rate-mismatched file is refused with the reason shown. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library && (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test)
-- Appliance: Listen is audible on the main outputs, a performance recording armed during Listen contains none of it, and a loop recorded during Listen contains none of it. | verify: manual on the console: 1. Listen, hear the preview. 2. Arm Record performance; master.wav is silent where the preview was. 3. Record a take during Listen; the take holds only the input. [HARDWARE]
+- The Dart seam starts, reports progress, stops and retries once on `notReady` through the real FFI. | verify: (cd packages/segno_engine && SEGNO_ENGINE_LIB=<built lib> /Users/Tomas/development/flutter/bin/flutter test)
 NON-GOALS:
-- Resampling, looping the preview, audition of arbitrary files, a second output device.
-VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter test
+- Repository, cubit, UI, resampling, looping the preview, streaming.
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh && (cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter test)
 ```
 
-### Part 7: Library > Audio with Performances, Export to USB and the re-homed DAW export (about 520 lines)
+### Part 6b: Listen, bounded decode and the preview waveform (about 320 lines)
+
+Files: `packages/wav_codec/lib/src/wav.dart` (`decodeFloat32(bytes,
+{maxFrames})` and a header-only reader giving channels, rate and frame
+count), `session_repository.dart` (`startAudition(path)`: header read, then
+`Isolate.run` decoding at most `kAuditionMaxSeconds` of frames from the file
+(`RandomAccessFile`, header plus payload bound), then `auditionStart`;
+`stopAudition()`; `auditionProgress()`; `readPeaks(id, channel, buckets)` in
+`Isolate.run` over the lane-0 live layer), `library_cubit.dart` (Listen
+state, a 100 ms progress timer while playing, the truncated flag, stop on
+navigation, Open, New loop, pedal press, capture arm, any track recording via
+`LooperBloc` state, and a device reopen or reconfigure observed as
+`auditionFrames == 0` before the end), `library_preview_card.dart`
+(`Listen`/`Stop` 160 x 64 with progress, `Preview plays the first 2:00` when
+truncated; lane peaks), l10n.
+
+Tests: `packages/wav_codec/test` (`maxFrames` returns exactly that many
+frames and the header reader reports the full count), `session_repository_test.dart`
+(`startAudition` of a bundle's `mixdown.wav` hands the decoded frames at the
+bundle rate; a file longer than the cap hands exactly the cap and reports
+truncation; a 44.1 kHz file on a 48 kHz engine is refused with a typed error;
+`readPeaks` of a known ramp), `library_cubit_test.dart` (Listen ends on each
+of the seven triggers), `library_page_test.dart` (the button, progress and
+truncation line; lanes draw peaks when present and length-only when the read
+fails).
+
+```success-criteria
+GOAL: Listen plays a session's saved preview through the native voice within the bound, decoded off the UI isolate, and the preview lanes draw real peaks or nothing.
+SUCCESS CRITERIA:
+- A preview longer than 120 s plays exactly its first 120 s and says so; the UI isolate never decodes a WAV (the decode runs in `Isolate.run`, asserted through an injected decoder hook). | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/wav_codec && /Users/Tomas/development/flutter/bin/flutter test)
+- Audition ends on navigation, Open, New loop, a footswitch press, performance arm, a track entering recording and a device reopen; a rate-mismatched file is refused with the reason shown. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library
+- Appliance: Listen is audible on the main outputs, a performance recording armed during Listen contains none of it, and a loop recorded during Listen contains none of it. | verify: manual on the console: 1. Listen, hear the preview. 2. Arm Record performance; master.wav is silent where the preview was. 3. Record a take during Listen; the take holds only the input. [HARDWARE]
+NON-GOALS:
+- Resampling, looping the preview, audition of arbitrary files, streaming past the cap.
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/wav_codec && /Users/Tomas/development/flutter/bin/flutter test) && dart analyze --fatal-infos && bloc lint lib test packages
+```
+
+### Part 7: Library > Audio with Performances and Sessions groups, Export to USB and the re-homed DAW export (about 560 lines)
 
 Files: `packages/performance_repository/lib/src/performance_repository.dart`
 (`listCaptures()` -> `CaptureSummary(path, slug, name, startedAt, durationFrames,
 sampleRate, hasDawProject)` from `performance.json`, skipping unfinalized and
-`recovered/` bundles; `copyTo(path, destinationDir, {conflict})` with
-temp-then-rename), new `lib/performance/application/daw_project_export.dart`
-(the writer moved from `performance_recorder_cubit.dart:637-656`, called by
-`_finishRender` `:528-560` and by the Library), `performance_recorder_cubit.dart`
-and `performance_recorder_state.dart` (`reExport`, `isReExporting`,
+`recovered/` bundles; `dawPackageFiles(path)` listing `master.wav`, every
+`live-input-N.wav`, `project.als` and `fx-chains.txt` that exist), new
+`lib/performance/application/daw_project_export.dart` (the writer moved from
+`performance_recorder_cubit.dart:637-656`, called by `_finishRender`
+`:528-560` and by the Library), `performance_recorder_cubit.dart` and
+`performance_recorder_state.dart` (`reExport`, `isReExporting`,
 `reExportFailed` removed), `performance_completion_sheet.dart:315-353`
 (`Re-export` button and banner removed), new `lib/library/view/library_audio_tab.dart`
-(18/01 geometry: `Internal`/`USB drive`, `Search audio`, the `Performances`
-group, the 684-wide preview with kind `WAV`, duration, name, waveform via
-Part 6's peaks over `master.wav`, `Listen` through the same voice, actions
-`Export to USB` and `DAW project`), `library_cubit.dart` (Audio tab state,
-export progress and conflict), the four dialogs 20/09-20/12 (`Already on
-USB` with `Cancel`/`Keep both`/`Replace file`; `Connect a USB drive` with
+(18/01 geometry: title `Audio library` without the sub-nav row (deviation 3),
+`Internal`/`USB drive`, `Search audio`, the `Performances` group and the
+`Sessions` group (each saved session's mixdown, deviation 4), the 684-wide
+preview with kind `WAV`, duration, name, waveform via Part 6b's peaks,
+`Preview` through the same voice, actions `Export to USB` and, for a
+recording, `DAW project`; for a session item `Export to USB` (mixdown) and
+`Export stems`), `library_cubit.dart` (Audio tab state, export progress and
+conflict, the package choice), the dialogs 20/09-20/12 (`Already on USB` with
+`Cancel`/`Keep both`/`Replace file`; `Connect a USB drive` with
 `Cancel`/`Try again`; `Not enough space. Free up storage and try again.`;
-`Exported to USB` with `Done`), l10n.
+`Exported to USB` with `Done`) and a two-row package chooser (`Recording only
+(WAV)` / `DAW package (WAV, stems, Ableton project)`), l10n.
 
-Behavior: export runs inside `RemovableVolumes.withWriteLease`; the
-destination is `<mount>/Segno/Performances/<name>.wav`; a free-space check
-against `RemovableVolume.freeBytes` precedes the copy; the copy writes
-`<name>.wav.part` and renames; cancel, a missing drive, a full disk or a
-write error delete the part file and leave the internal recording untouched
-(accepted 6.8). `DAW project` writes `project.als` and `fx-chains.txt` into
-the bundle and reports success or the typed failure in the preview. With
+Behavior: every export runs inside `RemovableVolumes.withWriteLease(target,
+purpose)` with a purpose the Storage page can show (`Exporting <name>`); a
+`space()` check against the package's byte total precedes the copy; each file
+goes through the port's `copyFile` with the chosen `ConflictPolicy`
+(`ask` first, so a conflict surfaces 20/09 before anything is written), to
+`Segno/Performances/<name>.wav` for a single WAV, `Segno/Performances/<name>/`
+for a DAW package (which first writes `project.als` and `fx-chains.txt` into
+the internal bundle through the shared function if they are missing),
+`Segno/Sessions/<name>.wav` for a session mixdown and `Segno/Sessions/<name>
+stems/` for its stems (via the re-based `exportStems` into a temp directory,
+then `copyFile` per file). A multi-file package that fails midway removes the
+files it already placed on the drive (the destination directory is renamed
+into place only after every file landed) so cancel, a missing drive, a full
+disk or a write error leave both the drive and the internal recording as they
+were (accepted 6.8). `DAW project` alone writes the two files into the bundle
+and reports success or the typed failure in the preview. With
 `InternalOnlyVolumes` the `USB drive` segment shows 18/06 and `Export to USB`
 opens 20/10.
 
 Tests: `packages/performance_repository/test` (listing skips unfinalized and
-recovered bundles, reads the slug and duration; `copyTo` conflict policies,
-part-file cleanup on a thrown write), `test/performance/cubit/performance_recorder_cubit_test.dart`
+recovered bundles, reads the slug and duration; `dawPackageFiles` lists only
+files that exist), `test/performance/cubit/performance_recorder_cubit_test.dart`
 (render still writes the DAW files through the shared function; `reExport`
 gone), `test/performance/view/performance_completion_sheet_test.dart:351-381`
-removed, `test/library/view/library_audio_tab_test.dart` (group, preview,
-Listen, the four dialogs driven by a fake `RemovableVolumes`), `library_cubit_test.dart`.
+removed, `test/library/view/library_audio_tab_test.dart` (both groups,
+preview, Preview, the package chooser, the four dialogs driven by a fake
+`RemovableVolumes` whose `copyFile` records calls and can throw each
+`StorageFailure`), `library_cubit_test.dart` (the fake records exactly one
+`copyFile` per package file with the chosen policy; a `full` on the third
+file of a package removes the two already placed; `volumeLost` mid-package
+leaves the drive-side directory absent).
 
 ```success-criteria
-GOAL: Finished recordings are browsable in Library > Audio, exportable to USB without ever altering the internal copy, and the DAW project export lives there and nowhere else.
+GOAL: Finished recordings and saved sessions' mixdowns are browsable in Library > Audio and exportable to USB as a WAV, a stems set or a DAW package through #1177's copy protocol, without ever altering the internal copy; the DAW project export lives there and nowhere else.
 SUCCESS CRITERIA:
-- The Performances group lists finalized captures with name and duration and excludes unfinalized and recovered bundles. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test test/library
-- Export to USB with a fake volume: success, Keep both, Replace, cancel mid-copy, drive removed, disk full and a write error each leave the internal recording byte-identical and never leave a `.part` file. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library && (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test)
+- The Performances group lists finalized captures with name and duration and excludes unfinalized and recovered bundles; the Sessions group lists every catalog session that has a mixdown. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test test/library
+- Export with a fake port: single WAV, DAW package, mixdown and stems each issue one `copyFile` per file with the chosen policy; `ask` surfaces the conflict before any copy; `full`, `volumeLost`, `readOnly` and `io` midway leave the drive without the partial package and the internal bundle byte-identical. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library && (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test)
 - `DAW project` writes `project.als` and `fx-chains.txt` into the bundle; the completion sheet has no re-export control; `reExport` no longer exists. | verify: /Users/Tomas/development/flutter/bin/flutter test test/performance test/library && ! grep -rn "reExport" lib
 - The performance repository's 99% floor and the root 90% floor hold. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test --coverage) && /Users/Tomas/development/flutter/bin/flutter test --coverage
-- Appliance: with the #1177 adapter, export a recording to a real drive, then unplug mid-copy and retry. | verify: manual on the console with a FAT32 and an exFAT drive: the file lands under `Segno/Performances`, the interrupted copy leaves no part file, Retry completes. [HARDWARE, after #1177]
+- Appliance: with #1177's `StorageRepository` behind the port, export a recording as WAV and as a DAW package to a real drive, then unplug mid-copy and retry. | verify: manual on the console with a FAT32 and an exFAT drive: the files land under `Segno/Performances`, the interrupted package leaves nothing on the drive, Retry completes, Eject is refused during the copy naming the export. [HARDWARE, after #1177]
 NON-GOALS:
-- Backing, prepared audio, Use in loop, Save audio, import from USB, preset export (E5-5).
+- Backing, prepared audio, Use in loop, Save audio, import from USB, preset export (E5-5), `Show on USB` (deviation 3).
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test --coverage) && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
 ### Part 8: Sessions > USB: Back up to USB and Restore to Library (about 430 lines)
 
-Files: `session_repository.dart` (`backupTo(id, destinationRoot, {conflict})`
-copying the bundle to `<root>/<id>.part/` then renaming to `<root>/<id>/`;
-`listBackups(root)` with the same lenient summaries; `restoreFrom(root, id,
-{name})` copying into the internal root under a fresh id and, on a name match,
-`<name> (2)` (pen `f2sBAc`)), `library_cubit.dart` (backup progress and
+Files: `session_repository.dart` (`bundleFiles(id)` listing the manifest and
+every referenced WAV; `listBackups(root)` reading a drive's `Segno/Sessions/`
+with the same lenient summaries; `restoreFrom(sourceDir, {name})` copying a
+backup bundle into the internal root under a fresh id, rewriting `name` in
+the restored manifest and, on a name match, `<name> (2)` (pen `f2sBAc`)),
+`library_cubit.dart` (backup orchestration: lease with purpose `Backing up
+<name>`, `space()` check, one `copyFile` per bundle file into
+`Segno/Sessions/<id>.part/` on the drive, then a directory rename to
+`Segno/Sessions/<id>/`; `Replace` renames the existing backup to `.old`
+first and deletes it only after the new directory is in place; progress,
 cancel, conflict, interruption and retry; the USB location lists backups and
 offers `Restore to Library`), `library_sessions_tab.dart` (section 34 tiles:
 inline progress "Backing up <name>…" with `Cancel`; `A backup has this name`
@@ -668,27 +904,32 @@ with `Cancel`/`Keep both`/`Replace`; `Backup interrupted` "USB drive
 disconnected. Nothing was changed." with `Cancel`/`Retry`; the USB list with
 `Session`/`Saved` columns and "Adds a new session to Library."), l10n.
 
-Behavior: both directions run inside `withWriteLease` for the drive side;
-`Replace` removes the old backup only after the new copy's rename succeeds
-(swap through a `.old` rename, then delete); a `VolumeUnavailable` or I/O
-error mid-copy deletes the part directory and shows the interruption tile;
-`Retry` repeats with the same choices. Restore never touches the live rig; the
-restored copy appears selected in the preview with `Open session` (`f2sBAc`).
-Backups keep their manifest `name`; the restored id is fresh (`newSessionId`).
+Behavior: the drive side goes through the port (`withWriteLease`, `space`,
+`copyFile`; the per-file `.part` protocol is #1177's), and this plan keeps
+only the bundle-level steps (the `.part` directory, the rename, the `.old`
+swap). A `StorageFailure` mid-copy removes the part directory and shows the
+interruption tile; `Retry` repeats with the same choices. Restore reads the
+drive (no lease needed for reading) and never touches the live rig; the
+restored copy appears selected in the preview with `Open session`
+(`f2sBAc`). Backups keep their manifest `name`; the restored id is fresh
+(`newSessionId`) and its manifest carries the restored name.
 
-Tests: `session_repository_test.dart` (backup to a temp root is byte-identical
-per file; Keep both suffixes the backup name; Replace swaps atomically and a
-failure before the rename leaves the old backup intact; a thrown write leaves
-no `.part`; restore creates a fresh id and `(2)` on a name match; the live
-rig's bundles are untouched), `library_cubit_test.dart` (progress, cancel,
-interruption, retry with a fake `RemovableVolumes` that drops the volume
-mid-copy), `library_page_test.dart` (the six tiles).
+Tests: `session_repository_test.dart` (`bundleFiles` lists exactly the
+manifest plus the referenced WAVs and the mixdown; `listBackups` over a temp
+root; restore creates a fresh id, rewrites `name`, suffixes `(2)` on a match;
+the live rig's bundles are untouched), `library_cubit_test.dart` (with a fake
+port recording `copyFile`: one call per bundle file into the `.part`
+directory, then the rename; `volumeLost` on the third file removes the part
+directory and leaves an existing backup intact; Replace keeps the `.old`
+backup when the new copy fails and deletes it when it lands; cancel between
+files removes the part directory; Keep both suffixes), `library_page_test.dart`
+(the six tiles).
 
 ```success-criteria
-GOAL: A session can be backed up to a drive and restored as an independent copy, and no interruption, conflict or cancel ever changes what was there before.
+GOAL: A session can be backed up to a drive and restored as an independent copy through #1177's copy protocol, and no interruption, conflict or cancel ever changes what was there before.
 SUCCESS CRITERIA:
-- Backup writes an exact copy under `Segno/Sessions/<id>/` with no part directory left on success, cancel, drive loss or write error; Replace leaves the old backup when the new copy fails. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test)
-- Restore adds a new identity, suffixes a matching name with ` (2)`, and never calls `applySession`. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test test/library
+- Backup places every bundle file through the port into `Segno/Sessions/<id>.part/` and renames it into place; cancel, drive loss or any typed failure leaves no part directory and an existing backup intact; Replace deletes the old backup only after the new one landed. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library && (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test)
+- Restore adds a new identity whose manifest carries the restored name, suffixes a matching name with ` (2)`, and never calls `applySession`. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test test/library
 - The six section-34 tiles render and act as specified against a fake volume, including the interruption and Retry path. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library
 - Appliance: back up to a real drive, unplug mid-copy, replug, Retry; restore the backup; open it. | verify: manual on the console: the backup lands, the interrupted copy leaves nothing, Retry completes, the restored session opens stopped and plays byte-exact. [HARDWARE, after #1177]
 NON-GOALS:
@@ -726,25 +967,33 @@ New loop fate is decided.
 
 ## 7. Hardware-only
 
-Audible isolation of Listen from captures and takes (Part 6), real drive
+Audible isolation of Listen from captures and takes (Part 6b), real drive
 behavior for export, backup and restore including FAT32 and exFAT, unplug
-mid-write and Retry (Parts 7 and 8, both after the #1177 adapter), and the
-footswitch return-to-Tracks timing on the console. Everything else is
-verified by the commands above.
+mid-write and Retry (Parts 7 and 8, both after #1177's `StorageRepository`
+stands behind the port), Eject refused during a Library write naming its
+purpose, and the footswitch return-to-Tracks timing on the console.
+Everything else is verified by the commands above.
 
-## 8. Open questions for the owner
+## 8. Review record and answered questions
 
-Only genuine product-direction points; the defaults above are taken under
-the standing rules and the build proceeds on them.
+The plan was reviewed on 2026-10-06 and approved with eight required edits,
+all applied above: E1 (keep mixdown and stems reachable; DAW package export;
+`.als` capture-only) in D13, Part 1 and Part 7; E2 (the playback predicate) in
+D8 and Part 4; E3 (bounded audition decode off the UI isolate) in D10, 4.4
+and Part 6b; E4 (block-end ack, immediate free when stopped, `LE_ERR_NOT_READY`
+on a busy retired slot, reopen as a stop trigger, `le_perf_arm`, engine paths)
+in 4.4, D10 and Part 6a; E5 (stale mixdown deleted) in Part 1; E6 (Open
+wired in Part 2) in Part 2; E7 (the port shaped like #1177 and copies through
+its `copyFile`) in D12, 4.3, Parts 7 and 8; E8 (the key-set field-table test
+and the complete D9 keep list) in D9 and Part 5. The review's acceptable
+notes are applied too: duplicate and restore rewrite `name` (D5, Part 8),
+interrupted saves are not folders (D2, Part 1), the three pen deviations are
+listed in section 2, Part 6 is split into 6a and 6b, and the SessionCubit id
+migration moved from Part 2 into Part 1.
 
-1. **Save with no identity** now saves under `New loop N` without a prompt
-   (D4). Alternative: keep a name prompt on the very first Save and use
-   automatic names only for New loop and Open's preservation. Default taken:
-   no prompt; Rename is in Manage.
-2. **Preservation always writes back** (D7), so Open and New loop cost one
-   save even when nothing changed. Default taken: correctness first; skip-when-
-   unchanged is a later optimization behind `audio_rev`.
-3. **The DAW project action's placement** (deviation 2): in the recording's
-   preview actions under Library > Audio, alongside Export to USB. Confirm
-   this is the intended home, and that the completion sheet should lose its
-   Re-export control now rather than with E7-11's redesign of that sheet.
+The three questions the first draft asked were answered (section 3, "Owner
+answers recorded"): automatic `New loop N` with no prompt; preserve by saving
+first, amended by the coordinator's rule-2 decision that any unsaved change
+is preserved and an unchanged rig is not re-saved; the DAW project action on
+the recording preview with Re-export removed now, amended by E1. No question
+remains open for the build.
