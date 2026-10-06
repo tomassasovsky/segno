@@ -81,6 +81,7 @@ const Map<int, SessionMigrationStep> sessionMigrationSteps = {
   9: _v9ToV10,
   10: _v10ToV11,
   11: _v11ToV12,
+  12: _v12ToV13,
 };
 
 /// A manifest written by an older schema, converted in memory: the exact
@@ -393,6 +394,16 @@ void _v11ToV12(Map<String, dynamic> m, SessionMigrationContext c) {
         '$entries layer entries',
       );
     }
+  }
+}
+
+/// 12 → 13: each track carries its playback direction (#1162). No earlier
+/// schema saved one, and every earlier session recalled its tracks forward,
+/// so every track is forward.
+void _v12ToV13(Map<String, dynamic> m, SessionMigrationContext c) {
+  for (final track in _list(m, 'tracks').cast<Map<String, dynamic>>()) {
+    track['reversed'] = false;
+    c.note('tracks[${track['channel']}].reversed', 'defaulted to forward');
   }
 }
 

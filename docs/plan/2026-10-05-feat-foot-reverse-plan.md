@@ -476,8 +476,18 @@ Status: built (branch `claude/reverse-1162-p2`, on the trunk `68ed3f957`).
 
 - Session schema 13: `SessionTrack.reversed` is a required bool, decoded
   strictly (missing or non-bool is a `FormatException`), serialized and part
-  of value identity. Peel Part 2 (#1194) takes 12; whichever lands second
-  takes the next free number.
+  of value identity. Peel Part 2 (#1194) took 12 and landed first, so
+  Reverse is 13.
+- Migration (#1196 chain): `12: _v12ToV13` in `sessionMigrationSteps` sets
+  `reversed: false` on every track, with a conversion note per track. No
+  earlier schema saved a direction and every earlier session recalled its
+  tracks forward, so forward reproduces what those files always loaded as
+  (owner rules 1 and 3). The v13 decoder stays strict: a v13 track without
+  `reversed` is a `FormatException`, never a default. Fixtures: the schema-12
+  Peel bundle now converts like every older one (every track forward), and
+  `v13_reverse_576826cfa`, written by this branch's own save with track 2
+  reversed, is the no-conversion case (its generator is in
+  `fixtures/generators/`).
 - Capture: `SessionRepository` saves `TrackSnapshot.reversed` from the same
   detached snapshot as `fadeAmount`. `rigFromBundle` carries it to
   `SessionRigTrack.reversed`.
