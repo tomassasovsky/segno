@@ -1679,6 +1679,7 @@
     "powerOffSaveFailedBody": "La sesión no se escribió. No se apagó nada — los loops siguen en RAM.",
     "a11yPowerOffMark": "Segno",
     "stageLibrary": "Biblioteca",
+    "libraryTakeStillRunning": "La toma todavía no terminó. No se cambió nada; vuelve a intentarlo cuando termine.",
     "libraryOpenInterruptTitle": "¿Detener la reproducción y abrir {name}?",
     "libraryOpenInterruptBody": "Tu loop actual se queda en tu Biblioteca.",
     "libraryOpenConfirm": "Abrir",

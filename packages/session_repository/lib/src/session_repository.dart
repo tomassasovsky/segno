@@ -1426,8 +1426,15 @@ class SessionRepository {
     for (var i = 0; i < snapshot.tracks.length; i++) {
       final track = snapshot.tracks[i];
       if (track.state == TrackState.empty) continue;
-      // The state too: a take in progress is content the next save may hold.
-      final content = 'rev${_engine.trackAudioRev(i)}:${track.state.name}';
+      // A take in progress is content the next save may hold, so a
+      // capturing track reads as changed. Playing and stopped are transport,
+      // which a save does not write: a rig that was only played is
+      // unchanged.
+      final capturing =
+          track.state == TrackState.recording ||
+          track.state == TrackState.overdubbing;
+      final content =
+          'rev${_engine.trackAudioRev(i)}${capturing ? ':capturing' : ''}';
       final history = _engine.exportHistory(i);
       tracks.add(
         SessionTrack(

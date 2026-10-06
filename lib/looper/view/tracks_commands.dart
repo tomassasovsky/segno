@@ -417,6 +417,7 @@ void showSessionOutcome(BuildContext context, SessionState state) {
       SessionError.saveFailed => l10n.librarySaveFailed,
       SessionError.currentSessionProtected => l10n.libraryDeleteCurrentRefused,
       SessionError.folderNotEmpty => l10n.libraryFolderNotEmpty,
+      SessionError.captureInProgress => l10n.libraryTakeStillRunning,
       // nameCollision is answered inside the Library's name sheet; here it
       // falls back to the generic error. corruptLayers is a
       // rare corrupt/foreign-bundle refusal — the generic message (carrying the

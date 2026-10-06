@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:operation_guards/operation_guards.dart';
+import 'package:segno_engine/segno_engine.dart' show TrackState;
 import 'package:session_repository/session_repository.dart';
 
 import 'helpers/fake_session_engine.dart';
@@ -34,6 +35,22 @@ void main() {
       final before = fingerprint();
       expect(fingerprint(), before);
       expect(engine.exportedLayers, 0);
+    });
+
+    test('is the same for a track that only stops or plays again', () {
+      final before = fingerprint();
+      engine.setTrackState(0, TrackState.stopped);
+      expect(fingerprint(), before);
+      engine.setTrackState(0, TrackState.playing);
+      expect(fingerprint(), before);
+    });
+
+    test('changes while a track records or overdubs', () {
+      final before = fingerprint();
+      for (final state in [TrackState.recording, TrackState.overdubbing]) {
+        engine.setTrackState(0, state);
+        expect(fingerprint(), isNot(before), reason: state.name);
+      }
     });
 
     test('changes when a track is written', () {

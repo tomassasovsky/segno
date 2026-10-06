@@ -250,7 +250,9 @@ class LibraryPreviewTracks extends StatelessWidget {
               l10n.sessionErrorUnsupportedVersion,
             SessionError.unconvertible => l10n.sessionErrorUnconvertible,
             // Saving the outgoing rig failed: the 19/05 line says so.
-            SessionError.bootPersistence || SessionError.saveFailed => null,
+            SessionError.bootPersistence ||
+            SessionError.saveFailed ||
+            SessionError.captureInProgress => null,
             _ => l10n.sessionErrorGeneric(session.errorMessage ?? ''),
           };
     final tracks = preview.tracks;

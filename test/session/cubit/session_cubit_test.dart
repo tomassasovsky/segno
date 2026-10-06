@@ -1718,6 +1718,102 @@ void main() {
 
         verifySavedTo('/root/new').called(1);
       });
+
+      group('a take in progress (D8)', () {
+        LooperState rig(TrackState track1) => LooperState(
+          tracks: [
+            const Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: track1, lengthFrames: 24000),
+            for (var c = 2; c < 8; c++) Track(channel: c),
+          ],
+        );
+
+        for (final capture in [TrackState.recording, TrackState.overdubbing]) {
+          test('a ${capture.name} take is ended, then saved with the rig, '
+              'before the target is read', () async {
+            stubOpen();
+            var live = rig(capture);
+            when(() => looper.state).thenAnswer((_) => live);
+            when(() => looper.laneCount(any())).thenReturn(1);
+            when(
+              () => looper.stopRecordControl(channel: any(named: 'channel')),
+            ).thenAnswer((_) {
+              live = rig(TrackState.playing);
+              return EngineResult.ok;
+            });
+            final cubit = build();
+            addTearDown(cubit.close);
+            cubit.emit(
+              const SessionState(
+                currentSessionId: 'A',
+                currentSessionName: 'A',
+              ),
+            );
+            await cubit.save();
+            clearInteractions(repository);
+            liveFingerprint = 'the take';
+
+            await cubit.open('B');
+
+            verifyInOrder([
+              () => looper.stopRecordControl(channel: 1),
+              () => repository.save(
+                '/root/A',
+                chains: any(named: 'chains'),
+                settings: any(named: 'settings'),
+                pedalBindings: any(named: 'pedalBindings'),
+                name: 'A',
+                captureStillValid: any(named: 'captureStillValid'),
+              ),
+              () => repository.open(
+                '/root/B',
+                liveSettings: any(named: 'liveSettings'),
+              ),
+            ]);
+            verifyNever(() => looper.stopRecordControl(channel: 0));
+            expect(cubit.state.currentSessionId, 'B');
+          });
+        }
+
+        test('a take that does not end in time refuses the Open and changes '
+            'nothing', () async {
+          stubOpen();
+          when(() => looper.state).thenReturn(rig(TrackState.recording));
+          when(
+            () => looper.stopRecordControl(channel: any(named: 'channel')),
+          ).thenReturn(EngineResult.ok);
+          final cubit = SessionCubit(
+            captureSettings: captureSettings,
+            fxPersistence: fxPersistence,
+            settings: settings,
+            repository: repository,
+            looper: looper,
+            performance: performance,
+            mixSettings: mixSettings,
+            mixPersistence: mixPersistence,
+            guards: GuardRegistry(),
+            captureEndTimeout: const Duration(milliseconds: 20),
+          );
+          addTearDown(cubit.close);
+          cubit.emit(
+            const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+          );
+
+          await cubit.open('B');
+
+          expect(cubit.state.status, SessionStatus.failure);
+          expect(cubit.state.error, SessionError.captureInProgress);
+          expect(cubit.state.currentSessionId, 'A');
+          verifyNoSave();
+          verifyNever(
+            () => repository.open(
+              any(),
+              liveSettings: any(named: 'liveSettings'),
+            ),
+          );
+          verifyNever(() => looper.applySession(any()));
+        });
+      });
     });
 
     blocTest<SessionCubit, SessionState>(

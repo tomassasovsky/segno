@@ -1259,6 +1259,17 @@ void main() {
       );
     });
 
+    testWidgets('an Open stopped by an unfinished take says so on the line, '
+        'not on the target', (tester) async {
+      await failWith(
+        tester,
+        SessionError.captureInProgress,
+        failedSessionId: 's-gig',
+      );
+      expect(find.text(l10n.libraryTakeStillRunning), findsOneWidget);
+      expect(find.byKey(const Key('library_open_refused')), findsNothing);
+    });
+
     testWidgets('a refused delete has its own words', (tester) async {
       await failWith(tester, SessionError.currentSessionProtected);
       expect(find.text(l10n.libraryDeleteCurrentRefused), findsOneWidget);

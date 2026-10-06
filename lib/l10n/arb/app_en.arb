@@ -2668,6 +2668,10 @@
     "@stageLibrary": {
         "description": "Accessible name of the top-bar Library icon."
     },
+    "libraryTakeStillRunning": "The take has not finished yet. Nothing was changed; try again when it has.",
+    "@libraryTakeStillRunning": {
+        "description": "An Open or New loop ended a take in progress and it did not finish in time; nothing was saved, opened or cleared."
+    },
     "libraryOpenInterruptTitle": "Stop playback and open {name}?",
     "@libraryOpenInterruptTitle": {
         "description": "Asked before Open while a track plays or records (plan D8).",
