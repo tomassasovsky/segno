@@ -2,23 +2,24 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/storage/view/storage_page.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 
-/// The Storage tab: what is using the disk, and the two housekeeping actions.
+/// The Storage tab: the volumes and safe eject (pen 31, [StoragePage]), then
+/// what is using Internal, and the housekeeping action.
 ///
-/// Five readouts and two actions. The readouts are not a report — they are the
-/// argument for the actions, which is what keeps this from being the kind of
-/// tab that only tells you things.
+/// The breakdown readouts are not a report — they are the argument for the
+/// action, which is what keeps this from being the kind of tab that only
+/// tells you things.
 ///
 /// **Deleting captures asks first**, like every destructive action on this
 /// console, and afterwards the cubit **re-reads rather than guessing** at
-/// what is left. **Nowhere to export to is a fact about the rig, not a
-/// failure**: the row says "no USB volume" and stops being tappable, instead
-/// of failing under a finger. And when the build cannot read the disk at all,
-/// the whole breakdown is replaced by a card that says so — zeroes drawn as
-/// facts would be worse than saying nothing.
+/// what is left. And when the build cannot read the disk at all, the whole
+/// breakdown is replaced by a card that says so — zeroes drawn as facts would
+/// be worse than saying nothing.
 class StorageSystemTab extends StatefulWidget {
   /// Creates a [StorageSystemTab].
   const StorageSystemTab({super.key});
@@ -59,8 +60,6 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
     final l10n = context.l10n;
     final state = context.watch<ConsoleFactsCubit>().state;
     final usage = state.storage;
-    final destination = state.exportDestination;
-    final canExport = destination.isNotEmpty && !state.busy;
 
     return KeyedSubtree(
       key: const Key('system_storage_tab'),
@@ -68,9 +67,19 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
         previewKey: const Key('system_storage_upcoming'),
         lastGroupExtent:
             ConsolePinnedGroupLabel.extent +
-            kConsoleRowHeight * 2 +
+            kConsoleRowHeight +
             ConsoleCard.borderExtent,
         groups: [
+          ConsoleGroup(
+            blocks: [
+              StoragePage(
+                onOpenLibrary: () => unawaited(openLibrary()),
+                // The Library opens at Internal until #1178 gives it a USB
+                // view to open at.
+                onBrowse: (_) => unawaited(openLibrary()),
+              ),
+            ],
+          ),
           ConsoleGroup(
             caption: l10n.systemThisConsoleGroup,
             blocks: [
@@ -143,28 +152,9 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
                       StorageSystemTab.retentionDays,
                     ),
                     expanded: false,
+                    showDivider: false,
                     onTap: state.hasStorage && !state.busy
                         ? () => unawaited(_deleteCaptures())
-                        : null,
-                  ),
-                  ConsoleRow(
-                    key: const Key('system_storage_export'),
-                    title: l10n.storageExportTitle,
-                    // Not a failure and not an error tone: there being no
-                    // stick in the slot is a fact about the rig right now.
-                    state: destination.isEmpty ? l10n.storageNoUsb : null,
-                    value: destination.isEmpty ? null : destination,
-                    // No marker when there is nowhere to go: the gutter stays
-                    // (the row above reserves it for the group) but the row
-                    // stops claiming it does something.
-                    expanded: destination.isEmpty ? null : false,
-                    showDivider: false,
-                    onTap: canExport
-                        ? () => unawaited(
-                            context
-                                .read<ConsoleFactsCubit>()
-                                .exportEverything(),
-                          )
                         : null,
                   ),
                 ],

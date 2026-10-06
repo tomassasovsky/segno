@@ -35,6 +35,7 @@ import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/storage/cubit/storage_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
@@ -46,8 +47,10 @@ import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 import 'package:toastification/toastification.dart';
 import 'package:update_repository/update_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 /// The root application widget.
@@ -80,6 +83,7 @@ class App extends StatefulWidget {
     this.brightness = const UnsupportedBrightnessClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     this.removableVolumes = const InternalOnlyVolumes(),
+    this.storage,
     this.powerKeySource,
     this.powerOff,
     super.key,
@@ -105,6 +109,11 @@ class App extends StatefulWidget {
   /// [InternalOnlyVolumes] (no drive, every removable write refused) until
   /// the storage service (#1177) stands behind the port.
   final RemovableVolumes removableVolumes;
+
+  /// Where a write may go: Internal and the USB volumes. Null (the default)
+  /// builds one over no USB at all, measuring Internal through
+  /// [performanceRepository]; the entrypoint injects the appliance's.
+  final StorageRepository? storage;
 
   /// Injected power-button source. Null (the default) starts an evdev
   /// listener on Linux when `segno-update-ctl` exists, and nothing elsewhere.
@@ -177,6 +186,7 @@ class App extends StatefulWidget {
 class _AppState extends State<App> {
   StreamSubscription<PowerOffState>? _powerNoticeSubscription;
   late final PedalRepository _pedal;
+  late final StorageRepository _storage;
   late final AppRuntime _runtime;
   late final RecordOptionsCubit _recordView;
   StreamSubscription<MixSettingsOutcome>? _mixFailureSubscription;
@@ -194,6 +204,13 @@ class _AppState extends State<App> {
   void initState() {
     super.initState();
     _pedal = widget.pedalRepository ?? PedalRepository(NoopPedalLink());
+    _storage =
+        widget.storage ??
+        StorageRepository(
+          client: const UnsupportedUsbStorageClient(),
+          exportsRoot: widget.performanceRepository.exportsRoot,
+          volumeSpace: widget.performanceRepository.volumeSpace,
+        );
     _runtime = AppRuntime(
       repository: widget.repository,
       settings: widget.settings,
@@ -203,6 +220,7 @@ class _AppState extends State<App> {
       pedal: _pedal,
       performance: widget.performanceRepository,
       sessions: widget.sessionRepository,
+      storage: _storage,
       powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
       guards: widget.guards,
     );
@@ -269,6 +287,9 @@ class _AppState extends State<App> {
     // Runtime close stops control ingress synchronously, before adapters close.
     final closed = _runtime.close();
     await Future.wait([
+      // Only the repository this widget built; an injected one is its
+      // owner's.
+      if (widget.storage == null) closed.then((_) => _storage.dispose()),
       _timingView.close(),
       _recordView.close(),
       _playbackView.close(),
@@ -465,6 +486,7 @@ class _AppState extends State<App> {
         RepositoryProvider<RemovableVolumes>.value(
           value: widget.removableVolumes,
         ),
+        RepositoryProvider.value(value: _storage),
         if (_powerKeySource != null)
           RepositoryProvider<PowerKeySource>.value(value: _powerKeySource!),
       ],
@@ -619,6 +641,7 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
+          BlocProvider<StorageCubit>.value(value: _runtime.storage),
           BlocProvider<RecordTimingCubit>.value(value: _timingView),
           BlocProvider<TempoCubit>.value(value: _tempoView),
           BlocProvider<PlaybackOptionsCubit>.value(value: _playbackView),

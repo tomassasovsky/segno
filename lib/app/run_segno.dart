@@ -26,7 +26,9 @@ import 'package:segno/visualizer/waveform_window_args.dart';
 import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 import 'package:update_repository/update_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 /// Shared entrypoint for every flavor: routes the secondary waveform window,
@@ -177,6 +179,14 @@ Future<void> runSegno(
       );
     },
   );
+  // Where a write may go (#1177): Internal and the USB volumes the image's
+  // helper mounts and describes. Capacity is the same engine statvfs; the
+  // volumes arrive through an inotify watch, never a subprocess (#806).
+  final storage = StorageRepository(
+    client: createUsbStorageClient(),
+    exportsRoot: performance.exportsRoot,
+    volumeSpace: performance.volumeSpace,
+  );
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
   // pipeline) and never disposes it. Held independent of the engine so MIDI
@@ -239,6 +249,7 @@ Future<void> runSegno(
       brightness: brightness,
       consoleFacts: consoleFacts,
       guards: registry,
+      storage: storage,
     ),
   );
 }

@@ -18,6 +18,7 @@ import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
+import 'package:segno/storage/cubit/storage_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/system/system_tab.dart';
 import 'package:segno/system/view/system_tray_panel.dart';
@@ -25,7 +26,9 @@ import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 import 'package:update_repository/update_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -33,16 +36,12 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
 
-/// The fake, plus a record of what the face asked it to export.
-class _RecordingFactsClient implements ConsoleFactsClient {
-  _RecordingFactsClient({this.failExport = false});
-
+/// The fake, except that the housekeeping write is refused.
+class _FailingDeleteFactsClient implements ConsoleFactsClient {
   @override
   Future<int> retiredBluetoothPairings() async => 0;
 
-  final bool failExport;
   final _inner = FakeConsoleFactsClient(latency: Duration.zero);
-  final exportedTo = <String>[];
 
   @override
   bool get isSupported => true;
@@ -54,17 +53,8 @@ class _RecordingFactsClient implements ConsoleFactsClient {
   Future<ConsoleFacts> facts() => _inner.facts();
 
   @override
-  Future<int> deleteCapturesOlderThan(int days) =>
-      _inner.deleteCapturesOlderThan(days);
-
-  @override
-  Future<String> exportDestination() => _inner.exportDestination();
-
-  @override
-  Future<void> exportEverything(String destination) async {
-    exportedTo.add(destination);
-    if (failExport) throw StateError('the stick went away');
-  }
+  Future<int> deleteCapturesOlderThan(int days) async =>
+      throw StateError('read-only');
 }
 
 /// A client whose reads hang until [release] is called.
@@ -94,15 +84,6 @@ class _SlowFactsClient implements ConsoleFactsClient {
 
   @override
   Future<int> deleteCapturesOlderThan(int days) async => 0;
-
-  @override
-  Future<String> exportDestination() async {
-    await _gate.future;
-    return _inner.exportDestination();
-  }
-
-  @override
-  Future<void> exportEverything(String destination) async {}
 }
 
 /// A client that throws every read, for the "cannot read the disk" face.
@@ -121,12 +102,6 @@ class _FailingFactsClient implements ConsoleFactsClient {
 
   @override
   Future<int> deleteCapturesOlderThan(int days) async => 0;
-
-  @override
-  Future<String> exportDestination() async => '';
-
-  @override
-  Future<void> exportEverything(String destination) async {}
 }
 
 const _devices = <AudioDevice>[
@@ -168,6 +143,7 @@ void main() {
   late AudioSetupCubit audio;
   late PedalCubit pedal;
   late ConsoleFactsCubit facts;
+  late StorageCubit storage;
   late _MockUpdateCubit update;
 
   setUpAll(() {
@@ -242,6 +218,15 @@ void main() {
       client: client ?? FakeConsoleFactsClient(latency: Duration.zero),
       settings: settings,
     );
+    final storageRepository = StorageRepository(
+      client: FakeUsbStorageClient(),
+      exportsRoot: () async => '/data/exports',
+      volumeSpace: (_) => null,
+    );
+    storage = StorageCubit(
+      repository: storageRepository,
+      sampleRate: () => 48000,
+    );
     update = _MockUpdateCubit();
     when(update.startDownload).thenAnswer((_) async {});
     when(update.check).thenAnswer((_) async {});
@@ -268,6 +253,8 @@ void main() {
     addTearDown(() => unawaited(audio.close()));
     addTearDown(() => unawaited(pedal.close()));
     addTearDown(() => unawaited(facts.close()));
+    addTearDown(() => unawaited(storage.close()));
+    addTearDown(() => unawaited(storageRepository.dispose()));
 
     await tester.pumpWidget(
       MaterialApp(
@@ -291,6 +278,7 @@ void main() {
               BlocProvider.value(value: audio),
               BlocProvider.value(value: pedal),
               BlocProvider.value(value: facts),
+              BlocProvider.value(value: storage),
               BlocProvider<UpdateCubit>.value(value: update),
             ],
             child: const Scaffold(
@@ -654,51 +642,48 @@ void main() {
       expect(find.text(l10n.storageGigabytes(2.1)), findsOneWidget);
     });
 
-    testWidgets('nowhere to export is a fact, not a failure — the row says '
-        'so and is not tappable', (tester) async {
+    testWidgets('the volumes and safe eject open the tab, and there is no '
+        '"Export everything" row any more', (tester) async {
+      await pump(tester, tab: SystemTab.storage);
+
+      // The pen's Storage page (31) heads the tab; the breakdown and the
+      // housekeeping action follow it.
+      expect(find.byKey(const Key('storage_internal_card')), findsOneWidget);
+      expect(find.byKey(const Key('storage_usb_card_none')), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byKey(const Key('storage_internal_card'))).dy,
+        lessThan(
+          tester.getTopLeft(find.byKey(const Key('system_storage_card'))).dy,
+        ),
+      );
+      // Never tappable on any real client, and no accepted screen has it.
+      expect(find.byKey(const Key('system_storage_export')), findsNothing);
+      expect(find.textContaining('Export everything'), findsNothing);
+    });
+
+    testWidgets('a housekeeping write that throws says so WHERE THE ACTION '
+        'IS, and does not take the disk figures down with it', (tester) async {
       await pump(
         tester,
         tab: SystemTab.storage,
-        client: FakeConsoleFactsClient(
-          latency: Duration.zero,
-          exportVolumeMounted: false,
-        ),
+        client: _FailingDeleteFactsClient(),
       );
       final l10n = l10nOf(tester);
 
-      expect(find.text(l10n.storageNoUsb), findsOneWidget);
-      final row = tester.widget<ConsoleRow>(
-        find.byKey(const Key('system_storage_export')),
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('system_storage_delete_captures')),
+        200,
       );
-      expect(row.onTap, isNull);
-    });
-
-    testWidgets('exporting reaches the client with the mounted volume', (
-      tester,
-    ) async {
-      final client = _RecordingFactsClient();
-      await pump(tester, tab: SystemTab.storage, client: client);
-
-      await tester.tap(find.byKey(const Key('system_storage_export')));
+      await tester.tap(
+        find.byKey(const Key('system_storage_delete_captures')),
+      );
       await tester.pumpAndSettle();
-
-      expect(client.exportedTo, ['/media/usb0']);
-      expect(facts.state.busy, isFalse);
-    });
-
-    testWidgets('an export that throws says so WHERE THE ACTION IS, and does '
-        'not take the disk figures down with it', (tester) async {
-      final client = _RecordingFactsClient(failExport: true);
-      await pump(tester, tab: SystemTab.storage, client: client);
-      final l10n = l10nOf(tester);
-
-      await tester.tap(find.byKey(const Key('system_storage_export')));
+      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
       await tester.pumpAndSettle();
 
       // A refused WRITE is not an unreadable disk. The five figures were
       // measured and are still true.
       expect(find.byKey(const Key('system_storage_card')), findsOneWidget);
-      expect(find.text(l10n.storageGigabytes(41.6)), findsOneWidget);
       expect(find.text(l10n.storageUnknown), findsNothing);
       expect(facts.state.hasStorage, isTrue);
 

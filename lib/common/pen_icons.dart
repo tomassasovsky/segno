@@ -49,6 +49,10 @@ enum PenIcon {
   /// over a base line, in the prototype's 24x20 box. Filled, not stroked —
   /// the stroke rounds the points and the fill makes the mark.
   crown,
+
+  /// A storage volume (`STORAGE UX`, the Internal and USB cards' `svg`): an
+  /// upright body with a slot near its foot, from the same 24-unit source.
+  drive,
 }
 
 /// Draws [icon] in [color], scaled to whatever box it is given.
@@ -95,6 +99,8 @@ class PenIconPainter extends CustomPainter {
         _views(canvas, paint);
       case PenIcon.crown:
         _crown(canvas, paint);
+      case PenIcon.drive:
+        _drive(canvas, paint);
     }
     canvas.restore();
   }
@@ -132,6 +138,24 @@ class PenIconPainter extends CustomPainter {
     for (final x in const [9.0, 15.0]) {
       canvas.drawLine(Offset(x * k, 4 * k), Offset(x * k, 20 * k), paint);
     }
+  }
+
+  /// `M5 3h14v18h-14z m3 13h8m-8 2h1`, drawn the way the pen draws it: its
+  /// 24-unit viewBox stretched into a 48x66 box, so the 14x18 body stands
+  /// 28x49.5, upright like a drive on end. Here that body fills the box's
+  /// height and keeps its 28:49.5 width, with an even stroke rather than the
+  /// stretched one.
+  void _drive(Canvas canvas, Paint paint) {
+    const top = 0.5;
+    const height = box - 1;
+    const width = height * 28 / 49.5;
+    const left = (box - width) / 2;
+    double x(double source) => left + (source - 5) / 14 * width;
+    double y(double source) => top + (source - 3) / 18 * height;
+    canvas
+      ..drawRect(Rect.fromLTRB(x(5), y(3), x(19), y(21)), paint)
+      ..drawLine(Offset(x(8), y(16)), Offset(x(16), y(16)), paint)
+      ..drawLine(Offset(x(8), y(18)), Offset(x(9), y(18)), paint);
   }
 
   /// `M3 15 1 5l6 4 5-7 5 7 6-4-2 10Z` filled, over a 24x20 source that the
