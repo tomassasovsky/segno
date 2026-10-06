@@ -672,6 +672,35 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/looper_repository && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
 
+Part 2 build notes (deviations from the text above):
+
+- A LENGTH entry also carries its playhead map (`start`, Part 1), and Redo of a
+  half would lose the bar position without it. So `le_engine_export_history`
+  gains `starts[]`, not `lens[]`, and the Session entry is `{kind, skipped,
+  start}` for a length edit (other kinds keep `{kind, skipped}`; a map on them
+  is refused). The lengths come from the images themselves:
+  `le_engine_export_layer` with `max_frames` 0 returns an image's length, and
+  `le_engine_finalize_history` takes `lens[]` (with the image count) instead of
+  `live_len`, which is `lens[undo_count]`.
+- `le_engine_finalize_history` checks the lineage itself (an image is as long
+  as the nearest LENGTH entry at or nearer live on its stack names, else as
+  long as live), so a caller cannot publish an image at a length its Undo
+  would not restore. `import_layer` still writes `a_len`, now only as the
+  "staged" marker that finalize requires; finalize publishes the live length.
+- The lineage is checked in `SessionRepository.read`, not `SessionTrack.fromJson`:
+  the manifest does not hold the lengths, the decoded WAVs do. It runs before
+  the bundle is returned, so a refusal still precedes every side effect; lanes
+  of one track must also carry the same lengths.
+- Schema: provisionally 13 on this branch (the next number on its base). The
+  number is assigned at landing; the #1196 migration step for it is the
+  identity (`(manifest, context) {}`), since an older manifest holds no length
+  edit and an entry without `start` reads as 0. Add it to
+  `sessionMigrationSteps` with the number assigned, and add the converted
+  fixture the chain test asks for.
+- Reopen: `test_reopen_keeps_length_history` proves a retained track keeps both
+  stacks byte-identical and a length edit posted but unapplied at the loss
+  drops only its track (mask bit set, pin and `length_pending` cleared).
+
 ### Part 3. Foot Multiply / Divide surface and mappings (about 650 production lines)
 
 Section 3 complete: mode, model, actions, cubit part, view, the three

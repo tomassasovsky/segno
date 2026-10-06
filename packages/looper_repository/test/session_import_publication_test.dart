@@ -26,8 +26,16 @@ class _ImportEngine extends PumpedNativeEngine {
   int? refusedFadeChannel;
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) {
-    final result = super.finalizeHistory(channel, history);
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) {
+    final result = super.finalizeHistory(
+      channel,
+      history,
+      imageLengths: imageLengths,
+    );
     if (result.isOk) finalized = true;
     return result;
   }

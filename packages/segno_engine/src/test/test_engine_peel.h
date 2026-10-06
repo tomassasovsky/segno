@@ -537,7 +537,7 @@ static void test_peel_processed_restoration(void) {
   CHECK(le_engine_peel(e, 0) == LE_ERR_INVALID);
   peel_expect_unchanged(t, &h);
   int32_t kinds[4], skipped[4], undo_count = -1;
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, 4, &undo_count) == 2);
+  CHECK(export_history(e, 0, kinds, skipped, 4, &undo_count) == 2);
   CHECK(kinds[0] == LE_HIST_LAYER && kinds[1] == LE_HIST_PROCESSED);
   CHECK(undo_count == 2);
   /* Undo swaps the raw take back and keeps the kind on the redo side. */
@@ -681,32 +681,32 @@ static void test_peel_export_ordinals_and_history(void) {
   }
   CHECK(le_engine_export_layer(e, 0, 0, 4, pcm, LOOP_N) == LE_ERR_INVALID);
   int32_t kinds[8], skipped[8], undo_count = -1;
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, 8, &undo_count) == 4);
+  CHECK(export_history(e, 0, kinds, skipped, 8, &undo_count) == 4);
   CHECK(undo_count == 2);
   CHECK(kinds[0] == LE_HIST_LAYER && kinds[1] == LE_HIST_LAYER &&
         kinds[2] == LE_HIST_PEEL && kinds[3] == LE_HIST_LAYER);
   CHECK(skipped[0] == 0 && skipped[1] == 0 && skipped[2] == 0 && skipped[3] == 0);
   /* The count is the total even when fewer fit. */
   kinds[1] = -7;
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, 1, &undo_count) == 4);
+  CHECK(export_history(e, 0, kinds, skipped, 1, &undo_count) == 4);
   CHECK(kinds[0] == LE_HIST_LAYER && kinds[1] == -7);
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, 0, &undo_count) == 4);
+  CHECK(export_history(e, 0, kinds, skipped, 0, &undo_count) == 4);
   CHECK(le_engine_redo(e, 0) == LE_OK); /* re-peel: [L0, Pa], redo [L(1.75)] */
   CHECK(le_engine_redo(e, 0) == LE_OK); /* [L0, Pa, L3], live 1.75 */
   check_content(e, 1.75f);
   CHECK(le_engine_undo(e, 0) == LE_OK);
   CHECK(le_engine_undo(e, 0) == LE_OK); /* [L0, L1], live 2.0 */
   check_content(e, 2.0f);
-  CHECK(le_engine_export_history(e, 0, NULL, skipped, 8, &undo_count) ==
+  CHECK(export_history(e, 0, NULL, skipped, 8, &undo_count) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, 8, NULL) ==
+  CHECK(export_history(e, 0, kinds, skipped, 8, NULL) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, -1, &undo_count) ==
+  CHECK(export_history(e, 0, kinds, skipped, -1, &undo_count) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_export_history(e, LE_MAX_TRACKS, kinds, skipped, 8,
+  CHECK(export_history(e, LE_MAX_TRACKS, kinds, skipped, 8,
                                  &undo_count) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_export_history(NULL, 0, kinds, skipped, 8, &undo_count) ==
+  CHECK(export_history(NULL, 0, kinds, skipped, 8, &undo_count) ==
         LE_ERR_INVALID);
   /* A skipped count rides along. */
   CHECK(le_engine_redo(e, 0) == LE_OK);
@@ -714,7 +714,7 @@ static void test_peel_export_ordinals_and_history(void) {
   CHECK(le_engine_peel(e, 0) == LE_OK); /* [L0, Pa, Pb(0)], live 1.5 */
   CHECK(le_engine_peel(e, 0) == LE_OK); /* [Pa, Pb, Pc(2)], live 1.0 */
   check_content(e, 1.0f);
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, 8, &undo_count) == 3);
+  CHECK(export_history(e, 0, kinds, skipped, 8, &undo_count) == 3);
   CHECK(undo_count == 3);
   CHECK(kinds[0] == LE_HIST_PEEL && kinds[1] == LE_HIST_PEEL &&
         kinds[2] == LE_HIST_PEEL);
@@ -918,7 +918,7 @@ typedef struct {
 
 static void peel_save_history(le_engine* e, peel_saved_history* h) {
   const le_track* t = &e->tracks[0];
-  h->count = le_engine_export_history(e, 0, h->kinds, h->skipped,
+  h->count = export_history(e, 0, h->kinds, h->skipped,
                                       2 * LE_POOL_SLOTS, &h->undo_count);
   CHECK(h->count == t->undo_count + t->redo_count);
   CHECK(h->undo_count == t->undo_count);
@@ -941,8 +941,8 @@ static le_engine* peel_recall_history(const peel_saved_history* h) {
   for (int32_t o = 0; o < h->image_count; ++o) {
     CHECK(le_engine_import_layer(e, 0, 0, o, h->images[o], LOOP_N) == LE_OK);
   }
-  CHECK(le_engine_finalize_history(e, 0, h->kinds, h->skipped, h->count,
-                                   h->undo_count) == LE_OK);
+  CHECK(finalize_uniform(e, 0, h->kinds, h->skipped, h->count,
+                                   h->undo_count, LOOP_N) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
   drain(e);
   return e;
@@ -1031,68 +1031,66 @@ static void test_peel_finalize_history_strict(void) {
   int32_t kinds[4] = {LE_HIST_LAYER, LE_HIST_PEEL, LE_HIST_LAYER, LE_HIST_PEEL};
   int32_t skipped[4] = {0, 0, 0, 0};
   /* Shape: handle, channel, counts and arrays. */
-  CHECK(le_engine_finalize_history(NULL, 0, kinds, skipped, 2, 1) ==
+  CHECK(finalize_uniform(NULL, 0, kinds, skipped, 2, 1, LOOP_N) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_finalize_history(e, LE_MAX_TRACKS, kinds, skipped, 2, 1) ==
+  CHECK(finalize_uniform(e, LE_MAX_TRACKS, kinds, skipped, 2, 1, LOOP_N) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 1, 2) ==
+  CHECK(finalize_uniform(e, 0, kinds, skipped, 1, 2, LOOP_N) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, -1, 0) ==
+  CHECK(finalize_uniform(e, 0, kinds, skipped, -1, 0, LOOP_N) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 2, -1) ==
+  CHECK(finalize_uniform(e, 0, kinds, skipped, 2, -1, LOOP_N) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_finalize_history(e, 0, NULL, skipped, 2, 1) ==
+  CHECK(finalize_uniform(e, 0, NULL, skipped, 2, 1, LOOP_N) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_finalize_history(e, 0, kinds, NULL, 2, 1) == LE_ERR_INVALID);
+  CHECK(finalize_uniform(e, 0, kinds, NULL, 2, 1, LOOP_N) == LE_ERR_INVALID);
   /* Kinds and payloads. */
   kinds[0] = 7;
-  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 2, 2) ==
+  CHECK(finalize_uniform(e, 0, kinds, skipped, 2, 2, LOOP_N) ==
         LE_ERR_INVALID);
   kinds[0] = LE_HIST_LAYER;
   skipped[1] = -1; /* a negative peel payload */
-  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 2, 2) ==
+  CHECK(finalize_uniform(e, 0, kinds, skipped, 2, 2, LOOP_N) ==
         LE_ERR_INVALID);
   skipped[1] = 0;
   skipped[0] = 1; /* a payload on a kind that has none */
-  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 2, 2) ==
+  CHECK(finalize_uniform(e, 0, kinds, skipped, 2, 2, LOOP_N) ==
         LE_ERR_INVALID);
   skipped[0] = 0;
   kinds[0] = LE_HIST_CLEAR; /* a restore point beneath the live image */
-  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 2, 2) ==
+  CHECK(finalize_uniform(e, 0, kinds, skipped, 2, 2, LOOP_N) ==
         LE_ERR_INVALID);
   kinds[0] = LE_HIST_LAYER;
   /* Images: [L, P] under live is 3 staged images; a redo LAYER above them
    * would be a fourth, never staged, so the reconstruction is torn. */
-  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 3, 2) ==
+  CHECK(finalize_uniform(e, 0, kinds, skipped, 3, 2, LOOP_N) ==
         LE_ERR_INVALID);
   /* Capacity: an undo stack as deep as the pool, a redo side past it. */
   static int32_t many_kinds[LE_POOL_SLOTS + 1];
   static int32_t many_skipped[LE_POOL_SLOTS + 1];
   for (int i = 0; i <= LE_POOL_SLOTS; ++i) many_kinds[i] = LE_HIST_PEEL;
-  CHECK(le_engine_finalize_history(e, 0, many_kinds, many_skipped,
-                                   LE_POOL_SLOTS, LE_POOL_SLOTS) ==
+  CHECK(finalize_uniform(e, 0, many_kinds, many_skipped,
+                                   LE_POOL_SLOTS, LE_POOL_SLOTS, LOOP_N) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_finalize_history(e, 0, many_kinds, many_skipped,
-                                   LE_POOL_SLOTS + 1, 0) == LE_ERR_INVALID);
-  /* Lanes at different lengths are torn. */
+  CHECK(finalize_uniform(e, 0, many_kinds, many_skipped,
+                                   LE_POOL_SLOTS + 1, 0, LOOP_N) == LE_ERR_INVALID);
+  /* A lane missing an image is torn. */
   CHECK(set_lane_count_and_publish(e, 0, 2) == LE_OK);
-  for (int32_t o = 0; o < 3; ++o) {
-    CHECK(le_engine_import_layer(e, 0, 1, o, pcm, LOOP_N - 1) == LE_OK);
+  for (int32_t o = 0; o < 2; ++o) {
+    CHECK(le_engine_import_layer(e, 0, 1, o, pcm, LOOP_N) == LE_OK);
   }
   kinds[2] = LE_HIST_PEEL;
   skipped[2] = 1;
-  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 3, 2) ==
+  CHECK(finalize_uniform(e, 0, kinds, skipped, 3, 2, LOOP_N) ==
         LE_ERR_INVALID);
-  for (int32_t o = 0; o < 3; ++o) {
-    CHECK(le_engine_import_layer(e, 0, 1, o, pcm, LOOP_N) == LE_OK);
-  }
+  CHECK(le_engine_import_layer(e, 0, 1, 2, pcm, LOOP_N) == LE_OK);
   /* Nothing was published by any refusal. */
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
   CHECK(t->undo_count == 0 && t->redo_count == 0);
   CHECK(s.tracks[0].undo_depth == 0 && s.tracks[0].redo_depth == 0);
   /* [L, P] under live and a redo marker: 3 images, both lanes. */
-  CHECK(le_engine_finalize_history(e, 0, kinds, skipped, 3, 2) == LE_OK);
+  CHECK(finalize_uniform(e, 0, kinds, skipped, 3, 2, LOOP_N) == LE_OK);
   CHECK(t->undo_count == 2 && t->undo_stack[0].slot == 0 &&
         t->undo_stack[1].kind == LE_HIST_PEEL && t->undo_stack[1].slot == 1);
   CHECK(t->redo_count == 1 && t->redo_stack[0].slot == -1 &&
@@ -1115,7 +1113,7 @@ static void test_peel_finalize_history_strict(void) {
   }
   const int32_t lc[2] = {LE_HIST_LAYER, LE_HIST_CLEAR};
   const int32_t zero[2] = {0, 0};
-  CHECK(le_engine_finalize_history(e, 0, lc, zero, 2, 1) == LE_OK);
+  CHECK(finalize_uniform(e, 0, lc, zero, 2, 1, LOOP_N) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
   drain(e);
   check_content(e, 1.5f);
@@ -1148,7 +1146,7 @@ static int32_t peel_finalize_shape(const int32_t* kinds, const int32_t* skipped,
     CHECK(le_engine_import_layer(e, 0, 0, o, pcm, LOOP_N) == LE_OK);
   }
   const int32_t result =
-      le_engine_finalize_history(e, 0, kinds, skipped, count, undo_count);
+      finalize_uniform(e, 0, kinds, skipped, count, undo_count, LOOP_N);
   const le_track* t = &e->tracks[0];
   if (result != LE_OK) {
     le_snapshot s;
@@ -1213,7 +1211,7 @@ static void test_peel_export_history_raw_split(void) {
   CHECK(load_i32(&t->a_state) != LE_TRACK_EMPTY);
   CHECK(load_i32(&t->a_undo_depth) == 0); /* gated, not yet republished */
   int32_t kinds[4], skipped[4], undo_count = -1;
-  CHECK(le_engine_export_history(e, 0, kinds, skipped, 4, &undo_count) == 3);
+  CHECK(export_history(e, 0, kinds, skipped, 4, &undo_count) == 3);
   CHECK(undo_count == 2);
   CHECK(kinds[0] == LE_HIST_LAYER && kinds[1] == LE_HIST_LAYER &&
         kinds[2] == LE_HIST_CLEAR);

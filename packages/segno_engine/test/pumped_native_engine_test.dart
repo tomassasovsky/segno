@@ -626,7 +626,14 @@ void main() {
     expect(engine.importLayer(0, 0, 0, l0), EngineResult.ok);
     expect(engine.importLayer(0, 0, 1, l1), EngineResult.ok);
     expect(engine.importLayer(0, 0, 2, l2), EngineResult.ok);
-    expect(engine.finalizeHistory(0, history), EngineResult.ok);
+    expect(
+      engine.finalizeHistory(
+        0,
+        history,
+        imageLengths: [l0.length, l1.length, l2.length],
+      ),
+      EngineResult.ok,
+    );
     expect(engine.commitSession(256, loopBars: 0), EngineResult.ok);
     engine.pump(frames: 0);
 

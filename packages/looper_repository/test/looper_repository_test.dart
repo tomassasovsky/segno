@@ -7256,6 +7256,48 @@ void main() {
         expect(engine.finalizedHistory[0], history);
       },
     );
+
+    test(
+      'finalizes length edits with every image at its own length (#1168)',
+      () async {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        final original = Float32List.fromList([1, 2, 3, 4]);
+        final doubled = Float32List.fromList([1, 2, 3, 4, 1, 2, 3, 4]);
+        const history = TrackHistory([
+          HistoryEntry(HistoryKind.length),
+          HistoryEntry(HistoryKind.length, start: 4),
+        ], undoCount: 1);
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              SessionRigTrack(
+                fadeAmount: 1,
+                channel: 0,
+                lanes: [
+                  SessionRigLane(
+                    lane: 0,
+                    layers: [original, doubled, original],
+                    volume: 1,
+                    muted: false,
+                    outputMask: 0x3,
+                    inputChannel: 0,
+                    history: history,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.finalizedHistory[0], history);
+        expect(engine.finalizedLengths[0], [4, 8, 4]);
+      },
+    );
   });
 
   group('chain and monitor read accessors', () {
