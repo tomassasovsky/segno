@@ -136,8 +136,19 @@ typedef enum le_perf_log_code {
   /* Transport facts fired from inside the audio thread's command drain /
    * per-frame loop, carrying the exact sample-accurate frame. Both are new in
    * events.log version 4 (#262). */
-  LE_PLOG_CLEAR_RESTORE = 322, /* restore_log: applied image/state/first-sample phase */
-  LE_PLOG_RESTORE_TRANSPORT = 323, /* restore_log: same image, new state/phase */
+  LE_PLOG_SOURCE_APPLIED = 322, /* restore_log: a staged history image became the
+                                 * channel's live source at this exact mixer
+                                 * frame — {channel, image_id, state, phase}.
+                                 * Every callback-applied history transition
+                                 * (Clear Undo, layer Undo/Redo, Redo-from-empty)
+                                 * logs one; a channel may carry several per
+                                 * capture, and a reader switches images on each
+                                 * (events.log version 6, #1143). */
+  LE_PLOG_SOURCE_TRANSPORT = 323, /* restore_log: same image, new state/phase.
+                                   * image_id 0 with state EMPTY = provenance
+                                   * lost (a slot became live without a staged
+                                   * image, or is being written): the stem is
+                                   * not reconstructible. */
   LE_PLOG_FADE = 321, /* fade_log: exact callback image, including arm/reset */
   LE_PLOG_PERF_ARMED = 315,   /* LE_CMD_PERF_ARM applied: the master loop phase
                                * at capture frame 0. `perf_arm` arm: {position,

@@ -1024,23 +1024,26 @@ class _SoundContext extends StatelessWidget {
     };
     return Row(
       children: [
-        // Flexible, because the Outputs line is a sentence: it says what an
-        // output chain actually processes, and the pen gives it 454px.
-        Flexible(
-          child: AppText(
-            label,
-            key: const Key('fx_context_label'),
-            maxLines: 2,
-            style: TextStyle(color: surface.textSecondary, fontSize: 20),
+        Expanded(
+          child: Row(
+            children: [
+              Flexible(
+                child: AppText(
+                  label,
+                  key: const Key('fx_context_label'),
+                  maxLines: 2,
+                  style: TextStyle(color: surface.textSecondary, fontSize: 20),
+                ),
+              ),
+              const SizedBox(width: 20),
+              if (destination.kind == FxDestinationKind.liveInput)
+                _HearLive(input: destination.index),
+              if (destination.kind == FxDestinationKind.recordedTrack &&
+                  !destination.isAllTracks)
+                _PartPicker(destination: destination),
+            ],
           ),
         ),
-        const SizedBox(width: 20),
-        if (destination.kind == FxDestinationKind.liveInput)
-          _HearLive(input: destination.index),
-        if (destination.kind == FxDestinationKind.recordedTrack &&
-            !destination.isAllTracks)
-          _PartPicker(destination: destination),
-        const Spacer(),
         LoopOutlinedButton(
           key: const Key('fx_reorder'),
           width: 137,

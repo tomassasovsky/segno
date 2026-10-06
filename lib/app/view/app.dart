@@ -182,6 +182,7 @@ class _AppState extends State<App> {
   late final TempoCubit _tempoView;
   final _ownerSubscriptions = <StreamSubscription<void>>[];
   StreamSubscription<int>? _recordingInputRequiredSubscription;
+  StreamSubscription<int>? _recordRefusedSubscription;
   late final PlaybackOptionsCubit _playbackView;
   late final RecordTimingCubit _timingView;
 
@@ -219,6 +220,9 @@ class _AppState extends State<App> {
         .repository
         .recordingInputRequired
         .listen(_showRecordingInputRequired);
+    _recordRefusedSubscription = widget.repository.recordRefusals.listen(
+      _showRecordRefused,
+    );
     _playbackView = PlaybackOptionsCubit(settings: _runtime.playback);
     _recordView = RecordOptionsCubit(settings: _runtime.record);
     _timingView = RecordTimingCubit(settings: _runtime.timing);
@@ -241,6 +245,7 @@ class _AppState extends State<App> {
       unawaited(subscription.cancel());
     }
     unawaited(_recordingInputRequiredSubscription?.cancel());
+    unawaited(_recordRefusedSubscription?.cancel());
     _controlNotices.dispose();
     unawaited(
       _closeControlOwners().catchError((Object error, StackTrace stack) {
@@ -349,6 +354,28 @@ class _AppState extends State<App> {
       autoCloseDuration: const Duration(seconds: 5),
       title: Builder(
         builder: (context) => Text(context.l10n.recordingInputRequiredTitle),
+      ),
+      description: Builder(
+        builder: (context) => Text(
+          context.l10n.trackName(
+            context.read<TracksCubit>().state.names,
+            channel,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A fresh-capture Record press the engine refused twice (#1146): the press
+  /// is lost, so say so. Low stakes — a toast, like the input notice above.
+  void _showRecordRefused(int channel) {
+    if (!mounted || _runtime.power.state.isUiUp) return;
+    showAppToast(
+      id: AppToastId.recordRefused,
+      type: ToastificationType.warning,
+      autoCloseDuration: const Duration(seconds: 5),
+      title: Builder(
+        builder: (context) => Text(context.l10n.recordRefusedTitle),
       ),
       description: Builder(
         builder: (context) => Text(
@@ -882,18 +909,44 @@ class _AppViewState extends State<_AppView> {
   ///
   /// The *lost* branch is gone (#453): loss is a standing condition, held by
   /// the stage's `ConnectivityBanners` until the hardware returns; a toast is
-  /// for the restored *event* only.
+  /// for the restored *event* only. A return that dropped some tracks (#1140:
+  /// a Clear/Undo/Redo/cancel on them was still unapplied at the loss) is the
+  /// same event with one fact added, so it is one transient warning toast
+  /// naming those tracks — low stakes, the rig plays on — not a second
+  /// notice. A return that cleared every loop is a standing condition and is
+  /// the stage banner's, never a toast (#860: one notice per cause).
   void _showDeviceRestoredToast(AudioSetupState state) {
-    if (state.deviceConnectivity != DeviceConnectivity.restored) return;
     final l10n = _l10n;
     final name = state.connectivityDeviceName.isEmpty
         ? l10n.audioDeviceFallbackName
         : state.connectivityDeviceName;
-    showAppSnackToast(
-      id: AppToastId.deviceRestored,
-      title: AppText(l10n.deviceReconnectedSnackbar(name)),
-      icon: const Icon(Icons.check_circle_outline),
-    );
+    switch (state.deviceConnectivity) {
+      case DeviceConnectivity.restored:
+        showAppSnackToast(
+          id: AppToastId.deviceRestored,
+          title: AppText(l10n.deviceReconnectedSnackbar(name)),
+          icon: const Icon(Icons.check_circle_outline),
+        );
+      case DeviceConnectivity.restoredPartial:
+        final dropped = state.engineStatus.reopen?.droppedChannels ?? const [];
+        showAppToast(
+          id: AppToastId.deviceRestoredPartial,
+          type: ToastificationType.warning,
+          title: AppText(l10n.deviceReconnectedSnackbar(name)),
+          description: AppText(
+            l10n.deviceRestoredPartialToastBody(
+              dropped.length,
+              dropped.map((channel) => '${channel + 1}').join(', '),
+            ),
+          ),
+          icon: const Icon(Icons.layers_clear_outlined),
+          autoCloseDuration: const Duration(seconds: 10),
+        );
+      case DeviceConnectivity.none:
+      case DeviceConnectivity.lost:
+      case DeviceConnectivity.restoredCleared:
+        return;
+    }
   }
 
   /// The MIDI controller's connectivity, surfaced as a transient toast.

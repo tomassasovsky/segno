@@ -72,6 +72,20 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Result returned by [reopen].
+  ReopenResult reopenResult = (
+    result: EngineResult.ok,
+    outcome: ReopenOutcome.retained,
+    droppedTracks: 0,
+  );
+
+  @override
+  ReopenResult reopen(EngineConfig config) {
+    lastConfig = config;
+    calls.add('reopen');
+    return reopenResult;
+  }
+
   /// How many times [snapshot] was called — the FFI walk a periodic reader
   /// must not pay per tick.
   int snapshotCalls = 0;
@@ -80,10 +94,21 @@ class FakeAudioEngine implements AudioEngine {
   bool get commandsSettled =>
       commandsAreSettled && pendingRecipeRevisions.isEmpty;
 
+  /// Runs after every [snapshot] read — lets a test change [nextSnapshot]
+  /// between two consecutive reads (the state moved under a caller).
+  void Function()? afterSnapshot;
+
   @override
   EngineSnapshot snapshot() {
     snapshotCalls++;
-    return _LengthSnapshot(nextSnapshot, publishedLengths, publishedMode, this);
+    final result = _LengthSnapshot(
+      nextSnapshot,
+      publishedLengths,
+      publishedMode,
+      this,
+    );
+    afterSnapshot?.call();
+    return result;
   }
 
   @override
@@ -1958,6 +1983,8 @@ class _LengthTrack extends TrackSnapshot {
         outputMask: source.outputMask,
         layerInFlight: source.layerInFlight,
         pending: source.pending,
+        pendingLaunch: source.pendingLaunch,
+        countInCancelGrace: source.countInCancelGrace,
         lengthPresetBars: bars ?? source.lengthPresetBars,
         oneShot: engine.trackOneShot[channel] ?? source.oneShot,
         settledTakeId: source.settledTakeId,

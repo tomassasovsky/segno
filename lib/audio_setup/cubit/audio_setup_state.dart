@@ -51,8 +51,20 @@ enum DeviceConnectivity {
   /// The pinned device just went absent (1→0).
   lost,
 
-  /// The pinned device just came back (0→1).
+  /// The pinned device just came back (0→1) with every loop retained.
   restored,
+
+  /// The pinned device just came back and the loops were retained except
+  /// the tracks a still-unapplied Clear/Undo/Redo/cancel had made uncertain
+  /// (named by [AudioSetupState.engineStatus]'s `reopen.droppedChannels`).
+  /// Low stakes — the rig plays on — so it is a transient toast.
+  restoredPartial,
+
+  /// The pinned device just came back at another sample rate (or loop cap)
+  /// and every loop was cleared; the saved Session is the way back. The one
+  /// standing notice of the return, with the Sessions action, until the user
+  /// acts (#1140).
+  restoredCleared,
 }
 
 /// State for the audio setup feature: the user's requested device options plus

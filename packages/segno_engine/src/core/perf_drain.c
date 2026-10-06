@@ -802,6 +802,11 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  *       phase anchor and renders correctly only if re-captured.
  *   5 — applied Clear restoration and its state/phase/source-end facts
  *       (322/323) reference capture-local immutable restored images.
+ *   6 — every callback-applied history image (Clear Undo, layer Undo/Redo,
+ *       Redo-from-empty) logs 322 at its exact application frame, so a
+ *       channel may carry several 322 facts and a reader switches images on
+ *       each; LE_CMD_UNDO_TO_EMPTY (39) is logged raw at its apply frame
+ *       (#1143).
  * Without the bump, "no 314 in this file" is indistinguishable from "the
  * writer did not know about 314". No reader in this repo gates on the field —
  * le_pr_load_log and daw_export's EventLogReader both check the magic and skip
@@ -811,7 +816,7 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  * this codebase can reject. */
 static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
   static const char magic[4] = {'P', 'L', 'E', 'V'};
-  const uint32_t version = 5;
+  const uint32_t version = 6;
   if (!le_pd_write(f, magic, sizeof(magic))) return 0;
   if (!le_pd_write(f, &version, sizeof(version))) return 0;
   if (!le_pd_write(f, &sample_rate, sizeof(sample_rate))) return 0;
@@ -1252,6 +1257,14 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
   if (d->layers_dropped)
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                    "  \"layers_dropped\": %u,\n", d->layers_dropped);
+  /* Retired images the engine refused to stage (copy allocation failure or
+   * a full staging ring): their retires are logged but have no manifest
+   * entry, so the renderer must not treat them as complete either. */
+  const uint32_t layer_overruns = atomic_load_explicit(
+      &d->engine->a_perf_layer_overruns, memory_order_relaxed);
+  if (layer_overruns)
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                   "  \"layer_overruns\": %u,\n", layer_overruns);
 
   if (report_disk_full || atomic_load_explicit(&d->disk_full, memory_order_acquire)) {
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,

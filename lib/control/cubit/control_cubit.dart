@@ -1563,7 +1563,7 @@ class ControlCubit extends Cubit<ControlState> {
   // The looper reducer: the stored-intent invalidation table.
   // ---------------------------------------------------------------------------
 
-  void _reduce(LooperState looper) {
+  void _reduce(LooperState looper, {bool wasParked = false}) {
     var next = state;
 
     // Cursor: always a valid channel.
@@ -1589,7 +1589,18 @@ class ControlCubit extends Cubit<ControlState> {
     if (state.excluded.any((c) => !playable(c))) {
       next = next.copyWith(excluded: state.excluded.where(playable).toSet());
     }
-    if (state.parkedResume.any((c) => !playable(c))) {
+    // Consumed on the parked -> running transition: the derived armed set
+    // carries the resumed members from here. Only the transition: a Stop
+    // latches the set while the loop still runs (its stops land a callback
+    // later), and a running snapshot in between must not erase that latch.
+    final running = looper.tracks.any(
+      (t) =>
+          t.hasContent &&
+          (t.state == TrackState.playing || t.state == TrackState.overdubbing),
+    );
+    if (wasParked && running && state.parkedResume.isNotEmpty) {
+      next = next.copyWith(parkedResume: const <int>{});
+    } else if (state.parkedResume.any((c) => !playable(c))) {
       next = next.copyWith(
         parkedResume: state.parkedResume.where(playable).toSet(),
       );
@@ -1956,12 +1967,23 @@ class ControlCubit extends Cubit<ControlState> {
       if (track.state == TrackState.stopped) {
         return _looper.play(channel: channel).isOk; // parked -> resume
       } else {
-        return _looper.record(channel: channel).isOk;
+        return _recordAccepted(channel);
       }
     }
     // The engine's cycling record() walks empty -> record, capturing -> play
     // (finalize), playing -> overdub.
-    return _looper.record(channel: channel).isOk;
+    return _recordAccepted(channel);
+  }
+
+  /// A Record press counts as accepted when the engine took it, or when the
+  /// repository still owes it the one retry a fresh capture refused inside the
+  /// callback's one-block window gets (#1146): the press is not lost, so its
+  /// contact stays lit while it resolves.
+  bool _recordAccepted(int channel) {
+    final result = _looper.record(channel: channel);
+    return result.isOk ||
+        (result == EngineResult.notReady &&
+            _looper.recordRetryPending(channel));
   }
 
   /// Mute mode Rec/Play: resume while parked; while running, expand to the
@@ -2006,9 +2028,11 @@ class ControlCubit extends Cubit<ControlState> {
       for (final channel in resume) {
         accepted = _looper.play(channel: channel).isOk || accepted;
       }
-      // Consumed: the resumed tracks are now sounding, so the derived armed
-      // set carries them from here.
-      emit(state.copyWith(parkedResume: const <int>{}));
+      // Kept until the transport is observed running (the reducer clears it
+      // then): with a count-in or quantized launch the plays are deferred, the
+      // loop is still parked, and the parked LEDs and a second Rec/Play (which
+      // toggles the same members, cancelling the pending launch) must keep
+      // using this membership rather than re-deriving every playable track.
       return accepted;
     }
     // Running: expand to every content track unless the full audible set is
@@ -3579,10 +3603,12 @@ class ControlCubit extends Cubit<ControlState> {
     } else if (_takeLocked()) {
       _retireAllExternal();
     }
+    // `_l` falls back to the repository's state before the first event.
+    final wasParked = isParked(_l);
     _looperState = looperState;
     _retryExternalReleases();
     _checkMidiSessionAndCleanup();
-    _reduce(looperState);
+    _reduce(looperState, wasParked: wasParked);
     _pendingRestore.toList().forEach(_tryRestoreBinding);
     _pushProjected();
   }

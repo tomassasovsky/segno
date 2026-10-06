@@ -109,6 +109,21 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Whether [_restore] has pushed the saved monitors into the repository.
   bool _restored = false;
 
+  /// Whether edits may reach the repository and storage. After a failed
+  /// restore the repository holds DEFAULTS, and every monitor write saves the
+  /// whole envelope (mode, routing, FX) over the player's saved settings,
+  /// while a later Retry would overwrite the edit anyway; refusing it until
+  /// Retry succeeds is the honest answer. Volume and mute save only their
+  /// own keys and stay available.
+  bool get _editable => !isClosed && !state.restoreFailed;
+
+  @override
+  void onChange(Change<MonitorState> change) {
+    super.onChange(change);
+    // Every input-stage writer (FX page, controller bindings) checks this.
+    _fxPersistence.inputRestoreFailed = change.nextState.restoreFailed;
+  }
+
   /// Inputs announced before that, to be read once it has.
   final Set<int> _heldReads = {};
 
@@ -133,6 +148,10 @@ class MonitorCubit extends Cubit<MonitorState> {
         !_fxPersistence.sessionTransitionActive;
     attempt = _mixSettings
         .runExclusive(() async {
+          if (!stillOwned()) return;
+          // Earlier accepted mute/FX edits must reach storage before this
+          // restore reads it. The shared Mix boundary refuses new mute edits.
+          await _fxPersistence.flush();
           if (stillOwned()) await _restore(stillOwned);
         })
         .catchError((Object error, StackTrace stack) {
@@ -214,6 +233,11 @@ class MonitorCubit extends Cubit<MonitorState> {
     // to be persisted back or every launch re-mints DIFFERENT ids for the
     // same legacy chain. Only that case writes; a chain that already had ids
     // is read, not rewritten.
+    // The saved monitors are applied: the restore has succeeded, so clear the
+    // failed state BEFORE persisting minted ids, or the input write gate
+    // (mirrored into FxChainPersistence) would skip that one-time save.
+    if (!stillOwned()) return;
+    if (state.restoreFailed) emit(MonitorState(inputs: state.inputs));
     for (final monitor in restored.values) {
       if (!stillOwned()) return;
       final applied = _repository.monitorEffects(monitor.input);
@@ -448,6 +472,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Enables or disables monitoring of hardware [input], applying and
   /// persisting the change.
   Future<void> setMode(int input, MonitorMode mode) async {
+    if (!_editable) return;
     final monitor = state.forInput(input).copyWith(mode: mode);
     emit(state.withInput(monitor));
     _repository.setMonitorInputMode(input: input, mode: mode);
@@ -456,6 +481,7 @@ class MonitorCubit extends Cubit<MonitorState> {
 
   /// Sets and persists monitor [input]'s output bitmask.
   Future<void> setOutputMask(int input, int mask) async {
+    if (!_editable) return;
     final next = state.forInput(input).copyWith(outputMask: mask);
     emit(state.withInput(next));
     _repository.setMonitorOutput(input: input, mask: mask);
@@ -481,6 +507,7 @@ class MonitorCubit extends Cubit<MonitorState> {
         repository: _repository,
         settings: _settings,
         persistence: _fxPersistence,
+        mixSettings: _mixSettings,
         input: input,
         muted: muted,
         onAccepted: () => emit(
@@ -500,6 +527,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// an input's Pre entries are what a take records, its Post entries are
   /// copied onto the lane and run after that take's player.
   void addEffect(int input, {TrackEffectType? type}) {
+    if (!_editable) return;
     final effects = state.forInput(input).effects;
     _pushEffects(input, [
       ...effects,
@@ -578,6 +606,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// the player chose: adding its pedals one at a time would push the chain to
   /// the engine once per pedal and let a half-built rack be heard on the way.
   void appendEffects(int input, List<TrackEffect> entries) {
+    if (!_editable) return;
     if (entries.isEmpty) return;
     _pushEffects(input, [...state.forInput(input).effects, ...entries]);
   }
@@ -586,6 +615,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Pre — see [addEffect]. The repository loads it through the slot ABI on
   /// the next chain apply.
   void insertPlugin(int input, PluginRef ref) {
+    if (!_editable) return;
     _pushEffects(input, [
       ...state.forInput(input).effects,
       PluginEffect(ref: ref, placement: FxPlacement.pre),
@@ -595,6 +625,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Relinks monitor [input]'s plugin chain entry [index] to [ref] (D-MISS),
   /// keeping its captured state + tweaks.
   void relinkPlugin(int input, int index, PluginRef ref) {
+    if (!_editable) return;
     final monitor = state.forInput(input);
     if (index < 0 || index >= monitor.effects.length) return;
     final fx = monitor.effects[index];
@@ -612,6 +643,7 @@ class MonitorCubit extends Cubit<MonitorState> {
 
   /// Removes monitor [input]'s chain entry at [index].
   void removeEffect(int input, int index) {
+    if (!_editable) return;
     final effects = state.forInput(input).effects;
     if (index < 0 || index >= effects.length) return;
     _pushEffects(input, [...effects]..removeAt(index));
@@ -619,6 +651,7 @@ class MonitorCubit extends Cubit<MonitorState> {
 
   /// Reorders monitor [input]'s chain, moving entry [from] to [to].
   void moveEffect(int input, int from, int to) {
+    if (!_editable) return;
     final effects = state.forInput(input).effects;
     if (from < 0 || from >= effects.length) return;
     var target = to;
@@ -643,6 +676,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// what a take records; its Post entries are copied onto the lane and run
   /// after that take's player.
   void setEffectPlacement(int input, int index, FxPlacement placement) {
+    if (!_editable) return;
     final effects = state.forInput(input).effects;
     if (index < 0 || index >= effects.length) return;
     final fx = effects[index];
@@ -664,6 +698,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Sets the type of monitor [input]'s chain entry [index] (resets its DSP
   /// state and seeds default params).
   void setEffectType(int input, int index, TrackEffectType type) {
+    if (!_editable) return;
     final effects = state.forInput(input).effects;
     if (index < 0 || index >= effects.length) return;
     // Retyping resets the DSP parameters while retaining the slot's identity
@@ -683,6 +718,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Sets parameter [param] of monitor [input]'s chain entry [index] to [value]
   /// without resetting DSP state.
   void setEffectParam(int input, int index, int param, double value) {
+    if (!_editable) return;
     final monitor = state.forInput(input);
     if (index < 0 || index >= monitor.effects.length) return;
     final fx = monitor.effects[index];
@@ -713,6 +749,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// param queue. Mirrors [setEffectParam] for [PluginEffect] entries, keyed by
   /// the stable plugin param id rather than a positional built-in index.
   void setPluginParam(int input, int index, int paramId, double value) {
+    if (!_editable) return;
     final monitor = state.forInput(input);
     if (index < 0 || index >= monitor.effects.length) return;
     final fx = monitor.effects[index];
@@ -736,6 +773,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// By identity at the repository boundary, like placement: channel handling
   /// belongs to the INSTANCE, and an index is what a reorder changes.
   void setEffectChannels(int input, int index, FxChannels channels) {
+    if (!_editable) return;
     final effects = state.forInput(input).effects;
     if (index < 0 || index >= effects.length) return;
     final slotId = effects[index].slotId;
@@ -753,6 +791,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Enables/disables monitor [input]'s chain entry [index] without losing its
   /// type or parameters (R16; click-free ramp engine-side).
   void setEffectEnabled(int input, int index, {required bool enabled}) {
+    if (!_editable) return;
     final monitor = state.forInput(input);
     if (index < 0 || index >= monitor.effects.length) return;
     // Write first, then emit what actually landed — the repository owns the
@@ -790,6 +829,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// the per-entry flags intact (R15). A chain-disabled monitor sounds dry and
   /// stops being snapshot-copied onto recording lanes (D-CHAINDIS, R18).
   void setChainEnabled(int input, {required bool enabled}) {
+    if (!_editable) return;
     // Only flip a monitor the user actually has. `forInput` synthesizes a
     // default for an unknown input, so without this an input that exists on
     // the device but was never configured would be materialized into state and
@@ -852,6 +892,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   }
 
   EngineResult _pushEffects(int input, List<TrackEffect> rawEffects) {
+    if (!_editable) return EngineResult.notReady;
     // A structural edit reseats the input's slots, so cancel any editor-sync
     // poll keyed by a now-stale chain index (a reorder would otherwise rebind
     // the poll to a different plugin).

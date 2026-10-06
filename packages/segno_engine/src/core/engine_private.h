@@ -974,8 +974,15 @@ typedef struct le_track {
    * take's layers and `clear_restore_slot` names the live slot they and the
    * frozen take share (kept allocated). A fresh capture drops the pending
    * point with the history (le_drop_clear_history). */
-  uint32_t perf_restore_id; /* callback: current captured restored image */
-  int perf_restore_active, perf_restore_state, perf_restore_next_pos, perf_restore_slot;
+  /* callback: the source the derived stem reproduces (#1143). `perf_source_slot`
+   * is the lane-0 pool slot the stem currently follows (-1 = none: EMPTY, or a
+   * material reset since); `perf_source_id` is 0 for snapshot provenance (the
+   * arm image, a fresh take) and the staged image id (perf.slot_image) for a
+   * callback-applied history image. A slot change under PLAYING/STOPPED looks
+   * the new slot up in perf.slot_image and logs 322 (image) or 323/0 (none). */
+  uint32_t perf_source_id;
+  int32_t perf_source_slot;
+  int perf_source_state, perf_source_next_pos;
   int clear_restore_pending;
   int32_t clear_restore_slot;
   uint32_t clear_restore_generation; /* the CLEAR that owns this report */
@@ -1019,6 +1026,13 @@ typedef struct le_track {
                             * (0 for a command that empties the track) */
   int32_t pending_master_len; /* control: the master grid that command
                                * re-establishes (0: leaves it as published) */
+  /* Control-only ticket (commands_posted) of the last command whose
+   * application empties this track. a_commands_published at or past it proves
+   * the callback block that applied it has completed — so no pointer that
+   * block, or an earlier one, cached to this track's PCM is still in use
+   * (#1146, le_record_impl). The ack alone lands before the block's frames
+   * finish. Configure resets it with the command counters. */
+  uint64_t empty_command;
   _Atomic int32_t a_state_acks; /* audio: state-flip commands applied */
   uint32_t dub_generation; /* bumped on clear; audio mirrors it in handle_clear
                             * and tags retire events, so a stale event from
@@ -1324,7 +1338,16 @@ typedef struct le_perf_capture {
    * (le_stage_retired_layer, engine_commands.c), drained by perf_drain.c
    * into numbered layer files + sidecar manifest entries. Re-initialised on
    * every arm, same as the two rings above. */
-  uint32_t next_restore_id; /* sole control producer, reset after joined capture */
+  uint32_t next_image_id; /* sole control producer, reset after joined capture */
+  /* Per-slot image identity (#1143): the control thread stages an immutable
+   * copy of a history slot BEFORE publishing it live and records the staged
+   * id here (0 = no image: staging refused, or the slot was written by a path
+   * without one). The callback reads the live slot's entry at the frame it
+   * first mixes that slot and logs it, so the fact names exactly the PCM that
+   * became audible. Relaxed stores paired with the release publish of a_live
+   * (le_track_publish_live) and the callback's acquire load of lane 0's
+   * a_live. Zeroed with the struct at configure and explicitly at every arm. */
+  _Atomic uint32_t slot_image[LE_MAX_TRACKS][LE_POOL_SLOTS];
   le_layer_staging_ring layer_staging_ring;
   le_staged_layer layer_staging_storage[LE_LAYER_STAGING_RING_CAPACITY];
 

@@ -30,7 +30,7 @@ unlike `performance.json`, which is atomically replaced each cycle.
 | Offset | Size | Field         | Notes                                   |
 |--------|------|---------------|------------------------------------------|
 | 0      | 4    | magic         | ASCII `"PLEV"` (Perf Log EVents)          |
-| 4      | 4    | version       | `uint32`, little/native-endian; `5` today — see below |
+| 4      | 4    | version       | `uint32`, little/native-endian; `6` today — see below |
 | 8      | 4    | sample_rate   | `int32`, the session's sample rate        |
 
 #### What `version` means
@@ -46,6 +46,7 @@ when the 28-byte record does.
 | `3`      | A `RECORD_ABORT` may appear **unpaired**: a count-in cancelled by the immediate-finalize primitive (#405, `LE_CMD_FINALIZE_TAKE`) logs 314 for the counting channel even though no `RECORD_START` ever preceded it (the count-in's commit is what logs the start). In a version-2 file every 314 closes an open `START`; from 3 on, a reader must treat an ABORT with no open `START` as a no-op, not a malformed file. |
 | `4`      | Two new transport facts (#262) — `LE_PLOG_PERF_ARMED` (315) recording the master loop phase at arm, and `LE_PLOG_TRANSPORT_HELD` (316) marking a mid-capture transport hold — and `LE_PLOG_RECORD_END` (301) now carries the `take` arm `{channel, take_id}` instead of a bare channel (#819). The offline renderer **requires** these: the two inferences it used before — the race-stale `armSnapshot.clockFrame` phase anchor and the "first `RECORD_END` while the channel is content-free" disarm-image proxy — were **deleted with no fallback** (AGENTS.md). A pre-4 file has neither fact, so it has no supported phase anchor and no take identity; it still parses (below), but renders correctly only if re-captured. |
 | `5`      | Applied Clear restoration (322) and restored source state, phase and retirement (323), with exact capture-local image identity. |
+| `6`      | Every callback-applied history image logs 322 (#1143): Clear Undo, layer Undo and Redo, and recovery from empty each stage an immutable image at admission and the callback names it at the exact frame it first mixes the slot, so a channel may carry several 322 facts per capture and a reader switches images on each (in version 5 a channel carried at most one, for Clear Undo). 323 keeps its meaning; `image_id` 0 with state EMPTY now also follows any slot that became live without a staged image (staging refused, loop-close restoration, session import), whatever the previous source was. `LE_CMD_UNDO_TO_EMPTY` (39) is logged raw at its exact apply frame next to the semantic 304: emptying is exact silence, not lost provenance. `LE_PLOG_LAYER_RETIRED`'s fourth payload field (`frames`) is reserved for the staging-gap follow-up under this same version; until it lands the writer does not define those four bytes and a reader must not interpret them. |
 
 Neither reader in this repo (`perf_render.c`'s `le_pr_load_log`, the Dart
 `EventLogReader`) gates on the field — both check the magic and skip these four
@@ -135,7 +136,7 @@ bytes are that command's union, unchanged, so a reader already familiar with
 | `LE_CMD_SET_MASTER_GAIN`              | 36    | generic     | Yes     | Explicitly required |
 | `LE_CMD_SET_OUTPUT_ENABLED`           | 37    | generic     | Yes     | Structural output gate |
 | `LE_CMD_DUB_SHADOW`                   | 38    | —           | No      | Internal shadow-pool bookkeeping, not itself an audible change |
-| `LE_CMD_UNDO_TO_EMPTY`                | 39    | —           | No*     | Logged as `LE_PLOG_UNDO` (the to-EMPTY edge case) |
+| `LE_CMD_UNDO_TO_EMPTY`                | 39    | generic     | Yes     | From version 6 (#1143): logged raw at its exact apply frame (`arg_i` = channel), in addition to the semantic `LE_PLOG_UNDO`, following the raw-command-plus-transport-fact convention below. The offline renderer appends silence from this frame, as it does for `LE_CMD_CLEAR`. Also logged for the cancelled take of `LE_CMD_CANCEL_TAKE`, which empties the track through the same body |
 | `LE_CMD_REDO_FROM_EMPTY`              | 40    | —           | No*     | Logged as `LE_PLOG_REDO` (the from-EMPTY edge case) |
 | `LE_CMD_PERF_ARM` / `LE_CMD_PERF_DISARM` | 41/42 | —        | No      | Meta — arming/disarming the session isn't part of what it captures |
 | `LE_CMD_SET_ONE_SHOT`                 | 47    | —           | No      | The setter changes no output at the moment it applies. Its audible consequence — the auto-stop at the track's own loop wrap (Free/Song, `advance_track_clock_frame`) — logs a **synthetic `LE_CMD_STOP`** (`arg_i` = channel) at the exact wrap frame (#420), so a replay stops the track where a listener heard it stop. No `LE_PLOG_RECORD_END` accompanies a wrap mid-overdub, matching a manual Stop on an OVERDUBBING track — `RECORD_END` means "left RECORDING", and the dub pass's end is logged by its `LE_PLOG_LAYER_RETIRED`. |
@@ -281,25 +282,42 @@ flag), since an append-only log has no "torn" state to guard against beyond
 a possibly-incomplete final entry, which a reader detects by simply running
 out of bytes mid-record (fewer than 28 bytes remaining) and discarding it.
 
+### Callback-applied source images (codes 322–323)
 
-### Applied Clear restoration (codes 322–323)
-
-`322` identifies the immutable image used by an applied Clear Undo. `323`
-updates only that restored image's playback state or discontinuous phase. Both
-carry four 32-bit fields: signed channel, unsigned nonzero image ID, signed
-`LE_TRACK_PLAYING`/`LE_TRACK_STOPPED` state, and signed first-sample image index.
-The callback publishes these at the existing mixer coordinate boundary; generic
-Undo `304` remains unrelated. Fade `321` supplies the independent stationary
-coefficient. The fixed event payload is unchanged; these facts use log version 5.
+`322` (`LE_PLOG_SOURCE_APPLIED`) names the immutable image that became a
+channel's live source at this exact mixer frame; `323`
+(`LE_PLOG_SOURCE_TRANSPORT`) updates only that image's playback state or
+discontinuous phase. Both carry four 32-bit fields: signed channel, unsigned
+image ID, signed `LE_TRACK_PLAYING`/`LE_TRACK_STOPPED` state, and signed
+first-sample image index. From version 6 every callback-applied history
+transition is admitted the same way (#1143): the control thread stages a copy
+of the target slot and records its id for that slot BEFORE publishing the slot
+live, and the callback logs the entry for whichever slot it first mixes
+PLAYING or STOPPED. A Clear Undo, a layer Undo, a layer Redo and a Redo from
+empty therefore each produce one `322`; a channel may carry several per
+capture, and a reader switches images on each. Several admissions before one
+callback (Undo, Undo, Redo in one block) produce exactly one `322`, for the
+slot actually mixed, with that slot's latest id; the intermediate images are
+listed but unreferenced, and a swap back to the slot already mixed produces no
+fact. The callback publishes these at the existing mixer coordinate boundary;
+generic Undo `304`/Redo `305` remain the control-side admission records. Fade
+`321` supplies the independent stationary coefficient. The fixed event payload
+is unchanged.
 
 Native `layers` entries distinguish ordinary overdub (`kind: 0`, `restore_id: 0`)
-from restored material (`kind: 1`, nonzero `restore_id`). Restore files are named
+from callback-applied source images (`kind: 1`, nonzero `restore_id`),
+whichever history operation admitted them. Image files are named
 `restore-<channel>-<restore_id>.pcm`, interleaved across their declared active
 lanes. IDs never repeat within a capture; exhaustion marks capture incomplete.
+Each admission copies `len × lanes × 4` bytes on the control thread and writes
+the same to disk (a 30 s stereo-lane loop is about 11.5 MB per press); disk
+growth, not capacity, is the ordinary-use cost.
 The manifest is bounded (`LE_LAYER_STAGING_RING_CAPACITY` entries per capture).
 Once it is full the drain drops later retired images instead of writing them,
 reports the count as `"layers_dropped": N` (omitted while zero) and keeps
-capturing master and monitors. In such a capture any stem whose logged retire
+capturing master and monitors. A retired image the callback could not hand to
+the staging ring is reported the same way, as `"layer_overruns": N`. In a
+capture with either count any stem whose logged retire
 (`LAYER_RETIRED`) has no manifest entry fails to render instead of replaying the
 previous image; a restoration without its entry always fails. Without drops, an
 unlisted retire keeps the existing edge tolerance (a retire handled after a
@@ -312,13 +330,24 @@ Rendering resolves exact kind/channel/ID and validates complete PCM before
 claiming success. Missing material, invalid bounds, duplicate identity and
 segment-capacity exhaustion fail the affected stem. STOPPED restored material
 is held silent until a callback-applied state/phase event permits playback.
-This extends the existing lane-0 renderer for restored images; it does not
-implement general history replay or multi-lane offline rendering.
+This extends the existing lane-0 renderer for applied images; it does not
+implement multi-lane offline rendering. The `322` frame is exact for lane 0:
+the callback names the slot that lane 0 mixes in that very frame. The control
+thread publishes lanes `n..1` before lane 0, so no lane can still mix the
+previous slot in the fact's frame, but a lane `k >= 1` may mix the new slot up
+to one frame before it (the live pool slot is published per lane, not per
+track). A future multi-lane renderer must treat lanes `1..n` as switching
+within one frame of the fact.
 
-Code `323` with image ID zero explicitly ends a restored source when a later
-same-span history or processed-material swap replaces its live slot without an
-exact captured replacement image. The affected stem fails; master capture
-remains usable. This is a material-coverage limit, not a queue or storage
-overrun. New recording and captured retired-layer events retain their existing
-image transitions. Ordinary Clear restoration publishes the same retained slot,
-so its later control-side revision bump does not invalidate that source.
+Code `323` with image ID zero and state EMPTY means provenance was lost: a
+slot became live without a staged image (staging refused or the id space
+exhausted, a loop-close restoration commit, a session import during capture),
+or an image-sourced slot started being written by a new recording or overdub.
+It is logged unconditionally on such a slot change, whether the previous
+source was an image or the arm snapshot, so the affected stem fails rather
+than replaying the arm image or a stale image as new; master capture remains
+usable. This is a material-coverage limit, not a queue or storage overrun.
+Undo-to-empty is not provenance loss: it logs the raw `39` and the renderer
+appends exact silence, so a Clear Undo followed by an Undo-to-empty in the same
+block renders silence and succeeds. New recording and captured retired-layer
+events retain their existing image transitions.

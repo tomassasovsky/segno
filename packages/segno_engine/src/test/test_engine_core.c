@@ -9152,13 +9152,14 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * on-disk format, not just the in-memory ring. ---- */
 #define LE_TEST_EVENTS_HEADER_BYTES 12
 #define LE_TEST_EVENTS_ENTRY_BYTES 28
-/* The version perf_drain.c writes today. 5 = applied Clear restore facts;
- * 4 = the PERF_ARMED/TRANSPORT_HELD
+/* The version perf_drain.c writes today. 6 = every callback-applied history
+ * image logs 322 and LE_CMD_UNDO_TO_EMPTY is raw-logged (#1143); 5 = applied
+ * Clear restore facts; 4 = the PERF_ARMED/TRANSPORT_HELD
  * facts + RECORD_END's take-id payload (#262/#819); 3 = unpaired RECORD_ABORT
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 5
+#define LE_TEST_EVENTS_VERSION 6
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -11811,8 +11812,10 @@ static void test_perf_layer_persists_through_redo_invalidation(void) {
   /* The undone layer and the fresh punch-in's completed pass both persisted,
    * in retire order — both retiring layers hold 1.0 (the pre-pass base):
    * the undo restored the track to exactly the same content the fresh
-   * punch-in then dubbed over again. */
-  CHECK(count_layer_entries_for_test(json) == 2);
+   * punch-in then dubbed over again. The undo itself staged its target as a
+   * kind-1 source image between them (#1143), so the manifest lists three. */
+  CHECK(count_layer_entries_for_test(json) == 3);
+  CHECK(strstr(json, "restore-0-1.pcm") != NULL);
 
   char filename[64];
   CHECK(nth_layer_filename_for_test(json, 0, filename, sizeof(filename)));
@@ -11827,7 +11830,7 @@ static void test_perf_layer_persists_through_redo_invalidation(void) {
     for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
   }
 
-  CHECK(nth_layer_filename_for_test(json, 1, filename, sizeof(filename)));
+  CHECK(nth_layer_filename_for_test(json, 2, filename, sizeof(filename)));
   snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), filename);
   f = fopen(path, "rb");
   CHECK(f != NULL);
@@ -13913,6 +13916,35 @@ static void test_shared_count_in_images_retire_by_member(void) {
   CHECK(s.tracks[6].image_revision == 0);
   CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
   CHECK(load_i32(&e->tracks[1].lanes[0].a_fx_count) == 1);
+  le_engine_destroy(e);
+}
+
+/* A Stop read during the countdown but posted after the commit and its
+ * one-drain grace (the control thread was descheduled in between) must not
+ * finalize the just-launched defining take into a tiny master. */
+static void stop_after_commit_hook(le_engine* e, int stage) {
+  if (stage != 1) return;
+  le_test_stop_record_hook = NULL;
+  tg_advance(e, 16000 + 512); /* 4/4 at 120 BPM, 8 kHz: one bar, then more */
+}
+
+static void test_count_in_stop_landing_after_commit_keeps_take(void) {
+  printf("test_count_in_stop_landing_after_commit_keeps_take\n");
+  le_engine* e = tg_make_engine(8000);
+  CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  le_engine_process(e, NULL, NULL, 0);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  le_test_stop_record_hook = stop_after_commit_hook;
+  CHECK(le_engine_stop_record_control(e, 1) == LE_OK);
+  CHECK(le_test_stop_record_hook == NULL); /* the hook really ran */
+  tg_advance(e, 256);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.master_length_frames == 0);
   le_engine_destroy(e);
 }
 
@@ -16900,6 +16932,482 @@ static void test_record_image_grid_clear_is_in_capture_batch(void) {
   }
 }
 
+/* #1146 — a fresh capture while the callback may still hold the buffers its
+ * preparation would regrow, zero or replace. Every case stops INSIDE a callback
+ * at the existing stage-5 seam (mix_tracks_frame has cached each lane's
+ * pool[live] pointer and not yet dereferenced it), posts the command that makes
+ * the track read EMPTY on the control side, then presses record. The press must
+ * come back LE_ERR_NOT_READY with nothing touched; after the block that applies
+ * the command has published, the retry takes the ordinary path.
+ *
+ * CHECK does not abort. On a baseline without the guard the press frees or
+ * zeroes the cached buffer, so the required assertions exit the process before
+ * the callback resumes rather than knowingly read freed PCM. */
+#define CAPTURE_GUARD_REQUIRE(cond)                                        \
+  do {                                                                     \
+    CHECK(cond);                                                           \
+    if (!(cond)) {                                                         \
+      printf("  aborting: the callback would resume into PCM this press "  \
+             "freed or zeroed\n");                                         \
+      exit(1);                                                             \
+    }                                                                      \
+  } while (0)
+
+enum {
+  CAPTURE_GUARD_UNDO_SHORT_LIVE = 1, /* undo-to-empty; live below the cap */
+  CAPTURE_GUARD_UNDO_ZERO_LIVE,      /* undo-to-empty; cap-sized live, master kept */
+  CAPTURE_GUARD_SWAP_CLEAR_SHADOW,   /* redo B->A then Clear; B is the candidate */
+  CAPTURE_GUARD_SWAP_CLEAR_UNRELATED,/* undo B->A then Clear; B is not */
+  CAPTURE_GUARD_ACKED_UNPUBLISHED    /* emptying applied, block not published */
+};
+static int g_capture_guard_case;
+static int g_capture_guard_channel;
+static int g_capture_guard_image; /* press with an image (1) or primitive (0) */
+static int g_capture_guard_slot;  /* the pool slot the callback holds */
+static int g_capture_guard_fired;
+static int g_capture_guard_rc;
+static float* g_capture_guard_held;
+
+static int capture_guard_press(le_engine* e, int channel) {
+  le_record_image image = {.revision = 1146};
+  return g_capture_guard_image ? le_engine_record_with_image(e, channel, &image)
+                               : le_engine_record(e, channel);
+}
+
+static void capture_guard_hook(le_engine* e, int stage) {
+  if (stage != 5) return;
+  le_test_fade_hook = NULL;
+  g_capture_guard_fired = 1;
+  const int ch = g_capture_guard_channel;
+  le_track* t = &e->tracks[ch];
+  le_lane* ln = &t->lanes[0];
+  const int slot = g_capture_guard_slot;
+  float* const held = ln->pool[slot];
+  const int32_t held_cap = ln->pool_cap[slot];
+  g_capture_guard_held = held;
+  CHECK(held != NULL);
+  CHECK(load_i32(&ln->a_live) == slot);
+  float before[LOOP_N];
+  memcpy(before, held, sizeof before);
+  switch (g_capture_guard_case) {
+    case CAPTURE_GUARD_UNDO_SHORT_LIVE:
+    case CAPTURE_GUARD_UNDO_ZERO_LIVE:
+      CHECK(le_engine_undo(e, ch) == LE_OK); /* undo-to-empty, unapplied */
+      break;
+    case CAPTURE_GUARD_SWAP_CLEAR_SHADOW:
+      CHECK(le_engine_redo(e, ch) == LE_OK); /* live B -> A, B onto undo */
+      CHECK(le_engine_clear(e, ch) == LE_OK); /* EMPTY pending, history gone */
+      break;
+    case CAPTURE_GUARD_SWAP_CLEAR_UNRELATED:
+      CHECK(le_engine_undo(e, ch) == LE_OK); /* live B -> A (cap-sized) */
+      CHECK(le_engine_clear(e, ch) == LE_OK);
+      break;
+    default:
+      break; /* the emptying was applied at this block's start */
+  }
+  CHECK(le_effective_state(t) == LE_TRACK_EMPTY);
+  if (g_capture_guard_case == CAPTURE_GUARD_ACKED_UNPUBLISHED) {
+    CHECK(load_i32(&t->a_state) == LE_TRACK_EMPTY);
+    CHECK(t->state_cmds_posted ==
+          atomic_load_explicit(&t->a_state_acks, memory_order_acquire));
+  } else {
+    CHECK(load_i32(&t->a_state) != LE_TRACK_EMPTY);
+  }
+  CHECK(!le_engine_commands_settled(e));
+  const uint64_t posted = e->commands_posted;
+  const int undo = t->undo_count, redo = t->redo_count;
+  const int outstanding = t->outstanding_count;
+  const int32_t empty_len = t->empty_len;
+  const int armed = e->armed[ch];
+  const int32_t muted = load_i32(&ln->a_muted);
+  g_capture_guard_rc = capture_guard_press(e, ch);
+  const int admitted = g_capture_guard_case == CAPTURE_GUARD_SWAP_CLEAR_UNRELATED;
+  CAPTURE_GUARD_REQUIRE(g_capture_guard_rc ==
+                        (admitted ? LE_OK : LE_ERR_NOT_READY));
+  CAPTURE_GUARD_REQUIRE(ln->pool[slot] == held);
+  CHECK(ln->pool_cap[slot] == held_cap);
+  CHECK(memcmp(before, held, sizeof before) == 0);
+  if (admitted) return;
+  CHECK(e->commands_posted == posted);
+  CHECK(t->undo_count == undo && t->redo_count == redo);
+  CHECK(t->outstanding_count == outstanding);
+  CHECK(t->empty_len == empty_len);
+  CHECK(e->armed[ch] == armed);
+  CHECK(load_i32(&ln->a_muted) == muted);
+  CHECK(load_i32(&t->a_pending) == 0);
+}
+
+/* Runs one callback block with the guard hook armed and returns its verdict. */
+static int capture_guard_block(le_engine* e, int which, int channel, int image,
+                               int slot) {
+  g_capture_guard_case = which;
+  g_capture_guard_channel = channel;
+  g_capture_guard_image = image;
+  g_capture_guard_slot = slot;
+  g_capture_guard_fired = 0;
+  g_capture_guard_rc = 0;
+  le_test_fade_hook = capture_guard_hook;
+  pump_frames(e, 0.0f, 64);
+  CHECK(g_capture_guard_fired);
+  CHECK(le_test_fade_hook == NULL);
+  return g_capture_guard_rc;
+}
+
+/* Base take at the 200000-frame cap in slot 0, one retired overdub layer in
+ * slot 1 — quantum-sized, the short allocation under test — track playing. */
+static le_engine* capture_guard_fixture(void) {
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 1, 200000) == LE_OK);
+  float out[64];
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, .5f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  settle_dub(e);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_PLAYING);
+  CHECK(e->tracks[0].undo_count == 1);
+  CHECK(e->tracks[0].undo_stack[0].slot == 1);
+  CHECK(e->tracks[0].lanes[0].pool[1] != NULL);
+  CHECK(e->tracks[0].lanes[0].pool_cap[1] == LE_LAYER_QUANTUM);
+  CHECK(LE_LAYER_QUANTUM < e->max_loop_frames);
+  CHECK(e->tracks[0].lanes[0].pool_cap[0] == e->max_loop_frames);
+  return e;
+}
+
+static void test_record_refuses_regrowing_callback_held_live(void) {
+  printf("test_record_refuses_regrowing_callback_held_live\n");
+  for (int image = 0; image <= 1; ++image) {
+    for (int rec_dub = 0; rec_dub <= 1; ++rec_dub) {
+      le_engine* e = capture_guard_fixture();
+      CHECK(le_engine_set_rec_dub(e, rec_dub) == LE_OK);
+      /* Undo swaps the quantum-sized layer slot live: the allocation a fresh
+       * capture regrows (le_begin_empty_capture / le_prepare_image_capture). */
+      CHECK(le_engine_undo(e, 0) == LE_OK);
+      drain(e);
+      CHECK(load_i32(&e->tracks[0].lanes[0].a_live) == 1);
+      CHECK(e->tracks[0].lanes[0].pool_cap[1] == LE_LAYER_QUANTUM);
+      CHECK(e->tracks[0].redo_count == 1);
+      CHECK(le_engine_commands_settled(e));
+      CHECK(capture_guard_block(e, CAPTURE_GUARD_UNDO_SHORT_LIVE, 0, image, 1) ==
+            LE_ERR_NOT_READY);
+      CHECK(e->tracks[0].lanes[0].pool[1] == g_capture_guard_held);
+      /* The emptying applies at the next block and publishes with it. */
+      drain(e);
+      CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_EMPTY);
+      CHECK(le_engine_commands_settled(e));
+      CHECK(e->tracks[0].redo_count == 2); /* the way back survived the refusal */
+      CHECK(capture_guard_press(e, 0) == LE_OK);
+      drain(e);
+      CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+      CHECK(e->tracks[0].lanes[0].pool_cap[1] == e->max_loop_frames);
+      CHECK(e->tracks[0].redo_count == 0);
+      if (rec_dub) {
+        CHECK(e->tracks[0].outstanding_count == 1);
+        CHECK(e->tracks[0].lanes[0].pool_cap[e->tracks[0].outstanding_slots[0]] ==
+              e->max_loop_frames);
+      }
+      pump_frames(e, .1f, LOOP_N);
+      CHECK(le_engine_record(e, 0) == LE_OK);
+      drain(e);
+      float pcm[LOOP_N];
+      CHECK(le_engine_export_track(e, 0, pcm, LOOP_N) == LOOP_N);
+      for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - .1f) < 1e-6f);
+      le_engine_destroy(e);
+    }
+  }
+}
+
+static void test_record_refuses_zeroing_callback_held_live(void) {
+  printf("test_record_refuses_zeroing_callback_held_live\n");
+  for (int image = 0; image <= 1; ++image) {
+    for (int quantized = 0; quantized <= 1; ++quantized) {
+      le_engine* e = le_engine_create();
+      CHECK(le_engine_configure(e, 48000, 1, 1, 4096) == LE_OK);
+      CHECK(le_engine_set_lane_input(e, 1, 0, 0) == LE_OK);
+      drain(e);
+      record_base_loop(e, 1.0f); /* track 0 keeps the grid throughout */
+      CHECK(le_engine_record(e, 1) == LE_OK);
+      pump_frames(e, .5f, LOOP_N);
+      CHECK(le_engine_record(e, 1) == LE_OK);
+      drain(e);
+      CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING);
+      CHECK(load_i32(&e->tracks[1].lanes[0].a_len) > 0);
+      /* Cap-sized live: nothing to regrow. Over a surviving master the
+       * preparation zeroes it instead (le_prepare_new_capture). */
+      CHECK(e->tracks[1].lanes[0].pool[0] != NULL);
+      CHECK(e->tracks[1].lanes[0].pool_cap[0] == e->max_loop_frames);
+      if (quantized) CHECK(timing_gate(e, 1) == LE_OK);
+      CHECK(le_engine_commands_settled(e));
+      CHECK(capture_guard_block(e, CAPTURE_GUARD_UNDO_ZERO_LIVE, 1, image, 0) ==
+            LE_ERR_NOT_READY);
+      drain(e);
+      CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_EMPTY);
+      CHECK(le_engine_commands_settled(e));
+      CHECK(capture_guard_press(e, 1) == LE_OK);
+      drain(e);
+      if (!quantized) {
+        CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_RECORDING);
+      } else {
+        CHECK(e->armed[1] == 1);
+        CHECK(load_i32(&e->tracks[1].a_pending) == 1);
+        /* Cancellation prepares nothing and stays exempt: a second press on
+         * the pending arm while the ring is unsettled still disarms. */
+        CHECK(le_engine_set_master_gain(e, 1) == LE_OK);
+        CHECK(!le_engine_commands_settled(e));
+        CHECK(le_engine_record(e, 1) == LE_OK);
+        CHECK(e->armed[1] == 0);
+        drain(e);
+        CHECK(load_i32(&e->tracks[1].a_pending) == 0);
+        CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_EMPTY);
+      }
+      le_engine_destroy(e);
+    }
+  }
+}
+
+/* Two cap-sized slots (0, 1) under a quantum-sized live slot 2, built the way
+ * a layered session load does it: layers at ordinals 0/1, a lane import that
+ * regrows the live slot 1 to the cap, then a third layer that becomes live. */
+static le_engine* capture_guard_layered_fixture(void) {
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 1, 200000) == LE_OK);
+  float a[LOOP_N], b[LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    a[i] = 1.0f;
+    b[i] = .25f;
+  }
+  CHECK(le_engine_import_layer(e, 0, 0, 0, a, LOOP_N) == LE_OK);
+  CHECK(le_engine_import_layer(e, 0, 0, 1, a, LOOP_N) == LE_OK);
+  CHECK(le_engine_finalize_layers(e, 0, 1, 0) == LE_OK);
+  drain(e);
+  CHECK(load_i32(&e->tracks[0].lanes[0].a_live) == 1);
+  CHECK(le_engine_import_track(e, 0, a, LOOP_N) == LE_OK);
+  CHECK(e->tracks[0].lanes[0].pool_cap[1] == e->max_loop_frames);
+  CHECK(le_engine_import_layer(e, 0, 0, 2, b, LOOP_N) == LE_OK);
+  CHECK(le_engine_finalize_layers(e, 0, 2, 0) == LE_OK);
+  CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_PLAYING);
+  CHECK(load_i32(&e->tracks[0].lanes[0].a_live) == 2);
+  CHECK(e->tracks[0].undo_count == 2);
+  CHECK(e->tracks[0].lanes[0].pool_cap[0] == e->max_loop_frames);
+  CHECK(e->tracks[0].lanes[0].pool_cap[1] == e->max_loop_frames);
+  CHECK(e->tracks[0].lanes[0].pool_cap[2] == LE_LAYER_QUANTUM);
+  return e;
+}
+
+static void test_record_refuses_replacing_callback_held_history_shadow(void) {
+  printf("test_record_refuses_replacing_callback_held_history_shadow\n");
+  for (int image = 0; image <= 1; ++image) {
+    le_engine* e = capture_guard_fixture();
+    CHECK(le_engine_set_rec_dub(e, 1) == LE_OK); /* the start supplies a shadow */
+    /* Undo makes the short layer slot live (the callback caches it); the hook
+     * then redoes back to the cap-sized base and Clears. Live is sufficient and
+     * history is gone, so the only buffer this start touches is the shadow
+     * candidate — the first slot that is neither live nor outstanding: B. */
+    CHECK(le_engine_undo(e, 0) == LE_OK);
+    drain(e);
+    CHECK(load_i32(&e->tracks[0].lanes[0].a_live) == 1);
+    CHECK(e->tracks[0].redo_count == 1 && e->tracks[0].redo_stack[0].slot == 0);
+    for (int i = 0; i < e->tracks[0].outstanding_count; ++i)
+      CHECK(e->tracks[0].outstanding_slots[i] != 1);
+    CHECK(capture_guard_block(e, CAPTURE_GUARD_SWAP_CLEAR_SHADOW, 0, image, 1) ==
+          LE_ERR_NOT_READY);
+    CHECK(load_i32(&e->tracks[0].lanes[0].a_live) == 0);
+    CHECK(e->tracks[0].undo_count == 0 && e->tracks[0].redo_count == 0);
+    CHECK(e->tracks[0].lanes[0].pool[1] == g_capture_guard_held);
+    CHECK(e->tracks[0].lanes[0].pool_cap[1] == LE_LAYER_QUANTUM);
+    drain(e);
+    CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_EMPTY);
+    CHECK(le_engine_commands_settled(e));
+    CHECK(capture_guard_press(e, 0) == LE_OK);
+    drain(e);
+    CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+    CHECK(e->tracks[0].outstanding_count == 1);
+    CHECK(e->tracks[0].outstanding_slots[0] == 1); /* B was the candidate */
+    CHECK(e->tracks[0].lanes[0].pool_cap[1] == e->max_loop_frames);
+    le_engine_destroy(e);
+  }
+  /* The control: a quantum-sized slot the callback holds that is NOT this
+   * start's candidate (a cap-sized slot 0 comes first) must not cause refusal.
+   * The start is admitted while the ring is unsettled and leaves it alone. */
+  for (int image = 0; image <= 1; ++image) {
+    le_engine* e = capture_guard_layered_fixture();
+    CHECK(le_engine_set_rec_dub(e, 1) == LE_OK);
+    drain(e);
+    CHECK(capture_guard_block(e, CAPTURE_GUARD_SWAP_CLEAR_UNRELATED, 0, image, 2) ==
+          LE_OK);
+    CHECK(load_i32(&e->tracks[0].lanes[0].a_live) == 1);
+    CHECK(e->tracks[0].lanes[0].pool[2] == g_capture_guard_held);
+    CHECK(e->tracks[0].lanes[0].pool_cap[2] == LE_LAYER_QUANTUM);
+    drain(e);
+    CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+    CHECK(le_engine_commands_settled(e));
+    CHECK(e->tracks[0].outstanding_count == 1);
+    CHECK(e->tracks[0].outstanding_slots[0] == 0);
+    CHECK(e->tracks[0].lanes[0].pool[2] == g_capture_guard_held);
+    CHECK(e->tracks[0].lanes[0].pool_cap[2] == LE_LAYER_QUANTUM);
+    le_engine_destroy(e);
+  }
+}
+
+static void test_record_waits_for_block_publication_not_state_ack(void) {
+  printf("test_record_waits_for_block_publication_not_state_ack\n");
+  le_engine* e = capture_guard_fixture();
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* live = the short layer slot */
+  drain(e);
+  CHECK(load_i32(&e->tracks[0].lanes[0].a_live) == 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* undo-to-empty, applied next block */
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_PLAYING);
+  /* The block applies the emptying first (a_state EMPTY, ack released), then
+   * reaches the seam before its final publication: still not enough. */
+  CHECK(capture_guard_block(e, CAPTURE_GUARD_ACKED_UNPUBLISHED, 0, 0, 1) ==
+        LE_ERR_NOT_READY);
+  CHECK(le_engine_commands_settled(e)); /* that block has published now */
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_EMPTY);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+  CHECK(e->tracks[0].lanes[0].pool_cap[1] == e->max_loop_frames);
+  le_engine_destroy(e);
+}
+
+/* Emptyings that carry no state command of their own (a cancelled launch
+ * grace, a void take) must still ticket the block that applies them. The hook
+ * presses Record at the stage-5 seam of that block: the track already reads
+ * EMPTY, the block has not published, and the press would zero the live buffer
+ * over the parked master — so it must be refused and the buffer kept intact. */
+static int g_emptying_rc, g_emptying_fired, g_emptying_zeroed;
+static void emptying_seam_hook(le_engine* e, int stage) {
+  if (stage != 5) return;
+  le_test_fade_hook = NULL;
+  g_emptying_fired = 1;
+  le_track* t = &e->tracks[0];
+  le_lane* ln = &t->lanes[0];
+  const int live = load_i32(&ln->a_live);
+  CHECK(load_i32(&t->a_state) == LE_TRACK_EMPTY);
+  CHECK(!le_engine_commands_settled(e));
+  float before[8];
+  memcpy(before, ln->pool[live], sizeof before);
+  g_emptying_rc = le_engine_record(e, 0);
+  g_emptying_zeroed = memcmp(before, ln->pool[live], sizeof before) != 0;
+}
+
+/* A master on track 1 (sr 8000, 20000-frame cap), playing with the clock at
+ * the loop top; parked when `park` (a held transport admits a count-in). Either
+ * way a grid exists, so a fresh capture on track 0 zeroes its live buffer. */
+static le_engine* emptying_fixture(int park) {
+  le_engine* e = tg_make_engine(8000);
+  CHECK(le_engine_set_tempo(e, 120) == LE_OK);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  tg_feed(e, .5f, 8000);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  tg_advance(e, 8000 / 100 + 64);
+  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING);
+  const int32_t len = load_i32(&e->a_master_len);
+  CHECK(len > 0);
+  tg_advance(e, (len - load_i32(&e->a_master_pos)) % len);
+  CHECK(load_i32(&e->a_master_pos) == 0);
+  if (park) {
+    CHECK(le_engine_stop_track(e, 1) == LE_OK);
+    drain(e);
+    CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED);
+  }
+  CHECK(le_engine_commands_settled(e));
+  return e;
+}
+
+static void emptying_press_and_retry(le_engine* e) {
+  g_emptying_fired = 0;
+  g_emptying_rc = 0;
+  g_emptying_zeroed = 1;
+  le_test_fade_hook = emptying_seam_hook;
+  tg_advance(e, 64); /* the block that applies the emptying */
+  le_test_fade_hook = NULL;
+  CHECK(g_emptying_fired);
+  CHECK(g_emptying_rc == LE_ERR_NOT_READY);
+  CHECK(!g_emptying_zeroed);
+  /* That block has published: the same press is admitted. */
+  CHECK(le_engine_commands_settled(e));
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_EMPTY);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+}
+
+static void test_record_refuses_after_grace_cancel_until_published(void) {
+  printf("test_record_refuses_after_grace_cancel_until_published\n");
+  /* 0: the cancellation rides LE_CMD_RECORD (le_record_impl); 1: LE_CMD_DISARM
+   * (le_engine_cancel_arm, the host's path during countInCancelGrace);
+   * 2: LE_CMD_STOP_RECORD_CONTROL; 3: LE_CMD_CANCEL_COUNT_IN. */
+  for (int via = 0; via <= 3; ++via) {
+    le_engine* e = emptying_fixture(1);
+    CHECK(record_start_count(e, 1) == LE_OK);
+    CHECK(le_engine_record(e, 0) == LE_OK); /* deferred into the count-in */
+    drain(e);
+    CHECK(load_i32(&e->tracks[0].a_pending_launch) == 1);
+    int guard = 0;
+    while (!load_i32(&e->tracks[0].a_launch_grace) && guard++ < 10000)
+      tg_advance(e, 64);
+    CHECK(load_i32(&e->tracks[0].a_launch_grace) == 1);
+    CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+    le_lane* ln = &e->tracks[0].lanes[0];
+    for (int i = 0; i < 8; ++i) ln->pool[load_i32(&ln->a_live)][i] = 1.0f;
+    const uint64_t before = e->tracks[0].empty_command;
+    switch (via) {
+      case 0: CHECK(le_engine_record(e, 0) == LE_OK); break;
+      case 1: CHECK(le_engine_cancel_arm(e, 0) == LE_OK); break;
+      case 2: CHECK(le_engine_stop_record_control(e, 0) == LE_OK); break;
+      default: CHECK(le_engine_cancel_count_in(e) == LE_OK); break;
+    }
+    CHECK(e->tracks[0].empty_command == e->commands_posted);
+    CHECK(e->tracks[0].empty_command > before);
+    emptying_press_and_retry(e);
+    le_engine_destroy(e);
+  }
+}
+
+static void test_record_refuses_after_void_take_until_published(void) {
+  printf("test_record_refuses_after_void_take_until_published\n");
+  /* Stop inside the block that starts the take at the loop top: it finalizes
+   * with nothing captured and the track empties (finalize_new_track's void
+   * take), with no state command to ticket it. */
+  le_engine* e = emptying_fixture(0);
+  le_lane* ln = &e->tracks[0].lanes[0];
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  /* The press over the master already zeroed the live buffer: mark it so the
+   * seam press's own zeroing would be observable. */
+  for (int i = 0; i < 8; ++i) ln->pool[load_i32(&ln->a_live)][i] = 1.0f;
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  CHECK(e->tracks[0].empty_command == e->commands_posted);
+  emptying_press_and_retry(e);
+  le_engine_destroy(e);
+}
+
+static void test_record_second_press_in_start_block_waits_for_publication(void) {
+  printf("test_record_second_press_in_start_block_waits_for_publication\n");
+  /* A second Record press inside the block that starts a take still reads
+   * EMPTY here, so it is classified as another start; the audio thread would
+   * apply it as a void finish. The start is ticketed, so a second start that
+   * would zero the live buffer over the master waits for publication instead
+   * of racing it; after the block the take records and a press finishes it. */
+  le_engine* e = emptying_fixture(0);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  CHECK(e->tracks[0].empty_command == e->commands_posted);
+  const uint64_t posted = e->commands_posted;
+  CHECK(le_engine_record(e, 0) == LE_ERR_NOT_READY);
+  CHECK(e->commands_posted == posted);
+  tg_advance(e, 64);
+  CHECK(le_engine_commands_settled(e));
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_RECORDING);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* the finish, as usual */
+  tg_advance(e, 64);
+  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_PLAYING);
+  le_engine_destroy(e);
+}
+
 static void test_record_image_deferred_shadow_survives_until_capture(void) {
   printf("test_record_image_deferred_shadow_survives_until_capture\n");
   for (int sound = 0; sound <= 1; ++sound) {
@@ -19060,7 +19568,8 @@ static void test_perf_render_unlisted_retire_fails_stem(void) {
                      .evt = {.channel = 1, .slot = 1, .generation = 1}});
     fclose(lf);
   }
-  for (int dropped = 1; dropped >= 0; --dropped) {
+  /* 2: overruns (refused at staging), 1: dropped (manifest full), 0: none. */
+  for (int dropped = 2; dropped >= 0; --dropped) {
     char manifest[1024];
     snprintf(manifest, sizeof(manifest),
         "{\"sample_rate\": 4800, \"capture_frames\": 12, "
@@ -19068,7 +19577,9 @@ static void test_perf_render_unlisted_retire_fails_stem(void) {
         "[{\"channel\": 1, \"volume\": 1, \"lanes\": [{\"lane\": 0, "
         "\"deferred\": false, \"pcmRef\": \"track1.wav\"}]}]}, "
         "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []%s}",
-        dropped ? ", \"layers_dropped\": 1" : "");
+        dropped == 2   ? ", \"layer_overruns\": 1"
+        : dropped == 1 ? ", \"layers_dropped\": 1"
+                       : "");
     test_write_manifest(dir, manifest);
     le_engine* e = le_engine_create();
     CHECK(le_perf_render_begin(e, dir) == LE_OK);
@@ -19415,34 +19926,91 @@ static void test_perf_render_partial_success(void) {
   le_engine_destroy(e);
 }
 
-/* Acceptance (robustness): pointing a render at a directory with no
- * performance.json (or, separately, a corrupt one) must not hang or crash —
- * the worker should reach `done` with zero tracks, matching a render that
- * legitimately has nothing to do. */
-static void test_perf_render_missing_or_corrupt_manifest(void) {
-  printf("test_perf_render_missing_or_corrupt_manifest\n");
-
-  const char* missing_dir = render_test_dir("missing-manifest");
-  le_engine* e1 = le_engine_create();
-  CHECK(le_perf_render_begin(e1, missing_dir) == LE_OK);
-  test_wait_for_render(e1, 2000);
+/* An unusable manifest finishes as a FAILED render (#1144): nonzero poll
+ * status, done, and no invented track results. A valid empty manifest is
+ * still a successful render with zero tracks, and the same engine renders
+ * again afterwards with its status reset. */
+static void expect_render_status(le_engine* e, const char* dir, int32_t want) {
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
   int32_t done = 0, track_count = -1;
-  CHECK(le_perf_render_poll(e1, &done, NULL, &track_count) == LE_OK);
+  CHECK(le_perf_render_poll(e, &done, NULL, &track_count) == want);
   CHECK(done == 1);
   CHECK(track_count == 0);
-  le_engine_destroy(e1);
+}
+
+static void test_perf_render_missing_or_corrupt_manifest(void) {
+  printf("test_perf_render_missing_or_corrupt_manifest\n");
+  le_engine* e = le_engine_create();
+  int32_t done = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, NULL) == LE_OK); /* idle */
+  CHECK(done == 1);
+
+  expect_render_status(e, render_test_dir("missing-manifest"), LE_ERR_INVALID);
 
   const char* corrupt_dir = render_test_dir("corrupt-manifest");
   test_write_manifest(corrupt_dir, "{not valid json");
-  le_engine* e2 = le_engine_create();
-  CHECK(le_perf_render_begin(e2, corrupt_dir) == LE_OK);
-  test_wait_for_render(e2, 2000);
-  done = 0;
-  track_count = -1;
-  CHECK(le_perf_render_poll(e2, &done, NULL, &track_count) == LE_OK);
-  CHECK(done == 1);
-  CHECK(track_count == 0);
-  le_engine_destroy(e2);
+  expect_render_status(e, corrupt_dir, LE_ERR_INVALID);
+
+  const char* policy_dir = render_test_dir("no-policy-manifest");
+  test_write_manifest(policy_dir,
+      "{\"sample_rate\": 4800, \"capture_frames\": 4, "
+      "\"armSnapshot\": {\"captureMask\": 1, \"tracks\": []}, \"layers\": []}");
+  expect_render_status(e, policy_dir, LE_ERR_INVALID);
+
+  const char* empty_dir = render_test_dir("empty-valid-manifest");
+  test_write_manifest(empty_dir,
+      "{\"sample_rate\": 4800, \"capture_frames\": 4, "
+      "\"armSnapshot\": {\"followOutput\": false, \"captureMask\": 1, "
+      "\"tracks\": []}, \"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}");
+  expect_render_status(e, empty_dir, LE_OK); /* reset after the failures */
+  le_engine_destroy(e);
+}
+
+/* A valid manifest larger than any fixed arena this renderer has used (8,192
+ * nodes, then 8,192 + 16 x 2,048 = 40,960) parses and renders a real track:
+ * the arena is sized from the complete text (#1144). */
+static void test_perf_render_large_manifest_parses(void) {
+  printf("test_perf_render_large_manifest_parses\n");
+  const char* dir = render_test_dir("large-manifest");
+  const float content[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track1.wav", dir);
+  test_write_wav_mono(wav_path, content, 4, 4800);
+  const int entries = 4300; /* 10 nodes each: ~43,000 > 40,960 */
+  const size_t cap = 512 + (size_t)entries * 192;
+  char* text = malloc(cap);
+  CHECK(text != NULL);
+  if (text == NULL) return;
+  size_t off = (size_t)snprintf(text, cap,
+      "{\"sample_rate\": 4800, \"capture_frames\": 4, "
+      "\"armSnapshot\": {\"followOutput\": false, \"captureMask\": 1, "
+      "\"tracks\": [{\"channel\": 1, \"volume\": 1, \"lanes\": [{\"lane\": 0, "
+      "\"deferred\": false, \"pcmRef\": \"track1.wav\"}]}]}, "
+      "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": [");
+  for (int i = 0; i < entries; ++i) {
+    off += (size_t)snprintf(text + off, cap - off,
+        "%s{\"channel\": 7, \"slot\": %d, \"generation\": %d, \"frame\": 0, "
+        "\"frame_count\": 4, \"lane_count\": 1, \"kind\": 0, "
+        "\"restore_id\": 0, \"filename\": \"layer-7-0-%d.pcm\"}",
+        i ? ", " : "", i % 256, i, i);
+  }
+  snprintf(text + off, cap - off, "]}");
+  test_write_manifest(dir, text);
+  free(text);
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+  int32_t done = 0, track_count = -1;
+  CHECK(le_perf_render_poll(e, &done, NULL, &track_count) == LE_OK);
+  CHECK(done == 1 && track_count == 1);
+  int32_t channel = -1, succeeded = -1;
+  CHECK(le_perf_render_track_status(e, 0, &channel, &succeeded) == LE_OK);
+  CHECK(channel == 1 && succeeded == 1);
+  float stem[4] = {0};
+  CHECK(test_read_stem(dir, 1, stem, 4) == 4);
+  for (int i = 0; i < 4; ++i) CHECK(fabsf(stem[i] - 0.5f) < 1e-6f);
+  le_engine_destroy(e);
 }
 
 /* ---- perf_render: the wet pass + master reconstruction (part 8) ---- */
@@ -32360,7 +32928,8 @@ static void test_perf_render_requires_explicit_capture_policy(void) {
     CHECK(le_perf_render_begin(e, dir) == LE_OK);
     test_wait_for_render(e, 5000);
     int32_t done = 0, count = -1;
-    CHECK(le_perf_render_poll(e, &done, NULL, &count) == LE_OK);
+    /* Missing or invalid policy is a failed render (#1144). */
+    CHECK(le_perf_render_poll(e, &done, NULL, &count) == LE_ERR_INVALID);
     CHECK(done && count == 0);
   }
   le_engine_destroy(e);
@@ -32403,7 +32972,9 @@ static void test_perf_render_validates_capture_identity(void) {
     le_engine* e = le_engine_create();
     CHECK(le_perf_render_begin(e, dir) == LE_OK); test_wait_for_render(e, 5000);
     int32_t done = 0, count = -1;
-    CHECK(le_perf_render_poll(e, &done, NULL, &count) == LE_OK);
+    /* An invalid identity is a failed render (#1144), never an empty one. */
+    CHECK(le_perf_render_poll(e, &done, NULL, &count) ==
+          (i < 20 ? LE_ERR_INVALID : LE_OK));
     CHECK(done && (i < 20 ? count == 0 : count > 0));
     le_engine_destroy(e);
   }
@@ -32967,8 +33538,26 @@ static void test_session_commit_stays_stopped_until_play(void) {
 }
 
 #include "test_engine_fade.h"
+#include "test_engine_reopen.h"
+#include "test_engine_history_replay.h"
 
 int main(void) {
+  test_reopen_same_rate_retains_material();
+  test_reopen_drops_partial_first_take();
+  test_reopen_reverts_partial_overdub_pass();
+  test_reopen_reverts_partial_pass_across_segments();
+  test_reopen_reverts_pass_mid_drain();
+  test_reopen_files_parked_retire();
+  test_reopen_drops_seam_take();
+  test_reopen_fade_frozen_then_resumes();
+  test_reopen_keeps_clear_history();
+  test_reopen_mismatch_clears();
+  test_reopen_pending_press_drops_only_that_track();
+  test_reopen_pending_state_drops_track();
+  test_reopen_files_two_complete_passes();
+  test_reopen_fewer_channels_keeps_material();
+  test_reopen_device_lifecycle();
+  test_reopen_ends_performance_capture();
   test_session_commit_stays_stopped_until_play();
   test_fade_clear_boundary();
   test_fade_clear_pressure_and_frozen();
@@ -32992,6 +33581,8 @@ int main(void) {
   test_fade_restore_staging_and_manifest_capacity();
   test_fade_grouped_muted_restore_stems();
   test_fade_restore_overdub_source_end();
+  run_history_replay_tests();
+  if (getenv("SEGNO_HISTORY_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_record_start_owned_cancel_survives_queued_pair();
   test_record_start_capture_and_no_source_refusal();
   test_record_start_selected_source_triggers();
@@ -33039,6 +33630,13 @@ int main(void) {
   test_record_image_punch_in_preserves_history();
   test_record_image_fresh_capture_admits_first_shadow();
   test_record_image_grid_clear_is_in_capture_batch();
+  test_record_refuses_regrowing_callback_held_live();
+  test_record_refuses_zeroing_callback_held_live();
+  test_record_refuses_replacing_callback_held_history_shadow();
+  test_record_waits_for_block_publication_not_state_ack();
+  test_record_refuses_after_grace_cancel_until_published();
+  test_record_refuses_after_void_take_until_published();
+  test_record_second_press_in_start_block_waits_for_publication();
   test_record_image_deferred_shadow_survives_until_capture();
   test_record_image_acceptance_and_arm();
   test_armed_image_keeps_live_faders_and_cancel_drops_context();
@@ -33097,6 +33695,7 @@ int main(void) {
   test_shared_count_in_metric_capacity_and_grace_stop();
   test_shared_count_in_sections_and_capture_authority();
   test_shared_count_in_images_retire_by_member();
+  test_count_in_stop_landing_after_commit_keeps_take();
   test_shared_count_in_stop_intents_do_not_acquire();
   test_count_in_delays_defining_record();
   test_count_in_record_press_cancels();
@@ -33441,6 +34040,7 @@ int main(void) {
   test_perf_render_concurrent_with_live_engine();
   test_perf_render_partial_success();
   test_perf_render_missing_or_corrupt_manifest();
+  test_perf_render_large_manifest_parses();
   test_perf_render_wet_fx_sweep();
   test_perf_render_dry_write_fail_excludes_from_master();
   test_perf_render_multi_channel_dry_fail_isolated();
