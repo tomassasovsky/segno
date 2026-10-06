@@ -18,7 +18,9 @@
  * Deterministic op sequence (fixed seed); the interleaving is not.
  */
 #include <pthread.h>
+#include <sched.h>
 #include <stdatomic.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -28,6 +30,7 @@
 #define OPS 20000
 
 static atomic_int g_stop;
+static atomic_long g_blocks;
 static int g_failures;
 
 #define CHECK(cond)                                                    \
@@ -51,6 +54,7 @@ static void* audio_thread(void* arg) {
   uint32_t n = 1;
   while (!atomic_load_explicit(&g_stop, memory_order_acquire)) {
     le_engine_process(e, out, in, n);
+    atomic_fetch_add_explicit(&g_blocks, 1, memory_order_relaxed);
     n = n % 61 + 1; /* every block length 1..61, so ends land anywhere */
   }
   return NULL;
@@ -74,15 +78,17 @@ int main(void) {
   pthread_t audio;
   CHECK(pthread_create(&audio, NULL, audio_thread, e) == 0);
 
-  int accepted = 0, refused = 0, max_owned = 0;
+  int accepted = 0, refused = 0, max_owned = 0, handoffs = 0, advances = 0;
+  uint32_t last_end_count = 0;
   for (int op = 0; op < OPS; ++op) {
     int32_t rc = LE_OK;
     switch (next_rand() % 9) {
       case 0:
       case 1: {
         le_backing_buffer* b = make_buffer();
-        rc = le_engine_backing_load(e, b, op, (int32_t)(next_rand() % 2));
+        rc = le_engine_backing_load(e, b, op, next_rand() % 4 != 0);
         if (rc != LE_OK) le_backing_buffer_free(b);
+        else ++handoffs;
         break;
       }
       case 2:
@@ -90,6 +96,7 @@ int main(void) {
         le_backing_buffer* b = make_buffer();
         rc = le_engine_backing_stage_next(e, b, op);
         if (rc != LE_OK) le_backing_buffer_free(b);
+        else ++handoffs;
         break;
       }
       case 4:
@@ -102,10 +109,22 @@ int main(void) {
         rc = le_engine_backing_seek(e, (int32_t)(next_rand() % 250));
         break;
       case 7:
-        rc = le_engine_backing_set_end(e, (int32_t)(next_rand() % 3));
+        /* Mostly Next, so advances keep landing inside blocks. */
+        rc = le_engine_backing_set_end(
+            e, next_rand() % 4 == 0 ? (int32_t)(next_rand() % 2)
+                                    : LE_BACKING_END_NEXT);
         break;
       default:
         break;
+    }
+    /* Keep the two threads interleaved: every fourth op waits for the audio
+     * thread to finish a block, so the control side cannot run the whole
+     * sequence against a starved callback. */
+    if (op % 4 == 3) {
+      const long seen = atomic_load_explicit(&g_blocks, memory_order_relaxed);
+      while (atomic_load_explicit(&g_blocks, memory_order_relaxed) == seen) {
+        sched_yield();
+      }
     }
     if (rc == LE_OK) ++accepted;
     else ++refused;
@@ -115,12 +134,21 @@ int main(void) {
     CHECK(s.owned >= 0 && s.owned <= LE_BACKING_MAX_BUFFERS);
     CHECK(s.owned_bytes <= LE_BACKING_BUDGET_BYTES);
     if (s.owned > max_owned) max_owned = s.owned;
+    if (s.end_count != last_end_count && s.last_end == LE_BACKING_EV_ADVANCED)
+      ++advances;
+    last_end_count = s.end_count;
   }
   atomic_store_explicit(&g_stop, 1, memory_order_release);
   CHECK(pthread_join(audio, NULL) == 0);
-  printf("  %d accepted, %d refused (ring full or in transit), max owned %d\n",
-         accepted, refused, max_owned);
-  CHECK(accepted > OPS / 2);
+  printf("  %d accepted, %d refused (ring full or in transit), %d buffer "
+         "handoffs, %d advances seen, %ld blocks, max owned %d\n",
+         accepted, refused, handoffs, advances,
+         (long)atomic_load(&g_blocks), max_owned);
+  /* The interleaving is the scheduler's; these only prove the race was
+   * exercised at all, with margins no machine should miss. */
+  CHECK(handoffs >= 100);
+  CHECK(advances >= 1);
+  CHECK(atomic_load(&g_blocks) >= 100);
   le_engine_destroy(e); /* frees whatever is loaded, staged or in flight */
   if (g_failures) {
     printf("%d CHECK(S) FAILED\n", g_failures);
