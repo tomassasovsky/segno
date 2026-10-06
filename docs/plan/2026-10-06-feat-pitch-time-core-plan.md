@@ -1017,8 +1017,13 @@ As built in Part 3b:
   (`EngineResult.transformed`), as it is for Speed.
 - The projection does not distinguish a pending render from one the cap
   refused (`LE_CACHE_REASON_BUDGET`): both read `effective` 0.
-  `le_engine_get_transpose_cache` carries the difference; Part 6b, which
-  draws the face, decides whether it shows it and adds the Dart query then.
+  `le_engine_get_transpose_cache` carries the difference. Part 6b adds the
+  Dart query and shows a cap refusal distinctly from "pending" (its first
+  and second success criteria), so a refused track never sits at
+  "pending" with no reason.
+- The record-refusal notice moves to Part 6b, as Speed's moved to 6a: a
+  record or punch-in refused with `EngineResult.transformed` on a
+  transposed track shows one notice (6b's first success criterion).
 
 ### Part 4a. Native Audio & tempo follow (about 450 production lines)
 
@@ -1151,13 +1156,18 @@ reset" at ±12 (11/04), Bank pages, Exit retains changes; the face lists every
 track's stored semitones and "Stored" while bypassed (FJ8Ys); a Tracks marker
 ("+2 st") per track reading `Track.transpose.effective` with the pending state
 distinguishable; `TrackOperation.transposeUp/Down` direct actions;
-`pitch_effective`-aware LEDs; EN/ES. Tests as 6a.
+`pitch_effective`-aware LEDs; one notice for a record or punch-in refused
+with `EngineResult.transformed` on a transposed track (moved from Part 3b);
+a render the cache cap refused (`LE_CACHE_REASON_BUDGET`, through a Dart
+query of `le_engine_get_transpose_cache`) shown distinctly from one still
+pending, so a refused track does not read "pending" for good; EN/ES. Tests
+as 6a.
 
 ```success-criteria
 GOAL: The accepted Transpose face steps selected tracks by semitone with hold-reset and a global bypass that keeps stored pitches, and Tracks shows what is sounding.
 SUCCESS CRITERIA:
-- Selection across banks, ±1 steps, limit reporting, hold resets, bypass/enable and Exit behave against the real receipts; a refused step shows one notice. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
-- Face, bypass tile and marker goldens match screens 11/01–04 and the bypass tile in EN and ES; the marker distinguishes stored from effective. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
+- Selection across banks, ±1 steps, limit reporting, hold resets, bypass/enable and Exit behave against the real receipts; a refused step shows one notice; a record or punch-in refused with `transformed` on a transposed track shows one notice. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
+- Face, bypass tile and marker goldens match screens 11/01–04 and the bypass tile in EN and ES; the marker distinguishes stored from effective, and a render the cap refused from one still pending. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
 - Static gates and the suite pass. | verify: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 - HARDWARE: footswitch, hold timing and LED proof on the appliance including the pending window after a step and the overdub refusal. | verify: manual appliance session per docs/PROGRESS.md hardware evidence rules
 NON-GOALS:
