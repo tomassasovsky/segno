@@ -34,6 +34,7 @@ import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
@@ -3395,18 +3396,16 @@ void main() {
           tester,
           UpdateRepository(backend: backend),
         );
-        // NOT awaited: openSegnoSettings awaits navigator.push, which resolves
-        // only when the route is POPPED. Awaiting it here deadlocks the test on
-        // its own first statement — settings is not closed until the end — and
-        // it does not fail fast: it spins until the harness gives up minutes
-        // later, poisoning the rest of the file.
-        unawaited(openSegnoSettings(section: SettingsSection.updates));
+        // NOT awaited: openUpdateSettings awaits navigator.push, which
+        // resolves only when the route is POPPED. Awaiting it here deadlocks
+        // the test on its own first statement.
+        unawaited(openUpdateSettings());
         await tester.pumpAndSettle();
         backend.complete();
         await tester.pumpAndSettle();
-        expect(find.byType(UpdatesSettingsSection), findsOneWidget);
+        expect(find.byType(UpdatesSettingsPage), findsOneWidget);
         expect(find.byKey(const Key('app_update_banner')), findsNothing);
-        await tester.tap(find.byKey(const Key('settings_close_button')));
+        await tester.tap(find.byKey(const Key('loop_settings_back')));
         await tester.pumpAndSettle();
       },
       // Toast, not a widget. These notifications moved to toastification,

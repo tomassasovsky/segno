@@ -2690,5 +2690,13 @@
     "mixerFading": "En Fade",
     "mixerFadeLevel": "Fade {value}%",
     "fadeDurationLabel": "Duración de Fade",
-    "fadeDurationReadout": "{value} s"
+    "fadeDurationReadout": "{value} s",
+    "settingsCrumb": "AJUSTES / {page}",
+    "settingsDeviceTitle": "Dispositivo",
+    "settingsNetworkTitle": "Red",
+    "settingsDisplaysTitle": "Pantallas",
+    "settingsStorageTitle": "Almacenamiento",
+    "settingsUpdatesTitle": "Actualizaciones",
+    "settingsAboutTitle": "Acerca de Segno",
+    "settingsAboutSubtitle": "Nombre, versión, controlador y licencias"
 }
