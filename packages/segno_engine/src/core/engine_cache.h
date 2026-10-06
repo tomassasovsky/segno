@@ -127,6 +127,17 @@ int32_t le_fx_print(const le_fx_frozen_chain* c, int32_t count,
                     int32_t sample_rate, int32_t cap, float* out,
                     int (*abort_fn)(void*), void* arg);
 
+/* ---- The render recipe's seams into the cache (engine_render.c) ---- */
+
+/* Reserves `bytes` against the cache's byte cap, evicting retained prints
+ * (LRU) to make room. Returns 1 when reserved. Control thread. */
+int le_cache_reserve(le_engine* engine, int64_t bytes);
+void le_cache_release(le_engine* engine, int64_t bytes);
+
+/* 1 when the callback publishes the track's PCM as readable and every
+ * command is settled — the cache's own copy-at-enqueue gate. */
+int le_cache_source_ready(le_engine* engine, int32_t channel);
+
 #ifdef __cplusplus
 }
 #endif

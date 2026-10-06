@@ -56,6 +56,7 @@
 #include <string.h>
 
 #include "engine_cache.h"
+#include "engine_render.h" /* the recipe job on this worker */
 #include "engine_core.h"    /* le_lanes_active, le_engine_drain_events */
 #include "engine_fx.h"      /* fx_apply_chain, le_fx_prepare, seed/bypass */
 #include "engine_private.h" /* le_engine, le_wet_entry, load/store helpers */
@@ -1310,6 +1311,24 @@ int32_t le_fx_print(const le_fx_frozen_chain* c, int32_t count,
   return rc;
 }
 
+int le_cache_reserve(le_engine* engine, int64_t bytes) {
+  struct le_fx_cache* c = engine->cache;
+  if (c == NULL) return 0;
+  const int64_t cap =
+      atomic_load_explicit(&engine->a_fx_cache_cap, memory_order_relaxed);
+  if (cap <= 0 || !le_cache_ensure_budget(engine, c, cap, bytes)) return 0;
+  c->used_bytes += bytes;
+  return 1;
+}
+
+void le_cache_release(le_engine* engine, int64_t bytes) {
+  if (engine->cache != NULL) engine->cache->used_bytes -= bytes;
+}
+
+int le_cache_source_ready(le_engine* engine, int32_t channel) {
+  return le_cache_source_readable(engine, channel);
+}
+
 /* ---- the render worker [B6] ---- */
 
 /* Picks the next queued job for a lane currently audible [B6], or NULL with
@@ -1392,9 +1411,21 @@ static void le_ca_worker_main(void* arg) {
    * the 250 ms settle debounce, and shutdown join latency is bounded by one
    * ceiling sleep. */
   int idle_ms = 1;
+  /* Prints for audible lanes come first; a render recipe (engine_render.c)
+   * takes one slice next, then prints for stopped lanes. Aging: once
+   * LE_RENDER_MAX_YIELDS audible prints have gone ahead of a waiting recipe,
+   * the recipe's next slice goes first, so continuous re-keys cannot starve
+   * it and a slice never holds an audible print back by more than one. */
+  int yields = 0;
   while (!atomic_load_explicit(&c->a_shutdown, memory_order_acquire)) {
     le_cache_job* fallback = NULL;
     le_cache_job* job = le_cache_pick(e, c, &fallback);
+    if (le_render_worker_choice(job != NULL, le_render_worker_ready(e),
+                                &yields)) {
+      idle_ms = 1;
+      le_render_worker_step(e);
+      continue;
+    }
     if (job == NULL) job = fallback;
     if (job == NULL) {
       le_ca_sleep_ms(idle_ms);
@@ -1430,6 +1461,9 @@ void le_cache_shutdown(le_engine* engine) {
    * per-block abort check, so a mid-render join is bounded. */
   atomic_store_explicit(&c->a_shutdown, 1, memory_order_release);
   if (c->worker_started) le_ca_thread_join(c->worker);
+  /* A render recipe on this worker cannot finish now: fail it with DEVICE
+   * and drop its byte charge with the books it was charged to. */
+  le_render_on_cache_shutdown(engine);
   /* Every caller guarantees the audio thread is stopped here, so the frees
    * below need no quiescent window — retract everything into the graveyard,
    * then force-sweep it, so a later restart can never observe a dangling
@@ -1492,6 +1526,7 @@ void le_cache_tick(le_engine* engine) {
   c->lru_clock++;
   le_cache_sweep_graveyard(engine, c, 0); /* passive quiescent frees [R2](c) */
   le_cache_copy_step(engine, c);          /* chunked enqueue copies [R2](a) */
+  le_render_tick(engine);                 /* the render recipe's staging */
   le_cache_collect(engine, c, cap);
   if (cap <= 0) {
     /* Caching disabled: free everything; lanes report live. In-flight jobs

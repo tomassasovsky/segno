@@ -1437,6 +1437,29 @@ typedef struct le_record_timing_readback {
   int32_t result;
 } le_record_timing_readback;
 
+/* LE_CMD_RENDER_FREEZE (#1202): the read law of every selected source at
+ * the drain that applies the command, written by the audio thread into this
+ * control-allocated record and published by a_done (release). base0 is the
+ * source's clock position at the top of the iteration the freeze lands in;
+ * render frame f reads le_direction_index(reversed, offset, base0 + f, len). */
+typedef struct le_render_freeze_src {
+  int64_t base0;
+  int32_t reversed, offset, len, slot, state;
+  float fade;
+  uint32_t audio_rev;
+} le_render_freeze_src;
+
+typedef struct le_render_freeze {
+  uint64_t i_ref;
+  le_render_freeze_src src[LE_MAX_TRACKS];
+  /* The job this record belongs to: control stores a_id before posting; the
+   * callback fills the record only for a matching id and then publishes
+   * a_done = id. A stale command for an older job therefore never touches a
+   * newer job's record, and the record (engine-owned) outlives every job. */
+  _Atomic uint32_t a_id;
+  _Atomic uint32_t a_done;
+} le_render_freeze;
+
 struct le_engine {
   /* The device backend driving the lifecycle (le_select_backend's choice),
    * remembered so le_engine_stop / le_engine_destroy release the device through
@@ -1813,6 +1836,18 @@ struct le_engine {
    * a control-thread publish of an undo layer (le_restore_commit_layer) plus
    * the per-track a_restore_state telemetry. */
   struct le_restore* restore;
+
+  /* The shared render recipe (#1202, engine_render.c): at most one job.
+   * render_job is control-owned; render_retired holds a cancelled job until
+   * the cache worker is provably out of it. a_render_runnable is the
+   * pointer the worker reads, a_render_worker_busy its in-use flag (both
+   * seq_cst so a retirement can never free a job the worker still holds). */
+  struct le_render_job* render_job;
+  struct le_render_job* render_retired;
+  le_render_freeze render_freeze;
+  struct le_render_job* _Atomic a_render_runnable;
+  _Atomic int32_t a_render_worker_busy;
+  uint32_t render_next_id;
 
   /* Command ring + pre-allocated backing storage. */
   le_ring ring;

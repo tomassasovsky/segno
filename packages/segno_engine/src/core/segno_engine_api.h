@@ -51,6 +51,11 @@ typedef enum le_result {
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
   LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
                               * is unavailable while Reverse is on */
+  LE_ERR_NO_COMMON_CYCLE = -16, /* render recipe (#1202): the selected tracks'
+                                 * lengths share no common cycle within the
+                                 * cap; a chosen length is required */
+  LE_ERR_TRACKS_CHANGED = -17,  /* render recipe (#1202): a source's material
+                                 * changed after the render froze it */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -518,6 +523,8 @@ typedef enum le_command_code {
   LE_CMD_RESET_TRANSFORMS = 82, /* internal material-import transform reset
                                  * (Fade and direction); never raw-posted */
   LE_CMD_REVERSE = 83, /* checked internal Reverse request; never raw-posted */
+  LE_CMD_RENDER_FREEZE = 112, /* render recipe (#1202): the callback records
+                               * every source's read law; never raw-posted */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -3434,6 +3441,102 @@ LE_EXPORT int32_t le_midi_out_close(le_midi_out* m);
  * len), or LE_ERR_DEVICE (no port open or the OS rejected the send). */
 LE_EXPORT int32_t le_midi_out_send(le_midi_out* m, const uint8_t* data,
                                    int32_t len);
+
+/* ---- Shared render recipe (#1202): Bounce and Save selected audio ----
+ *
+ * Renders the selected recorded tracks offline, regardless of transport, Mute
+ * and Solo, with their levels, pans, track gain, frozen Fade, direction, Pre
+ * (the take, as printed) and Post processing, optionally the All tracks chain
+ * (Mix FX), and never live inputs, monitors, click, output buses, output FX or
+ * the master. One job per engine, run in slices on the wet cache's worker.
+ * Lengths: the exact common cycle of the sources (at most 1024 beats, or 512
+ * seconds without a tempo) or a chosen whole number of bars. Tails: Wrap
+ * renders the window twice and keeps the second pass; Cut renders it once
+ * from cold Post states. Output is interleaved stereo float. */
+typedef enum le_render_tails {
+  LE_RENDER_WRAP = 0,
+  LE_RENDER_CUT = 1,
+} le_render_tails;
+
+typedef enum le_render_target {
+  LE_RENDER_TARGET_MEMORY = 0, /* kept in the job (Bounce; le_engine_render_copy) */
+  LE_RENDER_TARGET_FILE = 1,   /* a stereo float WAV published at `path` */
+} le_render_target;
+
+typedef enum le_render_method {
+  LE_RENDER_COMMON_CYCLE = 0,
+  LE_RENDER_CHOSEN_LENGTH = 1,
+} le_render_method;
+
+typedef enum le_render_state {
+  LE_RENDER_NONE = 0,
+  LE_RENDER_FREEZING = 1,
+  LE_RENDER_STAGING = 2,
+  LE_RENDER_RENDERING = 3,
+  LE_RENDER_DONE = 4,
+  LE_RENDER_FAILED = 5,
+} le_render_state;
+
+typedef struct le_render_request {
+  uint32_t source_mask; /* bit t = track t */
+  int32_t length_bars;  /* 0 = the common cycle */
+  int32_t tails;        /* le_render_tails */
+  int32_t mix_fx;       /* 1 = include the All tracks chain */
+  int32_t target;       /* le_render_target */
+  const char* path;     /* file target: the final path ("<path>.part" while
+                         * writing) */
+  int32_t max_frames;   /* 0 = no cap beyond the cycle cap; Bounce passes the
+                         * destination's capacity */
+} le_render_request;
+
+typedef struct le_render_plan {
+  int32_t frames;        /* the window, in frames */
+  int32_t method;        /* le_render_method */
+  int32_t beats_milli;   /* the window in beats x 1000 (0 without a tempo) */
+  int32_t tempo_set;     /* 0 = no tempo: lengths read in seconds */
+  uint32_t plugin_mask;  /* sources whose chains hold a hosted plugin, which
+                          * renders dry */
+  uint32_t faded_mask;   /* sources whose Fade amount is below unity */
+  uint32_t pending_mask; /* sources heard through a not-yet-ready transform */
+} le_render_plan;
+
+/* Admission only: the verdict and the plan, with no job. Returns LE_OK,
+ * LE_ERR_NO_COMMON_CYCLE, LE_ERR_CAPACITY (over max_frames), LE_ERR_INVALID
+ * (no sources, an empty source, a chosen length without a tempo, a file
+ * target without a path), LE_ERR_NOT_READY (a source is recording,
+ * overdubbing, has a layer in flight or an unacknowledged state command) or
+ * LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_render_measure(le_engine* engine,
+                                           const le_render_request* request,
+                                           le_render_plan* plan);
+
+/* Starts the job: re-measures, reserves its bytes against the cache's cap,
+ * and posts LE_CMD_RENDER_FREEZE. Returns LE_OK with *job set, any measure
+ * refusal, LE_ERR_ALREADY_RUNNING while a job exists, LE_ERR_CAPACITY when
+ * the bytes do not fit the cap, LE_ERR_UNSUPPORTED without a render worker,
+ * or a ring refusal. */
+LE_EXPORT int32_t le_engine_render_begin(le_engine* engine,
+                                         const le_render_request* request,
+                                         uint32_t* job);
+
+/* Progress of job `job`: *state (le_render_state), *permille (0..1000) and,
+ * once FAILED, *result (LE_ERR_TRACKS_CHANGED, LE_ERR_CAPACITY,
+ * LE_ERR_INVALID on an effect allocation failure, LE_ERR_DEVICE on a write
+ * failure or a configure/stop that joined the worker). Also the staging
+ * heartbeat: call it from the control thread until DONE or FAILED. Returns
+ * LE_OK, or LE_ERR_INVALID for an unknown job. */
+LE_EXPORT int32_t le_engine_render_poll(le_engine* engine, uint32_t job,
+                                        int32_t* state, int32_t* permille,
+                                        int32_t* result);
+
+/* Copies a DONE memory result (interleaved stereo) into `out`. Returns the
+ * frames copied (at most max_frames), or LE_ERR_INVALID / LE_ERR_NOT_READY. */
+LE_EXPORT int32_t le_engine_render_copy(le_engine* engine, uint32_t job,
+                                        float* out, int32_t max_frames);
+
+/* Cancels and releases job `job` (any state). A file target leaves no
+ * partial file. Returns LE_OK or LE_ERR_INVALID for an unknown job. */
+LE_EXPORT int32_t le_engine_render_cancel(le_engine* engine, uint32_t job);
 
 #ifdef __cplusplus
 }
