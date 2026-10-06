@@ -46,6 +46,7 @@ void main() {
                 outputMask: 3,
                 inputChannel: 0,
                 layers: [SessionLayer(file: 'missing.wav')],
+                history: TrackHistory.none,
               ),
             ],
           ),
@@ -857,6 +858,119 @@ void main() {
     },
   );
 
+  test(
+    'save then read round-trips a redo-side Peel marker and a restoration '
+    'entry with their kinds (#1164)',
+    () async {
+      // Undo side: a loop-close restoration's raw take, then the
+      // conditioned image beneath one overdub. Redo side: that overdub's
+      // undone Peel (a marker, no image) above the live image.
+      final original = Float32List.fromList([1, 1, 1, 1]);
+      final raw = Float32List.fromList([1.5, 1.5, 1.5, 1.5]);
+      final live = Float32List.fromList([.125, .125, .125, .125]);
+      const history = [
+        HistoryEntry(HistoryKind.processed),
+        HistoryEntry(HistoryKind.layer),
+        HistoryEntry(HistoryKind.peel),
+      ];
+      final source = FakeSessionEngine()
+        ..seedLayers(
+          0,
+          [original, raw, live],
+          undoDepth: 2,
+          redoDepth: 1,
+          history: history,
+        );
+      final dir = '${tempDir.path}/peel_history';
+      await repoFor(source).save(dir, settings: const SessionSettings());
+
+      // Three images for three entries plus live: the marker takes none.
+      expect(File('$dir/track0_lane0_L2.wav').existsSync(), isTrue);
+      expect(File('$dir/track0_lane0_L3.wav').existsSync(), isFalse);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      final lane = bundle.session.tracks.single.lanes.single;
+      expect(lane.history.entries, history);
+      expect(lane.undoCount, 2);
+      expect(lane.redoCount, 1);
+      expect(lane.liveIndex, 2);
+      expect(bundle.laneStems[(0, 0)], [original, raw, live]);
+    },
+  );
+
+  test(
+    'save splits the history by the raw undo count while the published '
+    'undo depth reads 0 (#1164 review finding 1)',
+    () async {
+      // Undo restored a Clear: the audio side applied it, but no drain has
+      // republished the depth yet, so the snapshot still reads 0 while the
+      // stacks hold two undo entries and the Clear point on the redo side.
+      final undo0 = Float32List.fromList([1, 1, 1, 1]);
+      final undo1 = Float32List.fromList([1.5, 1.5, 1.5, 1.5]);
+      final live = Float32List.fromList([2, 2, 2, 2]);
+      final clear = Float32List.fromList([2, 2, 2, 2]);
+      const history = [
+        HistoryEntry(HistoryKind.layer),
+        HistoryEntry(HistoryKind.layer),
+        HistoryEntry(HistoryKind.clear),
+      ];
+      final source = FakeSessionEngine()
+        ..seedLayers(
+          0,
+          [undo0, undo1, live, clear],
+          undoDepth: 2,
+          redoDepth: 1,
+          publishedUndoDepth: 0,
+          history: history,
+        );
+      final dir = '${tempDir.path}/gated_depth';
+      final saved = await repoFor(
+        source,
+      ).save(dir, settings: const SessionSettings());
+
+      // The track is saved, not dropped, with the live image at ordinal 2.
+      expect(saved.tracks, hasLength(1));
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      final lane = bundle.session.tracks.single.lanes.single;
+      expect(lane.history, const TrackHistory(history, undoCount: 2));
+      expect(lane.liveIndex, 2);
+      expect(bundle.laneStems[(0, 0)], [undo0, undo1, live, clear]);
+    },
+  );
+
+  test('read rejects a history that names more images than the bundle '
+      'stores', () async {
+    final source = FakeSessionEngine()
+      ..seedLayers(
+        0,
+        [
+          Float32List.fromList([1, 1, 1, 1]),
+          Float32List.fromList([2, 2, 2, 2]),
+        ],
+        undoDepth: 1,
+        redoDepth: 1,
+        history: const [
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.peel),
+        ],
+      );
+    final dir = '${tempDir.path}/corrupt_history';
+    await repoFor(source).save(dir, settings: const SessionSettings());
+    final file = File('$dir/${Session.manifestName}');
+    final manifest = jsonDecode(await file.readAsString()) as Map;
+    final lane = ((manifest['tracks'] as List).single as Map)['lanes'] as List;
+    // The marker relabelled as an overdub image the bundle does not hold.
+    ((lane.single as Map)['history'] as List)[1] = {
+      'kind': 'layer',
+      'skipped': 0,
+    };
+    await file.writeAsString(jsonEncode(manifest));
+    await expectLater(
+      repoFor(FakeSessionEngine()).read(dir),
+      throwsA(isA<SessionCorruptLayers>()),
+    );
+  });
+
   test('re-saving with fewer layers prunes the orphaned layer WAVs', () async {
     final dir = '${tempDir.path}/prune';
     // First save: a 3-layer history.
@@ -884,8 +998,18 @@ void main() {
     expect(File('$dir/track0_lane0_L2.wav').existsSync(), isFalse);
   });
 
+  /// A repository rooted at `<tempDir>/sessions`, the layout the catalog
+  /// exports read from.
+  SessionRepository rooted(AudioEngine engine) => SessionRepository(
+    engine: engine,
+    sessionsRoot: () async => '${tempDir.path}/sessions',
+    clearPollInterval: Duration.zero,
+    clearPollAttempts: 4,
+  );
+
   test(
-    'save and live export apply track gain once after unequal part levels',
+    'save and the mixdown export apply track gain once after unequal part '
+    'levels',
     () async {
       final engine = FakeSessionEngine()
         ..seedTrack(
@@ -895,8 +1019,8 @@ void main() {
           trackVolume: .5,
         )
         ..seedLane(0, 1, Float32List.fromList([.1, .1, .1, .1]), volume: 1.5);
-      final repository = repoFor(engine);
-      final directory = '${tempDir.path}/separate_gains';
+      final repository = rooted(engine);
+      final directory = await repository.bundlePathOf('separate-gains');
       final saved = await repository.save(
         directory,
         settings: const SessionSettings(
@@ -907,13 +1031,13 @@ void main() {
           },
         ),
       );
-      final livePath = '${tempDir.path}/live.wav';
-      await repository.exportMixdown(livePath);
+      final exported = '${tempDir.path}/out/mix.wav';
+      await repository.exportMixdown('separate-gains', exported);
       // (.2 * .25 + .1 * 1.5) * .5 = .1. Applying the fader to
       // lane zero only, deriving it from that lane, or applying twice differs.
       for (final path in [
         '$directory/${SessionRepository.mixdownName}',
-        livePath,
+        exported,
       ]) {
         final wav = WavCodec.decodeFloat32(File(path).readAsBytesSync());
         expect(wav.samples, everyElement(closeTo(.1, 1e-6)));
@@ -931,6 +1055,16 @@ void main() {
     },
   );
 
+  /// Saves [engine]'s rig as bundle [id] and returns its decoded mixdown.
+  Future<WavData> savedMixdown(FakeSessionEngine engine, String id) async {
+    final repository = rooted(engine);
+    final dir = await repository.bundlePathOf(id);
+    await repository.save(dir, settings: const SessionSettings());
+    return WavCodec.decodeFloat32(
+      File('$dir/${SessionRepository.mixdownName}').readAsBytesSync(),
+    );
+  }
+
   test('mixdown sums unmuted tracks over the LCM period', () async {
     final engine = FakeSessionEngine()
       ..seedTrack(0, Float32List.fromList([1, 1])) // base 2
@@ -939,10 +1073,8 @@ void main() {
         Float32List.fromList([0.5, 0.5, 0.5, 0.5]),
         multiple: 2,
       ); // length 4, base 2
-    final path = '${tempDir.path}/mix.wav';
 
-    await repoFor(engine).exportMixdown(path);
-    final wav = WavCodec.decodeFloat32(File(path).readAsBytesSync());
+    final wav = await savedMixdown(engine, 'lcm');
 
     expect(wav.frames, 4); // lcm(2, 4)
     for (final sample in wav.samples) {
@@ -955,10 +1087,8 @@ void main() {
     final engine = FakeSessionEngine()
       ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
       ..seedLane(0, 1, Float32List.fromList([0.25, 0.25, 0.25, 0.25]));
-    final path = '${tempDir.path}/mix.wav';
 
-    await repoFor(engine).exportMixdown(path);
-    final wav = WavCodec.decodeFloat32(File(path).readAsBytesSync());
+    final wav = await savedMixdown(engine, 'two-lanes');
 
     expect(wav.frames, 4);
     for (final sample in wav.samples) {
@@ -996,10 +1126,8 @@ void main() {
     final engine = FakeSessionEngine()
       ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
       ..seedLane(0, 1, Float32List.fromList([9, 9, 9, 9]), muted: true);
-    final path = '${tempDir.path}/mix.wav';
 
-    await repoFor(engine).exportMixdown(path);
-    final wav = WavCodec.decodeFloat32(File(path).readAsBytesSync());
+    final wav = await savedMixdown(engine, 'muted-lane');
 
     for (final sample in wav.samples) {
       expect(sample, closeTo(1, 1e-6)); // only lane 0 contributes
@@ -1010,25 +1138,174 @@ void main() {
     final engine = FakeSessionEngine()
       ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
       ..seedTrack(1, Float32List.fromList([9, 9, 9, 9]), muted: true);
-    final path = '${tempDir.path}/mix.wav';
 
-    await repoFor(engine).exportMixdown(path);
-    final wav = WavCodec.decodeFloat32(File(path).readAsBytesSync());
+    final wav = await savedMixdown(engine, 'muted-track');
 
     for (final sample in wav.samples) {
       expect(sample, closeTo(1, 1e-6));
     }
   });
 
-  test('exportStems writes one WAV per non-empty track', () async {
-    final engine = FakeSessionEngine()
-      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
-    final dir = '${tempDir.path}/stems';
+  test(
+    'a re-save whose mix is empty deletes the previous mixdown',
+    () async {
+      final dir = '${tempDir.path}/emptied';
+      await repoFor(
+        FakeSessionEngine()..seedTrack(0, Float32List.fromList([1, 1, 1, 1])),
+      ).save(dir, settings: const SessionSettings());
+      final mixdown = File('$dir/${SessionRepository.mixdownName}');
+      expect(mixdown.existsSync(), isTrue);
 
-    await repoFor(engine).exportStems(dir);
+      // The same identity re-saved with no recorded content at all.
+      await repoFor(FakeSessionEngine()).save(
+        dir,
+        settings: const SessionSettings(),
+      );
 
-    expect(File('$dir/track0_lane0_L0.wav').existsSync(), isTrue);
-    expect(File('$dir/track1_lane0_L0.wav').existsSync(), isFalse);
+      expect(mixdown.existsSync(), isFalse);
+      // The manifest is the fresh one (no tracks), not a stale leftover.
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.session.tracks, isEmpty);
+    },
+  );
+
+  test(
+    'a re-save whose mix is all-muted deletes the previous mixdown too',
+    () async {
+      final dir = '${tempDir.path}/all-muted';
+      await repoFor(
+        FakeSessionEngine()..seedTrack(0, Float32List.fromList([1, 1, 1, 1])),
+      ).save(dir, settings: const SessionSettings());
+      await repoFor(
+        FakeSessionEngine()
+          ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]), muted: true),
+      ).save(dir, settings: const SessionSettings());
+
+      expect(
+        File('$dir/${SessionRepository.mixdownName}').existsSync(),
+        isFalse,
+      );
+    },
+  );
+
+  test('save writes the display name into the manifest when given', () async {
+    final dir = '${tempDir.path}/named';
+    final saved = await repoFor(FakeSessionEngine()).save(
+      dir,
+      settings: const SessionSettings(),
+      name: 'Evening loop',
+    );
+    expect(saved.name, 'Evening loop');
+    final json =
+        jsonDecode(File('$dir/${Session.manifestName}').readAsStringSync())
+            as Map<String, dynamic>;
+    expect(json['name'], 'Evening loop');
+    expect(json['version'], Session.formatVersion);
+    expect(
+      (await repoFor(FakeSessionEngine()).read(dir)).session.name,
+      'Evening loop',
+    );
+  });
+
+  test('save without a name writes no name key', () async {
+    final dir = '${tempDir.path}/unnamed';
+    await repoFor(
+      FakeSessionEngine(),
+    ).save(dir, settings: const SessionSettings());
+    final json =
+        jsonDecode(File('$dir/${Session.manifestName}').readAsStringSync())
+            as Map<String, dynamic>;
+    expect(json.containsKey('name'), isFalse);
+  });
+
+  test(
+    'exportMixdown copies the saved bundle mixdown byte-for-byte',
+    () async {
+      final engine = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 0.5, 0.25, 0.125]));
+      final repository = rooted(engine);
+      final dir = await repository.bundlePathOf('export-me');
+      await repository.save(dir, settings: const SessionSettings());
+      final exported = '${tempDir.path}/out/nested/mix.wav';
+
+      // The live engine must not be consulted: a different rig at export
+      // time changes nothing in the copy.
+      await rooted(
+        FakeSessionEngine()..seedTrack(0, Float32List.fromList([9, 9, 9, 9])),
+      ).exportMixdown('export-me', exported);
+
+      expect(
+        File(exported).readAsBytesSync(),
+        File('$dir/${SessionRepository.mixdownName}').readAsBytesSync(),
+      );
+    },
+  );
+
+  test(
+    'exportMixdown refuses a missing bundle or a bundle without a mixdown',
+    () async {
+      final repository = rooted(FakeSessionEngine());
+      await expectLater(
+        repository.exportMixdown('ghost', '${tempDir.path}/x.wav'),
+        throwsStateError,
+      );
+      final dir = await repository.bundlePathOf('silent');
+      await repository.save(dir, settings: const SessionSettings());
+      await expectLater(
+        repository.exportMixdown('silent', '${tempDir.path}/x.wav'),
+        throwsStateError,
+      );
+      expect(File('${tempDir.path}/x.wav').existsSync(), isFalse);
+    },
+  );
+
+  test(
+    'exportStems writes every lane live layer as L0, history dropped',
+    () async {
+      final engine = FakeSessionEngine()
+        ..seedLayers(
+          0,
+          [
+            Float32List.fromList([1, 1, 1, 1]), // undo
+            Float32List.fromList([2, 2, 2, 2]), // live
+            Float32List.fromList([3, 3, 3, 3]), // redo
+          ],
+          undoDepth: 1,
+          redoDepth: 1,
+        )
+        ..seedTrack(1, Float32List.fromList([5, 5, 5, 5]));
+      final repository = rooted(engine);
+      final dir = await repository.bundlePathOf('stems-me');
+      await repository.save(dir, settings: const SessionSettings());
+      final out = '${tempDir.path}/stems';
+
+      await rooted(FakeSessionEngine()).exportStems('stems-me', out);
+
+      final names = Directory(out)
+          .listSync()
+          .whereType<File>()
+          .map((f) => f.path.split(RegExp(r'[/\\]')).last)
+          .toSet();
+      expect(names, {'track0_lane0_L0.wav', 'track1_lane0_L0.wav'});
+      expect(
+        File('$out/track0_lane0_L0.wav').readAsBytesSync(),
+        File('$dir/track0_lane0_L1.wav').readAsBytesSync(),
+        reason: 'the live layer of a 1-undo lane is ordinal 1',
+      );
+      expect(
+        WavCodec.decodeFloat32(
+          File('$out/track1_lane0_L0.wav').readAsBytesSync(),
+        ).samples,
+        everyElement(5),
+      );
+    },
+  );
+
+  test('exportStems refuses a missing bundle', () async {
+    await expectLater(
+      rooted(FakeSessionEngine()).exportStems('ghost', '${tempDir.path}/s'),
+      throwsStateError,
+    );
   });
 
   test('read rejects an invalid restored bar grid', () async {

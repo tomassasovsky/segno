@@ -96,7 +96,7 @@
     },
     "deviceRestoredClearedBanner": "Device came back at {sampleRate} Hz instead of {previousRate} Hz — the loops were cleared. Reload the session to get them back.",
     "@deviceRestoredClearedBanner": {
-        "description": "Standing stage banner after a reconnect at another sample rate cleared every recorded loop (#1140). Its action opens the Sessions manager.",
+        "description": "Standing stage banner after a reconnect at another sample rate cleared every recorded loop (#1140). Its action opens the Library.",
         "placeholders": {
             "sampleRate": {
                 "type": "int"
@@ -152,23 +152,17 @@
         "description": "Banner shown when the console booted with its pinned audio interface absent and is waiting to auto-start it."
     },
     "close": "Close",
-    "mixdownExported": "Mixdown exported",
-    "stemsExported": "Stems exported",
-    "exportMixdown": "Export mixdown",
-    "exportStems": "Export stems",
     "sessionMenuTooltip": "Session",
     "a11ySessionMenu": "Session menu",
     "sessionSaved": "Session saved",
     "sessionLoaded": "Session loaded",
     "sessionSave": "Save",
-    "sessionManage": "Sessions…",
     "sessionSaveAs": "Save as…",
     "sessionRename": "Rename",
     "sessionDelete": "Delete",
     "sessionDuplicate": "Duplicate",
     "sessionDuplicateTitle": "Duplicate as…",
     "sessionUnsaved": "Unsaved",
-    "sessionsManagerTitle": "Sessions",
     "sessionDateToday": "today {time}",
     "@sessionDateToday": {
         "description": "Sessions list date column for a session saved today; {time} is HH:MM.",
@@ -179,7 +173,6 @@
         }
     },
     "sessionDateYesterday": "yesterday",
-    "sessionsEmpty": "No saved sessions yet. Use “Save as…” to create one.",
     "sessionNewTitle": "Save as new session",
     "sessionRenameTitle": "Rename session",
     "sessionNameHint": "Session name",
@@ -3080,6 +3073,269 @@
     "stageLibrary": "Library",
     "@stageLibrary": {
         "description": "Accessible name of the top-bar Library icon."
+    },
+    "libraryManageSaveOpen": "Save {name}",
+    "@libraryManageSaveOpen": {
+        "description": "Manage row on another session: saves the open session (or the current loop) named here.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryManageSaveOpenAs": "Save {name} as…",
+    "@libraryManageSaveOpenAs": {
+        "description": "Manage row on another session: saves the open session (or the current loop) under a new name.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryCurrentLoop": "the current loop",
+    "@libraryCurrentLoop": {
+        "description": "Names the live rig in a Save row when no session is open."
+    },
+    "libraryFolderNotEmpty": "That folder still holds sessions. Move them out first.",
+    "@libraryFolderNotEmpty": {
+        "description": "Library line when a folder that holds sessions was asked to be deleted."
+    },
+    "libraryRenameFolder": "Rename folder",
+    "@libraryRenameFolder": {
+        "description": "Folder options row and the keyboard sheet's subtitle."
+    },
+    "libraryDeleteFolder": "Delete folder",
+    "@libraryDeleteFolder": {
+        "description": "Folder options row and its confirmation, for an empty folder."
+    },
+    "libraryDeleteFolderTitle": "Delete “{name}”?",
+    "@libraryDeleteFolderTitle": {
+        "description": "Asked before deleting a folder.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryDeleteFolderBody": "The folder is empty. No session is deleted.",
+    "@libraryDeleteFolderBody": {
+        "description": "Under the delete-folder question."
+    },
+    "libraryManage": "Manage",
+    "@libraryManage": {
+        "description": "Preview action that opens the options for the selected session."
+    },
+    "libraryNewFolder": "New folder",
+    "@libraryNewFolder": {
+        "description": "Library action that creates a folder."
+    },
+    "libraryMoveToFolder": "Move to folder…",
+    "@libraryMoveToFolder": {
+        "description": "Manage option that moves the session to a folder."
+    },
+    "libraryMoveTitle": "Move to folder",
+    "@libraryMoveTitle": {
+        "description": "Title of the folder choice for a move."
+    },
+    "libraryNewFolderOption": "New folder…",
+    "@libraryNewFolderOption": {
+        "description": "Folder choice that creates a folder and moves the session into it."
+    },
+    "libraryFolderName": "Folder name",
+    "@libraryFolderName": {
+        "description": "Keyboard sheet title and field label for a folder name."
+    },
+    "libraryFolderNameTaken": "A folder or session named “{name}” already exists.",
+    "@libraryFolderNameTaken": {
+        "description": "Inline error when a new folder name is taken.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "librarySaveFailed": "Could not save your current loop. Nothing was changed.",
+    "@librarySaveFailed": {
+        "description": "Library banner (pen 19/05) and toast when a save fails."
+    },
+    "libraryDeleteCurrentRefused": "The open session cannot be deleted.",
+    "@libraryDeleteCurrentRefused": {
+        "description": "Refusal when deleting the session that is open on the stage."
+    },
+    "libraryActionFailed": "That did not work. Try again.",
+    "@libraryActionFailed": {
+        "description": "Library banner when a catalog action fails for another reason."
+    },
+    "sessionSavedAs": "Saved as {name}",
+    "@sessionSavedAs": {
+        "description": "Toast after a save created a new session, naming it.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryUsbUnusable": "This USB drive can't be used",
+    "@libraryUsbUnusable": {
+        "description": "USB location with a drive that is plugged in but cannot be read."
+    },
+    "libraryUsbUnsupported": "{fsType} isn't supported. Format the drive as exFAT.",
+    "@libraryUsbUnsupported": {
+        "description": "Why a plugged-in drive cannot be read: its filesystem (the storage service copy, #1177).",
+        "placeholders": {
+            "fsType": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryUsbMountFailed": "It could not be opened. Unplug it and connect it again.",
+    "@libraryUsbMountFailed": {
+        "description": "Why a plugged-in drive cannot be read: its mount failed."
+    },
+    "libraryTitle": "Library",
+    "@libraryTitle": {
+        "description": "Title of the full-screen Library page."
+    },
+    "librarySessions": "Sessions",
+    "@librarySessions": {
+        "description": "The Library crumb tab that lists saved sessions."
+    },
+    "libraryInternal": "Internal",
+    "@libraryInternal": {
+        "description": "Library location: the appliance's own storage."
+    },
+    "libraryUsb": "USB",
+    "@libraryUsb": {
+        "description": "Library location: a removable USB drive."
+    },
+    "libraryNewLoop": "New loop",
+    "@libraryNewLoop": {
+        "description": "Library action that starts an empty loop."
+    },
+    "librarySearchSessions": "Search sessions",
+    "@librarySearchSessions": {
+        "description": "Library search field placeholder and its keyboard title."
+    },
+    "libraryFolderAll": "All",
+    "@libraryFolderAll": {
+        "description": "Folder chip that shows every session."
+    },
+    "libraryFolderUnfiled": "Unfiled",
+    "@libraryFolderUnfiled": {
+        "description": "Folder chip for sessions in no folder."
+    },
+    "libraryCurrentSession": "Current session",
+    "@libraryCurrentSession": {
+        "description": "Meta line of the session open on the stage."
+    },
+    "librarySessionMeta": "{date} · {tracks}",
+    "@librarySessionMeta": {
+        "description": "Meta line of a saved session row: its saved date and track count.",
+        "placeholders": {
+            "date": {
+                "type": "String"
+            },
+            "tracks": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryTrackCount": "{count, plural, =0{no tracks} =1{1 track} other{{count} tracks}}",
+    "@libraryTrackCount": {
+        "description": "Recorded tracks in a saved session.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "libraryTempo": "{bpm} BPM",
+    "@libraryTempo": {
+        "description": "A saved session tempo.",
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryTrackName": "Track {number}",
+    "@libraryTrackName": {
+        "description": "A track in the session preview, numbered from 1.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "librarySecondsUnit": "sec",
+    "@librarySecondsUnit": {
+        "description": "Unit after a track length in seconds, when the session has no tempo."
+    },
+    "libraryTrackFx": "FX {count}",
+    "@libraryTrackFx": {
+        "description": "Chip with a preview track's effect count.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "libraryFooterFacts": "{fx} FX · {backing}",
+    "@libraryFooterFacts": {
+        "description": "Preview footer: effect count and backing tracks.",
+        "placeholders": {
+            "fx": {
+                "type": "int"
+            },
+            "backing": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryBackingCount": "{count, plural, =1{1 backing track} other{{count} backing tracks}}",
+    "@libraryBackingCount": {
+        "description": "Backing tracks in a saved session.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "libraryReturnToTracks": "Return to tracks",
+    "@libraryReturnToTracks": {
+        "description": "Preview footer action when the current session is selected."
+    },
+    "libraryOpenSession": "Open session",
+    "@libraryOpenSession": {
+        "description": "Preview footer action that opens the selected saved session."
+    },
+    "libraryConnectUsb": "Connect a USB drive",
+    "@libraryConnectUsb": {
+        "description": "USB location with no drive."
+    },
+    "libraryConnectUsbBody": "Your internal sessions are still available.",
+    "@libraryConnectUsbBody": {
+        "description": "Under the USB location heading with no drive."
+    },
+    "libraryNoSessions": "No saved sessions yet.",
+    "@libraryNoSessions": {
+        "description": "Session list with an empty catalog."
+    },
+    "libraryNoMatches": "No sessions match.",
+    "@libraryNoMatches": {
+        "description": "Session list when the search or folder chip hides every session."
+    },
+    "libraryNoSelection": "Choose a session to preview it.",
+    "@libraryNoSelection": {
+        "description": "Preview card with nothing selected."
+    },
+    "libraryPreviewUnreadable": "This session could not be read.",
+    "@libraryPreviewUnreadable": {
+        "description": "Preview card when the manifest does not decode."
+    },
+    "libraryNoTracks": "No recorded tracks.",
+    "@libraryNoTracks": {
+        "description": "Preview card of a session without recorded audio."
     },
     "stageSettings": "Settings",
     "stageViewMenu": "Performance view",
@@ -6044,6 +6300,46 @@
                 "type": "String"
             }
         }
+    },
+    "actionModeReverse": "Reverse",
+    "@actionModeReverse": {
+        "description": "Foot Reverse performance surface."
+    },
+    "actionOperationReverse": "Reverse",
+    "@actionOperationReverse": {
+        "description": "Foot Reverse performance surface."
+    },
+    "footReversePlaybackDirection": "Playback direction",
+    "@footReversePlaybackDirection": {
+        "description": "Foot Reverse overview heading."
+    },
+    "footReverseForward": "Forward",
+    "@footReverseForward": {
+        "description": "Foot Reverse: the track plays forward."
+    },
+    "footReverseReversed": "Reverse",
+    "@footReverseReversed": {
+        "description": "Foot Reverse: the track plays reversed."
+    },
+    "footReverseSwitchBank": "Switch bank",
+    "@footReverseSwitchBank": {
+        "description": "Foot Reverse: what the Bank pedal does."
+    },
+    "footReverseFailure": "The track could not be turned around. Try again.",
+    "@footReverseFailure": {
+        "description": "Foot Reverse: a direction toggle was refused."
+    },
+    "footReverseOverdubRefused": "Overdub is unavailable while the track is reversed",
+    "@footReverseOverdubRefused": {
+        "description": "Foot Reverse: Record / Play refused an overdub on a reversed track."
+    },
+    "stageReverseMarker": "REV",
+    "@stageReverseMarker": {
+        "description": "Tracks meta row marker: the track plays reversed."
+    },
+    "a11yStageReversed": "Track plays reversed",
+    "@a11yStageReversed": {
+        "description": "Screen-reader label for the Tracks reverse marker."
     },
     "settingsCrumb": "SETTINGS / {page}",
     "@settingsCrumb": {
