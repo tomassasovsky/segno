@@ -295,6 +295,11 @@ Decisions taken under the owner rules (2026-10-05):
    pinned to the session it started in, so Retry after a recalled Session
    repairs storage without replacing the Session's value. The receipt's
    failure stream is synchronous, so a write's timeout is reported once.
+10. Delta review of PR #1165: a write waits for a restart replay of an owed
+    value instead of being refused before it settles; only a value still
+    owed after the settle refuses it. When a replay resolves an owed value
+    without Retry, the owner signals `recovered` and the app dismisses the
+    Click or Hear click recovery notice, the way it dismisses Fade's.
 
 Deviations from the plan text:
 

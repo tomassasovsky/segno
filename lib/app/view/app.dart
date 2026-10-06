@@ -186,6 +186,8 @@ class _AppState extends State<App> {
   late final TempoCubit _tempoView;
   StreamSubscription<SettingOutcome>? _clickFailureSubscription;
   StreamSubscription<SettingOutcome>? _clickModeFailureSubscription;
+  StreamSubscription<void>? _clickRecoveredSubscription;
+  StreamSubscription<void>? _clickModeRecoveredSubscription;
   StreamSubscription<RecordStartOutcome>? _recordStartFailureSubscription;
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   late final PlaybackOptionsCubit _playbackView;
@@ -222,6 +224,11 @@ class _AppState extends State<App> {
     );
     _clickModeFailureSubscription = _runtime.tempo.clickModeOwner.failures
         .listen(_showClickModeFailure);
+    // A restart replay can resolve an owed value without Retry.
+    _clickRecoveredSubscription = _runtime.tempo.clickVolumeOwner.recovered
+        .listen((_) => _controlNotices.dismiss(AppToastId.clickSettings));
+    _clickModeRecoveredSubscription = _runtime.tempo.clickModeOwner.recovered
+        .listen((_) => _controlNotices.dismiss(AppToastId.clickModeSettings));
     _recordStartFailureSubscription = _runtime.tempo.recordStartFailures.listen(
       _showRecordStartFailure,
     );
@@ -264,6 +271,8 @@ class _AppState extends State<App> {
     unawaited(_mixFailureSubscription?.cancel());
     unawaited(_clickFailureSubscription?.cancel());
     unawaited(_clickModeFailureSubscription?.cancel());
+    unawaited(_clickRecoveredSubscription?.cancel());
+    unawaited(_clickModeRecoveredSubscription?.cancel());
     unawaited(_recordStartFailureSubscription?.cancel());
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_decayFailureSubscription?.cancel());

@@ -1860,6 +1860,57 @@ void main() {
       });
     }
 
+    for (final hearClick in [false, true]) {
+      testWidgets(
+        'a restart that lands the owed value clears its recovery notice; '
+        'hearClick=$hearClick',
+        (tester) async {
+          settings = SettingsRepository(store: FakeKeyValueStore());
+          await pumpApp(tester, NoopWaveformWindowService());
+          repository.startEngine(const EngineConfig());
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.pumpAndSettle();
+          final tempo = tester
+              .element(find.byType(TracksView))
+              .read<TempoSettings>();
+          final toast = hearClick
+              ? AppToastId.clickModeSettings
+              : AppToastId.clickSettings;
+          if (hearClick) {
+            engine.publishClickModeCommands = false;
+          } else {
+            engine.publishClickCommands = false;
+          }
+          engine.commandsAreSettled = false;
+          unawaited(
+            hearClick
+                ? tempo.clickModeOwner.set(ClickMode.playRec)
+                : tempo.clickVolumeOwner.set(1.5),
+          );
+          await tester.pump(const Duration(milliseconds: 600));
+          await tester.pump();
+          expect(debugAppToastActive(toast), isTrue);
+          repository.stopEngine();
+          engine
+            ..publishClickCommands = true
+            ..publishClickModeCommands = true
+            ..commandsAreSettled = true;
+          repository.startEngine(const EngineConfig());
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.pumpAndSettle();
+          expect(
+            hearClick
+                ? tempo.clickModeOwner.ready
+                : tempo.clickVolumeOwner.ready,
+            isTrue,
+          );
+          expect(debugAppToastActive(toast), isFalse);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(const Duration(milliseconds: 600));
+        },
+      );
+    }
+
     testWidgets('compensated Hear click refusal permits normal shutdown', (
       tester,
     ) async {
