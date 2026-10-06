@@ -2280,6 +2280,7 @@ class LooperRepository {
               undoDepth: s.tracks[i].undoDepth,
               clearRestore: s.tracks[i].clearRestore,
               redoDepth: s.tracks[i].redoDepth,
+              peelDepth: s.tracks[i].peelDepth,
               layerInFlight: s.tracks[i].layerInFlight,
               pending: s.tracks[i].pending,
               pendingLaunch: s.tracks[i].pendingLaunch,
@@ -3690,6 +3691,20 @@ class LooperRepository {
       _forgetLaneMutes(channel);
     }
     return result;
+  }
+
+  /// Removes the newest overdub layer on track [channel] as one history
+  /// entry (Peel): the pre-pass image plays, [undo] restores the layer, and
+  /// the redo branch is dropped. The original take is never removed.
+  ///
+  /// The engine's answer is the result: a peel is a synchronous layer swap
+  /// that changes no take metadata, so there is no cache work here (unlike a
+  /// Clear restore). [EngineResult.notReady] while a Session is being
+  /// applied, like [undo]. A member of a grouped Clear All that is peeled
+  /// afterwards has a newer edit, which the group logic already excludes.
+  EngineResult peel({int channel = 0}) {
+    if (_sessionAudioReserved) return EngineResult.notReady;
+    return _engine.peel(channel: channel);
   }
 
   /// Applies a loaded session [rig] to the engine THROUGH this repository —

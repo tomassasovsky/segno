@@ -929,6 +929,12 @@ typedef struct le_track_snapshot {
   /* A just-committed member can still be canceled in the next command drain.
    * This is cancellation authority, not pending membership or fresh admission. */
   int32_t count_in_cancel_grace;
+  /* Trailing (#1164): how many overdub layers le_engine_peel can still remove
+   * — the LAYER entries above the newest history entry that is neither an
+   * overdub nor a peel. Published under undo_depth's gates, so an EMPTY track
+   * reads 0 here too. The host derives its layer count from this: PEEL
+   * entries keep undo_depth constant while a layer disappears. */
+  int32_t peel_depth;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1831,6 +1837,19 @@ LE_EXPORT int32_t le_engine_clear_restore_pending(le_engine* engine,
  * le_engine_undo_restores_clear, for the same host bookkeeping. */
 LE_EXPORT int32_t le_engine_redo_reclears(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_redo(le_engine* engine, int32_t channel);
+/* Removes the newest overdub layer as one history entry (#1164): the pre-pass
+ * image becomes live, the removed image is kept for le_engine_undo, and the
+ * Redo branch is dropped. Never touches the original take: Peel consumes the
+ * topmost overdub layer reachable through earlier peels only, so the deepest
+ * layer (the pre-first-overdub image) is swapped in but never consumed, and
+ * any non-overdub history above the layers (a clear, a loop-close restoration)
+ * blocks it. Undo of a Peel restores the layer; Redo re-peels. A synchronous
+ * control-thread swap like the in-track undo: no command, no receipt.
+ * LE_ERR_INVALID when no overdub layer can be peeled (none remain, the track
+ * is empty or cleared, or the newest edit is not an overdub); LE_ERR_NOT_READY
+ * while the track captures, drains a layer, or has a pending state command,
+ * cancel, Clear report or Count-in launch — never queued, nothing mutated. */
+LE_EXPORT int32_t le_engine_peel(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
                                              float volume);
 LE_EXPORT int32_t le_engine_set_track_mute(le_engine* engine, int32_t channel,
@@ -3141,6 +3160,20 @@ LE_EXPORT int32_t le_engine_import_layer(le_engine* engine, int32_t channel,
 LE_EXPORT int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
                                             int32_t undo_count,
                                             int32_t redo_count);
+
+/* Lists track `channel`'s history entries in image-ordinal order (#1164):
+ * the undo stack oldest first, then the redo stack top-down. `kinds[i]` is the
+ * entry's kind (0 overdub layer, 1 clear restore point, 2 peel, 3 loop-close
+ * restoration) and `skipped[i]` its peel payload (0 for every other kind). A
+ * redo-side peel entry is a marker without an image: le_engine_export_layer's
+ * ordinals count image-bearing entries only, so a track's image count is
+ * `undo_count + 1 + (redo entries that are not peel markers)`. Writes at most
+ * `max` entries and returns the track's TOTAL entry count (which may exceed
+ * `max`), or LE_ERR_INVALID for a bad handle, channel, NULL array or negative
+ * `max`. Control thread. */
+LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
+                                           int32_t* kinds, int32_t* skipped,
+                                           int32_t max);
 
 /* Establishes the master loop at `base_frames` and parks every imported track
  * (EMPTY with a loaded length) STOPPED at its whole-loop multiple

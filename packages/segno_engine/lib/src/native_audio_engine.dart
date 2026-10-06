@@ -989,6 +989,12 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult peel({int channel = 0}) {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_peel(_engine, channel));
+  }
+
+  @override
   EngineResult setLaneCount({required int channel, required int count}) {
     _checkAlive();
     return EngineResult.fromCode(

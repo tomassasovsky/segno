@@ -443,6 +443,7 @@ static int le_engine_reset_material(le_engine* engine,
     store_i32(&tr->a_undo_depth, 0);
     store_i32(&tr->a_clear_restore, 0);
     store_i32(&tr->a_redo_depth, 0);
+    store_i32(&tr->a_peel_depth, 0);
     store_i32(&tr->a_multiple, 1);
     store_i32(&tr->a_sync_divisor, 0); /* B3: per-track, resets like a_multiple */
     tr->take_seq = 0; /* #819: fresh session, take ids restart at 1 */

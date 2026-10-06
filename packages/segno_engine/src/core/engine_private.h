@@ -784,6 +784,12 @@ typedef enum {
   LE_HIST_CLEAR = 1, /* a clear restore point: everything needed to put the
                       * track back as it was (#219). Pushed ON TOP of the
                       * layers it erased, which stay peelable after a restore. */
+  LE_HIST_PEEL = 2,  /* a Peel (#1164): on the undo stack, the image Peel
+                      * removed (the former live slot) plus `skipped`; on the
+                      * redo stack a marker with slot -1 that re-peels. */
+  LE_HIST_PROCESSED = 3, /* a loop-close restoration commit (#697 S9): the raw
+                          * take beneath a conditioned live image. Undo/Redo
+                          * swap it like a LAYER; Peel never consumes it. */
 } le_hist_kind;
 
 /* One entry on a track's undo/redo history (control-thread-owned). A bare pool
@@ -806,6 +812,10 @@ typedef struct {
   uint32_t clear_generation;
   float fade_amount; /* stationary amount at the callback Clear boundary */
   int fade_ready;
+  int32_t skipped; /* PEEL: how many PEEL entries sat above the LAYER this
+                    * peel consumed. Undo re-inserts that LAYER `skipped`
+                    * entries below the PEEL's position (clamped to the
+                    * bottom), restoring the exact pre-peel stack. */
 } le_hist_entry;
 
 /* Positional aggregate init, not the designated initializer the rest of the
@@ -1118,6 +1128,9 @@ typedef struct le_track {
   _Atomic int32_t a_clear_restore; /* published: 1 when the next undo restores a
                                     * cleared take rather than peeling a layer */
   _Atomic int32_t a_redo_depth;    /* published redo_count */
+  _Atomic int32_t a_peel_depth; /* published le_peel_depth: LAYER entries Peel
+                                 * can still consume, under a_undo_depth's
+                                 * gates (0 on an EMPTY track) — #1164 */
   /* Offline loop-close restoration telemetry (#697 S9): 0 idle, 1 queued
    * (enqueue copy pending / QUEUED for the worker), 2 running (worker DSP in
    * flight). Written by the control-thread le_restore_tick, read by the

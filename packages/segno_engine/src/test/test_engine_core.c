@@ -33540,6 +33540,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_fade.h"
 #include "test_engine_reopen.h"
 #include "test_engine_history_replay.h"
+#include "test_engine_peel.h"
 
 int main(void) {
   test_reopen_same_rate_retains_material();
@@ -33583,6 +33584,8 @@ int main(void) {
   test_fade_restore_overdub_source_end();
   run_history_replay_tests();
   if (getenv("SEGNO_HISTORY_TESTS_ONLY")) return g_failures ? 1 : 0;
+  run_peel_tests();
+  if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_record_start_owned_cancel_survives_queued_pair();
   test_record_start_capture_and_no_source_refusal();
   test_record_start_selected_source_triggers();
