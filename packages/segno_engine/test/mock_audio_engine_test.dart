@@ -23,6 +23,34 @@ void main() {
       expect(engine.snapshot().tracks, before.tracks);
     });
 
+    test(
+      'speed is a global request with a receipt; capture refuses off 1x',
+      () {
+        expect(
+          engine.setSpeed(SpeedFactor.half).result,
+          EngineResult.notRunning,
+        );
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        final admitted = engine.setSpeed(SpeedFactor.half);
+        expect(admitted.result, EngineResult.ok);
+        expect(admitted.request, isNonZero);
+        expect(engine.readRequestResult(admitted.request), EngineResult.ok);
+        expect(
+          engine.readRequestResult(admitted.request),
+          EngineResult.invalid,
+        );
+        expect(engine.snapshot().speed, SpeedFactor.half);
+        expect(engine.record(), EngineResult.transformed);
+        final normal = engine.setSpeed(SpeedFactor.normal);
+        expect(engine.readRequestResult(normal.request), EngineResult.ok);
+        expect(engine.record(), EngineResult.ok);
+        engine.setSpeed(SpeedFactor.eightfold);
+        expect(engine.stop(), EngineResult.ok);
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        expect(engine.snapshot().speed, SpeedFactor.normal); // configure resets
+      },
+    );
+
     test('peel is unavailable because the mock keeps no overdub layers', () {
       expect(engine.peel(), EngineResult.notRunning);
       expect(engine.start(engine.defaultConfig), EngineResult.ok);

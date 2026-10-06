@@ -219,6 +219,22 @@ class FakeAudioEngine implements AudioEngine {
     return (result: EngineResult.ok, request: request);
   }
 
+  /// What [setSpeed] admits and the receipt it answers later (#1179).
+  EngineResult speedAdmission = EngineResult.ok;
+  EngineResult speedResult = EngineResult.ok;
+
+  /// The last factor [setSpeed] admitted.
+  SpeedFactor? lastSpeed;
+
+  @override
+  RequestAdmission setSpeed(SpeedFactor factor) {
+    if (!speedAdmission.isOk) return (result: speedAdmission, request: 0);
+    lastSpeed = factor;
+    final request = ++_fadeRequest;
+    _fadeResults[request] = speedResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
   @override
   EngineResult? readRequestResult(int request) => _fadeResults.remove(request);
 
@@ -1996,6 +2012,7 @@ class _LengthSnapshot extends EngineSnapshot {
         countInBeatsLeft: source.countInBeatsLeft,
         looperMode: mode ?? source.looperMode,
         primaryTrack: source.primaryTrack,
+        speed: source.speed,
         quantize: engine.lastQuantize ?? source.quantize,
         recordTimingRevision: engine.recordTimingRevision,
         recordTimingResult: engine.recordTimingResult,

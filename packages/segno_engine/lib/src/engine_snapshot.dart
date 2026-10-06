@@ -391,6 +391,41 @@ enum LooperMode {
   };
 }
 
+/// The global Speed (#1179): every recorded track plays at [numer]/[denom]
+/// of its recorded speed, its pitch following. The song clock, click and
+/// capture are unaffected. Mirrors the native `le_engine_set_speed` factors.
+enum SpeedFactor {
+  /// Half speed, an octave down.
+  half(1, 2),
+
+  /// The recorded speed.
+  normal(1, 1),
+
+  /// Double speed, an octave up.
+  twice(2, 1),
+
+  /// Four times the speed, two octaves up.
+  fourfold(4, 1),
+
+  /// Eight times the speed, three octaves up.
+  eightfold(8, 1);
+
+  const SpeedFactor(this.numer, this.denom);
+
+  /// The factor's numerator.
+  final int numer;
+
+  /// The factor's denominator.
+  final int denom;
+
+  /// The native factor [numer]/[denom]; [normal] for any other pair (the
+  /// value an unconfigured engine publishes).
+  static SpeedFactor fromRatio(int numer, int denom) => values.firstWhere(
+    (factor) => factor.numer == numer && factor.denom == denom,
+    orElse: () => SpeedFactor.normal,
+  );
+}
+
 /// What a looper-mode change would do right now — the engine's answer to
 /// `LooperModeControl.looperModeGate` (accepted design, slice 2).
 enum LooperModeGate {
@@ -636,6 +671,7 @@ class TrackSnapshot {
     this.peakL = 0,
     this.peakR = 0,
     this.reversed = false,
+    this.headRate = 1,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -674,6 +710,7 @@ class TrackSnapshot {
       peakL = 0,
       peakR = 0,
       reversed = false,
+      headRate = 1,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -727,6 +764,7 @@ class TrackSnapshot {
         : native.overdub_feedback_override,
     solo: native.solo != 0,
     reversed: native.reversed != 0,
+    headRate: native.head_rate_milli / 1000,
     imageRevision: native.image_revision,
     peakL: native.peak_l,
     peakR: native.peak_r,
@@ -740,6 +778,11 @@ class TrackSnapshot {
   /// #1162). Callback-owned like [fade]: published with every accepted
   /// `toggleReverse`/`installReverse`, reset to forward with the material.
   final bool reversed;
+
+  /// The track's effective read rate in source frames per song frame (Speed,
+  /// #1179): 0.5 at 1/2x, 8 at 8x. Its position moves at this rate, and its
+  /// pitch follows it.
+  final double headRate;
 
   /// Sequence of the coherent native tuple publication.
   final int fadeRevision;
@@ -924,6 +967,7 @@ class TrackSnapshot {
           peakL == other.peakL &&
           peakR == other.peakR &&
           reversed == other.reversed &&
+          headRate == other.headRate &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -958,6 +1002,7 @@ class TrackSnapshot {
     peakL,
     peakR,
     reversed,
+    headRate,
     Object.hashAll(lanes),
   ]);
 }
@@ -1288,6 +1333,7 @@ class EngineSnapshot {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.speed = SpeedFactor.normal,
     this.quantize = false,
     this.recordTimingRevision = 0,
     this.recordTimingResult = 0,
@@ -1366,6 +1412,7 @@ class EngineSnapshot {
       countInBeatsLeft = 0,
       looperMode = LooperMode.multi,
       primaryTrack = -1,
+      speed = SpeedFactor.normal,
       quantize = false,
       recordTimingRevision = 0,
       recordTimingResult = 0,
@@ -1459,6 +1506,7 @@ class EngineSnapshot {
       countInBeatsLeft: native.count_in_beats_left,
       looperMode: LooperMode.fromCode(native.looper_mode),
       primaryTrack: native.primary_track,
+      speed: SpeedFactor.fromRatio(native.speed_numer, native.speed_denom),
       quantize: native.quantize != 0,
       recordTimingRevision: native.record_timing_revision,
       recordTimingResult: native.record_timing_result,
@@ -1545,6 +1593,7 @@ class EngineSnapshot {
     int? countInBeatsLeft,
     LooperMode? looperMode,
     int? primaryTrack,
+    SpeedFactor? speed,
     bool? quantize,
     int? recordTimingRevision,
     int? recordTimingResult,
@@ -1620,6 +1669,7 @@ class EngineSnapshot {
     countInBeatsLeft: countInBeatsLeft ?? this.countInBeatsLeft,
     looperMode: looperMode ?? this.looperMode,
     primaryTrack: primaryTrack ?? this.primaryTrack,
+    speed: speed ?? this.speed,
     quantize: quantize ?? this.quantize,
     recordTimingRevision: recordTimingRevision ?? this.recordTimingRevision,
     recordTimingResult: recordTimingResult ?? this.recordTimingResult,
@@ -1886,6 +1936,10 @@ class EngineSnapshot {
   /// in-range channel, never back to `-1`, once first crowned.
   final int primaryTrack;
 
+  /// The global Speed the callback applies to every recorded track (#1179).
+  /// [SpeedFactor.normal] until a request lands.
+  final SpeedFactor speed;
+
   /// The global loop-grid record quantize gate the engine holds (slice 2b):
   /// what a record press over a master waits for, together with
   /// [quantizeDiv]. Published so the effective record timing is read from
@@ -2060,6 +2114,7 @@ class EngineSnapshot {
           countInBeatsLeft == other.countInBeatsLeft &&
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
+          speed == other.speed &&
           quantize == other.quantize &&
           recordTimingRevision == other.recordTimingRevision &&
           recordTimingResult == other.recordTimingResult &&
@@ -2137,6 +2192,7 @@ class EngineSnapshot {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
+    speed,
     quantize,
     recordTimingRevision,
     recordTimingResult,

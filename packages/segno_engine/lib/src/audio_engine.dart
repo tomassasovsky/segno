@@ -53,7 +53,12 @@ enum EngineResult {
 
   /// A punch-in on a reversed track: overdub is unavailable while Reverse is
   /// on (`LE_ERR_REVERSED`). Play, Stop, Mute, Fade and history stay available.
-  reversed;
+  reversed,
+
+  /// A record or punch-in while Speed is not 1x (`LE_ERR_TRANSFORMED`,
+  /// #1179): capture never writes through a fractional read head. Play, Stop,
+  /// Mute, Fade and history stay available.
+  transformed;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -69,6 +74,7 @@ enum EngineResult {
     -7 => EngineResult.modeMismatch,
     -8 => EngineResult.notReady,
     -9 => EngineResult.reversed,
+    -10 => EngineResult.transformed,
     _ => EngineResult.invalid,
   };
 
@@ -76,7 +82,7 @@ enum EngineResult {
   bool get isOk => this == EngineResult.ok;
 }
 
-/// Queue admission of a checked per-track request (Fade, Reverse), distinct
+/// Queue admission of a checked request (Fade, Reverse, Speed), distinct
 /// from the callback result of this exact request, read back with
 /// [LooperTransport.readRequestResult].
 typedef RequestAdmission = ({EngineResult result, int request});
@@ -307,8 +313,16 @@ abstract interface class LooperTransport {
     required bool reversed,
   });
 
-  /// Consumes a completed Fade or Reverse callback result; null means still
-  /// pending.
+  /// Queues the global Speed (#1179): every recorded track reads at
+  /// [factor] through its head, its pitch following; a request equal to the
+  /// factor in force is accepted and changes nothing. [EngineResult.notReady]
+  /// while any track records, overdubs, is armed or launching, or a count-in
+  /// runs. While not [SpeedFactor.normal], [record] refuses a record or
+  /// punch-in with [EngineResult.transformed].
+  RequestAdmission setSpeed(SpeedFactor factor);
+
+  /// Consumes a completed Fade, Reverse or Speed callback result; null means
+  /// still pending.
   EngineResult? readRequestResult(int request);
 
   /// Halts track [channel]'s playback, retaining the loop buffer.

@@ -292,6 +292,45 @@ void main() {
       expect(peeled.hashCode, isNot(peelable.hashCode));
     });
 
+    test(
+      'speed and head rate are projected from the native fields (#1179)',
+      () {
+        final snap = calloc<le_snapshot>();
+        final track = calloc<le_track_snapshot>();
+        addTearDown(
+          () => calloc
+            ..free(snap)
+            ..free(track),
+        );
+        expect(const EngineSnapshot.initial().speed, SpeedFactor.normal);
+        expect(const TrackSnapshot.empty().headRate, 1);
+        final unconfigured = EngineSnapshot.fromNative(snap.ref, const []);
+        expect(unconfigured.speed, SpeedFactor.normal); // 0/0 before configure
+        for (final factor in SpeedFactor.values) {
+          snap.ref
+            ..speed_numer = factor.numer
+            ..speed_denom = factor.denom;
+          final projected = EngineSnapshot.fromNative(snap.ref, const []);
+          expect(projected.speed, factor);
+          expect(projected == unconfigured, factor == SpeedFactor.normal);
+          expect(projected.copyWith().speed, factor);
+        }
+        expect(SpeedFactor.fromRatio(3, 1), SpeedFactor.normal);
+        track.ref
+          ..quantize_override = -1
+          ..quantize_div_override = -1
+          ..overdub_feedback_override = -1
+          ..head_rate_milli = 500;
+        final half = TrackSnapshot.fromNative(track.ref);
+        expect(half.headRate, 0.5);
+        track.ref.head_rate_milli = 8000;
+        final eight = TrackSnapshot.fromNative(track.ref);
+        expect(eight.headRate, 8);
+        expect(eight, isNot(half));
+        expect(eight.hashCode, isNot(half.hashCode));
+      },
+    );
+
     test('global native record settings each participate in equality', () {
       final ptr = calloc<le_snapshot>();
       addTearDown(() => calloc.free(ptr));
@@ -1655,6 +1694,7 @@ void main() {
         'countInBeatsLeft',
         'looperMode',
         'primaryTrack',
+        'speed', // a request outcome, not a callback-rate counter (#1179)
         'quantize',
         'autoRecord',
         'overdubFeedback',

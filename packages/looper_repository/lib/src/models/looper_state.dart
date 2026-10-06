@@ -7,6 +7,7 @@ import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
 import 'package:looper_repository/src/models/tuner_reading.dart';
+import 'package:segno_engine/segno_engine.dart' show SpeedFactor;
 
 /// The single source of looper truth: transport, the tracks, and engine status,
 /// projected from one engine snapshot.
@@ -32,6 +33,7 @@ class LooperState extends Equatable {
     this.laneOutputs = const {},
     this.laneCounts = const {},
     this.recordingInputLocks = const {},
+    this.speed = SpeedFactor.normal,
   });
 
   /// Master loop transport.
@@ -105,6 +107,10 @@ class LooperState extends Equatable {
   /// Tracks fenced by accepted record requests or active capture.
   final Set<int> recordingInputLocks;
 
+  /// The global Speed every recorded track plays at (#1179), as the engine
+  /// published it. [SpeedFactor.normal] until a request lands.
+  final SpeedFactor speed;
+
   /// Output destination [bus]'s configured entries.
   List<TrackEffect> outputEffects(int bus) =>
       outputChains[bus]?.entries ?? const [];
@@ -143,5 +149,6 @@ class LooperState extends Equatable {
     laneOutputs,
     laneCounts,
     recordingInputLocks,
+    speed,
   ];
 }

@@ -13,6 +13,8 @@ void main() {
       expect(EngineResult.fromCode(-6), EngineResult.capacity);
       expect(EngineResult.fromCode(-7), EngineResult.modeMismatch);
       expect(EngineResult.fromCode(-8), EngineResult.notReady);
+      expect(EngineResult.fromCode(-9), EngineResult.reversed);
+      expect(EngineResult.fromCode(-10), EngineResult.transformed);
     });
 
     test('maps unknown codes to invalid', () {
