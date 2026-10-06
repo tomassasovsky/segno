@@ -80,6 +80,7 @@ export 'src/plugin_descriptor.dart'
         PluginParamInfo,
         PluginScanProgress,
         PluginSlotHandle;
+export 'src/storage_io.dart' show NativeStorageIo, StorageIo;
 export 'src/track_effect.dart'
     show
         BuiltInEffect,

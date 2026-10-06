@@ -1,5 +1,4 @@
 import 'dart:ffi';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -7,6 +6,7 @@ import 'package:meta/meta.dart';
 import 'package:segno_engine/src/audio_device.dart';
 import 'package:segno_engine/src/audio_engine.dart';
 import 'package:segno_engine/src/engine_config.dart';
+import 'package:segno_engine/src/engine_library.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/ffi_strings.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
@@ -21,34 +21,6 @@ import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
 import 'package:segno_engine/src/volume_space.dart';
 
-/// Opens the bundled native engine library for the current platform.
-///
-/// On Apple platforms the engine is compiled directly into the application
-/// binary (Swift Package Manager static-links the plugin into the Runner; the
-/// CocoaPods fallback embeds it as a framework). In both cases its exported
-/// symbols live in the process's global namespace, so [DynamicLibrary.process]
-/// resolves them — there is no standalone library file to open. This relies on
-/// the `LE_EXPORT` symbols being marked `visibility("default")` + `used` so the
-/// linker keeps them. See macos/segno_engine/Package.swift.
-///
-/// On Linux/Windows the engine is a separate shared library opened by name.
-///
-/// A `SEGNO_ENGINE_LIB` environment variable overrides the lookup with an
-/// explicit path on every platform — how the device-free test suites (the
-/// sequence fuzzer via [PumpedNativeEngine]) point at a freshly built library
-/// outside an app bundle.
-DynamicLibrary _openLibrary() {
-  final override = Platform.environment['SEGNO_ENGINE_LIB'];
-  if (override != null && override.isNotEmpty) {
-    return DynamicLibrary.open(override);
-  }
-  if (Platform.isMacOS || Platform.isIOS) {
-    return DynamicLibrary.process();
-  }
-  if (Platform.isWindows) return DynamicLibrary.open('segno_engine.dll');
-  return DynamicLibrary.open('libsegno_engine.so');
-}
-
 /// Production [AudioEngine] that drives the native miniaudio engine over FFI.
 ///
 /// Owns a single native engine handle. Exactly one instance should own the
@@ -61,7 +33,7 @@ class NativeAudioEngine implements AudioEngine {
   /// [bindings] may be injected (e.g. against a statically linked test binary);
   /// when omitted, the platform shared library is opened.
   NativeAudioEngine({SegnoEngineBindings? bindings})
-    : _bindings = bindings ?? SegnoEngineBindings(_openLibrary()) {
+    : _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary()) {
     _engine = _bindings.le_engine_create();
     if (_engine == nullptr) {
       throw const EngineException(

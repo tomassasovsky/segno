@@ -47,6 +47,7 @@
 
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
 #include "engine_core.h"      /* le_push (raw ring pushes for the tempo tests) */
+#include "engine_digest.h"    /* le_sha256_ctx (#1198 streaming digests) */
 #include "engine_fx.h" /* LE_FX_ENABLE_RAMP_MS (FX enable-flag tests) */
 #include "engine_cache.h" /* LE_CACHE_SETTLE_MS (wet-cache tests) */
 #include "engine_internal.h"
@@ -19195,6 +19196,167 @@ static void test_render_mkdir(const char* path) {
 #endif
 }
 
+/* ---- SHA-256, file digests and directory sync (#1198 Part 1) ----
+ * The oracles are the FIPS 180-2 / NIST CAVP SHA-256 example vectors, as
+ * literal hex: the implementation is checked against the standard, never
+ * against itself. */
+static void digest_to_hex(const uint8_t d[32], char out[65]) {
+  static const char hex[] = "0123456789abcdef";
+  for (int i = 0; i < 32; ++i) {
+    out[2 * i] = hex[d[i] >> 4];
+    out[2 * i + 1] = hex[d[i] & 15];
+  }
+  out[64] = '\0';
+}
+
+static int digest_bytes_is(const void* data, uint64_t len, const char* hex) {
+  uint8_t d[32];
+  char got[65];
+  if (le_digest_bytes(data, len, d) != LE_OK) return 0;
+  digest_to_hex(d, got);
+  return strcmp(got, hex) == 0;
+}
+
+#define LE_TEST_SHA_EMPTY \
+  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+#define LE_TEST_SHA_ABC \
+  "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+#define LE_TEST_SHA_448 \
+  "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+#define LE_TEST_SHA_896 \
+  "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1"
+#define LE_TEST_SHA_MILLION_A \
+  "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
+
+static void test_sha256_known_answers(void) {
+  printf("test_sha256_known_answers\n");
+  CHECK(digest_bytes_is(NULL, 0, LE_TEST_SHA_EMPTY));
+  CHECK(digest_bytes_is("", 0, LE_TEST_SHA_EMPTY));
+  CHECK(digest_bytes_is("abc", 3, LE_TEST_SHA_ABC));
+  const char* m448 = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+  /* 56 bytes: the length field no longer fits, so the padding spills into a
+   * second block. */
+  CHECK(digest_bytes_is(m448, strlen(m448), LE_TEST_SHA_448));
+  /* 112 bytes: two message blocks. */
+  const char* m896 =
+      "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmno"
+      "ijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+  CHECK(digest_bytes_is(m896, strlen(m896), LE_TEST_SHA_896));
+  char* million = (char*)malloc(1000000);
+  CHECK(million != NULL);
+  if (million != NULL) {
+    memset(million, 'a', 1000000);
+    CHECK(digest_bytes_is(million, 1000000, LE_TEST_SHA_MILLION_A));
+    /* The streaming context the drain uses gives the same answer however the
+     * input is cut: odd chunk sizes straddle every block boundary. */
+    le_sha256_ctx ctx;
+    le_sha256_init(&ctx);
+    size_t off = 0;
+    size_t step = 1;
+    while (off < 1000000) {
+      size_t n = step < 1000000 - off ? step : 1000000 - off;
+      le_sha256_update(&ctx, million + off, n);
+      off += n;
+      step = step * 3 % 211 + 1;
+    }
+    uint8_t d[32];
+    char got[65];
+    le_sha256_final(&ctx, d);
+    digest_to_hex(d, got);
+    CHECK(strcmp(got, LE_TEST_SHA_MILLION_A) == 0);
+    free(million);
+  }
+  uint8_t d[32];
+  CHECK(le_digest_bytes("abc", 3, NULL) == LE_ERR_INVALID);
+  CHECK(le_digest_bytes(NULL, 1, d) == LE_ERR_INVALID);
+}
+
+static void digest_test_write(const char* path, const char* bytes, size_t n) {
+  FILE* f = fopen(path, "wb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  CHECK(fwrite(bytes, 1, n, f) == n);
+  fclose(f);
+}
+
+static int digest_file_is(const char* path, uint64_t offset, uint64_t length,
+                          const char* hex) {
+  uint8_t d[32];
+  char got[65];
+  if (le_digest_file(path, offset, length, d) != LE_OK) return 0;
+  digest_to_hex(d, got);
+  return strcmp(got, hex) == 0;
+}
+
+static void test_digest_file_ranges(void) {
+  printf("test_digest_file_ranges\n");
+  test_render_mkdir(perf_test_dir());
+  char path[600];
+  snprintf(path, sizeof(path), "%s/digest_range.bin", perf_test_dir());
+  digest_test_write(path, "xyzabcdef", 9);
+  uint8_t d[32];
+
+  /* Bytes [3, 6) are "abc". */
+  CHECK(digest_file_is(path, 3, 3, LE_TEST_SHA_ABC));
+  /* The whole file through UINT64_MAX equals the in-memory digest. */
+  uint8_t whole[32];
+  CHECK(le_digest_bytes("xyzabcdef", 9, whole) == LE_OK);
+  CHECK(le_digest_file(path, 0, UINT64_MAX, d) == LE_OK);
+  CHECK(memcmp(d, whole, 32) == 0);
+  /* An empty range at the end is the empty digest; from offset 6 to the end
+   * is "def". */
+  CHECK(digest_file_is(path, 9, 0, LE_TEST_SHA_EMPTY));
+  CHECK(digest_file_is(path, 9, UINT64_MAX, LE_TEST_SHA_EMPTY));
+  uint8_t def[32];
+  CHECK(le_digest_bytes("def", 3, def) == LE_OK);
+  CHECK(le_digest_file(path, 6, UINT64_MAX, d) == LE_OK);
+  CHECK(memcmp(d, def, 32) == 0);
+
+  /* A file shorter than the range it should hold is damaged: no digest. */
+  CHECK(le_digest_file(path, 3, 7, d) == LE_ERR_DEVICE);
+  CHECK(le_digest_file(path, 10, 0, d) == LE_ERR_DEVICE);
+  CHECK(le_digest_file(path, 10, UINT64_MAX, d) == LE_ERR_DEVICE);
+
+  /* A file longer than the 64 KiB read chunk: 200000 'a' bytes, digested as a
+   * range and compared with the in-memory digest of the same bytes. */
+  char big_path[600];
+  snprintf(big_path, sizeof(big_path), "%s/digest_big.bin", perf_test_dir());
+  char* big = (char*)malloc(200000);
+  CHECK(big != NULL);
+  if (big != NULL) {
+    memset(big, 'a', 200000);
+    digest_test_write(big_path, big, 200000);
+    uint8_t expect[32];
+    CHECK(le_digest_bytes(big + 1000, 150000, expect) == LE_OK);
+    CHECK(le_digest_file(big_path, 1000, 150000, d) == LE_OK);
+    CHECK(memcmp(d, expect, 32) == 0);
+    free(big);
+    remove(big_path);
+  }
+
+  /* Missing file, directory instead of a file, and bad arguments. */
+  char missing[600];
+  snprintf(missing, sizeof(missing), "%s/digest_missing.bin", perf_test_dir());
+  remove(missing);
+  CHECK(le_digest_file(missing, 0, UINT64_MAX, d) == LE_ERR_DEVICE);
+  CHECK(le_digest_file(perf_test_dir(), 0, UINT64_MAX, d) == LE_ERR_DEVICE);
+  CHECK(le_digest_file(NULL, 0, 0, d) == LE_ERR_INVALID);
+  CHECK(le_digest_file("", 0, 0, d) == LE_ERR_INVALID);
+  CHECK(le_digest_file(path, 0, 0, NULL) == LE_ERR_INVALID);
+  remove(path);
+}
+
+static void test_fs_sync_dir(void) {
+  printf("test_fs_sync_dir\n");
+  test_render_mkdir(perf_test_dir());
+  CHECK(le_fs_sync_dir(perf_test_dir()) == LE_OK);
+  char missing[600];
+  snprintf(missing, sizeof(missing), "%s/no_such_dir_for_sync", perf_test_dir());
+  CHECK(le_fs_sync_dir(missing) == LE_ERR_DEVICE);
+  CHECK(le_fs_sync_dir(NULL) == LE_ERR_INVALID);
+  CHECK(le_fs_sync_dir("") == LE_ERR_INVALID);
+}
+
 static const char* render_test_dir(const char* name) {
   static char dir[600];
   snprintf(dir, sizeof(dir), "%s/render_%s_%d", perf_test_dir(), name,
@@ -33757,6 +33919,9 @@ int main(void) {
   test_monitor_disable_and_excluded();
   test_monitor_and_playback_sum();
   test_volume_space();
+  test_sha256_known_answers();
+  test_digest_file_ranges();
+  test_fs_sync_dir();
   test_perf_arm_requires_configure();
   test_perf_reconfigure_while_armed_resets_cleanly();
   test_perf_arm_rejects_no_enabled_output();
