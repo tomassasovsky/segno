@@ -324,7 +324,8 @@ abstract interface class LooperTransport {
   /// entry, applied by the callback with its image, length and clock in one
   /// block; the playhead keeps its phase. Refused before any change with
   /// [EngineResult.modeMismatch] when the length would not fit the looper
-  /// mode (a track holding the rig's only content re-clocks it instead),
+  /// mode (a track holding the rig's only content re-clocks it instead, at
+  /// the same tempo, refused when that would leave a fractional bar count),
   /// [EngineResult.capacity] past the loop cap, [EngineResult.invalid] for a
   /// track that is not playing or stopped and [EngineResult.notReady] while
   /// it captures, drains or has an arm, launch or pending command.

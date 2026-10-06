@@ -3314,17 +3314,20 @@ typedef enum le_length_edit {
  * receipt below carries its verdict, and Undo/Redo restore the other image.
  * Lengths must fit the looper mode against the unchanged base, except that a
  * track holding the rig's only content re-clocks the master to its new length
- * (Free/Song spans are independent). Admission returns a nonzero request id
+ * at the unchanged tempo, keeping a whole bar count (Free/Song spans are
+ * independent). Admission returns a nonzero request id
  * only on LE_OK. Refusals, all before any change: LE_ERR_NOT_RUNNING when not
  * configured; LE_ERR_INVALID for a bad channel or edit, a track that is not
  * PLAYING or STOPPED, or a half of a length below 2; LE_ERR_CAPACITY when the
  * result exceeds max_loop_frames or the pool has no slot; LE_ERR_MODE_MISMATCH
- * when it would not fit the mode, or the track is the crowned Sync/Band
- * primary of other content; LE_ERR_NOT_READY while the track captures,
- * drains a layer, has an arm, launch, pending state, clock or lane command or
- * an unfiled length edit, or when no receipt slot is free. The callback
- * refuses (receipt LE_ERR_NOT_READY, or the verdict's own code when the rig
- * changed) while a seam or punch tail still writes. */
+ * when it would not fit the mode, a re-clock would leave a fractional bar
+ * count, or the track is the crowned Sync/Band primary of other content;
+ * LE_ERR_NOT_READY while the track captures, drains a layer, has an arm,
+ * launch, pending state, clock or lane command or an unfiled length edit,
+ * while the callback may still write its loop (a seam fold or punch tail), or
+ * when no receipt slot is free. The callback refuses (receipt
+ * LE_ERR_NOT_READY, or the verdict's own code when the rig changed) when the
+ * loop's content changed after admission. */
 LE_EXPORT int32_t le_engine_edit_length(le_engine* engine, int32_t channel,
                                         int32_t edit, uint64_t* request);
 

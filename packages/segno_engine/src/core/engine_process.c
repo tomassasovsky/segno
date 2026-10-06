@@ -2699,7 +2699,7 @@ static int32_t le_length_map(int64_t i, int32_t start, int32_t len) {
  * read index, so a Once relaunch or a reversed track keeps reading on from it.
  * A Reverse turn still mixing the old head snaps. */
 static void le_length_apply(le_engine* e, le_track* t, const le_command* cmd,
-                            uint64_t frame) {
+                            const le_length_fit* fit, uint64_t frame) {
   const int32_t ch = (int32_t)(t - e->tracks);
   const int32_t len = cmd->length.len;
   const int32_t start = cmd->length.start;
@@ -2729,7 +2729,7 @@ static void le_length_apply(le_engine* e, le_track* t, const le_command* cmd,
     e->loop_iteration = 0;
     t->start_iter = 0;
     store_i32(&e->a_master_len, len);
-    sync_grid_to_loop(e, len);
+    le_restore_musical_grid(e, fit->bars); /* the verdict kept the tempo */
     e->loop_viz_bucket = -1;
   } else if (cmd->length.divisor == 0 && e->clock.length > 0) {
     /* The segment the mapped position sits in, counted from the current
@@ -3386,19 +3386,22 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_track* t = &e->tracks[ch];
       const int32_t st = load_i32(&t->a_state);
       int32_t verdict = LE_ERR_NOT_READY;
+      le_length_fit fit;
       if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) &&
           load_i32(&t->lanes[0].a_len) > 0 && t->od_gain == 0.0f &&
           t->seam_capture == 0 && t->xfade_capture == 0 &&
-          !load_i32(&t->a_layer_in_flight)) {
+          !load_i32(&t->a_layer_in_flight) &&
+          atomic_load_explicit(&t->a_audio_rev, memory_order_relaxed) ==
+              cmd->length.audio_rev) {
         int others = 0;
         for (int32_t c = 0; c < e->track_count; ++c) {
           if (c != ch && load_i32(&e->tracks[c].a_state) != LE_TRACK_EMPTY) {
             others = 1;
           }
         }
-        le_length_fit fit;
         verdict = le_length_fit_check(load_i32(&e->a_looper_mode),
-                                      e->clock.length, others,
+                                      e->clock.length,
+                                      load_i32(&e->a_loop_bars), others,
                                       load_i32(&e->a_primary_track) == ch,
                                       cmd->length.len, e->max_loop_frames,
                                       &fit);
@@ -3408,7 +3411,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
           verdict = LE_ERR_NOT_READY;
         }
       }
-      if (verdict == LE_OK) le_length_apply(e, t, cmd, frame);
+      if (verdict == LE_OK) le_length_apply(e, t, cmd, &fit, frame);
       store_i32(&t->a_length_result, verdict);
       if (cmd->length.receipt >= 0) {
         atomic_store_explicit(&e->receipts[cmd->length.receipt].result,
