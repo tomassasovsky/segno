@@ -115,10 +115,12 @@ class ControlState extends Equatable {
   /// Transient Fade time selection; the visible bank is [activeBank].
   final FootFadeSelection footFade;
 
-  /// Each refused Fade gesture notifies the current flow once.
+  /// Each refused Fade gesture, and each assigned Fade that reached no
+  /// track, notifies the current flow once.
   final int footFadeFailure;
 
-  /// Each refused Reverse gesture notifies the current flow once.
+  /// Each refused Reverse gesture, and each assigned Reverse that reached
+  /// no track, notifies the current flow once.
   final int footReverseFailure;
 
   /// Each refused Peel press notifies the current flow once; the notice
