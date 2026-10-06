@@ -31,6 +31,7 @@ export 'package:segno_engine/segno_engine.dart'
         TempoSource,
         TrackHistory,
         TrackState,
+        TransposePitch,
         inputTrimGainOfDb,
         kInputTrimStepDb,
         kMaxChannels,

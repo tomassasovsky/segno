@@ -333,6 +333,47 @@ void main() {
       },
     );
 
+    test('transpose and its bypass are projected from the native fields '
+        '(#1179)', () {
+      final snap = calloc<le_snapshot>();
+      final track = calloc<le_track_snapshot>();
+      addTearDown(
+        () => calloc
+          ..free(snap)
+          ..free(track),
+      );
+      expect(const EngineSnapshot.initial().transposeBypass, isFalse);
+      expect(const TrackSnapshot.empty().transpose, (stored: 0, effective: 0));
+      final live = EngineSnapshot.fromNative(snap.ref, const []);
+      snap.ref.transpose_bypass = 1;
+      final bypassed = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(live.transposeBypass, isFalse);
+      expect(bypassed.transposeBypass, isTrue);
+      expect(bypassed, isNot(live));
+      expect(bypassed.hashCode, isNot(live.hashCode));
+      expect(live.copyWith(transposeBypass: true), bypassed);
+      expect(bypassed.copyWith().transposeBypass, isTrue);
+      track.ref
+        ..quantize_override = -1
+        ..quantize_div_override = -1
+        ..overdub_feedback_override = -1
+        ..transpose_st = 7;
+      // Stored but not sounding yet: the render is pending.
+      final pending = TrackSnapshot.fromNative(track.ref);
+      expect(pending.transpose, (stored: 7, effective: 0));
+      track.ref.transpose_effective_st = 7;
+      final landed = TrackSnapshot.fromNative(track.ref);
+      expect(landed.transpose, (stored: 7, effective: 7));
+      expect(landed, isNot(pending));
+      expect(landed.hashCode, isNot(pending.hashCode));
+      track.ref.transpose_st = -12;
+      track.ref.transpose_effective_st = -12;
+      expect(
+        TrackSnapshot.fromNative(track.ref).transpose,
+        (stored: -12, effective: -12),
+      );
+    });
+
     test('global native record settings each participate in equality', () {
       final ptr = calloc<le_snapshot>();
       addTearDown(() => calloc.free(ptr));
@@ -1697,6 +1738,7 @@ void main() {
         'looperMode',
         'primaryTrack',
         'speed', // a request outcome, not a callback-rate counter (#1179)
+        'transposeBypass', // likewise a request outcome (#1179)
         'quantize',
         'autoRecord',
         'overdubFeedback',

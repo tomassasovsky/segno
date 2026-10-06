@@ -48,6 +48,7 @@ export 'src/engine_snapshot.dart'
         TrackRestoreState,
         TrackSnapshot,
         TrackState,
+        TransposePitch,
         XrunKind,
         kMaxChannels,
         kMaxLanes,

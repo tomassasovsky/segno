@@ -34,6 +34,7 @@ class LooperState extends Equatable {
     this.laneCounts = const {},
     this.recordingInputLocks = const {},
     this.speed = SpeedFactor.normal,
+    this.transposeBypass = false,
   });
 
   /// Master loop transport.
@@ -111,6 +112,10 @@ class LooperState extends Equatable {
   /// published it. [SpeedFactor.normal] until a request lands.
   final SpeedFactor speed;
 
+  /// Whether Transpose is bypassed globally (#1179): every track plays dry,
+  /// its stored pitch kept in `Track.transpose`.
+  final bool transposeBypass;
+
   /// Output destination [bus]'s configured entries.
   List<TrackEffect> outputEffects(int bus) =>
       outputChains[bus]?.entries ?? const [];
@@ -150,5 +155,6 @@ class LooperState extends Equatable {
     laneCounts,
     recordingInputLocks,
     speed,
+    transposeBypass,
   ];
 }
