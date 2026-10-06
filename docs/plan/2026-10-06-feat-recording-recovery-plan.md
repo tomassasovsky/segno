@@ -359,16 +359,21 @@ Owner decision on review H1: the parts are 32-bit IEEE float, not 24-bit.
   - `dawPackageFiles` is the ordered `master-NNN.wav` and `input-<n>-NNN.wav`
     parts (plus `project.als` and `fx-chains.txt`), not `master.wav` and
     `live-input-N.wav`;
-  - the audition voice (Library D10) plays part 1 of the master stream
-    through the bounded reader, never `master.wav`;
+  - the audition voice (Library D10) plays part 1 of the master stream,
+    decoded by `le_backing_decode_file` (below), never `master.wav`;
   - a single-WAV export of a multi-part take writes the parts as
     consecutive `<name> · Part NNN.wav` files (each fits FAT32).
-- **One Dart WAV reader (review M7, rule 4).** `wav_codec` is the one Dart
-  reader: Part 5 adds the bounded part reader and the `maxFrames` bound on
-  `decodeFloat32`; the Library's Part 6b peaks and audition decode, and this
-  plan's recovery, all use it. #1200's backing player decodes natively
-  (miniaudio's dr_wav on the audio side), which is a separate concern (a
-  native voice), not a second Dart reader.
+- **One decoder (rule 4; cross-plan decision, replaces review M7's "one Dart
+  reader").** `le_backing_decode_file` (native and bounded, `engine_decode.c`,
+  #1200's backing Part 2, PR #1223) is the only code that decodes samples
+  for playback, preview and recovery. Its contract: the output is always
+  stereo (mono comes back as two equal sides) at the engine rate; the input
+  is mono or stereo WAV, PCM 16, 24 or 32 bit or float32, at 8 to 192 kHz;
+  a part at the device rate reads back unchanged. Audition, the Library's
+  previews and this plan's recovery read through it, and Part 8's checks use
+  it. `wav_codec` stays the writer and the header and part model
+  (`RecordedPartHeader`, `RecordedPartWriter`); it decodes no samples for
+  any of those.
 - **Legacy bundles** (raw `master.pcm`, including the 38 GB capture on the
   appliance) are recovered by re-chunking each float stream into float parts
   (header + the same sample bytes) **one stream at a time**: each `.pcm` is
@@ -938,10 +943,13 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
 - `packages/wav_codec`: `RecordedPartHeader` (read and write the 84-byte
   float header, including `sgno`), `RecordedPartWriter` (a streaming writer
   over a `RandomAccessFile`: header, append float blocks unchanged while
-  counting `overs`, seal with sizes and `flush`), `readRecordedPartFrames`
-  (bounded range reads), and `WavCodec.decodeFloat32(bytes, {maxFrames})`
-  (the bound the Library's audition needs, Library plan D10). `wav_codec` is
-  the one Dart WAV reader (D3, review M7).
+  counting `overs`, seal with sizes and `flush`). Sample decoding for
+  playback, preview and recovery is `le_backing_decode_file`'s (D3, one
+  decoder), so `wav_codec` stays the writer and the header and part model.
+  As built, PR #1227 also has `readRecordedPartFrames` and
+  `decodeFloat32(maxFrames:)`; under the one-decoder decision they are not
+  used for playback, preview or recovery, and are removed unless a
+  non-decoding use remains.
 - `performance_manifest.dart`: `RecordingFormat(sampleRate, channels,
   partBytes)` with `partFrames`, `bytesToAppend`, and
   `remainingFramesTogether(streams, budgetBytes)` (every stream, a header per
@@ -1048,8 +1056,9 @@ VERIFICATION COMMAND: (cd packages/session_repository && /Users/Tomas/developmen
   (Internal always), and a bundle-side checkpoint; otherwise the
   checkpoint's frames. Parts the checkpoint does not list are removed; the
   last kept part of each stream is truncated, its sizes patched, its digest
-  and overs recomputed (`le_digest_file` in `Isolate.run`, a bounded float
-  scan for overs); then finalize as above.
+  and overs recomputed (`le_digest_file` in `Isolate.run`; the overs from
+  the part read back through `le_backing_decode_file`, the one decoder, a
+  mono part's equal sides counted once); then finalize as above.
 - Legacy bundles (`master.pcm` present, no parts): one stream at a time,
   re-chunk the float `.pcm` into float parts with `RecordedPartWriter` in
   1 MiB chunks in `Isolate.run` (no sample changes; overs counted), write an
@@ -1080,8 +1089,8 @@ GOAL: A take finalizes and recovers in bounded memory without copying audio, rec
 SUCCESS CRITERIA:
 - Finalize of a three-part fixture writes a manifest whose parts list matches the checkpoint and whose sha256 values match le_digest_file of each part; no file other than performance.json is created or changed. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test)
 - Recovery of a stereo fixture whose checkpoint says 1000 frames and whose open part holds 1500: with a different boot id the part is truncated to 84 + 8 * 1000 bytes with data size 8000; with the same boot id and generation it keeps 1500 frames; with the same boot id and another generation (a detach and re-attach in the same boot) it is truncated to 1000; all read back as finalized. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test)
-- A part that rolled over after the checkpoint is removed, and a part sealed after it is truncated, re-patched and re-digested. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test)
-- A legacy master.pcm plus input-0.pcm fixture converts one stream at a time through a reader that records its largest read (at most 1 MiB); each .pcm is removed only after its parts and the interim manifest exist; sample bytes are unchanged; with injected free space below the largest stream the bundle is untouched and the failure is reported. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test)
+- A part that rolled over after the checkpoint is removed, and a part sealed after it is truncated, re-patched and re-digested; the kept part decodes through le_backing_decode_file to exactly the checkpoint's frames, sample for sample. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test)
+- A legacy master.pcm plus input-0.pcm fixture converts one stream at a time through a reader that records its largest read (at most 1 MiB); each .pcm is removed only after its parts and the interim manifest exist; sample bytes are unchanged, and each new part decodes through le_backing_decode_file to the .pcm's samples; with injected free space below the largest stream the bundle is untouched and the failure is reported. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test)
 - A fake engine reporting reserve_reached, slow_storage, disk_full or isPerfArmed false emits held(reason) and leaves no guard held; saveHeld finalizes under a transfer lease; discardHeld removes the bundle after the .discarding rename; a crash between the two is finished at the next start. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test)
 - An unfinalized Internal bundle at start is reported by unfinishedTakes and not moved; a recovered/ bundle older than 30 days is not deleted. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test)
 - Performance repository coverage floor (99%) holds. | verify: (cd packages/performance_repository && /Users/Tomas/development/flutter/bin/flutter test --coverage)
@@ -1549,7 +1558,7 @@ Parts 1, 5 and 11 are built or can start at once. The capture chain is 1 →
 2 → {3, 4} → 8 → 9 → {10, 12, 13}. The publication chain is 1 → 6 (#1196) →
 7 → 14 → {15, 16, 19}. Library Part 7 takes D3's contract (listing,
 `dawPackageFiles` as ordered parts, audition from part 1 through
-`wav_codec`'s bounded reader, multi-part export) and adds the Delete action
+`le_backing_decode_file`, multi-part export) and adds the Delete action
 for recordings (owner decision, review M9) whichever lands first; Part 8
 adjusts `listCaptures` if Library Part 7 is already in. Part 18 waits for
 #1206 (review L1: that issue settles session-owned assignments for its own
@@ -1638,7 +1647,8 @@ above:
   removable target; the live sidecar lives in the Internal mirror (D1,
   Part 2, Part 4's hardware criterion).
 - **M7** (Library contract and three WAV readers): D3 records the Library
-  changes; `wav_codec` is the one Dart reader.
+  changes. Superseded by the cross-plan decision: `le_backing_decode_file`
+  is the one decoder, `wav_codec` the writer and header model.
 - **M8** (backing rows owned by neither plan): Parts 14 and 15 build them
   after #1200's Part 5.
 - **M9** (no way to free space): the Library's Delete for recordings (Library
