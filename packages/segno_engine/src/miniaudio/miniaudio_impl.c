@@ -5,9 +5,9 @@
  */
 #define MINIAUDIO_IMPLEMENTATION
 
-/* We only need PCM capture/playback; disable decoders/encoders/resources we do
- * not use to keep the binary small and the build fast. */
-#define MA_NO_DECODING
+/* PCM capture/playback plus the built-in WAV, FLAC and MP3 decoders, which
+ * the backing player reads its files with (#1200, le_backing_decode_file).
+ * Encoders, generators and the resource manager stay compiled out. */
 #define MA_NO_ENCODING
 #define MA_NO_GENERATION
 #define MA_NO_RESOURCE_MANAGER

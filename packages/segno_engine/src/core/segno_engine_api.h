@@ -56,6 +56,9 @@ typedef enum le_result {
                               * exist (#1198) */
   LE_ERR_TRUNCATED = -19,    /* the file exists but is shorter than the range
                               * it must hold (#1198) */
+
+  /* -10 and -11 belong to pitch/time (#1179). */
+  LE_ERR_TOO_LONG = -12, /* a backing file over LE_BACKING_MAX_SECONDS (#1200) */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -2333,6 +2336,24 @@ LE_EXPORT int32_t le_backing_buffer_rate(const le_backing_buffer* buffer);
  * whole buffer into [out]; returns the count written, or LE_ERR_INVALID. */
 LE_EXPORT int32_t le_backing_buffer_peaks(const le_backing_buffer* buffer,
                                           float* out, int32_t buckets);
+/* The longest backing file accepted, in seconds of source audio. */
+#define LE_BACKING_MAX_SECONDS 900
+
+/* Decodes the audio file at [path] (WAV: 8/16/24/32-bit PCM and 32/64-bit
+ * float; FLAC; MP3) into a new stereo buffer at [sample_rate], converting the
+ * rate with the band-limited offline converter (le_resample_offline, after
+ * exact half-band halving for reductions below one half). Mono plays as dual
+ * mono. Any thread but the audio thread; no engine handle. Writes the file's
+ * own rate and channel count to [source_rate] / [source_channels] when they
+ * are not NULL. LE_ERR_INVALID: NULL or empty path, a missing, unreadable,
+ * unsupported or damaged file, or more than two channels; LE_ERR_TOO_LONG:
+ * over LE_BACKING_MAX_SECONDS (refused before the whole file is read when its
+ * header states the length); LE_ERR_CAPACITY: allocation failure. */
+LE_EXPORT int32_t le_backing_decode_file(const char* path, int32_t sample_rate,
+                                         le_backing_buffer** out,
+                                         int32_t* source_rate,
+                                         int32_t* source_channels);
+
 /* Frees a buffer the caller still owns. NULL is a no-op. */
 LE_EXPORT void le_backing_buffer_free(le_backing_buffer* buffer);
 
