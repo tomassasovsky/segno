@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -30,6 +31,7 @@ void main() {
   tearDown(() => tempDir.deleteSync(recursive: true));
 
   SessionRepository repo() => SessionRepository(
+    guards: GuardRegistry(),
     engine: FakeSessionEngine(),
     clearPollInterval: Duration.zero,
     clearPollAttempts: 4,
@@ -391,6 +393,7 @@ void main() {
     }) async {
       final before = snapshotOf(dir);
       final repository = SessionRepository(
+        guards: GuardRegistry(),
         engine: engine ?? FakeSessionEngine(),
       );
       await expectLater(
@@ -478,6 +481,7 @@ void main() {
       );
 
       await SessionRepository(
+        guards: GuardRegistry(),
         engine: newTake(),
       ).save(dir, settings: const SessionSettings());
 
@@ -486,6 +490,7 @@ void main() {
       expect(manifestOf(dir)['version'], Session.formatVersion);
       // A second save keeps the backup folder as it is.
       await SessionRepository(
+        guards: GuardRegistry(),
         engine: newTake(),
       ).save(dir, settings: const SessionSettings());
       await expectOriginalOpens('$dir/session.v7', 'v7_master_full');
@@ -495,6 +500,7 @@ void main() {
       final dir = copyFixture('v7_master_full');
 
       await SessionRepository(
+        guards: GuardRegistry(),
         engine: newTake(),
       ).save(dir, settings: const SessionSettings());
 
@@ -506,6 +512,7 @@ void main() {
       final dir = copyFixture('v1_loopy_8547affe7');
 
       await SessionRepository(
+        guards: GuardRegistry(),
         engine: newTake(),
       ).save(dir, settings: const SessionSettings());
 
@@ -530,6 +537,7 @@ void main() {
       });
 
       SessionRepository catalog() => SessionRepository(
+        guards: GuardRegistry(),
         engine: FakeSessionEngine(),
         sessionsRoot: () async => root,
       );
@@ -539,6 +547,7 @@ void main() {
         // new save in place and the previous bundle still beside it.
         Directory(bundle).renameSync('$bundle.old');
         await SessionRepository(
+          guards: GuardRegistry(),
           engine: newTake(),
         ).save(bundle, settings: const SessionSettings());
 
@@ -559,6 +568,7 @@ void main() {
         addTearDown(() => SessionRepository.debugOnKeepOriginal = null);
 
         await SessionRepository(
+          guards: GuardRegistry(),
           engine: newTake(),
         ).save(bundle, settings: const SessionSettings());
         expect(Directory('$bundle.old/session.v7').existsSync(), isTrue);
@@ -583,6 +593,7 @@ void main() {
 
       await expectLater(
         SessionRepository(
+          guards: GuardRegistry(),
           engine: newTake(),
         ).save(dir, settings: const SessionSettings()),
         throwsA(isA<FileSystemException>()),

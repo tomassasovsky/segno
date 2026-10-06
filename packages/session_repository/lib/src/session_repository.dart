@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/src/models/session.dart';
 import 'package:session_repository/src/models/session_preview.dart';
@@ -297,11 +298,13 @@ class SessionRepository {
   /// these.
   SessionRepository({
     required AudioEngine engine,
+    required GuardRegistry guards,
     Future<String> Function()? sessionsRoot,
     DateTime Function() now = DateTime.now,
     Duration clearPollInterval = const Duration(milliseconds: 8),
     int clearPollAttempts = 64,
   }) : _engine = engine,
+       _guards = guards,
        _sessionsRoot = sessionsRoot,
        _now = now,
        _clearPollInterval = clearPollInterval,
@@ -312,6 +315,15 @@ class SessionRepository {
   final DateTime Function() _now;
   final Duration _clearPollInterval;
   final int _clearPollAttempts;
+
+  /// The app's one guard table (accepted behaviour 6.12). A save holds a
+  /// `sessionWrite` guard on its bundle while it writes, so a second write
+  /// of the same bundle and a shutdown are refused at their commits, and the
+  /// save itself is refused once a shutdown has begun.
+  final GuardRegistry _guards;
+
+  /// What a refusal names a session write by.
+  static const String writePurpose = 'saving a session';
 
   /// The mixdown filename within a session bundle.
   static const String mixdownName = 'mixdown.wav';
@@ -1008,6 +1020,35 @@ class SessionRepository {
       throw StateError('session changed before save capture');
     }
     final captured = _capture(savedSettings);
+    // The commit: the guard is taken where the bundle starts to change, and
+    // a refusal leaves it untouched.
+    final guard = _guards.enter(
+      GuardKind.sessionWrite,
+      GuardScope.internal(item: directory),
+      purpose: writePurpose,
+    );
+    try {
+      return await _saveCaptured(
+        directory,
+        captured,
+        chains,
+        savedSettings,
+        pedalBindings,
+        name,
+      );
+    } finally {
+      guard.release();
+    }
+  }
+
+  Future<Session> _saveCaptured(
+    String directory,
+    _Capture captured,
+    SessionChains chains,
+    SessionSettings savedSettings,
+    String pedalBindings,
+    String? name,
+  ) async {
     final target = Directory(directory);
     // A save over an existing bundle never edits it in place: it writes a
     // whole new bundle beside it and swaps the two, so a failure (a full

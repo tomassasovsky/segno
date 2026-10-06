@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -116,11 +117,13 @@ void main() {
     ).thenAnswer((_) async {});
     exportsDirectory = '.';
     performance = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: engine,
       exportsRoot: () async => exportsDirectory,
     );
     addTearDown(performance.dispose);
     runtime = AppRuntime(
+      guards: GuardRegistry(),
       repository: repository,
       settings: settings,
       mix: testMixSettings(repository, settings: settings),
