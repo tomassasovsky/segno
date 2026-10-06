@@ -37,6 +37,7 @@ enum {
   LE_SYNTH_VOICE_HELD = 1,
   LE_SYNTH_VOICE_RELEASED = 2,
   LE_SYNTH_VOICE_FADING = 3,
+  LE_SYNTH_VOICE_SUSTAINED = 4, /* released, held on by sustain */
 };
 
 enum {
@@ -157,8 +158,13 @@ static void voice_ctrl(const le_synth* s, le_synth_voice* v, int start) {
                   (float)LE_SYNTH_CTRL_FRAMES / sr;
   if (v->lfo_phase >= 1.0f) v->lfo_phase -= 1.0f;
 
+  const le_synth_instrument* in = &s->inst[v->inst];
   if (!v->drum) {
-    const float cents = lfo * role(prm, fam, R_VIBRATO, 0.0f) * 0.35f;
+    /* bend: two semitones; modulation: 45 cents of LFO vibrato on top of the
+     * family's own (instrument-runtime.js update()) */
+    const float cents = in->bend * 200.0f +
+                        lfo * (in->mod * 45.0f +
+                               role(prm, fam, R_VIBRATO, 0.0f) * 0.35f);
     const float pm = exp2f(cents / 1200.0f);
     const float character = role(prm, fam, R_CHARACTER, 35.0f) / 100.0f;
     v->gain[0] = 0.62f;
@@ -192,8 +198,8 @@ static void voice_ctrl(const le_synth* s, le_synth_voice* v, int start) {
   v->a2 = g * v->a1;
   v->a3 = g * v->a2;
 
-  const float target =
-      1.0f + lfo * role(prm, fam, R_TREMOLO, 0.0f) / 100.0f * 0.25f;
+  const float target = 1.0f + in->pressure * 0.25f +
+                       lfo * role(prm, fam, R_TREMOLO, 0.0f) / 100.0f * 0.25f;
   if (start) {
     v->amp = target;
     v->amp_step = 0.0f;
@@ -275,7 +281,15 @@ static float fade_step(const le_synth* s) {
 }
 
 static int sounding(const le_synth_voice* v) {
-  return v->state == LE_SYNTH_VOICE_HELD || v->state == LE_SYNTH_VOICE_RELEASED;
+  return v->state == LE_SYNTH_VOICE_HELD ||
+         v->state == LE_SYNTH_VOICE_RELEASED ||
+         v->state == LE_SYNTH_VOICE_SUSTAINED;
+}
+
+/* The released class for stealing: released or held on only by sustain. */
+static int released_class(const le_synth_voice* v) {
+  return v->state == LE_SYNTH_VOICE_RELEASED ||
+         v->state == LE_SYNTH_VOICE_SUSTAINED;
 }
 
 /* Fades main voice `v` out where it is (Cut, patch change, voice limit). */
@@ -315,14 +329,17 @@ static le_synth_voice* oldest(le_synth* s, int32_t state, int32_t inst) {
   le_synth_voice* best = NULL;
   for (int32_t i = 0; i < s->voice_count; ++i) {
     le_synth_voice* v = &s->voices[i];
-    if (v->state != state || (inst >= 0 && v->inst != inst)) continue;
+    const int match = state == LE_SYNTH_VOICE_RELEASED ? released_class(v)
+                                                        : v->state == state;
+    if (!match || (inst >= 0 && v->inst != inst)) continue;
     if (best == NULL || v->serial < best->serial) best = v;
   }
   return best;
 }
 
-/* The stealing order: the oldest released voice of `inst`, then of any
- * instrument, then the oldest held voice of `inst`, then of any. */
+/* The stealing order: the oldest released (or sustained) voice of `inst`,
+ * then of any instrument, then the oldest held voice of `inst`, then of
+ * any. */
 static le_synth_voice* victim(le_synth* s, int32_t inst) {
   le_synth_voice* v = oldest(s, LE_SYNTH_VOICE_RELEASED, inst);
   if (v == NULL) v = oldest(s, LE_SYNTH_VOICE_RELEASED, -1);
@@ -411,6 +428,9 @@ int32_t le_synth_set_instrument(le_synth* s, int32_t inst, int32_t patch) {
       le_synth_voice* v = &s->voices[i];
       if (sounding(v) && v->inst == inst) fade_in_place(s, v);
     }
+    /* a new sound starts with no sustain and neutral expression */
+    s->inst[inst].sustain_n = 0;
+    s->inst[inst].bend = s->inst[inst].mod = s->inst[inst].pressure = 0.0f;
   }
   s->inst[inst].patch = patch;
   for (int32_t i = 0; i < LE_SYNTH_FAMILY_PARAMS; ++i) {
@@ -430,8 +450,21 @@ int32_t le_synth_set_param(le_synth* s, int32_t inst, int32_t index, float v) {
   return 0;
 }
 
+static int32_t note_on(le_synth* s, int32_t inst, uint32_t origin,
+                       int32_t note, int32_t velocity, int restrike);
+
 int32_t le_synth_note_on(le_synth* s, int32_t inst, uint32_t origin,
                          int32_t note, int32_t velocity) {
+  return note_on(s, inst, origin, note, velocity, 1);
+}
+
+int32_t le_synth_note_on_chord(le_synth* s, int32_t inst, uint32_t origin,
+                               int32_t note, int32_t velocity) {
+  return note_on(s, inst, origin, note, velocity, 0);
+}
+
+static int32_t note_on(le_synth* s, int32_t inst, uint32_t origin,
+                       int32_t note, int32_t velocity, int restrike) {
   if (s == NULL || inst < 0 || inst >= LE_SYNTH_MAX_INSTRUMENTS || note < 0 ||
       note > 127 || velocity < 1 || velocity > 127) {
     return -1;
@@ -442,8 +475,9 @@ int32_t le_synth_note_on(le_synth* s, int32_t inst, uint32_t origin,
   const int32_t drum = p->family == LE_SYNTH_DRUMS ? drum_kind(note) : 0;
   if (p->family == LE_SYNTH_DRUMS && drum == 0) return -1;
 
-  /* A repeated strike from the same origin replaces its held voice. */
-  for (int32_t i = 0; i < s->voice_count; ++i) {
+  /* A repeated strike from the same origin replaces its held voice (a
+   * sustained one rings on: repeated strikes under sustain stay distinct). */
+  for (int32_t i = 0; restrike && i < s->voice_count; ++i) {
     le_synth_voice* v = &s->voices[i];
     if (v->state == LE_SYNTH_VOICE_HELD && v->inst == inst &&
         v->origin == origin) {
@@ -534,36 +568,136 @@ int32_t le_synth_note_on(le_synth* s, int32_t inst, uint32_t origin,
   return 0;
 }
 
+/* Starts the release of held or sustained voice `v`. A drum hit rings to
+ * its end whatever the pad does, but leaves the held set, so a released
+ * pad's next strike overlaps it (instrument-runtime.js:200-207). */
+static void start_release(le_synth* s, le_synth_voice* v) {
+  if (v->drum) {
+    v->state = LE_SYNTH_VOICE_RELEASED;
+    return;
+  }
+  const le_synth_patch* p = le_synth_patch_at(v->patch);
+  const float* prm = s->inst[v->inst].params;
+  const float release = seconds_of(role(
+      prm, p->family, R_RELEASE, role(prm, p->family, R_DECAY, 35.0f)));
+  if (v->env <= 0.0f) {
+    v->state = LE_SYNTH_VOICE_FREE;
+    return;
+  }
+  /* Toward -floor with tau = release / 5: zero exactly at the release time
+   * (floor / (env + floor) = e^-5). */
+  const float tau = release / 5.0f;
+  v->rel_k = expf(-1.0f / (tau * (float)s->sample_rate));
+  v->rel_floor = v->env * 0.006783654f; /* e^-5 / (1 - e^-5) */
+  v->stage = STAGE_RELEASE;
+  v->state = LE_SYNTH_VOICE_RELEASED;
+}
+
+/* Releases the sustained voices of `inst` once nothing sustains it. */
+static void release_sustained(le_synth* s, int32_t inst) {
+  if (s->inst[inst].sustain_n > 0) return;
+  for (int32_t i = 0; i < s->voice_count; ++i) {
+    le_synth_voice* v = &s->voices[i];
+    if (v->state == LE_SYNTH_VOICE_SUSTAINED && v->inst == inst) {
+      start_release(s, v);
+    }
+  }
+}
+
 void le_synth_note_off(le_synth* s, uint32_t origin) {
   if (s == NULL) return;
   for (int32_t i = 0; i < s->voice_count; ++i) {
     le_synth_voice* v = &s->voices[i];
     if (v->state != LE_SYNTH_VOICE_HELD || v->origin != origin) continue;
-    if (v->drum) {
-      /* A drum hit rings to its end whatever the pad does, but a released
-       * pad's next strike must not choke it: like the reference (which drops
-       * a released hit from its token map, instrument-runtime.js:200-207),
-       * the hit leaves the held set so the repeated-strike rule no longer
-       * finds it. Its envelope is untouched. */
-      v->state = LE_SYNTH_VOICE_RELEASED;
-      continue;
+    if (!v->drum && s->inst[v->inst].sustain_n > 0) {
+      v->state = LE_SYNTH_VOICE_SUSTAINED; /* rings on, envelope unchanged */
+    } else {
+      start_release(s, v);
     }
-    const le_synth_patch* p = le_synth_patch_at(v->patch);
-    const float* prm = s->inst[v->inst].params;
-    const float release = seconds_of(role(
-        prm, p->family, R_RELEASE, role(prm, p->family, R_DECAY, 35.0f)));
-    if (v->env <= 0.0f) {
-      v->state = LE_SYNTH_VOICE_FREE;
-      continue;
-    }
-    /* Toward -floor with tau = release / 5: zero exactly at the release time
-     * (floor / (env + floor) = e^-5). */
-    const float tau = release / 5.0f;
-    v->rel_k = expf(-1.0f / (tau * (float)s->sample_rate));
-    v->rel_floor = v->env * 0.006783654f; /* e^-5 / (1 - e^-5) */
-    v->stage = STAGE_RELEASE;
-    v->state = LE_SYNTH_VOICE_RELEASED;
   }
+}
+
+static int sustain_index(const le_synth_instrument* in, uint32_t origin) {
+  for (int32_t i = 0; i < in->sustain_n; ++i) {
+    if (in->sustain[i] == origin) return i;
+  }
+  return -1;
+}
+
+static void sustain_remove(le_synth* s, int32_t inst, uint32_t origin) {
+  le_synth_instrument* in = &s->inst[inst];
+  const int i = sustain_index(in, origin);
+  if (i < 0) return;
+  in->sustain[i] = in->sustain[--in->sustain_n];
+  release_sustained(s, inst);
+}
+
+int32_t le_synth_sustain(le_synth* s, int32_t inst, uint32_t origin, int on) {
+  if (s == NULL || inst < 0 || inst >= LE_SYNTH_MAX_INSTRUMENTS) return -1;
+  le_synth_instrument* in = &s->inst[inst];
+  const le_synth_patch* p = le_synth_patch_at(in->patch);
+  if (p == NULL || p->family == LE_SYNTH_DRUMS) return 0; /* drums ignore it */
+  if (!on) {
+    sustain_remove(s, inst, origin);
+    return 0;
+  }
+  if (sustain_index(in, origin) >= 0) return 0;
+  if (in->sustain_n >= LE_SYNTH_SUSTAIN_MAX) {
+    s->sustain_refused++;
+    return -1;
+  }
+  in->sustain[in->sustain_n++] = origin;
+  return 0;
+}
+
+void le_synth_sustain_off(le_synth* s, uint32_t origin) {
+  if (s == NULL) return;
+  for (int32_t k = 0; k < LE_SYNTH_MAX_INSTRUMENTS; ++k) sustain_remove(s, k, origin);
+}
+
+void le_synth_expression(le_synth* s, int32_t inst, int32_t kind, float value) {
+  if (s == NULL || inst < 0 || inst >= LE_SYNTH_MAX_INSTRUMENTS || value != value) {
+    return;
+  }
+  le_synth_instrument* in = &s->inst[inst];
+  const float lo = kind == LE_SYNTH_BEND ? -1.0f : 0.0f;
+  if (value < lo) value = lo;
+  if (value > 1.0f) value = 1.0f;
+  if (kind == LE_SYNTH_BEND) in->bend = value;
+  else if (kind == LE_SYNTH_MOD) in->mod = value;
+  else if (kind == LE_SYNTH_PRESSURE) in->pressure = value;
+}
+
+void le_synth_release_matching(le_synth* s, uint32_t mask, uint32_t value) {
+  if (s == NULL) return;
+  for (int32_t k = 0; k < LE_SYNTH_MAX_INSTRUMENTS; ++k) {
+    le_synth_instrument* in = &s->inst[k];
+    for (int32_t i = in->sustain_n - 1; i >= 0; --i) {
+      if ((in->sustain[i] & mask) == value) in->sustain[i] = in->sustain[--in->sustain_n];
+    }
+  }
+  for (int32_t i = 0; i < s->voice_count; ++i) {
+    le_synth_voice* v = &s->voices[i];
+    const int held_on = !v->drum && s->inst[v->inst].sustain_n > 0;
+    if (v->state == LE_SYNTH_VOICE_HELD && (v->origin & mask) == value) {
+      /* its key is let go: sustain still holds it, as for a Note Off */
+      if (held_on) {
+        v->state = LE_SYNTH_VOICE_SUSTAINED;
+      } else {
+        start_release(s, v);
+      }
+    } else if (v->state == LE_SYNTH_VOICE_SUSTAINED && !held_on) {
+      start_release(s, v); /* the matching sustain was all that held it */
+    }
+  }
+}
+
+int32_t le_synth_held(const le_synth* s, uint32_t origin) {
+  if (s == NULL) return 0;
+  for (int32_t i = 0; i < s->voice_count; ++i) {
+    if (s->voices[i].state == LE_SYNTH_VOICE_HELD && s->voices[i].origin == origin) return 1;
+  }
+  return 0;
 }
 
 void le_synth_cut(le_synth* s, int32_t inst) {
@@ -571,6 +705,12 @@ void le_synth_cut(le_synth* s, int32_t inst) {
   for (int32_t i = 0; i < s->voice_count; ++i) {
     le_synth_voice* v = &s->voices[i];
     if (sounding(v) && (inst < 0 || v->inst == inst)) fade_in_place(s, v);
+  }
+  /* Cut all sound also lets go of every sustain and expression */
+  for (int32_t k = 0; k < LE_SYNTH_MAX_INSTRUMENTS; ++k) {
+    if (inst >= 0 && k != inst) continue;
+    s->inst[k].sustain_n = 0;
+    s->inst[k].bend = s->inst[k].mod = s->inst[k].pressure = 0.0f;
   }
 }
 
@@ -594,8 +734,7 @@ void le_synth_render(le_synth* s, float* const* bus, int32_t n_bus,
     if (s->ctrl_left <= 0) {
       for (int32_t i = 0; i < s->voice_count; ++i) {
         le_synth_voice* v = &s->voices[i];
-        if (v->state == LE_SYNTH_VOICE_HELD ||
-            v->state == LE_SYNTH_VOICE_RELEASED) {
+        if (sounding(v)) {
           voice_ctrl(s, v, 0);
         }
       }

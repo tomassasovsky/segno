@@ -1640,6 +1640,24 @@ struct le_engine {
   _Atomic uint32_t a_synth_epoch;
   _Atomic uint32_t a_inst_events_refused;
   _Atomic uint32_t a_inst_fallback_blocks;
+  _Atomic uint32_t a_inst_sustain_refused;
+  /* MIDI routes (#1197 Part 2c): two tables, the control thread writes the
+   * one the callback is not using and flips `a_inst_routes_live`; the
+   * callback acknowledges in `a_inst_routes_seen` at block start. */
+  le_inst_routes inst_routes[2];
+  /* Per table, which channels any remap covers for each port, kind (note,
+   * CC) and number (bit c: MIDI channel c + 1). Built with its table on the
+   * control thread, so a message no remap can match skips the remap scan of
+   * every instrument. */
+  uint16_t inst_remap_index[2][LE_MAX_MIDI_PORTS][2][128];
+  _Atomic int32_t a_inst_routes_live;
+  _Atomic int32_t a_inst_routes_seen;
+  /* audio thread: this block's table and remap index, and the port that
+   * last set each instrument's bend, modulation and pressure (-1: none), so
+   * a port that goes away resets only its own */
+  const le_inst_routes* inst_routes_active;
+  const uint16_t (*inst_remap_active)[2][128];
+  int8_t inst_expr_port[LE_MAX_INSTRUMENTS][3];
 
   /* ---- Input clip ("HOT") detector (input clip, S2) ---- *
    * Always on, no params, RAW path (see the LE_CLIP_* doc in

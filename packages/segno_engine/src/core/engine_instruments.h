@@ -37,6 +37,20 @@ void le_instruments_apply_command(le_engine* e, const le_command* cmd);
  * every instrument into its bus. */
 void le_instruments_block(le_engine* e, uint32_t frames);
 
+/* ---- MIDI routing (Part 2c), called from le_midi_ports_drain ----
+ * begin: once per block, before any port; switches in a published route
+ * table and acknowledges it. event: one current event (the drain's EVENT
+ * dispatch). gone: the drain's GAP, LOST and REBOUND dispatches, in stream
+ * order: lets go of the port's held notes, removes its sustain contributors
+ * and resets the expression it set. */
+void le_instruments_midi_begin(le_engine* e);
+void le_instruments_midi_event(le_engine* e, int32_t port,
+                               const le_midi_port_event* ev);
+void le_instruments_midi_gone(le_engine* e, int32_t port);
+
+/* Control-thread origins carry this bit, MIDI origins never do. */
+#define LE_INST_CONTROL_ORIGIN 0x80000000u
+
 /* Audio thread: Cut all sound fades every instrument voice out. */
 void le_instruments_cut(le_engine* e);
 

@@ -1401,6 +1401,9 @@ typedef struct le_snapshot {
   uint32_t synth_epoch;
   uint32_t instrument_events_refused;
   uint32_t instrument_fallback_blocks;
+  /* sustain contributors refused because an instrument already had
+   * LE_SYNTH_SUSTAIN_MAX (16) (#1197 Part 2c) */
+  uint32_t instrument_sustain_refused;
   /* ---- native MIDI input (#1228 Part 1; trailing). Totals across all
    * LE_MAX_MIDI_PORTS ports since the engine was created: events delivered
    * from the current binding, events dropped as stale (pushed by a binding
@@ -3593,6 +3596,75 @@ LE_EXPORT int32_t le_engine_instrument_note_on(le_engine* engine, int32_t slot,
  * full: the caller must retry, never drop it) or LE_ERR_NOT_RUNNING. */
 LE_EXPORT int32_t le_engine_instrument_note_off(le_engine* engine,
                                                 uint32_t origin);
+
+/* Adds (`on` 1) or removes (0) sustain contributor `origin` on `slot`: a
+ * pedal or external switch holding sustain. Released notes ring until every
+ * contributor, these and each port's CC64, lets go. Adding rides the note-on
+ * ring (LE_ERR_CAPACITY like a note-on), removing rides the release lane
+ * (LE_ERR_CAPACITY only when it is full: retry, never drop). Returns LE_OK,
+ * LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (adding on an empty slot) or
+ * LE_ERR_NOT_RUNNING. Control-thread origins share a space of their own:
+ * they never collide with a MIDI port's notes. */
+LE_EXPORT int32_t le_engine_instrument_sustain(le_engine* engine, int32_t slot,
+                                               uint32_t origin, int32_t on);
+
+/* ---- Instrument MIDI routes (#1197 Part 2c) ---------------------------------
+ * Which MIDI each instrument plays, from the ports of the shared input sink
+ * (le_engine_attach_midi_input). Routing runs on the audio thread, in the
+ * sink's drain: a Note Off (or Note On at velocity 0) releases every voice
+ * that note started, on every instrument, before any table is read, so
+ * editing a route never strands a held note; CC64 below 64 likewise removes
+ * that port and channel's sustain everywhere. Otherwise each message goes to
+ * every instrument it matches (layers), and channels and ranges make splits:
+ *   - a remap matching the message's port, channel (0: any) and kind/number
+ *     plays its notes (a chord with one identity) instead of the ordinary
+ *     handling of that message on that instrument (so a remapped CC64 does
+ *     not also sustain);
+ *   - otherwise, with MIDI enabled and the port and channel matching: Note
+ *     On within [low, high] plays the incoming note and velocity; CC64 >= 64
+ *     sustains; CC1 sets modulation; pitch bend (two semitones) and channel
+ *     pressure set expression.
+ * A port whose capture is detached, replaced, lost or overran its ring
+ * releases every voice it started, after the events queued before the loss
+ * have been played; nothing from an old binding replays. */
+
+#define LE_INST_MAX_REMAPS 32
+#define LE_INST_REMAP_NOTES 8
+#define LE_INST_REMAP_NOTE 0
+#define LE_INST_REMAP_CC 1
+
+typedef struct le_inst_remap {
+  int32_t port;    /* 0..LE_MAX_MIDI_PORTS-1 */
+  int32_t channel; /* 0: any, 1..16 */
+  int32_t kind;    /* LE_INST_REMAP_NOTE or LE_INST_REMAP_CC */
+  int32_t number;  /* the note or controller, 0..127 */
+  int32_t count;   /* notes to play, 1..LE_INST_REMAP_NOTES */
+  int32_t notes[LE_INST_REMAP_NOTES];
+} le_inst_remap;
+
+typedef struct le_inst_route {
+  int32_t midi_enabled; /* 0/1: ordinary notes and controllers */
+  int32_t port;         /* 0..LE_MAX_MIDI_PORTS-1 */
+  int32_t channel;      /* 0: any, 1..16 */
+  int32_t low, high;    /* note range, 0 <= low <= high <= 127 */
+  int32_t remap_count;  /* 0..LE_INST_MAX_REMAPS; remaps, like ordinary
+                         * notes, need midi_enabled */
+  le_inst_remap remaps[LE_INST_MAX_REMAPS];
+} le_inst_route;
+
+typedef struct le_inst_routes {
+  le_inst_route inst[LE_MAX_INSTRUMENTS];
+} le_inst_routes;
+
+/* Publishes a complete routing table (copied; the caller keeps its own).
+ * While the audio callback runs, a table is switched in at the next block
+ * and acknowledged there; a second publish before that acknowledgement
+ * returns LE_ERR_NOT_READY (retry on the next snapshot, latest wins). While
+ * the engine is stopped the table switches at once. Returns LE_OK,
+ * LE_ERR_INVALID (a field out of range), LE_ERR_NOT_READY or
+ * LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_set_instrument_routes(le_engine* engine,
+                                                  const le_inst_routes* routes);
 
 /* ---- Instrument synthesis catalogue (#1197) ------------------------------ *
  *

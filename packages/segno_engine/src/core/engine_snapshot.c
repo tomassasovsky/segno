@@ -370,6 +370,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
       atomic_load_explicit(&engine->a_inst_events_refused, memory_order_relaxed);
   out->instrument_fallback_blocks =
       atomic_load_explicit(&engine->a_inst_fallback_blocks, memory_order_relaxed);
+  out->instrument_sustain_refused =
+      atomic_load_explicit(&engine->a_inst_sustain_refused, memory_order_relaxed);
   out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
   out->device_present =
       atomic_load_explicit(&engine->a_device_present, memory_order_acquire);
