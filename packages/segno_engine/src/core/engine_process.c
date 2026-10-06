@@ -2808,17 +2808,37 @@ static void le_head_set_rate(le_engine* e, le_track* t, double rate,
   /* An integral rate lands on a whole sample (H1): Normal after 1/2x on an
    * odd song frame would otherwise keep a half-sample origin for good, every
    * read a two-tap average and the print never re-engaging. The old head
-   * keeps reading `cur`; the window absorbs the half sample. */
-  const double at =
-      rate == (double)(int64_t)rate && len > 0
-          ? le_head_wrap((double)(int64_t)(cur + 0.5), len)
-          : cur;
+   * keeps reading `cur`; the window absorbs the half sample. Inside a
+   * window still mixing (L-D1) the new head continues from `cur` exactly,
+   * so the carried blend stays continuous, and lands on the whole sample
+   * once that window ends, through a window of its own (le_head_land). */
+  const int integral = rate == (double)(int64_t)rate && len > 0;
+  const int carried = t->turn_left > 0;
+  t->land_whole = integral && carried;
+  const double at = integral && !carried
+                        ? le_head_wrap((double)(int64_t)(cur + 0.5), len)
+                        : cur;
   const int32_t turn = le_turn_begin(e, t, len);
   t->head.rate = rate;
   t->head.origin = le_head_origin(&t->head, at, pos, len);
   le_track_disengage_prints(t);
   store_i32(&t->a_head_rate_milli, (int32_t)(rate * 1000.0));
   le_speed_log(e, t, frame, at, turn);
+}
+
+/* The deferred whole-sample landing (L-D1): a track whose integral-rate
+ * step landed inside a window lands once that window has ended, at the top
+ * of a block, through le_head_set_rate's own equal-gain window. */
+static void le_head_land(le_engine* e, uint64_t frame) {
+  for (int c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    if (!t->land_whole || t->turn_left > 0) continue;
+    t->land_whole = 0;
+    if (t->head.rate == (double)(int64_t)t->head.rate &&
+        t->head.origin != (double)(int64_t)t->head.origin) {
+      le_head_set_rate(e, t, t->head.rate, frame);
+    }
+  }
 }
 
 static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
@@ -3431,7 +3451,11 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
        * A request equal to the factor in force is receipt-only (E6): no
        * re-origin, no turn window, no fact, nothing in the mix changes. */
       const int32_t numer = cmd->speed.numer, denom = cmd->speed.denom;
-      const int accepted = le_speed_change_safe(e);
+      int material = 0;
+      for (int c = 0; c < e->track_count; ++c) {
+        if (load_i32(&e->tracks[c].a_state) != LE_TRACK_EMPTY) material = 1;
+      }
+      const int accepted = material && le_speed_change_safe(e);
       if (accepted && (numer != e->speed_numer || denom != e->speed_denom)) {
         e->speed_numer = numer;
         e->speed_denom = denom;
@@ -3442,7 +3466,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         store_i32(&e->a_speed_denom, denom);
       }
       atomic_store_explicit(&e->receipts[cmd->speed.slot].result,
-                             accepted ? LE_OK : LE_ERR_NOT_READY,
+                             accepted ? LE_OK
+                                      : material ? LE_ERR_NOT_READY
+                                                 : LE_ERR_INVALID,
                              memory_order_relaxed);
       /* Release after the factor: control's le_effective_speed_one reads
        * the count first (acquire) and then trusts the published factor. */
@@ -6526,6 +6552,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     apply_command(e, &cmd, perf_frame_base);
     e->commands_applied++; /* rejected and no-op commands settle too */
   }
+  le_head_land(e, perf_frame_base);
 
   /* Close the count-in cancel-race grace window (code-review fix) right
    * after this block's command drain: it is open for exactly one block's

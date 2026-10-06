@@ -1204,6 +1204,26 @@ song clock's advance.
 25. Wherever the log's anchor is integral (322/323 phases) and the head reads
     off whole samples, a 327 with the exact index follows at the same frame
     (review M1, completing E3 for material that returns after a reset).
+26. An empty loop has no speed on the way up either (Part 2a delta review,
+    M-D1): with no track holding material, `le_engine_set_speed` refuses
+    every factor with `LE_ERR_INVALID` (and the receipt says the same when
+    the rig empties before the request lands), as Reverse and Transpose
+    refuse an empty track. The pen's "04 / Speed / Empty loop" (YMPRG) draws
+    the five factor pedals dimmed beside "No recorded audio", with only
+    Record / Play, Stop and Exit lit, so the face shows them unavailable
+    and the refusal matches it. The other reading (accept a factor on an
+    empty rig and drop it at the first capture) would change a setting the
+    player chose without asking (rule 3).
+27. An integral-rate step inside a window still mixing (Part 2a delta, L-D1)
+    continues from the exact index, so the carried blend is continuous, and
+    lands on the whole sample when that window ends, at the top of the next
+    block, through a window of its own with its own 327; decision 23's
+    landing therefore applies after the carry instead of at the change. The
+    bench judges the 8 x 8 rows at every factor too (L-D2), and prints an
+    8 x 8 row with a Pre chain on every lane at 8x (no print engages off 1x,
+    so every chain runs live); that row is judged on the Pi only (p99 at
+    most 50 % of the period), because the arm64 proxy's runner is not the
+    appliance's CPU.
 14. `presetCheaper` with the 8 kHz tonality limit is the starting recipe; the
     listening check on the appliance may swap either without an API change.
 
