@@ -50,6 +50,18 @@ void main() {
     await tester.pumpApp(pedal(pending: false));
     expect(find.byKey(barKey), findsOneWidget);
     expect(tester.getSize(find.byKey(barKey)), const Size(156, 3));
+    // The pen's blue-grey track under a pale-blue fill (`IBL3g`).
+    final boxes = tester.widgetList<ColoredBox>(
+      find.descendant(
+        of: find.byKey(barKey),
+        matching: find.byType(ColoredBox),
+      ),
+    );
+    expect(boxes.map((box) => box.color), [
+      SurfaceTheme.dark.holdTrack,
+      SurfaceTheme.dark.holdProgress,
+    ]);
+    expect(SurfaceTheme.dark.holdTrack, const Color(0xFF303B4B));
     expect(barOpacity(tester), 0);
     expect(hintColor(tester), SurfaceTheme.dark.textSecondary);
   });

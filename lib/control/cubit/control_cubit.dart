@@ -2781,11 +2781,33 @@ class ControlCubit extends Cubit<ControlState> {
       onTap: onTap,
       onSettled: cue == null ? null : () => _setHoldPending(cue, false),
     );
-    if (cue != null && !armed && gesture._active) _setHoldPending(cue, true);
+    if (cue != null &&
+        !armed &&
+        gesture._active &&
+        _cueModes.contains(state.mode)) {
+      _setHoldPending(cue, true);
+    }
   }
 
-  /// Publishes whether [button]'s hold is pending. Silent once the cubit is
-  /// closing: teardown cancels every gesture.
+  /// The modes whose surfaces draw pedals, and so the Pending Hold cue. Tracks
+  /// and Mute draw none (owner decision O1), so a hold armed there publishes
+  /// nothing: each stomp would otherwise rebuild the Tracks screen for a cue
+  /// it never shows.
+  static const Set<InteractionMode> _cueModes = {
+    InteractionMode.mixer,
+    InteractionMode.fade,
+    InteractionMode.reverse,
+    InteractionMode.fx,
+    InteractionMode.custom,
+  };
+
+  /// Publishes whether [button]'s hold is pending. Clearing always runs, so a
+  /// hold armed on a face and settled after the mode changed still leaves the
+  /// set empty.
+  ///
+  /// The closing guard is defence, not a path the cubit takes today: `close`
+  /// retires input first, which settles every gesture while the cubit is
+  /// still open. It keeps a later caller from emitting into a closed cubit.
   void _setHoldPending(PedalButton button, bool pending) {
     if (_closing || isClosed) return;
     final holds = state.pendingHolds;
