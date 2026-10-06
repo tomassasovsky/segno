@@ -95,7 +95,7 @@ typedef enum le_midi_dispatch_kind {
                                  * earlier from this port is over */
 } le_midi_dispatch_kind;
 #include "engine_telemetry.h"  /* le_cb_timing (audio-callback telemetry, #722) */
-#include "engine_direction.h"
+#include "engine_read_head.h"
 #include "engine_fade.h"
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
@@ -440,7 +440,15 @@ typedef struct le_wet_entry {
   uint64_t chain_fp;  /* le_lane_pre_fx_fingerprint at render */
   uint32_t vol_bits;  /* le_lane.a_vol_bits at render (D-VOL: pre-chain) */
   int32_t len;        /* frames; == the lane's a_len at render */
-  float* pcm;         /* interleaved stereo wet, 2*len floats */
+  /* Transpose (#1179 Part 3a): kind 0 is a Pre print (above); kind 1 a
+   * SOURCE render, the lane's dry take pitch-shifted by `semitones` into
+   * out_len MONO frames, pre-chain and pre-volume, so its key fixes
+   * chain_fp and vol_bits at 0 (E8: a volume move or a chain edit never
+   * re-renders it). A print's semitones is 0 and its out_len its len. */
+  int32_t kind;
+  int32_t semitones;
+  int32_t out_len;
+  float* pcm;         /* print: interleaved stereo, 2*len; source: mono, out_len */
   uint64_t last_used; /* control-side LRU stamp (tick counter) */
 } le_wet_entry;
 
@@ -451,12 +459,29 @@ typedef struct le_wet_entry {
  * checks (engine_cache.c). When the key grows a dimension, it grows HERE and
  * every site moves together; a hand-expanded comparison that missed a field
  * would be the stale-audio bug class this key exists to preclude. */
+static inline int le_wet_entry_key_matches_kind(
+    const le_wet_entry* ent, uint32_t audio_rev, uint64_t chain_fp,
+    uint32_t vol_bits, int32_t len, int32_t kind, int32_t semitones,
+    int32_t out_len) {
+  return ent->audio_rev == audio_rev && ent->chain_fp == chain_fp &&
+         ent->vol_bits == vol_bits && ent->len == len && ent->kind == kind &&
+         ent->semitones == semitones && ent->out_len == out_len;
+}
+/* A Pre print's key: kind 0, no shift, its own length. */
 static inline int le_wet_entry_key_matches(const le_wet_entry* ent,
                                            uint32_t audio_rev,
                                            uint64_t chain_fp,
                                            uint32_t vol_bits, int32_t len) {
-  return ent->audio_rev == audio_rev && ent->chain_fp == chain_fp &&
-         ent->vol_bits == vol_bits && ent->len == len;
+  return le_wet_entry_key_matches_kind(ent, audio_rev, chain_fp, vol_bits, len,
+                                       0, 0, len);
+}
+/* A source render's key (kind 1, E8): chain and volume fixed at 0. */
+static inline int le_src_entry_key_matches(const le_wet_entry* ent,
+                                           uint32_t audio_rev, int32_t len,
+                                           int32_t semitones) {
+  /* `audio_rev` is the track's content key here (le_track.a_src_key). */
+  return le_wet_entry_key_matches_kind(ent, audio_rev, 0, 0, len, 1,
+                                       semitones, len);
 }
 
 /* One recordable input lane — the fundamental unit of captured audio.
@@ -471,6 +496,11 @@ static inline int le_wet_entry_key_matches(const le_wet_entry* ent,
  *
  * The effects fields are the per-lane record-route chain: a single
  * non-destructive chain run on playback. The recording stays dry. */
+/* The source renders a lane keeps published at once (Transpose, #1179): the
+ * cache's retained pair, so the callback finds the render for the content a
+ * swap brings back (Undo, Redo, Peel) in the same block (review M1). */
+#define LE_SRC_CANDIDATES 2
+
 typedef struct le_lane {
   _Atomic int32_t a_input_channel; /* hardware input recorded (-1 = none) */
   _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
@@ -577,6 +607,11 @@ typedef struct le_lane {
    * keeps the cross-thread read defined and TSan-clean. */
   le_wet_entry* _Atomic a_wet;
   _Atomic int32_t a_cache_active;
+  /* Transpose's source renders for this lane (kind 1, #1179): the cache's
+   * retained entries, each published the same way as a_wet; the audio
+   * thread selects the one whose key is the track's current content key
+   * (a_src_key), every buffer. */
+  le_wet_entry* _Atomic a_src[LE_SRC_CANDIDATES];
   /* Chain-edit generation: bumped (relaxed fetch_add) by EVERY path that can
    * change this lane's chain fingerprint, so the audio thread's per-buffer
    * cache check can skip the full fingerprint refold while nothing changed
@@ -1130,6 +1165,23 @@ typedef struct le_track {
    * (seqlock shape) and the publish step re-checks it again, so a torn copy
    * can never publish. */
   _Atomic uint32_t a_audio_rev;
+  /* The content key Transpose's source renders key on (#1179 Part 3a review,
+   * M1). It follows a_audio_rev (le_audio_rev_bump stores the new revision)
+   * except at an Undo, Redo or Peel swap, which re-points a_live at a slot
+   * whose PCM has not changed since it last sounded: the swap restores that
+   * slot's own key (a_slot_key), so a render made for it is current again
+   * and Undo is cache-hot. Keys come from the monotonic revision, so a key
+   * names one content: a slot's key is recorded only where its PCM is known
+   * (swapped out of live; a first pass's pre-image at retire) and cleared
+   * whenever the slot is handed out for new PCM (track_select_slot, session
+   * import), so a stale key can never name other audio. */
+  _Atomic uint32_t a_src_key;
+  _Atomic uint32_t a_slot_key[LE_POOL_SLOTS];
+  /* Audio-side: the key of the content a fresh overdub session's first pass
+   * backs up (its pre-pass image), filed on that pass's shadow at retire;
+   * 0 once a later pass of the session runs (its pre-image never sounded
+   * settled, so no render can name it). */
+  uint32_t pass_key;
 
   _Atomic int32_t a_state;
   _Atomic int32_t a_undo_depth; /* published PEELABLE layer count — see
@@ -1290,21 +1342,43 @@ typedef struct le_track {
    * a take finalized or launched mid-lap plays at least one full lap before
    * Once stops it at a lap end. */
   uint64_t sounding_frames;
-  /* Audio-thread playback origin on the shared clock, in full-track frames.
-   * Only a launch after an automatic Once end changes it; ordinary captures
-   * and history recovery retain their established shared phase. */
-  int32_t playback_offset;
-  /* Reverse (#1162). `reversed` is the audio-thread-owned read direction of
-   * the recorded material (0 forward, 1 reversed); playback_offset above is
-   * the read origin in BOTH directions (engine_direction.h), re-origined at a
-   * toggle so the read index is continuous at the turn. Material, not
-   * runtime: it resets with the content (le_transform_reset) and survives a
-   * retained reopen. The turn window mixes the pre-turn head over the first
-   * turn_frames frames (turn_left counts down once per frame per track):
-   * turn_reversed/turn_offset are that old head's direction and origin. */
-  int32_t reversed;
-  int32_t turn_left, turn_frames, turn_reversed, turn_offset;
+  /* The audio-thread read head (engine_read_head.h): direction (Reverse,
+   * #1162), origin in source frames and rate (Speed, #1179). The origin is
+   * parked at 0 for the master path; a launch after an automatic Once end, a
+   * Reverse turn and a rate step re-origin it so the index is continuous.
+   * Direction is material, not runtime: it resets with the content
+   * (le_transform_reset) and survives a retained reopen; the rate follows
+   * the global Speed (e->speed). The turn window mixes prev_head, the
+   * pre-turn head, over the first turn_frames frames (turn_left counts down
+   * once per frame per track); both heads read the lane's live buffer, so
+   * the window pins no other source. */
+  le_read_head head;
+  le_read_head prev_head;
+  int32_t turn_left, turn_frames;
+  /* Transpose (#1179 Part 3a). transpose_st is the stored pitch (-12..12),
+   * transpose_eff what sounds (0 while the render is pending or bypassed).
+   * src_ent[l] is the source render each lane reads this buffer (NULL: the
+   * dry take); turn_ent[l] the source the turn window's old head reads, and
+   * turn_power selects the equal-power law for a swap between sources
+   * (equal-gain for a rate or direction turn over the same source). A render
+   * the old head still reads is published in a_turn_src so the cache's
+   * collector defers its free until the window ends (E4). */
+  int32_t transpose_st, transpose_eff, turn_power;
+  const le_wet_entry* src_ent[LE_MAX_LANES];
+  const le_wet_entry* turn_ent[LE_MAX_LANES];
+  le_wet_entry* _Atomic a_turn_src[LE_MAX_LANES];
+  le_wet_entry* _Atomic a_src_pin[LE_MAX_LANES]; /* src_ent, published */
+  _Atomic int32_t a_transpose_st, a_transpose_eff;
+  /* Control's view of the stored pitch while TRANSPOSE commands are in
+   * flight (le_effective_transposed), like Reverse's. */
+  uint32_t transpose_posted;
+  int32_t transpose_pending;
+  _Atomic uint32_t a_transpose_applied;
   _Atomic int32_t a_reversed; /* published direction (snapshot) */
+  _Atomic int32_t a_head_rate_milli; /* published head rate x1000 (#1179) */
+  /* An integral-rate step that landed inside a window, to be put on a whole
+   * sample once the window ends (le_head_land). Callback-only. */
+  int32_t land_whole;
   /* Control's view of direction while toggles are in flight
    * (le_effective_reversed): the number of REVERSE commands posted, the
    * direction they predict once applied, and the callback's count of REVERSE
@@ -1800,6 +1874,26 @@ struct le_engine {
     uint64_t request, command;
     _Atomic int32_t result;
   } receipts[LE_RING_CAPACITY];
+  /* Global Speed (#1179): the callback's factor (numer/denom of 1/2, 1, 2, 4,
+   * 8), published for the snapshot. Control's view while SET_SPEED commands
+   * are in flight, like Reverse's: the count posted, the factor they predict
+   * (speed_pending_one: whether it is 1x) and the callback's count processed
+   * (accepted or refused), released after the published factor. The
+   * published factor is ONE atomic, numer << 8 | denom (le_speed_pack), so
+   * a reader never sees the numerator of one factor with the denominator of
+   * another. */
+  int32_t speed_numer, speed_denom;
+  _Atomic int32_t a_speed_ratio;
+  uint32_t speed_posted;
+  int32_t speed_pending_one;
+  _Atomic uint32_t a_speed_applied;
+  /* Transpose's global bypass (#1179 Part 3a): callback-owned, published,
+   * with control's in-flight view like Speed's. */
+  int32_t transpose_bypass;
+  _Atomic int32_t a_transpose_bypass;
+  uint32_t bypass_posted;
+  int32_t bypass_pending;
+  _Atomic uint32_t a_bypass_applied;
   uint64_t commands_posted;
   uint64_t commands_applied;
   /* Callback-only: image publication invalidates the current frame snapshots. */
@@ -2170,6 +2264,21 @@ static inline void store_i32(_Atomic int32_t* slot, int32_t v) {
  * cheap first line of defence. */
 static inline void le_audio_rev_bump(le_track* t) {
   atomic_fetch_add_explicit(&t->a_audio_rev, 1u, memory_order_release);
+  /* Read back rather than use fetch_add's value: the non-Clang C++ atomics
+   * shim's fetch_add returns nothing (docs/PROGRESS.md, the C++ blast
+   * radius). The bump sites never race each other on one track. */
+  atomic_store_explicit(
+      &t->a_src_key,
+      atomic_load_explicit(&t->a_audio_rev, memory_order_acquire),
+      memory_order_release);
+}
+
+/* Forgets every slot's content key (session import: the slots are refilled
+ * with PCM no key names). */
+static inline void le_track_forget_slot_keys(le_track* t) {
+  for (int s = 0; s < LE_POOL_SLOTS; ++s) {
+    atomic_store_explicit(&t->a_slot_key[s], 0u, memory_order_relaxed);
+  }
 }
 
 /* Track [ch]'s effective forced loop multiple: its per-track override, or the

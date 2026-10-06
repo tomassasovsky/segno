@@ -433,7 +433,7 @@ static int rev_log_facts(const char* dir, int32_t channel,
   CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
   uint32_t version;
   memcpy(&version, buf + 4, 4);
-  CHECK(version == 7);
+  CHECK(version == LE_TEST_EVENTS_VERSION);
   const size_t count = log_entry_count(n);
   memset(first, 0, sizeof(*first));
   memset(last, 0, sizeof(*last));
@@ -874,7 +874,7 @@ static void test_reverse_reopen_keeps_direction(void) {
   le_engine_get_track(e, 1, &snap);
   CHECK(snap.state == LE_TRACK_EMPTY && snap.length_frames == 0);
   CHECK(snap.reversed == 0);
-  CHECK(e->tracks[1].reversed == 0);
+  CHECK(e->tracks[1].head.reversed == 0);
   le_engine_get_track(e, 0, &snap);
   CHECK(snap.state == LE_TRACK_STOPPED && snap.reversed == 0);
   le_engine_destroy(e);

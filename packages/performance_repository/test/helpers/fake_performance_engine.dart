@@ -417,6 +417,24 @@ class FakePerformanceEngine implements AudioEngine {
   }) => (result: EngineResult.invalid, request: 0);
 
   @override
+  RequestAdmission setSpeed(SpeedFactor factor) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
   EngineResult? readRequestResult(int request) => EngineResult.invalid;
 
   @override

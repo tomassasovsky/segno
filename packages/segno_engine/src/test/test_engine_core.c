@@ -9174,14 +9174,16 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * on-disk format, not just the in-memory ring. ---- */
 #define LE_TEST_EVENTS_HEADER_BYTES 12
 #define LE_TEST_EVENTS_ENTRY_BYTES 28
-/* The version perf_drain.c writes today. 6 = every callback-applied history
+/* The version perf_drain.c writes today. 9 = LE_PLOG_TRANSPOSE and 8 =
+ * LE_PLOG_SPEED (#1179); 7 =
+ * Reverse and Peel (#1162, #1164); 6 = every callback-applied history
  * image logs 322 and LE_CMD_UNDO_TO_EMPTY is raw-logged (#1143); 5 = applied
  * Clear restore facts; 4 = the PERF_ARMED/TRANSPORT_HELD
  * facts + RECORD_END's take-id payload (#262/#819); 3 = unpaired RECORD_ABORT
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 7
+#define LE_TEST_EVENTS_VERSION 9
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -33891,6 +33893,8 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_read_head.h"
 #include "test_engine_stretch.h"
 #include "test_engine_reverse.h"
+#include "test_engine_speed.h"
+#include "test_engine_transpose.h"
 #include "test_engine_peel.h"
 #include "test_engine_tuner.h"
 #include "test_engine_midi_in.h"
@@ -33904,6 +33908,10 @@ int main(void) {
   run_tuner_mute_tests();
   if (getenv("SEGNO_REVERSE_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_midi_in_tests();
+  run_speed_tests();
+  if (getenv("SEGNO_SPEED_TESTS_ONLY")) return g_failures ? 1 : 0;
+  run_transpose_tests();
+  if (getenv("SEGNO_TRANSPOSE_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_reopen_same_rate_retains_material();
   test_reopen_drops_partial_first_take();
   test_reopen_reverts_partial_overdub_pass();
@@ -34726,6 +34734,7 @@ int main(void) {
   test_stretch_offline_deterministic_and_guards();
   test_stretch_offline_click_alignment();
   test_stretch_offline_cyclic_seam();
+  test_stretch_loop_fold_holds_level();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

@@ -31,6 +31,19 @@ extern "C" {
  * pump counts from this one definition. */
 #define LE_CACHE_SETTLE_MS 250
 
+/* Transpose's source renders settle for 100 ms (#1179): foot steps are
+ * discrete, while the Pre print's 250 ms window exists for parameter sweeps.
+ * Same frame-count measure as above. */
+#define LE_CACHE_SOURCE_SETTLE_MS 100
+
+/* How a Transpose source is rendered, shared by the cache worker and the
+ * offline renderer so a stem reproduces the live render exactly: the
+ * stretcher's cheaper preset with the 8 kHz tonality limit its README
+ * recommends, a fixed seed (a re-render of the same key is byte-identical),
+ * and a 20 ms equal-power fold over the loop point (le_stretch_render_loop). */
+#define LE_CACHE_SOURCE_SEED 1179u
+#define LE_CACHE_SOURCE_FOLD_MS 20
+
 /* Allocates the cache state and starts the render worker (control thread; the
  * tail of le_engine_configure, after the pools exist). A thread-start failure
  * leaves engine->cache NULL — caching silently disabled, every lane live. */

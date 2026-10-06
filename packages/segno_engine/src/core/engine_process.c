@@ -76,6 +76,7 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame);
 static void le_primary_reconcile(le_engine* e);
 static void sync_grid_to_loop(le_engine* e, int32_t len);
 static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame);
+static void le_speed_reset_if_empty(le_engine* e, uint64_t frame);
 static void le_restore_multiple_or_divisor(le_track* t, int32_t base,
                                            int32_t len);
 
@@ -112,47 +113,56 @@ static int le_transport_held(le_engine* e) {
 }
 
 static void le_reset_track_playback(le_track* t) {
-  t->playback_offset = 0;
+  t->head.origin = 0.0;
   t->turn_left = 0; /* a parked origin has no old head to mix (#1162) */
   t->once_ended = 0;
   t->once_current_pass = 0;
   t->sounding_frames = 0;
 }
 
-/* A track's clock position and its own read length: the shared clock plus
- * its multiple's segment (a Sync division folds the primary's phase into its
- * shorter slice through the modulo in le_direction_index), or the private
- * clock in Free/Song. *len_out is 0 when the track has no material; the
- * position is 0 when no clock is established yet (imported material before
- * the commit). Recording and grid arms keep the musical clock: only reads go
- * through here. */
-static int64_t le_track_base_position(le_engine* e, le_track* t,
+/* A track's UNBOUNDED song position (#1179, E1) and its own read length:
+ * song frames since the track's start — every shared-clock lap since
+ * start_iter plus the clock position, or the private Free/Song clock's laps
+ * plus its position. The read head's modulo folds it into a multiple's
+ * segment or a Sync division's slice, so at rate 1 it reads exactly what the
+ * wrapped segment position did; at 1/2x a bounded position would span half
+ * the take and snap back at every wrap. *len_out is 0 when the track has no
+ * material; the position is 0 when no clock is established yet (imported
+ * material before the commit). Recording and grid arms keep the musical
+ * clock: only reads go through here. */
+static int64_t le_track_song_position(le_engine* e, le_track* t,
                                       int32_t* len_out) {
   const int32_t len = load_i32(&t->lanes[0].a_len);
   *len_out = len;
   if (len <= 0) return 0;
   if (e->clock.length > 0) {
-    int64_t position = e->clock.position;
-    if (load_i32(&t->a_sync_divisor) < 2) {
-      int32_t k = load_i32(&t->a_multiple);
-      if (k < 1) k = 1;
-      position += (int64_t)(((e->loop_iteration - t->start_iter) % (uint64_t)k) *
-                            (uint64_t)e->clock.length);
-    }
-    return position;
+    const uint64_t laps = e->loop_iteration - t->start_iter;
+    return (int64_t)(laps * (uint64_t)e->clock.length) + e->clock.position;
   }
-  if (t->free_clock.length > 0) return t->free_clock.position;
+  if (t->free_clock.length > 0) {
+    return (int64_t)(t->free_iteration * (uint64_t)t->free_clock.length) +
+           t->free_clock.position;
+  }
   return 0;
 }
 
-/* The dry index this track reads at its current clock position, in its own
- * direction and from its own origin (#1162; engine_direction.h). Playback can
- * have an origin of its own after Once or a Reverse turn. */
-static int32_t le_track_read_index(le_engine* e, le_track* t) {
+/* The dry index this track reads at its current song position through its
+ * head (engine_read_head.h): its direction, origin and rate. */
+static double le_track_read_index(le_engine* e, le_track* t) {
   int32_t len;
-  const int64_t base = le_track_base_position(e, t, &len);
-  if (len <= 0) return 0;
-  return le_direction_index(t->reversed, t->playback_offset, base, len);
+  const int64_t pos = le_track_song_position(e, t, &len);
+  return le_head_index(&t->head, pos, len);
+}
+
+/* Whether the head crossed its lap edge between the previous song frame and
+ * this one: the index the next frame reads is the lap start in the head's
+ * direction (Once's lap end, #1162; at any rate, #1179). */
+static int le_track_lap_edge(le_engine* e, le_track* t) {
+  int32_t len;
+  const int64_t pos = le_track_song_position(e, t, &len);
+  return len > 0 && le_head_wrapped(le_head_index(&t->head, pos - 1, len),
+                                    le_head_index(&t->head, pos, len),
+                                    t->head.reversed);
 }
 
 /* Only an explicit launch after automatic end restarts the audio. History
@@ -165,10 +175,10 @@ static void le_restart_once(le_engine* e, le_track* t) {
   if (!t->once_ended) return;
   le_reset_track_playback(t);
   int32_t len;
-  const int64_t base = le_track_base_position(e, t, &len);
+  const int64_t pos = le_track_song_position(e, t, &len);
   if (len <= 0) return;
-  t->playback_offset = le_direction_origin(
-      t->reversed, le_direction_lap_start(t->reversed, len), base, len);
+  t->head.origin = le_head_origin(&t->head, t->head.reversed ? len - 1 : 0,
+                                  pos, len);
 }
 
 /* The unpark rule: starting to record or play ANYTHING while the transport is
@@ -218,19 +228,78 @@ static void le_perf_source_lost(le_engine* e, le_track* t, uint64_t frame) {
 static void le_reverse_log(le_engine* e, le_track* t, uint64_t frame,
                            int32_t read_index, int32_t turn_frames) {
   le_plog_push(e, frame, (le_command){.code = LE_PLOG_REVERSE,
-      .reverse_log = {(int32_t)(t - e->tracks), t->reversed, read_index,
+      .reverse_log = {(int32_t)(t - e->tracks), t->head.reversed, read_index,
                       turn_frames}});
 }
 
+/* The rate fact (#1179, LE_PLOG_SPEED): the head's rate as the Speed factor,
+ * the exact index the callback reads at `frame` in Q32.32 and the turn
+ * window still mixing the old head. */
+static void le_speed_log(le_engine* e, le_track* t, uint64_t frame,
+                         double index, int32_t turn_frames) {
+  const uint64_t q = le_head_index_q32(index);
+  le_plog_push(e, frame, (le_command){.code = LE_PLOG_SPEED,
+      .speed_log = {(int32_t)(t - e->tracks), (uint8_t)e->speed_numer,
+                    (uint8_t)e->speed_denom, (uint16_t)turn_frames,
+                    (uint32_t)q, (uint32_t)(q >> 32)}});
+}
+
+/* The sounding-pitch fact (#1179 Part 3a, LE_PLOG_TRANSPOSE): stored and
+ * effective pitch, the swap's turn window and the exact index in Q32.32. */
+static void le_transpose_log(le_engine* e, le_track* t, uint64_t frame,
+                             int32_t turn_frames) {
+  int32_t len;
+  const int64_t pos = le_track_song_position(e, t, &len);
+  const uint64_t q = le_head_index_q32(le_head_index(&t->head, pos, len));
+  le_plog_push(e, frame, (le_command){.code = LE_PLOG_TRANSPOSE,
+      .transpose_log = {(int32_t)(t - e->tracks), (int8_t)t->transpose_st,
+                        (int8_t)t->transpose_eff, (uint16_t)turn_frames,
+                        (uint32_t)q, (uint32_t)(q >> 32)}});
+}
+
+/* A printed Pre render never plays through a non-identity head (reversed or
+ * at another rate): disengage every print so the live chains take over
+ * through the settled-bypass re-enable path [B7]; a forward 1x track
+ * re-engages at its next lap start. */
+static void le_track_disengage_prints(le_track* t) {
+  store_i32(&t->a_track_cache_active, 0);
+  for (int l = 0; l < LE_MAX_LANES; ++l) {
+    store_i32(&t->lanes[l].a_cache_active, 0);
+  }
+}
+
+/* The sources a turn window's old head reads (#1179 Part 3a): the ones in
+ * force as the window starts, pinned for the cache's collector (E4).
+ * `power` picks the law: equal-power for a swap between sources, equal-gain
+ * for a rate or direction turn over the same source. */
+static void le_turn_sources(le_track* t, int32_t power) {
+  t->turn_power = power;
+  for (int l = 0; l < LE_MAX_LANES; ++l) {
+    t->turn_ent[l] = t->src_ent[l];
+    atomic_store_explicit(&t->a_turn_src[l], (le_wet_entry*)t->src_ent[l],
+                          memory_order_release);
+  }
+}
+
 /* Direction dies with the material (#1162): forward, origin parked, no turn
- * in flight, published and logged. Printed renders need no clearing here —
+ * in flight, published and logged. The rate is the global Speed's, which
+ * survives a track's Clear (#1179). Printed renders need no clearing here —
  * every caller is a content transition that re-keys them. */
-static void le_direction_reset(le_engine* e, le_track* t, uint64_t frame) {
-  t->reversed = 0;
-  t->playback_offset = 0;
+static void le_head_reset(le_engine* e, le_track* t, uint64_t frame) {
+  t->head.reversed = 0;
+  t->head.origin = 0.0;
   t->turn_left = 0;
+  t->transpose_st = 0; /* pitch dies with the material too (#1179) */
+  store_i32(&t->a_transpose_st, 0);
   store_i32(&t->a_reversed, 0);
   le_reverse_log(e, t, frame, -1, 0);
+  /* The re-origined head's exact index at the reset (E3); the material's
+   * return re-anchors from its own fact (the 322/323 site below). */
+  if (t->head.rate != 1.0) {
+    int32_t len;
+    const int64_t pos = le_track_song_position(e, t, &len);
+    le_speed_log(e, t, frame, le_head_index(&t->head, pos, len), 0);
+  }
 }
 
 /* Every material reset: Fade and direction (#1162) go forward together. Also
@@ -245,7 +314,7 @@ static void le_transform_reset(le_engine* e, le_track* t, uint64_t frame) {
   t->fade_sample = 1;
   if (t->fade_generation != UINT64_MAX) ++t->fade_generation;
   le_fade_log(e, (int)(t - e->tracks), frame);
-  le_direction_reset(e, t, frame);
+  le_head_reset(e, t, frame);
 }
 
 static void le_fade_publish(le_engine* e, le_track* t) {
@@ -561,7 +630,7 @@ static void le_apply_mode_switch(le_engine* e, int32_t m) {
     const int32_t len = load_i32(&tr->lanes[0].a_len);
     tr->start_iter = 0;
     tr->free_iteration = 0;
-    tr->playback_offset = 0;
+    tr->head.origin = 0.0;
     tr->sounding_frames = 0;
     e->trk_play_pos[t] = 0;
     e->track_viz_bucket[t] = -1;
@@ -1508,6 +1577,8 @@ static void le_dub_session_start(le_engine* e, le_track* t) {
    * no overdub write ever happens under the old revision. A re-punch during
    * the fade tail / drain (the in-flight early-return below) bumps too:
    * writes resume, so the content epoch moves again. */
+  const uint32_t pre_key =
+      atomic_load_explicit(&t->a_src_key, memory_order_relaxed);
   le_audio_rev_bump(t);
   if (load_i32(&t->a_layer_in_flight)) {
     /* A re-punch while the previous layer is still in flight. Two cases:
@@ -1531,6 +1602,7 @@ static void le_dub_session_start(le_engine* e, le_track* t) {
     }
     return;
   }
+  t->pass_key = pre_key; /* the first pass backs up this content */
   t->dub_len = len;
   t->dub_offset = load_i32(&e->a_record_offset);
   t->dub_phase = 0;
@@ -1540,6 +1612,17 @@ static void le_dub_session_start(le_engine* e, le_track* t) {
   }
   t->dub_count = -1;
   atomic_store_explicit(&t->a_layer_in_flight, 1, memory_order_release);
+}
+
+/* Files the retiring shadow's content key (#1179, a_src_key): the first
+ * pass of a session holds the pre-session content, whose key is known; a
+ * later pass holds content that never sounded settled, so its slot is
+ * given none and comes back live under a fresh key. */
+static void le_file_pass_key(le_track* t) {
+  const int32_t s = t->dub_retire_slot;
+  if (s < 0 || s >= LE_POOL_SLOTS) return;
+  atomic_store_explicit(&t->a_slot_key[s], t->pass_key, memory_order_relaxed);
+  t->pass_key = 0;
 }
 
 /* Tries to push a parked retired layer into the evt_ring (audio thread).
@@ -1603,6 +1686,7 @@ static void le_dub_boundary(le_engine* e, le_track* t, uint64_t frame) {
     if (t->dub_retire_slot >= 0) return; /* frozen: retire is stuck */
     t->dub_retire_slot = t->dub_slot;
     t->dub_slot = -1;
+    le_file_pass_key(t);
     le_audio_rev_bump(t); /* [R1] a completed overdub pass retired */
     le_dub_try_retire(e, t, frame);
   }
@@ -1727,6 +1811,7 @@ static void le_dub_block_update(le_engine* e, uint64_t frame) {
         t->dub_retire_slot < 0) {
       t->dub_retire_slot = t->dub_slot;
       t->dub_slot = -1;
+      le_file_pass_key(t);
       le_audio_rev_bump(t); /* [R1] the punch-out pass retired (post-drain) */
       le_dub_try_retire(e, t, frame);
     }
@@ -1871,6 +1956,7 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
       store_i32(&e->a_master_len, 0);
       store_i32(&e->a_loop_bars, 0);
       e->grid_total_beats = 0;
+      le_speed_reset_if_empty(e, 0);
     }
   }
   /* A rig that kept content keeps (or, lacking one, gains) its crown; a
@@ -1951,7 +2037,15 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
    * or sound arm that fired after the toggle, or a Count-in member. Control
    * already refuses the press with LE_ERR_REVERSED; this closes the window. */
   if ((initial == LE_TRACK_STOPPED || initial == LE_TRACK_PLAYING) &&
-      e->tracks[ch].reversed) return;
+      e->tracks[ch].head.reversed) return;
+  /* Capture never writes through a fractional head (#1179): a record or
+   * punch-in that fires while Speed is not 1x is dropped the same way.
+   * Control refuses the press with LE_ERR_TRANSFORMED. */
+  if ((initial == LE_TRACK_EMPTY || initial == LE_TRACK_STOPPED ||
+       initial == LE_TRACK_PLAYING) && e->speed_numer != e->speed_denom) return;
+  /* ...and into a transposed track (#1179 Part 3a), the Reverse rule. */
+  if ((initial == LE_TRACK_STOPPED || initial == LE_TRACK_PLAYING) &&
+      e->tracks[ch].transpose_st != 0 && !e->transpose_bypass) return;
   if ((initial == LE_TRACK_EMPTY || initial == LE_TRACK_STOPPED ||
        initial == LE_TRACK_PLAYING) &&
       le_launch_defer(e, ch, initial == LE_TRACK_EMPTY ? 1 : 3)) return;
@@ -2080,6 +2174,7 @@ static void apply_undo_to_empty(le_engine* e, int32_t ch, uint64_t frame) {
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   le_transform_reset(e, t, frame);
+  le_speed_reset_if_empty(e, frame);
   le_track_set_len(t, 0);
   store_i32(&t->a_multiple, 1);
   store_i32(&t->a_sync_divisor, 0); /* B3: division state dies too */
@@ -2363,6 +2458,7 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   le_transform_reset(e, t, frame);
+  le_speed_reset_if_empty(e, frame);
   le_track_set_len(t, 0);
   store_i32(&t->a_multiple, 1);
   /* B3, D18: the track's own division state dies with its content — a
@@ -2437,6 +2533,7 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
      * plausible-looking but meaningless TAPPED tempo). */
     e->has_tap = 0;
     e->last_tap_frame = 0;
+    le_speed_reset_if_empty(e, frame); /* an empty loop has no speed (M2) */
     /* Clear the loop waveform so a re-record starts from silence. */
     e->loop_viz_bucket = -1;
     for (int i = 0; i < LE_VIZ_POINTS; ++i) {
@@ -2690,6 +2787,107 @@ static int le_apply_routing(le_engine* e, const le_mix_settings* mix,
 
 static void apply_command_image(le_engine* e, const le_command* cmd,
                                 uint64_t frame, int preserve_image);
+
+/* Starts a turn's window for a head change at this frame and returns the
+ * window logged with the change (0: none). A track that is not PLAYING, or a
+ * loop shorter than two windows, snaps. A change while a window is still
+ * mixing (L1) keeps that window and the head it fades out: the new head is
+ * value-continuous with the one it replaces, so the blend carries on from
+ * the output it was producing instead of dropping the old head mid-fade. */
+static int32_t le_turn_begin(le_engine* e, le_track* t, int32_t len) {
+  if (t->turn_left > 0) return t->turn_frames;
+  const int32_t F = seam_xfade_frames(e);
+  const int32_t turn =
+      load_i32(&t->a_state) == LE_TRACK_PLAYING && len >= 2 * F ? F : 0;
+  t->prev_head = t->head;
+  t->turn_frames = turn;
+  t->turn_left = turn;
+  le_turn_sources(t, 0); /* the old head reads the source in force */
+  return turn;
+}
+
+/* Whether Speed may change now (#1179): no track is capturing, finishing a
+ * punch-out tail or a seam deferral, armed, launching, or counting in. The
+ * callback's recheck of control's admission, which refused the same states
+ * as it saw them. */
+static int le_speed_change_safe(le_engine* e) {
+  if (load_i32(&e->a_counting_in)) return 0;
+  for (int c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    const int32_t st = load_i32(&t->a_state);
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+        t->od_gain != 0.0f || t->xfade_capture != 0 || t->pending_record ||
+        load_i32(&t->a_pending) || load_i32(&t->a_pending_launch)) return 0;
+  }
+  return 1;
+}
+
+/* Moves one track's head to `rate` at the current song position (#1179):
+ * re-origined so the index is continuous, the old head mixed out over the
+ * seam's equal-gain turn window while it sounds (a loop too short to host
+ * the window snaps), prints disengaged, published and logged with the exact
+ * index. An empty track only takes the rate. */
+static void le_head_set_rate(le_engine* e, le_track* t, double rate,
+                             uint64_t frame);
+
+/* An empty loop has no speed (M2; the pen's "04 / Speed / Empty loop" shows
+ * none): when no track holds material any more, Speed returns to 1x, every
+ * track's head with it, published (the host sees the factor change) and
+ * logged, so the first take of the next loop is not refused. */
+static void le_speed_reset_if_empty(le_engine* e, uint64_t frame) {
+  if (e->speed_numer == e->speed_denom) return;
+  for (int c = 0; c < e->track_count; ++c) {
+    if (load_i32(&e->tracks[c].a_state) != LE_TRACK_EMPTY) return;
+  }
+  e->speed_numer = 1;
+  e->speed_denom = 1;
+  for (int c = 0; c < e->track_count; ++c) {
+    le_head_set_rate(e, &e->tracks[c], 1.0, frame);
+  }
+  store_i32(&e->a_speed_ratio, le_speed_pack(1, 1));
+}
+
+static void le_head_set_rate(le_engine* e, le_track* t, double rate,
+                             uint64_t frame) {
+  int32_t len;
+  const int64_t pos = le_track_song_position(e, t, &len);
+  const double cur = le_head_index(&t->head, pos, len);
+  /* An integral rate lands on a whole sample (H1): Normal after 1/2x on an
+   * odd song frame would otherwise keep a half-sample origin for good, every
+   * read a two-tap average and the print never re-engaging. The old head
+   * keeps reading `cur`; the window absorbs the half sample. Inside a
+   * window still mixing (L-D1) the new head continues from `cur` exactly,
+   * so the carried blend stays continuous, and lands on the whole sample
+   * once that window ends, through a window of its own (le_head_land). */
+  const int integral = rate == (double)(int64_t)rate && len > 0;
+  const int carried = t->turn_left > 0;
+  t->land_whole = integral && carried;
+  const double at = integral && !carried
+                        ? le_head_wrap((double)(int64_t)(cur + 0.5), len)
+                        : cur;
+  const int32_t turn = le_turn_begin(e, t, len);
+  t->head.rate = rate;
+  t->head.origin = le_head_origin(&t->head, at, pos, len);
+  le_track_disengage_prints(t);
+  store_i32(&t->a_head_rate_milli, (int32_t)(rate * 1000.0));
+  le_speed_log(e, t, frame, at, turn);
+}
+
+/* The deferred whole-sample landing (L-D1): a track whose integral-rate
+ * step landed inside a window lands once that window has ended, at the top
+ * of a block, through le_head_set_rate's own equal-gain window. */
+static void le_head_land(le_engine* e, uint64_t frame) {
+  for (int c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    if (!t->land_whole || t->turn_left > 0) continue;
+    t->land_whole = 0;
+    if (t->head.rate == (double)(int64_t)t->head.rate &&
+        t->head.origin != (double)(int64_t)t->head.origin) {
+      le_head_set_rate(e, t, t->head.rate, frame);
+    }
+  }
+}
+
 static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
   apply_command_image(e, cmd, frame, 0);
 }
@@ -3249,7 +3447,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_track* t = &e->tracks[cmd->reverse.channel];
       const int32_t st = load_i32(&t->a_state);
       int32_t len;
-      const int64_t base = le_track_base_position(e, t, &len);
+      const int64_t pos = le_track_song_position(e, t, &len);
       const int writing = st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING;
       const int accepted = len > 0 && t->od_gain == 0.0f &&
           t->xfade_capture == 0 && !writing &&
@@ -3257,20 +3455,19 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
            st == LE_TRACK_STOPPED);
       if (accepted) {
         const int target = cmd->reverse.install ? cmd->reverse.target != 0
-                                                : !t->reversed;
-        int32_t cur = le_direction_index(t->reversed, t->playback_offset,
-                                         base, len);
+                                                : !t->head.reversed;
+        double cur = le_head_index(&t->head, pos, len);
         int32_t turn = 0;
-        const int turned = target != t->reversed;
-        if (turned && t->turn_left > 0 && target == t->turn_reversed) {
+        const int turned = target != t->head.reversed;
+        if (turned && t->turn_left > 0 && target == t->prev_head.reversed &&
+            t->prev_head.rate == t->head.rate) {
           /* Back to the pre-turn direction inside the turn window: cancel
            * the turn. The old head has kept reading all along, so it takes
            * over alone and the net-zero gesture plays the material it would
            * have played without either toggle. */
-          t->reversed = target;
-          t->playback_offset = t->turn_offset;
+          t->head = t->prev_head;
           t->turn_left = 0;
-          cur = le_direction_index(target, t->playback_offset, base, len);
+          cur = le_head_index(&t->head, pos, len);
         } else if (turned) {
           /* The old head keeps reading for one turn window while the new one
            * takes over — the value is continuous at the turn (same sample)
@@ -3278,27 +3475,15 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
            * the seam length (~10 ms); a loop too short to host it snaps,
            * like the punch fade. Nothing sounds on a STOPPED track, so there
            * is no old head to mix and a later Play starts clean. */
-          const int32_t F = seam_xfade_frames(e);
-          turn = st == LE_TRACK_PLAYING && len >= 2 * F ? F : 0;
-          t->turn_reversed = t->reversed;
-          t->turn_offset = t->playback_offset;
-          t->turn_frames = turn;
-          t->turn_left = turn;
-          t->reversed = target;
-          t->playback_offset = le_direction_origin(target, cur, base, len);
+          turn = le_turn_begin(e, t, len);
+          t->head.reversed = target;
+          t->head.origin = le_head_origin(&t->head, cur, pos, len);
         }
-        if (turned) {
-          /* A printed Pre render never plays reversed: disengage every print
-           * so the live chains take over through the settled-bypass
-           * re-enable path [B7]; forward tracks re-engage at their next lap
-           * start. */
-          store_i32(&t->a_track_cache_active, 0);
-          for (int l = 0; l < LE_MAX_LANES; ++l) {
-            store_i32(&t->lanes[l].a_cache_active, 0);
-          }
-        }
-        store_i32(&t->a_reversed, t->reversed);
-        le_reverse_log(e, t, frame, cur, turn);
+        if (turned) le_track_disengage_prints(t);
+        store_i32(&t->a_reversed, t->head.reversed);
+        /* the integral part: at rate 1 the index itself; at another rate
+         * the renderer keeps its own exact fraction when the floors agree */
+        le_reverse_log(e, t, frame, (int32_t)cur, turn);
       }
       atomic_store_explicit(&e->receipts[cmd->reverse.slot].result,
                              accepted ? LE_OK : LE_ERR_INVALID,
@@ -3306,6 +3491,74 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       /* Release after a_reversed: control's le_effective_reversed reads the
        * count first (acquire) and then trusts the published direction. */
       atomic_fetch_add_explicit(&t->a_reverse_applied, 1, memory_order_release);
+      break;
+    }
+    case LE_CMD_TRANSPOSE: {
+      /* Transpose (#1179 Part 3a): the stored pitch. The sounding one follows
+       * when the track's render lands (le_transpose_select). Accepted on
+       * material that is not being written, like Reverse; a step past +-12
+       * changes nothing and answers LE_ERR_CAPACITY (the pitch limit). */
+      le_track* t = &e->tracks[cmd->transpose.channel];
+      const int32_t st = load_i32(&t->a_state);
+      const int writing = st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING;
+      int32_t result = load_i32(&t->lanes[0].a_len) > 0 && t->od_gain == 0.0f &&
+                               t->xfade_capture == 0 && !writing &&
+                               (cmd->transpose.install || st == LE_TRACK_PLAYING ||
+                                st == LE_TRACK_STOPPED)
+                           ? LE_OK
+                           : LE_ERR_INVALID;
+      const int32_t target = cmd->transpose.install
+                                 ? cmd->transpose.semitones
+                                 : t->transpose_st + cmd->transpose.semitones;
+      if (result == LE_OK && (target < -12 || target > 12)) {
+        result = LE_ERR_CAPACITY;
+      }
+      if (result == LE_OK) {
+        t->transpose_st = target;
+        store_i32(&t->a_transpose_st, target);
+        if (target != 0) le_track_disengage_prints(t);
+      }
+      atomic_store_explicit(&e->receipts[cmd->transpose.slot].result, result,
+                             memory_order_relaxed);
+      atomic_fetch_add_explicit(&t->a_transpose_applied, 1, memory_order_release);
+      break;
+    }
+    case LE_CMD_TRANSPOSE_BYPASS:
+      e->transpose_bypass = cmd->transpose.semitones != 0;
+      store_i32(&e->a_transpose_bypass, e->transpose_bypass);
+      for (int c = 0; c < e->track_count && !e->transpose_bypass; ++c) {
+        if (e->tracks[c].transpose_st != 0) le_track_disengage_prints(&e->tracks[c]);
+      }
+      atomic_store_explicit(&e->receipts[cmd->transpose.slot].result, LE_OK,
+                             memory_order_relaxed);
+      atomic_fetch_add_explicit(&e->a_bypass_applied, 1, memory_order_release);
+      break;
+    case LE_CMD_SET_SPEED: {
+      /* Speed (#1179): every track's head moves to the new factor at once.
+       * A request equal to the factor in force is receipt-only (E6): no
+       * re-origin, no turn window, no fact, nothing in the mix changes. */
+      const int32_t numer = cmd->speed.numer, denom = cmd->speed.denom;
+      int material = 0;
+      for (int c = 0; c < e->track_count; ++c) {
+        if (load_i32(&e->tracks[c].a_state) != LE_TRACK_EMPTY) material = 1;
+      }
+      const int accepted = material && le_speed_change_safe(e);
+      if (accepted && (numer != e->speed_numer || denom != e->speed_denom)) {
+        e->speed_numer = numer;
+        e->speed_denom = denom;
+        for (int c = 0; c < e->track_count; ++c) {
+          le_head_set_rate(e, &e->tracks[c], (double)numer / denom, frame);
+        }
+        store_i32(&e->a_speed_ratio, le_speed_pack(numer, denom));
+      }
+      atomic_store_explicit(&e->receipts[cmd->speed.slot].result,
+                             accepted ? LE_OK
+                                      : material ? LE_ERR_NOT_READY
+                                                 : LE_ERR_INVALID,
+                             memory_order_relaxed);
+      /* Release after the factor: control's le_effective_speed_one reads
+       * the count first (acquire) and then trusts the published factor. */
+      atomic_fetch_add_explicit(&e->a_speed_applied, 1, memory_order_release);
       break;
     }
     case LE_CMD_SET_RECORD_TIMING: {
@@ -3999,9 +4252,14 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         /* A track already reversed at arm logs its direction and the index
          * capture frame 0 reads (#1162); forward is the renderer's default. */
         le_track* tr = &e->tracks[t];
-        if (tr->reversed) {
-          le_reverse_log(e, tr, frame, le_track_read_index(e, tr), 0);
+        if (tr->head.reversed) {
+          le_reverse_log(e, tr, frame, (int32_t)le_track_read_index(e, tr), 0);
         }
+        /* ...and a track not at 1x its rate and exact index (#1179). */
+        if (tr->head.rate != 1.0) {
+          le_speed_log(e, tr, frame, le_track_read_index(e, tr), 0);
+        }
+        if (tr->transpose_eff != 0) le_transpose_log(e, tr, frame, 0);
       }
       break;
     case LE_CMD_PERF_DISARM:
@@ -4615,14 +4873,8 @@ static inline void advance_track_clock_frame(le_engine* e, int32_t ch,
   /* Once stops when the READ lap ends — the index the next frame would read
    * is the lap start in the track's direction (#1162). Identical to "the
    * private clock wrapped" for a forward track with a parked origin. */
-  if (load_i32(&t->a_one_shot)) {
-    int32_t len;
-    const int64_t base = le_track_base_position(e, t, &len);
-    if (len > 0 && le_direction_index(t->reversed, t->playback_offset, base,
-                                      len) ==
-                       le_direction_lap_start(t->reversed, len)) {
-      le_one_shot_stop(e, t, ch, frame);
-    }
+  if (load_i32(&t->a_one_shot) && le_track_lap_edge(e, t)) {
+    le_one_shot_stop(e, t, ch, frame);
   }
 }
 
@@ -4663,12 +4915,12 @@ static inline void le_shared_clock_one_shots(le_engine* e, int tc,
     if (!load_i32(&tr->a_one_shot)) continue;
     if (fired[t] && st == LE_TRACK_OVERDUBBING) continue;
     const int32_t len = load_i32(&tr->lanes[0].a_len);
-    /* The read lap's start in the track's own direction (#1162): 0 forward,
-     * len - 1 reversed — "finishes the current pass" either way. */
-    const int lap_end = len > 0 && le_track_read_index(e, tr) ==
-                                       le_direction_lap_start(tr->reversed, len);
-    if (lap_end &&
-        (tr->once_current_pass || tr->sounding_frames >= (uint64_t)len)) {
+    /* The read lap's edge in the track's own direction (#1162) at its own
+     * rate (#1179) — "finishes the current pass" either way; a whole lap at
+     * 1/2x is two lengths of song frames. */
+    if (le_track_lap_edge(e, tr) &&
+        (tr->once_current_pass ||
+         (double)tr->sounding_frames * tr->head.rate >= (double)len)) {
       le_one_shot_stop(e, tr, t, frame);
     }
   }
@@ -4853,7 +5105,7 @@ static inline void advance_transport_frame(le_engine* e, int tc,
       e->loop_iteration = 0;
       for (int t = 0; t < tc; ++t) {
         e->tracks[t].start_iter = 0;
-        e->tracks[t].playback_offset = 0;
+        e->tracks[t].head.origin = 0.0;
         e->tracks[t].turn_left = 0; /* a parked origin has no old head */
         e->tracks[t].sounding_frames = 0; /* the next launch is a fresh lap */
       }
@@ -5093,6 +5345,67 @@ static inline void snapshot_track_fx(
     snapshot_bus_fx(&e->tracks[t].bus, &trk_fx_count[t], &trk_fx_pre_count[t],
                     trk_fx_type[t], trk_fx_params[t], trk_fx_enabled[t],
                     &trk_has_fx[t]);
+  }
+}
+
+/* Selects each track's source for this buffer (#1179 Part 3a): its lanes'
+ * Transpose renders when the track is transposed, not bypassed, and EVERY
+ * active lane holds a render for its current key (content, pitch, length),
+ * else the dry takes, so a track never plays two lanes at two pitches. A
+ * change of source starts the turn window with the equal-power law at the
+ * same index — the old source keeps reading, its render pinned (E4) — and
+ * logs what now sounds. A window that has ended releases its pins. */
+static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
+                                uint64_t frame) {
+  for (int t = 0; t < tc; ++t) {
+    le_track* tr = &e->tracks[t];
+    for (int l = 0; l < LE_MAX_LANES && tr->turn_left == 0; ++l) {
+      if (tr->turn_ent[l] == NULL) continue;
+      tr->turn_ent[l] = NULL;
+      atomic_store_explicit(&tr->a_turn_src[l], NULL, memory_order_release);
+    }
+    const int32_t want = e->transpose_bypass ? 0 : tr->transpose_st;
+    const le_wet_entry* pick[LE_MAX_LANES] = {NULL};
+    int engaged = want != 0 && lane_n[t] > 0;
+    if (engaged) {
+      const uint32_t rev =
+          atomic_load_explicit(&tr->a_src_key, memory_order_acquire);
+      const int32_t len = load_i32(&tr->lanes[0].a_len);
+      for (int l = 0; l < lane_n[t] && engaged; ++l) {
+        pick[l] = NULL;
+        for (int i = 0; i < LE_SRC_CANDIDATES && pick[l] == NULL; ++i) {
+          const le_wet_entry* c = atomic_load_explicit(&tr->lanes[l].a_src[i],
+                                                       memory_order_acquire);
+          if (c != NULL && le_src_entry_key_matches(c, rev, len, want)) {
+            pick[l] = c;
+          }
+        }
+        engaged = pick[l] != NULL;
+      }
+    }
+    int changed = 0;
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      if (!engaged) pick[l] = NULL;
+      changed |= pick[l] != tr->src_ent[l];
+    }
+    if (!changed) continue;
+    int32_t len;
+    (void)le_track_song_position(e, tr, &len);
+    const int32_t F = seam_xfade_frames(e);
+    const int32_t turn =
+        load_i32(&tr->a_state) == LE_TRACK_PLAYING && len >= 2 * F ? F : 0;
+    tr->prev_head = tr->head;
+    tr->turn_frames = turn;
+    tr->turn_left = turn;
+    le_turn_sources(tr, 1);
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      tr->src_ent[l] = pick[l];
+      atomic_store_explicit(&tr->a_src_pin[l], (le_wet_entry*)pick[l],
+                            memory_order_release);
+    }
+    tr->transpose_eff = engaged ? want : 0;
+    store_i32(&tr->a_transpose_eff, tr->transpose_eff);
+    le_transpose_log(e, tr, frame, turn);
   }
 }
 
@@ -5897,36 +6210,46 @@ static inline void mix_tracks_frame(
    * exclusive with Free mode's per-track override above by construction —
    * see sync_division_positions_frame's doc). */
   sync_division_positions_frame(e, tc, pos, trk_pos, trk_len);
-  /* A track reading from its own origin (an automatic-end relaunch) or in
-   * its own direction (Reverse, #1162) rewrites the pair from its read index.
-   * Keeping the (seg_base, trk_pos) representation means live/cached PCM,
-   * metering, the print engage edges and trk_play_pos all follow without
-   * further edits. A forward track with a parked origin keeps the master
-   * path byte-identical. Fresh recording never uses it.
+  /* A track reading through a non-identity head — its own origin (an
+   * automatic-end relaunch), direction (Reverse, #1162) or rate (Speed,
+   * #1179) — rewrites the pair from the integral part of its read index.
+   * Keeping the (seg_base, trk_pos) representation means metering, the
+   * print engage edges and trk_play_pos all follow without further edits.
+   * The identity head keeps the master path byte-identical. Fresh recording
+   * never uses it.
    *
-   * turn_old[t] is the pre-turn head's index while a Reverse turn is still
-   * mixing (-1 otherwise) and turn_x[t] the new head's equal-gain weight. */
-  int32_t turn_old[LE_MAX_TRACKS];
-  float turn_x[LE_MAX_TRACKS];
+   * head_idx[t] is the exact index (>= 0 when the dry read goes through the
+   * head: off whole samples it is interpolated, at 2x and up decimated),
+   * turn_idx[t] the pre-turn head's index while a turn is still mixing (-1
+   * otherwise) and turn_x[t] the new head's equal-gain weight. */
+  double head_idx[LE_MAX_TRACKS];
+  double turn_idx[LE_MAX_TRACKS];
+  int32_t src_len[LE_MAX_TRACKS];
+  float turn_x[LE_MAX_TRACKS], turn_y[LE_MAX_TRACKS];
   for (int t = 0; t < tc; ++t) {
     le_track* tr = &e->tracks[t];
-    turn_old[t] = -1;
+    head_idx[t] = -1.0;
+    turn_idx[t] = -1.0;
     turn_x[t] = 1.0f;
-    if (trk_len[t] <= 0 || !(tr->reversed || tr->playback_offset != 0 ||
-                             tr->turn_left > 0)) continue;
+    if (trk_len[t] <= 0 ||
+        (le_head_is_identity(&tr->head) && tr->turn_left == 0)) continue;
     if (st[t] != LE_TRACK_PLAYING && st[t] != LE_TRACK_OVERDUBBING) continue;
     int32_t len;
-    const int64_t base = le_track_base_position(e, tr, &len);
+    const int64_t song = le_track_song_position(e, tr, &len);
     if (len <= 0) continue;
-    const int32_t index =
-        le_direction_index(tr->reversed, tr->playback_offset, base, len);
-    seg_base[t] = index - index % trk_len[t];
-    trk_pos[t] = index % trk_len[t];
+    const double index = le_head_index(&tr->head, song, len);
+    const int32_t whole = (int32_t)index;
+    seg_base[t] = whole - whole % trk_len[t];
+    trk_pos[t] = whole % trk_len[t];
+    src_len[t] = len;
+    if (!le_head_is_integral(&tr->head)) head_idx[t] = index;
     if (tr->turn_left > 0) {
-      turn_old[t] = le_direction_index(tr->turn_reversed, tr->turn_offset,
-                                       base, len);
-      turn_x[t] = le_direction_turn_mix(tr->turn_frames - tr->turn_left,
-                                        tr->turn_frames);
+      turn_idx[t] = le_head_index(&tr->prev_head, song, len);
+      turn_x[t] = le_head_turn_mix(tr->turn_frames - tr->turn_left,
+                                   tr->turn_frames, tr->turn_power);
+      turn_y[t] = tr->turn_power
+                      ? le_head_turn_mix(tr->turn_left, tr->turn_frames, 1)
+                      : 1.0f - turn_x[t];
     }
   }
   /* Each track's read index for THIS frame, kept for the block-end publish of
@@ -5963,13 +6286,29 @@ static inline void mix_tracks_frame(
             .code = tr->perf_source_state < 0 ? LE_PLOG_SOURCE_APPLIED
                                               : LE_PLOG_SOURCE_TRANSPORT,
             .restore_log = {t, tr->perf_source_id, st[t], phase}});
+        /* 322/323 carry the integral phase; off whole samples the exact
+         * index follows (E3, M1), so the stem re-anchors exactly. */
+        if (st[t] == LE_TRACK_PLAYING && !le_head_is_integral(&tr->head)) {
+          int32_t hl;
+          const int64_t song = le_track_song_position(e, tr, &hl);
+          le_speed_log(e, tr, frame, le_head_index(&tr->head, song, hl), 0);
+        }
       }
       tr->perf_source_state = st[t];
-      /* The phase steps in the track's direction (#1162), so continuous
-       * reversed playback logs no transport facts. */
-      tr->perf_source_next_pos =
-          len > 0 ? (tr->reversed ? (phase + len - 1) % len : (phase + 1) % len)
-                  : 0;
+      /* The phase steps in the track's direction (#1162) at its rate
+       * (#1179): the integral index the next song frame reads, so continuous
+       * reversed or 1/2x playback logs no transport facts. */
+      if (len <= 0) {
+        tr->perf_source_next_pos = 0;
+      } else if (tr->head.rate == 1.0) {
+        tr->perf_source_next_pos = tr->head.reversed ? (phase + len - 1) % len
+                                                     : (phase + 1) % len;
+      } else {
+        int32_t hl;
+        const int64_t song = le_track_song_position(e, tr, &hl);
+        tr->perf_source_next_pos =
+            (int32_t)le_head_index(&tr->head, song + 1, hl) % len;
+      }
     } else if (st[t] == LE_TRACK_RECORDING || st[t] == LE_TRACK_OVERDUBBING) {
       /* The written slot is uncaptured material: an image source ends here
        * (D4), and so does a staged image that is overwritten before it was
@@ -6121,7 +6460,9 @@ static inline void mix_tracks_frame(
      * a relaunch origin) and never on a reversed track (#1162): reversing a
      * loop reverses the recording, not its effects, so the live chains run
      * forward over the backward read. */
-    if (tce != NULL && st[t] == LE_TRACK_PLAYING && !tr->reversed &&
+    if (tce != NULL && st[t] == LE_TRACK_PLAYING && !tr->head.reversed &&
+        le_head_is_integral(&tr->head) &&
+        (tr->transpose_st == 0 || e->transpose_bypass) &&
         !load_i32(&tr->a_track_cache_active) && trk_rp == 0) {
       store_i32(&tr->a_track_cache_active, 1);
       for (int l = 0; l < lane_n[t]; ++l) {
@@ -6191,12 +6532,20 @@ static inline void mix_tracks_frame(
          * od_gain == 0 in steady playback, so this is a plain read.
          * trk_pos[t] (Free mode, B2b): this track's own clock position;
          * equals pos otherwise. */
-        loopsample = lbuf[seg_base[t] + trk_pos[t]];
-        /* Reverse turn (#1162): the pre-turn head fades out over the window
-         * as the new head fades in — both read this same lane's material. */
-        if (turn_old[t] >= 0) {
+        /* The source this buffer selected: the lane's Transpose render, or
+         * its dry take (le_transpose_select). Writes stay on lbuf. */
+        const float* rb = tr->src_ent[l] ? tr->src_ent[l]->pcm : lbuf;
+        loopsample = head_idx[t] >= 0.0
+                         ? le_head_read(rb, src_len[t], &tr->head, head_idx[t])
+                         : rb[seg_base[t] + trk_pos[t]];
+        /* A turn (Reverse #1162, a Speed step or a source swap #1179): the
+         * pre-turn head fades out over the window as the new head fades in,
+         * over the source it read when the window started. */
+        if (turn_idx[t] >= 0.0) {
+          const float* ob = tr->turn_ent[l] ? tr->turn_ent[l]->pcm : lbuf;
           loopsample = loopsample * turn_x[t] +
-                       lbuf[turn_old[t]] * (1.0f - turn_x[t]);
+                       le_head_read(ob, src_len[t], &tr->prev_head,
+                                    turn_idx[t]) * turn_y[t];
         }
         if (od_gain > 0.0f) {
           /* Backup-on-write: save the pre-value into the armed shadow first —
@@ -6278,7 +6627,9 @@ static inline void mix_tracks_frame(
        * tail/LFO continuity) for playback nobody hears. */
       const le_wet_entry* wce = cache_ent[t][l];
       const int32_t rp = seg_base[t] + trk_pos[t];
-      if (wce != NULL && st[t] == LE_TRACK_PLAYING && !tr->reversed &&
+      if (wce != NULL && st[t] == LE_TRACK_PLAYING && !tr->head.reversed &&
+          le_head_is_integral(&tr->head) &&
+          (tr->transpose_st == 0 || e->transpose_bypass) &&
           !load_i32(&ln->a_cache_active) && rp == 0) {
         store_i32(&ln->a_cache_active, 1);
         for (int s = 0; s < fx_pre_count[t][l]; ++s) {
@@ -6658,6 +7009,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     apply_command(e, &cmd, perf_frame_base);
     e->commands_applied++; /* rejected and no-op commands settle too */
   }
+  le_head_land(e, perf_frame_base);
 
   le_midi_ports_drain(e);
 
@@ -6908,6 +7260,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * track of dormant cost. */
   const le_wet_entry* track_cache_ent[LE_MAX_TRACKS];
   snapshot_track_cache(e, tc, track_cache_ent);
+  le_transpose_select(e, tc, lane_n, perf_frame_base);
 
 
   /* Per-input live monitor chain, snapshotted once per buffer (see
