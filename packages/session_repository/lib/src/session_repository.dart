@@ -630,11 +630,14 @@ class SessionRepository {
   /// Reads the engine snapshot and each settled track's per-lane overdub layers
   /// once.
   ///
-  /// Every active lane's full pool history is exported: the `undoDepth` undo
-  /// snapshots, the live buffer, then the `redoDepth` redo snapshots (the
-  /// undo/redo depths are track-wide, so every lane carries the same count). A
-  /// lane whose live buffer is empty is skipped, and a track left with no lane
-  /// is dropped.
+  /// Every active lane's full history is exported: the track's history entries
+  /// with their kinds (#1164), and per lane the images they name — one per
+  /// undo entry, the live buffer, then one per redo entry that is not a Peel
+  /// marker (the history is track-wide, so every lane carries the same
+  /// images). The split is the engine's raw stack count that comes with the
+  /// entries, never the snapshot's `undoDepth`, which reads 0 while a Clear
+  /// restore is in flight. A lane whose live buffer is empty is skipped, and
+  /// a track left with no lane is dropped.
   _Capture _capture([SessionSettings? settings]) {
     final snapshot = _engine.snapshot();
     final laneStems = <(int, int), List<Float32List>>{};
@@ -649,9 +652,11 @@ class SessionRepository {
         continue;
       }
       if (track.lengthFrames <= 0) continue;
-      final undoCount = track.undoDepth;
-      final redoCount = track.redoDepth;
-      final total = undoCount + 1 + redoCount;
+      // The kinds name the images (#1164): a redo-side Peel marker holds
+      // none, so the image count is not simply undo + 1 + redo.
+      final history = _engine.exportHistory(i);
+      final undoCount = history.undoCount;
+      final total = history.imageCount;
       final lanes = <SessionLane>[];
       for (var l = 0; l < track.lanes.length; l++) {
         // The live layer sits at ordinal `undoCount`; skip a lane whose live
@@ -690,8 +695,7 @@ class SessionRepository {
             layers: layerFiles,
             pan: mix?.imagePan ?? 0,
             balance: mix?.balance ?? 1,
-            undoCount: undoCount,
-            redoCount: redoCount,
+            history: history,
           ),
         );
       }

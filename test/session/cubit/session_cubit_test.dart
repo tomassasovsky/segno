@@ -617,6 +617,7 @@ void main() {
                       outputMask: 1,
                       inputChannel: 0,
                       layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                      history: TrackHistory.none,
                     ),
                   ],
                 ),

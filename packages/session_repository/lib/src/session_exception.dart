@@ -52,10 +52,12 @@ class SessionUnsupportedVersion extends SessionException {
       'unsupported session version $version (requires $supported)';
 }
 
-/// A track lane's overdub-layer stack is structurally invalid — its declared
-/// `undoCount + 1 + redoCount` does not match its layer list, or the count
-/// exceeds the engine's per-lane pool cap. A corrupt or foreign bundle fails
-/// loudly on load rather than mid-apply.
+/// A track lane's audio history is structurally invalid (#1164): its stored
+/// counts disagree with its entries, the engine could not hold the entries
+/// (`TrackHistory.malformation`), its layer list is not one image per
+/// image-bearing entry plus the live buffer (`TrackHistory.imageCount`), or
+/// two lanes of one track carry different histories. A corrupt or foreign
+/// bundle fails loudly on load rather than mid-apply.
 class SessionCorruptLayers extends SessionException {
   /// Creates a [SessionCorruptLayers].
   const SessionCorruptLayers({
