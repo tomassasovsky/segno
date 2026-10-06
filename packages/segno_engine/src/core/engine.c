@@ -490,7 +490,8 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->outstanding_count = 0;
     tr->queued_undo = 0;
     tr->dub_punch_out_posted = 0;
-    tr->perf_restore_active = 0;
+    tr->perf_source_slot = -1;
+    tr->perf_source_id = 0;
     tr->clear_restore_pending = 0;
     tr->clear_restore_slot = -1;
     tr->clear_restore_generation = 0;

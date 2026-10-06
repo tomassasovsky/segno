@@ -115,8 +115,44 @@ static inline int32_t le_effective_state(le_track* t) {
  * the swap. Control thread only (a_live's sole writer). */
 static inline void le_track_publish_live(le_track* t, int32_t slot) {
   const int32_t lanes = le_lanes_active(t);
-  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, slot);
+  /* Lane 0 is published LAST, with release: a callback that observes the new
+   * slot there (the acquire load of lane 0's a_live in mix_tracks_frame, the
+   * capture's application boundary, #1143) also observes the perf.slot_image
+   * entry the caller stored for it AND the lanes 1..n stores above, so no lane
+   * can still mix the old slot in the frame lane 0's fact names. A lane k may
+   * still mix the new slot up to one frame BEFORE that fact (its own relaxed
+   * load runs after lane 0's in the same frame); the fact is exact for lane 0,
+   * which is all today's lane-0 renderer consumes. */
+  for (int32_t l = lanes - 1; l >= 0; --l) {
+    atomic_store_explicit(&t->lanes[l].a_live, slot, memory_order_release);
+  }
   le_audio_rev_bump(t); /* [R1] a_live now names other audio */
+}
+
+/* Publishes [slot] live with its staged image identity (#1143): `id` is the
+ * perf.slot_image entry the callback will log when it first mixes the slot —
+ * a nonzero staged id from le_stage_source_image, or 0 for a slot whose PCM
+ * has no immutable copy in this capture (loop-close restoration, session
+ * import), which the callback logs as 323/0 so the stem fails truthfully.
+ * Every control-side a_live publisher goes through here, so a stale entry
+ * can never be read for a slot that was published without one. */
+static inline void le_publish_live_image(le_engine* e, le_track* t, int32_t slot,
+                                         uint32_t id) {
+  atomic_store_explicit(&e->perf.slot_image[t - e->tracks][slot], id,
+                        memory_order_relaxed);
+  le_track_publish_live(t, slot);
+}
+
+/* Drops every staged image identity of [channel] (#1143). Called by every
+ * control path that writes PCM into a pool slot outside the overdub write
+ * path (session import, the fresh-capture zero/regrow): the slot's content
+ * no longer matches the image an earlier admission staged for it, and the
+ * callback must not log that image when the slot next becomes live. */
+static inline void le_forget_slot_images(le_engine* e, int32_t channel) {
+  for (int32_t s = 0; s < LE_POOL_SLOTS; ++s) {
+    atomic_store_explicit(&e->perf.slot_image[channel][s], 0u,
+                          memory_order_relaxed);
+  }
 }
 
 /* Whether `ch` is a usable track index. Defined in engine.c. */
