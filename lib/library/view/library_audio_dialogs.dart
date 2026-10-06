@@ -44,6 +44,12 @@ enum LibraryDialogRole {
   /// Filled `Try again`, 155 wide.
   tryAgain(width: 155, tone: LoopButtonTone.accent),
 
+  /// Filled `Retry`, 112 wide (pen 34).
+  retry(width: 112, tone: LoopButtonTone.accent),
+
+  /// Outlined `Replace`, 139 wide (pen 34's backup name match).
+  replaceBackup(width: 139, tone: LoopButtonTone.outlined),
+
   /// A chooser row, the panel's full inner width.
   choice(width: 878, tone: LoopButtonTone.outlined);
 
@@ -63,9 +69,24 @@ enum LibraryDialogRole {
   final bool destructive;
 }
 
-/// The Audio tab's dialog (pen 20/09, 20/10): the 960-wide panel with a
-/// title, one line, and its actions at the trailing edge, or with [choices]
-/// stacked under the title (the package chooser).
+/// The Library's two dialog panels: the Audio tab's 960-wide ones (pen
+/// 20/09, 20/10) and section 34's 900-wide backup ones.
+enum LibraryDialogPanel {
+  /// Pen 20/09 and 20/10.
+  export(width: 960),
+
+  /// Pen 34 `Matching backup name` and `Retry an interrupted copy`.
+  backup(width: 900);
+
+  const LibraryDialogPanel({required this.width});
+
+  /// The panel's width.
+  final double width;
+}
+
+/// The Library's dialog (pen 20/09, 20/10, 34): a panel with a title, one
+/// line, and its actions at the trailing edge, or with [choices] stacked
+/// under the title (the package chooser).
 class LibraryAudioDialog extends StatelessWidget {
   /// Creates a dialog.
   const LibraryAudioDialog({
@@ -73,8 +94,12 @@ class LibraryAudioDialog extends StatelessWidget {
     required this.actions,
     this.body,
     this.choices = const [],
+    this.panel = LibraryDialogPanel.export,
     super.key,
   });
+
+  /// Which panel it is, which sets its width.
+  final LibraryDialogPanel panel;
 
   /// The question.
   final String title;
@@ -105,7 +130,7 @@ class LibraryAudioDialog extends StatelessWidget {
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Container(
-            width: 960,
+            width: panel.width,
             padding: const EdgeInsets.all(41),
             decoration: BoxDecoration(
               color: surface.cardHigh,

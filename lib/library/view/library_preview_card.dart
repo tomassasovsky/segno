@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
+import 'package:segno/library/view/library_backup_view.dart';
 import 'package:segno/library/view/library_manage.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -559,16 +560,30 @@ class LibraryPreviewFooter extends StatelessWidget {
     final id = preview.summary.id;
     final isCurrent = id == session.currentSessionId;
     final busy = session.status == SessionStatus.working;
+    final backup = context.select<LibraryCubit, LibraryBackup?>(
+      (c) => c.state.backup,
+    );
+    // Pen 34 `Inline copy progress` takes the footer while this session is
+    // copied to the drive.
+    if (backup case final LibraryBackupRunning running when running.id == id) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: LibraryBackupProgress(backup: running),
+      );
+    }
+    final backedUp = backup is LibraryBackupDone && backup.id == id;
     return Row(
       children: [
         Expanded(
           child: Padding(
             padding: const EdgeInsets.only(top: 31),
             child: AppText(
-              l10n.libraryFooterFacts(
-                preview.fxCount,
-                l10n.libraryBackingCount(preview.backingCount),
-              ),
+              backedUp
+                  ? l10n.libraryBackedUp
+                  : l10n.libraryFooterFacts(
+                      preview.fxCount,
+                      l10n.libraryBackingCount(preview.backingCount),
+                    ),
               key: const Key('library_preview_footer_facts'),
               style: TextStyle(
                 color: surface.textSecondary,
@@ -578,6 +593,11 @@ class LibraryPreviewFooter extends StatelessWidget {
             ),
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: LibraryBackUpButton(summary: preview.summary),
+        ),
+        const SizedBox(width: 23),
         Padding(
           padding: const EdgeInsets.only(top: 12),
           child: isCurrent

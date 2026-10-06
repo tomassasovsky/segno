@@ -11,6 +11,7 @@ import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_audio_cubit.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_audio_tab.dart';
+import 'package:segno/library/view/library_backup_view.dart';
 import 'package:segno/library/view/library_sessions_tab.dart';
 import 'package:segno/library/view/new_loop_sheet.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -42,6 +43,7 @@ class LibraryPage extends StatelessWidget {
             sessions: context.read<SessionRepository>(),
             volumes: context.read<RemovableVolumes>(),
             pedal: context.read<PedalRepository>(),
+            guards: context.read<GuardRegistry>(),
           );
           if (session.state.currentSessionId case final current?) {
             unawaited(cubit.select(current));
@@ -163,6 +165,25 @@ class _LibraryViewState extends State<LibraryView> {
               previous.status != current.status &&
               current.status == SessionStatus.success,
           listener: _reselect,
+        ),
+        // Pen 34's questions: a backup already on the drive, an
+        // interruption, no drive.
+        BlocListener<LibraryCubit, LibraryState>(
+          listenWhen: (previous, current) =>
+              previous.backup != current.backup &&
+              (current.backup is LibraryBackupConflict ||
+                  current.backup is LibraryBackupInterrupted),
+          listener: (context, state) => unawaited(
+            showLibraryBackupQuestion(context, state.backup!),
+          ),
+        ),
+        // A restore added a session: the catalog shows it.
+        BlocListener<LibraryCubit, LibraryState>(
+          listenWhen: (previous, current) =>
+              previous.restoredId != current.restoredId &&
+              current.restoredId != null,
+          listener: (context, _) =>
+              unawaited(context.read<SessionCubit>().refreshSessions()),
         ),
         // A track that starts recording ends Listen and Preview (plan D10).
         BlocListener<LooperBloc, LooperState>(

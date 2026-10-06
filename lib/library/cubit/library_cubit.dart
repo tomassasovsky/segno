@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/library/application/audio_export.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -20,18 +22,31 @@ part 'library_state.dart';
 /// ends it on a performance arm and a device reopen, which the poll reads
 /// as the preview no longer playing.
 ///
-/// It never opens a session and never changes the catalog: `SessionCubit`
-/// owns the current session, the catalog and its folders, and every catalog
-/// mutation. This cubit only reads previews of saved bundles, so selecting a
-/// row can never reach the engine.
+/// It runs Sessions > USB (pen section 34, plan Part 8): `Back up to USB`
+/// copies the selected bundle to the drive as one directory through the
+/// port ([AudioExporter]'s package protocol: every file under a write lease
+/// into a hidden staging directory, then one rename, `Replace` keeping the
+/// old backup until the new one is in place), under a `transfer` guard; the
+/// USB location lists the drive's backups; `Restore to Library` adds one as
+/// a new, independent session.
+///
+/// It never opens a session. `SessionCubit` owns the current session, the
+/// catalog and its folders, and every other catalog mutation; the one
+/// catalog write here is a restore, which adds a session and touches no
+/// other, and the page refreshes the catalog when it lands
+/// ([LibraryState.restoredId]). Selecting a row can never reach the engine.
 class LibraryCubit extends Cubit<LibraryState> {
   /// Creates a [LibraryCubit] over [sessions], [volumes] and [pedal].
   LibraryCubit({
     required SessionRepository sessions,
     required RemovableVolumes volumes,
     required PedalRepository pedal,
+    required GuardRegistry guards,
     Duration listenPoll = const Duration(milliseconds: 100),
   }) : _sessions = sessions,
+       _volumes = volumes,
+       _exporter = AudioExporter(volumes),
+       _guards = guards,
        _listenPoll = listenPoll,
        super(LibraryState(volumes: volumes.current)) {
     _pedalSubscription = pedal.events.listen(_onPedalEvent);
@@ -39,6 +54,13 @@ class LibraryCubit extends Cubit<LibraryState> {
   }
 
   final SessionRepository _sessions;
+  final RemovableVolumes _volumes;
+  final AudioExporter _exporter;
+  final GuardRegistry _guards;
+
+  /// The policy the last backup ran under, which `Retry` repeats.
+  ConflictPolicy _backupPolicy = ConflictPolicy.ask;
+  bool _backupCancelRequested = false;
 
   /// How often a playing preview's progress is read.
   final Duration _listenPoll;
@@ -65,6 +87,7 @@ class LibraryCubit extends Cubit<LibraryState> {
 
   void _onVolumes(List<RemovableVolume> volumes) {
     emit(state.copyWith(volumes: volumes));
+    if (state.location == LibraryLocation.usb) loadBackups();
   }
 
   /// Selects [id] and reads its preview. Selecting is not opening: nothing
@@ -271,9 +294,238 @@ class LibraryCubit extends Cubit<LibraryState> {
     emit(state.copyWith(section: section));
   }
 
-  /// Browses [location].
-  void setLocation(LibraryLocation location) =>
-      emit(state.copyWith(location: location));
+  /// Browses [location]; the USB location reads the drive's backups.
+  void setLocation(LibraryLocation location) {
+    emit(state.copyWith(location: location));
+    if (location == LibraryLocation.usb) loadBackups();
+  }
+
+  /// The drive the Library reads, or null.
+  RemovableVolume? get _readableDrive =>
+      state.volumes.where((v) => v.readable).firstOrNull;
+
+  /// Reads the backups on the readable drive (none without one). The
+  /// selection stays while its backup is still there.
+  void loadBackups() {
+    final drive = _readableDrive;
+    final backups = drive == null
+        ? const <SessionSummary>[]
+        : _sessions.listBackups(
+            '${drive.mountPoint}/${AudioExportFolders.sessions}',
+          );
+    final keep = backups.any((b) => b.id == state.selectedBackup);
+    emit(
+      state.copyWith(
+        backups: backups,
+        clearSelectedBackup: !keep,
+        clearRestoreError: true,
+      ),
+    );
+  }
+
+  /// Selects the backup [id] on the USB list.
+  void selectBackup(String id) => emit(
+    state.copyWith(selectedBackup: id, clearRestoreError: true),
+  );
+
+  /// `Restore to Library`: adds the selected backup as a new session, then
+  /// shows it selected in Internal (pen 34 `Restored session selected`).
+  Future<void> restore() async {
+    final drive = _readableDrive;
+    final backup = state.selectedBackup;
+    if (drive == null || backup == null) return;
+    emit(state.copyWith(clearRestoreError: true));
+    final SessionId id;
+    try {
+      id = await _sessions.restoreFrom(
+        '${drive.mountPoint}/${AudioExportFolders.sessions}/$backup',
+      );
+    } on GuardRefused {
+      if (!isClosed) {
+        emit(state.copyWith(restoreError: LibraryRestoreError.busy));
+      }
+      return;
+    } on Object {
+      if (!isClosed) {
+        emit(state.copyWith(restoreError: LibraryRestoreError.failed));
+      }
+      return;
+    }
+    if (isClosed) return;
+    emit(state.copyWith(location: LibraryLocation.internal, restoredId: id));
+    await select(id);
+  }
+
+  /// `Back up to USB` for the selected session [name]d so: asks before a
+  /// backup already on the drive is touched, and reports a missing drive,
+  /// an interruption or a refusal with nothing changed.
+  Future<void> backUp({required String name, required String purpose}) async {
+    final id = state.selectedId;
+    if (id == null || state.backup is LibraryBackupRunning) return;
+    _backupPurpose = purpose;
+    await _runBackup(id, name, ConflictPolicy.ask);
+  }
+
+  String _backupPurpose = '';
+
+  /// Answers `A backup has this name` with `Keep both` or `Replace`.
+  Future<void> resolveBackupConflict(ConflictPolicy policy) async {
+    final backup = state.backup;
+    if (backup is! LibraryBackupConflict) return;
+    await _runBackup(backup.id, backup.name, policy);
+  }
+
+  /// `Retry` on an interruption: the same backup under the same choice.
+  Future<void> retryBackup() async {
+    final backup = state.backup;
+    if (backup is! LibraryBackupInterrupted) return;
+    await _runBackup(backup.id, backup.name, _backupPolicy);
+  }
+
+  /// `Cancel`: stops a running backup after the file in flight (removing
+  /// what it placed), or closes the question in front of the player.
+  void cancelBackup() {
+    if (state.backup is LibraryBackupRunning) {
+      _backupCancelRequested = true;
+      return;
+    }
+    emit(state.copyWith(clearBackup: true));
+  }
+
+  Future<void> _runBackup(
+    SessionId id,
+    String name,
+    ConflictPolicy policy,
+  ) async {
+    _backupPolicy = policy;
+    LibraryBackup interrupted(
+      LibraryBackupProblem problem, [
+      GuardKind? blockedBy,
+    ]) => LibraryBackupInterrupted(
+      id: id,
+      name: name,
+      problem: problem,
+      blockedBy: blockedBy,
+    );
+    final drive = _volumes.current
+        .where(
+          (v) =>
+              v.status == RemovableVolumeStatus.mounted && v.mountPoint != null,
+        )
+        .firstOrNull;
+    if (drive == null) {
+      final readOnly = _volumes.current.any(
+        (v) => v.status == RemovableVolumeStatus.readOnly,
+      );
+      emit(
+        state.copyWith(
+          backup: interrupted(
+            readOnly
+                ? LibraryBackupProblem.readOnly
+                : LibraryBackupProblem.noDrive,
+          ),
+        ),
+      );
+      return;
+    }
+    _backupCancelRequested = false;
+    emit(
+      state.copyWith(
+        backup: LibraryBackupRunning(id: id, name: name),
+      ),
+    );
+    OperationGuard? guard;
+    OperationGuard? reading;
+    try {
+      final bundle = await _sessions.bundlePathOf(id);
+      // On the drive: an eject or a take recorded to it waits for the copy.
+      guard = _guards.enter(
+        GuardKind.transfer,
+        GuardScope.removable(
+          drive.generation,
+          item: '${AudioExportFolders.sessions}/$id',
+        ),
+        purpose: _backupPurpose,
+      );
+      // On the bundle it reads: a save, rename or delete of the session
+      // waits too, so the backup never copies half of a write.
+      reading = _guards.enter(
+        GuardKind.transfer,
+        GuardScope.internal(item: bundle),
+        purpose: _backupPurpose,
+      );
+      final files = await _sessions.bundleFiles(id);
+      await _exporter.run(
+        AudioExportPlan(
+          name: id,
+          folder: AudioExportFolders.sessions,
+          package: true,
+          files: [for (final f in files) AudioExportFile('$bundle/$f', f)],
+        ),
+        generation: drive.generation,
+        policy: policy,
+        purpose: _backupPurpose,
+        cancelled: () => _backupCancelRequested,
+        onProgress: (fraction) {
+          if (isClosed) return;
+          emit(
+            state.copyWith(
+              backup: LibraryBackupRunning(
+                id: id,
+                name: name,
+                fraction: fraction,
+              ),
+            ),
+          );
+        },
+      );
+      if (isClosed) return;
+      emit(
+        state.copyWith(
+          backup: LibraryBackupDone(id: id, name: name),
+        ),
+      );
+      if (state.location == LibraryLocation.usb) loadBackups();
+    } on NameConflict {
+      if (!isClosed) {
+        emit(
+          state.copyWith(
+            backup: LibraryBackupConflict(id: id, name: name),
+          ),
+        );
+      }
+    } on AudioExportCancelled {
+      if (!isClosed) emit(state.copyWith(clearBackup: true));
+    } on GuardRefused catch (e) {
+      if (!isClosed) {
+        emit(
+          state.copyWith(
+            backup: interrupted(
+              LibraryBackupProblem.busy,
+              e.blockers.first.kind,
+            ),
+          ),
+        );
+      }
+    } on Object catch (e) {
+      if (!isClosed) {
+        emit(
+          state.copyWith(
+            backup: interrupted(switch (e) {
+              StorageVolumeLost() ||
+              StorageUnsupported() => LibraryBackupProblem.driveLost,
+              StorageFull() => LibraryBackupProblem.full,
+              StorageReadOnly() => LibraryBackupProblem.readOnly,
+              _ => LibraryBackupProblem.failed,
+            }),
+          ),
+        );
+      }
+    } finally {
+      guard?.release();
+      reading?.release();
+    }
+  }
 
   @override
   Future<void> close() async {
