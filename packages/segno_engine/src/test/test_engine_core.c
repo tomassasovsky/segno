@@ -19509,8 +19509,20 @@ static void test_fs_sync_dir(void) {
   if (f != NULL) {
     fclose(f);
     CHECK(le_fs_sync_dir(file) == LE_ERR_DEVICE);
+    int32_t err = -1;
+    CHECK(le_fs_sync_dir_errno(file, &err) == LE_ERR_DEVICE);
+    CHECK(err == ENOTDIR);
     remove(file);
   }
+  /* The errno variant says why, so a pulled drive can be told from a
+   * failing one (#1177). */
+  int32_t err = -1;
+  CHECK(le_fs_sync_dir_errno(missing, &err) == LE_ERR_DEVICE);
+  CHECK(err == ENOENT);
+  CHECK(le_fs_sync_dir_errno(perf_test_dir(), &err) == LE_OK);
+  CHECK(err == 0);
+  CHECK(le_fs_sync_dir_errno(perf_test_dir(), NULL) == LE_OK);
+  CHECK(le_fs_sync_dir_errno(NULL, &err) == LE_ERR_INVALID);
 }
 
 static void test_fs_rename_noreplace(void) {

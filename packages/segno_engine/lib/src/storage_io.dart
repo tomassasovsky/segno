@@ -87,9 +87,9 @@ abstract interface class StorageIo {
   /// Makes the entries of the directory at [path] durable, so a rename into
   /// it survives a power cut.
   ///
-  /// Throws a [FileSystemException] when the directory cannot be opened or
-  /// the sync fails: a caller must not report a publication as durable when
-  /// it is not.
+  /// Throws a [FileSystemException], carrying the OS error, when the
+  /// directory cannot be opened or the sync fails: a caller must not report
+  /// a publication as durable when it is not.
   void syncDirectory(String path);
 
   /// Renames [from] to [to] only if nothing is at [to], as one atomic step.
@@ -200,12 +200,19 @@ class NativeStorageIo implements StorageIo {
   @override
   void syncDirectory(String path) {
     final pathPtr = path.toNativeUtf8();
+    final errorPtr = calloc<Int32>();
     try {
-      final code = _bindings.le_fs_sync_dir(pathPtr.cast());
+      final code = _bindings.le_fs_sync_dir_errno(pathPtr.cast(), errorPtr);
       if (!EngineResult.fromCode(code).isOk) {
-        throw FileSystemException('could not sync the directory', path);
+        final errno = errorPtr.value;
+        throw FileSystemException(
+          'could not sync the directory',
+          path,
+          errno == 0 ? null : OSError('sync failed', errno),
+        );
       }
     } finally {
+      calloc.free(errorPtr);
       malloc.free(pathPtr);
     }
   }

@@ -5018,6 +5018,32 @@ class SegnoEngineBindings {
   late final _le_fs_sync_dir = _le_fs_sync_dirPtr
       .asFunction<int Function(ffi.Pointer<ffi.Char>)>();
 
+  /// le_fs_sync_dir, also reporting why it failed: on LE_ERR_DEVICE,
+  /// *out_errno (when not NULL) is the OS error (ENOENT for a missing path,
+  /// ENOTDIR for a file, EIO from a drive that went away mid-sync), so a caller
+  /// can tell a pulled drive from a failing one (#1177). *out_errno is 0 on
+  /// LE_OK.
+  int le_fs_sync_dir_errno(
+    ffi.Pointer<ffi.Char> path,
+    ffi.Pointer<ffi.Int32> out_errno,
+  ) {
+    return _le_fs_sync_dir_errno(
+      path,
+      out_errno,
+    );
+  }
+
+  late final _le_fs_sync_dir_errnoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Int32>)
+        >
+      >('le_fs_sync_dir_errno');
+  late final _le_fs_sync_dir_errno = _le_fs_sync_dir_errnoPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Int32>)
+      >();
+
   /// Renames `from` to `to` (both UTF-8) only if nothing is at `to`, as one
   /// atomic step: renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL)
   /// on macOS, MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows. A copy

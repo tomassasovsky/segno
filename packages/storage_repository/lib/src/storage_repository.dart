@@ -558,9 +558,19 @@ class StorageRepository {
         await _copyBytes(File(sourcePath), part, () => held.isLost);
         if (held.isLost) throw const FileSystemException('volume lost');
         final target = _publish(part, wanted, onConflict);
-        _io.syncDirectory(directory.path);
-        for (final made in created) {
-          _io.syncDirectory(made.parent.path);
+        try {
+          _io.syncDirectory(directory.path);
+          for (final made in created) {
+            _io.syncDirectory(made.parent.path);
+          }
+        } on FileSystemException catch (e) {
+          // The file is in place and complete; only its durability is in
+          // doubt. A pulled drive is still a lost volume (the sync carries
+          // the errno); anything else says where the file is.
+          final failure = await _classify(e, destination, held);
+          throw failure is StorageIo
+              ? StorageFailure.io(failure.reason, writtenTo: target)
+              : failure;
         }
         return target;
       } on SourceReadFailure catch (e) {
