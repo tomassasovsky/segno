@@ -1800,6 +1800,19 @@ void main() {
       destination: () => destination,
     );
 
+    /// [waitForCompleted] with room for a loaded machine: the finalize and
+    /// render here do real file work.
+    Future<PerformanceRecorderCompleted> completedWithin(
+      PerformanceRecorderCubit cubit,
+    ) async {
+      final state = cubit.state;
+      if (state is PerformanceRecorderCompleted) return state;
+      return cubit.stream
+          .firstWhere((s) => s is PerformanceRecorderCompleted)
+          .timeout(const Duration(seconds: 30))
+          .then((s) => s as PerformanceRecorderCompleted);
+    }
+
     void seedLog(String dir) {
       File('$dir/events.log').writeAsBytesSync(
         (BytesBuilder()
@@ -1849,7 +1862,7 @@ void main() {
       seedLog(performance.armedDirectory!);
 
       client.detach(1);
-      final completed = await waitForCompleted(cubit);
+      final completed = await completedWithin(cubit);
 
       expect(
         completed.result,
@@ -1882,7 +1895,7 @@ void main() {
       seedLog(performance.armedDirectory!);
       clock = clock.add(const Duration(seconds: 5));
       await performance.disarmAndFinalize();
-      await waitForCompleted(cubit);
+      await completedWithin(cubit);
 
       expect(storage.leases, isEmpty);
     });
