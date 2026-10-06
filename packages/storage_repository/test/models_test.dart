@@ -95,6 +95,10 @@ void main() {
     );
     expect('${const StorageFailure.io('EIO')}', 'storage I/O failed: EIO');
     expect(
+      '${const StorageFailure.io('EIO', writtenTo: '/media/1/take.wav')}',
+      'copied to /media/1/take.wav, but the drive did not confirm it: EIO',
+    );
+    expect(
       '${const NameConflict('/m/a.wav')}',
       'a file already exists at /m/a.wav',
     );
