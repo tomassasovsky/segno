@@ -1431,8 +1431,11 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
-    _importedDepths[channel] = (undoCount, redoCount);
+  TrackHistory exportHistory(int channel) => TrackHistory.none;
+
+  @override
+  EngineResult finalizeHistory(int channel, TrackHistory history) {
+    _importedDepths[channel] = (history.undoCount, history.redoCount);
     return EngineResult.ok;
   }
 
@@ -1524,6 +1527,9 @@ class FakeAudioEngine implements AudioEngine {
     if (publishPerfCommands) _publishedPerfArmed = false;
     return EngineResult.ok;
   }
+
+  @override
+  bool syncDirectory(String path) => path.isNotEmpty;
 
   @override
   VolumeSpace? volumeSpace(String path) => freeBytes == null

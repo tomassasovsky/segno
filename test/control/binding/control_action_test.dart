@@ -26,6 +26,7 @@ void main() {
     test('the accepted spellings are the ones stored', () {
       expect(const ModeAction(InteractionMode.record).key, 'mode:tracks');
       expect(const ModeAction(InteractionMode.mute).key, 'mode:mute');
+      expect(const ModeAction(InteractionMode.reverse).key, 'mode:reverse');
       expect(
         const CommandAction(ControlCommand.recordPlay).key,
         'command:record-play',
@@ -53,6 +54,13 @@ void main() {
         ).key,
         'direct:clear:5',
       );
+      expect(
+        ControlAction.tryParse('direct:reverse:all'),
+        const TrackOperationAction(
+          operation: TrackOperation.reverse,
+          scope: AllTracksScope(),
+        ),
+      );
     });
 
     test('a key this build cannot honour decodes to nothing', () {
@@ -68,7 +76,7 @@ void main() {
         'select-track:99',
         'select-track:+2',
         'direct:mute',
-        'direct:reverse:selected',
+        'direct:speed:selected',
         'direct:mute:9',
         'direct:mute:03',
         'command:teleport',

@@ -57,6 +57,10 @@ void main() {
     late FxChainPersistence projection;
     late SessionCubit session;
     late SessionRepository sessions;
+
+    /// The id the catalog gave the session saved as [name].
+    Future<SessionId> idOf(String name) async =>
+        (await sessions.listSessions()).singleWhere((s) => s.name == name).id;
     late PerformanceRepository performance;
     late MixSettingsCoordinator mix;
     late SettingsRepository settings;
@@ -144,7 +148,6 @@ void main() {
           record: record,
           timing: timing,
         ),
-        exportDirectory: () async => directory.path,
       );
       expect((await tempo.clickVolumeOwner.set(.4)).isOk, isTrue);
       expect(looper.record(), EngineResult.ok);
@@ -185,13 +188,15 @@ void main() {
         await session.saveAs('Click held');
         expect(session.state.status, SessionStatus.success);
         var bundle = await sessions.read(
-          await sessions.bundlePath('Click held'),
+          await sessions.bundlePathOf(await idOf('Click held')),
         );
         expect(bundle.session.clickVolume, closeTo(.4, 1e-6));
         expect(tempo.clickVolumeOwner.value, closeTo(1.6, 1e-6));
         expect(looper.sessionTransport.clickVolume, closeTo(1.6, 1e-6));
         await session.save();
-        bundle = await sessions.read(await sessions.bundlePath('Click held'));
+        bundle = await sessions.read(
+          await sessions.bundlePathOf(await idOf('Click held')),
+        );
         expect(bundle.session.clickVolume, closeTo(.4, 1e-6));
         expect(tempo.clickVolumeOwner.value, closeTo(1.6, 1e-6));
         expect(await settings.readClickVolumeCheckpoint(), closeTo(.4, 1e-6));
@@ -214,7 +219,9 @@ void main() {
       expect((await edit).isOk, isTrue);
       await save;
       expect(session.state.status, SessionStatus.success);
-      final bundle = await sessions.read(await sessions.bundlePath('Pending'));
+      final bundle = await sessions.read(
+        await sessions.bundlePathOf(await idOf('Pending')),
+      );
       expect(bundle.session.clickVolume, closeTo(1.2, 1e-6));
     });
 
@@ -231,7 +238,9 @@ void main() {
       );
       await session.saveAs('Held mode');
       expect(session.state.status, SessionStatus.success);
-      var bundle = await sessions.read(await sessions.bundlePath('Held mode'));
+      var bundle = await sessions.read(
+        await sessions.bundlePathOf(await idOf('Held mode')),
+      );
       expect(bundle.session.clickMode, ClickMode.off);
       expect(engine.snapshot().clickMode, ClickMode.playRec);
       expect(tempo.clickModeControl.clickModeSnapshot?.mode, ClickMode.playRec);
@@ -239,7 +248,9 @@ void main() {
       expect((await tempo.clickVolumeOwner.set(.7)).isOk, isTrue);
       await session.save();
       expect(session.state.status, SessionStatus.success);
-      bundle = await sessions.read(await sessions.bundlePath('Held mode'));
+      bundle = await sessions.read(
+        await sessions.bundlePathOf(await idOf('Held mode')),
+      );
       expect(bundle.session.clickVolume, closeTo(.7, 1e-6));
       expect(bundle.session.clickMode, ClickMode.off);
       expect(engine.snapshot().clickMode, ClickMode.playRec);
@@ -267,7 +278,7 @@ void main() {
         await save;
         expect(session.state.status, SessionStatus.success);
         final bundle = await sessions.read(
-          await sessions.bundlePath('Pending mode'),
+          await sessions.bundlePathOf(await idOf('Pending mode')),
         );
         expect(bundle.session.clickMode, ClickMode.rec);
         expect(engine.snapshot().clickMode, ClickMode.rec);
@@ -283,7 +294,7 @@ void main() {
           (await tempo.clickModeOwner.set(ClickMode.playRec)).isOk,
           isTrue,
         );
-        await session.loadNamed('No click');
+        await session.open(await idOf('No click'));
         expect(session.state.status, SessionStatus.success);
         expect(tempo.clickModeControl.clickModeSnapshot?.mode, ClickMode.off);
         expect(tempo.clickModeOwner.durable, ClickMode.off);
@@ -297,7 +308,7 @@ void main() {
       () async {
         await session.saveAs('Quiet');
         expect((await tempo.clickVolumeOwner.set(1.4)).isOk, isTrue);
-        await session.loadNamed('Quiet');
+        await session.open(await idOf('Quiet'));
         expect(session.state.status, SessionStatus.success);
         expect(tempo.clickVolumeOwner.value, closeTo(.4, 1e-6));
         expect(tempo.clickVolumeOwner.durable, closeTo(.4, 1e-6));

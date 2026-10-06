@@ -51,7 +51,7 @@ class StageTopBar extends StatelessWidget {
           _StageIconButton(
             key: const Key('stage_library'),
             semanticLabel: l10n.stageLibrary,
-            onTap: () => unawaited(showSessionsManager(context)),
+            onTap: () => unawaited(openLibrary()),
             child: PenIconView(
               icon: PenIcon.library,
               size: 28,

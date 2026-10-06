@@ -905,24 +905,21 @@ void main() {
       expect(find.byKey(const Key('audio_default_length_0')), findsNothing);
     });
 
-    testWidgets('its two openable rows also open one at a time', (
+    testWidgets('the loop cap lives on Device, not on Recording', (
       tester,
     ) async {
       await pump(tester, tab: AudioTab.recording);
-      await tester.tap(find.byKey(const Key('audio_max_loop_row')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_max_loop_5')), findsOneWidget);
+      expect(find.byKey(const Key('audio_max_loop_row')), findsNothing);
+      expect(find.byKey(const Key('audio_default_length_row')), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('audio_default_length_row')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_max_loop_5')), findsNothing);
-      expect(find.byKey(const Key('audio_default_length_2')), findsOneWidget);
+      await pump(tester);
+      expect(find.byKey(const Key('audio_max_loop_row')), findsOneWidget);
     });
 
     testWidgets('the loop cap chooser GROWS open rather than appearing', (
       tester,
     ) async {
-      await pump(tester, tab: AudioTab.recording);
+      await pump(tester);
       final chooser = find.byKey(const Key('audio_max_loop_chooser'));
       expect(tester.getSize(chooser).height, 0);
 
@@ -937,7 +934,7 @@ void main() {
     });
 
     testWidgets('the loop cap opens in place and writes', (tester) async {
-      await pump(tester, tab: AudioTab.recording);
+      await pump(tester);
       await tester.tap(find.byKey(const Key('audio_max_loop_row')));
       await tester.pumpAndSettle();
 

@@ -69,6 +69,7 @@ add_library(segno_engine SHARED
   # ---- core/: the portable engine (S1 split into per-concern TUs) ----
   core/engine.c              # residual control-thread core + shared helpers
   core/engine_convert.c      # pure sample-format conversion
+  core/engine_digest.c       # SHA-256, file digests, directory fsync (engine-free)
   # core/engine_fx.c lives in segno_dsp_core above (linked PRIVATE below) so a
   # second target (future VST3 plugin builds) can link it too.
   core/engine_session.c      # session export / import / commit
