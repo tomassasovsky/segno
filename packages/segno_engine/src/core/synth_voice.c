@@ -14,7 +14,8 @@
  *   - drums: GM 35/36 kick (sine 135 -> 47 Hz, or 180 -> 38 Hz electronic,
  *     over half the hit), 38/40 snare, 39 clap, 42/44 closed hat (noise plus a
  *     triangle, high-passed); an exponential fall to 1e-4 over the hit, then
- *     the voice ends. Drums ignore note-off. Their level is the prototype's
+ *     the voice ends. Drums ignore note-off for their sound: a released hit
+ *     rings on, and only a strike while the pad is still down replaces it. Their level is the prototype's
  *     times LE_SYNTH_DRUM_HEADROOM, so one hit stays under full scale.
  * The release falls exponentially with a time constant of release / 5 toward
  * a point just below zero, so it reaches exactly zero at the release time and
@@ -537,7 +538,14 @@ void le_synth_note_off(le_synth* s, uint32_t origin) {
   if (s == NULL) return;
   for (int32_t i = 0; i < s->voice_count; ++i) {
     le_synth_voice* v = &s->voices[i];
-    if (v->state != LE_SYNTH_VOICE_HELD || v->origin != origin || v->drum) {
+    if (v->state != LE_SYNTH_VOICE_HELD || v->origin != origin) continue;
+    if (v->drum) {
+      /* A drum hit rings to its end whatever the pad does, but a released
+       * pad's next strike must not choke it: like the reference (which drops
+       * a released hit from its token map, instrument-runtime.js:200-207),
+       * the hit leaves the held set so the repeated-strike rule no longer
+       * finds it. Its envelope is untouched. */
+      v->state = LE_SYNTH_VOICE_RELEASED;
       continue;
     }
     const le_synth_patch* p = le_synth_patch_at(v->patch);
