@@ -69,7 +69,7 @@ class Harness {
       exportsRoot: () async => exports,
       volumeSpace: (path) => spaces[path],
       storageIo: io,
-      guards: guards,
+      guards: guards ?? GuardRegistry(),
       copyBytes: copyBytes,
       volumeLossGrace: volumeLossGrace,
     );

@@ -281,6 +281,7 @@ void main() {
 
       expect(rig.client.pendingRequests, isEmpty);
       expect(cubit.state.ejectFailed, 1);
+      expect(cubit.state.ejectBlockedBy, GuardKind.restart);
       expect(cubit.state.volumes.single.status, RemovableVolumeStatus.mounted);
     });
 

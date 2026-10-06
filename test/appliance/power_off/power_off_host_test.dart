@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
@@ -175,6 +176,7 @@ void main() {
     testWidgets('press while a copy holds a drive refuses with the transfer '
         'words, and halts nothing', (tester) async {
       final repository = StorageRepository(
+        guards: GuardRegistry(),
         client: FakeUsbStorageClient(),
         exportsRoot: () async => '/data/exports',
         volumeSpace: (_) => null,

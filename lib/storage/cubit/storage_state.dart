@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:storage_repository/storage_repository.dart';
 
 /// What the Storage page draws: Internal and each removable volume, their
@@ -17,6 +18,7 @@ class StorageState extends Equatable {
     this.ejectFailed,
     this.ejectTaken = false,
     this.ejectStuck,
+    this.ejectBlockedBy,
   });
 
   /// Whether this build can see removable volumes at all.
@@ -62,6 +64,11 @@ class StorageState extends Equatable {
   /// answers or goes.
   final int? ejectStuck;
 
+  /// What the guard table said holds the drive when the last eject was
+  /// refused (a take on it, a shutdown), shown in place of "Could not
+  /// eject"; null when the eject was tried and failed on its own.
+  final GuardKind? ejectBlockedBy;
+
   /// Returns a copy with the given fields replaced. The nullable fields take
   /// a function, so null can be set rather than meaning "keep".
   StorageState copyWith({
@@ -76,6 +83,7 @@ class StorageState extends Equatable {
     int? Function()? ejectFailed,
     bool? ejectTaken,
     int? Function()? ejectStuck,
+    GuardKind? Function()? ejectBlockedBy,
   }) => StorageState(
     removableSupported: removableSupported ?? this.removableSupported,
     volumes: volumes ?? this.volumes,
@@ -88,6 +96,9 @@ class StorageState extends Equatable {
     ejectFailed: ejectFailed != null ? ejectFailed() : this.ejectFailed,
     ejectTaken: ejectTaken ?? this.ejectTaken,
     ejectStuck: ejectStuck != null ? ejectStuck() : this.ejectStuck,
+    ejectBlockedBy: ejectBlockedBy != null
+        ? ejectBlockedBy()
+        : this.ejectBlockedBy,
   );
 
   @override
@@ -103,5 +114,6 @@ class StorageState extends Equatable {
     ejectFailed,
     ejectTaken,
     ejectStuck,
+    ejectBlockedBy,
   ];
 }

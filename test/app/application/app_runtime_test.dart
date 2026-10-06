@@ -135,6 +135,7 @@ void main() {
       performance: performance,
       sessions: sessions,
       storage: StorageRepository(
+        guards: GuardRegistry(),
         client: const UnsupportedUsbStorageClient(),
         exportsRoot: () async => '.',
         volumeSpace: performance.volumeSpace,

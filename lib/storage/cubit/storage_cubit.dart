@@ -138,18 +138,29 @@ class StorageCubit extends Cubit<StorageState> {
   /// reading `Ejecting…` until it does.
   Future<void> eject(int generation) async {
     if (state.volumes.any(_isEjecting)) return;
-    emit(state.copyWith(ejectFailed: () => null, ejectTaken: false));
+    emit(
+      state.copyWith(
+        ejectFailed: () => null,
+        ejectBlockedBy: () => null,
+        ejectTaken: false,
+      ),
+    );
     final EjectOutcome outcome;
     try {
       outcome = await _repository.eject(generation);
     } on EjectRefused {
       await refresh();
       return;
-    } on GuardRefused {
+    } on GuardRefused catch (refusal) {
       // Something else forbids it now (a take on the drive, a shutdown);
-      // the repository filed nothing.
+      // the repository filed nothing. Said in the table's own words.
       if (isClosed) return;
-      emit(state.copyWith(ejectFailed: () => generation));
+      emit(
+        state.copyWith(
+          ejectFailed: () => generation,
+          ejectBlockedBy: () => refusal.blockers.first.kind,
+        ),
+      );
       return;
     }
     if (isClosed) return;

@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/storage/cubit/storage_cubit.dart';
 import 'package:storage_repository/storage_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
@@ -15,6 +16,7 @@ List<BlocProvider<StateStreamableSource<Object?>>> extraProviders() => [
   BlocProvider<StorageCubit>(
     create: (_) => StorageCubit(
       repository: StorageRepository(
+        guards: GuardRegistry(),
         client: const UnsupportedUsbStorageClient(),
         exportsRoot: () async => '/segno-destination-harness/exports',
         volumeSpace: (_) => null,

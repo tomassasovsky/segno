@@ -69,14 +69,15 @@ class StorageRepository implements ActiveOperationSource {
   /// replaces and a directory sync, both things Dart cannot do itself (see
   /// [copyFile]). It defaults to the engine's own, opened on the first copy,
   /// so watching and measuring drives never needs the native library.
-  /// [guards] is the app's one guard table; null checks nothing but this
-  /// repository's own leases (a build or a test without the table).
+  /// [guards] is the app's one guard table; the repository registers itself
+  /// with it as a source, so the table sees its leases and eject however the
+  /// table was made.
   StorageRepository({
     required UsbStorageClient client,
     required Future<String> Function() exportsRoot,
     required VolumeSpace? Function(String path) volumeSpace,
+    required GuardRegistry guards,
     engine.StorageIo? storageIo,
-    GuardRegistry? guards,
     this.ejectTimeout = const Duration(seconds: 20),
     this.ejectServedTimeout = const Duration(minutes: 2),
     this.volumeLossGrace = const Duration(seconds: 10),
@@ -88,6 +89,7 @@ class StorageRepository implements ActiveOperationSource {
        _guards = guards,
        _copyBytes = copyBytes ?? copyChunks {
     _subscription = _client.volumes.listen(_onRecords);
+    guards.addSource(this);
   }
 
   /// Space kept free on Internal so the system, the session store and Undo
@@ -121,7 +123,7 @@ class StorageRepository implements ActiveOperationSource {
   final VolumeSpace? Function(String path) _volumeSpace;
   engine.StorageIo? _storageIo;
   engine.StorageIo get _io => _storageIo ??= engine.NativeStorageIo();
-  final GuardRegistry? _guards;
+  final GuardRegistry _guards;
   final CopyBytes _copyBytes;
 
   late final StreamSubscription<List<RemovableVolumeRecord>> _subscription;
@@ -246,8 +248,8 @@ class StorageRepository implements ActiveOperationSource {
   /// Takes a hold on [destination] for [purpose]. Throws the
   /// [StorageFailure] a write there would meet: `readOnly`, `unsupported`, or
   /// `volumeLost` for a generation that is not present, is being ejected or
-  /// has been ejected; and [GuardRefused] when the guard table forbids a
-  /// `transfer` there now (a take on that volume, a shutdown).
+  /// has been ejected; or `busy` naming what holds it when the guard table
+  /// forbids a `transfer` there now (a take on that volume, a shutdown).
   ///
   /// The table is checked here, at the commit, and the lease itself is then
   /// reported through [activeOperations] for as long as it is held. A
@@ -257,13 +259,17 @@ class StorageRepository implements ActiveOperationSource {
       _checkWritable(destination.generation);
     }
     if (purpose != WritePurpose.recording) {
-      _guards
-          ?.enter(
-            GuardKind.transfer,
-            _scopeOf(destination),
-            purpose: purpose.name,
-          )
-          .release();
+      try {
+        _guards
+            .enter(
+              GuardKind.transfer,
+              _scopeOf(destination),
+              purpose: purpose.name,
+            )
+            .release();
+      } on GuardRefused catch (refusal) {
+        throw StorageFailure.busy(refusal.blockers.first.kind);
+      }
     }
     final held = HeldLease(
       WriteLease(target: destination, purpose: purpose),
@@ -371,7 +377,7 @@ class StorageRepository implements ActiveOperationSource {
       return const EjectOutcome.failed(stillEjecting);
     }
     _guards
-        ?.enter(
+        .enter(
           GuardKind.eject,
           GuardScope.removable(generation),
           purpose: ejectPurpose,

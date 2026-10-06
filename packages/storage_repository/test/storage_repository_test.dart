@@ -736,10 +736,12 @@ void main() {
   group('the guard table', () {
     late GuardRegistry guards;
 
-    StorageRepository buildGuarded() {
-      late StorageRepository built;
-      guards = GuardRegistry(sources: [_Source(() => built.activeOperations)]);
-      return built = h.build(initial: [h.record(1)], guards: guards);
+    StorageRepository buildGuarded({int drives = 1}) {
+      guards = GuardRegistry();
+      return h.build(
+        initial: [for (var g = 1; g <= drives; g++) h.record(g)],
+        guards: guards,
+      );
     }
 
     test('leases and the eject in flight are reported; a recording lease is '
@@ -797,13 +799,18 @@ void main() {
 
       expect(
         () => repo.acquire(usb1, WritePurpose.copy),
-        throwsA(
-          isA<GuardRefused>().having(
-            (e) => e.wants,
-            'wants',
-            GuardKind.transfer,
-          ),
+        throwsA(const StorageFailure.busy(GuardKind.capture)),
+      );
+      // A copy says so too, typed, before writing anything.
+      final source = h.source('take.wav', 100);
+      await expectLater(
+        repo.copyFile(
+          source.path,
+          usb1,
+          'take.wav',
+          onConflict: ConflictPolicy.ask,
         ),
+        throwsA(const StorageFailure.busy(GuardKind.capture)),
       );
       expect(repo.leases, isEmpty);
       // Internal is another volume.
@@ -813,6 +820,48 @@ void main() {
       take.release();
       repo.acquire(usb1, WritePurpose.copy).release();
     });
+
+    test('an eject left unanswered on one drive does not hold an eject of '
+        'another', () {
+      fakeAsync((async) {
+        repo = buildGuarded(drives: 2);
+        async.flushMicrotasks();
+        unawaited(repo.eject(1));
+        async.flushMicrotasks();
+        h.client.take('req-1');
+        async.elapse(const Duration(minutes: 3));
+        expect(repo.current.first.status, RemovableVolumeStatus.ejecting);
+
+        EjectOutcome? second;
+        unawaited(repo.eject(2).then((o) => second = o));
+        async.flushMicrotasks();
+        expect(h.client.pendingRequests, {'req-2': 2});
+        h.client.settleEject('req-2', ok: true);
+        async.flushMicrotasks();
+        expect(second, const EjectOutcome.safeToRemove());
+
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+        disposed = true;
+      });
+    });
+
+    test(
+      'the repository registers itself with the table it is given',
+      () async {
+        repo = buildGuarded();
+        await pumpEventQueue();
+        final copy = repo.acquire(usb1, WritePurpose.copy);
+        expect(guards.active, [
+          const ActiveOperation(
+            kind: GuardKind.transfer,
+            scope: GuardScope.removable(1),
+            purpose: 'copy',
+          ),
+        ]);
+        copy.release();
+      },
+    );
 
     test('an eject is refused at its commit by a take on that volume or a '
         'shutdown, and files no request', () async {
@@ -848,13 +897,4 @@ class _UnfileableClient extends FakeUsbStorageClient {
   @override
   Future<String> requestEject(int generation) async =>
       throw const FileSystemException('Read-only file system');
-}
-
-class _Source implements ActiveOperationSource {
-  _Source(this._read);
-
-  final Iterable<ActiveOperation> Function() _read;
-
-  @override
-  Iterable<ActiveOperation> get activeOperations => _read();
 }
