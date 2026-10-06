@@ -266,7 +266,7 @@ void main() {
       );
 
       test(
-        'unconfirmed pair cannot overwrite the previous session file',
+        'an unconfirmed pair is never saved: Save keeps the confirmed pair',
         () async {
           await session.saveAs('Protected');
           expect(session.state.status, SessionStatus.success);
@@ -281,9 +281,20 @@ void main() {
             enabled: true,
           );
           expect(edit.status, RecordStartStatus.recoveryRequired);
+          // Session capture uses the confirmed durable pair, so Save proceeds
+          // while Count-in is unavailable and never writes Sound on.
+          expect(
+            tempo.recordStartOwner.durable,
+            RecordStartSettings(countInBars: 0, soundStart: false),
+          );
           await session.save();
-          expect(session.state.status, isNot(SessionStatus.success));
+          expect(session.state.status, SessionStatus.success);
           expect(await manifest.readAsBytes(), before);
+          final saved = await sessions.read(
+            await sessions.bundlePath('Protected'),
+          );
+          expect(saved.session.countInBars, 0);
+          expect(saved.session.autoRecord, isFalse);
           store.refuseWrite = false;
           expect((await tempo.recordStartOwner.recover()).isOk, isTrue);
           await session.save();
