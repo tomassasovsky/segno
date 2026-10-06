@@ -394,6 +394,8 @@ void showSessionOutcome(BuildContext context, SessionState state) {
         null => l10n.sessionLoaded,
         final notice => sessionConversionMessage(l10n, notice),
       },
+      // The stage's header names the new loop (19/06); no toast over it.
+      SessionOutcome.newLoop ||
       // The catalog outcomes happen in the Library, which shows its own
       // result; no SnackBar behind it.
       SessionOutcome.renamed ||

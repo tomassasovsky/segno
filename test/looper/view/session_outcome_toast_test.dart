@@ -77,6 +77,20 @@ void main() {
       expect(find.text(l10n.libraryTakeStillRunning), findsOneWidget);
     });
 
+    testWidgets('a new loop raises no toast: the stage header names it', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        const SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.newLoop,
+          currentSessionName: 'New loop 2',
+        ),
+      );
+      expect(find.byKey(const Key('tracks_session_snackbar')), findsNothing);
+    });
+
     testWidgets('the Library catalog outcomes raise no toast behind it', (
       tester,
     ) async {
