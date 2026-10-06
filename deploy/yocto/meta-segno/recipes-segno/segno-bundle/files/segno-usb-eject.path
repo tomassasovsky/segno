@@ -1,0 +1,15 @@
+# Serves the app's USB eject requests without the app starting a process
+# (#1177; see #806 for why a fork from the app is not acceptable while audio
+# runs). The app renames a request into /run/segno/usb/requests/; this unit
+# starts segno-usb-eject.service for as long as the directory is non-empty,
+# and the service deletes every request it serves, which is what makes
+# DirectoryNotEmpty= a queue rather than a one-shot trigger.
+[Unit]
+Description=Segno: watch for USB eject requests
+
+[Path]
+DirectoryNotEmpty=/run/segno/usb/requests
+Unit=segno-usb-eject.service
+
+[Install]
+WantedBy=multi-user.target

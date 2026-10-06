@@ -1,0 +1,343 @@
+#!/bin/sh
+# segno-usb-ctl — removable USB storage helper (#1177).
+#
+# The OS mounts USB filesystems, not the app. udev tags every USB block
+# filesystem with SYSTEMD_WANTS=segno-usb-mount@<kname>.service
+# (98-segno-usb-storage.rules); that template unit runs `attach` and, when the
+# device vanishes (BindsTo=dev-<kname>.device), `detach`. The app never starts
+# a process for any of this: on the appliance a fork() of the 1.7 GB app
+# stalls the real-time audio thread (#806), so detection is one JSON file per
+# volume under /run/segno/usb/volumes/ that the app watches with inotify, and
+# eject is a request file the app drops into /run/segno/usb/requests/, served
+# here by segno-usb-eject.path.
+#
+# Verbs:
+#   attach <kname>    mount /dev/<kname> per its filesystem, write
+#                     volumes/<generation>.json (first without the write
+#                     probe, then again with it), exit 0 even when nothing
+#                     could be mounted (the JSON says why).
+#   detach <kname>    unmount (lazily if the device is gone), remove the mount
+#                     point, delete the JSON. Always exits 0 — an ejected
+#                     volume being unplugged is not a failure.
+#   serve-requests    for every non-dot file under requests/: sync, umount
+#                     (non-lazy), record the outcome in the volume's JSON,
+#                     delete the request.
+#   status            print every volume JSON as one array.
+#   probe <dir>       print write bytes/second measured with a temp file, or
+#                     `null` when the measurement failed.
+#
+# Volume JSON keys, in this order: generation, kname, fingerprint, label,
+# fsType, mountPoint, sizeBytes, status, readOnly, writeBytesPerSecond,
+# failureReason, eject. status is one of mounted, readOnly, unsupported,
+# mountFailed, ejected. Temporary files are dotfiles next to their target
+# (`.<gen>.json.tmp`, `.<id>.json.tmp`), renamed into place; readers ignore
+# dotfiles.
+#
+# Every path and the probe size are overridable so the tests never touch
+# /run, /sys, /proc or /dev.
+set -eu
+
+RUN_DIR="${SEGNO_USB_RUN_DIR:-/run/segno/usb}"
+MEDIA_DIR="${SEGNO_USB_MEDIA_DIR:-/run/media/segno}"
+SYSFS="${SEGNO_USB_SYSFS:-/sys/class/block}"
+DEV_DIR="${SEGNO_USB_DEV_DIR:-/dev}"
+PROBE_BYTES="${SEGNO_USB_PROBE_BYTES:-16777216}"
+UPTIME_FILE="${SEGNO_USB_UPTIME_FILE:-/proc/uptime}"
+VOLUMES="$RUN_DIR/volumes"
+REQUESTS="$RUN_DIR/requests"
+GEN_FILE="$RUN_DIR/.generation"
+
+log() { echo "segno-usb-ctl: $*" >&2; }
+
+# ---- small JSON helpers -----------------------------------------------------
+
+# Escapes a string for a JSON string literal: backslash, double quote, and
+# the control characters a label could carry. Non-ASCII bytes pass through
+# (JSON allows raw UTF-8).
+json_escape() {
+    tab=$(printf '\t'); cr=$(printf '\r')
+    printf '%s' "$1" | sed "s/\\\\/\\\\\\\\/g; s/\"/\\\\\"/g; s/$tab/\\\\t/g; s/$cr/\\\\r/g" | tr -d '\n'
+}
+
+# json_str VALUE — a JSON string literal, or null for an empty value where the
+# caller means "absent" (fingerprint/label are always strings; see callers).
+json_str() { printf '"%s"' "$(json_escape "$1")"; }
+
+# json_get KEY FILE — the raw value of a top-level scalar key the helper wrote
+# itself (string without quotes, or the literal null/number/true/false).
+# Extended regex (`sed -E`) on purpose: BSD, GNU and busybox sed all take it,
+# while `\|` alternation in a basic regex is GNU-only.
+json_get() {
+    sed -E -n "s/.*\"$1\":(\"(\\\\.|[^\"\\\\])*\"|[^,}]*)[,}].*/\\1/p" "$2" \
+        | head -n1 | sed -E 's/^"//; s/"$//; s/\\"/"/g; s/\\\\/\\/g'
+}
+
+# ---- udev facts -------------------------------------------------------------
+
+# prop NAME — one udev property of the device being attached (the whole
+# property dump is fetched once into $props).
+prop() { printf '%s\n' "$props" | sed -n "s/^$1=//p" | head -n1; }
+
+# udev's ID_FS_LABEL replaces spaces by underscores; ID_FS_LABEL_ENC keeps the
+# real bytes as \xNN escapes. Decode the latter so the app shows the label the
+# user gave the drive.
+decode_enc() {
+    printf '%s' "$1" | LC_ALL=C awk '
+        BEGIN { for (i = 0; i < 256; i++) ord[sprintf("%02x", i)] = i }
+        {
+            s = $0; out = ""
+            while ((i = index(s, "\\x")) > 0) {
+                out = out substr(s, 1, i - 1)
+                h = tolower(substr(s, i + 2, 2))
+                if (h in ord) out = out sprintf("%c", ord[h]); else out = out "?"
+                s = substr(s, i + 4)
+            }
+            printf "%s", out s
+        }'
+}
+
+# The mount-point component: the label reduced to [A-Za-z0-9._-], every other
+# BYTE replaced by `_`; an empty label falls back to the kernel name. A FAT
+# label is arbitrary user text and this is a shell script, so nothing from
+# the drive reaches a path unfiltered.
+safe_name() {
+    s=$(printf '%s' "$1" | LC_ALL=C tr -c 'A-Za-z0-9._-' '_')
+    [ -n "$s" ] || s=$2
+    printf '%s' "$s"
+}
+
+# ---- volume records ---------------------------------------------------------
+
+next_generation() {
+    gen=$(cat "$GEN_FILE" 2>/dev/null || echo 0)
+    case "$gen" in ''|*[!0-9]*) gen=0 ;; esac
+    gen=$((gen + 1))
+    echo "$gen" > "$GEN_FILE"
+    echo "$gen"
+}
+
+# write_volume GEN KNAME FINGERPRINT LABEL FSTYPE MOUNTPOINT SIZE STATUS
+#              READONLY WRITE_BPS FAILURE_REASON EJECT_JSON
+# MOUNTPOINT, WRITE_BPS and FAILURE_REASON are `null` when absent; EJECT_JSON
+# is `null` or a complete object. Atomic: dotfile then mv.
+write_volume() {
+    # POSIX sh has no locals: these names must not collide with any caller's.
+    wv_mp=null; [ "$6" = null ] || wv_mp=$(json_str "$6")
+    wv_reason=null; [ "${11}" = null ] || wv_reason=$(json_str "${11}")
+    wv_tmp="$VOLUMES/.$1.json.tmp"
+    printf '{"generation":%s,"kname":%s,"fingerprint":%s,"label":%s,"fsType":%s,"mountPoint":%s,"sizeBytes":%s,"status":"%s","readOnly":%s,"writeBytesPerSecond":%s,"failureReason":%s,"eject":%s}\n' \
+        "$1" "$(json_str "$2")" "$(json_str "$3")" "$(json_str "$4")" \
+        "$(json_str "$5")" "$wv_mp" "$7" "$8" "$9" "${10}" "$wv_reason" "${12}" \
+        > "$wv_tmp"
+    mv -f "$wv_tmp" "$VOLUMES/$1.json"
+}
+
+# volume_file_for_kname KNAME — the JSON path recorded for that device, if any.
+volume_file_for_kname() {
+    for f in "$VOLUMES"/[0-9]*.json; do
+        [ -f "$f" ] || continue
+        if [ "$(json_get kname "$f")" = "$1" ]; then
+            printf '%s\n' "$f"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# ---- mount policy -----------------------------------------------------------
+
+# mount_opts FSTYPE RW|RO — the option string for a filesystem we support, or
+# nothing for one we do not.
+mount_opts() {
+    case "$1:$2" in
+        vfat:rw)  echo "rw,noatime,flush,utf8=1,uid=0,gid=0,fmask=0022,dmask=0022" ;;
+        vfat:ro)  echo "ro,noatime,utf8=1,uid=0,gid=0,fmask=0022,dmask=0022" ;;
+        exfat:rw) echo "rw,noatime,uid=0,gid=0,fmask=0022,dmask=0022" ;;
+        exfat:ro) echo "ro,noatime,uid=0,gid=0,fmask=0022,dmask=0022" ;;
+        ext2:*|ext3:*|ext4:*) echo "$2,noatime" ;;
+        ntfs:rw)  echo "rw,noatime,uid=0,gid=0" ;;
+        ntfs:ro)  echo "ro,noatime,uid=0,gid=0" ;;
+        *) return 1 ;;
+    esac
+}
+
+# mount_type FSTYPE — the -t argument (ntfs is served by the ntfs3 driver).
+mount_type() { case "$1" in ntfs) echo ntfs3 ;; *) echo "$1" ;; esac; }
+
+# try_mount FSTYPE MODE DEVICE MOUNTPOINT — mounts; on failure sets
+# $mount_error to the first stderr line and returns 1.
+try_mount() {
+    opts=$(mount_opts "$1" "$2")
+    err=$(mount -t "$(mount_type "$1")" -o "$opts" "$3" "$4" 2>&1 >/dev/null) && return 0
+    mount_error=$(printf '%s\n' "$err" | head -n1)
+    [ -n "$mount_error" ] || mount_error="mount failed"
+    return 1
+}
+
+# ---- write probe ------------------------------------------------------------
+
+uptime_cs() {
+    read -r up _ < "$UPTIME_FILE" || return 1
+    whole=${up%%.*}
+    frac=${up#*.}
+    [ "$frac" = "$up" ] && frac=0
+    frac=$(printf '%s00' "$frac" | cut -c1-2)
+    echo $((whole * 100 + frac))
+}
+
+# do_probe DIR — bytes per second of a fsync'd write of PROBE_BYTES, or null.
+do_probe() {
+    target="$1/.segno-probe"
+    if [ $((PROBE_BYTES % 1048576)) -eq 0 ]; then
+        bs=1048576; count=$((PROBE_BYTES / 1048576))
+    else
+        bs=$PROBE_BYTES; count=1
+    fi
+    t0=$(uptime_cs 2>/dev/null) || { echo null; return 0; }
+    if ! dd if=/dev/zero of="$target" bs="$bs" count="$count" conv=fsync 2>/dev/null; then
+        rm -f "$target"
+        log "write probe failed on $1"
+        echo null
+        return 0
+    fi
+    t1=$(uptime_cs 2>/dev/null) || t1=$t0
+    rm -f "$target"
+    elapsed=$((t1 - t0))
+    [ "$elapsed" -gt 0 ] || elapsed=1
+    echo $((PROBE_BYTES * 100 / elapsed))
+}
+
+# ---- verbs ------------------------------------------------------------------
+
+do_attach() {
+    kname=$1
+    mkdir -p "$VOLUMES" "$REQUESTS" "$MEDIA_DIR"
+    props=$(udevadm info --query=property --name="$DEV_DIR/$kname" 2>/dev/null || true)
+    fstype=$(prop ID_FS_TYPE)
+    usage=$(prop ID_FS_USAGE)
+    label=$(decode_enc "$(prop ID_FS_LABEL_ENC)")
+    [ -n "$label" ] || label=$(prop ID_FS_LABEL)
+    fingerprint="$(prop ID_SERIAL)-$(prop ID_FS_UUID)"
+    sectors=$(cat "$SYSFS/$kname/size" 2>/dev/null || echo 0)
+    case "$sectors" in ''|*[!0-9]*) sectors=0 ;; esac
+    size=$((sectors * 512))
+    gen=$(next_generation)
+
+    if [ "$usage" != filesystem ]; then
+        [ -n "$fstype" ] || fstype=none
+        log "$kname: no mountable filesystem ($fstype)"
+        write_volume "$gen" "$kname" "$fingerprint" "$label" "$fstype" null \
+            "$size" unsupported false null null null
+        return 0
+    fi
+    if ! mount_opts "$fstype" rw >/dev/null 2>&1; then
+        log "$kname: unsupported filesystem $fstype"
+        write_volume "$gen" "$kname" "$fingerprint" "$label" "$fstype" null \
+            "$size" unsupported false null null null
+        return 0
+    fi
+
+    mp="$MEDIA_DIR/$gen-$(safe_name "$label" "$kname")"
+    mkdir -p "$mp"
+    mount_error=""
+    if try_mount "$fstype" rw "$DEV_DIR/$kname" "$mp"; then
+        write_volume "$gen" "$kname" "$fingerprint" "$label" "$fstype" "$mp" \
+            "$size" mounted false null null null
+        bps=$(do_probe "$mp")
+        write_volume "$gen" "$kname" "$fingerprint" "$label" "$fstype" "$mp" \
+            "$size" mounted false "$bps" null null
+        log "$kname: mounted $fstype at $mp (generation $gen)"
+        return 0
+    fi
+    rw_error=$mount_error
+    if try_mount "$fstype" ro "$DEV_DIR/$kname" "$mp"; then
+        log "$kname: rw mount failed ($rw_error); mounted read-only"
+        write_volume "$gen" "$kname" "$fingerprint" "$label" "$fstype" "$mp" \
+            "$size" readOnly true null "$rw_error" null
+        return 0
+    fi
+    rmdir "$mp" 2>/dev/null || true
+    log "$kname: mount failed ($mount_error)"
+    write_volume "$gen" "$kname" "$fingerprint" "$label" "$fstype" null \
+        "$size" mountFailed false null "$mount_error" null
+}
+
+do_detach() {
+    kname=$1
+    f=$(volume_file_for_kname "$kname") || { log "$kname: no volume record"; return 0; }
+    mp=$(json_get mountPoint "$f")
+    if [ -n "$mp" ] && [ "$mp" != null ]; then
+        sync
+        if ! umount "$mp" 2>/dev/null; then
+            # Already unmounted (ejected) or the device is gone: a lazy
+            # unmount clears any stale entry; its failure is not ours.
+            umount -l "$mp" 2>/dev/null || true
+        fi
+        rmdir "$mp" 2>/dev/null || true
+    fi
+    rm -f "$f"
+    log "$kname: detached"
+}
+
+# serve_one REQUEST_FILE
+serve_one() {
+    req=$1
+    gen=$(json_get generation "$req")
+    id=$(json_get request "$req")
+    rm -f "$req"
+    case "$gen" in ''|*[!0-9]*) log "request $(basename "$req"): malformed"; return 0 ;; esac
+    f="$VOLUMES/$gen.json"
+    [ -f "$f" ] || { log "request $id: generation $gen unknown"; return 0; }
+    mp=$(json_get mountPoint "$f")
+    status=$(json_get status "$f")
+    if [ "$mp" = null ] || [ -z "$mp" ] || [ "$status" = ejected ]; then
+        ok=true; reason=null; status=ejected
+    else
+        sync
+        if err=$(umount "$mp" 2>&1 >/dev/null); then
+            ok=true; reason=null; status=ejected
+        else
+            ok=false
+            case "$err" in *[Bb]usy*) reason='"busy"' ;; *) reason='"error"' ;; esac
+            log "eject $id: umount $mp failed: $(printf '%s\n' "$err" | head -n1)"
+        fi
+    fi
+    eject=$(printf '{"request":%s,"ok":%s,"reason":%s}' "$(json_str "$id")" "$ok" "$reason")
+    bps=$(json_get writeBytesPerSecond "$f")
+    failure=$(json_get failureReason "$f")
+    [ -n "$failure" ] || failure=null
+    write_volume "$gen" "$(json_get kname "$f")" "$(json_get fingerprint "$f")" \
+        "$(json_get label "$f")" "$(json_get fsType "$f")" "$mp" \
+        "$(json_get sizeBytes "$f")" "$status" "$(json_get readOnly "$f")" \
+        "$bps" "$failure" "$eject"
+}
+
+do_serve_requests() {
+    mkdir -p "$REQUESTS" "$VOLUMES"
+    for req in "$REQUESTS"/*; do
+        [ -f "$req" ] || continue
+        case "$(basename "$req")" in .*) continue ;; esac
+        serve_one "$req"
+    done
+}
+
+do_status() {
+    first=1
+    printf '['
+    for f in "$VOLUMES"/[0-9]*.json; do
+        [ -f "$f" ] || continue
+        [ "$first" = 1 ] || printf ','
+        first=0
+        tr -d '\n' < "$f"
+    done
+    printf ']\n'
+}
+
+case "${1:-}" in
+    attach)         [ -n "${2:-}" ] || { log "attach needs a kernel name"; exit 2; }; do_attach "$2" ;;
+    detach)         [ -n "${2:-}" ] || { log "detach needs a kernel name"; exit 2; }; do_detach "$2" ;;
+    serve-requests) do_serve_requests ;;
+    status)         do_status ;;
+    probe)          [ -d "${2:-}" ] || { log "probe needs a directory"; exit 2; }; do_probe "$2" ;;
+    *) log "usage: segno-usb-ctl {attach <kname>|detach <kname>|serve-requests|status|probe <dir>}"; exit 2 ;;
+esac
