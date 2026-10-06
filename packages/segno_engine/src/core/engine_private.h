@@ -1437,6 +1437,30 @@ typedef struct le_record_timing_readback {
   int32_t result;
 } le_record_timing_readback;
 
+/* ---- Instruments (#1197) ----
+ * One note event on a control-to-audio instrument ring. `seq` is the
+ * control thread's posting order across both rings, so the callback applies
+ * note-ons and releases in the order they were sent. */
+typedef struct le_inst_event {
+  uint32_t seq;
+  uint32_t origin;
+  uint8_t kind; /* LE_INST_NOTE_ON / _NOTE_OFF / _SET_PATCH (engine_instruments.c) */
+  uint8_t slot;
+  uint8_t note;
+  uint8_t velocity;
+} le_inst_event;
+
+/* A single-producer single-consumer ring of le_inst_event over caller
+ * storage (capacity a power of two; one slot is kept empty). */
+typedef struct le_inst_ring {
+  _Atomic uint32_t head; /* consumer */
+  _Atomic uint32_t tail; /* producer */
+  uint32_t mask;
+  le_inst_event* slots;
+} le_inst_ring;
+
+struct le_synth; /* synth_voice.h, owned by the audio thread after configure */
+
 struct le_engine {
   /* The device backend driving the lifecycle (le_select_backend's choice),
    * remembered so le_engine_stop / le_engine_destroy release the device through
@@ -1565,6 +1589,39 @@ struct le_engine {
    * native tests read the atomic directly, and a snapshot field can be added
    * the day a real consumer needs it. */
   _Atomic uint32_t a_cond_fallback_blocks;
+
+  /* ---- Instruments (#1197; engine_instruments.c) ----
+   * `synth` is allocated at create and re-initialised by every configure or
+   * reopen (device closed); afterwards only the audio thread touches it.
+   * `inst_bus` holds LE_MAX_INSTRUMENTS mono buses of LE_COND_SCRATCH_FRAMES,
+   * slot-major, allocated with the engine. */
+  struct le_synth* synth;
+  float* inst_bus;
+  /* control thread: the patch last requested per slot (-1: none), the
+   * posting sequence, and the event rings' storage */
+  int32_t inst_patch_requested[LE_MAX_INSTRUMENTS];
+  uint32_t inst_seq;
+  le_inst_ring inst_ring;
+  le_inst_ring inst_release_ring;
+  le_inst_event inst_ring_storage[LE_INST_EVENT_CAPACITY];
+  le_inst_event inst_release_storage[LE_INST_RELEASE_CAPACITY];
+  /* parameters: the control thread stores the bits and the patch they are
+   * for, then bumps the slot's revision; the callback applies a changed
+   * revision once per block, only to that patch */
+  _Atomic uint32_t a_inst_param_bits[LE_MAX_INSTRUMENTS][3];
+  _Atomic int32_t a_inst_param_patch[LE_MAX_INSTRUMENTS]; /* the stamp */
+  _Atomic uint32_t a_inst_param_rev[LE_MAX_INSTRUMENTS];
+  uint32_t inst_param_seen[LE_MAX_INSTRUMENTS]; /* audio thread */
+  /* published by the callback, read by the snapshot */
+  _Atomic int32_t a_inst_patch[LE_MAX_INSTRUMENTS];
+  _Atomic int32_t a_inst_voices[LE_MAX_INSTRUMENTS];
+  _Atomic uint32_t a_inst_peak_bits[LE_MAX_INSTRUMENTS];
+  _Atomic int32_t a_voice_limit;
+  _Atomic uint32_t a_voices_stolen;
+  _Atomic uint32_t a_voices_stolen_hard;
+  _Atomic uint32_t a_synth_epoch;
+  _Atomic uint32_t a_inst_events_refused;
+  _Atomic uint32_t a_inst_fallback_blocks;
 
   /* ---- Input clip ("HOT") detector (input clip, S2) ---- *
    * Always on, no params, RAW path (see the LE_CLIP_* doc in

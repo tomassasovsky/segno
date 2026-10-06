@@ -39,6 +39,7 @@
 #include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
 #include "../host/plugin_slot.h" /* le_plugin_slot_destroy (teardown of slots) */
 #include "engine_fx.h" /* effects DSP island: chain runner, reset/free, latency */
+#include "engine_instruments.h" /* instrument synth lifecycle (#1197) */
 #include "engine_internal.h"
 #include "engine_miniaudio.h"
 #include "engine_platform.h"
@@ -877,6 +878,9 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   /* Loop-stage wet cache (part 2): fresh state + worker for the new session.
    * The cap (a_fx_cache_cap) is a SETTING seeded in le_engine_create and
    * deliberately not reset here, like the tempo/click settings above. */
+  /* Instruments (#1197): a fresh synth at the new rate, empty note rings,
+   * no patches; the epoch tells the app that every voice and latch is gone. */
+  le_instruments_reset(engine, sample_rate);
   le_cache_init(engine);
   le_restore_init(engine); /* #697 S9: offline loop-close restoration worker */
   atomic_store_explicit(&engine->a_configured, 1, memory_order_release);
@@ -1137,6 +1141,10 @@ void le_engine_mark_device_lost(le_engine* engine) {
 le_engine* le_engine_create(void) {
   le_engine* engine = (le_engine*)calloc(1, sizeof(le_engine));
   if (engine == NULL) return NULL;
+  if (!le_instruments_create(engine)) {
+    free(engine);
+    return NULL;
+  }
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   le_ring_init(&engine->evt_ring, engine->evt_storage, LE_RING_CAPACITY);
   le_ring_init(&engine->midi_clock_ring, engine->midi_clock_ring_storage,
@@ -1274,6 +1282,7 @@ void le_engine_destroy(le_engine* engine) {
   }
   free(engine->lat_buf);
   free(engine->cond_buf); /* conditioned-copy scratch (input conditioning) */
+  le_instruments_destroy(engine); /* the synth and its buses (#1197) */
   /* The device is already closed (no audio thread), so the performance-capture
    * rings — including any left retracted-but-allocated by a disarm that could
    * not confirm quiescence — can be freed directly, without the handshake. The

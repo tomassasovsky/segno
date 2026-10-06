@@ -80,6 +80,7 @@ add_library(segno_engine SHARED
   core/engine_cache.c        # Loop-stage wet cache (scheduler + render worker)
   core/engine_restore.c      # Offline loop-close restoration worker (#697 S9)
   core/engine_cond.c         # per-input conditioning stage (input conditioning)
+  core/engine_instruments.c  # instrument slots, note rings, synth in the callback (#1197)
   # Offline loop-close restoration DSP (#697 S8) — pure TUs, no engine state;
   # consumed by the restore worker (engine_restore.c, S9). NOT matched by
   # run_native_tests.sh's engine*.c glob — they are listed explicitly there;
