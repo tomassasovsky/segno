@@ -111,8 +111,9 @@ class SessionCubit extends Cubit<SessionState> {
   }
 
   /// Saves the live rig as a NEW session under a fresh id, named [name], and
-  /// makes it current. Rejects a name another session carries (compared
-  /// case-insensitively) with [SessionError.nameCollision] and writes nothing.
+  /// makes it current. Rejects a name another session carries exactly
+  /// (case-sensitively, as the appliance always has) with
+  /// [SessionError.nameCollision] and writes nothing.
   Future<void> saveAs(String name) {
     final revision = _looper.sessionRevision;
     final generation = _looper.mixGeneration;
@@ -120,20 +121,24 @@ class SessionCubit extends Cubit<SessionState> {
     return _run(
       () => _captureSettings.runExclusive(() async {
         final slug = _slugOf(name);
-        final lower = slug.toLowerCase();
-        if ((await _repository.listSessions()).any(
-          (s) => s.name.toLowerCase() == lower,
-        )) {
+        if ((await _repository.listSessions()).any((s) => s.name == slug)) {
           throw SessionNameCollision(slug: slug);
         }
         final id = await _repository.newSessionId();
-        await _saveCurrentRig(
-          await _repository.bundlePathOf(id),
-          slug,
-          revision,
-          generation,
-          device,
-        );
+        try {
+          await _saveCurrentRig(
+            await _repository.bundlePathOf(id),
+            slug,
+            revision,
+            generation,
+            device,
+          );
+        } on Object {
+          // A save refused before it wrote anything leaves the reserved
+          // directory empty; give it back so it never lists as a folder.
+          await _repository.releaseSessionId(id);
+          rethrow;
+        }
         return _ActionResult(
           SessionOutcome.saved,
           currentId: id,

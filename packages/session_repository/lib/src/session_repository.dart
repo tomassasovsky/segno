@@ -383,17 +383,59 @@ class SessionRepository {
     return _locate(root, id) ?? '$root/$id';
   }
 
-  /// Mints an unused bundle id from the clock: `s-YYYYMMDD-HHMMSS`, with a
-  /// `-N` suffix when that second already has a bundle anywhere in the
-  /// catalog.
-  Future<SessionId> newSessionId() async {
-    final root = await _rootPath();
+  /// Mints an unused bundle id from the clock, `s-YYYYMMDD-HHMMSS`, and
+  /// reserves it by creating its empty bundle directory at the root
+  /// (Unfiled). The id takes a `-N` suffix when any directory at the root or
+  /// one level down already has that name (a bundle, a folder, an interrupted
+  /// save or another reservation), so a same-second Save as and Duplicate, or
+  /// a folder named like an id, can never share a directory.
+  ///
+  /// A caller whose save then writes nothing gives the id back with
+  /// [releaseSessionId]; an empty directory would otherwise list as a folder.
+  Future<SessionId> newSessionId() async => _reserveId(await _rootPath());
+
+  /// Picks the first free id for this second and creates `parent/<id>`
+  /// (`parent` defaults to the root).
+  ///
+  /// The check and the create are synchronous with no await between them, so
+  /// no other catalog call in this isolate can claim the same id in between.
+  SessionId _reserveId(String root, {String? parent}) {
     final base = sessionIdFor(_now());
     var candidate = base;
-    for (var n = 2; _locate(root, candidate) != null; n++) {
+    for (var n = 2; _isTaken(root, candidate); n++) {
       candidate = '$base-$n';
     }
+    Directory('${parent ?? root}/$candidate').createSync(recursive: true);
     return candidate;
+  }
+
+  /// Whether any entry named [id] exists at the root or inside any directory
+  /// directly under it.
+  static bool _isTaken(String root, String id) {
+    bool exists(String path) =>
+        FileSystemEntity.typeSync(path, followLinks: false) !=
+        FileSystemEntityType.notFound;
+    if (exists('$root/$id')) return true;
+    final dir = Directory(root);
+    if (!dir.existsSync()) return false;
+    for (final entity in dir.listSync(followLinks: false)) {
+      if (entity is Directory && exists('${entity.path}/$id')) return true;
+    }
+    return false;
+  }
+
+  /// Gives back an id [newSessionId] reserved when the save that was meant
+  /// to fill it wrote nothing: removes its directory only while it is still
+  /// empty. Anything written into it (a bundle, or an interrupted save's
+  /// layers) is left in place.
+  Future<void> releaseSessionId(SessionId id) async {
+    _requireId(id);
+    final dir = Directory('${await _rootPath()}/$id');
+    try {
+      if (dir.existsSync() && dir.listSync().isEmpty) dir.deleteSync();
+    } on FileSystemException {
+      // Something landed in it between the check and the delete: keep it.
+    }
   }
 
   /// Lists every bundle under the root and one folder down, newest save
@@ -605,7 +647,9 @@ class SessionRepository {
   }
 
   /// The smallest `"<prefix> N"` (N from 1) no catalog name carries,
-  /// compared case-insensitively.
+  /// compared case-insensitively so an automatic name never differs from an
+  /// existing one by case alone. This only skips numbers and never refuses;
+  /// a name the player picks collides case-sensitively ([_requireFreeName]).
   Future<String> nextAutomaticName(String prefix) async {
     final taken = {
       for (final s in await listSessions()) s.name.toLowerCase(),
@@ -617,11 +661,16 @@ class SessionRepository {
   }
 
   /// Throws [SessionNameCollision] when another session already carries
-  /// [slug] (case-insensitively). [except] is the id allowed to carry it.
+  /// exactly [slug]. [except] is the id allowed to carry it.
+  ///
+  /// Case-sensitive, as the appliance has always been: a name used to be a
+  /// directory on case-sensitive ext4, so `Song` and `song` could both be
+  /// saved and existing installs may hold such pairs. Refusing them now would
+  /// turn a Save as that used to work into an error (rule 1, preserve
+  /// existing installs).
   Future<void> _requireFreeName(String slug, {SessionId? except}) async {
-    final lower = slug.toLowerCase();
     for (final s in await listSessions()) {
-      if (s.id != except && s.name.toLowerCase() == lower) {
+      if (s.id != except && s.name == slug) {
         throw SessionNameCollision(slug: slug);
       }
     }
@@ -646,11 +695,27 @@ class SessionRepository {
     _rewriteManifestName('$path/${Session.manifestName}', slug);
   }
 
+  /// Rewrites the manifest's `name` atomically: the new manifest is written
+  /// and flushed to a sibling temp file, then renamed over the old one, so a
+  /// power cut leaves the old manifest or the new one, never a torn file
+  /// that would make the session unopenable.
   static void _rewriteManifestName(String manifestPath, String name) {
-    final file = File(manifestPath);
-    final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+    final json =
+        jsonDecode(File(manifestPath).readAsStringSync())
+            as Map<String, dynamic>;
     json['name'] = name;
-    file.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(json));
+    final temp = File('$manifestPath.tmp');
+    try {
+      temp
+        ..writeAsStringSync(
+          const JsonEncoder.withIndent('  ').convert(json),
+          flush: true,
+        )
+        ..renameSync(manifestPath);
+    } on Object {
+      if (temp.existsSync()) temp.deleteSync();
+      rethrow;
+    }
   }
 
   /// Copies the bundle [from] to a new bundle beside it (same folder) under
@@ -665,8 +730,9 @@ class SessionRepository {
     final source = _locate(root, from);
     if (source == null) throw StateError('no session with id "$from"');
     await _requireFreeName(slug);
-    final id = await newSessionId();
-    final target = '${Directory(source).parent.path}/$id';
+    final parent = Directory(source).parent.path;
+    final id = _reserveId(root, parent: parent);
+    final target = '$parent/$id';
     _copyDirSync(Directory(source), Directory(target));
     _rewriteManifestName('$target/${Session.manifestName}', slug);
     return id;
@@ -739,14 +805,16 @@ class SessionRepository {
     Directory('$root/$slug').createSync(recursive: true);
   }
 
-  /// Deletes the folder [name]. Throws [SessionFolderNotEmpty] while it still
-  /// holds a bundle; a missing folder is a no-op.
+  /// Deletes the folder [name]. Throws [SessionFolderNotEmpty] while any
+  /// directory inside it holds anything: a bundle, or an interrupted save
+  /// the catalog does not list but leaves in place (plan D2). A missing
+  /// folder is a no-op.
   Future<void> deleteFolder(String name) async {
     final slug = _requireName(name, 'name');
     final dir = Directory('${await _rootPath()}/$slug');
     if (!dir.existsSync() || !_isFolder(dir)) return;
-    for (final child in dir.listSync()) {
-      if (child is Directory && _isBundle(child.path)) {
+    for (final child in dir.listSync(followLinks: false)) {
+      if (child is Directory && child.listSync().isNotEmpty) {
         throw SessionFolderNotEmpty(folder: slug);
       }
     }

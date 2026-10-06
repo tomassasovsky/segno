@@ -266,6 +266,38 @@ void main() {
       expect(Directory('${root.path}/Full/s-a').existsSync(), isTrue);
     });
 
+    test(
+      'refuses a folder holding an interrupted save, and keeps it',
+      () async {
+        await repo().createFolder('Gigs');
+        final interrupted = File('${root.path}/Gigs/s-x/track0_lane0_L0.wav')
+          ..createSync(recursive: true);
+
+        await expectLater(
+          repo().deleteFolder('Gigs'),
+          throwsA(isA<SessionFolderNotEmpty>()),
+        );
+        expect(interrupted.existsSync(), isTrue);
+      },
+    );
+
+    test('refuses a folder holding any non-empty directory, and deletes one '
+        'holding only empty directories', () async {
+      await repo().createFolder('Held');
+      final kept = File('${root.path}/Held/notes/readme.txt')
+        ..createSync(recursive: true);
+      await repo().createFolder('Hollow');
+      Directory('${root.path}/Hollow/empty').createSync();
+
+      await expectLater(
+        repo().deleteFolder('Held'),
+        throwsA(isA<SessionFolderNotEmpty>()),
+      );
+      expect(kept.existsSync(), isTrue);
+      await repo().deleteFolder('Hollow');
+      expect(Directory('${root.path}/Hollow').existsSync(), isFalse);
+    });
+
     test('deleting a missing folder or a bundle is a no-op', () async {
       makeBundle('s-a');
       await expectLater(repo().deleteFolder('Ghost'), completes);
@@ -330,10 +362,84 @@ void main() {
       expect(await repo().newSessionId(), 's-20261006-120000');
       makeBundle('s-20261006-120000');
       expect(await repo().newSessionId(), 's-20261006-120000-2');
-      makeBundle('s-20261006-120000-2', folder: 'Gigs');
-      expect(await repo().newSessionId(), 's-20261006-120000-3');
+      makeBundle('s-20261006-120000-3', folder: 'Gigs');
+      expect(await repo().newSessionId(), 's-20261006-120000-4');
       clock = DateTime(2026, 10, 6, 12, 0, 1);
       expect(await repo().newSessionId(), 's-20261006-120001');
+    });
+
+    test('reserves the id by creating its directory at the root', () async {
+      final id = await repo().newSessionId();
+
+      expect(Directory('${root.path}/$id').existsSync(), isTrue);
+      expect(Directory('${root.path}/$id').listSync(), isEmpty);
+      // Two ids issued in the same second before either is written (a Save
+      // as and a Duplicate) never share a directory.
+      expect(await repo().newSessionId(), isNot(id));
+    });
+
+    test('treats a folder or an interrupted save named like an id as '
+        'taken', () async {
+      makeBundle('s-gig', folder: 's-20261006-120000');
+      Directory('${root.path}/Gigs/s-20261006-120000-2').createSync(
+        recursive: true,
+      );
+      File(
+        '${root.path}/Gigs/s-20261006-120000-2/track0_lane0_L0.wav',
+      ).createSync();
+
+      final id = await repo().newSessionId();
+
+      expect(id, 's-20261006-120000-3');
+      expect(
+        await repo().bundlePathOf(id),
+        '${root.path}/s-20261006-120000-3',
+      );
+      expect((await repo().listSessions()).single.id, 's-gig');
+    });
+
+    test(
+      'a duplicate in the same second as a Save as takes its own id',
+      () async {
+        await repo().createFolder('Gigs');
+        makeBundle('s-a', folder: 'Gigs', name: 'Source');
+        final saveAsId = await repo().newSessionId();
+
+        final copyId = await repo().duplicateSession('s-a', 'Copy');
+
+        expect(copyId, isNot(saveAsId));
+        expect(Directory('${root.path}/$saveAsId').listSync(), isEmpty);
+        expect(
+          File(
+            '${root.path}/Gigs/$copyId/${Session.manifestName}',
+          ).existsSync(),
+          isTrue,
+        );
+      },
+    );
+  });
+
+  group('releaseSessionId', () {
+    test('removes a reservation that nothing was written into', () async {
+      final id = await repo().newSessionId();
+
+      await repo().releaseSessionId(id);
+
+      expect(Directory('${root.path}/$id').existsSync(), isFalse);
+      expect(await repo().listFolders(), isEmpty);
+    });
+
+    test('keeps a directory a save wrote into', () async {
+      final id = await repo().newSessionId();
+      File('${root.path}/$id/track0_lane0_L0.wav').createSync();
+
+      await repo().releaseSessionId(id);
+      await repo().releaseSessionId('s-ghost');
+
+      expect(
+        File('${root.path}/$id/track0_lane0_L0.wav').existsSync(),
+        isTrue,
+      );
     });
   });
 
@@ -412,9 +518,9 @@ void main() {
         makeBundle('s-a', name: 'Keep');
         makeBundle('s-b', name: 'Clash');
         await expectLater(
-          repo().renameSession('s-a', 'clash'),
+          repo().renameSession('s-a', 'Clash!'), // folds to Clash
           throwsA(
-            isA<SessionNameCollision>().having((e) => e.slug, 'slug', 'clash'),
+            isA<SessionNameCollision>().having((e) => e.slug, 'slug', 'Clash'),
           ),
         );
         expect(
@@ -423,6 +529,54 @@ void main() {
         );
       },
     );
+
+    test('a name differing only by case is not a collision, as on the '
+        'case-sensitive appliance', () async {
+      makeBundle('s-a', name: 'Keep');
+      makeBundle('s-b', name: 'Song');
+
+      await repo().renameSession('s-a', 'song');
+
+      expect(
+        (await repo().listSessions()).map((s) => s.name),
+        unorderedEquals(['song', 'Song']),
+      );
+    });
+
+    test(
+      'replaces the manifest by rename, never rewriting it in place',
+      () async {
+        makeBundle('s-a', name: 'Old');
+        final manifest = '${root.path}/s-a/${Session.manifestName}';
+        final before = File(manifest).readAsBytesSync();
+        // A hard link shares the file's data: an in-place write shows through
+        // it, a new file renamed over the path does not.
+        final linked = '${root.path}/manifest-link';
+        expect(Process.runSync('ln', [manifest, linked]).exitCode, 0);
+
+        await repo().renameSession('s-a', 'New');
+
+        expect(File(linked).readAsBytesSync(), before);
+        expect((await repo().listSessions()).single.name, 'New');
+        expect(File('$manifest.tmp').existsSync(), isFalse);
+      },
+      skip: Platform.isWindows ? 'needs ln' : null,
+    );
+
+    test('a failed manifest write leaves the old manifest intact', () async {
+      makeBundle('s-a', name: 'Old');
+      final manifest = File('${root.path}/s-a/${Session.manifestName}');
+      final before = manifest.readAsBytesSync();
+      // A directory where the temp file goes makes the write fail.
+      Directory('${manifest.path}.tmp/blocker').createSync(recursive: true);
+
+      await expectLater(
+        repo().renameSession('s-a', 'New'),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(manifest.readAsBytesSync(), before);
+    });
 
     test('renaming to its own name, or a missing id, is a no-op', () async {
       makeBundle('s-a', name: 'Same');
@@ -480,6 +634,8 @@ void main() {
         throwsA(isA<SessionNameCollision>()),
       );
       expect(await repo().listSessions(), hasLength(2));
+      await repo().duplicateSession('s-a', 'clash');
+      expect(await repo().listSessions(), hasLength(3));
     });
 
     test('throws StateError when the source is missing', () async {

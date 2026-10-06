@@ -216,6 +216,9 @@ void main() {
   setUp(() async {
     repository = _MockSessionRepository();
     when(repository.newSessionId).thenAnswer((_) async => 'new');
+    when(
+      () => repository.releaseSessionId(any()),
+    ).thenAnswer((_) async {});
     looper = _MockLooperRepository();
     performance = _MockPerformanceRepository();
     looperStates = StreamController<LooperState>.broadcast();
@@ -458,6 +461,9 @@ void main() {
         captureStillValid: any(named: 'captureStillValid'),
       ),
     );
+    // The id was reserved before the refusal; giving it back keeps an empty
+    // directory from listing as a folder.
+    verify(() => repository.releaseSessionId('new')).called(1);
   });
 
   group('load failure classification', () {
@@ -925,6 +931,26 @@ void main() {
           captureStillValid: any(named: 'captureStillValid'),
         ),
       ),
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'saveAs accepts a name that differs from a saved one only by case, '
+      'as the case-sensitive appliance always has',
+      setUp: () => stubCatalog(
+        list: const [SessionSummary(id: 'Song', name: 'Song')],
+      ),
+      build: build,
+      act: (cubit) => cubit.saveAs('song'),
+      expect: () => [
+        isA<SessionState>().having(
+          (s) => s.status,
+          'st',
+          SessionStatus.working,
+        ),
+        isA<SessionState>()
+            .having((s) => s.status, 'st', SessionStatus.success)
+            .having((s) => s.currentSessionName, 'current', 'song'),
+      ],
     );
 
     blocTest<SessionCubit, SessionState>(

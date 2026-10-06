@@ -36,15 +36,19 @@ next save.
 (`s-YYYYMMDD-HHMMSS` for bundles the Library creates; older bundles keep the
 slug they were saved under). The display name is the manifest's optional
 `name`; absent, the catalog shows the id. Rename rewrites `name` and nothing
-else. The schema version did not change for `name`: a bundle without it reads
-exactly as before, and a bundle with it reads on older builds, which ignore
-unknown keys.
+else, through `session.json.tmp` renamed over `session.json`, so the manifest
+is never half-written. Display names collide case-sensitively, as directory
+names always did on the appliance. A new id is reserved by creating its
+directory, and is skipped while any directory at the root or one level down
+has that name. The schema version did not change for `name`: a bundle
+without it reads exactly as before, and a bundle with it reads on older
+builds, which ignore unknown keys.
 
 **Folders.** A directory under `sessions/` with no manifest is a folder, one
 level deep; bundles directly under the root are "Unfiled". Moving a bundle is
 a directory rename. A manifest-less directory that holds layer WAVs or a
 `mixdown.wav` is an interrupted save, not a folder: the catalog lists it
-nowhere and leaves it alone.
+nowhere and leaves it alone, and a folder holding one cannot be deleted.
 
 **Mixdown.** `mixdown.wav` is written when the saved mix has any audible
 content and deleted when it has none (every track empty or muted), so a
