@@ -14,8 +14,12 @@ class LoopFocusable extends StatelessWidget {
     required this.onActivate,
     this.enabled = true,
     this.radius = 8,
+    this.autofocus = false,
     super.key,
   });
+
+  /// Whether this stop takes focus when its page opens.
+  final bool autofocus;
 
   /// The visual control.
   final Widget child;
@@ -32,6 +36,7 @@ class LoopFocusable extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Focus(
     canRequestFocus: enabled,
+    autofocus: autofocus,
     onKeyEvent: (_, event) {
       if (!enabled || event is! KeyDownEvent) return KeyEventResult.ignored;
       if (event.logicalKey == LogicalKeyboardKey.enter ||
@@ -49,7 +54,7 @@ class LoopFocusable extends StatelessWidget {
           borderRadius: BorderRadius.circular(radius),
           border: Border.all(
             color: Focus.of(context).hasFocus
-                ? context.surface.warning
+                ? context.surface.encoderFocus
                 : Colors.transparent,
             width: 3,
           ),
@@ -399,8 +404,13 @@ class LoopOutlinedButton extends StatelessWidget {
     this.height = 64,
     this.fontSize = 24,
     this.radius = 7,
+    this.borderColor,
     super.key,
   });
+
+  /// The line around the button, when its pen node draws one other than
+  /// its tone's.
+  final Color? borderColor;
 
   /// The pen's width.
   final double width;
@@ -450,11 +460,13 @@ class LoopOutlinedButton extends StatelessWidget {
       LoopButtonTone.card => surface.card,
       LoopButtonTone.accent => surface.accent,
     };
-    final border = switch (tone) {
-      LoopButtonTone.card => surface.borderSubtle,
-      LoopButtonTone.accent => surface.accent,
-      _ => surface.borderStrong,
-    };
+    final border =
+        borderColor ??
+        switch (tone) {
+          LoopButtonTone.card => surface.borderSubtle,
+          LoopButtonTone.accent => surface.accent,
+          _ => surface.borderStrong,
+        };
     final foreground = tone == LoopButtonTone.accent
         ? surface.onAccent
         : surface.textPrimary;
@@ -839,7 +851,7 @@ class _LoopStepperState extends State<LoopStepper> {
                     decoration: BoxDecoration(
                       border: Border.all(
                         color: Focus.of(context).hasFocus
-                            ? surface.warning
+                            ? surface.encoderFocus
                             : Colors.transparent,
                         width: 3,
                       ),
@@ -1129,7 +1141,9 @@ class _LoopSliderState extends State<LoopSlider> {
                     color: surface.surface,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: focused ? surface.warning : surface.borderHairline,
+                      color: focused
+                          ? surface.encoderFocus
+                          : surface.borderHairline,
                       width: focused ? 3 : 1,
                     ),
                   ),

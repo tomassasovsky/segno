@@ -56,6 +56,8 @@ dependencies:
     path: packages/session_repository
   settings_repository:
     path: packages/settings_repository
+  storage_repository:
+    path: packages/storage_repository
   toastification: ^3.2.0
   update_repository:
     path: packages/update_repository
@@ -103,6 +105,9 @@ flutter:
     - assets/hardware/external_single.webp
     - assets/hardware/external_dual.webp
     - assets/hardware/external_expression.webp
+    # The ten Settings tiles' art: the owner's Segno menu set from the design
+    # program (docs/design/settings-art at 56410d148), byte for byte.
+    - assets/settings/
   fonts:
     - family: Inter
       fonts:
