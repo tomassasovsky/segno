@@ -63,6 +63,12 @@ static void test_backing_buffer_and_refusals(void) {
   CHECK(le_backing_buffer_from_pcm(mono, 0, 1, BK_SR, &b) == LE_ERR_INVALID);
   CHECK(b == NULL);
   CHECK(le_backing_buffer_from_pcm(mono, 3, 3, BK_SR, &b) == LE_ERR_INVALID);
+  /* A NaN or Inf sample would poison output-bus FX for good: refused. */
+  const float nan_pcm[3] = {.25f, NAN, .75f};
+  const float inf_pcm[2] = {INFINITY, 0.0f};
+  CHECK(le_backing_buffer_from_pcm(nan_pcm, 3, 1, BK_SR, &b) == LE_ERR_INVALID);
+  CHECK(le_backing_buffer_from_pcm(inf_pcm, 1, 2, BK_SR, &b) == LE_ERR_INVALID);
+  CHECK(b == NULL);
   CHECK(le_backing_buffer_from_pcm(mono, 1, 1, BK_SR, &b) == LE_OK);
 
   le_engine* unconfigured = le_engine_create();
@@ -506,6 +512,17 @@ static void test_backing_lifetimes(void) {
   CHECK(s.epoch == epoch + 2);
   CHECK(s.item == -1 && s.next_item == -1 && s.frames == 0 && s.owned == 0);
   CHECK(s.mask == 0x3 && s.level == 0.5f);
+  /* A configure while a Pause still fades: the fade voice must let go of
+   * the buffer the configure frees (ASan reads freed memory otherwise, and
+   * the stale voice would still sound). */
+  CHECK(le_engine_backing_load(e, bk_buffer(N, 0.0f), 10, 1) == LE_OK);
+  bk_run(e, out, 100, 2, 100);
+  CHECK(le_engine_backing_transport(e, LE_BACKING_OP_PAUSE) == LE_OK);
+  bk_run(e, out, 50, 2, 50);
+  CHECK(le_engine_configure(e, BK_SR, 1, 2, BK_SR * 4) == LE_OK);
+  bk_run(e, out, BK_RAMP, 2, 64);
+  for (int i = 0; i < BK_RAMP * 2; ++i) CHECK(out[i] == 0.0f);
+  CHECK(bk_state(e).owned == 0);
   /* Destroy with a loaded, a staged, a fading and a queued buffer. */
   CHECK(le_engine_backing_load(e, bk_buffer(N, 0.0f), 4, 1) == LE_OK);
   CHECK(le_engine_backing_stage_next(e, bk_buffer(N, 0.0f), 5) == LE_OK);
@@ -541,6 +558,31 @@ static void test_backing_byte_budget(void) {
   for (int i = 0; i < 3; ++i) b[i]->frames = 4; /* real sizes for teardown */
   if (third != LE_OK) le_backing_buffer_free(b[2]);
   le_engine_destroy(e);
+
+  /* Review L1: a replaced buffer still fading is in transit, so a stage that
+   * fits once it is back reads NOT_READY (retry), not CAPACITY. */
+  static float out[1024 * 2];
+  e = bk_engine(2);
+  CHECK(le_engine_backing_set_output(e, 0x3) == LE_OK);
+  le_backing_buffer* a = bk_buffer(4096, 0.0f);
+  CHECK(le_engine_backing_load(e, a, 1, 1) == LE_OK);
+  bk_run(e, out, 100, 2, 100);
+  /* Only the byte count grows: the fade reads positions below 400. */
+  a->frames = big;
+  le_backing_buffer* bb = bk_buffer(4, 0.0f);
+  le_backing_buffer* c = bk_buffer(4, 0.0f);
+  bb->frames = big;
+  c->frames = big;
+  CHECK(le_engine_backing_load(e, bb, 2, 0) == LE_OK); /* stays stopped */
+  bk_run(e, out, 10, 2, 10); /* applied: a fades out on the second voice */
+  CHECK(le_engine_backing_stage_next(e, c, 3) == LE_ERR_NOT_READY);
+  bk_run(e, out, BK_RAMP + 10, 2, 64); /* the fade ends and hands a back */
+  CHECK(le_engine_backing_stage_next(e, c, 3) == LE_OK);
+  drain(e);
+  CHECK(bk_state(e).owned == 2);
+  bb->frames = 4;
+  c->frames = 4;
+  le_engine_destroy(e);
 }
 
 /* The End = Next advance never drops a buffer: with every return slot taken
@@ -573,12 +615,16 @@ static void test_backing_advance_refused_when_returns_full(void) {
  * sidecar (L8); one without it does not. */
 static void test_backing_marks_capture(void) {
   printf("test_backing_marks_capture\n");
-  for (int routed = 0; routed < 2; ++routed) {
-    le_engine* e = bk_engine(2);
+  /* One engine, routed then unrouted: the second capture's marker must not
+   * carry over from the first (the count resets at arm). */
+  le_engine* e = bk_engine(2);
+  CHECK(le_engine_backing_load(e, bk_buffer(8192, 0.0f), 1, 1) == LE_OK);
+  for (int pass = 0; pass < 2; ++pass) {
+    const int routed = pass == 0;
     CHECK(le_engine_backing_set_output(e, routed ? 0x3 : 0x0) == LE_OK);
-    CHECK(le_engine_backing_load(e, bk_buffer(4096, 0.0f), 1, 1) == LE_OK);
     drain(e);
-    const char* dir = render_test_dir(routed ? "backing-mark-1" : "backing-mark-0");
+    const char* dir =
+        render_test_dir(routed ? "backing-mark-1" : "backing-mark-0");
     CHECK(le_perf_arm(e, dir) == LE_OK);
     drain(e);
     static float out[512 * 2];
@@ -586,8 +632,8 @@ static void test_backing_marks_capture(void) {
     CHECK(le_perf_disarm(e) == LE_OK);
     CHECK(history_manifest_count(dir, "\"backing_in_master\": true") ==
           routed);
-    le_engine_destroy(e);
   }
+  le_engine_destroy(e);
 }
 
 static void test_click_pan(void) {

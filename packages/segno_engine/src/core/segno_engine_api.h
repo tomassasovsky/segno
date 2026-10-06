@@ -2282,9 +2282,10 @@ LE_EXPORT int32_t le_engine_set_click_pan(le_engine* engine, float pan);
  * before every load or stage, at configure, at reopen and at destroy, never
  * on the audio thread. At most LE_BACKING_MAX_BUFFERS buffers and
  * LE_BACKING_BUDGET_BYTES of PCM are engine-owned at once. A load or stage
- * past either bound reads LE_ERR_NOT_READY while a buffer is in transit (more
- * than two owned: a replaced or finished one the audio thread has not handed
- * back yet; retry after one block), else LE_ERR_CAPACITY.
+ * past either bound reads LE_ERR_NOT_READY while a buffer is in transit (one
+ * posted and not yet applied by the callback, or a replaced one still fading
+ * out or waiting to be handed back: retry after one block), else
+ * LE_ERR_CAPACITY.
  *
  * Handoff protocol. Only the audio thread changes which buffer is loaded or
  * staged: loads, stages and clears travel the command ring in posting order,
@@ -2318,8 +2319,10 @@ typedef struct le_backing_buffer le_backing_buffer;
 
 /* Copies [frames] interleaved frames of [channels] (1 or 2) at [sample_rate]
  * into a new stereo buffer (mono is duplicated into both sides). Any thread.
- * LE_ERR_INVALID on NULL, frames <= 0, channels outside 1..2 or a
- * non-positive rate; LE_ERR_CAPACITY when the allocation fails. */
+ * LE_ERR_INVALID on NULL, frames <= 0, channels outside 1..2, a
+ * non-positive rate or any non-finite sample (a NaN or Inf would poison the
+ * output-bus FX state for good); LE_ERR_CAPACITY when the allocation
+ * fails. */
 LE_EXPORT int32_t le_backing_buffer_from_pcm(const float* interleaved,
                                              int32_t frames, int32_t channels,
                                              int32_t sample_rate,
@@ -2364,7 +2367,9 @@ typedef enum le_backing_end_event {
  * else Stopped. [item] is the caller's token, reported back in the state.
  * LE_ERR_INVALID: NULL, a buffer the engine already owns, a rate other than
  * the engine's, or the command ring full. LE_ERR_NOT_RUNNING: not
- * configured. LE_ERR_NOT_READY: LE_BACKING_MAX_BUFFERS already owned. */
+ * configured. Past LE_BACKING_MAX_BUFFERS or LE_BACKING_BUDGET_BYTES:
+ * LE_ERR_NOT_READY while a buffer is in transit, else LE_ERR_CAPACITY (see
+ * Buffers above). */
 LE_EXPORT int32_t le_engine_backing_load(le_engine* engine,
                                          le_backing_buffer* buffer,
                                          int32_t item, int32_t play);

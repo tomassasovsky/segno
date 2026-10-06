@@ -1780,6 +1780,14 @@ struct le_engine {
    * thread exchanges each slot back to NULL and frees what it finds. Never
    * full: the engine owns at most LE_BACKING_MAX_BUFFERS buffers in total. */
   struct le_backing_buffer* _Atomic a_backing_dead[LE_BACKING_MAX_BUFFERS];
+  /* Transit, for the registry's NOT_READY-or-CAPACITY answer: the callback
+   * counts every buffer-carrying load or stage it applied (release, after
+   * handing back what it replaced), and flags while the fade voice owns a
+   * replaced buffer (cleared, with release, after handing it back). The
+   * control thread counts what it posted (backing_posted). */
+  _Atomic uint32_t a_backing_applied;
+  _Atomic int32_t a_backing_fade_owns;
+  uint32_t backing_posted;
   /* Control-thread registry of every buffer the engine owns (in the ring,
    * held by the callback, or returned and not yet freed). */
   struct le_backing_buffer* backing_owned[LE_BACKING_MAX_BUFFERS];

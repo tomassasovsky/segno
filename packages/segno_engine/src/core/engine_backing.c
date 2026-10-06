@@ -30,6 +30,10 @@ int32_t le_backing_buffer_from_pcm(const float* interleaved, int32_t frames,
       channels > 2 || sample_rate <= 0) {
     return LE_ERR_INVALID;
   }
+  const size_t n = (size_t)frames * (size_t)channels;
+  for (size_t i = 0; i < n; ++i) {
+    if (!isfinite(interleaved[i])) return LE_ERR_INVALID;
+  }
   le_backing_buffer* b = (le_backing_buffer*)calloc(1, sizeof(*b));
   if (b == NULL) return LE_ERR_CAPACITY;
   b->pcm = (float*)malloc((size_t)frames * 2u * sizeof(float));
@@ -136,6 +140,10 @@ void le_backing_release(le_engine* e, int keep_loaded) {
     e->backing_owned[i] = NULL;
   }
   e->backing_fade = (le_backing_voice){0};
+  atomic_store_explicit(&e->a_backing_fade_owns, 0, memory_order_relaxed);
+  /* The ring was re-initialised: nothing posted is still in it. */
+  e->backing_posted =
+      atomic_load_explicit(&e->a_backing_applied, memory_order_relaxed);
   e->backing_cur = (le_backing_voice){.buf = keep_cur};
   e->backing_next = keep_next;
   if (keep_cur == NULL) e->backing_item = -1;
@@ -161,6 +169,13 @@ static int32_t le_backing_post_buffer(le_engine* e, int32_t code,
                          le_backing_owned_index(e, buffer) >= 0)) {
     return LE_ERR_INVALID;
   }
+  /* Read before collecting: a buffer the callback hands back after these
+   * reads is collected below, so "nothing in transit" is never stale. */
+  const int in_transit =
+      atomic_load_explicit(&e->a_backing_fade_owns, memory_order_acquire) !=
+          0 ||
+      atomic_load_explicit(&e->a_backing_applied, memory_order_acquire) !=
+          e->backing_posted;
   le_backing_collect(e);
   int slot = -1;
   if (buffer != NULL) {
@@ -168,15 +183,14 @@ static int32_t le_backing_post_buffer(le_engine* e, int32_t code,
     const int over_budget = le_backing_owned_bytes(e) + le_backing_bytes(buffer) >
                             LE_BACKING_BUDGET_BYTES;
     if (slot < 0 || over_budget) {
-      /* More than a loaded and a staged buffer means one is in transit. */
-      return le_backing_owned_count(e) > 2 ? LE_ERR_NOT_READY
-                                           : LE_ERR_CAPACITY;
+      return in_transit ? LE_ERR_NOT_READY : LE_ERR_CAPACITY;
     }
     e->backing_owned[slot] = buffer;
   }
   const int32_t rc = le_push_cmd(
       e, (le_command){.code = code, .backing = {buffer, item, play ? 1 : 0}});
   if (rc != LE_OK && slot >= 0) e->backing_owned[slot] = NULL;
+  if (rc == LE_OK && buffer != NULL) e->backing_posted++;
   return rc;
 }
 
