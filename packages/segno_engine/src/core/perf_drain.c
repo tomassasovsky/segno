@@ -81,6 +81,7 @@
                               * LE_MAX_MONITORED_INPUTS */
 #include "layer_staging_ring.h" /* le_layer_staging_ring_pop (retired-layer persistence) */
 #include "perf_log_ring.h"   /* le_perf_log_ring_pop (performance event log) */
+#include "perf_checkpoint.h" /* durable two-slot checkpoints (#1198 D4) */
 
 #if defined(_WIN32)
 #include <direct.h> /* _mkdir */
@@ -289,19 +290,39 @@ int32_t le_volume_space(const char* path, uint64_t* out_total_bytes,
 typedef HANDLE le_pd_thread_t;
 
 static void le_pd_drain_thread_main(void* arg);
+static void le_pd_checkpoint_thread_main(void* arg);
 
 static DWORD WINAPI le_pd_win_trampoline(LPVOID arg) {
   le_pd_drain_thread_main(arg);
   return 0;
 }
 
-static int le_pd_thread_start(le_pd_thread_t* out, void* arg) {
+static DWORD WINAPI le_pd_win_checkpoint_trampoline(LPVOID arg) {
+  le_pd_checkpoint_thread_main(arg);
+  return 0;
+}
+
+typedef LPTHREAD_START_ROUTINE le_pd_entry_t;
+#define LE_PD_DRAIN_ENTRY le_pd_win_trampoline
+#define LE_PD_CHECKPOINT_ENTRY le_pd_win_checkpoint_trampoline
+
+/* A lock held only to copy a few integers (the published progress) or to
+ * serialize checkpoint writes. */
+typedef SRWLOCK le_pd_mutex_t;
+static void le_pd_mutex_init(le_pd_mutex_t* m) { InitializeSRWLock(m); }
+static void le_pd_mutex_destroy(le_pd_mutex_t* m) { (void)m; }
+static void le_pd_mutex_lock(le_pd_mutex_t* m) { AcquireSRWLockExclusive(m); }
+static void le_pd_mutex_unlock(le_pd_mutex_t* m) {
+  ReleaseSRWLockExclusive(m);
+}
+
+static int le_pd_thread_start(le_pd_thread_t* out, le_pd_entry_t entry,
+                              void* arg) {
   /* CREATE_SUSPENDED so the priority really is set before the thread runs a
    * single instruction. Without it the drop would merely race the new thread,
    * and only the fact that the loop opens with a 10 ms sleep would make it
    * land in time — a coincidence, not a guarantee. */
-  *out = CreateThread(NULL, 0, le_pd_win_trampoline, arg, CREATE_SUSPENDED,
-                      NULL);
+  *out = CreateThread(NULL, 0, entry, arg, CREATE_SUSPENDED, NULL);
   if (*out == NULL) return 0;
   /* Best-effort: a refusal here costs the priority drop, not the capture. */
   (void)SetThreadPriority(*out, THREAD_PRIORITY_BELOW_NORMAL);
@@ -356,11 +377,29 @@ static int le_pd_mkdir_one(const char* path) {
 typedef pthread_t le_pd_thread_t;
 
 static void le_pd_drain_thread_main(void* arg);
+static void le_pd_checkpoint_thread_main(void* arg);
 
 static void* le_pd_posix_trampoline(void* arg) {
   le_pd_drain_thread_main(arg);
   return NULL;
 }
+
+static void* le_pd_posix_checkpoint_trampoline(void* arg) {
+  le_pd_checkpoint_thread_main(arg);
+  return NULL;
+}
+
+typedef void* (*le_pd_entry_t)(void*);
+#define LE_PD_DRAIN_ENTRY le_pd_posix_trampoline
+#define LE_PD_CHECKPOINT_ENTRY le_pd_posix_checkpoint_trampoline
+
+/* A lock held only to copy a few integers (the published progress) or to
+ * serialize checkpoint writes. */
+typedef pthread_mutex_t le_pd_mutex_t;
+static void le_pd_mutex_init(le_pd_mutex_t* m) { pthread_mutex_init(m, NULL); }
+static void le_pd_mutex_destroy(le_pd_mutex_t* m) { pthread_mutex_destroy(m); }
+static void le_pd_mutex_lock(le_pd_mutex_t* m) { pthread_mutex_lock(m); }
+static void le_pd_mutex_unlock(le_pd_mutex_t* m) { pthread_mutex_unlock(m); }
 
 static void le_pd_thread_lower_own_priority(void) {
 #if defined(__linux__)
@@ -417,10 +456,11 @@ static int le_pd_caller_is_realtime(void) {
   return 0;
 }
 
-static int le_pd_thread_start(le_pd_thread_t* out, void* arg) {
+static int le_pd_thread_start(le_pd_thread_t* out, le_pd_entry_t entry,
+                              void* arg) {
   pthread_attr_t attr;
   if (le_pd_thread_attr_init(&attr)) {
-    const int rc = pthread_create(out, &attr, le_pd_posix_trampoline, arg);
+    const int rc = pthread_create(out, &attr, entry, arg);
     pthread_attr_destroy(&attr);
     if (rc == 0) return 1;
     /* fell through: some hardened kernels refuse an explicit-sched create
@@ -435,7 +475,7 @@ static int le_pd_thread_start(le_pd_thread_t* out, void* arg) {
    * loudly (LE_ERR_DEVICE, unwound by the caller) instead of quietly
    * shipping a priority inversion into a capture. */
   if (le_pd_caller_is_realtime()) return 0;
-  return pthread_create(out, NULL, le_pd_posix_trampoline, arg) == 0;
+  return pthread_create(out, NULL, entry, arg) == 0;
 }
 
 static void le_pd_thread_join(le_pd_thread_t th) { pthread_join(th, NULL); }
@@ -726,14 +766,8 @@ typedef struct le_pd_file {
   le_sha256_ctx sha;     /* the open part's payload so far */
 } le_pd_file;
 
-/* A sealed part, for the sidecar's `parts` list. */
-typedef struct le_pd_sealed_part {
-  int32_t stream;
-  int32_t index;
-  uint64_t frames;
-  uint64_t overs;
-  uint8_t sha256[LE_SHA256_BYTES];
-} le_pd_sealed_part;
+/* A sealed part, for the sidecar's `parts` list and the checkpoints. */
+typedef le_perf_sealed_part le_pd_sealed_part;
 
 struct le_perf_drain {
   le_engine* engine;
@@ -771,6 +805,24 @@ struct le_perf_drain {
   uint64_t overs;        /* samples above full scale, every stream, sealed parts */
 
   le_pd_sealed_part sealed[LE_PD_MAX_PARTS];
+
+  /* Checkpoints (#1198 D4). The drain copies its flushed progress into
+   * `published` under `progress_lock` after every cycle; the checkpoint
+   * thread copies it out under the same lock, so neither waits on the other
+   * for more than a few integers. `write_lock` serializes whole checkpoints
+   * (the thread's and le_perf_checkpoint_now_for_test's). */
+  le_pd_mutex_t progress_lock;
+  le_pcp_progress published;
+  le_pd_mutex_t write_lock;
+  le_pcp_writer cp_writer;
+  le_pcp_take cp_take;
+  char mirror_dir[LE_PD_PATH_MAX];
+  char boot_id[64];
+  int32_t checkpoint_ms;
+  le_pd_thread_t cp_thread;
+  _Atomic int cp_stop; /* write a last checkpoint and exit */
+  _Atomic int cp_now;  /* write one as soon as possible */
+  uint64_t events_bytes; /* events.log bytes written */
   int sealed_count;
 
   le_pd_file master_file;
@@ -995,6 +1047,7 @@ static int le_pd_drain_log_ring(le_perf_drain* d, le_perf_log_ring* ring) {
   while (le_perf_log_ring_pop(ring, &entry)) {
     if (!le_pd_write_log_entry(d->events_file, &entry)) return 0;
     le_pd_count_bytes(d, LE_PD_EVENTS_ENTRY_BYTES);
+    d->events_bytes += LE_PD_EVENTS_ENTRY_BYTES;
   }
   return 1;
 }
@@ -1171,19 +1224,9 @@ static uint64_t le_pd_whole_frames_landed(le_pd_file* pf, uint64_t landed,
  * disk, and every existing budget in the suite is a count of sample bytes. A
  * header write that fails still fails the cycle like any other write. */
 
-static void le_pd_stream_name(int32_t stream, char* out, size_t cap) {
-  if (stream == 0) {
-    snprintf(out, cap, "master");
-  } else {
-    snprintf(out, cap, "input-%d", stream - 1);
-  }
-}
-
 static void le_pd_part_filename(int32_t stream, int32_t index, char* out,
                                 size_t cap) {
-  char name[32];
-  le_pd_stream_name(stream, name, sizeof(name));
-  snprintf(out, cap, "%s-%03d.wav", name, index);
+  le_perf_part_filename(stream, index, out, cap);
 }
 
 /* The 32-byte `sgno` chunk: take id, stream, part index, 12 reserved zero
@@ -1804,6 +1847,90 @@ static void le_pd_publish_stop(le_perf_drain* d) {
   atomic_store_explicit(&d->self_stopped, 1, memory_order_release);
 }
 
+/* Publishes what this cycle flushed (#1198 D4): every stream's open part,
+ * how many sealed parts and layer files are final, events.log's length and
+ * the frames every stream holds. Only after the flush, so a checkpoint never
+ * names bytes still in a stdio buffer. Allocation-free: a struct copy under
+ * a lock held for nothing else. */
+static void le_pd_publish_progress(le_perf_drain* d) {
+  le_pcp_progress p;
+  memset(&p, 0, sizeof(p));
+  uint64_t frames = UINT64_MAX;
+  uint64_t overs = d->overs;
+  for (int32_t k = -1; k < LE_MAX_MONITORED_INPUTS; ++k) {
+    const le_pd_file* pf = le_pd_stream(d, k);
+    if (pf == NULL) continue;
+    le_pcp_stream* s = &p.streams[p.stream_count++];
+    s->stream = pf->stream;
+    s->channels = pf->channels;
+    if (pf->w.file != NULL) {
+      s->open_index = pf->part_index;
+      s->open_frames = pf->part_frames;
+      s->open_overs = pf->part_overs;
+      overs += pf->part_overs;
+    }
+    if (pf->written < frames) frames = pf->written;
+  }
+  p.sealed_count = d->sealed_count;
+  p.layer_count = d->layer_count;
+  p.events_bytes = d->events_bytes;
+  p.frames = frames == UINT64_MAX ? 0 : frames;
+  p.overs = overs;
+  le_pd_mutex_lock(&d->progress_lock);
+  d->published = p;
+  le_pd_mutex_unlock(&d->progress_lock);
+}
+
+/* One checkpoint of the latest published progress. Never on the drain
+ * thread. A failure leaves the other slot standing and is counted; the take
+ * goes on. */
+static int le_pd_checkpoint(le_perf_drain* d) {
+  le_pd_mutex_lock(&d->write_lock);
+  le_pcp_progress p;
+  le_pd_mutex_lock(&d->progress_lock);
+  p = d->published;
+  le_pd_mutex_unlock(&d->progress_lock);
+  const int ok = le_pcp_write(&d->cp_writer, &d->cp_take, &p);
+  le_pd_mutex_unlock(&d->write_lock);
+  if (!ok) {
+    atomic_fetch_add_explicit(&d->engine->a_perf_checkpoint_failures, 1u,
+                              memory_order_relaxed);
+  }
+  return ok;
+}
+
+/* The checkpoint thread: every `checkpoint_ms` (never, with 0), on request,
+ * and once more when the take stops. Polls like the drain thread, so a stop
+ * is never more than a poll away. */
+static void le_pd_checkpoint_thread_main(void* arg) {
+  le_perf_drain* d = (le_perf_drain*)arg;
+  le_pd_thread_lower_own_priority();
+  uint64_t next_ms = 0;
+  if (d->checkpoint_ms > 0 && le_pd_now_ms(&next_ms)) {
+    next_ms += (uint64_t)d->checkpoint_ms;
+  }
+  for (;;) {
+    le_pd_sleep_ms(LE_PD_POLL_MS);
+    const int stop = atomic_load_explicit(&d->cp_stop, memory_order_acquire);
+    const int now =
+        atomic_exchange_explicit(&d->cp_now, 0, memory_order_acq_rel);
+    int due = 0;
+    uint64_t now_ms = 0;
+    if (d->checkpoint_ms > 0 && le_pd_now_ms(&now_ms) && now_ms >= next_ms) {
+      due = 1;
+      next_ms += (uint64_t)d->checkpoint_ms;
+      if (next_ms <= now_ms) next_ms = now_ms + (uint64_t)d->checkpoint_ms;
+    }
+    if (stop || now || due) le_pd_checkpoint(d);
+    if (stop) return;
+  }
+}
+
+int le_perf_checkpoint_now_for_test(struct le_engine* engine) {
+  if (engine == NULL || engine->perf.drain == NULL) return 0;
+  return le_pd_checkpoint(engine->perf.drain);
+}
+
 static int le_pd_drain_cycle(le_perf_drain* d, int final) {
   le_engine* e = d->engine;
   float scratch[LE_PD_SCRATCH_SAMPLES];
@@ -1996,6 +2123,7 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
   }
 
   le_pd_publish_overs(d);
+  le_pd_publish_progress(d);
 
   /* Write the sidecar (with the disk_full marker, if this cycle just failed)
    * BEFORE publishing d->self_stopped — le_perf_drain_self_stopped
@@ -2094,6 +2222,10 @@ static void le_pd_drain_thread_main(void* arg) {
    * so the on-disk state reflects everything captured up to this moment.
    * Its own failure is not actionable — the thread is exiting either way. */
   le_pd_drain_cycle(d, 1);
+  /* Whatever ended the take, its last state is made durable now, not at the
+   * next interval: a self-stop can be followed by a crash before any
+   * disarm. */
+  atomic_store_explicit(&d->cp_now, 1, memory_order_release);
 }
 
 /* Closes every file `d` opened, without sealing (a start that failed half
@@ -2118,8 +2250,13 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
           ? target->live_sidecar_dir
           : target->capture_dir;
   /* Reject rather than silently truncate into a wrong path. */
+  const char* mirror_dir = target->mirror_dir != NULL ? target->mirror_dir : "";
   if (strlen(target->capture_dir) >= LE_PD_PATH_MAX ||
-      strlen(sidecar_dir) >= LE_PD_PATH_MAX) {
+      strlen(sidecar_dir) >= LE_PD_PATH_MAX ||
+      strlen(mirror_dir) >= LE_PD_PATH_MAX || target->checkpoint_ms < 0) {
+    return NULL;
+  }
+  if (mirror_dir[0] != '\0' && !le_pd_mkdir_recursive(mirror_dir)) {
     return NULL;
   }
   if (!le_pd_mkdir_recursive(target->capture_dir)) return NULL;
@@ -2145,6 +2282,28 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
    * byte the take puts on the volume. */
   le_pd_sample_free(d);
 
+  snprintf(d->mirror_dir, sizeof(d->mirror_dir), "%s", mirror_dir);
+  d->checkpoint_ms = target->checkpoint_ms;
+  le_pcp_read_boot_id(d->boot_id, sizeof(d->boot_id));
+  le_pd_mutex_init(&d->progress_lock);
+  le_pd_mutex_init(&d->write_lock);
+  d->cp_take.capture_dir = d->capture_dir;
+  d->cp_take.mirror_dir = d->mirror_dir;
+  d->cp_take.take_id = d->take_id;
+  d->cp_take.volume_generation = d->volume_generation;
+  d->cp_take.sample_rate = engine->sample_rate;
+  d->cp_take.boot_id = d->boot_id;
+  d->cp_take.sealed = d->sealed;
+  d->cp_take.layer_names = d->layers[0].filename;
+  d->cp_take.layer_stride = sizeof(d->layers[0]);
+  if (!le_pcp_writer_init(&d->cp_writer)) {
+    le_pcp_writer_free(&d->cp_writer);
+    le_pd_mutex_destroy(&d->progress_lock);
+    le_pd_mutex_destroy(&d->write_lock);
+    free(d);
+    return NULL;
+  }
+
   d->master_file.stream = 0;
   d->master_file.channels = engine->perf.master_channels;
   int ok = le_pd_open_part(d, &d->master_file);
@@ -2161,15 +2320,30 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
     d->events_file = fopen(path, "wb");
     ok = d->events_file != NULL &&
          le_pd_write_events_header(d->events_file, engine->sample_rate);
-    if (ok) le_pd_count_bytes(d, 12); /* "PLEV", version, sample rate */
+    if (ok) {
+      le_pd_count_bytes(d, 12); /* "PLEV", version, sample rate */
+      d->events_bytes = 12;
+    }
   }
 
   if (ok) {
-    atomic_store_explicit(&d->running, 1, memory_order_release);
-    ok = le_pd_thread_start(&d->thread, d);
+    /* The opened parts and events.log are what the first checkpoint names. */
+    le_pd_publish_progress(d);
+    ok = le_pd_thread_start(&d->cp_thread, LE_PD_CHECKPOINT_ENTRY, d);
+    if (ok) {
+      atomic_store_explicit(&d->running, 1, memory_order_release);
+      if (!le_pd_thread_start(&d->thread, LE_PD_DRAIN_ENTRY, d)) {
+        atomic_store_explicit(&d->cp_stop, 1, memory_order_release);
+        le_pd_thread_join(d->cp_thread);
+        ok = 0;
+      }
+    }
   }
   if (!ok) {
     le_pd_close_all(d);
+    le_pcp_writer_free(&d->cp_writer);
+    le_pd_mutex_destroy(&d->progress_lock);
+    le_pd_mutex_destroy(&d->write_lock);
     free(d);
     return NULL;
   }
@@ -2193,9 +2367,17 @@ void le_perf_drain_stop(le_perf_drain* drain, le_perf_stop_reason reason) {
                                           memory_order_relaxed,
                                           memory_order_relaxed);
 
+  /* The last checkpoint, after the final pass sealed the parts: the thread
+   * writes it on its way out. */
+  atomic_store_explicit(&drain->cp_stop, 1, memory_order_release);
+  le_pd_thread_join(drain->cp_thread);
+
   /* The final pass sealed (and closed) every part it could; whatever is
    * still open here failed to seal and is closed as it stands — its header
    * keeps zero sizes, which recovery reads as a part to be measured. */
   le_pd_close_all(drain);
+  le_pcp_writer_free(&drain->cp_writer);
+  le_pd_mutex_destroy(&drain->progress_lock);
+  le_pd_mutex_destroy(&drain->write_lock);
   free(drain);
 }

@@ -437,6 +437,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     out->perf_capture_streams = streams;
     out->perf_capture_frame_bytes = frame_bytes;
   }
+  out->perf_checkpoint_failures = atomic_load_explicit(
+      &engine->a_perf_checkpoint_failures, memory_order_relaxed);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_fill_track_snapshot(engine, t, t < engine->track_count,

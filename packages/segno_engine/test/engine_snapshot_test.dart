@@ -1277,6 +1277,7 @@ void main() {
       expect(base, isNot(equals(base.copyWith(perfOvers: 2))));
       expect(base, isNot(equals(base.copyWith(perfCaptureStreams: 2))));
       expect(base, isNot(equals(base.copyWith(perfCaptureFrameBytes: 16))));
+      expect(base, isNot(equals(base.copyWith(perfFailedCheckpoints: 1))));
     });
 
     test('an unknown native stop reason reads as none', () {
@@ -1664,6 +1665,7 @@ void main() {
         'perfOvers',
         'perfCaptureStreams',
         'perfCaptureFrameBytes',
+        'perfFailedCheckpoints',
         'tempoBpm',
         'tempoSource',
         'tsNum',

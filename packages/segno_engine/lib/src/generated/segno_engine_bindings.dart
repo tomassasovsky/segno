@@ -4750,7 +4750,8 @@ class SegnoEngineBindings {
   /// still be valid but is otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING
   /// (not configured), LE_ERR_INVALID (null target, null/empty `capture_dir`, a
   /// `part_bytes` with no room for a frame or past the RIFF limit, a
-  /// `ring_seconds` outside 0 to LE_PERF_RING_SECONDS_MAX, no output enabled to capture, or ring allocation failure),
+  /// `ring_seconds` outside 0 to LE_PERF_RING_SECONDS_MAX, a negative
+  /// `checkpoint_ms`, no output enabled to capture, or ring allocation failure),
   /// or LE_ERR_DEVICE (the drain thread could not be started — e.g. a directory
   /// could not be created — or a previous disarm's quiescent wait bailed out and
   /// left a stale drain session still live).
@@ -7757,6 +7758,12 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Uint32()
   external int perf_capture_frame_bytes;
+
+  /// Checkpoints of the most recent take that could not be written (a failed
+  /// sync or slot write); each leaves the other slot standing and the take
+  /// running. Reset by the next arm.
+  @ffi.Uint32()
+  external int perf_checkpoint_failures;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -8015,6 +8022,16 @@ final class le_perf_target extends ffi.Struct {
   /// a failed write.
   @ffi.Uint64()
   external int reserve_bytes;
+
+  /// An Internal directory that receives a copy of every checkpoint, for a
+  /// take on a removable volume (the mirror wins over the stick's own slots);
+  /// NULL or empty for none. Created if missing.
+  external ffi.Pointer<ffi.Char> mirror_dir;
+
+  /// How often the checkpoint thread makes the take durable, in ms (5000 for
+  /// a real take); 0 checkpoints only when the take stops.
+  @ffi.Int32()
+  external int checkpoint_ms;
 }
 
 /// Why the most recent take stopped (le_snapshot.perf_stop_reason). NONE while

@@ -691,6 +691,8 @@ void main() {
             volumeGeneration: 7,
             partBytes: 84 + 4 * 100, // mono master: 100 frames a part
             ringSeconds: 3,
+            mirrorDir: '${captureDir.path}/mirror',
+            checkpointMs: 0, // only the final checkpoint
           ),
         ),
         EngineResult.ok,
@@ -729,6 +731,15 @@ void main() {
       );
       expect(sidecar, contains('"volume_generation": 7,'));
       expect(sidecar, contains('"ring_seconds": 3,'));
+      // The final checkpoint lands in the take and, byte for byte, in the
+      // mirror (#1198 D4).
+      final slot = File('${captureDir.path}/checkpoint-a.json');
+      expect(slot.readAsStringSync(), contains('"frames": 256,'));
+      expect(
+        File('${captureDir.path}/mirror/checkpoint-a.json').readAsBytesSync(),
+        slot.readAsBytesSync(),
+      );
+      expect(engine.snapshot().perfFailedCheckpoints, 0);
       expect(engine.snapshot().perfRingSeconds, 3);
       expect(
         File('${captureDir.path}/performance.json').existsSync(),

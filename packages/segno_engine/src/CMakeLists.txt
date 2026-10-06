@@ -99,6 +99,7 @@ add_library(segno_engine SHARED
   core/perf_log_ring.c       # perf event log: SPSC ring of frame-tagged le_command entries
   core/layer_staging_ring.c  # retired-layer PCM staging ring (persist before pool eviction)
   core/perf_drain.c          # perf-capture drain thread: rings -> raw PCM + sidecar
+  core/perf_checkpoint.c     # durable two-slot take checkpoints (#1198 D4)
   core/json_read.c           # minimal read-only JSON parser (performance.json)
   core/perf_render.c         # offline renderer: replay capture dir -> dry stems
   # Control-thread plugin-slot lifecycle (load/clear + quiescent handshake).

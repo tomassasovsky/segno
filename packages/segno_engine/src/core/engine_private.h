@@ -1796,6 +1796,8 @@ struct le_engine {
   _Atomic uint64_t a_perf_bytes_written;
   _Atomic uint64_t a_perf_overs;
   _Atomic uint64_t a_perf_first_drop_frame;
+  /* Checkpoints of the current take that could not be written (#1198 D4). */
+  _Atomic uint32_t a_perf_checkpoint_failures;
   le_perf_capture perf;
 
   /* Tracks. */
