@@ -123,13 +123,6 @@ class LocalConsoleFactsClient implements ConsoleFactsClient {
   @override
   Future<int> deleteCapturesOlderThan(int days) async => 0;
 
-  /// USB export is unimplemented; there is no destination to offer.
-  @override
-  Future<String> exportDestination() async => '';
-
-  @override
-  Future<void> exportEverything(String destination) async {}
-
   /// Counts the device records BlueZ kept under [kRetiredBluetoothState]:
   /// `<adapter address>/<device address>/info`. Anything else in the tree
   /// (the adapter's `settings`, its `cache` directory) is not a pairing.

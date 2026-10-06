@@ -2223,7 +2223,6 @@
     },
     "storageSystemTitle": "System and updates",
     "storageSystemSubtitle": "includes the standby system",
-    "storageFreeTitle": "Free",
     "storageGigabytes": "{value} GB",
     "@storageGigabytes": {
         "description": "One figure of the disk breakdown. Formatted rather than pre-printed, so the decimal separator is the locale's — the sample rate beside it in About already is.",
@@ -2259,10 +2258,135 @@
         }
     },
     "storageDeleteCapturesConfirm": "Delete them",
-    "storageExportTitle": "Export everything to USB",
-    "storageNoUsb": "no USB volume",
-    "@storageNoUsb": {
-        "description": "Trailing readout when there is nowhere to export. A fact about the rig, not a failure — the row simply stops being tappable."
+    "storageInternalTitle": "Internal",
+    "storageInternalSubtitle": "Sessions and audio",
+    "storageOpenLibrary": "Open library",
+    "storageFreeGigabytes": "{value} GB free",
+    "@storageFreeGigabytes": {
+        "description": "A volume's free space on the Storage page (pen 31). Decimal gigabytes, one place.",
+        "placeholders": {
+            "value": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "storageOfGigabytes": "of {value} GB",
+    "@storageOfGigabytes": {
+        "description": "A volume's size beside its free space, in whole decimal gigabytes.",
+        "placeholders": {
+            "value": {
+                "type": "int"
+            }
+        }
+    },
+    "storageCapacityUnavailable": "Capacity unavailable",
+    "@storageCapacityUnavailable": {
+        "description": "Where the free figure would be, when the volume cannot be measured (pen 47 T8ACW)."
+    },
+    "storageRecordingRemaining": "{hours} hr {minutes} min recording remaining · estimated",
+    "@storageRecordingRemaining": {
+        "placeholders": {
+            "hours": {
+                "type": "int"
+            },
+            "minutes": {
+                "type": "int"
+            }
+        }
+    },
+    "storageNoRecordingSpace": "No recording space",
+    "storageRecordingTimeUnavailable": "Remaining time unavailable",
+    "@storageRecordingTimeUnavailable": {
+        "description": "Unknown capacity cannot claim available time (accepted behaviour 6.7)."
+    },
+    "storageRecordingFormat": "{rate} kHz · 24-bit · Stereo",
+    "@storageRecordingFormat": {
+        "description": "The format the recording estimate is made at: the applied rate, stereo 24-bit PCM.",
+        "placeholders": {
+            "rate": {
+                "type": "double",
+                "format": "decimalPattern"
+            }
+        }
+    },
+    "storageReserveNote": "Internal storage · {reserve} GB reserved. Extra recordings and Undo audio use more space.",
+    "@storageReserveNote": {
+        "placeholders": {
+            "reserve": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "storageLowInternal": "Internal storage is nearly full.",
+    "storageUsbTitle": "USB drive",
+    "storageUsbNotConnected": "Not connected",
+    "storageUsbConnectHint": "Connect a drive to import or export audio.",
+    "storageUsbUnnamed": "Unnamed drive",
+    "@storageUsbUnnamed": {
+        "description": "Stands in for a USB drive's label when it has none."
+    },
+    "storageUsbEjecting": "Ejecting…",
+    "storageUsbSafeToRemove": "Safe to remove",
+    "storageUsbSafeToRemoveBody": "Your internal audio stays available.",
+    "storageUsbReadOnly": "{label} · read-only",
+    "@storageUsbReadOnly": {
+        "placeholders": {
+            "label": {
+                "type": "String"
+            }
+        }
+    },
+    "storageUsbInUse": "{label} · in use for {purpose}",
+    "@storageUsbInUse": {
+        "description": "Under a drive whose Eject is disabled because something is writing to it; purpose is one or more of the storagePurpose words, joined with a comma.",
+        "placeholders": {
+            "label": {
+                "type": "String"
+            },
+            "purpose": {
+                "type": "String"
+            }
+        }
+    },
+    "storageUsbUnsupported": "{fsType} isn't supported. Format the drive as exFAT.",
+    "@storageUsbUnsupported": {
+        "placeholders": {
+            "fsType": {
+                "type": "String"
+            }
+        }
+    },
+    "storageUsbUnformatted": "This drive isn't formatted. Format it as exFAT.",
+    "storageUsbMountFailed": "This drive could not be opened.",
+    "storageEject": "Eject",
+    "storageEjectFailed": "Could not eject. The drive is still connected. Try again.",
+    "storageEjectUnderway": "Already ejecting. Wait for it to finish.",
+    "@storageEjectUnderway": {
+        "description": "Under a drive whose Cancel came after the eject had started syncing and unmounting; it cannot be stopped."
+    },
+    "storagePurposeRecording": "recording",
+    "@storagePurposeRecording": {
+        "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
+    "storagePurposeCopy": "copying files",
+    "@storagePurposeCopy": {
+        "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
+    "storagePurposeExport": "export",
+    "@storagePurposeExport": {
+        "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
+    "storagePurposeBackup": "backup",
+    "@storagePurposeBackup": {
+        "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
     },
     "aboutNameRow": "Name",
     "aboutRenameTitle": "Rename console",
@@ -2627,6 +2751,14 @@
     "powerOffRefuseBody": "Recording is in progress. Stop it, then press the power button again if you want to power off.",
     "@powerOffRefuseBody": {
         "description": "Power-off refuse body. Accidental bump mid-take must not offer discard."
+    },
+    "powerOffTransferTitle": "Wait for the transfer",
+    "@powerOffTransferTitle": {
+        "description": "Power-off dialog title while a copy, export, backup or USB eject is in progress. The only action is Keep playing."
+    },
+    "powerOffTransferBody": "Audio is being copied, or a USB drive is being ejected. Wait for it to finish, then press the power button again if you want to power off.",
+    "@powerOffTransferBody": {
+        "description": "Power-off refuse body for a transfer in flight (accepted behaviour 7.8: transfers and eject guard power)."
     },
     "powerOffConfirmTitle": "Power off?",
     "@powerOffConfirmTitle": {
@@ -6020,5 +6152,9 @@
                 "type": "int"
             }
         }
+    },
+    "storageEjectStuck": "Still ejecting. If it does not finish, unplug the drive.",
+    "@storageEjectStuck": {
+        "description": "Under a drive whose eject the helper took and has not answered after two minutes; pulling the drive is the way out."
     }
 }
