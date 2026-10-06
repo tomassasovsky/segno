@@ -102,6 +102,7 @@ class SessionCubit extends Cubit<SessionState> {
   String? _pendingLoadedName;
   List<SessionSummary>? _pendingLoadedSessions;
   FadeDurations? _pendingLoadedFade;
+  ({SessionBacking backing, double clickPan})? _pendingLoadedBacking;
   SessionConversionNotice? _pendingConversion;
   final _activeOperations = <Future<void>>{};
   Future<void>? _closingFuture;
@@ -406,6 +407,10 @@ class SessionCubit extends Cubit<SessionState> {
             _pendingLoadedBindings = bundle.session.pedalBindings;
             _pendingLoadedSessions = sessions;
             _pendingLoadedFade = fade;
+            _pendingLoadedBacking = (
+              backing: bundle.session.backing,
+              clickPan: bundle.session.clickPan,
+            );
             _pendingConversion = notice;
             // The live rig is the new session, even if boot keys fail later.
             // Do not publish loaded or enable its bindings until persistence
@@ -422,6 +427,12 @@ class SessionCubit extends Cubit<SessionState> {
             }
             await _fxPersistence.persistLoadedSession(_settings);
             await _captureSettings.installFade(fade);
+            // The backing stops and takes the session's prepared setup
+            // (#1200 D9), loaded again stopped at 0.
+            await _captureSettings.installBacking(
+              bundle.session.backing,
+              bundle.session.clickPan,
+            );
             _onPedalBindings(bundle.session.pedalBindings);
             _fxPersistence.completeSessionBoot();
             _looper.clearSessionBootStartBlock();
@@ -430,6 +441,7 @@ class SessionCubit extends Cubit<SessionState> {
             _pendingLoadedBindings = null;
             _pendingLoadedSessions = null;
             _pendingLoadedFade = null;
+            _pendingLoadedBacking = null;
             _pendingConversion = null;
             return _ActionResult(
               SessionOutcome.loaded,
@@ -495,18 +507,24 @@ class SessionCubit extends Cubit<SessionState> {
       final bindings = _pendingLoadedBindings;
       final sessions = _pendingLoadedSessions;
       final fade = _pendingLoadedFade;
+      final backing = _pendingLoadedBacking;
       final conversion = _pendingConversion;
       if (id == null ||
           name == null ||
           bindings == null ||
           sessions == null ||
           fade == null ||
+          backing == null ||
           !_fxPersistence.sessionBootRecoveryRequired) {
         throw StateError('no loaded session needs boot recovery');
       }
       try {
         await _fxPersistence.retrySessionBoot();
         await _captureSettings.installFade(fade);
+        await _captureSettings.installBacking(
+          backing.backing,
+          backing.clickPan,
+        );
         _onPedalBindings(bindings);
         _fxPersistence.completeSessionBoot();
         _looper.clearSessionBootStartBlock();
@@ -515,6 +533,7 @@ class SessionCubit extends Cubit<SessionState> {
         _pendingLoadedBindings = null;
         _pendingLoadedSessions = null;
         _pendingLoadedFade = null;
+        _pendingLoadedBacking = null;
         _pendingConversion = null;
         return _ActionResult(
           SessionOutcome.loaded,

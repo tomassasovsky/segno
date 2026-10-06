@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
@@ -44,13 +45,15 @@ Future<void> runSegno(
   SessionRepository? sessionRepository,
   PerformanceRepository? performanceRepository,
   GuardRegistry? guards,
+  BackingRepository? backingRepository,
   EngineConfig? startConfig,
 }) async {
   assert(
     (repository == null) == (sessionRepository == null) &&
         (repository == null) == (performanceRepository == null) &&
-        (repository == null) == (guards == null),
-    'inject all three repositories and the guard table they share together, '
+        (repository == null) == (guards == null) &&
+        (repository == null) == (backingRepository == null),
+    'inject all four repositories and the guard table they share together, '
     'or none',
   );
   WidgetsFlutterBinding.ensureInitialized();
@@ -94,9 +97,11 @@ Future<void> runSegno(
   // One guard table for the whole app (accepted behaviour 6.12): the
   // repositories and the runtime's owners all check it at their commits.
   final registry = guards ?? GuardRegistry();
+  final BackingRepository backing;
   if (repository == null ||
       sessionRepository == null ||
-      performanceRepository == null) {
+      performanceRepository == null ||
+      backingRepository == null) {
     final engine = createNativeAudioEngine();
     looper = LooperRepository(engine: engine);
     session = SessionRepository(
@@ -109,10 +114,17 @@ Future<void> runSegno(
       exportsRoot: defaultExportDirectory,
       guards: registry,
     );
+    final decoder = createNativeAudioDecoder();
+    backing = BackingRepository.forEngine(
+      engine,
+      decoder: decoder,
+      store: backingStoreFor(decoder),
+    );
   } else {
     looper = repository;
     session = sessionRepository;
     performance = performanceRepository;
+    backing = backingRepository;
   }
 
   // The native MIDI source feeds the controller pipeline; it is null when no
@@ -233,6 +245,7 @@ Future<void> runSegno(
       ),
       sessionRepository: session,
       performanceRepository: performance,
+      backingRepository: backing,
       initialAsioDrivers: asioDrivers,
       updates: updates,
       wifi: wifi,
@@ -242,3 +255,12 @@ Future<void> runSegno(
     ),
   );
 }
+
+/// The backing player's managed `Backing tracks` store under the exports
+/// root (#1200), copied into by the internal copier and validated by
+/// [decoder].
+BackingAssetStore backingStoreFor(AudioDecoder decoder) => BackingAssetStore(
+  root: defaultExportDirectory,
+  decoder: decoder,
+  copier: internalBackingCopier(defaultExportDirectory),
+);

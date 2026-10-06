@@ -199,7 +199,10 @@ class NotReadyEngine implements BackingControl {
   }
 
   @override
-  EngineResult setClickPan(double pan) => inner.setClickPan(pan);
+  EngineResult setClickPan(double pan) {
+    settings.add('click pan $pan');
+    return inner.setClickPan(pan);
+  }
 
   @override
   BackingState backingState() {

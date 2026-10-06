@@ -10,6 +10,8 @@ environment:
 
 dependencies:
   bloc: ^9.2.1
+  backing_repository:
+    path: packages/backing_repository
   brightness_client:
     path: packages/brightness_client
   # Already resolved (transitive); declared direct so the volume overlay's

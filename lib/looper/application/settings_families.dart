@@ -1,6 +1,8 @@
 import 'dart:convert';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/backing/model/backing_mix.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/click_volume.dart';
@@ -1466,4 +1468,225 @@ FadeDurations fadeWith(FadeDurations base, int? channel, int? milliseconds) {
       channel: ?milliseconds,
     },
   );
+}
+
+/// The backing's level, pan, outputs and End (#1200 Part 5): one stored
+/// record, applied through the backing repository, which replays it after
+/// the engine restarts. No native receipt: like Fade, the repository's
+/// setters are direct stores that cannot be refused.
+///
+/// An edit names its field ([BackingMixField]) as the address, so one
+/// field's controller is never superseded by another field's edit.
+final class BackingMixFamily implements SettingsFamily<BackingMix, String?> {
+  /// Binds the family to its stored record and the repository it drives.
+  BackingMixFamily({
+    required SettingsRepository settings,
+    required BackingRepository backing,
+  }) : _settings = settings,
+       _backing = backing;
+
+  final SettingsRepository _settings;
+  final BackingRepository _backing;
+  BackingMix _live = BackingMix.defaults;
+  BackingMix _durable = BackingMix.defaults;
+
+  @override
+  OwnedSetting get key => OwnedSetting.backingMix;
+
+  /// The one record holds every field.
+  @override
+  List<Object?> get addresses => const [null];
+
+  @override
+  bool validate(BackingMix value) => value.isValid;
+
+  /// The exact stored bytes, after checking they decode.
+  @override
+  Future<String?> readCheckpoint(Object? address) async {
+    final record = await _settings.readBackingMixCheckpoint();
+    if (record != null) _decode(record);
+    return record;
+  }
+
+  @override
+  Future<void> writeCheckpoint(Object? address, String? checkpoint) =>
+      _settings.restoreBackingMixCheckpoint(checkpoint);
+
+  /// The whole record for [durable]; [stored] when it already holds it, so
+  /// an absent record is not written for the defaults.
+  @override
+  String? checkpointOf(BackingMix durable, Object? address, String? stored) {
+    final current = stored == null ? BackingMix.defaults : _decode(stored);
+    return current == durable ? stored : jsonEncode(durable.toJson());
+  }
+
+  @override
+  List<Object?> supersededBy(
+    Object? address,
+    BackingMix before,
+    BackingMix after,
+  ) => const [];
+
+  /// [durable] with the written field taken from [written]; a write with no
+  /// field (a Session, a restore) takes all of it.
+  @override
+  BackingMix durableAfter(
+    BackingMix durable,
+    BackingMix written,
+    Object? address,
+  ) => address is BackingMixField
+      ? durable.withField(address, written)
+      : written;
+
+  /// An absent record is the defaults.
+  @override
+  BackingMix restoreValue(Map<Object?, String?> checkpoints) {
+    final record = checkpoints[null];
+    return record == null ? BackingMix.defaults : _decode(record);
+  }
+
+  /// An unreadable record is replaced by the defaults, stored.
+  @override
+  String? repair(Object? address) => jsonEncode(BackingMix.defaults.toJson());
+
+  @override
+  BackingMix get live => _live;
+
+  @override
+  BackingMix get durable => _durable;
+
+  @override
+  bool get captureLocked => false;
+
+  @override
+  bool get recoveryRequired => false;
+
+  @override
+  Stream<EngineResult> get failures => const Stream.empty();
+
+  @override
+  EngineResult request(BackingMix live, BackingMix durable, Object? edit) {
+    _live = live;
+    _durable = durable;
+    _apply(live);
+    return EngineResult.ok;
+  }
+
+  @override
+  Future<EngineResult> settle() => Future.value(EngineResult.ok);
+
+  @override
+  EngineResult recover() => EngineResult.ok;
+
+  /// A new session or device lifetime retires a held controller value.
+  @override
+  void retireLive() {
+    _live = _durable;
+    _apply(_durable);
+  }
+
+  void _apply(BackingMix mix) => _backing
+    ..setLevel(mix.level)
+    ..setPan(mix.pan)
+    ..setOutput(mix.outputMask)
+    ..setEnd(mix.end);
+
+  static BackingMix _decode(String record) =>
+      BackingMix.fromJson(jsonDecode(record));
+}
+
+/// The click's pan (#1200 D6): one scalar, applied through the backing
+/// repository (the click sums where the backing does, and the repository
+/// replays it after the engine restarts). No native receipt.
+final class ClickPanFamily implements SettingsFamily<double, double?> {
+  /// Binds the family to its stored key and the repository it drives.
+  ClickPanFamily({
+    required SettingsRepository settings,
+    required BackingRepository backing,
+  }) : _settings = settings,
+       _backing = backing;
+
+  final SettingsRepository _settings;
+  final BackingRepository _backing;
+  double _live = 0;
+  double _durable = 0;
+
+  @override
+  OwnedSetting get key => OwnedSetting.clickPan;
+
+  @override
+  List<Object?> get addresses => const [null];
+
+  @override
+  bool validate(double value) => value.isFinite && value >= -1 && value <= 1;
+
+  @override
+  Future<double?> readCheckpoint(Object? address) async {
+    final value = await _settings.readClickPanCheckpoint();
+    if (value != null && !validate(value)) {
+      throw FormatException('Invalid click pan setting', value);
+    }
+    return value;
+  }
+
+  @override
+  Future<void> writeCheckpoint(Object? address, double? checkpoint) =>
+      _settings.restoreClickPanCheckpoint(checkpoint);
+
+  /// Absence stays absence while the value is the centre default.
+  @override
+  double? checkpointOf(double durable, Object? address, double? stored) =>
+      stored == null && durable == 0 ? null : durable;
+
+  @override
+  List<Object?> supersededBy(Object? address, double before, double after) =>
+      const [];
+
+  @override
+  double durableAfter(double durable, double written, Object? address) =>
+      written;
+
+  /// An absent preference is centre.
+  @override
+  double restoreValue(Map<Object?, double?> checkpoints) =>
+      checkpoints[null] ?? 0;
+
+  /// Removing the key restores centre.
+  @override
+  double? repair(Object? address) => null;
+
+  @override
+  double get live => _live;
+
+  @override
+  double get durable => _durable;
+
+  @override
+  bool get captureLocked => false;
+
+  @override
+  bool get recoveryRequired => false;
+
+  @override
+  Stream<EngineResult> get failures => const Stream.empty();
+
+  @override
+  EngineResult request(double live, double durable, Object? edit) {
+    _live = live;
+    _durable = durable;
+    _backing.setClickPan(live);
+    return EngineResult.ok;
+  }
+
+  @override
+  Future<EngineResult> settle() => Future.value(EngineResult.ok);
+
+  @override
+  EngineResult recover() => EngineResult.ok;
+
+  @override
+  void retireLive() {
+    _live = _durable;
+    _backing.setClickPan(_durable);
+  }
 }
