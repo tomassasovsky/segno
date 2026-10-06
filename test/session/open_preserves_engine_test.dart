@@ -244,5 +244,50 @@ void main() {
         expect(saved.laneStems[(0, 0)]!.length, greaterThan(1));
       },
     );
+
+    test('New loop from a session that was only played and stopped saves '
+        'nothing of it and empties every track', () async {
+      await session.saveAs('Played');
+      final played = await sessions.bundlePathOf(await idOf('Played'));
+      expect(looper.stopTrack(), EngineResult.ok);
+      engine.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final writes = <String>[];
+      SessionRepository.debugOnSaveWrite = writes.add;
+
+      await session.newLoop();
+
+      expect(session.state.status, SessionStatus.success);
+      expect(session.state.currentSessionName, 'New loop 1');
+      expect(
+        writes.where(
+          (path) =>
+              path == played ||
+              path.startsWith('$played/') ||
+              path.startsWith('$played.'),
+        ),
+        isEmpty,
+      );
+      for (final track in engine.snapshot().tracks) {
+        expect(track.state, TrackState.empty);
+      }
+    });
+
+    test('New loop while a take records keeps the take', () async {
+      await session.saveAs('Recording');
+      expect(looper.record(channel: 1), EngineResult.ok);
+      engine
+        ..pump(frames: 256, input: .25)
+        ..pump();
+
+      await session.newLoop();
+
+      expect(session.state.status, SessionStatus.success);
+      final saved = await sessions.read(
+        await sessions.bundlePathOf(await idOf('Recording')),
+      );
+      expect(saved.session.tracks.map((t) => t.channel), [0, 1]);
+      expect(engine.snapshot().tracks[1].state, TrackState.empty);
+    });
   });
 }

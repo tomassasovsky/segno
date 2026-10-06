@@ -1816,6 +1816,386 @@ void main() {
       });
     });
 
+    group('New loop (plan D9)', () {
+      /// The order the seams below are reached in.
+      late List<String> events;
+
+      /// The rigs the looper was asked to apply.
+      late List<SessionRig> applied;
+
+      void stubNewLoop() {
+        events = [];
+        applied = [];
+        stubCatalog();
+        when(
+          () => repository.liveSession(
+            settings: any(named: 'settings'),
+            chains: any(named: 'chains'),
+            pedalBindings: any(named: 'pedalBindings'),
+          ),
+        ).thenAnswer((inv) {
+          events.add('capture');
+          return Session(
+            name: 'A',
+            sampleRate: 48000,
+            channels: 1,
+            baseLengthFrames: 96000,
+            tracks: const [],
+            tempoBpm: 96,
+            tempoSource: TempoSource.manual,
+            tsNum: 7,
+            tsDen: 8,
+            loopBars: 4,
+            looperMode: LooperMode.sync,
+            primaryTrack: 2,
+            countInBars: 2,
+            trackLevels: const {0: 0.5},
+            pedalBindings: inv.namedArguments[#pedalBindings] as String,
+          );
+        });
+        when(() => looper.applySession(any())).thenAnswer((inv) async {
+          events.add('apply');
+          applied.add(inv.positionalArguments.first as SessionRig);
+        });
+        when(
+          () => repository.nextAutomaticName(any()),
+        ).thenAnswer((_) async => 'New loop 3');
+      }
+
+      VerificationResult verifySavedTo(String path, {String? name}) => verify(
+        () => repository.save(
+          path,
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+          pedalBindings: any(named: 'pedalBindings'),
+          name: name ?? any(named: 'name'),
+          captureStillValid: any(named: 'captureStillValid'),
+        ),
+      );
+
+      void stubAudioInRig() {
+        when(() => looper.state).thenReturn(
+          LooperState(
+            tracks: [
+              const Track(state: TrackState.stopped, lengthFrames: 48000),
+              for (var c = 1; c < 8; c++) Track(channel: c),
+            ],
+          ),
+        );
+        when(() => looper.laneCount(any())).thenReturn(1);
+      }
+
+      SessionCubit buildWithPedals({
+        required void Function(String) onPedalBindings,
+      }) => SessionCubit(
+        guards: GuardRegistry(),
+        captureSettings: captureSettings,
+        fxPersistence: fxPersistence,
+        settings: settings,
+        repository: repository,
+        looper: looper,
+        performance: performance,
+        mixSettings: mixSettings,
+        mixPersistence: mixPersistence,
+        currentPedalBindings: () => 'remap',
+        onPedalBindings: onPedalBindings,
+        releaseHeldBindings: () => events.add('release'),
+      );
+
+      test('applies the empty rig with the live settings, then saves it as '
+          'the next New loop, which becomes current', () async {
+        stubNewLoop();
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.recordBaseline();
+
+        await cubit.newLoop();
+
+        final rig = applied.single;
+        expect(rig.tracks, isEmpty);
+        expect(rig.baseLengthFrames, 0);
+        expect(rig.loopBars, 0);
+        expect(rig.primaryTrack, -1);
+        expect(rig.tempoBpm, 96);
+        expect((rig.tsNum, rig.tsDen), (7, 8));
+        expect(rig.looperMode, LooperMode.sync);
+        expect(rig.countInBars, 2);
+        expect(rig.trackLevels, {0: 0.5});
+        verifyInOrder([
+          () => looper.applySession(any()),
+          () => repository.save(
+            '/root/new',
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: 'New loop 3',
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+        ]);
+        expect(cubit.state.status, SessionStatus.success);
+        expect(cubit.state.outcome, SessionOutcome.newLoop);
+        expect(cubit.state.currentSessionId, 'new');
+        expect(cubit.state.currentSessionName, 'New loop 3');
+        expect(cubit.state.sessions, summaries);
+      });
+
+      test('a take in progress is ended and saved before the clear', () async {
+        stubNewLoop();
+        LooperState rig(TrackState track1) => LooperState(
+          tracks: [
+            const Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: track1, lengthFrames: 24000),
+            for (var c = 2; c < 8; c++) Track(channel: c),
+          ],
+        );
+        var live = rig(TrackState.recording);
+        when(() => looper.state).thenAnswer((_) => live);
+        when(() => looper.laneCount(any())).thenReturn(1);
+        when(
+          () => looper.stopRecordControl(channel: any(named: 'channel')),
+        ).thenAnswer((_) {
+          live = rig(TrackState.playing);
+          return EngineResult.ok;
+        });
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+        clearInteractions(repository);
+        liveFingerprint = 'the take';
+
+        await cubit.newLoop();
+
+        verifyInOrder([
+          () => looper.stopRecordControl(channel: 1),
+          () => repository.save(
+            '/root/A',
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: 'A',
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+          () => looper.applySession(any()),
+        ]);
+      });
+
+      test(
+        'a changed outgoing session is saved to its identity first',
+        () async {
+          stubNewLoop();
+          final cubit = build();
+          addTearDown(cubit.close);
+          cubit.emit(
+            const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+          );
+          await cubit.save();
+          clearInteractions(repository);
+          liveFingerprint = 'edited';
+
+          await cubit.newLoop();
+
+          verifyInOrder([
+            () => repository.save(
+              '/root/A',
+              chains: any(named: 'chains'),
+              settings: any(named: 'settings'),
+              pedalBindings: any(named: 'pedalBindings'),
+              name: 'A',
+              captureStillValid: any(named: 'captureStillValid'),
+            ),
+            () => looper.applySession(any()),
+            () => repository.save(
+              '/root/new',
+              chains: any(named: 'chains'),
+              settings: any(named: 'settings'),
+              pedalBindings: any(named: 'pedalBindings'),
+              name: 'New loop 3',
+              captureStillValid: any(named: 'captureStillValid'),
+            ),
+          ]);
+        },
+      );
+
+      test('an unchanged outgoing session is not saved again', () async {
+        stubNewLoop();
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+        clearInteractions(repository);
+
+        await cubit.newLoop();
+
+        verifyNever(
+          () => repository.save(
+            '/root/A',
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: any(named: 'name'),
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+        );
+        verifySavedTo('/root/new', name: 'New loop 3').called(1);
+      });
+
+      test('a failed preservation applies nothing and mints no id', () async {
+        stubNewLoop();
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+        clearInteractions(repository);
+        liveFingerprint = 'edited';
+        when(
+          () => repository.save(
+            any(),
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: any(named: 'name'),
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+        ).thenThrow(const FileSystemException('disk full'));
+
+        await cubit.newLoop();
+
+        expect(cubit.state.status, SessionStatus.failure);
+        expect(cubit.state.error, SessionError.saveFailed);
+        expect(cubit.state.currentSessionId, 'A');
+        verifyNever(() => looper.applySession(any()));
+        verifyNever(repository.newSessionId);
+      });
+
+      test('a refusal before the apply gives the new id back and leaves the '
+          'current session', () async {
+        stubNewLoop();
+        when(
+          performance.disarmAndFinalize,
+        ).thenAnswer((_) async => EngineResult.device);
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.emit(
+          const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+        );
+        await cubit.save();
+
+        await cubit.newLoop();
+
+        expect(cubit.state.status, SessionStatus.failure);
+        expect(cubit.state.currentSessionId, 'A');
+        verify(() => repository.releaseSessionId('new')).called(1);
+        verifyNever(() => looper.applySession(any()));
+      });
+
+      test('an empty rig that cannot be written leaves the new loop started '
+          'and current, and says something failed', () async {
+        stubNewLoop();
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.recordBaseline();
+        when(
+          () => repository.save(
+            '/root/new',
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: any(named: 'name'),
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+        ).thenThrow(const FileSystemException('disk full'));
+
+        await cubit.newLoop();
+
+        verify(() => looper.applySession(any())).called(1);
+        expect(cubit.state.status, SessionStatus.failure);
+        expect(cubit.state.error, SessionError.newLoopNotSaved);
+        expect(cubit.state.currentSessionId, 'new');
+        expect(cubit.state.currentSessionName, 'New loop 3');
+        verifyNever(() => repository.releaseSessionId(any()));
+
+        // The outgoing rig's reference no longer applies: with no reference,
+        // a rig holding audio is saved on the next Open, to the new loop.
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) => (
+              session: _session,
+              laneStems: <(int, int), List<Float32List>>{},
+            ),
+          ),
+        );
+        stubAudioInRig();
+        clearInteractions(repository);
+        await cubit.open('B');
+        verifySavedTo('/root/new', name: 'New loop 3').called(1);
+      });
+
+      test('keeps the pedal remap, and releases a held momentary before the '
+          'chains it keeps are captured', () async {
+        stubNewLoop();
+        final installed = <String>[];
+        final cubit = buildWithPedals(onPedalBindings: installed.add);
+        addTearDown(cubit.close);
+        await cubit.recordBaseline();
+
+        await cubit.newLoop();
+
+        expect(installed, ['remap']);
+        expect(events.indexOf('release'), lessThan(events.indexOf('capture')));
+        expect(events.indexOf('capture'), lessThan(events.indexOf('apply')));
+      });
+
+      test('the new loop is the reference: opening another session while '
+          'it is unchanged saves nothing more', () async {
+        stubNewLoop();
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) => (
+              session: _session,
+              laneStems: <(int, int), List<Float32List>>{},
+            ),
+          ),
+        );
+        when(() => looper.applySession(any())).thenAnswer((_) async {
+          liveFingerprint = 'the empty rig';
+        });
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.recordBaseline();
+        await cubit.newLoop();
+        clearInteractions(repository);
+        // Audio in the rig: only the recorded reference keeps it from being
+        // saved again.
+        stubAudioInRig();
+
+        await cubit.open('B');
+
+        verifyNever(
+          () => repository.save(
+            any(),
+            chains: any(named: 'chains'),
+            settings: any(named: 'settings'),
+            pedalBindings: any(named: 'pedalBindings'),
+            name: any(named: 'name'),
+            captureStillValid: any(named: 'captureStillValid'),
+          ),
+        );
+      });
+    });
+
     blocTest<SessionCubit, SessionState>(
       'invalid effect placement refuses session before the live rig changes',
       setUp: () {

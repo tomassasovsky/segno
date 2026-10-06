@@ -1476,6 +1476,27 @@ class SessionRepository {
     return jsonEncode(session.toJson());
   }
 
+  /// The manifest [save] would build from [settings], [chains] and
+  /// [pedalBindings], without its tracks, audio or name, and with no file
+  /// touched: the settings half of the live rig, for `New loop` to start
+  /// from (plan D9, through [Session.forNewLoop]).
+  Session liveSession({
+    required SessionSettings settings,
+    SessionChains chains = const SessionChains(),
+    String pedalBindings = '',
+  }) => _sessionFrom(
+    _Capture(
+      snapshot: _engine.snapshot(),
+      laneStems: const {},
+      tracks: const [],
+      trackLevels: const {},
+    ),
+    chains,
+    SessionSettings._detached(settings),
+    pedalBindings,
+    null,
+  );
+
   /// The pattern of a bundle's per-layer WAV filenames
   /// (`track{c}_lane{l}_L{n}.wav`).
   static final RegExp _layerFilePattern = RegExp(

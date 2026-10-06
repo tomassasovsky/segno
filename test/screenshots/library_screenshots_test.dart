@@ -8,10 +8,12 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/view/library_page.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -23,6 +25,9 @@ class _MockSessionCubit extends MockCubit<SessionState>
 class _MockSessionRepository extends Mock implements SessionRepository {}
 
 class _MockPedalRepository extends Mock implements PedalRepository {}
+
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
 
 final _saved = DateTime(2026, 9, 7, 10);
 
@@ -80,7 +85,7 @@ SessionPreview _previewOf(String id) => switch (id) {
   ),
 };
 
-/// Author-side images of the Library against pen 19/01, 19/03 and 18/06;
+/// Author-side images of the Library against pen 19/01 to 19/05 and 18/06;
 /// CI does not claim visual proof.
 void main() {
   final fontDir = Platform.environment['SEGNO_SCREENSHOT_FONT_DIR'];
@@ -145,6 +150,22 @@ void main() {
     );
     final pedal = _MockPedalRepository();
     when(() => pedal.events).thenAnswer((_) => const Stream.empty());
+    // The live rig holds the current session's three tracks.
+    final looper = _MockLooperBloc();
+    whenListen(
+      looper,
+      const Stream<LooperState>.empty(),
+      initialState: LooperState(
+        tracks: [
+          for (var c = 0; c < 8; c++)
+            Track(
+              channel: c,
+              state: c < 3 ? TrackState.stopped : TrackState.empty,
+              lengthFrames: c < 3 ? 48000 : 0,
+            ),
+        ],
+      ),
+    );
     await tester.pumpApp(
       MultiRepositoryProvider(
         providers: [
@@ -154,8 +175,11 @@ void main() {
             value: const InternalOnlyVolumes(),
           ),
         ],
-        child: BlocProvider<SessionCubit>.value(
-          value: session,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<SessionCubit>.value(value: session),
+            BlocProvider<LooperBloc>.value(value: looper),
+          ],
           child: const LibraryPage(),
         ),
       ),
@@ -213,6 +237,13 @@ void main() {
     await tester.tap(find.byKey(const Key('fx_option_move')));
     await tester.pumpAndSettle();
     await shot('move');
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('19/02 the New loop sheet', (tester) async {
+    await pump(tester, current: 's-1');
+    await tester.tap(find.byKey(const Key('library_new_loop')));
+    await tester.pumpAndSettle();
+    await shot('new_loop');
   }, skip: !hasScreenshotFonts);
 
   testWidgets('19/05 a failed save', (tester) async {
