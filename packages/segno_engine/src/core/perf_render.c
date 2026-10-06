@@ -721,7 +721,10 @@ static double le_pr_segment_index(const le_pr_segment* seg, uint64_t f) {
 typedef struct le_pr_track_build {
   le_pr_segment segments[LE_PR_MAX_SEGMENTS];
   int segment_count;
-  double rate; /* the channel's head rate from its last LE_PLOG_SPEED (#1179) */
+  /* The channel's Speed from its last LE_PLOG_SPEED (#1179) and the span
+   * its take plays over from its last LE_PLOG_HEAD_SPAN (Part 4a, 0 = the
+   * take's own): a segment reads at le_head_rate of them and its image. */
+  int32_t numer, denom, play_len;
   int load_failed; /* 1 if a pcmRef/layer file this track's manifest entries
                     * NAME could not actually be read — the per-stem failure
                     * the "partial success" acceptance criterion means. A
@@ -729,6 +732,12 @@ typedef struct le_pr_track_build {
                     * snapshot at all) is NOT a failure — le_pr_collect_
                     * channels never even calls this function for one. */
 } le_pr_track_build;
+
+/* The rate a segment over an image of `image_len` frames reads at: the
+ * callback's le_track_rate over the logged Speed and span. */
+static double le_pr_rate(const le_pr_track_build* b, int32_t image_len) {
+  return le_head_rate(b->numer, b->denom, image_len, b->play_len);
+}
 
 static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
                                  double phase0, float* image,
@@ -759,7 +768,7 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
   seg->image = image;
   seg->image_len = image_len;
   seg->reversed = reversed;
-  seg->rate = b->rate;
+  seg->rate = le_pr_rate(b, image_len);
   seg->turn_frames = 0;
   seg->turn_into0 = 0;
   seg->turn = (le_read_head){0, 0.0, 1.0};
@@ -834,6 +843,7 @@ static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
   seg->owns_image = 0;
   seg->image = image;
   seg->image_len = image_len;
+  seg->rate = le_pr_rate(b, image_len);
   seg->phase0 = le_head_wrap(index, image_len);
   seg->silent = silent;
   seg->reversed = reversed;
@@ -911,13 +921,28 @@ static int le_pr_apply_transpose(le_pr_track_build* b, uint64_t frame,
  * callback logged, mixing the old head out over its turn window. */
 static void le_pr_apply_speed(le_pr_track_build* b, uint64_t frame,
                               const le_log_command* cmd) {
-  b->rate = (double)cmd->speed_log.numer / (double)cmd->speed_log.denom;
+  b->numer = cmd->speed_log.numer;
+  b->denom = cmd->speed_log.denom;
   if (b->segment_count == 0) return;
   const le_pr_segment* last = &b->segments[b->segment_count - 1];
   const uint64_t q = (uint64_t)cmd->speed_log.index_lo |
                      ((uint64_t)cmd->speed_log.index_hi << 32);
   le_pr_reanchor(b, frame, last->reversed, le_head_index_from_q32(q),
                  cmd->speed_log.turn_frames, 0);
+}
+
+/* A span fact (LE_PLOG_HEAD_SPAN, #1179 Part 4a) on this channel: later
+ * segments read at speed * image length / span, and content re-anchors at
+ * the exact index the callback logged, a window still mixing carried. */
+static void le_pr_apply_span(le_pr_track_build* b, uint64_t frame,
+                             const le_log_command* cmd) {
+  b->play_len = cmd->span_log.play_len;
+  if (b->segment_count == 0) return;
+  const le_pr_segment* last = &b->segments[b->segment_count - 1];
+  const uint64_t q = (uint64_t)cmd->span_log.index_lo |
+                     ((uint64_t)cmd->span_log.index_hi << 32);
+  le_pr_reanchor(b, frame, last->reversed, le_head_index_from_q32(q),
+                 cmd->span_log.turn_frames, 0);
 }
 
 /* The latest LE_PLOG_LOOP_LENGTH_LOCKED at or before `frame` (INCLUSIVE, so
@@ -928,13 +953,21 @@ static void le_pr_apply_speed(le_pr_track_build* b, uint64_t frame,
  * engine_process.c); its arg_i carries the locked base length. */
 static int le_pr_find_lock(const le_pr_log_entry* log, int log_count,
                            uint64_t frame, uint64_t* out_frame,
-                           int32_t* out_base) {
+                           int32_t* out_base, int32_t* out_pos) {
   int found = 0;
   for (int i = 0; i < log_count && log[i].frame <= frame; ++i) {
     if (log[i].cmd.code == LE_PLOG_LOOP_LENGTH_LOCKED) {
       *out_frame = log[i].frame;
       *out_base = log[i].cmd.arg_i;
+      *out_pos = 0;
       found = 1;
+    } else if (log[i].cmd.code == LE_PLOG_RETIME) {
+      /* A retime (#1179 Part 4a) re-lengths the running clock, which goes
+       * on from the logged position instead of the top. */
+      *out_frame = log[i].frame;
+      *out_base = log[i].cmd.retime_log.length;
+      *out_pos = log[i].cmd.retime_log.position;
+      found = 2;
     }
   }
   return found;
@@ -997,15 +1030,17 @@ static uint64_t le_pr_record_end_phase(const le_pr_manifest* m,
   const uint64_t start_frame =
       le_pr_find_record_start(log, log_count, channel, end_frame);
   uint64_t lock_frame = 0;
-  int32_t lock_base = 0;
-  const int has_lock =
-      le_pr_find_lock(log, log_count, end_frame, &lock_frame, &lock_base);
-  if (has_lock && lock_frame >= start_frame) {
+  int32_t lock_base = 0, lock_pos = 0;
+  const int has_lock = le_pr_find_lock(log, log_count, end_frame, &lock_frame,
+                                       &lock_base, &lock_pos);
+  /* A retime never lands inside a capture (the callback refuses it then). */
+  if (has_lock == 1 && lock_frame >= start_frame) {
     return (end_frame - lock_frame) % (uint64_t)image_len;
   }
   uint64_t start_pos = 0;
   if (has_lock && lock_base > 0) {
-    start_pos = (start_frame - lock_frame) % (uint64_t)lock_base;
+    start_pos = ((uint64_t)lock_pos + (start_frame - lock_frame)) %
+                (uint64_t)lock_base;
   } else if (!has_lock && m->perf_arm_present && m->perf_arm_master_len > 0) {
     start_pos = ((uint64_t)m->perf_arm_position + start_frame) %
                 (uint64_t)m->perf_arm_master_len;
@@ -1024,7 +1059,9 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
                                  int32_t channel, int32_t* out_failed) {
   *out_failed = 0;
   le_pr_track_build build = {0};
-  build.rate = 1.0;
+  build.numer = 1;
+  build.denom = 1;
+  build.play_len = 0;
   /* A baseline silence segment at frame 0 always exists first — even a
    * track absent from armSnapshot entirely (recorded fresh later, or
    * mid-overdub/deferred at arm) needs SOMETHING covering [0, first real
@@ -1131,6 +1168,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         seg->owns_image = 0;
         seg->image = restore_image;
         seg->image_len = restore_len;
+        seg->rate = le_pr_rate(&build, restore_len);
         seg->phase0 = anchor;
       }
     } else if (e->cmd.code == LE_PLOG_RECORD_END && e->cmd.take.channel == channel &&
@@ -1271,6 +1309,9 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     } else if (e->cmd.code == LE_PLOG_SPEED &&
                e->cmd.speed_log.channel == channel) {
       le_pr_apply_speed(&build, e->frame, &e->cmd);
+    } else if (e->cmd.code == LE_PLOG_HEAD_SPAN &&
+               e->cmd.span_log.channel == channel) {
+      le_pr_apply_span(&build, e->frame, &e->cmd);
     } else if (e->cmd.code == LE_PLOG_TRANSPOSE &&
                e->cmd.transpose_log.channel == channel) {
       if (!le_pr_apply_transpose(&build, e->frame, &e->cmd, m->sample_rate)) {

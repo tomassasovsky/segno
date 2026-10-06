@@ -124,6 +124,23 @@ typedef struct le_command {
       uint16_t turn_frames;
       uint32_t index_lo, index_hi;
     } transpose_log;
+    struct { /* LE_CMD_SET_FOLLOW_TEMPO (#1179 Part 4a): channel -1 sets the
+              * default (0/1), a track its override (-1 inherits). */
+      int32_t channel, slot, value;
+    } follow;
+    struct { /* LE_PLOG_HEAD_SPAN: the span a track's take plays over (0 =
+              * its own length), the turn window still mixing the old head
+              * and the exact index in Q32.32. */
+      int16_t channel;
+      uint16_t turn_frames;
+      int32_t play_len;
+      uint32_t index_lo, index_hi;
+    } span_log;
+    struct { /* LE_PLOG_RETIME: the song tempo and the master length and
+              * position it retimed the shared clock to. */
+      float bpm;
+      int32_t length, position, bars;
+    } retime_log;
     struct { /* LE_PLOG_SPEED: a track's head rate as numer/denom, the
               * equal-gain turn window the old head is still mixed over, and
               * the exact index the callback reads at this frame in Q32.32

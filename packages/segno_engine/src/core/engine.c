@@ -427,6 +427,13 @@ static int le_engine_reset_material(le_engine* engine,
   store_i32(&engine->a_speed_ratio, le_speed_pack(1, 1));
   engine->transpose_bypass = 0;
   store_i32(&engine->a_transpose_bypass, 0);
+  /* Follow tempo and the recorded tempo are material (#1179 Part 4a). */
+  engine->follow_tempo = 0;
+  store_i32(&engine->a_follow_tempo, 0);
+  store_f32(&engine->a_recorded_tempo_bits, 0.0f);
+  engine->rec_bpm = 0.0f;
+  engine->rec_master_len = 0;
+  store_i32(&engine->a_rec_master_len, 0);
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
     /* Track transport: one lane active by default, empty, one base loop. */
@@ -454,6 +461,11 @@ static int le_engine_reset_material(le_engine* engine,
     store_i32(&tr->a_transpose_st, 0);
     le_track_forget_slot_keys(tr); /* no slot holds a keyed take any more */
     tr->pass_key = 0;
+    tr->follow_override = -1;
+    store_i32(&tr->a_follow_override, -1);
+    tr->log_play_len = 0;
+    tr->span_clock = 0;
+    store_i32(&tr->a_span_clock, 0);
     store_i32(&tr->a_undo_depth, 0);
     store_i32(&tr->a_clear_restore, 0);
     store_i32(&tr->a_redo_depth, 0);
@@ -1546,6 +1558,7 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (code == LE_CMD_FADE) return LE_ERR_INVALID;
   if (code == LE_CMD_REVERSE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_SPEED) return LE_ERR_INVALID;
+  if (code == LE_CMD_SET_FOLLOW_TEMPO) return LE_ERR_INVALID;
   if (code == LE_CMD_TRANSPOSE || code == LE_CMD_TRANSPOSE_BYPASS) {
     return LE_ERR_INVALID;
   }
