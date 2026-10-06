@@ -16,6 +16,7 @@ import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
@@ -34,6 +35,7 @@ import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -101,6 +103,7 @@ void main() {
   late PedalRepository pedalRepo;
 
   setUp(() {
+    resetSegnoNavigatorForTest();
     // The toast registry is module-level and survives between tests; a stale
     // entry would make the next identical toast a silent duplicate. The
     // `toastification` singleton leaks too, across files, under
@@ -236,6 +239,8 @@ void main() {
   }) => tester.pumpWidget(
     ToastificationWrapper(
       child: MaterialApp(
+        // The root key, so Settings and its destinations push over the stage.
+        navigatorKey: segnoNavigatorKey,
         theme: AppTheme.neon,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
@@ -355,6 +360,40 @@ void main() {
     },
   );
 
+  group('Settings opens over the stage, never the tray', () {
+    // The stage is under the Settings route, so its tray is offstage.
+    double scrim(WidgetTester tester) => tester
+        .widget<AnimatedOpacity>(
+          find.byKey(const Key('settingsTray_scrim'), skipOffstage: false),
+        )
+        .opacity;
+
+    testWidgets('from the header icon', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('stage_settings')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsHomePage), findsOneWidget);
+      expect(scrim(tester), 0);
+    });
+
+    testWidgets('from the foot Mixer', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      control.setMode(InteractionMode.mixer);
+      await tester.pump();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(FootMixerView),
+          matching: find.text('Settings'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsHomePage), findsOneWidget);
+      expect(scrim(tester), 0);
+    });
+  });
+
   for (final activation in [
     LogicalKeyboardKey.enter,
     LogicalKeyboardKey.space,
@@ -385,13 +424,18 @@ void main() {
         await tester.pump();
         await tester.sendKeyEvent(activation);
         await tester.pumpAndSettle();
+        expect(find.byType(SettingsHomePage), findsOneWidget);
+        // Settings opens over the stage; the tray stays shut.
         expect(
           tester
               .widget<AnimatedOpacity>(
-                find.byKey(const Key('settingsTray_scrim')),
+                find.byKey(
+                  const Key('settingsTray_scrim'),
+                  skipOffstage: false,
+                ),
               )
               .opacity,
-          1,
+          0,
         );
         verifyNever(() => bloc.add(const LooperPlayAllPressed()));
       },

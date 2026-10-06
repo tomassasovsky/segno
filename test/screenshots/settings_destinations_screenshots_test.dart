@@ -7,12 +7,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/settings/settings.dart';
 
 import '../helpers/screenshot_fonts.dart';
 import '../settings/view/destination_harness.dart';
 
-/// The five interim Settings destinations: the tray's bodies in the shared
-/// Settings frame. Author-machine goldens, like the other suites here.
+/// Settings (pen `05 Loop setup / 01 Settings`) and the five interim
+/// destinations, the tray's bodies in the shared Settings frame.
+/// Author-machine goldens, like the other suites here.
 void main() {
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
@@ -44,6 +46,7 @@ void main() {
   setUp(resetSegnoNavigatorForTest);
 
   final pages = <String, Future<void> Function()>{
+    'home': openSegnoSettings,
     'device': openDeviceSettings,
     'network': openNetworkSettings,
     'displays': openDisplaySettings,
@@ -55,6 +58,15 @@ void main() {
     testWidgets(name, (tester) async {
       await DestinationHarness().pump(tester);
       unawaited(open());
+      await tester.pumpAndSettle();
+      // The tile art decodes off the test's fake clock; let the real decode
+      // finish so the golden is not an empty picture.
+      final context = tester.element(find.byType(Scaffold).last);
+      await tester.runAsync(() async {
+        for (final destination in SettingsDestination.values) {
+          await precacheImage(AssetImage(destination.artAsset), context);
+        }
+      });
       await tester.pumpAndSettle();
       await expectLater(
         find.byType(MaterialApp),

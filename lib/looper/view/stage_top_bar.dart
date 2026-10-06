@@ -5,11 +5,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/pen_icons.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -70,7 +70,7 @@ class StageTopBar extends StatelessWidget {
             key: const Key('stage_settings'),
             semanticLabel: l10n.stageSettings,
             bordered: true,
-            onTap: () => context.read<SettingsTrayCubit>().open(),
+            onTap: () => unawaited(openSegnoSettings()),
             child: Icon(
               LucideIcons.settings,
               size: 28,
