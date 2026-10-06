@@ -532,7 +532,12 @@ as heard, and the destination reset table in 5.3 gains "Mono off" (the policy's
 - **`le_engine_render_measure(engine, req, le_render_plan* out)`** is
   synchronous and admission-only, with no job.
   - Output: `frames`, `method` (common/chosen), `beats_milli`, `tempo_set`,
-    `plugin_mask`, `faded_mask`, `pending_mask`.
+    `plugin_mask`, `faded_mask`, `pending_mask`, `once_cut_mask`.
+  - `once_cut_mask` names the Once sources longer than a chosen length (4.4):
+    only the part of their pass inside the window sounds, and none of it when
+    the pass starts after the window ends. Where the pass starts is the live
+    phase at the freeze, so the readout names every source that can be cut,
+    and the surfaces say so before the render (review L-D1).
   - Results:
     - `LE_OK`;
     - `LE_ERR_NO_COMMON_CYCLE`;
@@ -602,8 +607,8 @@ as heard, and the destination reset table in 5.3 gains "Mono off" (the policy's
     one recipe slice, then stopped-lane prints.
   - Aging: after `LE_RENDER_MAX_YIELDS` (8) consecutive cache jobs chosen ahead
     of a waiting recipe, the next pick is a recipe slice. Continuous re-keys
-    therefore cannot starve it, and a slice never holds a playing print back by
-    more than one slice.
+    therefore cannot starve it, and the recipe never holds a playing print
+    back by more than one slice or one source-length print (4.1).
 - **File target and the one WAV writer (decision R6, review M6).**
   - A new internal module, `engine_wav.c` with `engine_wav.h`, is included
     only by engine TUs, never by `engine_private.h`.
@@ -615,7 +620,9 @@ as heard, and the destination reset table in 5.3 gains "Mono off" (the policy's
       `4 × channels`;
     - an optional caller chunk (#1198's `sgno`), then `data`;
     - the header is written with zero sizes, data is appended, and `seal`
-      patches the RIFF and `data` sizes, then flushes and fsyncs;
+      patches the RIFF and `data` sizes, flushes, truncates the file to
+      header plus data (a torn frame a short write left past the credited
+      frames goes; review L-E2), and fsyncs;
     - `publish` renames `<name>.part` to `<name>` and syncs the directory with
       `le_fs_sync_dir` (#1198 Part 1, PR #1220).
   - Users:
@@ -624,8 +631,10 @@ as heard, and the destination reset table in 5.3 gains "Mono off" (the policy's
       `:254-310` become calls into it);
     - #1198 Part 2's part streams, which add their `sgno` chunk and their
       incremental digest through the same open/append/seal calls, flush each
-      drain cycle with `le_wav_flush`, and repair parts on recovery with
-      `le_wav_patch_sizes`.
+      drain cycle with `le_wav_flush`, rely on the seal truncation after a
+      short write, and repair parts on recovery with `le_wav_patch_sizes`,
+      which is exported (`LE_EXPORT`) so the Dart salvage calls it instead of
+      patching sizes itself (rule 4).
   - **Landing order.** Whichever of #1198 Part 2 and this Part 1 lands first
     creates the module, and the other adopts it.
     - Until #1220 is on the trunk, `publish` fsyncs the file and renames
@@ -1832,8 +1841,9 @@ A third commit (`fix(engine)`) answers both reviews:
   directory sync failed; the job reads DONE.
 - **L4.** The writer takes #1198 Part 2's (PR #1245) extensions as built
   there: the close-on-exec open through a descriptor and `le_wav_note_frames`.
-  It adds the two calls the capture drain and its recovery need, so #1245
-  rebases onto this part without reaching into the writer:
+  It adds the two calls the capture drain and its recovery need. #1245
+  still rewinds `w.file` itself after a torn write and salvages sizes in
+  Dart; on rebase it moves onto these (review L-E3):
   - `le_wav_flush` hands every appended sample to the OS each drain cycle,
     leaving the file open and unsealed;
   - `le_wav_patch_sizes` repairs a part that was never sealed, or cuts it
@@ -1845,8 +1855,27 @@ A third commit (`fix(engine)`) answers both reviews:
 - **L5.** The job charges its effect states, and `le_fx_print` prepares only
   the entries it runs.
 - **L6.** Answered by the own budget: an eight-track set of 30 s loops fits.
+  A Pre-heavy set can still exceed it, because each Pre lane print is twice
+  its dry: sixteen lanes, all with Pre, at 48 kHz and 30 s come to about
+  264 MiB. The appliance criterion records peak bytes for such a set.
 
-### Part 2 (`claude/render-1202-p2`, stacked on Part 1)
+### Part 1 delta review round
+
+A fourth commit answers the delta review:
+
+- **M-D1.** `le_wav_seal` truncates the file to header plus data, exactly as
+  #1245's `51696d5f3` does, so #1245's rebase loses nothing. New test:
+  `test_wav_seal_cuts_torn_frame`.
+- **L-D1.** `le_render_plan.once_cut_mask` (4.7), checked in
+  `test_render_once_chosen_length`.
+- **L-D2.** New test: `test_render_once_reversed`, a reversed Once on a
+  common cycle.
+- **L-D3.** `le_wav_patch_sizes` is exported through `segno_engine_api.h`,
+  with its signature unchanged (1 on success, 0 on failure).
+- **Staging progress (Part 2 review M1, native half).** Staging copies
+  chunks for up to 2 ms per heartbeat (`le_render_stage_budget_ns`, at least
+  one chunk) and counts staged frames on the same permille scale as the
+  render. New test: `test_render_staging_progress`. (`claude/render-1202-p2`, stacked on Part 1)
 
 One commit (`feat(looper)`). Where the build departs from the text above:
 
@@ -1855,7 +1884,8 @@ One commit (`feat(looper)`). Where the build departs from the text above:
   The plan does not depend on the target.
 - **Memory jobs.** A memory job keeps its result in the engine after it
   finishes, so Part 4a's Bounce can consume it in place by job id. The caller
-  releases it, or the next render replaces it. `RenderJob.copySamples` reads
+  releases it; until then the repository refuses another render (review
+  round below). `RenderJob.copySamples` reads
   it for previews and tests.
 - **File jobs.** A file job is released as soon as its file is published.
 - **The mock engine** (UI development without hardware) models no PCM, so
@@ -1885,3 +1915,31 @@ Verification:
   - `dart analyze --fatal-infos lib test packages` is clean.
   - `dart format` changes nothing.
   - `bloc lint` is clean.
+
+### Part 2 review round (PR #1241 review)
+
+One commit (`fix(looper)`), with the native half of M1 in Part 1's delta
+round:
+
+- **M1, progress during staging.** Part 1 counts staged frames on the
+  render's permille scale and copies for up to 2 ms per heartbeat.
+  `RenderProgress` carries a repository-owned `RenderPhase`, so the surfaces
+  can say "Preparing" while it moves. Test: progress moves while sources are
+  staged.
+- **L1, a freeze that never lands.** A job still FREEZING after
+  `renderFreezeTimeout` (2 s) is cancelled and ends with
+  `EngineResult.device`. Test with a 20 ms timeout.
+- **L2, a kept memory result.** While a finished memory job's result is held,
+  `renderToFile`/`renderToMemory` refuse with `alreadyRunning` instead of
+  letting the engine retire it. `RenderJob.holdsResult` says which. A FAILED
+  job is released from the engine at once.
+- **L3, bars without a time signature.** The readout divides beats by four
+  when `tsNum` is 0, the engine's own default for a chosen length.
+- **L4, the boundary.** The repository owns `RenderTailRule` and
+  `RenderPhase` and no longer re-exports `RenderJobState`, `RenderTails` or
+  `RenderTarget`.
+- **Part 1's `once_cut_mask`** reaches the readout as
+  `SelectedRenderPlan.onceCutTracks` (engine and repository tests, and a
+  native test through the real engine).
+- **Mutations.** Each failed its test: the held-result refusal, the freeze
+  timeout, the bars default and the once-cut mapping.
