@@ -41,7 +41,7 @@ class AppRuntime {
     required SessionRepository sessions,
     required Future<String> Function() exportDirectory,
     required Future<void> Function() powerOff,
-    GuardRegistry? guards,
+    required GuardRegistry guards,
   }) {
     fxPersistence = FxChainPersistence(looper: repository);
     mixPersistence = SettingsMixPersistence(settings);

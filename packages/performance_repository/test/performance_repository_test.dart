@@ -168,6 +168,37 @@ class _ThrowingListDirectory implements Directory {
   );
 }
 
+/// A `performance.json` that reads normally and refuses to be rewritten —
+/// the finalize of a take whose disk filled at the end.
+class _ManifestWriteFails implements File {
+  _ManifestWriteFails(this._inner);
+
+  final File _inner;
+
+  @override
+  String get path => _inner.path;
+
+  @override
+  bool existsSync() => _inner.existsSync();
+
+  @override
+  Future<String> readAsString({Encoding encoding = utf8}) =>
+      _inner.readAsString(encoding: encoding);
+
+  @override
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) async => throw const FileSystemException('No space left on device');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
+    'not reached by finalize on the manifest: $invocation',
+  );
+}
+
 void main() {
   late Directory tempDir;
   late FakePerformanceEngine engine;
@@ -179,6 +210,7 @@ void main() {
     engine = FakePerformanceEngine();
     clock = DateTime(2026, 7, 6, 14, 30, 15);
     repo = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: engine,
       exportsRoot: () async => '${tempDir.path}/exports',
       now: () => clock,
@@ -305,6 +337,7 @@ void main() {
         'directory', () async {
       final broken = _ThrowAfterArmEngine()..throwSnapshot = true;
       final localRepo = PerformanceRepository(
+        guards: GuardRegistry(),
         engine: broken,
         exportsRoot: () async => '${tempDir.path}/exports',
         now: () => clock,
@@ -324,6 +357,7 @@ void main() {
         ..throwOutputFx = true
         ..perfDisarmResult = EngineResult.device;
       final localRepo = PerformanceRepository(
+        guards: GuardRegistry(),
         engine: broken,
         exportsRoot: () async => '${tempDir.path}/exports',
         now: () => clock,
@@ -351,6 +385,7 @@ void main() {
         ..throwOutputFx = true
         ..throwDisarmOnce = true;
       final localRepo = PerformanceRepository(
+        guards: GuardRegistry(),
         engine: broken,
         exportsRoot: () async => '${tempDir.path}/exports',
         now: () => clock,
@@ -1025,6 +1060,7 @@ void main() {
         // salvage provably enters the window AFTER arm's entry gate passed.
         final rootGate = Completer<String>();
         final gatedRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () => rootGate.future,
           now: () => clock,
@@ -1066,6 +1102,7 @@ void main() {
         // engine's drain thread.
         final rootGate = Completer<String>();
         final gatedRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () => rootGate.future,
           now: () => clock,
@@ -1874,6 +1911,7 @@ void main() {
           progressPercent: 10,
         );
         final pollingRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
           now: () => clock,
@@ -1958,6 +1996,7 @@ void main() {
         final rootGate = Completer<String>();
         var rootCalls = 0;
         final gatedRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () {
             rootCalls++;
@@ -2035,6 +2074,7 @@ void main() {
           progressPercent: 10,
         );
         final timingRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
           now: () => clock,
@@ -2097,6 +2137,7 @@ void main() {
           progressPercent: 10,
         );
         final timingRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
           now: () => clock,
@@ -2238,6 +2279,7 @@ void main() {
       'to recover, and no unhandled error out of the unawaited call',
       () async {
         final brokenRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => throw const FileSystemException('gone'),
           now: () => clock,
@@ -2254,6 +2296,7 @@ void main() {
       () async {
         var rootCalls = 0;
         final flakyRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async {
             rootCalls++;
@@ -2456,6 +2499,7 @@ void main() {
       "resolved, mirroring runBootRecovery's own no-op on that boot",
       () async {
         final brokenRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => throw const FileSystemException('gone'),
           now: () => clock,
@@ -2477,6 +2521,7 @@ void main() {
         // restarts, since arm() latches _armedDir for the process lifetime.
         engine.seedLane(0, 0, Float32List.fromList([1, 1]));
         final sessionRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
           now: () => clock,
@@ -2494,6 +2539,7 @@ void main() {
           progressPercent: 10,
         );
         final boot1 = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
           now: () => clock,
@@ -2841,6 +2887,27 @@ void main() {
       engine.perfDisarmResult = EngineResult.ok;
       expect(await guarded.disarmAndFinalize(), EngineResult.ok);
       expect(blockingDeviceChange(), isEmpty);
+    });
+
+    test('a finalize that throws after the engine disarmed still releases '
+        'the guard', () async {
+      expect(await guarded.arm(), EngineResult.ok);
+      writeNativeSidecar(guarded.armedDirectory!);
+      final testZone = Zone.current;
+      await expectLater(
+        IOOverrides.runZoned(
+          guarded.disarmAndFinalize,
+          createFile: (path) {
+            final real = testZone.run(() => File(path));
+            return path.endsWith('/performance.json')
+                ? _ManifestWriteFails(real)
+                : real;
+          },
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(engine.perfDisarmCalls, 1);
+      expect(guards.active, isEmpty);
     });
 
     test('an arm the engine refuses releases the guard', () async {

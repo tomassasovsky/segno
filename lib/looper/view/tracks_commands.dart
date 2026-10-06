@@ -5,6 +5,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -402,6 +403,9 @@ void showSessionOutcome(BuildContext context, SessionState state) {
       SessionError.unsupportedVersion => l10n.sessionErrorUnsupportedVersion,
       // App recovery notices remain actionable above the Sessions dialog.
       SessionError.bootPersistence => null,
+      SessionError.busy => l10n.operationBusy(
+        state.refusedBy?.name ?? 'other',
+      ),
       // nameCollision gets a dedicated inline message in the manager UI; here
       // (legacy path) it falls back to the generic error. corruptLayers is a
       // rare corrupt/foreign-bundle refusal — the generic message (carrying the
@@ -442,6 +446,13 @@ void onPerformanceRecorderState(
     _showPerformanceLowDiskBlocked(context);
     return;
   }
+  // Refused at its commit by an operation in flight (#1198): a toast, since
+  // nothing needs doing beyond waiting for it (the popup-severity rule).
+  final refusedBy = state is PerformanceRecorderIdle ? state.refusedBy : null;
+  if (refusedBy != null) {
+    _showPerformanceArmRefused(context, refusedBy);
+    return;
+  }
   // Entering Rendering opens the dialog on its rendering face; entering
   // Completed opens it for a capture the operator hid (or one whose render
   // was instant). While it is already up it morphs in place — the show
@@ -457,6 +468,23 @@ void onPerformanceRecorderState(
       unawaited(showPerformanceCompletionSheet(context));
     }
   }
+}
+
+void _showPerformanceArmRefused(BuildContext context, GuardKind refusedBy) {
+  final l10n = context.l10n;
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(
+        key: const Key('tracks_perfArmRefused_snackbar'),
+        content: Semantics(
+          liveRegion: true,
+          child: AppText(
+            l10n.perfArmRefused(l10n.operationBusy(refusedBy.name)),
+          ),
+        ),
+      ),
+    );
 }
 
 void _showPerformanceLowDiskBlocked(BuildContext context) {

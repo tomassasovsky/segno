@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/audio_bootstrap.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/track_mute.dart';
@@ -566,7 +567,10 @@ void main() {
           'segno-mute-probe-',
         );
         addTearDown(() => sessionDirectory.delete(recursive: true));
-        final sessions = SessionRepository(engine: engine);
+        final sessions = SessionRepository(
+          guards: GuardRegistry(),
+          engine: engine,
+        );
         await sessions.save(
           sessionDirectory.path,
           settings: const SessionSettings(),

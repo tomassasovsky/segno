@@ -87,6 +87,7 @@ void main() {
     engine = FakeAudioEngine();
     clock = DateTime(2026, 7, 6, 14, 30, 15);
     performance = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: engine,
       exportsRoot: () async => '${tempDir.path}/exports',
       now: () => clock,
@@ -282,6 +283,7 @@ void main() {
         writeManifest(dir.path, finalized: false);
         var rootCalls = 0;
         final blowingRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async {
             rootCalls++;

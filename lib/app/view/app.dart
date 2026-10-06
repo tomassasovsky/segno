@@ -68,6 +68,7 @@ class App extends StatefulWidget {
     required this.sessionRepository,
     required this.performanceRepository,
     required this.exportDirectory,
+    required this.guards,
     this.pedalRepository,
     this.displayCount,
     this.waveformWindowOpenDelay = Duration.zero,
@@ -84,7 +85,6 @@ class App extends StatefulWidget {
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     this.powerKeySource,
     this.powerOff,
-    this.guards,
     super.key,
   });
 
@@ -115,9 +115,9 @@ class App extends StatefulWidget {
   final Future<void> Function()? powerOff;
 
   /// The app's one guard table (accepted behaviour 6.12), shared with the
-  /// session and performance repositories it was built with. Null gives the
-  /// runtime its own, which is what a test that injects nothing wants.
-  final GuardRegistry? guards;
+  /// session and performance repositories it was built with. Required: an
+  /// owner checking a private table would refuse nothing.
+  final GuardRegistry guards;
 
   /// The shared looper repository (owns the audio engine).
   final LooperRepository repository;

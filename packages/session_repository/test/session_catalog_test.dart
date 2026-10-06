@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -16,6 +17,7 @@ void main() {
   tearDown(() => root.deleteSync(recursive: true));
 
   SessionRepository repo({bool withRoot = true}) => SessionRepository(
+    guards: GuardRegistry(),
     engine: FakeSessionEngine(),
     sessionsRoot: withRoot ? () async => root.path : null,
   );
@@ -68,6 +70,7 @@ void main() {
 
     test('is empty when the root does not exist yet', () async {
       final missing = SessionRepository(
+        guards: GuardRegistry(),
         engine: FakeSessionEngine(),
         sessionsRoot: () async => '${root.path}/never-created',
       );
@@ -170,8 +173,11 @@ void main() {
     test(
       'a duplicate carries no orphan layer WAVs from a shrinking re-save',
       () async {
-        SessionRepository repoWith(AudioEngine e) =>
-            SessionRepository(engine: e, sessionsRoot: () async => root.path);
+        SessionRepository repoWith(AudioEngine e) => SessionRepository(
+          guards: GuardRegistry(),
+          engine: e,
+          sessionsRoot: () async => root.path,
+        );
         final dir = await repo().bundlePath('Source');
 
         // Save a 3-layer history, then re-save single-layer (prunes L1/L2).
