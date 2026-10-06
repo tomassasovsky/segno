@@ -698,26 +698,31 @@ class SessionRepository {
     ).name;
     if (current == slug) return;
     await _requireFreeName(slug, except: id);
-    _rewriteManifestName('$path/${Session.manifestName}', slug);
+    final manifest = '$path/${Session.manifestName}';
+    _writeManifestNamed(from: manifest, to: manifest, name: slug);
   }
 
-  /// Rewrites the manifest's `name` atomically: the new manifest is written
-  /// and flushed to a sibling temp file, then renamed over the old one, so a
-  /// power cut leaves the old manifest or the new one, never a torn file
-  /// that would make the session unopenable.
-  static void _rewriteManifestName(String manifestPath, String name) {
+  /// Writes the manifest at [from] to [to] carrying [name], atomically: the
+  /// new manifest is written and flushed to a sibling temp file, then
+  /// renamed into place, so a power cut leaves the old manifest (or none)
+  /// or the new one at [to], never a torn file that would make the session
+  /// unopenable.
+  static void _writeManifestNamed({
+    required String from,
+    required String to,
+    required String name,
+  }) {
     final json =
-        jsonDecode(File(manifestPath).readAsStringSync())
-            as Map<String, dynamic>;
+        jsonDecode(File(from).readAsStringSync()) as Map<String, dynamic>;
     json['name'] = name;
-    final temp = File('$manifestPath.tmp');
+    final temp = File('$to.tmp');
     try {
       temp
         ..writeAsStringSync(
           const JsonEncoder.withIndent('  ').convert(json),
           flush: true,
         )
-        ..renameSync(manifestPath);
+        ..renameSync(to);
     } on Object {
       if (temp.existsSync()) temp.deleteSync();
       rethrow;
@@ -740,8 +745,20 @@ class SessionRepository {
     final id = _reserveId(root, parent: parent);
     final target = Directory('$parent/$id');
     try {
-      _copyDirSync(Directory(source), target);
-      _rewriteManifestName('${target.path}/${Session.manifestName}', slug);
+      // The manifest goes last: until it lands, the copy is a manifest-less
+      // directory of layer WAVs, an interrupted save that lists nowhere, so
+      // a power cut mid-copy never lists a half copy (D2).
+      _copyDirSync(
+        Directory(source),
+        target,
+        skip: const {Session.manifestName, '${Session.manifestName}.tmp'},
+      );
+      _writeManifestNamed(
+        from: '$source/${Session.manifestName}',
+        to: '${target.path}/${Session.manifestName}',
+        name: slug,
+      );
+      debugOnDuplicateWrite?.call('${target.path}/${Session.manifestName}');
     } on Object {
       // Everything in the reserved directory is this copy's own: remove it,
       // so a failed Duplicate leaves neither a half bundle under the
@@ -752,16 +769,28 @@ class SessionRepository {
     return id;
   }
 
-  /// Recursively copies [src] to [dst] (files + nested folders). The catalog
-  /// bundles are shallow, but this stays correct for any nesting.
-  static void _copyDirSync(Directory src, Directory dst) {
+  /// Called with each path a Duplicate has just written, in order, so a
+  /// test can see what a power cut at that moment would leave behind.
+  @visibleForTesting
+  static void Function(String path)? debugOnDuplicateWrite;
+
+  /// Recursively copies [src] to [dst] (files + nested folders), leaving out
+  /// the top-level entries named in [skip]. The catalog bundles are
+  /// shallow, but this stays correct for any nesting.
+  static void _copyDirSync(
+    Directory src,
+    Directory dst, {
+    Set<String> skip = const {},
+  }) {
     dst.createSync(recursive: true);
     for (final entity in src.listSync()) {
       final name = _basename(entity.path);
+      if (skip.contains(name)) continue;
       if (entity is Directory) {
         _copyDirSync(entity, Directory('${dst.path}/$name'));
       } else if (entity is File) {
         entity.copySync('${dst.path}/$name');
+        debugOnDuplicateWrite?.call('${dst.path}/$name');
       }
     }
   }

@@ -738,6 +738,44 @@ void main() {
       skip: Platform.isWindows ? 'needs chmod' : null,
     );
 
+    test(
+      'writes the manifest last, so a copy cut short lists nowhere',
+      () async {
+        final engine = FakeSessionEngine()
+          ..seedLayers(
+            0,
+            [
+              Float32List.fromList([1, 1, 1, 1]),
+              Float32List.fromList([2, 2, 2, 2]),
+            ],
+            undoDepth: 1,
+          );
+        await repo(engine: engine).save(
+          '${root.path}/s-a',
+          settings: const SessionSettings(),
+          name: 'Source',
+        );
+        final listedAtEachWrite = <bool>[];
+        SessionRepository.debugOnDuplicateWrite = (path) {
+          final copy = Directory(path).parent.path;
+          listedAtEachWrite.add(
+            File('$copy/${Session.manifestName}').existsSync(),
+          );
+        };
+        addTearDown(() => SessionRepository.debugOnDuplicateWrite = null);
+
+        await repo().duplicateSession('s-a', 'Copy');
+
+        // Every layer and the mixdown land before the manifest.
+        expect(listedAtEachWrite.length, greaterThan(2));
+        expect(listedAtEachWrite.last, isTrue);
+        expect(
+          listedAtEachWrite.take(listedAtEachWrite.length - 1),
+          everyElement(isFalse),
+        );
+      },
+    );
+
     test('throws ArgumentError when the new name is invalid', () async {
       makeBundle('s-a');
       await expectLater(

@@ -172,8 +172,10 @@ the `.als` all remain reachable.
   (`releaseSessionId`) (Part 1 review, finding 1). An empty directory named
   like a minted id is a reservation, never a folder, so one a crash leaves
   behind shows no chip; `createFolder` refuses such a name. A Duplicate whose
-  copy fails removes its own partial copy (delta review D1). The manifest
-  gains an
+  copy fails removes its own partial copy (delta review D1), and it writes
+  the copy's manifest last, so a copy cut short by a power cut is a hidden
+  interrupted save rather than a listed half copy (delta review D2). The
+  manifest gains an
   optional `name` field read leniently; absent, the name is the directory
   basename, which is exactly what every existing bundle shows today (rule 1,
   one line, no migration pass). `formatVersion` stays 11: a bump would turn
