@@ -23,6 +23,7 @@ void main() {
             outputMask: 0x3,
             inputChannel: 0,
             layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+            history: TrackHistory.none,
           ),
           SessionLane(
             lane: 1,
@@ -31,6 +32,7 @@ void main() {
             outputMask: 0x2,
             inputChannel: 1,
             layers: [SessionLayer(file: 'track0_lane1_L0.wav')],
+            history: TrackHistory.none,
           ),
         ],
       ),
@@ -47,6 +49,7 @@ void main() {
             outputMask: 0x3,
             inputChannel: 0,
             layers: [SessionLayer(file: 'track1_lane0_L0.wav')],
+            history: TrackHistory.none,
           ),
         ],
       ),
@@ -290,15 +293,15 @@ void main() {
         );
       }
       expect(
-        () => Session.fromJson({...json, 'version': 10}),
+        () => Session.fromJson({...json, 'version': 11}),
         throwsA(isA<SessionUnsupportedVersion>()),
       );
     });
 
-    test('serializes the manifest version (v11)', () {
+    test('serializes the manifest version (v12)', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 11);
+      expect(json['version'], 12);
       expect(json['baseLengthFrames'], 96000);
     });
 
@@ -719,6 +722,7 @@ void main() {
         'layers': [
           {'file': 'track0_lane0_L0.wav'},
         ],
+        'history': <Object>[],
         'undoCount': 0,
         'redoCount': 0,
       });
@@ -768,8 +772,11 @@ void main() {
         muted: false,
         outputMask: 0x3,
         inputChannel: 0,
-        undoCount: 2,
-        redoCount: 1,
+        history: TrackHistory([
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.layer),
+        ], undoCount: 2),
         layers: [
           SessionLayer(file: 'u0.wav'),
           SessionLayer(file: 'u1.wav'),
@@ -812,13 +819,43 @@ void main() {
       },
     );
 
-    test('rejects a lane whose layer count disagrees with its undo/redo', () {
-      // undoCount 2 + live + redoCount 0 claims 3 layers but lists 1.
+    /// Track 0's lane maps in [json]: both lanes share one history, so a
+    /// history edit applies to each.
+    List<Map<String, dynamic>> track0Lanes(Map<String, dynamic> json) => [
+      for (final lane
+          in ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
+              as List)
+        lane as Map<String, dynamic>,
+    ];
+
+    /// Gives every lane of track 0 [history] (`{kind, skipped}` maps) with
+    /// [undoCount] entries on the undo side and [layers] image files.
+    Map<String, dynamic> withHistory(
+      List<Map<String, Object>> history, {
+      required int undoCount,
+      required int layers,
+    }) {
       final json = session.toJson();
-      final lane0 =
-          ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
-              as List;
-      (lane0.first as Map<String, dynamic>)
+      for (final lane in track0Lanes(json)) {
+        lane
+          ..['history'] = history
+          ..['undoCount'] = undoCount
+          ..['redoCount'] = history.length - undoCount
+          ..['layers'] = [
+            for (var i = 0; i < layers; i++) {'file': 'x$i.wav'},
+          ];
+      }
+      return json;
+    }
+
+    test('rejects a lane whose layer count disagrees with its history', () {
+      // Two undo entries + live name 3 images but the lane lists 1.
+      final json = session.toJson();
+      track0Lanes(json).first
+        ..['history'] = [
+          {'kind': 'layer', 'skipped': 0},
+          {'kind': 'layer', 'skipped': 0},
+        ]
         ..['undoCount'] = 2
         ..['redoCount'] = 0;
       expect(
@@ -828,36 +865,31 @@ void main() {
     });
 
     test('rejects a lane claiming more layers than the pool cap', () {
-      final json = session.toJson();
-      final lane0 =
-          ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
-              as List;
-      (lane0.first as Map<String, dynamic>)
-        ..['undoCount'] = SessionLane.maxLayers
-        ..['redoCount'] = 0
-        ..['layers'] = [
-          for (var i = 0; i < SessionLane.maxLayers + 1; i++)
-            {'file': 'x$i.wav'},
-        ];
+      final json = withHistory(
+        [
+          for (var i = 0; i < SessionLane.maxLayers; i++)
+            {'kind': 'layer', 'skipped': 0},
+        ],
+        undoCount: SessionLane.maxLayers,
+        layers: SessionLane.maxLayers + 1,
+      );
       expect(
         () => Session.fromJson(json),
-        throwsA(isA<SessionCorruptLayers>()),
+        throwsA(
+          isA<SessionCorruptLayers>().having(
+            (e) => e.reason,
+            'reason',
+            contains('cap'),
+          ),
+        ),
       );
     });
 
     test('rejects a lane with a negative undo/redo count', () {
-      final json = session.toJson();
-      final lane0 =
-          ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
-              as List;
-      (lane0.first as Map<String, dynamic>)
+      final json = withHistory(const [], undoCount: 0, layers: 1);
+      track0Lanes(json).first
         ..['undoCount'] = -1
-        ..['redoCount'] = 1
-        // length matches undoCount+1+redoCount (== 1) so only the negativity
-        // branch can reject this.
-        ..['layers'] = [
-          {'file': 'x.wav'},
-        ];
+        ..['redoCount'] = 1;
       expect(
         () => Session.fromJson(json),
         throwsA(isA<SessionCorruptLayers>()),
@@ -865,18 +897,270 @@ void main() {
     });
 
     test('accepts a lane at exactly the pool cap', () {
-      final json = session.toJson();
-      final lane0 =
-          ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
-              as List;
-      (lane0.first as Map<String, dynamic>)
-        ..['undoCount'] = SessionLane.maxLayers - 1
-        ..['redoCount'] = 0
-        ..['layers'] = [
-          for (var i = 0; i < SessionLane.maxLayers; i++) {'file': 'x$i.wav'},
-        ];
+      final json = withHistory(
+        [
+          for (var i = 0; i < SessionLane.maxLayers - 1; i++)
+            {'kind': 'layer', 'skipped': 0},
+        ],
+        undoCount: SessionLane.maxLayers - 1,
+        layers: SessionLane.maxLayers,
+      );
       final loaded = Session.fromJson(json);
       expect(loaded.tracks.first.lanes.first.layers, hasLength(256));
+    });
+
+    group('history (#1164)', () {
+      // Undo side: a restoration, an overdub and a Peel above it. Redo side:
+      // the marker of an undone Peel (it re-peels the overdub), a layer, and
+      // the Clear point as the deepest entry, so 3 + 1 + 2 images.
+      const peelHistory = [
+        {'kind': 'processed', 'skipped': 0},
+        {'kind': 'layer', 'skipped': 0},
+        {'kind': 'peel', 'skipped': 0},
+        {'kind': 'peel', 'skipped': 1},
+        {'kind': 'layer', 'skipped': 0},
+        {'kind': 'clear', 'skipped': 0},
+      ];
+
+      test('round-trips every kind, skipped counts and redo markers', () {
+        final json = withHistory(peelHistory, undoCount: 3, layers: 6);
+        final lane = Session.fromJson(json).tracks.first.lanes.first;
+        expect(lane.history.entries, const [
+          HistoryEntry(HistoryKind.processed),
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.peel),
+          HistoryEntry(HistoryKind.peel, skipped: 1),
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.clear),
+        ]);
+        expect(lane.undoCount, 3);
+        expect(lane.redoCount, 3);
+        final again = Session.fromJson(
+          jsonDecode(jsonEncode(Session.fromJson(json).toJson()))
+              as Map<String, dynamic>,
+        );
+        expect(again, Session.fromJson(json));
+        expect(
+          track0Lanes(Session.fromJson(json).toJson()).first['history'],
+          peelHistory,
+        );
+      });
+
+      test('a redo marker takes no image; an undo Peel takes one', () {
+        // Treating the marker as an image (7 layers) is as corrupt as
+        // dropping the undo Peel's image (5).
+        for (final layers in [5, 7]) {
+          expect(
+            () => Session.fromJson(
+              withHistory(peelHistory, undoCount: 3, layers: layers),
+            ),
+            throwsA(isA<SessionCorruptLayers>()),
+          );
+        }
+      });
+
+      test('rejects malformed entries before anything else', () {
+        for (final entry in <Object>[
+          {'kind': 'overdub', 'skipped': 0},
+          {'kind': 'layer'},
+          {'kind': 'layer', 'skipped': 0.5},
+          {'kind': 1, 'skipped': 0},
+          {'kind': 'layer', 'skipped': 0, 'slot': 3},
+          'layer',
+        ]) {
+          final json = withHistory(
+            [
+              {'kind': 'layer', 'skipped': 0},
+            ],
+            undoCount: 1,
+            layers: 2,
+          );
+          for (final lane in track0Lanes(json)) {
+            lane['history'] = [entry];
+          }
+          expect(() => Session.fromJson(json), throwsFormatException);
+        }
+        final missing = session.toJson();
+        track0Lanes(missing).first.remove('history');
+        expect(() => Session.fromJson(missing), throwsFormatException);
+      });
+
+      test('rejects entries the engine could not rebuild', () {
+        final cases = <(List<Map<String, Object>>, int, int)>[
+          // A Clear point beneath the live image.
+          (
+            [
+              {'kind': 'clear', 'skipped': 0},
+            ],
+            1,
+            2,
+          ),
+          // A skipped count on a kind that has none, and a negative one.
+          (
+            [
+              {'kind': 'layer', 'skipped': 1},
+            ],
+            1,
+            2,
+          ),
+          (
+            [
+              {'kind': 'peel', 'skipped': -1},
+            ],
+            1,
+            2,
+          ),
+        ];
+        for (final (history, undoCount, layers) in cases) {
+          expect(
+            () => Session.fromJson(
+              withHistory(history, undoCount: undoCount, layers: layers),
+            ),
+            throwsA(isA<SessionCorruptLayers>()),
+          );
+        }
+        // Counts that disagree with the entries.
+        final json = withHistory(peelHistory, undoCount: 3, layers: 6);
+        track0Lanes(json).first['redoCount'] = 2;
+        expect(
+          () => Session.fromJson(json),
+          throwsA(isA<SessionCorruptLayers>()),
+        );
+      });
+
+      /// Expects the history to be refused with a reason containing [reason].
+      void expectRefused(
+        List<Map<String, Object>> history, {
+        required int undoCount,
+        required int layers,
+        required String reason,
+      }) {
+        expect(
+          () => Session.fromJson(
+            withHistory(history, undoCount: undoCount, layers: layers),
+          ),
+          throwsA(
+            isA<SessionCorruptLayers>().having(
+              (e) => e.reason,
+              'reason',
+              contains(reason),
+            ),
+          ),
+        );
+      }
+
+      test('refuses a Clear point that is not the deepest Redo entry', () {
+        // Clear drops the Redo branch, so nothing can sit beneath it: a Redo
+        // of this Clear would discard the layer below.
+        expectRefused(
+          const [
+            {'kind': 'layer', 'skipped': 0},
+            {'kind': 'clear', 'skipped': 0},
+            {'kind': 'layer', 'skipped': 0},
+          ],
+          undoCount: 1,
+          layers: 4,
+          reason: 'not the deepest',
+        );
+        expectRefused(
+          const [
+            {'kind': 'clear', 'skipped': 0},
+            {'kind': 'clear', 'skipped': 0},
+          ],
+          undoCount: 0,
+          layers: 3,
+          reason: 'not the deepest',
+        );
+      });
+
+      test('refuses a Redo marker with nothing to peel', () {
+        // A restoration on top blocks Peel, and an empty Undo side has
+        // nothing beneath the original: Redo would refuse forever and strand
+        // the layer below the marker.
+        expectRefused(
+          const [
+            {'kind': 'processed', 'skipped': 0},
+            {'kind': 'peel', 'skipped': 0},
+            {'kind': 'layer', 'skipped': 0},
+          ],
+          undoCount: 1,
+          layers: 3,
+          reason: 'no layer to peel',
+        );
+        expectRefused(
+          const [
+            {'kind': 'peel', 'skipped': 0},
+          ],
+          undoCount: 0,
+          layers: 1,
+          reason: 'no layer to peel',
+        );
+        // A marker reached after an earlier Redo re-files a layer is fine.
+        final json = withHistory(
+          const [
+            {'kind': 'processed', 'skipped': 0},
+            {'kind': 'layer', 'skipped': 0},
+            {'kind': 'peel', 'skipped': 0},
+          ],
+          undoCount: 1,
+          layers: 3,
+        );
+        expect(Session.fromJson(json).tracks.first.lanes.first.redoCount, 2);
+      });
+
+      test('refuses an oversized skipped count', () {
+        // Only an overdub sits beneath the Peel, yet it claims to have
+        // skipped one Peel entry: Undo would re-insert out of order.
+        expectRefused(
+          const [
+            {'kind': 'layer', 'skipped': 0},
+            {'kind': 'layer', 'skipped': 0},
+            {'kind': 'peel', 'skipped': 1},
+          ],
+          undoCount: 3,
+          layers: 4,
+          reason: 'only 0 sit beneath',
+        );
+        // No stack holds that many entries.
+        expectRefused(
+          const [
+            {'kind': 'peel', 'skipped': 256},
+          ],
+          undoCount: 1,
+          layers: 2,
+          reason: 'invalid skipped count 256',
+        );
+        // Pool eviction removes the oldest entries, so a run of Peel entries
+        // that reaches the bottom may be shorter than a skipped count.
+        final evicted = withHistory(
+          const [
+            {'kind': 'peel', 'skipped': 0},
+            {'kind': 'peel', 'skipped': 3},
+          ],
+          undoCount: 2,
+          layers: 3,
+        );
+        expect(Session.fromJson(evicted).tracks.first.lanes.first.undoCount, 2);
+      });
+
+      test('rejects lanes of one track with different histories', () {
+        final json = withHistory(
+          [
+            {'kind': 'layer', 'skipped': 0},
+          ],
+          undoCount: 1,
+          layers: 2,
+        );
+        track0Lanes(json).last['history'] = [
+          {'kind': 'processed', 'skipped': 0},
+        ];
+        expect(
+          () => Session.fromJson(json),
+          throwsA(
+            isA<SessionCorruptLayers>().having((e) => e.lane, 'lane', 1),
+          ),
+        );
+      });
     });
   });
 }

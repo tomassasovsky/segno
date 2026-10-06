@@ -84,6 +84,7 @@ inline T le_cxx_atomic_exchange(T* slot, V value) {
 #include "layer_staging_ring.h" /* le_layer_staging_ring (retired-layer persistence) */
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "le_midi_clock.h"     /* le_midi_clock_gen (C1 24-PPQN clock-send emitter) */
+#include "le_midi_port.h"      /* le_midi_port (the native MIDI input sink, #1228) */
 #include "engine_telemetry.h"  /* le_cb_timing (audio-callback telemetry, #722) */
 #include "engine_direction.h"
 #include "engine_fade.h"
@@ -1099,7 +1100,7 @@ typedef struct le_track {
    *   clear-restore (#219)         | control | le_restore_clear (the a_live
    *                                |         | swap; the audio flip follows)
    *   session load (import)        | control | le_engine_import_track_lane
-   *   session load (layered)       | control | le_engine_finalize_layers
+   *   session load (layered)       | control | le_engine_finalize_history
    *                                |         | (covers le_engine_import_layer:
    *                                |         | layers fill while EMPTY and
    *                                |         | publish only at finalize)
@@ -1982,6 +1983,20 @@ struct le_engine {
    * like the click/count-in running state above — its SETTING twin
    * (a_clock_mode) is seeded once in le_engine_create and persists. */
   le_midi_clock_gen midi_clock;
+
+  /* The native MIDI input sink (#1228 Part 1; le_midi_port.h). Each port is
+   * fed by the capture attached to it (le_engine_attach_midi_input) and
+   * drained by the audio thread at block start (le_midi_ports_drain). The
+   * bindings live in the ports themselves (a_owner), never in Dart. */
+  le_midi_port midi_ports[LE_MAX_MIDI_PORTS];
+  /* Audio-thread only: each port's lost flag as of the last drain, so a lost
+   * port is counted once per edge. */
+  int32_t midi_port_lost_seen[LE_MAX_MIDI_PORTS];
+  /* Published totals (le_snapshot.midi_in_*). */
+  _Atomic uint32_t a_midi_in_events;
+  _Atomic uint32_t a_midi_in_stale;
+  _Atomic uint32_t a_midi_in_overflows;
+  _Atomic uint32_t a_midi_in_lost;
 
   /* Quantized recording (control-thread-owned). When `quantize` is set, a record
    * press over an existing master arms `armed[ch]` (and does the one-time prep

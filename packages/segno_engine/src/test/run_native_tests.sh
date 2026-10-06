@@ -147,6 +147,17 @@ $CC $STD $EXTRA_CFLAGS src/test/test_instrument_races.c $ENGINE_SRC \
   "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_instrument_race_tests.exe"
 "$OUT/segno_instrument_race_tests.exe"
 
+echo "== building MIDI sink race tests =="
+# The native MIDI input sink (#1228 Part 1, le_midi_port.h): a producer, an
+# audio thread and the control thread attaching/detaching/destroying, against
+# the real engine. Before the races-only exit so TSAN covers it; it needs no
+# OS MIDI backend (a struct beginning with a le_midi_sink stands in for a
+# capture), so the TSAN job's missing libasound does not matter.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_midi_sink_races.c \
+  $ENGINE_SRC "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_midi_sink_race_tests.exe"
+"$OUT/segno_midi_sink_race_tests.exe"
+
 if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then
   exit 0
 fi

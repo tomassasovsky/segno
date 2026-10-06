@@ -321,4 +321,24 @@ void main() {
       expect(refusals, isEmpty);
     });
   });
+
+  test('a punch-in refused on a reversed track is reported as an overdub '
+      'refusal, not retried', () async {
+    engine.nextSnapshot = _rig(2, state: TrackState.playing);
+    final repo = start();
+    final overdubs = <int>[];
+    final sub = repo.overdubRefusals.listen(overdubs.add);
+    addTearDown(sub.cancel);
+    engine.recordResult = EngineResult.reversed;
+    expect(repo.record(channel: 1), EngineResult.reversed);
+    await poll();
+    expect(overdubs, [1]);
+    expect(refusals, isEmpty);
+    expect(repo.recordRetryPending(1), isFalse);
+    // Any other refusal is not an overdub refusal.
+    engine.recordResult = EngineResult.invalid;
+    repo.record(channel: 1);
+    await poll();
+    expect(overdubs, [1]);
+  });
 }
