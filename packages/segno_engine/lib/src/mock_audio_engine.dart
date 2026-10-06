@@ -7,6 +7,7 @@ import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_fingerprint.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+import 'package:segno_engine/src/history_entry.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
@@ -1615,8 +1616,14 @@ class MockAudioEngine implements AudioEngine {
   ) => _requireRunning();
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) =>
-      _requireRunning();
+  List<HistoryEntry> exportHistory(int channel) => const [];
+
+  @override
+  EngineResult finalizeHistory(
+    int channel,
+    List<HistoryEntry> history,
+    int undoCount,
+  ) => _requireRunning();
 
   @override
   EngineResult commitSession(int baseFrames, {required int loopBars}) =>

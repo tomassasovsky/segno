@@ -1416,8 +1416,15 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
-    _importedDepths[channel] = (undoCount, redoCount);
+  List<HistoryEntry> exportHistory(int channel) => const [];
+
+  @override
+  EngineResult finalizeHistory(
+    int channel,
+    List<HistoryEntry> history,
+    int undoCount,
+  ) {
+    _importedDepths[channel] = (undoCount, history.length - undoCount);
     return EngineResult.ok;
   }
 

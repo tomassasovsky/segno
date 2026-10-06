@@ -21,6 +21,10 @@ class _FakeTrack {
   int lengthFrames = 0;
   int undoDepth = 0;
   int redoDepth = 0;
+
+  /// The track's history entries ([AudioEngine.exportHistory] order); its
+  /// length is `undoDepth + redoDepth`.
+  List<HistoryEntry> history = const [];
   bool solo = false;
   final List<_FakeLane> lanes = [_FakeLane()];
 
@@ -110,7 +114,8 @@ class FakeSessionEngine implements AudioEngine {
       ..multiple = multiple
       ..lengthFrames = frames
       ..undoDepth = 0
-      ..redoDepth = 0;
+      ..redoDepth = 0
+      ..history = const [];
     track.lanes[0]
       ..layers = [pcm]
       ..volume = volume
@@ -121,12 +126,15 @@ class FakeSessionEngine implements AudioEngine {
 
   /// Seeds a playing single-lane track with an ordinal-ordered [layers] stack
   /// and its shared [undoDepth] / [redoDepth] — exercises overdub-layer capture.
-  /// The live buffer is `layers[undoDepth]`.
+  /// The live buffer is `layers[undoDepth]`. [history] defaults to one overdub
+  /// layer per undo/redo entry; a history with redo-side Peel markers names
+  /// fewer images than entries.
   void seedLayers(
     int channel,
     List<Float32List> layers, {
     int undoDepth = 0,
     int redoDepth = 0,
+    List<HistoryEntry>? history,
     int multiple = 1,
     double volume = 1,
     bool muted = false,
@@ -137,7 +145,13 @@ class FakeSessionEngine implements AudioEngine {
       ..multiple = multiple
       ..lengthFrames = frames
       ..undoDepth = undoDepth
-      ..redoDepth = redoDepth;
+      ..redoDepth = redoDepth
+      ..history =
+          history ??
+          List.filled(
+            undoDepth + redoDepth,
+            const HistoryEntry(HistoryKind.layer),
+          );
     track.lanes[0]
       ..layers = List.of(layers)
       ..volume = volume
@@ -291,8 +305,14 @@ class FakeSessionEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) =>
-      EngineResult.ok;
+  List<HistoryEntry> exportHistory(int channel) => _tracks[channel].history;
+
+  @override
+  EngineResult finalizeHistory(
+    int channel,
+    List<HistoryEntry> history,
+    int undoCount,
+  ) => EngineResult.ok;
 
   @override
   EngineResult commitSession(int baseFrames, {required int loopBars}) {
@@ -316,6 +336,7 @@ class FakeSessionEngine implements AudioEngine {
       ..lengthFrames = 0
       ..undoDepth = 0
       ..redoDepth = 0
+      ..history = const []
       ..lanes.clear();
     _tracks[channel].lanes.add(_FakeLane());
     if (_tracks.every((t) => t.state == TrackState.empty)) masterLength = 0;

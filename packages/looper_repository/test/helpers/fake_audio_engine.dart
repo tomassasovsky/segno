@@ -286,7 +286,7 @@ class FakeAudioEngine implements AudioEngine {
     if (importedTracks.remove(channel) != null) {
       importedLanes.removeWhere((key, _) => key.$1 == channel);
       importedLayers.removeWhere((key, _) => key.$1 == channel);
-      finalizedLayers.remove(channel);
+      finalizedHistory.remove(channel);
       final tracks = [..._nextSnapshot.tracks];
       tracks[channel] = const TrackSnapshot.empty();
       _nextSnapshot = _nextSnapshot.copyWith(
@@ -1447,8 +1447,9 @@ class FakeAudioEngine implements AudioEngine {
   /// `(channel, lane, ordinal)`.
   final Map<(int, int, int), Float32List> importedLayers = {};
 
-  /// `(undoCount, redoCount)` passed to [finalizeLayers], keyed by channel.
-  final Map<int, (int, int)> finalizedLayers = {};
+  /// The history and undo count passed to [finalizeHistory], keyed by
+  /// channel.
+  final Map<int, (List<HistoryEntry>, int)> finalizedHistory = {};
 
   /// Result returned by [importLayer] once any [importFailCountdown] is spent.
   EngineResult importResult = EngineResult.ok;
@@ -1496,9 +1497,19 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
-    calls.add('finalizeLayers');
-    finalizedLayers[channel] = (undoCount, redoCount);
+  List<HistoryEntry> exportHistory(int channel) {
+    calls.add('exportHistory');
+    return const [];
+  }
+
+  @override
+  EngineResult finalizeHistory(
+    int channel,
+    List<HistoryEntry> history,
+    int undoCount,
+  ) {
+    calls.add('finalizeHistory');
+    finalizedHistory[channel] = (history, undoCount);
     return EngineResult.ok;
   }
 
@@ -1511,16 +1522,16 @@ class FakeAudioEngine implements AudioEngine {
     committedBaseFrames = baseFrames;
     final tracks = [..._nextSnapshot.tracks];
     for (final entry in importedTracks.entries) {
-      final depths = finalizedLayers[entry.key];
-      if (depths == null) return EngineResult.invalid;
+      final finalized = finalizedHistory[entry.key];
+      if (finalized == null) return EngineResult.invalid;
       tracks[entry.key] = TrackSnapshot(
         state: TrackState.stopped,
         fade: installedFades[entry.key] ?? const FadeImage(),
         volume: 1,
         muted: false,
         lengthFrames: entry.value.length,
-        undoDepth: depths.$1,
-        redoDepth: depths.$2,
+        undoDepth: finalized.$2,
+        redoDepth: finalized.$1.length - finalized.$2,
         rms: 0,
         peak: 0,
       );
