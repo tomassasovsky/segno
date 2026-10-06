@@ -1,5 +1,7 @@
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/midi_mapping_draft.dart';
 
 MidiSource _source({
@@ -106,5 +108,33 @@ void main() {
     expect(draft.canSaveIn(set), isFalse);
     expect(draft.withChannel(1).canSaveIn(set), isTrue);
     expect(MidiMappingDraft.of(existing).canSaveIn(set), isTrue);
+  });
+
+  test('a literal 1.0 on a level fader is unity at authoring, repointing '
+      'and reload', () {
+    const volume = TrackVolumeTarget(0);
+    const lane = LaneVolumeTarget(0, 1);
+    final unity = volume.mappingTop;
+    var draft = MidiMappingDraft(device: 'usb').withControl(
+      MidiParameterControl(key: volume.canonicalString(), low: 0, high: .5),
+    );
+    draft = draft.withRange(volume.canonicalString(), high: 1);
+    final authored = draft.controls.single as MidiParameterControl;
+    expect(authored.high, unity);
+    expect(volume.toDomain(authored.high), closeTo(1.0, 1e-9));
+    // A full-travel mapping repointed onto a level fader tops at unity.
+    final param = const FxParamTarget(
+      address: FxAddress(stage: FxStage.track),
+      slotId: 'drive',
+      param: 0,
+    ).canonicalString();
+    final repointed = MidiMappingDraft(device: 'usb')
+        .withControl(MidiParameterControl(key: param, low: 0, high: 1))
+        .repointing(param, lane.canonicalString());
+    expect(
+      (repointed.controls.single as MidiParameterControl).high,
+      lane.mappingTop,
+    );
+    expect(lane.mappingTop, unity);
   });
 }

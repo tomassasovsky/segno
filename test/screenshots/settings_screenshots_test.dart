@@ -13,6 +13,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
@@ -223,21 +224,26 @@ void main() {
     mixSettings = testMixSettings(repository, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
     tempoOwner = TempoSettings(repository: repository, settings: settings);
+    final ownedFade = testFadeSettings();
     control = ControlCubit(
-      fadeSettings: testFadeSettings(),
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
-      recordLengthControl: FakeRecordLengthControl(),
-      recordTimingControl: FakeRecordTimingControl(),
-      clickVolumeControl: FakeClickVolumeControl(),
-      clickModeControl: FakeClickModeControl(),
-      recordStartControl: tempoOwner.recordStartControl,
       fxPersistence: fxPersistence,
       looper: repository,
       mixSettings: mixSettings,
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
+      fadeSettings: ownedFade,
+      ownedValues: OwnedValuePort(
+        looper: repository,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: tempoOwner.recordStartControl,
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: ownedFade,
+      ),
     );
     addTearDown(() => unawaited(control.close()));
     // Backs the Tempo section (reads live values from LooperBloc's

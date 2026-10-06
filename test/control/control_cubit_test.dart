@@ -8,6 +8,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/control.dart';
@@ -343,15 +344,8 @@ void main() {
       // Every emit projects a frame from the repository snapshot, so the
       // snapshot has to exist before the first one; setEngine() re-stubs it.
       when(() => looper.state).thenReturn(_stateWith(_emptyTracks()));
+      final ownedFade = testFadeSettings();
       cubit = ControlCubit(
-        fadeSettings: testFadeSettings(),
-        decayControl: FakeDecayControl(),
-        oneShotControl: FakeOneShotControl(),
-        recordLengthControl: FakeRecordLengthControl(),
-        recordTimingControl: FakeRecordTimingControl(),
-        clickVolumeControl: FakeClickVolumeControl(),
-        clickModeControl: FakeClickModeControl(),
-        recordStartControl: FakeRecordStartControl(),
         fxPersistence: FxChainPersistence(looper: looper),
         looper: looper,
         mixSettings: testMixSettings(looper),
@@ -359,6 +353,18 @@ void main() {
         settings: settings,
         performance: performance,
         takeLocked: () => takeIsLocked,
+        fadeSettings: ownedFade,
+        ownedValues: OwnedValuePort(
+          looper: looper,
+          clickVolume: FakeClickVolumeControl(),
+          clickMode: FakeClickModeControl(),
+          recordStart: FakeRecordStartControl(),
+          decay: FakeDecayControl(),
+          oneShot: FakeOneShotControl(),
+          recordLength: FakeRecordLengthControl(),
+          recordTiming: FakeRecordTimingControl(),
+          fade: ownedFade,
+        ),
       );
       setEngine(_emptyTracks());
     });
@@ -1985,15 +1991,8 @@ void main() {
       });
 
       test('takeLocked suppresses recPlay', () {
+        final ownedFade = testFadeSettings();
         final locked = ControlCubit(
-          fadeSettings: testFadeSettings(),
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
-          recordLengthControl: FakeRecordLengthControl(),
-          recordTimingControl: FakeRecordTimingControl(),
-          clickVolumeControl: FakeClickVolumeControl(),
-          clickModeControl: FakeClickModeControl(),
-          recordStartControl: FakeRecordStartControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -2001,6 +2000,18 @@ void main() {
           settings: settings,
           performance: performance,
           takeLocked: () => true,
+          fadeSettings: ownedFade,
+          ownedValues: OwnedValuePort(
+            looper: looper,
+            clickVolume: FakeClickVolumeControl(),
+            clickMode: FakeClickModeControl(),
+            recordStart: FakeRecordStartControl(),
+            decay: FakeDecayControl(),
+            oneShot: FakeOneShotControl(),
+            recordLength: FakeRecordLengthControl(),
+            recordTiming: FakeRecordTimingControl(),
+            fade: ownedFade,
+          ),
         );
         addTearDown(locked.close);
         locked.recPlay();
@@ -2008,15 +2019,8 @@ void main() {
       });
 
       test('takeLocked suppresses rec-mode trackPressed', () {
+        final ownedFade = testFadeSettings();
         final locked = ControlCubit(
-          fadeSettings: testFadeSettings(),
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
-          recordLengthControl: FakeRecordLengthControl(),
-          recordTimingControl: FakeRecordTimingControl(),
-          clickVolumeControl: FakeClickVolumeControl(),
-          clickModeControl: FakeClickModeControl(),
-          recordStartControl: FakeRecordStartControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -2024,22 +2028,27 @@ void main() {
           settings: settings,
           performance: performance,
           takeLocked: () => true,
+          fadeSettings: ownedFade,
+          ownedValues: OwnedValuePort(
+            looper: looper,
+            clickVolume: FakeClickVolumeControl(),
+            clickMode: FakeClickModeControl(),
+            recordStart: FakeRecordStartControl(),
+            decay: FakeDecayControl(),
+            oneShot: FakeOneShotControl(),
+            recordLength: FakeRecordLengthControl(),
+            recordTiming: FakeRecordTimingControl(),
+            fade: ownedFade,
+          ),
         );
         addTearDown(locked.close);
         locked.trackPressed(2);
         expect(locked.state.cursor, 0);
       });
 
-      test('takeLocked suppresses togglePerformanceRecord', () {
+      test('takeLocked suppresses togglePerformanceRecord', () async {
+        final ownedFade = testFadeSettings();
         final locked = ControlCubit(
-          fadeSettings: testFadeSettings(),
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
-          recordLengthControl: FakeRecordLengthControl(),
-          recordTimingControl: FakeRecordTimingControl(),
-          clickVolumeControl: FakeClickVolumeControl(),
-          clickModeControl: FakeClickModeControl(),
-          recordStartControl: FakeRecordStartControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -2047,9 +2056,22 @@ void main() {
           settings: settings,
           performance: performance,
           takeLocked: () => true,
+          fadeSettings: ownedFade,
+          ownedValues: OwnedValuePort(
+            looper: looper,
+            clickVolume: FakeClickVolumeControl(),
+            clickMode: FakeClickModeControl(),
+            recordStart: FakeRecordStartControl(),
+            decay: FakeDecayControl(),
+            oneShot: FakeOneShotControl(),
+            recordLength: FakeRecordLengthControl(),
+            recordTiming: FakeRecordTimingControl(),
+            fade: ownedFade,
+          ),
         );
         addTearDown(locked.close);
         locked.togglePerformanceRecord();
+        await pumpEventQueue();
         expect(performance.armedDirectory, isNull);
       });
 
@@ -2059,15 +2081,8 @@ void main() {
         lockedTransport.hello();
         await pumpEventQueue();
         addTearDown(lockedPedal.dispose);
+        final ownedFade = testFadeSettings();
         final locked = ControlCubit(
-          fadeSettings: testFadeSettings(),
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
-          recordLengthControl: FakeRecordLengthControl(),
-          recordTimingControl: FakeRecordTimingControl(),
-          clickVolumeControl: FakeClickVolumeControl(),
-          clickModeControl: FakeClickModeControl(),
-          recordStartControl: FakeRecordStartControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
@@ -2075,6 +2090,18 @@ void main() {
           settings: settings,
           performance: performance,
           takeLocked: () => true,
+          fadeSettings: ownedFade,
+          ownedValues: OwnedValuePort(
+            looper: looper,
+            clickVolume: FakeClickVolumeControl(),
+            clickMode: FakeClickModeControl(),
+            recordStart: FakeRecordStartControl(),
+            decay: FakeDecayControl(),
+            oneShot: FakeOneShotControl(),
+            recordLength: FakeRecordLengthControl(),
+            recordTiming: FakeRecordTimingControl(),
+            fade: ownedFade,
+          ),
         );
         addTearDown(locked.close);
         setEngine(
@@ -2645,21 +2672,26 @@ void main() {
             exportsRoot: () async => tempDir.path,
           );
           addTearDown(recordingPerformance.dispose);
+          final ownedFade = testFadeSettings();
           final armedCubit = ControlCubit(
-            fadeSettings: testFadeSettings(),
-            decayControl: FakeDecayControl(),
-            oneShotControl: FakeOneShotControl(),
-            recordLengthControl: FakeRecordLengthControl(),
-            recordTimingControl: FakeRecordTimingControl(),
-            clickVolumeControl: FakeClickVolumeControl(),
-            clickModeControl: FakeClickModeControl(),
-            recordStartControl: FakeRecordStartControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
             pedal: pedal,
             settings: settings,
             performance: recordingPerformance,
+            fadeSettings: ownedFade,
+            ownedValues: OwnedValuePort(
+              looper: looper,
+              clickVolume: FakeClickVolumeControl(),
+              clickMode: FakeClickModeControl(),
+              recordStart: FakeRecordStartControl(),
+              decay: FakeDecayControl(),
+              oneShot: FakeOneShotControl(),
+              recordLength: FakeRecordLengthControl(),
+              recordTiming: FakeRecordTimingControl(),
+              fade: ownedFade,
+            ),
           );
           addTearDown(armedCubit.close);
 
@@ -2695,21 +2727,26 @@ void main() {
           exportsRoot: () async => tempDir.path,
         );
         addTearDown(unarmedPerformance.dispose);
+        final ownedFade = testFadeSettings();
         final unarmedCubit = ControlCubit(
-          fadeSettings: testFadeSettings(),
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
-          recordLengthControl: FakeRecordLengthControl(),
-          recordTimingControl: FakeRecordTimingControl(),
-          clickVolumeControl: FakeClickVolumeControl(),
-          clickModeControl: FakeClickModeControl(),
-          recordStartControl: FakeRecordStartControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
           pedal: pedal,
           settings: settings,
           performance: unarmedPerformance,
+          fadeSettings: ownedFade,
+          ownedValues: OwnedValuePort(
+            looper: looper,
+            clickVolume: FakeClickVolumeControl(),
+            clickMode: FakeClickModeControl(),
+            recordStart: FakeRecordStartControl(),
+            decay: FakeDecayControl(),
+            oneShot: FakeOneShotControl(),
+            recordLength: FakeRecordLengthControl(),
+            recordTiming: FakeRecordTimingControl(),
+            fade: ownedFade,
+          ),
         );
         addTearDown(unarmedCubit.close);
 
@@ -2732,21 +2769,26 @@ void main() {
             exportsRoot: () async => tempDir.path,
           );
           addTearDown(recordingPerformance.dispose);
+          final ownedFade = testFadeSettings();
           final armedCubit = ControlCubit(
-            fadeSettings: testFadeSettings(),
-            decayControl: FakeDecayControl(),
-            oneShotControl: FakeOneShotControl(),
-            recordLengthControl: FakeRecordLengthControl(),
-            recordTimingControl: FakeRecordTimingControl(),
-            clickVolumeControl: FakeClickVolumeControl(),
-            clickModeControl: FakeClickModeControl(),
-            recordStartControl: FakeRecordStartControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
             pedal: pedal,
             settings: settings,
             performance: recordingPerformance,
+            fadeSettings: ownedFade,
+            ownedValues: OwnedValuePort(
+              looper: looper,
+              clickVolume: FakeClickVolumeControl(),
+              clickMode: FakeClickModeControl(),
+              recordStart: FakeRecordStartControl(),
+              decay: FakeDecayControl(),
+              oneShot: FakeOneShotControl(),
+              recordLength: FakeRecordLengthControl(),
+              recordTiming: FakeRecordTimingControl(),
+              fade: ownedFade,
+            ),
           );
           addTearDown(armedCubit.close);
 
@@ -2875,15 +2917,8 @@ void main() {
           // The pedal gesture must record the same rig the toolbar path does —
           // before this was wired both armed with an empty chain set, so a
           // capture documented no FX at all.
+          final ownedFade = testFadeSettings();
           final wired = ControlCubit(
-            fadeSettings: testFadeSettings(),
-            decayControl: FakeDecayControl(),
-            oneShotControl: FakeOneShotControl(),
-            recordLengthControl: FakeRecordLengthControl(),
-            recordTimingControl: FakeRecordTimingControl(),
-            clickVolumeControl: FakeClickVolumeControl(),
-            clickModeControl: FakeClickModeControl(),
-            recordStartControl: FakeRecordStartControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
@@ -2903,6 +2938,18 @@ void main() {
               ],
               limiterEnabled: true,
               limiterCeiling: 0.8,
+            ),
+            fadeSettings: ownedFade,
+            ownedValues: OwnedValuePort(
+              looper: looper,
+              clickVolume: FakeClickVolumeControl(),
+              clickMode: FakeClickModeControl(),
+              recordStart: FakeRecordStartControl(),
+              decay: FakeDecayControl(),
+              oneShot: FakeOneShotControl(),
+              recordLength: FakeRecordLengthControl(),
+              recordTiming: FakeRecordTimingControl(),
+              fade: ownedFade,
             ),
           );
           addTearDown(wired.close);
@@ -4116,21 +4163,26 @@ void main() {
           set,
         );
 
+        final ownedFade = testFadeSettings();
         final reloaded = ControlCubit(
-          fadeSettings: testFadeSettings(),
-          decayControl: FakeDecayControl(),
-          oneShotControl: FakeOneShotControl(),
-          recordLengthControl: FakeRecordLengthControl(),
-          recordTimingControl: FakeRecordTimingControl(),
-          clickVolumeControl: FakeClickVolumeControl(),
-          clickModeControl: FakeClickModeControl(),
-          recordStartControl: FakeRecordStartControl(),
           fxPersistence: FxChainPersistence(looper: looper),
           looper: looper,
           mixSettings: testMixSettings(looper),
           pedal: pedal,
           settings: settings,
           performance: performance,
+          fadeSettings: ownedFade,
+          ownedValues: OwnedValuePort(
+            looper: looper,
+            clickVolume: FakeClickVolumeControl(),
+            clickMode: FakeClickModeControl(),
+            recordStart: FakeRecordStartControl(),
+            decay: FakeDecayControl(),
+            oneShot: FakeOneShotControl(),
+            recordLength: FakeRecordLengthControl(),
+            recordTiming: FakeRecordTimingControl(),
+            fade: ownedFade,
+          ),
         );
         addTearDown(reloaded.close);
         await reloaded.load();
@@ -4218,21 +4270,26 @@ void main() {
           idleLink.hello();
           await pumpEventQueue();
           addTearDown(idlePedal.dispose);
+          final ownedFade = testFadeSettings();
           final idle = ControlCubit(
-            fadeSettings: testFadeSettings(),
-            decayControl: FakeDecayControl(),
-            oneShotControl: FakeOneShotControl(),
-            recordLengthControl: FakeRecordLengthControl(),
-            recordTimingControl: FakeRecordTimingControl(),
-            clickVolumeControl: FakeClickVolumeControl(),
-            clickModeControl: FakeClickModeControl(),
-            recordStartControl: FakeRecordStartControl(),
             fxPersistence: FxChainPersistence(looper: looper),
             looper: looper,
             mixSettings: testMixSettings(looper),
             pedal: idlePedal,
             settings: settings,
             performance: performance,
+            fadeSettings: ownedFade,
+            ownedValues: OwnedValuePort(
+              looper: looper,
+              clickVolume: FakeClickVolumeControl(),
+              clickMode: FakeClickModeControl(),
+              recordStart: FakeRecordStartControl(),
+              decay: FakeDecayControl(),
+              oneShot: FakeOneShotControl(),
+              recordLength: FakeRecordLengthControl(),
+              recordTiming: FakeRecordTimingControl(),
+              fade: ownedFade,
+            ),
           );
           addTearDown(idle.close);
           expect(idleLink.lastFrame, isNull, reason: 'nothing before load()');

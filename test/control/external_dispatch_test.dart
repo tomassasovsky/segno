@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:controller_repository/controller_repository.dart';
@@ -9,6 +10,7 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
@@ -152,15 +154,8 @@ class _Rig {
       exportsRoot: () async => Directory.systemTemp.path,
     );
     fx = FxChainPersistence(looper: looper);
+    final ownedFade = testFadeSettings();
     cubit = ControlCubit(
-      fadeSettings: testFadeSettings(),
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
-      recordLengthControl: FakeRecordLengthControl(),
-      recordTimingControl: FakeRecordTimingControl(),
-      clickVolumeControl: FakeClickVolumeControl(),
-      clickModeControl: FakeClickModeControl(),
-      recordStartControl: FakeRecordStartControl(),
       looper: looper,
       pedal: pedal,
       settings: settings,
@@ -170,6 +165,19 @@ class _Rig {
       midiDevices: midi,
       midiClock: () => clock.elapsed,
       controller: controller,
+      takeLocked: () => powerOffUp,
+      fadeSettings: ownedFade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: FakeRecordStartControl(),
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: ownedFade,
+      ),
     );
     link.hello();
     unawaited(cubit.load());
@@ -188,6 +196,9 @@ class _Rig {
   late final PerformanceRepository performance;
   late final ControlCubit cubit;
   late final FxChainPersistence fx;
+
+  /// The power-off route is up: takes are locked.
+  bool powerOffUp = false;
 
   void bindMidi({
     int id = 21,
@@ -548,6 +559,11 @@ void main() {
         target is MonitorVolumeTarget;
     final low = gain || target is OutputLevelTarget ? 0.0 : -1.0;
     final high = gain && target is! MonitorVolumeTarget ? 2.0 : 1.0;
+    // A MIDI mapping on a level fader tops at unity (decision 46); an
+    // External switch value keeps its authored +6 dB.
+    final midiHigh = target is TrackVolumeTarget || target is LaneVolumeTarget
+        ? 1.0
+        : high;
     check(
       'MIDI and External ${target.canonicalString()} '
       'share full range and durable low',
@@ -588,7 +604,7 @@ void main() {
           ..midiValue(127);
         expect(
           physical(looper.mixSettingsSnapshot, target),
-          closeTo(high, 1e-6),
+          closeTo(midiHigh, 1e-6),
         );
         expect(physical(r.mix.durableSnapshot, target), closeTo(low, 1e-6));
         r.midiValue(0);
@@ -1968,6 +1984,327 @@ void main() {
     (r) {
       looper.setMasterGain(.37);
       expect(looper.readValueTarget(const MasterGainTarget()), .37);
+    },
+  );
+
+  check(
+    'a pair link during the FX settle drops only the Input pan, and the '
+    'FX value is released',
+    ExternalJackSetup.empty,
+    (r) {
+      double drive() =>
+          (looper.trackEffects(0).single as BuiltInEffect).params[0];
+      r
+        ..bindMidi(
+          controls: [
+            MidiParameterControl(
+              key: _param.canonicalString(),
+              low: .2,
+              high: .8,
+            ),
+            MidiParameterControl(
+              key: const InputPanTarget(0).canonicalString(),
+              low: const InputPanTarget(0).fromDomain(-.5),
+              high: const InputPanTarget(0).fromDomain(.5),
+            ),
+          ],
+        )
+        // The press is admitted; its FX receipt waits for the next callback.
+        ..midi.push(
+          const RawControllerInput(
+            kind: ControllerSourceKind.midiCc,
+            id: 21,
+            value: 127,
+          ),
+        )
+        ..clock.flushMicrotasks();
+      unawaited(r.mix.setInputPair(input: 0, paired: true));
+      r
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(looper.inputSetup.pairs, contains(0));
+      expect(drive(), closeTo(.8, .0001));
+      // The accepted press owns the FX value, so what is saved is its
+      // Released value, not the held one.
+      final stored = decodeFxChain(
+        r.store.values['track_fx_chain.0'] as String?,
+      );
+      expect(
+        (stored.entries.single as BuiltInEffect).params.first,
+        closeTo(.2, .0001),
+      );
+      r.midiValue(0);
+      expect(drive(), closeTo(.2, .0001));
+    },
+  );
+
+  check(
+    'a pair link while MIDI work is queued drops only the Input pan',
+    ExternalJackSetup.empty,
+    (r) {
+      double drive() =>
+          (looper.trackEffects(0).single as BuiltInEffect).params[0];
+      r
+        ..bindMidi(id: 22)
+        ..bindMidi(
+          controls: [
+            MidiParameterControl(
+              key: _param.canonicalString(),
+              low: .2,
+              high: .8,
+            ),
+            MidiParameterControl(
+              key: const InputPanTarget(0).canonicalString(),
+              low: const InputPanTarget(0).fromDomain(-.5),
+              high: const InputPanTarget(0).fromDomain(.5),
+            ),
+          ],
+        )
+        // A chain press holds the shared queue on its storage write.
+        ..store.fxGate = Completer<void>()
+        ..midiValue(127, id: 22)
+        ..midi.push(
+          const RawControllerInput(
+            kind: ControllerSourceKind.midiCc,
+            id: 21,
+            value: 127,
+          ),
+        )
+        ..clock.flushMicrotasks();
+      unawaited(r.mix.setInputPair(input: 0, paired: true));
+      r
+        ..settle()
+        ..store.fxGate!.complete()
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(looper.inputSetup.pairs, contains(0));
+      expect(drive(), closeTo(.8, .0001));
+    },
+  );
+
+  check(
+    'a pair link while an External press saves its FX drops only the Input '
+    'pan',
+    button(
+      [],
+      parameters: [
+        ExternalParameter(
+          target: _param,
+          active: .8,
+          inactive: .2,
+          condition: ExternalValueCondition.heldReleased,
+        ),
+        ExternalParameter(
+          target: const TrackVolumeTarget(0),
+          active: const TrackVolumeTarget(0).fromDomain(.6),
+          inactive: const TrackVolumeTarget(0).fromDomain(.3),
+          condition: ExternalValueCondition.heldReleased,
+        ),
+        ExternalParameter(
+          target: const InputPanTarget(0),
+          active: const InputPanTarget(0).fromDomain(.5),
+          inactive: const InputPanTarget(0).fromDomain(-.5),
+          condition: ExternalValueCondition.heldReleased,
+        ),
+      ],
+    ),
+    (r) {
+      // The press's FX save waits in storage while the link lands.
+      r
+        ..store.fxGate = Completer<void>()
+        ..sample(255)
+        ..settle();
+      unawaited(r.mix.setInputPair(input: 0, paired: true));
+      r.settle();
+      expect(looper.inputSetup.pairs, contains(0));
+      r
+        ..store.fxGate!.complete()
+        ..clock.flushMicrotasks()
+        ..settle();
+      expect(
+        (looper.trackEffects(0).single as BuiltInEffect).params[0],
+        closeTo(.8, .0001),
+      );
+      // The track level in the same press still lands.
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(.6, 1e-6));
+    },
+  );
+
+  check(
+    'an unrelated pair link keeps another jack expression baseline',
+    ExternalJackSetup(
+      type: ExternalJackType.expression,
+      expression: ExternalExpressionSetup(
+        calibration: ExpressionCalibration(heel: 0, toe: 255),
+        mappings: [ExpressionMapping(target: _param)],
+      ),
+    ),
+    (r) {
+      double drive() =>
+          (looper.trackEffects(0).single as BuiltInEffect).params[0];
+      r
+        ..sample(0, kind: PedalCtrlKind.expression)
+        ..sample(255, kind: PedalCtrlKind.expression)
+        ..settle();
+      expect(drive(), closeTo(1, .0001));
+      unawaited(r.mix.setInputPair(input: 0, paired: true));
+      r.settle();
+      expect(looper.inputSetup.pairs, contains(0));
+      // The pair link retired Input pan, which this jack does not map: its
+      // first move after the link applies.
+      r
+        ..sample(51, kind: PedalCtrlKind.expression)
+        ..settle();
+      expect(drive(), closeTo(51 / 255, .0001));
+    },
+  );
+
+  check(
+    'with the power-off dialog open, an expression sweep and a MIDI value '
+    'land while Record is refused',
+    ExternalJackSetup(
+      type: ExternalJackType.expression,
+      expression: ExternalExpressionSetup(
+        calibration: ExpressionCalibration(heel: 0, toe: 255),
+        mappings: [ExpressionMapping(target: _param)],
+      ),
+    ),
+    (r) {
+      double drive() =>
+          (looper.trackEffects(0).single as BuiltInEffect).params[0];
+      r
+        ..bindMidi(
+          id: 22,
+          target: const MasterGainTarget().canonicalString(),
+          low: .2,
+          high: .6,
+        )
+        ..sample(0, kind: PedalCtrlKind.expression)
+        ..settle()
+        ..powerOffUp = true
+        ..sample(102, kind: PedalCtrlKind.expression)
+        ..settle();
+      expect(drive(), closeTo(102 / 255, .0001));
+      r.midiValue(127, id: 22);
+      expect(looper.masterGain, closeTo(.6, 1e-9));
+      // Perf-arm's refusal is pinned in control_cubit_test.
+      r.cubit.recPlay();
+      r.settle();
+      expect(
+        looper.state.tracks.any((track) => track.isCapturing || track.pending),
+        isFalse,
+      );
+    },
+  );
+
+  check(
+    'a stored MIDI level mapping with a literal 1.0 top lands unity gain',
+    ExternalJackSetup.empty,
+    (r) {
+      r.midiValue(127, id: 30);
+      expect(
+        looper.mixSettingsSnapshot.trackLevels[0] ?? 1,
+        closeTo(1.0, 1e-6),
+      );
+      r.midiValue(0, id: 30);
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(0, 1e-6));
+      r.midiValue(127, id: 30);
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(1.0, 1e-6));
+    },
+    initialMidiRaw: jsonEncode({
+      'version': 1,
+      'enabled': true,
+      'mappings': [
+        MidiMapping(
+          id: 'stored',
+          source: MidiSource(
+            device: 'test-midi',
+            kind: ControllerSourceKind.midiCc,
+            number: 30,
+          ),
+          behavior: MidiBehavior.continuous,
+          controls: [
+            MidiParameterControl(
+              key: const TrackVolumeTarget(0).canonicalString(),
+              low: 0,
+              high: 1,
+            ),
+          ],
+        ).toJson(),
+      ],
+    }),
+  );
+
+  check(
+    'a literal 1.0 top authored on Track volume plays, shows and stores '
+    'unity',
+    ExternalJackSetup.empty,
+    (r) {
+      const volume = TrackVolumeTarget(0);
+      r
+        ..bindMidi(
+          controls: [
+            MidiParameterControl(
+              key: volume.canonicalString(),
+              low: 0,
+              high: 1,
+            ),
+          ],
+          behavior: MidiBehavior.continuous,
+        )
+        ..midiValue(127);
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(1.0, 1e-6));
+      final control =
+          r.cubit.state.midiMappings.mappings.single.controls.single
+              as MidiParameterControl;
+      expect(control.high, volume.mappingTop);
+      final stored = MidiMappingSet.fromJson(
+        (jsonDecode(r.store.values['midi.configuration']! as String)
+            as Map<String, dynamic>)['mappings'],
+      );
+      expect(
+        (stored.mappings.single.controls.single as MidiParameterControl).high,
+        volume.mappingTop,
+      );
+    },
+  );
+
+  check(
+    'with the power-off dialog open, a held External value survives looper '
+    'state, and the encoder still moves master gain until the flush',
+    button(
+      [],
+      parameters: [
+        ExternalParameter(
+          target: _param,
+          active: .8,
+          inactive: .2,
+          condition: ExternalValueCondition.heldReleased,
+        ),
+      ],
+    ),
+    (r) {
+      double drive() =>
+          (looper.trackEffects(0).single as BuiltInEffect).params[0];
+      r
+        ..sample(255)
+        ..settle();
+      expect(drive(), closeTo(.8, .0001));
+      r.powerOffUp = true;
+      // A looper state change while the dialog is up.
+      unawaited(r.mix.setTrackPan(.3));
+      r.settle();
+      expect(looper.mixSettingsSnapshot.trackPans[0], closeTo(.3, 1e-6));
+      expect(drive(), closeTo(.8, .0001), reason: 'the hold is kept');
+      final before = looper.masterGain;
+      r.cubit.encoderTurned(-8);
+      expect(looper.masterGain, lessThan(before));
+      final turned = looper.masterGain;
+      unawaited(r.cubit.flushMidiConfiguration(retireControls: true));
+      r
+        ..settle()
+        ..cubit.encoderTurned(-8);
+      expect(looper.masterGain, turned, reason: 'the flush suspends input');
     },
   );
 }

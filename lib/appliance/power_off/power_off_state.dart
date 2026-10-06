@@ -33,10 +33,17 @@ enum PowerOffPhase {
 /// State of [PowerOffCubit].
 class PowerOffState extends Equatable {
   /// Creates a [PowerOffState].
-  const PowerOffState({this.phase = PowerOffPhase.idle});
+  const PowerOffState({
+    this.phase = PowerOffPhase.idle,
+    this.retryFailed = false,
+  });
 
   /// Current phase.
   final PowerOffPhase phase;
+
+  /// In [PowerOffPhase.flushFailed], whether a Retry has failed too: only
+  /// then is Power off anyway offered.
+  final bool retryFailed;
 
   /// Any power-off UI is up — extra `KEY_POWER` is ignored.
   bool get isUiUp => phase != PowerOffPhase.idle;
@@ -50,5 +57,5 @@ class PowerOffState extends Equatable {
       phase == PowerOffPhase.saveFailed;
 
   @override
-  List<Object?> get props => [phase];
+  List<Object?> get props => [phase, retryFailed];
 }
