@@ -434,6 +434,9 @@ static int le_engine_reset_material(le_engine* engine,
   engine->rec_bpm = 0.0f;
   engine->rec_master_len = 0;
   store_i32(&engine->a_rec_master_len, 0);
+  engine->retime_len = 0;
+  engine->retime_frac = 0.0;
+  store_i32(&engine->a_retime_len, 0);
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
     /* Track transport: one lane active by default, empty, one base loop. */
