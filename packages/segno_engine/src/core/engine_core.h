@@ -243,18 +243,22 @@ int32_t le_push_cmd(le_engine* engine, le_command cmd);
  * 0 and republishes the state. Control thread, audio thread NOT running. */
 void le_backing_release(le_engine* engine, int keep_loaded);
 
-/* The backing decoder's offline converter (engine_backing.c, #1200 Part 2):
- * planar, out_frames must be le_resample_frames(in_frames, in_rate,
- * out_rate) = floor(in_frames * out_rate / in_rate); equal rates copy
- * bit-exactly; out_rate * 2 < in_rate is refused (halve first). LE_OK,
- * LE_ERR_INVALID (bad arguments, or more than 8192 rational phases),
- * LE_ERR_CAPACITY. Control or worker thread. */
+/* The decoder's offline converter (engine_decode.c, #1200 Part 2): one
+ * channel, strided input and output; out_frames must be
+ * le_resample_frames(in_frames, in_rate, out_rate) = floor(in_frames *
+ * out_rate / in_rate); equal rates copy exactly; out_rate * 2 < in_rate is
+ * refused (halve first). LE_OK, LE_ERR_INVALID (bad arguments, or more than
+ * 8192 rational phases), LE_ERR_CAPACITY. Control or worker thread. */
 int64_t le_resample_frames(int64_t in_frames, int32_t in_rate,
                            int32_t out_rate);
-int32_t le_resample_offline(const float* const* in, int32_t in_frames,
-                            int32_t channels, int32_t in_rate,
-                            float* const* out, int32_t out_frames,
+int32_t le_resample_offline(const float* in, int32_t in_stride,
+                            int32_t in_frames, int32_t in_rate, float* out,
+                            int32_t out_stride, int32_t out_frames,
                             int32_t out_rate);
+#ifdef LE_NATIVE_TESTS
+/* Overrides the decoder's MemAvailable reading (bytes; -1 = unknown). */
+extern int64_t (*le_test_mem_available_hook)(void);
+#endif
 
 /* One bounded timing read. refresh_cache is only true for full snapshots. */
 le_record_timing_readback le_record_timing_read(le_engine* engine,
