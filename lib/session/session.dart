@@ -1,7 +1,6 @@
-/// Session persistence feature: named-session catalog, export actions, and the
-/// Sessions-manager UI over the session repository.
+/// Session persistence feature: the session cubit over the session
+/// repository, and the quick Save's name prompt.
 library;
 
 export 'cubit/session_cubit.dart';
-export 'cubit/sessions_manager_cubit.dart';
-export 'view/sessions_manager_dialog.dart';
+export 'view/session_name_prompt.dart';

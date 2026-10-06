@@ -96,7 +96,7 @@
     },
     "deviceRestoredClearedBanner": "Device came back at {sampleRate} Hz instead of {previousRate} Hz — the loops were cleared. Reload the session to get them back.",
     "@deviceRestoredClearedBanner": {
-        "description": "Standing stage banner after a reconnect at another sample rate cleared every recorded loop (#1140). Its action opens the Sessions manager.",
+        "description": "Standing stage banner after a reconnect at another sample rate cleared every recorded loop (#1140). Its action opens the Library.",
         "placeholders": {
             "sampleRate": {
                 "type": "int"
@@ -157,14 +157,12 @@
     "sessionSaved": "Session saved",
     "sessionLoaded": "Session loaded",
     "sessionSave": "Save",
-    "sessionManage": "Sessions…",
     "sessionSaveAs": "Save as…",
     "sessionRename": "Rename",
     "sessionDelete": "Delete",
     "sessionDuplicate": "Duplicate",
     "sessionDuplicateTitle": "Duplicate as…",
     "sessionUnsaved": "Unsaved",
-    "sessionsManagerTitle": "Sessions",
     "sessionDateToday": "today {time}",
     "@sessionDateToday": {
         "description": "Sessions list date column for a session saved today; {time} is HH:MM.",
@@ -175,7 +173,6 @@
         }
     },
     "sessionDateYesterday": "yesterday",
-    "sessionsEmpty": "No saved sessions yet. Use “Save as…” to create one.",
     "sessionNewTitle": "Save as new session",
     "sessionRenameTitle": "Rename session",
     "sessionNameHint": "Session name",
@@ -3076,6 +3073,151 @@
     "stageLibrary": "Library",
     "@stageLibrary": {
         "description": "Accessible name of the top-bar Library icon."
+    },
+    "libraryTitle": "Library",
+    "@libraryTitle": {
+        "description": "Title of the full-screen Library page."
+    },
+    "librarySessions": "Sessions",
+    "@librarySessions": {
+        "description": "The Library crumb tab that lists saved sessions."
+    },
+    "libraryInternal": "Internal",
+    "@libraryInternal": {
+        "description": "Library location: the appliance's own storage."
+    },
+    "libraryUsb": "USB",
+    "@libraryUsb": {
+        "description": "Library location: a removable USB drive."
+    },
+    "libraryNewLoop": "New loop",
+    "@libraryNewLoop": {
+        "description": "Library action that starts an empty loop."
+    },
+    "librarySearchSessions": "Search sessions",
+    "@librarySearchSessions": {
+        "description": "Library search field placeholder and its keyboard title."
+    },
+    "libraryFolderAll": "All",
+    "@libraryFolderAll": {
+        "description": "Folder chip that shows every session."
+    },
+    "libraryFolderUnfiled": "Unfiled",
+    "@libraryFolderUnfiled": {
+        "description": "Folder chip for sessions in no folder."
+    },
+    "libraryCurrentSession": "Current session",
+    "@libraryCurrentSession": {
+        "description": "Meta line of the session open on the stage."
+    },
+    "librarySessionMeta": "{date} · {tracks}",
+    "@librarySessionMeta": {
+        "description": "Meta line of a saved session row: its saved date and track count.",
+        "placeholders": {
+            "date": {
+                "type": "String"
+            },
+            "tracks": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryTrackCount": "{count, plural, =0{no tracks} =1{1 track} other{{count} tracks}}",
+    "@libraryTrackCount": {
+        "description": "Recorded tracks in a saved session.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "libraryTempo": "{bpm} BPM",
+    "@libraryTempo": {
+        "description": "A saved session tempo.",
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryTrackName": "Track {number}",
+    "@libraryTrackName": {
+        "description": "A track in the session preview, numbered from 1.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "librarySecondsUnit": "sec",
+    "@librarySecondsUnit": {
+        "description": "Unit after a track length in seconds, when the session has no tempo."
+    },
+    "libraryTrackFx": "FX {count}",
+    "@libraryTrackFx": {
+        "description": "Chip with a preview track's effect count.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "libraryFooterFacts": "{fx} FX · {backing}",
+    "@libraryFooterFacts": {
+        "description": "Preview footer: effect count and backing tracks.",
+        "placeholders": {
+            "fx": {
+                "type": "int"
+            },
+            "backing": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryBackingCount": "{count, plural, =1{1 backing track} other{{count} backing tracks}}",
+    "@libraryBackingCount": {
+        "description": "Backing tracks in a saved session.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "libraryReturnToTracks": "Return to tracks",
+    "@libraryReturnToTracks": {
+        "description": "Preview footer action when the current session is selected."
+    },
+    "libraryOpenSession": "Open session",
+    "@libraryOpenSession": {
+        "description": "Preview footer action that opens the selected saved session."
+    },
+    "libraryConnectUsb": "Connect a USB drive",
+    "@libraryConnectUsb": {
+        "description": "USB location with no drive."
+    },
+    "libraryConnectUsbBody": "Your internal sessions are still available.",
+    "@libraryConnectUsbBody": {
+        "description": "Under the USB location heading with no drive."
+    },
+    "libraryNoSessions": "No saved sessions yet.",
+    "@libraryNoSessions": {
+        "description": "Session list with an empty catalog."
+    },
+    "libraryNoMatches": "No sessions match.",
+    "@libraryNoMatches": {
+        "description": "Session list when the search or folder chip hides every session."
+    },
+    "libraryNoSelection": "Choose a session to preview it.",
+    "@libraryNoSelection": {
+        "description": "Preview card with nothing selected."
+    },
+    "libraryPreviewUnreadable": "This session could not be read.",
+    "@libraryPreviewUnreadable": {
+        "description": "Preview card when the manifest does not decode."
+    },
+    "libraryNoTracks": "No recorded tracks.",
+    "@libraryNoTracks": {
+        "description": "Preview card of a session without recorded audio."
     },
     "stageSettings": "Settings",
     "stageViewMenu": "Performance view",

@@ -388,7 +388,7 @@ void showSessionOutcome(BuildContext context, SessionState state) {
     SessionStatus.success => switch (state.outcome) {
       SessionOutcome.saved => l10n.sessionSaved,
       SessionOutcome.loaded => l10n.sessionLoaded,
-      // The named-session outcomes surface through the Sessions manager UI (a
+      // The named-session outcomes surface through the Library (a
       // later part), which gives them their own messaging; no legacy SnackBar.
       SessionOutcome.renamed ||
       SessionOutcome.deleted ||
