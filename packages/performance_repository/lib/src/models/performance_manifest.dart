@@ -1,5 +1,6 @@
 import 'package:meta/meta.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
+import 'package:performance_repository/src/models/recording_format.dart';
 import 'package:segno_engine/segno_engine.dart';
 
 bool _requiredCapturePolicy(Object? value) {
@@ -672,6 +673,19 @@ class PerformanceManifest {
   /// Why capture stopped early (`disk_full` / `device_changed`), or `null`
   /// for a normal disarm.
   String? get stoppedEarly => native['stopped_early'] as String?;
+
+  /// The take's id (32 lower-case hex digits), from the native fields;
+  /// null for a capture written before takes had ids.
+  String? get takeId => native['take_id'] as String?;
+
+  /// Every recorded part of every stream, in the order the native drain
+  /// listed them; empty for a capture written before ordered parts.
+  ///
+  /// Throws [FormatException] for a malformed entry.
+  List<TakePart> get parts => [
+    for (final p in (native['parts'] as List<dynamic>? ?? const []))
+      TakePart.fromJson(p as Map<String, dynamic>),
+  ];
 
   /// Every retired overdub layer's raw PCM file (part 5), from the native
   /// fields.
