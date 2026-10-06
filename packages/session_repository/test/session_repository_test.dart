@@ -46,6 +46,7 @@ void main() {
                 outputMask: 3,
                 inputChannel: 0,
                 layers: [SessionLayer(file: 'missing.wav')],
+                history: TrackHistory.none,
               ),
             ],
           ),
@@ -856,6 +857,119 @@ void main() {
       expect(bundle.laneStems[(0, 0)], [undo0, live, redo0]);
     },
   );
+
+  test(
+    'save then read round-trips a redo-side Peel marker and a restoration '
+    'entry with their kinds (#1164)',
+    () async {
+      // Undo side: a loop-close restoration's raw take, then the
+      // conditioned image beneath one overdub. Redo side: that overdub's
+      // undone Peel (a marker, no image) above the live image.
+      final original = Float32List.fromList([1, 1, 1, 1]);
+      final raw = Float32List.fromList([1.5, 1.5, 1.5, 1.5]);
+      final live = Float32List.fromList([.125, .125, .125, .125]);
+      const history = [
+        HistoryEntry(HistoryKind.processed),
+        HistoryEntry(HistoryKind.layer),
+        HistoryEntry(HistoryKind.peel),
+      ];
+      final source = FakeSessionEngine()
+        ..seedLayers(
+          0,
+          [original, raw, live],
+          undoDepth: 2,
+          redoDepth: 1,
+          history: history,
+        );
+      final dir = '${tempDir.path}/peel_history';
+      await repoFor(source).save(dir, settings: const SessionSettings());
+
+      // Three images for three entries plus live: the marker takes none.
+      expect(File('$dir/track0_lane0_L2.wav').existsSync(), isTrue);
+      expect(File('$dir/track0_lane0_L3.wav').existsSync(), isFalse);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      final lane = bundle.session.tracks.single.lanes.single;
+      expect(lane.history.entries, history);
+      expect(lane.undoCount, 2);
+      expect(lane.redoCount, 1);
+      expect(lane.liveIndex, 2);
+      expect(bundle.laneStems[(0, 0)], [original, raw, live]);
+    },
+  );
+
+  test(
+    'save splits the history by the raw undo count while the published '
+    'undo depth reads 0 (#1164 review finding 1)',
+    () async {
+      // Undo restored a Clear: the audio side applied it, but no drain has
+      // republished the depth yet, so the snapshot still reads 0 while the
+      // stacks hold two undo entries and the Clear point on the redo side.
+      final undo0 = Float32List.fromList([1, 1, 1, 1]);
+      final undo1 = Float32List.fromList([1.5, 1.5, 1.5, 1.5]);
+      final live = Float32List.fromList([2, 2, 2, 2]);
+      final clear = Float32List.fromList([2, 2, 2, 2]);
+      const history = [
+        HistoryEntry(HistoryKind.layer),
+        HistoryEntry(HistoryKind.layer),
+        HistoryEntry(HistoryKind.clear),
+      ];
+      final source = FakeSessionEngine()
+        ..seedLayers(
+          0,
+          [undo0, undo1, live, clear],
+          undoDepth: 2,
+          redoDepth: 1,
+          publishedUndoDepth: 0,
+          history: history,
+        );
+      final dir = '${tempDir.path}/gated_depth';
+      final saved = await repoFor(
+        source,
+      ).save(dir, settings: const SessionSettings());
+
+      // The track is saved, not dropped, with the live image at ordinal 2.
+      expect(saved.tracks, hasLength(1));
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      final lane = bundle.session.tracks.single.lanes.single;
+      expect(lane.history, const TrackHistory(history, undoCount: 2));
+      expect(lane.liveIndex, 2);
+      expect(bundle.laneStems[(0, 0)], [undo0, undo1, live, clear]);
+    },
+  );
+
+  test('read rejects a history that names more images than the bundle '
+      'stores', () async {
+    final source = FakeSessionEngine()
+      ..seedLayers(
+        0,
+        [
+          Float32List.fromList([1, 1, 1, 1]),
+          Float32List.fromList([2, 2, 2, 2]),
+        ],
+        undoDepth: 1,
+        redoDepth: 1,
+        history: const [
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.peel),
+        ],
+      );
+    final dir = '${tempDir.path}/corrupt_history';
+    await repoFor(source).save(dir, settings: const SessionSettings());
+    final file = File('$dir/${Session.manifestName}');
+    final manifest = jsonDecode(await file.readAsString()) as Map;
+    final lane = ((manifest['tracks'] as List).single as Map)['lanes'] as List;
+    // The marker relabelled as an overdub image the bundle does not hold.
+    ((lane.single as Map)['history'] as List)[1] = {
+      'kind': 'layer',
+      'skipped': 0,
+    };
+    await file.writeAsString(jsonEncode(manifest));
+    await expectLater(
+      repoFor(FakeSessionEngine()).read(dir),
+      throwsA(isA<SessionCorruptLayers>()),
+    );
+  });
 
   test('re-saving with fewer layers prunes the orphaned layer WAVs', () async {
     final dir = '${tempDir.path}/prune';

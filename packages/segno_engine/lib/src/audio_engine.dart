@@ -4,6 +4,7 @@ import 'package:segno_engine/src/audio_device.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
+import 'package:segno_engine/src/history_entry.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
@@ -1271,27 +1272,37 @@ abstract interface class SessionIo {
   /// [EngineResult.invalid] if the track is not empty.
   EngineResult importTrackLane(int channel, int lane, Float32List pcm);
 
-  /// Copies track [channel]'s lane [lane] overdub layer at [ordinal] out for
+  /// Copies track [channel]'s lane [lane] history image at [ordinal] out for
   /// session export, or an empty list for an empty layer / out-of-range
-  /// argument. Ordinals run oldest→newest: `[0, undoDepth)` are the undo
-  /// snapshots, `undoDepth` is the live buffer, then the redo snapshots.
-  /// Read-only — call when not capturing.
+  /// argument. Ordinals run oldest→newest: `[0, undoCount)` are the undo
+  /// snapshots, `undoCount` is the live buffer, then the redo snapshots; a
+  /// redo-side Peel marker holds no image and takes no ordinal
+  /// ([exportHistory], [TrackHistory.imageCount]). Read-only — call when not
+  /// capturing.
   Float32List exportLayer(int channel, int lane, int ordinal);
 
-  /// Stages [pcm] as track [channel]'s lane [lane] layer at [ordinal] into an
+  /// Lists track [channel]'s history in image-ordinal order with its raw
+  /// split ([TrackHistory.undoCount]): split the images by that count, never
+  /// by the snapshot's `undoDepth`, which reads 0 while a Clear restore is in
+  /// flight. [TrackHistory.none] for an out-of-range [channel]. Read-only.
+  TrackHistory exportHistory(int channel);
+
+  /// Stages [pcm] as track [channel]'s lane [lane] image at [ordinal] into an
   /// EMPTY track (the ordinal is the pool slot). Call once per `(lane,
-  /// ordinal)` with ordinals contiguous from 0, then [finalizeLayers], then
+  /// ordinal)` with ordinals contiguous from 0, then [finalizeHistory], then
   /// [commitSession]. Returns [EngineResult.invalid] for a non-empty track or
   /// an out-of-range ordinal.
   EngineResult importLayer(int channel, int lane, int ordinal, Float32List pcm);
 
-  /// Publishes a track reconstructed via [importLayer]: rebuilds the undo/redo
-  /// stacks and points playback at the live buffer (layer [undoCount]), every
-  /// active lane in lockstep. `undoCount + 1 + redoCount` layers must already
-  /// be staged on every active lane. Returns [EngineResult.invalid] for a
-  /// non-empty track, a layer count past the pool cap, or a torn (missing-slot
-  /// or mismatched-length) reconstruction.
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount);
+  /// Publishes a track reconstructed via [importLayer] with its [history]
+  /// ([exportHistory] order): rebuilds the undo/redo stacks with their kinds
+  /// and points playback at the live image (ordinal
+  /// [TrackHistory.undoCount]), every active lane in lockstep.
+  /// [TrackHistory.imageCount] images must already be staged on every active
+  /// lane at one length. Returns [EngineResult.invalid] for a non-empty
+  /// track, a history the engine could not hold ([TrackHistory.malformation]),
+  /// or a torn (missing-image or mismatched-length) reconstruction.
+  EngineResult finalizeHistory(int channel, TrackHistory history);
 
   /// Establishes the master loop at [baseFrames] and leaves every imported
   /// track stopped at its whole-loop multiple. Launch with [AudioEngine.play].
