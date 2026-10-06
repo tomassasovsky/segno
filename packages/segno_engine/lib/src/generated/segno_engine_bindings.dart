@@ -5323,10 +5323,14 @@ class SegnoEngineBindings {
   /// the live buffer is slot `undo_count`, and a redo-side peel entry becomes a
   /// marker without an image; every active lane is republished in lockstep with
   /// its undo, redo and peel depths. Strict: LE_ERR_INVALID for a non-EMPTY
-  /// track, an unknown kind, a negative `skipped` or a nonzero one on a kind other
-  /// than peel, a clear restore point on the undo side, more images than
-  /// LE_POOL_SLOTS, or a torn reconstruction (an image ordinal not staged on every
-  /// active lane, or lanes at different lengths). Returns LE_OK otherwise.
+  /// track, an unknown kind, a `skipped` outside [0, LE_POOL_SLOTS) or nonzero on
+  /// a kind other than peel, a clear restore point anywhere but the last entry
+  /// on the redo side, an undo-side peel whose `skipped` exceeds the run of peel
+  /// entries directly beneath it (unless that run reaches the bottom: pool
+  /// eviction), a redo-side peel marker that would find no layer to peel when
+  /// Redo reaches it, more images than LE_POOL_SLOTS, or a torn reconstruction
+  /// (an image ordinal not staged on every active lane, or lanes at different
+  /// lengths). Returns LE_OK otherwise.
   int le_engine_finalize_history(
     ffi.Pointer<le_engine> engine,
     int channel,
