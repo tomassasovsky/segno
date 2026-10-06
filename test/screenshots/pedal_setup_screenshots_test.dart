@@ -12,6 +12,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_page.dart';
@@ -120,21 +121,26 @@ void main() {
     final pedal = PedalRepository(NoopPedalLink());
     final pedalCubit = PedalCubit(pedal: pedal);
     addTearDown(() => unawaited(pedalCubit.close()));
+    final ownedFade = testFadeSettings();
     final control = ControlCubit(
-      fadeSettings: testFadeSettings(),
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
-      recordLengthControl: FakeRecordLengthControl(),
-      recordTimingControl: FakeRecordTimingControl(),
-      clickVolumeControl: FakeClickVolumeControl(),
-      clickModeControl: FakeClickModeControl(),
-      recordStartControl: FakeRecordStartControl(),
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,
       pedal: pedal,
       settings: settings,
       performance: performance,
+      fadeSettings: ownedFade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: FakeRecordStartControl(),
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: ownedFade,
+      ),
     );
     final tracks = TracksCubit(settings: settings);
     addTearDown(() => unawaited(control.close()));

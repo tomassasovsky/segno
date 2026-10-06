@@ -1,13 +1,7 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
-import 'package:segno/looper/model/click_mode.dart';
-import 'package:segno/looper/model/one_shot.dart';
-import 'package:segno/looper/model/overdub_decay.dart';
-import 'package:segno/looper/model/record_length.dart';
-import 'package:segno/looper/model/record_start.dart';
-import 'package:segno/looper/model/record_timing.dart';
-import 'package:settings_repository/settings_repository.dart';
+import 'package:segno/control/binding/owned_value_control.dart';
 
 /// Resolves a typed [ControlValueTarget] against the live rig — the app-side
 /// half of the continuous binding model, and the twin of part 6b's
@@ -37,16 +31,7 @@ extension ControlValueResolver on LooperRepository {
   /// their parameters are addressed by plugin-assigned id rather than position
   /// and have no setter at every stage, so v1 leaves them to the on-screen
   /// controls.
-  List<ControlValueTarget> availableValueTargets({
-    ClickModeSnapshot? clickModeSnapshot,
-    double? clickVolume,
-    DecaySnapshot? decaySnapshot,
-    FadeDurations? fadeDurations,
-    OneShotSnapshot? oneShotSnapshot,
-    RecordLengthSnapshot? recordLengthSnapshot,
-    RecordStartSnapshot? recordStartSnapshot,
-    RecordTimingSnapshot? recordTimingSnapshot,
-  }) {
+  List<ControlValueTarget> availableValueTargets({OwnedValueReadout? owned}) {
     final targets = <ControlValueTarget>[];
     void add(FxAddress address, List<TrackEffect> entries) {
       for (final fx in entries) {
@@ -88,38 +73,8 @@ extension ControlValueResolver on LooperRepository {
       add(FxAddress(stage: FxStage.output, index: bus), outputEffects(bus));
     }
     targets.addAll(availableMixValueTargets());
-    if (clickVolume != null) targets.add(const ClickVolumeTarget());
-    if (clickModeSnapshot != null) targets.add(const ClickModeValueTarget());
-    if (recordStartSnapshot != null) targets.add(const CountInValueTarget());
-    if (decaySnapshot != null) {
-      targets.add(const DefaultDecayTarget());
-      for (var channel = 0; channel < 8; channel++) {
-        targets.add(TrackDecayTarget(channel));
-      }
-    }
-    if (oneShotSnapshot != null) {
-      targets.add(const DefaultOneShotTarget());
-      for (var channel = 0; channel < 8; channel++) {
-        targets.add(TrackOneShotTarget(channel));
-      }
-    }
-    if (recordLengthSnapshot != null) {
-      targets.add(const DefaultRecordLengthTarget());
-      for (var channel = 0; channel < 8; channel++) {
-        targets.add(TrackRecordLengthTarget(channel));
-      }
-    }
-    if (recordTimingSnapshot != null) {
-      targets.add(const DefaultRecordTimingTarget());
-      for (var channel = 0; channel < 8; channel++) {
-        targets.add(TrackRecordTimingTarget(channel));
-      }
-    }
-    if (fadeDurations != null) {
-      targets.add(const DefaultFadeTarget());
-      for (var channel = 0; channel < 8; channel++) {
-        targets.add(TrackFadeTarget(channel));
-      }
+    if (owned != null) {
+      targets.addAll(ownedValueTargets.where(owned.resolves));
     }
     // The master output always exists, so it is always offerable.
     targets.add(const MasterGainTarget());
@@ -164,14 +119,7 @@ extension ControlValueResolver on LooperRepository {
   /// Whether [target] names something that exists in the live rig.
   bool valueTargetResolves(
     ControlValueTarget target, {
-    ClickModeSnapshot? clickModeSnapshot,
-    double? clickVolume,
-    DecaySnapshot? decaySnapshot,
-    FadeDurations? fadeDurations,
-    OneShotSnapshot? oneShotSnapshot,
-    RecordLengthSnapshot? recordLengthSnapshot,
-    RecordStartSnapshot? recordStartSnapshot,
-    RecordTimingSnapshot? recordTimingSnapshot,
+    OwnedValueReadout? owned,
   }) => switch (target) {
     FxParamTarget() => _paramSlot(target) != null,
     TrackVolumeTarget(:final channel) ||
@@ -189,17 +137,7 @@ extension ControlValueResolver on LooperRepository {
     OutputLevelTarget(:final bus) ||
     OutputBalanceTarget(:final bus) => bus >= 0 && bus < state.outputBusCount,
     MasterGainTarget() => true,
-    ClickModeValueTarget() => clickModeSnapshot != null,
-    CountInValueTarget() => recordStartSnapshot != null,
-    ClickVolumeTarget() => clickVolume != null,
-    DecayValueTarget() => decaySnapshot != null && target.isStructurallyValid,
-    OneShotValueTarget() =>
-      oneShotSnapshot != null && target.isStructurallyValid,
-    RecordLengthValueTarget() =>
-      recordLengthSnapshot != null && target.isStructurallyValid,
-    RecordTimingValueTarget() =>
-      recordTimingSnapshot != null && target.isStructurallyValid,
-    FadeValueTarget() => fadeDurations != null && target.isStructurallyValid,
+    OwnedValueTarget() => owned?.resolves(target) ?? false,
   };
 
   /// The value [target] holds now (normalized `0..1`), or `null` when it does
@@ -209,58 +147,12 @@ extension ControlValueResolver on LooperRepository {
   /// adding the mapping invents no sound change.
   double? readValueTarget(
     ControlValueTarget target, {
-    ClickModeSnapshot? clickModeSnapshot,
-    double? clickVolume,
-    DecaySnapshot? decaySnapshot,
-    FadeDurations? fadeDurations,
-    OneShotSnapshot? oneShotSnapshot,
-    RecordLengthSnapshot? recordLengthSnapshot,
-    RecordStartSnapshot? recordStartSnapshot,
-    RecordTimingSnapshot? recordTimingSnapshot,
+    OwnedValueReadout? owned,
   }) => switch (target) {
     FxParamTarget(:final param) => _paramSlot(target)?.effect.params[param],
     MixValueTarget() => _readMixValue(target),
     MasterGainTarget() => masterGain,
-    ClickModeValueTarget() =>
-      clickModeSnapshot == null
-          ? null
-          : target.fromDomain(clickModeSnapshot.mode),
-    CountInValueTarget() =>
-      recordStartSnapshot == null
-          ? null
-          : target.fromDomain(recordStartSnapshot.settings.countInBars),
-    ClickVolumeTarget() =>
-      clickVolume == null ? null : target.fromDomain(clickVolume),
-    DecayValueTarget() =>
-      decaySnapshot == null || !target.isStructurallyValid
-          ? null
-          : target.fromDomain(decaySnapshot.effectivePercent(target.address)),
-    OneShotValueTarget() =>
-      oneShotSnapshot == null || !target.isStructurallyValid
-          ? null
-          : target.fromDomain(
-              oneShot: oneShotSnapshot.effectiveOneShot(target.address),
-            ),
-    RecordLengthValueTarget() =>
-      recordLengthSnapshot == null || !target.isStructurallyValid
-          ? null
-          : target.fromDomain(
-              recordLengthSnapshot.effectiveBars(target.address),
-            ),
-    RecordTimingValueTarget() =>
-      recordTimingSnapshot == null || !target.isStructurallyValid
-          ? null
-          : target.fromDomain(
-              recordTimingSnapshot.effectiveTiming(target.address),
-            ),
-    FadeValueTarget(:final channel) =>
-      fadeDurations == null || !target.isStructurallyValid
-          ? null
-          : target.fromDomain(
-              channel == null
-                  ? fadeDurations.defaultMs
-                  : fadeDurations.effectiveMs(channel),
-            ),
+    OwnedValueTarget() => owned?.read(target),
   };
 
   bool _trackExists(int channel) =>

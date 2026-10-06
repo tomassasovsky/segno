@@ -13,6 +13,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
@@ -316,21 +317,25 @@ void main() {
     final fade = testFadeSettings();
     addTearDown(() => unawaited(fade.close()));
     control = ControlCubit(
-      fadeSettings: fade,
       looper: looper,
-      clickVolumeControl: tempo,
-      clickModeControl: tempo,
-      recordStartControl: tempo,
-      decayControl: playback,
-      oneShotControl: playback,
-      recordLengthControl: record,
-      recordTimingControl: timingOwner,
       pedal: pedal,
       settings: settings,
       performance: performance,
       mixSettings: mix,
       fxPersistence: FxChainPersistence(looper: looper),
       midiDevices: devices,
+      fadeSettings: fade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: tempo,
+        clickMode: tempo,
+        recordStart: tempo,
+        decay: playback,
+        oneShot: playback,
+        recordLength: record,
+        recordTiming: timingOwner,
+        fade: fade,
+      ),
     );
     final tracks = TracksCubit(settings: settings);
     final midi = MidiSetupCubit(repository: devices);
