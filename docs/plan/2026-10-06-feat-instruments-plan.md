@@ -572,8 +572,16 @@ nothing old replays (`:386-387`).
 Each part is independently mergeable, keeps the app working and shows no
 unfinished destination: nothing reaches the UI before Part 6. Production-line
 estimates exclude tests, bench tooling, generated bindings, assets and docs.
-Command codes and fact codes are assigned at rebase, never in this text (the
-pitch/time plan's E13 rule).
+Engine numbers come from the central ledger (main session, 2026-10-06):
+instruments own commands 96-111, perf-log facts 336-339 and result codes -14
+and -15. Part 2a takes commands 96-99 (`LE_CMD_SET_INSTRUMENT`,
+`LE_CMD_INSTRUMENT_CUT_SLOT` if a separate cut proves necessary, two spare),
+Part 2b takes 100-103 (port reset and route-flip acknowledgement); 104-111
+stay reserved. `LE_ERR_NO_INSTRUMENT = -14` refuses a route or monitor on an
+empty instrument slot; `LE_ERR_UNKNOWN_PATCH = -15` refuses a patch index the
+build does not define. Facts 336-339 are reserved for instrument note
+provenance in performance stems, which no part here logs yet. The Session
+schema number is assigned at landing (Part 5).
 
 ### Part 1. Measured synthesis spike: voice TU, patch table, bench (about 550 production lines)
 
@@ -602,8 +610,9 @@ the appliance cost of the voice pool is measured before any engine change.
      (`sub` release 30 → 0.08 + 0.30 × 2.4 = 0.80 s) plus one block later every
      sample of the bus is exactly `0.0f` and the active count is 0;
    - velocity 64 peak within 1 % of 64/127 of the velocity-127 peak (`sub`);
-   - `drums` note 36: zero crossings in the first 10 ms correspond to
-     135 ± 10 Hz and in 100-150 ms to 47 ± 5 Hz; a note-off changes nothing;
+   - `drums` note 36: the first period measures 135 ± 4 Hz and the
+     zero crossings over 0.40-0.70 s measure 47 ± 2 Hz (default decay 40 gives
+     a 0.722 s hit whose 135 to 47 Hz sweep ends at half of it); a note-off changes nothing;
      note 60 renders exact silence;
    - pool: 33 note-ons on one instrument with a 32 pool leave 32 active and 1
      fading; the oldest origin is the one stolen; after 3 ms that voice adds
@@ -659,8 +668,8 @@ the excluded and clip masks. API: `le_engine_set_instrument(e, slot,
 patch_index or -1, params[3])` (a command; the snapshot reports the applied
 patch), `le_engine_set_instrument_param(e, slot, index, value)` (atomic
 store, read once per block), `le_engine_instrument_event(e, const
-le_inst_event*)` (pushes `inst_ring`, returns `LE_ERR_FULL` when full and
-counts it). `handle_cut_sound` (`:2201`) moves every voice to a 3 ms fade and
+le_inst_event*)` (pushes `inst_ring`, returns the existing `LE_ERR_CAPACITY` when
+full and counts it). `handle_cut_sound` (`:2201`) moves every voice to a 3 ms fade and
 clears sustain and expression. Configure re-initializes the synth for the new
 rate. Snapshot: per instrument `{patch, active_voices, sustained, active_notes
 [4 × u32], bend, mod, pressure, peak, events_dropped}` and pool counters.
@@ -712,7 +721,7 @@ Linux backend converts `SND_SEQ_EVENT_PITCHBEND` and `SND_SEQ_EVENT_CHANPRESS`
 port)`, `le_engine_detach_midi_input(e, port)`,
 `le_engine_set_instrument_routes(e, const le_inst_routes*)` (copies into the
 inactive slot once the audio thread acknowledged the previous flip; returns
-`LE_ERR_BUSY` otherwise and the caller retries on the next snapshot).
+the existing `LE_ERR_NOT_READY` otherwise and the caller retries on the next snapshot).
 Sustain contributors in the synth: per instrument a 16-bit channel mask per
 port and a 32-bit token mask for Dart contributors; latch versus held is a
 Dart concern (Part 3b), the engine only sees contributor on and off.
@@ -742,7 +751,7 @@ without the change:
 - ring overflow: 300 events in one block play the first 256 now, the rest in
   the next block, and the counter reports 44 deferred;
 - routes publish: a second publish before the acknowledgement returns
-  `LE_ERR_BUSY`; under ASAN a publish racing the callback for 10⁵ blocks
+  `LE_ERR_NOT_READY`; under ASAN a publish racing the callback for 10⁵ blocks
   never reads a half-written table (`test_engine_races.c` pattern).
 
 ```success-criteria
