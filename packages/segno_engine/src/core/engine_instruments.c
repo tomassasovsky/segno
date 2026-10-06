@@ -45,7 +45,12 @@ enum {
   LE_INST_SET_PATCH = 3, /* note = patch index, or LE_INST_NO_PATCH */
   LE_INST_SUSTAIN_ON = 4,
   LE_INST_SUSTAIN_OFF = 5, /* release lane */
+  LE_INST_CHORD_NOTE_ON = 6, /* a chord's later note: no repeated strike */
 };
+
+/* The public pool bound is the synth's. */
+_Static_assert(LE_INST_MAX_VOICES == LE_SYNTH_MAX_VOICES,
+               "LE_INST_MAX_VOICES is the synth pool");
 
 /* MIDI origins: tag bit clear, port (3 bits), channel (4), kind (1: note 0,
  * controller 1), number (7). Control origins set the tag bit. */
@@ -159,10 +164,14 @@ void le_instruments_reset(le_engine* e, int32_t sample_rate) {
   atomic_store_explicit(&e->a_inst_sustain_refused, 0u, memory_order_relaxed);
   memset(e->inst_routes, 0, sizeof(e->inst_routes));
   memset(e->inst_remap_index, 0, sizeof(e->inst_remap_index));
+  memset(e->inst_remap_insts, 0, sizeof(e->inst_remap_insts));
+  memset(e->inst_remap_first, 0, sizeof(e->inst_remap_first));
   store_i32(&e->a_inst_routes_live, 0);
   store_i32(&e->a_inst_routes_seen, 0);
   e->inst_routes_active = &e->inst_routes[0];
   e->inst_remap_active = e->inst_remap_index[0];
+  e->inst_remap_insts_active = e->inst_remap_insts[0];
+  e->inst_remap_first_active = e->inst_remap_first[0];
   memset(e->inst_expr_port, -1, sizeof(e->inst_expr_port));
   atomic_fetch_add_explicit(&e->a_synth_epoch, 1u, memory_order_release);
 }
@@ -276,6 +285,37 @@ LE_EXPORT int32_t le_engine_instrument_note_on(le_engine* engine, int32_t slot,
   return LE_OK;
 }
 
+LE_EXPORT int32_t le_engine_instrument_chord_on(le_engine* engine,
+                                                int32_t slot, uint32_t origin,
+                                                const int32_t* notes,
+                                                int32_t count,
+                                                int32_t velocity) {
+  if (engine == NULL || slot < 0 || slot >= LE_MAX_INSTRUMENTS ||
+      notes == NULL || count < 1 || count > LE_INST_CHORD_NOTES ||
+      velocity < 1 || velocity > 127) {
+    return LE_ERR_INVALID;
+  }
+  for (int32_t n = 0; n < count; ++n) {
+    if (notes[n] < 0 || notes[n] > 127) return LE_ERR_INVALID;
+  }
+  if (!configured(engine)) return LE_ERR_NOT_RUNNING;
+  if (engine->inst_patch_requested[slot] < 0) return LE_ERR_NO_INSTRUMENT;
+  /* all or nothing, keeping room for one patch change per slot */
+  if (ring_free(&engine->inst_ring) <= (uint32_t)(LE_MAX_INSTRUMENTS + count - 1)) {
+    atomic_fetch_add_explicit(&engine->a_inst_events_refused, 1u,
+                              memory_order_relaxed);
+    return LE_ERR_CAPACITY;
+  }
+  for (int32_t n = 0; n < count; ++n) {
+    /* the first note is an ordinary strike (it replaces the origin's held
+     * voice), the others join it */
+    push_event(engine, &engine->inst_ring, origin | LE_INST_CONTROL_ORIGIN,
+               n == 0 ? LE_INST_NOTE_ON : LE_INST_CHORD_NOTE_ON, (uint8_t)slot,
+               (uint8_t)notes[n], (uint8_t)velocity);
+  }
+  return LE_OK;
+}
+
 LE_EXPORT int32_t le_engine_instrument_note_off(le_engine* engine,
                                                 uint32_t origin) {
   if (engine == NULL) return LE_ERR_INVALID;
@@ -354,12 +394,17 @@ LE_EXPORT int32_t le_engine_set_instrument_routes(le_engine* engine,
   const int32_t next = 1 - live;
   engine->inst_routes[next] = *routes;
   uint16_t(*index)[2][128] = engine->inst_remap_index[next];
+  uint8_t(*insts)[2][128] = engine->inst_remap_insts[next];
+  uint8_t(*first)[LE_MAX_MIDI_PORTS][2][128] = engine->inst_remap_first[next];
   memset(index, 0, sizeof(engine->inst_remap_index[next]));
+  memset(insts, 0, sizeof(engine->inst_remap_insts[next]));
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
-    for (int m = 0; m < routes->inst[k].remap_count; ++m) {
+    for (int m = routes->inst[k].remap_count - 1; m >= 0; --m) {
       const le_inst_remap* x = &routes->inst[k].remaps[m];
       index[x->port][x->kind][x->number] |=
           x->channel == 0 ? 0xFFFFu : (uint16_t)(1u << (x->channel - 1));
+      insts[x->port][x->kind][x->number] |= (uint8_t)(1u << k);
+      first[k][x->port][x->kind][x->number] = (uint8_t)m; /* lowest wins */
     }
   }
   /* Release: the callback that loads `next` sees the whole table. */
@@ -393,11 +438,45 @@ void le_instruments_apply_command(le_engine* e, const le_command* cmd) {
 
 /* ---- MIDI routing (audio thread, from le_midi_ports_drain) ---- */
 
+/* An instrument whose MIDI `next` turns off or moves to another port or
+ * channel: the old port's notes and sustain on it end as at a Note Off, and
+ * the expression MIDI set on it returns to neutral, as the reference's
+ * silenceController does. Range and remap edits leave held notes to their
+ * own release. `prev` is intact here: the control thread cannot overwrite
+ * it before this block acknowledges `next`. */
+static void retire_moved_routes(le_engine* e, const le_inst_routes* prev,
+                                const le_inst_routes* next) {
+  le_synth* s = (le_synth*)e->synth;
+  if (s == NULL) return;
+  for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+    const le_inst_route* was = &prev->inst[k];
+    const le_inst_route* now = &next->inst[k];
+    if (!was->midi_enabled ||
+        (now->midi_enabled && now->port == was->port &&
+         now->channel == was->channel)) {
+      continue;
+    }
+    le_synth_release_matching(s, k, LE_INST_PORT_MASK, (uint32_t)was->port << 24);
+    for (int x = 0; x < 3; ++x) {
+      if (e->inst_expr_port[k][x] >= 0) {
+        le_synth_expression(s, k, x, 0.0f);
+        e->inst_expr_port[k][x] = -1;
+      }
+    }
+  }
+}
+
 void le_instruments_midi_begin(le_engine* e) {
   const int32_t live =
       atomic_load_explicit(&e->a_inst_routes_live, memory_order_acquire);
+  const le_inst_routes* prev = e->inst_routes_active;
+  if (prev != NULL && prev != &e->inst_routes[live]) {
+    retire_moved_routes(e, prev, &e->inst_routes[live]);
+  }
   e->inst_routes_active = &e->inst_routes[live];
   e->inst_remap_active = e->inst_remap_index[live];
+  e->inst_remap_insts_active = e->inst_remap_insts[live];
+  e->inst_remap_first_active = e->inst_remap_first[live];
   /* Release: every read of the previous table (earlier blocks) happens
    * before the control thread may overwrite it. */
   atomic_store_explicit(&e->a_inst_routes_seen, live, memory_order_release);
@@ -406,7 +485,7 @@ void le_instruments_midi_begin(le_engine* e) {
 void le_instruments_midi_gone(le_engine* e, int32_t port) {
   le_synth* s = (le_synth*)e->synth;
   if (s == NULL) return;
-  le_synth_release_matching(s, LE_INST_PORT_MASK, (uint32_t)port << 24);
+  le_synth_release_matching(s, -1, LE_INST_PORT_MASK, (uint32_t)port << 24);
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
     for (int x = 0; x < 3; ++x) {
       if (e->inst_expr_port[k][x] == port) {
@@ -421,10 +500,10 @@ static int channel_matches(int32_t want, int32_t ch) {
   return want == 0 || want == ch + 1;
 }
 
-static const le_inst_remap* find_remap(const le_inst_route* q, int32_t port,
-                                       int32_t ch, int32_t kind,
+static const le_inst_remap* find_remap(const le_inst_route* q, int first,
+                                       int32_t port, int32_t ch, int32_t kind,
                                        int32_t number) {
-  for (int m = 0; m < q->remap_count; ++m) {
+  for (int m = first; m < q->remap_count; ++m) {
     const le_inst_remap* x = &q->remaps[m];
     if (x->port == port && channel_matches(x->channel, ch) && x->kind == kind &&
         x->number == number) {
@@ -474,18 +553,24 @@ void le_instruments_midi_event(le_engine* e, int32_t port,
     le_synth_sustain_off(s, origin); /* a CC64 let go */
   }
   if (!note_on && !cc && type != 0xE0 && type != 0xD0) return;
-  /* can any instrument's remap match this message? */
-  const int remapped =
-      (note_on || cc) && (e->inst_remap_active[port][kind][d1] >> ch) & 1u;
-  /* a switch-like controller already held does not strike again */
-  if (remapped && cc && d2 >= 64 && le_synth_held(s, origin)) return;
+  /* which instruments' remaps can match this message (none: no scan) */
+  const uint32_t remapped =
+      (note_on || cc) && (e->inst_remap_active[port][kind][d1] >> ch) & 1u
+          ? e->inst_remap_insts_active[port][kind][d1]
+          : 0u;
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
     const le_inst_route* q = &e->inst_routes_active->inst[k];
     if (!q->midi_enabled || s->inst[k].patch < 0) continue;
-    if (remapped) {
-      const le_inst_remap* x = find_remap(q, port, ch, kind, d1);
+    if ((remapped >> k) & 1u) {
+      const le_inst_remap* x = find_remap(
+          q, e->inst_remap_first_active[k][port][kind][d1], port, ch, kind, d1);
       if (x != NULL) {
-        if (note_on || d2 >= 64) play_remap(s, k, x, origin, note_on ? d2 : 100);
+        /* a switch-like controller already held on this instrument does not
+         * strike again (review L1: only here, never for the others) */
+        const int repeat = cc && le_synth_held(s, k, origin);
+        if ((note_on || d2 >= 64) && !repeat) {
+          play_remap(s, k, x, origin, note_on ? d2 : 100);
+        }
         continue; /* a remap replaces the ordinary handling (no CC64 sustain) */
       }
     }
@@ -540,6 +625,9 @@ static void apply_event(le_engine* e, le_synth* s, const le_inst_event* ev) {
     case LE_INST_NOTE_ON:
       le_synth_note_on(s, ev->slot, ev->origin, ev->note, ev->velocity);
       break;
+    case LE_INST_CHORD_NOTE_ON:
+      le_synth_note_on_chord(s, ev->slot, ev->origin, ev->note, ev->velocity);
+      break;
     case LE_INST_NOTE_OFF:
       le_synth_note_off(s, ev->origin);
       break;
@@ -589,13 +677,23 @@ static void drain_events(le_engine* e, le_synth* s) {
 }
 
 void le_instruments_block(le_engine* e, uint32_t frames) {
+  le_instruments_apply(e);
+  le_instruments_render(e, frames);
+}
+
+void le_instruments_apply(le_engine* e) {
+  le_synth* s = (le_synth*)e->synth;
+  if (s == NULL) return;
+  apply_params(e, s);
+  drain_events(e, s);
+}
+
+void le_instruments_render(le_engine* e, uint32_t frames) {
   le_synth* s = (le_synth*)e->synth;
   /* The buses hold this block's audio (silence included) unless the block
    * is larger than the scratch; instrument sources read silence then. */
   e->inst_bus_live = s != NULL && frames <= LE_COND_SCRATCH_FRAMES;
   if (s == NULL) return;
-  apply_params(e, s);
-  drain_events(e, s);
   if (frames == 0) return;
   int any = le_synth_fading(s) > 0;
   for (int k = 0; k < LE_MAX_INSTRUMENTS && !any; ++k) {

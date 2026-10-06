@@ -37,9 +37,17 @@ void le_instruments_apply_command(le_engine* e, const le_command* cmd);
  * every instrument into its bus. */
 void le_instruments_block(le_engine* e, uint32_t frames);
 
+/* The two halves of le_instruments_block, which the callback runs around the
+ * MIDI drain (review L2): apply the parameter changes and the note rings
+ * first, so a MIDI note meets a patch posted before it, then render. */
+void le_instruments_apply(le_engine* e);
+void le_instruments_render(le_engine* e, uint32_t frames);
+
 /* ---- MIDI routing (Part 2c), called from le_midi_ports_drain ----
  * begin: once per block, before any port; switches in a published route
- * table and acknowledges it. event: one current event (the drain's EVENT
+ * table and acknowledges it. An instrument whose MIDI the new table turns
+ * off or moves to another port or channel lets go of the old port's notes
+ * and sustain and drops the expression MIDI set on it (review M1). event: one current event (the drain's EVENT
  * dispatch). gone: the drain's GAP, LOST and REBOUND dispatches, in stream
  * order: lets go of the port's held notes, removes its sustain contributors
  * and resets the expression it set. */

@@ -6171,7 +6171,7 @@ class SegnoEngineBindings {
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
 
   /// Limits the sounding voices of all instruments together to `limit`
-  /// (1..64): lowering it fades the excess, the overload
+  /// (1..LE_INST_MAX_VOICES): lowering it fades the excess, the overload
   /// control. The default after configure is 32. Returns LE_OK, LE_ERR_INVALID
   /// or LE_ERR_NOT_RUNNING.
   int le_engine_set_voice_limit(
@@ -6250,6 +6250,49 @@ class SegnoEngineBindings {
       >('le_engine_instrument_note_on');
   late final _le_engine_instrument_note_on = _le_engine_instrument_note_onPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int, int)>();
+
+  int le_engine_instrument_chord_on(
+    ffi.Pointer<le_engine> engine,
+    int slot,
+    int origin,
+    ffi.Pointer<ffi.Int32> notes,
+    int count,
+    int velocity,
+  ) {
+    return _le_engine_instrument_chord_on(
+      engine,
+      slot,
+      origin,
+      notes,
+      count,
+      velocity,
+    );
+  }
+
+  late final _le_engine_instrument_chord_onPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_instrument_chord_on');
+  late final _le_engine_instrument_chord_on = _le_engine_instrument_chord_onPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          ffi.Pointer<ffi.Int32>,
+          int,
+          int,
+        )
+      >();
 
   /// Releases every voice started for `origin`, on every instrument. Rides the
   /// reserved release lane. Returns LE_OK, LE_ERR_CAPACITY (the release lane is
@@ -8624,6 +8667,10 @@ const int LE_MAX_MIDI_PORTS = 8;
 const int LE_INST_EVENT_CAPACITY = 256;
 
 const int LE_INST_RELEASE_CAPACITY = 1024;
+
+const int LE_INST_MAX_VOICES = 64;
+
+const int LE_INST_CHORD_NOTES = 8;
 
 const int LE_INST_MAX_REMAPS = 32;
 

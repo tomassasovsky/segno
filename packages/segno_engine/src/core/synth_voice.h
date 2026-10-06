@@ -145,6 +145,8 @@ typedef struct le_synth_instrument {
   float bend, mod, pressure;
 } le_synth_instrument;
 
+#define LE_SYNTH_HELD_BUCKETS 256
+
 typedef struct le_synth {
   int32_t sample_rate;
   int32_t voice_count; /* the pool size, <= LE_SYNTH_MAX_VOICES */
@@ -160,6 +162,11 @@ typedef struct le_synth {
   uint32_t stolen;      /* voices taken for a new note (faded) */
   uint32_t stolen_hard; /* voices or fades cut without a fade (no room) */
   uint32_t sustain_refused; /* contributors refused: the table was full */
+  /* Per origin hash bucket, an upper bound on the HELD voices with an origin
+   * in it: a note-on adds one (saturating), every render recounts exactly. A release
+   * whose bucket is empty skips the voice scan (the routing cost, #1197
+   * Part 2c review H1). Never below the truth, so nothing is ever missed. */
+  uint8_t held_hint[LE_SYNTH_HELD_BUCKETS];
 } le_synth;
 
 /* Prepares `s` for `sample_rate` with a pool of `voices` (1..64). No
@@ -208,14 +215,18 @@ void le_synth_sustain_off(le_synth* s, uint32_t origin);
 enum { LE_SYNTH_BEND = 0, LE_SYNTH_MOD = 1, LE_SYNTH_PRESSURE = 2 };
 void le_synth_expression(le_synth* s, int32_t inst, int32_t kind, float value);
 
-/* A device gone or a binding retired: removes the sustain contributors whose
- * origin, masked by `mask`, equals `value`, lets go of the matching held
- * voices (sustained if the instrument is still sustained, as for a Note Off)
- * and releases the sustained voices nothing sustains any more. */
-void le_synth_release_matching(le_synth* s, uint32_t mask, uint32_t value);
+/* A device gone, a binding retired or an instrument's MIDI route changed:
+ * on instrument `inst` (-1: every instrument) removes the sustain
+ * contributors whose origin, masked by `mask`, equals `value`, lets go of
+ * the matching held voices (sustained if the instrument is still sustained,
+ * as for a Note Off) and releases the sustained voices nothing sustains any
+ * more. */
+void le_synth_release_matching(le_synth* s, int32_t inst, uint32_t mask,
+                               uint32_t value);
 
-/* Whether a held voice (not released or sustained) exists for `origin`. */
-int32_t le_synth_held(const le_synth* s, uint32_t origin);
+/* Whether a held voice (not released or sustained) exists for `origin` on
+ * instrument `inst` (-1: any instrument). */
+int32_t le_synth_held(const le_synth* s, int32_t inst, uint32_t origin);
 
 /* Cut all sound: every sounding voice of `inst` (-1: every instrument) fades
  * to silence over LE_SYNTH_FADE_MS in place. */
