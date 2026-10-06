@@ -73,20 +73,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.1.0-dev.24"
-  bluetooth_client:
-    dependency: "direct dev"
-    description:
-      path: "packages/bluetooth_client"
-      relative: true
-    source: path
-    version: "0.1.0"
-  bluetooth_repository:
-    dependency: "direct main"
-    description:
-      path: "packages/bluetooth_repository"
-      relative: true
-    source: path
-    version: "0.1.0"
   boolean_selector:
     dependency: transitive
     description:

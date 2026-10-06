@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
@@ -150,7 +149,6 @@ Future<void> runSegno(
   // are wired, so the update UI stays hidden on unsupported builds.
   final updates = UpdateRepository(backend: createPlatformUpdateBackend());
   final wifi = WifiRepository(client: createWifiClient());
-  final bluetooth = BluetoothRepository(client: createBluetoothClient());
   final brightness = createBrightnessClient();
   // The same directory resolvers the session and performance repositories are
   // wired with, so the real client's disk accounting measures the app's own
@@ -230,7 +228,6 @@ Future<void> runSegno(
       initialAsioDrivers: asioDrivers,
       updates: updates,
       wifi: wifi,
-      bluetooth: bluetooth,
       brightness: brightness,
       consoleFacts: consoleFacts,
     ),

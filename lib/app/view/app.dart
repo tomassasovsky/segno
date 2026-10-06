@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
@@ -76,9 +75,6 @@ class App extends StatefulWidget {
       backend: UnsupportedPlatformBackend(),
     ),
     this.wifi = const WifiRepository(client: UnsupportedWifiClient()),
-    this.bluetooth = const BluetoothRepository(
-      client: UnsupportedBluetoothClient(),
-    ),
     this.brightness = const UnsupportedBrightnessClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     this.powerKeySource,
@@ -93,9 +89,6 @@ class App extends StatefulWidget {
 
   /// Appliance WiFi repository (Control Center). Defaults unsupported.
   final WifiRepository wifi;
-
-  /// Appliance Bluetooth repository (Control Center). Defaults unsupported.
-  final BluetoothRepository bluetooth;
 
   /// Appliance brightness client (Control Center slider). Defaults unsupported.
   final BrightnessClient brightness;
@@ -446,7 +439,6 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: _pedal),
         RepositoryProvider.value(value: widget.updates),
         RepositoryProvider.value(value: widget.wifi),
-        RepositoryProvider.value(value: widget.bluetooth),
         RepositoryProvider.value(value: widget.brightness),
         RepositoryProvider.value(value: widget.consoleFacts),
         if (_powerKeySource != null)
@@ -776,7 +768,26 @@ class _AppViewState extends State<_AppView> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_bootstrapWindow());
+      if (mounted) unawaited(_noticeRetiredBluetooth());
     });
+  }
+
+  /// Tells an install that had paired Bluetooth devices, once, that they will
+  /// not reconnect: Bluetooth is retired and the image no longer runs BlueZ.
+  /// The pairings themselves stay on the data volume, so a fallback to the
+  /// previous system still has them.
+  Future<void> _noticeRetiredBluetooth() async {
+    final settings = context.read<SettingsRepository>();
+    final facts = context.read<ConsoleFactsClient>();
+    if (await settings.loadBluetoothRetiredNoticeShown()) return;
+    final count = await facts.retiredBluetoothPairings();
+    if (count == 0 || !mounted) return;
+    showAppToast(
+      id: AppToastId.bluetoothRetired,
+      title: AppText(_l10n.bluetoothRetiredNotice(count)),
+      icon: const Icon(Icons.bluetooth_disabled),
+    );
+    await settings.saveBluetoothRetiredNoticeShown();
   }
 
   void _reconcileRestoreNotices() {

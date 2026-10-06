@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
-/// Compact page chrome for appliance host surfaces (WiFi / Bluetooth):
+/// Compact page chrome for appliance host surfaces (WiFi):
 /// Close + title on the left, optional action on the right.
 class HostChromeBar extends StatelessWidget {
   /// Creates a [HostChromeBar].
@@ -83,7 +83,7 @@ class HostTrayChromeBar extends StatelessWidget {
   /// Optional trailing control (e.g. scan).
   final Widget? trailing;
 
-  /// Compact enough that a no-descender title ("Bluetooth") doesn't sit
+  /// Compact enough that a no-descender title ("WiFi") doesn't sit
   /// above a hollow band that reads as bottom padding.
   static const double _height = 32;
 
