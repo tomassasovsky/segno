@@ -39,12 +39,12 @@ class SessionLayer {
 /// audio [layers]. A lane records one input into its own mono buffer, so a
 /// track persists one of these per active lane.
 ///
-/// [layers] is the lane's pool contents oldest→newest: the [undoCount] undo
-/// snapshots, then the live buffer, then the [redoCount] redo snapshots. The
-/// live buffer is `layers[liveIndex]` (== [undoCount]), and
-/// `layers.length == undoCount + 1 + redoCount`. Part 1 always emits a single
-/// live layer (`undoCount == redoCount == 0`); later revisions populate the
-/// undo/redo layers so a reloaded lane can undo/redo.
+/// [history] is the track's audio history (schema v12, #1164): the
+/// [undoCount] undo entries oldest first, then the [redoCount] redo entries
+/// newest-adjacent first, each with its kind. [layers] holds the images they
+/// name oldest→newest: one per undo entry, the live buffer at
+/// `layers[liveIndex]` (== [undoCount]), then one per redo entry except a
+/// Peel marker, which holds no image ([TrackHistory.imageCount]).
 @immutable
 class SessionLane {
   /// Creates a [SessionLane].
@@ -55,13 +55,14 @@ class SessionLane {
     required this.outputMask,
     required this.inputChannel,
     required this.layers,
+    required this.history,
     this.pan = 0,
     this.balance = 1,
-    this.undoCount = 0,
-    this.redoCount = 0,
   });
 
-  /// Projects a [SessionLane] from a decoded JSON map.
+  /// Projects a [SessionLane] from a decoded JSON map. The stored
+  /// `redoCount` is derived on write and cross-checked by
+  /// [SessionTrack.fromJson].
   factory SessionLane.fromJson(Map<String, dynamic> json) => SessionLane(
     lane: (json['lane'] as num).toInt(),
     volume: (json['volume'] as num).toDouble(),
@@ -74,8 +75,10 @@ class SessionLane {
     ],
     pan: (json['pan'] as num?)?.toDouble() ?? 0,
     balance: (json['balance'] as num?)?.toDouble() ?? 1,
-    undoCount: (json['undoCount'] as num).toInt(),
-    redoCount: (json['redoCount'] as num).toInt(),
+    history: TrackHistory(
+      _readHistory(json['history']),
+      undoCount: (json['undoCount'] as num).toInt(),
+    ),
   );
 
   /// Lane index within the track.
@@ -112,21 +115,26 @@ class SessionLane {
   /// only when below unity; omitted at the current-schema default of `1`.
   final double balance;
 
-  /// The lane's audio buffers, oldest undo → live → newest redo.
+  /// The lane's audio images, oldest undo → live → newest redo.
   final List<SessionLayer> layers;
 
-  /// Number of leading [layers] that are undo snapshots (below the live
-  /// buffer).
-  final int undoCount;
+  /// The track's audio history in image-ordinal order: [undoCount] undo
+  /// entries, then [redoCount] redo entries. Every lane of a track carries the
+  /// same history; a lane with no history is [TrackHistory.none].
+  final TrackHistory history;
 
-  /// Number of trailing [layers] that are redo snapshots (above the live
-  /// buffer).
-  final int redoCount;
+  /// Number of leading [history] entries (and [layers]) on the undo side,
+  /// below the live buffer.
+  int get undoCount => history.undoCount;
+
+  /// Number of trailing [history] entries on the redo side, above the live
+  /// buffer.
+  int get redoCount => history.redoCount;
 
   /// Maximum layers a lane can hold, mirroring the engine's `LE_POOL_SLOTS`
   /// (one live buffer plus up to 255 undo/redo snapshots). A bundle claiming
   /// more is rejected on load.
-  static const int maxLayers = 256;
+  static const int maxLayers = TrackHistory.maxImages;
 
   /// Index into [layers] of the live (currently playing) buffer.
   int get liveIndex => undoCount;
@@ -141,6 +149,10 @@ class SessionLane {
     'layers': [for (final l in layers) l.toJson()],
     if (pan != 0) 'pan': pan,
     if (balance != 1) 'balance': balance,
+    'history': [
+      for (final e in history.entries)
+        {'kind': e.kind.name, 'skipped': e.skipped},
+    ],
     'undoCount': undoCount,
     'redoCount': redoCount,
   };
@@ -157,8 +169,7 @@ class SessionLane {
           inputChannel == other.inputChannel &&
           pan == other.pan &&
           balance == other.balance &&
-          undoCount == other.undoCount &&
-          redoCount == other.redoCount &&
+          history == other.history &&
           _listEquals(layers, other.layers);
 
   @override
@@ -170,8 +181,7 @@ class SessionLane {
     inputChannel,
     pan,
     balance,
-    undoCount,
-    redoCount,
+    history,
     Object.hashAll(layers),
   );
 }
@@ -196,34 +206,24 @@ class SessionTrack {
     if (amount is! num || !amount.isFinite || amount < 0 || amount > 1) {
       throw const FormatException('invalid track Fade amount');
     }
-    final lanes = [
-      for (final l in json['lanes'] as List<dynamic>)
-        SessionLane.fromJson(l as Map<String, dynamic>),
-    ];
     final channel = (json['channel'] as num).toInt();
+    final lanes = <SessionLane>[];
+    for (final raw in json['lanes'] as List<dynamic>) {
+      final laneJson = raw as Map<String, dynamic>;
+      final lane = SessionLane.fromJson(laneJson);
+      _checkHistory(
+        channel,
+        lane,
+        storedRedoCount: (laneJson['redoCount'] as num).toInt(),
+      );
+      lanes.add(lane);
+    }
     for (final lane in lanes) {
-      final expected = lane.undoCount + 1 + lane.redoCount;
-      if (lane.undoCount < 0 || lane.redoCount < 0) {
+      if (lane.history != lanes.first.history) {
         throw SessionCorruptLayers(
           channel: channel,
           lane: lane.lane,
-          reason: 'negative undo/redo count',
-        );
-      }
-      if (lane.layers.length != expected) {
-        throw SessionCorruptLayers(
-          channel: channel,
-          lane: lane.lane,
-          reason:
-              '${lane.layers.length} layers but undoCount+1+redoCount == '
-              '$expected',
-        );
-      }
-      if (expected > SessionLane.maxLayers) {
-        throw SessionCorruptLayers(
-          channel: channel,
-          lane: lane.lane,
-          reason: '$expected layers exceeds the ${SessionLane.maxLayers} cap',
+          reason: 'history differs from lane ${lanes.first.lane}',
         );
       }
     }
@@ -685,7 +685,7 @@ class SessionOutputSetup {
 }
 
 /// A saved Segno session, paired with per-lane, per-layer WAV files in a
-/// `.segno` bundle directory. Only the current schema 11 is accepted.
+/// `.segno` bundle directory. Only the current schema 12 is accepted.
 ///
 /// Track settings are session-level maps, independent of audio entries.
 /// Missing entries inherit the session default; explicit values, including
@@ -703,6 +703,7 @@ class Session {
     required this.channels,
     required this.baseLengthFrames,
     required this.tracks,
+    this.name,
     this.laneChains = const [],
     this.monitors = const [],
     this.trackChains = const [],
@@ -760,6 +761,7 @@ class Session {
       );
     }
     return Session(
+      name: _readName(json['name']),
       sampleRate: (json['sampleRate'] as num).toInt(),
       channels: (json['channels'] as num).toInt(),
       baseLengthFrames: (json['baseLengthFrames'] as num).toInt(),
@@ -844,10 +846,19 @@ class Session {
   }
 
   /// The current manifest schema stores per-track settings and all FX stages.
-  static const int formatVersion = 11;
+  static const int formatVersion = 12;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
+
+  /// The session's display name, or `null` for a bundle saved before names
+  /// were metadata (the catalog then shows the bundle directory's name).
+  ///
+  /// Rename rewrites this field and nothing else: the directory is the
+  /// session's identity and the audio files are never touched. Read leniently
+  /// (a blank or non-string value reads as absent) and written only when set,
+  /// so a manifest without it stays byte-for-byte what it was.
+  final String? name;
 
   /// Negotiated device sample rate the session was recorded at.
   final int sampleRate;
@@ -1018,6 +1029,7 @@ class Session {
   /// current [formatVersion].
   Map<String, dynamic> toJson() => {
     'version': formatVersion,
+    if (name != null) 'name': name,
     'sampleRate': sampleRate,
     'channels': channels,
     'baseLengthFrames': baseLengthFrames,
@@ -1088,6 +1100,7 @@ class Session {
       identical(this, other) ||
       other is Session &&
           runtimeType == other.runtimeType &&
+          name == other.name &&
           sampleRate == other.sampleRate &&
           channels == other.channels &&
           baseLengthFrames == other.baseLengthFrames &&
@@ -1148,6 +1161,7 @@ class Session {
   // [pedalBindings], and `Object.hash` caps at 20 positional arguments.
   @override
   int get hashCode => Object.hashAll([
+    name,
     sampleRate,
     channels,
     baseLengthFrames,
@@ -1194,12 +1208,65 @@ class Session {
   ]);
 }
 
+/// A blank or non-string `name` reads as absent rather than failing the load:
+/// the name is display metadata, never a reason to refuse a bundle.
+String? _readName(Object? raw) {
+  if (raw is! String) return null;
+  final trimmed = raw.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
 T _readEnum<T extends Enum>(Object? raw, List<T> values) {
   if (raw is! String) throw const FormatException('missing enum value');
   for (final value in values) {
     if (value.name == raw) return value;
   }
   throw FormatException('unknown enum value: $raw');
+}
+
+/// Decodes a lane's history entries: each exactly `{kind, skipped}` with a
+/// known kind name and an integer count.
+List<HistoryEntry> _readHistory(Object? raw) {
+  if (raw is! List) throw const FormatException('lane history must be a list');
+  return [
+    for (final entry in raw)
+      switch (entry) {
+        {'kind': final String kind, 'skipped': final int skipped}
+            when entry.length == 2 =>
+          HistoryEntry(_readEnum(kind, HistoryKind.values), skipped: skipped),
+        _ => throw FormatException('invalid history entry: $entry'),
+      },
+  ];
+}
+
+/// Rejects a lane whose history the engine could not rebuild (#1164): a
+/// stored redo count that disagrees with the entries, any
+/// [TrackHistory.malformation] (the same rules as the engine's
+/// `le_engine_finalize_history`), or an image list that is not exactly one
+/// image per image-bearing entry plus the live buffer.
+void _checkHistory(
+  int channel,
+  SessionLane lane, {
+  required int storedRedoCount,
+}) {
+  Never corrupt(String reason) => throw SessionCorruptLayers(
+    channel: channel,
+    lane: lane.lane,
+    reason: reason,
+  );
+  final history = lane.history;
+  if (storedRedoCount != history.redoCount) {
+    corrupt(
+      'redoCount $storedRedoCount but ${history.entries.length} entries '
+      'with undoCount ${history.undoCount}',
+    );
+  }
+  final malformation = history.malformation;
+  if (malformation != null) corrupt(malformation);
+  final images = history.imageCount;
+  if (lane.layers.length != images) {
+    corrupt('${lane.layers.length} layers but the history names $images');
+  }
 }
 
 bool _listEquals<T>(List<T> a, List<T> b) {

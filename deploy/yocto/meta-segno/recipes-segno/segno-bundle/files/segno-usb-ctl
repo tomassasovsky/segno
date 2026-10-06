@@ -19,7 +19,7 @@
 #   detach <kname>    unmount (lazily if the device is gone), remove the mount
 #                     point, delete the JSON. Always exits 0 — an ejected
 #                     volume being unplugged is not a failure.
-#   serve-requests    for every <id>.json under requests/: sync, umount
+#   serve-requests    for every <id>.json under requests/: sync -f, umount
 #                     (non-lazy), record the outcome in the volume's JSON,
 #                     delete the request.
 #
@@ -45,6 +45,7 @@ SYSFS="${SEGNO_USB_SYSFS:-/sys/class/block}"
 DEV_DIR="${SEGNO_USB_DEV_DIR:-/dev}"
 PROBE_BYTES="${SEGNO_USB_PROBE_BYTES:-16777216}"
 UPTIME_FILE="${SEGNO_USB_UPTIME_FILE:-/proc/uptime}"
+LOCK_WAIT="${SEGNO_USB_LOCK_WAIT:-60}"
 VOLUMES="$RUN_DIR/volumes"
 REQUESTS="$RUN_DIR/requests"
 GEN_FILE="$RUN_DIR/.generation"
@@ -168,10 +169,27 @@ safe_name() {
 # mount then leaks, because detach cannot find it), and attach's second write
 # can overwrite an eject's outcome. The kernel releases a flock when the
 # process exits, however it exits, so no stale lock survives a crash.
+#
+# take_lock bounded — attach and serve-requests wait at most LOCK_WAIT
+# seconds: one stuck holder (a sync or umount hung on a failing stick) must
+# not stall every other drive for good. They exit 1 and say why; the unit
+# fails visibly and the drive can be replugged. detach waits for as long as
+# it takes, because it is the cleanup path and must not leave a mount behind.
+#
+# fd 9 is the lock: every child gets `9>&-`, so nothing the helper starts
+# (a FUSE mount daemon, were one ever added) can inherit it and hold the
+# lock for the life of a mount.
 take_lock() {
     mkdir -p "$RUN_DIR"
     exec 9>"$RUN_DIR/.lock"
-    flock 9
+    if [ "${1:-}" = bounded ]; then
+        flock -w "$LOCK_WAIT" 9 2>/dev/null || {
+            log "another drive's work has held the lock for ${LOCK_WAIT}s; giving up"
+            exit 1
+        }
+    else
+        flock 9
+    fi
 }
 
 # ---- volume records ---------------------------------------------------------
@@ -237,7 +255,7 @@ mount_type() { case "$1" in ntfs) echo ntfs3 ;; *) echo "$1" ;; esac; }
 # $mount_error to the first stderr line and returns 1.
 try_mount() {
     opts=$(mount_opts "$1" "$2")
-    err=$(mount -t "$(mount_type "$1")" -o "$opts" "$3" "$4" 2>&1 >/dev/null) && return 0
+    err=$(mount -t "$(mount_type "$1")" -o "$opts" "$3" "$4" 2>&1 >/dev/null 9>&-) && return 0
     mount_error=$(printf '%s\n' "$err" | head -n1)
     [ -n "$mount_error" ] || mount_error="mount failed"
     return 1
@@ -266,7 +284,7 @@ do_probe() {
         bs=$PROBE_BYTES; count=1
     fi
     t0=$(uptime_cs 2>/dev/null) || { echo null; return 0; }
-    if ! dd if=/dev/zero of="$target" bs="$bs" count="$count" conv=fsync 2>/dev/null; then
+    if ! dd if=/dev/zero of="$target" bs="$bs" count="$count" conv=fsync 2>/dev/null 9>&-; then
         rm -f "$target"
         log "write probe failed on $1"
         echo null
@@ -284,7 +302,7 @@ do_probe() {
 do_attach() {
     kname=$1
     mkdir -p "$VOLUMES" "$REQUESTS" "$MEDIA_DIR"
-    props=$(udevadm info --query=property --name="$DEV_DIR/$kname" 2>/dev/null || true)
+    props=$(udevadm info --query=property --name="$DEV_DIR/$kname" 2>/dev/null 9>&- || true)
     fstype=$(prop ID_FS_TYPE)
     usage=$(prop ID_FS_USAGE)
     label=$(decode_enc "$(prop ID_FS_LABEL_ENC)")
@@ -339,11 +357,13 @@ do_detach() {
     f=$(volume_file_for_kname "$kname") || { log "$kname: no volume record"; return 0; }
     mp=$(json_get mountPoint "$f")
     if [ -n "$mp" ] && [ "$mp" != null ]; then
-        sync
-        if ! umount "$mp" 2>/dev/null; then
+        # This volume's dirty data only: a global sync would also wait on
+        # every other drive's.
+        sync -f "$mp" 9>&- 2>/dev/null || true
+        if ! umount "$mp" 2>/dev/null 9>&-; then
             # Already unmounted (ejected) or the device is gone: a lazy
             # unmount clears any stale entry; its failure is not ours.
-            umount -l "$mp" 2>/dev/null || true
+            umount -l "$mp" 2>/dev/null 9>&- || true
         fi
         rmdir "$mp" 2>/dev/null || true
     fi
@@ -372,8 +392,8 @@ serve_one() {
     if [ "$mp" = null ] || [ -z "$mp" ] || [ "$status" = ejected ]; then
         ok=true; reason=null; status=ejected
     else
-        sync
-        if err=$(umount "$mp" 2>&1 >/dev/null); then
+        sync -f "$mp" 9>&- 2>/dev/null || true
+        if err=$(umount "$mp" 2>&1 >/dev/null 9>&-); then
             ok=true; reason=null; status=ejected
         else
             ok=false
@@ -412,9 +432,9 @@ do_status() {
 }
 
 case "${1:-}" in
-    attach)         [ -n "${2:-}" ] || { log "attach needs a kernel name"; exit 2; }; take_lock; do_attach "$2" ;;
+    attach)         [ -n "${2:-}" ] || { log "attach needs a kernel name"; exit 2; }; take_lock bounded; do_attach "$2" ;;
     detach)         [ -n "${2:-}" ] || { log "detach needs a kernel name"; exit 2; }; take_lock; do_detach "$2" ;;
-    serve-requests) take_lock; do_serve_requests ;;
+    serve-requests) take_lock bounded; do_serve_requests ;;
     status)         do_status ;;
     probe)          [ -d "${2:-}" ] || { log "probe needs a directory"; exit 2; }; do_probe "$2" ;;
     *) log "usage: segno-usb-ctl {attach <kname>|detach <kname>|serve-requests|status|probe <dir>}"; exit 2 ;;

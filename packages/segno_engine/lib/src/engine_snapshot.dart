@@ -19,6 +19,10 @@ const int kMaxLanes = LE_MAX_LANES;
 /// [EngineSnapshot], which are sized to the open device, not to this.
 const int kMaxChannels = LE_MAX_CHANNELS;
 
+/// The number of looper tracks, mirroring the native `LE_MAX_TRACKS`.
+/// Referenced (not re-typed) so it can never drift from the C.
+const int kMaxTracks = LE_MAX_TRACKS;
+
 /// The number of sources the live-monitor path covers, mirroring the native
 /// `LE_MAX_MONITORED_INPUTS`. Referenced (not re-typed) so it can never drift
 /// from the C.
