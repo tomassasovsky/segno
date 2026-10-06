@@ -703,6 +703,10 @@ typedef struct le_pr_segment {
   int owns_src;
   const float* turn_src;
   int turn_power;
+  /* The renders' lengths (#1179 Part 4a-ii, LE_PLOG_SOURCE_LEN): a stretch
+   * render is not the image's length and is read mapped
+   * (le_head_read_scaled); 0 = the image's. */
+  int32_t src_len, turn_src_len;
 } le_pr_segment;
 
 /* The head segment `seg` reads through, its origin anchored at start_frame. */
@@ -725,6 +729,7 @@ typedef struct le_pr_track_build {
    * its take plays over from its last LE_PLOG_HEAD_SPAN (Part 4a, 0 = the
    * take's own): a segment reads at le_head_rate of them and its image. */
   int32_t numer, denom, play_len;
+  int32_t next_src_len; /* the last LE_PLOG_SOURCE_LEN, for the next 328 */
   int load_failed; /* 1 if a pcmRef/layer file this track's manifest entries
                     * NAME could not actually be read — the per-stem failure
                     * the "partial success" acceptance criterion means. A
@@ -760,6 +765,8 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
       b->segment_count > 0 ? b->segments[b->segment_count - 1].reversed : 0;
   float* const src =
       b->segment_count > 0 ? b->segments[b->segment_count - 1].src : NULL;
+  const int32_t src_len =
+      b->segment_count > 0 ? b->segments[b->segment_count - 1].src_len : 0;
   le_pr_segment* seg = &b->segments[b->segment_count++];
   seg->owns_image = 1;
   seg->silent = 0;
@@ -776,6 +783,8 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
   seg->owns_src = 0;
   seg->turn_src = NULL;
   seg->turn_power = 0;
+  seg->src_len = src_len;
+  seg->turn_src_len = 0;
 }
 
 /* The loop phase (image index) the CURRENT last segment would play at
@@ -826,6 +835,7 @@ static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
   const int carry = !swap && turn_frames > 0 && last->turn_frames > 0 &&
                     into0 < last->turn_frames;
   const float* carried_src = last->turn_src;
+  const int32_t carried_src_len = last->turn_src_len;
   const int carried_power = last->turn_power;
   if (carry) {
     old = last->turn;
@@ -852,6 +862,7 @@ static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
   seg->turn = old;
   /* the old head reads the source it read (a carried window's own) */
   seg->turn_src = carry ? carried_src : seg->src;
+  seg->turn_src_len = carry ? carried_src_len : seg->src_len;
   seg->turn_power = carry ? carried_power : 0;
 }
 
@@ -889,10 +900,14 @@ static int le_pr_apply_transpose(le_pr_track_build* b, uint64_t frame,
   if (last->image == NULL || last->image_len <= 0) return 1;
   float* rendered = NULL;
   const int32_t st = cmd->transpose_log.effective;
-  if (st != 0) {
-    rendered = (float*)malloc((size_t)last->image_len * sizeof(float));
+  const int32_t out_len =
+      b->next_src_len > 0 ? b->next_src_len : last->image_len;
+  b->next_src_len = 0;
+  if (st != 0 || out_len != last->image_len) {
+    rendered = (float*)malloc((size_t)out_len * sizeof(float));
     if (rendered == NULL ||
-        le_stretch_render_loop(last->image, last->image_len, sample_rate,
+        le_stretch_render_loop(last->image, last->image_len,
+                               out_len, sample_rate,
                                (float)st, 8000.0f / (float)sample_rate, 1,
                                LE_CACHE_SOURCE_SEED,
                                sample_rate * LE_CACHE_SOURCE_FOLD_MS / 1000,
@@ -912,6 +927,7 @@ static int le_pr_apply_transpose(le_pr_track_build* b, uint64_t frame,
   le_pr_segment* seg = &b->segments[b->segment_count - 1];
   seg->src = rendered;
   seg->owns_src = rendered != NULL;
+  seg->src_len = rendered != NULL ? out_len : 0;
   seg->turn_power = 1;
   return 1;
 }
@@ -1062,6 +1078,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
   build.numer = 1;
   build.denom = 1;
   build.play_len = 0;
+  build.next_src_len = 0;
   /* A baseline silence segment at frame 0 always exists first — even a
    * track absent from armSnapshot entirely (recorded fresh later, or
    * mid-overdub/deferred at arm) needs SOMETHING covering [0, first real
@@ -1309,6 +1326,9 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     } else if (e->cmd.code == LE_PLOG_SPEED &&
                e->cmd.speed_log.channel == channel) {
       le_pr_apply_speed(&build, e->frame, &e->cmd);
+    } else if (e->cmd.code == LE_PLOG_SOURCE_LEN &&
+               e->cmd.lanei.channel == channel) {
+      build.next_src_len = e->cmd.lanei.value;
     } else if (e->cmd.code == LE_PLOG_HEAD_SPAN &&
                e->cmd.span_log.channel == channel) {
       le_pr_apply_span(&build, e->frame, &e->cmd);
@@ -1361,8 +1381,10 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       const le_read_head head = le_pr_segment_head(seg);
       const int64_t into = (int64_t)(f - seg->start_frame);
       const float* rb = seg->src != NULL ? seg->src : seg->image;
-      stem[f] = le_head_read(rb, seg->image_len, &head,
-                             le_head_index(&head, into, seg->image_len));
+      const int32_t rl =
+          seg->src != NULL && seg->src_len > 0 ? seg->src_len : seg->image_len;
+      stem[f] = le_head_read_scaled(rb, rl, seg->image_len, &head,
+                                    le_head_index(&head, into, seg->image_len));
       const int64_t mixed = into + seg->turn_into0;
       if (seg->turn_frames > 0 && mixed < seg->turn_frames) {
         const double old = le_head_index(&seg->turn, into, seg->image_len);
@@ -1374,8 +1396,11 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
                                    seg->turn_frames, 1)
                 : 1.0f - x;
         const float* ob = seg->turn_src != NULL ? seg->turn_src : seg->image;
-        stem[f] = stem[f] * x +
-                  le_head_read(ob, seg->image_len, &seg->turn, old) * y;
+        const int32_t ol = seg->turn_src != NULL && seg->turn_src_len > 0
+                               ? seg->turn_src_len
+                               : seg->image_len;
+        stem[f] = stem[f] * x + le_head_read_scaled(ob, ol, seg->image_len,
+                                                    &seg->turn, old) * y;
       }
     }
   }

@@ -469,13 +469,38 @@ static inline int le_wet_entry_key_matches(const le_wet_entry* ent,
   return le_wet_entry_key_matches_kind(ent, audio_rev, chain_fp, vol_bits, len,
                                        0, 0, len);
 }
-/* A source render's key (kind 1, E8): chain and volume fixed at 0. */
-static inline int le_src_entry_key_matches(const le_wet_entry* ent,
-                                           uint32_t audio_rev, int32_t len,
-                                           int32_t semitones) {
-  /* `audio_rev` is the track's content key here (le_track.a_src_key). */
-  return le_wet_entry_key_matches_kind(ent, audio_rev, 0, 0, len, 1,
-                                       semitones, len);
+
+/* How far a stretch render's length may sit from the span it plays over and
+ * still serve it (#1179 Part 4a-ii, plan 4.3): 0.5 %, about 9 cents; the
+ * head absorbs the residual (it reads the render at speed * out_len /
+ * play_len), so a tempo that moves a little does not re-render. */
+#define LE_SRC_STRETCH_TOLERANCE_PER_MILLE 5
+
+/* Whether a render `have` frames long may serve a span of `want` frames:
+ * within LE_SRC_STRETCH_TOLERANCE_PER_MILLE of it. */
+static inline int le_src_len_within(int32_t have, int32_t want) {
+  const int64_t d = (int64_t)have - (int64_t)want;
+  return (d < 0 ? -d : d) * 1000 <=
+         (int64_t)want * LE_SRC_STRETCH_TOLERANCE_PER_MILLE;
+}
+
+/* A source render's key (kind 1, E8): chain and volume fixed at 0, keyed on
+ * the track's content key (le_track.a_src_key).
+ * Whether source render `ent` serves a track whose content key, take length
+ * and pitch are key / len / semitones and whose wanted render length is
+ * `want_out` (len: no stretch; the span: pitch kept across a retime). The
+ * one key predicate, with a stretch within the tolerance. A span within the
+ * tolerance of the take already wants the take's own length
+ * (le_track_want_out), which the plain render matches exactly. */
+static inline int le_src_entry_fits(const le_wet_entry* ent, uint32_t key,
+                                    int32_t len, int32_t semitones,
+                                    int32_t want_out) {
+  if (!le_wet_entry_key_matches_kind(ent, key, 0, 0, len, 1, semitones,
+                                     ent->out_len)) {
+    return 0;
+  }
+  if (want_out == len || ent->out_len == len) return ent->out_len == want_out;
+  return le_src_len_within(ent->out_len, want_out);
 }
 
 /* One recordable input lane — the fundamental unit of captured audio.
@@ -1386,6 +1411,14 @@ typedef struct le_track {
    * speed * span_clock / clock length. */
   int32_t span_clock;
   _Atomic int32_t a_span_clock;
+  /* Pitch across a retime (#1179 Part 4a-ii): this track's override of the
+   * default (-1 inherit, 0 Unchanged: a stretch render keeps the pitch,
+   * 1 Follows speed: the varispeed head moves it), callback-owned and
+   * published; and the length of the source it sounds (0: its dry take),
+   * published for the snapshot's pitch_effective_cents. */
+  int32_t pitch_override;
+  _Atomic int32_t a_pitch_override;
+  _Atomic int32_t a_src_out;
   /* Control's view of direction while toggles are in flight
    * (le_effective_reversed): the number of REVERSE commands posted, the
    * direction they predict once applied, and the callback's count of REVERSE
@@ -1909,6 +1942,10 @@ struct le_engine {
    * reference (le_tempo_latch) clears it. */
   int32_t follow_tempo;
   _Atomic int32_t a_follow_tempo;
+  /* The Pitch default every track inherits (#1179 Part 4a-ii): 0 Unchanged
+   * (the plan's default), 1 Follows speed. */
+  int32_t pitch_follows;
+  _Atomic int32_t a_pitch_follows;
   _Atomic uint32_t a_recorded_tempo_bits;
   float rec_bpm; /* kept through an all-empty reset for a Clear Undo */
   int32_t rec_master_len;
@@ -2294,6 +2331,49 @@ static inline void le_track_forget_slot_keys(le_track* t) {
  * finalize_new_track fixes the length with it, and the control thread's
  * first-wrap pre-arm gate (le_capture_may_overdub) predicts that same finalize
  * — and the two must never diverge. */
+/* The span track [t]'s take plays over (#1179 Part 4a): its own length,
+ * unless it follows the tempo on a clock a retime moved since the take was
+ * laid down, then that length scaled by the clock. From the published
+ * fields, so the callback, the cache scheduler and the snapshot agree. */
+static inline int32_t le_track_play_span(le_engine* e, le_track* t) {
+  const int32_t len = atomic_load_explicit(&t->lanes[0].a_len,
+                                           memory_order_relaxed);
+  const int32_t clock = atomic_load_explicit(&e->a_master_len,
+                                             memory_order_relaxed);
+  const int32_t span = atomic_load_explicit(&t->a_span_clock,
+                                            memory_order_relaxed);
+  const int32_t own = atomic_load_explicit(&t->a_follow_override,
+                                           memory_order_relaxed);
+  const int follows =
+      own >= 0 ? own
+               : atomic_load_explicit(&e->a_follow_tempo, memory_order_relaxed);
+  if (len <= 0 || clock <= 0 || span <= 0 || span == clock || !follows) {
+    return len;
+  }
+  const int64_t play = (int64_t)len * clock / span;
+  return play > 0 && play <= INT32_MAX ? (int32_t)play : len;
+}
+
+/* The render length track [t] wants (#1179 Part 4a-ii): its span when it
+ * plays over another span with Pitch Unchanged (a stretch render keeps the
+ * pitch), else its own length (no stretch). A span within the tolerance of
+ * the take wants no stretch (4a-ii M1): the head absorbs the residual, so a
+ * small tempo move keeps a transposed track on its plain render and an
+ * untransposed one on its dry take, with no new render. */
+static inline int32_t le_track_want_out(le_engine* e, le_track* t) {
+  const int32_t len = atomic_load_explicit(&t->lanes[0].a_len,
+                                           memory_order_relaxed);
+  const int32_t play = le_track_play_span(e, t);
+  if (play == len || le_src_len_within(len, play)) return len;
+  const int32_t own = atomic_load_explicit(&t->a_pitch_override,
+                                           memory_order_relaxed);
+  const int follows_speed =
+      own >= 0 ? own
+               : atomic_load_explicit(&e->a_pitch_follows,
+                                      memory_order_relaxed);
+  return follows_speed ? len : play;
+}
+
 static inline int32_t le_effective_multiple(const le_engine* e, int32_t ch) {
   const int32_t ov = e->target_multiple[ch];
   return ov > 0 ? ov : e->default_multiple;

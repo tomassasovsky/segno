@@ -430,6 +430,8 @@ static int le_engine_reset_material(le_engine* engine,
   /* Follow tempo and the recorded tempo are material (#1179 Part 4a). */
   engine->follow_tempo = 0;
   store_i32(&engine->a_follow_tempo, 0);
+  engine->pitch_follows = 0; /* Unchanged (#1179 Part 4a-ii) */
+  store_i32(&engine->a_pitch_follows, 0);
   store_f32(&engine->a_recorded_tempo_bits, 0.0f);
   engine->rec_bpm = 0.0f;
   engine->rec_master_len = 0;
@@ -466,6 +468,9 @@ static int le_engine_reset_material(le_engine* engine,
     tr->pass_key = 0;
     tr->follow_override = -1;
     store_i32(&tr->a_follow_override, -1);
+    tr->pitch_override = -1;
+    store_i32(&tr->a_pitch_override, -1);
+    store_i32(&tr->a_src_out, 0);
     tr->log_play_len = 0;
     tr->span_clock = 0;
     store_i32(&tr->a_span_clock, 0);
@@ -1561,7 +1566,9 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (code == LE_CMD_FADE) return LE_ERR_INVALID;
   if (code == LE_CMD_REVERSE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_SPEED) return LE_ERR_INVALID;
-  if (code == LE_CMD_SET_FOLLOW_TEMPO) return LE_ERR_INVALID;
+  if (code == LE_CMD_SET_FOLLOW_TEMPO || code == LE_CMD_SET_PITCH_MODE) {
+    return LE_ERR_INVALID;
+  }
   if (code == LE_CMD_TRANSPOSE || code == LE_CMD_TRANSPOSE_BYPASS) {
     return LE_ERR_INVALID;
   }

@@ -390,7 +390,7 @@ static void test_stretch_loop_fold_holds_level(void) {
           in[i] = 0.3f * ((float)((seed >> 8) & 0xffff) / 32768.0f - 1.0f);
         }
       }
-      CHECK(le_stretch_render_loop(in, n, sr, (float)st, 8000.0f / sr, 1,
+      CHECK(le_stretch_render_loop(in, n, n, sr, (float)st, 8000.0f / sr, 1,
                                    1179u, fold, out) == LE_STRETCH_OK);
       const float* ins[1] = {in};
       float* outs[1] = {plain};

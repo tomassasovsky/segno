@@ -1139,6 +1139,55 @@ command 120, facts 329 and 330, events.log version 10):
 - **Mode switch.** A mode switch returns a retimed song to its recorded
   tempo, resetting a tempo the player chose; Part 4b's page says so.
 
+As built in Part 4a-ii (Pitch across a retime; command 121, fact 331,
+events.log version 11):
+
+- **One render, two jobs.** A source render now has its own length: the
+  take time-stretched to the span it plays over (Pitch Unchanged) and
+  shifted by its Transpose pitch, one render. The shim's
+  `le_stretch_render_loop` takes the output length (ratio out / take, the
+  fold scaled with it). The callback wants a render when the track is
+  transposed and not bypassed, or plays over another span with Pitch
+  Unchanged; bypass keeps the stretch and drops only the pitch.
+- **Reading a render of another length.** The head stays in the take's
+  frames (its rate speed x take / span); a render's read maps the index by
+  out_len / take and runs at the head's rate in the render's frames
+  (`le_head_read_scaled`), in the callback and the renderer alike. A track
+  sounding any render always reads through the head.
+- **Pending rule.** Until the render lands, the dry take plays through the
+  varispeed head: timing exact, the pitch off by the ratio, reported as
+  `pitch_effective_cents` (1200 log2 of the sounding source's length over
+  the span; 0 at its own span or once the render plays).
+- **Tolerance.** A render within 0.5 % of the span serves it (about 9
+  cents, reported); a tempo move past that renders again, dry meanwhile. A
+  span within 0.5 % of the take itself wants no stretch (review M1): a
+  transposed track stays on its plain transpose render and an untransposed
+  one on its dry take, the head absorbing the residual, so a small tempo
+  move (a MIDI clock's 0.05 BPM steps, #1228) neither drops a transposed
+  track to its true pitch nor re-renders every follower.
+- **Memory and CPU for retimes (review M2), an owner-visible gate like
+  3a's.** With Pitch Unchanged the default and Follow On from Part 4b, every
+  tempo change past 0.5 % on a populated rig asks for a stretch render per
+  following lane, and slowing down makes them longer. The joint table gains
+  the retime rows (96 kHz, 30 s takes, 120 to 90 BPM, so 40 s renders of
+  15.4 MiB each):
+
+  | Rig | Stretch renders | Worker time at the 20x Pi floor |
+  |---|---|---|
+  | 8 followers x 1 lane | 123 MiB (fits the 128 MiB beside the prints) | 16 s |
+  | 8 followers x 8 lanes | 983 MiB (most refused, those tracks stay at the varispeed pitch, reported) | 128 s |
+
+  The Pi 5 measurement list (Part 1's `render` scenario, E11) adds the case:
+  eight followers x 8 lanes retimed 120 to 90, renders landed, peak RSS and
+  late periods while the worker runs. On those numbers the owner decides
+  whether Unchanged renders get their own share of the cap or a per-retime
+  priority (sounding tracks first, then by lane count); until then a
+  refused render is reported (`pitch_effective_cents` stays the ratio's)
+  and Part 6b shows it as refused, not pending.
+- **Setting.** The default (0 Unchanged, the plan's) and per-track
+  overrides through `le_engine_set_pitch_mode` with a receipt; a change only
+  re-selects the source (an equal-power swap), the head is untouched.
+
 ### Part 4b. Audio & tempo page and Session fields (about 300 production lines)
 
 Section 4.4: the Follow tempo default flips to On together with the page

@@ -9,6 +9,7 @@
  * type/count atomics (the only race-free seam; see its comment). Behaviour
  * unchanged.
  */
+#include <math.h>   /* log2, lround — the tempo ratio in cents (#1179) */
 #include <stdint.h>
 #include <string.h> /* memset — the NULL-engine telemetry read */
 
@@ -124,6 +125,19 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->head_rate_milli = load_i32(&tr->a_head_rate_milli); /* #1179 */
   out->transpose_st = load_i32(&tr->a_transpose_st);
   out->follow_override = load_i32(&tr->a_follow_override);
+  out->pitch_override = load_i32(&tr->a_pitch_override);
+  {
+    /* The tempo ratio's pitch on what sounds: the source's length over the
+     * span it plays across (the take's own while dry). */
+    const int32_t len = load_i32(&tr->lanes[0].a_len);
+    const int32_t play = le_track_play_span(engine, tr);
+    const int32_t src = load_i32(&tr->a_src_out);
+    const int32_t sounding = src > 0 ? src : len;
+    out->pitch_effective_cents =
+        len > 0 && play > 0 && sounding != play
+            ? (int32_t)lround(1200.0 * log2((double)sounding / (double)play))
+            : 0;
+  }
   out->transpose_effective_st = load_i32(&tr->a_transpose_eff);
   /* Timing fields are filled below from one coherent callback tuple. */
   /* The caller fills timing from one coherent family tuple. */
@@ -498,6 +512,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->recorded_tempo_bpm = load_f32(&engine->a_recorded_tempo_bits);
   out->follow_tempo = load_i32(&engine->a_follow_tempo);
   out->tempo_follow = le_tempo_follow_now(engine);
+  out->pitch_follows_speed = load_i32(&engine->a_pitch_follows);
   out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);
   const int perf_armed =
