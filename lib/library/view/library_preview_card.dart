@@ -555,7 +555,11 @@ Future<void> openWithConfirm(
   final session = context.read<SessionCubit>();
   final l10n = context.l10n;
   final interrupts = context.read<LooperBloc>().state.tracks.any(
-    (t) => t.state == TrackState.playing || t.isCapturing,
+    (t) =>
+        t.state == TrackState.playing ||
+        t.isCapturing ||
+        t.pending ||
+        t.pendingLaunch != null,
   );
   if (interrupts) {
     final confirmed = await showConsoleConfirmDialog(

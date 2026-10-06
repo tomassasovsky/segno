@@ -361,14 +361,29 @@ class SessionCubit extends Cubit<SessionState> {
   /// [SessionError.captureInProgress] before anything else changes. Runs
   /// inside `runExclusive`.
   Future<void> _endCaptures() async {
+    // An arm still waiting for its boundary (the loop top, a bar, a signal,
+    // the Count-in downbeat) would fire during the save and be cleared by
+    // the apply: withdraw it first, so no take can start from here on
+    // (#1178 Part 4 review, D-1).
+    bool armed() => _looper.state.tracks.any(
+      (t) => t.pending || t.pendingLaunch != null,
+    );
     bool capturing() => _looper.state.tracks.any((t) => t.isCapturing);
-    if (!capturing()) return;
+    if (!armed() && !capturing()) return;
+    for (final track in _looper.state.tracks) {
+      if (track.pending) _looper.cancelArm(channel: track.channel);
+    }
+    if (_looper.state.tracks.any((t) => t.pendingLaunch != null)) {
+      _looper.cancelCountIn();
+    }
     for (final track in _looper.state.tracks) {
       if (track.isCapturing) _looper.stopRecordControl(channel: track.channel);
     }
-    final deadline = DateTime.now().add(_captureEndTimeout);
-    while (capturing()) {
-      if (DateTime.now().isAfter(deadline)) {
+    // A Stopwatch, not the wall clock: an NTP step at boot on the RTC-less
+    // appliance must not shorten or stretch the wait.
+    final waited = Stopwatch()..start();
+    while (armed() || capturing()) {
+      if (waited.elapsed > _captureEndTimeout) {
         throw const _SessionRefusal(SessionError.captureInProgress);
       }
       await Future<void>.delayed(const Duration(milliseconds: 8));
