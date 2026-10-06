@@ -421,6 +421,8 @@ static void le_engine_quiesce_workers(le_engine* engine) {
  * reopen. Returns 0 when lane 0's live buffer could not be allocated. */
 static int le_engine_reset_material(le_engine* engine,
                                     int32_t max_loop_frames) {
+  /* The backing buffers were decoded at the old rate (#1200). */
+  le_backing_release(engine, 0);
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
     /* Track transport: one lane active by default, empty, one base loop. */
@@ -657,6 +659,13 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   engine->out_channels = output_channels;
   engine->max_loop_frames = max_loop_frames;
   engine->fx_delay_frames = sample_rate; /* 1 s of delay line per slot */
+
+  /* Backing player (#1200): a buffer queued in the ring dies with it below,
+   * so free it first; the loaded and staged buffers survive a retained
+   * reopen (configure freed them already), stopped at 0. The epoch tells
+   * the owner to replay. */
+  le_backing_release(engine, 1);
+  atomic_fetch_add_explicit(&engine->a_backing_epoch, 1u, memory_order_release);
 
   /* Drop any stale traffic from a previous configuration — BOTH rings. The
    * command ring can hold presses made while the device was stopped/lost
@@ -1169,6 +1178,17 @@ le_engine* le_engine_create(void) {
   store_i32(&engine->a_click_mode, LE_CLICK_OFF);
   atomic_store_explicit(&engine->a_click_mask, 0u, memory_order_relaxed);
   store_f32(&engine->a_click_volume_bits, 1.0f);
+  store_f32(&engine->a_click_pan_bits, 0.0f);
+  /* Backing player SETTINGS (#1200): the same seeded-once persistence.
+   * Unrouted, unity, centred, End = Stop; nothing loaded. */
+  atomic_store_explicit(&engine->a_backing_mask, 0u, memory_order_relaxed);
+  store_f32(&engine->a_backing_level_bits, 1.0f);
+  store_f32(&engine->a_backing_pan_bits, 0.0f);
+  store_i32(&engine->a_backing_end_mode, LE_BACKING_END_STOP);
+  engine->backing_item = -1;
+  engine->backing_next_item = -1;
+  store_i32(&engine->a_backing_item, -1);
+  store_i32(&engine->a_backing_next_item, -1);
   store_i32(&engine->a_record_start, 0);
   /* Looper mode SETTING (B2a, D4): same seeded-once persistence as the
    * tempo/click settings above. MULTI (0) is both the enum's zero value and
@@ -1222,6 +1242,7 @@ void le_engine_destroy(le_engine* engine) {
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
   le_restore_shutdown(engine); /* #697 S9: join before the pool frees below */
+  le_backing_release(engine, 0); /* #1200: no audio thread any more */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &engine->tracks[t].lanes[l];
@@ -1525,6 +1546,11 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (code == LE_CMD_REVERSE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_CLICK_MODE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_RECORD_START) return LE_ERR_INVALID;
+  /* Backing (#1200): LOAD and STAGE_NEXT carry an owned buffer pointer that a
+   * raw {arg_i, arg_f} post cannot express; the family is typed-only. */
+  if (code >= LE_CMD_BACKING_LOAD && code <= LE_CMD_BACKING_SEEK) {
+    return LE_ERR_INVALID;
+  }
   if (code == LE_CMD_SET_LOOPER_MODE) {
     return le_push_cmd(engine, (le_command){.code = code,
                                            .presets = {.mode = arg_i}});
