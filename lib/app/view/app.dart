@@ -1076,6 +1076,17 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
+  /// The console now always starts in Record; said once to an install whose
+  /// retired boot default was Mute. Low stakes, nothing to act on: a toast.
+  void _showBootModeRetiredNotice() {
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.bootModeRetired,
+      title: AppText(l10n.bootModeRetiredNotice),
+      icon: const Icon(Icons.info_outline),
+    );
+  }
+
   /// Only one display on the dual-display console.
   void _showSingleDisplayNotice() {
     final l10n = _l10n;
@@ -1195,6 +1206,12 @@ class _AppViewState extends State<_AppView> {
         ),
         BlocListener<ControlCubit, ControlState>(
           listener: (_, _) => _updateDisplayContext(),
+        ),
+        BlocListener<ControlCubit, ControlState>(
+          listenWhen: (previous, current) =>
+              previous.retiredBootMode == null &&
+              current.retiredBootMode != null,
+          listener: (_, _) => _showBootModeRetiredNotice(),
         ),
         BlocListener<TracksCubit, TracksState>(
           listener: (_, _) => _updateDisplayContext(),
