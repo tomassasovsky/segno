@@ -5874,6 +5874,10 @@ class SegnoEngineBindings {
   /// Stops capture and closes the open port. Idempotent (a no-op when nothing is
   /// open). After it returns the callback registered by le_midi_open is guaranteed
   /// not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle).
+  /// A capture attached to an engine port (le_engine_attach_midi_input) is
+  /// detached first: the port's generation advances and it reads lost. Because
+  /// le_midi_open closes the current port before opening another, re-opening also
+  /// detaches; attach again after opening.
   int le_midi_close(
     ffi.Pointer<le_midi> m,
   ) {
@@ -5888,6 +5892,76 @@ class SegnoEngineBindings {
       );
   late final _le_midi_close = _le_midi_closePtr
       .asFunction<int Function(ffi.Pointer<le_midi>)>();
+
+  /// Whether the capture's backend thread runs at real-time priority (#1228):
+  /// 1 granted, -1 refused by the OS (no RTPRIO), 0 not applicable (no port
+  /// open, or a backend whose OS owns the thread, as CoreMIDI does).
+  int le_midi_priority_state(
+    ffi.Pointer<le_midi> m,
+  ) {
+    return _le_midi_priority_state(
+      m,
+    );
+  }
+
+  late final _le_midi_priority_statePtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_midi>)>>(
+        'le_midi_priority_state',
+      );
+  late final _le_midi_priority_state = _le_midi_priority_statePtr
+      .asFunction<int Function(ffi.Pointer<le_midi>)>();
+
+  /// Attaches capture `m` to engine input port `port` (0..LE_MAX_MIDI_PORTS-1).
+  /// A capture already attached elsewhere moves; a capture already on `port` is
+  /// detached first. Returns LE_OK, or LE_ERR_INVALID for a null handle or a port
+  /// out of range. Valid whether or not the engine is configured or running.
+  int le_engine_attach_midi_input(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_midi> m,
+    int port,
+  ) {
+    return _le_engine_attach_midi_input(
+      engine,
+      m,
+      port,
+    );
+  }
+
+  late final _le_engine_attach_midi_inputPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_midi>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_attach_midi_input');
+  late final _le_engine_attach_midi_input = _le_engine_attach_midi_inputPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_midi>, int)
+      >();
+
+  /// Detaches whatever capture is on `port`. Returns LE_OK (also when nothing
+  /// was attached) or LE_ERR_INVALID for a null engine or a port out of range.
+  int le_engine_detach_midi_input(
+    ffi.Pointer<le_engine> engine,
+    int port,
+  ) {
+    return _le_engine_detach_midi_input(
+      engine,
+      port,
+    );
+  }
+
+  late final _le_engine_detach_midi_inputPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_detach_midi_input');
+  late final _le_engine_detach_midi_input = _le_engine_detach_midi_inputPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// Allocates a MIDI output handle bound to the compiled-in per-OS backend.
   /// Returns NULL on allocation failure or when no backend is available for the
@@ -7715,6 +7789,26 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Array.multi([8])
   external ffi.Array<ffi.Int32> record_timing_overrides;
+
+  /// ---- native MIDI input (#1228 Part 1; trailing). Totals across all
+  /// LE_MAX_MIDI_PORTS ports since the engine was created: events drained from
+  /// the port rings under the current generation, events dropped as stale,
+  /// blocks that found an overflow flag, and attached ports that went lost.
+  /// midi_in_attached_mask has bit p set while a capture is attached to p.
+  @ffi.Uint32()
+  external int midi_in_events;
+
+  @ffi.Uint32()
+  external int midi_in_stale;
+
+  @ffi.Uint32()
+  external int midi_in_overflows;
+
+  @ffi.Uint32()
+  external int midi_in_lost;
+
+  @ffi.Uint32()
+  external int midi_in_attached_mask;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -8008,3 +8102,5 @@ const int LE_CB_BUCKETS = 8;
 const int LE_XRUN_KINDS = 4;
 
 const int LE_CACHE_DEFAULT_CAP_BYTES = 67108864;
+
+const int LE_MAX_MIDI_PORTS = 8;

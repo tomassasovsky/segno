@@ -19,11 +19,13 @@
  */
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "le_midi_backend.h"
 #include "le_midi_clock.h" /* le_midi_clock_advance (C1, D15) */
 #include "le_midi_internal.h"
+#include "le_midi_port.h" /* the engine sink (#1228 Part 1) */
 #include "segno_engine_api.h"
 
 static int g_failures = 0;
@@ -101,15 +103,43 @@ static void test_parse_program_change(void) {
 static void test_parse_ignores_non_note_cc(void) {
   printf("test_parse_ignores_non_note_cc\n");
   CHECK(le_midi_parse(0xA0, 60, 10, NULL) == LE_MIDI_IGNORE); /* aftertouch */
-  CHECK(le_midi_parse(0xD0, 64, 0, NULL) == LE_MIDI_IGNORE);  /* chan press */
-  CHECK(le_midi_parse(0xE0, 0, 64, NULL) == LE_MIDI_IGNORE);  /* pitch bend */
   CHECK(le_midi_parse(0xF0, 0, 0, NULL) == LE_MIDI_IGNORE);   /* SysEx start */
-  CHECK(le_midi_parse(0xF8, 0, 0, NULL) == LE_MIDI_IGNORE);   /* clock */
+  CHECK(le_midi_parse(0xF1, 0, 0, NULL) == LE_MIDI_IGNORE);   /* MTC */
+  CHECK(le_midi_parse(0xF3, 0, 0, NULL) == LE_MIDI_IGNORE);   /* song select */
+  CHECK(le_midi_parse(0xF6, 0, 0, NULL) == LE_MIDI_IGNORE);   /* tune request */
+  CHECK(le_midi_parse(0xF9, 0, 0, NULL) == LE_MIDI_IGNORE);   /* undefined */
   CHECK(le_midi_parse(0xFE, 0, 0, NULL) == LE_MIDI_IGNORE);   /* active sens */
+  CHECK(le_midi_parse(0xFF, 0, 0, NULL) == LE_MIDI_IGNORE);   /* reset */
   /* A data byte (high bit clear) is never a status. */
   CHECK(le_midi_parse(0x40, 0, 0, NULL) == LE_MIDI_IGNORE);
   /* NULL out pointer is allowed. */
   CHECK(le_midi_parse(0xB0, 1, 2, NULL) == LE_MIDI_CC);
+}
+
+/* The kinds only the engine sink carries (#1228 Part 1). */
+static void test_parse_sink_kinds(void) {
+  printf("test_parse_sink_kinds\n");
+  le_midi_parsed p;
+  CHECK(le_midi_parse(0xD3, 90, 0, &p) == LE_MIDI_CHANNEL_PRESSURE);
+  CHECK(p.channel == 3 && p.number == 90);
+  CHECK(le_midi_parse(0xE1, 0x00, 0x40, &p) == LE_MIDI_PITCH_BEND);
+  CHECK(p.channel == 1 && p.number == 0x00 && p.value == 0x40); /* centre */
+  /* Song Position 16 sixteenth notes = one 4/4 bar: LSB 0x10, MSB 0. */
+  CHECK(le_midi_parse(0xF2, 0x10, 0x00, &p) == LE_MIDI_SONG_POSITION);
+  CHECK(p.channel == 0 && (p.number | (p.value << 7)) == 16);
+  CHECK(le_midi_parse(0xF2, 0x7F, 0x7F, &p) == LE_MIDI_SONG_POSITION);
+  CHECK((p.number | (p.value << 7)) == 16383);
+  CHECK(le_midi_parse(0xF8, 0, 0, &p) == LE_MIDI_CLOCK);
+  CHECK(p.channel == 0 && p.number == 0 && p.value == 0);
+  CHECK(le_midi_parse(0xFA, 0, 0, NULL) == LE_MIDI_START);
+  CHECK(le_midi_parse(0xFB, 0, 0, NULL) == LE_MIDI_CONTINUE);
+  CHECK(le_midi_parse(0xFC, 0, 0, NULL) == LE_MIDI_STOP);
+  /* Which path carries which kind. */
+  CHECK(le_midi_kind_for_dart(LE_MIDI_PROGRAM) && !le_midi_kind_for_sink(LE_MIDI_PROGRAM));
+  CHECK(le_midi_kind_for_dart(LE_MIDI_NOTE_ON) && le_midi_kind_for_sink(LE_MIDI_NOTE_ON));
+  CHECK(!le_midi_kind_for_dart(LE_MIDI_CLOCK) && le_midi_kind_for_sink(LE_MIDI_CLOCK));
+  CHECK(!le_midi_kind_for_dart(LE_MIDI_PITCH_BEND) && le_midi_kind_for_sink(LE_MIDI_PITCH_BEND));
+  CHECK(!le_midi_kind_for_dart(LE_MIDI_IGNORE) && !le_midi_kind_for_sink(LE_MIDI_IGNORE));
 }
 
 /* ---- ring push filtering ------------------------------------------------- */
@@ -209,6 +239,191 @@ static void test_close_nulls_callback_before_teardown(void) {
   /* A later capture callback must not receive the prior lifetime's ring. */
   /* close is idempotent. */
   CHECK(le_midi_close(m) == LE_OK);
+  le_midi_destroy(m);
+}
+
+/* ---- the engine sink (#1228 Part 1; le_midi_port.h) ---------------------- */
+
+static le_midi_port* sink_port_new(void) {
+  return (le_midi_port*)calloc(1, sizeof(le_midi_port));
+}
+
+static int sink_port_count(le_midi_port* p) {
+  return (int)(atomic_load(&p->tail) - atomic_load(&p->head));
+}
+
+/* Clock reaches the bound port with its timestamp and generation, and never
+ * the Dart callback. */
+static void test_sink_clock_reaches_port_not_dart(void) {
+  printf("test_sink_clock_reaches_port_not_dart\n");
+  cap_reset();
+  le_midi* m = le_midi_create();
+  le_midi_port* port = sink_port_new();
+  le_midi_set_cb_for_test(m, cap_cb);
+  le_midi_sink_bind(le_midi_sink_of(m), port);
+  CHECK(atomic_load(&port->a_gen) == 1u);
+  le_midi_input_for_test(m, 0xF8, 0, 0, 1000000000ull);
+  le_midi_input_for_test(m, 0xFA, 0, 0, 1000000001ull);
+  le_midi_drain(m);
+  CHECK(g_cap_count == 0);
+  le_midi_port_event ev;
+  CHECK(le_midi_port_pop(port, &ev, NULL) == 1);
+  CHECK(ev.status == 0xF8 && ev.t_ns == 1000000000ull && ev.gen == 1u);
+  CHECK(le_midi_port_pop(port, &ev, NULL) == 1);
+  CHECK(ev.status == 0xFA && ev.t_ns == 1000000001ull);
+  CHECK(le_midi_port_pop(port, &ev, NULL) == 0);
+  le_midi_destroy(m);
+  free(port);
+}
+
+/* Notes reach both paths: the sink with ns, the Dart ring with us. Program
+ * reaches only Dart; bend, pressure and Song Position only the sink. */
+static void test_sink_and_dart_split(void) {
+  printf("test_sink_and_dart_split\n");
+  cap_reset();
+  le_midi* m = le_midi_create();
+  le_midi_port* port = sink_port_new();
+  le_midi_set_cb_for_test(m, cap_cb);
+  le_midi_sink_bind(le_midi_sink_of(m), port);
+  le_midi_input_for_test(m, 0x90, 60, 100, 2000000000ull);
+  le_midi_input_for_test(m, 0xC0, 5, 0, 2000001000ull);
+  le_midi_input_for_test(m, 0xE0, 0x00, 0x40, 2000002000ull);
+  le_midi_input_for_test(m, 0xD0, 90, 0, 2000003000ull);
+  le_midi_input_for_test(m, 0xF2, 0x10, 0x00, 2000004000ull);
+  le_midi_input_for_test(m, 0xFE, 0, 0, 2000005000ull); /* active sensing */
+  le_midi_drain(m);
+  CHECK(g_cap_count == 2);
+  CHECK(g_cap[0].status == 0x90 && g_cap[0].data1 == 60 &&
+        g_cap[0].data2 == 100 && g_cap[0].ts_us == 2000000ull);
+  CHECK(g_cap[1].status == 0xC0 && g_cap[1].data1 == 5);
+  CHECK(sink_port_count(port) == 4);
+  le_midi_port_event ev;
+  CHECK(le_midi_port_pop(port, &ev, NULL) && ev.status == 0x90 && ev.data1 == 60 &&
+        ev.data2 == 100 && ev.t_ns == 2000000000ull);
+  CHECK(le_midi_port_pop(port, &ev, NULL) && ev.status == 0xE0 && ev.data2 == 0x40);
+  CHECK(le_midi_port_pop(port, &ev, NULL) && ev.status == 0xD0 && ev.data1 == 90);
+  CHECK(le_midi_port_pop(port, &ev, NULL) && ev.status == 0xF2 &&
+        (ev.data1 | (ev.data2 << 7)) == 16);
+  le_midi_destroy(m);
+  free(port);
+}
+
+/* An unbound capture writes no port; a full ring sets the overflow flag
+ * instead of dropping silently (instruments review H3). */
+static void test_sink_unbound_and_overflow(void) {
+  printf("test_sink_unbound_and_overflow\n");
+  le_midi* m = le_midi_create();
+  le_midi_port* port = sink_port_new();
+  le_midi_input_for_test(m, 0xF8, 0, 0, 1);
+  CHECK(sink_port_count(port) == 0);
+  le_midi_sink_bind(le_midi_sink_of(m), port);
+  for (int i = 0; i < 300; ++i) le_midi_input_for_test(m, 0xF8, 0, 0, (uint64_t)i);
+  CHECK(sink_port_count(port) == (int)LE_MIDI_PORT_RING_CAP - 1);
+  /* The first lost message would have taken index 255. */
+  CHECK(le_midi_port_gap(port) == (size_t)LE_MIDI_PORT_RING_CAP);
+  le_midi_port_event ev;
+  size_t index = 99;
+  CHECK(le_midi_port_pop(port, &ev, &index) && ev.t_ns == 0u && index == 0u);
+  /* Room again: the next push lands after the gap, which is unchanged. */
+  le_midi_input_for_test(m, 0xF8, 0, 0, 1000);
+  CHECK(le_midi_port_gap(port) == (size_t)LE_MIDI_PORT_RING_CAP);
+  while (le_midi_port_pop(port, &ev, &index)) {
+  }
+  CHECK(index == (size_t)LE_MIDI_PORT_RING_CAP - 1u && ev.t_ns == 1000u);
+  le_midi_port_clear_gap(port, le_midi_port_gap(port));
+  CHECK(le_midi_port_gap(port) == 0u);
+  /* A second loss before the consumer acts moves the mark forward. */
+  for (int i = 0; i < 300; ++i) le_midi_input_for_test(m, 0xF8, 0, 0, 2000);
+  const size_t first = le_midi_port_gap(port);
+  CHECK(first == (size_t)LE_MIDI_PORT_RING_CAP * 2u); /* tail 511 at the loss */
+  CHECK(le_midi_port_pop(port, &ev, &index));
+  le_midi_input_for_test(m, 0xF8, 0, 0, 3000); /* fills the freed slot */
+  le_midi_input_for_test(m, 0xF8, 0, 0, 3001); /* lost: full again */
+  CHECK(le_midi_port_gap(port) == first + 1u);
+  le_midi_port_clear_gap(port, first); /* stale clear: the newer mark stays */
+  CHECK(le_midi_port_gap(port) == first + 1u);
+  le_midi_destroy(m);
+  free(port);
+}
+
+/* Closing a bound capture leaves the engine (review H2): the generation
+ * advances, the port reads lost and unowned, and nothing more lands. */
+static void test_sink_close_detaches_and_marks_lost(void) {
+  printf("test_sink_close_detaches_and_marks_lost\n");
+  le_midi* m = le_midi_create();
+  le_midi_port* port = sink_port_new();
+  le_midi_sink_bind(le_midi_sink_of(m), port);
+  CHECK(atomic_load(&port->a_owner) == le_midi_sink_of(m));
+  CHECK(atomic_load(&port->a_lost) == 0);
+  CHECK(le_midi_close(m) == LE_OK);
+  CHECK(atomic_load(&port->a_gen) == 2u);
+  CHECK(atomic_load(&port->a_lost) == 1);
+  CHECK(atomic_load(&port->a_owner) == NULL);
+  CHECK(atomic_load(&le_midi_sink_of(m)->port) == NULL);
+  le_midi_input_for_test(m, 0xF8, 0, 0, 1);
+  CHECK(sink_port_count(port) == 0);
+  /* A second close changes nothing. */
+  CHECK(le_midi_close(m) == LE_OK);
+  CHECK(atomic_load(&port->a_gen) == 2u);
+  /* Rebinding clears lost and starts a new generation. */
+  le_midi_sink_bind(le_midi_sink_of(m), port);
+  CHECK(atomic_load(&port->a_lost) == 0 && atomic_load(&port->a_gen) == 3u);
+  le_midi_input_lost(m);
+  CHECK(atomic_load(&port->a_lost) == 1);
+  le_midi_destroy(m);
+  free(port);
+}
+
+/* Rebinding makes earlier events stale; binding moves a capture between
+ * ports and evicts a port's previous capture. */
+static void test_sink_rebind_moves_and_evicts(void) {
+  printf("test_sink_rebind_moves_and_evicts\n");
+  le_midi* a = le_midi_create();
+  le_midi* b = le_midi_create();
+  le_midi_port* p0 = sink_port_new();
+  le_midi_port* p1 = sink_port_new();
+  le_midi_sink_bind(le_midi_sink_of(a), p0);
+  le_midi_input_for_test(a, 0xF8, 0, 0, 1);
+  le_midi_sink_bind(le_midi_sink_of(a), p0); /* rebind the same port */
+  le_midi_input_for_test(a, 0xF8, 0, 0, 2);
+  le_midi_port_event ev;
+  const uint32_t gen = atomic_load(&p0->a_gen);
+  CHECK(gen == 3u); /* bind, unbind, bind */
+  CHECK(le_midi_port_pop(p0, &ev, NULL) && ev.gen != gen);
+  CHECK(le_midi_port_pop(p0, &ev, NULL) && ev.gen == gen && ev.t_ns == 2u);
+  /* Move a to p1: p0 is left unowned with a new generation. */
+  le_midi_sink_bind(le_midi_sink_of(a), p1);
+  CHECK(atomic_load(&p0->a_owner) == NULL && atomic_load(&p0->a_gen) == 4u);
+  CHECK(atomic_load(&p1->a_owner) == le_midi_sink_of(a));
+  le_midi_input_for_test(a, 0xF8, 0, 0, 3);
+  CHECK(sink_port_count(p0) == 0 && sink_port_count(p1) == 1);
+  /* b takes p1: a is evicted and writes nowhere. */
+  le_midi_sink_bind(le_midi_sink_of(b), p1);
+  CHECK(atomic_load(&le_midi_sink_of(a)->port) == NULL);
+  CHECK(atomic_load(&p1->a_owner) == le_midi_sink_of(b));
+  le_midi_input_for_test(a, 0xF8, 0, 0, 4);
+  CHECK(sink_port_count(p1) == 1);
+  le_midi_input_for_test(b, 0xFC, 0, 0, 5);
+  CHECK(sink_port_count(p1) == 2);
+  /* Unbinding a port by itself detaches its capture. */
+  CHECK(le_midi_port_unbind(p1) == 1);
+  CHECK(atomic_load(&le_midi_sink_of(b)->port) == NULL);
+  CHECK(le_midi_port_unbind(p1) == 0);
+  le_midi_destroy(a);
+  le_midi_destroy(b);
+  free(p0);
+  free(p1);
+}
+
+static void test_priority_state_defaults(void) {
+  printf("test_priority_state_defaults\n");
+  le_midi* m = le_midi_create();
+  CHECK(le_midi_priority_state(NULL) == 0);
+  CHECK(le_midi_priority_state(m) == 0);
+  le_midi_set_priority_state(m, -1);
+  CHECK(le_midi_priority_state(m) == -1);
+  CHECK(le_midi_close(m) == LE_OK);
+  CHECK(le_midi_priority_state(m) == 0);
   le_midi_destroy(m);
 }
 
@@ -603,7 +818,14 @@ int main(void) {
   test_parse_note_on_and_off();
   test_parse_program_change();
   test_parse_ignores_non_note_cc();
+  test_parse_sink_kinds();
   test_ring_push_filters_non_note_cc();
+  test_sink_clock_reaches_port_not_dart();
+  test_sink_and_dart_split();
+  test_sink_unbound_and_overflow();
+  test_sink_close_detaches_and_marks_lost();
+  test_sink_rebind_moves_and_evicts();
+  test_priority_state_defaults();
   test_drain_delivers_in_fifo_order();
   test_ring_wraps_around();
   test_ring_full_drops_newest();

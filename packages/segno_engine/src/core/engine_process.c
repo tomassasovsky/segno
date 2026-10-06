@@ -6335,6 +6335,69 @@ void le_engine_master_bus_frame_for_test(le_engine* e, float* out, uint32_t f,
 
 /* ---- the real-time DSP core ---- */
 
+/* The native MIDI input sink (#1228 Part 1; le_midi_port.h): drains every
+ * port ring once per block, right after the command drain, so a message is
+ * at most one block old when it is applied. It is the only consumer of the
+ * ports: it alone clears a port's gap and observes lost edges, and every user
+ * of the events is dispatched from here, in ring order:
+ *   - events pushed under an earlier generation (a detached or replaced
+ *     capture) are dropped and counted, never applied;
+ *   - a gap (a full ring dropped messages) is reported once, at its exact
+ *     position: between the last event before the loss and the first after
+ *     it. Instruments release that port's voices there (review H3, delta D2);
+ *     the clock follower counts pulses across it by timestamp (#1228 M2);
+ *   - a lost port is reported once per edge.
+ * Part 1 has no consumer of the events themselves: MIDI clock (#1228 Part 2)
+ * and instrument routing (#1197 Part 2c) dispatch at the marked points.
+ * Bounded: at most LE_MIDI_PORT_RING_CAP events per port per block, no
+ * allocation, no lock. */
+static void le_midi_ports_drain(le_engine* e) {
+  uint32_t events = 0u, stale = 0u, gaps = 0u, lost = 0u;
+  for (int p = 0; p < LE_MAX_MIDI_PORTS; ++p) {
+    le_midi_port* port = &e->midi_ports[p];
+    const int32_t is_lost =
+        atomic_load_explicit(&port->a_lost, memory_order_acquire);
+    if (is_lost && !e->midi_port_lost_seen[p]) lost++;
+    e->midi_port_lost_seen[p] = is_lost;
+    const uint32_t gen = atomic_load_explicit(&port->a_gen, memory_order_acquire);
+    /* Read before popping: every event queued below the gap index precedes
+     * the loss, so the gap is dispatched when the pop reaches that index. */
+    const size_t gap = le_midi_port_gap(port);
+    int gap_reported = 0;
+    le_midi_port_event ev;
+    size_t index = 0;
+    for (uint32_t n = 0;
+         n < LE_MIDI_PORT_RING_CAP && le_midi_port_pop(port, &ev, &index); ++n) {
+      if (gap != 0 && !gap_reported && index + 1u >= gap) {
+        gaps++; /* dispatch point: the loss sits just before this event */
+        gap_reported = 1;
+      }
+      if (ev.gen != gen) {
+        stale++;
+        continue;
+      }
+      events++; /* dispatch point: one current event */
+    }
+    if (gap != 0) {
+      if (!gap_reported) gaps++; /* the loss follows every queued event */
+      le_midi_port_clear_gap(port, gap);
+    }
+  }
+  if (events) {
+    atomic_fetch_add_explicit(&e->a_midi_in_events, events, memory_order_relaxed);
+  }
+  if (stale) {
+    atomic_fetch_add_explicit(&e->a_midi_in_stale, stale, memory_order_relaxed);
+  }
+  if (gaps) {
+    atomic_fetch_add_explicit(&e->a_midi_in_overflows, gaps,
+                              memory_order_relaxed);
+  }
+  if (lost) {
+    atomic_fetch_add_explicit(&e->a_midi_in_lost, lost, memory_order_relaxed);
+  }
+}
+
 void le_engine_process(le_engine* e, float* output, const float* input,
                        uint32_t frames) {
   le_flush_denormals(); /* per-thread; cheap to reassert every callback */
@@ -6358,6 +6421,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     apply_command(e, &cmd, perf_frame_base);
     e->commands_applied++; /* rejected and no-op commands settle too */
   }
+
+  le_midi_ports_drain(e);
 
   /* Close the count-in cancel-race grace window (code-review fix) right
    * after this block's command drain: it is open for exactly one block's

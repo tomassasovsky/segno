@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h> /* clock_gettime */
 
 #include "le_midi_backend.h"
 #include "segno_engine_api.h"
@@ -96,19 +97,51 @@ static MIDIEndpointRef le_core_find_source(const char* id) {
   return 0;
 }
 
-static uint64_t le_core_ts_to_us(const le_core_midi_state* st,
-                                 MIDITimeStamp ts) {
-  if (ts == 0) ts = mach_absolute_time(); /* 0 means "now" */
-  /* ns = ts * numer / denom; widen to 128-bit to avoid overflow. */
-  const unsigned __int128 ns =
-      (unsigned __int128)ts * st->numer / st->denom;
-  return (uint64_t)(ns / 1000u);
+static uint64_t le_core_ticks_to_ns(const le_core_midi_state* st,
+                                    uint64_t ticks) {
+  /* ns = ticks * numer / denom; widen to 128-bit to avoid overflow. */
+  return (uint64_t)((unsigned __int128)ticks * st->numer / st->denom);
 }
 
-/* Splits a packet's raw byte stream into complete channel-voice / system
- * messages and pushes the Note/CC ones (the ring filters the rest). */
+/* CLOCK_MONOTONIC in ns, the base of the engine's le_now_ns. */
+static uint64_t le_core_monotonic_ns(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+/* A packet's host time on the engine's CLOCK_MONOTONIC timeline. On macOS
+ * CLOCK_MONOTONIC keeps counting through sleep while mach_absolute_time (the
+ * packet clock) does not, so the two differ by an offset, taken here at
+ * delivery. */
+static uint64_t le_core_ts_to_ns(const le_core_midi_state* st,
+                                 MIDITimeStamp ts) {
+  const uint64_t now_ticks = mach_absolute_time();
+  const uint64_t now_ns = le_core_monotonic_ns();
+  if (ts == 0 || ts > now_ticks) return now_ns; /* 0 means "now" */
+  return now_ns - le_core_ticks_to_ns(st, now_ticks - ts);
+}
+
+/* The data-byte count of a status byte, or -1 for a byte this splitter skips
+ * whole (SysEx is handled by the caller). */
+static int le_core_data_len(uint8_t status) {
+  if (status < 0xF0u) {
+    const uint8_t hi = (uint8_t)(status & 0xF0u);
+    return (hi == 0xC0u || hi == 0xD0u) ? 1 : 2;
+  }
+  switch (status) {
+    case 0xF1u: case 0xF3u: return 1; /* MTC quarter frame, Song Select */
+    case 0xF2u: return 2;             /* Song Position Pointer */
+    default: return 0;                /* tune request and real-time */
+  }
+}
+
+/* Splits a packet's raw byte stream into complete messages and hands each to
+ * le_midi_input, which routes the engine kinds (now including clock,
+ * transport and Song Position, #1228) to the bound port and the Note/CC/Program
+ * kinds to the Dart ring. */
 static void le_core_push_bytes(le_midi* owner, const Byte* data, UInt16 len,
-                               uint64_t ts_us) {
+                               uint64_t t_ns) {
   UInt16 i = 0;
   while (i < len) {
     const uint8_t status = data[i];
@@ -122,15 +155,10 @@ static void le_core_push_bytes(le_midi* owner, const Byte* data, UInt16 len,
       if (i < len) i++;
       continue;
     }
-    if (status >= 0xF1u) {
-      i++; /* single-byte system / real-time message */
-      continue;
-    }
-    const uint8_t hi = (uint8_t)(status & 0xF0u);
-    const int datalen = (hi == 0xC0u || hi == 0xD0u) ? 1 : 2;
-    const uint8_t d1 = (i + 1 < len) ? data[i + 1] : 0;
+    const int datalen = le_core_data_len(status);
+    const uint8_t d1 = (datalen >= 1 && i + 1 < len) ? data[i + 1] : 0;
     const uint8_t d2 = (datalen == 2 && i + 2 < len) ? data[i + 2] : 0;
-    le_midi_ring_push(owner, status, d1, d2, ts_us);
+    le_midi_input(owner, status, d1, d2, t_ns);
     i = (UInt16)(i + 1 + datalen);
   }
 }
@@ -143,7 +171,7 @@ static void le_core_read_proc(const MIDIPacketList* pktlist, void* readRefCon,
   const MIDIPacket* pkt = &pktlist->packet[0];
   for (UInt32 i = 0; i < pktlist->numPackets; ++i) {
     le_core_push_bytes(st->owner, pkt->data, pkt->length,
-                       le_core_ts_to_us(st, pkt->timeStamp));
+                       le_core_ts_to_ns(st, pkt->timeStamp));
     pkt = MIDIPacketNext(pkt);
   }
   le_midi_drain(st->owner);
