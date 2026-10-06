@@ -86,7 +86,10 @@ Finder _column(int channel) => find.byWidgetPredicate(
 void main() {
   late MixSettingsCoordinator mixSettings;
   late FxChainPersistence fxPersistence;
-  setUpAll(() => registerFallbackValue(const LooperRecordPressed(0)));
+  setUpAll(() {
+    registerFallbackValue(const LooperRecordPressed(0));
+    registerFallbackValue(LengthEdit.doubled);
+  });
 
   late LooperBloc bloc;
   late TracksCubit tracks;
@@ -610,6 +613,44 @@ void main() {
       );
       expect(control.state.footReverseFailure, 1);
       dismissAppToast(AppToastId.footReverseFailure);
+      await tester.pump(const Duration(seconds: 10));
+    });
+  });
+
+  group('Multiply / Divide (#1168)', () {
+    testWidgets('the surface replaces the columns, and a refused edit shows '
+        'its own notice once', (tester) async {
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ],
+        ),
+      );
+      when(
+        () => repository.editLength(
+          channel: any(named: 'channel'),
+          edit: any(named: 'edit'),
+        ),
+      ).thenAnswer((_) async => EngineResult.modeMismatch);
+      await pump(tester);
+      control.setMode(InteractionMode.length);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('foot_length_view')), findsOneWidget);
+      await control.editFootLengthTrack(LengthEdit.lastHalf);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('That length does not fit the other loops or the bars.'),
+        findsOneWidget,
+      );
+      expect(control.state.footLengthFailure, 1);
+      dismissAppToast(AppToastId.footLengthRefused);
       await tester.pump(const Duration(seconds: 10));
     });
   });

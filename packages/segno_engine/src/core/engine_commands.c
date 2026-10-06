@@ -647,8 +647,13 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
     t->queued_undo--;
     if (t->undo_count > 0) {
       /* A length edit is undone by a command, never from the drain: the
-       * next explicit tap undoes it (#1168). */
-      if (t->undo_stack[t->undo_count - 1].kind == LE_HIST_LENGTH) break;
+       * next explicit tap undoes it (#1168). This tap and the rest did
+       * nothing, which the host reports. */
+      if (t->undo_stack[t->undo_count - 1].kind == LE_HIST_LENGTH) {
+        atomic_fetch_add_explicit(&t->a_length_history_refusals, 1u,
+                                  memory_order_relaxed);
+        break;
+      }
       le_undo_swap(engine, t);
       continue;
     }
@@ -3052,7 +3057,7 @@ int32_t le_engine_edit_length(le_engine* e, int32_t channel, int32_t edit,
 /* Undo (redo == 0) or Redo of the LENGTH entry on top of that stack: the same
  * command, re-applying the entry's image, length and playhead map. The
  * synchronous result is the post (as Undo to empty and Clear restore). */
-static int32_t le_length_history(le_engine* e, int32_t ch, int redo) {
+static int32_t le_length_history_post(le_engine* e, int32_t ch, int redo) {
   le_track* t = &e->tracks[ch];
   if (le_length_busy(e, ch)) return LE_ERR_NOT_READY;
   const le_hist_entry top = redo ? t->redo_stack[t->redo_count - 1]
@@ -3069,6 +3074,19 @@ static int32_t le_length_history(le_engine* e, int32_t ch, int redo) {
       atomic_load_explicit(&t->a_audio_rev, memory_order_acquire), NULL);
 }
 
+/* Counts an Undo or Redo tap on a length edit that did nothing, for the host
+ * to report (le_track_snapshot.length_history_refusals). */
+static void le_length_history_refused(le_track* t) {
+  atomic_fetch_add_explicit(&t->a_length_history_refusals, 1u,
+                            memory_order_relaxed);
+}
+
+static int32_t le_length_history(le_engine* e, int32_t ch, int redo) {
+  const int32_t rc = le_length_history_post(e, ch, redo);
+  if (rc != LE_OK) le_length_history_refused(&e->tracks[ch]);
+  return rc;
+}
+
 /* Files a length motion once the callback acknowledged it (control thread,
  * from the event drain). Accepted: the callback dropped the old-length armed
  * shadows, so nothing outstanding is held any more; the replaced image moves
@@ -3081,6 +3099,8 @@ static void le_length_collect(le_engine* e, le_track* t) {
   const int32_t slot = t->length_pending - 1;
   t->length_pending = 0;
   if (load_i32(&t->a_length_result) != LE_OK) {
+    /* An Undo or Redo the rig no longer fits: posted as OK, so say so now. */
+    if (t->length_op != 0) le_length_history_refused(t);
     for (int k = 0; t->length_op == 0 && k < t->outstanding_count; ++k) {
       if (t->outstanding_slots[k] != slot) continue;
       t->outstanding_slots[k] = t->outstanding_slots[--t->outstanding_count];

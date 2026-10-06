@@ -30,9 +30,11 @@ import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/control/control_projection.dart';
 import 'package:segno/control/foot_fade_actions.dart';
+import 'package:segno/control/foot_length_actions.dart';
 import 'package:segno/control/foot_mixer_actions.dart';
 import 'package:segno/control/foot_reverse_actions.dart';
 import 'package:segno/control/model/foot_fade.dart';
+import 'package:segno/control/model/foot_length.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/control/model/foot_reverse.dart';
 import 'package:segno/logging/app_log.dart';
@@ -42,6 +44,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 part 'control_foot_fade.dart';
 part 'control_foot_reverse.dart';
+part 'control_foot_length.dart';
 part 'control_foot_mixer.dart';
 part 'control_midi.dart';
 part 'control_state.dart';
@@ -191,6 +194,7 @@ class ControlCubit extends Cubit<ControlState> {
        _fxPersistence = fxPersistence,
        _owned = ownedValues,
        _footReverseActions = FootReverseActions(repository: looper),
+       _footLengthActions = FootLengthActions(repository: looper),
        _footFadeActions = FootFadeActions(
          repository: looper,
          settings: fadeSettings,
@@ -1052,6 +1056,7 @@ class ControlCubit extends Cubit<ControlState> {
   (int, int)? _footMixerSource;
   final FootFadeActions _footFadeActions;
   final FootReverseActions _footReverseActions;
+  final FootLengthActions _footLengthActions;
   int _footFadeSession = 0;
   late final _footMixerActions = FootMixerActions(
     repository: _looper,
@@ -1312,7 +1317,8 @@ class ControlCubit extends Cubit<ControlState> {
     InteractionMode.custom ||
     InteractionMode.mixer ||
     InteractionMode.fade ||
-    InteractionMode.reverse => InteractionMode.record,
+    InteractionMode.reverse ||
+    InteractionMode.length => InteractionMode.record,
   });
 
   /// Saves the built-in pedal setup before making it live. A storage refusal
@@ -1453,6 +1459,7 @@ class ControlCubit extends Cubit<ControlState> {
           ),
         );
       case InteractionMode.reverse:
+      case InteractionMode.length:
         emit(
           state.copyWith(
             mode: next,
@@ -1594,6 +1601,10 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.fade:
         _recAdvance(state.cursor);
       case InteractionMode.reverse:
+        _recAdvance(state.cursor);
+      case InteractionMode.length:
+        // The Rec/Play PEDAL doubles here, through the surface's role table;
+        // this keyboard and transport call keeps its record meaning.
         _recAdvance(state.cursor);
       case InteractionMode.mute:
         _muteRecPlay();
@@ -1737,6 +1748,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.mixer:
       case InteractionMode.fade:
       case InteractionMode.reverse:
+      case InteractionMode.length:
         parkAll();
       case InteractionMode.fx:
         panicTrackChains();
@@ -1804,6 +1816,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.mixer:
       case InteractionMode.fade:
       case InteractionMode.reverse:
+      case InteractionMode.length:
         break;
       case InteractionMode.custom:
         // Inert here: the switch runs its assignment at the press. Note the
@@ -2148,6 +2161,40 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
+  /// Admits a screen contact on the Multiply / Divide surface into the
+  /// shared ledger.
+  void footLengthPressed(PedalButton button, Object contact) {
+    if (state.mode != InteractionMode.length || isClosed) return;
+    _handleEvent(ButtonPressed(button), contact: contact);
+  }
+
+  /// Only the admitted screen contact may complete its Multiply / Divide
+  /// contact.
+  void footLengthReleased(PedalButton button, Object contact) =>
+      footMixerReleased(button, contact);
+
+  /// Cancels an abandoned Multiply / Divide contact.
+  void footLengthCancelled(PedalButton button, Object contact) =>
+      footMixerCancelled(button, contact);
+
+  /// Accessible semantic activation uses the same Multiply / Divide role as
+  /// contacts.
+  void activateFootLengthPedal(PedalButton button) {
+    final role = FootLengthProjection.pedalRoles[button]!;
+    if (role.press != FootLengthAction.exit && !_lengthEditable) return;
+    _dispatchLengthAction(role.press, role.slot);
+  }
+
+  /// Applies [edit] to the selected track from the Multiply / Divide
+  /// surface. An empty selected track is silent; a recorded one that changes
+  /// nothing says why.
+  Future<void> editFootLengthTrack(LengthEdit edit) async {
+    if (!_lengthEditable) return;
+    final channel = state.cursor;
+    if (!_lengthProjection().tracks[channel].hasContent) return;
+    await _editLengthChannel(channel, edit);
+  }
+
   /// Fades the recorded track in visible [slot] of the current bank.
   Future<void> toggleFootFadeTrack(int slot) async {
     final fade = _footFadeActions;
@@ -2359,6 +2406,10 @@ class ControlCubit extends Cubit<ControlState> {
       _onReversePress(button);
       return;
     }
+    if (state.mode == InteractionMode.length) {
+      _onLengthPress(button);
+      return;
+    }
     if (state.mode == InteractionMode.custom) {
       // These two physical exits cannot be assigned. They act on contact,
       // without a second action waiting on the release.
@@ -2411,7 +2462,8 @@ class ControlCubit extends Cubit<ControlState> {
           InteractionMode.custom ||
           InteractionMode.mixer ||
           InteractionMode.fade ||
-          InteractionMode.reverse => false,
+          InteractionMode.reverse ||
+          InteractionMode.length => false,
         };
         if (accepted) _acceptedContacts.add(button);
         _armRecordHold();
@@ -2659,6 +2711,10 @@ class ControlCubit extends Cubit<ControlState> {
         return _footReverseActions
             .toggle(channel)
             .then((result) => result.isOk);
+      case TrackOperation.multiply:
+      case TrackOperation.divideFirstHalf:
+      case TrackOperation.divideLastHalf:
+        return _runAssignedLength(channel, _lengthEditOf(operation)!);
     }
   }
 

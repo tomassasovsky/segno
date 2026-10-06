@@ -732,6 +732,59 @@ NON-GOALS:
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
 
+Part 3 build notes (branch `claude/multiply-divide-1168-p3`, stacked on Part 2):
+
+- **Notice policy, shared with Fade, Reverse and Peel (Peel Part 3, #1233).**
+  - On the surface an EMPTY track is dimmed and silent: its track pedal cannot
+    select it, and while the selected track is empty the three edit pedals
+    rest. Nothing is posted and nothing is said.
+  - A press on a RECORDED track that changes nothing raises
+    `ControlState.footLengthFailure`/`footLengthRefusal`, and Tracks shows one
+    toast with the reason: busy (capturing, a layer landing, an arm or a
+    Count-in launch; refused before the engine), incompatible
+    (`modeMismatch`), capacity, or failed (an error toast; the rest warn).
+    A refusal that lands after its visit or Session ended is dropped, as on
+    Reverse.
+  - An ASSIGNED Multiply or Divide (Custom, CTRL, MIDI) that changes nothing
+    always shows its toast, in any mode, the empty track included.
+  - §3 said an unavailable track is refused "without a notice"; the policy
+    keeps that only for the empty track on the surface.
+- **Undo flashes (Part 1 review L2 and L3).** The engine counts every Undo or
+  Redo tap on a LENGTH entry that did nothing: refused at the tap (the length
+  no longer fits, or the track is busy), refused by the callback after it was
+  posted, or queued behind an overdub and stopped at the edit. The count is
+  published as `le_track_snapshot.length_history_refusals`; the repository
+  reports each rise on `lengthHistoryRefusals`, and the app shows one toast
+  naming the track, in every mode and from every surface. This adds one
+  snapshot field (no command or fact number).
+- **M2 behind one check.** The re-clock bar rule now lives in
+  `le_reclock_whole_bars` (`engine_core.h`) and nowhere else. If the review
+  recommends accepting a sole 1- or 3-bar loop's half (changing the tempo
+  instead), that function is the one to change, plus its test
+  `test_length_reclock_keeps_tempo`.
+- **Selection.** The track pedals select on contact (the shared cursor), and
+  Bank pages without moving the cursor; the selected track stays visible in
+  the overview with its bar. The LED is red on the selected recorded track.
+  `trackPressed` is inert in this mode, as on the other performance surfaces.
+- **Overview.** "Loop length": whole bars when the grid counts them, else
+  seconds (locale decimals), plus `×2`/`×4`/`1/2`/`1/4`; "Empty" for an empty
+  track. A busy recorded track keeps its length, dimmed.
+- **Journey.** The accepted Record → overdub → Divide → Peel → Undo/Redo
+  journey runs against the actual engine
+  (`length_journey_native_test.dart`): a Divide bakes the passes into the
+  kept half, so Peel has nothing to remove until Undo restores the length and
+  its layers. No fake-engine copy: the fake cannot say what Peel does after a
+  Divide.
+- **Pen.** `segno-ui.pen` has no Multiply / Divide frame. The surface follows
+  the Fade, Reverse and Peel layout. Write-back list for the pen owner: a
+  Multiply / Divide performance frame beside the Reverse and Peel frames
+  (overview heading "Loop length", the bars/seconds and ratio words, the
+  dimmed empty track), the four refusal notices, the assigned-edit notice and
+  the length Undo notice, with a `c/` note recording the policy above.
+- **Outstanding:** the appliance hardware evidence (the last success
+  criterion), and the M2 product check the Part 1 review is doing against
+  pen section 16.
+
 ## 6. Decisions taken under the standing rules
 
 1. The edit, and Undo/Redo of it, apply on the audio thread through

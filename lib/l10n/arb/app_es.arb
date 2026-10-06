@@ -2741,5 +2741,21 @@
     "footReverseFailure": "No se pudo cambiar el sentido de la pista. Inténtalo de nuevo.",
     "footReverseOverdubRefused": "No se puede sobregrabar mientras la pista suena al revés",
     "stageReverseMarker": "REV",
-    "a11yStageReversed": "La pista se reproduce al revés"
+    "a11yStageReversed": "La pista se reproduce al revés",
+    "actionModeLength": "Multiplicar / Dividir",
+    "actionOperationMultiply": "Multiplicar",
+    "actionOperationDivideFirstHalf": "Dividir: primera mitad",
+    "actionOperationDivideLastHalf": "Dividir: segunda mitad",
+    "footLengthDouble": "Duplicar",
+    "footLengthFirstHalf": "Primera mitad",
+    "footLengthLastHalf": "Segunda mitad",
+    "footLengthOverview": "Duración del bucle",
+    "footLengthDivision": "1/{divisor}",
+    "footLengthSeconds": "{seconds} s",
+    "footLengthIncompatible": "Esa duración no encaja con los otros bucles ni con los compases.",
+    "footLengthCapacity": "El bucle duplicado superaría la memoria de bucles.",
+    "footLengthBusy": "La pista está ocupada. Inténtalo de nuevo cuando termine.",
+    "footLengthEmpty": "La pista no tiene grabación para duplicar ni dividir.",
+    "footLengthFailure":"No se pudo cambiar la duración. Inténtalo de nuevo.",
+    "lengthHistoryRefused": "No se deshizo ni se rehízo el cambio de duración. Inténtalo de nuevo."
 }

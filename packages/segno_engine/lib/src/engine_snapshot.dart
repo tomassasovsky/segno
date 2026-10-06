@@ -637,6 +637,7 @@ class TrackSnapshot {
     this.peakL = 0,
     this.peakR = 0,
     this.reversed = false,
+    this.lengthHistoryRefusals = 0,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -676,6 +677,7 @@ class TrackSnapshot {
       peakL = 0,
       peakR = 0,
       reversed = false,
+      lengthHistoryRefusals = 0,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -730,6 +732,7 @@ class TrackSnapshot {
         : native.overdub_feedback_override,
     solo: native.solo != 0,
     reversed: native.reversed != 0,
+    lengthHistoryRefusals: native.length_history_refusals,
     imageRevision: native.image_revision,
     peakL: native.peak_l,
     peakR: native.peak_r,
@@ -743,6 +746,12 @@ class TrackSnapshot {
   /// #1162). Callback-owned like [fade]: published with every accepted
   /// `toggleReverse`/`installReverse`, reset to forward with the material.
   final bool reversed;
+
+  /// How many Undo or Redo taps on this track's length edits did nothing
+  /// (#1168): the length no longer fit the rig, or a tap queued behind an
+  /// overdub stopped at a length edit. Counted since the engine was created
+  /// and never reset; the host reports each increase.
+  final int lengthHistoryRefusals;
 
   /// Sequence of the coherent native tuple publication.
   final int fadeRevision;
@@ -932,6 +941,7 @@ class TrackSnapshot {
           peakL == other.peakL &&
           peakR == other.peakR &&
           reversed == other.reversed &&
+          lengthHistoryRefusals == other.lengthHistoryRefusals &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -967,6 +977,7 @@ class TrackSnapshot {
     peakL,
     peakR,
     reversed,
+    lengthHistoryRefusals,
     Object.hashAll(lanes),
   ]);
 }

@@ -47,7 +47,12 @@ enum InteractionMode {
 
   /// Foot-controlled per-track playback direction: each track pedal turns
   /// its track around at the current position.
-  reverse;
+  reverse,
+
+  /// Foot-controlled Multiply / Divide (#1168): the track pedals select a
+  /// track, and Rec/Play doubles it while Undo and Clear keep its first or
+  /// last half.
+  length;
 
   /// The persisted token for this mode. Derived from the member name, so a
   /// member rename changes the current stored identity.

@@ -187,6 +187,7 @@ class _AppState extends State<App> {
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   StreamSubscription<int>? _recordRefusedSubscription;
   StreamSubscription<int>? _overdubRefusedSubscription;
+  StreamSubscription<int>? _lengthHistoryRefusedSubscription;
   late final PlaybackOptionsCubit _playbackView;
   late final RecordTimingCubit _timingView;
 
@@ -231,6 +232,17 @@ class _AppState extends State<App> {
       (channel) =>
           _showRecordRefused(channel, (l10n) => l10n.footReverseOverdubRefused),
     );
+    // An Undo or Redo of a length edit that did nothing (#1168): refused at
+    // the tap or after it was posted, or queued taps that stopped at the
+    // edit. From any surface, so a tap that did nothing is never silent.
+    _lengthHistoryRefusedSubscription = widget.repository.lengthHistoryRefusals
+        .listen(
+          (channel) => _showRecordRefused(
+            channel,
+            (l10n) => l10n.lengthHistoryRefused,
+            id: AppToastId.lengthHistoryRefused,
+          ),
+        );
     _playbackView = PlaybackOptionsCubit(settings: _runtime.playback);
     _recordView = RecordOptionsCubit(settings: _runtime.record);
     _timingView = RecordTimingCubit(settings: _runtime.timing);
@@ -255,6 +267,7 @@ class _AppState extends State<App> {
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_recordRefusedSubscription?.cancel());
     unawaited(_overdubRefusedSubscription?.cancel());
+    unawaited(_lengthHistoryRefusedSubscription?.cancel());
     _controlNotices.dispose();
     unawaited(
       _closeControlOwners().catchError((Object error, StackTrace stack) {
@@ -380,11 +393,12 @@ class _AppState extends State<App> {
   /// why. Low stakes — a toast, like the input notice above.
   void _showRecordRefused(
     int channel,
-    String Function(AppLocalizations l10n) title,
-  ) {
+    String Function(AppLocalizations l10n) title, {
+    String id = AppToastId.recordRefused,
+  }) {
     if (!mounted || _runtime.power.state.isUiUp) return;
     showAppToast(
-      id: AppToastId.recordRefused,
+      id: id,
       type: ToastificationType.warning,
       autoCloseDuration: const Duration(seconds: 5),
       title: Builder(

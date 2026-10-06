@@ -150,15 +150,30 @@ typedef struct {
   int32_t len, multiple, divisor, reclock, bars;
 } le_length_fit;
 
+/* The re-clock bar rule (#1212 review M2), the only place it lives: a track
+ * that is the rig's only content re-clocks the master to its new length `len`
+ * and keeps the tempo, so a grid of `bars` bars over `base` frames must come
+ * out a whole bar count over `len` (within a frame per bar, the odd length's
+ * half frame). Returns the kept bar count, or 0 when the length would change
+ * the tempo or the beat rate: the edit is then refused as incompatible. Half of
+ * 1 or 3 bars is refused; half of 2 bars and every Double keep whole bars. To
+ * accept such a length instead, this is the function to change. */
+static inline int32_t le_reclock_whole_bars(int32_t base, int32_t bars,
+                                            int32_t len) {
+  const int64_t beats = (int64_t)bars * len; /* bars * base frames */
+  const int64_t kept = (beats + base / 2) / base;
+  const int64_t off = kept * base - beats;
+  if (kept < 1 || (off < 0 ? -off : off) > bars) return 0;
+  return (int32_t)kept;
+}
+
 /* The one verdict for a new length `len`, shared by control admission (its
  * effective view) and the callback recheck (the applied rig), so the two can
  * only disagree when the rig changed in between. `others`: another track holds
  * or is capturing content; `primary`: this track is the crowned primary.
  * Free/Song spans are independent. With no other content the master follows
- * the track, keeping the tempo: a grid of `bars` bars over `base` frames must
- * come out a whole bar count over `len` (within a frame per bar, the odd
- * length's half frame), else the length is refused as incompatible rather
- * than changing tempo or beat rate silently. A crowned Sync/Band primary with
+ * the track, keeping the tempo, under le_reclock_whole_bars. A crowned
+ * Sync/Band primary with
  * dependents is refused (a Double would end Sync quantization, a half would
  * re-clock every dependent); any other track must fit the mode's span rule
  * against the unchanged base. */
@@ -177,13 +192,8 @@ static inline int32_t le_length_fit_check(int32_t mode, int32_t base,
   if (!others) {
     out->reclock = len;
     if (bars > 0 && base > 0) {
-      const int64_t beats = (int64_t)bars * len; /* bars * base frames */
-      const int64_t kept = (beats + base / 2) / base;
-      const int64_t off = kept * base - beats;
-      if (kept < 1 || (off < 0 ? -off : off) > bars) {
-        return LE_ERR_MODE_MISMATCH;
-      }
-      out->bars = (int32_t)kept;
+      out->bars = le_reclock_whole_bars(base, bars, len);
+      if (out->bars == 0) return LE_ERR_MODE_MISMATCH;
     }
     return LE_OK;
   }

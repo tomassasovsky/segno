@@ -168,7 +168,16 @@ enum TrackOperation {
   fade('fade'),
 
   /// Turn the track's playback direction around at its current position.
-  reverse('reverse');
+  reverse('reverse'),
+
+  /// Double the track's length by repeating it: Multiply (#1168).
+  multiply('multiply'),
+
+  /// Keep the first half of the track: Divide (#1168).
+  divideFirstHalf('divide-first'),
+
+  /// Keep the last half of the track: Divide (#1168).
+  divideLastHalf('divide-last');
 
   const TrackOperation(this.token);
 
@@ -187,8 +196,16 @@ enum TrackOperation {
   ///
   /// Clear may not: erasing the whole rig is [ControlCommand.clearAll], ONE
   /// grouped edit with one undo, and eight separate clears would leave eight
-  /// undo steps behind a single stomp.
-  bool get allowsAllTracks => this != TrackOperation.clear;
+  /// undo steps behind a single stomp. Neither may Multiply and Divide: eight
+  /// length edits behind one stomp leave eight undo steps too, and most rigs
+  /// would refuse several of them (#1168).
+  bool get allowsAllTracks => switch (this) {
+    TrackOperation.clear ||
+    TrackOperation.multiply ||
+    TrackOperation.divideFirstHalf ||
+    TrackOperation.divideLastHalf => false,
+    _ => true,
+  };
 }
 
 /// The whole-rig commands a control can drive.
@@ -351,6 +368,7 @@ final class ModeAction extends ControlAction {
     InteractionMode.mixer => 'mixer',
     InteractionMode.fade => 'fade',
     InteractionMode.reverse => 'reverse',
+    InteractionMode.length => 'length',
   };
 
   @override

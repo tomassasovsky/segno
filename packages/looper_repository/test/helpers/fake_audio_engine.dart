@@ -2038,6 +2038,7 @@ class _LengthTrack extends TrackSnapshot {
         redoDepth: source.redoDepth,
         multiple: source.multiple,
         syncDivisor: source.syncDivisor,
+        lengthHistoryRefusals: source.lengthHistoryRefusals,
         inputMask: source.inputMask,
         outputMask: source.outputMask,
         layerInFlight: source.layerInFlight,

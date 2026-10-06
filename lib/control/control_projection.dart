@@ -14,6 +14,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/invariants.dart';
 import 'package:segno/control/model/foot_fade.dart';
+import 'package:segno/control/model/foot_length.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/control/model/foot_reverse.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -106,6 +107,12 @@ PedalTrackLed projectTrackLed(
       // with the direction reset, so an empty track never reads reversed.
       return (track != null && track.hasContent && track.reversed)
           ? PedalTrackLed.blue
+          : PedalTrackLed.off;
+    case InteractionMode.length:
+      // Red on the selected recorded track, the one every edit acts on (the
+      // Record-mode cursor convention); an empty track is never selected.
+      return (channel == overlay.cursor && track != null && track.hasContent)
+          ? PedalTrackLed.red
           : PedalTrackLed.off;
     case InteractionMode.custom:
       return customFunctions[channel] ?? false
@@ -209,7 +216,8 @@ PedalStateFrame projectFrame(
       InteractionMode.custom ||
       InteractionMode.mixer ||
       InteractionMode.fade ||
-      InteractionMode.reverse => PedalMode.custom,
+      InteractionMode.reverse ||
+      InteractionMode.length => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
@@ -240,11 +248,14 @@ PedalStateFrame projectFrame(
   return frame;
 }
 
-/// Whether [button] is a slot-less pedal on a Fade or Reverse surface.
+/// Whether [button] is a slot-less pedal on a Fade, Reverse or Multiply /
+/// Divide surface.
 bool _slotless(InteractionMode mode, PedalButton button) => switch (mode) {
   InteractionMode.fade => FootFadeProjection.pedalRoles[button]!.slot == null,
   InteractionMode.reverse =>
     FootReverseProjection.pedalRoles[button]!.slot == null,
+  InteractionMode.length =>
+    FootLengthProjection.pedalRoles[button]!.slot == null,
   _ => false,
 };
 
