@@ -256,6 +256,10 @@ abstract interface class DecodedAudioPayload {
 
   /// Frees the samples. Called once, and only while the payload is owned.
   void free();
+
+  /// The engine took the samples: nothing here may free them any more (a
+  /// native payload detaches its finalizer).
+  void detach();
 }
 
 /// Who owns a [DecodedAudio]'s samples.
@@ -338,6 +342,7 @@ class DecodedAudio {
   void markTransferred() {
     _requireOwned();
     _ownership = DecodedAudioOwnership.transferred;
+    payload.detach();
   }
 
   void _requireOwned() {

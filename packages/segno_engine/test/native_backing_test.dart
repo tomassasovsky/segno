@@ -7,6 +7,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
+import 'package:segno_engine/src/native_audio_decoder.dart'
+    show NativeDecodedAudioPayload;
 
 /// The backing seam through the real native library (#1200 Part 3): the
 /// decoder in a background isolate, and the voice through the device-free
@@ -218,6 +220,43 @@ void main() {
       expect(s.position, 50);
       expect(s.lastEnd, BackingEndEvent.advanced);
       expect(s.owned, 1); // the finished file came back and was freed
+    }, skip: skip);
+
+    test('the finalizer guards a decode until the engine takes it or it is '
+        'disposed (review of P3, L2)', () async {
+      final decoder = NativeAudioDecoder();
+      final kept = await decoder.decode(
+        writeWav('f1.wav', 100),
+        sampleRate: 48000,
+      );
+      final dropped = await decoder.decode(
+        writeWav('f2.wav', 100),
+        sampleRate: 48000,
+      );
+      bool guarded(DecodedAudio audio) =>
+          (audio.payload as NativeDecodedAudioPayload).finalizerAttached;
+      expect(guarded(kept), isTrue);
+      expect(guarded(dropped), isTrue);
+      expect(engine.backingLoad(kept, item: 1, play: false), EngineResult.ok);
+      expect(guarded(kept), isFalse);
+      dropped.dispose();
+      expect(guarded(dropped), isFalse);
+    }, skip: skip);
+
+    test('a bounded read past the last output frame is empty and the voice '
+        'refuses it', () async {
+      final empty = await NativeAudioDecoder().decode(
+        writeWav('t.wav', 100, rate: 96000),
+        sampleRate: 48000,
+        startFrame: 99,
+        maxFrames: 10,
+      );
+      expect(empty.frames, 0);
+      expect(
+        engine.backingLoad(empty, item: 1, play: false),
+        EngineResult.invalid,
+      );
+      empty.dispose();
     }, skip: skip);
 
     test("refusals leave the audio the caller's", () async {
