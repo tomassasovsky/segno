@@ -6152,5 +6152,9 @@
                 "type": "int"
             }
         }
+    },
+    "storageEjectStuck": "Still ejecting. If it does not finish, unplug the drive.",
+    "@storageEjectStuck": {
+        "description": "Under a drive whose eject the helper took and has not answered after two minutes; pulling the drive is the way out."
     }
 }

@@ -73,7 +73,12 @@ class _StoragePageState extends State<StoragePage> {
               context.l10n.storageEjectFailed,
               key: const Key('storage_eject_failed'),
             ),
-          if (state.ejectTaken &&
+          if (state.ejectStuck == volume.generation)
+            StorageNotice(
+              context.l10n.storageEjectStuck,
+              key: const Key('storage_eject_stuck'),
+            )
+          else if (state.ejectTaken &&
               volume.status == RemovableVolumeStatus.ejecting)
             StorageNotice(
               context.l10n.storageEjectUnderway,
