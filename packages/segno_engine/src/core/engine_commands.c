@@ -1729,6 +1729,16 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
       !load_i32(&t->a_pending_launch)) {
     return LE_ERR_TRANSFORMED;
   }
+  /* ...and a punch-in on a take a retime moved off its span (#1179 Part
+   * 4a): what it would lay down is not what it plays. The callback drops a
+   * press that a retime still in flight overtakes. */
+  const int32_t span_clock = load_i32(&t->a_span_clock);
+  if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && span_clock > 0 &&
+      span_clock != load_i32(&engine->a_master_len) &&
+      !(engine->armed[channel] && load_i32(&t->a_pending)) &&
+      !load_i32(&t->a_pending_launch)) {
+    return LE_ERR_TRANSFORMED;
+  }
   /* The track's length (k * base) — all lanes share it, so lane 0 is canonical.
    * Kept coherent with the effective state: the undo-to-empty / redo-from-empty
    * paths store it control-side when they post. */
@@ -2327,8 +2337,21 @@ int32_t le_engine_history_mode_gate(le_engine* engine, uint32_t channels,
     if (base <= 0) {
       base = saved_base > 0 ? saved_base : restored;
     }
+    /* While a retime is in force (#1179 Part 4a: the running master is not
+     * the recorded one) a take laid down at the recorded tempo spans the
+     * recorded master, not the retimed one. */
+    const int32_t master = load_i32(&engine->a_master_len);
+    const int32_t rec = load_i32(&engine->a_rec_master_len);
+    /* With no master left (the last take cleared after a retime, 4a H1)
+     * the saved base is the retimed clock when it is the length the last
+     * retime produced; the reference survives the all-empty reset for
+     * exactly this restore. */
+    const int32_t retime = load_i32(&engine->a_retime_len);
+    const int retimed = rec > 0 && rec != base &&
+                        (master > 0 ? base == master : base == retime);
     for (int32_t other = 0; other < engine->track_count; ++other) {
-      if (!le_mode_span_fits(mode, base, lengths[other])) {
+      if (!le_mode_span_fits(mode, base, lengths[other]) &&
+          !(retimed && le_mode_span_fits(mode, rec, lengths[other]))) {
         return LE_ERR_MODE_MISMATCH;
       }
     }
@@ -2903,6 +2926,20 @@ int32_t le_engine_transpose_step(le_engine* e, int32_t channel, int32_t delta,
 int32_t le_engine_install_transpose(le_engine* e, int32_t channel,
                                     int32_t semitones, uint64_t* request) {
   return le_transpose_admit(e, channel, 1, semitones, request);
+}
+
+/* Follow tempo (#1179 Part 4a): see le_engine_set_follow_tempo's contract.
+ * A setting, admitted whenever configured; the callback re-derives every
+ * affected head. */
+int32_t le_engine_set_follow_tempo(le_engine* e, int32_t channel,
+                                   int32_t value, uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request || channel < -1 || channel >= e->track_count ||
+      value < (channel < 0 ? 0 : -1) || value > 1) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  le_command cmd = {.code = LE_CMD_SET_FOLLOW_TEMPO,
+                    .follow = {channel, 0, value}};
+  return le_request_admit(e, &cmd, &cmd.follow.slot, request);
 }
 
 int32_t le_engine_set_transpose_bypass(le_engine* e, int32_t on,

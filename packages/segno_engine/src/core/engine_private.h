@@ -123,6 +123,10 @@ extern "C" {
 #define LE_PERF_LOG_RING_CAPACITY 4096u
 #define LE_PERF_LOG_CTRL_RING_CAPACITY 512u
 
+/* How close to the recorded tempo a tempo change returns the song to it
+ * exactly (#1179 Part 4a M1): the MIDI clock plan's real-change threshold. */
+#define LE_TEMPO_SNAP_BPM 0.05f
+
 /* Per-track buffer pool size: one live buffer plus up to LE_POOL_SLOTS-1 undo/
  * redo layers (one per overdub pass). Buffers are allocated lazily, so memory
  * grows only as deep as the user actually overdubs; past the cap the oldest
@@ -1369,6 +1373,19 @@ typedef struct le_track {
   /* An integral-rate step that landed inside a window, to be put on a whole
    * sample once the window ends (le_head_land). Callback-only. */
   int32_t land_whole;
+  /* Follow tempo (#1179 Part 4a): this track's override of the default
+   * (-1 inherit, 0 keeps its recorded speed, 1 follows the song tempo),
+   * callback-owned and published; and the span the perf log last named for
+   * its head (0 = its own length), so a change is logged exactly once. */
+  int32_t follow_override;
+  _Atomic int32_t a_follow_override;
+  int32_t log_play_len;
+  /* The shared-clock length the take was laid down against (0: the current
+   * one), callback-owned and published for control's punch-in guard. A
+   * retime fills it before moving the clock, so a following take reads at
+   * speed * span_clock / clock length. */
+  int32_t span_clock;
+  _Atomic int32_t a_span_clock;
   /* Control's view of direction while toggles are in flight
    * (le_effective_reversed): the number of REVERSE commands posted, the
    * direction they predict once applied, and the callback's count of REVERSE
@@ -1878,6 +1895,27 @@ struct le_engine {
    * with control's in-flight view like Speed's. */
   int32_t transpose_bypass;
   _Atomic int32_t a_transpose_bypass;
+  /* Audio & tempo follow (#1179 Part 4a): the default every track inherits
+   * (0 = keep the recorded speed), callback-owned and published; the tempo
+   * the takes were recorded at and the master length it measured, latched
+   * when a master is defined, committed or its tempo restored, cleared with
+   * the last take. A return to within LE_TEMPO_SNAP_BPM of the recorded
+   * tempo restores the recorded tempo and length exactly. The clock's
+   * position after a retime keeps its fractional part (retime_frac, valid
+   * while the clock is still retime_len long), so a run of retimes does not
+   * drift the song's phase a frame at a time. retime_len is published
+   * (a_retime_len) and survives the all-empty reset, so control can tell a
+   * cleared rig's saved base was a retimed clock (Clear Undo, 4a H1); a new
+   * reference (le_tempo_latch) clears it. */
+  int32_t follow_tempo;
+  _Atomic int32_t a_follow_tempo;
+  _Atomic uint32_t a_recorded_tempo_bits;
+  float rec_bpm; /* kept through an all-empty reset for a Clear Undo */
+  int32_t rec_master_len;
+  _Atomic int32_t a_rec_master_len; /* published for control's history fit */
+  int32_t retime_len;
+  _Atomic int32_t a_retime_len;
+  double retime_frac;
   uint32_t bypass_posted;
   int32_t bypass_pending;
   _Atomic uint32_t a_bypass_applied;

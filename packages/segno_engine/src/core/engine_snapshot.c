@@ -123,6 +123,7 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->reversed = load_i32(&tr->a_reversed); /* #1162 */
   out->head_rate_milli = load_i32(&tr->a_head_rate_milli); /* #1179 */
   out->transpose_st = load_i32(&tr->a_transpose_st);
+  out->follow_override = load_i32(&tr->a_follow_override);
   out->transpose_effective_st = load_i32(&tr->a_transpose_eff);
   /* Timing fields are filled below from one coherent callback tuple. */
   /* The caller fills timing from one coherent family tuple. */
@@ -347,6 +348,31 @@ uint64_t le_engine_monitor_fx_fingerprint(le_engine* engine, int32_t input) {
                                  &m->a_fx_chain_enabled);
 }
 
+/* What a song-tempo change does now (#1179 Part 4a), from the published
+ * state: the callback's le_tempo_follow_open, which also waits out a punch
+ * tail or a seam deferral this view cannot see. */
+static int32_t le_tempo_follow_now(le_engine* e) {
+  const int counting_in = load_i32(&e->a_counting_in) != 0;
+  int content = 0, follower = 0, busy = counting_in;
+  const int32_t fallback = load_i32(&e->a_follow_tempo);
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    const int32_t st = load_i32(&t->a_state);
+    if (load_i32(&t->a_pending) || load_i32(&t->a_pending_launch)) busy = 1;
+    if (st == LE_TRACK_EMPTY) continue;
+    content = 1;
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) busy = 1;
+    const int32_t override = load_i32(&t->a_follow_override);
+    if (override >= 0 ? override : fallback) follower = 1;
+  }
+  if (!content) return counting_in ? LE_TEMPO_FOLLOW_BUSY : LE_TEMPO_FOLLOW_FREE;
+  if (load_i32(&e->a_master_len) <= 0 || load_i32(&e->a_loop_bars) <= 0) {
+    return LE_TEMPO_FOLLOW_NO_GRID;
+  }
+  if (!follower) return LE_TEMPO_FOLLOW_NO_FOLLOWER;
+  return busy ? LE_TEMPO_FOLLOW_BUSY : LE_TEMPO_FOLLOW_RETIMES;
+}
+
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   if (engine == NULL || out == NULL) return;
   /* Collect retired per-pass undo layers (and replenish shadow spares) on the
@@ -469,6 +495,9 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->speed_numer = le_speed_numer_of(speed);
   out->speed_denom = le_speed_denom_of(speed);
   out->transpose_bypass = load_i32(&engine->a_transpose_bypass);
+  out->recorded_tempo_bpm = load_f32(&engine->a_recorded_tempo_bits);
+  out->follow_tempo = load_i32(&engine->a_follow_tempo);
+  out->tempo_follow = le_tempo_follow_now(engine);
   out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);
   const int perf_armed =

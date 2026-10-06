@@ -198,6 +198,16 @@ typedef enum le_perf_log_code {
                             * its sounding pitch (render engaged, dry
                             * fallback, bypass) with the exact index, and at
                             * PERF_ARM for a track sounding transposed. */
+  LE_PLOG_HEAD_SPAN = 329, /* span_log: the span a track's take plays over
+                            * (#1179 Part 4a, events.log version 10), so the
+                            * head's rate is speed * len / play_len — at a
+                            * retime for every following track, at a Follow
+                            * setting change, at a material change to or
+                            * from another span, and at PERF_ARM. */
+  LE_PLOG_RETIME = 330, /* retime_log: a song-tempo change that retimed the
+                         * shared clock with content (#1179 Part 4a): the new
+                         * length and the position it continues from. */
+  /* 331 is held by #1179 for its later parts. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's
@@ -242,6 +252,19 @@ typedef struct le_log_command {
       uint16_t turn_frames;
       uint32_t index_lo, index_hi;
     } transpose_log;
+    struct { /* LE_PLOG_HEAD_SPAN: the span a track's take plays over (0 =
+              * its own length), the turn window still mixing the old head
+              * and the exact index in Q32.32. */
+      int16_t channel;
+      uint16_t turn_frames;
+      int32_t play_len;
+      uint32_t index_lo, index_hi;
+    } span_log;
+    struct { /* LE_PLOG_RETIME: the song tempo and the master length and
+              * position it retimed the shared clock to. */
+      float bpm;
+      int32_t length, position, bars;
+    } retime_log;
     struct { int32_t channel; uint32_t image_id; int32_t state, phase; } restore_log;
     struct { int32_t channel, slot, previous; uint32_t generation; } peel_log;
     struct { int32_t position, master_len, iteration; } perf_arm;
@@ -257,6 +280,7 @@ static inline int le_log_extract(const le_command* command, le_log_command* out)
       command->code == LE_CMD_REVERSE || command->code == LE_CMD_SET_SPEED ||
       command->code == LE_CMD_TRANSPOSE ||
       command->code == LE_CMD_TRANSPOSE_BYPASS ||
+      command->code == LE_CMD_SET_FOLLOW_TEMPO ||
       command->code == LE_CMD_SET_MIX ||
       command->code == LE_CMD_RECORD_IMAGE ||
       command->code == LE_CMD_SET_LENGTH_PRESETS) return 0;
