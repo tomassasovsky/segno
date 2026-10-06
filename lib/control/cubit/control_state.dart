@@ -25,6 +25,10 @@ class ControlState extends Equatable {
     this.footReverseFailure = 0,
     this.footPeelFailure = 0,
     this.footPeelRefusal = FootPeelRefusal.failed,
+    this.footFxFailure = 0,
+    this.footFxRefusal = FootFxRefusal.unavailable,
+    this.fxSwitches = const <PedalButton, FxSwitchReading>{},
+    this.fxStopChangeNotice = false,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -133,6 +137,24 @@ class ControlState extends Equatable {
 
   /// Why the latest refused Peel press removed nothing.
   final FootPeelRefusal footPeelRefusal;
+
+  /// Each refused FX-mode stomp notifies once; the notice reads
+  /// [footFxRefusal] (#1229).
+  final int footFxFailure;
+
+  /// Why the latest refused FX-mode stomp changed nothing.
+  final FootFxRefusal footFxRefusal;
+
+  /// What each BOUND switch's target reads in FX mode, the same values the
+  /// LEDs project, published so the FX face cannot disagree with the plate
+  /// (#1229). Empty outside FX mode. Derived by the cubit on every
+  /// projection, never edited; it rides here only so a surface can render it.
+  final Map<PedalButton, FxSwitchReading> fxSwitches;
+
+  /// Set once, at the first FX-mode entry on an install that has not been
+  /// told, so the app can say that Stop no longer switches every track's
+  /// effects off in FX mode (#1229). Never cleared.
+  final bool fxStopChangeNotice;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -250,6 +272,10 @@ class ControlState extends Equatable {
     int? footReverseFailure,
     int? footPeelFailure,
     FootPeelRefusal? footPeelRefusal,
+    int? footFxFailure,
+    FootFxRefusal? footFxRefusal,
+    Map<PedalButton, FxSwitchReading>? fxSwitches,
+    bool? fxStopChangeNotice,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -285,6 +311,10 @@ class ControlState extends Equatable {
     footReverseFailure: footReverseFailure ?? this.footReverseFailure,
     footPeelFailure: footPeelFailure ?? this.footPeelFailure,
     footPeelRefusal: footPeelRefusal ?? this.footPeelRefusal,
+    footFxFailure: footFxFailure ?? this.footFxFailure,
+    footFxRefusal: footFxRefusal ?? this.footFxRefusal,
+    fxSwitches: fxSwitches ?? this.fxSwitches,
+    fxStopChangeNotice: fxStopChangeNotice ?? this.fxStopChangeNotice,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -322,6 +352,10 @@ class ControlState extends Equatable {
     footReverseFailure,
     footPeelFailure,
     footPeelRefusal,
+    footFxFailure,
+    footFxRefusal,
+    fxSwitches,
+    fxStopChangeNotice,
     cursor,
     activeBank,
     excluded,

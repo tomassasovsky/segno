@@ -14,6 +14,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/invariants.dart';
 import 'package:segno/control/model/foot_fade.dart';
+import 'package:segno/control/model/foot_fx.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/control/model/foot_reverse.dart';
@@ -145,6 +146,7 @@ PedalStateFrame projectFrame(
   bool performanceArmed = false,
   double masterGain = 1.0,
   Map<int, bool?> boundChains = const {},
+  Map<PedalButton, FxSwitchReading> boundSwitches = const {},
   Map<int, bool> customFunctions = const {},
   Map<PedalButton, bool> physicalCustomStates = const {},
   Set<PedalButton> acceptedContacts = const {},
@@ -188,6 +190,7 @@ PedalStateFrame projectFrame(
     performanceArmed: performanceArmed,
     clearFadeActive: clearFadeActive,
     physicalCustomStates: physicalCustomStates,
+    boundSwitches: boundSwitches,
     acceptedContacts: acceptedContacts,
   );
   final sampleRate = looper.status.sampleRate;
@@ -263,6 +266,7 @@ int _physicalButtonMask(
   required bool performanceArmed,
   required bool clearFadeActive,
   required Map<PedalButton, bool> physicalCustomStates,
+  required Map<PedalButton, FxSwitchReading> boundSwitches,
   required Set<PedalButton> acceptedContacts,
 }) {
   var mask = 0;
@@ -283,6 +287,14 @@ int _physicalButtonMask(
       ),
       _ when overlay.mode == InteractionMode.custom =>
         physicalCustomStates[button] ?? false,
+      // FX mode (#1229): Rec/Play, Stop, Undo and Clear light only for what
+      // their binding drives, as their face does; unbound they are inert and
+      // dark, as pen 10/03 draws them.
+      PedalButton.recPlay ||
+      PedalButton.stop ||
+      PedalButton.undo ||
+      PedalButton.clear when overlay.mode == InteractionMode.fx =>
+        boundSwitches[button]?.lit ?? false,
       PedalButton.track1 ||
       PedalButton.track2 ||
       PedalButton.track3 ||
@@ -292,18 +304,14 @@ int _physicalButtonMask(
                 PedalButton.track1.index] !=
             PedalTrackLed.off,
       PedalButton.recPlay =>
-        overlay.mode != InteractionMode.fx &&
-            (global == GlobalColor.red ||
-                global == GlobalColor.amber ||
-                global == GlobalColor.green ||
-                performanceArmed ||
-                acceptedContacts.contains(button)),
-      PedalButton.undo =>
-        overlay.mode != InteractionMode.fx && acceptedContacts.contains(button),
+        global == GlobalColor.red ||
+            global == GlobalColor.amber ||
+            global == GlobalColor.green ||
+            performanceArmed ||
+            acceptedContacts.contains(button),
+      PedalButton.undo => acceptedContacts.contains(button),
       PedalButton.stop => acceptedContacts.contains(button),
-      PedalButton.clear =>
-        overlay.mode != InteractionMode.fx &&
-            (clearFadeActive || acceptedContacts.contains(button)),
+      PedalButton.clear => clearFadeActive || acceptedContacts.contains(button),
     };
     if (lit) mask |= 1 << button.index;
   }

@@ -1097,6 +1097,16 @@ class _AppViewState extends State<_AppView> {
 
   /// The console now always starts in Record; said once to an install whose
   /// retired boot default was Mute. Low stakes, nothing to act on: a toast.
+  /// FX mode's Stop no longer switches every track's effects off (#1229);
+  /// said once, at the first FX entry. Nothing to act on here: a toast.
+  void _showFxStopChangedNotice() {
+    showAppToast(
+      id: AppToastId.fxStopChanged,
+      title: AppText(_l10n.footFxStopChanged),
+      icon: const Icon(Icons.info_outline),
+    );
+  }
+
   void _showBootModeRetiredNotice() {
     final l10n = _l10n;
     showAppToast(
@@ -1231,6 +1241,11 @@ class _AppViewState extends State<_AppView> {
               previous.retiredBootMode == null &&
               current.retiredBootMode != null,
           listener: (_, _) => _showBootModeRetiredNotice(),
+        ),
+        BlocListener<ControlCubit, ControlState>(
+          listenWhen: (previous, current) =>
+              !previous.fxStopChangeNotice && current.fxStopChangeNotice,
+          listener: (_, _) => _showFxStopChangedNotice(),
         ),
         BlocListener<TracksCubit, TracksState>(
           listener: (_, _) => _updateDisplayContext(),

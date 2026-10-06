@@ -682,6 +682,17 @@ class SettingsRepository {
   Future<void> saveShowWaveformWindow({required bool value}) =>
       _store.setBool(_showWaveformWindowKey, value: value);
 
+  static const String _fxStopNoticeKey = 'fx.stop_change_notice_shown';
+
+  /// Whether the one-time notice that FX mode's Stop no longer switches every
+  /// track's effects off has been shown (#1229). Defaults to `false`.
+  Future<bool> loadFxStopChangeNoticeShown() async =>
+      await _store.getBool(_fxStopNoticeKey) ?? false;
+
+  /// Records that the FX Stop change notice has been shown.
+  Future<void> saveFxStopChangeNoticeShown() =>
+      _store.setBool(_fxStopNoticeKey, value: true);
+
   static const String _highContrastKey = 'ui.high_contrast';
 
   /// Whether the manual high-contrast theme override is on. Defaults to

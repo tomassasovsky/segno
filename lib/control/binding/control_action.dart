@@ -60,8 +60,9 @@ enum ControlActionGroup {
   /// The track pedals themselves, and the bank.
   tracks,
 
-  /// The eight FX pedal assignments. Empty until the FX-slot model lands;
-  /// FX activation is assigned on its own surface today.
+  /// Whole-rig FX commands. FX activation itself is assigned on its own
+  /// surface (Pedal assignments); this group holds the sweeps that used to
+  /// live on the FX-mode Stop (#1229).
   fx,
 
   /// Backing-track playback. Empty until the audio library part.
@@ -221,6 +222,14 @@ enum ControlCommand {
 
   /// Set the tempo from successive taps.
   tapTempo('command:tap-tempo'),
+
+  /// Turn off every Track-stage chain that has effects — the former FX-mode
+  /// Stop panic, now assignable to any control (#1229).
+  trackFxOff('command:track-fx-off'),
+
+  /// Turn every Track-stage chain on, the empties included — the former
+  /// FX-mode Stop hold.
+  trackFxOn('command:track-fx-on'),
 
   /// Switch the track bank A / B.
   nextBank('bank:next');
@@ -383,6 +392,8 @@ final class CommandAction extends ControlAction {
   @override
   ControlActionGroup get group => switch (command) {
     ControlCommand.nextBank => ControlActionGroup.tracks,
+    ControlCommand.trackFxOff ||
+    ControlCommand.trackFxOn => ControlActionGroup.fx,
     _ => ControlActionGroup.transport,
   };
 
