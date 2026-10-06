@@ -415,6 +415,7 @@ class LooperRepository {
   /// second refusal is reported on [recordRefusals].
   _RecordRetry? _recordRetry;
   bool _retryingRecord = false;
+  bool _retrySuperseded = false;
   final _recordRefusals = StreamController<int>.broadcast();
 
   /// The desired global master output gain (`0..1`), re-applied to the engine
@@ -895,6 +896,9 @@ class LooperRepository {
     _mixGeneration++;
     if (_pendingImages.isNotEmpty) _snapshotAndSettleImages();
     _pendingImages.clear();
+    // A refused Record press belongs to the lifetime that refused it: never
+    // start a take on a restarted engine or a loaded session for it.
+    _recordRetry = null;
   }
 
   void _cancelMix() {
@@ -3031,6 +3035,13 @@ class LooperRepository {
     if (channel < 0 || channel >= snapshot.tracks.length) {
       return EngineResult.invalid;
     }
+    // The owed retry of a refused fresh capture must never become anything
+    // else: a take that started since (the player's own second press) would
+    // be finished by the plain record below. Superseded, quietly.
+    if (_retryingRecord && state != TrackState.empty) {
+      _retrySuperseded = true;
+      return EngineResult.invalid;
+    }
     // The callback rechecks this cancellation-only intent, so an expired
     // grace window cannot turn the press into a new capture.
     if (snapshot.tracks[channel].pendingLaunch != null ||
@@ -3211,7 +3222,7 @@ class LooperRepository {
       if (result == EngineResult.notReady &&
           state == TrackState.empty &&
           !_retryingRecord) {
-        _recordRetry = _RecordRetry(channel, snapshot.framesProcessed);
+        _recordRetry = _RecordRetry(channel);
       }
     }
     return result;
@@ -7452,18 +7463,20 @@ class LooperRepository {
   /// for its one retry — the press counts as accepted until it resolves.
   bool recordRetryPending(int channel) => _recordRetry?.channel == channel;
 
-  /// Runs the one retry a refused fresh-capture press is owed, once a further
-  /// callback block has published (frames advanced or the ring settled), or
-  /// after [_recordRetryPollLimit] polls without either. A track that is no
-  /// longer a fresh target (a later press landed, a redo) supersedes the
-  /// press silently; a second refusal is reported.
+  /// Runs the one retry a refused fresh-capture press is owed, once every
+  /// command posted before it has published (`commandsSettled`: the emptying
+  /// that caused the refusal was posted earlier, so settled implies its block
+  /// completed — a frame advance alone can be one block short when the buffer
+  /// period exceeds the poll), or after [_recordRetryPollLimit] polls without
+  /// settlement. A track that is no longer a fresh target (a later press
+  /// landed, a redo) supersedes the press silently; a second refusal is
+  /// reported.
   void _retryRefusedRecord(EngineSnapshot snapshot) {
     final retry = _recordRetry;
     if (retry == null) return;
-    final published =
-        snapshot.framesProcessed != retry.framesProcessed ||
-        _engine.commandsSettled;
-    if (!published && ++retry.polls < _recordRetryPollLimit) return;
+    if (!_engine.commandsSettled && ++retry.polls < _recordRetryPollLimit) {
+      return;
+    }
     _recordRetry = null;
     final track = retry.channel < snapshot.tracks.length
         ? snapshot.tracks[retry.channel]
@@ -7476,13 +7489,14 @@ class LooperRepository {
       return;
     }
     _retryingRecord = true;
+    _retrySuperseded = false;
     EngineResult result;
     try {
       result = record(channel: retry.channel);
     } finally {
       _retryingRecord = false;
     }
-    if (!result.isOk && !_recordRefusals.isClosed) {
+    if (!result.isOk && !_retrySuperseded && !_recordRefusals.isClosed) {
       _recordRefusals.add(retry.channel);
     }
   }
@@ -8453,15 +8467,11 @@ class _PendingImage {
 
 /// One refused fresh-capture press waiting for its retry (#1146).
 class _RecordRetry {
-  _RecordRetry(this.channel, this.framesProcessed);
+  _RecordRetry(this.channel);
 
   final int channel;
 
-  /// The callback's frame count at the refusal: a different count on a later
-  /// poll means at least one further block has published.
-  final int framesProcessed;
-
-  /// Polls waited without seeing publication.
+  /// Polls waited without the ring settling.
   int polls = 0;
 }
 

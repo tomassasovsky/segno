@@ -80,10 +80,21 @@ class FakeAudioEngine implements AudioEngine {
   bool get commandsSettled =>
       commandsAreSettled && pendingRecipeRevisions.isEmpty;
 
+  /// Runs after every [snapshot] read — lets a test change [nextSnapshot]
+  /// between two consecutive reads (the state moved under a caller).
+  void Function()? afterSnapshot;
+
   @override
   EngineSnapshot snapshot() {
     snapshotCalls++;
-    return _LengthSnapshot(nextSnapshot, publishedLengths, publishedMode, this);
+    final result = _LengthSnapshot(
+      nextSnapshot,
+      publishedLengths,
+      publishedMode,
+      this,
+    );
+    afterSnapshot?.call();
+    return result;
   }
 
   @override
