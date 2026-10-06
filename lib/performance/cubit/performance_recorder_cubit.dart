@@ -36,13 +36,14 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// the double-press-guard clock; injectable for deterministic tests.
   ///
   /// [freeSpaceBytes] answers "how much room is left on this volume", and
-  /// defaults to [PerformanceRepository.freeSpaceBytes] — a `statvfs` through
-  /// the engine. It used to shell out to `df`, and that turned out to be the
-  /// single most expensive thing on the appliance's real-time path: a capture
-  /// re-checks its volume every twenty ticks, `Process.run` is fork() + exec(),
-  /// and fork() holds the process's `mmap_lock` for write for milliseconds
-  /// while it copies a 1.7 GB address space's page tables. On the Pi 5 bench
-  /// every audible dropout landed within 3 ms of one of those forks (#806).
+  /// defaults to the free half of [PerformanceRepository.volumeSpace], a
+  /// `statvfs` through the engine. It used to shell out to `df`, and that
+  /// turned out to be the single most expensive thing on the appliance's
+  /// real-time path: a capture re-checks its volume every twenty ticks,
+  /// `Process.run` is fork() + exec(), and fork() holds the process's
+  /// `mmap_lock` for write for milliseconds while it copies a 1.7 GB address
+  /// space's page tables. On the Pi 5 bench every audible dropout landed
+  /// within 3 ms of one of those forks (#806).
   /// Still injectable, and still narrow — the tests that model a filling disk
   /// pass their own function and are unaffected.
   ///
@@ -78,7 +79,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
        _now = now,
        _freeSpaceBytes =
            freeSpaceBytes ??
-           ((String path) async => performance.freeSpaceBytes(path)),
+           ((String path) async => performance.volumeSpace(path)?.freeBytes),
        _currentChains = currentChains,
        _takeLocked = takeLocked,
        super(const PerformanceRecorderIdle()) {

@@ -65,12 +65,16 @@ else
 fi
 
 # --- 2. The historical skew is caught ----------------------------------------
-# Exactly the 2026-08-25 appliance failure: a .so predating #808, missing the
-# storage-accounting entry point the Dart half already calls on a timer.
-nm_skew="$(make_nm nm_skew $(all_symbols | grep -v '^le_perf_volume_free_bytes$'))"
+# The shape of the 2026-08-25 appliance failure: a .so predating the
+# storage-accounting entry point the Dart half already calls. That entry
+# point was le_perf_volume_free_bytes (#808); it is le_volume_space since
+# #1177, so that is the symbol removed here. The case must name a symbol the
+# bindings still look up, or removing it changes nothing and the check
+# passes.
+nm_skew="$(make_nm nm_skew $(all_symbols | grep -v '^le_volume_space$'))"
 out="$(NM="$nm_skew" "$CHECK" "$FAKE_SO" 2>&1)"; rc=$?
-if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'le_perf_volume_free_bytes'; then
-  pass "historical skew (#808 symbol absent) fails and names the symbol"
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'le_volume_space'; then
+  pass "historical skew (storage symbol absent) fails and names the symbol"
 else
   fail "historical skew should fail loudly; rc=$rc"
 fi
