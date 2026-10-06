@@ -249,6 +249,9 @@ void main() {
             (_) => engine.pump(frames: 0),
           );
           await session.saveAs('Owed length');
+          // Opening the current session does nothing (plan Part 4), so
+          // recall goes through another current session.
+          await session.saveAs('Elsewhere');
           expect(session.state.status, SessionStatus.success);
           final bundle = await sessions.read(
             await sessions.bundlePathOf(await idOf('Owed length')),

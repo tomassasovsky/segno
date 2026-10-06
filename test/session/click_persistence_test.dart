@@ -294,6 +294,9 @@ void main() {
       () async {
         expect((await tempo.clickModeOwner.set(ClickMode.off)).isOk, isTrue);
         await session.saveAs('No click');
+        // Opening the current session does nothing (plan Part 4), so
+        // recall goes through another current session.
+        await session.saveAs('Elsewhere');
         expect(
           (await tempo.clickModeOwner.set(ClickMode.playRec)).isOk,
           isTrue,
@@ -311,6 +314,9 @@ void main() {
       'recall restores saved Click without rewriting startup gain',
       () async {
         await session.saveAs('Quiet');
+        // Opening the current session does nothing (plan Part 4), so
+        // recall goes through another current session.
+        await session.saveAs('Elsewhere');
         expect((await tempo.clickVolumeOwner.set(1.4)).isOk, isTrue);
         await session.open(await idOf('Quiet'));
         expect(session.state.status, SessionStatus.success);

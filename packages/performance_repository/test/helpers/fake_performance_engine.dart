@@ -203,6 +203,9 @@ class FakePerformanceEngine implements AudioEngine {
   Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
 
   @override
+  int trackAudioRev(int channel) => 0;
+
+  @override
   EngineResult importLayer(
     int channel,
     int lane,

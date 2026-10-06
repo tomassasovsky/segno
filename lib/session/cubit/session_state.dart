@@ -88,6 +88,10 @@ enum SessionError {
 
   /// A folder that still holds sessions cannot be deleted.
   folderNotEmpty,
+
+  /// An Open or New loop ended a take in progress, and it did not finish in
+  /// time; nothing was saved, opened or cleared.
+  captureInProgress,
 }
 
 /// State of the [SessionCubit].

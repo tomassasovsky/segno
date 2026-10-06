@@ -1643,6 +1643,10 @@ class MockAudioEngine implements AudioEngine {
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
 
+  /// The mock holds no audio, so no track's content ever changes.
+  @override
+  int trackAudioRev(int channel) => 0;
+
   @override
   EngineResult importLayer(
     int channel,
