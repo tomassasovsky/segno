@@ -1,6 +1,6 @@
 # MIDI clock: receive, Follow Play/Stop, clock loss, per-output send and the MIDI Sync page
 
-<!-- cspell:ignore pthread timedwait condvar PITCHBEND sublabels sublabel XLSOr BFfDT gCTKx T7urI SCQt4 jRkHr jWDJD timerfd ppoll epoll pwait earlycon kworkers getty condattr setclock retime retimes SCHED RTPRIO bootfs sched seqlock seqlocked rawmidi TSAN Adriaensen PPQN termios BOTHER ttyAMA SONGPOS PGMCHANGE NOTEON NOTEOFF CHANPRESS nanosleep ABSTIME eventfd setschedparam Kaehn fkLOU yMhnp ipK6w OeIN1 PMu8D bXxAY YPTg6 nfcC2 IEttC FrsRF JQpGt Lqfa3 rmWqV dRiy6 PddSM -->
+<!-- cspell:ignore retimed pthread timedwait condvar PITCHBEND sublabels sublabel XLSOr BFfDT gCTKx T7urI SCQt4 jRkHr jWDJD timerfd ppoll epoll pwait earlycon kworkers getty condattr setclock retime retimes SCHED RTPRIO bootfs sched seqlock seqlocked rawmidi TSAN Adriaensen PPQN termios BOTHER ttyAMA SONGPOS PGMCHANGE NOTEON NOTEOFF CHANPRESS nanosleep ABSTIME eventfd setschedparam Kaehn fkLOU yMhnp ipK6w OeIN1 PMu8D bXxAY YPTg6 nfcC2 IEttC FrsRF JQpGt Lqfa3 rmWqV dRiy6 PddSM -->
 
 Tracking: #1228 (gap inventory E8-1 to E8-5), `autonomy:merge-gate` on every
 build part.
@@ -33,7 +33,7 @@ at `74e55eab4`, whose D4 now carries the same shared-sink layout as D1 here).
 | Kind | Range | Use in this plan |
 |---|---|---|
 | Commands | 124-131 | 124 `LE_CMD_SET_CLOCK_SYNC` (Part 2). 125-131 stay reserved to this epic. |
-| Facts (perf log) | 348-351 | 348 `LE_PLOG_CLOCK_TRANSPORT` (Part 4), 350 `LE_PLOG_CLOCK_LOST` (Part 5). 349 and 351 reserved. |
+| Facts (perf log) | 348-351 | 348 `LE_PLOG_CLOCK_TRANSPORT` (Part 4), 349 `LE_PLOG_CLOCK_SLIP` (Part 3a), 350 `LE_PLOG_CLOCK_LOST` (Part 5). 351 reserved. |
 | `LE_ERR` | -20, -21 | -20 `LE_ERR_EXTERNAL_CLOCK` (tempo is owned by an external source), -21 `LE_ERR_SYNC_LOCKED` (sync source change while capturing, armed or counting in). |
 
 `LE_CMD_SET_CLOCK_MODE` (48) is retired by Part 2 and its number is never
@@ -293,9 +293,22 @@ and written identically into the instruments plan's D4 (review M8):
   Position is not a Learn target) and `_parse` is unchanged.
 - **One consumer.** `le_midi_ports_drain`, run right after the command drain
   (`engine_process.c`, before `le_engine_process`), is the only code that
-  clears a gap or observes a lost edge. It drops stale-generation events and
-  dispatches, in ring order, to instrument routing and the clock follower,
-  reporting a loss at its exact position in the stream.
+  clears a gap or observes a lost or generation edge. It calls
+  `le_midi_port_dispatch` per port in stream order (PR #1246 review M1,
+  built): REBOUND when the generation moved since the last drain (a detach,
+  a rebind, or a close followed at once by an attach), then the current
+  binding's events with GAP at its exact position (and REBOUND again at the
+  first event of a binding made during the drain, review L1), then LOST,
+  which is read before the pops but dispatched after them so the events
+  read before the device went away come first. Stale events are dropped and
+  counted. Instruments release a port's voices on GAP, LOST and REBOUND;
+  the clock follower counts pulses across a GAP, goes Lost on LOST and
+  starts over on REBOUND. An ALSA input overrun (`-ENOSPC`) marks a gap
+  through `le_midi_sink_mark_gap`, inside the bracket (review L4).
+- **Backlog at engine start** (PR #1246 review note). While the device is
+  stopped nothing drains the rings, so the first block can deliver up to 255
+  old messages. The clock follower drops pulses older than its loss deadline
+  (built in Part 2); instruments Part 2c must not sound old Note Ons.
 - **API**: `le_engine_attach_midi_input(e, m, port)` and
   `le_engine_detach_midi_input(e, port)`, direct calls (generations make a
   rebind safe without an audio-thread acknowledgement), and
@@ -343,21 +356,23 @@ unit tests drive the same function with the same inputs.
 
 Established practice for filtering timestamped periodic events is a
 second-order delay-locked loop (F. Adriaensen, "Using a DLL to filter time",
-LAC 2005), the filter JACK uses for its period timing. The review's probe
-showed the DLL is sound and the first draft's re-acquisition rule was not
-(M1); the rules below were re-run against the review's jitter models in a
-probe (`docs/plan/2026-10-06-midi-clock-follower-probe.c`, which Part 2
-turns into native oracles), with these results over 60 s at 90, 120, 124.9 and 174 BPM:
+LAC 2005), the filter JACK uses for its period timing. The first review's
+probe showed the DLL is sound and the first draft's re-acquisition rule was
+not (M1). The rules below are built in Part 2 and measured by its native
+tests (`src/test/test_clock_follow.h`, the review's four jitter models,
+seeded); the earlier standalone probe is retired in favour of them (delta
+review DL2). Over 60 s at 90, 120, 124.9 and 174 BPM:
 
-| Source model | Re-acquisitions | Max tempo error after 5 s |
-|---|---|---|
-| uniform random ±1 ms | 0 | 0.037 BPM |
-| 1 ms USB-frame quantization | 0 | 0.024 BPM |
-| pulses at 512-frame / 44.1 kHz block edges | 0 | 0.184 BPM (90 BPM), 0.049 (120) |
-| block edges plus 0.5 ms noise | 0 | 0.170 BPM |
-| step 120 → 100 BPM (uniform jitter) | 1 | settles within 0.1 BPM in 1.05 s |
-| step 174 → 90 BPM (USB frames) | 1 | 0.94 s |
-| one pulse dropped from 120 BPM | 0 | pulse count exact |
+| Source model | Re-acquisitions | Max tempo error after 5 s | Readout changes after 5 s | Pulse count |
+|---|---|---|---|---|
+| uniform random ±1 ms | 0 | 0.037 BPM | ≤ 1 (settling) | exact |
+| 1 ms USB-frame quantization | 0 | 0.024 BPM | ≤ 1 | exact |
+| pulses at 512-frame / 44.1 kHz block edges | 0 | 0.184 BPM (90), 0.049 (120) | ≤ 1 | exact |
+| block edges plus 0.5 ms noise | 0 | 0.189 BPM | ≤ 1 | exact |
+| step 120 → 100 (each model) | 1 | settles in 0.20-1.30 s; 0.27 BPM at most after 4 s | ≤ 2 | exact |
+| step 120 → 60, 150 → 50, 174 → 87 (each model) | 1 | settles in 0.17-1.32 s; 0.28 BPM at most | ≤ 2 | exact |
+| one pulse dropped at 120 | 0 | 0.03 BPM | 0 | exact |
+| a 4 ms bus stall over four pulses | 0 | under 0.1 BPM | — | exact |
 
 - **Units (review H2).** MIDI clock is 24 pulses per quarter note; the
   engine's tempo is denominator notes per minute (`tempo_grid.h:11-13`). The
@@ -384,15 +399,31 @@ turns into native oracles), with these results over 60 s at 90, 120, 124.9 and 1
   from the median of the intervals since the first of them (so a 120 → 100
   step seeds 25 ms, not the mean of old and new). A source quantized to
   block edges has a large `σ` and never trips it.
-- **Missed pulses (review M2).** Once Synced, an interval counts `k ≥ 2`
-  pulses only when it is within 0.25 P of a whole multiple, the previous
-  pulse was not an outlier and `σ < P/6`; the DLL then advances `k-1`
-  periods before taking the error. A tempo step grows the error gradually
-  and never matches; a dropped 0xF8 on USB or a DIN framing error does. A
-  ring loss is also known exactly from the port's gap mark (D1). The pulse
-  count therefore stays exact for anchors, Song Position and the beat pulse.
+- **Missed pulses (review M2) and integer divisions (delta review DH1).**
+  Once Synced, an isolated interval counts `k ≥ 2` pulses when it is within
+  0.25 P of a whole multiple, the previous pulse was not an outlier and
+  `σ < P/6`; the DLL then advances `k-1` periods before taking the error.
+  That is a dropped 0xF8 on USB or a DIN framing error. Two such intervals
+  in a row are not drops but a master that moved to half, a third (...) of
+  its tempo: the first interval's extra count is taken back and the loop
+  re-seeds from the two intervals. An outlier re-seed also takes back a
+  whole-multiple count made just before its run (that interval was the
+  step's first). A ring or OS loss is known exactly from the port's gap mark
+  (D1) and counts what it hid. The pulse count therefore stays exact for
+  anchors, Song Position and the beat pulse; it is corrected at most one
+  pulse late, before any anchor reads it at a bar line.
 - **Published values.** The engine tempo is the unrounded DLL value. The
-  display value is rounded to 0.1 BPM with a 0.15 BPM hysteresis; the Sync
+  display value is rounded to 0.1 BPM and moves once the estimate is more
+  than max(0.08 BPM, 2.5 σ) from it, where σ is the estimate's own wander
+  over the last eight beats (delta review DL1). 0.08 is the 0.05 rounding
+  half-step plus 0.03, so a steady source shows the right tenth (a fixed
+  0.15 left a 126.0 clock reading 125.9); the σ term (wander around a
+  one-beat mean, over eight beats) holds a block-edge source still (2-3
+  flips a minute before, at most one settling change after). A rounded value
+  that differs from the readout for a whole beat is shown anyway, so a wide
+  band never leaves the readout on a wrong tenth and a ramp is shown within
+  two seconds of its end. A re-seed after a tempo step shows the new value at
+  once. The Sync
   page prints whole values without a decimal ("120", as `ipK6w` draws) and
   a fractional tempo with one decimal ("124.9"); the footer keeps its one
   decimal (review M11).
@@ -441,7 +472,22 @@ turns into native oracles), with these results over 60 s at 90, 120, 124.9 and 1
   input); the accumulated error is worked off, clamped per wrap, from the
   first wrap after the capture ends. The bound is the crystal error times
   the capture length: 50 ppm over a three-minute overdub is 9 ms. Free and
-  Song have no shared position and get no slips.
+  Song have no shared position and get no slips. A track detached by the
+  owner decision below reads its private counter: slips do not move it, so
+  it drifts by the crystal error until its next Stop/Play re-attaches it
+  (delta review DM1.4). That is the decision's intent: it keeps its
+  recorded speed.
+- **Slip target (delta review DM3).** φ is measured against the loop's own
+  phase offset to the external grid, captured when the defining take
+  starts (the interpolated pulse phase of that frame), not against the
+  external bar line. A take pressed 1.5 beats into a bar keeps that offset
+  for ever; slips only remove drift. Start, Continue and Song Position
+  (Follow On) set the offset to the master's bar, as D4's anchors say.
+- **Slips are logged (delta review DM2).** Every slip pushes
+  `LE_PLOG_CLOCK_SLIP` (349) `{frame, φ}`, and `perf_render.c` applies it
+  through the same turn crossfade as `LE_PLOG_REVERSE`'s turn
+  (`perf_log_ring.h:182`), so a stem rendered from a performance with slips
+  matches what was heard.
 - **Real tempo changes.** When the DLL tempo differs from the session tempo
   by more than 0.05 BPM (about 400 ppm at 120, ten times any crystal error)
   for a whole beat, and the rig has content, the follower requests pitch/time
@@ -458,16 +504,31 @@ turns into native oracles), with these results over 60 s at 90, 120, 124.9 and 1
   number of bars at the master's tempo cannot stay in time with it; a
   human-timed take is typically 0.5 % off, far more than slips correct. So
   under an external source an Auto defining take's end is queued to the next
-  bar line of the external grid, the precedent of AB 2.8 ("finish queues the
-  end of a whole primary cycle"), through the existing auto-finalize target
+  whole bar counted from the take's own start at the external tempo (delta
+  review DM3: not the external bar line, which a take pressed mid-bar never
+  meets), the precedent of AB 2.8 ("finish queues the end of a whole primary
+  cycle"), through the existing auto-finalize target
   (`length_preset_target_frames`, `engine_process.c:704-735`). Nothing is
-  truncated: the take records up to the bar line. Fixed lengths stay local
+  truncated: the take records up to that point. Fixed lengths stay local
   (UX doc `:15-17`).
-- **Follow tempo Off.** AB 2.6 says Following Off preserves original-time
-  playback; AB 7.3 says the external source owns tempo. Slips keep Follow-Off
-  tracks phase-locked through crystal drift, so the open case is only a
-  real master tempo change: section 9 asks the owner, with the default this
-  plan builds.
+- **Follow tempo Off (owner decision, 2026-10-06, decided).** Slips keep
+  Follow-Off tracks phase-locked through crystal drift. On a real master
+  tempo change, the song tempo (shared clock, click, quantize grid) follows
+  the master, and each track's Follow tempo decides: a following track is
+  retimed; a track with Follow tempo Off keeps its recorded speed (AB 2.6)
+  and detaches from the shared position until its next Stop/Play,
+  pitch/time 4a's rule (`pitch-time-core-plan.md:606-613`). Nothing is
+  refused. The 07/07 page under Follow tempo Off says "Keeps its recorded
+  speed. The MIDI clock changed the song tempo." once that has happened.
+- **The global Follow tempo value under a clock (delta review DM1.2).** 4a
+  ships the global default Off until 4b, and with it Off `le_tempo_locked`
+  still locks a rig with content, so 4a's own tempo setter cannot retime.
+  The follower does not go through that setter: Part 3b calls 4a's retime
+  entry directly, which the external source owns, and the global value acts
+  only as each track's inherited Follow tempo. With the global value Off,
+  a real master tempo change therefore retimes the shared clock and every
+  inheriting track detaches at its recorded speed, the owner's decision
+  applied to every track.
 
 ### D5. Recording when clock is lost mid-take
 
@@ -480,7 +541,12 @@ At detection, on the audio thread, in this order:
    and pads the lap with silence (AB 2.7). In Sync and Band,
    `le_sync_choose_ratio` can round a take down (`engine_process.c:1167-1172`),
    so a loss finalize passes a round-up flag that picks the next whole ratio
-   above the captured length. The take ends STOPPED and playable
+   above the captured length. Past the largest ratio (4×) or the loop
+   capacity there is no ratio to round up to (delta review DL3): the take is
+   finalized at that limit, as a performer's Stop already does today, the
+   frames beyond it are counted in `LE_PLOG_CLOCK_LOST`, and a notice says
+   "Clock lost: the take ran past 4 times the timing track and its end was
+   cut." (rule 5) until the held take of E4-5 can keep them. The take ends STOPPED and playable
    (timing completion `:82-85`) and contains the audio up to the detection
    frame; trimming back to the last pulse would remove measured frames, so
    it is not done.
@@ -645,7 +711,11 @@ source is external:
   Pending starts are cancelled (UX doc `:22-23`). A repeated Stop leaves the
   set as it is.
 - **Continue**: captures end first, as for Start; the resume set plays from
-  the held position (or the Song Position), plus `d + L_out` (D4).
+  the held position (or the Song Position), plus `d + L_out` (D4). A track
+  detached by the owner decision (D4) that was in the resume set re-attaches
+  on Continue exactly as on a local Play (4a's re-attach at Stop/Play): it
+  plays from the shared held position at its recorded speed (delta review
+  DL4).
 - **Song Position**: accepted only while stopped with no capture, arm,
   count-in or queued action: it replaces the held position, converted
   through quarter-note frames (`value / 4` quarter notes, D3 units) and
@@ -723,6 +793,12 @@ count since the downbeat when Follow On (review L9).
 (AGENTS.md: no compatibility layers). Their roles split: the source is
 `LE_CMD_SET_CLOCK_SYNC` (receive), sending is per output in the scheduler.
 The send gate keeps Multi/Sync/Band and "transport active" (rule 1).
+As built in Part 2: receive left the tri-state, and the send half stays a
+plain switch (`le_engine_set_clock_send`, code 48 renamed
+`LE_CMD_SET_CLOCK_SEND`, `le_snapshot.clock_send`) that also closes under
+an external source, so the engine's C1 send tests keep running until Part 6
+replaces the switch and the ring with the per-output table and retires
+code 48.
 
 ## 2. Native model
 
@@ -772,7 +848,16 @@ Production line counts exclude tests, generated bindings and docs. Every
 native part runs the normal, ASAN and telemetry-off suites, each in its own
 `TMPDIR`; parts with threads also run the TSAN races binary.
 
-### Part 1. The shared MIDI input sink (built: `claude/midi-clock-1228-p1` at `69e18c403`; 734 added production lines, 430 of them code and the rest comments)
+### Part 1. The shared MIDI input sink (built: PR #1246, `claude/midi-clock-1228-p1` at `8c2f43d48`)
+
+Review fixes (PR #1246 review, `8c2f43d48`): the ordered dispatch with
+REBOUND and a per-port `gen_seen` (M1), the generation reload for a binding
+made during the drain (L1), a native-test dispatch hook with order oracles
+(L2), a park point that makes the quiescence test deterministic (L3), the
+ALSA `-ENOSPC` gap mark (L4), the shared byte splitter `le_midi_split` that
+keeps interleaved real-time bytes (L5), the 16-byte static assertion and
+comment fixes (L6). The SwiftPM `include/` forwarder for `le_midi_port.h`
+was added in `5616a9bb4`.
 
 Built as D1 describes: `src/midi/le_midi_port.h` (port, sink, enter/leave,
 push, lost mark, gap mark, pop, bind/unbind); `midi.c` with the sink as the
@@ -820,7 +905,18 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && NATIVE_TESTS_ONLY=races EXTRA_CFLAGS='-fsanitize=thread -g' bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
-### Part 2. Clock follower, source command and tempo ownership (about 550 production lines)
+### Part 2. Clock follower, source command and tempo ownership (built: `claude/midi-clock-1228-p2`, stacked on Part 1)
+
+As built, with three departures from the text below: the anchor and its
+re-anchor rule moved to Part 3a, the first part that uses an anchor; "no
+count-in for external starts" moved to Part 4, where external starts exist;
+and the send switch stays as D12 now describes. The follower's pulse count
+(`clock_pulses`) is in place for both. Built after the delta review: the
+integer-division rule (DH1) with the 120 → 60, 150 → 50 and 174 → 87
+oracles on all four source models, the readout band and one-beat hold
+(DL1) with glide and ramp lag oracles, the follower fed from the ordered
+dispatch (GAP, LOST and REBOUND of the source port), and the backlog filter
+for pulses older than the loss deadline.
 
 `le_clock_follow.{h,c}` (D3: units, acquisition, two-stage DLL, jitter
 estimate, step rule, missed pulses, display, loss), the time-source hook
@@ -861,8 +957,9 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
 
 ### Part 3a. Phase lock without resampling: anchor, receive latency, slips and whole-bar takes (about 400 production lines)
 
-D4's anchors with `d + L_out`, the per-wrap slip under the Reverse turn
-crossfade with its ±2 ms clamp and capture deferral, the external-grid end
+D4's anchors with `d + L_out`, the take-start phase offset, the per-wrap slip
+under the Reverse turn crossfade with its ±2 ms clamp and capture deferral,
+`LE_PLOG_CLOCK_SLIP` (349) and its `perf_render.c` replay, the whole-bar end
 for an Auto defining take, the held state before 3b.
 
 Tests (`test_clock_follow.h`): Multi, 4 bars at 120 BPM, sr 48000
@@ -875,14 +972,18 @@ than the turn crossfade allows (the Reverse precedent's oracle). A Follow-Off
 track and a following track keep the same shared position. A Start pulse
 96 frames before block start with `L_out` 256 frames puts the clock at 352.
 An Auto defining take under clock at 120 BPM stopped at frame 380000 ends at
-384000; stopped at 390000, at 480000. A real tempo change with content and
-no 3b sets `clock_tempo_held` and leaves the tempo alone.
+384000; stopped at 390000, at 480000. A take started 1.5 beats (36000
+frames) after an external bar line, 4 bars long: slips keep the 36000-frame
+offset and never pull it toward the bar line, and its Auto end is whole
+bars from its own start. A stem render over three slipped laps equals the
+live output sample for sample. A real tempo change with content and no 3b
+sets `clock_tempo_held` and leaves the tempo alone.
 
 ```success-criteria
 GOAL: Under an external clock the shared loop stays phase-locked to the master through crystal drift, without resampling, with Overdub available and every track on the shared position.
 SUCCESS CRITERIA:
 - The slip, deferral, crossfade, Start-latency and whole-bar oracles above pass. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- No `len_src`/`play_len` change and no retime results from slips; perf log and renderer parity hold for a slipped lap. | verify: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh
+- No `len_src`/`play_len` change and no retime results from slips; every slip is logged as fact 349 and a stem render over three slipped laps matches the live output exactly. | verify: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh
 - HARDWARE: 10 minutes against a hardware drum machine over USB and over DIN; a two-track recording of both shows a constant offset (reported) with drift within 2 ms. | verify: manual, appliance + interface recording; attach the onset plot.
 NON-GOALS:
 - Real master tempo changes with content (3b), Follow Play/Stop, sending.
@@ -899,11 +1000,16 @@ state once 4a exists.
 Tests: content at 120, master steps to 124: one retime after one beat; slips
 continue at the new tempo; with an overdub running the retime waits and
 lands at the overdub's end; a 0.01 BPM change is left to slips (no retime).
+The owner decision (delta review DM1.3): a Follow-Off track on a 120 → 124
+change keeps `rate = speed_global` and its `len_src` lap on its private
+counter while a following track is retimed; it re-attaches at its next
+Stop/Play; with the global Follow tempo Off, every inheriting track
+detaches and the shared clock still retimes.
 
 ```success-criteria
 GOAL: A real tempo change on the master retimes the loops through the single retime owner, never during a capture.
 SUCCESS CRITERIA:
-- The step, capture-wait and threshold oracles pass. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- The step, capture-wait and threshold oracles pass, and the Follow-Off, re-attach and global-Off oracles of the owner decision. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
 - HARDWARE: a DAW tempo change from 120 to 100 while loops play; the loops follow within two beats. | verify: manual, appliance + DAW.
 NON-GOALS:
 - Anything 3a covers.
@@ -954,8 +1060,10 @@ never records. Sync mode, primary 384000: a take started at the primary top
 and lost at frame 537600 (1.4×) ends at 2× (768000) with `[0, 537600)` equal
 to the input; it never ends at 1×. An overdub at loss closes as a Stop with
 exact Redo. A defining take at loss finalizes through the crossfade path with
-its measured length. A `CLOCK` arm ignores a loud input and fires at the
-Synced edge (Follow Off). Cut all sound keeps its tail clearing.
+its measured length. Past the largest ratio (delta review DL3): a take lost
+at 4.6× the primary ends at 4× with the cut frame count in fact 350 and the
+notice raised. A `CLOCK` arm ignores a loud input and fires at the Synced
+edge (Follow Off). Cut all sound keeps its tail clearing.
 
 ```success-criteria
 GOAL: Losing an external clock mid-performance closes every take with all its measured audio in every mode, cancels queued starts, obeys Keep playing or Stop loops, and a reconnect never records or starts music by itself.
@@ -1142,7 +1250,7 @@ undrawn "Waiting" and "Clock lost" chips from the write-back list;
 readout labelled MIDI clock with the D10 beat dots, slider and Tap disabled,
 signature, Hear click and Count-in unchanged); Audio & tempo note "Recorded
 audio follows MIDI clock." under Follow tempo On with an external source
-(`BFfDT`), and the Follow-Off line section 9 settles; length pages verified
+(`BFfDT`), and the Follow-Off line of D4's owner decision; length pages verified
 unchanged under clock (`PddSM`, `XLSOr`); track cues "Waiting for clock" and
 "Clock lost · Captured / audio kept" (`gCTKx`). EN and ES.
 
@@ -1198,8 +1306,12 @@ Parts 2, 3a, 4, 5, 8 ── Part 9b external sources ── Part 9c main view + 
 4. Crystal drift is corrected by slips at the master wrap under the existing
    turn crossfade, deferred during captures; only real tempo changes go
    through 4a's retime (rule 4: one owner of rescaling).
-5. Under an external source an Auto defining take ends on the external bar
-   line (AB 2.8's precedent), never truncated.
+5. Under an external source an Auto defining take ends on whole bars from
+   its own start (AB 2.8's precedent), never truncated; slips keep the
+   loop's own offset to the master's grid.
+5a. Owner decision (2026-10-06): under an external clock a track with Follow
+   tempo Off keeps its recorded speed and detaches until its next
+   Stop/Play; the song tempo still follows the master (D4).
 6. Receive aligns Segno's output, not its block, to the master (`L_out`), the
    same principle as sending.
 7. Loss closes takes at detection keeping every measured frame (Sync and
@@ -1262,24 +1374,16 @@ displays (9c). "Green in CI" does not close these.
   to finish."; the pre-3b held line; the real-time-priority warning.
 - The page's interim Internal-only source row in Part 9a (until 9b).
 - Note on 27/01 that DIN appears only on the appliance.
-- The 07/07 note under Follow tempo Off, once section 9 is answered.
+- The 07/07 note under Follow tempo Off ("Keeps its recorded speed. The MIDI
+  clock changed the song tempo.", D4's owner decision).
 
 ## 9. Genuine product-direction questions
 
-1. **External clock with Follow tempo Off.** AB 2.6 says Following Off keeps
-   original-time playback; AB 7.3 says the external source owns tempo.
-   Slips keep Follow-Off tracks in phase through crystal drift either way, so
-   the question is only what a real tempo change on the master does to a
-   track with Follow tempo Off:
-   - (a) **Recommended default, built unless the owner says otherwise:** the
-     track keeps its recorded speed, as AB 2.6 says, and detaches from the
-     shared position until its next Stop/Play (pitch/time 4a's rule); the
-     07/07 page says "Keeps its recorded speed. The MIDI clock changed the
-     song tempo." Nothing is refused.
-   - (b) Selecting an external source requires Follow tempo On for every
-     recorded track, refused with a reason otherwise.
-   - (c) Under an external source Follow tempo is forced On while the source
-     is selected, and restored when Internal returns.
+None open. Answered by the owner on 2026-10-06: under an external clock, a
+track with Follow tempo Off keeps its recorded speed and detaches until its
+next Stop/Play (option (a) of the question; D4 records it). The options not
+taken were refusing an external source unless every recorded track follows
+tempo, and forcing Follow tempo On while an external source is selected.
 
 The receive-side alignment no longer needs an owner call: D4 compensates the
 known output latency the way sending does (review M10).
@@ -1313,3 +1417,21 @@ known output latency the way sending does (review M10).
 | L8 offset edits | D7 |
 | L9 beat pulse and quantize anchor | D10 |
 | L10 ALSA identity | D6 |
+
+Delta review (`6fc551396`):
+
+| Finding | Where it is met |
+|---|---|
+| DH1 integer tempo divisions | D3 missed pulses; built in Part 2 with the 120 → 60, 150 → 50 and 174 → 87 oracles |
+| DM1 owner decision, global Follow Off, oracles, detached wording | D4 (decided; the global value under a clock; detached tracks and slips), section 5 item 5a, section 9, Part 3b oracles |
+| DM2 slip fact | numbering table (349), D4, Part 3a scope and parity oracle |
+| DM3 slip target and Auto end | D4 (take-start offset; whole bars from the take's start), Part 3a 1.5-beat oracle |
+| DL1 readout flicker | D3 published values; built in Part 2 (band, hold, lag oracles) |
+| DL2 probe flaws | the probe is retired; Part 2's native tests are the measurement |
+| DL3 past the largest ratio | D5 step 1, Part 5 oracle |
+| DL4 detached track and Continue | D9 Continue |
+| DL5 instruments D4 on CoreMIDI loss | instruments plan D4 (`1537c8f96`) |
+
+PR #1246 review (Part 1): M1 and L1-L6 are met in Part 1 (`8c2f43d48`); D1
+here and instruments D4 describe the dispatch order; the backlog note is
+met in Part 2.
