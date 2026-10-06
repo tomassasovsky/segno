@@ -83,6 +83,14 @@ class PowerOffCubit extends Cubit<PowerOffState> {
     unawaited(_halt(retry: true));
   }
 
+  /// Powers off without the settings flush, after a Retry failed too. The
+  /// last unsaved change is lost; the take gate still applies.
+  void powerOffAnyway(PowerOffSnapshot snapshot) {
+    if (state.phase != PowerOffPhase.flushFailed || !state.retryFailed) return;
+    if (!_prepareCommit(snapshot)) return;
+    unawaited(_halt(flush: false));
+  }
+
   /// Host finished naming an unnamed session. Runs [save] under Saving.
   void commitSave(
     PowerOffSnapshot snapshot,
@@ -116,14 +124,22 @@ class PowerOffCubit extends Cubit<PowerOffState> {
     await _halt();
   }
 
-  Future<void> _halt({bool retry = false}) async {
-    _set(PowerOffPhase.flushing);
-    try {
-      await _flush(retry: retry);
-    } on Object catch (error, stack) {
-      AppLog.error('power-off flush failed', error: error, stack: stack);
-      if (!isClosed) _set(PowerOffPhase.flushFailed);
-      return;
+  Future<void> _halt({bool retry = false, bool flush = true}) async {
+    if (flush) {
+      _set(PowerOffPhase.flushing);
+      try {
+        await _flush(retry: retry);
+      } on Object catch (error, stack) {
+        AppLog.error('power-off flush failed', error: error, stack: stack);
+        if (!isClosed) {
+          emit(
+            PowerOffState(phase: PowerOffPhase.flushFailed, retryFailed: retry),
+          );
+        }
+        return;
+      }
+    } else {
+      AppLog.warn('power-off: powering off anyway without the settings flush');
     }
     if (isClosed) return;
     _pedalGoodbye();

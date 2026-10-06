@@ -356,6 +356,7 @@ class ExpressionControlsPanel extends StatelessWidget {
               // endpoints are shown and not movable: the row is there to be
               // repointed or removed, not tuned.
               enabled: row.available && row.disabledReason == null,
+              max: row.mapping.target.mappingTop,
               keyboardStep: row.mapping.target is RecordLengthValueTarget
                   ? 1 / 64
                   : row.mapping.target is RecordTimingValueTarget

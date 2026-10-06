@@ -163,7 +163,10 @@ class ControlCubit extends Cubit<ControlState> {
   /// seam simply never receives external control.
   ///
   /// [takeLocked] suppresses Rec / overdub / perf-arm while the power-off
-  /// route is up, so a take cannot start behind the dialog.
+  /// route is up, so a take cannot start behind the dialog. [inputLocked]
+  /// holds continuous writes (expression sweeps, External values, MIDI
+  /// values) during Session transitions and disposal only; the power-off
+  /// route leaves them running until its flush suspends input.
   ControlCubit({
     required LooperRepository looper,
     required PedalRepository pedal,
@@ -179,6 +182,7 @@ class ControlCubit extends Cubit<ControlState> {
     Duration learnTimeout = const Duration(seconds: 15),
     PerformanceChains Function() currentChains = _noChains,
     bool Function() takeLocked = _neverLocked,
+    bool Function() inputLocked = _neverLocked,
   }) : _looper = looper,
        _pedal = pedal,
        _settings = settings,
@@ -196,6 +200,7 @@ class ControlCubit extends Cubit<ControlState> {
        _learnTimeout = learnTimeout,
        _currentChains = currentChains,
        _takeLocked = takeLocked,
+       _inputLocked = inputLocked,
        super(const ControlState()) {
     _fxPersistence.onOrdinaryWrite = _onOrdinaryFxWrite;
     _mixSettings.onOrdinaryValues = _onOrdinaryMixValues;
@@ -408,7 +413,7 @@ class ControlCubit extends Cubit<ControlState> {
     if (raw.kind == ControllerSourceKind.consoleExpression) {
       final before = _expressionRaw[input.jack];
       _expressionRaw[input.jack] = raw.value;
-      if (_takeLocked() ||
+      if (_inputLocked() ||
           before == null ||
           before == raw.value ||
           state.pedalSetupUnavailable ||
@@ -604,7 +609,7 @@ class ControlCubit extends Cubit<ControlState> {
     late final Future<void> next;
     next = before
         .then((_) async {
-          if (!restoring && held != false && _takeLocked()) return;
+          if (!restoring && held != false && _inputLocked()) return;
           bool cancelled() =>
               (_closing && !restoring) ||
               isClosed ||
@@ -1015,6 +1020,11 @@ class ControlCubit extends Cubit<ControlState> {
   final Duration _learnTimeout;
   final PerformanceChains Function() _currentChains;
   final bool Function() _takeLocked;
+
+  /// Holds continuous writes (expression, External values, MIDI values)
+  /// during Session transitions and disposal. The power-off route does not
+  /// hold them: it blocks only takes, through [_takeLocked].
+  final bool Function() _inputLocked;
   bool _haltInputSuspended = false;
   bool _inputRetired = false;
   bool get _controlInputSuspended {
@@ -2259,7 +2269,9 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// An encoder detent turn: accumulates into the master output gain.
   void encoderTurned(int delta) {
-    if (_inputRetired || _takeLocked()) return;
+    // A continuous value: it runs behind the power-off dialog, and stops once
+    // the flush suspends input.
+    if (_inputRetired || _inputLocked() || _controlInputSuspended) return;
     if (state.mode == InteractionMode.mixer) {
       for (var step = 0; step < delta.abs(); step++) {
         unawaited(stepFootMixerGain(delta.sign));
@@ -3259,7 +3271,7 @@ class ControlCubit extends Cubit<ControlState> {
         _externalSession != _looper.sessionRevision) {
       _retireAllExternal(sessionChanged: true);
       _externalSession = _looper.sessionRevision;
-    } else if (_takeLocked()) {
+    } else if (_inputLocked()) {
       _retireAllExternal();
     }
     // `_l` falls back to the repository's state before the first event.
