@@ -394,6 +394,7 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
         SessionRigTrack(
           channel: track.channel,
           fadeAmount: track.fadeAmount,
+          reversed: track.reversed,
           lanes: lanes,
         ),
       );

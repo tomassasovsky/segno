@@ -606,6 +606,7 @@ void main() {
               tracks: [
                 SessionTrack(
                   fadeAmount: 1,
+                  reversed: false,
                   channel: 0,
                   multiple: 1,
                   lengthFrames: 128,

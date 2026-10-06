@@ -187,6 +187,7 @@ void main() {
                   multiple: 1,
                   lengthFrames: 128,
                   fadeAmount: .25,
+                  reversed: false,
                   lanes: [
                     SessionLane(
                       lane: 0,
@@ -203,6 +204,7 @@ void main() {
                   multiple: 1,
                   lengthFrames: 128,
                   fadeAmount: 0,
+                  reversed: false,
                   lanes: [
                     SessionLane(
                       lane: 0,
@@ -342,6 +344,7 @@ void main() {
                       multiple: 1,
                       lengthFrames: 128,
                       fadeAmount: amount,
+                      reversed: false,
                       lanes: const [],
                     ),
                 ],
@@ -384,6 +387,7 @@ void main() {
           tracks: [
             SessionTrack(
               fadeAmount: 1,
+              reversed: false,
               channel: 0,
               multiple: 1,
               lengthFrames: 128,

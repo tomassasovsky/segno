@@ -22,6 +22,7 @@ class _FakeTrack {
   int undoDepth = 0;
   int redoDepth = 0;
   bool solo = false;
+  bool reversed = false;
   final List<_FakeLane> lanes = [_FakeLane()];
 
   int get liveIndex => undoDepth;
@@ -102,9 +103,11 @@ class FakeSessionEngine implements AudioEngine {
     double volume = 1,
     double trackVolume = 1,
     bool muted = false,
+    bool reversed = false,
   }) {
     final frames = pcm.length ~/ channels;
     final track = _tracks[channel]
+      ..reversed = reversed
       ..volume = trackVolume
       ..state = TrackState.playing
       ..multiple = multiple
@@ -219,6 +222,7 @@ class FakeSessionEngine implements AudioEngine {
           overdubFeedbackOverride: overdubFeedbackOverride[i],
           layerInFlight: i == 0 && _consumeInFlightPoll(),
           solo: t.solo,
+          reversed: t.reversed,
           lanes: [
             for (final lane in t.lanes)
               LaneSnapshot(

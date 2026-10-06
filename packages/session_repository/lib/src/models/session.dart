@@ -187,6 +187,7 @@ class SessionTrack {
     required this.multiple,
     required this.lengthFrames,
     required this.fadeAmount,
+    required this.reversed,
     required this.lanes,
   });
 
@@ -195,6 +196,10 @@ class SessionTrack {
     final amount = json['fadeAmount'];
     if (amount is! num || !amount.isFinite || amount < 0 || amount > 1) {
       throw const FormatException('invalid track Fade amount');
+    }
+    final reversed = json['reversed'];
+    if (reversed is! bool) {
+      throw const FormatException('invalid track playback direction');
     }
     final lanes = [
       for (final l in json['lanes'] as List<dynamic>)
@@ -232,6 +237,7 @@ class SessionTrack {
       multiple: (json['multiple'] as num).toInt(),
       lengthFrames: (json['lengthFrames'] as num).toInt(),
       fadeAmount: amount.toDouble(),
+      reversed: reversed,
       lanes: lanes,
     );
   }
@@ -248,6 +254,10 @@ class SessionTrack {
   /// Captured Fade coefficient, recalled as a stationary amount.
   final double fadeAmount;
 
+  /// Whether the track plays reversed (#1162). Recalled before the stopped
+  /// commit, so Play starts at the reversed lap start.
+  final bool reversed;
+
   /// The track's lanes, each with its own mix/routing and audio layers.
   final List<SessionLane> lanes;
 
@@ -257,6 +267,7 @@ class SessionTrack {
     'multiple': multiple,
     'lengthFrames': lengthFrames,
     'fadeAmount': fadeAmount,
+    'reversed': reversed,
     'lanes': [for (final l in lanes) l.toJson()],
   };
 
@@ -269,6 +280,7 @@ class SessionTrack {
           multiple == other.multiple &&
           lengthFrames == other.lengthFrames &&
           fadeAmount == other.fadeAmount &&
+          reversed == other.reversed &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -277,6 +289,7 @@ class SessionTrack {
     multiple,
     lengthFrames,
     fadeAmount,
+    reversed,
     Object.hashAll(lanes),
   );
 }
@@ -844,7 +857,7 @@ class Session {
   }
 
   /// The current manifest schema stores per-track settings and all FX stages.
-  static const int formatVersion = 11;
+  static const int formatVersion = 13;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';

@@ -708,6 +708,7 @@ class SessionRepository {
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
           fadeAmount: track.fade.amount,
+          reversed: track.reversed,
           lanes: lanes,
         ),
       );
