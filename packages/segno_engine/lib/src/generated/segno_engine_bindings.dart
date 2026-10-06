@@ -4858,6 +4858,32 @@ class SegnoEngineBindings {
         )
       >();
 
+  /// fsync(2) on the directory at `path`, so the entries in it — a file renamed
+  /// into it, a file created in it — survive a power cut or a pulled drive. A
+  /// file's own fsync makes its bytes durable but not its name: on ext4 a copy
+  /// that returned within the commit interval could otherwise come back after a
+  /// power cut as a part file with no final name (#1177, #1195). Dart has no way
+  /// to open a directory, so the storage repository asks here.
+  ///
+  /// LE_ERR_INVALID on a NULL or empty path; LE_ERR_DEVICE when the path cannot
+  /// be opened as a directory or the sync fails. LE_OK on Windows without doing
+  /// anything: NTFS journals its directory entries. Control thread only; it can
+  /// take as long as the device's flush.
+  int le_sync_dir(
+    ffi.Pointer<ffi.Char> path,
+  ) {
+    return _le_sync_dir(
+      path,
+    );
+  }
+
+  late final _le_sync_dirPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<ffi.Char>)>>(
+        'le_sync_dir',
+      );
+  late final _le_sync_dir = _le_sync_dirPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Char>)>();
+
   /// Starts an offline render of the finalized capture at `capture_dir`: spawns
   /// a worker thread that writes `stems/dry/track<channel>.wav` +
   /// `stems/wet/track<channel>.wav` under `capture_dir` for every non-empty
