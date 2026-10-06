@@ -548,6 +548,14 @@ class FakeSessionEngine implements AudioEngine {
       (result: EngineResult.invalid, request: 0);
 
   @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
   EngineResult? readRequestResult(int request) => EngineResult.invalid;
 
   @override

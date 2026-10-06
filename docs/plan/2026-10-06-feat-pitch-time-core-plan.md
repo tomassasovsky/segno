@@ -1188,6 +1188,27 @@ events.log version 11):
   overrides through `le_engine_set_pitch_mode` with a receipt; a change only
   re-selects the source (an equal-power swap), the head is untouched.
 
+As built in Part 4a-iii (the Dart seam):
+
+- `AudioEngine.setFollowTempo` / `setPitchMode` (the default with channel
+  null, an override per track, null inherits) through the receipt table;
+  `EngineSnapshot.recordedTempoBpm`, `followTempo`, `tempoFollow`
+  (`TempoFollowState`) and `pitchMode` (`PitchMode`);
+  `TrackSnapshot.followTempoOverride`, `pitchModeOverride` and
+  `pitchEffectiveCents`; the native and mock engines and the four fakes.
+- `LooperRepository.setFollowTempoSettings` / `setPitchModeSettings` are
+  two `SettingsReceipt` families with the inherit grammar, like One Shot:
+  the whole vector (default plus eight slots) is the intent, only the
+  parts the engine does not hold are sent, the vector is accepted once
+  every request's callback result is OK, a failure leaves it owed until
+  Retry, a stopped engine stages it and every start replays it. The
+  restart intents are what Part 4b's Session fields capture.
+- `LooperState.recordedTempoBpm`, `tempoFollow`, `defaultFollowTempo`,
+  `defaultPitchMode`; `Track.followTempoOverride`, `pitchModeOverride`
+  (the accepted settings) and `pitchEffectiveCents` (the engine's).
+- A session load clears an owed vector but keeps the settings; whether a
+  session carries them (and so replaces them) is Part 4b's.
+
 ### Part 4b. Audio & tempo page and Session fields (about 300 production lines)
 
 Section 4.4: the Follow tempo default flips to On together with the page

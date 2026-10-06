@@ -374,6 +374,73 @@ void main() {
       );
     });
 
+    test('tempo follow and pitch are projected from the native fields '
+        '(#1179)', () {
+      final snap = calloc<le_snapshot>();
+      final track = calloc<le_track_snapshot>();
+      addTearDown(
+        () => calloc
+          ..free(snap)
+          ..free(track),
+      );
+      const initial = EngineSnapshot.initial();
+      expect(initial.followTempo, isFalse);
+      expect(initial.tempoFollow, TempoFollowState.free);
+      expect(initial.pitchMode, PitchMode.unchanged);
+      expect(initial.recordedTempoBpm, 0);
+      final base = EngineSnapshot.fromNative(snap.ref, const []);
+      snap.ref
+        ..recorded_tempo_bpm = 120
+        ..follow_tempo = 1
+        ..tempo_follow = 1
+        ..pitch_follows_speed = 1;
+      final set = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(set.recordedTempoBpm, 120);
+      expect(set.followTempo, isTrue);
+      expect(set.tempoFollow, TempoFollowState.retimes);
+      expect(set.pitchMode, PitchMode.followsSpeed);
+      expect(set, isNot(base));
+      expect(set.hashCode, isNot(base.hashCode));
+      expect(
+        base.copyWith(pitchMode: PitchMode.followsSpeed).pitchMode,
+        PitchMode.followsSpeed,
+      );
+      for (final (code, state) in [
+        (0, TempoFollowState.free),
+        (2, TempoFollowState.noGrid),
+        (3, TempoFollowState.noFollower),
+        (4, TempoFollowState.busy),
+        (99, TempoFollowState.busy),
+      ]) {
+        expect(TempoFollowState.fromCode(code), state);
+      }
+      track.ref
+        ..quantize_override = -1
+        ..quantize_div_override = -1
+        ..overdub_feedback_override = -1
+        ..follow_override = -1
+        ..pitch_override = -1;
+      final inherit = TrackSnapshot.fromNative(track.ref);
+      expect(inherit.followTempoOverride, isNull);
+      expect(inherit.pitchModeOverride, isNull);
+      track.ref
+        ..follow_override = 0
+        ..pitch_override = 1
+        ..pitch_effective_cents = -498;
+      final own = TrackSnapshot.fromNative(track.ref);
+      expect(own.followTempoOverride, isFalse);
+      expect(own.pitchModeOverride, PitchMode.followsSpeed);
+      expect(own.pitchEffectiveCents, -498);
+      expect(own, isNot(inherit));
+      expect(own.hashCode, isNot(inherit.hashCode));
+      track.ref
+        ..follow_override = 1
+        ..pitch_override = 0;
+      final other = TrackSnapshot.fromNative(track.ref);
+      expect(other.followTempoOverride, isTrue);
+      expect(other.pitchModeOverride, PitchMode.unchanged);
+    });
+
     test('global native record settings each participate in equality', () {
       final ptr = calloc<le_snapshot>();
       addTearDown(() => calloc.free(ptr));
@@ -1739,6 +1806,12 @@ void main() {
         'primaryTrack',
         'speed', // a request outcome, not a callback-rate counter (#1179)
         'transposeBypass', // likewise a request outcome (#1179)
+        // Audio & tempo follow (#1179): settings, a latched tempo and a state
+        // that moves with content, not per callback.
+        'recordedTempoBpm',
+        'followTempo',
+        'tempoFollow',
+        'pitchMode',
         'quantize',
         'autoRecord',
         'overdubFeedback',
