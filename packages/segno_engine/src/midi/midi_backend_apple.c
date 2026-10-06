@@ -6,8 +6,10 @@
  * label and kMIDIPropertyUniqueID for the id (stable across replug/reboot).
  * open() creates a MIDI client + input port, connects the chosen source, and
  * the input read callback (run on CoreMIDI's own delivery thread) splits each
- * packet into messages and feeds Note/CC bytes through le_midi_ring_push +
- * le_midi_drain.
+ * packet into messages and hands each to le_midi_input (the engine sink, then
+ * the Note/CC/Program Dart ring), then calls le_midi_drain. Real-time bytes
+ * (0xF8-0xFF) may sit between the bytes of another message or inside a
+ * SysEx; they are delivered where they appear and skipped over.
  *
  * It uses the classic MIDIInputPortCreate / MIDIReadProc rather than the macOS
  * 11 MIDIInputPortCreateWithProtocol: the classic API is a plain C function
@@ -122,47 +124,6 @@ static uint64_t le_core_ts_to_ns(const le_core_midi_state* st,
   return now_ns - le_core_ticks_to_ns(st, now_ticks - ts);
 }
 
-/* The data-byte count of a status byte, or -1 for a byte this splitter skips
- * whole (SysEx is handled by the caller). */
-static int le_core_data_len(uint8_t status) {
-  if (status < 0xF0u) {
-    const uint8_t hi = (uint8_t)(status & 0xF0u);
-    return (hi == 0xC0u || hi == 0xD0u) ? 1 : 2;
-  }
-  switch (status) {
-    case 0xF1u: case 0xF3u: return 1; /* MTC quarter frame, Song Select */
-    case 0xF2u: return 2;             /* Song Position Pointer */
-    default: return 0;                /* tune request and real-time */
-  }
-}
-
-/* Splits a packet's raw byte stream into complete messages and hands each to
- * le_midi_input, which routes the engine kinds (now including clock,
- * transport and Song Position, #1228) to the bound port and the Note/CC/Program
- * kinds to the Dart ring. */
-static void le_core_push_bytes(le_midi* owner, const Byte* data, UInt16 len,
-                               uint64_t t_ns) {
-  UInt16 i = 0;
-  while (i < len) {
-    const uint8_t status = data[i];
-    if (status < 0x80u) {
-      i++; /* stray data byte (CoreMIDI does not use running status): skip */
-      continue;
-    }
-    if (status == 0xF0u) { /* SysEx: skip through the 0xF7 terminator */
-      i++;
-      while (i < len && data[i] != 0xF7u) i++;
-      if (i < len) i++;
-      continue;
-    }
-    const int datalen = le_core_data_len(status);
-    const uint8_t d1 = (datalen >= 1 && i + 1 < len) ? data[i + 1] : 0;
-    const uint8_t d2 = (datalen == 2 && i + 2 < len) ? data[i + 2] : 0;
-    le_midi_input(owner, status, d1, d2, t_ns);
-    i = (UInt16)(i + 1 + datalen);
-  }
-}
-
 static void le_core_read_proc(const MIDIPacketList* pktlist, void* readRefCon,
                               void* srcRefCon) {
   (void)srcRefCon;
@@ -170,8 +131,8 @@ static void le_core_read_proc(const MIDIPacketList* pktlist, void* readRefCon,
   if (st == NULL || pktlist == NULL) return;
   const MIDIPacket* pkt = &pktlist->packet[0];
   for (UInt32 i = 0; i < pktlist->numPackets; ++i) {
-    le_core_push_bytes(st->owner, pkt->data, pkt->length,
-                       le_core_ts_to_ns(st, pkt->timeStamp));
+    le_midi_split(st->owner, pkt->data, pkt->length,
+                  le_core_ts_to_ns(st, pkt->timeStamp));
     pkt = MIDIPacketNext(pkt);
   }
   le_midi_drain(st->owner);

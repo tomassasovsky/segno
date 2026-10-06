@@ -1402,15 +1402,19 @@ typedef struct le_snapshot {
   uint32_t instrument_events_refused;
   uint32_t instrument_fallback_blocks;
   /* ---- native MIDI input (#1228 Part 1; trailing). Totals across all
-   * LE_MAX_MIDI_PORTS ports since the engine was created: events drained from
-   * the port rings under the current generation, events dropped as stale,
-   * blocks that found an overflow flag, and attached ports that went lost.
-   * midi_in_attached_mask has bit p set while a capture is attached to p. */
+   * LE_MAX_MIDI_PORTS ports since the engine was created: events delivered
+   * from the current binding, events dropped as stale (pushed by a binding
+   * that has since ended), gaps (places where a full ring or an OS overrun
+   * lost messages), ports that went lost, and binding changes (an attach,
+   * detach, rebind or close, counted once per drain that sees the
+   * generation move). midi_in_attached_mask has bit p set while a capture is
+   * attached to p. */
   uint32_t midi_in_events;
   uint32_t midi_in_stale;
   uint32_t midi_in_overflows;
   uint32_t midi_in_lost;
   uint32_t midi_in_attached_mask;
+  uint32_t midi_in_rebinds;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
