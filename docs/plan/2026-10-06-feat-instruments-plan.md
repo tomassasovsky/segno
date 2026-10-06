@@ -375,8 +375,38 @@ flushed per callback (`engine_process.c:6340`).
     run.
   The arm64 CI proxy asserts p50 at half of each percentage. Part 2a re-runs
   the joint scenario with the voices inside `le_engine_process`; Part 2c adds
-  the event-routing cost (8 ports × 256 events plus 256 control events,
-  scanned against 8 instruments × 32 remaps) to it.
+  the event-routing cost to it.
+- **The proxy gate (plan delta review D8, Part 2c review H1; proposed, needs
+  the owner's sign-off).** The proxy no longer gates the joint total; it
+  gates what this plan adds to it, and the Pi set keeps gating the total.
+  - Why: on the trunk merge `6eabf241d` the proxy failed Part 1 at 37.63 %
+    against 37.5 % with no instrument change (run 37532938268). In that run
+    the voices were 23 µs of the joint's 251 µs: 8 × 8 lanes 88.7 µs, with
+    32 voices 111.4 µs. The same joint was 36.3 % (#1234) and 35.3 %
+    (#1261) on older trunks; the rest is the looper, eight reverb monitors
+    and the read head, and it moves with every trunk change. The runner also
+    refuses SCHED_FIFO. Part 2c failed the same gate at 42.72 % because its
+    routing load put a full ring on every port in every period.
+  - The joint runs three ways: the base (no instruments, no MIDI), the
+    joint worst case (32 voices plus dense MIDI: 4 messages per port and 8
+    control releases per 64-frame period, about 6000 messages a second per
+    port, six times a DIN port's ceiling), and the joint plus a ring-full
+    burst in every period (255 messages on every port and 256 control
+    releases). The messages include CC 20, which the remap index admits on
+    every port and which scans every instrument's remap list to the end
+    (the heavy path; Part 2c review L3).
+  - Proxy (p50): the instruments' share (joint minus base) ≤ 7.5 % of the
+    period, and the burst's increment (burst minus joint) ≤ 10 %; the total
+    is printed against its old 37.5 % reference, not gated.
+  - Pi (p99.9): the joint worst case ≤ 75 % with no late period, and the
+    burst's increment ≤ 20 % (the note burst's threshold).
+  - Routing made cheaper first (Part 2c review H1): a release whose origin
+    bucket holds no held voice skips the voice scan (a per-bucket upper
+    bound, recounted every render); the remap index records which
+    instruments carry a remap for each port, kind and number and where its
+    first one sits, so an admitted message scans only those instruments,
+    from there. On the development Mac (loaded) the burst's increment fell
+    from 74 µs to 33 µs; the dense joint's share is 11-17 µs (1.7-2.5 %).
 - **The Pi gate moves to Part 2a (review M4).** The owner runs this plan's
   bench and the pitch/time bench in one appliance session (the steps are in
   `2026-10-06-instruments-spike-findings.md`, "Pi 5"); the instrument
@@ -793,10 +823,13 @@ TU, with their own tests.
   count, notes[8]}}` (about 3 KB per slot).
 - Per block, after the command drain: apply the voice limit and parameter
   revisions, drain the control rings in posting order up to the high-water
-  mark (patch changes included, at most 512 events), drain each port ring
-  (at most 256 events) and act on a port's lost flag or overflow mark only
-  after its queued events (D4), render the buses, publish per-instrument
-  peaks and `synth_epoch`.
+  mark (patch changes included, at most 512 events), then drain each port
+  ring (at most 256 events) and act on a port's lost flag or overflow mark
+  only after its queued events (D4), render the buses, publish
+  per-instrument peaks and `synth_epoch`. Built in this order after the
+  delta review (D10, Part 2c review L2): `le_instruments_apply`, then the
+  MIDI drain, then `le_instruments_render`, so a MIDI note in the same block
+  as a patch change plays the new patch.
 - `le_source_sample(in_c, ch_in, inst_bus, f, s)` (Part 2b) is the one
   accessor used by capture (`:5986-5992`), the monitors (`:5395-5430`, loop
   bound widened to `LE_MAX_SOURCES`), the sound trigger (`:5316-5337`) and
@@ -821,6 +854,21 @@ For each port event (status, d1, d2):
 A port detach, loss or overflow releases that port's voices and contributors
 as D4 describes; reconnect gets a new generation, so nothing old replays
 (`:386-387`).
+
+A table switch that turns an instrument's MIDI off, or moves it to another
+port or channel (delta review D9, Part 2c review M1), ends the old port's
+notes and sustain on that instrument as a Note Off would (a voice another
+contributor still sustains rings on) and returns the bend, modulation and
+pressure MIDI set on it to neutral, as the reference's `silenceController`
+does (`instrument-runtime.js:221-227`). Other instruments on that port keep
+theirs. A range or remap edit leaves held notes to their own release (by
+origin, rule 1 above), so editing a split while playing never cuts a note.
+
+One origin, one sounding note (Part 3a review M1): a control note-on for an
+origin whose voice is still held on that slot replaces it, while a voice
+held on only by sustain rings on. A chord with one identity uses
+`le_engine_instrument_chord_on` (up to 8 notes, all or nothing), which the
+note dispatch of Parts 3b and 8 calls for chords.
 
 ## 3. Dart model
 
@@ -1542,7 +1590,11 @@ architecture, test-quality and adversarial reviews before the human merge
 gate. Stop for review on: a second real-time thread, any allocation or lock
 in render, MIDI through Dart on the note path, a second routing model for
 instrument sources, a second capture of one device, a Dart-side copy of the
-patch table, a dropped release, or a per-slot refusal in a batch.
+patch table (one exception, decided after the Part 3a review M2: the mock
+engine's and test fakes' `referenceSynthCatalogue`, which is not exported
+from `segno_engine`, so app code can read the catalogue only from an engine,
+and which a native-library test pins to the engine's table field by field),
+a dropped release, or a per-slot refusal in a batch.
 
 ## 5. Decisions taken under the standing rules
 
@@ -1635,6 +1687,9 @@ patch table, a dropped release, or a per-slot refusal in a batch.
 | Delta D7 stale text | §7 L4 row, Part 2a tests, D10 re-strike rule |
 | Planner question 1 | owner: Install hidden, ids as strings, Retry only for audio start |
 | Planner question 2 | owner: computer keys hidden on the appliance; M8 applies on desktop |
+| Delta D8 proxy joint gate | D2 "the proxy gate" (proposed; owner sign-off): the share and the burst increment gated on the proxy, the total on the Pi; routing made cheaper first |
+| Delta D9 expression on route edits | §2.3: a table switch that turns MIDI off or moves its port or channel releases that port's notes on the instrument and neutralises its expression; range and remap edits do not cut |
+| Delta D10 block order | §2.2: control rings, then the MIDI drain, then render (built in Part 2c) |
 
 ## 8. Genuine product-direction questions
 
