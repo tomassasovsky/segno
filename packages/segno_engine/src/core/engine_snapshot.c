@@ -368,6 +368,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->tuner_hz = load_f32(&engine->a_tuner_hz_bits);
   out->tuner_confidence = load_f32(&engine->a_tuner_conf_bits);
   out->tuner_input = load_i32(&engine->a_tuner_input);
+  out->tuner_mute_mask = atomic_load_explicit(&engine->a_tuner_mute_mask,
+                                              memory_order_relaxed);
   out->input_peak = load_f32(&engine->a_in_peak_bits);
   out->output_rms = load_f32(&engine->a_out_rms_bits);
   out->latency_state = load_i32(&engine->a_latency_state);

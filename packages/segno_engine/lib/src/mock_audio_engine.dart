@@ -42,9 +42,24 @@ class MockAudioEngine implements AudioEngine {
   /// mock analyses nothing, so a test drives the reading directly.
   double tunerHz = 0;
 
+  /// The inputs the tuner silences; follows the native rules.
+  int _tunerMuteMask = 0;
+
   @override
   EngineResult setTunerInput({required int input}) {
     _tunerInput = input < 0 || input >= inputChannels ? -1 : input;
+    // Every arm, move or disarm drops the temporary mute, as natively.
+    _tunerMuteMask = 0;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTunerMute({required int inputMask}) {
+    // Refused (stored as 0) while disarmed; absent inputs dropped.
+    _tunerMuteMask = _tunerInput < 0
+        ? 0
+        : inputMask &
+              (inputChannels >= 32 ? 0xFFFFFFFF : (1 << inputChannels) - 1);
     return EngineResult.ok;
   }
 
@@ -327,6 +342,7 @@ class MockAudioEngine implements AudioEngine {
       tunerHz: _tunerInput >= 0 ? tunerHz : 0,
       tunerConfidence: _tunerInput >= 0 && tunerHz > 0 ? 1 : 0,
       tunerInput: _tunerInput,
+      tunerMuteMask: _tunerMuteMask,
       inputPeak: 0,
       outputRms: 0,
       latencyState: _latencyState,

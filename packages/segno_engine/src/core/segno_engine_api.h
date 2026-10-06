@@ -523,6 +523,15 @@ typedef enum le_command_code {
   LE_CMD_RESET_TRANSFORMS = 82, /* internal material-import transform reset
                                  * (Fade and direction); never raw-posted */
   LE_CMD_REVERSE = 83, /* checked internal Reverse request; never raw-posted */
+
+  /* Silence the live monitors of the inputs in the mask while the tuner is
+   * armed (#1229). arg_i = the mask, bit c = input c. Owned by the tuner arm:
+   * refused (stored as 0) while the tuner is disarmed, and cleared by every
+   * LE_CMD_SET_TUNER_INPUT, so it can never outlive or follow a tuning. Not
+   * perf-logged: it changes no recorded material, and a captured monitor stem
+   * already records the silence that was heard. 84-131 belong to other
+   * epics (the numbering ledger); 133-135 stay reserved for #1229. */
+  LE_CMD_SET_TUNER_MUTE = 132,
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -1227,6 +1236,10 @@ typedef struct le_snapshot {
    * the UI cannot tell "armed and silent" from "not armed yet", and those two
    * need different words on screen. */
   int32_t tuner_input;
+  /* Inputs whose live monitors the tuner is silencing (bit c = input c); 0
+   * whenever the tuner is disarmed. Persistent monitor mute is separate and
+   * unaffected (le_engine_set_monitor_input_mute). */
+  uint32_t tuner_mute_mask;
 
   /* Tracks. */
   int32_t track_count; /* number of usable tracks (<= LE_MAX_TRACKS) */
@@ -2351,6 +2364,24 @@ LE_EXPORT int32_t le_engine_set_master_gain(le_engine* engine, float gain);
  * `tuner_input`. Detection is gated on the arm, so disarming (or never arming)
  * costs nothing. */
 LE_EXPORT int32_t le_engine_set_tuner_input(le_engine* engine, int32_t input);
+
+/* Silences the live monitors of the inputs in `input_mask` (bit c = input c)
+ * for as long as the tuner stays armed — the foot Tuner's temporary mute of
+ * the input (or stereo pair) being tuned (#1229).
+ *
+ * This is NOT le_engine_set_monitor_input_mute: that mute is the player's
+ * persistent intent, and this one belongs to the tuner arm. The two are
+ * ORed; neither changes the other. Arm the input first: a mask posted while
+ * the tuner is disarmed is stored as 0, and every le_engine_set_tuner_input
+ * (re-arm, move or disarm) clears it, so a tuning can never leave an input
+ * silent behind it. Bits for inputs the device does not have are dropped.
+ *
+ * Only monitoring changes. Track lanes still record the input, the detector
+ * still hears it (it taps before any monitor), and the mask is not
+ * perf-logged; a captured monitor stem holds the silence that was heard.
+ * Results ride the snapshot as `tuner_mute_mask`. */
+LE_EXPORT int32_t le_engine_set_tuner_mute(le_engine* engine,
+                                           uint32_t input_mask);
 
 /* Enables/disables the master peak limiter and sets its ceiling (clamped to
  * (0,1], default 0.99). The limiter is applied post master-gain so the summed

@@ -3512,6 +3512,10 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       int32_t in = cmd->arg_i;
       if (in < 0 || in >= e->in_channels) in = -1;
       store_i32(&e->a_tuner_input, in);
+      /* Every arm, move or disarm drops the temporary mute: it belonged to
+       * the tuning that just ended, and the caller re-sends it for the new
+       * input (#1229). */
+      atomic_store_explicit(&e->a_tuner_mute_mask, 0u, memory_order_relaxed);
       /* Reset the analysis state on every change, including a disarm: a
        * window half-full of the previous input would otherwise produce one
        * bogus reading on the new one. */
@@ -3525,6 +3529,16 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       e->tuner_pass.phase = LE_TUNER_PHASE_IDLE;
       store_f32(&e->a_tuner_hz_bits, 0.0f);
       store_f32(&e->a_tuner_conf_bits, 0.0f);
+      break;
+    }
+    case LE_CMD_SET_TUNER_MUTE: {
+      /* Owned by the tuner arm: nothing to silence while disarmed. */
+      uint32_t mask = 0u;
+      if (load_i32(&e->a_tuner_input) >= 0) {
+        mask = (uint32_t)cmd->arg_i;
+        if (e->in_channels < 32) mask &= (1u << e->in_channels) - 1u;
+      }
+      atomic_store_explicit(&e->a_tuner_mute_mask, mask, memory_order_relaxed);
       break;
     }
     case LE_CMD_SET_MASTER_GAIN: {
@@ -4944,6 +4958,11 @@ static inline void snapshot_monitor_fx(
     float mon_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
     int32_t mon_fx_enabled[][LE_FX_MAX], int* mon_has_fx, float* mon_gl,
     float* mon_gr) {
+  /* The tuner's temporary mute ORs into the player's persistent one, so the
+   * whole monitor path below treats it as a mute without either flag
+   * changing the other (#1229). */
+  const uint32_t tuner_mute =
+      atomic_load_explicit(&e->a_tuner_mute_mask, memory_order_relaxed);
   for (int c = 0; c < ch_in && c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_monitor_input* m = &e->monitors[c];
     mon_on[c] = load_i32(&m->a_enabled) && !(excluded & (1u << c));
@@ -4951,7 +4970,7 @@ static inline void snapshot_monitor_fx(
     mon_vol[c] = load_f32(&m->a_vol_bits);
     mon_gl[c] = load_f32(&m->a_pan_gl_bits);
     mon_gr[c] = load_f32(&m->a_pan_gr_bits);
-    mon_mut[c] = load_i32(&m->a_muted);
+    mon_mut[c] = load_i32(&m->a_muted) || (tuner_mute & (1u << c)) != 0u;
     mon_has_fx[c] = 0;
     int32_t n = load_i32(&m->a_fx_count);
     if (n < 0) n = 0;
