@@ -3257,10 +3257,20 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (accepted) {
         const int target = cmd->reverse.install ? cmd->reverse.target != 0
                                                 : !t->reversed;
-        const int32_t cur = le_direction_index(t->reversed, t->playback_offset,
-                                               base, len);
+        int32_t cur = le_direction_index(t->reversed, t->playback_offset,
+                                         base, len);
         int32_t turn = 0;
-        if (target != t->reversed) {
+        const int turned = target != t->reversed;
+        if (turned && t->turn_left > 0 && target == t->turn_reversed) {
+          /* Back to the pre-turn direction inside the turn window: cancel
+           * the turn. The old head has kept reading all along, so it takes
+           * over alone and the net-zero gesture plays the material it would
+           * have played without either toggle. */
+          t->reversed = target;
+          t->playback_offset = t->turn_offset;
+          t->turn_left = 0;
+          cur = le_direction_index(target, t->playback_offset, base, len);
+        } else if (turned) {
           /* The old head keeps reading for one turn window while the new one
            * takes over — the value is continuous at the turn (same sample)
            * but its slope flips, which clicks on low material. Equal-gain,
@@ -3275,6 +3285,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
           t->turn_left = turn;
           t->reversed = target;
           t->playback_offset = le_direction_origin(target, cur, base, len);
+        }
+        if (turned) {
           /* A printed Pre render never plays reversed: disengage every print
            * so the live chains take over through the settled-bypass
            * re-enable path [B7]; forward tracks re-engage at their next lap
@@ -4048,6 +4060,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
          * prior clear+reimport cycle never leaks a stale divisor. */
         store_i32(&tr->a_sync_divisor, 0);
         tr->start_iter = 0;
+        /* Parked at the loop head, so a Play in this same drain starts at
+         * the lap start of an installed direction (#1162). */
+        le_reset_track_playback(tr);
         store_i32(&tr->a_state, LE_TRACK_STOPPED);
       }
       /* A session that saved no crown still gets one: its lowest recorded
@@ -4820,6 +4835,7 @@ static inline void advance_transport_frame(le_engine* e, int tc,
       for (int t = 0; t < tc; ++t) {
         e->tracks[t].start_iter = 0;
         e->tracks[t].playback_offset = 0;
+        e->tracks[t].turn_left = 0; /* a parked origin has no old head */
         e->tracks[t].sounding_frames = 0; /* the next launch is a fresh lap */
       }
     }

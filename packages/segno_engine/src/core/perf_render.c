@@ -780,10 +780,16 @@ static void le_pr_apply_direction(le_pr_track_build* b, uint64_t frame,
   const int silent = last->silent;
   float* image = last->image;
   const int32_t image_len = last->image_len;
-  le_pr_append_segment(b, frame, (uint64_t)read_index, image, image_len);
+  /* The image stays owned by the segment that loaded it: hand the append no
+   * image, so a full segment table frees nothing here, and borrow it after,
+   * as the restored-image path does. */
+  le_pr_append_segment(b, frame, 0, NULL, 0);
   if (b->load_failed) return;
   le_pr_segment* seg = &b->segments[b->segment_count - 1];
   seg->owns_image = 0;
+  seg->image = image;
+  seg->image_len = image_len;
+  seg->phase0 = (uint64_t)read_index % (uint64_t)image_len;
   seg->silent = silent;
   seg->reversed = reversed;
   seg->turn_frames = turn_frames;

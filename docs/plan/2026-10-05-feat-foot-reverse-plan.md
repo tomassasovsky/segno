@@ -145,7 +145,12 @@ with `x = le_direction_turn_mix(F - turn_left, F)`, `F = seam_xfade_frames(e)`
 (~10 ms, `:971-974`), decremented once per frame per track after the lane loop
 (beside the seam countdown, `:5841-5857`). Equal-gain, like `le_seam_fold`
 (`:995-1004`): the two reads are the same material. Loops shorter than `2*F` snap
-without a crossfade, mirroring the punch-fade rule (`:5397-5405`).
+without a crossfade, mirroring the punch-fade rule (`:5397-5405`). A toggle back to
+the pre-turn direction while `turn_left > 0` cancels the turn: restore
+`playback_offset = turn_offset`, set `turn_left = 0`, and log the restored head's
+index with no turn. The old head never stopped advancing, so it plays on alone. Every
+park of the origin (transport hold, `le_reset_track_playback`, Session commit) also
+zeroes `turn_left`.
 
 Caches and Reverse: a reversed track never engages a printed Pre render, and a
 toggle clears `a_cache_active` on every lane and `a_track_cache_active`

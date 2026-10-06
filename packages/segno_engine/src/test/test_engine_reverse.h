@@ -327,7 +327,7 @@ static void test_reverse_refusals_and_record_guard(void) {
   le_engine* e = reverse_fixture(48000, len, len);
   float ramp[1000], pcm[1000], out[64];
   for (int i = 0; i < len; ++i) ramp[i] = (float)i;
-  uint64_t id, other;
+  uint64_t id;
   int32_t result;
   CHECK(le_engine_toggle_reverse(NULL, 0, &id) == LE_ERR_INVALID);
   CHECK(le_engine_toggle_reverse(e, 0, NULL) == LE_ERR_INVALID);
@@ -407,14 +407,6 @@ static void test_reverse_refusals_and_record_guard(void) {
   CHECK(le_engine_cancel_arm(e, 0) == LE_OK);
   drain(e);
   CHECK(timing_gate(e, 0) == LE_OK);
-  /* Rapid double toggles: two receipts, direction unchanged, index continuous. */
-  CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK);
-  CHECK(le_engine_toggle_reverse(e, 0, &other) == LE_OK && other > id);
-  drain(e);
-  fade_result(e, id, LE_OK);
-  fade_result(e, other, LE_OK);
-  le_engine_get_track(e, 0, &snap);
-  CHECK(snap.reversed == 0);
   /* Unread receipts stay owned; a read frees the slot. */
   uint64_t ids[LE_RING_CAPACITY];
   for (int i = 0; i < (int)LE_RING_CAPACITY; ++i) {
@@ -457,6 +449,140 @@ static int rev_log_facts(const char* dir, int32_t channel,
     found++;
   }
   return found;
+}
+
+static void rev_render_track_wav(le_engine* e, const char* dir, int len) {
+  float pcm[1000];
+  CHECK(le_engine_export_track(e, 0, pcm, len) == len);
+  char path[700];
+  snprintf(path, sizeof(path), "%s/track.wav", dir);
+  test_write_wav_mono(path, pcm, len, 48000);
+  fade_finalize_manifest(dir,
+    "{\"followOutput\":false,\"captureMask\":1,\"tracks\":[{\"channel\":0,\"volume\":1,"
+    "\"lanes\":[{\"lane\":0,\"deferred\":false,\"pcmRef\":\"track.wav\"}]}]}");
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+}
+
+/* A toggle back to the pre-turn direction inside the turn window cancels the
+ * turn: the old head has kept reading, so it plays on alone, and the stem
+ * reproduces it. */
+static void test_reverse_rapid_double_toggles(void) {
+  printf("test_reverse_rapid_double_toggles\n");
+  const int len = 1000, F = 480;
+  le_engine* e = reverse_fixture(48000, len, len);
+  const char* dir = render_test_dir("reverse-double");
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+  static float live[2048], replay[2048];
+  uint64_t id, other;
+  rev_process(e, live, 37, 512);
+  /* Both in one drain: two receipts, direction unchanged, and the output is
+   * the forward ramp with no burst from the reversed head. */
+  CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK);
+  CHECK(le_engine_toggle_reverse(e, 0, &other) == LE_OK && other > id);
+  rev_process(e, live + 37, 600, 512);
+  for (int k = 0; k < 600; ++k) CHECK(live[37 + k] == (float)(37 + k));
+  fade_result(e, id, LE_OK);
+  fade_result(e, other, LE_OK);
+  le_track_snapshot snap;
+  le_engine_get_track(e, 0, &snap);
+  CHECK(snap.reversed == 0);
+  /* 100 frames into a turn: the mix so far, then the forward head alone,
+   * which never stopped advancing. */
+  CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK);
+  rev_process(e, live + 637, 100, 512);
+  rev_check(live + 637, 100, 1, 637, len, F);
+  CHECK(le_engine_toggle_reverse(e, 0, &other) == LE_OK);
+  rev_process(e, live + 737, 299, 512);
+  for (int k = 0; k < 299; ++k) CHECK(live[737 + k] == (float)((737 + k) % len));
+  fade_result(e, id, LE_OK);
+  fade_result(e, other, LE_OK);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_log_entry first, last;
+  CHECK(rev_log_facts(dir, 0, &first, &last) == 4);
+  CHECK(last.cmd.reverse_log.reversed == 0);
+  CHECK(last.cmd.reverse_log.read_index == 737);
+  CHECK(last.cmd.reverse_log.turn_frames == 0);
+  rev_render_track_wav(e, dir, len);
+  const int frames = test_read_wet_stem(dir, 0, replay, 2048);
+  CHECK(frames == 1036);
+  for (int i = 0; i < frames; ++i) CHECK(fabsf(replay[i] - live[i]) < 2e-3f);
+  le_engine_destroy(e);
+}
+
+/* Stop inside the turn window, then Play: the hold parks the origin and the
+ * turn together, so the relaunch starts clean at the reversed lap start. */
+static void test_reverse_hold_settles_turn(void) {
+  printf("test_reverse_hold_settles_turn\n");
+  const int len = 1000, F = 480;
+  le_engine* e = reverse_fixture(48000, len, len);
+  float out[512];
+  rev_process(e, out, 37, 512);
+  uint64_t id;
+  CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK);
+  rev_process(e, out, 100, 512);
+  rev_check(out, 100, 1, 37, len, F);
+  fade_result(e, id, LE_OK);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  rev_process(e, out, 8, 512);
+  for (int i = 0; i < 8; ++i) CHECK(out[i] == 0);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  rev_process(e, out, 5, 512);
+  for (int i = 0; i < 5; ++i) CHECK(out[i] == (float)(999 - i));
+  le_engine_destroy(e);
+}
+
+/* A Session recall installs the direction on the imported EMPTY track before
+ * the commit; the commit parks the origin, so a Play in the same drain starts
+ * at the reversed lap start. */
+static void test_reverse_commit_parks_install(void) {
+  printf("test_reverse_commit_parks_install\n");
+  const int len = 1000;
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 1, 4000) == LE_OK);
+  float pcm[1000], out[8];
+  for (int i = 0; i < len; ++i) pcm[i] = (float)i;
+  CHECK(le_engine_import_track(e, 0, pcm, len) == LE_OK);
+  uint64_t id;
+  CHECK(le_engine_install_reverse(e, 0, 1, &id) == LE_OK);
+  CHECK(le_engine_commit_session(e, len, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  rev_process(e, out, 5, 512);
+  for (int i = 0; i < 5; ++i) CHECK(out[i] == (float)(999 - i));
+  fade_result(e, id, LE_OK);
+  le_track_snapshot snap;
+  le_engine_get_track(e, 0, &snap);
+  CHECK(snap.reversed == 1 && snap.state == LE_TRACK_PLAYING);
+  le_engine_destroy(e);
+}
+
+/* More direction facts than the renderer's segment table holds: the stem
+ * fails cleanly, and the image is freed once, by the segment that loaded it. */
+static void test_reverse_render_segment_overflow(void) {
+  printf("test_reverse_render_segment_overflow\n");
+  const int len = 1000, toggles = 4200;
+  le_engine* e = reverse_fixture(48000, len, len);
+  const char* dir = render_test_dir("reverse-overflow");
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+  float out[8];
+  for (int i = 0; i < toggles; ++i) {
+    uint64_t id;
+    CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK);
+    rev_process(e, out, 1, 512);
+    fade_result(e, id, LE_OK);
+    /* Let the drain thread empty the log ring, so every fact reaches disk. */
+    if (i % 256 == 255) test_sleep_ms(30);
+  }
+  CHECK(le_perf_disarm(e) == LE_OK);
+  rev_render_track_wav(e, dir, len);
+  int32_t done = 0, count = 0, channel = -1, succeeded = 1;
+  CHECK(le_perf_render_poll(e, &done, NULL, &count) == LE_OK);
+  CHECK(done == 1 && count == 1);
+  CHECK(le_perf_render_track_status(e, 0, &channel, &succeeded) == LE_OK);
+  CHECK(channel == 0 && succeeded == 0);
+  le_engine_destroy(e);
 }
 
 static void test_reverse_material_resets(void) {
@@ -505,7 +631,7 @@ static void test_reverse_material_resets(void) {
   CHECK(le_perf_disarm(e) == LE_OK);
   le_perf_log_entry first, last;
   const int facts = rev_log_facts(dir, 0, &first, &last);
-  CHECK(facts >= 4); /* toggle, clear, toggle, undo-to-empty (+ capture) */
+  CHECK(facts == 5); /* toggle, clear, capture reset, toggle, undo-to-empty */
   CHECK(first.cmd.reverse_log.reversed == 1);
   CHECK(first.cmd.reverse_log.read_index == 37);
   CHECK(first.cmd.reverse_log.turn_frames == 480);
@@ -564,9 +690,9 @@ static void test_reverse_actual_arm_render(void) {
   CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK);
   rev_process(e, live + 128, 640, 512); /* the whole turn and past it */
   CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK);
-  rev_process(e, live + 768, 256, 512);
+  rev_process(e, live + 768, 640, 512); /* the second turn completes */
   CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK); /* a third turn */
-  rev_process(e, live + 1024, 512, 512);
+  rev_process(e, live + 1408, 512, 512);
   CHECK(le_perf_disarm(e) == LE_OK);
   CHECK(le_engine_export_track(e, 0, pcm, len) == len);
   char path[700];
@@ -578,7 +704,7 @@ static void test_reverse_actual_arm_render(void) {
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
   test_wait_for_render(e, 5000);
   const int frames = test_read_wet_stem(dir, 0, replay, 2048);
-  CHECK(frames == 1536);
+  CHECK(frames == 1920);
   CHECK(live[128] == 128 && live[129] != 127); /* the turn is in the live take */
   for (int i = 0; i < frames; ++i) CHECK(fabsf(replay[i] - live[i]) < 2e-3f);
   le_perf_log_entry first, last;
@@ -700,6 +826,10 @@ static void run_reverse_tests(void) {
   test_reverse_two_lanes();
   test_reverse_fade_continues();
   test_reverse_refusals_and_record_guard();
+  test_reverse_rapid_double_toggles();
+  test_reverse_hold_settles_turn();
+  test_reverse_commit_parks_install();
+  test_reverse_render_segment_overflow();
   test_reverse_material_resets();
   test_reverse_cache_disengages();
   test_reverse_actual_arm_render();
