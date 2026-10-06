@@ -1932,8 +1932,8 @@ struct le_engine {
   /* MIDI clock sync (#1228 Part 2). The source is a SETTING like the send
    * switch: applied by LE_CMD_SET_CLOCK_SYNC, persisting across configure.
    * Audio-thread owned: the follower, the applied vector, and the pulse
-   * count at the last tempo write. A new capture on the source port reaches
-   * the follower as the drain's REBOUND. */
+   * count at the last tempo write. The end of the source port's binding
+   * reaches the follower as the drain's REBOUND, a loss while Synced. */
   le_clock_follow clock_follow;
   int32_t clock_source;          /* -1 = Internal, else an input port */
   int32_t clock_follow_transport;

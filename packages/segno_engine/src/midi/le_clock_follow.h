@@ -7,21 +7,36 @@
  * (le_midi_ports_drain) and asks it once per block whether the clock was
  * lost; the unit tests drive the same functions with synthetic timestamps.
  *
- * The estimate: the median of six consecutive valid pulse intervals seeds a
- * second-order delay-locked loop (F. Adriaensen, "Using a DLL to filter time",
- * LAC 2005; the filter JACK uses for period times), 0.5 Hz wide for the first
- * eight beats after an acquisition and 0.2 Hz after. Each pulse's error
- * against the prediction updates a jitter estimate; an error beyond
- * max(2 ms, 4 sigma) is an outlier, and six consecutive outliers of one sign
- * mean the master changed tempo: the loop re-seeds from the median of the
- * intervals since the first of them. An isolated pulse interval close to a
- * whole multiple of the period, after a pulse that was on time, counts the
- * missed pulses (a dropped 0xF8 on USB or a DIN framing error), so the pulse
- * count stays exact. Two such intervals in a row are not drops but a master
- * that moved to half, a third (...) of its tempo: the extra pulses counted
- * one interval earlier are taken back and the loop re-seeds at the new
- * period (PR #1236 delta review DH1). The tuning was checked against the jitter models of the PR
- * #1236 review (docs/plan/2026-10-06-midi-clock-follower-probe.c).
+ * Acquisition (PR #1259 review M1): a least-squares line through the pulse
+ * times, not a median of intervals, so a source that stamps pulses on audio
+ * block edges (intervals of one or two blocks, never the period) is seeded
+ * from the span of its timestamps. Synced is reached once the fitted tempo's
+ * standard error is below 0.15 BPM, after at least one beat of intervals (six
+ * equal block-edge intervals can alias 100 BPM to 107.67) and at most four.
+ * A fit whose newest half has a different slope spans a tempo change and is
+ * cut back to that half. The fit seeds a second-order delay-locked loop (F.
+ * Adriaensen, "Using a DLL to filter time", LAC 2005; the filter JACK uses
+ * for period times), 0.2 Hz wide.
+ *
+ * Tracking: each pulse's error against the prediction updates the jitter
+ * estimate (errors past the outlier bar, max(2 ms, 2.5 sigma), do not). An
+ * isolated interval on a whole multiple of the period after an on-time pulse
+ * counts the pulses it missed; two in a row are a master that moved to half,
+ * a third (...) of its tempo (PR #1236 delta review DH1). A run of errors of
+ * one sign beyond max(2 ms, 1 sigma) whose last six average past the outlier
+ * bar is classified (the average, not each error, because block-edge jitter
+ * is a sawtooth that dips under any single bar every few pulses): a line
+ * fitted through the run with the old slope, whole periods late, is pulses
+ * dropped without a mark (count them, keep the period); a slope several
+ * standard errors from the old one is a tempo step (re-fit a line over the
+ * run and the pulses that follow, as at acquisition). So the pulse count
+ * stays exact for anchors and Song Position, also on block-edge sources
+ * where a single interval cannot tell a drop from jitter.
+ *
+ * Loss: silence for max(6 periods, 250 ms) while Synced, decided at the
+ * deadline whether or not a pulse arrives in the same block (review L1), or
+ * the device going away. A Lost follower keeps its period and readout until
+ * pulses return.
  *
  * Units: MIDI clock is 24 pulses per QUARTER note; the engine's tempo is in
  * time-signature DENOMINATOR notes per minute (tempo_grid.h). The follower
@@ -49,11 +64,27 @@ extern "C" {
 
 /* Event bits returned by le_clock_follow_pulse and le_clock_follow_check. */
 #define LE_CLOCK_EVENT_SYNCED 1u     /* became Synced (an acquisition) */
-#define LE_CLOCK_EVENT_REACQUIRED 2u /* re-seeded after a tempo step */
+#define LE_CLOCK_EVENT_REACQUIRED 2u /* a tempo step: re-fitting the period */
 #define LE_CLOCK_EVENT_LOST 4u       /* Synced -> Lost */
 #define LE_CLOCK_EVENT_WAITING 8u    /* Synced -> Waiting (silence after Stop) */
 
 #define LE_CLOCK_FOLLOW_OUTLIERS 64
+
+/* A least-squares line through (pulse index, time). Times are relative to
+ * t0 so the sums keep their precision. */
+/* Points a fit holds: four beats of intervals and the first pulse. */
+#define LE_CLOCK_FIT_POINTS (4 * LE_CLOCK_FOLLOW_PPQN + 1)
+
+typedef struct le_clock_fit {
+  uint64_t t0;
+  int32_t n;    /* points */
+  int32_t k;    /* index of the last point */
+  double sk, st, skk, skt, stt;
+  /* The points themselves, so a fit that spans a tempo change can be cut
+   * back to the part after it. */
+  int32_t pk[LE_CLOCK_FIT_POINTS];
+  uint64_t pt[LE_CLOCK_FIT_POINTS];
+} le_clock_fit;
 
 typedef struct le_clock_follow {
   int32_t state;
@@ -63,9 +94,9 @@ typedef struct le_clock_follow {
   int32_t have_last;
   int32_t gap;          /* messages were lost since the last pulse */
   uint64_t last_t;      /* the last pulse's time, ns */
-  /* Acquisition. */
-  double acq[6];
-  int32_t n_acq;
+  /* Acquisition, and re-fitting after a tempo step. */
+  le_clock_fit fit;
+  int32_t refit;        /* Synced, but the period is being re-fitted */
   int32_t n_oor;
   double oor_prev;
   /* Tracking. */
@@ -75,7 +106,12 @@ typedef struct le_clock_follow {
   double e_prev;  /* the previous pulse's error, ns */
   int32_t since;  /* pulses since the last acquisition */
   int32_t out_count, out_sign, n_out;
-  double out_iv[LE_CLOCK_FOLLOW_OUTLIERS];
+  int32_t out_armed;    /* the run's errors averaged past the outlier bar */
+  double out_e[LE_CLOCK_FOLLOW_OUTLIERS];    /* the run's errors, ns */
+  uint64_t out_t[LE_CLOCK_FOLLOW_OUTLIERS]; /* the run's pulse times */
+  double out_t0;        /* where the loop placed the pulse before the run
+                         * (its own line, not that pulse's noisy time) */
+  double out_period;    /* the period when the run began */
   int32_t multi_prev;    /* k of the previous interval if it counted k >= 2
                           * pulses, else 0 */
   double multi_iv;       /* that interval, ns */
@@ -99,7 +135,9 @@ void le_clock_follow_reset(le_clock_follow* f, int32_t ts_den);
 /* The denominator changed: the window and the published units follow. */
 void le_clock_follow_set_den(le_clock_follow* f, int32_t ts_den);
 
-/* One Timing Clock (0xF8) received at `t_ns`. Returns LE_CLOCK_EVENT_* bits. */
+/* One Timing Clock (0xF8) received at `t_ns`. Returns LE_CLOCK_EVENT_* bits.
+ * A pulse with the same time as the previous one (two in one packet or one
+ * read) is counted; an earlier time is ignored. */
 uint32_t le_clock_follow_pulse(le_clock_follow* f, uint64_t t_ns);
 
 /* Start (0xFA), Continue (0xFB) or Stop (0xFC). The follower only remembers
@@ -110,9 +148,16 @@ void le_clock_follow_transport(le_clock_follow* f, uint8_t status);
  * interval may span it, and once Synced the pulses it hid are counted. */
 void le_clock_follow_gap(le_clock_follow* f);
 
-/* The source device went away: Lost if Synced, otherwise Waiting. Returns
- * LE_CLOCK_EVENT_LOST when it ended a Synced run. */
+/* The source device went away, or another capture now feeds the source
+ * port: Synced becomes Lost (returning LE_CLOCK_EVENT_LOST), Lost stays
+ * Lost with its period and readout, Waiting stays Waiting. Only the
+ * acquisition state restarts (PR #1259 review M2). */
 uint32_t le_clock_follow_lost(le_clock_follow* f);
+
+/* Whether the follower's tempo may be written as the session tempo: Synced,
+ * not re-fitting, and tracked for a whole beat since the last acquisition or
+ * re-fit (the first estimate of a coarse source is not published). */
+int le_clock_follow_tempo_ready(const le_clock_follow* f);
 
 /* Checks for silence at `now_ns`: no pulse for max(6 periods, 250 ms) while
  * Synced is Lost, or Waiting after a Stop. Returns the event bit. */
