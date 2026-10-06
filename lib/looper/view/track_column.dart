@@ -595,9 +595,9 @@ class _TrackInfo extends StatelessWidget {
 
 /// The meta row under the name: the channel number, the bar and layer counts
 /// with their small units, then the Reverse and FX markers at the trailing
-/// edge. FX is bright when the chain is engaged, dim when bypassed; REV shows
-/// while the track plays reversed. An absent marker is invisible but holds
-/// its width.
+/// edge. FX is bright when the chain is engaged, dim when bypassed, and always
+/// holds its place. REV takes a slot only while the track plays reversed, so
+/// a forward row is the pen row and a reversed row makes room for the marker.
 class _TrackMeta extends StatelessWidget {
   const _TrackMeta({
     required this.channel,
@@ -650,6 +650,10 @@ class _TrackMeta extends StatelessWidget {
           child: Row(
             key: Key('tracks_meta_$channel'),
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            // A floor under the pen's even spread: when long counts or units
+            // fill the row, its parts still never touch (the row then scales
+            // down as one piece). With room to spare the layout is unchanged.
+            spacing: _ReverseMarker.gap,
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
@@ -677,12 +681,18 @@ class _TrackMeta extends StatelessWidget {
                 figureStyle: figure,
                 unitStyle: unit,
               ),
-              // REV paints in the gap before FX, outside the slot's own
-              // width, so the row lays out exactly as the pen draws it
-              // whether or not the track is reversed.
-              Stack(
-                clipBehavior: Clip.none,
+              // REV takes a real slot before FX while the track plays
+              // reversed, so it can never paint over a long Spanish unit or
+              // a two-digit count; a forward row is the pen's row exactly.
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
                 children: [
+                  if (reversed) ...[
+                    _ReverseMarker(channel: channel),
+                    const SizedBox(width: _ReverseMarker.gap),
+                  ],
                   Semantics(
                     label: switch (fxMarker) {
                       _FxMarker.active => l10n.a11yStageFxActive,
@@ -709,11 +719,6 @@ class _TrackMeta extends StatelessWidget {
                       ),
                     ),
                   ),
-                  PositionedDirectional(
-                    start: 0,
-                    top: 0,
-                    child: _ReverseMarker(channel: channel, reversed: reversed),
-                  ),
                 ],
               ),
             ],
@@ -725,48 +730,28 @@ class _TrackMeta extends StatelessWidget {
 }
 
 /// "REV" while the track plays reversed. It reads the repository's
-/// published direction, so it stays after the Reverse surface is left. It
-/// takes no space in the meta row: it paints in the gap before FX.
+/// published direction, so it stays after the Reverse surface is left.
 class _ReverseMarker extends StatelessWidget {
-  const _ReverseMarker({required this.channel, required this.reversed});
+  const _ReverseMarker({required this.channel});
 
   final int channel;
-  final bool reversed;
 
-  /// The gap kept between REV and the FX marker it sits before.
-  static const _gap = 12.0;
+  /// The gap kept between REV and the FX marker after it.
+  static const gap = 12.0;
 
   @override
-  Widget build(BuildContext context) {
-    final rtl = Directionality.of(context) == TextDirection.rtl;
-    // Anchored at the FX slot's start edge, then moved back by its own
-    // width (gap included): it occupies the row's gap, never its layout.
-    return FractionalTranslation(
-      translation: Offset(rtl ? 1 : -1, 0),
-      child: Padding(
-        padding: const EdgeInsetsDirectional.only(end: _gap),
-        child: _visible(context),
-      ),
-    );
-  }
-
-  Widget _visible(BuildContext context) {
-    return Opacity(
-      opacity: reversed ? 1 : 0,
-      child: AppText(
-        context.l10n.stageReverseMarker,
-        key: Key('tracks_reverse_$channel'),
-        style: TextStyle(
-          fontFamily: SurfaceTheme.displayFont,
-          color: context.surface.textPrimary,
-          fontSize: 19,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1,
-          height: 1,
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AppText(
+    context.l10n.stageReverseMarker,
+    key: Key('tracks_reverse_$channel'),
+    style: TextStyle(
+      fontFamily: SurfaceTheme.displayFont,
+      color: context.surface.textPrimary,
+      fontSize: 19,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1,
+      height: 1,
+    ),
+  );
 }
 
 /// Lays [child] out at least as wide as the available width, then scales it

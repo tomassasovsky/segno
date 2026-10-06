@@ -215,14 +215,23 @@ class _ReverseOverviewCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
-    final color = !track.available
+    final color = !track.recorded
         ? surface.textMuted
         : track.reversed
         ? surface.textPrimary
         : surface.textSecondary;
     final style = TextStyle(fontSize: 22, color: color);
-    return Column(
+    // A busy recorded track keeps its real direction, dimmed: it cannot
+    // turn around until the pass or arm resolves.
+    return Opacity(
       key: Key('foot_reverse_overview_${track.channel}'),
+      opacity: track.busy ? surface.disabledOpacity : 1,
+      child: _overviewColumn(l10n, style, color),
+    );
+  }
+
+  Widget _overviewColumn(AppLocalizations l10n, TextStyle style, Color color) {
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         AppText(
@@ -234,7 +243,7 @@ class _ReverseOverviewCell extends StatelessWidget {
         const SizedBox(height: 10),
         Row(
           children: [
-            if (track.available) ...[
+            if (track.recorded) ...[
               Icon(
                 _directionIcon(reversed: track.reversed),
                 size: 26,
@@ -252,7 +261,7 @@ class _ReverseOverviewCell extends StatelessWidget {
 
 /// Reads one track's direction as a short state word.
 String _directionWord(AppLocalizations l10n, FootReverseTrack track) =>
-    !track.available
+    !track.recorded
     ? l10n.readoutStateEmpty
     : track.reversed
     ? l10n.footReverseReversed
@@ -305,7 +314,7 @@ class _FootReversePedal extends StatelessWidget {
             FootReverseAction.nextBank => l10n.footReverseSwitchBank,
             _ => '',
           };
-    final reversed = track != null && track.available && track.reversed;
+    final reversed = track != null && track.recorded && track.reversed;
     return PerformancePedal(
       keyPrefix: 'foot_reverse_pedal',
       button: button,
@@ -320,13 +329,15 @@ class _FootReversePedal extends StatelessWidget {
       },
       title: title,
       detail: detail,
-      detailIcon: track != null && track.available
+      detailIcon: track != null && track.recorded
           ? _directionIcon(reversed: track.reversed)
           : null,
-      detailHighlighted: reversed,
+      detailHighlighted: reversed && !track.busy,
       hint: '',
+      // A busy recorded track still admits the stomp, which is refused with
+      // a notice; an empty one has nothing to turn around.
       enabled:
-          role.press != FootReverseAction.none && (track?.available ?? true),
+          role.press != FootReverseAction.none && (track?.recorded ?? true),
       // The selection bar mirrors the physical LED: a reversed track, Bank
       // on bank B, and Exit, the way back to Tracks.
       selected:

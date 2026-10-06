@@ -1803,9 +1803,8 @@ class ControlCubit extends Cubit<ControlState> {
         toggleTrackChain(channel);
       case InteractionMode.mixer:
       case InteractionMode.fade:
-        break;
       case InteractionMode.reverse:
-        unawaited(_toggleReverseChannel(channel));
+        break;
       case InteractionMode.custom:
         // Inert here: the switch runs its assignment at the press. Note the
         // on-screen surfaces still call this — selection happens at their
@@ -2137,9 +2136,10 @@ class ControlCubit extends Cubit<ControlState> {
 
   Future<void> _toggleReverseChannel(int channel) async {
     if (!_reverseEditable || channel < 0 || channel >= 8) return;
-    // An empty or capturing track is unavailable, not a failure.
+    // An empty track has no direction: nothing to report. A recorded track
+    // that is busy is refused with the notice, like any other refusal.
     final projection = _footReverseActions.project(bank: state.activeBank);
-    if (!projection.tracks[channel].available) return;
+    if (!projection.tracks[channel].recorded) return;
     final visit = _surfaceVisit;
     final session = _looper.sessionRevision;
     final result = await _footReverseActions.toggle(channel);

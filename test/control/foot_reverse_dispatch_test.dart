@@ -28,6 +28,10 @@ class _Engine extends FakeAudioEngine {
 
   final Set<int> recorded;
   final reversedTracks = <int>{};
+
+  /// Recorded tracks writing an overdub pass, or with an arm pending.
+  final overdubbing = <int>{};
+  final pendingTracks = <int>{};
   final toggles = <int>[];
   final records = <int>[];
   final _results = <int, EngineResult>{};
@@ -39,7 +43,10 @@ class _Engine extends FakeAudioEngine {
       for (var channel = 0; channel < 8; channel++)
         if (recorded.contains(channel))
           TrackSnapshot(
-            state: TrackState.playing,
+            state: overdubbing.contains(channel)
+                ? TrackState.overdubbing
+                : TrackState.playing,
+            pending: pendingTracks.contains(channel),
             volume: 1,
             muted: false,
             lengthFrames: 48000,
@@ -75,6 +82,17 @@ class _Engine extends FakeAudioEngine {
     if (reversedTracks.contains(channel)) return EngineResult.reversed;
     return super.record(channel: channel);
   }
+}
+
+/// A repository whose Session revision a test can move mid-toggle, the way
+/// a Session load does.
+class _Looper extends LooperRepository {
+  _Looper({required super.engine, required super.ticker});
+
+  int? revision;
+
+  @override
+  int get sessionRevision => revision ?? super.sessionRevision;
 }
 
 class _Midi extends MidiDeviceRepository {
@@ -113,7 +131,7 @@ class _Rig {
           )
           .encode();
     }
-    looper = LooperRepository(engine: engine, ticker: ticks.stream)
+    looper = _Looper(engine: engine, ticker: ticks.stream)
       ..startEngine(const EngineConfig());
     settings = SettingsRepository(store: store);
     mix = testMixSettings(looper, settings: settings);
@@ -161,7 +179,7 @@ class _Rig {
   final store = FakeKeyValueStore();
   final ticks = StreamController<void>.broadcast();
   final link = FakePedalLink();
-  late final LooperRepository looper;
+  late final _Looper looper;
   late final SettingsRepository settings;
   late final MixSettingsCoordinator mix;
   late final FxChainPersistence persistence;
@@ -302,6 +320,103 @@ void main() {
       expect(rig.engine.undoCalls, 0);
       expect(rig.engine.clearCalls, 0);
       expect(rig.engine.toggles, isEmpty);
+      // Neither pedal reaches the transport: every track keeps playing.
+      expect(rig.engine.stopTrackCalls, 0);
+      expect(rig.engine.cancelCountInCalls, 0);
+      expect(rig.control.state.parkedResume, isEmpty);
+      expect(rig.control.state.mode, InteractionMode.reverse);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('a busy recorded track is refused with one notice, then turns once '
+      'it settles', () async {
+    final rig = _Rig()..engine.overdubbing.add(0);
+    rig.engine
+      ..pendingTracks.add(1)
+      ..publish();
+    await rig.poll();
+    rig.control.setMode(InteractionMode.reverse);
+    await _pump();
+    try {
+      await tap(rig, PedalButton.track1); // overdubbing
+      expect(rig.engine.toggles, isEmpty);
+      expect(rig.control.state.footReverseFailure, 1);
+      await tap(rig, PedalButton.track2); // arm pending
+      expect(rig.engine.toggles, isEmpty);
+      expect(rig.control.state.footReverseFailure, 2);
+      rig.engine.overdubbing.clear();
+      rig.engine
+        ..pendingTracks.clear()
+        ..publish();
+      await rig.poll();
+      await tap(rig, PedalButton.track1);
+      await tap(rig, PedalButton.track2);
+      expect(rig.engine.toggles, [0, 1]);
+      expect(rig.control.state.footReverseFailure, 2);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('a toggle is refused during a Session transition', () async {
+    final rig = await enter();
+    try {
+      rig.persistence.reserveSessionLoad();
+      await tap(rig, PedalButton.track1);
+      await rig.control.toggleFootReverseTrack(1);
+      rig.control.activateFootReversePedal(PedalButton.track2);
+      await _pump(const Duration(milliseconds: 30));
+      expect(rig.engine.toggles, isEmpty);
+      expect(rig.control.state.footReverseFailure, 0);
+      rig.persistence.cancelSessionLoad();
+      await tap(rig, PedalButton.track1);
+      expect(rig.engine.toggles, [0]);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('Exit leaves Reverse even while toggles are not editable', () async {
+    final rig = await enter();
+    try {
+      // A Session transition makes the surface read-only; Exit still works.
+      rig.persistence.reserveSessionLoad();
+      await tap(rig, PedalButton.mode);
+      expect(rig.control.state.mode, InteractionMode.record);
+      rig.persistence.cancelSessionLoad();
+      // Behind the power-off dialog the pedals are locked upstream, but the
+      // screen's Exit activation still leaves.
+      rig.control.setMode(InteractionMode.reverse);
+      await _pump();
+      rig.powerOffUp = true;
+      rig.control.activateFootReversePedal(PedalButton.mode);
+      expect(rig.control.state.mode, InteractionMode.record);
+      expect(rig.engine.toggles, isEmpty);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('the Mode cycle leaves Reverse for Tracks', () async {
+    final rig = await enter();
+    try {
+      rig.control.toggleMode();
+      expect(rig.control.state.mode, InteractionMode.record);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('a track button in Reverse mode is inert, like Fade', () async {
+    final rig = await enter();
+    try {
+      rig.control.trackPressed(0);
+      rig.control.trackPressed(1);
+      await _pump(const Duration(milliseconds: 30));
+      expect(rig.engine.toggles, isEmpty);
+      expect(rig.control.state.footReverseFailure, 0);
       expect(rig.control.state.mode, InteractionMode.reverse);
     } finally {
       await rig.close();
@@ -332,6 +447,23 @@ void main() {
       rig.control.setMode(InteractionMode.record);
       await pending;
       expect(rig.control.state.footReverseFailure, 1);
+      // Even when the player is back in Reverse by the time it lands.
+      rig.control.setMode(InteractionMode.reverse);
+      await _pump();
+      final revisit = rig.control.toggleFootReverseTrack(1);
+      rig.control
+        ..setMode(InteractionMode.record)
+        ..setMode(InteractionMode.reverse);
+      await revisit;
+      expect(rig.control.state.footReverseFailure, 1);
+      // A Session load that began meanwhile retires the report too.
+      final reloaded = rig.control.toggleFootReverseTrack(1);
+      rig.looper.revision = rig.looper.sessionRevision + 1;
+      await reloaded;
+      expect(rig.control.state.footReverseFailure, 1);
+      // The same refusal with nothing in between is reported.
+      await rig.control.toggleFootReverseTrack(1);
+      expect(rig.control.state.footReverseFailure, 2);
     } finally {
       await rig.close();
     }

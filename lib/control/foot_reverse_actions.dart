@@ -14,14 +14,15 @@ class FootReverseActions {
   FootReverseProjection project({required int bank, LooperState? looper}) =>
       projectFootReverse(looper ?? repository.state, bank: bank);
 
-  /// Turns one recorded track around at its current position. Refuses a
-  /// track that is empty, capturing or pending as [EngineResult.invalid]
-  /// without posting. Shared by the Reverse surface and assigned Reverse
-  /// actions.
+  /// Turns one recorded track around at its current position. Refuses an
+  /// empty track as [EngineResult.invalid] and a busy one (writing, or with
+  /// an arm or launch pending) as [EngineResult.notReady], without posting
+  /// either. Shared by the Reverse surface and assigned Reverse actions.
   Future<EngineResult> toggle(int channel) {
     if (channel < 0 || channel >= 8) return Future.value(EngineResult.invalid);
     final track = project(bank: 0).tracks[channel];
-    if (!track.available) return Future.value(EngineResult.invalid);
+    if (!track.recorded) return Future.value(EngineResult.invalid);
+    if (track.busy) return Future.value(EngineResult.notReady);
     return repository.toggleReverse(channel: channel);
   }
 }

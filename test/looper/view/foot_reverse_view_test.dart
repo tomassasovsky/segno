@@ -165,6 +165,69 @@ void main() {
     }
   });
 
+  testWidgets('a busy recorded track reads its real direction, dimmed, and '
+      'still takes the stomp', (tester) async {
+    whenListen(
+      looper,
+      const Stream<LooperState>.empty(),
+      initialState: const LooperState(
+        tracks: [
+          Track(state: TrackState.overdubbing, lengthFrames: 48000),
+          Track(
+            channel: 1,
+            state: TrackState.playing,
+            lengthFrames: 48000,
+            reversed: true,
+            pending: true,
+          ),
+          Track(channel: 2, state: TrackState.playing, lengthFrames: 48000),
+        ],
+      ),
+    );
+    given(const ControlState(mode: InteractionMode.reverse));
+    await pump(tester);
+    double opacityOf(int channel) =>
+        tester.widget<Opacity>(overview(channel)).opacity;
+    for (final (channel, word, chevron) in [
+      (0, 'Forward', Icons.chevron_right),
+      (1, 'Reverse', Icons.chevron_left),
+    ]) {
+      expect(
+        find.descendant(of: overview(channel), matching: find.text(word)),
+        findsOneWidget,
+        reason: 'track ${channel + 1}',
+      );
+      expect(
+        find.descendant(of: overview(channel), matching: find.byIcon(chevron)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: overview(channel), matching: find.text('Empty')),
+        findsNothing,
+      );
+      expect(opacityOf(channel), lessThan(1), reason: 'track ${channel + 1}');
+      expect(
+        find.descendant(
+          of: pedal(PedalButton.values[PedalButton.track1.index + channel]),
+          matching: find.text(word),
+        ),
+        findsOneWidget,
+      );
+    }
+    expect(opacityOf(2), 1);
+    // The reversed busy track keeps its lit bar, like its LED.
+    expect(
+      pedalSemantics(tester, PedalButton.track2).properties.selected,
+      isTrue,
+    );
+    for (final button in [PedalButton.track1, PedalButton.track2]) {
+      expect(pedalSemantics(tester, button).properties.enabled, isTrue);
+      await tester.tap(pedal(button));
+      await tester.pump();
+      verify(() => control.footReversePressed(button, any())).called(1);
+    }
+  });
+
   testWidgets('pedals follow the shared bank', (tester) async {
     given(const ControlState(mode: InteractionMode.reverse, activeBank: 1));
     await pump(tester);

@@ -593,6 +593,52 @@ void main() {
     skip: !hasScreenshotFonts,
   );
 
+  // Real fonts: REV sits clear of the layers figure and FX in English and
+  // Spanish, with long counts.
+  for (final locale in const [Locale('en'), Locale('es')]) {
+    for (final bars in [16, 128]) {
+      testWidgets(
+        'REV clears its neighbours (${locale.languageCode}, $bars bars, '
+        '12 layers)',
+        (tester) async {
+          Track track(int channel) => Track(
+            channel: channel,
+            state: TrackState.playing,
+            lengthFrames: 1000 * bars,
+            peelDepth: 11,
+            reversed: channel == 1,
+          );
+          seed(
+            LooperState(
+              status: const EngineStatus(
+                isConnected: true,
+                devicePresent: true,
+                deviceName: 'Segno',
+                sampleRate: 48000,
+                inputChannels: 2,
+                outputChannels: 2,
+              ),
+              transport: const TransportState(
+                masterLengthFrames: 1000,
+                loopBars: 1,
+              ),
+              tracks: [
+                for (var channel = 0; channel < 4; channel++) track(channel),
+              ],
+            ),
+          );
+          await pump(tester, locale: locale);
+          Rect box(String part) =>
+              tester.getRect(find.byKey(Key('tracks_${part}_1')));
+          expect(box('reverse').left, greaterThan(box('layers').right + 4));
+          expect(box('reverse').right, lessThan(box('fx').left));
+          expect(box('layers').left, greaterThan(box('bars').right));
+        },
+        skip: !hasScreenshotFonts,
+      );
+    }
+  }
+
   testWidgets(
     'the Mixer view (MAIN VIEWS / Mixer)',
     (tester) async {

@@ -74,19 +74,48 @@ void main() {
     expect(pressed.activeButtonMask & (1 << PedalButton.stop.index), isNonZero);
   });
 
-  test('the projection offers only settled recorded tracks', () {
+  test('the projection reads recorded, busy and direction per track', () {
     final projection = projectFootReverse(
       _state(const [
         Track(state: TrackState.playing, lengthFrames: 48000, reversed: true),
         Track(channel: 1, state: TrackState.recording),
+        Track(
+          channel: 3,
+          state: TrackState.overdubbing,
+          lengthFrames: 48000,
+          reversed: true,
+        ),
+        Track(
+          channel: 4,
+          state: TrackState.playing,
+          lengthFrames: 48000,
+          pending: true,
+        ),
         Track(channel: 5, state: TrackState.playing, lengthFrames: 48000),
       ]),
       bank: 1,
     );
+    FootReverseTrack track(int channel) => projection.tracks[channel];
     expect(projection.trackAt(1).channel, 5);
-    expect(projection.trackAt(1).available, isTrue);
-    expect(projection.tracks[0].reversed, isTrue);
-    expect(projection.tracks[1].available, isFalse);
-    expect(projection.tracks[2].available, isFalse);
+    expect(track(5), _track(5, recorded: true, busy: false, reversed: false));
+    expect(track(0), _track(0, recorded: true, busy: false, reversed: true));
+    // A first take has no direction yet; an absent track is empty.
+    expect(track(1).recorded, isFalse);
+    expect(track(2), _track(2, recorded: false, busy: false, reversed: false));
+    // Overdubbing and a pending arm keep the real direction, but are busy.
+    expect(track(3), _track(3, recorded: true, busy: true, reversed: true));
+    expect(track(4), _track(4, recorded: true, busy: true, reversed: false));
   });
 }
+
+FootReverseTrack _track(
+  int channel, {
+  required bool recorded,
+  required bool busy,
+  required bool reversed,
+}) => FootReverseTrack(
+  channel: channel,
+  recorded: recorded,
+  busy: busy,
+  reversed: reversed,
+);
