@@ -195,7 +195,8 @@ LibraryFailure? libraryFailureOf(SessionState state) {
   return switch (state.error) {
     SessionError.bootPersistence => null,
     SessionError.sampleRateMismatch ||
-    SessionError.unsupportedVersion => LibraryFailure.actionFailed,
+    SessionError.unsupportedVersion ||
+    SessionError.unconvertible => LibraryFailure.actionFailed,
     SessionError.saveFailed => LibraryFailure.saveFailed,
     SessionError.currentSessionProtected => LibraryFailure.deleteCurrentRefused,
     SessionError.folderNotEmpty => LibraryFailure.folderNotEmpty,

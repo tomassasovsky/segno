@@ -75,6 +75,14 @@ class _BootStore extends FakeKeyValueStore {
   }
 }
 
+const _conversion = SessionConversion(
+  fromVersion: 7,
+  original: '{"version": 7}',
+  manifest: {'version': 12},
+  notes: ['monitors[0].volume: 1.5 lowered to the live-input ceiling of 1'],
+  changes: {SessionConversionChange.monitorLevelLowered},
+);
+
 const _session = Session(
   sampleRate: 48000,
   channels: 1,
@@ -200,6 +208,7 @@ void main() {
     registerFallbackValue(const SessionRig());
     registerFallbackValue(const SessionChains());
     registerFallbackValue(const SessionSettings());
+    registerFallbackValue(_conversion);
   });
 
   SessionSettingsCoordinator buildCapture() => SessionSettingsCoordinator(
@@ -473,7 +482,9 @@ void main() {
       when(
         () => repository.bundlePathOf(any()),
       ).thenAnswer((_) async => '/root/x');
-      when(() => repository.read(any())).thenThrow(error);
+      when(
+        () => repository.open(any(), liveSettings: any(named: 'liveSettings')),
+      ).thenThrow(error);
     }
 
     blocTest<SessionCubit, SessionState>(
@@ -505,9 +516,9 @@ void main() {
     );
 
     blocTest<SessionCubit, SessionState>(
-      'open rejects an older version without replacing the open rig',
+      'open rejects a newer version without replacing the open rig',
       setUp: () => stubRead(
-        const SessionUnsupportedVersion(version: 7, supported: 8),
+        const SessionUnsupportedVersion(version: 13, supported: 12),
       ),
       build: build,
       seed: () => const SessionState(
@@ -527,6 +538,25 @@ void main() {
             .having((s) => s.currentSessionName, 'current', 'Current'),
       ],
       verify: (_) => verifyNever(() => looper.applySession(any())),
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'open refuses an unconvertible older session untouched',
+      setUp: () => stubRead(
+        const SessionUnconvertible(version: 0, reason: 'older than schema 1'),
+      ),
+      build: build,
+      act: (cubit) => cubit.open('X'),
+      expect: () => [
+        const SessionState(status: SessionStatus.working),
+        isA<SessionState>()
+            .having((s) => s.status, 'status', SessionStatus.failure)
+            .having((s) => s.error, 'error', SessionError.unconvertible),
+      ],
+      verify: (_) {
+        verifyNever(() => looper.applySession(any()));
+        verifyNever(() => repository.commitConversion(any(), any()));
+      },
     );
 
     blocTest<SessionCubit, SessionState>(
@@ -577,35 +607,40 @@ void main() {
       setUp: () {
         stubCatalog();
         mixPersistence = _WriteThenThrowPersistence();
-        when(() => repository.read(any())).thenAnswer(
-          (_) async => (
-            session: const Session(
-              sampleRate: 48000,
-              channels: 1,
-              baseLengthFrames: 128,
-              tracks: [
-                SessionTrack(
-                  fadeAmount: 1,
-                  channel: 0,
-                  multiple: 1,
-                  lengthFrames: 128,
-                  lanes: [
-                    SessionLane(
-                      lane: 0,
-                      volume: 1,
-                      muted: false,
-                      outputMask: 1,
-                      inputChannel: 0,
-                      layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
-                      history: TrackHistory.none,
-                    ),
-                  ],
-                ),
-              ],
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: const Session(
+                sampleRate: 48000,
+                channels: 1,
+                baseLengthFrames: 128,
+                tracks: [
+                  SessionTrack(
+                    fadeAmount: 1,
+                    channel: 0,
+                    multiple: 1,
+                    lengthFrames: 128,
+                    lanes: [
+                      SessionLane(
+                        lane: 0,
+                        volume: 1,
+                        muted: false,
+                        outputMask: 1,
+                        inputChannel: 0,
+                        layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                        history: TrackHistory.none,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              laneStems: {
+                (0, 0): [Float32List(128)],
+              },
             ),
-            laneStems: {
-              (0, 0): [Float32List(128)],
-            },
           ),
         );
       },
@@ -647,10 +682,17 @@ void main() {
           when(
             looper.clearSessionBootStartBlock,
           ).thenAnswer((_) => blocked = false);
-          when(() => repository.read(any())).thenAnswer(
-            (_) async => (
-              session: _session,
-              laneStems: <(int, int), List<Float32List>>{},
+          when(
+            () => repository.open(
+              any(),
+              liveSettings: any(named: 'liveSettings'),
+            ),
+          ).thenAnswer(
+            _opened(
+              (_) async => (
+                session: _session,
+                laneStems: <(int, int), List<Float32List>>{},
+              ),
             ),
           );
           when(() => looper.applySession(any())).thenAnswer((_) async {
@@ -686,9 +728,16 @@ void main() {
       'failed apply cancels its boot admission block',
       setUp: () {
         stubCatalog();
-        when(() => repository.read(any())).thenAnswer(
-          (_) async =>
-              (session: _session, laneStems: <(int, int), List<Float32List>>{}),
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: _session,
+              laneStems: <(int, int), List<Float32List>>{},
+            ),
+          ),
         );
         when(() => looper.applySession(any())).thenThrow(StateError('refused'));
       },
@@ -710,10 +759,14 @@ void main() {
       stubCatalog();
       final read = Completer<SessionBundle>();
       final entered = Completer<void>();
-      when(() => repository.read(any())).thenAnswer((_) {
-        entered.complete();
-        return read.future;
-      });
+      when(
+        () => repository.open(any(), liveSettings: any(named: 'liveSettings')),
+      ).thenAnswer(
+        _opened((_) {
+          entered.complete();
+          return read.future;
+        }),
+      );
       final cubit = build();
       addTearDown(cubit.close);
 
@@ -817,9 +870,18 @@ void main() {
           saveEntered.complete();
           return finishSave.future;
         });
-        when(() => repository.read('/root/B')).thenAnswer(
-          (_) async =>
-              (session: _session, laneStems: <(int, int), List<Float32List>>{}),
+        when(
+          () => repository.open(
+            '/root/B',
+            liveSettings: any(named: 'liveSettings'),
+          ),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: _session,
+              laneStems: <(int, int), List<Float32List>>{},
+            ),
+          ),
         );
         when(() => looper.applySession(any())).thenAnswer((_) async {
           order.add('apply B');
@@ -859,10 +921,17 @@ void main() {
           when(
             () => repository.bundlePathOf('B'),
           ).thenAnswer((_) async => '/root/B');
-          when(() => repository.read('/root/B')).thenAnswer(
-            (_) async => (
-              session: _session,
-              laneStems: <(int, int), List<Float32List>>{},
+          when(
+            () => repository.open(
+              '/root/B',
+              liveSettings: any(named: 'liveSettings'),
+            ),
+          ).thenAnswer(
+            _opened(
+              (_) async => (
+                session: _session,
+                laneStems: <(int, int), List<Float32List>>{},
+              ),
             ),
           );
           when(repository.listSessions).thenAnswer((_) async => const []);
@@ -1105,9 +1174,16 @@ void main() {
       'open reads, applies through the looper, sets current, refreshes',
       setUp: () {
         stubCatalog();
-        when(() => repository.read(any())).thenAnswer(
-          (_) async =>
-              (session: _session, laneStems: <(int, int), List<Float32List>>{}),
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: _session,
+              laneStems: <(int, int), List<Float32List>>{},
+            ),
+          ),
         );
         when(() => looper.applySession(any())).thenAnswer((_) async {});
       },
@@ -1131,28 +1207,155 @@ void main() {
             .having((s) => s.sessions, 'sessions', summaries),
       ],
       verify: (_) {
-        verify(() => repository.read('/root/A')).called(1);
+        verify(
+          () => repository.open(
+            '/root/A',
+            liveSettings: any(named: 'liveSettings'),
+          ),
+        ).called(1);
         verify(() => looper.applySession(any())).called(1);
         verify(performance.disarmAndFinalize).called(1);
+        verifyNever(() => repository.commitConversion(any(), any()));
       },
     );
+
+    group('an older session', () {
+      void stubConvertedOpen() {
+        stubCatalog();
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          (_) async => (
+            bundle: (
+              session: _session,
+              laneStems: <(int, int), List<Float32List>>{},
+            ),
+            conversion: _conversion,
+          ),
+        );
+        when(() => looper.applySession(any())).thenAnswer((_) async {});
+      }
+
+      blocTest<SessionCubit, SessionState>(
+        'is written back after it applies and the player is told what changed',
+        setUp: () {
+          stubConvertedOpen();
+          when(
+            () => repository.commitConversion(any(), any()),
+          ).thenAnswer((_) async => true);
+        },
+        build: build,
+        act: (cubit) => cubit.open('A'),
+        skip: 2,
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.outcome, 'outcome', SessionOutcome.loaded)
+              .having(
+                (s) => s.conversion,
+                'conversion',
+                const SessionConversionNotice(
+                  fromVersion: 7,
+                  written: true,
+                  changes: {SessionConversionChange.monitorLevelLowered},
+                ),
+              ),
+        ],
+        verify: (_) {
+          verifyInOrder([
+            () => looper.applySession(any()),
+            () => repository.commitConversion('/root/A', _conversion),
+          ]);
+          // The settings the old session never carried come from the
+          // player's live owners.
+          final live =
+              verify(
+                    () => repository.open(
+                      '/root/A',
+                      liveSettings: captureAny(named: 'liveSettings'),
+                    ),
+                  ).captured.single
+                  as SessionSettings Function();
+          expect(live().recDub, captureSettings.current().recDub);
+        },
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'that cannot be written back still loads, and says the original is '
+        'unchanged',
+        setUp: () {
+          stubConvertedOpen();
+          when(
+            () => repository.commitConversion(any(), any()),
+          ).thenThrow(const FileSystemException('read-only'));
+        },
+        build: build,
+        act: (cubit) => cubit.open('A'),
+        skip: 2,
+        expect: () => [
+          isA<SessionState>()
+              .having((s) => s.status, 'st', SessionStatus.success)
+              .having((s) => s.outcome, 'outcome', SessionOutcome.loaded)
+              .having((s) => s.conversion?.written, 'written', isFalse),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'whose manifest changed before the write-back says nothing was written',
+        setUp: () {
+          stubConvertedOpen();
+          when(
+            () => repository.commitConversion(any(), any()),
+          ).thenAnswer((_) async => false);
+        },
+        build: build,
+        act: (cubit) => cubit.open('A'),
+        skip: 2,
+        expect: () => [
+          isA<SessionState>().having(
+            (s) => s.conversion?.written,
+            'written',
+            isFalse,
+          ),
+        ],
+      );
+
+      blocTest<SessionCubit, SessionState>(
+        'is not written back when it does not apply',
+        setUp: () {
+          stubConvertedOpen();
+          when(
+            () => looper.applySession(any()),
+          ).thenThrow(StateError('refused'));
+        },
+        build: build,
+        act: (cubit) => cubit.open('A'),
+        verify: (_) =>
+            verifyNever(() => repository.commitConversion(any(), any())),
+      );
+    });
 
     blocTest<SessionCubit, SessionState>(
       'invalid effect placement refuses session before the live rig changes',
       setUp: () {
         stubCatalog();
-        when(() => repository.read(any())).thenAnswer(
-          (_) async => (
-            session: const Session(
-              sampleRate: 48000,
-              channels: 1,
-              baseLengthFrames: 0,
-              tracks: [],
-              allTracksChain:
-                  '{"chainEnabled":true,"entries":['
-                  '{"type":1,"placement":"sideways"}]}',
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: const Session(
+                sampleRate: 48000,
+                channels: 1,
+                baseLengthFrames: 0,
+                tracks: [],
+                allTracksChain:
+                    '{"chainEnabled":true,"entries":['
+                    '{"type":1,"placement":"sideways"}]}',
+              ),
+              laneStems: <(int, int), List<Float32List>>{},
             ),
-            laneStems: <(int, int), List<Float32List>>{},
           ),
         );
       },
@@ -1176,25 +1379,30 @@ void main() {
     blocTest<SessionCubit, SessionState>(
       'invalid monitor gain preserves the current rig and ongoing capture',
       setUp: () {
-        when(() => repository.read(any())).thenAnswer(
-          (_) async => (
-            session: const Session(
-              sampleRate: 48000,
-              channels: 1,
-              baseLengthFrames: 0,
-              tracks: [],
-              monitors: [
-                SessionMonitor(
-                  input: 0,
-                  mode: 'on',
-                  outputMask: 3,
-                  volume: 1.5,
-                  muted: false,
-                  encoded: '[]',
-                ),
-              ],
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: const Session(
+                sampleRate: 48000,
+                channels: 1,
+                baseLengthFrames: 0,
+                tracks: [],
+                monitors: [
+                  SessionMonitor(
+                    input: 0,
+                    mode: 'on',
+                    outputMask: 3,
+                    volume: 1.5,
+                    muted: false,
+                    encoded: '[]',
+                  ),
+                ],
+              ),
+              laneStems: <(int, int), List<Float32List>>{},
             ),
-            laneStems: <(int, int), List<Float32List>>{},
           ),
         );
       },
@@ -1224,9 +1432,16 @@ void main() {
       '(D-ORCHESTRATE)',
       setUp: () {
         stubCatalog();
-        when(() => repository.read(any())).thenAnswer(
-          (_) async =>
-              (session: _session, laneStems: <(int, int), List<Float32List>>{}),
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: _session,
+              laneStems: <(int, int), List<Float32List>>{},
+            ),
+          ),
         );
         when(() => looper.applySession(any())).thenAnswer((_) async {});
       },
@@ -1234,7 +1449,8 @@ void main() {
       act: (cubit) => cubit.open('A'),
       verify: (_) {
         verifyInOrder([
-          () => repository.read(any()),
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
           performance.disarmAndFinalize,
           () => looper.applySession(any()),
         ]);
@@ -1245,9 +1461,16 @@ void main() {
       'open leaves the live rig alone when performance disarm refuses',
       setUp: () {
         stubCatalog();
-        when(() => repository.read(any())).thenAnswer(
-          (_) async =>
-              (session: _session, laneStems: <(int, int), List<Float32List>>{}),
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: _session,
+              laneStems: <(int, int), List<Float32List>>{},
+            ),
+          ),
         );
         when(
           performance.disarmAndFinalize,
@@ -1269,7 +1492,10 @@ void main() {
       ],
       verify: (_) {
         verify(performance.disarmAndFinalize).called(1);
-        verify(() => repository.read(any())).called(1);
+        verify(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).called(1);
         verifyNever(() => looper.applySession(any()));
       },
     );
@@ -1755,16 +1981,21 @@ void main() {
         when(
           () => repository.bundlePathOf(any()),
         ).thenAnswer((_) async => '/b/X');
-        when(() => repository.read(any())).thenAnswer(
-          (_) async => (
-            session: const Session(
-              sampleRate: 48000,
-              channels: 1,
-              baseLengthFrames: 0,
-              tracks: [],
-              pedalBindings: '[{"button":"stop","target":"t"}]',
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: const Session(
+                sampleRate: 48000,
+                channels: 1,
+                baseLengthFrames: 0,
+                tracks: [],
+                pedalBindings: '[{"button":"stop","target":"t"}]',
+              ),
+              laneStems: <(int, int), List<Float32List>>{},
             ),
-            laneStems: <(int, int), List<Float32List>>{},
           ),
         );
         when(() => looper.applySession(any())).thenAnswer((_) async {
@@ -1804,16 +2035,21 @@ void main() {
         when(
           () => repository.bundlePathOf(any()),
         ).thenAnswer((_) async => '/b/X');
-        when(() => repository.read(any())).thenAnswer(
-          (_) async => (
-            session: const Session(
-              sampleRate: 48000,
-              channels: 1,
-              baseLengthFrames: 0,
-              tracks: [],
-              pedalBindings: '[{"button":"stop","target":"t"}]',
+        when(
+          () =>
+              repository.open(any(), liveSettings: any(named: 'liveSettings')),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: const Session(
+                sampleRate: 48000,
+                channels: 1,
+                baseLengthFrames: 0,
+                tracks: [],
+                pedalBindings: '[{"button":"stop","target":"t"}]',
+              ),
+              laneStems: <(int, int), List<Float32List>>{},
             ),
-            laneStems: <(int, int), List<Float32List>>{},
           ),
         );
         when(
@@ -1888,3 +2124,9 @@ void main() {
     });
   });
 }
+
+/// Answers a stubbed `open` with a bundle that needed no conversion.
+Future<OpenedSession> Function(Invocation) _opened(
+  FutureOr<SessionBundle> Function(Invocation) answer,
+) =>
+    (invocation) async => (bundle: await answer(invocation), conversion: null);

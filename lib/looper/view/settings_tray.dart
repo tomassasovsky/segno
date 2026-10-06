@@ -1,10 +1,8 @@
 import 'dart:async';
 
-import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
-import 'package:segno/bluetooth/bluetooth_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/tray/tray.dart';
@@ -38,19 +36,15 @@ import 'package:wifi_repository/wifi_repository.dart';
 class SettingsTray extends StatefulWidget {
   /// Creates a [SettingsTray].
   ///
-  /// Optional [wifiRepository] / [bluetoothRepository] override the
-  /// [RepositoryProvider] values — used by screenshot previews and tests.
+  /// Optional [wifiRepository] overrides the [RepositoryProvider] value —
+  /// used by screenshot previews and tests.
   const SettingsTray({
     super.key,
     this.wifiRepository,
-    this.bluetoothRepository,
   });
 
   /// Optional WiFi repository override.
   final WifiRepository? wifiRepository;
-
-  /// Optional Bluetooth repository override.
-  final BluetoothRepository? bluetoothRepository;
 
   @override
   State<SettingsTray> createState() => _SettingsTrayState();
@@ -65,7 +59,6 @@ class _SettingsTrayState extends State<SettingsTray> {
   bool _dragging = false;
 
   WifiCubit? _wifi;
-  BluetoothCubit? _bluetooth;
 
   WifiRepository _wifiRepository() {
     if (widget.wifiRepository != null) return widget.wifiRepository!;
@@ -73,17 +66,6 @@ class _SettingsTrayState extends State<SettingsTray> {
       return context.read<WifiRepository>();
     } on ProviderNotFoundException {
       return const WifiRepository(client: UnsupportedWifiClient());
-    }
-  }
-
-  BluetoothRepository _bluetoothRepository() {
-    if (widget.bluetoothRepository != null) {
-      return widget.bluetoothRepository!;
-    }
-    try {
-      return context.read<BluetoothRepository>();
-    } on ProviderNotFoundException {
-      return const BluetoothRepository(client: UnsupportedBluetoothClient());
     }
   }
 
@@ -95,17 +77,11 @@ class _SettingsTrayState extends State<SettingsTray> {
       unawaited(wifi.load());
       _wifi = wifi;
     }
-    if (_bluetooth == null) {
-      final bluetooth = BluetoothCubit(repository: _bluetoothRepository());
-      unawaited(bluetooth.load());
-      _bluetooth = bluetooth;
-    }
   }
 
   @override
   void dispose() {
     unawaited(_wifi?.close() ?? Future<void>.value());
-    unawaited(_bluetooth?.close() ?? Future<void>.value());
     super.dispose();
   }
 
@@ -162,7 +138,6 @@ class _SettingsTrayState extends State<SettingsTray> {
             child: MultiBlocProvider(
               providers: [
                 BlocProvider<WifiCubit>.value(value: _wifi!),
-                BlocProvider<BluetoothCubit>.value(value: _bluetooth!),
               ],
               // The same duration the slide above runs on — zero mid-drag, so
               // the sheet's shadow tracks the finger exactly and fades with

@@ -61,6 +61,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.chromeBar,
     required this.meterTrack,
     required this.pageGlow,
+    required this.menuArtGround,
+    required this.menuArtLine,
+    required this.menuPowerLine,
+    required this.encoderFocus,
     required this.knobFaceTop,
     required this.knobFaceBottom,
     required this.disabledOpacity,
@@ -238,7 +242,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
         InteractionMode.custom ||
         InteractionMode.mixer ||
         InteractionMode.fade ||
-        InteractionMode.reverse => (outline: ledAmber, fill: cardHigh),
+        InteractionMode.reverse ||
+        InteractionMode.peel => (outline: ledAmber, fill: cardHigh),
       };
 
   /// Pedal LED palette — the on-screen pedal faceplate renders the firmware's
@@ -269,6 +274,23 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   final Color chromeBar;
   final Color meterTrack;
   final Color pageGlow;
+
+  /// The ground the Segno menu artwork is painted on. The Settings tiles fill
+  /// with it so each picture sits on its tile without a visible square: the
+  /// art is opaque on this exact colour, in every flavour.
+  final Color menuArtGround;
+
+  /// The 1 px line inside each Settings tile, the pen's `#556881`.
+  final Color menuArtLine;
+
+  /// The line around the Settings title bar's Power button, the pen's
+  /// `#5f5f5f`.
+  final Color menuPowerLine;
+
+  /// The encoder's focus: the 3 px amber the pen draws inside a focused
+  /// control (`#f2bf70`), distinct from the blue of a selection.
+  final Color encoderFocus;
+
   final Color knobFaceTop;
   final Color knobFaceBottom;
 
@@ -347,6 +369,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? chromeBar,
     Color? meterTrack,
     Color? pageGlow,
+    Color? menuArtGround,
+    Color? menuArtLine,
+    Color? menuPowerLine,
+    Color? encoderFocus,
     Color? knobFaceTop,
     Color? knobFaceBottom,
     double? disabledOpacity,
@@ -396,6 +422,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     chromeBar: chromeBar ?? this.chromeBar,
     meterTrack: meterTrack ?? this.meterTrack,
     pageGlow: pageGlow ?? this.pageGlow,
+    menuArtGround: menuArtGround ?? this.menuArtGround,
+    menuArtLine: menuArtLine ?? this.menuArtLine,
+    menuPowerLine: menuPowerLine ?? this.menuPowerLine,
+    encoderFocus: encoderFocus ?? this.encoderFocus,
     knobFaceTop: knobFaceTop ?? this.knobFaceTop,
     knobFaceBottom: knobFaceBottom ?? this.knobFaceBottom,
     disabledOpacity: disabledOpacity ?? this.disabledOpacity,
@@ -453,6 +483,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       chromeBar: c(chromeBar, other.chromeBar),
       meterTrack: c(meterTrack, other.meterTrack),
       pageGlow: c(pageGlow, other.pageGlow),
+      menuArtGround: c(menuArtGround, other.menuArtGround),
+      menuArtLine: c(menuArtLine, other.menuArtLine),
+      menuPowerLine: c(menuPowerLine, other.menuPowerLine),
+      encoderFocus: c(encoderFocus, other.encoderFocus),
       knobFaceTop: c(knobFaceTop, other.knobFaceTop),
       knobFaceBottom: c(knobFaceBottom, other.knobFaceBottom),
       disabledOpacity:
@@ -540,6 +574,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     chromeBar: Color(0xFF0B0B0C),
     meterTrack: Color(0xFF0E0E0F),
     pageGlow: Color(0xFF121214),
+    menuArtGround: Color(0xFF202735),
+    menuArtLine: Color(0xFF556881),
+    menuPowerLine: Color(0xFF5F5F5F),
+    encoderFocus: Color(0xFFF2BF70),
     knobFaceTop: Color(0xFF232325),
     knobFaceBottom: Color(0xFF121214),
     disabledOpacity: 0.4,
@@ -614,6 +652,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     chromeBar: Color(0xFF060607),
     meterTrack: Color(0xFF040405),
     pageGlow: Color(0xFF0B0B0C),
+    menuArtGround: Color(0xFF202735),
+    menuArtLine: Color(0xFF556881),
+    menuPowerLine: Color(0xFF5F5F5F),
+    encoderFocus: Color(0xFFF2BF70),
     knobFaceTop: Color(0xFF2E2E30),
     knobFaceBottom: Color(0xFF171719),
     // Dim less than [dark]: a disabled control must still clear the contrast

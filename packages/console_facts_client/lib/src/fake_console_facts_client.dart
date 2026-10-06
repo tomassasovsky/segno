@@ -25,10 +25,14 @@ class FakeConsoleFactsClient implements ConsoleFactsClient {
   FakeConsoleFactsClient({
     this.latency = const Duration(milliseconds: 220),
     bool exportVolumeMounted = true,
+    this.bluetoothPairings = 0,
   }) : _exportVolume = exportVolumeMounted ? '/media/usb0' : '';
 
   /// How long each answer pretends to take.
   final Duration latency;
+
+  /// What [retiredBluetoothPairings] answers.
+  final int bluetoothPairings;
 
   final String _exportVolume;
 
@@ -92,4 +96,7 @@ class FakeConsoleFactsClient implements ConsoleFactsClient {
 
   @override
   Future<void> exportEverything(String destination) => _wait();
+
+  @override
+  Future<int> retiredBluetoothPairings() async => bluetoothPairings;
 }
