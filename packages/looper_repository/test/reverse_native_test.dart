@@ -71,7 +71,7 @@ void main() {
       expect(await empty, EngineResult.invalid);
       await completion;
       // 128 frames is shorter than two turn windows, so the read snaps: the
-      // frame after the toggle at index 37 reads 36.
+      // toggle frame itself reads index 37, the index the turn continues from.
       expect(engine.snapshot().outputPeaks[0], closeTo(37 / 128, 1e-6));
       expect(engine.snapshot().tracks[0].reversed, isTrue);
       ticks.add(null);
