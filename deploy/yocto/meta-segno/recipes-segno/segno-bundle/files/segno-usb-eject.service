@@ -1,0 +1,9 @@
+# Serves every pending USB eject request: sync, a non-lazy umount, the outcome
+# written into the volume's JSON, the request deleted (#1177). Triggered by
+# segno-usb-eject.path. Runs in the root mount namespace, like the mount unit.
+[Unit]
+Description=Segno: serve USB eject requests
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/segno-usb-ctl serve-requests

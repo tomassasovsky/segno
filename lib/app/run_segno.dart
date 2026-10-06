@@ -155,9 +155,20 @@ Future<void> runSegno(
   // The same directory resolvers the session and performance repositories are
   // wired with, so the real client's disk accounting measures the app's own
   // data volume (`/data` on the appliance) by construction (#656).
+  // Capacity comes from the engine's statvfs through the performance
+  // repository, never from a `df` subprocess (#806); the client's own type is
+  // filled from the engine's reading so the client stays engine-free (#1177).
   final consoleFacts = createConsoleFactsClient(
     sessionsRoot: defaultSessionsRoot,
     capturesRoot: defaultExportDirectory,
+    diskSpace: (path) async {
+      final space = performance.volumeSpace(path);
+      if (space == null) return null;
+      return DiskSpace(
+        totalBytes: space.totalBytes,
+        freeBytes: space.freeBytes,
+      );
+    },
   );
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
