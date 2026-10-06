@@ -2398,6 +2398,7 @@
     "a11yMixerClearSolo": "Quitar todos los solos",
     "a11yMixerEditFx": "Editar los efectos de la pista {number}",
     "a11yMixerBypassFx": "Puentear los efectos de la pista {number}",
+    "a11yMixerEditFx": "Editar los efectos de la pista {number}",
     "a11yMixerEnableFx": "Activar los efectos de la pista {number}",
     "a11yMixerPan": "Panorama de la pista {number}",
     "a11yMixerLevel": "Nivel de la pista {number}",

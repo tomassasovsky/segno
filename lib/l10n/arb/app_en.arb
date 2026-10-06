@@ -4889,6 +4889,14 @@
                     }
             }
     },
+    "a11yMixerEditFx": "Edit track {number} effects",
+    "@a11yMixerEditFx": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    }
+            }
+    },
     "a11yMixerEnableFx": "Enable track {number} effects",
     "@a11yMixerEnableFx": {
             "placeholders": {
