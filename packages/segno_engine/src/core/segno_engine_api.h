@@ -3025,6 +3025,41 @@ LE_EXPORT int32_t le_volume_space(const char* path, uint64_t* out_total_bytes,
  * take as long as the device's flush. */
 LE_EXPORT int32_t le_sync_dir(const char* path);
 
+/* ---- recorded-audio identity and durable publication (#1198) ----
+ * Engine-free, like le_volume_space: questions about bytes and paths, safe to
+ * call from any thread and from a Dart background isolate with no engine.
+ *
+ * Recorded audio is identified by the SHA-256 of its sample payload, so an
+ * intact copy is recognised wherever it is and whatever it is called, and a
+ * damaged or different file never passes for it (accepted behaviour 6.10:
+ * "same name is not enough"). `out` receives the 32-byte digest. */
+
+/* SHA-256 of `length` bytes at `data` (`data` may be NULL only when `length`
+ * is 0). Returns LE_OK, or LE_ERR_INVALID for a NULL `out`, a NULL `data`
+ * with a non-zero length, or a length this platform cannot address. */
+LE_EXPORT int32_t le_digest_bytes(const void* data, uint64_t length,
+                                  uint8_t* out);
+
+/* SHA-256 of `length` bytes of the regular file at `path` (UTF-8) starting at
+ * byte `offset`; `length` = UINT64_MAX means through the end of the file.
+ * Reads in 64 KiB chunks, so a multi-gigabyte recording costs no memory.
+ * Returns LE_OK; LE_ERR_INVALID for a NULL or empty `path` or NULL `out`;
+ * LE_ERR_DEVICE when the file cannot be opened, is not a regular file, is
+ * shorter than `offset` + `length` (a damaged file never yields a digest of
+ * what happens to be left), or a read fails. */
+LE_EXPORT int32_t le_digest_file(const char* path, uint64_t offset,
+                                 uint64_t length, uint8_t* out);
+
+/* Makes the directory entries of `path` durable: open + fsync on POSIX, which
+ * is what makes a rename into that directory survive a power cut (fsync on
+ * the renamed file does not cover its name). Dart cannot open a directory, so
+ * the atomic publication of a bundle (tmp, fsync, rename, then this) needs it
+ * here. On Windows there is no directory handle to flush; it reports only
+ * whether the directory exists. Returns LE_OK; LE_ERR_INVALID for a NULL or
+ * empty `path`; LE_ERR_DEVICE when the directory cannot be opened or the sync
+ * fails. */
+LE_EXPORT int32_t le_fs_sync_dir(const char* path);
+
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's
  * `performance.json` + `events.log` + `loops/` + retired-layer PCM), on a
