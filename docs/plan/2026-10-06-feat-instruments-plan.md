@@ -449,7 +449,8 @@ instrument slot without a patch renders exact silence. It adds no
 a smaller interface) is accepted and shown (`recording_inputs_tab.dart:106`),
 and that stays (rule 1). Refusals for new routes live in the repository and
 the UI (`isSource`), and `LE_ERR_NO_INSTRUMENT` (-14) is confined to the
-single-command event API (`le_engine_instrument_event` on an empty slot).
+single-command event API (`le_engine_instrument_note_on` and
+`le_engine_set_instrument_param` on an empty slot).
 
 Instrument buses are **mono**. The accepted synthesis renders mono voices into
 one gain node per instrument (`instrument-runtime.js:35-48`, `busFor`), so a
@@ -674,19 +675,28 @@ TU, with their own tests.
 
 ### 2.2 Engine state (Parts 2a and 2b)
 
-- `le_engine.inst[LE_MAX_INSTRUMENTS]`: the patch is applied by a command,
-  `LE_CMD_SET_INSTRUMENT` (96), at block start, and the snapshot reports the
-  applied patch (review L4: one mechanism); the three parameters are
-  `_Atomic uint32_t a_param_bits[3]`, read once per block (not commands, as
-  every continuous control is).
-- `LE_CMD_SET_VOICE_LIMIT` (97) and `LE_CMD_INSTRUMENT_RESET` (98, cut one
-  slot's voices and contributors when its definition is removed); 99 spare.
+- Patch changes ride the ordered note ring as a `SET_PATCH` event, applied
+  at block start in posting order, and the snapshot reports the applied
+  patch (review L4: one mechanism). They are not commands: the command ring
+  is drained separately and gives no order against the note ring, so a note
+  posted right after its instrument was set could meet the previous patch
+  (found while building Part 2a). The three parameters are continuous
+  controls, `_Atomic uint32_t a_inst_param_bits[3]` stamped with the patch
+  they belong to and a revision, read once per block and applied only to
+  that patch; a patch change applies the current stamped values at once, so
+  custom parameters given with the patch reach the first note.
+- `LE_CMD_SET_VOICE_LIMIT` (96) and `LE_CMD_INSTRUMENT_RESET` (97, fade one
+  slot's voices when its definition is removed); 98 and 99 spare.
 - `inst_bus`: `LE_MAX_INSTRUMENTS × LE_COND_SCRATCH_FRAMES` floats allocated
   with `cond_buf` at configure; a larger block renders silence and counts
   `a_inst_fallback_blocks` (the conditioning precedent, `:6460-6467`).
-- `inst_ring` (256, note-on and expression) and `inst_release_ring` (1024,
-  note-off, sustain-off, retire): SPSC `le_inst_event {u8 kind, slot, note,
-  velocity; u32 origin; f32 value}`, drained at block start, releases first.
+- `inst_ring` (256: note-on, patch change, and from Part 2c expression) and
+  `inst_release_ring` (1024: note-off, and from Part 2c sustain-off): SPSC
+  `le_inst_event {u32 seq, origin; u8 kind, slot, note, velocity}`. The
+  control thread stamps one posting sequence across both, and the callback
+  merges them by it (at most 512 events per block, the rest wait in order),
+  so a note-on and its note-off posted before one block apply in that order
+  while note-ons can never crowd out a release.
 - `ports[LE_MAX_MIDI_PORTS = 8]` (Part 2c): `_Atomic uint32_t a_gen`,
   `_Atomic int32_t a_overflow`, `_Atomic int32_t a_lost`, and an SPSC ring of
   `{u32 gen; u8 status, d1, d2}` (256). Producer: that port's OS MIDI thread
@@ -761,7 +771,7 @@ unfinished destination: nothing reaches the UI before Part 6. Production-line
 estimates exclude tests, bench tooling, generated bindings, assets and docs.
 Engine numbers come from the central ledger (main session, 2026-10-06):
 instruments own commands 96-111, perf-log facts 336-339 and result codes -14
-and -15. Part 2a takes commands 96-99, Part 2c takes 100-103
+and -15. Part 2a takes commands 96-97 (98-99 spare), Part 2c takes 100-103
 (`LE_CMD_ATTACH_MIDI_PORT`, `LE_CMD_DETACH_MIDI_PORT`, two spare); 104-111
 stay reserved. `LE_ERR_NO_INSTRUMENT = -14` is returned only by the
 single-command event API on an empty slot (H4); `LE_ERR_UNKNOWN_PATCH = -15`
@@ -794,20 +804,25 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
 
 ### Part 2a. Native instrument slots, buses and the synth in the callback (about 550 production lines)
 
-`inst[]`, `inst_bus`, the synth inside `le_engine_process` after the command
-drain, `LE_CMD_SET_INSTRUMENT` (96), `LE_CMD_SET_VOICE_LIMIT` (97),
-`LE_CMD_INSTRUMENT_RESET` (98), the parameter atomics, `inst_ring` and the
-reserved `inst_release_ring` (D4, H3), `handle_cut_sound` (`:2201`) calling
-`le_synth_cut(-1)` and clearing contributors, the synth re-initialised on
-configure with `synth_epoch` bumped (M9), and the snapshot's per-instrument
-`{patch, active_voices, peak, events_dropped}`, `voice_limit`, `stolen`,
-`stolen_hard`, `synth_epoch`. API: `le_engine_set_instrument(e, slot,
-patch_index or -1)` (`LE_ERR_UNKNOWN_PATCH` for an index the build lacks),
-`le_engine_set_instrument_param`, `le_engine_set_voice_limit`,
-`le_engine_instrument_event` (note-on and expression: `LE_ERR_CAPACITY` when
-full, `LE_ERR_NO_INSTRUMENT` on an empty slot) and
-`le_engine_instrument_release` (the release lane; `LE_ERR_CAPACITY` only when
-1024 releases are queued, which the repository retries). No source routing
+`engine_instruments.{h,c}` (inside the `engine*.c` glob): the synth and
+`inst_bus` allocated at create, the synth inside `le_engine_process` after
+the command drain, the ordered `inst_ring` with patch changes and the
+reserved `inst_release_ring` (§2.2, D4, H3), the stamped parameter atomics,
+`LE_CMD_SET_VOICE_LIMIT` (96), `LE_CMD_INSTRUMENT_RESET` (97),
+`handle_cut_sound` (`:2201`) calling `le_synth_cut(-1)`, the synth
+re-initialised on configure and reopen with `synth_epoch` bumped (M9), and
+the snapshot's `instrument_patch`, `instrument_voices`, `instrument_peaks`,
+`voice_limit`, `voices_stolen`, `voices_stolen_hard`, `synth_epoch`,
+`instrument_events_refused`, `instrument_fallback_blocks`. API:
+`le_engine_set_instrument(e, slot, patch or -1, params or NULL)`
+(`LE_ERR_UNKNOWN_PATCH`; `LE_ERR_CAPACITY` with nothing changed when the
+note ring is full), `le_engine_set_instrument_param`,
+`le_engine_set_voice_limit`, `le_engine_reset_instrument`,
+`le_engine_instrument_note_on` (`LE_ERR_CAPACITY` when full, counted;
+`LE_ERR_NO_INSTRUMENT` on an empty slot) and `le_engine_instrument_note_off`
+(the release lane; `LE_ERR_CAPACITY` only when 1023 releases are queued,
+which the repository retries). Part 2c adds the expression and sustain
+events to the same rings. No source routing
 yet: the buses are observable to native tests through the engine internals
 (`test_engine_core.c` already reads `engine_private.h`).
 
