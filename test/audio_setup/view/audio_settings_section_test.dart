@@ -236,6 +236,9 @@ void main() {
     when(() => repository.allTracksEffects).thenReturn(const []);
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.looperState).thenAnswer((_) => stateChanges.stream);
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => repository.lengthSettingsFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
     );

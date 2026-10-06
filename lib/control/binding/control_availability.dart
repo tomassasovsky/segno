@@ -3,13 +3,7 @@ import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
-import 'package:segno/looper/model/click_mode.dart';
-import 'package:segno/looper/model/one_shot.dart';
-import 'package:segno/looper/model/overdub_decay.dart';
-import 'package:segno/looper/model/record_length.dart';
-import 'package:segno/looper/model/record_start.dart';
-import 'package:segno/looper/model/record_timing.dart';
-import 'package:settings_repository/settings_repository.dart';
+import 'package:segno/control/binding/owned_value_control.dart';
 
 /// A present target can be temporarily locked without losing its identity.
 enum ControlEditBlock {
@@ -25,49 +19,19 @@ enum ControlEditBlock {
 class ControlAvailability {
   const ControlAvailability({
     required this.looper,
-    this.clickVolume,
-    this.clickModeSnapshot,
-    this.decaySnapshot,
-    this.fadeDurations,
-    this.oneShotSnapshot,
-    this.recordLengthSnapshot,
-    this.recordStartSnapshot,
-    this.recordTimingSnapshot,
+    this.owned = const OwnedValueSnapshots(),
   });
 
   final LooperRepository looper;
-  final double? clickVolume;
-  final ClickModeSnapshot? clickModeSnapshot;
-  final DecaySnapshot? decaySnapshot;
-  final FadeDurations? fadeDurations;
-  final OneShotSnapshot? oneShotSnapshot;
-  final RecordLengthSnapshot? recordLengthSnapshot;
-  final RecordStartSnapshot? recordStartSnapshot;
-  final RecordTimingSnapshot? recordTimingSnapshot;
 
-  List<ControlValueTarget> get targets => looper.availableValueTargets(
-    clickVolume: clickVolume,
-    clickModeSnapshot: clickModeSnapshot,
-    decaySnapshot: decaySnapshot,
-    fadeDurations: fadeDurations,
-    oneShotSnapshot: oneShotSnapshot,
-    recordLengthSnapshot: recordLengthSnapshot,
-    recordStartSnapshot: recordStartSnapshot,
-    recordTimingSnapshot: recordTimingSnapshot,
-  );
+  /// The owned families' read models; a null field leaves that family out.
+  final OwnedValueSnapshots owned;
+
+  List<ControlValueTarget> get targets =>
+      looper.availableValueTargets(owned: owned);
 
   bool resolves(Object? target) => switch (target) {
-    ControlValueTarget() => looper.valueTargetResolves(
-      target,
-      clickVolume: clickVolume,
-      clickModeSnapshot: clickModeSnapshot,
-      decaySnapshot: decaySnapshot,
-      fadeDurations: fadeDurations,
-      oneShotSnapshot: oneShotSnapshot,
-      recordLengthSnapshot: recordLengthSnapshot,
-      recordStartSnapshot: recordStartSnapshot,
-      recordTimingSnapshot: recordTimingSnapshot,
-    ),
+    ControlValueTarget() => looper.valueTargetResolves(target, owned: owned),
     FxBindingTarget() => looper.bindingResolves(target),
     _ => false,
   };
@@ -77,17 +41,17 @@ class ControlAvailability {
   );
 
   ControlEditBlock? blockedBy(Object? target) => switch (target) {
-    ClickModeValueTarget() when clickModeSnapshot?.canEdit == false =>
+    ClickModeValueTarget() when owned.clickModeSnapshot?.canEdit == false =>
       ControlEditBlock.clickCapture,
-    CountInValueTarget() when recordStartSnapshot?.canEdit == false =>
+    CountInValueTarget() when owned.recordStartSnapshot?.canEdit == false =>
       ControlEditBlock.recordStartCapture,
     RecordLengthValueTarget(:final address)
-        when recordLengthSnapshot?.canEdit(address) == false =>
-      recordLengthSnapshot!.captureLocked
+        when owned.recordLengthSnapshot?.canEdit(address) == false =>
+      owned.recordLengthSnapshot!.captureLocked
           ? ControlEditBlock.lengthCapture
           : ControlEditBlock.sharedLength,
     RecordTimingValueTarget(:final address)
-        when recordTimingSnapshot?.canEdit(address) == false =>
+        when owned.recordTimingSnapshot?.canEdit(address) == false =>
       ControlEditBlock.timingCapture,
     _ => null,
   };
@@ -95,15 +59,6 @@ class ControlAvailability {
   bool canAssign(Object target) =>
       resolves(target) && blockedBy(target) == null;
 
-  double? value(ControlValueTarget target) => looper.readValueTarget(
-    target,
-    clickVolume: clickVolume,
-    clickModeSnapshot: clickModeSnapshot,
-    decaySnapshot: decaySnapshot,
-    fadeDurations: fadeDurations,
-    oneShotSnapshot: oneShotSnapshot,
-    recordLengthSnapshot: recordLengthSnapshot,
-    recordStartSnapshot: recordStartSnapshot,
-    recordTimingSnapshot: recordTimingSnapshot,
-  );
+  double? value(ControlValueTarget target) =>
+      looper.readValueTarget(target, owned: owned);
 }

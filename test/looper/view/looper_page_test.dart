@@ -8,6 +8,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
@@ -74,6 +75,7 @@ void main() {
       );
       await timing.load();
       final fade = FadeSettings(
+        repository: repository,
         settings: settings,
         blocked: () => false,
         sessionBlocked: () => false,
@@ -156,22 +158,29 @@ void main() {
               // created by the providers (as in the app wiring) so disposal
               // happens with the tree, not in an awaited teardown.
               BlocProvider<ControlCubit>(
-                create: (_) => ControlCubit(
-                  fadeSettings: testFadeSettings(),
-                  decayControl: playback.decayControl,
-                  oneShotControl: playback.oneShotControl,
-                  recordLengthControl: recordOptions,
-                  recordTimingControl: timing,
-                  clickVolumeControl: tempo.clickVolumeControl,
-                  clickModeControl: tempo.clickModeControl,
-                  recordStartControl: tempo.recordStartControl,
-                  fxPersistence: fxPersistence,
-                  looper: repository,
-                  mixSettings: mixSettings,
-                  pedal: PedalRepository(NoopPedalLink()),
-                  settings: settings,
-                  performance: performanceRepository,
-                ),
+                create: (_) {
+                  final ownedFade = testFadeSettings();
+                  return ControlCubit(
+                    fxPersistence: fxPersistence,
+                    looper: repository,
+                    mixSettings: mixSettings,
+                    pedal: PedalRepository(NoopPedalLink()),
+                    settings: settings,
+                    performance: performanceRepository,
+                    fadeSettings: ownedFade,
+                    ownedValues: OwnedValuePort(
+                      looper: repository,
+                      clickVolume: tempo.clickVolumeControl,
+                      clickMode: tempo.clickModeControl,
+                      recordStart: tempo.recordStartControl,
+                      decay: playback.decayControl,
+                      oneShot: playback.oneShotControl,
+                      recordLength: recordOptions,
+                      recordTiming: timing,
+                      fade: ownedFade,
+                    ),
+                  );
+                },
               ),
               BlocProvider(
                 create: (context) => SessionCubit(
@@ -192,6 +201,7 @@ void main() {
                       ...playback.owners,
                       ...recordOptions.owners,
                       ...timing.owners,
+                      ...fade.owners,
                     ]),
                     tempo: tempo,
                     playback: playback,

@@ -265,7 +265,8 @@ void main() {
     );
 
     test(
-      'real Session save waits for duration and refuses later edits',
+      'real Session save waits for an admitted duration edit and captures '
+      'it',
       () async {
         await runtime.start();
         registerFallbackValue(const SessionChains());
@@ -292,7 +293,8 @@ void main() {
         final edit = runtime.fade.setOverride(7, 4000);
         await store.fadeWriteEntered.future;
         final save = runtime.session.saveAs('durations');
-        await expectLater(runtime.fade.setDefault(8000), throwsStateError);
+        // Fade edits queue behind Session exclusion like every owned family;
+        // the Mixer still refuses its own edits there.
         expect(
           (await runtime.mix.setTrackVolume(.3)).status,
           MixSettingsStatus.superseded,

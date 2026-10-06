@@ -179,6 +179,13 @@ typedef enum le_perf_log_code {
   LE_PLOG_SET_OUTPUT_FX_PARAM = 318,
   LE_PLOG_SET_OUTPUT_FX_ENABLED = 319,
   LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED = 320,
+  LE_PLOG_REVERSE = 324, /* reverse_log: a track's read direction (#1162,
+                          * events.log version 7) — every accepted toggle or
+                          * install carries the exact read index the callback
+                          * continues from and its turn window; every material
+                          * reset logs forward with read_index -1; a reversed
+                          * track also logs its index at PERF_ARM. 325 is
+                          * reserved for Peel; do not take it. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's
@@ -210,6 +217,7 @@ typedef struct le_log_command {
     struct { int32_t channel, slot; uint32_t generation; } evt;
     struct { int32_t channel, take_id; } take;
     struct { int32_t channel; float amount, target, seconds; } fade_log;
+    struct { int32_t channel, reversed, read_index, turn_frames; } reverse_log;
     struct { int32_t channel; uint32_t image_id; int32_t state, phase; } restore_log;
     struct { int32_t channel, slot, previous; uint32_t generation; } peel_log;
     struct { int32_t position, master_len, iteration; } perf_arm;
@@ -221,7 +229,9 @@ typedef struct le_log_command {
 /* Explicit extraction also handles the transaction union's stronger alignment:
  * never assume a le_command payload starts four bytes after its code. */
 static inline int le_log_extract(const le_command* command, le_log_command* out) {
-  if (command->code == LE_CMD_RESET_FADE || command->code == LE_CMD_FADE || command->code == LE_CMD_SET_MIX || command->code == LE_CMD_RECORD_IMAGE ||
+  if (command->code == LE_CMD_RESET_TRANSFORMS || command->code == LE_CMD_FADE ||
+      command->code == LE_CMD_REVERSE || command->code == LE_CMD_SET_MIX ||
+      command->code == LE_CMD_RECORD_IMAGE ||
       command->code == LE_CMD_SET_LENGTH_PRESETS) return 0;
   out->code = command->code;
   memcpy(&out->arg_i, &command->arg_i, 16);

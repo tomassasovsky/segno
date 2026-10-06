@@ -7,6 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/control/control.dart';
@@ -14,7 +15,7 @@ import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show FadeAdmission, TrackSnapshot;
+    show RequestAdmission, TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -27,7 +28,7 @@ class _Engine extends FakeAudioEngine {
   bool refuse = false;
 
   @override
-  FadeAdmission toggleFade({required int channel, required double seconds}) {
+  RequestAdmission toggleFade({required int channel, required double seconds}) {
     if (refuse) return (result: EngineResult.invalid, request: 0);
     toggles.add((channel, seconds));
     final request = ++_request;
@@ -36,8 +37,8 @@ class _Engine extends FakeAudioEngine {
   }
 
   @override
-  EngineResult? readFadeResult(int request) =>
-      _results.remove(request) ?? super.readFadeResult(request);
+  EngineResult? readRequestResult(int request) =>
+      _results.remove(request) ?? super.readRequestResult(request);
 }
 
 const _holdThreshold = Duration(milliseconds: 820);
@@ -102,6 +103,7 @@ class _Rig {
       exportsRoot: () async => Directory.systemTemp.path,
     );
     fade = FadeSettings(
+      repository: looper,
       settings: settings,
       blocked: () => false,
       sessionBlocked: () => false,
@@ -113,14 +115,18 @@ class _Rig {
       performance: performance,
       mixSettings: mix,
       fxPersistence: persistence,
-      clickVolumeControl: FakeClickVolumeControl(),
-      clickModeControl: FakeClickModeControl(),
-      recordStartControl: FakeRecordStartControl(),
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
-      recordLengthControl: FakeRecordLengthControl(),
-      recordTimingControl: FakeRecordTimingControl(),
       fadeSettings: fade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: FakeRecordStartControl(),
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: fade,
+      ),
     );
     link.hello();
   }

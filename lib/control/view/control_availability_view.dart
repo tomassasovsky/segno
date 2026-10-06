@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_availability.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
+import 'package:segno/control/binding/owned_value_control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
@@ -31,14 +32,16 @@ ControlAvailability controlAvailability(
   final fade = context.read<FadeSettings>();
   return ControlAvailability(
     looper: context.read<LooperRepository>(),
-    fadeDurations: fade.needsRecovery ? null : fade.live,
-    clickVolume: tempo.state.confirmedClickVolume,
-    clickModeSnapshot: tempo.state.clickModeSnapshot,
-    recordStartSnapshot: tempo.state.recordStartSnapshot,
-    decaySnapshot: playback.state.decaySnapshot,
-    oneShotSnapshot: playback.state.oneShotSnapshot,
-    recordLengthSnapshot: record.state.options.recordLengthSnapshot,
-    recordTimingSnapshot: timing.state.recordTimingSnapshot,
+    owned: OwnedValueSnapshots(
+      fadeDurations: fade.needsRecovery ? null : fade.live,
+      clickVolume: tempo.state.confirmedClickVolume,
+      clickModeSnapshot: tempo.state.clickModeSnapshot,
+      recordStartSnapshot: tempo.state.recordStartSnapshot,
+      decaySnapshot: playback.state.decaySnapshot,
+      oneShotSnapshot: playback.state.oneShotSnapshot,
+      recordLengthSnapshot: record.state.options.recordLengthSnapshot,
+      recordTimingSnapshot: timing.state.recordTimingSnapshot,
+    ),
   );
 }
 
@@ -52,12 +55,5 @@ List<ExpressionDestination> controlDestinations(
   names,
   availability.looper,
   withActivations: withActivations,
-  clickVolume: availability.clickVolume,
-  clickModeSnapshot: availability.clickModeSnapshot,
-  recordStartSnapshot: availability.recordStartSnapshot,
-  decaySnapshot: availability.decaySnapshot,
-  fadeDurations: availability.fadeDurations,
-  oneShotSnapshot: availability.oneShotSnapshot,
-  recordLengthSnapshot: availability.recordLengthSnapshot,
-  recordTimingSnapshot: availability.recordTimingSnapshot,
+  owned: availability.owned,
 );

@@ -5,6 +5,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
@@ -45,18 +46,20 @@ class AppRuntime {
     tempo = TempoSettings(repository: repository, settings: settings);
     playback = PlaybackSettings(repository: repository, settings: settings);
     record = RecordSettings(repository: repository, settings: settings);
+    fade = FadeSettings(
+      repository: repository,
+      settings: settings,
+      blocked: () => takeLocked,
+      sessionBlocked: () => fxPersistence.sessionTransitionActive,
+    );
     timing = RecordTimingSettings(repository: repository, settings: settings);
     owners = SettingsOwners([
       ...tempo.owners,
       ...playback.owners,
       ...record.owners,
       ...timing.owners,
+      ...fade.owners,
     ]);
-    fade = FadeSettings(
-      settings: settings,
-      blocked: () => takeLocked,
-      sessionBlocked: () => fxPersistence.sessionTransitionActive,
-    );
     power = PowerOffCubit(
       flush: prepareShutdown,
       pedalGoodbye: pedal.goodbye,
@@ -74,13 +77,17 @@ class AppRuntime {
       settings: settings,
       mixSettings: mix,
       fxPersistence: fxPersistence,
-      decayControl: playback.decayControl,
-      oneShotControl: playback.oneShotControl,
-      recordLengthControl: record,
-      recordTimingControl: timing,
-      clickVolumeControl: tempo.clickVolumeControl,
-      clickModeControl: tempo.clickModeControl,
-      recordStartControl: tempo.recordStartControl,
+      ownedValues: OwnedValuePort(
+        looper: repository,
+        clickVolume: tempo.clickVolumeControl,
+        clickMode: tempo.clickModeControl,
+        recordStart: tempo.recordStartControl,
+        decay: playback.decayControl,
+        oneShot: playback.oneShotControl,
+        recordLength: record,
+        recordTiming: timing,
+        fade: fade,
+      ),
       fadeSettings: fade,
       pedal: pedal,
       performance: performance,
@@ -182,9 +189,6 @@ class AppRuntime {
       if (!retry) rethrow;
     }
     if (retry) {
-      if (!await fade.recover()) {
-        throw StateError('Fade duration settings still need recovery');
-      }
       final mixResult = await mix.recover();
       if (!mixResult.isOk) throw MixSettingsRecoveryException(mixResult);
       if (await owners.recover() case final failure?) {
@@ -194,7 +198,6 @@ class AppRuntime {
         retireControls: true,
       );
     }
-    await fade.flush();
     await fxPersistence.flush();
     final mixResult = await mix.flush();
     if (!mixResult.isOk) throw MixSettingsRecoveryException(mixResult);

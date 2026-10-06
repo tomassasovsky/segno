@@ -10,6 +10,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -850,21 +851,26 @@ class _Harness {
       engine: engine,
       exportsRoot: () async => tempDir.path,
     );
+    final ownedFade = testFadeSettings();
     control = ControlCubit(
-      fadeSettings: testFadeSettings(),
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
-      recordLengthControl: FakeRecordLengthControl(),
-      recordTimingControl: FakeRecordTimingControl(),
-      clickVolumeControl: FakeClickVolumeControl(),
-      clickModeControl: FakeClickModeControl(),
-      recordStartControl: FakeRecordStartControl(),
       fxPersistence: fxPersistence,
       looper: repo,
       mixSettings: mixSettings,
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
+      fadeSettings: ownedFade,
+      ownedValues: OwnedValuePort(
+        looper: repo,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: FakeRecordStartControl(),
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: ownedFade,
+      ),
     );
     cubit = PedalCubit(
       pedal: pedalRepo,
