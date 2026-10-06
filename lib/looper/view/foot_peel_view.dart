@@ -318,9 +318,10 @@ class _FootPeelPedal extends StatelessWidget {
       title: title,
       detail: detail,
       hint: '',
-      // Every track pedal takes a press, even one that cannot peel now: a
-      // press that removes nothing says why.
-      enabled: role.press != FootPeelAction.none,
+      // A recorded track's pedal takes a press even when it cannot peel
+      // now, so the refusal can say why. An empty track's pedal is dimmed,
+      // as on Fade and Reverse.
+      enabled: role.press != FootPeelAction.none && (track?.hasContent ?? true),
       // The selection bar mirrors the physical LED: a track a press would
       // peel, Bank on bank B, and Exit, the way back to Tracks.
       selected:
