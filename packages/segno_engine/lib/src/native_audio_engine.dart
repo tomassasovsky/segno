@@ -2497,6 +2497,7 @@ class NativeAudioEngine implements AudioEngine {
           pluginTracks: renderTracksOfMask(p.plugin_mask),
           fadedTracks: renderTracksOfMask(p.faded_mask),
           pendingTracks: renderTracksOfMask(p.pending_mask),
+          onceCutTracks: renderTracksOfMask(p.once_cut_mask),
         ),
       );
     } finally {

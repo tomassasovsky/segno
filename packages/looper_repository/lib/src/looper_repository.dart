@@ -144,12 +144,14 @@ class LooperRepository {
     Stream<void>? reconnectTicker,
     Duration reconnectInterval = const Duration(seconds: 1),
     Duration renderPollInterval = const Duration(milliseconds: 16),
+    Duration renderFreezeTimeout = const Duration(seconds: 2),
   }) : _engine = engine,
        _ticker = ticker,
        _pollInterval = pollInterval,
        _reconnectTicker = reconnectTicker,
        _reconnectInterval = reconnectInterval,
-       _renderPollInterval = renderPollInterval {
+       _renderPollInterval = renderPollInterval,
+       _renderFreezeTimeout = renderFreezeTimeout {
     _controller = StreamController<LooperState>.broadcast(
       onListen: _startPolling,
       onCancel: _stopPolling,
@@ -160,6 +162,7 @@ class LooperRepository {
   final Stream<void>? _ticker;
   Duration _pollInterval;
   final Duration _renderPollInterval;
+  final Duration _renderFreezeTimeout;
 
   /// The shared-recipe render this repository started last (#1202).
   RenderJob? _renderJob;
@@ -3776,7 +3779,8 @@ class LooperRepository {
   /// Renders [render] into a stereo float WAV published at [path]. The
   /// returned job reports progress and its outcome; it never leaves a
   /// partial file. Refusals are [measureRender]'s, plus
-  /// [EngineResult.alreadyRunning] while a render runs and
+  /// [EngineResult.alreadyRunning] while a render runs or a finished memory
+  /// render's result is still held (its owner has not released it), and
   /// [EngineResult.capacity] when the job does not fit in memory.
   ({EngineResult result, RenderJob? job}) renderToFile(
     SelectedRender render,
@@ -3787,7 +3791,7 @@ class LooperRepository {
 
   /// Renders [render] into the engine's memory, at most [maxFrames] frames
   /// (a Bounce destination's capacity). The finished job keeps its result
-  /// until it is released or the next render starts.
+  /// until it is released; no other render starts meanwhile.
   ({EngineResult result, RenderJob? job}) renderToMemory(
     SelectedRender render, {
     required int maxFrames,
@@ -3803,7 +3807,10 @@ class LooperRepository {
   }) => RenderRequest(
     sources: render.sources,
     lengthBars: render.lengthBars,
-    tails: render.tails,
+    tails: switch (render.tails) {
+      RenderTailRule.wrap => RenderTails.wrap,
+      RenderTailRule.cut => RenderTails.cut,
+    },
     mixFx: render.mixFx,
     target: target,
     path: path,
@@ -3814,6 +3821,11 @@ class LooperRepository {
     if (_sessionAudioReserved) {
       return (result: EngineResult.notReady, job: null);
     }
+    // A kept memory result (a Bounce waiting for its commit) is never
+    // replaced behind its owner's back: the engine would retire it.
+    if (_renderJob?.holdsResult ?? false) {
+      return (result: EngineResult.alreadyRunning, job: null);
+    }
     final admission = _engine.beginRender(request);
     if (!admission.result.isOk) return (result: admission.result, job: null);
     final job = RenderJob(
@@ -3822,6 +3834,7 @@ class LooperRepository {
       target: request.target,
       path: request.path,
       pollInterval: _renderPollInterval,
+      freezeTimeout: _renderFreezeTimeout,
     );
     _renderJob = job;
     return (result: EngineResult.ok, job: job);
@@ -8015,7 +8028,7 @@ class LooperRepository {
 
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {
-    _renderJob?.cancel();
+    _renderJob?.release();
     _retireEngineLifetime();
     await _stopPollingAndClose();
     _engine.dispose();

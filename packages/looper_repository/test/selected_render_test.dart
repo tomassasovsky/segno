@@ -3,7 +3,14 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show RenderJobStatus, RenderMethod, RenderPlan, RenderRequest;
+    show
+        RenderJobState,
+        RenderJobStatus,
+        RenderMethod,
+        RenderPlan,
+        RenderRequest,
+        RenderTails,
+        RenderTarget;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -41,7 +48,11 @@ void main() {
         ),
       );
       final measured = repository.measureRender(
-        render.copyWith(lengthBars: 2, tails: RenderTails.cut, mixFx: true),
+        render.copyWith(
+          lengthBars: 2,
+          tails: RenderTailRule.cut,
+          mixFx: true,
+        ),
         maxFrames: 200000,
       );
       expect(measured.result, EngineResult.ok);
@@ -168,6 +179,93 @@ void main() {
       expect(engine.cancelledRenders, [1]);
     });
 
+    test('reads bars as four beats without a time signature', () {
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(tsNum: 0);
+      engine.measureRenderAnswer = (
+        result: EngineResult.ok,
+        plan: const RenderPlan(
+          frames: 192000,
+          method: RenderMethod.chosenLength,
+          beatsMilli: 8000,
+          tempoSet: true,
+        ),
+      );
+      final plan = repository.measureRender(render).plan!;
+      expect(plan.beats, 8);
+      expect(plan.bars, 2); // the engine's own 4/4 default
+    });
+
+    test('names Once tracks a chosen length cuts', () {
+      engine.measureRenderAnswer = (
+        result: EngineResult.ok,
+        plan: const RenderPlan(
+          frames: 38400,
+          method: RenderMethod.chosenLength,
+          beatsMilli: 4000,
+          tempoSet: true,
+          onceCutTracks: {2},
+        ),
+      );
+      expect(repository.measureRender(render).plan!.onceCutTracks, {2});
+    });
+
+    test('progress moves while sources are staged', () async {
+      engine.renderStatuses = const [
+        RenderJobStatus(state: RenderJobState.freezing, permille: 0),
+        RenderJobStatus(state: RenderJobState.staging, permille: 120),
+        RenderJobStatus(state: RenderJobState.staging, permille: 300),
+        RenderJobStatus(state: RenderJobState.rendering, permille: 600),
+        RenderJobStatus(state: RenderJobState.done, permille: 1000),
+      ];
+      final job = repository.renderToFile(render, '/tmp/s.wav').job!;
+      final seen = <RenderProgress>[];
+      job.progress.listen(seen.add);
+      await job.outcome;
+      expect(seen, const [
+        RenderProgress(phase: RenderPhase.freezing, permille: 0),
+        RenderProgress(phase: RenderPhase.staging, permille: 120),
+        RenderProgress(phase: RenderPhase.staging, permille: 300),
+        RenderProgress(phase: RenderPhase.rendering, permille: 600),
+        RenderProgress(phase: RenderPhase.done, permille: 1000),
+      ]);
+    });
+
+    test('a job the callback never freezes ends as a device failure', () async {
+      final timed = LooperRepository(
+        engine: engine,
+        ticker: const Stream.empty(),
+        renderPollInterval: const Duration(milliseconds: 1),
+        renderFreezeTimeout: const Duration(milliseconds: 20),
+      );
+      addTearDown(timed.dispose);
+      engine.renderStatuses = const [
+        RenderJobStatus(state: RenderJobState.freezing, permille: 0),
+      ];
+      final job = timed.renderToMemory(render, maxFrames: 10).job!;
+      expect(
+        await job.outcome,
+        const RenderOutcome(result: EngineResult.device),
+      );
+      expect(engine.cancelledRenders, [1]);
+      expect(job.holdsResult, isFalse);
+    });
+
+    test('a held memory result is never replaced by another render', () async {
+      final job = repository.renderToMemory(render, maxFrames: 10).job!;
+      await job.outcome;
+      expect(job.holdsResult, isTrue);
+      final refused = repository.renderToFile(render, '/tmp/d.wav');
+      expect(refused.result, EngineResult.alreadyRunning);
+      expect(refused.job, isNull);
+      expect(engine.renderRequests, hasLength(1));
+      job.release();
+      expect(job.holdsResult, isFalse);
+      expect(
+        repository.renderToFile(render, '/tmp/d.wav').result,
+        EngineResult.ok,
+      );
+    });
+
     test('begin refusals return no job', () {
       engine.beginRenderAnswer = (result: EngineResult.alreadyRunning, job: 0);
       final begun = repository.renderToMemory(render, maxFrames: 10);
@@ -188,7 +286,7 @@ void main() {
 
   test('SelectedRender defaults and copyWith', () {
     const render = SelectedRender(sources: {1});
-    expect(render.tails, RenderTails.wrap);
+    expect(render.tails, RenderTailRule.wrap);
     expect(render.mixFx, isFalse);
     expect(render.lengthBars, isNull);
     final chosen = render.copyWith(lengthBars: 4);
