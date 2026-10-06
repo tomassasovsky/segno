@@ -15,6 +15,20 @@ import 'package:segno/session/cubit/session_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
 
+/// What the power-off gate needs to know about the rig right now, read from
+/// the app-wide owners above [context].
+PowerOffSnapshot currentPowerOffSnapshot(BuildContext context) =>
+    powerOffSnapshotOf(
+      looper: context.read<LooperBloc>().state,
+      recorder: context.read<PerformanceRecorderCubit>().state,
+      session: context.read<SessionCubit>().state,
+    );
+
+/// Asks to power off exactly as a short press of the rear power button does:
+/// the same confirm, save and refusal flow, which [PowerOffHost] presents.
+void requestPowerOff(BuildContext context) =>
+    context.read<PowerOffCubit>().press(currentPowerOffSnapshot(context));
+
 /// Listens for the rear power button, shows confirm, and runs Save As.
 ///
 /// Mounted under LooperPage so it can read SessionCubit and the app-wide
@@ -65,13 +79,7 @@ class _PowerOffHostState extends State<PowerOffHost> {
     }
   }
 
-  PowerOffSnapshot _snapshot() {
-    return powerOffSnapshotOf(
-      looper: context.read<LooperBloc>().state,
-      recorder: context.read<PerformanceRecorderCubit>().state,
-      session: context.read<SessionCubit>().state,
-    );
-  }
+  PowerOffSnapshot _snapshot() => currentPowerOffSnapshot(context);
 
   Future<void> _saveNamed() async {
     final session = context.read<SessionCubit>();

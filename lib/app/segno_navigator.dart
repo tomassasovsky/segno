@@ -11,7 +11,6 @@ import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
-import 'package:segno/looper/view/settings_page.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/page_transitions.dart';
 
@@ -19,7 +18,7 @@ import 'package:segno/theme/page_transitions.dart';
 /// tree (e.g. the macOS system menu bar) as well as from in-app gestures.
 final GlobalKey<NavigatorState> segnoNavigatorKey = GlobalKey<NavigatorState>();
 
-/// Route name for the settings page (used to avoid stacking duplicates).
+/// Route name for the Settings page (the ten destinations).
 const String segnoSettingsRouteName = 'segno/settings';
 
 /// Route name for the Loop settings pages.
@@ -219,48 +218,18 @@ Future<void> openAboutSettings() => _pushOnce(
 @visibleForTesting
 void resetSegnoNavigatorForTest() {
   _openRoutes.clear();
-  _openSettingsSection = null;
   _fxCatalogue = null;
 }
 
-SettingsSection? _openSettingsSection;
-
-/// Whether Updates is on screen, in either Settings surface (skip the update
-/// toast).
+/// Whether the Updates page is on screen (skip the update toast).
 bool get isSegnoUpdatesSettingsOpen =>
-    _openRoutes.contains(segnoUpdateSettingsRouteName) ||
-    (_openRoutes.contains(segnoSettingsRouteName) &&
-        _openSettingsSection == SettingsSection.updates);
+    _openRoutes.contains(segnoUpdateSettingsRouteName);
 
-void _onSettingsSectionChanged(SettingsSection section) {
-  _openSettingsSection = section;
-  if (section == SettingsSection.updates) {
-    dismissAppToast(AppToastId.update);
-  }
-}
-
-/// Pushes the [SettingsPage] onto the root navigator, guarding
-/// against stacking duplicates from rapid triggers (menu + key + right-click).
-///
-/// [section] selects which left-rail tab is shown first (defaults to View).
-Future<void> openSegnoSettings({
-  SettingsSection section = SettingsSection.view,
-}) async {
-  if (_openRoutes.contains(segnoSettingsRouteName)) return;
-  _openSettingsSection = section;
-  if (section == SettingsSection.updates) {
-    dismissAppToast(AppToastId.update);
-  }
-  try {
-    await _pushOnce(
-      segnoSettingsRouteName,
-      () =>
-          (_) => SettingsPage(
-            initialSection: section,
-            onSectionChanged: _onSettingsSectionChanged,
-          ),
-    );
-  } finally {
-    _openSettingsSection = null;
-  }
-}
+/// Pushes the Settings page, the ten destinations, onto the root navigator,
+/// guarding against stacking duplicates from rapid triggers (the header
+/// icon, a key and a menu item in one frame).
+Future<void> openSegnoSettings() => _pushOnce(
+  segnoSettingsRouteName,
+  () =>
+      (_) => const SettingsHomePage(),
+);

@@ -389,6 +389,7 @@ List<Color> _colors(SurfaceTheme s) => [
   s.chromeBar,
   s.meterTrack,
   s.pageGlow,
+  s.menuArtGround,
   s.knobFaceTop,
   s.knobFaceBottom,
 ];

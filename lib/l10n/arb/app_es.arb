@@ -2698,5 +2698,7 @@
     "settingsStorageTitle": "Almacenamiento",
     "settingsUpdatesTitle": "Actualizaciones",
     "settingsAboutTitle": "Acerca de Segno",
-    "settingsAboutSubtitle": "Nombre, versión, controlador y licencias"
+    "settingsAboutSubtitle": "Nombre, versión, controlador y licencias",
+    "settingsMidiTitle": "MIDI",
+    "settingsPower": "Apagado"
 }

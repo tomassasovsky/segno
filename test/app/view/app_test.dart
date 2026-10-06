@@ -36,7 +36,6 @@ import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno_engine/segno_engine.dart'
     as le
@@ -3357,7 +3356,7 @@ void main() {
     );
 
     testWidgets(
-      'Update on the toast opens Settings on the Updates tab',
+      'Update on the toast opens the Updates page',
       (
         tester,
       ) async {
@@ -3367,16 +3366,11 @@ void main() {
         );
         await tester.tap(find.byKey(const Key('app_update_banner_update')));
         await tester.pumpAndSettle();
-        expect(find.byType(SettingsPage), findsOneWidget);
-        expect(find.byType(UpdatesSettingsSection), findsOneWidget);
-        expect(
-          find.byKey(const Key('settings_tab_updates')),
-          findsOneWidget,
-        );
+        expect(find.byType(UpdatesSettingsPage), findsOneWidget);
         expect(find.byKey(const Key('app_update_banner')), findsNothing);
-        // Pop so the navigator re-entrancy guard (`_settingsOpen`) clears for
-        // later tests in this file that also open Settings.
-        await tester.tap(find.byKey(const Key('settings_close_button')));
+        // Pop so the navigator's open-route guard clears for later tests in
+        // this file that also open Settings.
+        await tester.tap(find.byKey(const Key('loop_settings_back')));
         await tester.pumpAndSettle();
       },
       // Toast, not a widget. These notifications moved to toastification,
@@ -3608,8 +3602,8 @@ void main() {
       expect(windowService.isOpen, isFalse);
     });
 
-    testWidgets('right-click opens settings; disabling the waveform window '
-        'closes it', (tester) async {
+    testWidgets('right-click opens Settings; disabling the waveform window '
+        'on Displays closes it', (tester) async {
       final windowService = _RecordingWindowService();
       await pumpApp(tester, windowService);
       expect(windowService.isOpen, isTrue);
@@ -3619,37 +3613,36 @@ void main() {
         buttons: kSecondaryButton,
       );
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(find.byType(SettingsHomePage), findsOneWidget);
 
-      // Disable the secondary waveform window; it closes (Tracks is the
-      // only mode now, so the window follows this enable toggle alone).
-      await tester.tap(
-        find.byKey(const Key('settings_waveformWindow_switch')),
-      );
+      // Disable the secondary waveform window from Displays; it closes
+      // (Tracks is the only mode now, so the window follows this toggle).
+      await tester.tap(find.byKey(const Key('settings_tile_displays')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('system_waveform_switch')));
       await tester.pumpAndSettle();
 
       expect(windowService.isOpen, isFalse);
 
-      // Close the settings page so the global open-guard resets for the next
-      // test (the toggle no longer navigates away on its own).
-      await tester.tap(find.byKey(const Key('settings_close_button')));
+      // Back to the stage, so the open-route guard resets for the next test.
+      await tester.tap(find.byKey(const Key('loop_settings_stage')));
       await tester.pumpAndSettle();
 
       // The layout never swaps — Tracks is the only mode.
       expect(find.byType(TracksView), findsOneWidget);
     });
 
-    testWidgets('the S key opens the settings page', (tester) async {
+    testWidgets('the S key opens Settings', (tester) async {
       await pumpApp(tester, NoopWaveformWindowService());
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(find.byType(SettingsHomePage), findsOneWidget);
 
-      // Close it so the global open-guard resets for the next test.
-      await tester.tap(find.byKey(const Key('settings_close_button')));
+      // Close it so the open-route guard resets for the next test.
+      await tester.tap(find.byKey(const Key('loop_settings_back')));
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsNothing);
+      expect(find.byType(SettingsHomePage), findsNothing);
     });
 
     // The successor to the device-lost BANNER tests the toast rewrite

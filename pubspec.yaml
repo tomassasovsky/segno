@@ -103,6 +103,9 @@ flutter:
     - assets/hardware/external_single.webp
     - assets/hardware/external_dual.webp
     - assets/hardware/external_expression.webp
+    # The ten Settings tiles' art: the owner's Segno menu set from the design
+    # program (docs/design/settings-art at 56410d148), byte for byte.
+    - assets/settings/
   fonts:
     - family: Inter
       fonts:

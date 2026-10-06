@@ -61,6 +61,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.chromeBar,
     required this.meterTrack,
     required this.pageGlow,
+    required this.menuArtGround,
     required this.knobFaceTop,
     required this.knobFaceBottom,
     required this.disabledOpacity,
@@ -268,6 +269,12 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   final Color chromeBar;
   final Color meterTrack;
   final Color pageGlow;
+
+  /// The ground the Segno menu artwork is painted on. The Settings tiles fill
+  /// with it so each picture sits on its tile without a visible square: the
+  /// art is opaque on this exact colour, in every flavour.
+  final Color menuArtGround;
+
   final Color knobFaceTop;
   final Color knobFaceBottom;
 
@@ -346,6 +353,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? chromeBar,
     Color? meterTrack,
     Color? pageGlow,
+    Color? menuArtGround,
     Color? knobFaceTop,
     Color? knobFaceBottom,
     double? disabledOpacity,
@@ -395,6 +403,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     chromeBar: chromeBar ?? this.chromeBar,
     meterTrack: meterTrack ?? this.meterTrack,
     pageGlow: pageGlow ?? this.pageGlow,
+    menuArtGround: menuArtGround ?? this.menuArtGround,
     knobFaceTop: knobFaceTop ?? this.knobFaceTop,
     knobFaceBottom: knobFaceBottom ?? this.knobFaceBottom,
     disabledOpacity: disabledOpacity ?? this.disabledOpacity,
@@ -452,6 +461,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       chromeBar: c(chromeBar, other.chromeBar),
       meterTrack: c(meterTrack, other.meterTrack),
       pageGlow: c(pageGlow, other.pageGlow),
+      menuArtGround: c(menuArtGround, other.menuArtGround),
       knobFaceTop: c(knobFaceTop, other.knobFaceTop),
       knobFaceBottom: c(knobFaceBottom, other.knobFaceBottom),
       disabledOpacity:
@@ -539,6 +549,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     chromeBar: Color(0xFF0B0B0C),
     meterTrack: Color(0xFF0E0E0F),
     pageGlow: Color(0xFF121214),
+    menuArtGround: Color(0xFF202735),
     knobFaceTop: Color(0xFF232325),
     knobFaceBottom: Color(0xFF121214),
     disabledOpacity: 0.4,
@@ -613,6 +624,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     chromeBar: Color(0xFF060607),
     meterTrack: Color(0xFF040405),
     pageGlow: Color(0xFF0B0B0C),
+    menuArtGround: Color(0xFF202735),
     knobFaceTop: Color(0xFF2E2E30),
     knobFaceBottom: Color(0xFF171719),
     // Dim less than [dark]: a disabled control must still clear the contrast
