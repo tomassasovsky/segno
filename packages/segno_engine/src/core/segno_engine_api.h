@@ -1377,6 +1377,20 @@ typedef struct le_snapshot {
   uint32_t record_timing_revision;
   int32_t record_timing_result;
   int32_t record_timing_overrides[LE_MAX_TRACKS];
+  /* ---- native MIDI input (#1228 Part 1; trailing). Totals across all
+   * LE_MAX_MIDI_PORTS ports since the engine was created: events delivered
+   * from the current binding, events dropped as stale (pushed by a binding
+   * that has since ended), gaps (places where a full ring or an OS overrun
+   * lost messages), ports that went lost, and binding changes (an attach,
+   * detach, rebind or close, counted once per drain that sees the
+   * generation move). midi_in_attached_mask has bit p set while a capture is
+   * attached to p. */
+  uint32_t midi_in_events;
+  uint32_t midi_in_stale;
+  uint32_t midi_in_overflows;
+  uint32_t midi_in_lost;
+  uint32_t midi_in_attached_mask;
+  uint32_t midi_in_rebinds;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -3433,8 +3447,54 @@ LE_EXPORT int32_t le_midi_open(le_midi* m, const char* id,
 
 /* Stops capture and closes the open port. Idempotent (a no-op when nothing is
  * open). After it returns the callback registered by le_midi_open is guaranteed
- * not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle). */
+ * not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle).
+ * A capture attached to an engine port (le_engine_attach_midi_input) is
+ * detached first: the port's generation advances and it reads lost. Because
+ * le_midi_open closes the current port before opening another, re-opening also
+ * detaches; attach again after opening. */
 LE_EXPORT int32_t le_midi_close(le_midi* m);
+
+/* Whether the capture's backend thread runs at real-time priority (#1228):
+ * 1 granted, -1 refused by the OS (no RTPRIO), 0 not applicable (no port
+ * open, or a backend whose OS owns the thread, as CoreMIDI does). */
+LE_EXPORT int32_t le_midi_priority_state(le_midi* m);
+
+/* ---- the native MIDI input sink (#1228 Part 1; shared with #1197) ----
+ *
+ * An open capture can be attached to one of LE_MAX_MIDI_PORTS engine input
+ * ports. Its OS MIDI thread then pushes every note, CC, pitch bend, channel
+ * pressure, Timing Clock, Start, Continue, Stop and Song Position message,
+ * stamped with a CLOCK_MONOTONIC time, into that port's ring, and the audio
+ * thread drains the ring at the start of every block. Nothing in this path
+ * passes through Dart; the Dart callback keeps receiving Note, CC and Program
+ * exactly as before.
+ *
+ * Generations: each attach and detach advances the port's generation; events
+ * pushed under an older one are dropped by the audio thread and counted
+ * (le_snapshot.midi_in_stale). A push into a full ring sets the port's
+ * overflow flag, counted once per block that finds it
+ * (le_snapshot.midi_in_overflows), so a consumer can release whatever the
+ * dropped messages would have released. A capture whose device disappears, or
+ * that is closed while attached, marks its port lost (midi_in_lost counts
+ * each such edge).
+ *
+ * Threading: attach, detach, le_midi_close/destroy and le_engine_destroy run
+ * on one control thread and are not called concurrently. Detach and close
+ * wait until no push is in flight, so when they return the capture can no
+ * longer write the port; le_engine_destroy detaches every port first. */
+#define LE_MAX_MIDI_PORTS 8
+
+/* Attaches capture `m` to engine input port `port` (0..LE_MAX_MIDI_PORTS-1).
+ * A capture already attached elsewhere moves; a capture already on `port` is
+ * detached first. Returns LE_OK, or LE_ERR_INVALID for a null handle or a port
+ * out of range. Valid whether or not the engine is configured or running. */
+LE_EXPORT int32_t le_engine_attach_midi_input(le_engine* engine, le_midi* m,
+                                              int32_t port);
+
+/* Detaches whatever capture is on `port`. Returns LE_OK (also when nothing
+ * was attached) or LE_ERR_INVALID for a null engine or a port out of range. */
+LE_EXPORT int32_t le_engine_detach_midi_input(le_engine* engine,
+                                              int32_t port);
 
 /* ---- native USB MIDI output (foot-pedal LED feedback) ---- *
  *
