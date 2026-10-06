@@ -558,6 +558,7 @@
     "overlayfs",
     "owenbush",
     "pactl",
+    "packagegroup",
     "pairable",
     "parallelizable",
     "parameterise",
