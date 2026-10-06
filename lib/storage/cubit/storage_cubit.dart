@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc/bloc.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/storage/cubit/storage_state.dart';
 import 'package:storage_repository/storage_repository.dart';
 
@@ -143,6 +144,12 @@ class StorageCubit extends Cubit<StorageState> {
       outcome = await _repository.eject(generation);
     } on EjectRefused {
       await refresh();
+      return;
+    } on GuardRefused {
+      // Something else forbids it now (a take on the drive, a shutdown);
+      // the repository filed nothing.
+      if (isClosed) return;
+      emit(state.copyWith(ejectFailed: () => generation));
       return;
     }
     if (isClosed) return;

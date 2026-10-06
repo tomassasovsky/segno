@@ -457,6 +457,20 @@ void onPerformanceRecorderState(
     _showPerformanceLowDiskBlocked(context);
     return;
   }
+  if (state is PerformanceRecorderIdle && state.driveUnavailable) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('tracks_perfArmDriveUnavailable_snackbar'),
+          content: Semantics(
+            liveRegion: true,
+            child: AppText(context.l10n.perfArmDriveUnavailable),
+          ),
+        ),
+      );
+    return;
+  }
   // Refused at its commit by an operation in flight (#1198): a toast, since
   // nothing needs doing beyond waiting for it (the popup-severity rule).
   final refusedBy = state is PerformanceRecorderIdle ? state.refusedBy : null;

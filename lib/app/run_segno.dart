@@ -95,7 +95,14 @@ Future<void> runSegno(
   final PerformanceRepository performance;
   // One guard table for the whole app (accepted behaviour 6.12): the
   // repositories and the runtime's owners all check it at their commits.
-  final registry = guards ?? GuardRegistry();
+  // The storage service reports its leases and eject to it (#1177); it is
+  // built further down, so the table reads it through a late reference.
+  late final StorageRepository storage;
+  final registry =
+      guards ??
+      GuardRegistry(
+        sources: [_LateOperations(() => storage.activeOperations)],
+      );
   if (repository == null ||
       sessionRepository == null ||
       performanceRepository == null) {
@@ -182,10 +189,11 @@ Future<void> runSegno(
   // Where a write may go (#1177): Internal and the USB volumes the image's
   // helper mounts and describes. Capacity is the same engine statvfs; the
   // volumes arrive through an inotify watch, never a subprocess (#806).
-  final storage = StorageRepository(
+  storage = StorageRepository(
     client: createUsbStorageClient(),
     exportsRoot: performance.exportsRoot,
     volumeSpace: performance.volumeSpace,
+    guards: registry,
   );
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
@@ -252,4 +260,15 @@ Future<void> runSegno(
       storage: storage,
     ),
   );
+}
+
+/// An [ActiveOperationSource] read through a function, for an owner built
+/// after the guard table that must report to it.
+class _LateOperations implements ActiveOperationSource {
+  _LateOperations(this._read);
+
+  final Iterable<ActiveOperation> Function() _read;
+
+  @override
+  Iterable<ActiveOperation> get activeOperations => _read();
 }

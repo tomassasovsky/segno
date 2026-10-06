@@ -202,7 +202,9 @@ class _TracksViewState extends State<TracksView> {
                 (current is PerformanceRecorderCompleted &&
                     previous is! PerformanceRecorderCompleted) ||
                 (current is PerformanceRecorderIdle &&
-                    (current.lowDiskBlocked || current.refusedBy != null)),
+                    (current.lowDiskBlocked ||
+                        current.driveUnavailable ||
+                        current.refusedBy != null)),
             listener: onPerformanceRecorderState,
           ),
           BlocListener<ControlCubit, ControlState>(
