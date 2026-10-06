@@ -1165,7 +1165,7 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && NATIVE_TESTS_ONLY=races EXTRA_CFLAGS='-fsanitize=thread -g' bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
-### Part 3a. Dart engine seam (built: branch `claude/instruments-1197-p3a`; about 300 production lines)
+### Part 3a. Dart engine seam (built in two parts: 3a (i) `claude/instruments-1197-p3a`, 3a (ii) `claude/instruments-1197-p3a-2`)
 
 A new role `InstrumentHost` in `packages/segno_engine/lib/src/audio_engine.dart`
 beside `MonitorControl` (`:1125`) and composed into `AudioEngine` (`:1513`):
@@ -1224,12 +1224,30 @@ As built (differences from the text above):
   field, so it cannot drift silently.
 - **`MidiClient.captureHandle`** returns the handle; the engine detaches it
   on close and dispose (the sink's own rule).
-- **Size.** About 1,200 production lines (comments and blank lines
-  excluded), well above the 300 estimate and the 700 ceiling. The excess is
-  the shared voice model (about 330 lines) and the reference catalogue
-  (about 200 lines once formatted), which the estimate did not count, plus
-  the value types' equality. Splitting it would leave the mock or the
-  fakes not compiling against the new roles, so it stays one part.
+- **Split after the review (L1).** About 1,200 production lines in one
+  commit was well over the ceiling, so it is two parts at the seam the
+  review proposed:
+  - 3a (i), about 690 lines: the two roles (declared, not yet on
+    `AudioEngine`), the value types, the snapshot groups, the result codes,
+    `NativeAudioEngine` implementing both roles, `captureHandle` and the
+    native-library tests. Nothing else changes, because no fake implements
+    the roles yet.
+  - 3a (ii), about 610 lines: the roles composed into `AudioEngine`, the
+    simulated model, the mock and the four fakes, and the parity test.
+- **One origin, one sounding note; chords (review M1).** The engine replaces
+  a held voice of the same slot and origin on a new note-on, so the role
+  documents that and gains `instrumentChordOn` over the new native
+  `le_engine_instrument_chord_on` (up to 8 notes, all or nothing; built in
+  Part 2c). The simulated model follows the engine (a sustained voice rings
+  on, a kit plays only its GM notes), and a parity test runs one script
+  through the model and the real engine and compares the voice counts per
+  slot after every step; it fails against each of the old rules.
+- **The catalogue copy (review M2).** `referenceSynthCatalogue` is not
+  exported; the mock reaches it inside the package, and the parity test
+  pins it to the engine's table. Recorded as the one exception in the stop
+  list (§4, sequencing).
+- **`kMaxVoiceLimit`** is the new public `LE_INST_MAX_VOICES`, asserted
+  equal to the synth pool in C (review L2).
 
 ### Part 3b. Instrument domain and repository (split in two when built: 3b-1 built on `claude/instruments-1197-p3b`, 3b-2 next)
 
