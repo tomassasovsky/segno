@@ -144,10 +144,18 @@ class _TracksViewState extends State<TracksView> {
             // The Fade surface and an assigned Fade in any mode.
             listenWhen: (before, after) =>
                 before.footFadeFailure != after.footFadeFailure,
-            listener: (context, _) => showAppToast(
+            listener: (context, state) => showAppToast(
               id: AppToastId.footFadeFailure,
-              type: ToastificationType.error,
-              title: Text(context.l10n.footFadeFailure),
+              type: state.footFadeRefusedEmpty > 0
+                  ? ToastificationType.warning
+                  : ToastificationType.error,
+              title: Text(
+                state.footFadeRefusedEmpty > 0
+                    ? context.l10n.footFadeRefusedEmpty(
+                        state.footFadeRefusedEmpty,
+                      )
+                    : context.l10n.footFadeFailure,
+              ),
               autoCloseDuration: const Duration(seconds: 5),
             ),
           ),
@@ -155,10 +163,18 @@ class _TracksViewState extends State<TracksView> {
             // The Reverse surface and an assigned Reverse in any mode.
             listenWhen: (before, after) =>
                 before.footReverseFailure != after.footReverseFailure,
-            listener: (context, _) => showAppToast(
+            listener: (context, state) => showAppToast(
               id: AppToastId.footReverseFailure,
-              type: ToastificationType.error,
-              title: Text(context.l10n.footReverseFailure),
+              type: state.footReverseRefusedEmpty > 0
+                  ? ToastificationType.warning
+                  : ToastificationType.error,
+              title: Text(
+                state.footReverseRefusedEmpty > 0
+                    ? context.l10n.footReverseRefusedEmpty(
+                        state.footReverseRefusedEmpty,
+                      )
+                    : context.l10n.footReverseFailure,
+              ),
               autoCloseDuration: const Duration(seconds: 5),
             ),
           ),

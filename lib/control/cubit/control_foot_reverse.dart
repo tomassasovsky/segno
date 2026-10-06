@@ -49,6 +49,11 @@ extension _FootReverseControl on ControlCubit {
         _looper.sessionRevision != session) {
       return;
     }
-    emit(state.copyWith(footReverseFailure: state.footReverseFailure + 1));
+    emit(
+      state.copyWith(
+        footReverseFailure: state.footReverseFailure + 1,
+        footReverseRefusedEmpty: 0,
+      ),
+    );
   }
 }

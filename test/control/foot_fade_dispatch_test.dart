@@ -433,14 +433,18 @@ void main() {
         await _pump();
       }
 
-      // Track 3 is empty: nothing fades, and the stomp says so.
+      // Track 3 is empty: nothing fades, and the stomp names the empty
+      // track rather than offering a retry.
       await stomp(PedalButton.clear);
       expect(rig.engine.toggles, isEmpty);
       expect(rig.control.state.footFadeFailure, 1);
-      // An engine refusal says so too; an accepted fade does not.
+      expect(rig.control.state.footFadeRefusedEmpty, 1);
+      // An engine refusal on a recorded track says so too, with the retry;
+      // an accepted fade does not.
       rig.engine.refuse = true;
       await stomp(PedalButton.undo);
       expect(rig.control.state.footFadeFailure, 2);
+      expect(rig.control.state.footFadeRefusedEmpty, 0);
       rig.engine.refuse = false;
       await stomp(PedalButton.undo);
       expect(rig.engine.toggles.map((toggle) => toggle.$1), [4]);

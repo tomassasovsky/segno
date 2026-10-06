@@ -22,7 +22,9 @@ class ControlState extends Equatable {
     this.footMixerFailure = 0,
     this.footFade = const FootFadeSelection(),
     this.footFadeFailure = 0,
+    this.footFadeRefusedEmpty = 0,
     this.footReverseFailure = 0,
+    this.footReverseRefusedEmpty = 0,
     this.footPeelFailure = 0,
     this.footPeelRefusal = FootPeelRefusal.failed,
     this.cursor = 0,
@@ -123,9 +125,17 @@ class ControlState extends Equatable {
   /// track, notifies the current flow once.
   final int footFadeFailure;
 
+  /// How many empty tracks the latest refused Fade was aimed at when every
+  /// one of its targets was empty (an assigned Fade); 0 for any other
+  /// refusal. The notice names the empty track instead of a retry.
+  final int footFadeRefusedEmpty;
+
   /// Each refused Reverse gesture, and each assigned Reverse that reached
   /// no track, notifies the current flow once.
   final int footReverseFailure;
+
+  /// The same as [footFadeRefusedEmpty], for Reverse.
+  final int footReverseRefusedEmpty;
 
   /// Each refused Peel press notifies the current flow once; the notice
   /// reads [footPeelRefusal].
@@ -247,7 +257,9 @@ class ControlState extends Equatable {
     int? footMixerFailure,
     FootFadeSelection? footFade,
     int? footFadeFailure,
+    int? footFadeRefusedEmpty,
     int? footReverseFailure,
+    int? footReverseRefusedEmpty,
     int? footPeelFailure,
     FootPeelRefusal? footPeelRefusal,
     int? cursor,
@@ -282,7 +294,10 @@ class ControlState extends Equatable {
     footMixerFailure: footMixerFailure ?? this.footMixerFailure,
     footFade: footFade ?? this.footFade,
     footFadeFailure: footFadeFailure ?? this.footFadeFailure,
+    footFadeRefusedEmpty: footFadeRefusedEmpty ?? this.footFadeRefusedEmpty,
     footReverseFailure: footReverseFailure ?? this.footReverseFailure,
+    footReverseRefusedEmpty:
+        footReverseRefusedEmpty ?? this.footReverseRefusedEmpty,
     footPeelFailure: footPeelFailure ?? this.footPeelFailure,
     footPeelRefusal: footPeelRefusal ?? this.footPeelRefusal,
     cursor: cursor ?? this.cursor,
@@ -319,7 +334,9 @@ class ControlState extends Equatable {
     footMixerFailure,
     footFade,
     footFadeFailure,
+    footFadeRefusedEmpty,
     footReverseFailure,
+    footReverseRefusedEmpty,
     footPeelFailure,
     footPeelRefusal,
     cursor,
