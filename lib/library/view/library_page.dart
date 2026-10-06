@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
@@ -160,7 +161,10 @@ class _LibraryViewState extends State<LibraryView> {
                 top: 916,
                 width: 1792,
                 height: 33,
-                child: LibraryFailureLine(failure: failure),
+                child: LibraryFailureLine(
+                  failure: failure,
+                  refusedBy: session.refusedBy,
+                ),
               ),
           ],
         ),
@@ -183,6 +187,10 @@ enum LibraryFailure {
 
   /// Any other catalog action failed.
   actionFailed,
+
+  /// Refused at its commit because another operation is in flight (the
+  /// guard table, #1198); the line names what to wait for.
+  busy,
 }
 
 /// What the Library says about the last session action's failure, or null
@@ -200,6 +208,7 @@ LibraryFailure? libraryFailureOf(SessionState state) {
     SessionError.saveFailed => LibraryFailure.saveFailed,
     SessionError.currentSessionProtected => LibraryFailure.deleteCurrentRefused,
     SessionError.folderNotEmpty => LibraryFailure.folderNotEmpty,
+    SessionError.busy => LibraryFailure.busy,
     SessionError.nameCollision ||
     SessionError.corruptLayers ||
     SessionError.unknown ||
@@ -212,10 +221,17 @@ LibraryFailure? libraryFailureOf(SessionState state) {
 /// any other failed catalog action.
 class LibraryFailureLine extends StatelessWidget {
   /// Creates the line for [failure].
-  const LibraryFailureLine({required this.failure, super.key});
+  const LibraryFailureLine({
+    required this.failure,
+    this.refusedBy,
+    super.key,
+  });
 
   /// What failed.
   final LibraryFailure failure;
+
+  /// For [LibraryFailure.busy]: the operation that refused the action.
+  final GuardKind? refusedBy;
 
   @override
   Widget build(BuildContext context) {
@@ -225,6 +241,7 @@ class LibraryFailureLine extends StatelessWidget {
       LibraryFailure.deleteCurrentRefused => l10n.libraryDeleteCurrentRefused,
       LibraryFailure.folderNotEmpty => l10n.libraryFolderNotEmpty,
       LibraryFailure.actionFailed => l10n.libraryActionFailed,
+      LibraryFailure.busy => l10n.operationBusy(refusedBy?.name ?? 'other'),
     };
     return Semantics(
       liveRegion: true,

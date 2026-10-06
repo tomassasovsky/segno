@@ -75,6 +75,10 @@ enum SessionError {
   /// A loaded rig is stopped until its full boot-settings image is recovered.
   bootPersistence,
 
+  /// Refused at its commit because another operation it must not overlap is
+  /// in flight; [SessionState.refusedBy] names it (the guard table, #1198).
+  busy,
+
   /// Writing the live rig failed; the catalog and the open session are as
   /// they were (the 19/05 banner).
   saveFailed,
@@ -109,6 +113,7 @@ class SessionState extends Equatable {
     this.folders = const [],
     this.bootRecoveryRequired = false,
     this.conversion,
+    this.refusedBy,
   });
 
   /// The current action status.
@@ -151,6 +156,10 @@ class SessionState extends Equatable {
   /// an older version, or null. A per-transition result, like [outcome].
   final SessionConversionNotice? conversion;
 
+  /// For [SessionError.busy]: the kind of operation that refused the action.
+  /// Per-transition, like [error].
+  final GuardKind? refusedBy;
+
   /// Returns a copy for the next emit.
   ///
   /// The **result** fields ([outcome] / [error] / [errorMessage] /
@@ -171,6 +180,7 @@ class SessionState extends Equatable {
     List<String>? folders,
     bool? bootRecoveryRequired,
     SessionConversionNotice? conversion,
+    GuardKind? refusedBy,
   }) => SessionState(
     status: status ?? this.status,
     outcome: outcome,
@@ -183,6 +193,7 @@ class SessionState extends Equatable {
     folders: folders ?? this.folders,
     bootRecoveryRequired: bootRecoveryRequired ?? this.bootRecoveryRequired,
     conversion: conversion,
+    refusedBy: refusedBy,
   );
 
   @override
@@ -198,6 +209,7 @@ class SessionState extends Equatable {
     folders,
     bootRecoveryRequired,
     conversion,
+    refusedBy,
   ];
 }
 

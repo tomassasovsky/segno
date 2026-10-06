@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -20,6 +21,7 @@ void main() {
 
   SessionRepository repo({bool withRoot = true, AudioEngine? engine}) =>
       SessionRepository(
+        guards: GuardRegistry(),
         engine: engine ?? FakeSessionEngine(),
         sessionsRoot: withRoot ? () async => root.path : null,
         now: () => clock,
@@ -221,6 +223,7 @@ void main() {
 
     test('is empty when the root does not exist yet', () async {
       final missing = SessionRepository(
+        guards: GuardRegistry(),
         engine: FakeSessionEngine(),
         sessionsRoot: () async => '${root.path}/never-created',
       );
@@ -246,6 +249,7 @@ void main() {
 
     test('is empty when the root does not exist yet', () async {
       final missing = SessionRepository(
+        guards: GuardRegistry(),
         engine: FakeSessionEngine(),
         sessionsRoot: () async => '${root.path}/never-created',
       );
