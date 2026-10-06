@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:controller_repository/controller_repository.dart';
@@ -164,6 +165,7 @@ class _Rig {
       midiDevices: midi,
       midiClock: () => clock.elapsed,
       controller: controller,
+      takeLocked: () => powerOffUp,
       fadeSettings: ownedFade,
       ownedValues: OwnedValuePort(
         looper: looper,
@@ -194,6 +196,9 @@ class _Rig {
   late final PerformanceRepository performance;
   late final ControlCubit cubit;
   late final FxChainPersistence fx;
+
+  /// The power-off route is up: takes are locked.
+  bool powerOffUp = false;
 
   void bindMidi({
     int id = 21,
@@ -2147,5 +2152,81 @@ void main() {
         ..settle();
       expect(drive(), closeTo(51 / 255, .0001));
     },
+  );
+
+  check(
+    'with the power-off dialog open, an expression sweep and a MIDI value '
+    'land while Record is refused',
+    ExternalJackSetup(
+      type: ExternalJackType.expression,
+      expression: ExternalExpressionSetup(
+        calibration: ExpressionCalibration(heel: 0, toe: 255),
+        mappings: [ExpressionMapping(target: _param)],
+      ),
+    ),
+    (r) {
+      double drive() =>
+          (looper.trackEffects(0).single as BuiltInEffect).params[0];
+      r
+        ..bindMidi(
+          id: 22,
+          target: const MasterGainTarget().canonicalString(),
+          low: .2,
+          high: .6,
+        )
+        ..sample(0, kind: PedalCtrlKind.expression)
+        ..settle()
+        ..powerOffUp = true
+        ..sample(102, kind: PedalCtrlKind.expression)
+        ..settle();
+      expect(drive(), closeTo(102 / 255, .0001));
+      r.midiValue(127, id: 22);
+      expect(looper.masterGain, closeTo(.6, 1e-9));
+      // Perf-arm's refusal is pinned in control_cubit_test.
+      r.cubit.recPlay();
+      r.settle();
+      expect(
+        looper.state.tracks.any((track) => track.isCapturing || track.pending),
+        isFalse,
+      );
+    },
+  );
+
+  check(
+    'a stored MIDI level mapping with a literal 1.0 top lands unity gain',
+    ExternalJackSetup.empty,
+    (r) {
+      r.midiValue(127, id: 30);
+      expect(
+        looper.mixSettingsSnapshot.trackLevels[0] ?? 1,
+        closeTo(1.0, 1e-6),
+      );
+      r.midiValue(0, id: 30);
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(0, 1e-6));
+      r.midiValue(127, id: 30);
+      expect(looper.mixSettingsSnapshot.trackLevels[0], closeTo(1.0, 1e-6));
+    },
+    initialMidiRaw: jsonEncode({
+      'version': 1,
+      'enabled': true,
+      'mappings': [
+        MidiMapping(
+          id: 'stored',
+          source: MidiSource(
+            device: 'test-midi',
+            kind: ControllerSourceKind.midiCc,
+            number: 30,
+          ),
+          behavior: MidiBehavior.continuous,
+          controls: [
+            MidiParameterControl(
+              key: const TrackVolumeTarget(0).canonicalString(),
+              low: 0,
+              high: 1,
+            ),
+          ],
+        ).toJson(),
+      ],
+    }),
   );
 }

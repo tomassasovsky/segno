@@ -829,6 +829,20 @@ void main() {
         unawaited(subscription.cancel());
       });
 
+      check('an owed value lets the flush through, since storage holds what '
+          'the next start replays', (r) {
+        final owner = c.owner(r);
+        c.withhold(r.engine);
+        unawaited(c.put(owner, c.next));
+        r.expire();
+        expect(owner.ready, isFalse);
+        final flushed = r.run(owner.flush());
+        expect(flushed?.status, SettingStatus.applied);
+        expect(flushed?.deferred, isTrue);
+        expect(c.read(r.store), c.encode(c.next));
+        expect(c.restart(r.looper), c.next);
+      });
+
       check('a failed rollback owes the checkpoint until Retry', (r) {
         final owner = c.owner(r);
         r.store.failingWrites = 2;
@@ -837,6 +851,8 @@ void main() {
           SettingStatus.recoveryRequired,
         );
         expect(owner.ready, isFalse);
+        // Storage does not hold the value a start replays: the flush fails.
+        expect(r.run(owner.flush())?.status, SettingStatus.recoveryRequired);
         expect(
           r.run(c.put(owner, c.next))?.status,
           SettingStatus.recoveryRequired,

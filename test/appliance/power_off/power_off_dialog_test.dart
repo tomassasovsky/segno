@@ -121,6 +121,38 @@ void main() {
       expect(find.byKey(const Key('power_off_discard')), findsOneWidget);
     });
 
+    testWidgets('Power off anyway appears only after a failed Retry, says '
+        'the last change is lost, and fires the power-off', (tester) async {
+      var halts = 0;
+      final cubit = PowerOffCubit(
+        flush: ({required retry}) => throw StateError('unconfirmed'),
+        pedalGoodbye: () {},
+        powerOff: () async => halts++,
+        markHold: Duration.zero,
+      );
+      addTearDown(cubit.close);
+      const snapshot = PowerOffSnapshot();
+      cubit.press(snapshot);
+      await tester.pumpApp(
+        BlocProvider.value(
+          value: cubit,
+          child: Scaffold(body: PowerOffDialog(snapshot: () => snapshot)),
+        ),
+      );
+      await tester.pump();
+      expect(cubit.state.phase, PowerOffPhase.flushFailed);
+      expect(find.byKey(const Key('power_off_anyway')), findsNothing);
+      await tester.tap(find.byKey(const Key('power_off_retry')));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('power_off_anyway')), findsOneWidget);
+      expect(find.textContaining('the last unsaved change is lost'), findsOne);
+      await tester.tap(find.byKey(const Key('power_off_anyway')));
+      await tester.pump();
+      await tester.pump();
+      expect(halts, 1);
+    });
+
     testWidgets('scrim pop leaves the cubit on confirm until host maps it', (
       tester,
     ) async {

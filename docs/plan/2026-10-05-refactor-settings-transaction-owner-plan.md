@@ -871,6 +871,81 @@ NON-GOALS:
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/dart analyze --fatal-infos lib test packages && bloc lint lib test packages && /Users/Tomas/development/flutter/bin/flutter test
 ```
 
+#### Part 4 as built
+
+Status: built (branch `claude/settings-owner-1159-p4`, on Part 3).
+
+The owner's directions (2026-10-06, via the coordinator and the #1159 note)
+replace two of the block's lines above. Hear click is Off for fresh installs
+only, and existing installs with no key keep their current default. A stored
+literal 1.0 top on a volume mapping decodes as unity, which resolves open
+decision 1. A fourth item was added: one flush rule for every owner.
+
+- Power-off blocks only takes. `ControlCubit` takes a second predicate,
+  `inputLocked`, which `AppRuntime` sets to closing or a Session transition.
+  It gates the continuous writes: expression samples, the queued External
+  write, MIDI parameter writes, and the retire-all on looper state.
+  `takeLocked` (power UI up, closing, Session transition) still gates Rec,
+  overdub, perf-arm, footswitches, MIDI and External actions, and External
+  switch contacts. The flush still suspends all input
+  (`_haltInputSuspended`).
+- Power off anyway. `PowerOffState.retryFailed` is set when a Retry's flush
+  also fails. `PowerOffCubit.powerOffAnyway` acts only in that state and
+  through the take gate. It runs goodbye and the power-off without the
+  flush. The flush-failed body then reads "Segno is still on. Retry again,
+  or power off anyway: the last unsaved change is lost." and shows the third
+  button (en and es copy).
+- One flush rule. `SettingsOwner.flush` fails only when storage does not
+  hold the value a start replays: not initialized, unreadable, or a failed
+  rollback. An owed receipt reports applied with `deferred`.
+  `MixSettingsCoordinator.flush` awaits a draining edit and fails only on a
+  failed rollback. The shutdown Retry runs the Mixer's and the owners' Retry
+  and lets the flushes decide.
+- Hear click. `tryAutoStartEngine` first stores Hear click Off when there is
+  neither a saved audio configuration nor a Hear click key, through the
+  verified writer, before the families stage. Existing installs read the
+  unchanged absent default (Rec first) and nothing is written.
+- Volume law. `ControlValueTarget.mappingTop` is unity travel for Track and
+  Lane volume and full travel elsewhere. New MIDI parameter controls and
+  new expression mappings default their top to it.
+  `ControlValueTarget.decodeEndpoint` reads a stored literal 1.0 on those
+  targets as unity, for MIDI mappings at load and for expression mappings at
+  decode. The law is unchanged; every other endpoint keeps its value.
+- Tests flipped by the decisions (assertions changed, not scenarios):
+  - the Hear click startup matrix (config=false, no key);
+  - "power confirmation blocks new values" in `click_dispatch_test`;
+  - two flush assertions in the Record length and Record timing suites;
+  - the +6.0 dB default top in the Mixer catalogue, MIDI page and
+    expression page tests.
+
+  `control_cubit_test`'s perf-arm lock test now awaits the queue: it read
+  `armedDirectory` before the arm could run, so it passed without the
+  guard.
+
+Decisions taken under the owner rules (2026-10-06):
+
+42. Power-off locks takes, not settings or continuous values; footswitches,
+    MIDI actions and External switch contacts stay locked because they can
+    start a take. Rules 2 and 4.
+43. Power off anyway is offered only after the first Retry fails, and still
+    refuses during a take. Rule 3: the copy says the last unsaved change is
+    lost.
+44. An owed value never blocks power-off on its own, for the owners and the
+    Mixer alike; Session Save already follows the same rule (decision 30).
+    Rules 2 and 4.
+45. A fresh install is one with no saved audio configuration and no Hear
+    click key; it stores Off. Rule 1 keeps existing installs on Rec first.
+46. The literal-1.0 rule applies to Track and Lane volume (the two log-law
+    level faders), at every endpoint, for MIDI and expression mappings. A
+    mapping saved after load stores the decoded unity value. Authoring +6 dB
+    as the top is no longer possible through a literal 1.0. External switch
+    parameters keep their values, since they start from the current value,
+    not a default top. Rule 1, owner call.
+
+Deviations: the plan's `flushFailedRetried` phase is a `retryFailed` flag on
+the `flushFailed` phase, so the host's phase switches stay as they are.
+Production change: +172 / -34 against the +130 / -30 estimate.
+
 ## 4. Test migration
 
 Part 1 has done this for Click volume and Hear click (see Part 1 as built);
@@ -932,11 +1007,13 @@ once Multi entry can no longer strand a release.
    (`midi_controls_page.dart:959`), which the fader law maps to +6 dB. "Unity for
    existing mappings" needs a stored-data migration (AGENTS.md forbids) or a
    decode rule that a literal 1.0 top means unity, which makes +6 dB unreachable
-   for authors who meant it. Part 4 ships the new-mapping default only.
+   for authors who meant it. Resolved 2026-10-06: the decode rule (decision
+   46).
 2. Resolved 2026-10-05: an uncertain receipt keeps the requested durable value
    in storage and Retry re-requests it (section 2.1; Part 1 as built).
 3. "Power off anyway" copy: the unsaved setting lives in the engine only and is
-   lost on restart; the owner's words are needed.
+   lost on restart. Resolved 2026-10-06: the copy states that the last
+   unsaved change is lost (Part 4 as built).
 4. Building the owner registry in `run_segno.dart` before `App` (section 2.3)
    removes the double startup replay but moves construction out of `AppRuntime`.
 

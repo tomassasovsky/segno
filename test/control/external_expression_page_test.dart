@@ -1137,7 +1137,8 @@ void main() {
           '${const TrackVolumeTarget(0).canonicalString()}';
       expect(textOf(key), '—', reason: 'nothing has reported a position');
       await sweep(tester, 127);
-      expect(textOf(key), '+6.0 dB');
+      // A level mapping's default toe is unity gain, not the fader's +6 dB.
+      expect(textOf(key), '0.0 dB');
     });
 
     expressionTestWidgets(

@@ -144,4 +144,42 @@ void main() {
       expect(ExternalExpressionSetup(mappings: [missing]).mappings, [missing]);
     },
   );
+
+  test('a new level mapping tops out at unity gain at full travel', () {
+    final mapping = ExpressionMapping(target: volume);
+    // Literal oracle: 0 dB is linear gain 1.0.
+    expect(volume.toDomain(mapping.valueAt(1)), closeTo(1.0, 1e-9));
+    expect(ExpressionMapping(target: gain).toe, 1);
+  });
+
+  test('a stored literal 1.0 on a level mapping reads as unity; other '
+      'values and targets keep theirs', () {
+    final stored = ExpressionMapping.fromJson({
+      'target': volume.canonicalString(),
+      'heel': 0,
+      'toe': 1.0,
+    });
+    expect(volume.toDomain(stored.valueAt(1)), closeTo(1.0, 1e-9));
+    expect(
+      ExpressionMapping.fromJson({
+        'target': volume.canonicalString(),
+        'toe': .95,
+      }).toe,
+      .95,
+    );
+    expect(
+      ExpressionMapping.fromJson({
+        'target': gain.canonicalString(),
+        'toe': 1.0,
+      }).toe,
+      1,
+    );
+    expect(
+      ExpressionMapping.fromJson({
+        'target': const MonitorVolumeTarget(0).canonicalString(),
+        'toe': 1.0,
+      }).toe,
+      1,
+    );
+  });
 }

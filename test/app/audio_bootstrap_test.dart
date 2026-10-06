@@ -452,15 +452,22 @@ void main() {
               settings: settings,
               mixSettings: testMixSettings(repository, settings: settings),
             );
+            // A fresh install (no audio config, no key) stores Off; an
+            // existing install with no key keeps the absent default.
+            final fresh = !hasAudioConfig && stored == null;
+            final expected = fresh ? ClickMode.off.code : stored ?? 2;
             expect(result.started, isTrue);
             expect(repository.clickModeSettled, isTrue);
             expect(repository.clickModeRecoveryRequired, isFalse);
-            expect(engine.snapshot().clickMode.code, stored ?? 2);
-            expect(repository.sessionTransport.clickMode.code, stored ?? 2);
-            expect(store.values['tempo.click_mode'], stored);
+            expect(engine.snapshot().clickMode.code, expected);
+            expect(repository.sessionTransport.clickMode.code, expected);
+            expect(
+              store.values['tempo.click_mode'],
+              fresh ? ClickMode.off.code : stored,
+            );
             expect(
               store.values.containsKey('tempo.click_mode'),
-              stored != null,
+              fresh || stored != null,
             );
           });
         }
