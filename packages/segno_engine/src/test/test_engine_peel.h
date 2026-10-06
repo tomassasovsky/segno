@@ -832,7 +832,73 @@ static void test_peel_stem_parity(void) {
   }
 }
 
+/* PR #1180 review, finding 1: the audio thread pushes a layer's final retire
+ * event BEFORE clearing a_layer_in_flight, so a retire can land between
+ * le_engine_peel's first drain and its flag load. The hook runs the audio side
+ * in exactly that window: the punch-out drain of a partial third pass retires
+ * the layer and clears the flag while the event is still in the ring. Without
+ * the second drain, Peel would consume the SECOND pass (live 1.5) and the late
+ * retire would file a LAYER on top of the PEEL, out of chronological order. */
+static int g_peel_race_fired;
+static void peel_race_hook(le_engine* e, int stage) {
+  if (stage != 1) return;
+  le_test_peel_hook = NULL;
+  g_peel_race_fired = 1;
+  float out[64];
+  le_track* t = &e->tracks[0];
+  for (int i = 0; i < 64 && load_i32(&t->a_layer_in_flight); ++i) {
+    process_const(e, 0.0f, LOOP_N, out);
+  }
+  CHECK(load_i32(&t->a_layer_in_flight) == 0);
+  CHECK(t->undo_count == 2); /* the retire is still in the event ring */
+}
+
+static void test_peel_late_retire_race(void) {
+  printf("test_peel_late_retire_race\n");
+  le_engine* e = make_configured_engine();
+  le_track* t = &e->tracks[0];
+  float out[64];
+  record_base_loop(e, 1.0f);
+  peel_pass(e, .5f);
+  peel_pass(e, .5f);
+  check_content(e, 2.0f);
+  /* A partial third pass: punch out, apply it, leave the layer in flight. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, .5f, 2, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  CHECK(load_i32(&t->a_layer_in_flight) == 1);
+  g_peel_race_fired = 0;
+  le_test_peel_hook = peel_race_hook;
+  CHECK(le_engine_peel(e, 0) == LE_OK);
+  CHECK(le_test_peel_hook == NULL);
+  CHECK(g_peel_race_fired == 1);
+  /* The peel removed the third pass: live 2.0, [L0, L1, PEEL(partial)]. */
+  check_content(e, 2.0f);
+  const int32_t llp[] = {LE_HIST_LAYER, LE_HIST_LAYER, LE_HIST_PEEL};
+  peel_expect_stack(e, llp, 3);
+  CHECK(t->undo_stack[2].skipped == 0);
+  peel_expect_depths(e, 0, 2, 3, 0);
+  CHECK(peel_slots_unique(t));
+  /* Undo restores the partial pass exactly, with the stack in order. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  float pcm[LOOP_N];
+  peel_export(e, pcm);
+  int raised = 0;
+  for (int i = 0; i < LOOP_N; ++i) {
+    if (fabsf(pcm[i] - 2.5f) < 1e-6f) ++raised;
+    else CHECK(fabsf(pcm[i] - 2.0f) < 1e-6f);
+  }
+  CHECK(raised == 2);
+  const int32_t lll[] = {LE_HIST_LAYER, LE_HIST_LAYER, LE_HIST_LAYER};
+  peel_expect_stack(e, lll, 3);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 2.0f);
+  le_engine_destroy(e);
+}
+
 static void run_peel_tests(void) {
+  test_peel_late_retire_race();
   test_peel_worked_example();
   test_peel_drops_redo_branch();
   test_peel_refusals();

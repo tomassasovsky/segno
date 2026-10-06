@@ -9159,7 +9159,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 6
+#define LE_TEST_EVENTS_VERSION 7
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
