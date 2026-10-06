@@ -28,12 +28,12 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/logging/app_log.dart';
+import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/looper/model/record_length.dart';
-import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
@@ -184,11 +184,7 @@ class _AppState extends State<App> {
   PowerKeySource? _powerKeySource;
   final _controlNotices = ControlSettingsNotices();
   late final TempoCubit _tempoView;
-  StreamSubscription<SettingOutcome>? _clickFailureSubscription;
-  StreamSubscription<SettingOutcome>? _clickModeFailureSubscription;
-  StreamSubscription<void>? _clickRecoveredSubscription;
-  StreamSubscription<void>? _clickModeRecoveredSubscription;
-  StreamSubscription<RecordStartOutcome>? _recordStartFailureSubscription;
+  final _ownerSubscriptions = <StreamSubscription<void>>[];
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   late final PlaybackOptionsCubit _playbackView;
   late final RecordTimingCubit _timingView;
@@ -219,19 +215,15 @@ class _AppState extends State<App> {
     );
     _mixFailureSubscription = _runtime.mix.failures.listen(_showMixFailure);
     _tempoView = TempoCubit(settings: _runtime.tempo);
-    _clickFailureSubscription = _runtime.tempo.clickVolumeOwner.failures.listen(
-      _showClickFailure,
-    );
-    _clickModeFailureSubscription = _runtime.tempo.clickModeOwner.failures
-        .listen(_showClickModeFailure);
-    // A restart replay can resolve an owed value without Retry.
-    _clickRecoveredSubscription = _runtime.tempo.clickVolumeOwner.recovered
-        .listen((_) => _controlNotices.dismiss(AppToastId.clickSettings));
-    _clickModeRecoveredSubscription = _runtime.tempo.clickModeOwner.recovered
-        .listen((_) => _controlNotices.dismiss(AppToastId.clickModeSettings));
-    _recordStartFailureSubscription = _runtime.tempo.recordStartFailures.listen(
-      _showRecordStartFailure,
-    );
+    for (final owner in _runtime.owners.all) {
+      _ownerSubscriptions.addAll([
+        owner.failures.listen((outcome) => _showOwnedFailure(owner, outcome)),
+        // A restart replay can resolve an owed value without Retry.
+        owner.recovered.listen(
+          (_) => _controlNotices.dismiss(_ownedNotice(owner.key).id),
+        ),
+      ]);
+    }
     _recordingInputRequiredSubscription = widget
         .repository
         .recordingInputRequired
@@ -269,11 +261,9 @@ class _AppState extends State<App> {
     unawaited(_powerNoticeSubscription?.cancel());
     unawaited(_powerKeySource?.close());
     unawaited(_mixFailureSubscription?.cancel());
-    unawaited(_clickFailureSubscription?.cancel());
-    unawaited(_clickModeFailureSubscription?.cancel());
-    unawaited(_clickRecoveredSubscription?.cancel());
-    unawaited(_clickModeRecoveredSubscription?.cancel());
-    unawaited(_recordStartFailureSubscription?.cancel());
+    for (final subscription in _ownerSubscriptions) {
+      unawaited(subscription.cancel());
+    }
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_decayFailureSubscription?.cancel());
     unawaited(_oneShotFailureSubscription?.cancel());
@@ -301,80 +291,54 @@ class _AppState extends State<App> {
     ]);
   }
 
-  void _showClickFailure(SettingOutcome outcome) {
+  void _showOwnedFailure(
+    SettingsOwner<Object, Object?> owner,
+    SettingOutcome outcome,
+  ) {
     if (!mounted || outcome.status == SettingStatus.superseded) return;
     final recovery = outcome.status == SettingStatus.recoveryRequired;
-    AppLog.error('Click: ${outcome.status.name} ${outcome.error ?? ''}');
+    final notice = _ownedNotice(owner.key);
+    AppLog.error(
+      '${owner.key.name}: ${outcome.status.name} ${outcome.error ?? ''}',
+    );
     _controlNotices.show(
       ControlSettingsNotice(
-        id: AppToastId.clickSettings,
-        title: (context) => Text(
-          recovery
-              ? context.l10n.clickSettingsRecoveryTitle
-              : context.l10n.clickSettingsRefusedTitle,
-        ),
-        description: recovery
-            ? (context) => Text(context.l10n.clickSettingsRecoveryBody)
-            : null,
-        retry: recovery
-            ? () async => (await _runtime.tempo.clickVolumeOwner.recover()).isOk
-            : null,
-        needsRecovery: recovery
-            ? () => !_runtime.tempo.clickVolumeOwner.ready
-            : null,
+        id: notice.id,
+        title: (context) =>
+            Text(recovery ? notice.recovery(context) : notice.refused(context)),
+        description: recovery ? (context) => Text(notice.body(context)) : null,
+        retry: recovery ? () async => (await owner.recover()).isOk : null,
+        needsRecovery: recovery ? () => !owner.ready : null,
       ),
     );
   }
 
-  void _showClickModeFailure(SettingOutcome outcome) {
-    if (!mounted || outcome.status == SettingStatus.superseded) return;
-    final recovery = outcome.status == SettingStatus.recoveryRequired;
-    AppLog.error('ClickMode: ${outcome.status.name} ${outcome.error ?? ''}');
-    _controlNotices.show(
-      ControlSettingsNotice(
-        id: AppToastId.clickModeSettings,
-        title: (context) => Text(
-          recovery
-              ? context.l10n.clickModeSettingsRecoveryTitle
-              : context.l10n.clickModeSettingsRefusedTitle,
-        ),
-        description: recovery
-            ? (context) => Text(context.l10n.clickModeSettingsRecoveryBody)
-            : null,
-        retry: recovery
-            ? () async => (await _runtime.tempo.clickModeOwner.recover()).isOk
-            : null,
-        needsRecovery: recovery
-            ? () => !_runtime.tempo.clickModeOwner.ready
-            : null,
-      ),
-    );
-  }
-
-  void _showRecordStartFailure(RecordStartOutcome outcome) {
-    if (!mounted || outcome.status == RecordStartStatus.superseded) return;
-    final recovery = outcome.status == RecordStartStatus.recoveryRequired;
-    AppLog.error('RecordStart: ${outcome.status.name} ${outcome.error ?? ''}');
-    _controlNotices.show(
-      ControlSettingsNotice(
-        id: AppToastId.recordStartSettings,
-        title: (context) => Text(
-          recovery
-              ? context.l10n.recordStartSettingsRecoveryTitle
-              : context.l10n.recordStartSettingsRefusedTitle,
-        ),
-        description: recovery
-            ? (context) => Text(context.l10n.recordStartSettingsRecoveryBody)
-            : null,
-        retry: recovery
-            ? () async => (await _runtime.tempo.recoverRecordStart()).isOk
-            : null,
-        needsRecovery: recovery
-            ? () => !_runtime.tempo.state.recordStartReady
-            : null,
-      ),
-    );
-  }
+  static ({
+    String id,
+    String Function(BuildContext) recovery,
+    String Function(BuildContext) refused,
+    String Function(BuildContext) body,
+  })
+  _ownedNotice(OwnedSetting key) => switch (key) {
+    OwnedSetting.clickVolume => (
+      id: AppToastId.clickSettings,
+      recovery: (context) => context.l10n.clickSettingsRecoveryTitle,
+      refused: (context) => context.l10n.clickSettingsRefusedTitle,
+      body: (context) => context.l10n.clickSettingsRecoveryBody,
+    ),
+    OwnedSetting.hearClick => (
+      id: AppToastId.clickModeSettings,
+      recovery: (context) => context.l10n.clickModeSettingsRecoveryTitle,
+      refused: (context) => context.l10n.clickModeSettingsRefusedTitle,
+      body: (context) => context.l10n.clickModeSettingsRecoveryBody,
+    ),
+    OwnedSetting.recordStart => (
+      id: AppToastId.recordStartSettings,
+      recovery: (context) => context.l10n.recordStartSettingsRecoveryTitle,
+      refused: (context) => context.l10n.recordStartSettingsRefusedTitle,
+      body: (context) => context.l10n.recordStartSettingsRecoveryBody,
+    ),
+  };
 
   void _showRecordingInputRequired(int channel) {
     if (!mounted || _runtime.power.state.isUiUp) return;

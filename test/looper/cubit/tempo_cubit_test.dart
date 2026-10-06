@@ -49,7 +49,7 @@ void main() {
       await owner.clickModeOwner.load();
       expect(cubit.state.confirmedClickMode, ClickMode.recFirst);
       expect(cubit.state.recordStartSnapshot, isNull);
-      await owner.loadRecordStart();
+      await owner.recordStartOwner.load();
       expect(cubit.state.recordStartSnapshot?.settings.countInBars, 1);
       await cubit.setCountInBars(2);
       expect(cubit.state, same(owner.state));

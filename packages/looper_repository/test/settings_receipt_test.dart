@@ -101,6 +101,41 @@ final _hearClick = _Family<ClickMode>(
   audible: (engine) => engine.nextSnapshot.clickMode,
 );
 
+final _recordStart = _Family<({int countInBars, bool soundStart})>(
+  name: 'Count-in',
+  prior: (countInBars: 0, soundStart: false),
+  next: (countInBars: 2, soundStart: false),
+  request: (repository, value) => repository.setRecordStartSettings(
+    countInBars: value.countInBars,
+    soundStart: value.soundStart,
+    editKind: RecordStartEditKind.countIn,
+  ),
+  settle: (repository) => repository.settleRecordStartSettings(),
+  recover: (repository) => repository.recoverRecordStartSettings(),
+  owes: (repository) => repository.recordStartRecoveryRequired,
+  live: (repository) => repository.recordStartSettings,
+  restart: (repository) => repository.recordStartRestartIntent,
+  withhold: (engine) => engine
+    ..publishRecordStartCommands = false
+    ..commandsAreSettled = false,
+  deliver: (engine, value) {
+    final snapshot = engine.nextSnapshot;
+    engine
+      ..nextSnapshot = snapshot.copyWith(
+        countInBars: value.countInBars,
+        autoRecord: value.soundStart,
+        recordStartRevision: (snapshot.recordStartRevision + 1) & 0xffffffff,
+        recordStartResult: 0,
+      )
+      ..publishRecordStartCommands = true
+      ..commandsAreSettled = true;
+  },
+  audible: (engine) => (
+    countInBars: engine.nextSnapshot.countInBars,
+    soundStart: engine.nextSnapshot.autoRecord,
+  ),
+);
+
 void main() {
   int count(FakeAudioEngine engine, String call) =>
       engine.calls.where((c) => c == call).length;
@@ -285,6 +320,7 @@ void main() {
 
   contract(_clickVolume);
   contract(_hearClick);
+  contract(_recordStart);
 
   group('Hear click receipt', () {
     check(

@@ -31,6 +31,7 @@ import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/view/updates_settings_section.dart';
@@ -1502,18 +1503,21 @@ void main() {
           expect(find.text('Recording start needs recovery'), findsOneWidget);
           await tester.tap(find.text('Retry'));
           await tester.pumpAndSettle();
-          expect(tempo.state.recordStartReady, !malformed);
-          expect(store.values, before);
-          if (malformed) {
-            expect(find.text('Recording start needs recovery'), findsOneWidget);
-          } else {
-            expect(tempo.state.recordStartSnapshot?.settings.countInBars, 4);
-            expect(
-              tempo.state.recordStartSnapshot?.settings.soundStart,
-              isFalse,
-            );
-            expect(find.text('Recording start needs recovery'), findsNothing);
-          }
+          // A transient read reads cleanly on Retry; a pair that stays
+          // unreadable is repaired to (0, false).
+          expect(tempo.state.recordStartReady, isTrue);
+          expect(
+            store.values,
+            malformed
+                ? {'tempo.count_in_bars': 0, 'looper.auto_record': false}
+                : before,
+          );
+          expect(
+            tempo.state.recordStartSnapshot?.settings.countInBars,
+            malformed ? 0 : 4,
+          );
+          expect(tempo.state.recordStartSnapshot?.settings.soundStart, isFalse);
+          expect(find.text('Recording start needs recovery'), findsNothing);
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(const Duration(milliseconds: 100));
         },
@@ -1646,11 +1650,11 @@ void main() {
         expect(store.values['tempo.count_in_bars'], 0);
         expect(store.values['looper.auto_record'], isTrue);
         expect(
-          context.read<TempoSettings>().durableRecordStartSettings.countInBars,
+          context.read<TempoSettings>().recordStartOwner.durable.countInBars,
           0,
         );
         expect(
-          context.read<TempoSettings>().durableRecordStartSettings.soundStart,
+          context.read<TempoSettings>().recordStartOwner.durable.soundStart,
           isTrue,
         );
       });
@@ -1700,11 +1704,11 @@ void main() {
         expect(store.values.containsKey('tempo.count_in_bars'), isFalse);
         expect(store.values.containsKey('looper.auto_record'), isFalse);
         expect(
-          context.read<TempoSettings>().durableRecordStartSettings.countInBars,
+          context.read<TempoSettings>().recordStartOwner.durable.countInBars,
           1,
         );
         expect(
-          context.read<TempoSettings>().durableRecordStartSettings.soundStart,
+          context.read<TempoSettings>().recordStartOwner.durable.soundStart,
           isFalse,
         );
       });
@@ -1731,6 +1735,7 @@ void main() {
       unawaited(
         context
             .read<TempoSettings>()
+            .recordStartControl
             .setCountInBars(4)
             .then((v) => accepted = v.isOk),
       );
@@ -1860,10 +1865,10 @@ void main() {
       });
     }
 
-    for (final hearClick in [false, true]) {
+    for (final key in OwnedSetting.values) {
       testWidgets(
         'a restart that lands the owed value clears its recovery notice; '
-        'hearClick=$hearClick',
+        '${key.name}',
         (tester) async {
           settings = SettingsRepository(store: FakeKeyValueStore());
           await pumpApp(tester, NoopWaveformWindowService());
@@ -1873,20 +1878,34 @@ void main() {
           final tempo = tester
               .element(find.byType(TracksView))
               .read<TempoSettings>();
-          final toast = hearClick
-              ? AppToastId.clickModeSettings
-              : AppToastId.clickSettings;
-          if (hearClick) {
-            engine.publishClickModeCommands = false;
-          } else {
-            engine.publishClickCommands = false;
-          }
-          engine.commandsAreSettled = false;
-          unawaited(
-            hearClick
-                ? tempo.clickModeOwner.set(ClickMode.playRec)
-                : tempo.clickVolumeOwner.set(1.5),
-          );
+          final (toast, owner) = switch (key) {
+            OwnedSetting.clickVolume => (
+              AppToastId.clickSettings,
+              tempo.clickVolumeOwner,
+            ),
+            OwnedSetting.hearClick => (
+              AppToastId.clickModeSettings,
+              tempo.clickModeOwner,
+            ),
+            OwnedSetting.recordStart => (
+              AppToastId.recordStartSettings,
+              tempo.recordStartOwner,
+            ),
+          };
+          engine
+            ..publishClickCommands = key != OwnedSetting.clickVolume
+            ..publishClickModeCommands = key != OwnedSetting.hearClick
+            ..publishRecordStartCommands = key != OwnedSetting.recordStart
+            ..commandsAreSettled = false;
+          unawaited(switch (key) {
+            OwnedSetting.clickVolume => tempo.clickVolumeOwner.set(1.5),
+            OwnedSetting.hearClick => tempo.clickModeOwner.set(
+              ClickMode.playRec,
+            ),
+            OwnedSetting.recordStart => tempo.recordStartControl.setCountInBars(
+              2,
+            ),
+          });
           await tester.pump(const Duration(milliseconds: 600));
           await tester.pump();
           expect(debugAppToastActive(toast), isTrue);
@@ -1894,16 +1913,12 @@ void main() {
           engine
             ..publishClickCommands = true
             ..publishClickModeCommands = true
+            ..publishRecordStartCommands = true
             ..commandsAreSettled = true;
           repository.startEngine(const EngineConfig());
           await tester.pump(const Duration(milliseconds: 50));
           await tester.pumpAndSettle();
-          expect(
-            hearClick
-                ? tempo.clickModeOwner.ready
-                : tempo.clickVolumeOwner.ready,
-            isTrue,
-          );
+          expect(owner.ready, isTrue);
           expect(debugAppToastActive(toast), isFalse);
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(const Duration(milliseconds: 600));
