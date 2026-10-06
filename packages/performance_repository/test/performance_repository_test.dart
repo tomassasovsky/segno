@@ -986,7 +986,7 @@ void main() {
         final dir = '${tempDir.path}/exports/perf-crashed';
         Directory(dir).createSync(recursive: true);
         writeNativeSidecar(dir);
-        writeRawPcm('$dir/master.pcm', Float32List.fromList([0.1, 0.2]));
+        writeOpenPart('$dir/master-001.wav', Float32List.fromList([0.1, 0.2]));
 
         final recovery = repo.recoverCapture(dir);
         final result = await repo.arm();
@@ -1009,7 +1009,10 @@ void main() {
         final crashed = '${tempDir.path}/exports/perf-crashed';
         Directory(crashed).createSync(recursive: true);
         writeNativeSidecar(crashed);
-        writeRawPcm('$crashed/master.pcm', Float32List.fromList([0.1, 0.2]));
+        writeOpenPart(
+          '$crashed/master-001.wav',
+          Float32List.fromList([0.1, 0.2]),
+        );
 
         // The salvage's finalize hands straight over to its render (exactly
         // the production handover), so the refusal window stays covered at
@@ -1101,7 +1104,7 @@ void main() {
         final dirA = '${tempDir.path}/exports/perf-crashed';
         Directory(dirA).createSync(recursive: true);
         writeNativeSidecar(dirA);
-        writeRawPcm('$dirA/master.pcm', Float32List.fromList([0.1, 0.2]));
+        writeOpenPart('$dirA/master-001.wav', Float32List.fromList([0.1, 0.2]));
 
         // dirB: armed live, then disarmed with NO sidecar on disk — the
         // documented early-return finalize, the fastest possible finisher.
@@ -1161,17 +1164,20 @@ void main() {
         r.armedDirectory!,
         capturedInputs: const [0],
       );
-      writeRawPcm(
-        '${r.armedDirectory!}/master.pcm',
+      writeOpenPart(
+        '${r.armedDirectory!}/master-001.wav',
         Float32List.fromList([0.1, 0.2, 0.3, 0.4]),
+        tornBytes: 4,
       );
-      writeRawPcm(
-        '${r.armedDirectory!}/input-0.pcm',
+      writeOpenPart(
+        '${r.armedDirectory!}/input-0-001.wav',
         Float32List.fromList([0.5, 0.6, 0.7, 0.8]),
+        stream: 1,
       );
     }
 
-    test('converts master + captured-input raw PCM to WAV', () async {
+    test('seals the open parts a crash left, dropping a torn frame, and '
+        'converts nothing (#1198)', () async {
       await armAndSeedNative(engine, repo);
       final dir = repo.armedDirectory!;
 
@@ -1179,17 +1185,44 @@ void main() {
       expect(result, EngineResult.ok);
       expect(engine.perfArmed, isFalse);
 
-      final master = WavCodec.decodeFloat32(
-        File('$dir/master.wav').readAsBytesSync(),
+      // Two whole stereo frames: 16 data bytes, the torn 4 dropped.
+      expect(partSizes('$dir/master-001.wav'), (84 - 8 + 16, 16));
+      expect(File('$dir/master-001.wav').lengthSync(), 84 + 16);
+      expect(partSizes('$dir/input-0-001.wav'), (84 - 8 + 16, 16));
+      final payload = ByteData.sublistView(
+        File('$dir/master-001.wav').readAsBytesSync(),
+        84,
       );
-      expect(master.channels, 2);
-      expect(master.samples, Float32List.fromList([0.1, 0.2, 0.3, 0.4]));
+      expect(
+        [for (var i = 0; i < 4; i++) payload.getFloat32(i * 4, Endian.little)],
+        Float32List.fromList([0.1, 0.2, 0.3, 0.4]),
+      );
+      expect(File('$dir/master.wav').existsSync(), isFalse);
+      expect(File('$dir/live-input-0.wav').existsSync(), isFalse);
+    });
 
-      final input0 = WavCodec.decodeFloat32(
-        File('$dir/live-input-0.wav').readAsBytesSync(),
-      );
-      expect(input0.channels, 2);
-      expect(input0.samples, Float32List.fromList([0.5, 0.6, 0.7, 0.8]));
+    test('leaves a sealed part and a file that is not a part alone', () async {
+      await repo.arm();
+      clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+      final dir = repo.armedDirectory!;
+      writeNativeSidecar(dir);
+      writeOpenPart('$dir/master-001.wav', Float32List.fromList([0.1, 0.2]));
+      // Sealed already: its sizes are what the drain patched.
+      File('$dir/master-001.wav').openSync(mode: FileMode.append)
+        ..setPositionSync(4)
+        ..writeFromSync([84, 0, 0, 0])
+        ..setPositionSync(80)
+        ..writeFromSync([8, 0, 0, 0])
+        ..setPositionSync(84 + 8)
+        ..writeFromSync([1, 2, 3])
+        ..closeSync();
+      writeOpenPart('$dir/notes-001.txt', Float32List.fromList([0.1]));
+
+      await repo.disarm();
+
+      expect(partSizes('$dir/master-001.wav'), (84, 8));
+      expect(File('$dir/master-001.wav').lengthSync(), 84 + 8 + 3);
+      expect(partSizes('$dir/notes-001.txt'), (0, 0));
     });
 
     test(
@@ -1578,14 +1611,14 @@ void main() {
         final dir = Directory('${root.path}/perf-crashed')
           ..createSync(recursive: true);
         writeNativeSidecar(dir.path);
-        writeRawPcm(
-          '${dir.path}/master.pcm',
+        writeOpenPart(
+          '${dir.path}/master-001.wav',
           Float32List.fromList([0.25, 0.5]),
         );
 
         await repo.recoverCapture(dir.path);
 
-        expect(File('${dir.path}/master.wav').existsSync(), isTrue);
+        expect(partSizes('${dir.path}/master-001.wav'), (84 - 8 + 8, 8));
         final manifest =
             jsonDecode(File('${dir.path}/performance.json').readAsStringSync())
                 as Map<String, dynamic>;
@@ -1722,13 +1755,13 @@ void main() {
   });
 
   group('runBootRecovery (silent boot salvage, #679)', () {
-    /// A crashed capture: unfinalized sidecar plus raw master PCM, the same
-    /// fixture shape the recoverCapture tests use.
+    /// A crashed capture: unfinalized sidecar plus an open master part, the
+    /// same fixture shape the recoverCapture tests use.
     String seedCrashed(String slug) {
       final dir = '${tempDir.path}/exports/$slug';
       Directory(dir).createSync(recursive: true);
       writeNativeSidecar(dir);
-      writeRawPcm('$dir/master.pcm', Float32List.fromList([0.1, 0.2]));
+      writeOpenPart('$dir/master-001.wav', Float32List.fromList([0.1, 0.2]));
       return dir;
     }
 
@@ -1743,9 +1776,9 @@ void main() {
         final recovered = '${tempDir.path}/exports/recovered/perf-crashed';
         expect(Directory(crashed).existsSync(), isFalse);
         expect(
-          File('$recovered/master.wav').existsSync(),
-          isTrue,
-          reason: 'the salvage converts the raw PCM to usable audio',
+          partSizes('$recovered/master-001.wav'),
+          (84 - 8 + 8, 8),
+          reason: 'the salvage seals the open part so the take plays',
         );
         final manifest =
             jsonDecode(File('$recovered/performance.json').readAsStringSync())
@@ -1846,9 +1879,8 @@ void main() {
       'the next boot, without crashing',
       () async {
         final dir = seedCrashed('perf-crashed');
-        // A directory squatting on the finalize's WAV target: the PCM
-        // conversion's writeAsBytes fails on it.
-        Directory('$dir/master.wav').createSync();
+        // A directory named like a part: sealing it fails to open it.
+        Directory('$dir/master-002.wav').createSync();
 
         await repo.runBootRecovery();
 
@@ -2003,9 +2035,9 @@ void main() {
       'escapes as an unhandled error (#679 r2)',
       () async {
         final bad = seedCrashed('perf-a-bad');
-        // A directory squatting on the finalize's WAV target: this
-        // capture's salvage throws mid-finalize.
-        Directory('$bad/master.wav').createSync();
+        // A directory named like a part: this capture's salvage throws
+        // mid-finalize.
+        Directory('$bad/master-002.wav').createSync();
         seedCrashed('perf-b-good');
 
         // Deterministic regardless of listSync order: an unguarded loop

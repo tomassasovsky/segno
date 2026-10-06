@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
 
@@ -16,7 +18,10 @@ void main() {
       ..outputMuted[1] = true;
     expect(engine.setPerfFollowOutput(follow: true), EngineResult.ok);
 
-    expect(engine.perfArm('/take'), EngineResult.ok);
+    expect(
+      engine.perfArm(PerfTarget(captureDir: '/take', takeId: Uint8List(16))),
+      EngineResult.ok,
+    );
     final armed = engine.snapshot();
     expect(armed.isPerfArmed, isTrue);
     expect(armed.perfCaptureBus, 1);
@@ -47,7 +52,10 @@ void main() {
       ..nextSnapshot = const EngineSnapshot.initial().copyWith(
         outputChannels: 0,
       );
-    expect(engine.perfArm('/take'), EngineResult.invalid);
+    expect(
+      engine.perfArm(PerfTarget(captureDir: '/take', takeId: Uint8List(16))),
+      EngineResult.invalid,
+    );
     expect(engine.snapshot().isPerfArmed, isFalse);
   });
 
@@ -60,7 +68,10 @@ void main() {
         perfCaptureBus: 0,
         perfCaptureMask: 0x2,
       );
-    expect(engine.perfArm('/take'), EngineResult.ok);
+    expect(
+      engine.perfArm(PerfTarget(captureDir: '/take', takeId: Uint8List(16))),
+      EngineResult.ok,
+    );
     expect(engine.snapshot().perfCaptureMask, 0x2);
     expect(engine.perfDisarm(), EngineResult.ok);
     expect(engine.snapshot().isPerfArmed, isTrue);

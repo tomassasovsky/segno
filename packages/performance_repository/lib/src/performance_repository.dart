@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:performance_repository/src/models/performance_chains.dart';
@@ -363,7 +364,13 @@ class PerformanceRepository {
       return EngineResult.ok;
     }
 
-    final result = _engine.perfArm(dir);
+    // The take's identity (#1198): random, minted before any audio exists,
+    // and written into every part's `sgno` chunk by the drain.
+    final random = Random.secure();
+    final takeId = Uint8List.fromList([
+      for (var i = 0; i < PerfTarget.takeIdBytes; i++) random.nextInt(256),
+    ]);
+    final result = _engine.perfArm(PerfTarget(captureDir: dir, takeId: takeId));
     if (!result.isOk) {
       final created = Directory(dir);
       if (created.existsSync()) created.deleteSync(recursive: true);
@@ -972,39 +979,11 @@ class PerformanceRepository {
         // recoverable to finalize), instead of upgrading every outer guard.
         return;
       }
-      final layout =
-          native['channel_layout'] as Map<String, dynamic>? ?? const {};
-      final sampleRate = (native['sample_rate'] as num?)?.toInt() ?? 0;
-      final masterChannels = (layout['master_channels'] as num?)?.toInt() ?? 1;
-      final capturedInputs = [
-        for (final c
-            in (layout['captured_inputs'] as List<dynamic>? ?? const []))
-          (c as num).toInt(),
-      ];
-
-      final masterPcm = File('$dir/master.pcm');
-      if (masterPcm.existsSync()) {
-        final samples = _readRawPcm(masterPcm);
-        await File('$dir/master.wav').writeAsBytes(
-          WavCodec.encodeFloat32(
-            samples: samples,
-            sampleRate: sampleRate,
-            channels: masterChannels,
-          ),
-        );
-      }
-      for (final input in capturedInputs) {
-        final raw = File('$dir/input-$input.pcm');
-        if (!raw.existsSync()) continue;
-        final samples = _readRawPcm(raw);
-        await File('$dir/live-input-$input.wav').writeAsBytes(
-          WavCodec.encodeFloat32(
-            samples: samples,
-            sampleRate: sampleRate,
-            channels: 2,
-          ),
-        );
-      }
+      // The drain writes each stream as finished float WAV parts, so there
+      // is nothing to convert. A crash leaves the open part's sizes
+      // unpatched; seal it here so a salvaged take still plays (#1198).
+      // Part 8 replaces this with the checkpoint-based recovery.
+      _sealOpenParts(dir);
 
       var resolvedArm = armSnapshot;
       final armFile = File('$dir/$_armSnapshotFileName');
@@ -1166,14 +1145,50 @@ class PerformanceRepository {
       },
   ];
 
-  Float32List _readRawPcm(File file) {
-    final bytes = file.readAsBytesSync();
-    return Float32List.view(
-      bytes.buffer,
-      bytes.offsetInBytes,
-      bytes.lengthInBytes ~/ 4,
-    );
+  /// A part file the drain names: `master-001.wav`, `input-3-002.wav`.
+  static final _partFile = RegExp(r'^(master|input-\d+)-\d{3}\.wav$');
+
+  /// Patches the RIFF and data sizes of every part [dir] holds whose header
+  /// still reads 0 (the drain patches them only when it seals the part),
+  /// dropping a torn trailing frame. A file that is not a recorded part is
+  /// left alone; one that cannot be opened throws, which keeps the bundle in
+  /// place for the next boot.
+  void _sealOpenParts(String dir) {
+    const header = PerfTarget.partHeaderBytes;
+    for (final entity in Directory(dir).listSync()) {
+      if (!_partFile.hasMatch(_basename(entity.path))) continue;
+      final file = File(entity.path).openSync(mode: FileMode.append);
+      try {
+        final length = file.lengthSync();
+        if (length < header) continue;
+        file.setPositionSync(0);
+        final head = ByteData.sublistView(file.readSync(header));
+        String tag(int at) =>
+            String.fromCharCodes(head.buffer.asUint8List(at, 4));
+        if (tag(0) != 'RIFF' ||
+            tag(8) != 'WAVE' ||
+            tag(36) != 'sgno' ||
+            tag(76) != 'data' ||
+            head.getUint32(4, Endian.little) != 0) {
+          continue;
+        }
+        final frameBytes = head.getUint16(22, Endian.little) * 4;
+        if (frameBytes == 0) continue;
+        final data = (length - header) ~/ frameBytes * frameBytes;
+        file
+          ..truncateSync(header + data)
+          ..setPositionSync(4)
+          ..writeFromSync(_u32(header - 8 + data))
+          ..setPositionSync(header - 4)
+          ..writeFromSync(_u32(data));
+      } finally {
+        file.closeSync();
+      }
+    }
   }
+
+  static Uint8List _u32(int value) =>
+      (ByteData(4)..setUint32(0, value, Endian.little)).buffer.asUint8List();
 
   String _basename(String path) =>
       path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;

@@ -158,9 +158,6 @@ extern "C" {
  * completes in ~44 callbacks (~0.5 s at typical buffer sizes). */
 #define LE_DRAIN_CHUNK 32768
 
-/* Minimum performance-recording capture ring size, in seconds of audio at the
- * device rate (le_perf_arm sizes the master + per-monitor rings from this). */
-#define LE_PERF_CAPTURE_SECONDS 2
 
 /* One looper track.
  *

@@ -46,6 +46,9 @@ class FakePerformanceEngine implements AudioEngine {
   bool perfArmPending = false;
   void Function()? onPerfArmQueued;
   String? lastPerfCaptureDir;
+
+  /// The target of the most recent perfArm.
+  PerfTarget? lastPerfTarget;
   EngineResult perfArmResult = EngineResult.ok;
   EngineResult perfDisarmResult = EngineResult.ok;
   int perfArmCalls = 0;
@@ -222,7 +225,9 @@ class FakePerformanceEngine implements AudioEngine {
       EngineResult.ok;
 
   @override
-  EngineResult perfArm(String captureDir) {
+  EngineResult perfArm(PerfTarget target) {
+    final captureDir = target.captureDir;
+    lastPerfTarget = target;
     perfArmCalls++;
     lastPerfCaptureDir = captureDir;
     if (!perfArmResult.isOk) return perfArmResult;

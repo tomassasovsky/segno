@@ -7,9 +7,12 @@
 #include <string.h>
 
 #if defined(_WIN32)
+#include <fcntl.h>
 #include <io.h>
+#include <sys/stat.h>
 #include <windows.h>
 #else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
@@ -31,7 +34,22 @@ int le_wav_open(le_wav_writer* w, const char* path, int32_t sample_rate,
   memset(w, 0, sizeof(*w));
   if (path == NULL || sample_rate <= 0 || channels <= 0) return 0;
   if (chunk_id != NULL && chunk_bytes > 0 && chunk == NULL) return 0;
-  w->file = fopen(path, "wb");
+  /* Close-on-exec, so a child the app spawns while a file is open never
+   * inherits a writable descriptor onto it (the inheritance window #722
+   * describes for perf_drain.c's streams). */
+#if defined(_WIN32)
+  const int fd = _open(path, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY |
+                                 _O_NOINHERIT,
+                       _S_IREAD | _S_IWRITE);
+  if (fd < 0) return 0;
+  w->file = _fdopen(fd, "wb");
+  if (w->file == NULL) _close(fd);
+#else
+  const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
+  if (fd < 0) return 0;
+  w->file = fdopen(fd, "wb");
+  if (w->file == NULL) close(fd);
+#endif
   if (w->file == NULL) return 0;
   w->channels = channels;
   unsigned char fmt[36];
@@ -76,6 +94,10 @@ int le_wav_append(le_wav_writer* w, const float* samples, uint64_t frames) {
   }
   w->frames += frames;
   return 1;
+}
+
+void le_wav_note_frames(le_wav_writer* w, uint64_t frames) {
+  w->frames += frames;
 }
 
 int le_wav_seal(le_wav_writer* w, int sync) {
