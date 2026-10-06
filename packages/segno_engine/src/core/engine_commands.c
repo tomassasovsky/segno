@@ -282,11 +282,20 @@ static int le_redo_push(le_track* t, le_hist_entry e) {
  *
  * The redo push cannot fail here: it moves one entry off the undo stack for the
  * one it adds, so the total is unchanged. Losing the redo step would still beat
- * corrupting the struct, hence the guard rather than an assert. */
-static void le_undo_swap(le_track* t) {
+ * corrupting the struct, hence the guard rather than an assert.
+ *
+ * Capture provenance (#1143): the target slot is staged as an immutable image
+ * BEFORE it is published, so the callback can name exactly the PCM that became
+ * audible at the frame it first mixes it. Staging refusal never refuses the
+ * swap (D5); the stem then fails truthfully (323/0). */
+static uint32_t le_stage_source_image(le_engine* engine, int32_t channel,
+                                      int32_t slot, int32_t len);
+static void le_undo_swap(le_engine* engine, le_track* t) {
   const int32_t prev = t->undo_stack[--t->undo_count].slot;
+  const uint32_t id = le_stage_source_image(
+      engine, (int32_t)(t - engine->tracks), prev, load_i32(&t->lanes[0].a_len));
   (void)le_redo_push(t, le_hist_layer(load_i32(&t->lanes[0].a_live)));
-  le_track_publish_live(t, prev); /* [R1] undo swap */
+  le_publish_live_image(engine, t, prev, id); /* [R1] undo swap */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
 }
@@ -416,8 +425,10 @@ int32_t le_restore_commit_layer(le_engine* engine, int32_t channel,
   }
   le_publish_undo_depth(t);
   /* Swap a_live to the restored slot on every lane + bump a_audio_rev in one
-   * motion (invalidating and re-rendering the wet cache). */
-  le_track_publish_live(t, slot);
+   * motion (invalidating and re-rendering the wet cache). Image 0 (#1143):
+   * processed material has no staged copy, so a running capture's stem fails
+   * truthfully at this swap (323/0) instead of replaying the raw take. */
+  le_publish_live_image(engine, t, slot, 0);
   return LE_OK;
 }
 
@@ -543,7 +554,7 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
   while (t->queued_undo > 0) {
     t->queued_undo--;
     if (t->undo_count > 0) {
-      le_undo_swap(t);
+      le_undo_swap(engine, t);
       continue;
     }
     const int32_t st = le_effective_state(t);
@@ -596,19 +607,22 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
  * the sizes are the track's ACTUAL loop length, so a preallocated pool would
  * either pin max_loop_frames per slot (hundreds of MB across LE_MAX_TRACKS *
  * LE_MAX_LANES) or need a size-keyed free-list recycled back across the
- * thread boundary. Neither is in scope here. */
-static void le_stage_retired_layer(le_engine* engine, int32_t channel,
-                                   int32_t slot, uint32_t generation,
-                                   int32_t restored_len, uint32_t restore_id) {
+ * thread boundary. Neither is in scope here.
+ *
+ * Returns 1 once the copy is in the staging ring, 0 when nothing was staged
+ * (not armed, nothing recorded, or a refusal — which is also counted). */
+static int le_stage_retired_layer(le_engine* engine, int32_t channel,
+                                  int32_t slot, uint32_t generation,
+                                  int32_t restored_len, uint32_t restore_id) {
   /* A queued ARM already owns its worker/ring before callback acknowledgement. */
   if (restore_id ? engine->perf.drain == NULL :
       !atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
-    return;
+    return 0;
   }
-  if (channel < 0 || channel >= engine->track_count) return;
+  if (channel < 0 || channel >= engine->track_count) return 0;
   le_track* t = &engine->tracks[channel];
   const int32_t frame_count = restore_id ? restored_len : load_i32(&t->lanes[0].a_len);
-  if (frame_count <= 0) return; /* nothing recorded into this slot */
+  if (frame_count <= 0) return 0; /* nothing recorded into this slot */
   const int32_t lane_count = le_lanes_active(t);
 
   le_staged_layer entry = {0};
@@ -631,14 +645,14 @@ static void le_stage_retired_layer(le_engine* engine, int32_t channel,
       for (int32_t k = 0; k < l; ++k) free(entry.lane_pcm[k]);
       atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
                                 memory_order_relaxed);
-      return;
+      return 0;
     }
     float* copy = (float*)malloc((size_t)frame_count * sizeof(float));
     if (copy == NULL) {
       for (int32_t k = 0; k < l; ++k) free(entry.lane_pcm[k]);
       atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
                                 memory_order_relaxed);
-      return;
+      return 0;
     }
     memcpy(copy, src, (size_t)frame_count * sizeof(float));
     entry.lane_pcm[l] = copy;
@@ -648,7 +662,33 @@ static void le_stage_retired_layer(le_engine* engine, int32_t channel,
     for (int32_t l = 0; l < lane_count; ++l) free(entry.lane_pcm[l]);
     atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
                               memory_order_relaxed);
+    return 0;
   }
+  return 1;
+}
+
+/* Stages pool slot [slot] of [channel] as a callback-applied source image
+ * (#1143, plan section 2.4) and records its id in perf.slot_image. Returns the
+ * id, or 0 when nothing was staged: no capture owns a drain (the same gate
+ * le_restore_clear used, which includes an ARM still awaiting its callback),
+ * the id space is exhausted, or le_stage_retired_layer refused. A 0 entry is
+ * what the callback logs as 323/0 when it mixes the slot, so a stem never
+ * replays PCM that has no immutable copy. The musical operation itself is
+ * never refused here (D5). */
+static uint32_t le_stage_source_image(le_engine* engine, int32_t channel,
+                                      int32_t slot, int32_t len) {
+  if (engine->perf.drain == NULL) return 0;
+  uint32_t id = 0;
+  if (engine->perf.next_image_id == UINT32_MAX) {
+    atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
+                              memory_order_relaxed);
+  } else {
+    id = ++engine->perf.next_image_id;
+    if (!le_stage_retired_layer(engine, channel, slot, 0, len, id)) id = 0;
+  }
+  atomic_store_explicit(&engine->perf.slot_image[channel][slot], id,
+                        memory_order_relaxed);
+  return id;
 }
 
 /* Handles one retired-layer event (control thread): returns the slot from the
@@ -1068,6 +1108,10 @@ static void le_begin_empty_capture(le_engine* engine, int32_t channel, int defer
   le_drop_clear_history(t);
   t->queued_undo = 0;
   t->cancel_pending = 0; /* a new take supersedes a cancelled one's redo */
+  /* #1143: the regrow below, le_prepare_new_capture's zero and the recording
+   * itself rewrite pool slots whose content an earlier admission may have
+   * staged; the next slot this track makes live is a fresh take. */
+  le_forget_slot_images(engine, channel);
   const int32_t lanes = le_lanes_active(t);
   for (int32_t l = 0; l < lanes; ++l) {
     /* A fresh capture can grow to the recording cap, but undo may have left a
@@ -2234,15 +2278,9 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   cmd.restore.state = e.state;
   cmd.restore.master_len = e.master_len;
   cmd.restore.fade_amount = e.fade_amount;
-  cmd.restore.source_slot = e.slot;
-  if (engine->perf.drain != NULL) {
-    if (engine->perf.next_restore_id == UINT32_MAX) {
-      atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u, memory_order_relaxed);
-    } else {
-      cmd.restore.image_id = ++engine->perf.next_restore_id;
-      le_stage_retired_layer(engine, channel, e.slot, 0, e.len, cmd.restore.image_id);
-    }
-  }
+  /* Staged before the push: the callback may apply this restore before the
+   * publish below and looks the slot up at that frame (#1143). */
+  const uint32_t image_id = le_stage_source_image(engine, channel, e.slot, e.len);
   if (le_push_cmd(engine, cmd) != LE_OK) return LE_ERR_INVALID;
 #ifdef LE_NATIVE_TESTS
   if (le_test_fade_hook) le_test_fade_hook(engine, 4);
@@ -2251,7 +2289,7 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   t->undo_count--;
   /* Cannot fail: one entry off the undo stack for the one added here. */
   (void)le_redo_push(t, e);
-  le_track_publish_live(t, e.slot); /* [R1] clear-restore */
+  le_publish_live_image(engine, t, e.slot, image_id); /* [R1] clear-restore */
   /* Leftover armed shadows may be sized for a different loop; the audio thread
    * drops them when the command applies (same reclaim rule as redo-from-empty:
    * an EMPTY track has no layer in flight, so no retire event can be
@@ -2357,7 +2395,7 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
    * erased take's, and they only become peelable again once it is restored. */
   if (le_history_is_cleared(t)) return le_restore_clear(engine, channel);
   if (t->undo_count > 0) {
-    le_undo_swap(t);
+    le_undo_swap(engine, t);
     le_plog_push_ctrl(engine,
                       (le_command){.code = LE_PLOG_UNDO, .arg_i = channel});
     return LE_OK;
@@ -2463,13 +2501,17 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
       le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_MUTE,
                                        .lanef = {channel, l, 0.0f}});
     }
+    /* Staged before the push (#1143): the handler flips PLAYING and the
+     * callback looks the slot up at that frame. */
+    const int32_t next = t->redo_stack[t->redo_count - 1].slot;
+    const uint32_t image_id = le_stage_source_image(engine, channel, next, len);
     if (le_push_cmd(engine, (le_command){.code = LE_CMD_REDO_FROM_EMPTY,
                                          .lanei = {channel, 0, len}}) !=
         LE_OK) {
       return LE_ERR_INVALID;
     }
-    const int32_t next = t->redo_stack[--t->redo_count].slot;
-    le_track_publish_live(t, next); /* [R1] redo-from-empty */
+    t->redo_count--;
+    le_publish_live_image(engine, t, next, image_id); /* [R1] redo-from-empty */
     t->empty_len = 0;
     /* Leftover armed shadows may be sized for a different loop; the audio
      * thread drops them when the command applies. Same no-in-flight argument
@@ -2483,8 +2525,10 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
     return LE_OK;
   }
   const int32_t next = t->redo_stack[--t->redo_count].slot;
+  const uint32_t image_id = le_stage_source_image(engine, channel, next,
+                                                  load_i32(&t->lanes[0].a_len));
   t->undo_stack[t->undo_count++] = le_hist_layer(load_i32(&t->lanes[0].a_live));
-  le_track_publish_live(t, next); /* [R1] redo swap */
+  le_publish_live_image(engine, t, next, image_id); /* [R1] redo swap */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
   le_plog_push_ctrl(engine,
@@ -4400,7 +4444,11 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
                              engine->perf.layer_staging_storage,
                              LE_LAYER_STAGING_RING_CAPACITY);
 
-  engine->perf.next_restore_id = 0;
+  engine->perf.next_image_id = 0;
+  /* A fresh image namespace (#1143): no entry from a previous capture may be
+   * logged under this one's ids. Safe before LE_CMD_PERF_ARM is pushed for the
+   * same reason the ring resets above are. */
+  for (int32_t c = 0; c < LE_MAX_TRACKS; ++c) le_forget_slot_images(engine, c);
   /* Spawn the drain thread before publishing to the audio thread: it only
    * ever reads through le_audio_ring_pop (never allocates/frees the ring
    * buffers themselves), so starting it slightly early is harmless — it just
