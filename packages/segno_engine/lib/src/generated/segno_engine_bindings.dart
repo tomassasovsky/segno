@@ -5044,6 +5044,44 @@ class SegnoEngineBindings {
   late final _le_fs_sync_dir = _le_fs_sync_dirPtr
       .asFunction<int Function(ffi.Pointer<ffi.Char>)>();
 
+  /// Repairs a float WAV part the engine's writer opened but never sealed (a
+  /// power cut or a crash), or cuts one back to a trusted length, for the
+  /// recording recovery (#1198) and anything else that salvages a part: keeps
+  /// the first min(whole frames present, `max_frames`) frames, truncates
+  /// anything after them (a torn last frame included), patches the RIFF and data
+  /// sizes and fsyncs. UINT64_MAX keeps every whole frame. `*kept` (may be NULL)
+  /// receives the frames kept. The file must be 32-bit float in the writer's
+  /// layout (RIFF/WAVE, `fmt `, an optional caller chunk such as `sgno`, then
+  /// `data`, whose size may still be the open file's zero). Returns 1 on
+  /// success, 0 when the file is not in that layout or a read or write fails.
+  /// The one size patcher; implemented by the native WAV writer (engine_wav.c).
+  int le_wav_patch_sizes(
+    ffi.Pointer<ffi.Char> path,
+    int max_frames,
+    ffi.Pointer<ffi.Uint64> kept,
+  ) {
+    return _le_wav_patch_sizes(
+      path,
+      max_frames,
+      kept,
+    );
+  }
+
+  late final _le_wav_patch_sizesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Uint64,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_wav_patch_sizes');
+  late final _le_wav_patch_sizes = _le_wav_patch_sizesPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Char>, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
   /// Starts an offline render of the finalized capture at `capture_dir`: spawns
   /// a worker thread that writes `stems/dry/track<channel>.wav` +
   /// `stems/wet/track<channel>.wav` under `capture_dir` for every non-empty
@@ -6135,11 +6173,11 @@ class SegnoEngineBindings {
         )
       >();
 
-  /// Starts the job: re-measures, reserves its bytes against the cache's cap,
-  /// and posts LE_CMD_RENDER_FREEZE. Returns LE_OK with *job set, any measure
-  /// refusal, LE_ERR_ALREADY_RUNNING while a job exists, LE_ERR_CAPACITY when
-  /// the bytes do not fit the cap, LE_ERR_UNSUPPORTED without a render worker,
-  /// or a ring refusal.
+  /// Starts the job: re-measures and posts LE_CMD_RENDER_FREEZE. Returns LE_OK
+  /// with *job set, any measure refusal, LE_ERR_ALREADY_RUNNING while a job
+  /// exists, LE_ERR_CAPACITY when the job's bytes exceed the recipe's own
+  /// budget (it never evicts the wet cache), LE_ERR_UNSUPPORTED without a
+  /// render worker, or a ring refusal.
   int le_engine_render_begin(
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_render_request> request,
@@ -6171,7 +6209,8 @@ class SegnoEngineBindings {
         )
       >();
 
-  /// Progress of job `job`: *state (le_render_state), *permille (0..1000) and,
+  /// Progress of job `job`: *state (le_render_state), *permille (0..1000, one
+  /// scale over staging, then the render) and,
   /// once FAILED, *result (LE_ERR_TRACKS_CHANGED, LE_ERR_CAPACITY,
   /// LE_ERR_INVALID on an effect allocation failure, LE_ERR_DEVICE on a write
   /// failure or a configure/stop that joined the worker; a file whose
@@ -8388,6 +8427,12 @@ final class le_render_plan extends ffi.Struct {
   /// sources heard through a not-yet-ready transform
   @ffi.Uint32()
   external int pending_mask;
+
+  /// Once sources longer than a chosen length: only
+  /// the part of their single pass inside the window
+  /// sounds, none when it starts after the window
+  @ffi.Uint32()
+  external int once_cut_mask;
 }
 
 /// ---- Bounce (#1202, Part 4a: Keep sources) ----

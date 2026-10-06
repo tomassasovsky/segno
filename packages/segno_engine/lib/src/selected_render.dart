@@ -151,6 +151,7 @@ class RenderPlan {
     this.pluginTracks = const {},
     this.fadedTracks = const {},
     this.pendingTracks = const {},
+    this.onceCutTracks = const {},
   });
 
   /// The window, in frames.
@@ -174,6 +175,11 @@ class RenderPlan {
   /// Sources heard through a transform that is not ready yet.
   final Set<int> pendingTracks;
 
+  /// Once sources longer than a chosen length: only the part of their single
+  /// pass inside the window sounds, and none of it when the pass starts after
+  /// the window ends.
+  final Set<int> onceCutTracks;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -184,7 +190,8 @@ class RenderPlan {
           tempoSet == other.tempoSet &&
           _setEquals(pluginTracks, other.pluginTracks) &&
           _setEquals(fadedTracks, other.fadedTracks) &&
-          _setEquals(pendingTracks, other.pendingTracks);
+          _setEquals(pendingTracks, other.pendingTracks) &&
+          _setEquals(onceCutTracks, other.onceCutTracks);
 
   @override
   int get hashCode => Object.hash(
@@ -195,13 +202,15 @@ class RenderPlan {
     Object.hashAllUnordered(pluginTracks),
     Object.hashAllUnordered(fadedTracks),
     Object.hashAllUnordered(pendingTracks),
+    Object.hashAllUnordered(onceCutTracks),
   );
 
   @override
   String toString() =>
       'RenderPlan(frames: $frames, method: $method, beatsMilli: $beatsMilli, '
       'tempoSet: $tempoSet, pluginTracks: $pluginTracks, '
-      'fadedTracks: $fadedTracks, pendingTracks: $pendingTracks)';
+      'fadedTracks: $fadedTracks, pendingTracks: $pendingTracks, '
+      'onceCutTracks: $onceCutTracks)';
 }
 
 /// [EngineSelectedRender.measureRender]'s answer: the verdict, and the plan

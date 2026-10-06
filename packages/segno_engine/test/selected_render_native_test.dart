@@ -61,6 +61,32 @@ void main() {
     fail('render did not finish');
   }
 
+  test('names a Once track longer than the chosen length', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+    expect(
+      engine.start(const EngineConfig(inputChannels: 1, outputChannels: 2)),
+      EngineResult.ok,
+    );
+    engine.pump(frames: 0);
+    // 60,000 frames against one bar of 38,400 at 300 BPM and 48 kHz.
+    expect(engine.importTrack(0, Float32List(60000)), EngineResult.ok);
+    expect(engine.commitSession(60000, loopBars: 0), EngineResult.ok);
+    expect(engine.setTempo(300), EngineResult.ok);
+    engine.pump(frames: 0);
+    const request = RenderRequest(sources: {0}, lengthBars: 1);
+    expect(engine.measureRender(request).plan!.onceCutTracks, isEmpty);
+    expect(
+      engine.setOneShotMask(channels: 1, oneShot: true),
+      EngineResult.ok,
+    );
+    engine.pump(frames: 0);
+    final measured = engine.measureRender(request);
+    expect(measured.result, EngineResult.ok);
+    expect(measured.plan!.frames, 38400);
+    expect(measured.plan!.onceCutTracks, {0});
+  }, skip: skip);
+
   test('measures and renders the common cycle into memory', () async {
     final engine = fixture();
     const request = RenderRequest(sources: {0, 1}, tails: RenderTails.cut);
