@@ -437,8 +437,13 @@ level path is the mix transaction (`LooperRepository._sendMix` → `setMix` →
 - **Instrument pan** lives where every live input's pan lives, in
   `InputSetup.pan` keyed by source (`monitorMix`, `looper_repository.dart:8046`);
   Part 3c widens that one map to `LE_MAX_SOURCES` while trim and pairs stay
-  physical. It is edited from the Mixer's live-input strip, as for jacks; the
-  Instruments page (pen `gGTXF`) shows Level but no Pan, so it gains none.
+  physical. Its editor is the instrument's own page (delta review D1): the
+  Mixer has no live-input strip (`mixer_column.dart` is one strip per track)
+  and a jack's pan is edited only in Input setup, which stays physical, so
+  Part 7a puts **Level and Pan** together in the Live sound panel. The pen's
+  `gGTXF` shows Level only; the Pan control is a departure listed in §6.
+  The `InputPanTarget` value binding is instrument-keyed like
+  `monitorVolume` (D7).
 
 **The mix path accepts every source and refuses nothing per slot (review
 H4).** `le_apply_routing` validates the whole `le_mix_settings` and refuses
@@ -491,18 +496,35 @@ take uses one lane of eight, Pan places it, and no stereo-pair rules apply.
   `instrument-runtime.js:200-207`). Only Note On and CC64 on consult the
   tables.
 - **Never drop a release (review H3).**
-  - Port rings: when a push finds the ring full, the producer sets the
-    port's `a_overflow` flag instead of silently dropping. At the next block
-    the audio thread releases (normal release, not a cut) every voice whose
-    origin names that port, removes that port's sustain contributors, counts
-    the event and clears the flag. A note-on lost to the overflow is simply
-    not played; nothing it would have sounded can stick.
+  - Port rings: when a push finds the ring full, the producer drops the
+    message and records an overflow mark carrying the ring's tail at that
+    moment (delta review D2). The audio thread first drains every event that
+    was queued before the mark (they precede the dropped one), and only once
+    its head has passed the marked tail releases (normal release, not a cut)
+    every voice whose origin names that port, removes that port's sustain
+    contributors and counts the overflow. So a Note On queued before a
+    dropped Note Off is played and then released, never left held; a later
+    overflow while one is pending moves the mark forward. A note-on lost to
+    the overflow is simply not played.
   - The control event ring has a reserved release lane: a second SPSC ring of
     1024 entries carrying only note-off, sustain-off and retire events, so
     note-ons can never crowd releases out. `InstrumentRepository` keeps every
     release it could not push in a pending queue and retries it on the next
     snapshot until accepted, never dropping one; a refused note-on is
     dropped and its later note-off is a harmless no-op.
+  - **One consistent cut over both rings (delta review D3, PR #1234 M1,
+    built).** The control thread stamps one posting sequence across both
+    rings and publishes the highest one (release) after each push; the
+    callback loads that high-water mark (acquire) before peeking and merges
+    by sequence only up to it. Every event at or below the mark is visible in
+    both rings, so a note-off can never be applied before its own note-on
+    (a two-thread race test: 0 stuck notes in 300k pairs; 56 without the
+    mark).
+  - **Room for patch changes (delta review D4, built).** Patch changes ride
+    the note-on ring, which refuses note-ons while fewer than
+    `LE_MAX_INSTRUMENTS` slots would stay free, so an audition Apply or
+    Cancel always fits. A patch change can still be refused only when eight
+    are already queued, and the repository retries it like a release.
 - **Producer quiescence (review H2).** Today `le_midi_close` nulls the
   callback and then joins the backend thread (`midi.c:174-188`,
   `midi_backend_linux.c:189`). The engine sink gets the same guarantee
@@ -510,7 +532,15 @@ take uses one lane of eight, Pan places it, and no stereo-pair rules apply.
   that the backend thread increments around the sink call (wait-free for the
   producer). Detach stores NULL to the sink and spins until the counter reads
   zero; only then may the engine's port slot be reused or the engine be
-  destroyed. `le_midi_close` performs the same quiescent detach, bumps the
+  destroyed. The handshake is Dekker-style, so its order is fixed (delta
+  review D5): the producer increments the counter (`seq_cst`), then loads
+  the sink (`seq_cst`), calls it if non-NULL, then decrements (release);
+  detach stores NULL (`seq_cst`), then loads the counter (`seq_cst`) until it
+  reads zero. With acquire/release alone both sides can miss each other on
+  arm64. **The sink itself is shared with the MIDI clock plan (#1236) and is
+  built there first** (`claude/midi-clock-1228-p1`, following this D4 and
+  the H2 design); Part 2c builds the instrument routing on top of it and
+  adds no second sink. `le_midi_close` performs the same quiescent detach, bumps the
   port generation and marks the port lost, so a capture closed or destroyed
   first can never write into an engine port again. `le_engine_destroy`
   detaches every attached port first. A TSAN test in `native-tests-tsan`
@@ -607,11 +637,16 @@ the failure"). Part 3b tests the rollback case.
   instrument can be recorded through an old route by accident. When all
   eight slots are in use or tombstoned, Add instrument names the tracks that
   still route a removed instrument and offers to clear those routes.
-- **The synth epoch (review M9).** The engine bumps `synth_epoch` in the
-  snapshot whenever the synth is re-initialised (configure, sample-rate
-  change, reopen). `InstrumentRepository` clears every latch, sustain
-  contributor token and pending release when the epoch changes, and the
-  pedal LEDs that show a latch go dark with it.
+- **The synth epoch is the one reset trigger (review M9, delta review D6).**
+  The engine bumps `synth_epoch` in the snapshot whenever the synth is
+  re-initialised: every configure and every reopen (`le_engine_reset_runtime`
+  calls `le_instruments_reset`), which clears the patches, returns the voice
+  limit to 32 and empties both rings. When `InstrumentRepository` sees the
+  epoch change it does both halves at once: it clears every latch, sustain
+  contributor token and pending release (the pedal LEDs that show a latch go
+  dark), and it replays every slot's patch and parameters, the voice limit
+  and the routing table. A Dart engine-lifetime event is not used for this:
+  the native reset is the fact, the epoch reports it.
 
 ### D8. Device captures: one per device, shared by both consumers
 
@@ -651,8 +686,12 @@ devices may also feed controls stays with #1040.
 
 Drum patches play the defined GM notes only (35/36 kick, 38/40 snare, 39
 clap, 42/44 closed hat); other notes are shown as received and produce
-nothing. Drums ignore note-off and sustain, as the reference does
-(`instrument-runtime.js:146`, `:204`, `:213`). (Built in Part 1.)
+nothing. Drums ignore sustain, and a note-off leaves the hit's sound alone
+but takes it out of the held set, as the reference does
+(`instrument-runtime.js:146`, `:200-207`, `:213`): a released pad struck
+again overlaps the earlier hit, and only a strike while the pad is still
+down replaces it (the repeated-strike rule). (Built in Part 1; the
+re-strike rule fixed after the PR #1224 review.)
 
 ### D11. Note names
 
@@ -705,10 +744,12 @@ TU, with their own tests.
   (Part 2c): per instrument `{midi_enabled, port, channel (0 = All), low,
   high, remap_count, remaps[32] {port, channel, kind (note | cc), number,
   count, notes[8]}}` (about 3 KB per slot).
-- Per block, after the command drain: apply patch changes and the voice
-  limit, handle port overflow and lost flags, drain the release lane, then
-  the port rings and the event ring (at most 256 events per ring per block),
-  render the buses, publish per-instrument peaks and `synth_epoch`.
+- Per block, after the command drain: apply the voice limit and parameter
+  revisions, drain the control rings in posting order up to the high-water
+  mark (patch changes included, at most 512 events), drain each port ring
+  (at most 256 events) and act on a port's lost flag or overflow mark only
+  after its queued events (D4), render the buses, publish per-instrument
+  peaks and `synth_epoch`.
 - `le_source_sample(in_c, ch_in, inst_bus, f, s)` (Part 2b) is the one
   accessor used by capture (`:5986-5992`), the monitors (`:5395-5430`, loop
   bound widened to `LE_MAX_SOURCES`), the sound trigger (`:5316-5337`) and
@@ -749,11 +790,12 @@ as D4 describes; reconnect gets a new generation, so nothing old replays
     publishes the routing table (coalesced); resolves computer keys, touch
     keys and action tokens to note events and keeps latch state per token;
     keeps the pending-release queue (D4, H3); attaches captures to ports;
-    observes `synth_epoch` (M9) and the callback telemetry (D2 overload);
+    observes `synth_epoch`, the one trigger that clears latches and replays
+    slots, parameters, the voice limit and routes (D7), and the callback
+    telemetry (D2 overload); retries refused releases and patch changes;
     projects `InstrumentsState` (definitions, activity, port online state,
     the voice limit); writes the `instruments` family through a
-    `SettingsOwner`; re-publishes everything after an engine lifetime
-    change.
+    `SettingsOwner`.
 - `LooperRepository` stays the owner of everything keyed by source: it gains
   `isSource(int)` (D3), `liveSources` on `LooperState` (device channels, then
   instrument sources with their names, then tombstones as unavailable), and
@@ -818,7 +860,8 @@ the snapshot's `instrument_patch`, `instrument_voices`, `instrument_peaks`,
 (`LE_ERR_UNKNOWN_PATCH`; `LE_ERR_CAPACITY` with nothing changed when the
 note ring is full), `le_engine_set_instrument_param`,
 `le_engine_set_voice_limit`, `le_engine_reset_instrument`,
-`le_engine_instrument_note_on` (`LE_ERR_CAPACITY` when full, counted;
+`le_engine_instrument_note_on` (`LE_ERR_CAPACITY` when full, keeping eight
+slots for patch changes, counted;
 `LE_ERR_NO_INSTRUMENT` on an empty slot) and `le_engine_instrument_note_off`
 (the release lane; `LE_ERR_CAPACITY` only when 1023 releases are queued,
 which the repository retries). Part 2c adds the expression and sustain
@@ -835,7 +878,7 @@ Tests (`src/test/test_engine_instruments.h`, literal PCM through
   (release lane), and 300 note-ons into a 256-entry ring return
   `LE_ERR_CAPACITY` for the excess while every queued release still lands;
 - Cut all sound: every bus exactly zero from 144 frames after the cut block,
-  and sustain contributors cleared;
+  (sustain contributors arrive in Part 2c, which adds them to Cut);
 - voice limit 8 with 16 held: 8 sounding after one block, the oldest faded;
 - a patch change fades only that slot; slot 1's bus equals its solo render;
 - `LE_ERR_UNKNOWN_PATCH` for patch 19, `LE_ERR_NO_INSTRUMENT` for an event
@@ -915,9 +958,12 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
 
 ### Part 2c. Native MIDI note routing, sustain and expression (about 600 production lines)
 
-§2.3 and D4's MIDI rules. `midi.c`: the quiescent engine sink on `le_midi`
-(`_Atomic` sink and context, in-flight counter, detach-and-spin,
-`le_midi_close` performing it with a generation bump and the lost mark, H2);
+§2.3 and D4's MIDI rules, **built on the shared native MIDI input sink from
+the MIDI clock plan (#1236, `claude/midi-clock-1228-p1`)**: that branch adds
+the quiescent sink on `le_midi` (in-flight counter, detach-and-spin in the
+`seq_cst` order of D4, `le_midi_close` performing it with a generation bump
+and the lost mark, its TSAN test); this part adds the instrument port rings
+behind it and no second sink.
 the parser gains `LE_MIDI_PITCH_BEND` (0xE0, 14-bit) and
 `LE_MIDI_CHANNEL_PRESSURE` (0xD0), still filtered out of the Dart ring so
 `_parse` is unchanged; the Linux backend converts `SND_SEQ_EVENT_PITCHBEND`
@@ -948,10 +994,11 @@ without the change:
   is refused and counted;
 - pitch bend 16383 on `sub` 69: 880 × 2^(2/12) ± 2 crossings per second;
   pressure 127 raises the peak by 25 % ± 1 %; drums ignore CC64 and note-off;
-- overflow: 300 messages pushed into a 256-slot port ring between two blocks
-  set the flag; the next block releases every voice from that port (each
-  reaches exact zero by its release time) and counts one overflow; voices
-  from other ports and tokens are untouched (H3);
+- overflow: a Note On X queued, then 254 more messages, then X's Note Off
+  dropped because the ring is full: the next block plays the queued events
+  first, then releases every voice from that port (X included, reaching
+  exact zero by its release time) and counts one overflow; voices from other
+  ports and tokens are untouched (H3, delta review D2);
 - detach and loss: the port's voices released, a token's voice ringing, an
   old-generation event dropped, a fresh note after re-attach played;
 - the races test, under `-fsanitize=thread`: a producer thread pushing
@@ -1008,8 +1055,10 @@ A–K mapping, slot allocation with tombstones, the routing-table compiler
 computer-key, touch-key and action-token note dispatch with latch state, the
 pending-release queue (H3), audition drafts, the activity projection, the
 `instruments` family written through a `SettingsOwner` from the start, the
-synth-epoch observer (M9), the overload policy (D2), replay after an engine
-lifetime change, unknown sound ids kept as unavailable (D6), and the removal
+synth-epoch observer as the one reset trigger (M9, D7: clear latches and
+replay slots, parameters, the voice limit and routes), retries of refused
+releases and patch changes, the overload policy (D2), unknown sound ids kept
+as unavailable (D6), and the removal
 sequence. The working copy is written only after the engine acknowledged the
 change; a failed write restores the previous definition and reports it.
 
@@ -1017,12 +1066,14 @@ Tests against `MockAudioEngine` and a fake `SettingsRepository`: add fills
 the first free non-tombstoned slot with both controller enables off and Hear
 live On; the ninth add is refused with the reason; Cancel after Listen sends
 the saved patch; a parameter draft is not written to the store; a release
-refused by a full lane is retried until accepted and never dropped; an epoch
-change clears latches and contributor tokens; a late period lowers the voice
+refused by a full lane is retried until accepted and never dropped, and so
+is a refused patch change; an epoch change clears latches and contributor
+tokens and replays every slot, parameter, the voice limit and the routes, and
+an engine-lifetime event alone does not; a late period lowers the voice
 limit to three quarters (not below 8) and raises the toast; the persisted
 working copy naming a patch id the build lacks (the A/B rollback case, M7)
-loads as unavailable, sends no patch and keeps routes and mappings; an engine
-reopen replays slots and routes; the compiler builds splits, layers and
+loads as unavailable, sends no patch and keeps routes and mappings; the
+compiler builds splits, layers and
 remaps and reports truncation to the native caps as a problem rather than
 silently. One actual-native case
 (`packages/instrument_repository/test/instrument_native_test.dart`) plays a
@@ -1178,7 +1229,8 @@ reason on refusal, the tombstone notice when recorded material keeps its
 label, the empty Add instrument state after the last), the touch keyboard or
 pads (octave paging changes the view only; C3 = 60, D11), the "Played by"
 summary rows (MIDI, and Computer keys on desktop builds only, D9), the Live
-sound panel (Hear live, Level, Outputs, Effects, Recording inputs), the
+sound panel (Hear live, Level and Pan, Outputs, Effects, Recording inputs;
+Pan is a departure from `gGTXF`, D3), the
 reduced-polyphony line with Restore (D2), and the feedback line: active
 notes, Sustain, and the silent reasons in the reference's order
 (`virtual-instruments.js`, `feedback`): audio start failure (with **Retry**,
@@ -1351,6 +1403,9 @@ patch table, a dropped release, or a per-slot refusal in a batch.
   "Sound not available in this version".
 - `gGTXF`, `B5PEqI`: the reduced-polyphony line with Restore (D2) and the
   audio-start Retry (D6) are additions the pen does not draw.
+- `gGTXF`: the Live sound panel gains Pan beside Level (delta review D1): an
+  instrument's pan has no other editor, since Input setup stays physical and
+  the Mixer has no live-input strip.
 - Section 21 (`s0zlm`, `oegcz`, `MoriR`, `sTYRr`, `r47I8`, `mf0fR`): the
   screens show no instrument sources; the built screens add instrument cards
   and removed-instrument tombstones (Part 6).
@@ -1381,12 +1436,19 @@ patch table, a dropped release, or a per-slot refusal in a batch.
 | L1 line references | re-checked on `56033baf0` |
 | L2 monitored-input consumers | Part 2b lists them |
 | L3 origin space | D4 tag bit and contributor table |
-| L4 patch application | §2.2: a command, the snapshot reports it |
+| L4 patch application | §2.2: patch changes ride the ordered note ring (not commands); the snapshot reports the applied patch |
 | L5 note names | D11 |
 | L6 Listen button | Part 7a matches the pen |
 | L7 device loss | D4: native port-exit and CoreMIDI notify |
 | L8 publish coalescing | D4: latest-wins, direct flip while stopped |
 | L9 pen departures | §6 |
+| Delta D1 pan editor | D3; Part 7a Live sound panel (Level and Pan); §6 |
+| Delta D2 overflow order | D4 overflow mark; Part 2c test |
+| Delta D3 consistent cut | D4; built in Part 2a (high-water mark) |
+| Delta D4 patch room | D4; built in Part 2a; Part 3b retries |
+| Delta D5 memory order | D4 (seq_cst handshake); the shared sink (#1236) |
+| Delta D6 epoch trigger | D7; Part 3b |
+| Delta D7 stale text | §7 L4 row, Part 2a tests, D10 re-strike rule |
 | Planner question 1 | owner: Install hidden, ids as strings, Retry only for audio start |
 | Planner question 2 | owner: computer keys hidden on the appliance; M8 applies on desktop |
 
