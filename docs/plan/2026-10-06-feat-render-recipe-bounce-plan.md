@@ -1727,3 +1727,43 @@ Verification:
   check.
 - **Not run.** The appliance criterion (no xrun, worker CPU and peak bytes) is
   hardware and still open.
+
+### Part 2 (`claude/render-1202-p2`, stacked on Part 1)
+
+One commit (`feat(looper)`). Where the build departs from the text above:
+
+- **Measure ignores the target.** `measureRender` sends a memory-target
+  request because the native measure refuses a file target without a path.
+  The plan does not depend on the target.
+- **Memory jobs.** A memory job keeps its result in the engine after it
+  finishes, so Part 4a's Bounce can consume it in place by job id. The caller
+  releases it, or the next render replaces it. `RenderJob.copySamples` reads
+  it for previews and tests.
+- **File jobs.** A file job is released as soon as its file is published.
+- **The mock engine** (UI development without hardware) models no PCM, so
+  every render call answers `unsupported` rather than inventing audio.
+- **Size.** About 900 library lines including documentation and value
+  equality: the `segno_engine` seam and the `looper_repository` model, job and
+  methods.
+
+Verification:
+
+- **Tests.**
+  - New `segno_engine` unit and native tests: the literal common cycle into
+    memory, a stereo float file, and the refusal and `tracksChanged` mapping.
+  - New `looper_repository` fake-engine tests: the plan readout, refusals, the
+    Session gate, progress, file release, memory keep and release, failure,
+    an unknown job, cancel, and dispose.
+  - A native repository test: two literal loops render to a WAV that decodes
+    to their sum.
+- **Mutations.** Each failed its test:
+  - the Session gate removed;
+  - the file release removed;
+  - the dispose cancel removed;
+  - the -17 mapping removed.
+- **Suites and analysis.**
+  - `segno_engine` 388, `looper_repository` 819, `performance_repository`,
+    `session_repository` and the app (3,469) pass with `SEGNO_ENGINE_LIB`.
+  - `dart analyze --fatal-infos lib test packages` is clean.
+  - `dart format` changes nothing.
+  - `bloc lint` is clean.
