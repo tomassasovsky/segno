@@ -171,6 +171,23 @@ void main() {
     );
 
     blocTest<LibraryCubit, LibraryState>(
+      'an unconvertible older preview reads as unconvertible',
+      setUp: () => when(() => sessions.readPreview('s-old')).thenThrow(
+        const SessionUnconvertible(version: 0, reason: 'older than 1'),
+      ),
+      build: build,
+      act: (cubit) => cubit.select('s-old'),
+      skip: 1,
+      expect: () => [
+        isA<LibraryState>().having(
+          (s) => s.previewError,
+          'error',
+          LibraryPreviewError.unconvertible,
+        ),
+      ],
+    );
+
+    blocTest<LibraryCubit, LibraryState>(
       'a preview that does not decode reads as unreadable',
       setUp: () => when(
         () => sessions.readPreview('s-bad'),

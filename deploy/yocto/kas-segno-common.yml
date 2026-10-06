@@ -118,6 +118,15 @@ local_conf_header:
     # packagegroup-core-weston; keep x11 in so the image GTK3 stays a close ABI
     # match to our Ubuntu-built bundle (xwayland fallback also available).
     DISTRO_FEATURES:append = " wayland opengl systemd pam"
+    # No Bluetooth (#1199). The machine and the default distro both carry the
+    # feature, and with both set packagegroup-base hard-depends on
+    # packagegroup-base-bluetooth, which pulls bluez5 and enables
+    # bluetooth.service. Removing it here is what keeps BlueZ out; the image's
+    # PACKAGE_EXCLUDE is the guard that fails the build if anything else
+    # brings it back. A DISTRO_FEATURES change invalidates most of sstate, so
+    # the first build after it is close to a full rebuild: check the runner's
+    # disk headroom (the 40 GB pre-flight) before starting it.
+    DISTRO_FEATURES:remove = "bluetooth"
 
   segno: |
     # SEGNO_BOOT_DISK is set per board (kas-segno-rpi{4,5}.yml). The .wks.in is

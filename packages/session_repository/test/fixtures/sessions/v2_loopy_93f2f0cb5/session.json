@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "sampleRate": 48000,
+  "channels": 1,
+  "baseLengthFrames": 2400,
+  "tracks": [
+    {
+      "channel": 0,
+      "volume": 1.0,
+      "muted": false,
+      "multiple": 1,
+      "lengthFrames": 2400,
+      "stem": "track0.wav"
+    },
+    {
+      "channel": 1,
+      "volume": 0.5,
+      "muted": true,
+      "multiple": 2,
+      "lengthFrames": 4800,
+      "stem": "track1.wav"
+    }
+  ],
+  "laneChains": [
+    {
+      "channel": 0,
+      "lane": 0,
+      "encoded": "[{\"type\":3,\"params\":[0.35,0.35,0.35,0.0]}]"
+    }
+  ],
+  "monitors": [
+    {
+      "input": 0,
+      "enabled": true,
+      "outputMask": 3,
+      "volume": 1.5,
+      "muted": false,
+      "encoded": "[{\"type\":7,\"params\":[0.5,0.5,0.35,0.0]}]"
+    }
+  ]
+}
