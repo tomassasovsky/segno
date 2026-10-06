@@ -239,8 +239,10 @@ pulled or the power is cut, and is what "same drive" is checked against.
 Two native stop rules, both in the drain, both ending every stream at the
 same frame:
 
-- **Reserve.** At arm the drain receives `reserve_bytes`: 1 GiB on Internal
-  (`StorageRepository.internalReserveBytes`, P4 `storage_repository.dart:56`),
+- **Reserve.** At arm the drain receives `reserve_bytes`: 1 GB on Internal
+  (`StorageRepository.internalReserveBytes` = 1000000000, decimal, as
+  accepted behaviour §6.7 and pen 31's "1.0 GB reserved" have it; the code
+  is right and earlier drafts of this plan said 1 GiB),
   16 MiB on a removable volume (room for the final checkpoint slots, the
   finalized manifest and the layer files still staged). Every 5 s, on the
   checkpoint cadence, the drain re-reads the volume's free bytes (the
@@ -292,7 +294,7 @@ same frame:
   remaining time for every caller: `RecordingFormat.remainingFramesTogether`
   (Part 5) over the frozen set of streams (master plus every captured input,
   each with its bytes per frame and one header per part), from the
-  destination's free bytes minus its reserve (1 GiB Internal, 16 MiB
+  destination's free bytes minus its reserve (1 GB Internal, 16 MiB
   removable) minus the 1 MiB allowance. The page's `52:45:49 remaining`,
   the 60-second warning (pen `yzmtU`'s `Storage is nearly full. Recording
   stops before reserved space is used.`), the native budget and the USB
@@ -472,7 +474,7 @@ What Part 7 adds to that one mechanism:
   recovery path for both the Library's swap and this plan.
 - **Allocation is accounted before writing.** The save sums the bytes of
   the layers it must add and refuses with `StorageFailure.full` before
-  writing anything when they exceed free space. Saves may use the 1 GiB
+  writing anything when they exceed free space. Saves may use the 1 GB
   reserve (that is what the reserve is for: a take stops before it, so the
   session can still be saved).
 - **Garbage needs no sweep.** Unreferenced audio is simply not linked into
@@ -881,7 +883,7 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
   `reserve_reached`, `slow_storage`; `disk_full` and `device_changed` keep
   their spelling.
 - Dart: `PerfStopReason` and `perfOvers` on the snapshot; the repository
-  passes the destination's reserve (Internal 1 GiB, removable 16 MiB).
+  passes the destination's reserve (Internal 1 GB, removable 16 MiB).
 
 ```success-criteria
 GOAL: A take ends at the last whole frame every stream can hold when the reserve is reached or the drain falls behind, and says why.
@@ -1124,7 +1126,7 @@ VERIFICATION COMMAND: (cd packages/performance_repository && /Users/Tomas/develo
 ```success-criteria
 GOAL: The recorder reports remaining time and parts for every stream it writes, and holds every interrupted take for an explicit Save or Discard.
 SUCCESS CRITERIA:
-- With 64 GB free, 1 GiB reserve, 48 kHz stereo master and two captured stereo inputs the Armed state's remaining equals remainingFramesTogether over all three streams (24 bytes a frame), a third of the master-only figure; at 59 s remaining nearlyFull is true; with unknown space remaining is null and arming still succeeds. | verify: /Users/Tomas/development/flutter/bin/flutter test test/performance
+- With 64 GB free, 1 GB reserve, 48 kHz stereo master and two captured stereo inputs the Armed state's remaining equals remainingFramesTogether over all three streams (24 bytes a frame), a third of the master-only figure; at 59 s remaining nearlyFull is true; with unknown space remaining is null and arming still succeeds. | verify: /Users/Tomas/development/flutter/bin/flutter test test/performance
 - On a removable destination with only the master, nearlyFull turns on 60 s before the 16 MiB floor, not after it. | verify: /Users/Tomas/development/flutter/bin/flutter test test/performance
 - Arming when the destination cannot hold 10 s of every stream above its reserve, the allowance and one header per stream is refused with noRecordingSpace and arms nothing; one byte more arms. | verify: /Users/Tomas/development/flutter/bin/flutter test test/performance
 - held(reserveReached) emits Held; saveRecovered emits Finalizing then Completed; a throwing save emits Held(saveFailed: true) and a second saveRecovered succeeds; discardRecording emits Idle only after the repository confirms; a lease lost while armed emits Held(volumeLost). | verify: /Users/Tomas/development/flutter/bin/flutter test test/performance
