@@ -2523,6 +2523,77 @@ void main() {
       expect(engine.tunerInput, 0);
     });
 
+    test('setTunerMute silences a pair only while armed and rides the arm '
+        'across a restart', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      // Disarmed: refused, nothing sent.
+      expect(repo.setTunerMute({0}), EngineResult.invalid);
+      expect(engine.calls, isNot(contains('setTunerMute')));
+
+      repo.setTunerInput(input: 2);
+      expect(repo.setTunerMute({2, 3}), EngineResult.ok);
+      expect(engine.tunerMuteMask, 0xC);
+      expect(repo.setTunerMute({32}), EngineResult.invalid);
+      expect(repo.setTunerMute({-1}), EngineResult.invalid);
+      expect(engine.tunerMuteMask, 0xC);
+
+      // A restart under the open face re-arms, then re-sends the mute after
+      // it (the arm clears it natively).
+      engine.calls.clear();
+      engine
+        ..tunerInput = -1
+        ..tunerMuteMask = 0;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.tunerInput, 2);
+      expect(engine.tunerMuteMask, 0xC);
+      expect(
+        engine.calls.indexOf('setTunerInput'),
+        lessThan(engine.calls.indexOf('setTunerMute')),
+      );
+
+      // Moving the tuner drops the remembered mute: a restart re-arms the new
+      // input without silencing the old pair.
+      repo.setTunerInput(input: 1);
+      engine
+        ..calls.clear()
+        ..tunerMuteMask = 0;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.tunerInput, 1);
+      expect(engine.calls, isNot(contains('setTunerMute')));
+
+      // An empty set ends the mute.
+      expect(repo.setTunerMute({1}), EngineResult.ok);
+      expect(repo.setTunerMute({}), EngineResult.ok);
+      expect(engine.tunerMuteMask, 0);
+    });
+
+    test(
+      'a mute issued while stopped lands after the arm on the next start',
+      () {
+        final repo = buildRepo()..setTunerInput(input: 1);
+        expect(repo.setTunerMute({1}), EngineResult.ok);
+        expect(engine.tunerMuteMask, 0);
+
+        repo.startEngine(const EngineConfig());
+        expect(engine.tunerInput, 1);
+        expect(engine.tunerMuteMask, 0x2);
+      },
+    );
+
+    test('the tuner reading carries the engine mute mask', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        tunerInput: 2,
+        tunerMuteMask: 0xC,
+      );
+      final next = repo.looperState.firstWhere((s) => s.tuner.input == 2);
+      expect((await next).tuner.muteMask, 0xC);
+    });
+
     test('an arm issued while stopped lands on the next start', () {
       final repo = buildRepo()..setTunerInput(input: 1);
       expect(engine.tunerInput, -1);

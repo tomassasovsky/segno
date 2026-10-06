@@ -2960,6 +2960,40 @@ class SegnoEngineBindings {
   late final _le_engine_set_tuner_input = _le_engine_set_tuner_inputPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Silences the live monitors of the inputs in `input_mask` (bit c = input c)
+  /// for as long as the tuner stays armed — the foot Tuner's temporary mute of
+  /// the input (or stereo pair) being tuned (#1229).
+  ///
+  /// This is NOT le_engine_set_monitor_input_mute: that mute is the player's
+  /// persistent intent, and this one belongs to the tuner arm. The two are
+  /// ORed; neither changes the other. Arm the input first: a mask posted while
+  /// the tuner is disarmed is stored as 0, and every le_engine_set_tuner_input
+  /// (re-arm, move or disarm) clears it, so a tuning can never leave an input
+  /// silent behind it. Bits for inputs the device does not have are dropped.
+  ///
+  /// Only monitoring changes. Track lanes still record the input, the detector
+  /// still hears it (it taps before any monitor), and the mask is not
+  /// perf-logged; a captured monitor stem holds the silence that was heard.
+  /// Results ride the snapshot as `tuner_mute_mask`.
+  int le_engine_set_tuner_mute(
+    ffi.Pointer<le_engine> engine,
+    int input_mask,
+  ) {
+    return _le_engine_set_tuner_mute(
+      engine,
+      input_mask,
+    );
+  }
+
+  late final _le_engine_set_tuner_mutePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Uint32)
+        >
+      >('le_engine_set_tuner_mute');
+  late final _le_engine_set_tuner_mute = _le_engine_set_tuner_mutePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Enables/disables the master peak limiter and sets its ceiling (clamped to
   /// (0,1], default 0.99). The limiter is applied post master-gain so the summed
   /// output of all tracks, overdub layers, and monitoring cannot exceed the ceiling
@@ -6518,7 +6552,16 @@ enum le_command_code {
   LE_CMD_RESET_TRANSFORMS(82),
 
   /// checked internal Reverse request; never raw-posted
-  LE_CMD_REVERSE(83);
+  LE_CMD_REVERSE(83),
+
+  /// Silence the live monitors of the inputs in the mask while the tuner is
+  /// armed (#1229). arg_i = the mask, bit c = input c. Owned by the tuner arm:
+  /// refused (stored as 0) while the tuner is disarmed, and cleared by every
+  /// LE_CMD_SET_TUNER_INPUT, so it can never outlive or follow a tuning. Not
+  /// perf-logged: it changes no recorded material, and a captured monitor stem
+  /// already records the silence that was heard. 84-131 belong to other
+  /// epics (the numbering ledger); 133-135 stay reserved for #1229.
+  LE_CMD_SET_TUNER_MUTE(132);
 
   final int value;
   const le_command_code(this.value);
@@ -6606,6 +6649,7 @@ enum le_command_code {
     81 => LE_CMD_FADE,
     82 => LE_CMD_RESET_TRANSFORMS,
     83 => LE_CMD_REVERSE,
+    132 => LE_CMD_SET_TUNER_MUTE,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -7480,6 +7524,12 @@ final class le_snapshot extends ffi.Struct {
   /// need different words on screen.
   @ffi.Int32()
   external int tuner_input;
+
+  /// Inputs whose live monitors the tuner is silencing (bit c = input c); 0
+  /// whenever the tuner is disarmed. Persistent monitor mute is separate and
+  /// unaffected (le_engine_set_monitor_input_mute).
+  @ffi.Uint32()
+  external int tuner_mute_mask;
 
   /// number of usable tracks (<= LE_MAX_TRACKS)
   @ffi.Int32()

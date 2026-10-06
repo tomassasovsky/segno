@@ -363,6 +363,11 @@ class LooperRepository {
   /// resumes analysing behind a face nobody is looking at.
   int _tunerInput = -1;
 
+  /// The inputs the tuner silences while armed (bit `c` = input `c`), `0`
+  /// otherwise — the engine's rule, mirrored so a restart can re-send it
+  /// after the arm it belongs to (#1229).
+  int _tunerMuteMask = 0;
+
   /// Musical settings retained across device restarts and restored sessions.
   /// Explicit edits and session recall update the desired tempo. Stopping the
   /// engine captures its final tapped/derived tempo and source for reconnect.
@@ -2210,6 +2215,7 @@ class LooperRepository {
       hz: s.tunerHz,
       confidence: s.tunerConfidence,
       input: s.tunerInput,
+      muteMask: s.tunerMuteMask,
     ),
     transport: TransportState(
       isRunning: s.isRunning,
@@ -2537,7 +2543,13 @@ class LooperRepository {
       // Without this a device reconnect under an open Tuner face leaves the
       // engine disarmed, and the face has no way to notice: it armed once, on
       // the way in, and will not do so again until it is closed and reopened.
-      if (_tunerInput >= 0) _engine.setTunerInput(input: _tunerInput);
+      if (_tunerInput >= 0) {
+        _engine.setTunerInput(input: _tunerInput);
+        // The arm clears the mask natively; the tuning's mute rides after it.
+        if (_tunerMuteMask != 0) {
+          _engine.setTunerMute(inputMask: _tunerMuteMask);
+        }
+      }
       // Re-apply the tempo grid + click/count-in state (A1/A2), plus the
       // looper mode (B2a): a fresh start resets all of it to the tempo-free/
       // Multi defaults, same as quantize/gain above. Only an explicitly-set
@@ -5198,10 +5210,39 @@ class LooperRepository {
   /// nobody is looking; the cache only carries an arm across a restart that
   /// happens WHILE the tuner is open (a reconnect, a device change), which is
   /// the one case where dropping it strands the face on a dead engine.
+  ///
+  /// Every call (arm, move or disarm) also drops the tuner's temporary mute,
+  /// as the engine does: it belonged to the tuning this call ends, and
+  /// [setTunerMute] sends the new one.
   EngineResult setTunerInput({required int input}) {
     _tunerInput = input;
+    _tunerMuteMask = 0;
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setTunerInput(input: input);
+  }
+
+  /// Silences the live monitors of [inputs] while the tuner is armed — the
+  /// foot Tuner's temporary mute of the input or pair it tunes (#1229).
+  ///
+  /// Not the monitor's own mute: nothing here is saved, captured into a
+  /// Session or perf-logged, and [monitorMuted] never reports it. Refused
+  /// with [EngineResult.invalid] while the tuner is disarmed or for an input
+  /// outside `0..31`; an empty set ends the mute. Remembered with the arm and
+  /// re-sent after it on every (re)start.
+  EngineResult setTunerMute(Set<int> inputs) {
+    if (_tunerInput < 0 || inputs.any((input) => input < 0 || input >= 32)) {
+      return EngineResult.invalid;
+    }
+    var mask = 0;
+    for (final input in inputs) {
+      mask |= 1 << input;
+    }
+    if (_intendRunning) {
+      final result = _engine.setTunerMute(inputMask: mask);
+      if (!result.isOk) return result;
+    }
+    _tunerMuteMask = mask;
+    return EngineResult.ok;
   }
 
   /// Sets what hardware [input]'s live monitor is asked to do. The input-level

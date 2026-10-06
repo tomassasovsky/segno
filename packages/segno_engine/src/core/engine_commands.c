@@ -3464,6 +3464,14 @@ int32_t le_engine_set_tuner_input(le_engine* engine, int32_t input) {
   return le_push(engine, LE_CMD_SET_TUNER_INPUT, input, 0.0f);
 }
 
+int32_t le_engine_set_tuner_mute(le_engine* engine, uint32_t input_mask) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  /* Through the ring, after any arm already posted, so "arm, then mute"
+   * orders the way the caller wrote it; the audio thread refuses a mask
+   * while disarmed and drops bits for inputs the device lacks. */
+  return le_push(engine, LE_CMD_SET_TUNER_MUTE, (int32_t)input_mask, 0.0f);
+}
+
 int32_t le_engine_set_limiter(le_engine* engine, int32_t enabled,
                               float ceiling) {
   if (engine == NULL) return LE_ERR_INVALID;

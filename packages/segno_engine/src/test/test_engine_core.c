@@ -33840,9 +33840,11 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_stretch.h"
 #include "test_engine_reverse.h"
 #include "test_engine_peel.h"
+#include "test_engine_tuner.h"
 
 int main(void) {
   run_reverse_tests();
+  run_tuner_mute_tests();
   if (getenv("SEGNO_REVERSE_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_reopen_same_rate_retains_material();
   test_reopen_drops_partial_first_take();
