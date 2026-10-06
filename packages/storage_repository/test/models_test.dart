@@ -105,15 +105,24 @@ void main() {
   });
 
   test('a write lease is a const value: target and purpose', () {
-    const a = WriteLease(target: StorageDestination.internal(), purpose: 'x');
+    const a = WriteLease(
+      target: StorageDestination.internal(),
+      purpose: WritePurpose.copy,
+    );
     expect(
       a,
-      const WriteLease(target: StorageDestination.internal(), purpose: 'x'),
+      const WriteLease(
+        target: StorageDestination.internal(),
+        purpose: WritePurpose.copy,
+      ),
     );
     expect(
       a,
       isNot(
-        const WriteLease(target: StorageDestination.removable(1), purpose: 'x'),
+        const WriteLease(
+          target: StorageDestination.removable(1),
+          purpose: WritePurpose.copy,
+        ),
       ),
     );
   });

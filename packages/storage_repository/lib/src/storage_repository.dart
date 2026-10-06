@@ -233,7 +233,7 @@ class StorageRepository {
   /// [StorageFailure] a write there would meet: `readOnly`, `unsupported`, or
   /// `volumeLost` for a generation that is not present, is being ejected or
   /// has been ejected.
-  HeldLease acquire(StorageDestination destination, String purpose) {
+  HeldLease acquire(StorageDestination destination, WritePurpose purpose) {
     if (destination is RemovableDestination) {
       _checkWritable(destination.generation);
     }
@@ -253,7 +253,7 @@ class StorageRepository {
   /// a body must stop at its first failure rather than recreate directories.
   Future<T> withWriteLease<T>(
     StorageDestination target,
-    String purpose,
+    WritePurpose purpose,
     Future<T> Function(String root) body,
   ) async {
     final held = acquire(target, purpose);
@@ -466,10 +466,14 @@ class StorageRepository {
 
   /// Whether Internal has less free space than [internalReserveBytes]. False
   /// when Internal cannot be measured: unknown is not full.
-  Future<bool> lowInternalSpace() async {
-    final measured = await space(const StorageDestination.internal());
-    return measured != null && measured.freeBytes < internalReserveBytes;
-  }
+  Future<bool> lowInternalSpace() async =>
+      isLowInternalSpace(await space(const StorageDestination.internal()));
+
+  /// The rule [lowInternalSpace] applies, for a reading of Internal a caller
+  /// already holds (the Storage page reads it every few seconds and must not
+  /// measure twice, or keep its own copy of the rule).
+  static bool isLowInternalSpace(VolumeSpace? internal) =>
+      internal != null && internal.freeBytes < internalReserveBytes;
 
   String? _mountedPath(int generation) {
     final record = _records[generation];
@@ -541,7 +545,7 @@ class StorageRepository {
         'must be a relative path inside the destination',
       );
     }
-    final held = acquire(destination, 'copy');
+    final held = acquire(destination, WritePurpose.copy);
     try {
       final wanted = '${await _writeRoot(destination)}/$relativePath';
       if (onConflict == ConflictPolicy.ask && _taken(wanted)) {

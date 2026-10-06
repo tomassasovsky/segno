@@ -51,10 +51,7 @@ void main() {
           child: Scaffold(
             body: SingleChildScrollView(
               child: page
-                  ? StoragePage(
-                      onOpenLibrary: () => opened.add('library'),
-                      onBrowse: (g) => opened.add('browse $g'),
-                    )
+                  ? StoragePage(onOpenLibrary: () => opened.add('library'))
                   : const SizedBox.shrink(),
             ),
           ),
@@ -142,22 +139,44 @@ void main() {
       expect(find.byKey(const Key('storage_low_space_banner')), findsNothing);
     });
 
-    testWidgets('a mounted 32 GB SEGNO USB: 24.2 GB free, of 32 GB, Browse '
-        'and Eject', (tester) async {
-      await pump(tester, volumes: [usbRecord(1)]);
+    testWidgets('a mounted 32 GB SEGNO USB: 24.2 GB free, of 32 GB, and '
+        'Eject; no Browse until the Library can open at a drive', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        volumes: [
+          usbRecord(1),
+          usbRecord(2, status: RemovableVolumeRecordStatus.readOnly),
+        ],
+      );
 
       expect(inCard(1, find.text('SEGNO USB')), findsOneWidget);
       expect(inCard(1, find.text('24.2 GB free')), findsOneWidget);
       expect(inCard(1, find.text('of 32 GB')), findsOneWidget);
+      expect(inCard(1, find.byKey(const Key('storage_eject'))), findsOneWidget);
+      // A Browse that opened Internal would show the wrong files as the
+      // drive's (#1217 review).
+      expect(find.text('Browse'), findsNothing);
       expect(
-        inCard(1, find.byKey(const Key('storage_browse'))),
+        inCard(2, find.byKey(const Key('storage_eject'))),
         findsOneWidget,
       );
-      expect(inCard(1, find.byKey(const Key('storage_eject'))), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('storage_browse')));
       await tester.tap(find.byKey(const Key('storage_open_library')));
-      expect(opened, ['browse 1', 'library']);
+      expect(opened, ['library']);
+    });
+
+    testWidgets('Eject is set at 700, as the pen draws it', (tester) async {
+      await pump(tester, volumes: [usbRecord(1)]);
+
+      final label = tester.widget<RichText>(
+        find.descendant(
+          of: find.byKey(const Key('storage_eject')),
+          matching: find.byType(RichText),
+        ),
+      );
+      expect(label.text.style?.fontWeight, FontWeight.w700);
     });
 
     testWidgets('Eject: Ejecting… with Cancel, then Safe to remove and the '
@@ -184,7 +203,6 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(const Key('storage_eject_cancel')), findsNothing);
-      expect(find.byKey(const Key('storage_browse')), findsNothing);
     });
 
     testWidgets('a refused eject says so under the drive, and Eject is there '
@@ -224,17 +242,51 @@ void main() {
       expect(find.byKey(const Key('storage_eject_failed')), findsNothing);
     });
 
+    testWidgets('a Cancel after the helper took the eject drops Cancel and '
+        'says the eject cannot be stopped', (tester) async {
+      final l10n = await pump(tester, volumes: [usbRecord(1)]);
+
+      await tester.tap(find.byKey(const Key('storage_eject')));
+      await tester.pumpAndSettle();
+      rig.client.take('req-1');
+      await tester.tap(find.byKey(const Key('storage_eject_cancel')));
+      await tester.pumpAndSettle();
+
+      expect(inCard(1, find.text(l10n.storageUsbEjecting)), findsOneWidget);
+      expect(find.byKey(const Key('storage_eject_cancel')), findsNothing);
+      expect(find.text(l10n.storageEjectUnderway), findsOneWidget);
+
+      rig.client.settleEject('req-1', ok: true);
+      await tester.pumpAndSettle();
+      expect(inCard(1, find.text(l10n.storageUsbSafeToRemove)), findsOneWidget);
+      expect(find.byKey(const Key('storage_eject_underway')), findsNothing);
+    });
+
     testWidgets('while a lease holds the drive Eject is disabled and the '
         'card names the work; a tap files nothing', (tester) async {
       final l10n = await pump(tester, volumes: [usbRecord(1)]);
-      rig.repository.acquire(const StorageDestination.removable(1), 'export');
+      rig.repository
+        ..acquire(const StorageDestination.removable(1), WritePurpose.copy)
+        ..acquire(const StorageDestination.removable(1), WritePurpose.copy)
+        ..acquire(
+          const StorageDestination.removable(1),
+          WritePurpose.recording,
+        );
       // Leases have no event of their own; the next read (at most 5 s away
       // while the page is open) shows it.
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
 
       expect(
-        inCard(1, find.text(l10n.storageUsbInUse('SEGNO USB', 'export'))),
+        inCard(
+          1,
+          find.text(
+            l10n.storageUsbInUse(
+              'SEGNO USB',
+              '${l10n.storagePurposeCopy}, ${l10n.storagePurposeRecording}',
+            ),
+          ),
+        ),
         findsOneWidget,
       );
       final eject = tester.widget<StorageCardButton>(
@@ -346,7 +398,7 @@ void main() {
           value: cubit,
           child: Scaffold(
             body: SingleChildScrollView(
-              child: StoragePage(onOpenLibrary: () {}, onBrowse: (_) {}),
+              child: StoragePage(onOpenLibrary: () {}),
             ),
           ),
         ),

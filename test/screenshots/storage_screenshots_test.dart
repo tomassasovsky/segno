@@ -91,7 +91,7 @@ void main() {
             backgroundColor: SurfaceTheme.dark.card,
             body: Padding(
               padding: const EdgeInsets.fromLTRB(200, 120, 20, 20),
-              child: StoragePage(onOpenLibrary: () {}, onBrowse: (_) {}),
+              child: StoragePage(onOpenLibrary: () {}),
             ),
           ),
         ),

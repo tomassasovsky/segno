@@ -4,6 +4,12 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/common/pen_icons.dart';
 import 'package:segno/theme/theme.dart';
 
+/// Bytes as decimal gigabytes, the figure printed on a drive's own label and
+/// quoted by every other appliance; a "12.4 GB free" that disagrees with the
+/// sticker is a bug report. Handed to l10n as a number, so the separator is
+/// the locale's.
+double decimalGigabytes(int bytes) => bytes / 1000000000;
+
 /// One volume on the Storage page (pen 31 `storage-volume`): the drive glyph
 /// with the volume's name and state, what it holds in the middle, and its
 /// actions at the trailing edge.

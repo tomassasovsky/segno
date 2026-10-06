@@ -6,6 +6,7 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/storage/view/storage_page.dart';
+import 'package:segno/storage/view/storage_volume_card.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 
 /// The Storage tab: the volumes and safe eject (pen 31, [StoragePage]), then
@@ -35,8 +36,8 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
   @override
   void initState() {
     super.initState();
-    // Re-read on open: a USB stick may have arrived since the app started,
-    // and captures may have been written by the session in between.
+    // Re-read on open: captures may have been written by the session since
+    // the app started.
     unawaited(context.read<ConsoleFactsCubit>().load());
   }
 
@@ -72,12 +73,7 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
         groups: [
           ConsoleGroup(
             blocks: [
-              StoragePage(
-                onOpenLibrary: () => unawaited(openLibrary()),
-                // The Library opens at Internal until #1178 gives it a USB
-                // view to open at.
-                onBrowse: (_) => unawaited(openLibrary()),
-              ),
+              StoragePage(onOpenLibrary: () => unawaited(openLibrary())),
             ],
           ),
           ConsoleGroup(
@@ -115,16 +111,14 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
                       subtitle: l10n.storagePluginsSubtitle(usage.pluginCount),
                       bytes: usage.pluginBytes,
                     ),
+                    // No Free row: the Internal card above carries free
+                    // space, read every few seconds; a second figure from a
+                    // read made once on open would disagree with it.
                     _usageRow(
                       key: const Key('system_storage_system'),
                       title: l10n.storageSystemTitle,
                       subtitle: l10n.storageSystemSubtitle,
                       bytes: usage.systemBytes,
-                    ),
-                    _usageRow(
-                      key: const Key('system_storage_free'),
-                      title: l10n.storageFreeTitle,
-                      bytes: usage.freeBytes,
                       showDivider: false,
                     ),
                   ],
@@ -180,19 +174,8 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
     key: key,
     title: title,
     subtitle: subtitle,
-    value: context.l10n.storageGigabytes(_gigabytes(bytes)),
+    value: context.l10n.storageGigabytes(decimalGigabytes(bytes)),
     showDisclosure: false,
     showDivider: showDivider,
   );
-
-  /// Bytes as the GB figure the mockups print.
-  ///
-  /// Decimal gigabytes, not gibibytes: this is the number printed on the disk
-  /// and quoted by every other appliance, and a "12.4 GB free" that disagrees
-  /// with the sticker is a bug report.
-  ///
-  /// Handed over as a number, not a printed string: the one decimal and the
-  /// separator are the locale's, so `es` reads `41,6 GB` rather than
-  /// disagreeing with the sample rate About prints two tabs away.
-  static double _gigabytes(int bytes) => bytes / 1000000000;
 }

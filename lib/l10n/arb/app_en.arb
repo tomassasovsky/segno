@@ -2223,7 +2223,6 @@
     },
     "storageSystemTitle": "System and updates",
     "storageSystemSubtitle": "includes the standby system",
-    "storageFreeTitle": "Free",
     "storageGigabytes": "{value} GB",
     "@storageGigabytes": {
         "description": "One figure of the disk breakdown. Formatted rather than pre-printed, so the decimal separator is the locale's — the sample rate beside it in About already is.",
@@ -2347,7 +2346,7 @@
     },
     "storageUsbInUse": "{label} · in use for {purpose}",
     "@storageUsbInUse": {
-        "description": "Under a drive whose Eject is disabled because something is writing to it; purpose is the writer's own word (recording, export, backup, copy).",
+        "description": "Under a drive whose Eject is disabled because something is writing to it; purpose is one or more of the storagePurpose words, joined with a comma.",
         "placeholders": {
             "label": {
                 "type": "String"
@@ -2367,9 +2366,28 @@
     },
     "storageUsbUnformatted": "This drive isn't formatted. Format it as exFAT.",
     "storageUsbMountFailed": "This drive could not be opened.",
-    "storageBrowse": "Browse",
     "storageEject": "Eject",
     "storageEjectFailed": "Could not eject. The drive is still connected. Try again.",
+    "storageEjectUnderway": "Already ejecting. Wait for it to finish.",
+    "@storageEjectUnderway": {
+        "description": "Under a drive whose Cancel came after the eject had started syncing and unmounting; it cannot be stopped."
+    },
+    "storagePurposeRecording": "recording",
+    "@storagePurposeRecording": {
+        "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
+    "storagePurposeCopy": "copying files",
+    "@storagePurposeCopy": {
+        "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
+    "storagePurposeExport": "export",
+    "@storagePurposeExport": {
+        "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
+    "storagePurposeBackup": "backup",
+    "@storagePurposeBackup": {
+        "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
     "aboutNameRow": "Name",
     "aboutRenameTitle": "Rename console",
     "aboutSerialRow": "Serial",
