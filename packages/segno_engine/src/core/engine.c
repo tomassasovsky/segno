@@ -1560,6 +1560,8 @@ void (*le_test_record_timing_hook)(le_engine*, int) = NULL;
 void (*le_test_click_mode_hook)(le_engine*, int) = NULL;
 void (*le_test_record_start_hook)(le_engine*, int) = NULL;
 void (*le_test_peel_hook)(le_engine*, int) = NULL;
+void (*le_test_midi_dispatch_hook)(le_engine*, int, int,
+                                   const le_midi_port_event*) = NULL;
 #endif
 
 int32_t le_push_cmd(le_engine* engine, le_command cmd) {

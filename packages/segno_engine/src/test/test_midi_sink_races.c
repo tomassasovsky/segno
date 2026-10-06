@@ -18,6 +18,8 @@
  *   2. A producer pushes while the control thread creates an engine, attaches
  *      the capture and destroys the engine, 2 000 times: destroy must wait
  *      for any push in flight, so no push ever writes a freed engine.
+ *   3. Deterministic: a producer is parked inside the bracket; a detach on
+ *      another thread must not return until the producer is released.
  *
  * Both run in the plain suite (the accounting is a functional property) and
  * in the native-tests-tsan job (NATIVE_TESTS_ONLY=races
@@ -26,10 +28,17 @@
  * destroy race against freed memory.
  */
 #include <pthread.h>
+#include <sched.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+
+/* The park point (le_midi_port.h): a producer can be held inside the
+ * quiescence bracket, so test 3 proves unbind waits for it, every run. */
+static void race_park(void);
+#define LE_MIDI_SINK_TEST_PARK(sink) race_park()
 
 #include "engine_private.h" /* le_engine (the ports, for the final check) */
 #include "le_midi_port.h"
@@ -157,9 +166,64 @@ static void test_destroy_against_producer(void) {
   CHECK(atomic_load(&c.pushed) > 0);
 }
 
+static _Atomic int g_park_armed, g_parked, g_release;
+
+static void race_park(void) {
+  if (!atomic_exchange(&g_park_armed, 0)) return;
+  atomic_store(&g_parked, 1);
+  while (!atomic_load(&g_release)) sched_yield();
+}
+
+typedef struct park_ctx {
+  le_engine* engine;
+  fake_capture capture;
+  _Atomic int push_result;
+  _Atomic int detached;
+} park_ctx;
+
+static void* park_producer(void* arg) {
+  park_ctx* c = (park_ctx*)arg;
+  atomic_store(&c->push_result,
+               le_midi_sink_push(&c->capture.sink, 0xF8, 0, 0, 1));
+  return NULL;
+}
+
+static void* park_detacher(void* arg) {
+  park_ctx* c = (park_ctx*)arg;
+  le_engine_detach_midi_input(c->engine, 0);
+  atomic_store(&c->detached, 1);
+  return NULL;
+}
+
+static void test_detach_waits_for_parked_producer(void) {
+  printf("test_detach_waits_for_parked_producer\n");
+  static park_ctx c;
+  memset(&c, 0, sizeof(c));
+  c.engine = le_engine_create();
+  le_engine_attach_midi_input(c.engine, (le_midi*)(void*)&c.capture, 0);
+  atomic_store(&g_parked, 0);
+  atomic_store(&g_release, 0);
+  atomic_store(&g_park_armed, 1);
+  pthread_t producer, detacher;
+  pthread_create(&producer, NULL, park_producer, &c);
+  while (!atomic_load(&g_parked)) sched_yield();
+  pthread_create(&detacher, NULL, park_detacher, &c);
+  const struct timespec wait = {0, 20000000}; /* 20 ms */
+  nanosleep(&wait, NULL);
+  CHECK(atomic_load(&c.detached) == 0); /* still waiting for the producer */
+  atomic_store(&g_release, 1);
+  pthread_join(producer, NULL);
+  pthread_join(detacher, NULL);
+  CHECK(atomic_load(&c.detached) == 1);
+  CHECK(atomic_load(&c.push_result) == 1); /* it was bound when it entered */
+  CHECK(atomic_load(&c.capture.sink.port) == NULL);
+  le_engine_destroy(c.engine);
+}
+
 int main(void) {
   test_attach_detach_against_producer_and_audio();
   test_destroy_against_producer();
+  test_detach_waits_for_parked_producer();
   if (g_failures == 0) {
     printf("ALL PASSED\n");
     return 0;

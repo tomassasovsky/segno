@@ -256,6 +256,11 @@ extern void (*le_test_record_start_hook)(le_engine*, int);
 /* 1: le_engine_peel drained events, before it reads a_layer_in_flight (the
  * window a late retire can land in). */
 extern void (*le_test_peel_hook)(le_engine*, int);
+/* Every dispatch of le_midi_ports_drain, in order (#1228): `kind` is an
+ * le_midi_dispatch_kind; `ev` is the event for LE_MIDI_DISPATCH_EVENT and
+ * NULL otherwise. */
+extern void (*le_test_midi_dispatch_hook)(le_engine*, int port, int kind,
+                                          const le_midi_port_event* ev);
 #endif
 
 

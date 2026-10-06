@@ -23,6 +23,7 @@
 #ifndef SEGNO_ENGINE_MIDI_BACKEND_H
 #define SEGNO_ENGINE_MIDI_BACKEND_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "segno_engine_api.h" /* le_midi (opaque), le_midi_info, le_result */
@@ -70,6 +71,19 @@ int le_midi_ring_push(le_midi* m, uint8_t status, uint8_t data1, uint8_t data2,
  * ts_us = t_ns / 1000). Wait-free; safe from any OS MIDI thread. */
 void le_midi_input(le_midi* m, uint8_t status, uint8_t data1, uint8_t data2,
                    uint64_t t_ns);
+
+/* Splits a raw MIDI 1.0 byte stream (complete messages, no running status)
+ * into messages and hands each to le_midi_input with `t_ns`. Real-time bytes
+ * (0xF8-0xFF) are delivered where they appear, also between the bytes of
+ * another message or inside a SysEx, and skipped over; SysEx is skipped; a
+ * message cut short by a new status byte or the end of the buffer is
+ * dropped. Used by the CoreMIDI backend. */
+void le_midi_split(le_midi* m, const uint8_t* data, size_t len, uint64_t t_ns);
+
+/* Marks a gap on the bound engine port: the OS dropped messages before the
+ * backend could read them (ALSA's -ENOSPC input overrun). Safe from the
+ * backend's own thread. */
+void le_midi_input_gap(le_midi* m);
 
 /* Marks the bound engine port lost (the source device went away while the
  * capture was open). Safe from the backend's own thread. */
