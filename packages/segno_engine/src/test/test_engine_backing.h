@@ -1376,6 +1376,33 @@ static void test_backing_decode_bounded_matches_whole(void) {
   }
 }
 
+/* Review of #1223, L5: a bounded read starting at the last source frame of
+ * a reduction has no output frame of its own: an empty read, not damage;
+ * the voice refuses the empty buffer. */
+static void test_backing_decode_empty_bounded_read(void) {
+  printf("test_backing_decode_empty_bounded_read\n");
+  enum { N = 9600 };
+  float* x = calloc(N, sizeof(float));
+  bk_write_wav(bk_path("tail.wav"), 3, 32, 1, 96000, x, N, 0);
+  free(x);
+  le_backing_buffer* b = NULL;
+  le_backing_decode_info info;
+  CHECK(le_backing_decode_file(bk_path("tail.wav"), 48000, N - 1, 100, &b,
+                               &info) == LE_OK);
+  CHECK(b != NULL && le_backing_buffer_frames(b) == 0 && info.truncated == 0);
+  le_engine* e = bk_engine(2);
+  CHECK(le_engine_backing_load(e, b, 1, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_backing_stage_next(e, b, 1) == LE_ERR_INVALID);
+  le_engine_destroy(e);
+  le_backing_buffer_free(b);
+  /* One frame earlier there is one. */
+  b = NULL;
+  CHECK(le_backing_decode_file(bk_path("tail.wav"), 48000, N - 2, 100, &b,
+                               &info) == LE_OK);
+  CHECK(le_backing_buffer_frames(b) == 1);
+  le_backing_buffer_free(b);
+}
+
 /* Defense in depth for H2: reads and seeks stop after a bounded amount of
  * work, so even a decoder loop the header check missed ends. */
 static void test_backing_decode_work_bound(void) {
@@ -1413,6 +1440,7 @@ static void run_backing_decode_tests(void) {
   test_backing_decode_non_finite();
   test_backing_decode_bounded_matches_whole();
   test_backing_decode_work_bound();
+  test_backing_decode_empty_bounded_read();
 }
 
 static void run_backing_tests(void) {

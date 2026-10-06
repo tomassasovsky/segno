@@ -169,7 +169,8 @@ static int32_t le_backing_post_buffer(le_engine* e, int32_t code,
   if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
-  if (buffer != NULL && (buffer->sample_rate != e->sample_rate ||
+  if (buffer != NULL && (buffer->frames <= 0 ||
+                         buffer->sample_rate != e->sample_rate ||
                          le_backing_owned_index(e, buffer) >= 0)) {
     return LE_ERR_INVALID;
   }
