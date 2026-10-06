@@ -85,12 +85,18 @@ elsewhere:
 |---|---|---|
 | Waveform window, high contrast, refresh rate | `settings_page.dart:167-227` | tray System > Display (`lib/system/view/display_system_tab.dart:74-136`) |
 | Boot default mode (Record or Mute) | `settings_page.dart:185-206`; applied at `lib/control/cubit/control_cubit.dart:1179-1205` | nowhere |
-| Device, rate, buffer, latency, ASIO | `lib/audio_setup/view/audio_settings_section.dart` | tray Audio > Device (`lib/audio_setup/view/console/device_audio_tab.dart`) |
+| Device, rate, buffer, latency, ASIO | `lib/audio_setup/view/audio_settings_section.dart` | tray Audio > Device (`lib/audio_setup/view/console/device_audio_tab.dart`), with one exception: separate playback and capture devices (below) |
 | Click level | `audio_settings_section.dart:108` (`ClickVolumeSection`) | nowhere on touch (the doc at `lib/audio_setup/view/click_volume_section.dart:11-17` says a fresh unit needs it) |
 | Record offset text field (desktop) | `audio_settings_section.dart:274`, `:452-` | Device tab shows the measured offset read-only (`device_audio_tab.dart:428`) |
 | Pedal section → `PedalAssignmentPage` → `PedalPlate` | `audio_settings_section.dart:112`, `lib/pedal/view/pedal_settings_section.dart`, `pedal_assignment_page.dart:244` | tray Control > Pedal (same `setGlobalBindings`) |
 | Track names | `settings_page.dart:235-258` | track column and Mixer column names (`lib/looper/view/track_column.dart:538-546`, `lib/looper/view/mixer_column.dart:228-236`) |
 | Updates | `lib/update/view/updates_settings_section.dart` | tray System > Updates (`lib/system/view/updates_system_tab.dart`) |
+
+The Device tab pairs playback and capture by interface name (`_Interface` in
+`device_audio_tab.dart`, `AudioSetupCubit.setDevice`). The old page's two
+pickers could choose a different device for each, which a macOS development
+host needs to pair its built-in microphone with its built-in speakers. That
+choice goes with the old page (D13).
 
 ### 1.4 Tray Audio > Recording tab
 
@@ -207,16 +213,21 @@ only touch control for click level (§1.3), and the accepted home, the Mixer
 "Backing & click" strip (E3-3, pen `Mixer · Backing & click / Tile`), is not
 built. E3-3 deletes this row when its strip lands (rule 4).
 
-D3. **Maximum loop length and the default loop multiple stay on the interim
-Device page's Recording tab**, which keeps only those two rows; the Rec/Dub,
-Auto record and Quantize duplicates are removed (rule 4, §1.4). Stored values
-keep applying (rule 1). Their final home is question Q1.
+D3. **Maximum loop length goes to Device; the default loop multiple goes to
+Loop settings > Length & quantize** (Q1, answered by the review of #1208).
+Maximum loop length sizes memory when the device opens, so it is a row on the
+Device tab (Part 1, as built). The default multiple is the length tracks that
+inherit get, the question Length & quantize answers per track; until Part 5
+moves it there it stays on the Device page's Recording tab, which keeps only
+that row. The Rec/Dub, Auto record and Quantize duplicates are removed
+(rule 4, §1.4). Stored values keep applying (rule 1).
 
-D4. **The boot-default mode preference is retired.** The console starts in
-Record mode, as AB 1.1 has normal startup open Tracks. An install that stored
-`mute` gets one notice on its next start, "Segno now starts in Tracks. Press
-Mode to switch to Mute.", and the key is removed (rule 3). The alternative is
-question Q2.
+D4. **The boot-default mode preference is retired** (owner, 2026-10-06). The
+console starts in Record. An install that stored `mute` gets one notice on its
+next start, "Segno now always starts in Record mode. Press Mode to switch to
+Mute.", and the key is removed (rule 3). Parts 2 and 3 ship in the same
+release: from Part 2 the old page, and with it the boot-default control, is
+unreachable, and only Part 3 brings the notice.
 
 D5. **The record-offset text field (desktop only) is retired.** The stored
 offset keeps applying (rule 1); Measure on the Device page replaces it, as it
@@ -260,18 +271,35 @@ notice, but keep the pairing files for rollback** (rules 1, 2, 5).
   development path and are not handled.
 - The image drops `bluez5`, `segno-bt-ctl`, `segno-bt-persist` and its unit.
   `bluetoothd` no longer runs, so nothing powers the controller, advertises, or
-  reconnects a paired device. The image adds `PACKAGE_EXCLUDE += "bluez5"`, as it
-  does for psplash (`segno-kiosk-image.bb`), so a hard dependency fails the
-  build instead of silently pulling BlueZ back. If the build fails, the
-  fallback is `DISTRO_FEATURES:remove = "bluetooth"` in `kas-segno-common.yml`.
+  reconnects a paired device.
+- **`DISTRO_FEATURES:remove = "bluetooth"` in `kas-segno-common.yml` is what
+  keeps BlueZ out.** The machine (`rpi-base.inc`) and the default distro both
+  carry `bluetooth`, so `packagegroup-base` hard-depends on
+  `packagegroup-base-bluetooth`, which pulls `bluez5` and enables
+  `bluetooth.service`. `PACKAGE_EXCLUDE += "bluez5"` stays in the image as the
+  guard: on its own it would stop the rootfs on an unsatisfiable dependency.
+  The DISTRO_FEATURES change invalidates most of sstate, so the first build
+  after it is close to a full rebuild; check the Yocto runner's disk headroom
+  (the 40 GB pre-flight) before starting it.
 - `/data/bluetooth` is left untouched. A RAUC fallback to the previous slot
-  re-binds it and the pairings work again, which is the recovery path.
+  re-binds it and the pairings work again, which is the recovery path. It lasts
+  one update: the next OTA overwrites that slot, after which nothing on the
+  console can use the files. They are kept on purpose (L3 of the review), are
+  inert, and go with a factory reset; the toast does not promise recovery.
 - On the first start with paired devices on record (a device directory under
-  any adapter directory of `/data/bluetooth`), the app shows one toast:
-  "Bluetooth is no longer supported. {count} paired devices will not
-  reconnect." The acknowledgement is stored in `settings_repository` so the
-  toast never repeats. This is a toast, not a banner, because there is
+  any adapter directory of `/data/bluetooth`), the app shows one toast, an ICU
+  plural: "Bluetooth is no longer supported. The device paired with this
+  console will not reconnect." / "… The {count} devices paired with this
+  console will not reconnect." The acknowledgement is stored in
+  `settings_repository` so the toast never repeats. This is a toast, not a banner, because there is
   nothing to act on (popup severity principle, #860).
+
+D13. **Separate playback and capture devices go with the old page.** The
+appliance has one interface, so the Device tab's paired choice is the whole
+need there (appliance-only decision, 2026-08-28). On a macOS development host
+the built-in microphone and speakers can no longer be paired from any surface
+after Part 2; a desktop developer uses an interface with both, or the stored
+choice from an earlier build, which keeps applying (rule 1).
 
 D12. **No session schema change.** Nothing here is recalled with a session, so
 #1196's migration chain is untouched.
@@ -310,14 +338,14 @@ imported by `track_column.dart:11`, `fx_effect_editor.dart:7`,
 `lib/looper/view/signal_graph/signal_style.dart` is imported by
 `mixer_column.dart:18`, `control_value_readout.dart:6` and the chip.
 `AudioRoutingCard` is used by `device_audio_tab.dart`. `AudioTab` survives as the
-Device page's tab enum.
+Device page's tab enum until Part 5 moves the default multiple out.
 
 ## 6. Removal order
 
 ```
 P1 interim pages ─┬─> P2 Settings home ──> P3 retire SettingsPage + dead pages ─┐
                   └─> P4 retire Bluetooth (app + image) ─────────────────────────┼─> P5 tray → tuner drawer ──> P6 delete tray (needs E6-7)
-                                                                                └─> P7 geometry tokens (after P3 and P5)
+                                                                                └─> P7 frame matches the pen (#1230, after P5) ─> P8 geometry tokens
 ```
 
 No point in the order leaves a reachable dead end or loses a control:
@@ -325,9 +353,11 @@ No point in the order leaves a reachable dead end or loses a control:
 - After P1, every tray and old-page control is still reachable, and the device
   and update notices land on a page that can act on them (today the
   engine-stopped banner opens a View section with no device control).
-- After P2, the old page is unreachable, but nothing on it is lost: D2 and D3
-  moved its unique controls in P1, the boot default keeps applying until P3
-  (rule 1), and the tray stays behind its handle.
+- After P2, the old page is unreachable. D2 and D3 moved its unique controls
+  in P1 and the tray stays behind its handle, but three controls go with it:
+  the boot default (which keeps applying with no control until P3, so P2 and
+  P3 ship in one release, D4), the desktop record-offset field (D5) and the
+  desktop's separate playback and capture devices (D13).
 - P4 removes the Bluetooth tab from the tray's Network face in the same
   change that stops BlueZ, so no release has BT running without its UI.
 - P5 needs P2 (Effects and Loop leave the rail for tiles), P4 (no Bluetooth
@@ -497,7 +527,9 @@ D11 notice:
 Image: delete the three helper files and their two test scripts. Remove
 `bluez5` from `segno-kiosk-image.bb:39` and `segno-bundle.bb:114`, and the bt
 entries at `segno-bundle.bb:44-49`, `:104`, `:126`, `:138-141`, `:160`, `:253-256`,
-`:321-325`. Add `PACKAGE_EXCLUDE += "bluez5"` beside the psplash exclusion.
+`:321-325`. Remove the `bluetooth` distro feature in `kas-segno-common.yml`
+and add `PACKAGE_EXCLUDE += "bluez5"` beside the psplash exclusion as the
+guard (D11).
 Delete the CI steps `main.yaml:453-456` and `bluetoothctl` from
 `cspell.json:92` if no other reader remains.
 
@@ -509,7 +541,8 @@ SUCCESS CRITERIA:
 - No Bluetooth code or recipe line remains. | verify: ! grep -rniE "bluetooth_(client|repository)|BluetoothCubit|segno-bt-" lib test packages pubspec.yaml deploy/yocto .github/workflows && test "$(grep -rn bluez5 deploy/yocto | grep -vc PACKAGE_EXCLUDE)" -eq 0 && grep -q 'PACKAGE_EXCLUDE.*bluez5' deploy/yocto/meta-segno/recipes-core/images/segno-kiosk-image.bb
 - Remaining appliance helper suites and bundle tests pass. | verify: for t in deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_*_tests.sh deploy/yocto/meta-segno/recipes-core/images/test/run_*_tests.sh; do bash "$t" || exit 1; done
 - The tray's Network face shows only Wi-Fi with no tab strip. | verify: /Users/Tomas/development/flutter/bin/flutter test test/network
-- Yocto build host (not CI): the image manifest lists no bluez5 package and the build does not trip PACKAGE_EXCLUDE. | verify: grep -c bluez5 tmp/deploy/images/*/segno-kiosk-image-*.manifest | grep -qx 0 (on the runner after kas build)
+- `kas-segno-common.yml` removes the `bluetooth` distro feature. | verify: grep -q 'DISTRO_FEATURES:remove = "bluetooth"' deploy/yocto/kas-segno-common.yml
+- Yocto build host (not CI), after checking disk headroom: the image manifest lists neither bluez5 nor packagegroup-base-bluetooth, and the build does not trip PACKAGE_EXCLUDE. | verify: grep -cE 'bluez5|packagegroup-base-bluetooth' tmp/deploy/images/*/segno-kiosk-image-*.manifest | grep -qx 0 (on the runner after kas build)
 - HARDWARE: on a console with one paired device and Bluetooth advertising on, install the bundle over OTA. Expected: one toast naming 1 device; `pidof bluetoothd` empty; a phone scanning for 60 s at 1 m does not list Segno; `ls /data/bluetooth` unchanged. Then trigger a RAUC fallback to the other slot: the device reconnects. | verify: manual on device
 NON-GOALS:
 - Deleting /data/bluetooth; Bluetooth MIDI or audio; dtoverlay changes.
@@ -528,7 +561,13 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
   and `toggle`. The state keeps only `dragProgress`.
 - `SettingsTray` no longer creates `WifiCubit` (`settings_tray.dart:67-110`,
   `:162-166`).
-- Device page tabs keep `AudioTab`.
+- The default loop multiple moves from the Device page's Recording tab to Loop
+  settings > Length & quantize (D3), shown in the Defaults scope; the Recording
+  tab, `RecordingAudioTab` and `AudioTab` go, and the Device page has no tabs.
+  The row is a departure from pen `06 / 01 Length and quantization`; it goes on
+  the write-back list.
+- The brightness control the tray capsule offered (arrow keys, encoder, screen
+  reader) already lives on Displays (Part 1, as built); this part only checks it.
 - Pen write-back (memory rule: a shipped departure updates the pen). The owner,
   or an agent the owner authorizes to edit the pen, adds one
   `c/ Interim · Settings destinations` note to section 05 listing D2, D3, D6,
@@ -538,6 +577,8 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
 GOAL: The tray holds only the tuner; every former tray control is reachable from a Settings destination or the FX page, and brightness lives on Displays.
 SUCCESS CRITERIA:
 - FX page Pedal assignments pushes segno/fx/pedal-assignments; assigning bank B pedal 2 to a chain there writes the same PedalBindingSet as the tray did (existing control_face cases moved, oracle unchanged). | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view/fx test/control/control_face_test.dart
+- Brightness on Displays adjusts with Enter, arrows and Enter, cancels with Escape, and exposes increase and decrease to a screen reader (Part 1's tests still pass). | verify: /Users/Tomas/development/flutter/bin/flutter test test/settings
+- Length & quantize, Defaults scope, sets the default multiple (Auto, ×1, ×2, ×3) through RecordOptionsCubit.setDefaultMultiple; no Recording tab remains. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view/loop_settings test/settings
 - Tapping or dragging the handle opens the tuner face directly and arms TunerCubit; closing disarms it; no rail, brightness button or other face exists. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view/settings_tray_test.dart test/tuner
 - No symbol from the P5 rows of the deletion list remains. | verify: ! grep -rnE "TrayNavigationRail|TrayRailEntry|BrightnessCapsule|TrayBrightnessPopover|ControlTrayPanel|ControllersTrayBody|TracksTrayPanel|NamesTracksTab|AudioTrayPanel|NetworkTrayPanel|SystemTrayPanel|enum (ControlTab|NetworkTab|SystemTab)|SettingsTrayDestination" lib test
 - Analyzer, Bloc lint, coverage floor; screenshot goldens regenerated on the author's machine (control_center_preview_test retired with the faces it draws). | verify: dart analyze --fatal-infos && bloc lint lib test packages && /Users/Tomas/development/flutter/bin/flutter test --coverage
@@ -565,7 +606,35 @@ NON-GOALS:
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
-### Part 7: E3-9 geometry tokens on the surviving surfaces (about 250 production lines; after Parts 3 and 5)
+### Part 7: the Loop settings frame matches the pen (#1230; after Part 5)
+
+Every Loop settings page draws `LoopSettingsFrame`, and the frame drifts from
+the pen (`05 Loop setup / 01 Settings`, `v7Ekz`, and the other section 05 to 08
+screens): Inter where the pen uses Arimo; page and top bar background
+`#0b0b0c` against `#111215`; the top bar rule `#2a2a2e` against `#3d3d3d`; an
+arrow Back glyph where the pen draws a chevron, stroked `#3a3a40` against
+`#515d6e`; the Stage button fill `#1e1e21` and stroke `#3a3a40` against
+`#202735` and `#515d6e`; the title 2 px low and `#f3f4f7` against `#e7edf6`;
+the crumb `#9a9aa2` against `#b5b5b5`. The fix goes in the shared frame and
+its theme tokens, so every page matches at once. Each value is read from the
+pen through the pencil MCP before it is set; the affected goldens are
+regenerated and checked by eye. The font question (Arimo against the app's
+Inter) is the one part that is not a token: the plan for this part decides
+whether the frame alone changes face or the whole app does, and asks the owner
+if the pen is the only evidence.
+
+```success-criteria
+GOAL: Every Loop settings page's frame (top bar, Back, crumb, Stage, title) matches the pen's values, from theme tokens.
+SUCCESS CRITERIA:
+- The frame reads its background, rule, Back and Stage strokes and fills, crumb and title colours from tokens whose values equal the pen's. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view/loop_settings test/theme
+- The title's glyph top matches the pen within 1 px at 1920 x 1080. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view/loop_settings
+- Goldens of every Loop settings page regenerated on the author's machine and compared with the pen screens by eye. | verify: /Users/Tomas/development/flutter/bin/flutter test test/screenshots --update-goldens (author machine)
+NON-GOALS:
+- Page bodies; the stage.
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
+```
+
+### Part 8: E3-9 geometry tokens on the surviving surfaces (about 250 production lines; after Parts 3 and 5)
 
 E3-9 is four issues. This part does the one that is still open work, on the
 code that survives Parts 3 and 5:
@@ -618,15 +687,8 @@ verified by the shell suites, the Yocto manifest and the device.
 
 ## 10. Questions for the owner (defaults taken; override on #1199)
 
-Q1. **Maximum loop length and the default loop multiple have no screen in
-`01 CURRENT UX`** (§1.4). Default taken (D3): they stay on the interim Device
-page's Recording tab. Should they move into Device (memory sizing), into Loop
-settings > Length & quantize, or should the default multiple be retired in
-favour of the Length & quantize default?
-
-Q2. **Boot default mode.** Default taken (D4): retired, with a one-time notice
-for installs that stored Mute. The alternative is to keep it as a setting.
-The pen draws no place for it.
+Q1 and Q2 are settled: Q1 by the plan review's recommendation (D3), Q2 by the
+owner (D4). No questions remain open.
 
 ## 11. Build record
 
@@ -725,5 +787,53 @@ Built as planned, with these details:
 - Section 05: a `c/ Interim · Settings destinations` note listing the five
   interim pages and what each hosts (Device: Device and Recording tabs with
   the click bar; Displays: brightness bar first; Updates: About row).
-- `01 Settings`: tile fill mapped to `menuArtGround`, stroke to
-  `borderStrong`, focus to `warning`.
+- `01 Settings`: tile fill, stroke and focus now equal the pen's values
+  (`menuArtGround`, `menuArtLine`, `encoderFocus`), so nothing to write back
+  for those; the Power stroke is `menuPowerLine` (`#5f5f5f`).
+- `06 / 01 Length and quantization`: the default multiple row Part 5 adds.
+
+### Review round 1 (2026-10-06): what changed
+
+The plan review (#1208), the Part 1 review (#1218) and the Part 2 review
+(#1219) asked for changes. Every branch now also merges the trunk at
+`097e1ef68` (Library P1 to P3, USB storage P4, Reverse P3).
+
+- **Part 1, `9dcddac52`.**
+  - Brightness is the Loop settings slider over 10% to 100%: Enter, arrows and
+    Enter adjust it, Escape cancels, a double tap returns to full, and a
+    screen reader can increase and decrease it (every `LoopSlider` gains those
+    two actions). The bar's dead first 10% is gone.
+  - Maximum loop length moved to the Device tab (D3).
+  - New tests: the audio-recovery toast opens Device; a double tap resets
+    brightness; opening Updates drops the update toast. Each fails with its
+    fix reverted.
+  - The Network page reads its repository with a plain `context.read`.
+  - USB P5 hazard: `test/settings/view/destination_extra_providers.dart` is the
+    one list the P5 merge adds `StorageCubit` to; regenerate
+    `settings_storage.png` with it.
+  - Not changed: the update toast stays suppressed while About covers Updates
+    (review L3); About is one Back away.
+- **Part 2, `ccb828632`.**
+  - The tiles use the Loop settings focus stop, which draws the 3 px
+    `encoderFocus` (`#f2bf70`) inside and in front of the tile; a pixel test
+    with keyboard highlighting finds the ring and fails if it is drawn behind.
+    Every Loop settings focus stop now uses that token.
+  - `menuArtLine` (`#556881`) strokes the tiles, `menuPowerLine` (`#5f5f5f`)
+    strokes Power, and the home golden shows Power and the focused first tile.
+    The art is decoded at 128 px.
+  - USB P5 hazard: `currentPowerOffSnapshot` carries `transferInFlight` from
+    `StorageRepository` and the gate refuses on it, copied from P5 so the merge
+    is identical; a test presses Settings Power during a transfer and expects
+    a refusal.
+  - The foot Reverse Settings button (`foot_reverse_view.dart`, from Reverse
+    P3) opens Settings instead of the tray, with a test.
+- **Part 3, `a586a895c`.** Merges Part 2. The only conflict was
+  `pedal_plate.dart`, which Part 3 deletes.
+- **Part 4, `13838933b`.** `DISTRO_FEATURES:remove = "bluetooth"` is the
+  primary path, with `PACKAGE_EXCLUDE` as the guard (D11).
+- **Plan text.** D3 (Q1 answered), D4 (owner decision; Parts 2 and 3 ship
+  together), D11 (distro feature, one-update recovery, plural toast), new D13
+  (desktop separate devices), the removal order, Part 5 (default multiple
+  move, brightness check) and the new Part 7 (#1230), with the geometry tokens
+  renumbered as Part 8.
+
