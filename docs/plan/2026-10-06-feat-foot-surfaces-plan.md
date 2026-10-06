@@ -1081,7 +1081,7 @@ human merge gate stays.
 | Delta DM1 (O3 not in the plan) | O3 recorded; Part 2 lists the commands, the `stop()` change, the one-time notice, tests and criteria; `_sweepTrackChains` kept |
 | Delta DM2 (seeding) | D11 and Part 6: one-shot flag, skipped on malformed or uncertain setups, tests |
 | Delta DL1, DL2 | §9 notes row corrected; Part 3 cites `_runAction`'s `TrackOperationAction` arm |
-| P1 review M1, L1, L2 | Part 1 publishes only in pedal-drawing modes; `holdTrack` `#303b4b`; closing guard documented as defence (§10) |
+| P1 review M1, L1, L2 | Part 1 publishes only in pedal-drawing modes; `holdTrack` `#303b4b`; closing guard documented as defense (§10) |
 | P4 review L1 | Part 5 drops the mismatch re-push and tests it |
 
 ## 10. Build record
@@ -1103,7 +1103,7 @@ human merge gate stays.
   no progress semantics and does not collide with the Mixer face's level bar.
 - Teardown order: `close` first retires input, which cancels the gestures
   while the cubit is still open, so the cue clears with one ordinary emit;
-  the `_closing`/`isClosed` guard is defence only (no current path reaches it
+  the `_closing`/`isClosed` guard is defense only (no current path reaches it
   after close), and the code says so (P1 review L2).
 - **P1 review fixes (`ffa51848c`).** The cue is published only in Mixer, Fade,
   Reverse, FX and Custom; a Record- or Mute-mode stomp emits no state for it
