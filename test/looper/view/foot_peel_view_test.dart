@@ -271,10 +271,12 @@ void main() {
       };
       expect(texts, hasLength(FootPeelRefusal.values.length));
     }
-    expect(
-      footPeelRefusalText(es, FootPeelRefusal.busy),
-      contains('Inténtalo de nuevo'),
-      reason: 'the retry wording every Spanish notice uses',
-    );
+    for (final refusal in [FootPeelRefusal.busy, FootPeelRefusal.failed]) {
+      expect(
+        footPeelRefusalText(es, refusal),
+        contains('Inténtalo de nuevo'),
+        reason: 'the retry wording every Spanish notice uses',
+      );
+    }
   });
 }
