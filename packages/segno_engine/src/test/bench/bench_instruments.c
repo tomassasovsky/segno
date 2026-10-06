@@ -26,12 +26,20 @@
  *             reverb each, the pitch/time read head at 8x over the 64 lanes
  *             (the Speed work its plan adds to the mixer), and 32 voices of
  *             the costliest patch. Reported with p99.9 and the count of
- *             periods over the budget ("late").
+ *             periods over the budget ("late"), and run a second time
+ *             without the voices, so the instruments' share of the joint
+ *             period is measured on its own.
  *
  * Scheduling: SCHED_FIFO (BENCH_RT_PRIO, below the app's audio thread) around
  * the timed loops only. Thresholds (--assert): the Pi 5 set, refused on
  * anything but a Cortex-A76 unless --proxy, which asserts the arm64 CI proxy
  * set (p50 at half the Pi percentages). --smoke: short runs, no assertions.
+ *
+ * The proxy gates the instruments' share of the joint period, not its total
+ * (plan D2, "the proxy gate"): the total is mostly the looper, the monitors
+ * and the read head, whose cost moves with every trunk change, and the CI
+ * runner is not the appliance (it may refuse SCHED_FIFO). The total is
+ * still printed against its old proxy reference; the Pi set gates it.
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -224,8 +232,10 @@ static stats run_joint(const bench_opts* o, int32_t patch, int32_t voices,
     const double a = now_us();
     le_engine_process(r.e, r.out, r.in, (uint32_t)o->period);
     head_period(heads, lanes, kLanesPerTrack, frames, base, o->period, 8.0, acc);
-    keep_voices(&g_synth, 0, voices, &origin);
-    le_synth_render(&g_synth, g_bus, LE_SYNTH_MAX_INSTRUMENTS, o->period);
+    if (voices > 0) {
+      keep_voices(&g_synth, 0, voices, &origin);
+      le_synth_render(&g_synth, g_bus, LE_SYNTH_MAX_INSTRUMENTS, o->period);
+    }
     t[k] = now_us() - a;
     base += o->period;
     g_sink = acc[(k * 7) % (size_t)o->period];
@@ -355,8 +365,13 @@ int main(int argc, char** argv) {
   print_row("8 x 8 lanes + 32 voices", with);
   printf("\n## joint (8 x 8 lanes + 8 monitored inputs with reverb + read head 8x + 32 voices)\n\n");
   print_tail_header();
+  const stats joint_base = run_joint(&o, costliest, 0, src, frames);
+  print_tail_row("joint without instruments", joint_base);
   const stats joint = run_joint(&o, costliest, 32, src, frames);
   print_tail_row("joint worst case", joint);
+  const double share_p50 = joint.p50 - joint_base.p50;
+  printf("\n- instruments' share of the joint period, p50: %.1f us (%.1f%%)\n",
+         share_p50, 100.0 * share_p50 / g_budget_us);
   free(src);
   printf("\n- peak RSS: %.0f MiB\n\n", peak_rss_bytes() / 1048576.0);
 
@@ -370,7 +385,8 @@ int main(int argc, char** argv) {
       judge("32 voices p50 <= 7.5% of period", 100.0 * p50_32 / g_budget_us, 7.5, 1);
       judge("64 voices p50 <= 15% of period", 100.0 * p50_64 / g_budget_us, 15.0, 1);
       judge("32-note burst p50 <= 10% of period", 100.0 * burst.p50 / g_budget_us, 10.0, 1);
-      judge("joint worst case p50 <= 37.5% of period", 100.0 * joint.p50 / g_budget_us, 37.5, 1);
+      judge("joint instruments' share p50 <= 7.5% of period",
+            100.0 * share_p50 / g_budget_us, 7.5, 1);
     } else {
       judge("32 voices p99.9 <= 15% of period", 100.0 * p999_32 / g_budget_us, 15.0, 1);
       judge("64 voices p99.9 <= 30% of period", 100.0 * p999_64 / g_budget_us, 30.0, 1);
@@ -389,6 +405,11 @@ int main(int argc, char** argv) {
       /* the pool size the plan's D2 takes from this run */
       printf("\nvoice pool: %d (64 when the 64-voice threshold passes)\n",
              g_verdicts[1].pass ? 64 : LE_SYNTH_DEFAULT_VOICES);
+    }
+    if (o.proxy) {
+      /* not gated on the runner (see the header); the Pi set gates it */
+      printf("- info: joint worst case p50 %.2f%% of period (old proxy reference "
+             "37.50, not gated)\n", 100.0 * joint.p50 / g_budget_us);
     }
     printf("\n%s\n", failed ? "THRESHOLDS FAILED" : "ALL THRESHOLDS MET");
     return failed ? 1 : 0;
