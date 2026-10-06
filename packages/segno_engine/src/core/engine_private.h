@@ -1781,6 +1781,8 @@ struct le_engine {
    * unpersisted instead of queued for the drain thread. Same rationale as
    * the two atomics above: not surfaced via le_snapshot yet. */
   _Atomic uint32_t a_perf_layer_overruns;
+  /* Ring seconds the most recent arm granted (#1198), for the snapshot. */
+  _Atomic int32_t a_perf_ring_seconds;
   le_perf_capture perf;
 
   /* Tracks. */

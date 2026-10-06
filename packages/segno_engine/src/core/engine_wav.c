@@ -114,6 +114,17 @@ int le_wav_seal(le_wav_writer* w, int sync) {
          fwrite(size, 1, 4, w->file) == 4;
   }
   ok = ok && fflush(w->file) == 0;
+  /* Cut anything past the declared data: a short write leaves a torn
+   * partial frame there, which the writer's caller rewound over but could
+   * not remove. A sealed file is exactly its header and its data. */
+  if (ok) {
+    const uint64_t end = w->header_bytes + data_bytes;
+#if defined(_WIN32)
+    ok = _chsize_s(_fileno(w->file), (long long)end) == 0;
+#else
+    ok = ftruncate(fileno(w->file), (off_t)end) == 0;
+#endif
+  }
   if (ok && sync) {
 #if defined(_WIN32)
     ok = _commit(_fileno(w->file)) == 0;

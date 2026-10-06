@@ -487,7 +487,7 @@ static int le_pd_mkdir_one(const char* path) {
  * O_CLOEXEC is a small upgrade on it — the sidecar is rewritten four times a
  * second, so any Process.start from the Dart side landing in that window used
  * to inherit a writable descriptor onto the temp inode. It closes ONLY that
- * window, and it is the narrow one: master.pcm, events.log and every staged
+ * window, and it is the narrow one: the open parts, events.log and every staged
  * layer are still plain fopen(..., "wb") with no "e", so a child spawned any
  * time during a capture inherits those writable descriptors for as long as it
  * lives. Widening the close-on-exec discipline to the stdio streams is a
@@ -521,11 +521,11 @@ static void le_pd_fd_close(int fd) { (void)close(fd); }
  *   - The sidecar describes the PCM streams, which are only fflush'd (stdio
  *     buffer -> page cache) and never synced either. Syncing only the sidecar
  *     makes the pair INCONSISTENT: performance.json durably claiming
- *     capture_frames = N while master.pcm's last seconds are still page
+ *     capture_frames = N while the open part's last seconds are still page
  *     cache, so #679's salvage and daw_export lay out an arrangement past the
  *     audio. Un-synced, both sides lose the same tail and stay consistent.
  *   - On ext4 data=ordered an fsync here commits the journal transaction
- *     carrying master.pcm's block allocations too, so it would drag PCM
+ *     carrying the open part's block allocations too, so it would drag PCM
  *     writeback onto this cycle synchronously — and the capture rings hold
  *     only LE_PERF_RING_SECONDS_DEFAULT. An SD garbage-collection stall past that
  *     inside one cycle overruns master_ring and writes zero-filled silence
@@ -1053,7 +1053,7 @@ static uint64_t le_pd_whole_frames_landed(le_pd_file* pf, uint64_t landed,
  * is re-written; what IS retried is this function itself, on the drain
  * thread's unconditional final pass, and the catch-up that follows it pads
  * from `pf->written`. Leaving it behind the bytes already on disk is what made
- * master.pcm come out LONGER than `elapsed` by the residue — the same shape as
+ * the master stream come out LONGER than `elapsed` by the residue — the same shape as
  * the pad's own gap (#718), milder only because there is no whole gap to
  * duplicate here.
  *
@@ -1130,14 +1130,14 @@ static int le_pd_open_part(le_perf_drain* d, le_pd_file* pf) {
 }
 
 /* Seals `pf`'s open part through the writer (sizes patched, flushed,
- * closed) and lists it with its digest and overs. A part with nowhere left
- * to be listed fails the seal (the take stops as a write failure) rather
- * than go unlisted. Not synced here: durability is the checkpoint's job
+ * closed) and lists it with its digest and overs. le_pd_append keeps room
+ * in the list for every open part; should it ever be full, the part is
+ * left open (recovery measures it) rather than sealed and unlisted. Not synced here: durability is the checkpoint's job
  * (plan D4, Part 4). */
 static int le_pd_seal_part(le_perf_drain* d, le_pd_file* pf) {
   if (pf->w.file == NULL) return 0;
+  if (d->sealed_count >= LE_PD_MAX_PARTS) return 0; /* before sealing */
   const int ok = le_wav_seal(&pf->w, 0);
-  if (d->sealed_count >= LE_PD_MAX_PARTS) return 0;
   le_pd_sealed_part* sp = &d->sealed[d->sealed_count];
   sp->stream = pf->stream;
   sp->index = pf->part_index;
@@ -1147,6 +1147,15 @@ static int le_pd_seal_part(le_perf_drain* d, le_pd_file* pf) {
   d->sealed_count++;
   d->overs += pf->part_overs;
   return ok;
+}
+
+/* The streams the take writes: the master and each captured input. */
+static int32_t le_pd_stream_count(const le_perf_drain* d) {
+  int32_t n = 1;
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    if (d->engine->perf.input_mask & (1u << c)) n++;
+  }
+  return n;
 }
 
 /* Samples whose magnitude exceeds 1.0 — the master is tapped before the
@@ -1173,6 +1182,10 @@ static int le_pd_append(le_perf_drain* d, le_pd_file* pf, const float* src,
   while (frames > 0) {
     if (pf->w.file == NULL) return 0;
     if (pf->part_frames >= capacity) {
+      /* Room must stay in the parts list for every stream's open part, which
+       * the final pass seals: a take that would outgrow it stops here, as a
+       * write failure, with every part on disk listed. */
+      if (d->sealed_count + le_pd_stream_count(d) >= LE_PD_MAX_PARTS) return 0;
       if (!le_pd_seal_part(d, pf) || !le_pd_open_part(d, pf)) return 0;
     }
     uint64_t n = capacity - pf->part_frames;
@@ -1260,7 +1273,7 @@ static int le_pd_drain_ring(le_perf_drain* d, le_pd_file* pf,
  * boundary: it short-writes. The bytes before the short return are on disk and
  * cannot be taken back, so a cycle that abandons the whole span re-pads bytes
  * the file already has — the next cycle (and the unconditional final one) pad
- * from a `written` that is behind the real file length, and master.pcm ends
+ * from a `written` that is behind the real file length, and the stream ends
  * LONGER than `elapsed`. That is not a lost tail, it is a permanent offset:
  * every frame after the gap sits later in the file than its frame number says,
  * so #679's salvage and daw_export lay the whole remainder of the take out
@@ -1671,7 +1684,7 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
 
   /* Retired-layer persistence (part 5, D-LAYER): each staged layer is its
    * own self-contained file (open, write, fclose — not a long-lived stream
-   * like master.pcm), so there is nothing to flush separately below: the
+   * like the parts), so there is nothing to flush separately below: the
    * fclose inside le_pd_write_staged_layer has already pushed every byte out
    * of stdio and into the page cache before the manifest entry is recorded.
    * That is the same guarantee le_pd_flush gives the long-lived streams —

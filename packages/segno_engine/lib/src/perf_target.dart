@@ -20,6 +20,10 @@ class PerfTarget {
     if (takeId.length != takeIdBytes) {
       throw ArgumentError.value(takeId, 'takeId', 'must be 16 bytes');
     }
+    if (ringSeconds < 0 || ringSeconds > maxRingSeconds) {
+      throw ArgumentError.value(ringSeconds, 'ringSeconds');
+    }
+    if (partBytes < 0) throw ArgumentError.value(partBytes, 'partBytes');
   }
 
   /// The length of a take id.
@@ -50,6 +54,10 @@ class PerfTarget {
   /// 2,000,000,000.
   final int partBytes;
 
-  /// Seconds each capture ring holds; 0 means the engine default.
+  /// Seconds each capture ring holds, up to [maxRingSeconds]; 0 means the
+  /// engine default.
   final int ringSeconds;
+
+  /// The most [ringSeconds] may ask for. Mirrors `LE_PERF_RING_SECONDS_MAX`.
+  static const int maxRingSeconds = 8;
 }
