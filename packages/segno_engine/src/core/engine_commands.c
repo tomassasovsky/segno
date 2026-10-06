@@ -2827,13 +2827,18 @@ int32_t le_engine_set_speed(le_engine* e, int32_t numer, int32_t denom,
   if (!valid) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
   if (load_i32(&e->a_counting_in)) return LE_ERR_NOT_READY;
+  int material = 0;
   for (int c = 0; c < e->track_count; ++c) {
     le_track* t = &e->tracks[c];
     const int32_t st = le_effective_state(t);
     if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
         load_i32(&t->a_pending) || e->armed[c] ||
         load_i32(&t->a_pending_launch)) return LE_ERR_NOT_READY;
+    if (st != LE_TRACK_EMPTY) material = 1;
   }
+  /* An empty loop has no speed (plan decision 26): nothing to play at a
+   * factor, as Reverse and Transpose refuse an empty track. */
+  if (!material) return LE_ERR_INVALID;
   le_command cmd = {.code = LE_CMD_SET_SPEED, .speed = {0, numer, denom}};
   const int32_t result = le_request_admit(e, &cmd, &cmd.speed.slot, request);
   if (result != LE_OK) return result;

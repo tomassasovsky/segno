@@ -565,6 +565,85 @@ static void test_speed_empty_loop_resets(void) {
   le_engine_destroy(e);
 }
 
+/* M-D1: the rule holds on the way up too. A rig with no material refuses
+ * every factor (decision 26: the pen's empty-loop face shows the factor
+ * pedals unavailable), at admission and, for a request that lands after the
+ * rig empties, in the receipt; the first take then records. */
+static void test_speed_refused_on_empty_rig(void) {
+  printf("test_speed_refused_on_empty_rig\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 1, 1, 4000) == LE_OK);
+  uint64_t id = 7;
+  CHECK(le_engine_set_speed(e, 1, 2, &id) == LE_ERR_INVALID && id == 0);
+  CHECK(le_engine_set_speed(e, 1, 1, &id) == LE_ERR_INVALID && id == 0);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.speed_numer == 1 && s.speed_denom == 1);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  le_engine_destroy(e);
+  /* Admitted on material, refused by the callback once a Clear posted
+   * before it in the same drain has emptied the rig. */
+  e = reverse_fixture(48000, 1000, 1000);
+  CHECK(le_push(e, LE_CMD_CLEAR, 0, 0.0f) == LE_OK);
+  id = speed_set(e, 1, 2);
+  drain(e);
+  fade_result(e, id, LE_ERR_INVALID);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.speed_numer == 1 && s.speed_denom == 1);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  le_engine_destroy(e);
+}
+
+/* L-D1: an integral-rate step inside a running window continues from the
+ * exact index (no half-sample jump at the change), and lands on the whole
+ * sample once that window ends, through a window of its own: every step of
+ * the output stays within the blend's own slope, every read after the
+ * landing is a whole sample, and the stem follows. */
+static void test_speed_integral_step_inside_window(void) {
+  printf("test_speed_integral_step_inside_window\n");
+  const int len = 1000, F = 480;
+  le_engine* e = reverse_fixture(48000, len, len);
+  const char* dir = render_test_dir("speed-land");
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+  static float live[4000], replay[4000];
+  rev_process(e, live, 37, 512);
+  uint64_t id = speed_set(e, 1, 2);
+  rev_process(e, live + 37, 101, 512); /* index 37 + 50.5: a half sample */
+  fade_result(e, id, LE_OK);
+  id = speed_set(e, 1, 1);
+  rev_process(e, live + 138, 3000, 64);
+  fade_result(e, id, LE_OK);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  float worst = 0;
+  for (int k = 138; k < 3138; ++k) {
+    const float d = fabsf(live[k] - live[k - 1]);
+    if (d < len / 2 && d > worst) worst = d; /* the lap wrap aside */
+  }
+  CHECK(worst <= 1.01f);
+  /* The carried window, literally: the 1x head from before it (index k)
+   * fades out under the new 1x head, which continues from 87.5 exactly. */
+  int off = 0;
+  for (int k = 138; k < 37 + F; ++k) {
+    const double x = (double)(k - 37) / F;
+    off += fabs(live[k] - (x * (87.5 + (k - 138)) + (1 - x) * k)) >= 2e-3;
+  }
+  CHECK(off == 0);
+  int fractional = 0;
+  for (int k = 37 + 2 * F + 64; k < 3138; ++k) {
+    fractional += live[k] != (float)(int)live[k];
+  }
+  CHECK(fractional == 0);
+  rev_render_track_wav(e, dir, len);
+  const int frames = test_read_wet_stem(dir, 0, replay, 4000);
+  CHECK(frames == 3138);
+  int bad = 0;
+  for (int i = 0; i < frames; ++i) bad += fabsf(replay[i] - live[i]) >= 2e-3f;
+  CHECK(bad == 0);
+  le_engine_destroy(e);
+}
+
 /* L1: a second step inside the first step's window keeps that window and the
  * head it fades out — 1x -> 2x, then 4x 100 frames later never jumps (the
  * blend's slope stays under 4 on the ramp) — two presses in one drain answer
@@ -770,6 +849,8 @@ static void run_speed_tests(void) {
   test_speed_normal_lands_on_whole_sample();
   test_speed_clear_undo_stem_exact();
   test_speed_empty_loop_resets();
+  test_speed_refused_on_empty_rig();
+  test_speed_integral_step_inside_window();
   test_speed_step_inside_window();
   test_speed_refusals_while_writing();
   test_speed_arm_while_sped_up_and_fade();

@@ -315,8 +315,19 @@ typedef struct {
   int32_t period;
 } rig;
 
+/* A rig with `chains` set gives every lane a two-entry Pre chain (filter,
+ * drive): off 1x no print engages, so the chains run live on the callback
+ * (#1179 Part 2a review, L-D2). */
+static int rig_create_chains(rig* r, const bench_opts* o, int lanes_per_track,
+                             const float* src, int32_t frames, int chains);
+
 static int rig_create(rig* r, const bench_opts* o, int lanes_per_track,
                       const float* src, int32_t frames) {
+  return rig_create_chains(r, o, lanes_per_track, src, frames, 0);
+}
+
+static int rig_create_chains(rig* r, const bench_opts* o, int lanes_per_track,
+                             const float* src, int32_t frames, int chains) {
   memset(r, 0, sizeof(*r));
   r->period = o->period;
   r->e = le_engine_create();
@@ -327,6 +338,13 @@ static int rig_create(rig* r, const bench_opts* o, int lanes_per_track,
       const int32_t rc = le_engine_import_track_lane(r->e, t, l, src, frames);
       if (rc != LE_OK) {
         fprintf(stderr, "import track %d lane %d failed: %d\n", t, l, rc);
+        return 0;
+      }
+      if (chains &&
+          (le_engine_set_lane_fx(r->e, t, l, 0, LE_FX_FILTER) != LE_OK ||
+           le_engine_set_lane_fx(r->e, t, l, 1, LE_FX_DRIVE) != LE_OK ||
+           le_engine_set_lane_fx_count(r->e, t, l, 2, 2) != LE_OK)) {
+        fprintf(stderr, "chain on track %d lane %d failed\n", t, l);
         return 0;
       }
     }
@@ -366,11 +384,24 @@ static void print_header(void) {
 
 /* The real mixer path at a Speed (#1179 Part 2a): le_engine_process with
  * every track read through its head at numer/denom (1/1 is the baseline). */
+static stats scenario_baseline_chains(const bench_opts* o,
+                                      int lanes_per_track, const float* src,
+                                      int32_t frames, int numer, int denom,
+                                      int chains);
+
 static stats scenario_baseline(const bench_opts* o, int lanes_per_track,
                                const float* src, int32_t frames, int numer,
                                int denom) {
+  return scenario_baseline_chains(o, lanes_per_track, src, frames, numer,
+                                  denom, 0);
+}
+
+static stats scenario_baseline_chains(const bench_opts* o,
+                                      int lanes_per_track, const float* src,
+                                      int32_t frames, int numer, int denom,
+                                      int chains) {
   rig r;
-  if (!rig_create(&r, o, lanes_per_track, src, frames)) {
+  if (!rig_create_chains(&r, o, lanes_per_track, src, frames, chains)) {
     fprintf(stderr, "baseline rig failed\n");
     exit(3);
   }
@@ -733,7 +764,7 @@ int main(int argc, char** argv) {
   /* The same mixer at 1/2x, 4x and 8x (the Part 2a gate on the real mixer
    * path): every read through the head, decimated at 4x and 8x. */
   const int factors[3][2] = {{1, 2}, {4, 1}, {8, 1}};
-  stats speed_worst = base1;
+  stats speed_worst = base1, speed_worst8 = base8;
   for (int f = 0; f < 3; ++f) {
     for (int lanes = 1; lanes <= 8; lanes += 7) {
       const stats s = scenario_baseline(&o, lanes, src, frames, factors[f][0],
@@ -742,11 +773,15 @@ int main(int argc, char** argv) {
       snprintf(label, sizeof(label), "8 tracks x %d lane%s at %d/%d", lanes,
                lanes > 1 ? "s" : "", factors[f][0], factors[f][1]);
       print_row(label, s);
-      if (lanes == 1 && (o.proxy ? s.p50 > speed_worst.p50 : s.p99 > speed_worst.p99)) {
-        speed_worst = s;
-      }
+      stats* worst = lanes == 1 ? &speed_worst : &speed_worst8;
+      if (o.proxy ? s.p50 > worst->p50 : s.p99 > worst->p99) *worst = s;
     }
   }
+  /* The appliance rig: 8 x 8 with a Pre chain on every lane at 8x, so no
+   * print engages and every chain runs live. */
+  const stats chained =
+      scenario_baseline_chains(&o, 8, src, frames, 8, 1, 1);
+  print_row("8 x 8 with Pre chains at 8/1", chained);
   printf("\n");
 
   /* head */
@@ -876,6 +911,10 @@ int main(int argc, char** argv) {
       judge("render cheaper under load >= 40x real time", loaded_cheaper_min, 40.0, 0);
       judge("mixer at 1/2x, 4x, 8x p50 (8 lanes) <= 25% of period",
             100.0 * speed_worst.p50 / g_budget_us, 25.0, 1);
+      judge("mixer at 1/2x, 4x, 8x p50 (64 lanes) <= 25% of period",
+            100.0 * speed_worst8.p50 / g_budget_us, 25.0, 1);
+      /* The live-chain row is the appliance's question (plan decision 27):
+       * it prints here and is judged on the Pi only. */
     } else {
       judge("head added p99 at 8 lanes <= 10% of period", 100.0 * worst_added_p99[0] / g_budget_us, 10.0, 1);
       judge("head added p99 at 64 lanes <= 35% of period", 100.0 * worst_added_p99[1] / g_budget_us, 35.0, 1);
@@ -884,6 +923,10 @@ int main(int argc, char** argv) {
       judge("render cheaper under load >= 20x real time", loaded_cheaper_min, 20.0, 0);
       judge("mixer at 1/2x, 4x, 8x p99 (8 lanes) <= 50% of period",
             100.0 * speed_worst.p99 / g_budget_us, 50.0, 1);
+      judge("mixer at 1/2x, 4x, 8x p99 (64 lanes) <= 50% of period",
+            100.0 * speed_worst8.p99 / g_budget_us, 50.0, 1);
+      judge("8 x 8 with live Pre chains at 8x p99 <= 50% of period",
+            100.0 * chained.p99 / g_budget_us, 50.0, 1);
     }
     judge("render worker scratch under 1 MiB", scratch_max / 1048576.0, 1.0, 1);
     judge("stretcher heap per instance (cheaper) <= 4 MiB", per_cheaper / 1048576.0, 4.0, 1);

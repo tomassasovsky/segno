@@ -1295,6 +1295,9 @@ typedef struct le_track {
   int32_t turn_left, turn_frames;
   _Atomic int32_t a_reversed; /* published direction (snapshot) */
   _Atomic int32_t a_head_rate_milli; /* published head rate x1000 (#1179) */
+  /* An integral-rate step that landed inside a window, to be put on a whole
+   * sample once the window ends (le_head_land). Callback-only. */
+  int32_t land_whole;
   /* Control's view of direction while toggles are in flight
    * (le_effective_reversed): the number of REVERSE commands posted, the
    * direction they predict once applied, and the callback's count of REVERSE
