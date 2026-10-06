@@ -462,6 +462,13 @@ jobs:
         run: |
           flutter pub get
           flutter test --tags fuzz
+      # instrument_repository's native case (#1197) is fuzz-tagged too.
+      - name: Run the instrument_repository native tests
+        working-directory: packages/instrument_repository
+        run: |
+          test -s "$SEGNO_ENGINE_LIB"
+          flutter pub get
+          flutter test --tags fuzz
 
   # Linux port (part 14): the same seven plugins + CTest suite with gcc/clang. The
   # default generator on ubuntu is single-config (Makefiles), so the build type is

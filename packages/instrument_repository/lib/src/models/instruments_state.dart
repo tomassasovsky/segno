@@ -13,6 +13,8 @@ class InstrumentsState extends Equatable {
     this.auditions = const {},
     this.drafts = const {},
     this.problems = const [],
+    this.voiceLimit = 32,
+    this.voiceLimitReduced = false,
   });
 
   /// The definitions the engine is driven from.
@@ -34,6 +36,34 @@ class InstrumentsState extends Equatable {
   /// What the routing table could not carry as defined.
   final List<RouteProblem> problems;
 
+  /// The sounding-voice limit asked of the engine.
+  final int voiceLimit;
+
+  /// Whether late periods lowered [voiceLimit] below its default; the page
+  /// offers Restore.
+  final bool voiceLimitReduced;
+
+  /// This state with the named fields replaced.
+  InstrumentsState copyWith({
+    InstrumentsWorkingCopy? workingCopy,
+    Set<String>? unavailable,
+    Map<String, int>? voices,
+    Map<String, String>? auditions,
+    Map<String, List<double>>? drafts,
+    List<RouteProblem>? problems,
+    int? voiceLimit,
+    bool? voiceLimitReduced,
+  }) => InstrumentsState(
+    workingCopy: workingCopy ?? this.workingCopy,
+    unavailable: unavailable ?? this.unavailable,
+    voices: voices ?? this.voices,
+    auditions: auditions ?? this.auditions,
+    drafts: drafts ?? this.drafts,
+    problems: problems ?? this.problems,
+    voiceLimit: voiceLimit ?? this.voiceLimit,
+    voiceLimitReduced: voiceLimitReduced ?? this.voiceLimitReduced,
+  );
+
   @override
   List<Object?> get props => [
     workingCopy,
@@ -42,5 +72,7 @@ class InstrumentsState extends Equatable {
     auditions,
     drafts,
     problems,
+    voiceLimit,
+    voiceLimitReduced,
   ];
 }

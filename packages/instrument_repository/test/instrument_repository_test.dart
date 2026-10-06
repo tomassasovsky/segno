@@ -284,4 +284,143 @@ void main() {
     ]);
     expect(states.last, repository.state);
   });
+
+  group('the voice limit and overload', () {
+    void late(int periods) => engine.nextCallbackTelemetry = CallbackTelemetry(
+      session: CallbackWindowStats(latePeriods: periods),
+    );
+
+    test('every epoch sends the default limit', () async {
+      final stream = StreamController<EngineSnapshot>();
+      final custom = InstrumentRepository(
+        engine: engine,
+        snapshots: stream.stream,
+        defaultVoiceLimit: 24,
+      );
+      expect(custom.state.voiceLimit, 24);
+      Future<void> tickCustom() async {
+        stream.add(engine.snapshot());
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      await tickCustom();
+      expect(engine.snapshot().instruments.voiceLimit, 24);
+      engine
+        ..stop()
+        ..start(engine.defaultConfig); // the engine is back at 32
+      await tickCustom();
+      expect(engine.snapshot().instruments.voiceLimit, 24);
+      await custom.dispose();
+      await stream.close();
+    });
+
+    test('late periods while nothing sounds are not counted', () async {
+      repository.apply(two);
+      await pump();
+      engine.instrumentNoteOn(slot: 0, origin: 1, note: 60, velocity: 90);
+      await pump(); // the baseline, 0 late
+      engine.instrumentRelease(1);
+      await pump(); // silent
+      late(4);
+      await pump(); // still silent: no reduction
+      engine.instrumentNoteOn(slot: 0, origin: 2, note: 60, velocity: 90);
+      await pump(); // a fresh baseline at 4
+      expect(repository.state.voiceLimit, 32);
+    });
+
+    test(
+      'a late period while sounding lowers the limit by a quarter',
+      () async {
+        final reductions = <int>[];
+        repository.polyphonyReductions.listen(reductions.add);
+        repository.apply(two);
+        await pump();
+        late(5); // late periods while nothing sounds do not count
+        await pump();
+        engine.instrumentNoteOn(slot: 0, origin: 1, note: 60, velocity: 90);
+        await pump(); // the baseline
+        expect(repository.state.voiceLimit, 32);
+        late(6);
+        await pump();
+        expect(repository.state.voiceLimit, 24);
+        expect(repository.state.voiceLimitReduced, isTrue);
+        expect(engine.snapshot().instruments.voiceLimit, 24);
+        for (var n = 7; n < 14; n++) {
+          late(n);
+          await pump();
+        }
+        expect(reductions, [24, 18, 13, 9, 8]);
+        expect(
+          repository.state.voiceLimit,
+          InstrumentRepository.minimumVoiceLimit,
+        );
+        repository.restoreVoiceLimit();
+        expect(repository.state.voiceLimit, 32);
+        expect(repository.state.voiceLimitReduced, isFalse);
+        expect(engine.snapshot().instruments.voiceLimit, 32);
+      },
+    );
+
+    test('an epoch returns the limit to its default', () async {
+      repository.apply(two);
+      await pump();
+      engine.instrumentNoteOn(slot: 0, origin: 1, note: 60, velocity: 90);
+      await pump();
+      late(1);
+      await pump();
+      expect(repository.state.voiceLimit, 24);
+      engine
+        ..stop()
+        ..start(engine.defaultConfig);
+      await pump();
+      expect(repository.state.voiceLimit, 32);
+      expect(repository.state.voiceLimitReduced, isFalse);
+    });
+
+    test('an epoch drops held notes and latches', () async {
+      repository.apply(two);
+      await pump();
+      repository.notes.toggleLatch('pad', 'a', const [60]);
+      engine
+        ..stop()
+        ..start(engine.defaultConfig);
+      await pump();
+      expect(repository.notes.isLatched('pad'), isFalse);
+    });
+
+    test('an owed release is retried on the next snapshot', () async {
+      final refusing = _FullReleaseLane()
+        ..start(MockAudioEngine().defaultConfig);
+      final stream = StreamController<EngineSnapshot>();
+      final repo = InstrumentRepository(
+        engine: refusing,
+        snapshots: stream.stream,
+      )..apply(two);
+      stream.add(refusing.snapshot());
+      await Future<void>.delayed(Duration.zero);
+      final token = repo.notes.press('a', const [60])!;
+      refusing.refuse = 1;
+      repo.notes.release(token);
+      expect(repo.notes.owedReleases, 1);
+      stream.add(refusing.snapshot());
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.notes.owedReleases, 0);
+      expect(refusing.snapshot().instruments.voices[0], 0);
+      await repo.dispose();
+      await stream.close();
+    });
+  });
+}
+
+class _FullReleaseLane extends MockAudioEngine {
+  int refuse = 0;
+
+  @override
+  EngineResult instrumentRelease(int origin) {
+    if (refuse > 0) {
+      refuse--;
+      return EngineResult.capacity;
+    }
+    return super.instrumentRelease(origin);
+  }
 }

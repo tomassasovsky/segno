@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:instrument_repository/src/models/instruments_state.dart';
 import 'package:instrument_repository/src/models/working_copy.dart';
+import 'package:instrument_repository/src/note_dispatcher.dart';
 import 'package:instrument_repository/src/route_compiler.dart';
 import 'package:segno_engine/segno_engine.dart';
 
@@ -16,22 +17,49 @@ typedef _SlotImage = ({int? patch, List<double> params});
 /// copy through its owner and calls [apply]. Nothing a refusal can lose is
 /// dropped: a patch change or table the engine cannot take yet is retried on
 /// the next snapshot, latest wins. The engine's synth epoch is the one reset
-/// trigger: when it moves, auditions and drafts end and every slot and the
-/// table are sent again.
+/// trigger: when it moves, auditions, drafts, held notes, latches and owed
+/// releases end, the voice limit returns to its default, and every slot,
+/// the limit and the table are sent again.
+///
+/// The overload policy (plan D2): while any instrument sounds, a new late
+/// period in the callback telemetry lowers the voice limit to three
+/// quarters (never below 8) and reports it on [polyphonyReductions].
 class InstrumentRepository {
   /// Creates an [InstrumentRepository] over [engine], observing [snapshots]
-  /// (the caller's engine poll).
+  /// (the caller's engine poll). [defaultVoiceLimit] is the limit a fresh
+  /// session and every engine reset start from.
   InstrumentRepository({
     required AudioEngine engine,
     required Stream<EngineSnapshot> snapshots,
-  }) : _engine = engine {
+    int defaultVoiceLimit = 32,
+  }) : _engine = engine,
+       _defaultLimit = defaultVoiceLimit {
+    _state = InstrumentsState(voiceLimit: defaultVoiceLimit);
+    notes = NoteDispatcher(
+      engine: engine,
+      instruments: () => workingCopy.instruments,
+    );
     _subscription = snapshots.listen(_onSnapshot);
   }
 
+  /// The lowest limit the overload policy goes to.
+  static const int minimumVoiceLimit = 8;
+
   final AudioEngine _engine;
+  final int _defaultLimit;
   late final StreamSubscription<EngineSnapshot> _subscription;
   final _states = StreamController<InstrumentsState>.broadcast();
-  InstrumentsState _state = const InstrumentsState();
+  final _reductions = StreamController<int>.broadcast();
+  late InstrumentsState _state;
+  bool _limitSent = false;
+  int? _lastLate;
+
+  /// Plays the notes Dart owns: computer keys, touch keys, action tokens.
+  late final NoteDispatcher notes;
+
+  /// Each voice limit the overload policy lowered to, for the toast
+  /// "Polyphony reduced to N to keep audio running".
+  Stream<int> get polyphonyReductions => _reductions.stream;
   SynthCatalogue? _catalogue;
   Map<String, int> _ports = const {};
   final _sent = List<_SlotImage?>.filled(kMaxInstruments, null);
@@ -72,13 +100,12 @@ class InstrumentRepository {
           _listEquals(before.params, after.params);
     }
 
-    _state = InstrumentsState(
+    _state = _state.copyWith(
       workingCopy: next,
       unavailable: {
         for (final i in next.instruments)
           if (catalogue.byId(i.soundId) == null) i.id,
       },
-      voices: _state.voices,
       auditions: {
         for (final e in _state.auditions.entries)
           if (unchanged(e.key)) e.key: e.value,
@@ -133,10 +160,22 @@ class InstrumentRepository {
   void discardDraft(String id) =>
       _runtime(drafts: {..._state.drafts}..remove(id));
 
+  /// Returns the voice limit to its default after the overload policy
+  /// lowered it.
+  void restoreVoiceLimit() {
+    _state = _state.copyWith(
+      voiceLimit: _defaultLimit,
+      voiceLimitReduced: false,
+    );
+    _limitSent = false;
+    _reconcile();
+  }
+
   /// Stops observing snapshots.
   Future<void> dispose() async {
     await _subscription.cancel();
     await _states.close();
+    await _reductions.close();
   }
 
   void _runtime({
@@ -144,13 +183,9 @@ class InstrumentRepository {
     Map<String, List<double>>? drafts,
     String? dropDraft,
   }) {
-    _state = InstrumentsState(
-      workingCopy: _state.workingCopy,
-      unavailable: _state.unavailable,
-      voices: _state.voices,
-      auditions: auditions ?? _state.auditions,
+    _state = _state.copyWith(
+      auditions: auditions,
       drafts: {...drafts ?? _state.drafts}..remove(dropDraft),
-      problems: _state.problems,
     );
     _reconcile();
   }
@@ -179,27 +214,44 @@ class InstrumentRepository {
       _epoch = instruments.synthEpoch;
       _sent.fillRange(0, kMaxInstruments, null);
       _publishedRoutes = null;
-      _state = InstrumentsState(
-        workingCopy: _state.workingCopy,
-        unavailable: _state.unavailable,
-        voices: _state.voices,
-        problems: _state.problems,
+      _limitSent = false;
+      _lastLate = null;
+      notes.reset();
+      _state = _state.copyWith(
+        auditions: const {},
+        drafts: const {},
+        voiceLimit: _defaultLimit,
+        voiceLimitReduced: false,
       );
     }
-    final voices = {
-      for (final i in workingCopy.instruments) i.id: instruments.voices[i.slot],
-    };
-    if (!_mapEquals(voices, _state.voices)) {
-      _state = InstrumentsState(
-        workingCopy: _state.workingCopy,
-        unavailable: _state.unavailable,
-        voices: voices,
-        auditions: _state.auditions,
-        drafts: _state.drafts,
-        problems: _state.problems,
-      );
-    }
+    _state = _state.copyWith(
+      voices: {
+        for (final i in workingCopy.instruments)
+          i.id: instruments.voices[i.slot],
+      },
+    );
+    _watchOverload(instruments.totalVoices > 0);
+    notes.retry();
     _reconcile();
+  }
+
+  void _watchOverload(bool sounding) {
+    if (!sounding) {
+      _lastLate = null; // late periods with nothing sounding do not count
+      return;
+    }
+    final late = _engine.callbackTelemetry().session.latePeriods;
+    final before = _lastLate;
+    _lastLate = late;
+    if (before == null || late <= before) return;
+    final limit = _state.voiceLimit;
+    final lowered = limit * 3 ~/ 4 < minimumVoiceLimit
+        ? minimumVoiceLimit
+        : limit * 3 ~/ 4;
+    if (lowered >= limit) return;
+    _state = _state.copyWith(voiceLimit: lowered, voiceLimitReduced: true);
+    _limitSent = false;
+    _reductions.add(lowered);
   }
 
   /// Sends every slot and the table that differ from what the engine was
@@ -207,6 +259,9 @@ class InstrumentRepository {
   /// is retried on the next snapshot; before the first configure (epoch 0)
   /// nothing is sent, the first epoch sends it all.
   void _reconcile() {
+    if (_epoch != 0 && !_limitSent) {
+      _limitSent = _engine.setVoiceLimit(_state.voiceLimit).isOk;
+    }
     if (_epoch != 0) {
       for (var slot = 0; slot < kMaxInstruments; slot++) {
         final owner = workingCopy.bySlot(slot);
@@ -222,14 +277,7 @@ class InstrumentRepository {
         _publishedRoutes = compiled.routes;
       }
     }
-    final next = InstrumentsState(
-      workingCopy: _state.workingCopy,
-      unavailable: _state.unavailable,
-      voices: _state.voices,
-      auditions: _state.auditions,
-      drafts: _state.drafts,
-      problems: compiled.problems,
-    );
+    final next = _state.copyWith(problems: compiled.problems);
     if (next != _lastEmitted) {
       _lastEmitted = next;
       _states.add(next);
@@ -274,6 +322,3 @@ bool _listEquals<T>(List<T> a, List<T>? b) {
   }
   return true;
 }
-
-bool _mapEquals(Map<String, int> a, Map<String, int> b) =>
-    a.length == b.length && a.entries.every((e) => b[e.key] == e.value);
