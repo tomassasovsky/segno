@@ -457,15 +457,21 @@ static void le_ticket_emptying(le_engine* engine, int32_t channel) {
  * (handle_record -> apply_undo_to_empty), or a pending launch the count-in may
  * commit before the DISARM applies. An ordinary arm cancellation empties
  * nothing, and must stay re-armable within the same block. */
+/* Whether [t] has a launch a press may only cancel: a Count-in deferral
+ * pending, or a committed take inside its cancellation grace. Pending first,
+ * then grace, both acquire: le_count_in_commit stores the grace (release)
+ * before it clears the pending flag (release), so a clear read here implies
+ * the grace store is visible — no instant exists where a cancellable launch
+ * reads as neither. Every control-side reader of the pair goes through this
+ * one helper so none of them re-introduces the relaxed, unordered read. */
+static int le_launch_cancellable(le_track* t) {
+  return atomic_load_explicit(&t->a_pending_launch, memory_order_acquire) ||
+         atomic_load_explicit(&t->a_launch_grace, memory_order_acquire);
+}
+
 static void le_ticket_launch_cancel(le_engine* engine, int32_t channel) {
   if (channel < 0 || channel >= engine->track_count) return;
-  le_track* t = &engine->tracks[channel];
-  /* Pending first, then grace, both acquire: le_count_in_commit stores the
-   * grace (release) before it clears the pending flag (release), so a clear
-   * read here implies the grace store is visible — no instant exists where a
-   * cancellable launch reads as neither. */
-  if (atomic_load_explicit(&t->a_pending_launch, memory_order_acquire) ||
-      atomic_load_explicit(&t->a_launch_grace, memory_order_acquire)) {
+  if (le_launch_cancellable(&engine->tracks[channel])) {
     le_ticket_emptying(engine, channel);
   }
 }
@@ -1403,8 +1409,7 @@ typedef enum le_record_admission {
 static le_record_admission le_classify_record(le_engine* e, int channel) {
   le_track* t = &e->tracks[channel];
   const int state = le_effective_state(t);
-  if (load_i32(&t->a_pending_launch) || load_i32(&t->a_launch_grace))
-    return LE_RECORD_CANCEL;
+  if (le_launch_cancellable(t)) return LE_RECORD_CANCEL;
   if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) return LE_RECORD_FINISH;
   if (e->armed[channel] && load_i32(&t->a_pending) &&
       e->record_timing_command > atomic_load_explicit(&e->a_commands_published, memory_order_acquire)) {
@@ -1482,8 +1487,7 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
                                 const le_record_image* image) {
   const int32_t admission = le_record_preflight(engine, channel, image);
   if (admission != LE_OK) return admission;
-  if (load_i32(&engine->tracks[channel].a_pending_launch) ||
-      load_i32(&engine->tracks[channel].a_launch_grace)) {
+  if (le_launch_cancellable(&engine->tracks[channel])) {
     /* Keep cancellation intent even if an earlier pair command removes the
      * countdown before this command drains. Never reinterpret it as acquire. */
     uint32_t sequence = engine->clock_commands_posted + 1u;
@@ -1881,12 +1885,15 @@ int32_t le_engine_stop_track(le_engine* engine, int32_t channel) {
 }
 int32_t le_engine_play(le_engine* engine, int32_t channel) {
   if (!engine || channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
-  if (load_i32(&engine->tracks[channel].a_pending_launch) ||
-      load_i32(&engine->tracks[channel].a_launch_grace))
+  if (le_launch_cancellable(&engine->tracks[channel]))
     return le_engine_cancel_arm(engine, channel);
   if (engine && engine->record_start_command > atomic_load_explicit(
       &engine->a_commands_published, memory_order_acquire)) return LE_ERR_NOT_READY;
-  return le_push(engine, LE_CMD_PLAY, channel, 0.0f);
+  const int32_t rc = le_push(engine, LE_CMD_PLAY, channel, 0.0f);
+  /* handle_play routes a track still in its launch grace to handle_record,
+   * which empties the take: ticket a PLAY that drains against one (#1146). */
+  if (rc == LE_OK) le_ticket_launch_cancel(engine, channel);
+  return rc;
 }
 /* Builds the restore point for a clear about to be posted on `t` (control
  * thread), or returns 0 when there is nothing worth restoring — an already-empty
