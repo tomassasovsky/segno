@@ -224,6 +224,27 @@ void main() {
         expect(family.audible(engine), family.next);
       });
 
+      check('a Retry cancelled before its receipt keeps the value owed', (
+        clock,
+        engine,
+        repository,
+      ) {
+        family.withhold(engine);
+        expect(family.request(repository, family.next), EngineResult.ok);
+        clock.elapse(const Duration(milliseconds: 510));
+        expect(family.recover(repository), EngineResult.ok);
+        expect(family.owes(repository), isTrue);
+        repository.stopEngine();
+        clock.flushMicrotasks();
+        expect(family.owes(repository), isTrue);
+        expect(family.restart(repository), family.next);
+        family.deliver(engine, family.prior);
+        expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+        clock.elapse(const Duration(milliseconds: 20));
+        expect(family.owes(repository), isFalse);
+        expect(family.audible(engine), family.next);
+      });
+
       check('Retry while stopped stages the owed value', (
         clock,
         engine,

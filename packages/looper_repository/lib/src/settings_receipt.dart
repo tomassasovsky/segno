@@ -53,7 +53,9 @@ final class SettingsReceipt<T extends Object> {
   T? _owed;
   _Pending<T>? _pending;
   EngineResult _lastResult = EngineResult.ok;
-  final _failures = StreamController<EngineResult>.broadcast();
+  // Synchronous, so an owner hears a failure while its own write still awaits
+  // the receipt and reports it once.
+  final _failures = StreamController<EngineResult>.broadcast(sync: true);
 
   /// The last accepted value, including a temporary controller value.
   T get live => _live;
@@ -85,12 +87,8 @@ final class SettingsReceipt<T extends Object> {
 
   /// Replays the owed or accepted durable value into a fresh engine lifetime.
   EngineResult replay() {
-    final owed = _owed;
     final value = restart;
-    _owed = null;
-    final result = _admit(value, value, startup: true);
-    if (!result.isOk) _owed = owed;
-    return result;
+    return _admit(value, value, startup: true);
   }
 
   /// Retry: running, re-requests the owed value; stopped, stages it. Never
@@ -99,10 +97,7 @@ final class SettingsReceipt<T extends Object> {
     final owed = _owed;
     if (owed == null) return EngineResult.ok;
     if (_pending != null) return EngineResult.notReady;
-    _owed = null;
-    final result = _admit(owed, owed, startup: false);
-    if (!result.isOk) _owed = owed;
-    return result;
+    return _admit(owed, owed, startup: false);
   }
 
   /// Awaits the pending receipt, bounded by the caller's budget and the
@@ -138,10 +133,13 @@ final class SettingsReceipt<T extends Object> {
   /// Closes the failure stream.
   Future<void> dispose() => _failures.close();
 
+  // The owed value is kept until a receipt is accepted or a stopped engine
+  // stages it: a cancel, a refusal or a failed start leaves it owed.
   EngineResult _admit(T value, T restart, {required bool startup}) {
     if (!_running()) {
       _live = value;
       _restart = restart;
+      _owed = null;
       _lastResult = EngineResult.ok;
       return EngineResult.ok;
     }
@@ -167,6 +165,7 @@ final class SettingsReceipt<T extends Object> {
         _pending = null;
         _live = pending.value;
         _restart = pending.restart;
+        _owed = null;
         _lastResult = EngineResult.ok;
         pending.observation.complete(EngineResult.ok);
       case ReceiptVerdict.refused when !pending.startup:

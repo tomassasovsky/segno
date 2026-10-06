@@ -288,6 +288,13 @@ Decisions taken under the owner rules (2026-10-05):
    did; Click volume now does too), and Session exclusion no longer refuses
    while Click volume or Hear click is unavailable: capture uses the
    repository's durable value. Count-in still refuses until Part 2.
+9. Review of PR #1165: the owed value stays owed until a receipt is accepted
+   (or a stopped engine stages it), so a cancelled Retry, a refused Retry or
+   a start that fails after the replay keeps it. A fenced controller write
+   cannot replace a waiting ordinary choice; it is superseded. The load is
+   pinned to the session it started in, so Retry after a recalled Session
+   repairs storage without replacing the Session's value. The receipt's
+   failure stream is synchronous, so a write's timeout is reported once.
 
 Deviations from the plan text:
 

@@ -21,6 +21,7 @@ const _pinned = le.AudioDevice(
 class _Engine extends FakeAudioEngine {
   bool refuseClick = false;
   bool refuseMode = false;
+  bool refuseOnce = false;
   final clickWrites = <double>[];
 
   /// Runs once, from the first snapshot read after it is armed and returns
@@ -44,12 +45,31 @@ class _Engine extends FakeAudioEngine {
   @override
   EngineResult setClickMode(ClickMode mode) =>
       refuseMode ? EngineResult.notReady : super.setClickMode(mode);
+
+  /// Once replays after both Click families, so refusing it fails a start
+  /// after their replays were admitted.
+  @override
+  EngineResult setOneShotMask({required int channels, required bool oneShot}) =>
+      refuseOnce
+      ? EngineResult.invalid
+      : super.setOneShotMask(channels: channels, oneShot: oneShot);
 }
 
 class _Store extends FakeKeyValueStore {
   static const keys = {'tempo.click_volume', 'tempo.click_mode'};
   final writes = <String, int>{};
   int failingWrites = 0;
+  Completer<void>? modeReadGate;
+  bool failModeRead = false;
+
+  @override
+  Future<int?> getInt(String key) async {
+    if (key == 'tempo.click_mode') {
+      await modeReadGate?.future;
+      if (failModeRead) throw StateError('Hear click read failed');
+    }
+    return super.getInt(key);
+  }
 
   Future<void> _write(String key, Future<void> Function() write) async {
     if (!keys.contains(key)) return write();
@@ -137,7 +157,13 @@ final _hearClick = _Case<ClickMode>(
 );
 
 class _Rig {
-  _Rig(this.clock, {Object? clickVolume = .5, Object? clickMode = 0}) {
+  _Rig(
+    this.clock, {
+    Object? clickVolume = .5,
+    Object? clickMode = 0,
+    void Function(_Store)? prepare,
+  }) {
+    prepare?.call(store);
     if (clickVolume != null) store.values['tempo.click_volume'] = clickVolume;
     if (clickMode != null) store.values['tempo.click_mode'] = clickMode;
     engine.nextSnapshot = engine.nextSnapshot.copyWith(devicePresent: true);
@@ -209,11 +235,17 @@ void main() {
     void Function(_Rig) body, {
     Object? clickVolume = .5,
     Object? clickMode = 0,
+    void Function(_Store)? prepare,
   }) {
     test(
       name,
       () => fakeAsync((clock) {
-        final rig = _Rig(clock, clickVolume: clickVolume, clickMode: clickMode);
+        final rig = _Rig(
+          clock,
+          clickVolume: clickVolume,
+          clickMode: clickMode,
+          prepare: prepare,
+        );
         try {
           body(rig);
         } finally {
@@ -317,6 +349,66 @@ void main() {
         expect(r.run(owner.flush())?.status, SettingStatus.applied);
       });
 
+      check('Retry stopped inside its receipt window still owes the value', (
+        r,
+      ) {
+        final owner = c.owner(r.tempo);
+        c.withhold(r.engine);
+        unawaited(owner.set(c.next));
+        r.expire();
+        SettingOutcome? retry;
+        unawaited(owner.recover().then((value) => retry = value));
+        r.clock.flushMicrotasks();
+        r.looper.stopEngine();
+        r.pump();
+        expect(retry?.status, SettingStatus.recoveryRequired);
+        expect(owner.ready, isFalse);
+        expect(c.restart(r.looper), c.next);
+        c.deliver(r.engine);
+        expect(r.looper.startEngine(const EngineConfig()), EngineResult.ok);
+        r.pump();
+        expect(c.audible(r.engine), c.next);
+        expect(r.run(owner.flush())?.status, SettingStatus.applied);
+        expect(owner.value, c.next);
+        expect(r.store.values[c.key], c.encode(c.next));
+      });
+
+      check('a failed start after an owed replay still owes the value', (r) {
+        final owner = c.owner(r.tempo);
+        c.withhold(r.engine);
+        unawaited(owner.set(c.next));
+        r.expire();
+        r.looper.stopEngine();
+        c.deliver(r.engine);
+        r.engine.refuseOnce = true;
+        expect(
+          r.looper.startEngine(const EngineConfig()),
+          isNot(EngineResult.ok),
+        );
+        r.pump();
+        expect(owner.ready, isFalse);
+        expect(c.restart(r.looper), c.next);
+        r.engine.refuseOnce = false;
+        expect(r.looper.startEngine(const EngineConfig()), EngineResult.ok);
+        r.pump();
+        expect(c.audible(r.engine), c.next);
+        expect(r.store.values[c.key], c.encode(c.next));
+        expect(r.run(owner.flush())?.status, SettingStatus.applied);
+      });
+
+      check('a timeout during a write is reported once', (r) {
+        final owner = c.owner(r.tempo);
+        final failures = <SettingOutcome>[];
+        final subscription = owner.failures.listen(failures.add);
+        c.withhold(r.engine);
+        unawaited(owner.set(c.next));
+        r
+          ..expire()
+          ..pump();
+        expect(failures.map((f) => f.status), [SettingStatus.recoveryRequired]);
+        unawaited(subscription.cancel());
+      });
+
       check('a failed rollback owes the checkpoint until Retry', (r) {
         final owner = c.owner(r.tempo);
         r.store.failingWrites = 2;
@@ -370,6 +462,46 @@ void main() {
           expect(r.store.values[c.key], repaired);
           expect(owner.ready, isTrue);
           expect(owner.value, value);
+        },
+        clickVolume: c == _clickVolume ? invalid : .5,
+        clickMode: c == _hearClick ? invalid : 0,
+      );
+    }
+  });
+
+  group('a recalled Session survives Retry', () {
+    for (final (c, invalid, repaired, recalled)
+        in <(_Case<Object>, Object, Object?, SessionRig)>[
+          (
+            _hearClick,
+            9,
+            ClickMode.off.code,
+            const SessionRig(clickMode: ClickMode.playRec),
+          ),
+          (_clickVolume, 5.0, null, const SessionRig(clickVolume: 1.25)),
+        ]) {
+      check(
+        '${c.name}: unreadable key, Session load, then Retry',
+        (r) {
+          final owner = c.owner(r.tempo);
+          final value = c == _hearClick ? ClickMode.playRec : 1.25;
+          expect(owner.ready, isFalse);
+          r.looper.stopEngine();
+          unawaited(r.looper.applySession(recalled));
+          r.pump();
+          expect(r.looper.startEngine(const EngineConfig()), EngineResult.ok);
+          r.pump();
+          expect(c.audible(r.engine), value);
+          expect(r.run(owner.recover())?.status, SettingStatus.applied);
+          expect(r.store.values[c.key], repaired);
+          expect(owner.value, value);
+          expect(c.audible(r.engine), value);
+          Object? captured;
+          unawaited(
+            r.tempo.runTempoExclusive(() async => captured = owner.durable),
+          );
+          r.pump();
+          expect(captured, value);
         },
         clickVolume: c == _clickVolume ? invalid : .5,
         clickMode: c == _hearClick ? invalid : 0,
@@ -436,6 +568,22 @@ void main() {
       });
     }
 
+    check('an ordinary same-value edit removes the held Released value', (r) {
+      final owner = r.tempo.clickVolumeOwner;
+      unawaited(
+        owner.setController(1.5, lifetime: owner.lifetime, released: .25),
+      );
+      r.pump();
+      expect(owner.durable, .25);
+      final ordinary = <double>[];
+      final subscription = owner.ordinaryChanges.listen(ordinary.add);
+      expect(r.run(owner.set(1.5))?.isOk, isTrue);
+      expect(owner.durable, 1.5);
+      expect(r.store.values['tempo.click_volume'], 1.5);
+      expect(ordinary, [1.5]);
+      unawaited(subscription.cancel());
+    });
+
     check('a stopped edit is deferred and the next start replays it', (r) {
       r.looper.stopEngine();
       final outcome = r.run(r.tempo.clickVolumeOwner.set(1.5));
@@ -469,6 +617,81 @@ void main() {
   });
 
   group('Hear click family', () {
+    check('a refused Retry stays owed', (r) {
+      final owner = r.tempo.clickModeOwner;
+      _hearClick.withhold(r.engine);
+      unawaited(owner.set(ClickMode.playRec));
+      r.expire();
+      r.engine.commandsAreSettled = true;
+      final revision = r.engine.nextSnapshot.clickModeRevision;
+      SettingOutcome? retry;
+      unawaited(owner.recover().then((value) => retry = value));
+      r.clock.flushMicrotasks();
+      r.engine.nextSnapshot = r.engine.nextSnapshot.copyWith(
+        clickModeRevision: revision + 1,
+        clickModeResult: -1,
+      );
+      r.pump();
+      expect(retry?.status, SettingStatus.recoveryRequired);
+      expect(owner.ready, isFalse);
+      expect(r.looper.clickModeRecoveryRequired, isTrue);
+      expect(owner.durable, ClickMode.playRec);
+      expect(r.store.values['tempo.click_mode'], ClickMode.playRec.code);
+      expect(r.engine.stopCalls, 0);
+    });
+
+    check('a stale release cannot replace the waiting ordinary choice', (r) {
+      final owner = r.tempo.clickModeOwner;
+      final origin = owner.lifetime;
+      final revision = owner.revision;
+      r.engine.commandsAreSettled = false;
+      SettingOutcome? first;
+      SettingOutcome? latest;
+      SettingOutcome? release;
+      unawaited(owner.set(ClickMode.rec).then((value) => first = value));
+      r.clock.flushMicrotasks();
+      unawaited(owner.set(ClickMode.playRec).then((value) => latest = value));
+      unawaited(
+        owner
+            .setController(
+              ClickMode.off,
+              lifetime: origin,
+              revision: revision,
+            )
+            .then((value) => release = value),
+      );
+      r.clock.flushMicrotasks();
+      r.engine.commandsAreSettled = true;
+      r
+        ..pump()
+        ..pump();
+      expect(first?.status, SettingStatus.applied);
+      expect(latest?.status, SettingStatus.applied);
+      expect(release?.status, SettingStatus.superseded);
+      expect(owner.value, ClickMode.playRec);
+      expect(r.store.values['tempo.click_mode'], ClickMode.playRec.code);
+    });
+
+    check(
+      'an obsolete failed load adopts an accepted replacement Session',
+      (r) {
+        final owner = r.tempo.clickModeOwner;
+        expect(owner.initialized, isFalse);
+        r.looper.stopEngine();
+        unawaited(r.looper.applySession(const SessionRig()));
+        r.pump();
+        r.store
+          ..failModeRead = true
+          ..modeReadGate!.complete();
+        r.pump();
+        expect(owner.ready, isTrue);
+        expect(owner.value, ClickMode.off);
+        expect(owner.durable, ClickMode.off);
+      },
+      clickMode: ClickMode.playRec.code,
+      prepare: (store) => store.modeReadGate = Completer<void>(),
+    );
+
     check('an absent preference loads First recording without a key', (r) {
       expect(r.tempo.clickModeOwner.value, ClickMode.recFirst);
       expect(r.store.values.containsKey('tempo.click_mode'), isFalse);

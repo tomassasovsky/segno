@@ -92,6 +92,7 @@ class SettingsOwner<V extends Object, C> {
   bool _busy = false;
   bool _closing = false;
   Object? _unreadable;
+  int? _loadSession;
   ({C checkpoint})? _owedRollback;
   SettingOutcome _last = const SettingOutcome(SettingStatus.rejected);
 
@@ -261,6 +262,11 @@ class SettingsOwner<V extends Object, C> {
 
   Future<SettingOutcome> _admit(_Write<V> write) {
     final replaced = _waiting;
+    if (replaced != null && replaced.ordinary && write.revision != null) {
+      // A newer ordinary choice already supersedes this origin's revision.
+      write.done.complete(const SettingOutcome(SettingStatus.superseded));
+      return write.done.future;
+    }
     _waiting = write;
     if (replaced != null) {
       // Latest wins: one storage write per in-flight receipt.
@@ -415,7 +421,9 @@ class SettingsOwner<V extends Object, C> {
   }
 
   Future<void> _restore() async {
-    final session = _repository.sessionRevision;
+    // The stored preference belongs to the session the first load ran in.
+    // A re-run after a recalled Session must not replace the Session's value.
+    final session = _loadSession ??= _repository.sessionRevision;
     C? checkpoint;
     var read = false;
     try {
