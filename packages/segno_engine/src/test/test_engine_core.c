@@ -9297,6 +9297,27 @@ static int nth_layer_filename_for_test(const char* json, int n, char* out,
  * `df` subprocess, and fork() on the appliance costs the real-time audio thread
  * milliseconds. This is the replacement — a plain question about a directory,
  * with no engine and no child process. */
+/* #1195: a copy's rename is durable only once its directory is synced. */
+static void test_sync_dir(void) {
+  printf("test_sync_dir\n");
+  CHECK(le_sync_dir(NULL) == LE_ERR_INVALID);
+  CHECK(le_sync_dir("") == LE_ERR_INVALID);
+  CHECK(le_sync_dir(".") == LE_OK);
+#if !defined(_WIN32)
+  CHECK(le_sync_dir("/no/such/directory/for/segno") == LE_ERR_DEVICE);
+  /* A file is not a directory: O_DIRECTORY refuses it rather than syncing
+   * the file and claiming the directory was. */
+  char path[] = "segno_sync_dir_probe_XXXXXX";
+  const int fd = mkstemp(path);
+  CHECK(fd >= 0);
+  if (fd >= 0) {
+    close(fd);
+    CHECK(le_sync_dir(path) == LE_ERR_DEVICE);
+    unlink(path);
+  }
+#endif
+}
+
 static void test_volume_space(void) {
   printf("test_volume_space\n");
   uint64_t total = 12345;
@@ -33774,6 +33795,7 @@ int main(void) {
   test_monitor_disable_and_excluded();
   test_monitor_and_playback_sum();
   test_volume_space();
+  test_sync_dir();
   test_perf_arm_requires_configure();
   test_perf_reconfigure_while_armed_resets_cleanly();
   test_perf_arm_rejects_no_enabled_output();

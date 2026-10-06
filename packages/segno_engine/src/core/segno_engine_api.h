@@ -3012,6 +3012,19 @@ LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
 LE_EXPORT int32_t le_volume_space(const char* path, uint64_t* out_total_bytes,
                                   uint64_t* out_free_bytes);
 
+/* fsync(2) on the directory at `path`, so the entries in it — a file renamed
+ * into it, a file created in it — survive a power cut or a pulled drive. A
+ * file's own fsync makes its bytes durable but not its name: on ext4 a copy
+ * that returned within the commit interval could otherwise come back after a
+ * power cut as a part file with no final name (#1177, #1195). Dart has no way
+ * to open a directory, so the storage repository asks here.
+ *
+ * LE_ERR_INVALID on a NULL or empty path; LE_ERR_DEVICE when the path cannot
+ * be opened as a directory or the sync fails. LE_OK on Windows without doing
+ * anything: NTFS journals its directory entries. Control thread only; it can
+ * take as long as the device's flush. */
+LE_EXPORT int32_t le_sync_dir(const char* path);
+
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's
  * `performance.json` + `events.log` + `loops/` + retired-layer PCM), on a

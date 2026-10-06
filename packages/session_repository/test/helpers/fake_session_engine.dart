@@ -891,6 +891,9 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult perfDisarm() => EngineResult.ok;
 
   @override
+  bool syncDirectory(String path) => path.isNotEmpty;
+
+  @override
   VolumeSpace? volumeSpace(String path) => freeBytes == null
       ? null
       : VolumeSpace(totalBytes: totalBytes, freeBytes: freeBytes!);
