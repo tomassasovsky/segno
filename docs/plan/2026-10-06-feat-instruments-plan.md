@@ -1183,7 +1183,7 @@ As built (differences from the text above):
   the value types' equality. Splitting it would leave the mock or the
   fakes not compiling against the new roles, so it stays one part.
 
-### Part 3b. Instrument domain and repository (about 650 production lines)
+### Part 3b. Instrument domain and repository (split in two when built: 3b-1 built on `claude/instruments-1197-p3b`, 3b-2 next)
 
 `packages/instrument_repository` (§3): models with JSON, the desktop default
 A–K mapping, slot allocation with tombstones, the routing-table compiler
@@ -1224,6 +1224,54 @@ NON-GOALS:
 - The source predicate (Part 3c), device captures, session schema, UI, shared actions.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
+
+Split when built (the size rule): 3b-1 came to about 650 production lines on
+its own, so the part is two.
+
+**3b-1, built (`claude/instruments-1197-p3b`).** The new
+`packages/instrument_repository`:
+- Models with JSON: `Instrument` (id, slot, name, sound id, three
+  parameters), `MidiNoteInput` (enable, device, channel or All, range,
+  remaps), `NoteRemap`, `ComputerKeys` with the desktop default rows A W S E
+  D F T G Y H U J K → 60..72, `Tombstone`, and `InstrumentsWorkingCopy` (a
+  version field; duplicate slots or ids are refused on load).
+- Edits are pure working-copy operations that return the next copy for the
+  settings owner to write: `add` (first free non-tombstoned slot,
+  controllers off, the default key rows, or the refusal `full` /
+  `tombstoned`), `replace`, `remove` (with or without a tombstone),
+  `clearTombstone`.
+- `compileRoutes` (definitions plus device ports → the eight
+  `InstrumentRoute`s), which reports remaps and remap notes beyond the
+  native caps and invalid fields as problems instead of dropping them.
+- `InstrumentRepository.apply(copy)`: adopts a copy and reconciles every
+  slot (patch, parameters) and the routing table with the engine; a patch
+  change or table the engine refuses for now is retried on later snapshots,
+  latest wins; nothing is sent before the first synth epoch. Auditions
+  (`listen` / `cancelAudition`) and parameter drafts (`setParamDraft` /
+  `discardDraft`) are runtime only and end when their instrument's sound or
+  parameters are written, or on an epoch change, which also sends every
+  slot and the table. Unknown sound ids load as unavailable: the slot is
+  silent, the definition, routes and mappings stay. `InstrumentsState`
+  projects the copy, unavailability, voices, previews and route problems.
+- Deviations: the repository takes the engine poll as a
+  `Stream<EngineSnapshot>` the app supplies rather than polling the engine a
+  second time; parameters are three numbers in the family's order rather
+  than a key map (keys come from the catalogue, and an unavailable sound has
+  none); `SettingsOwner` lives in the app layer, so the repository exposes
+  proposals and `apply` and the app writes through the owner (3b-2).
+  Hear live On at 75 % for a new instrument is a `LooperRepository` monitor
+  preference and lands with the source space (3c).
+- Tests: models, the compiler and the repository against `MockAudioEngine`
+  (24; 100 % line coverage; 17 mutations, all caught); a CI job
+  `instrument-repository` with a 100 % floor.
+
+**3b-2, next.** The note dispatch (computer keys on desktop builds, touch
+keys, action tokens with latch state and origin tokens), the
+pending-release queue, the overload policy (late periods lower the voice
+limit to three quarters, not below 8, with the toast), the voice limit in
+the epoch replay, the `instruments` family and its `SettingsOwner` with
+the `SettingsRepository` checkpoint, the app wiring (the snapshot stream,
+ports), the removal sequence's guard, and the native-library case.
 
 ### Part 3c. Dart source space, instrument-keyed targets and removal labels (about 550 production lines)
 
