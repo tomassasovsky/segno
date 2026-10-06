@@ -568,6 +568,33 @@ void main() {
       });
     }
 
+    check('an edit while an owed replay is admitted waits and applies', (r) {
+      final owner = r.tempo.clickVolumeOwner;
+      _clickVolume.withhold(r.engine);
+      unawaited(owner.set(1.5));
+      r.expire();
+      expect(owner.ready, isFalse);
+      r.looper.stopEngine();
+      // The restart replays the owed 1.5; its receipt is not published yet.
+      r.engine.publishClickCommands = true;
+      expect(r.looper.startEngine(const EngineConfig()), EngineResult.ok);
+      final failures = <SettingOutcome>[];
+      final subscription = owner.failures.listen(failures.add);
+      SettingOutcome? outcome;
+      unawaited(owner.set(.75).then((value) => outcome = value));
+      r.clock.flushMicrotasks();
+      r.engine.commandsAreSettled = true;
+      r
+        ..pump()
+        ..pump();
+      expect(outcome?.status, SettingStatus.applied);
+      expect(failures, isEmpty);
+      expect(owner.value, .75);
+      expect(r.engine.nextSnapshot.clickVolume, .75);
+      expect(r.store.values['tempo.click_volume'], .75);
+      unawaited(subscription.cancel());
+    });
+
     check('an ordinary same-value edit removes the held Released value', (r) {
       final owner = r.tempo.clickVolumeOwner;
       unawaited(

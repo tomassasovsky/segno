@@ -82,6 +82,8 @@ class SettingsOwner<V extends Object, C> {
   final _ordinary = StreamController<V>.broadcast(sync: true);
   final _failures = StreamController<SettingOutcome>.broadcast(sync: true);
   final _changes = StreamController<void>.broadcast(sync: true);
+  final _recovered = StreamController<void>.broadcast(sync: true);
+  bool _recoveryReported = false;
   Future<void> _tail = Future<void>.value();
   Future<void>? _loadFuture;
   Future<void>? _closeFuture;
@@ -135,6 +137,10 @@ class SettingsOwner<V extends Object, C> {
 
   /// Fires whenever readiness or the reported outcome changes.
   Stream<void> get changes => _changes.stream;
+
+  /// Fires when a reported recovery resolves, including outside Retry: a
+  /// restart or reconnect replay that lands the owed value.
+  Stream<void> get recovered => _recovered.stream;
 
   /// Restores the stored value once. Unreadable storage makes only this
   /// family unavailable.
@@ -248,6 +254,7 @@ class SettingsOwner<V extends Object, C> {
       _ordinary.close(),
       _failures.close(),
       _changes.close(),
+      _recovered.close(),
     ]);
   }
 
@@ -291,7 +298,9 @@ class SettingsOwner<V extends Object, C> {
         write.lifetime == lifetime &&
         (write.revision == null || write.revision == _revision);
     if (!current()) return const SettingOutcome(SettingStatus.superseded);
-    if (!_initialized || _recoveryPending) {
+    // An owed receipt may be replaying right now; the settle below waits for
+    // it and the check after it refuses only a value still owed.
+    if (!_initialized || _unreadable != null || _owedRollback != null) {
       return _report(
         SettingOutcome(
           _recoveryPending
@@ -496,15 +505,25 @@ class SettingsOwner<V extends Object, C> {
   }
 
   void _sync() {
-    if (_closing || _busy || _lifetime == lifetime) return;
-    _lifetime = lifetime;
-    _revision = 0;
-    _changed();
+    if (_closing || _busy) return;
+    if (_lifetime != lifetime) {
+      _lifetime = lifetime;
+      _revision = 0;
+      _changed();
+    }
+    if (_recoveryReported && ready) {
+      _recoveryReported = false;
+      if (!_recovered.isClosed) _recovered.add(null);
+      _changed();
+    }
   }
 
   SettingOutcome _report(SettingOutcome outcome) {
     if (outcome.status == SettingStatus.superseded) return outcome;
     _last = outcome;
+    if (outcome.status == SettingStatus.recoveryRequired) {
+      _recoveryReported = true;
+    }
     if (!_closing && !outcome.isOk && !_failures.isClosed) {
       _failures.add(outcome);
     }
