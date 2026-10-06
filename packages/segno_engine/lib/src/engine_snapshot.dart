@@ -418,12 +418,18 @@ enum SpeedFactor {
   /// The factor's denominator.
   final int denom;
 
-  /// The native factor [numer]/[denom]; [normal] for any other pair (the
-  /// value an unconfigured engine publishes).
-  static SpeedFactor fromRatio(int numer, int denom) => values.firstWhere(
-    (factor) => factor.numer == numer && factor.denom == denom,
-    orElse: () => SpeedFactor.normal,
-  );
+  /// The native factor [numer]/[denom]; [normal] for 0/0, what an
+  /// unconfigured engine publishes. Any other pair is a factor this build
+  /// does not know, and is an [ArgumentError] rather than a silent [normal]:
+  /// showing Normal while the engine plays another factor would claim a
+  /// speed that is not sounding.
+  static SpeedFactor fromRatio(int numer, int denom) {
+    if (numer == 0 && denom == 0) return SpeedFactor.normal;
+    for (final factor in values) {
+      if (factor.numer == numer && factor.denom == denom) return factor;
+    }
+    throw ArgumentError('Unknown native speed factor $numer/$denom');
+  }
 }
 
 /// What a looper-mode change would do right now — the engine's answer to

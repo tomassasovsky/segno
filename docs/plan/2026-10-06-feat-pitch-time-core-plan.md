@@ -876,7 +876,8 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
 (`test/helpers/fake_audio_engine.dart`, the three package fakes),
 `LooperRepository.setSpeed` through `_requestReceipt` (the renamed
 `_requestFade`, `looper_repository.dart:1972-2018`), `LooperState.speed`
-projection, the record-refusal notice path for `transformed`. One
+projection (the record-refusal notice for `transformed` moved to Part 6a,
+which draws it; review of #1213, L1). One
 actual-native repository case (`packages/looper_repository/test/
 speed_native_test.dart`, fixture of `fade_native_test.dart:13-45`) confirms
 the receipt, the projection and the record refusal; mock and fake cases cover
@@ -1060,16 +1061,20 @@ Mode = Exit, Rec/Play and Stop as in Fade, Undo/Clear inert; `TrackOperation`
 gains `speedHalf/Normal/Double/Quad/Octuple` as direct actions (the catalogue
 rule at `control_action.dart:10-20`: an entry exists only once the engine does);
 the face shows the factor, the derived pitch ("−12 st", "+36 st") and the loop
-duration ("2×", "1/8"), "No recorded audio" when every track is empty (15/04);
+duration ("2×", "1/8"), "No recorded audio" when every track is empty (15/04)
+with the five factor pedals unavailable (decision 26: the engine refuses
+them with `invalid`);
 the Tracks marker "Loop speed 2×" (15/05) reads `LooperState.speed` and holds
 its width at 1×; LEDs: the lit position is the current factor; refusal toast
-once per visit; EN/ES strings. Tests as the Reverse Part 3 lists: dispatch,
+once per visit; a record or punch-in refused with `EngineResult.transformed`
+while Speed is not 1× shows a notice, so the refusal is never silent (moved
+here from Part 2b, which only returns the result); EN/ES strings. Tests as the Reverse Part 3 lists: dispatch,
 projection truthfulness, view goldens, marker, ingress parity.
 
 ```success-criteria
 GOAL: The accepted Speed face sets the global factor by foot or assignment, shows the derived pitch and duration, and leaves a truthful marker on Tracks.
 SUCCESS CRITERIA:
-- Pedals set the five factors against the real receipt, Exit keeps the factor, Normal restores only the factor, a refused change shows one notice. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
+- Pedals set the five factors against the real receipt, Exit keeps the factor, Normal restores only the factor, a refused change shows one notice, a record refused with `transformed` shows one notice, and the empty-loop face shows the factor pedals unavailable. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
 - Face and marker goldens match screens 15/01–05 in EN and ES; the marker holds width at 1×. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
 - Direct Speed actions reach the same adapter from pedal, CTRL and MIDI ingress; static gates and the suite pass. | verify: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 - HARDWARE: footswitch and LED proof on the appliance at each factor during playback and stopped, with a running Fade and with a record refusal. | verify: manual appliance session per docs/PROGRESS.md hardware evidence rules
