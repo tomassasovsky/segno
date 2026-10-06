@@ -46,7 +46,7 @@ when the 28-byte record does.
 | `3`      | A `RECORD_ABORT` may appear **unpaired**: a count-in cancelled by the immediate-finalize primitive (#405, `LE_CMD_FINALIZE_TAKE`) logs 314 for the counting channel even though no `RECORD_START` ever preceded it (the count-in's commit is what logs the start). In a version-2 file every 314 closes an open `START`; from 3 on, a reader must treat an ABORT with no open `START` as a no-op, not a malformed file. |
 | `4`      | Two new transport facts (#262) — `LE_PLOG_PERF_ARMED` (315) recording the master loop phase at arm, and `LE_PLOG_TRANSPORT_HELD` (316) marking a mid-capture transport hold — and `LE_PLOG_RECORD_END` (301) now carries the `take` arm `{channel, take_id}` instead of a bare channel (#819). The offline renderer **requires** these: the two inferences it used before — the race-stale `armSnapshot.clockFrame` phase anchor and the "first `RECORD_END` while the channel is content-free" disarm-image proxy — were **deleted with no fallback** (AGENTS.md). A pre-4 file has neither fact, so it has no supported phase anchor and no take identity; it still parses (below), but renders correctly only if re-captured. |
 | `5`      | Applied Clear restoration (322) and restored source state, phase and retirement (323), with exact capture-local image identity. |
-| `6`      | Every callback-applied history image logs 322 (#1143): Clear Undo, layer Undo and Redo, and recovery from empty each stage an immutable image at admission and the callback names it at the exact frame it first mixes the slot, so a channel may carry several 322 facts per capture and a reader switches images on each (in version 5 a channel carried at most one, for Clear Undo). 323 keeps its meaning; `image_id` 0 with state EMPTY now also follows any slot that became live without a staged image (staging refused, loop-close restoration, session import), whatever the previous source was. `LE_CMD_UNDO_TO_EMPTY` (39) is logged raw at its exact apply frame next to the semantic 304: emptying is exact silence, not lost provenance. `LE_PLOG_LAYER_RETIRED`'s fourth payload field (`frames`) is reserved for the staging-gap follow-up under this same version and reads 0 until it lands. |
+| `6`      | Every callback-applied history image logs 322 (#1143): Clear Undo, layer Undo and Redo, and recovery from empty each stage an immutable image at admission and the callback names it at the exact frame it first mixes the slot, so a channel may carry several 322 facts per capture and a reader switches images on each (in version 5 a channel carried at most one, for Clear Undo). 323 keeps its meaning; `image_id` 0 with state EMPTY now also follows any slot that became live without a staged image (staging refused, loop-close restoration, session import), whatever the previous source was. `LE_CMD_UNDO_TO_EMPTY` (39) is logged raw at its exact apply frame next to the semantic 304: emptying is exact silence, not lost provenance. `LE_PLOG_LAYER_RETIRED`'s fourth payload field (`frames`) is reserved for the staging-gap follow-up under this same version; until it lands the writer does not define those four bytes and a reader must not interpret them. |
 
 Neither reader in this repo (`perf_render.c`'s `le_pr_load_log`, the Dart
 `EventLogReader`) gates on the field — both check the magic and skip these four
@@ -330,8 +330,14 @@ Rendering resolves exact kind/channel/ID and validates complete PCM before
 claiming success. Missing material, invalid bounds, duplicate identity and
 segment-capacity exhaustion fail the affected stem. STOPPED restored material
 is held silent until a callback-applied state/phase event permits playback.
-This extends the existing lane-0 renderer for restored images; it does not
-implement general history replay or multi-lane offline rendering.
+This extends the existing lane-0 renderer for applied images; it does not
+implement multi-lane offline rendering. The `322` frame is exact for lane 0:
+the callback names the slot that lane 0 mixes in that very frame. The control
+thread publishes lanes `n..1` before lane 0, so no lane can still mix the
+previous slot in the fact's frame, but a lane `k >= 1` may mix the new slot up
+to one frame before it (the live pool slot is published per lane, not per
+track). A future multi-lane renderer must treat lanes `1..n` as switching
+within one frame of the fact.
 
 Code `323` with image ID zero and state EMPTY means provenance was lost: a
 slot became live without a staged image (staging refused or the id space

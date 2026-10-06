@@ -3650,12 +3650,23 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       /* Provenance at arm (#1143): whatever is live now is the arm snapshot's
        * (image 0); anything that becomes live later goes through
-       * perf.slot_image. An EMPTY track has no source until a slot is mixed. */
+       * perf.slot_image. An EMPTY track has no source until a slot is mixed.
+       * A slot whose table entry is already nonzero was swapped in between
+       * le_perf_arm (which zeroed the table) and this apply: the arm snapshot
+       * predates it, so it is left unresolved (-1) and rule 1 logs its 322 at
+       * the first mixed frame. Acquire on a_live pairs with that publish so a
+       * seen swap implies a seen entry. */
       for (int t = 0; t < e->track_count; ++t) {
         le_track* tr = &e->tracks[t];
-        tr->perf_source_slot = load_i32(&tr->a_state) == LE_TRACK_EMPTY
-                                   ? -1 : load_i32(&tr->lanes[0].a_live);
+        tr->perf_source_slot = -1;
         tr->perf_source_id = 0;
+        if (load_i32(&tr->a_state) == LE_TRACK_EMPTY) continue;
+        const int32_t live = atomic_load_explicit(&tr->lanes[0].a_live,
+                                                  memory_order_acquire);
+        if (atomic_load_explicit(&e->perf.slot_image[t][live],
+                                 memory_order_relaxed) == 0) {
+          tr->perf_source_slot = live;
+        }
       }
       e->perf.armed = 1;
       atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);

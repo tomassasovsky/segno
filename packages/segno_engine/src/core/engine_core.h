@@ -115,10 +115,15 @@ static inline int32_t le_effective_state(le_track* t) {
  * the swap. Control thread only (a_live's sole writer). */
 static inline void le_track_publish_live(le_track* t, int32_t slot) {
   const int32_t lanes = le_lanes_active(t);
-  /* Release: a callback that observes the new slot (acquire load of lane 0's
-   * a_live in mix_tracks_frame) also observes the perf.slot_image entry the
-   * caller stored for it (#1143). */
-  for (int32_t l = 0; l < lanes; ++l) {
+  /* Lane 0 is published LAST, with release: a callback that observes the new
+   * slot there (the acquire load of lane 0's a_live in mix_tracks_frame, the
+   * capture's application boundary, #1143) also observes the perf.slot_image
+   * entry the caller stored for it AND the lanes 1..n stores above, so no lane
+   * can still mix the old slot in the frame lane 0's fact names. A lane k may
+   * still mix the new slot up to one frame BEFORE that fact (its own relaxed
+   * load runs after lane 0's in the same frame); the fact is exact for lane 0,
+   * which is all today's lane-0 renderer consumes. */
+  for (int32_t l = lanes - 1; l >= 0; --l) {
     atomic_store_explicit(&t->lanes[l].a_live, slot, memory_order_release);
   }
   le_audio_rev_bump(t); /* [R1] a_live now names other audio */
