@@ -197,6 +197,12 @@ shows a peel depth, mirroring the `undo_depth` contract. Snapshot: trailing
 && pendingLaunch == null`, and `Track.layers` becomes `peelDepth + (hasContent ? 1 : 0)`
 so the layer badge decrements on Peel (`track.dart:241-244`; PEEL entries would
 otherwise keep `undoDepth` constant while a layer disappears).
+Note (Part 1 build): the badge therefore counts peelable layers only. Beneath a
+non-overdub kind on top of the stack (today `LE_HIST_PROCESSED` after a loop-close
+restoration; later the length-edit kinds) `peelDepth` reads 0 and the badge shows
+1 while the performer hears the original plus the conditioned or edited passes.
+No Dart caller binds `le_engine_restore_track` yet, so nothing shows this today;
+it is the badge's intended semantics ("layers Peel can remove"), not a defect.
 
 Control-side admission in `le_engine_peel` (after `le_engine_drain_events`, like
 `le_engine_undo` `:2051-2058`): `LE_ERR_NOT_RUNNING` when not configured; `LE_ERR_INVALID`

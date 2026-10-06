@@ -2668,6 +2668,9 @@ int32_t le_engine_peel(le_engine* engine, int32_t channel) {
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   le_engine_drain_events(engine);
+#ifdef LE_NATIVE_TESTS
+  if (le_test_peel_hook) le_test_peel_hook(engine, 1);
+#endif
   le_track* t = &engine->tracks[channel];
   /* Never queued (accepted design §2.10: the in-progress layer is Undo's): a
    * Peel that meets a capture, a layer still draining, a Count-in launch or
@@ -2684,6 +2687,13 @@ int32_t le_engine_peel(le_engine* engine, int32_t channel) {
   if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
     return LE_ERR_NOT_READY;
   }
+  /* The flight flag cleared: the audio thread pushes the final retire event
+   * BEFORE clearing it, so a retire that landed between the drain above and
+   * this load is still in the ring. One more drain is guaranteed to have it on
+   * the stack (le_engine_undo does the same); without it a Peel tapped right
+   * after a punch-out would consume the layer beneath the one just retired
+   * and the late retire would then file on top of the PEEL, out of order. */
+  le_engine_drain_events(engine);
   if (t->state_cmds_posted >
       atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
     return LE_ERR_NOT_READY;

@@ -153,8 +153,9 @@ typedef enum le_perf_log_code {
   LE_PLOG_PEEL = 325, /* peel_log: a Peel succeeded (#1164) — {channel, slot
                        * now live, previous slot filed as PEEL, dub_generation},
                        * the control-side admission record like 304/305; the
-                       * callback's 322 names the staged image it mixes. 324 is
-                       * Reverse's. */
+                       * callback's 322 names the staged image it mixes and is
+                       * the authoritative image name. events.log version 7,
+                       * shared with Reverse's 324. */
   LE_PLOG_PERF_ARMED = 315,   /* LE_CMD_PERF_ARM applied: the master loop phase
                                * at capture frame 0. `perf_arm` arm: {position,
                                * master_len, iteration}. The offline renderer's

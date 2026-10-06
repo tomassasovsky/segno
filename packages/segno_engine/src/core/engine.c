@@ -1533,6 +1533,7 @@ void (*le_test_stop_record_hook)(le_engine*, int) = NULL;
 void (*le_test_record_timing_hook)(le_engine*, int) = NULL;
 void (*le_test_click_mode_hook)(le_engine*, int) = NULL;
 void (*le_test_record_start_hook)(le_engine*, int) = NULL;
+void (*le_test_peel_hook)(le_engine*, int) = NULL;
 #endif
 
 int32_t le_push_cmd(le_engine* engine, le_command cmd) {
