@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:meta/meta.dart';
+
 import 'package:usb_storage_client/src/removable_volume_record.dart';
 import 'package:usb_storage_client/src/usb_storage_client.dart';
 
@@ -17,23 +19,33 @@ import 'package:usb_storage_client/src/usb_storage_client.dart';
 /// directory rather than patching one entry, and a burst of events within one
 /// event-loop turn produces one list, so a listener sees one attach as one
 /// event.
+///
+/// The watch itself can fail: inotify drops events when its queue overflows
+/// and reports that as an error, and a watch can end. Either way events may
+/// have been lost, so the client logs it and re-lists the directory; a watch
+/// that ended is started again while anyone is listening.
 class LinuxUsbStorageClient implements UsbStorageClient {
   /// Creates a [LinuxUsbStorageClient] over [runDir] (the helper's
   /// `/run/segno/usb`). [newRequestId] names eject requests; the default is a
   /// random 128-bit hex id, injectable for deterministic tests. [log] receives
-  /// one line per skipped (malformed) file.
+  /// one line per skipped file and per watch failure. [watchDirectory] is the
+  /// platform's directory watcher, injectable so tests can make it fail.
   LinuxUsbStorageClient({
     this.runDir = '/run/segno/usb',
     String Function()? newRequestId,
     void Function(String message)? log,
+    @visibleForTesting
+    Stream<FileSystemEvent> Function(String path)? watchDirectory,
   }) : _newRequestId = newRequestId ?? _randomId,
-       _log = log ?? _noLog;
+       _log = log ?? _noLog,
+       _watchDirectory = watchDirectory ?? _platformWatch;
 
   /// The helper's state directory.
   final String runDir;
 
   final String Function() _newRequestId;
   final void Function(String message) _log;
+  final Stream<FileSystemEvent> Function(String path) _watchDirectory;
 
   final _listeners = <StreamController<List<RemovableVolumeRecord>>>{};
   StreamSubscription<FileSystemEvent>? _watch;
@@ -63,7 +75,7 @@ class LinuxUsbStorageClient implements UsbStorageClient {
     controller = StreamController<List<RemovableVolumeRecord>>(
       onListen: () {
         _listeners.add(controller);
-        _watch ??= Directory(volumesDir).watch().listen(_onEvent);
+        _watch ??= _startWatch();
         _last = _readAll();
         controller.add(_last);
       },
@@ -78,11 +90,37 @@ class LinuxUsbStorageClient implements UsbStorageClient {
     return controller.stream;
   }
 
+  StreamSubscription<FileSystemEvent> _startWatch() {
+    return _watchDirectory(volumesDir).listen(
+      _onEvent,
+      onError: (Object error) {
+        // An inotify queue overflow, or any other watcher failure: events may
+        // be gone, so the list is read again rather than trusted.
+        _log('usb_storage_client: watch of $volumesDir failed: $error');
+        _relist();
+      },
+      onDone: () {
+        // Only a live subscription ends this way (a cancel does not call
+        // onDone), so someone is listening: watch again, unless the
+        // directory itself is gone, where a new watch would only end again.
+        _log('usb_storage_client: watch of $volumesDir ended');
+        _watch = isSupported ? _startWatch() : null;
+        _relist();
+      },
+    );
+  }
+
   void _onEvent(FileSystemEvent event) {
     if (!_isRecord(event.path) &&
         !(event is FileSystemMoveEvent && _isRecord(event.destination))) {
       return;
     }
+    _relist();
+  }
+
+  /// Re-reads the directory once per event-loop turn and emits the list when
+  /// it changed.
+  void _relist() {
     if (_relistScheduled) return;
     _relistScheduled = true;
     scheduleMicrotask(() {
@@ -104,8 +142,8 @@ class LinuxUsbStorageClient implements UsbStorageClient {
     if (!dir.existsSync()) return const [];
     final records = <RemovableVolumeRecord>[];
     for (final entry in dir.listSync()) {
-      if (entry is! File || !_isRecord(entry.path)) continue;
-      final record = _readOne(entry);
+      if (entry is Directory || !_isRecord(entry.path)) continue;
+      final record = _readOne(File(entry.path));
       if (record != null) records.add(record);
     }
     records.sort((a, b) => a.generation.compareTo(b.generation));
@@ -114,7 +152,10 @@ class LinuxUsbStorageClient implements UsbStorageClient {
 
   RemovableVolumeRecord? _readOne(File file) {
     try {
-      final decoded = jsonDecode(file.readAsStringSync());
+      // Bytes, decoded leniently: a label byte that is not UTF-8 shows as a
+      // replacement character instead of hiding the whole volume.
+      final text = utf8.decode(file.readAsBytesSync(), allowMalformed: true);
+      final decoded = jsonDecode(text);
       if (decoded is! Map<String, Object?>) {
         throw const FormatException('not an object');
       }
@@ -125,9 +166,14 @@ class LinuxUsbStorageClient implements UsbStorageClient {
       // stays malformed is a helper bug worth a log line, not a dead stream.
       _log('usb_storage_client: skipped ${file.path}: ${e.message}');
       return null;
-    } on FileSystemException {
+    } on PathNotFoundException {
       // Deleted between the listing and the read: it is gone, so it is not
       // in the list.
+      return null;
+    } on FileSystemException catch (e) {
+      // There but unreadable: leave it out, and say so, because a volume
+      // missing from the app with nothing in the log cannot be traced.
+      _log('usb_storage_client: could not read ${file.path}: ${e.message}');
       return null;
     }
   }
@@ -177,4 +223,7 @@ class LinuxUsbStorageClient implements UsbStorageClient {
   }
 
   static void _noLog(String message) {}
+
+  static Stream<FileSystemEvent> _platformWatch(String path) =>
+      Directory(path).watch();
 }
