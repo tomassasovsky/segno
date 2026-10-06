@@ -3,6 +3,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/control/binding/control_availability.dart';
 import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/control/binding/owned_value_control.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
@@ -22,9 +23,11 @@ void main() {
     expect(missing.blockedBy(target), isNull);
     final locked = ControlAvailability(
       looper: looper,
-      clickModeSnapshot: const ClickModeSnapshot(
-        mode: ClickMode.rec,
-        captureLocked: true,
+      owned: const OwnedValueSnapshots(
+        clickModeSnapshot: ClickModeSnapshot(
+          mode: ClickMode.rec,
+          captureLocked: true,
+        ),
       ),
     );
     expect(locked.resolves(target), isTrue);
@@ -39,9 +42,11 @@ void main() {
     expect(missing.blockedBy(target), isNull);
     final locked = ControlAvailability(
       looper: looper,
-      recordStartSnapshot: RecordStartSnapshot(
-        settings: RecordStartSettings(countInBars: 0, soundStart: true),
-        captureLocked: true,
+      owned: OwnedValueSnapshots(
+        recordStartSnapshot: RecordStartSnapshot(
+          settings: RecordStartSettings(countInBars: 0, soundStart: true),
+          captureLocked: true,
+        ),
       ),
     );
     expect(locked.resolves(target), isTrue);
@@ -53,11 +58,13 @@ void main() {
   test('Multi length locks track override but keeps defaults assignable', () {
     final available = ControlAvailability(
       looper: looper,
-      recordLengthSnapshot: RecordLengthSnapshot(
-        defaultBars: 4,
-        trackOverrides: const {},
-        mode: LooperMode.multi,
-        captureLocked: false,
+      owned: OwnedValueSnapshots(
+        recordLengthSnapshot: RecordLengthSnapshot(
+          defaultBars: 4,
+          trackOverrides: const {},
+          mode: LooperMode.multi,
+          captureLocked: false,
+        ),
       ),
     );
     const target = TrackRecordLengthTarget(3);
@@ -73,17 +80,19 @@ void main() {
     () {
       final available = ControlAvailability(
         looper: looper,
-        recordLengthSnapshot: RecordLengthSnapshot(
-          defaultBars: 4,
-          trackOverrides: const {},
-          mode: LooperMode.free,
-          captureLocked: true,
-        ),
-        recordTimingSnapshot: RecordTimingSnapshot(
-          defaultTiming: RecordTiming.bar,
-          rememberedDivision: GridDivision.bar,
-          trackOverrides: const {},
-          captureLocked: true,
+        owned: OwnedValueSnapshots(
+          recordLengthSnapshot: RecordLengthSnapshot(
+            defaultBars: 4,
+            trackOverrides: const {},
+            mode: LooperMode.free,
+            captureLocked: true,
+          ),
+          recordTimingSnapshot: RecordTimingSnapshot(
+            defaultTiming: RecordTiming.bar,
+            rememberedDivision: GridDivision.bar,
+            trackOverrides: const {},
+            captureLocked: true,
+          ),
         ),
       );
       const length = DefaultRecordLengthTarget();

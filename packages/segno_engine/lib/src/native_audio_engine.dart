@@ -766,7 +766,7 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  FadeAdmission toggleFade({required int channel, required double seconds}) {
+  RequestAdmission toggleFade({required int channel, required double seconds}) {
     _checkAlive();
     final request = calloc<Uint64>();
     try {
@@ -780,7 +780,10 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  FadeAdmission installFade({required int channel, required FadeImage image}) {
+  RequestAdmission installFade({
+    required int channel,
+    required FadeImage image,
+  }) {
     _checkAlive();
     final request = calloc<Uint64>();
     final value = calloc<le_fade_image>();
@@ -803,12 +806,48 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult? readFadeResult(int request) {
+  RequestAdmission toggleReverse({required int channel}) {
+    _checkAlive();
+    final request = calloc<Uint64>();
+    try {
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_toggle_reverse(_engine, channel, request),
+      );
+      return (result: result, request: request.value);
+    } finally {
+      calloc.free(request);
+    }
+  }
+
+  @override
+  RequestAdmission installReverse({
+    required int channel,
+    required bool reversed,
+  }) {
+    _checkAlive();
+    final request = calloc<Uint64>();
+    try {
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_install_reverse(
+          _engine,
+          channel,
+          reversed ? 1 : 0,
+          request,
+        ),
+      );
+      return (result: result, request: request.value);
+    } finally {
+      calloc.free(request);
+    }
+  }
+
+  @override
+  EngineResult? readRequestResult(int request) {
     _checkAlive();
     final result = calloc<Int32>();
     try {
       final status = EngineResult.fromCode(
-        _bindings.le_engine_read_fade_result(_engine, request, result),
+        _bindings.le_engine_read_request_result(_engine, request, result),
       );
       if (status == EngineResult.notReady) return null;
       return status.isOk ? EngineResult.fromCode(result.value) : status;

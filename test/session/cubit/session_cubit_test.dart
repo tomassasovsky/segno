@@ -206,7 +206,7 @@ void main() {
     looper: looper,
     mix: mixSettings,
     fx: fxPersistence,
-    owners: SettingsOwners([_LengthOwner(looper)]),
+    owners: SettingsOwners([_LengthOwner(looper), ...fade.owners]),
     tempo: _TempoOwner(),
     playback: _PlaybackOwner(looper),
     record: _RecordOwner(looper),
@@ -219,9 +219,12 @@ void main() {
     performance = _MockPerformanceRepository();
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
+    when(() => looper.sessionRevision).thenReturn(0);
+    when(() => looper.mixGeneration).thenReturn(0);
     addTearDown(looperStates.close);
     settings = SettingsRepository(store: FakeKeyValueStore());
     fade = FadeSettings(
+      repository: looper,
       settings: settings,
       blocked: () => false,
       sessionBlocked: () => false,
@@ -240,6 +243,10 @@ void main() {
     when(() => looper.sessionTransport).thenReturn(const TransportState());
     when(() => looper.lengthSettingsSettled).thenReturn(true);
     when(() => looper.mixSettingsSettled).thenReturn(true);
+    when(() => looper.mixRecoveryRequired).thenReturn(false);
+    when(
+      () => looper.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());

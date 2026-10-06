@@ -106,6 +106,9 @@ void main() {
     addTearDown(monitorChanges.close);
     addTearDown(monitorParams.close);
     when(() => repository.looperState).thenAnswer((_) => states.stream);
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.clickVolumeSettled).thenReturn(true);

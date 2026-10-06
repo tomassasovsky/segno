@@ -49,16 +49,10 @@ class SessionSettingsCoordinator {
   /// Excludes settings edits through capture and the caller's session I/O.
   /// All session operations acquire these gates in this one order.
   Future<T> runExclusive<T>(Future<T> Function() operation) =>
-      _fade.runExclusive(
-        (admittedEdits) => _mix.runExclusive(
-          () => _owners.runExclusive(() async {
-            await admittedEdits;
-            return operation();
-          }),
-        ),
-      );
+      _mix.runExclusive(() => _owners.runExclusive(operation));
 
-  /// Completes the exact accepted Session setup within the held scope.
+  /// Completes the exact accepted Session setup within the held scope: the
+  /// registry's exclusion, which Fade's owner joins.
   Future<void> installFade(FadeDurations incoming) =>
       _fade.installSession(incoming);
 
@@ -96,7 +90,7 @@ class SessionSettingsCoordinator {
         oneShot: _playback.oneShotOwner.durable,
         recordLength: _record.durableRecordLengthSnapshot,
         recordTiming: _timing.durableRecordTimingSnapshot,
-        fade: _fade.confirmed,
+        fade: _fade.owner.durable,
       ),
     );
   }

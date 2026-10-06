@@ -120,6 +120,7 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->length_preset_bars = load_i32(&tr->a_length_preset_bars);
   out->sync_divisor = load_i32(&tr->a_sync_divisor);
   out->one_shot = load_i32(&tr->a_one_shot);
+  out->reversed = load_i32(&tr->a_reversed); /* #1162 */
   /* Timing fields are filled below from one coherent callback tuple. */
   /* The caller fills timing from one coherent family tuple. */
   out->overdub_feedback_override = load_f32(&tr->a_overdub_fb_bits);

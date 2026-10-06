@@ -14,6 +14,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_expression.dart';
@@ -97,6 +98,9 @@ void main() {
     when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
+    when(
+      () => looper.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
@@ -302,20 +306,24 @@ void main() {
     final fade = testFadeSettings();
     addTearDown(() => unawaited(fade.close()));
     final control = ControlCubit(
-      fadeSettings: fade,
-      decayControl: decay,
-      oneShotControl: decay,
-      recordLengthControl: record,
-      recordTimingControl: timingOwner,
-      clickVolumeControl: tempo,
-      clickModeControl: tempo,
-      recordStartControl: tempo,
       fxPersistence: FxChainPersistence(looper: looper),
       looper: looper,
       mixSettings: mixSettings,
       pedal: pedal,
       settings: settings,
       performance: performance,
+      fadeSettings: fade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: tempo,
+        clickMode: tempo,
+        recordStart: tempo,
+        decay: decay,
+        oneShot: decay,
+        recordLength: record,
+        recordTiming: timingOwner,
+        fade: fade,
+      ),
     );
     final tracks = TracksCubit(settings: settings);
     addTearDown(() => unawaited(control.close()));

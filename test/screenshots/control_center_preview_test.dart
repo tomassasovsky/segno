@@ -17,6 +17,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
@@ -441,6 +442,9 @@ void main() {
       (_) => const Stream<int>.empty(),
     );
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
+    when(
+      () => looper.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.state).thenReturn(
       LooperState(
@@ -510,21 +514,26 @@ void main() {
     final fxPersistence = FxChainPersistence(looper: looper);
     final mixSettings = testMixSettings(looper, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
+    final ownedFade = testFadeSettings();
     final control = ControlCubit(
-      fadeSettings: testFadeSettings(),
-      decayControl: FakeDecayControl(),
-      oneShotControl: FakeOneShotControl(),
-      recordLengthControl: FakeRecordLengthControl(),
-      recordTimingControl: FakeRecordTimingControl(),
-      clickVolumeControl: FakeClickVolumeControl(),
-      clickModeControl: FakeClickModeControl(),
-      recordStartControl: FakeRecordStartControl(),
       fxPersistence: fxPersistence,
       looper: looper,
       mixSettings: mixSettings,
       pedal: pedalRepository,
       settings: settings,
       performance: performance,
+      fadeSettings: ownedFade,
+      ownedValues: OwnedValuePort(
+        looper: looper,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: FakeRecordStartControl(),
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: ownedFade,
+      ),
     );
     final midi = MidiSetupCubit(repository: devices);
     // The Loop face's own providers. A mock bloc rather than a real one over

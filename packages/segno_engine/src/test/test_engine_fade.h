@@ -30,9 +30,9 @@ static void fade_process(le_engine* e, int frames, int block,
 
 static void fade_result(le_engine* e, uint64_t id, int expected) {
   int32_t result = 123;
-  CHECK(le_engine_read_fade_result(e, id, &result) == LE_OK);
+  CHECK(le_engine_read_request_result(e, id, &result) == LE_OK);
   CHECK(result == expected);
-  CHECK(le_engine_read_fade_result(e, id, &result) == LE_ERR_INVALID);
+  CHECK(le_engine_read_request_result(e, id, &result) == LE_ERR_INVALID);
 }
 
 static void test_fade_samples(void) {
@@ -44,7 +44,7 @@ static void test_fade_samples(void) {
     uint64_t id;
     CHECK(le_engine_toggle_fade(e, 0, 0.5f, &id) == LE_OK);
     int32_t result;
-    CHECK(le_engine_read_fade_result(e, id, &result) == LE_ERR_NOT_READY);
+    CHECK(le_engine_read_request_result(e, id, &result) == LE_ERR_NOT_READY);
     fade_process(e, sr / 2 + 2, blocks[b], 1, -2.0 / sr, 0.5f);
     fade_result(e, id, LE_OK);
     le_track_snapshot snap;
@@ -124,7 +124,7 @@ static void test_fade_images_and_receipts(void) {
   CHECK(le_engine_toggle_fade(e, 0, 1, &b) == LE_OK);
   CHECK(le_engine_configure(e, 48000, 1, 1, 1000) == LE_OK);
   int32_t result;
-  CHECK(le_engine_read_fade_result(e, b, &result) == LE_ERR_INVALID);
+  CHECK(le_engine_read_request_result(e, b, &result) == LE_ERR_INVALID);
   CHECK(le_engine_install_fade(e, 0, &image, &a) == LE_ERR_INVALID);
   CHECK(le_engine_toggle_fade(e, 0, 1, &a) == LE_OK && a > b);
   drain(e); fade_result(e, a, LE_ERR_INVALID);

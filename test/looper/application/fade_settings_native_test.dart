@@ -80,6 +80,7 @@ void main() {
           ticker: const Stream.empty(),
         );
         final owner = FadeSettings(
+          repository: repository,
           settings: SettingsRepository(store: FakeKeyValueStore()),
           blocked: () => false,
           sessionBlocked: () => false,
