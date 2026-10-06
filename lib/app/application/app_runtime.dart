@@ -167,7 +167,7 @@ class AppRuntime {
       timing.load(),
       fade.load(),
       control.load(),
-    ]).then((_) {});
+    ]).then((_) => session.recordBaseline());
   }
 
   /// Retires controls, recovers on explicit retry, and confirms durable writes.

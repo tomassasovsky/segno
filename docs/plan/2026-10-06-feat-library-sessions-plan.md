@@ -219,6 +219,35 @@ a design change; this plan does not edit the pen):
      nothing is left to prompt for; naming is Rename in Manage. The
      power-off flow's own Save-as prompt is outside this plan and stays.
 
+7. Part 4 as built:
+   - `Open session` while a track plays, records or overdubs asks with the
+     console's confirm dialog: "Stop playback and open <name>?", "Your
+     current loop stays in your Library.", `Cancel` / `Open`. The pen draws
+     no such dialog; the body line is ours.
+   - Opening the session that is already open does nothing. The Library
+     never offers it (its footer reads `Return to tracks`), and reloading it
+     would discard its unsaved edits.
+   - The D7 fingerprint is `SessionRepository.fingerprint`: the manifest a
+     save would write, from the same capture, with each lane's layers
+     replaced by `AudioEngine.trackAudioRev` (a new `SessionIo` read over
+     `le_engine_track_audio_rev`; the snapshot is unchanged). A save records
+     the fingerprint taken just before its own capture, so an edit landing
+     in between costs one more save later, never a skipped one.
+   - The reference is recorded after every save and open, and as a boot
+     baseline once the app's settings have loaded
+     (`SessionCubit.recordBaseline`, from `AppRuntime.start`). When the two
+     cannot be compared (no baseline, or a capture that cannot run while a
+     setting awaits recovery), the outgoing rig is saved only when it holds
+     recorded audio: the part nothing else brings back is kept, an untouched
+     rig is not saved, and an Open that resolves a recovery notice still
+     works.
+   - An unnamed rig preserved as `New loop N` becomes current at once, so a
+     target refused after the save leaves the saved rig open under its new
+     name.
+   - A failed preservation shows the 19/05 line, not a refusal on the
+     target's preview card.
+   - Stopping an audition on Open belongs to Part 6, which builds Listen.
+
 ## 3. Decisions
 
 Owner decisions are repeated inline above. The rest are taken under the

@@ -159,7 +159,7 @@ class SessionCubit extends Cubit<SessionState> {
     final device = _looper.state.status.deviceName;
     return _run(
       () => _captureSettings.runExclusive(() async {
-        await _asSaveFailure(
+        _savedFingerprint = await _asSaveFailure(
           () async => _saveCurrentRig(
             await _repository.bundlePathOf(id),
             name,
@@ -187,32 +187,12 @@ class SessionCubit extends Cubit<SessionState> {
     final device = _looper.state.status.deviceName;
     return _run(
       () => _captureSettings.runExclusive(() async {
-        final String slug;
-        if (name == null) {
-          slug = await _repository.nextAutomaticName(automaticNamePrefix);
-        } else {
-          slug = _slugOf(name);
-          if ((await _repository.listSessions()).any((s) => s.name == slug)) {
-            throw SessionNameCollision(slug: slug);
-          }
-        }
-        final id = await _repository.newSessionId();
-        try {
-          await _asSaveFailure(
-            () async => _saveCurrentRig(
-              await _repository.bundlePathOf(id),
-              slug,
-              revision,
-              generation,
-              device,
-            ),
-          );
-        } on Object {
-          // A save refused before it wrote anything leaves the reserved
-          // directory empty; give it back so it never lists as a folder.
-          await _repository.releaseSessionId(id);
-          rethrow;
-        }
+        final (:id, :slug) = await _writeNew(
+          name,
+          revision: revision,
+          generation: generation,
+          device: device,
+        );
         return _ActionResult(
           SessionOutcome.savedAs,
           currentId: id,
@@ -223,20 +203,181 @@ class SessionCubit extends Cubit<SessionState> {
     );
   }
 
+  /// Writes the live rig under a fresh id, named [name] or the next
+  /// automatic name, and records its fingerprint. Runs inside
+  /// `runExclusive`.
+  Future<({SessionId id, String slug})> _writeNew(
+    String? name, {
+    required int revision,
+    required int generation,
+    required String device,
+  }) async {
+    final String slug;
+    if (name == null) {
+      slug = await _repository.nextAutomaticName(automaticNamePrefix);
+    } else {
+      slug = _slugOf(name);
+      if ((await _repository.listSessions()).any((s) => s.name == slug)) {
+        throw SessionNameCollision(slug: slug);
+      }
+    }
+    final id = await _repository.newSessionId();
+    try {
+      _savedFingerprint = await _asSaveFailure(
+        () async => _saveCurrentRig(
+          await _repository.bundlePathOf(id),
+          slug,
+          revision,
+          generation,
+          device,
+        ),
+      );
+    } on Object {
+      // A save refused before it wrote anything leaves the reserved
+      // directory empty; give it back so it never lists as a folder.
+      await _repository.releaseSessionId(id);
+      rethrow;
+    }
+    return (id: id, slug: slug);
+  }
+
+  /// The fingerprint ([SessionRepository.fingerprint]) of the rig as of its
+  /// last save, open or boot baseline, or null when it is unknown. Equal to
+  /// the live rig's means there is nothing to preserve (plan D7).
+  String? _savedFingerprint;
+
+  /// Records the rig's fingerprint as the boot baseline, so an Open of
+  /// another session does not save a rig nobody has touched. Quiet: no
+  /// working/success cycle. Does nothing once a fingerprint is known. A
+  /// capture that fails leaves none; Open then preserves the rig only when it
+  /// holds recorded audio.
+  Future<void> recordBaseline() async {
+    if (_closing || isClosed) return;
+    if (_savedFingerprint != null) return;
+    final operation = _captureSettings.runExclusive(() async {
+      if (_savedFingerprint != null) return;
+      _savedFingerprint = await _liveFingerprint();
+    });
+    _track(operation);
+    try {
+      await operation;
+    } on Object {
+      // No baseline: the next Open preserves the rig.
+    }
+  }
+
+  /// The live rig's fingerprint, from the same capture a save runs first.
+  /// Runs inside `runExclusive`.
+  Future<String> _liveFingerprint() async {
+    final revision = _looper.sessionRevision;
+    final generation = _looper.mixGeneration;
+    final device = _looper.state.status.deviceName;
+    bool stillOwned() =>
+        !isClosed &&
+        revision == _looper.sessionRevision &&
+        generation == _looper.mixGeneration &&
+        device == _looper.state.status.deviceName;
+    final captured = await _captureSettings.capture(stillOwned: stillOwned);
+    return _repository.fingerprint(
+      settings: captured.settings,
+      chains: captured.chains,
+      pedalBindings: _currentPedalBindings(),
+    );
+  }
+
+  /// Saves the outgoing rig before an Open replaces it, when it has changed
+  /// since its last save, open or the boot baseline (plan D7): to its
+  /// identity, or under the next automatic name, which then becomes current
+  /// so a refused target leaves the saved rig named. Any failure is a
+  /// [SessionError.saveFailed] and stops the Open before anything else
+  /// changes. Runs inside `runExclusive`.
+  ///
+  /// When the two cannot be compared (no baseline was taken, or the live
+  /// rig's capture cannot run, as while a setting awaits recovery), the rig
+  /// is saved when it holds recorded audio, the part nothing else can bring
+  /// back, and is otherwise left as it is: an Open that resolves a recovery
+  /// notice stays possible, and an untouched rig is not saved.
+  Future<void> _preserveOutgoing() async {
+    final revision = _looper.sessionRevision;
+    final generation = _looper.mixGeneration;
+    final device = _looper.state.status.deviceName;
+    String? now;
+    try {
+      now = await _liveFingerprint();
+    } on Object {
+      // A capture that cannot run now (a setting still awaiting recovery)
+      // cannot be compared; the rule below decides.
+      now = null;
+    }
+    final known = _savedFingerprint;
+    if (now == null || known == null) {
+      if (!_looper.state.tracks.any((t) => t.hasContent)) return;
+    } else if (now == known) {
+      return;
+    }
+    final id = state.currentSessionId;
+    if (id != null) {
+      _savedFingerprint = await _asSaveFailure(
+        () async => _saveCurrentRig(
+          await _repository.bundlePathOf(id),
+          state.currentSessionName,
+          revision,
+          generation,
+          device,
+        ),
+      );
+      return;
+    }
+    final saved = await _asSaveFailure(
+      () => _writeNew(
+        null,
+        revision: revision,
+        generation: generation,
+        device: device,
+      ),
+    );
+    if (isClosed) return;
+    emit(
+      state.copyWith(
+        status: SessionStatus.working,
+        currentSessionId: saved.id,
+        currentSessionName: saved.slug,
+        sessions: await _repository.listSessions(),
+      ),
+    );
+  }
+
+  /// Records the just-opened rig's fingerprint; when it cannot be taken it
+  /// is unknown, and the next Open preserves (the safe side).
+  Future<void> _recordOpenedFingerprint() async {
+    try {
+      _savedFingerprint = await _liveFingerprint();
+    } on Object {
+      _savedFingerprint = null;
+    }
+  }
+
   /// Runs a save's write and reports any failure that is not a typed
   /// session refusal as [SessionError.saveFailed], the 19/05 banner's
   /// "Could not save your current loop. Nothing was changed."
-  static Future<void> _asSaveFailure(Future<void> Function() write) async {
+  static Future<T> _asSaveFailure<T>(Future<T> Function() write) async {
     try {
-      await write();
+      return await write();
     } on SessionException {
+      rethrow;
+    } on _SessionRefusal {
       rethrow;
     } on Object catch (error) {
       throw _SessionRefusal(SessionError.saveFailed, error);
     }
   }
 
-  Future<void> _saveCurrentRig(
+  /// Captures and writes the live rig to [directory], returning the
+  /// fingerprint of what it captured. The fingerprint is taken before the
+  /// write's own capture, so an edit landing between the two makes it older,
+  /// never newer: the next Open then saves once more rather than skipping an
+  /// edit.
+  Future<String> _saveCurrentRig(
     String directory,
     String? name,
     int revision,
@@ -252,14 +393,21 @@ class SessionCubit extends Cubit<SessionState> {
       throw StateError('session changed before save');
     }
     final captured = await _captureSettings.capture(stillOwned: stillOwned);
+    final pedalBindings = _currentPedalBindings();
+    final fingerprint = _repository.fingerprint(
+      settings: captured.settings,
+      chains: captured.chains,
+      pedalBindings: pedalBindings,
+    );
     await _repository.save(
       directory,
       chains: captured.chains,
       settings: captured.settings,
-      pedalBindings: _currentPedalBindings(),
+      pedalBindings: pedalBindings,
       name: name,
       captureStillValid: stillOwned,
     );
+    return fingerprint;
   }
 
   /// Opens the session [id] into the engine through the looper repository
@@ -277,13 +425,22 @@ class SessionCubit extends Cubit<SessionState> {
   /// manual disarm does; `PerformanceRecorderCubit` observes the repository's
   /// status stream, so it reflects this disarm too even though it was never
   /// the one to call it.
-  Future<void> open(SessionId id) => _run(
+  ///
+  /// The outgoing rig is saved first when it has changed (plan D7); opening
+  /// the session that is already current does nothing.
+  Future<void> open(SessionId id) {
+    if (id == state.currentSessionId) return Future<void>.value();
+    return _open(id);
+  }
+
+  Future<void> _open(SessionId id) => _run(
     subject: id,
     () async {
       var applied = false;
       OperationGuard? applying;
       try {
         return await _captureSettings.runExclusive(() async {
+          await _preserveOutgoing();
           final path = await _repository.bundlePathOf(id);
           final (:bundle, :conversion) = await _repository.open(
             path,
@@ -431,6 +588,7 @@ class SessionCubit extends Cubit<SessionState> {
             _pendingLoadedSessions = null;
             _pendingLoadedFade = null;
             _pendingConversion = null;
+            await _recordOpenedFingerprint();
             return _ActionResult(
               SessionOutcome.loaded,
               currentId: id,
@@ -516,6 +674,7 @@ class SessionCubit extends Cubit<SessionState> {
         _pendingLoadedSessions = null;
         _pendingLoadedFade = null;
         _pendingConversion = null;
+        await _recordOpenedFingerprint();
         return _ActionResult(
           SessionOutcome.loaded,
           currentId: id,

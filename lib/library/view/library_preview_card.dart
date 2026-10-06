@@ -3,10 +3,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_manage.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -247,7 +249,8 @@ class LibraryPreviewTracks extends StatelessWidget {
             SessionError.unsupportedVersion =>
               l10n.sessionErrorUnsupportedVersion,
             SessionError.unconvertible => l10n.sessionErrorUnconvertible,
-            SessionError.bootPersistence => null,
+            // Saving the outgoing rig failed: the 19/05 line says so.
+            SessionError.bootPersistence || SessionError.saveFailed => null,
             _ => l10n.sessionErrorGeneric(session.errorMessage ?? ''),
           };
     final tracks = preview.tracks;
@@ -528,12 +531,38 @@ class LibraryPreviewFooter extends StatelessWidget {
                     label: l10n.libraryOpenSession,
                     onTap: busy
                         ? null
-                        : () =>
-                              unawaited(context.read<SessionCubit>().open(id)),
+                        : () => unawaited(
+                            openWithConfirm(context, preview.summary),
+                          ),
                   ),
                 ),
         ),
       ],
     );
   }
+}
+
+/// Opens [summary] through [SessionCubit.open], asking first while any track
+/// plays or captures (plan D8): `Stop playback and open <name>?` with
+/// `Cancel` / `Open`. A running device with every track stopped or empty
+/// is not asked; Cancel changes nothing.
+Future<void> openWithConfirm(
+  BuildContext context,
+  SessionSummary summary,
+) async {
+  final session = context.read<SessionCubit>();
+  final l10n = context.l10n;
+  final interrupts = context.read<LooperBloc>().state.tracks.any(
+    (t) => t.state == TrackState.playing || t.isCapturing,
+  );
+  if (interrupts) {
+    final confirmed = await showConsoleConfirmDialog(
+      context,
+      title: l10n.libraryOpenInterruptTitle(summary.name),
+      body: l10n.libraryOpenInterruptBody,
+      confirmLabel: l10n.libraryOpenConfirm,
+    );
+    if (!confirmed) return;
+  }
+  await session.open(summary.id);
 }

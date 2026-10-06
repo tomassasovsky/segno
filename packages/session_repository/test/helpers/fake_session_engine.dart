@@ -17,6 +17,9 @@ class _FakeLane {
 
 class _FakeTrack {
   TrackState state = TrackState.empty;
+
+  /// The content revision; every seed is a write and bumps it.
+  int audioRev = 0;
   int multiple = 1;
   int lengthFrames = 0;
 
@@ -127,6 +130,7 @@ class FakeSessionEngine implements AudioEngine {
       ..redoDepth = 0
       ..publishedUndoDepth = null
       ..history = const [];
+    track.audioRev++;
     track.lanes[0]
       ..layers = [pcm]
       ..volume = volume
@@ -167,6 +171,7 @@ class FakeSessionEngine implements AudioEngine {
             undoDepth + redoDepth,
             const HistoryEntry(HistoryKind.layer),
           );
+    track.audioRev++;
     track.lanes[0]
       ..layers = List.of(layers)
       ..volume = volume
@@ -187,6 +192,7 @@ class FakeSessionEngine implements AudioEngine {
     int? inputChannel,
   }) {
     final track = _tracks[channel];
+    track.audioRev++;
     while (track.lanes.length <= lane) {
       track.lanes.add(_FakeLane());
     }
@@ -197,6 +203,10 @@ class FakeSessionEngine implements AudioEngine {
       ..outputMask = outputMask
       ..inputChannel = inputChannel ?? lane;
   }
+
+  @override
+  int trackAudioRev(int channel) =>
+      channel < 0 || channel >= _tracks.length ? 0 : _tracks[channel].audioRev;
 
   @override
   CallbackTelemetry callbackTelemetry() => CallbackTelemetry.empty;
@@ -283,8 +293,13 @@ class FakeSessionEngine implements AudioEngine {
     return Float32List.fromList(track.liveOf(lane));
   }
 
+  /// How many layers have been exported, so a test can tell a read that
+  /// copies audio from one that does not.
+  int exportedLayers = 0;
+
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) {
+    exportedLayers++;
     final track = _tracks[channel];
     if (lane < 0 || lane >= track.lanes.length) return Float32List(0);
     final layers = track.lanes[lane].layers;

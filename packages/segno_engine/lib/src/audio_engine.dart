@@ -1287,6 +1287,13 @@ abstract interface class SessionIo {
   /// flight. [TrackHistory.none] for an out-of-range [channel]. Read-only.
   TrackHistory exportHistory(int channel);
 
+  /// Track [channel]'s content revision: it changes on every write to the
+  /// track's audio (record, overdub, undo, redo, clear, import), on either
+  /// thread, and on nothing else. 0 for an out-of-range [channel]. Cheap and
+  /// copy-free, so the session layer can tell an unchanged rig from a changed
+  /// one without exporting any audio.
+  int trackAudioRev(int channel);
+
   /// Stages [pcm] as track [channel]'s lane [lane] image at [ordinal] into an
   /// EMPTY track (the ordinal is the pool slot). Call once per `(lane,
   /// ordinal)` with ordinals contiguous from 0, then [finalizeHistory], then

@@ -223,6 +223,9 @@ void main() {
             expect(saved.session.tracks, hasLength(1));
             expect(engine.snapshot().countInBars, held ? 2 : 0);
             printOnFailure('Both files checked; recalling');
+            // Opening the current session does nothing (plan Part 4), so
+            // recall goes through another current session.
+            await runtime.session.saveAs('Elsewhere');
             await runtime.session.open(await idOf('Held choice'));
             printOnFailure('Recall completed');
             expect(runtime.session.state.status, SessionStatus.success);

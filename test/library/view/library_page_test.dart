@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
@@ -12,6 +13,7 @@ import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_page.dart';
 import 'package:segno/library/view/library_sessions_tab.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -25,6 +27,9 @@ class _MockSessionCubit extends MockCubit<SessionState>
 class _MockSessionRepository extends Mock implements SessionRepository {}
 
 class _MockPedalRepository extends Mock implements PedalRepository {}
+
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
 
 final _saved = DateTime(2026, 9, 7, 10);
 
@@ -119,7 +124,14 @@ void main() {
     SessionState? state,
     Stream<SessionState> states = const Stream.empty(),
     RemovableVolumes volumes = const InternalOnlyVolumes(),
+    LooperState looperState = const LooperState(),
   }) async {
+    final looper = _MockLooperBloc();
+    whenListen(
+      looper,
+      const Stream<LooperState>.empty(),
+      initialState: looperState,
+    );
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -146,8 +158,11 @@ void main() {
             value: volumes,
           ),
         ],
-        child: BlocProvider<SessionCubit>.value(
-          value: session,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<SessionCubit>.value(value: session),
+            BlocProvider<LooperBloc>.value(value: looper),
+          ],
           child: Navigator(
             onGenerateRoute: (_) => MaterialPageRoute<void>(
               builder: (context) => Scaffold(
@@ -1309,6 +1324,88 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text(l10n.librarySaveFailed), findsOneWidget);
+    });
+  });
+
+  group('Open asks before it stops playback (D8)', () {
+    LooperState withTrack(TrackState state) => LooperState(
+      transport: const TransportState(isRunning: true),
+      tracks: [
+        Track(state: state, lengthFrames: 48000),
+        for (var c = 1; c < 8; c++) Track(channel: c),
+      ],
+    );
+
+    Future<void> tapOpen(WidgetTester tester, LooperState looperState) async {
+      await openLibrary(tester, looperState: looperState);
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('library_open_session')));
+      await tester.pumpAndSettle();
+    }
+
+    for (final state in [TrackState.playing, TrackState.recording]) {
+      testWidgets('a ${state.name} track is asked about first', (
+        tester,
+      ) async {
+        await tapOpen(tester, withTrack(state));
+
+        expect(
+          find.text(l10n.libraryOpenInterruptTitle('Night set')),
+          findsOneWidget,
+        );
+        verifyNever(() => session.open(any()));
+
+        await tester.tap(find.byKey(const Key('console_confirm_confirm')));
+        await tester.pumpAndSettle();
+        verify(() => session.open('s-gig')).called(1);
+      });
+    }
+
+    testWidgets('Cancel changes nothing', (tester) async {
+      await tapOpen(tester, withTrack(TrackState.playing));
+      await tester.tap(find.byKey(const Key('console_confirm_cancel')));
+      await tester.pumpAndSettle();
+      verifyNever(() => session.open(any()));
+    });
+
+    testWidgets('stopped tracks on a running device are not asked about', (
+      tester,
+    ) async {
+      await tapOpen(tester, withTrack(TrackState.stopped));
+
+      expect(
+        find.text(l10n.libraryOpenInterruptTitle('Night set')),
+        findsNothing,
+      );
+      verify(() => session.open('s-gig')).called(1);
+    });
+  });
+
+  group('a failed preservation', () {
+    testWidgets('shows the 19/05 line, not a refusal on the target', (
+      tester,
+    ) async {
+      final states = StreamController<SessionState>.broadcast();
+      addTearDown(states.close);
+      await openLibrary(tester, states: states.stream);
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+
+      states.add(
+        SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.saveFailed,
+          failedSessionId: 's-gig',
+          currentSessionId: 's-cur',
+          sessions: _catalog,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text(l10n.librarySaveFailed), findsOneWidget);
+      expect(find.byKey(const Key('library_open_refused')), findsNothing);
     });
   });
 

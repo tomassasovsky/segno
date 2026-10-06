@@ -199,6 +199,8 @@ enum LibraryFailure {
 /// app-wide notice.
 LibraryFailure? libraryFailureOf(SessionState state) {
   if (state.status != SessionStatus.failure) return null;
+  // A save that failed before an Open (plan D7) is still a failed save.
+  if (state.error == SessionError.saveFailed) return LibraryFailure.saveFailed;
   if (state.failedSessionId != null) return null;
   return switch (state.error) {
     SessionError.bootPersistence => null,
