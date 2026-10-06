@@ -46,6 +46,15 @@ jobs:
       run_bloc_lint: false
       min_coverage: 100
 
+  # usb_storage_client (#1177) is pure Dart too: it reads the appliance's USB
+  # volume records and files eject requests, with no Flutter dependency.
+  usb-storage-client:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    with:
+      working_directory: packages/usb_storage_client
+      run_bloc_lint: false
+      min_coverage: 100
+
   # Per-package test + coverage gates for the five domain packages (FX v3
   # part 3a [VGV-critical]): the root `build` job only runs the root app's own
   # test/ dir, so until these jobs existed the packages' suites never ran in
@@ -454,6 +463,12 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_persist_tests.sh
       - name: Run bt-ctl device-verb tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_ctl_tests.sh
+      # Twice: the appliance's /bin/sh is busybox ash, so the helper must hold
+      # under a strict POSIX shell (dash) as well as bash.
+      - name: Run usb-ctl tests (bash)
+        run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
+      - name: Run usb-ctl tests (dash)
+        run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
       - name: Run wifi-regdom tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_regdom_tests.sh
       - name: Run wifi-backend ownership tests
