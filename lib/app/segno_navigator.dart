@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:segno/app/app_toasts.dart';
@@ -10,6 +12,7 @@ import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/settings_page.dart';
+import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/page_transitions.dart';
 
 /// The root navigator key, so settings can be opened from outside the widget
@@ -37,12 +40,27 @@ const String segnoExternalPedalsRouteName = 'segno/external-pedals';
 /// Route name for MIDI controls and Learn.
 const String segnoMidiControlsRouteName = 'segno/midi-controls';
 
-bool _loopSettingsOpen = false;
-bool _audioRoutingOpen = false;
-bool _fxOpen = false;
-bool _pedalSetupOpen = false;
-bool _externalPedalsOpen = false;
-bool _midiControlsOpen = false;
+/// Route name for the Device settings page.
+const String segnoDeviceSettingsRouteName = 'segno/settings/device';
+
+/// Route name for the Network settings page.
+const String segnoNetworkSettingsRouteName = 'segno/settings/network';
+
+/// Route name for the Displays settings page.
+const String segnoDisplaySettingsRouteName = 'segno/settings/displays';
+
+/// Route name for the Storage settings page.
+const String segnoStorageSettingsRouteName = 'segno/settings/storage';
+
+/// Route name for the Updates settings page.
+const String segnoUpdateSettingsRouteName = 'segno/settings/updates';
+
+/// Route name for the About page, opened from Updates.
+const String segnoAboutSettingsRouteName = 'segno/settings/about';
+
+/// The names of the routes [_pushOnce] currently has on the stack.
+final Set<String> _openRoutes = {};
+
 Future<FxCatalogue>? _fxCatalogue;
 
 /// The factory catalogue, loaded once and kept.
@@ -61,25 +79,35 @@ void setSegnoFxCatalogueForTest(FxCatalogue? catalogue) =>
 
 /// Pushes the Effects route onto the root navigator, pointed at
 /// [destination]; guarded against stacking duplicates like the routes below.
-Future<void> openFx({FxDestination? destination, VoidCallback? onStage}) async {
+Future<void> openFx({FxDestination? destination, VoidCallback? onStage}) =>
+    _pushOnce(segnoFxRouteName, () async {
+      final catalogue = await segnoFxCatalogue();
+      return (_) => FxPage(
+        initial: destination,
+        catalogue: catalogue,
+        onStage: onStage,
+      );
+    });
+
+/// Pushes the page [page] builds onto the root navigator under [name], once:
+/// a second call while that route is on the stack does nothing, so rapid
+/// triggers (a tap, a key and a menu item in one frame) cannot stack
+/// duplicates. [page] may load what the page needs first; the guard is held
+/// from the call, so a load in flight also counts as open.
+Future<void> _pushOnce(
+  String name,
+  FutureOr<WidgetBuilder> Function() page,
+) async {
   final navigator = segnoNavigatorKey.currentState;
-  if (navigator == null || _fxOpen) return;
-  _fxOpen = true;
+  if (navigator == null || !_openRoutes.add(name)) return;
   try {
-    final catalogue = await segnoFxCatalogue();
+    final builder = await page();
     if (segnoNavigatorKey.currentState == null) return;
     await navigator.push(
-      desktopPageRoute<void>(
-        (_) => FxPage(
-          initial: destination,
-          catalogue: catalogue,
-          onStage: onStage,
-        ),
-        settings: const RouteSettings(name: segnoFxRouteName),
-      ),
+      desktopPageRoute<void>(builder, settings: RouteSettings(name: name)),
     );
   } finally {
-    _fxOpen = false;
+    _openRoutes.remove(name);
   }
 }
 
@@ -88,40 +116,19 @@ Future<void> openFx({FxDestination? destination, VoidCallback? onStage}) async {
 /// stacking duplicates like [openLoopSettings].
 Future<void> openAudioRouting({
   AudioRoutingTab initial = AudioRoutingTab.setup,
-}) async {
-  final navigator = segnoNavigatorKey.currentState;
-  if (navigator == null || _audioRoutingOpen) return;
-  _audioRoutingOpen = true;
-  try {
-    await navigator.push(
-      desktopPageRoute<void>(
-        (_) => AudioRoutingPage(initial: initial),
-        settings: const RouteSettings(name: segnoAudioRoutingRouteName),
-      ),
-    );
-  } finally {
-    _audioRoutingOpen = false;
-  }
-}
+}) => _pushOnce(
+  segnoAudioRoutingRouteName,
+  () =>
+      (_) => AudioRoutingPage(initial: initial),
+);
 
 /// Pushes the Pedals setup route (the accepted Layout A) onto the root
 /// navigator; guarded against stacking duplicates like [openLoopSettings].
-Future<void> openPedalSetup({VoidCallback? onStage}) async {
-  final navigator = segnoNavigatorKey.currentState;
-  if (navigator == null || _pedalSetupOpen) return;
-  _pedalSetupOpen = true;
-  try {
-    await navigator.push(
-      desktopPageRoute<void>(
-        (_) => PedalSetupPage(onStage: onStage),
-        settings: const RouteSettings(name: segnoPedalSetupRouteName),
-      ),
-    );
-  } finally {
-    _pedalSetupOpen = false;
-    _externalPedalsOpen = false;
-  }
-}
+Future<void> openPedalSetup({VoidCallback? onStage}) => _pushOnce(
+  segnoPedalSetupRouteName,
+  () =>
+      (_) => PedalSetupPage(onStage: onStage),
+);
 
 /// Pushes the External pedals subview on top of the Pedals route; guarded
 /// against stacking duplicates like [openPedalSetup].
@@ -129,38 +136,18 @@ Future<void> openPedalSetup({VoidCallback? onStage}) async {
 /// Its own route rather than a context of the Pedals screen: it has its own
 /// draft and its own Save, and Back has to mean "leave this subview and
 /// discard what it holds" rather than "leave Pedals".
-Future<void> openExternalPedals() async {
-  final navigator = segnoNavigatorKey.currentState;
-  if (navigator == null || _externalPedalsOpen) return;
-  _externalPedalsOpen = true;
-  try {
-    await navigator.push(
-      desktopPageRoute<void>(
-        (_) => const ExternalPedalPage(),
-        settings: const RouteSettings(name: segnoExternalPedalsRouteName),
-      ),
-    );
-  } finally {
-    _externalPedalsOpen = false;
-  }
-}
+Future<void> openExternalPedals() => _pushOnce(
+  segnoExternalPedalsRouteName,
+  () =>
+      (_) => const ExternalPedalPage(),
+);
 
 /// Opens the shared MIDI assignment editor without stacking duplicate routes.
-Future<void> openMidiControls({VoidCallback? onStage}) async {
-  final navigator = segnoNavigatorKey.currentState;
-  if (navigator == null || _midiControlsOpen) return;
-  _midiControlsOpen = true;
-  try {
-    await navigator.push(
-      desktopPageRoute<void>(
-        (_) => MidiControlsPage(onStage: onStage),
-        settings: const RouteSettings(name: segnoMidiControlsRouteName),
-      ),
-    );
-  } finally {
-    _midiControlsOpen = false;
-  }
-}
+Future<void> openMidiControls({VoidCallback? onStage}) => _pushOnce(
+  segnoMidiControlsRouteName,
+  () =>
+      (_) => MidiControlsPage(onStage: onStage),
+);
 
 /// Pushes the Loop settings route (the accepted hub and its submenus) onto
 /// the root navigator, opened at [initial]; guarded against stacking
@@ -168,47 +155,82 @@ Future<void> openMidiControls({VoidCallback? onStage}) async {
 Future<void> openLoopSettings({
   LoopSettingsPageId initial = LoopSettingsPageId.hub,
   VoidCallback? onStage,
-}) async {
-  final navigator = segnoNavigatorKey.currentState;
-  if (navigator == null || _loopSettingsOpen) return;
-  _loopSettingsOpen = true;
-  try {
-    await navigator.push(
-      desktopPageRoute<void>(
-        (_) => LoopSettingsPage(initial: initial, onStage: onStage),
-        settings: const RouteSettings(name: segnoLoopSettingsRouteName),
-      ),
-    );
-  } finally {
-    _loopSettingsOpen = false;
-  }
+}) => _pushOnce(
+  segnoLoopSettingsRouteName,
+  () =>
+      (_) => LoopSettingsPage(initial: initial, onStage: onStage),
+);
+
+/// Pushes the Device settings page: the audio interface, its rate, buffer and
+/// latency, and what recording keeps in memory.
+///
+/// Where every "the audio stopped" notice leads, because it is the page whose
+/// device chooser can start the engine again.
+Future<void> openDeviceSettings() => _pushOnce(
+  segnoDeviceSettingsRouteName,
+  () =>
+      (_) => const DeviceSettingsPage(),
+);
+
+/// Pushes the Network settings page.
+Future<void> openNetworkSettings() => _pushOnce(
+  segnoNetworkSettingsRouteName,
+  () =>
+      (_) => const NetworkSettingsPage(),
+);
+
+/// Pushes the Displays settings page.
+Future<void> openDisplaySettings() => _pushOnce(
+  segnoDisplaySettingsRouteName,
+  () =>
+      (_) => const DisplaysSettingsPage(),
+);
+
+/// Pushes the Storage settings page.
+Future<void> openStorageSettings() => _pushOnce(
+  segnoStorageSettingsRouteName,
+  () =>
+      (_) => const StorageSettingsPage(),
+);
+
+/// Pushes the Updates settings page, and drops the update toast: the page
+/// shows the same offer with its own action.
+Future<void> openUpdateSettings() {
+  dismissAppToast(AppToastId.update);
+  return _pushOnce(
+    segnoUpdateSettingsRouteName,
+    () =>
+        (_) => const UpdatesSettingsPage(),
+  );
 }
 
-bool _settingsOpen = false;
+/// Pushes the About page.
+Future<void> openAboutSettings() => _pushOnce(
+  segnoAboutSettingsRouteName,
+  () =>
+      (_) => const AboutSettingsPage(),
+);
 
-/// Clears the "settings already open" guard.
+/// Resets the open-route guard.
 ///
-/// The guard is module-level and only released when the route pops, so a
-/// widget test that leaves settings open wedges it for every later test in the
-/// file — `openSegnoSettings` then returns early and the page never appears.
+/// The guard is module-level and only released when a route pops, so a
+/// widget test that leaves a route open wedges it for every later test in the
+/// file: the open call then returns early and the page never appears.
 @visibleForTesting
 void resetSegnoNavigatorForTest() {
-  _settingsOpen = false;
+  _openRoutes.clear();
   _openSettingsSection = null;
-  _loopSettingsOpen = false;
-  _audioRoutingOpen = false;
-  _fxOpen = false;
-  _pedalSetupOpen = false;
-  _externalPedalsOpen = false;
-  _midiControlsOpen = false;
   _fxCatalogue = null;
 }
 
 SettingsSection? _openSettingsSection;
 
-/// Whether Settings is open on the Updates tab (skip the update toast).
+/// Whether Updates is on screen, in either Settings surface (skip the update
+/// toast).
 bool get isSegnoUpdatesSettingsOpen =>
-    _settingsOpen && _openSettingsSection == SettingsSection.updates;
+    _openRoutes.contains(segnoUpdateSettingsRouteName) ||
+    (_openRoutes.contains(segnoSettingsRouteName) &&
+        _openSettingsSection == SettingsSection.updates);
 
 void _onSettingsSectionChanged(SettingsSection section) {
   _openSettingsSection = section;
@@ -224,25 +246,21 @@ void _onSettingsSectionChanged(SettingsSection section) {
 Future<void> openSegnoSettings({
   SettingsSection section = SettingsSection.view,
 }) async {
-  final navigator = segnoNavigatorKey.currentState;
-  if (navigator == null || _settingsOpen) return;
-  _settingsOpen = true;
+  if (_openRoutes.contains(segnoSettingsRouteName)) return;
   _openSettingsSection = section;
   if (section == SettingsSection.updates) {
     dismissAppToast(AppToastId.update);
   }
   try {
-    await navigator.push(
-      desktopPageRoute<void>(
-        (_) => SettingsPage(
-          initialSection: section,
-          onSectionChanged: _onSettingsSectionChanged,
-        ),
-        settings: const RouteSettings(name: segnoSettingsRouteName),
-      ),
+    await _pushOnce(
+      segnoSettingsRouteName,
+      () =>
+          (_) => SettingsPage(
+            initialSection: section,
+            onSectionChanged: _onSettingsSectionChanged,
+          ),
     );
   } finally {
-    _settingsOpen = false;
     _openSettingsSection = null;
   }
 }

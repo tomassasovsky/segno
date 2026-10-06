@@ -1002,16 +1002,16 @@ class _AppViewState extends State<_AppView> {
       icon: const Icon(Icons.usb_off_outlined),
       actions: [
         TextButton(
-          onPressed: () => unawaited(openSegnoSettings()),
+          onPressed: () => unawaited(openDeviceSettings()),
           child: AppText(l10n.settingsMenuItem),
         ),
       ],
     );
   }
 
-  /// Startup notice that a newer build is available. Skipped when Settings →
-  /// Updates is already open. "Not now" dismisses that version; "Update…"
-  /// opens the Updates section.
+  /// Startup notice that a newer build is available. Skipped when Updates is
+  /// already open. "Not now" dismisses that version; "Update…" opens the
+  /// Updates settings page.
   void _showUpdateBanner(BuildContext context, UpdateState state) {
     final manifest = state.available;
     if (!state.shouldNotify || manifest == null) {
@@ -1041,7 +1041,7 @@ class _AppViewState extends State<_AppView> {
           key: const Key(AppToastId.updateAction),
           onPressed: () {
             dismissAppToast(AppToastId.update);
-            unawaited(openSegnoSettings(section: SettingsSection.updates));
+            unawaited(openUpdateSettings());
           },
           child: AppText(l10n.updateBannerUpdateAction),
         ),

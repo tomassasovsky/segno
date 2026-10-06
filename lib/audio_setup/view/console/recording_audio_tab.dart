@@ -6,8 +6,6 @@ import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
-import 'package:segno/looper/cubit/record_timing_cubit.dart';
-import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Which of the tab's two openable rows is showing its list.
@@ -22,11 +20,14 @@ enum _OpenRow {
   defaultLength,
 }
 
-/// The Recording tab: what pressing record does.
+/// The Recording tab: how long a loop may grow, and the length new
+/// recordings default to.
 ///
-/// Two rows that open in place and three switches between them. Both open onto
-/// **chip grids** — `Default (30 s)`, `2 min`, `Auto`, `×2` are all bare
-/// tokens, and a token has nothing to put in a row's width.
+/// Two rows that open in place onto **chip grids**: `Default (30 s)`,
+/// `2 min`, `Auto`, `×2` are all bare tokens, and a token has nothing to put
+/// in a row's width. What a record press does — Rec/Dub, Sound start and
+/// quantize — is Loop settings' (Recording, and Length & quantize), and is
+/// not repeated here.
 class RecordingAudioTab extends StatefulWidget {
   /// Creates a [RecordingAudioTab].
   const RecordingAudioTab({super.key});
@@ -51,11 +52,6 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
     final surface = context.surface;
     final audio = context.watch<AudioSetupCubit>();
     final options = context.watch<RecordOptionsCubit>().state.options;
-    final timing = context.watch<RecordTimingCubit>().state;
-    final timingEnabled = timing.recordTimingReady && !timing.captureLocked;
-    final tempo = context.watch<TempoCubit>();
-    final confirmedStart = tempo.state.confirmedRecordStart;
-    final startSnapshot = tempo.state.recordStartSnapshot;
     final cap = audio.state.maxLoopMinutes;
 
     return KeyedSubtree(
@@ -99,68 +95,6 @@ class _RecordingAudioTabState extends State<RecordingAudioTab> {
                         setState(() => _open = _OpenRow.none);
                       },
                     ),
-                  ),
-                  ConsoleRow(
-                    key: const Key('audio_quantize_row'),
-                    title: l10n.quantizeRecording,
-                    subtitle: !timing.recordTimingReady
-                        ? l10n.recordTimingUnavailable
-                        : timing.captureLocked
-                        ? l10n.recordTimingCaptureLocked
-                        : l10n.quantizeRecordingSubtitle,
-                    trailing: ConsoleSwitch(
-                      key: const Key('audio_quantize_switch'),
-                      value: timing.defaultTiming.quantize,
-                      semanticLabel: l10n.quantizeRecording,
-                      onChanged: timingEnabled
-                          ? (on) => unawaited(
-                              context.read<RecordTimingCubit>().setEnabled(
-                                value: on,
-                              ),
-                            )
-                          : null,
-                    ),
-                  ),
-                  ConsoleRow(
-                    key: const Key('audio_rec_dub_row'),
-                    title: l10n.overdubOnSecondPressTitle,
-                    subtitle: l10n.overdubOnSecondPressSubtitle,
-                    trailing: ConsoleSwitch(
-                      key: const Key('audio_rec_dub_switch'),
-                      value: options.recDub,
-                      semanticLabel: l10n.overdubOnSecondPressTitle,
-                      onChanged: (on) => unawaited(
-                        context.read<RecordOptionsCubit>().setRecDub(value: on),
-                      ),
-                    ),
-                  ),
-                  ConsoleRow(
-                    key: const Key('audio_auto_record_row'),
-                    title: l10n.soundActivatedRecordingTitle,
-                    subtitle: startSnapshot == null
-                        ? l10n.recordStartUnavailable
-                        : !startSnapshot.canEdit
-                        ? l10n.recordStartCaptureLocked
-                        : l10n.soundActivatedRecordingSubtitle,
-                    trailing: confirmedStart == null
-                        ? Semantics(
-                            label: l10n.recordStartUnavailable,
-                            excludeSemantics: true,
-                            child: const AppText(
-                              '—',
-                              key: Key('audio_auto_record_unavailable'),
-                            ),
-                          )
-                        : ConsoleSwitch(
-                            key: const Key('audio_auto_record_switch'),
-                            value: confirmedStart.soundStart,
-                            semanticLabel: l10n.soundActivatedRecordingTitle,
-                            onChanged: startSnapshot?.canEdit == true
-                                ? (on) => unawaited(
-                                    tempo.setSoundStart(enabled: on),
-                                  )
-                                : null,
-                          ),
                   ),
                   ConsoleRow(
                     key: const Key('audio_default_length_row'),
