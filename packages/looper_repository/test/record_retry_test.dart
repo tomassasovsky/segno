@@ -100,15 +100,18 @@ void main() {
         expect(recordCalls(), 1);
         expect(repo.recordRetryPending(0), isTrue);
 
-        // No further block has published: the retry waits.
+        // The emptying has not published (the ring is unsettled): the retry
+        // waits.
         engine.commandsAreSettled = false;
         await poll();
         expect(recordCalls(), 1);
         expect(repo.recordRetryPending(0), isTrue);
 
-        // The block that emptied the track has published: the one retry lands.
+        // Everything posted before the press has published: the one retry
+        // lands.
         engine
           ..recordResult = EngineResult.ok
+          ..commandsAreSettled = true
           ..nextSnapshot = _rig(2, framesProcessed: 128);
         await poll();
         expect(recordCalls(), 2);
@@ -177,6 +180,89 @@ void main() {
         await poll();
 
         expect(recordCalls(), 1, reason: 'the retry would finish that take');
+        expect(refusals, isEmpty);
+        expect(repo.recordRetryPending(0), isFalse);
+      },
+    );
+
+    test('a frame advance alone is not publication: a buffer period longer '
+        'than the poll waits for the ring to settle', () async {
+      final repo = start();
+      engine
+        ..recordResult = EngineResult.notReady
+        ..commandsAreSettled = false;
+
+      expect(repo.record(), EngineResult.notReady);
+      // Block N ends (frames advance) while the emptying, posted after N's
+      // drain, still waits for N+1: retrying now would be refused again.
+      for (var frames = 1024; frames <= 3072; frames += 1024) {
+        engine.nextSnapshot = _rig(2, framesProcessed: frames);
+        await poll();
+        expect(recordCalls(), 1, reason: 'not published yet');
+      }
+      engine
+        ..recordResult = EngineResult.ok
+        ..commandsAreSettled = true;
+      await poll();
+      expect(recordCalls(), 2);
+      expect(engine.imageRevisions.keys, [0]);
+      expect(refusals, isEmpty);
+    });
+
+    test('does not survive an engine lifetime change', () async {
+      for (final restart in [false, true]) {
+        engine = FakeAudioEngine()..nextSnapshot = _rig(2);
+        refusals = [];
+        final repo = start();
+        engine.recordResult = EngineResult.notReady;
+
+        expect(repo.record(), EngineResult.notReady);
+        expect(repo.recordRetryPending(0), isTrue);
+        // Within the retry window the engine lifetime ends (device loss,
+        // restart, Session load all retire it the same way).
+        repo.stopEngine();
+        if (restart) repo.startEngine(const EngineConfig());
+        expect(repo.recordRetryPending(0), isFalse);
+
+        engine
+          ..recordResult = EngineResult.ok
+          ..nextSnapshot = _rig(2, framesProcessed: 128);
+        await poll();
+        await poll();
+        expect(
+          recordCalls(),
+          1,
+          reason: 'no take the player did not press for',
+        );
+        expect(refusals, isEmpty, reason: 'no toast for the old lifetime');
+      }
+    });
+
+    test(
+      'never finishes a take that started between the poll and the retry',
+      () async {
+        final repo = start();
+        engine.recordResult = EngineResult.notReady;
+
+        expect(repo.record(), EngineResult.notReady);
+        // The poll's own snapshot still reads EMPTY; the callback applies the
+        // player's second press before record() takes its snapshot.
+        final before = engine.snapshotCalls;
+        engine
+          ..recordResult = EngineResult.ok
+          ..afterSnapshot = () {
+            if (engine.snapshotCalls == before + 1) {
+              engine.nextSnapshot = _rig(
+                2,
+                state: TrackState.recording,
+                framesProcessed: 128,
+              );
+            }
+          };
+        await poll();
+        engine.afterSnapshot = null;
+
+        expect(recordCalls(), 1, reason: 'a plain record() would finish it');
         expect(refusals, isEmpty);
         expect(repo.recordRetryPending(0), isFalse);
       },
