@@ -5,6 +5,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/mix_value_scale.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
@@ -62,6 +63,18 @@ sealed class ControlValueTarget extends Equatable {
     DefaultFadeTarget() => true,
     TrackFadeTarget(:final channel) => channel >= 0 && channel < 8,
   };
+
+  /// Where a new mapping's top endpoint sits: unity gain on a level fader,
+  /// whose full travel is +6 dB; full travel on every other target.
+  double get mappingTop => switch (this) {
+    TrackVolumeTarget() || LaneVolumeTarget() => mixerTravelFor(1),
+    _ => 1,
+  };
+
+  /// A stored mapping endpoint as the mapping reads it. On a level fader a
+  /// literal 1.0 is read as [mappingTop], unity: the top every mapping got
+  /// before unity became the default.
+  double decodeEndpoint(double stored) => stored == 1 ? mappingTop : stored;
 
   /// Parses a [canonicalString] back to a target, or `null` when [encoded] is
   /// not a decodable one.
@@ -353,6 +366,24 @@ final class OutputBalanceTarget extends MixValueTarget {
   List<Object?> get props => [bus];
 }
 
+/// A value a shared settings owner holds: one family's default or track
+/// address. Dispatch handles every owned family through this one type; the
+/// conversion to each family's domain lives with its port.
+sealed class OwnedValueTarget extends ControlValueTarget {
+  /// Const base constructor for the owned families.
+  const OwnedValueTarget();
+
+  /// The family whose owner holds this value.
+  OwnedSetting get family;
+
+  /// One MIDI relative-controller detent in normalized source travel.
+  double get relativeStep;
+
+  /// [normalized] snapped to the nearest value the family can hold; a
+  /// non-finite value passes through for the caller to refuse.
+  double coerce(double normalized);
+}
+
 /// The master output gain — the same value the pedal's encoder turns.
 final class MasterGainTarget extends ControlValueTarget {
   /// Creates the master-gain target.
@@ -367,9 +398,15 @@ final class MasterGainTarget extends ControlValueTarget {
 
 /// The click's gain, owned by the current Click volume control rather than a
 /// Mixer output bus. A normalized position of 0.5 is physical unity.
-final class ClickVolumeTarget extends ControlValueTarget {
+final class ClickVolumeTarget extends OwnedValueTarget {
   /// Creates the click-volume target.
   const ClickVolumeTarget();
+
+  @override
+  OwnedSetting get family => OwnedSetting.clickVolume;
+
+  @override
+  double coerce(double normalized) => normalized.clamp(0.0, 1.0);
 
   /// Converts a stored normalized endpoint to the click's physical gain.
   double toDomain(double normalized) =>
@@ -378,7 +415,7 @@ final class ClickVolumeTarget extends ControlValueTarget {
   /// Converts an accepted physical gain to a normalized endpoint.
   double fromDomain(double gain) => (gain / kMaxClickGain).clamp(0.0, 1.0);
 
-  /// One MIDI relative-controller detent in normalized source travel.
+  @override
   double get relativeStep => 0.01;
 
   @override
@@ -390,9 +427,16 @@ final class ClickVolumeTarget extends ControlValueTarget {
 
 /// The click's four audible policies in user order, independent of native
 /// enum codes. A mapping stores normalized travel, not the native code.
-final class ClickModeValueTarget extends ControlValueTarget {
+final class ClickModeValueTarget extends OwnedValueTarget {
   /// Creates the global Hear click target.
   const ClickModeValueTarget();
+
+  @override
+  OwnedSetting get family => OwnedSetting.hearClick;
+
+  @override
+  double coerce(double normalized) =>
+      normalized.isFinite ? fromDomain(toDomain(normalized)) : normalized;
 
   /// Choices in the order displayed by Loop settings and endpoint editors.
   static const choices = <ClickMode>[
@@ -413,7 +457,7 @@ final class ClickModeValueTarget extends ControlValueTarget {
   /// The exact normalized position of an accepted choice.
   double fromDomain(ClickMode mode) => choices.indexOf(mode) / 3;
 
-  /// One relative-controller detent moves exactly one choice.
+  @override
   double get relativeStep => 1 / 3;
 
   @override
@@ -424,9 +468,16 @@ final class ClickModeValueTarget extends ControlValueTarget {
 }
 
 /// The four Count-in choices, stored as normalized option positions.
-final class CountInValueTarget extends ControlValueTarget {
+final class CountInValueTarget extends OwnedValueTarget {
   /// Creates the global Count-in target.
   const CountInValueTarget();
+
+  @override
+  OwnedSetting get family => OwnedSetting.recordStart;
+
+  @override
+  double coerce(double normalized) =>
+      normalized.isFinite ? fromDomain(toDomain(normalized)) : normalized;
 
   /// The nearest supported choice, never a rounded number of bars.
   int toDomain(double normalized) {
@@ -443,7 +494,7 @@ final class CountInValueTarget extends ControlValueTarget {
     return index / 3;
   }
 
-  /// One relative detent moves one named choice.
+  @override
   double get relativeStep => 1 / 3;
 
   @override
@@ -454,9 +505,16 @@ final class CountInValueTarget extends ControlValueTarget {
 }
 
 /// A decay endpoint uses percent as its native domain and 0..1 in mappings.
-sealed class DecayValueTarget extends ControlValueTarget {
+sealed class DecayValueTarget extends OwnedValueTarget {
   /// Creates a decay target.
   const DecayValueTarget();
+
+  @override
+  OwnedSetting get family => OwnedSetting.decay;
+
+  @override
+  double coerce(double normalized) =>
+      normalized.isFinite ? fromDomain(toDomain(normalized)) : normalized;
 
   /// Its stable default or fixed-track address.
   DecayAddress get address;
@@ -472,7 +530,7 @@ sealed class DecayValueTarget extends ControlValueTarget {
   /// Converts accepted percent into normalized source travel.
   double fromDomain(int percent) => percent.clamp(0, 100) / 100;
 
-  /// One relative-controller detent in normalized travel.
+  @override
   double get relativeStep => 0.01;
 }
 
@@ -511,9 +569,17 @@ final class TrackDecayTarget extends DecayValueTarget {
 }
 
 /// A binary Loop/Once endpoint represented by normalized controller travel.
-sealed class OneShotValueTarget extends ControlValueTarget {
+sealed class OneShotValueTarget extends OwnedValueTarget {
   /// Creates a Loop/Once target.
   const OneShotValueTarget();
+
+  @override
+  OwnedSetting get family => OwnedSetting.oneShot;
+
+  @override
+  double coerce(double normalized) => normalized.isFinite
+      ? fromDomain(oneShot: toDomain(normalized))
+      : normalized;
 
   /// The fixed default or track address.
   OneShotAddress get address;
@@ -529,7 +595,7 @@ sealed class OneShotValueTarget extends ControlValueTarget {
   /// Converts the accepted Loop/Once value to a stored endpoint.
   double fromDomain({required bool oneShot}) => oneShot ? 1 : 0;
 
-  /// One relative-controller detent crosses the binary choice.
+  @override
   double get relativeStep => 1;
 }
 
@@ -568,9 +634,16 @@ final class TrackOneShotTarget extends OneShotValueTarget {
 }
 
 /// A future-recording length: Auto or a whole number of bars.
-sealed class RecordLengthValueTarget extends ControlValueTarget {
+sealed class RecordLengthValueTarget extends OwnedValueTarget {
   /// Creates a length target.
   const RecordLengthValueTarget();
+
+  @override
+  OwnedSetting get family => OwnedSetting.recordLength;
+
+  @override
+  double coerce(double normalized) =>
+      normalized.isFinite ? fromDomain(toDomain(normalized)) : normalized;
 
   /// Its stable default or fixed-track address.
   RecordLengthAddress get address;
@@ -586,7 +659,7 @@ sealed class RecordLengthValueTarget extends ControlValueTarget {
   /// Encodes an accepted length as a canonical normalized endpoint.
   double fromDomain(int bars) => bars.clamp(0, 64) / 64;
 
-  /// One bar per relative-controller detent.
+  @override
   double get relativeStep => 1 / 64;
 }
 
@@ -625,9 +698,16 @@ final class TrackRecordLengthTarget extends RecordLengthValueTarget {
 }
 
 /// A future Record/Overdub timing choice on the established musical grid.
-sealed class RecordTimingValueTarget extends ControlValueTarget {
+sealed class RecordTimingValueTarget extends OwnedValueTarget {
   /// Creates a timing target.
   const RecordTimingValueTarget();
+
+  @override
+  OwnedSetting get family => OwnedSetting.recordTiming;
+
+  @override
+  double coerce(double normalized) =>
+      normalized.isFinite ? fromDomain(toDomain(normalized)) : normalized;
 
   /// Its stable default or fixed-track address.
   RecordTimingAddress get address;
@@ -643,7 +723,7 @@ sealed class RecordTimingValueTarget extends ControlValueTarget {
   /// Encodes a confirmed choice as its canonical normalized endpoint.
   double fromDomain(RecordTiming timing) => timing.code / 6;
 
-  /// One musical choice per relative-controller detent.
+  @override
   double get relativeStep => 1 / 6;
 }
 
@@ -683,9 +763,16 @@ final class TrackRecordTimingTarget extends RecordTimingValueTarget {
 
 /// A Fade duration endpoint: 0.5–30 s in 0.5 s steps, stored in mappings as
 /// normalized travel across those 60 values.
-sealed class FadeValueTarget extends ControlValueTarget {
+sealed class FadeValueTarget extends OwnedValueTarget {
   /// Creates a Fade duration target.
   const FadeValueTarget();
+
+  @override
+  OwnedSetting get family => OwnedSetting.fade;
+
+  @override
+  double coerce(double normalized) =>
+      normalized.isFinite ? fromDomain(toDomain(normalized)) : normalized;
 
   /// The fixed track, or null for the Default inherited by tracks without an
   /// override.
@@ -709,7 +796,7 @@ sealed class FadeValueTarget extends ControlValueTarget {
       (milliseconds.clamp(_minMs, _minMs + _steps * _stepMs) - _minMs) /
       (_steps * _stepMs);
 
-  /// One relative-controller detent moves one 0.5 s step.
+  @override
   double get relativeStep => 1 / _steps;
 }
 
