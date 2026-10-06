@@ -51,6 +51,10 @@ void main() {
     late FxChainPersistence projection;
     late SessionCubit session;
     late SessionRepository sessions;
+
+    /// The id the catalog gave the session saved as [name].
+    Future<SessionId> idOf(String name) async =>
+        (await sessions.listSessions()).singleWhere((s) => s.name == name).id;
     late PerformanceRepository performance;
     late MixSettingsCoordinator mix;
     late SettingsRepository settings;
@@ -141,7 +145,6 @@ void main() {
           record: record,
           timing: timing,
         ),
-        exportDirectory: () async => directory.path,
       );
       expect(
         (await playback.decayControl.setOverdubDecay(
@@ -194,14 +197,16 @@ void main() {
         await session.saveAs('Decay held');
         expect(session.state.status, SessionStatus.success);
         var bundle = await sessions.read(
-          await sessions.bundlePath('Decay held'),
+          await sessions.bundlePathOf(await idOf('Decay held')),
         );
         expect(bundle.session.overdubDecay, 20);
         expect(bundle.session.trackOverdubDecayOverrides, {0: 0});
         expect(playback.state.overdubDecay, 80);
         expect(playback.state.trackOverdubDecayOverrides, {0: 75});
         await session.save();
-        bundle = await sessions.read(await sessions.bundlePath('Decay held'));
+        bundle = await sessions.read(
+          await sessions.bundlePathOf(await idOf('Decay held')),
+        );
         expect(bundle.session.overdubDecay, 20);
         expect(bundle.session.trackOverdubDecayOverrides, {0: 0});
         expect(playback.state.overdubDecay, 80);
@@ -231,7 +236,7 @@ void main() {
         await save;
         expect(session.state.status, SessionStatus.success);
         final bundle = await sessions.read(
-          await sessions.bundlePath('Pending'),
+          await sessions.bundlePathOf(await idOf('Pending')),
         );
         expect(bundle.session.trackOverdubDecayOverrides, {7: 45});
       },
@@ -253,7 +258,7 @@ void main() {
           channel: 0,
           percent: null,
         );
-        await session.loadNamed('Inherited and custom');
+        await session.open(await idOf('Inherited and custom'));
         expect(session.state.status, SessionStatus.success);
         expect(playback.state.overdubDecay, 20);
         expect(playback.state.trackOverdubDecayOverrides, {0: 0});

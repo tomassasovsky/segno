@@ -52,6 +52,10 @@ void main() {
       late FxChainPersistence projection;
       late SessionCubit session;
       late SessionRepository sessions;
+
+      /// The id the catalog gave the session saved as [name].
+      Future<SessionId> idOf(String name) async =>
+          (await sessions.listSessions()).singleWhere((s) => s.name == name).id;
       late PerformanceRepository performance;
       late MixSettingsCoordinator mix;
       late _LengthSaveStore store;
@@ -139,7 +143,6 @@ void main() {
             record: record,
             timing: timing,
           ),
-          exportDirectory: () async => directory.path,
         );
         expect(looper.record(), EngineResult.ok);
         engine.pump(frames: 256, input: .5);
@@ -191,7 +194,7 @@ void main() {
           for (var pass = 0; pass < 2; pass++) {
             if (pass == 1) await session.save();
             final bundle = await sessions.read(
-              await sessions.bundlePath('Record length held'),
+              await sessions.bundlePathOf(await idOf('Record length held')),
             );
             expect(bundle.session.defaultLengthPresetBars, 4);
             expect(bundle.session.trackLengthPresetOverrides, {7: 0});
@@ -221,7 +224,7 @@ void main() {
           expect((await write).isOk, isTrue);
           await save;
           final bundle = await sessions.read(
-            await sessions.bundlePath('Record length pending'),
+            await sessions.bundlePathOf(await idOf('Record length pending')),
           );
           expect(bundle.session.trackLengthPresetOverrides, {7: 0});
         },
@@ -248,7 +251,7 @@ void main() {
           await session.saveAs('Owed length');
           expect(session.state.status, SessionStatus.success);
           final bundle = await sessions.read(
-            await sessions.bundlePath('Owed length'),
+            await sessions.bundlePathOf(await idOf('Owed length')),
           );
           expect(bundle.session.trackLengthPresetOverrides, {2: 4});
 
@@ -259,7 +262,7 @@ void main() {
             isTrue,
           );
           expect(engine.snapshot().tracks[2].lengthPresetBars, 8);
-          await session.loadNamed('Owed length');
+          await session.open(await idOf('Owed length'));
           expect(session.state.status, SessionStatus.success);
           expect(looper.lengthRecoveryRequired, isFalse);
           expect(looper.lengthSettingsSettled, isTrue);

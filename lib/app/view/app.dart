@@ -28,6 +28,7 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/looper.dart';
@@ -67,7 +68,6 @@ class App extends StatefulWidget {
     required this.waveformWindow,
     required this.sessionRepository,
     required this.performanceRepository,
-    required this.exportDirectory,
     required this.guards,
     this.pedalRepository,
     this.displayCount,
@@ -83,6 +83,7 @@ class App extends StatefulWidget {
     ),
     this.brightness = const UnsupportedBrightnessClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
+    this.removableVolumes = const InternalOnlyVolumes(),
     this.powerKeySource,
     this.powerOff,
     super.key,
@@ -106,6 +107,11 @@ class App extends StatefulWidget {
   /// where it can export to. Defaults to the client that answers "unknown",
   /// which is what every non-appliance build gets.
   final ConsoleFactsClient consoleFacts;
+
+  /// The removable drives the Library browses and copies to. Defaults to
+  /// [InternalOnlyVolumes] (no drive, every removable write refused) until
+  /// the storage service (#1177) stands behind the port.
+  final RemovableVolumes removableVolumes;
 
   /// Injected power-button source. Null (the default) starts an evdev
   /// listener on Linux when `segno-update-ctl` exists, and nothing elsewhere.
@@ -169,9 +175,6 @@ class App extends StatefulWidget {
   /// The shared performance-recording repository, sharing the engine.
   final PerformanceRepository performanceRepository;
 
-  /// Resolves the directory a mixdown / stems export is written to.
-  final Future<String> Function() exportDirectory;
-
   @override
   State<App> createState() => _AppState();
 }
@@ -190,6 +193,7 @@ class _AppState extends State<App> {
   final _ownerSubscriptions = <StreamSubscription<void>>[];
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   StreamSubscription<int>? _recordRefusedSubscription;
+  StreamSubscription<int>? _overdubRefusedSubscription;
   late final PlaybackOptionsCubit _playbackView;
   late final RecordTimingCubit _timingView;
 
@@ -206,7 +210,6 @@ class _AppState extends State<App> {
       pedal: _pedal,
       performance: widget.performanceRepository,
       sessions: widget.sessionRepository,
-      exportDirectory: widget.exportDirectory,
       powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
       guards: widget.guards,
     );
@@ -229,7 +232,12 @@ class _AppState extends State<App> {
         .recordingInputRequired
         .listen(_showRecordingInputRequired);
     _recordRefusedSubscription = widget.repository.recordRefusals.listen(
-      _showRecordRefused,
+      (channel) =>
+          _showRecordRefused(channel, (l10n) => l10n.recordRefusedTitle),
+    );
+    _overdubRefusedSubscription = widget.repository.overdubRefusals.listen(
+      (channel) =>
+          _showRecordRefused(channel, (l10n) => l10n.footReverseOverdubRefused),
     );
     _playbackView = PlaybackOptionsCubit(settings: _runtime.playback);
     _recordView = RecordOptionsCubit(settings: _runtime.record);
@@ -254,6 +262,7 @@ class _AppState extends State<App> {
     }
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_recordRefusedSubscription?.cancel());
+    unawaited(_overdubRefusedSubscription?.cancel());
     _controlNotices.dispose();
     unawaited(
       _closeControlOwners().catchError((Object error, StackTrace stack) {
@@ -374,16 +383,20 @@ class _AppState extends State<App> {
     );
   }
 
-  /// A fresh-capture Record press the engine refused twice (#1146): the press
-  /// is lost, so say so. Low stakes — a toast, like the input notice above.
-  void _showRecordRefused(int channel) {
+  /// A Record press the engine refused: a fresh capture refused twice
+  /// (#1146), or an overdub on a reversed track. The press is lost, so say
+  /// why. Low stakes — a toast, like the input notice above.
+  void _showRecordRefused(
+    int channel,
+    String Function(AppLocalizations l10n) title,
+  ) {
     if (!mounted || _runtime.power.state.isUiUp) return;
     showAppToast(
       id: AppToastId.recordRefused,
       type: ToastificationType.warning,
       autoCloseDuration: const Duration(seconds: 5),
       title: Builder(
-        builder: (context) => Text(context.l10n.recordRefusedTitle),
+        builder: (context) => Text(title(context.l10n)),
       ),
       description: Builder(
         builder: (context) => Text(
@@ -457,6 +470,9 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.bluetooth),
         RepositoryProvider.value(value: widget.brightness),
         RepositoryProvider.value(value: widget.consoleFacts),
+        RepositoryProvider<RemovableVolumes>.value(
+          value: widget.removableVolumes,
+        ),
         if (_powerKeySource != null)
           RepositoryProvider<PowerKeySource>.value(value: _powerKeySource!),
       ],
