@@ -15,6 +15,7 @@
 # app starts -- off a periodic timer, so it repeated for as long as each run
 # lasted -- from a bundle whose Dart half was newer than its .so half.
 # Nothing in the build had anything to say about it. This script is that voice.
+# (That entry point is le_volume_space since #1177.)
 #
 # Usage:
 #   check_ffi_symbols.sh <libsegno_engine.so> [bindings.dart]
