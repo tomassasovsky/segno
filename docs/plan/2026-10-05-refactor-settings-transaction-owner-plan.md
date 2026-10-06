@@ -559,9 +559,11 @@ transaction code is what 2b removes. Production change: +883 / -1,432.
   poll. The `startEngine` length and timing gates are gone; the session-boot
   and Mixer fences stay.
 - `RecordTimingFamily` and `RecordLengthFamily` (`settings_families.dart`).
-  Timing's stored checkpoint is the one tuple for every address, so
   `SettingsFamily.checkpointOf` now receives the checkpoint read before the
-  write and replaces only its address's part. Length has the looper mode as
+  write, so a default timing without a gate keeps its stored division.
+  Timing's storage addresses are its ten keys (gate, division, eight
+  overrides), read and repaired one by one; the settings repository gained
+  the matching per-key readers and writers. Length has the looper mode as
   an address (`LooperModeAddress`).
 - `SettingsFamily.supersededBy` names the addresses an ordinary write settles
   besides its own. Entering Multi settles all eight track presets: their
@@ -588,9 +590,12 @@ Decisions taken under the owner rules (2026-10-05):
 22. An unreadable saved Record length, mode or Record timing value no longer
     keeps audio stopped: audio opens with the repository's values, the
     family is unavailable and Retry repairs the stored data (decision 17's
-    rule). Length repairs the one unreadable key; timing's keys are one
-    tuple, so Retry replaces the whole tuple and logs the old values. Rules
-    2 and 4.
+    rule). Retry repairs key by key for both families: it removes only an
+    unreadable key and logs its old value, and every valid key survives
+    (owner decision on #1159, after the review of PR #1176). Timing's gate,
+    division and eight overrides are each a storage address of the family;
+    a write still addresses the default (gate and division) or one track.
+    Rules 1, 2 and 4.
 23. Length and timing uncertainty no longer stops audio or blocks a restart:
     the receipt owes the Released vector, a restart replays it and Retry
     re-requests it while running. An unconfirmed startup replay logs and

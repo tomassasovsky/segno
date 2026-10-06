@@ -112,15 +112,35 @@ void main() {
       await owner.load();
       expect(owner.recordTimingSnapshot, isNull);
       expect(repository.defaultRecordTiming, RecordTiming.immediately);
-      // Retry replaces the unreadable tuple; the old value is logged.
+      // Retry removes only the unreadable key; the old value is logged.
       expect((await owner.owner.recover()).status, SettingStatus.applied);
       expect(store.values.containsKey('track_record_timing.7'), isFalse);
-      expect(
-        owner.recordTimingSnapshot?.defaultTiming,
-        RecordTiming.immediately,
-      );
+      expect(owner.recordTimingSnapshot?.defaultTiming, RecordTiming.quarter);
     },
   );
+  test('Retry repairs only the malformed timing key; every valid timing '
+      'setting survives', () async {
+    store.values.addAll({
+      'looper.quantize': true,
+      'tempo.quantize_div': 2,
+      'track_record_timing.4': 99,
+      'track_record_timing.6': RecordTiming.bar.code,
+    });
+    await owner.load();
+    expect(owner.recordTimingSnapshot, isNull);
+    expect((await owner.owner.recover()).status, SettingStatus.applied);
+    expect(store.values, {
+      'looper.quantize': true,
+      'tempo.quantize_div': 2,
+      'track_record_timing.6': RecordTiming.bar.code,
+    });
+    final snapshot = owner.recordTimingSnapshot!;
+    expect(snapshot.defaultTiming, RecordTiming.half);
+    expect(snapshot.rememberedDivision, GridDivision.half);
+    expect(snapshot.trackOverrides, {6: RecordTiming.bar});
+    expect(repository.defaultRecordTiming, RecordTiming.half);
+    expect(repository.trackRecordTimingOverrides, {6: RecordTiming.bar});
+  });
   test('gate off and on keeps remembered musical division', () async {
     await owner.load();
     expect((await owner.setTiming(RecordTiming.quarter)).isOk, isTrue);

@@ -1526,11 +1526,16 @@ void main() {
           expect(timing.state.recordTimingReady, isTrue);
           expect(find.text('Record timing needs recovery'), findsNothing);
           if (malformed) {
-            // The timing keys are one tuple: Retry replaces all of them.
-            for (final key in before.keys) {
-              expect(store.values.containsKey(key), isFalse);
+            // Retry removes only the unreadable key; the rest survive.
+            expect(
+              store.values.containsKey('track_record_timing.7'),
+              isFalse,
+            );
+            before.remove('track_record_timing.7');
+            for (final entry in before.entries) {
+              expect(store.values[entry.key], entry.value);
             }
-            expect(timing.state.defaultTiming, RecordTiming.immediately);
+            expect(timing.state.defaultTiming, RecordTiming.quarter);
             expect(repository.trackRecordTimingOverrides, isEmpty);
           } else {
             expect(store.values, before);
