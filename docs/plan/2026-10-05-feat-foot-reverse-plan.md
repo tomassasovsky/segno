@@ -331,15 +331,18 @@ same-buffer fallback (`:5534-5535`), accepted.
   344-349`); labels `actionModeReverse` (`control_action_labels.dart:77-78`).
 - `lib/control/model/foot_reverse.dart`: `FootReverseAction {recordPlay, stop, exit,
   toggleTrack, nextBank}`, `FootReversePedal`, `FootReverseTrack {channel,
-  available, reversed}` with `available = hasContent && !isCapturing && !pending`,
+  recorded, busy, reversed}` with `recorded = hasContent` and `busy = isCapturing
+  || pending`,
   `FootReverseProjection {bank, tracks}` and `pedalRoles`: track1-4 `toggleTrack`
   immediate (the spec says "immediately"), bank `nextBank`, recPlay/stop/mode as in
   Fade (`foot_fade.dart:154-193`), undo and clear inert (no accepted meaning; the FX
   mode precedent). No transient selection, so `ControlState` gains only
   `footReverseFailure` (`control_state.dart:23-24` pattern).
 - `lib/control/foot_reverse_actions.dart`: stateless `toggle(channel)` over
-  `LooperRepository.toggleReverse`, refusing unavailable tracks as `invalid`
-  without a notice; shared by the surface and assigned actions
+  `LooperRepository.toggleReverse`. An empty track is refused as `invalid`
+  without a notice (it has no direction to change); a recorded track that is
+  writing or pending is refused as `notReady` with the toggle-failure notice,
+  per decision 1. Neither posts. Shared by the surface and assigned actions
   (`foot_fade_actions.dart:51-63`).
 - `lib/control/cubit/control_foot_reverse.dart` part: `_reverseEditable`,
   `_onReversePress`, `_dispatchReverseAction`, `_reportReverseFailure`, mirroring
@@ -358,14 +361,15 @@ same-buffer fallback (`:5534-5535`), accepted.
   625-626, 1051`; themes (`looper_theme.dart:129`, `surface_theme.dart:240`).
 - `lib/looper/view/foot_reverse_view.dart`: `PerformancePedal` layout as the Fade
   view's front row and Bank, a title, and an eight-track overview cell showing
-  name and `Forward`/`Reversed`/`Empty`; selected bar lit on reversed tracks, Exit
+  name and `Forward`/`Reversed`/`Empty` (a busy recorded track keeps its real
+  word, dimmed); selected bar lit on reversed tracks, Exit
   and Bank B (`foot_fade_view.dart:405-410`). Tracks composition
   (`tracks_view.dart:209-212`), failure toast (`:139-146`, `AppToastId.
   footReverseFailure`), a11y and switch arms in `track_column.dart:364-376,
   383-405`, `wave_track_row.dart:96, 111`, `tracks_commands.dart:122, 225, 313`.
 - Normal-Tracks marker: a `_ReverseMarker` beside the FX marker in `_TrackMeta`
-  (`track_column.dart:593-700`): `stageReverseMarker` ("REV"), opacity 0 while
-  forward so the row never reflows, a11y `a11yStageReversed`. It reads
+  (`track_column.dart:593-700`): `stageReverseMarker` ("REV"), laid out only
+  while reversed (see "Part 3 as built"), a11y `a11yStageReversed`. It reads
   `track.reversed` from the repository projection, so it remains after Exit.
 - Localization: English and Spanish strings for the mode, operation, pedal
   captions, overview words, marker and failure (`lib/l10n/arb/app_en.arb:5901-6001`
@@ -482,7 +486,7 @@ selected/fixed/all actions exercised through the real ingress.
 GOAL: The accepted Reverse surface toggles direction immediately by foot or assignment, shows truthful LEDs and a persistent normal-Tracks marker, and never exposes a half-wired action.
 SUCCESS CRITERIA:
 - Track pedals toggle on contact against the current bank, Bank pages, Exit returns to Tracks with directions kept, Undo/Clear are inert, and a refused toggle shows one notice. | verify: /Users/Tomas/development/flutter/bin/flutter test test/control
-- LED and marker light only for recorded reversed tracks; the marker remains after Exit and holds its width while forward; goldens match in English and Spanish. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
+- LED and marker light only for recorded reversed tracks; the marker remains after Exit, a forward meta row is the pen's row, and REV never overlaps the counts (en/es, 128 bars, 12 layers); goldens match in English and Spanish. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view
 - Selected, fixed and all-tracks Reverse actions reach the same adapter from pedal, CTRL and MIDI ingress. | verify: /Users/Tomas/development/flutter/bin/flutter test
 - Static gates and the whole app suite pass. | verify: dart analyze --fatal-infos lib test packages && bloc lint lib test packages && /Users/Tomas/development/flutter/bin/flutter test
 - Physical footswitch, LED and listening proof on the appliance: toggle during playback, while stopped, on a division, with a running fade, and overdub refusal. | verify: manual appliance session per docs/PROGRESS.md hardware evidence rules.
@@ -504,9 +508,20 @@ one case in its `TrackOperation` switch).
   English and Spanish.
 - Model and actions: `lib/control/model/foot_reverse.dart` (role table:
   every role fires on contact, Undo and Clear are `none`; a track is
-  available when it has content and is neither capturing nor pending) and
-  the stateless `FootReverseActions.toggle`, shared by the surface and every
-  assigned action.
+  `recorded` when it has content and `busy` while it captures or has an arm
+  or launch pending) and the stateless `FootReverseActions.toggle`, shared
+  by the surface and every assigned action.
+- Busy tracks (review Medium 2, decision 1): a recorded track that is
+  overdubbing or pending shows its real direction word and chevron, dimmed,
+  in the overview and on its pedal, and its pedal still takes the stomp.
+  The stomp is refused before posting (`notReady`) and shows the
+  toggle-failure notice once. Only an empty track is silent. Section 3 used
+  to say every unavailable track was refused "without a notice", which
+  contradicted decision 1; section 3 now follows decision 1.
+- `trackPressed` in Reverse mode is inert, like Fade: no production path
+  reaches it (track pedals route through `_onReversePress`, and the Tracks
+  columns are replaced by the Reverse view), so a future on-screen caller
+  cannot turn a track around by accident.
 - Cubit part `control_foot_reverse.dart`: contact dispatch, Exit, Bank,
   Stop, Rec/Play on the normal cursor, and one toggle-refusal report per
   visit (`ControlState.footReverseFailure`).
@@ -521,13 +536,26 @@ one case in its `TrackOperation` switch).
 - `FootReverseView` mirrors the Fade view (same canvas, positions and
   `PerformancePedal`), which gained an optional detail glyph and a
   highlighted detail for the direction line.
-- Tracks marker: `_ReverseMarker` ("REV") paints in the meta row's gap
-  just before the FX slot, anchored to that slot and translated back by its
-  own width, so it takes no layout space: the forward row is the pen's row
-  exactly (the Tracks goldens are byte-identical to the trunk's), and a
-  reversal reflows nothing. Opacity 0 while forward, read from
-  `Track.reversed`; the meta row's screen-reader label adds "Track plays
-  reversed".
+- Tracks marker (review Medium 1): "REV" takes a real slot before the FX
+  marker, but only while the track plays reversed. A forward meta row is
+  the pen's row exactly (the forward Tracks goldens are byte-identical to
+  the trunk's); reversing a track reflows that track's own row so REV
+  always has room. The earlier version painted REV into the gap without
+  layout space, and it overlapped the layers figure in Spanish and with
+  long counts. The row also has a 12 px spacing floor: with room to spare
+  `spaceBetween` lays it out as before, and when it is tight its parts
+  never touch. Tests: an Ahem geometry test for en and es at 128 bars and
+  12 layers, and real-font screenshot tests for en and es at 16 and 128
+  bars, asserting REV clears the layers figure and the FX marker. The
+  marker reads `Track.hasContent && Track.reversed`; the meta row's
+  screen-reader label adds "Track plays reversed".
+- Spanish (owner's Argentine usage): the mode and operation are "Reversa",
+  the forward state word is "Normal", the reversed one "Reversa", the
+  overview heading "Sentido de reproducción", the overdub refusal "No se
+  puede sobregrabar mientras la pista suena al revés", the screen-reader
+  label "La pista se reproduce al revés", and the failure "No se pudo
+  cambiar el sentido de la pista." ("invertir" reads as polarity to audio
+  users).
 - Pen departures (segno-ui.pen, 13 Performance · Reverse):
   - the Tracks indicator is the meta-row "REV" marker, as this plan states,
     not the pen's "‹ Reverse" caption under a Tracks pedal (the app's Tracks
@@ -541,7 +569,10 @@ one case in its `TrackOperation` switch).
 ## 5. Decisions taken under the standing rules
 
 1. Toggle while the track writes (RECORDING, OVERDUBBING, punch tail, pending arm or
-   launch): refused with a receipt and a notice. Rule 2 and 5: a write on a
+   launch): refused with a notice. The app refuses it before posting while the
+   projection shows the track busy; one that races the projection is refused by
+   the callback with a receipt, which shows the same notice. A track with no
+   material yet has no direction, so a stomp on it is silent. Rule 2 and 5: a write on a
    reversed pair would corrupt the per-pass shadow; the refusal is visible.
 2. Overdub into a reversed track: refused with `LE_ERR_REVERSED` and a notice; Play,
    Stop, Mute, Fade and history stay available. Rule 2 and 4: one capture engine;

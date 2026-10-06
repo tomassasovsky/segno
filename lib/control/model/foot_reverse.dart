@@ -41,21 +41,26 @@ class FootReverseTrack extends Equatable {
   /// Creates a read of current repository facts.
   const FootReverseTrack({
     required this.channel,
-    required this.available,
+    required this.recorded,
+    required this.busy,
     required this.reversed,
   });
 
   /// Absolute zero-based channel.
   final int channel;
 
-  /// Whether the track holds settled recorded material it can turn around.
-  final bool available;
+  /// Whether the track holds recorded material, which has a direction.
+  final bool recorded;
+
+  /// Whether the track is writing or has an arm or launch pending: its
+  /// direction cannot change now, and a stomp is refused with a notice.
+  final bool busy;
 
   /// Callback-published direction.
   final bool reversed;
 
   @override
-  List<Object?> get props => [channel, available, reversed];
+  List<Object?> get props => [channel, recorded, busy, reversed];
 }
 
 /// Shared semantic read model for captions, touch and physical feedback.
@@ -116,11 +121,8 @@ FootReverseProjection projectFootReverse(
         .firstOrNull;
     return FootReverseTrack(
       channel: channel,
-      available:
-          track != null &&
-          track.hasContent &&
-          !track.isCapturing &&
-          !track.pending,
+      recorded: track?.hasContent ?? false,
+      busy: track != null && (track.isCapturing || track.pending),
       reversed: track?.reversed ?? false,
     );
   }
