@@ -1122,3 +1122,31 @@ human merge gate stays.
 - The mock engine follows the native rules; `LooperRepository.setTunerMute`
   refuses while disarmed or for an input outside `0..31`, and every
   `setTunerInput` clears the remembered mask.
+
+### Part 2 (branch `claude/foot-surfaces-1229-p2`)
+
+- Built on the trunk at `ed72e03d2` (Peel P3, Settings P3/P4 and the #912
+  port merged). `FootFxView` replaces the Tracks columns in FX mode; the
+  #692 re-dress, its l10n strings and its golden (`tracks_fx_window.png`)
+  are gone, and so are the twelve strings only it used.
+- The face reads `ControlState.fxSwitches` (`({lit, stale})` per bound
+  switch), which the cubit publishes beside the frame push from the same
+  values the LEDs use; the four track LEDs still go through `boundChains`.
+- `Track FX off` / `Track FX on`, the one-time notice (flag
+  `fx.stop_change_notice_shown`, toast in `app.dart` beside the boot-mode
+  notice) and MODE as Exit (D13) are built as the amended Part 2 says.
+- **Departures:**
+  - The pedal assignment page and its strings left the trunk with the old
+    Settings page (`13b483025`). The face has its own `Toggle` and `Target
+    missing` strings, and the stale-binding toast says "Reassign it." without
+    naming a page; bindings are edited in the Control tray's pedal body
+    (`pedal_tray_body.dart`).
+  - The face's Settings button opens Settings (`openSegnoSettings`), as
+    Reverse and Fade now do on the trunk; it never uses the tray.
+  - Hint line: a bound switch without a Hold target shows its stage
+    (`Input 2`, `Track 2 lane 1`) as the third line, the #884/#873 fix made
+    visible; the pen draws no third line (write-back W3 adds it).
+  - Accessible activation acts as press-and-release, so a momentary binding is
+    a no-op there, as for a foot that lifts at once.
+  - The Pending Hold cue (Part 1) is not wired into this face yet: whichever
+    of #1247 and this part lands second passes `holdPending` here too.
