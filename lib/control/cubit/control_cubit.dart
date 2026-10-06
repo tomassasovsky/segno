@@ -2616,12 +2616,21 @@ class ControlCubit extends Cubit<ControlState> {
           // mode: the control is away from the track, so silence would read
           // as a dead pedal.
           final session = _looper.sessionRevision;
+          // Read before firing: a stomp aimed only at empty tracks says so,
+          // rather than offering a retry that cannot help.
+          final empty =
+              channels.isNotEmpty &&
+                  channels.every(
+                    (channel) => !(_trackAt(channel)?.hasContent ?? false),
+                  )
+              ? channels.length
+              : 0;
           return Future.wait([
             for (final channel in channels)
               Future.value(_runTrackOperation(operation, channel)),
           ]).then((results) {
             final accepted = results.any((accepted) => accepted);
-            if (!accepted) _reportAssignedRefusal(operation, session);
+            if (!accepted) _reportAssignedRefusal(operation, session, empty);
             return accepted;
           });
         }
@@ -2643,14 +2652,23 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   /// Reports an assigned Fade or Reverse that reached no track, unless the
-  /// Session it was fired in has since been replaced.
-  void _reportAssignedRefusal(TrackOperation operation, int session) {
+  /// Session it was fired in has since been replaced. [empty] counts the
+  /// targets when every one of them was empty, and is 0 otherwise.
+  void _reportAssignedRefusal(
+    TrackOperation operation,
+    int session,
+    int empty,
+  ) {
     if (isClosed || _looper.sessionRevision != session) return;
     emit(switch (operation) {
       TrackOperation.fade => state.copyWith(
         footFadeFailure: state.footFadeFailure + 1,
+        footFadeRefusedEmpty: empty,
       ),
-      _ => state.copyWith(footReverseFailure: state.footReverseFailure + 1),
+      _ => state.copyWith(
+        footReverseFailure: state.footReverseFailure + 1,
+        footReverseRefusedEmpty: empty,
+      ),
     });
   }
 

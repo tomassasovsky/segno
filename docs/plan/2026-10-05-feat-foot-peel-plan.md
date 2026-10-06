@@ -586,6 +586,10 @@ trunk that carries Part 2 and Reverse Part 3. It follows the Reverse surface
   - A separate commit gives assigned Fade and Reverse the same rule: when an
     assigned toggle reaches no track (every target refused or empty), their
     failure notice now shows in any mode, so no assigned refusal is silent.
+    When every target was empty, the notice says the track is empty (or that
+    no track has a recording), as an assigned Peel does, instead of the
+    retry wording (#1242, from the #1233 delta review D-2). A refusal that
+    lands after the Session changed shows nothing; a test pins it (D-1).
   - §3 said an unavailable track is refused "without a notice". The policy
     above keeps that only for the empty track on the surface.
   - Peel completes on the control thread, so the report always belongs to

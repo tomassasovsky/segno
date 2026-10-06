@@ -748,17 +748,17 @@ void main() {
   for (final (operation, notice, toast) in [
     (
       TrackOperation.fade,
-      'The fade could not be started. Try again.',
+      'The track is empty: there is nothing to fade.',
       AppToastId.footFadeFailure,
     ),
     (
       TrackOperation.reverse,
-      'The track could not be turned around. Try again.',
+      'The track is empty: there is nothing to turn around.',
       AppToastId.footReverseFailure,
     ),
   ]) {
-    testWidgets('an assigned ${operation.name} that reaches no track says so '
-        'outside its surface', (tester) async {
+    testWidgets('an assigned ${operation.name} aimed at an empty track says '
+        'so outside its surface', (tester) async {
       tester.view
         ..physicalSize = const Size(1920, 1080)
         ..devicePixelRatio = 1;
