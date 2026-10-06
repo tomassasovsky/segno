@@ -1529,11 +1529,16 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  int? volumeFreeBytes(String path) => freeBytes;
+  VolumeSpace? volumeSpace(String path) => freeBytes == null
+      ? null
+      : VolumeSpace(totalBytes: totalBytes, freeBytes: freeBytes!);
 
-  /// What [volumeFreeBytes] reports; `null` models a platform that cannot
-  /// answer.
+  /// What [volumeSpace] reports as free; `null` models a platform that
+  /// cannot answer.
   int? freeBytes = 1 << 40;
+
+  /// What [volumeSpace] reports as the volume's size.
+  int totalBytes = 2 << 40;
 
   /// Result returned by [renderBegin].
   EngineResult renderBeginResult = EngineResult.ok;

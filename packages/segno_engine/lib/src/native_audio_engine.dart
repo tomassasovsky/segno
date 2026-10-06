@@ -20,6 +20,7 @@ import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
+import 'package:segno_engine/src/volume_space.dart';
 
 /// Opens the bundled native engine library for the current platform.
 ///
@@ -2376,19 +2377,19 @@ class NativeAudioEngine implements AudioEngine {
   /// a network mount whose server has gone away it can block for that mount's
   /// timeout. The appliance's capture volume is local NVMe.
   @override
-  int? volumeFreeBytes(String path) {
+  VolumeSpace? volumeSpace(String path) {
     if (path.isEmpty) return null;
     final pathPtr = path.toNativeUtf8();
-    final outPtr = calloc<Uint64>();
+    final totalPtr = calloc<Uint64>();
+    final freePtr = calloc<Uint64>();
     try {
-      final code = _bindings.le_perf_volume_free_bytes(
-        pathPtr.cast(),
-        outPtr,
-      );
+      final code = _bindings.le_volume_space(pathPtr.cast(), totalPtr, freePtr);
       if (!EngineResult.fromCode(code).isOk) return null;
-      return outPtr.value;
+      return VolumeSpace(totalBytes: totalPtr.value, freeBytes: freePtr.value);
     } finally {
-      calloc.free(outPtr);
+      calloc
+        ..free(freePtr)
+        ..free(totalPtr);
       malloc.free(pathPtr);
     }
   }

@@ -16,6 +16,7 @@ import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
+import 'package:segno_engine/src/volume_space.dart';
 
 /// In-memory [AudioEngine] that simulates a multichannel interface for UI
 /// development and manual testing without real hardware.
@@ -1672,13 +1673,16 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  /// What [volumeFreeBytes] reports. `null` models a platform that cannot
-  /// answer; set a number to model a volume with that much room left.
-  int? volumeFreeBytesValue = 1 << 40; // 1 TiB: plenty, by default
+  /// What [volumeSpace] reports. `null` models a platform that cannot
+  /// answer; set a reading to model a volume of that size with that much room.
+  VolumeSpace? volumeSpaceValue = const VolumeSpace(
+    totalBytes: 2 << 40, // 2 TiB, half of it
+    freeBytes: 1 << 40, // free: plenty, by default
+  );
 
   @override
-  int? volumeFreeBytes(String path) =>
-      path.isEmpty ? null : volumeFreeBytesValue;
+  VolumeSpace? volumeSpace(String path) =>
+      path.isEmpty ? null : volumeSpaceValue;
 
   /// The `captureDir` passed to the most recent [renderBegin] call, for test
   /// assertions. `null` until the first render.
