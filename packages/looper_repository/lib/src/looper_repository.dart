@@ -3037,8 +3037,12 @@ class LooperRepository {
     }
     // The owed retry of a refused fresh capture must never become anything
     // else: a take that started since (the player's own second press) would
-    // be finished by the plain record below. Superseded, quietly.
-    if (_retryingRecord && state != TrackState.empty) {
+    // be finished by the plain record below, and a Count-in it started would
+    // be cancelled by the branch after. Superseded, quietly.
+    if (_retryingRecord &&
+        (state != TrackState.empty ||
+            snapshot.tracks[channel].pendingLaunch != null ||
+            snapshot.tracks[channel].countInCancelGrace)) {
       _retrySuperseded = true;
       return EngineResult.invalid;
     }

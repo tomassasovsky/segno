@@ -13,6 +13,7 @@ EngineSnapshot _rig(
   int count, {
   TrackState state = TrackState.empty,
   int framesProcessed = 0,
+  bool countInCancelGrace = false,
 }) => EngineSnapshot(
   isRunning: true,
   devicePresent: true,
@@ -31,6 +32,7 @@ EngineSnapshot _rig(
     for (var i = 0; i < count; i++)
       TrackSnapshot(
         state: state,
+        countInCancelGrace: countInCancelGrace,
         volume: 1,
         muted: false,
         lengthFrames: state == TrackState.empty ? 0 : 48000,
@@ -263,6 +265,38 @@ void main() {
         engine.afterSnapshot = null;
 
         expect(recordCalls(), 1, reason: 'a plain record() would finish it');
+        expect(refusals, isEmpty);
+        expect(repo.recordRetryPending(0), isFalse);
+      },
+    );
+
+    test(
+      'never cancels a Count-in the player started between the poll and the '
+      'retry',
+      () async {
+        final repo = start();
+        engine.recordResult = EngineResult.notReady;
+
+        expect(repo.record(), EngineResult.notReady);
+        // The player's own second press was deferred into a count-in by the
+        // callback after the poll's snapshot and before record()'s.
+        final before = engine.snapshotCalls;
+        engine
+          ..recordResult = EngineResult.ok
+          ..afterSnapshot = () {
+            if (engine.snapshotCalls == before + 1) {
+              engine.nextSnapshot = _rig(
+                2,
+                framesProcessed: 128,
+                countInCancelGrace: true,
+              );
+            }
+          };
+        await poll();
+        engine.afterSnapshot = null;
+
+        expect(engine.cancelledArms, isEmpty, reason: 'that is their press');
+        expect(recordCalls(), 1);
         expect(refusals, isEmpty);
         expect(repo.recordRetryPending(0), isFalse);
       },

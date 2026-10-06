@@ -1969,6 +1969,8 @@ class _LengthTrack extends TrackSnapshot {
         outputMask: source.outputMask,
         layerInFlight: source.layerInFlight,
         pending: source.pending,
+        pendingLaunch: source.pendingLaunch,
+        countInCancelGrace: source.countInCancelGrace,
         lengthPresetBars: bars ?? source.lengthPresetBars,
         oneShot: engine.trackOneShot[channel] ?? source.oneShot,
         settledTakeId: source.settledTakeId,
