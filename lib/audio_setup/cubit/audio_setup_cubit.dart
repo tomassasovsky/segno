@@ -345,6 +345,13 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // of the selection and is named by the banner instead.
     final rate = _offerable(actualRate, state.sampleRateChoices, askedRate);
     final buffer = _offerable(actualBuffer, state.bufferChoices, askedBuffer);
+    // The user's (re)apply resolves any standing loss condition — see the
+    // baseline reset above — with one exception: a reconnect whose rig replay
+    // rolled back carries its verdict to this start (`EngineStatus.reopen`,
+    // #1140), because no device return will ever show it. A rig the engine
+    // cleared or partly dropped on that reopen is told here, the same way it
+    // would have been on the return (rule 3: no silent changes).
+    final carried = _restoredConnectivity(live.reopen);
     final settled = state.copyWith(
       status: AudioSetupStatus.running,
       clearError: true,
@@ -355,9 +362,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       requestedBuffer: askedBuffer,
       actualRate: actualRate,
       actualBuffer: actualBuffer,
-      // The user's (re)apply resolves any standing loss condition — see the
-      // baseline reset above.
-      deviceConnectivity: DeviceConnectivity.none,
+      deviceConnectivity: carried == DeviceConnectivity.restored
+          ? DeviceConnectivity.none
+          : carried,
+      connectivityDeviceName: live.deviceName.isNotEmpty
+          ? live.deviceName
+          : _lastPresentDeviceName,
     );
     emit(settled);
     // Only when the SELECTION moved: what was written above — the config that

@@ -8,7 +8,7 @@ import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/session/view/sessions_manager_dialog.dart';
+import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The stage's one standing loss condition: the pinned audio interface is
