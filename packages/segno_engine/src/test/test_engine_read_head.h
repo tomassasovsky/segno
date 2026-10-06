@@ -129,7 +129,10 @@ static void test_read_head_reorigin_and_wrap(void) {
         if (le_head_wrapped(prev, next, rev)) wraps++;
         prev = next;
       }
-      CHECK(wraps == 4 || wraps == 3); /* four laps; the last edge may land on the boundary */
+      /* exactly four laps, both ways: forward, the last position (4 len)
+       * lands on index 0 and is the fourth wrap; reversed, the first step
+       * off index 0 is the first wrap and the last lands on 0 without one */
+      CHECK(wraps == 4);
     }
   }
   /* the modulus helper agrees with fmod for large positive and negative values */

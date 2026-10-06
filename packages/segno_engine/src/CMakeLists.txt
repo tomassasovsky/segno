@@ -250,6 +250,17 @@ set_source_files_properties(
   "${SEGNO_RNNOISE_DIR}/src/rnnoise_tables.c"
   PROPERTIES COMPILE_OPTIONS "-fvisibility=hidden")
 
+# The stretch shim TU for the same reason (#1179): on Linux its out-of-line
+# Signalsmith Stretch and std::vector instantiations would otherwise be
+# default-visibility weak exports of libsegno_engine.so, and Signalsmith is a
+# common plugin dependency, so a dlopen'd plugin could interpose them (or have
+# its own copy interposed). Nothing outside the engine calls le_stretch_*; the
+# FFI surface is untouched.
+if(UNIX AND NOT APPLE)
+  set_source_files_properties(stretch/le_stretch.cpp
+    PROPERTIES COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")
+endif()
+
 # --- VST3 + CLAP plugin hosting (vendored SDK include roots) ----------------
 #
 # Plugin hosting (third_party/vst3sdk + third_party/clap, both MIT — see

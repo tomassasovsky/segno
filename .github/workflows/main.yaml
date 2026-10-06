@@ -176,6 +176,8 @@ jobs:
   # criterion (docs/plan/2026-10-06-feat-pitch-time-core-plan.md Part 1): the
   # built binary is uploaded as an artifact so the owner can copy it to the
   # appliance and run it with `--budget-us 667 --assert` there.
+  # upload-artifact does not keep file modes: `chmod +x bench_pitch_time` on
+  # the appliance before running it.
   native-bench-arm64:
     runs-on: ubuntu-24.04-arm
     steps:
@@ -185,6 +187,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential
       - name: Build + run the pitch/time bench (arm64 proxy thresholds)
+        # `shell: bash` runs the step as `bash -eo pipefail`. The default shell
+        # has no pipefail, so the pipeline would exit with tee's status and a
+        # failed threshold (or a failed build) would leave the job green.
+        shell: bash
         run: >
           bash packages/segno_engine/src/test/bench/bench_pitch_time.sh
           --budget-us 667 --assert --proxy --seconds 20
