@@ -2456,5 +2456,13 @@
     "storagePurposeBackup": "hacer una copia de seguridad",
     "powerOffTransferTitle": "Espera a que termine la transferencia",
     "powerOffTransferBody": "Se está copiando audio o expulsando una unidad USB. Espera a que termine y vuelve a pulsar el botón de encendido si quieres apagar.",
-    "storageEjectStuck": "Todavía se está expulsando. Si no termina, desconecta la unidad."
+    "storageEjectStuck": "Todavía se está expulsando. Si no termina, desconecta la unidad.",
+    "perfStoppedVolumeLost": "La captura se detuvo antes de tiempo — se desconectó la unidad USB. Tus loops siguieron sonando.",
+    "perfArmDriveUnavailable": "La grabación no empezó. Ahora no se puede grabar en la unidad USB elegida en Guardar en.",
+    "saveTo": "Guardar en",
+    "saveToUnsupported": "{label} · no se puede escribir",
+    "saveToTooSlow": "{label} · demasiado lenta para grabar",
+    "connectUsbTitle": "Conecta una unidad USB",
+    "connectUsbBody": "Tu grabación se queda en Interno.",
+    "connectUsbTryAgain": "Reintentar"
 }
