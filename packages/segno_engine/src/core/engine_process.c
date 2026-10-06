@@ -1577,6 +1577,8 @@ static void le_dub_session_start(le_engine* e, le_track* t) {
    * no overdub write ever happens under the old revision. A re-punch during
    * the fade tail / drain (the in-flight early-return below) bumps too:
    * writes resume, so the content epoch moves again. */
+  const uint32_t pre_key =
+      atomic_load_explicit(&t->a_src_key, memory_order_relaxed);
   le_audio_rev_bump(t);
   if (load_i32(&t->a_layer_in_flight)) {
     /* A re-punch while the previous layer is still in flight. Two cases:
@@ -1600,6 +1602,7 @@ static void le_dub_session_start(le_engine* e, le_track* t) {
     }
     return;
   }
+  t->pass_key = pre_key; /* the first pass backs up this content */
   t->dub_len = len;
   t->dub_offset = load_i32(&e->a_record_offset);
   t->dub_phase = 0;
@@ -1609,6 +1612,17 @@ static void le_dub_session_start(le_engine* e, le_track* t) {
   }
   t->dub_count = -1;
   atomic_store_explicit(&t->a_layer_in_flight, 1, memory_order_release);
+}
+
+/* Files the retiring shadow's content key (#1179, a_src_key): the first
+ * pass of a session holds the pre-session content, whose key is known; a
+ * later pass holds content that never sounded settled, so its slot is
+ * given none and comes back live under a fresh key. */
+static void le_file_pass_key(le_track* t) {
+  const int32_t s = t->dub_retire_slot;
+  if (s < 0 || s >= LE_POOL_SLOTS) return;
+  atomic_store_explicit(&t->a_slot_key[s], t->pass_key, memory_order_relaxed);
+  t->pass_key = 0;
 }
 
 /* Tries to push a parked retired layer into the evt_ring (audio thread).
@@ -1672,6 +1686,7 @@ static void le_dub_boundary(le_engine* e, le_track* t, uint64_t frame) {
     if (t->dub_retire_slot >= 0) return; /* frozen: retire is stuck */
     t->dub_retire_slot = t->dub_slot;
     t->dub_slot = -1;
+    le_file_pass_key(t);
     le_audio_rev_bump(t); /* [R1] a completed overdub pass retired */
     le_dub_try_retire(e, t, frame);
   }
@@ -1796,6 +1811,7 @@ static void le_dub_block_update(le_engine* e, uint64_t frame) {
         t->dub_retire_slot < 0) {
       t->dub_retire_slot = t->dub_slot;
       t->dub_slot = -1;
+      le_file_pass_key(t);
       le_audio_rev_bump(t); /* [R1] the punch-out pass retired (post-drain) */
       le_dub_try_retire(e, t, frame);
     }
@@ -5334,11 +5350,18 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
     int engaged = want != 0 && lane_n[t] > 0;
     if (engaged) {
       const uint32_t rev =
-          atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
+          atomic_load_explicit(&tr->a_src_key, memory_order_acquire);
       const int32_t len = load_i32(&tr->lanes[0].a_len);
       for (int l = 0; l < lane_n[t] && engaged; ++l) {
-        pick[l] = atomic_load_explicit(&tr->lanes[l].a_src, memory_order_acquire);
-        engaged = pick[l] != NULL && le_src_entry_key_matches(pick[l], rev, len, want);
+        pick[l] = NULL;
+        for (int i = 0; i < LE_SRC_CANDIDATES && pick[l] == NULL; ++i) {
+          const le_wet_entry* c = atomic_load_explicit(&tr->lanes[l].a_src[i],
+                                                       memory_order_acquire);
+          if (c != NULL && le_src_entry_key_matches(c, rev, len, want)) {
+            pick[l] = c;
+          }
+        }
+        engaged = pick[l] != NULL;
       }
     }
     int changed = 0;

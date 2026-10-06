@@ -183,8 +183,22 @@ static inline int le_effective_speed_one(le_engine* e) {
  * clear-restore, layered session finalize) MUST go through this helper, so
  * the [R1] bump can never be forgotten when the next history feature copies
  * the swap. Control thread only (a_live's sole writer). */
-static inline void le_track_publish_live(le_track* t, int32_t slot) {
+static inline void le_track_publish_live(le_track* t, int32_t slot,
+                                         int reuse_key) {
   const int32_t lanes = le_lanes_active(t);
+  /* The outgoing content keeps its key on its slot (#1179, a_src_key). */
+  const int32_t old = atomic_load_explicit(&t->lanes[0].a_live,
+                                           memory_order_relaxed);
+  if (old >= 0 && old < LE_POOL_SLOTS && old != slot) {
+    atomic_store_explicit(
+        &t->a_slot_key[old],
+        atomic_load_explicit(&t->a_src_key, memory_order_acquire),
+        memory_order_relaxed);
+  }
+  const uint32_t key =
+      reuse_key && slot >= 0 && slot < LE_POOL_SLOTS && old != slot
+          ? atomic_load_explicit(&t->a_slot_key[slot], memory_order_relaxed)
+          : 0u;
   /* Lane 0 is published LAST, with release: a callback that observes the new
    * slot there (the acquire load of lane 0's a_live in mix_tracks_frame, the
    * capture's application boundary, #1143) also observes the perf.slot_image
@@ -197,6 +211,7 @@ static inline void le_track_publish_live(le_track* t, int32_t slot) {
     atomic_store_explicit(&t->lanes[l].a_live, slot, memory_order_release);
   }
   le_audio_rev_bump(t); /* [R1] a_live now names other audio */
+  if (key != 0u) atomic_store_explicit(&t->a_src_key, key, memory_order_release);
 }
 
 /* Publishes [slot] live with its staged image identity (#1143): `id` is the
@@ -207,10 +222,10 @@ static inline void le_track_publish_live(le_track* t, int32_t slot) {
  * Every control-side a_live publisher goes through here, so a stale entry
  * can never be read for a slot that was published without one. */
 static inline void le_publish_live_image(le_engine* e, le_track* t, int32_t slot,
-                                         uint32_t id) {
+                                         uint32_t id, int reuse_key) {
   atomic_store_explicit(&e->perf.slot_image[t - e->tracks][slot], id,
                         memory_order_relaxed);
-  le_track_publish_live(t, slot);
+  le_track_publish_live(t, slot, reuse_key);
 }
 
 /* Drops every staged image identity of [channel] (#1143). Called by every

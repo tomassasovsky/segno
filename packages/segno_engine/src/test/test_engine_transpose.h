@@ -351,6 +351,247 @@ static void test_transpose_turn_pins_old_render(void) {
   le_engine_destroy(e);
 }
 
+/* The master position (the clock is one lap of the take, rate 1). */
+static int tp_pos(le_engine* e) {
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  return s.master_position_frames;
+}
+
+/* Processes until track ch sounds `want` and its swap window is over, then
+ * captures one lap of output into lap (lap[k] at take index (*at + k)). */
+static void tp_lap(le_engine* e, float* lap, int* at) {
+  static float scratch[TP_LEN];
+  rev_process(e, scratch, 1024, 64); /* past any turn window */
+  *at = tp_pos(e);
+  rev_process(e, lap, TP_LEN, 64);
+}
+
+/* M1: Undo and Redo are cache-hot. A take transposed +5 is rendered; with
+ * Transpose bypassed it takes an overdub, and the new take is rendered too;
+ * Undo then sounds the first render again from the very next block (no
+ * dry block, no re-render), sample for sample what it sounded before, and
+ * Redo sounds the second the same way. */
+static void test_transpose_undo_redo_cache_hot(void) {
+  printf("test_transpose_undo_redo_cache_hot\n");
+  static float out[8 * TP_LEN], first[TP_LEN], second[TP_LEN], lap[TP_LEN];
+  int first_at, second_at, at;
+  le_engine* e = tp_engine(1);
+  uint64_t id = tp_install(e, 0, 5);
+  CHECK(tp_until(e, 0, 5, out, 4 * TP_LEN) >= 0);
+  fade_result(e, id, LE_OK);
+  tp_lap(e, first, &first_at);
+  CHECK(le_engine_set_transpose_bypass(e, 1, &id) == LE_OK);
+  rev_process(e, out, 64, 64);
+  fade_result(e, id, LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* bypassed: punch-in allowed */
+  for (int k = 0; k < 64; ++k) process_const(e, 0.1f, 64, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  settle_layers(e);
+  CHECK(le_engine_set_transpose_bypass(e, 0, &id) == LE_OK);
+  CHECK(tp_until(e, 0, 5, out, 4 * TP_LEN) >= 0);
+  fade_result(e, id, LE_OK);
+  tp_lap(e, second, &second_at);
+  le_lane_cache_info info;
+  le_engine_get_transpose_cache(e, 0, &info);
+  CHECK(info.renders == 2);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  int dry = 0;
+  for (int k = 0; k < 32; ++k) { /* two laps, block by block */
+    rev_process(e, out, 64, 64);
+    dry += tp_effective(e, 0) != 5;
+  }
+  CHECK(dry == 0);
+  tp_lap(e, lap, &at);
+  int bad = 0;
+  for (int k = 0; k < TP_LEN; ++k) {
+    bad += lap[k] != first[((at - first_at + k) % TP_LEN + TP_LEN) % TP_LEN];
+  }
+  CHECK(bad == 0);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  dry = 0;
+  for (int k = 0; k < 32; ++k) {
+    rev_process(e, out, 64, 64);
+    dry += tp_effective(e, 0) != 5;
+  }
+  CHECK(dry == 0);
+  tp_lap(e, lap, &at);
+  bad = 0;
+  for (int k = 0; k < TP_LEN; ++k) {
+    bad += lap[k] != second[((at - second_at + k) % TP_LEN + TP_LEN) % TP_LEN];
+  }
+  CHECK(bad == 0);
+  for (int k = 0; k < 40; ++k) { /* the worker has time: nothing re-renders */
+    le_engine_get_transpose_cache(e, 0, &info);
+    test_sleep_ms(1);
+  }
+  CHECK(info.renders == 2);
+  le_engine_destroy(e);
+}
+
+/* M2 (review probe P-T3): the render a lane selects is retracted while
+ * engaged (the cap drops to 0, no bypass first). Only the selection pin
+ * keeps it alive until the next verdict lets go; under ASAN an early free
+ * is a use-after-free. The track then plays dry, reported, and the bytes
+ * are released. */
+static void test_transpose_selected_render_pinned(void) {
+  printf("test_transpose_selected_render_pinned\n");
+  static float out[8 * TP_LEN];
+  le_engine* e = tp_engine(1);
+  uint64_t id = tp_install(e, 0, 7);
+  CHECK(tp_until(e, 0, 7, out, 4 * TP_LEN) >= 0);
+  fade_result(e, id, LE_OK);
+  rev_process(e, out, 1024, 64);
+  CHECK(le_engine_set_fx_cache_cap(e, 0) == LE_OK);
+  le_lane_cache_info info;
+  le_engine_get_transpose_cache(e, 0, &info); /* sweeps the graveyard */
+  for (int k = 0; k < 24; ++k) {
+    rev_process(e, out + 64 * k, 64, 64);
+    le_engine_get_transpose_cache(e, 0, &info);
+  }
+  for (int k = 0; k < 64 * 24; ++k) CHECK(isfinite(out[k]));
+  CHECK(tp_effective(e, 0) == 0);
+  CHECK(le_engine_fx_cache_used_bytes(e) == 0);
+  le_engine_destroy(e);
+}
+
+/* M2 (P-T7): a capture armed while the track already sounds transposed
+ * renders the transposed stem: PERF_ARM logs the 328 the renderer anchors
+ * on. Without it the stem plays the dry take without failing. */
+static void test_transpose_arm_while_transposed(void) {
+  printf("test_transpose_arm_while_transposed\n");
+  static float live[4 * TP_LEN], replay[4 * TP_LEN], scratch[8 * TP_LEN];
+  le_engine* e = tp_engine(1);
+  uint64_t id = tp_install(e, 0, 5);
+  CHECK(tp_until(e, 0, 5, scratch, 4 * TP_LEN) >= 0);
+  fade_result(e, id, LE_OK);
+  rev_process(e, scratch, 1000, 64);
+  const char* dir = render_test_dir("transpose-arm");
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+  const int total = 2 * TP_LEN;
+  rev_process(e, live, total, 64);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  static float pcm[TP_LEN];
+  CHECK(le_engine_export_track(e, 0, pcm, TP_LEN) == TP_LEN);
+  char path[700];
+  snprintf(path, sizeof(path), "%s/track.wav", dir);
+  test_write_wav_mono(path, pcm, TP_LEN, TP_SR);
+  fade_finalize_manifest(dir,
+    "{\"followOutput\":false,\"captureMask\":1,\"tracks\":[{\"channel\":0,\"volume\":1,"
+    "\"lanes\":[{\"lane\":0,\"deferred\":false,\"pcmRef\":\"track.wav\"}]}]}");
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 20000);
+  const int frames = test_read_wet_stem(dir, 0, replay, 4 * TP_LEN);
+  CHECK(frames == total);
+  int bad = 0;
+  for (int i = 0; i < frames; ++i) bad += fabsf(replay[i] - live[i]) >= 2e-3f;
+  CHECK(bad == 0);
+  le_engine_destroy(e);
+}
+
+/* M2 (P-T9): a track never plays two pitches. Two lanes, 220 Hz and
+ * 330 Hz, at +12 st both move up an octave: 660 Hz dominates 330 Hz. */
+static void test_transpose_two_lanes_move_together(void) {
+  printf("test_transpose_two_lanes_move_together\n");
+  static float lane1[TP_LEN], out[8 * TP_LEN];
+  for (int i = 0; i < TP_LEN; ++i) {
+    tp_take[i] = 0.5f * (float)sin(2.0 * M_PI * 220.0 * i / TP_SR);
+    lane1[i] = 0.5f * (float)sin(2.0 * M_PI * 330.0 * i / TP_SR);
+  }
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, TP_SR, 1, 1, 30000) == LE_OK);
+  CHECK(le_engine_import_track(e, 0, tp_take, TP_LEN) == LE_OK);
+  CHECK(le_engine_import_track_lane(e, 0, 1, lane1, TP_LEN) == LE_OK);
+  CHECK(le_engine_commit_session(e, TP_LEN, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  uint64_t id = tp_install(e, 0, 12);
+  CHECK(tp_until(e, 0, 12, out, 4 * TP_LEN) >= 0);
+  fade_result(e, id, LE_OK);
+  rev_process(e, out, 2 * TP_LEN, 64);
+  const double p330 = tp_power(out, TP_LEN / 2, 2 * TP_LEN, 330.0);
+  const double p660 = tp_power(out, TP_LEN / 2, 2 * TP_LEN, 660.0);
+  const double p440 = tp_power(out, TP_LEN / 2, 2 * TP_LEN, 440.0);
+  CHECK(p660 > 100.0 * p330); /* lane 1 moved */
+  CHECK(p440 > 100.0 * tp_power(out, TP_LEN / 2, 2 * TP_LEN, 220.0));
+  le_engine_destroy(e);
+}
+
+/* M2 (P-T10): a Pre print never engages while the track sounds transposed
+ * (decision 7): the print plays the dry pitch through the chain. */
+static void test_transpose_no_print_while_transposed(void) {
+  printf("test_transpose_no_print_while_transposed\n");
+  static float out[8 * TP_LEN];
+  le_engine* e = tp_engine(1);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  le_lane_cache_info print;
+  int engaged = 0;
+  for (int k = 0; k < 400 && !engaged; ++k) {
+    le_engine_get_lane_cache(e, 0, 0, &print);
+    engaged = print.engaged;
+    test_sleep_ms(1);
+    rev_process(e, out, 512, 64);
+  }
+  CHECK(engaged);
+  uint64_t id = tp_install(e, 0, 5);
+  CHECK(tp_until(e, 0, 5, out, 4 * TP_LEN) >= 0);
+  fade_result(e, id, LE_OK);
+  int ever = 0;
+  for (int k = 0; k < 4 * TP_LEN / 512; ++k) {
+    le_engine_get_lane_cache(e, 0, 0, &print);
+    ever |= print.engaged;
+    test_sleep_ms(1);
+    rev_process(e, out, 512, 64);
+  }
+  CHECK(!ever && tp_effective(e, 0) == 5);
+  le_engine_destroy(e);
+}
+
+/* L2: a stopped transposed track keeps its render: another track's job that
+ * needs the room is refused instead, and the stopped track's next Play
+ * sounds the pitch at once. L3: a configure resets pitch and bypass with
+ * the material. */
+static void test_transpose_stopped_render_kept_and_configure(void) {
+  printf("test_transpose_stopped_render_kept_and_configure\n");
+  static float out[8 * TP_LEN];
+  le_engine* e = tp_engine(2);
+  uint64_t id = tp_install(e, 0, 5);
+  CHECK(tp_until(e, 0, 5, out, 4 * TP_LEN) >= 0);
+  fade_result(e, id, LE_OK);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  rev_process(e, out, 64, 64);
+  /* room for a job (its dry copy and render) only if the stopped track's
+   * render goes: the job must be refused instead */
+  CHECK(le_engine_set_fx_cache_cap(e, (int64_t)TP_LEN * 8 + 1024) == LE_OK);
+  uint64_t other = 0;
+  CHECK(le_engine_install_transpose(e, 1, 3, &other) == LE_OK);
+  le_lane_cache_info info;
+  for (int k = 0; k < 200; ++k) {
+    le_engine_get_transpose_cache(e, 1, &info);
+    test_sleep_ms(1);
+    rev_process(e, out, 64, 64);
+  }
+  fade_result(e, other, LE_OK);
+  le_engine_get_transpose_cache(e, 1, &info);
+  CHECK(info.state == LE_CACHE_GAVE_UP && info.reason == LE_CACHE_REASON_BUDGET);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  rev_process(e, out, 64, 64);
+  CHECK(tp_effective(e, 0) == 5);
+  CHECK(le_engine_set_transpose_bypass(e, 1, &id) == LE_OK);
+  rev_process(e, out, 64, 64);
+  fade_result(e, id, LE_OK);
+  CHECK(le_engine_configure(e, TP_SR, 1, 1, 30000) == LE_OK);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.transpose_bypass == 0);
+  CHECK(s.tracks[0].transpose_st == 0 && s.tracks[0].transpose_effective_st == 0);
+  CHECK(s.tracks[1].transpose_st == 0);
+  le_engine_destroy(e);
+}
+
 static void run_transpose_tests(void) {
   test_transpose_render_pitch_loop_identity();
   test_transpose_dry_until_ready_then_swap();
@@ -358,4 +599,10 @@ static void run_transpose_tests(void) {
   test_transpose_eviction_and_budget();
   test_transpose_bypass_guards_and_resets();
   test_transpose_turn_pins_old_render();
+  test_transpose_undo_redo_cache_hot();
+  test_transpose_selected_render_pinned();
+  test_transpose_arm_while_transposed();
+  test_transpose_two_lanes_move_together();
+  test_transpose_no_print_while_transposed();
+  test_transpose_stopped_render_kept_and_configure();
 }

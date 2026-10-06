@@ -121,6 +121,8 @@ static void le_ca_sleep_ms(int ms) {
  * other half), so an off/on stomp is cache-hot in both directions. The pair
  * counts twice against the cap. */
 #define LE_CACHE_ENTRIES_PER_LANE 2
+_Static_assert(LE_CACHE_ENTRIES_PER_LANE == LE_SRC_CANDIDATES,
+               "every retained source render is published to the callback");
 
 /* Worker abort-check cadence [B5]: revision/shutdown checked once per this
  * many rendered frames — cheap per block, never per sample. */
@@ -130,14 +132,19 @@ static void le_ca_sleep_ms(int ms) {
  * to change twice) prove the audio thread no longer holds a retracted entry
  * pointer — the engine_plugin.c clear-slot number, observed passively here.
  * The graveyard is sized so it can hold EVERY possible entry at once — the
- * retained pairs of every lane AND of every track's whole-track print, plus
- * install-replacement churn — so pushing can never overflow by construction.
- * The track term is what a second entry class costs here; leaving it out
- * would turn an overflow into a permanent leak. */
+ * retained pairs of every lane (prints and source renders) AND of every
+ * track's whole-track print, plus install-replacement churn — so pushing can
+ * never overflow by construction. The track term is what a second entry
+ * class costs here; leaving it out would turn an overflow into a permanent
+ * leak. The last term is Transpose's pins (#1179): a retracted source
+ * render a lane still selects (a_src_pin) or a turn window still reads
+ * (a_turn_src) waits here until the callback lets go, which with the device
+ * stopped is the next callback, while its book slot is already refilled. */
 #define LE_CACHE_QUIESCE_BOUNDARIES 2
 #define LE_CACHE_GRAVEYARD                                             \
   (2 * LE_MAX_TRACKS * LE_MAX_LANES * LE_CACHE_ENTRIES_PER_LANE +       \
-   LE_MAX_TRACKS * LE_CACHE_ENTRIES_PER_LANE + LE_CACHE_JOB_SLOTS)
+   LE_MAX_TRACKS * LE_CACHE_ENTRIES_PER_LANE + LE_CACHE_JOB_SLOTS +     \
+   2 * LE_MAX_TRACKS * LE_MAX_LANES)
 
 
 /* Consecutive render failures (allocation, prepare OOM) before a lane stops
@@ -186,7 +193,8 @@ typedef struct le_cache_job {
   int32_t kind;
   int32_t channel;
   int32_t lane;
-  uint32_t audio_rev;
+  uint32_t audio_rev; /* LE_CACHE_KIND_SOURCE: the content key (a_src_key) */
+  uint32_t copy_rev;  /* LE_CACHE_KIND_SOURCE: a_audio_rev under the copy */
   uint64_t chain_fp;
   uint32_t vol_bits;
   float vol;
@@ -403,8 +411,8 @@ static le_lane_cache* le_ca_book(struct le_fx_cache* c, int32_t kind, int t,
 }
 
 static le_wet_entry* _Atomic* le_ca_published(le_engine* e, int32_t kind, int t,
-                                              int l) {
-  if (kind == LE_CACHE_KIND_SOURCE) return &e->tracks[t].lanes[l].a_src;
+                                              int l, int i) {
+  if (kind == LE_CACHE_KIND_SOURCE) return &e->tracks[t].lanes[l].a_src[i];
   return kind == LE_CACHE_KIND_TRACK ? &e->tracks[t].a_track_wet
                                      : &e->tracks[t].lanes[l].a_wet;
 }
@@ -418,13 +426,14 @@ static _Atomic int32_t* le_ca_active(le_engine* e, int32_t kind, int t, int l) {
  * thread, removes its bytes from the cap accounting, and parks it in the
  * graveyard for the passive quiescent free above. Non-blocking by design
  * [R2](c) — this runs on the UI-poll drain path. The graveyard is sized to
- * hold every possible entry of BOTH classes, so the push cannot fail. */
+ * hold every possible entry of every class plus the pinned stragglers
+ * (LE_CACHE_GRAVEYARD), so the push cannot fail. */
 static void le_cache_drop_entry(le_engine* e, struct le_fx_cache* c,
                                 int32_t kind, int t, int l, int i) {
   le_lane_cache* book = le_ca_book(c, kind, t, l);
   le_wet_entry* ent = book->entries[i];
   if (ent == NULL) return;
-  le_wet_entry* _Atomic* pub = le_ca_published(e, kind, t, l);
+  le_wet_entry* _Atomic* pub = le_ca_published(e, kind, t, l, i);
   if (atomic_load_explicit(pub, memory_order_relaxed) == ent) {
     atomic_store_explicit(pub, NULL, memory_order_release);
   }
@@ -465,16 +474,18 @@ static void le_cache_free_all_entries(le_engine* e, struct le_fx_cache* c) {
 }
 
 /* Whether an entry may be evicted (E7): a source render that is the one a
- * PLAYING, transposed track's current key names never is — evicting it
- * would drop the track to its dry take, a silent pitch change. */
+ * transposed track with material names for its current content never is —
+ * evicting it would drop the track to its dry take, a silent pitch change,
+ * now (PLAYING) or at its next Play (STOPPED, review L2). A job that needs
+ * its room is refused instead. */
 static int le_ca_evictable(le_engine* e, int32_t kind, int t,
                            const le_wet_entry* ent) {
   if (kind != LE_CACHE_KIND_SOURCE) return 1;
   le_track* tr = &e->tracks[t];
-  return load_i32(&tr->a_state) != LE_TRACK_PLAYING ||
+  return load_i32(&tr->a_state) == LE_TRACK_EMPTY ||
          load_i32(&e->a_transpose_bypass) ||
          !le_src_entry_key_matches(
-             ent, atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire),
+             ent, atomic_load_explicit(&tr->a_src_key, memory_order_acquire),
              load_i32(&tr->lanes[0].a_len), load_i32(&tr->a_transpose_st));
 }
 
@@ -551,7 +562,6 @@ static void le_cache_install_entry(le_engine* e, struct le_fx_cache* c,
                                    int32_t kind, int t, int l,
                                    const le_wet_entry* key, float** pcm) {
   le_lane_cache* lc = le_ca_book(c, kind, t, l);
-  le_wet_entry* _Atomic* pub = le_ca_published(e, kind, t, l);
 
   int slot = -1;
   for (int i = 0; i < LE_CACHE_ENTRIES_PER_LANE; ++i) {
@@ -592,7 +602,8 @@ static void le_cache_install_entry(le_engine* e, struct le_fx_cache* c,
   *pcm = NULL; /* ownership moved */
   lc->entries[slot] = ent;
   c->used_bytes += le_ca_entry_bytes(ent);
-  atomic_store_explicit(pub, ent, memory_order_release);
+  atomic_store_explicit(le_ca_published(e, kind, t, l, slot), ent,
+                        memory_order_release);
 }
 
 static void le_cache_install(le_engine* e, struct le_fx_cache* c,
@@ -610,7 +621,7 @@ static void le_cache_install(le_engine* e, struct le_fx_cache* c,
  * stored pitch, and whether it is bypassed. */
 static int le_ca_source_current(le_engine* e, const le_cache_job* job) {
   le_track* tr = &e->tracks[job->channel];
-  return atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire) ==
+  return atomic_load_explicit(&tr->a_src_key, memory_order_acquire) ==
              job->audio_rev &&
          load_i32(&tr->lanes[0].a_len) == job->len &&
          load_i32(&tr->a_transpose_st) == job->semitones &&
@@ -723,7 +734,13 @@ static int le_cache_source_readable(le_engine* e, int32_t channel) {
 }
 
 static int le_cache_copy_key_matches(le_engine* e, const le_cache_job* job) {
-  if (job->kind == LE_CACHE_KIND_SOURCE) return le_ca_source_current(e, job);
+  /* A source copy is also torn by any write under it, which bumps the
+   * revision even where the key would come back (seqlock, [B5]). */
+  if (job->kind == LE_CACHE_KIND_SOURCE) {
+    return le_ca_source_current(e, job) &&
+           atomic_load_explicit(&e->tracks[job->channel].a_audio_rev,
+                                memory_order_acquire) == job->copy_rev;
+  }
   le_track* tr = &e->tracks[job->channel];
   le_lane* ln = &tr->lanes[job->lane < 0 ? 0 : job->lane];
   const uint64_t fp = job->kind == LE_CACHE_KIND_TRACK
@@ -1210,6 +1227,8 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
     return;
   }
   const uint32_t rev =
+      atomic_load_explicit(&tr->a_src_key, memory_order_acquire);
+  const uint32_t copy_rev =
       atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
   const uint64_t now = atomic_load_explicit(&e->a_frames, memory_order_relaxed);
   const uint64_t key_hash =
@@ -1232,13 +1251,8 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
     all = hit[l] != NULL;
   }
   if (all) {
-    for (int l = 0; l < lanes; ++l) {
-      hit[l]->last_used = c->lru_clock;
-      if (atomic_load_explicit(&tr->lanes[l].a_src, memory_order_relaxed) !=
-          hit[l]) {
-        atomic_store_explicit(&tr->lanes[l].a_src, hit[l], memory_order_release);
-      }
-    }
+    /* Every retained render is already published; the callback picks it. */
+    for (int l = 0; l < lanes; ++l) hit[l]->last_used = c->lru_clock;
     lc->state = LE_CACHE_CACHED;
     return;
   }
@@ -1283,6 +1297,7 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
   job->lanes = lanes;
   job->semitones = st;
   job->audio_rev = rev;
+  job->copy_rev = copy_rev;
   job->chain_fp = 0;
   job->vol_bits = 0;
   job->len = len;
@@ -1669,7 +1684,10 @@ void le_cache_shutdown(le_engine* engine) {
      * until its render lands again. */
     le_track* tr = &engine->tracks[t];
     for (int l = 0; l < LE_MAX_LANES; ++l) {
-      atomic_store_explicit(&tr->lanes[l].a_src, NULL, memory_order_release);
+      for (int i = 0; i < LE_SRC_CANDIDATES; ++i) {
+        atomic_store_explicit(&tr->lanes[l].a_src[i], NULL,
+                              memory_order_release);
+      }
       atomic_store_explicit(&tr->a_turn_src[l], NULL, memory_order_release);
       atomic_store_explicit(&tr->a_src_pin[l], NULL, memory_order_release);
       tr->src_ent[l] = NULL;
@@ -1816,7 +1834,7 @@ int32_t le_engine_get_transpose_cache(le_engine* engine, int32_t channel,
   out->audio_rev = atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
   out->engaged = load_i32(&tr->a_transpose_eff) != 0;
   le_wet_entry* w =
-      atomic_load_explicit(&tr->lanes[0].a_src, memory_order_relaxed);
+      atomic_load_explicit(&tr->a_src_pin[0], memory_order_acquire);
   out->entry_frames = w != NULL ? w->out_len : 0;
   if (engine->cache != NULL) {
     const le_lane_cache* lc = &engine->cache->src_tracks[channel];
