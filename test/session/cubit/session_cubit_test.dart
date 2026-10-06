@@ -6,6 +6,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
@@ -291,6 +292,7 @@ void main() {
   });
 
   SessionCubit build() => SessionCubit(
+    guards: GuardRegistry(),
     captureSettings: captureSettings,
     fxPersistence: fxPersistence,
     settings: settings,
@@ -620,6 +622,7 @@ void main() {
                 tracks: [
                   SessionTrack(
                     fadeAmount: 1,
+                    reversed: false,
                     channel: 0,
                     multiple: 1,
                     lengthFrames: 128,
@@ -754,6 +757,103 @@ void main() {
         expect(fxPersistence.sessionTransitionActive, isFalse);
       },
     );
+
+    test('an open is refused at its commit while an audio change is in '
+        'flight, before anything changes (#1198)', () async {
+      stubCatalog();
+      when(
+        () => repository.bundlePathOf(any()),
+      ).thenAnswer((_) async => '/root/A');
+      when(
+        () => repository.open(any(), liveSettings: any(named: 'liveSettings')),
+      ).thenAnswer(
+        (_) async => (
+          bundle: (
+            session: _session,
+            laneStems: <(int, int), List<Float32List>>{},
+          ),
+          conversion: null,
+        ),
+      );
+      final guards = GuardRegistry()
+        ..enter(
+          GuardKind.deviceChange,
+          const GuardScope.internal(),
+          purpose: 'audio apply',
+        );
+      final cubit = SessionCubit(
+        captureSettings: captureSettings,
+        fxPersistence: fxPersistence,
+        settings: settings,
+        repository: repository,
+        looper: looper,
+        performance: performance,
+        mixSettings: mixSettings,
+        mixPersistence: mixPersistence,
+        guards: guards,
+      );
+      addTearDown(cubit.close);
+
+      await cubit.open('A');
+      expect(cubit.state.status, SessionStatus.failure);
+      expect(cubit.state.error, SessionError.busy);
+      expect(cubit.state.refusedBy, GuardKind.deviceChange);
+      verifyNever(performance.disarmAndFinalize);
+      verifyNever(() => looper.applySession(any()));
+      expect(fxPersistence.sessionTransitionActive, isFalse);
+      expect(guards.active.single.kind, GuardKind.deviceChange);
+    });
+
+    test('an open holds the apply guard from its commit to its end '
+        '(#1198)', () async {
+      stubCatalog();
+      when(
+        () => repository.bundlePathOf(any()),
+      ).thenAnswer((_) async => '/root/A');
+      when(
+        () => repository.open(any(), liveSettings: any(named: 'liveSettings')),
+      ).thenAnswer(
+        (_) async => (
+          bundle: (
+            session: _session,
+            laneStems: <(int, int), List<Float32List>>{},
+          ),
+          conversion: null,
+        ),
+      );
+      final guards = GuardRegistry();
+      final seenAtFinalize = <GuardKind>[];
+      final seenAtApply = <GuardKind>[];
+      when(performance.disarmAndFinalize).thenAnswer((_) async {
+        seenAtFinalize.addAll(guards.active.map((o) => o.kind));
+        return EngineResult.ok;
+      });
+      when(() => looper.applySession(any())).thenAnswer((_) async {
+        seenAtApply.addAll(guards.active.map((o) => o.kind));
+        // A take cannot start under an apply.
+        expect(
+          guards.blockers(GuardKind.capture, const GuardScope.internal()),
+          isNotEmpty,
+        );
+      });
+      final cubit = SessionCubit(
+        captureSettings: captureSettings,
+        fxPersistence: fxPersistence,
+        settings: settings,
+        repository: repository,
+        looper: looper,
+        performance: performance,
+        mixSettings: mixSettings,
+        mixPersistence: mixPersistence,
+        guards: guards,
+      );
+      addTearDown(cubit.close);
+
+      await cubit.open('A');
+      expect(seenAtFinalize, [GuardKind.sessionApply]);
+      expect(seenAtApply, [GuardKind.sessionApply]);
+      expect(guards.active, isEmpty);
+    });
 
     test('load closes control admission before the catalog read', () async {
       stubCatalog();
@@ -2004,6 +2104,7 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
+          guards: GuardRegistry(),
           captureSettings: captureSettings,
           fxPersistence: fxPersistence,
           settings: settings,
@@ -2058,6 +2159,7 @@ void main() {
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
+          guards: GuardRegistry(),
           captureSettings: captureSettings,
           fxPersistence: fxPersistence,
           settings: settings,
@@ -2096,6 +2198,7 @@ void main() {
       ).thenAnswer((_) async => _session);
 
       final cubit = SessionCubit(
+        guards: GuardRegistry(),
         captureSettings: captureSettings,
         fxPersistence: fxPersistence,
         settings: settings,

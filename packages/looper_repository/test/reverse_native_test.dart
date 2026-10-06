@@ -89,4 +89,110 @@ void main() {
     },
     skip: skip,
   );
+
+  Future<void> reverseTrack0() async {
+    final result = repository.toggleReverse(channel: 0);
+    engine.pump(frames: 1);
+    expect(await result, EngineResult.ok);
+  }
+
+  /// One block, then the repository's own projection of track 0.
+  Track track0() {
+    engine.pump(frames: 1);
+    ticks.add(null);
+    return repository.state.tracks[0];
+  }
+
+  test(
+    'direction dies with the material: undo to empty, redo from empty, '
+    'Clear and its undo all read forward',
+    () async {
+      final subscription = repository.looperState.listen((_) {});
+      addTearDown(subscription.cancel);
+      await Future<void>.delayed(Duration.zero);
+      await reverseTrack0();
+      expect(track0().reversed, isTrue);
+
+      expect(repository.undo(), EngineResult.ok);
+      expect(track0().hasContent, isFalse);
+      expect(track0().reversed, isFalse);
+      expect(repository.redo(), EngineResult.ok);
+      expect(track0().hasContent, isTrue);
+      expect(track0().reversed, isFalse);
+
+      await reverseTrack0();
+      expect(track0().reversed, isTrue);
+      expect(repository.clear(), EngineResult.ok);
+      expect(track0().hasContent, isFalse);
+      expect(track0().reversed, isFalse);
+      for (var i = 0; i < 20 && !track0().hasContent; i++) {
+        repository.undo();
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(track0().hasContent, isTrue);
+      expect(track0().reversed, isFalse);
+    },
+    skip: skip,
+  );
+
+  test(
+    'a Session recall installs direction before the stopped commit: Play '
+    'reads the reversed track from its lap start, the forward one from 0',
+    () async {
+      SessionRigTrack rigTrack(
+        int channel,
+        List<double> pcm, {
+        required bool reversed,
+      }) => SessionRigTrack(
+        fadeAmount: 1,
+        channel: channel,
+        reversed: reversed,
+        lanes: [
+          SessionRigLane(
+            lane: 0,
+            layers: [Float32List.fromList(pcm)],
+            volume: 1,
+            muted: false,
+            outputMask: 1,
+            inputChannel: 0,
+          ),
+        ],
+      );
+      final rig = SessionRig(
+        baseLengthFrames: 128,
+        tracks: [
+          rigTrack(0, [for (var i = 0; i < 128; i++) i / 256], reversed: true),
+          rigTrack(1, [
+            for (var i = 0; i < 128; i++) .25 + i / 1024,
+          ], reversed: false),
+        ],
+      );
+      final callback = Timer.periodic(
+        const Duration(milliseconds: 1),
+        (_) => engine.pump(frames: 0),
+      );
+      try {
+        await repository.applySession(rig);
+      } finally {
+        callback.cancel();
+      }
+      final recalled = engine.snapshot().tracks;
+      expect(recalled[0].state, TrackState.stopped);
+      expect(recalled[1].state, TrackState.stopped);
+      expect(recalled[0].reversed, isTrue);
+      expect(recalled[1].reversed, isFalse);
+      expect(repository.play(), EngineResult.ok);
+      engine.pump(frames: 0);
+      // Reversed track 0 reads 127, 126, ...; forward track 1 reads 0, 1, ...
+      for (var k = 0; k < 3; k++) {
+        engine.pump(frames: 1);
+        expect(
+          engine.snapshot().outputPeaks[0],
+          closeTo((127 - k) / 256 + .25 + k / 1024, 1e-5),
+          reason: 'frame $k',
+        );
+      }
+    },
+    skip: skip,
+  );
 }

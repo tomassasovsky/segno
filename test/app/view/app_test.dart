@@ -13,6 +13,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_client/midi_client.dart' show MidiControllerSource;
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -318,7 +319,8 @@ class _MonitorRestoreStore extends FakeKeyValueStore {
 }
 
 class _NoticeSessionRepository extends SessionRepository {
-  _NoticeSessionRepository() : super(engine: FakeAudioEngine());
+  _NoticeSessionRepository()
+    : super(engine: FakeAudioEngine(), guards: GuardRegistry());
 
   final readEntered = Completer<void>();
   final readRelease = Completer<void>();
@@ -689,8 +691,12 @@ void main() {
       );
       controllerRepository = ControllerRepository(sources: const []);
       settings = SettingsRepository(store: FakeKeyValueStore());
-      sessionRepository = SessionRepository(engine: FakeAudioEngine());
+      sessionRepository = SessionRepository(
+        guards: GuardRegistry(),
+        engine: FakeAudioEngine(),
+      );
       performanceRepository = PerformanceRepository(
+        guards: GuardRegistry(),
         engine: FakeAudioEngine(),
         exportsRoot: () async => '.',
       );
@@ -716,6 +722,7 @@ void main() {
       await tester.pumpWidget(
         App(
           consoleFacts: consoleFacts,
+          guards: GuardRegistry(),
           mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
@@ -738,6 +745,7 @@ void main() {
     ) async {
       await tester.pumpWidget(
         App(
+          guards: GuardRegistry(),
           mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
@@ -814,6 +822,7 @@ void main() {
         final controllers = ControllerRepository(sources: const []);
         final midi = MidiDeviceRepository(source: null, settings: settings);
         final performance = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '.',
         );
@@ -823,13 +832,17 @@ void main() {
         addTearDown(performance.dispose);
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllers,
             midiDeviceRepository: midi,
             settings: settings,
             waveformWindow: NoopWaveformWindowService(),
-            sessionRepository: SessionRepository(engine: engine),
+            sessionRepository: SessionRepository(
+              guards: GuardRegistry(),
+              engine: engine,
+            ),
             performanceRepository: performance,
           ),
         );
@@ -3487,6 +3500,7 @@ void main() {
       tester,
     ) async {
       App buildApp() => App(
+        guards: GuardRegistry(),
         mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         controllerRepository: controllerRepository,
@@ -3521,6 +3535,7 @@ void main() {
         );
         addTearDown(() => sessionsRoot.delete(recursive: true));
         sessionRepository = SessionRepository(
+          guards: GuardRegistry(),
           engine: FakeAudioEngine(),
           sessionsRoot: () async => sessionsRoot.path,
         );
@@ -3529,6 +3544,7 @@ void main() {
         link.hello();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
@@ -3566,6 +3582,7 @@ void main() {
       // directly even with no saved audio config.
       await tester.pumpWidget(
         App(
+          guards: GuardRegistry(),
           mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
@@ -3809,6 +3826,7 @@ void main() {
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(pinned),
             repository: pinned,
             controllerRepository: controllerRepository,
@@ -3901,6 +3919,7 @@ void main() {
 
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(pinned),
             repository: pinned,
             controllerRepository: controllerRepository,
@@ -4023,6 +4042,7 @@ void main() {
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
@@ -4162,6 +4182,7 @@ void main() {
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
@@ -4398,6 +4419,7 @@ void main() {
         final window = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(driven),
             repository: driven,
             controllerRepository: controllerRepository,
@@ -4877,6 +4899,7 @@ void main() {
         // arrival). pump (not pumpAndSettle) — the cubit holds a periodic poll.
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
             mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
@@ -4910,6 +4933,7 @@ void main() {
       // stands. Its action is the way to the interface chooser.
       await tester.pumpWidget(
         App(
+          guards: GuardRegistry(),
           mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
