@@ -4,7 +4,8 @@
  * `fmt ` with tag 3 (IEEE float), 32 bits and block align 4 x channels, an
  * optional caller chunk (a performance part's `sgno` identity), then `data`.
  * The header is written with zero sizes, samples are appended as they come,
- * and le_wav_seal patches the RIFF and `data` sizes, flushes and fsyncs. A
+ * and le_wav_seal patches the RIFF and `data` sizes, flushes, truncates the
+ * file to header plus data, and fsyncs. A
  * file sealed with no extra chunk is byte-identical to wav_codec's
  * encodeFloat32 output (packages/wav_codec/lib/src/wav.dart).
  *
@@ -49,7 +50,9 @@ void le_wav_note_frames(le_wav_writer* w, uint64_t frames);
  * failed, so le_wav_seal reports it too. */
 int le_wav_flush(le_wav_writer* w);
 
-/* Patches the RIFF and data sizes, flushes, optionally fsyncs, and closes.
+/* Patches the RIFF and data sizes, flushes, truncates the file to its header
+ * plus data (a torn frame a short write left past the credited frames goes),
+ * optionally fsyncs, and closes.
  * Returns 1 when the whole file (header, samples, sizes) is on disk. A data
  * size beyond 32 bits fails rather than writing a wrapped size. */
 int le_wav_seal(le_wav_writer* w, int sync);
@@ -64,14 +67,8 @@ void le_wav_abandon(le_wav_writer* w);
  * a power cut), 0 when the rename failed (nothing was published). */
 int le_wav_publish(const char* part_path, const char* final_path);
 
-/* Repairs a file this writer opened but never sealed (a power cut or a
- * crash), or cuts one back to a trusted length: keeps the first
- * min(whole frames present, `max_frames`) frames, truncates anything after
- * them (a torn last frame included), patches the RIFF and data sizes and
- * fsyncs. Pass UINT64_MAX to keep every whole frame. `*kept` (may be NULL)
- * receives the frames kept. Returns 1 on success, 0 when the file is not a
- * 32-bit float WAV in this layout or a read or write fails. */
-int le_wav_patch_sizes(const char* path, uint64_t max_frames, uint64_t* kept);
+/* le_wav_patch_sizes, the repair of a part that was never sealed, is
+ * exported: see segno_engine_api.h. */
 
 /* One-shot helper: writes a whole interleaved buffer as a sealed file. */
 int le_wav_write_file(const char* path, const float* samples, uint64_t frames,

@@ -3097,6 +3097,20 @@ LE_EXPORT int32_t le_digest_end(void* state, uint8_t* out);
  * fails. */
 LE_EXPORT int32_t le_fs_sync_dir(const char* path);
 
+/* Repairs a float WAV part the engine's writer opened but never sealed (a
+ * power cut or a crash), or cuts one back to a trusted length, for the
+ * recording recovery (#1198) and anything else that salvages a part: keeps
+ * the first min(whole frames present, `max_frames`) frames, truncates
+ * anything after them (a torn last frame included), patches the RIFF and data
+ * sizes and fsyncs. UINT64_MAX keeps every whole frame. `*kept` (may be NULL)
+ * receives the frames kept. The file must be 32-bit float in the writer's
+ * layout (RIFF/WAVE, `fmt `, an optional caller chunk such as `sgno`, then
+ * `data`, whose size may still be the open file's zero). Returns 1 on
+ * success, 0 when the file is not in that layout or a read or write fails.
+ * The one size patcher; implemented by the native WAV writer (engine_wav.c). */
+LE_EXPORT int32_t le_wav_patch_sizes(const char* path, uint64_t max_frames,
+                                     uint64_t* kept);
+
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's
  * `performance.json` + `events.log` + `loops/` + retired-layer PCM), on a
@@ -3528,6 +3542,9 @@ typedef struct le_render_plan {
                           * renders dry */
   uint32_t faded_mask;   /* sources whose Fade amount is below unity */
   uint32_t pending_mask; /* sources heard through a not-yet-ready transform */
+  uint32_t once_cut_mask; /* Once sources longer than a chosen length: only
+                           * the part of their single pass inside the window
+                           * sounds, none when it starts after the window */
 } le_render_plan;
 
 /* Admission only: the verdict and the plan, with no job. Returns LE_OK,
@@ -3540,16 +3557,17 @@ LE_EXPORT int32_t le_engine_render_measure(le_engine* engine,
                                            const le_render_request* request,
                                            le_render_plan* plan);
 
-/* Starts the job: re-measures, reserves its bytes against the cache's cap,
- * and posts LE_CMD_RENDER_FREEZE. Returns LE_OK with *job set, any measure
- * refusal, LE_ERR_ALREADY_RUNNING while a job exists, LE_ERR_CAPACITY when
- * the bytes do not fit the cap, LE_ERR_UNSUPPORTED without a render worker,
- * or a ring refusal. */
+/* Starts the job: re-measures and posts LE_CMD_RENDER_FREEZE. Returns LE_OK
+ * with *job set, any measure refusal, LE_ERR_ALREADY_RUNNING while a job
+ * exists, LE_ERR_CAPACITY when the job's bytes exceed the recipe's own
+ * budget (it never evicts the wet cache), LE_ERR_UNSUPPORTED without a
+ * render worker, or a ring refusal. */
 LE_EXPORT int32_t le_engine_render_begin(le_engine* engine,
                                          const le_render_request* request,
                                          uint32_t* job);
 
-/* Progress of job `job`: *state (le_render_state), *permille (0..1000) and,
+/* Progress of job `job`: *state (le_render_state), *permille (0..1000, one
+ * scale over staging, then the render) and,
  * once FAILED, *result (LE_ERR_TRACKS_CHANGED, LE_ERR_CAPACITY,
  * LE_ERR_INVALID on an effect allocation failure, LE_ERR_DEVICE on a write
  * failure or a configure/stop that joined the worker; a file whose

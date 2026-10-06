@@ -32,8 +32,13 @@ typedef struct le_render_job le_render_job;
  * result is about 22 MiB more. Memory is held only while a job runs. */
 #define LE_RENDER_BUDGET_BYTES (256ll * 1024 * 1024)
 
-/* Frames of one source lane the control thread stages per heartbeat. */
+/* Frames of one source lane the control thread stages per copy. */
 #define LE_RENDER_COPY_CHUNK_FRAMES 48000
+
+/* Wall time one staging heartbeat may spend copying, in nanoseconds (2 ms);
+ * a heartbeat copies at least one chunk. A variable so a test can set 0 and
+ * step staging one chunk at a time. */
+extern uint64_t le_render_stage_budget_ns;
 
 /* Control thread: the bytes the current job holds (0 without one). A
  * finished job holds only a memory result. */

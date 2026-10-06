@@ -42,7 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "engine_cache.h"    /* le_fx_frozen_*, le_fx_print, reserve/release */
+#include "engine_cache.h"    /* le_fx_frozen_*, le_fx_print */
 #include "engine_core.h"     /* le_lanes_active, le_effective_state, le_push_cmd */
 #include "engine_direction.h" /* le_direction_index, the live read law */
 #include "engine_fx.h"       /* fx_apply_chain(_with_gain), state teardown */
@@ -104,6 +104,8 @@ struct le_render_job {
   int32_t state; /* le_render_state */
   int32_t result;
   int32_t stage_src, stage_lane, stage_pos;
+  int64_t stage_total; /* lane frames to stage, for progress */
+  int64_t staged;      /* lane frames staged so far */
   /* worker */
   _Atomic int32_t a_work;
   _Atomic int32_t a_result;
@@ -226,6 +228,16 @@ static int32_t le_render_measure_impl(le_engine* e, const le_render_request* q,
   }
   if (frames <= 0 || frames > INT32_MAX / 2) return LE_ERR_CAPACITY;
   plan->frames = (int32_t)frames;
+  /* A Once source longer than a chosen window cannot play its whole pass:
+   * only the part inside the window sounds, and none of it when the pass
+   * starts after the window ends. Where the pass starts is the live phase at
+   * the freeze, so the readout names every such source (review L-D1). */
+  for (int32_t t = 0; t < e->track_count; ++t) {
+    if ((q->source_mask & (1u << t)) && lens[t] > frames &&
+        load_i32(&e->tracks[t].a_one_shot) != 0) {
+      plan->once_cut_mask |= 1u << t;
+    }
+  }
   if (tempo_set) {
     plan->beats_milli =
         (int32_t)llround((double)frames * bpm * 1000.0 / (60.0 * sr));
@@ -515,10 +527,33 @@ static void le_render_after_freeze(le_engine* e, le_render_job* j) {
       }
     }
   }
+  j->stage_total = 0;
+  for (int32_t i = 0; i < j->nsrc; ++i) {
+    j->stage_total += (int64_t)j->src[i].len * j->src[i].lanes;
+  }
   j->state = LE_RENDER_STAGING;
 }
 
+uint64_t le_render_stage_budget_ns = 2000000;
+
+/* Progress, all phases on one scale: staging counts its chunks, the worker
+ * its setup units and window slices (review M1 of Part 2: a long staging
+ * must not read 0%). */
+static int32_t le_render_permille(const le_render_job* j, double done_work) {
+  const double staging = (double)j->stage_total / LE_RENDER_COPY_CHUNK_FRAMES;
+  const double total = staging + (double)j->units +
+                       (double)j->passes * (double)j->frames /
+                           LE_RENDER_SLICE_FRAMES;
+  int32_t pm = total > 0 ? (int32_t)(done_work * 1000.0 / total) : 0;
+  if (pm > 999) pm = 999;
+  if (pm < 0) pm = 0;
+  return pm;
+}
+
 static void le_render_stage(le_engine* e, le_render_job* j) {
+  /* Several chunks per heartbeat within a small time budget, so staging
+   * speed does not hang on the poll interval; always at least one. */
+  const uint64_t until = le_now_ns() + le_render_stage_budget_ns;
   while (j->stage_src < j->nsrc) {
     le_render_src* s = &j->src[j->stage_src];
     le_track* tr = &e->tracks[s->channel];
@@ -555,11 +590,16 @@ static void le_render_stage(le_engine* e, le_render_job* j) {
              (size_t)n * sizeof(float));
     } /* a lane with no buffer plays silence: the calloc'd zeros */
     j->stage_pos += n;
+    j->staged += n;
     if (j->stage_pos >= s->len) {
       j->stage_lane++;
       j->stage_pos = 0;
     }
-    return; /* one bounded chunk per heartbeat */
+    atomic_store_explicit(
+        &j->a_permille,
+        le_render_permille(j, (double)j->staged / LE_RENDER_COPY_CHUNK_FRAMES),
+        memory_order_relaxed);
+    if (le_now_ns() >= until) return; /* the rest at the next heartbeat */
   }
   /* Completion: the content key must still be what was frozen. */
   atomic_thread_fence(memory_order_acquire);
@@ -923,13 +963,11 @@ static void le_render_window(le_render_job* j, int32_t from, int32_t n,
 }
 
 static void le_render_progress(le_render_job* j) {
-  const double total =
-      (double)j->units + (double)j->passes * (double)j->frames / LE_RENDER_SLICE_FRAMES;
-  const double done = (double)j->unit + ((double)j->pass * j->frames + j->pos) /
-                                            LE_RENDER_SLICE_FRAMES;
-  int32_t pm = total > 0 ? (int32_t)(done * 1000.0 / total) : 0;
-  if (pm > 999) pm = 999;
-  atomic_store_explicit(&j->a_permille, pm, memory_order_relaxed);
+  const double done =
+      (double)j->stage_total / LE_RENDER_COPY_CHUNK_FRAMES + (double)j->unit +
+      ((double)j->pass * j->frames + j->pos) / LE_RENDER_SLICE_FRAMES;
+  atomic_store_explicit(&j->a_permille, le_render_permille(j, done),
+                        memory_order_relaxed);
 }
 
 static void le_render_unit(le_render_job* j) {
