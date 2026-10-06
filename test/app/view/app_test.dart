@@ -34,6 +34,7 @@ import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
@@ -3453,18 +3454,16 @@ void main() {
           tester,
           UpdateRepository(backend: backend),
         );
-        // NOT awaited: openSegnoSettings awaits navigator.push, which resolves
-        // only when the route is POPPED. Awaiting it here deadlocks the test on
-        // its own first statement — settings is not closed until the end — and
-        // it does not fail fast: it spins until the harness gives up minutes
-        // later, poisoning the rest of the file.
-        unawaited(openSegnoSettings(section: SettingsSection.updates));
+        // NOT awaited: openUpdateSettings awaits navigator.push, which
+        // resolves only when the route is POPPED. Awaiting it here deadlocks
+        // the test on its own first statement.
+        unawaited(openUpdateSettings());
         await tester.pumpAndSettle();
         backend.complete();
         await tester.pumpAndSettle();
-        expect(find.byType(UpdatesSettingsSection), findsOneWidget);
+        expect(find.byType(UpdatesSettingsPage), findsOneWidget);
         expect(find.byKey(const Key('app_update_banner')), findsNothing);
-        await tester.tap(find.byKey(const Key('settings_close_button')));
+        await tester.tap(find.byKey(const Key('loop_settings_back')));
         await tester.pumpAndSettle();
       },
       // Toast, not a widget. These notifications moved to toastification,
@@ -4843,6 +4842,48 @@ void main() {
       // the persistent-surface work — see #453.
       skip: true,
     );
+
+    testWidgets('the audio-recovery toast opens the Device page', (
+      tester,
+    ) async {
+      // The pinned interface is absent, so recovery waits and the toast
+      // stands. Its action is the way to the interface chooser.
+      await tester.pumpWidget(
+        App(
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
+          settings: settings,
+          waveformWindow: NoopWaveformWindowService(),
+          sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
+          audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
+        ),
+      );
+      // pump, not pumpAndSettle: the recovery cubit holds a periodic poll.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 10));
+      expect(debugAppToastActive(AppToastId.audioRecovery), isTrue);
+      // Let the toast animate in before tapping its action.
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key(AppToastId.audioRecovery)),
+          matching: find.byType(TextButton),
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.byType(DeviceSettingsPage), findsOneWidget);
+
+      // Unmount so the recovery poll stops with the test.
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
 
     testWidgets(
       'macOS PlatformMenuBar survives MaterialApp theme rebuild and '
