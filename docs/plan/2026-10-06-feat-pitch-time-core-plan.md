@@ -1,10 +1,11 @@
 # Pitch and time core: Speed, Transpose, Audio & tempo follow, import Adapt
 
-<!-- cspell:ignore varispeed lerp lbuf wdub Signalsmith signalsmith -->
+<!-- cspell:ignore varispeed lerp lbuf wdub Signalsmith signalsmith numer SCHED untransposed sidelobe retiming Retiming retimes retimed retime regrid halfband Neoverse milli fmod crossfades hujm YMPRG Bmpo -->
 
-Status: plan for owner review (merging this plan approves its direction);
-implementation not started. Part 1 is a measured CPU spike whose numbers gate
-the rest.
+Status: approved with required review edits E1-E15, which are applied in this
+text (the review is kept at the owner's evidence store,
+`claude-published-review/1179-plan-review/review.md`). Part 1 is a measured
+CPU spike whose numbers gate the rest.
 Tracking: #1179 (parent #1026; gap inventory E4-1, serving E6-4 Speed, E6-5
 Transpose, E4-2 Audio & tempo, E7-9 import Adapt), `autonomy:merge-gate`.
 Source baseline: `origin/claude/segno-integration` at `c3714abc2`. Every
@@ -57,8 +58,8 @@ Pen screens the work must match (`segno-ui.pen`, group `01 CURRENT UX`):
 
 | Section | Screen (id) | Serves |
 |---|---|---|
-| 15 Performance · Speed | `01 / Speed / Normal` (SO34L), `02 / Half speed` (Q29ROp), `03 / Eight times` (jY5NQ), `04 / Empty loop` (YMPRG), `05 / Tracks / Speed indicator` (usAz6) | Parts 2, 6a |
-| 11 Performance · Transpose | `01 / Transpose` (k5GTy), `02 / across banks` (yBmpo), `03 / with no selection` (JTxQq), `04 / at pitch limit` (lpGO0), `Transpose bypass · pitches retained / Tile` (FJ8Ys) | Parts 3, 6b |
+| 15 Performance · Speed | `01 / Speed / Normal` (SO34L), `02 / Half speed` (Q29ROp), `03 / Eight times` (jY5NQ), `04 / Empty loop` (YMPRG), `05 / Tracks / Speed indicator` (usAz6) | Parts 2a, 6a |
+| 11 Performance · Transpose | `01 / Transpose` (k5GTy), `02 / across banks` (yBmpo), `03 / with no selection` (JTxQq), `04 / at pitch limit` (lpGO0), `Transpose bypass · pitches retained / Tile` (FJ8Ys) | Parts 3a, 6b |
 | 07 Playback, decay & audio tempo | `04 / Audio tempo defaults` (reN7g), `05 / Pitch follows speed` (MfjIH), `06 / Keep recorded speed` (hujmY); `07 / Audio follows MIDI tempo` (JQpGt) is E8-1's and only consumes this plan's seam | Part 4 |
 | 18 Audio library, backing & import | `12 / Track import / Choose destination` (taRWd), `13 / Ready to load` (c6CBav), `14 / No empty tracks` (akxOj), `15 / USB source` (HaVqw): the "Adapt to loop tempo · 84 BPM · keep original pitch" choice | Part 5 (seam only; the flow is #1178 / E7-9) |
 
@@ -241,34 +242,48 @@ initializers only, no `_Atomic`; the PROGRESS C++ blast-radius rule applies):
 
 ```c
 typedef struct le_read_head {
-  int reversed;   /* direction (Reverse plan) */
-  double origin;  /* source-frame origin; re-set so the index is continuous at a change */
-  double rate;    /* source frames per song frame = speed * (len_src / play_len) */
+  int32_t reversed; /* direction (Reverse plan) */
+  double origin;    /* source-frame origin; re-set so the index is continuous at a change */
+  double rate;      /* source frames per song frame = speed * (len_src / play_len) */
 } le_read_head;
-/* Source index for song position `pos` on a track whose source holds `len_src`
- * frames: forward (origin + rate*pos) mod len_src, reversed (origin - rate*pos) mod len_src. */
+/* Source index for the UNBOUNDED song position `pos` (see 2.3) on a track whose
+ * source holds `len_src` frames: forward (origin + rate*pos) mod len_src,
+ * reversed (origin - rate*pos) mod len_src. No libm: the modulus is an int64
+ * quotient, never fmod/floor. */
 static inline double le_head_index(const le_read_head*, int64_t pos, int32_t len_src);
 /* Re-origins so le_head_index == index at `pos`. */
 static inline double le_head_origin(const le_read_head*, double index, int64_t pos, int32_t len_src);
 /* Linear interpolation with wrap. frac == 0 returns buf[i] exactly. */
 static inline float le_head_sample(const float* buf, int32_t len, double index);
-/* Box average of the source samples a rate >= 2 head steps over (first-order anti-alias). */
+/* Box of floor(rate) source samples from floor(index), wrapped: the
+ * first-order anti-alias for rate >= 2 (first sidelobe -13 dB). */
 static inline float le_head_sample_decimated(const float* buf, int32_t len, double index, double rate);
-/* Equal-gain weight of the new head during a swap/turn of F frames, i frames in. */
-static inline float le_head_turn_mix(int32_t i, int32_t F);
+/* Weight of the new head i frames into a window of F: equal-gain (i/F) for a
+ * rate or direction turn (same material, continuous at the turn), equal-power
+ * (sin(i/F * pi/2), polynomial, no libm) for a swap between source kinds. */
+static inline float le_head_turn_mix(int32_t i, int32_t F, int32_t equal_power);
 /* A lap wrap between two consecutive indices, in the head's direction. */
-static inline int le_head_wrapped(double prev, double next, int reversed, int32_t len);
+static inline int le_head_wrapped(double prev, double next, int32_t reversed, int32_t len);
 ```
 
 `rate == 1` and `origin ∈ ℤ` reproduces today's integer path bit-for-bit
 (`le_head_sample` returns `buf[i]` when the fraction is zero); `rate == 1`,
 `reversed == 1` reproduces the Reverse plan's `le_direction_index`. The Reverse
 plan says Speed's head is where "`le_direction_index` generalises" (its §1.5);
-this header is that generalization. Sequencing: whichever Part 1 lands first
-(Reverse's or this plan's Part 2) introduces the header; the other rebases onto
-it and keeps the first's tests green. Reverse's `turn_left / turn_reversed /
-turn_offset` become a `le_read_head prev_head; int32_t turn_left;` pair that
-also serves rate steps and source swaps below: one crossfade law.
+this header is that generalization. Sequencing (E12): Reverse Part 1 is being
+built now with `engine_direction.h`. Part 1 of this plan ships
+`engine_read_head.h` as the pure header the bench and its unit tests need;
+Part 2a then rebases onto Reverse's header and generalizes it IN PLACE: the
+two files become one `engine_read_head.h`, `le_direction_index` becomes
+`le_head_index` at rate 1 (bit-exact, Reverse's tests unchanged),
+`le_direction_origin` / `le_direction_lap_start` become `le_head_origin` /
+`le_head_wrapped`, and Reverse's `turn_left / turn_reversed / turn_offset`
+become `le_read_head prev_head; int32_t turn_left;`, the pair that also serves
+rate steps and source swaps below: one crossfade mechanism, two named laws.
+
+Precision: `pos < 2^31 × k`, `rate × pos < 2^37`, the double mantissa has 53
+bits; the index is derived from the clock each frame, never integrated, so
+nothing drifts.
 
 ### 2.2 Rate
 
@@ -284,23 +299,57 @@ from `len_src_t` when the song tempo moves away from the recorded tempo.
 Replace the pair rewrite at `engine_process.c:5569-5578` with: for every
 PLAYING or OVERDUBBING track with `len > 0` and a non-identity head
 (`reversed || origin != 0 || rate != 1 || source != dry`), compute
-`idx = le_head_index(&tr->head, song_pos, len_src)` where `song_pos =
-seg_base + trk_pos` (the per-frame musical position within `play_len`). Keep
-`(seg_base, trk_pos)` integer for the write paths (they only run at rate 1,
-§2.5). The dry read at `:5833` becomes `loopsample = le_head_sample(lbuf,
-len, idx)` (`_decimated` when `rate >= 2`), with the identity fast path
-`lbuf[seg_base + trk_pos]` kept verbatim for the default head so the existing
-suite stays bit-identical. Metering reads the same `loopsample`.
-`trk_play_pos[t]` (`:5584`) publishes `floor(idx)` in source frames, so
-`position_frames / length_frames` stays the track's progress.
+`idx = le_head_index(&tr->head, song_pos, len_src)`.
 
-Turn window: while `turn_left > 0`, also read `old = le_head_sample(lbuf,
-len, le_head_index(&tr->prev_head, …))` and mix with `le_head_turn_mix`,
+`song_pos` is UNBOUNDED (E1), never the wrapped per-frame position: with
+`rate = ½` a bounded `seg_base + trk_pos` would span only half the take and
+snap back at every wrap. On the shared clock `song_pos = (loop_iteration -
+start_iter) × clock.length + clock.position` (an int64 count of song frames
+since the track's start; at rate 1 it reproduces `seg_base + trk_pos` for
+multiples, and for a division because `L % (L/n) == 0`); in Free/Song
+`song_pos = free_iteration × free_clock.length + free_clock.position`. The head
+is re-set (`le_head_origin`, continuity at the current index) at every
+discontinuity of that count: the transport hold (`:4480-4484` in the Reverse
+plan's numbering), Stop/Play of the track, `le_restart_once`, and Part 4a's
+position scaling. Keep `(seg_base, trk_pos)` integer for the write paths (they
+only run at rate 1, §2.5). The dry read at `:5833` becomes `loopsample =
+le_head_sample(lbuf, len, idx)` (`_decimated` when `rate >= 2`), with the
+identity fast path `lbuf[seg_base + trk_pos]` kept verbatim for the default
+head so the existing suite stays bit-identical. Metering reads the same
+`loopsample`. `trk_play_pos[t]` (`:5584`) publishes `floor(idx)` in source
+frames, so `position_frames / length_frames` stays the track's progress.
+
+Decimation (E5): `le_head_sample_decimated` is a box of `floor(rate)` samples,
+a first-order anti-alias (first sidelobe −13 dB), acceptable for a
+pitch-coupled performance effect at 2×. The Part 2a listening check at 4× and
+8× is its gate. The named fallback, if that check fails: worker-rendered
+half-band-decimated sources (`restore_halfband.c` already provides the 2:1
+stage; 4× and 8× are two and three stages) as a kind-2 cache entry read at
+rate 1, measured by the Part 1 harness's `render` scenario before it is built.
+8× is not left without a fallback.
+
+Turn window: while `turn_left > 0`, also read `old = le_head_sample(src_prev,
+len_prev, le_head_index(&tr->prev_head, …))` and mix with `le_head_turn_mix`,
 `F = seam_xfade_frames(e)` (about 10 ms), decremented once per frame per
 track after the lane loop beside the seam countdown (`:6086-6098`). A rate
 step (Speed press), a direction toggle (Reverse) and a source swap (§3) all
 start the same window; loops shorter than `2F` snap, mirroring the punch-fade
-rule (`:5645-5650`).
+rule (`:5645-5650`). Two laws, one helper with a flag (E5): equal-gain for a
+rate or direction turn (the two heads read the same material and are
+continuous at the turn), equal-power for a swap between source kinds (dry to
+render, render to render, bypass: uncorrelated signals, where equal-gain dips
+6 dB at mid-fade).
+
+Turn-window memory safety (E4): `F = sr/100` is 960 frames at 96 kHz, fifteen
+64-frame periods, while the cache frees a retracted entry after two
+processed-buffer boundaries. So, while `turn_left > 0`, the audio thread
+publishes the previous source per track (`a_turn_source`, a pointer, plus its
+lane's slot or entry identity); the collector (`engine_cache.c:537`) defers
+freeing any graveyard entry a track's `a_turn_source` still names; and any
+control-side pool free or slot reuse (undo slot recycling, lane shrink,
+import) that would hit a track's turn source snaps that track's window
+(`turn_left = 0`) before the free, through the existing quiescent handshake. A
+Part 2a ASAN test steps a rate, retracts and frees inside the window.
 
 Lap edges follow the head: Once's lap end (`:4486-4510`) and Free/Song's
 (`:4454-4463`) use `le_head_wrapped` on the track's consecutive indices instead
@@ -350,35 +399,54 @@ by construction).
 
 ### 2.6 Commands, receipts, snapshot, facts
 
-- `LE_CMD_SET_SPEED = 84` (after Reverse's 83; renumber if Peel/Multiply land
-  first), payload `struct { int32_t numer, denom; } speed;` with the five
-  factors as `{1,2} {1,1} {2,1} {4,1} {8,1}`; checked, never raw-posted (add to
-  the `le_push` refusal list, `engine.c:1299-1300` per the Reverse plan). Public
+- `LE_CMD_SET_SPEED` takes the next free command code at rebase (E13: this
+  text assigns no numbers; Reverse holds 83 and Multiply/Divide's plan holds
+  `LE_CMD_SET_LENGTH = 84`; the audited table row in
+  `docs/design/performance-event-log-format.md` and the `le_log_extract`
+  exclusion list are the collision check), payload `struct { int32_t numer,
+  denom; } speed;` with the five factors as `{1,2} {1,1} {2,1} {4,1} {8,1}`;
+  checked, never raw-posted (add to the `le_push` refusal list,
+  `engine.c:1299-1300` per the Reverse plan). Public
   `le_engine_set_speed(engine, numer, denom, uint64_t* request)` next to Fade,
-  through the shared receipt table (`le_request_admit` from the Reverse plan,
-  or factored here from `le_fade_admit` `:2568-2602` if this lands first; the
-  reader becomes `le_engine_read_request_result`).
+  through the shared receipt table (`le_request_admit` from the Reverse plan;
+  the reader is `le_engine_read_request_result`).
 - Callback application: `speed_global` is one engine field; the handler
   re-origins every content track's head so the index is continuous, starts
-  their turn windows, publishes `a_speed_numer/denom`, pushes the fact, writes
-  the receipt. Normal (`{1,1}`) restores only this factor (`rate_t` keeps its
-  tempo term).
+  their turn windows (equal-gain), publishes `a_speed_numer/denom`, pushes the
+  fact, writes the receipt. Normal (`{1,1}`) restores only this factor
+  (`rate_t` keeps its tempo term). "Repeated 2× stays 2×" (E6): a request
+  equal to the current factor is receipt-only: no re-origin, no turn window,
+  no fact, no change to the mix; tested as such.
 - Snapshot: trailing `int32_t speed_numer, speed_denom;` on `le_snapshot`
   (global) and `int32_t head_rate_milli;` on `le_track_snapshot`
   (`segno_engine_api.h:932`, the effective per-track rate ×1000 so the UI can
   show the derived pitch and progress without re-deriving).
 - Perf fact `LE_PLOG_SPEED = 327` (Reverse 324, Peel/Multiply 325–326 per the
-  gap inventory's sequencing note), payload `{numer, denom, song_frame}`;
-  pushed at every accepted change and at every material reset. events.log
+  gap inventory's sequencing note), payload `{int32_t numer, denom; uint64_t
+  index_q32;}` (E3): the exact `le_head_index` at the change in Q32.32, the
+  frame being the record header's, mirroring Reverse's logged `read_index`.
+  Pushed at every accepted change, at every re-origin (hold, Stop/Play,
+  relaunch, retiming) and at every material reset, so the renderer anchors
+  from a logged index rather than integrating from capture start. events.log
   version: whichever of the 324–328 plans lands next takes the next version
   (`perf_drain.c:819` reads 6 today; the stem plan's rule). The renderer
   (`perf_render.c:829`, segment read `:1099`) applies the same
-  `le_head_index`/`le_head_sample` with the logged `(numer, denom)` and
-  anchors from the logged frame, so a stem at ½× is sample-exact against the
-  live mix.
+  `le_head_index`/`le_head_sample` from the logged index and `(numer, denom)`,
+  so a stem at ½× is sample-exact against the live mix.
+- Provenance tracker (E2): the 322/323 tracker (`engine_process.c:5586-5634`)
+  expects `perf_source_next_pos == phase` with `phase = trk_play_pos % len`,
+  which a non-identity head breaks every frame. Decision: `phase` is logged
+  in SONG-position space (`song_pos mod play_len`), unchanged at rate 1, and
+  the renderer derives the source index through the logged head. This keeps
+  322/323 integer and exact under Part 4a, where a source-space phase could
+  exceed the image length and fail `perf_render.c:924`. A Part 2a test asserts
+  zero 323 facts over a two-lap ½× run and an 8× run.
 - Material resets (`le_fade_reset` sites, `:184-199` and callers; Reverse's
-  `le_transform_reset`) reset the head to identity. Speed itself is global and
-  survives a single track's Clear; New Loop resets it (§4).
+  `le_transform_reset`, whose import-time command is `LE_CMD_RESET_TRANSFORMS`
+  at the value of today's `LE_CMD_RESET_FADE` 82) reset the head to identity.
+  The stem plan's E8 holds: that command is pushed only on EMPTY tracks and a
+  non-EMPTY caller must not reset provenance through it. Speed itself is global
+  and survives a single track's Clear; New Loop resets it (§4).
 
 ## 3. Transpose: a rendered source read through the head
 
@@ -387,27 +455,46 @@ by construction).
 Extend `le_wet_entry` (`engine_private.h:427-434`) with `int32_t kind;`
 (0 = Pre print, 1 = source render), `int32_t semitones;` and `int32_t out_len;`,
 and the key predicate (`:443-449`) with those three fields; every comparison
-site moves together, as its comment demands. A source render is mono (`pcm` of
-`out_len` floats: lanes are mono before the chain), rendered from the lane's
-live dry slot at content revision `audio_rev`, by the stretcher at ratio
-`out_len / len` (1 for Transpose) and `setTransposeSemitones(semitones,
+site moves together, as its comment demands. The kind-1 key (E8) is
+`{audio_rev, kind, semitones, out_len}` with `chain_fp = 0` and `vol_bits = 0`
+fixed, inside the one predicate: a source render is pre-chain and pre-volume,
+so a volume move or a chain edit never re-renders it. A source render is mono
+(`pcm` of `out_len` floats: lanes are mono before the chain), rendered from
+the lane's live dry slot at content revision `audio_rev`, by the stretcher at
+ratio `out_len / len` (1 for Transpose) and `setTransposeSemitones(semitones,
 8000/sr)` (the tonality limit the README recommends; the listening check may
 drop it). The lap is rendered as a cyclic signal: the worker feeds the last
 `W = block + interval` source frames, the lap, then the first `W`, and keeps
 the central `out_len` output frames, so the render loops as seamlessly as the
-seam-folded dry does. The stretcher is constructed on the worker with a fixed
-seed (D0 note 5) so a re-render of the same key is byte-identical, which is
-also what makes the offline stem (§3.4) exact.
+seam-folded dry does. Determinism: the stretcher is constructed on the worker
+with a fixed seed (D0 note 5), and the sample rate and preset change only
+through configure / `le_cache_init`, so a re-render of the same key in the
+same configuration is byte-identical, which is also what makes the offline
+stem (§3.4) exact.
 
 Jobs are per TRACK: one job renders every active lane of the track at the
 same key and publishes the entries together, so a track never plays two lanes
 at two pitches. Publication, retraction, LRU and the quiescent handshake are
-the cache's existing ones; the memory cap is shared. Default cap: Part 3 raises
-`LE_CACHE_DEFAULT_CAP_BYTES` from 64 MiB to 384 MiB (a 30 s mono lane at
-96 kHz is 11.5 MiB; eight transposed single-lane tracks are 92 MiB; the Pi 5
-has 8 GiB and the bench records peak RSS). A job that does not fit is refused
-and the track stays dry with the reason in `le_lane_cache_info` (the Pre
-print's existing rule).
+the cache's existing ones; the memory cap is shared. Eviction (E7): a kind-1
+entry that matches a PLAYING track's current key is never evicted (evicting it
+would play dry, a silent pitch change, rule 3); Pre prints are evicted first
+(optional: the live chain computes the same function); a kind-1 job that
+still does not fit is refused with the reason in `le_lane_cache_info` (the Pre
+print's existing rule) and the track stays dry, reported. Default cap: Part 3a
+raises `LE_CACHE_DEFAULT_CAP_BYTES` from 64 MiB to 384 MiB (a 30 s mono lane
+at 96 kHz is 11.5 MiB; eight transposed single-lane tracks are 92 MiB; the Pi
+5 has 8 GiB and the bench records peak RSS). A fully populated 8-track ×
+8-lane 30 s rig at 96 kHz would need 737 MiB of kind-1 entries and is refused
+per track, so the Transpose face must expect "pending / refused" on dense
+rigs. Worker priority (E9): the cache worker runs `SCHED_OTHER` at nice +10 on
+Linux so a twelve-second eight-lane render yields to the Flutter UI thread;
+the audio thread is already SCHED_FIFO 80. The Part 1 `render` scenario
+measures with that nice applied.
+
+Latency fact for the face: a semitone step lands after the debounce plus the
+render (about 1.6 s for a single 30 s lane on the Pi 5 at the Part 1
+threshold, about 12 s for eight lanes); the face shows stored and effective so
+the wait is visible, never silent.
 
 ### 3.2 State and application
 
@@ -439,12 +526,13 @@ Pre-print debounce exists for parameter sweeps), as a second constant beside
 
 ### 3.3 Commands
 
-- `LE_CMD_TRANSPOSE = 85`, payload `struct { int32_t channel, install,
+- `LE_CMD_TRANSPOSE` and `LE_CMD_TRANSPOSE_BYPASS` take the next free command
+  codes at rebase (E13), payload `struct { int32_t channel, install,
   semitones; } transpose;` (`install = 0` steps by `semitones` ±1 and clamps
   at ±12 with the result in the receipt, so "at pitch limit" is reportable;
-  `install = 1` sets, for Session recall) and `LE_CMD_TRANSPOSE_BYPASS = 86`
-  (`arg_i` 0/1). Public `le_engine_transpose_step(engine, channel, delta,
-  request)`, `le_engine_install_transpose(engine, channel, semitones, request)`,
+  `install = 1` sets, for Session recall) and `arg_i` 0/1 for the bypass.
+  Public `le_engine_transpose_step(engine, channel, delta, request)`,
+  `le_engine_install_transpose(engine, channel, semitones, request)`,
   `le_engine_set_transpose_bypass(engine, on, request)`, all through the receipt
   table. Admission refuses EMPTY, RECORDING and OVERDUBBING tracks and pending
   arms exactly as Fade/Reverse do; bypass is admitted whenever configured.
@@ -455,9 +543,11 @@ Pre-print debounce exists for parameter sweeps), as a second constant beside
   Clear, Undo/Redo stay available.
 - Snapshot: trailing `int32_t transpose_st, transpose_effective_st;` on
   `le_track_snapshot`; `int32_t transpose_bypass;` on `le_snapshot`.
-- Facts: `LE_PLOG_TRANSPOSE = 328` `{channel, stored, effective, source_kind}`
-  at every effective change (render engaged, dry fallback, bypass), so the
-  renderer knows exactly which frames played which source.
+- Facts: `LE_PLOG_TRANSPOSE = 328` `{int32_t channel, stored, effective,
+  source_kind; uint64_t index_q32;}` at every effective change (render
+  engaged, dry fallback, bypass), the index being the head's exact
+  `le_head_index` at the swap frame (E3) so the renderer places the
+  equal-power turn exactly and knows which frames played which source.
 
 ### 3.4 Offline renderer
 
@@ -494,7 +584,9 @@ recorded later at another song tempo carry their own ratio implicitly through
 
 ### 4.2 Retiming on a tempo change
 
-With Follow tempo on (`a_follow_tempo`, default 1, per-track override
+With Follow tempo on (`a_follow_tempo`, default 0 in Part 4a so an existing
+rig behaves exactly as today until the page exists; Part 4b flips the default
+to 1 together with the page that can turn it off, E15; per-track override
 `a_follow_tempo_override` −1/0/1 like `a_quantize_div_override`,
 `engine_private.h:1254`), `le_tempo_locked` (`:411-423`) no longer locks a rig
 with content and a bar grid; `LE_CMD_SET_TEMPO` (`:3119-3133`), tap and
@@ -543,8 +635,9 @@ not an owner question.
 Follow tempo and Pitch are Loop settings: Defaults plus per-track overrides
 with the inherit grammar (`SettingsReceipt`, `looper_repository.dart:293-382,
 1160`; the quantize override precedent). Engine commands
-`LE_CMD_SET_FOLLOW_TEMPO = 87` / `LE_CMD_SET_PITCH_MODE = 88` each carry
-`{channel (-1 = default), value (-1 inherit)}` and a receipt. Session (schema
+`LE_CMD_SET_FOLLOW_TEMPO` / `LE_CMD_SET_PITCH_MODE` (next free codes at
+rebase, E13) each carry `{channel (-1 = default), value (-1 inherit)}` and a
+receipt. Session (schema
 bump, strict decode, no legacy path per AGENTS.md): `recordedTempoBpm` on the
 session, `followTempo` and `pitchFollowsSpeed` defaults, per-track overrides on
 `SessionTrack` (`session.dart:180-262`), captured at
@@ -606,7 +699,7 @@ reads, before any mixer edit.
    `packages/segno_engine/third_party/signalsmith-stretch/` beside `rnnoise/`
    with `README.upstream.md` (tag 1.1.0, commit `44c8f865`, MIT, the stripped
    `web/`, `cmd/` noted) and add the MIT notice where RNNoise's lives in the
-   About licences. Add `src/stretch/le_stretch.h` (plain C: opaque
+   About license notices. Add `src/stretch/le_stretch.h` (plain C: opaque
    `le_stretch`, `le_stretch_create(channels, sample_rate, cheaper, seed)`,
    `le_stretch_destroy`, `le_stretch_render_offline` as in §5, and the
    streaming `le_stretch_process(in, n_in, out, n_out)` / `_seek` / `_flush` /
@@ -654,25 +747,43 @@ reads, before any mixer edit.
    - `--smoke` runs every scenario for one second at 48 kHz / 128 frames with
      no thresholds; the `native-tests` CI job runs it so the harness cannot
      rot (`.github/workflows/main.yaml:183`).
-   Acceptance thresholds, asserted by the harness (`--budget-us 667 --assert`,
-   non-zero exit on failure), on the appliance Pi 5 (Yocto image, SCHED_FIFO,
-   both displays attached, app running):
-   - `head` added p99 ≤ 10 % of the period at 8 lanes and ≤ 35 % at 64 lanes
-     for every factor and ratio;
-   - `baseline` p99 + `head` p99 ≤ 50 % of the period at 8 lanes (if
-     `baseline` alone exceeds that, it is a pre-existing finding to report on
-     its own issue, not this plan's gate);
-   - `render` ≥ 20× real time per mono lane under load with `presetCheaper`
-     (a 30 s lap in ≤ 1.5 s; an eight-lane track in ≤ 12 s);
-   - `memory`: a kind-1 entry costs `out_len × 4` bytes plus under 1 MiB of
-     worker scratch; stretcher heap per instance recorded;
+   The harness prints the CPU model (`/proc/cpuinfo` "CPU part": 0xd0b is the
+   Pi 5's Cortex-A76) and the scheduling it obtained, and refuses `--assert`
+   without `--proxy` on anything but a Cortex-A76.
+   Acceptance thresholds, asserted by the harness (non-zero exit on failure):
+   - **Proxy (E10), the gate Part 1 and Part 2 close on.** A new CI job
+     `native-bench-arm64` on `ubuntu-24.04-arm` (the runner `build-linux-arm64`
+     already uses, `.github/workflows/main.yaml:148`) runs
+     `bench_pitch_time.sh --budget-us 667 --assert --proxy` and uploads the
+     arm64 harness binary as an artifact for the owner to copy to the
+     appliance. `--proxy` asserts p50 and throughput only (a shared Neoverse
+     VM without SCHED_FIFO has no meaningful p99), at half the Pi thresholds
+     (Neoverse N2/V2 is roughly 1.5-2.5× an A76 single-thread, so this keeps a
+     2× margin): `head` added p50 ≤ 5 % of the period at 8 lanes and ≤ 17 % at
+     64 lanes for every factor and ratio; `render` ≥ 40× real time per mono
+     lane with `presetCheaper`; `memory` as below.
+   - **Pi 5 (E11), the measurement D2 rests on.** On the appliance (Yocto
+     image, SCHED_FIFO, both displays attached, app running), with
+     `--budget-us 667 --assert`: `head` added p99 ≤ 10 % of the period at 8
+     lanes and ≤ 35 % at 64 lanes for every factor and ratio; `baseline` p99 +
+     `head` p99 ≤ 50 % of the period at 8 lanes (if `baseline` alone exceeds
+     that, it is a pre-existing finding to report on its own issue, not this
+     plan's gate); `render` ≥ 20× real time per mono lane under load with
+     `presetCheaper` (a 30 s lap in ≤ 1.5 s; an eight-lane track in ≤ 12 s).
+     This measurement gates **Part 3a's merge** and Part 2a's listening check,
+     not Part 1 or Part 2, because the Pi cannot be driven unattended.
+   - `memory` (both): a kind-1 entry costs `out_len × 4` bytes plus under 1 MiB
+     of worker scratch; stretcher heap per instance recorded.
    - `inline` has no threshold; its p99 relative to the period is recorded.
-4. `docs/plan/2026-10-xx-pitch-time-spike-findings.md`: the tables from the
-   Pi 5 and from the dev machine (the latter for ratios only), the reproduce
-   command, and the gate verdict. If `render` fails its threshold on the Pi 5
-   the plan returns to the owner before Part 3 (escalation to `plan-gate`):
-   the fallback candidates are `presetCheaper` with a smaller block, or a
-   lower-cost shifter for Transpose, both measured by the same harness.
+4. `docs/plan/2026-10-06-pitch-time-spike-findings.md`: the tables from the
+   arm64 proxy, from the dev machine (informational, ratios only) and, when
+   the owner has run the artifact, from the Pi 5; the reproduce commands; the
+   gate verdicts. The first time both proxy and Pi numbers exist the document
+   records the proxy/Pi ratio, which is the scaling note every later run uses.
+   If `render` fails its Pi threshold the plan returns to the owner before
+   Part 3a (escalation to `plan-gate`): the fallback candidates are
+   `presetCheaper` with a smaller block, or a lower-cost shifter for
+   Transpose, both measured by the same harness.
 
 Build note: the shim's C header must stay plain C (`_Atomic`-free) because it
 reaches the VST3 C++ TUs through nothing today but will the moment a core
@@ -684,108 +795,163 @@ SUCCESS CRITERIA:
 - The read-head header reproduces the integer path bit-exactly at rate 1 and visits the expected indices at the five factors, both directions and the two tempo ratios; the stretch shim renders an exact-length output for a 30 s input at ratio 1, 0.75 and 1.333. | verify: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
 - The harness builds and its smoke run passes on macOS and Linux x64; the C++17 shim repro compiles with the new header; the FFI symbol check passes against the built library. | verify: bash packages/segno_engine/src/test/bench/bench_pitch_time.sh --smoke && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)" && manual: the docs/PROGRESS.md shim repro with engine_read_head.h and le_stretch.h included
 - Dart analysis, Bloc lint and the Dart suites stay clean (no Dart production change expected beyond the licence notice). | verify: dart analyze --fatal-infos lib test packages && bloc lint lib test packages && /Users/Tomas/development/flutter/bin/flutter test
+- The arm64 proxy job passes its p50 and throughput assertions and publishes the harness artifact; the findings document carries the proxy and dev-machine tables with the CPU model and scheduling each run obtained. | verify: CI job native-bench-arm64 green on the PR head (bash packages/segno_engine/src/test/bench/bench_pitch_time.sh --budget-us 667 --assert --proxy on ubuntu-24.04-arm)
+- HARDWARE (informational for Part 1; gates Part 3a): the artifact run on the appliance Pi 5 at 96 kHz / 64 frames with the app running meets the Pi thresholds; its table and the proxy/Pi ratio are added to the findings document when it exists. | verify: manual: copy the native-bench-arm64 artifact to the appliance and run bench_pitch_time.sh --budget-us 667 --assert; record the output in the findings document
 - HARDWARE: on the appliance Pi 5 at 96 kHz / 64 frames with the app running, every threshold above holds and the findings document carries the tables and the verdict. | verify: manual: scp the arm64 harness (built on the build-linux-arm64 runner or the bench Pi) to the appliance and run bench_pitch_time.sh --budget-us 667 --assert; record the output in the findings document
 NON-GOALS:
 - Any mixer, command, snapshot, Session or UI change; a decision on inline streaming beyond recording its cost.
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && bash packages/segno_engine/src/test/bench/bench_pitch_time.sh --smoke && dart analyze --fatal-infos lib test packages
 ```
 
-### Part 2. Native Speed and the head in the mixer (about 550 production lines)
+### Part 2a. Native Speed and the head in the mixer (about 400 production lines)
 
-Sections 2.2–2.6 complete: the head on `le_track` (beside `playback_offset`,
-`engine_private.h:1272`), the mixer rewrite at `engine_process.c:5569-5578` and
-`:5833`, the turn window, lap edges, print-engage conditions,
-`LE_CMD_SET_SPEED`, `LE_ERR_TRANSFORMED` guards, receipts (sharing or
-factoring `le_request_admit`), snapshot fields, fact 327, renderer parity,
-material resets. Dart seam: `AudioEngine.setSpeed(SpeedFactor) ->
-RequestAdmission` and `readRequestResult`, `EngineSnapshot.speed`,
-`TrackSnapshot.headRate`, `EngineResult.transformed`, the four fakes
-(`test/helpers/fake_audio_engine.dart`, the three package fakes), regenerated
-and formatted bindings; `LooperRepository.setSpeed` through `_requestReceipt`
-(the renamed `_requestFade`, `looper_repository.dart:1972`), `LooperState.speed`
-projection. No mode entry, no UI.
+Sections 2.2–2.6 complete, native only: the head on `le_track` (beside
+`playback_offset`, `engine_private.h:1272`), the in-place generalization of
+Reverse's `engine_direction.h` into `engine_read_head.h` (E12), the unbounded
+`song_pos` and its re-origin sites, the mixer rewrite at
+`engine_process.c:5569-5578` and `:5833`, the turn window with `a_turn_source`
+and the collector's deferral, lap edges, print-engage conditions,
+`LE_CMD_SET_SPEED` (next free code), `LE_ERR_TRANSFORMED` guards, receipts
+through `le_request_admit`, snapshot fields, fact 327 with `index_q32`, the
+song-space provenance phase, renderer parity, material resets. No Dart change
+beyond the regenerated bindings for the new API, which Part 2b consumes; no
+mode entry, no UI.
 
 Tests (`src/test/test_engine_speed.h`, literal PCM through
-`le_engine_process`; ramp PCM so the index is the sample): identity
-bit-exactness for the whole existing suite (unchanged tests); ½× reads indices
-0, 0.5, 1 … (interpolated values `i + 0.5`) and takes two song laps per lap at
-44.1/48/96 kHz and blocks 1/64/127/512; 2×/4×/8× visit `2i`/`4i`/`8i` with the
-decimated average oracle; a step 1× -> 2× at index 37 is continuous (37, 39,
-41 …) with the equal-gain mix inside the turn window; Normal after 4× keeps
-the index continuous; multiple 2 at ½× cycles both segments over four song
-laps; a Sync division at 2× laps `2n` times per primary cycle; Free/Song
-private clock; Once lap end at the head wrap in both directions; two lanes read
-the same index; Fade continues through a step; the Pre print disengages on a
-step and never engages at a non-identity head; record and overdub refused with
-`LE_ERR_TRANSFORMED` and dropped on the callback when armed before the change;
-a change refused while RECORDING/OVERDUBBING/armed/count-in; receipts for rapid
-double presses; Clear/undo-to-empty/new capture/import reset the head and log
-the fact; the renderer reproduces a ½× and an 8× stem sample-exactly including
-the turn; `position_frames` runs at the head's rate. One actual-native
-repository case (`packages/looper_repository/test/speed_native_test.dart`,
-fixture of `fade_native_test.dart:13-45`) confirms the receipt, the projection
-and the record refusal.
+`le_engine_process`; ramp PCM so the index is the sample), each failing
+without the change: ½× over two song laps reads indices `0 .. len-1` once
+(E1) with interpolated values `i + 0.5` on odd frames, at 44.1/48/96 kHz and
+blocks 1/64/127/512; a Sync division at ½× (E1); 2×/4×/8× visit `2i`/`4i`/`8i`
+with the decimated box oracle; a step 1× -> 2× at index 37 is continuous (37,
+39, 41 …) with the equal-gain mix inside the turn window; a repeated 2×
+request produces a receipt, no fact and no mix change (E6); Normal after 4×
+keeps the index continuous; multiple 2 at ½× cycles both segments over four
+song laps; a Sync division at 2× laps `2n` times per primary cycle; Free/Song
+private clock; Once lap end at the head wrap in both directions; two lanes
+read the same index; Fade continues through a step; the Pre print disengages
+on a step and never engages at a non-identity head; record and overdub
+refused with `LE_ERR_TRANSFORMED` and dropped on the callback when armed
+before the change; a change refused while RECORDING/OVERDUBBING/armed/count-in;
+receipts for rapid double presses; Clear/undo-to-empty/new capture/import reset
+the head and log the fact; zero 323 facts over a two-lap ½× run and an 8× run
+(E2); the renderer reproduces a ½× and an 8× stem sample-exactly including the
+turn, anchored from the logged `index_q32` (E3); a rate step followed by a
+retract and free inside the turn window under ASAN (E4); `position_frames`
+runs at the head's rate. The existing suite stays byte-identical (a regression
+guard, not counted as a failing test).
 
 ```success-criteria
-GOAL: A checked native global Speed reads every recorded track at ½×, 1×, 2×, 4× or 8× through one fractional head, click-free and exact over time, with the song clock, click, quantize and capture untouched, confirmed receipts and exact offline replay, while the public app is unchanged.
+GOAL: A checked native global Speed reads every recorded track at ½×, 1×, 2×, 4× or 8× through one fractional head over an unbounded song position, click-free and exact over time, with the song clock, click, quantize and capture untouched, confirmed receipts and exact offline replay.
 SUCCESS CRITERIA:
-- Literal PCM proves the five factors, continuity at steps, multiples, divisions, Free/Song, Once, two-lane parity and Fade independence at three rates and four block sizes; the default head keeps every pre-existing test byte-identical. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- Capture refusals and drops return LE_ERR_TRANSFORMED, never write through a non-identity head, and a change during capture is refused; material resets publish identity and log the fact. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- Offline stems at ½× and 8× match the live mix sample-exactly; sanitizer and telemetry-off builds pass. | verify: EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
-- Bindings, symbol parity and the Dart seam are complete; the repository confirms a Speed change and projects it. | verify: (cd packages/segno_engine && dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/looper_repository && SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
-- HARDWARE: the Part 1 harness re-run on the appliance with the real mixer path at 8× and ½× stays within the Part 1 thresholds. | verify: manual: bench_pitch_time.sh --budget-us 667 --assert on the appliance after Part 2
+- Literal PCM proves the five factors over whole takes, continuity at steps, the repeated-factor no-op, multiples, divisions, Free/Song, Once, two-lane parity and Fade independence at three rates and four block sizes; the default head keeps every pre-existing test byte-identical. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Capture refusals and drops return LE_ERR_TRANSFORMED, never write through a non-identity head, and a change during capture is refused; material resets publish identity and log the fact; no 323 fact is emitted by a non-identity head alone. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Offline stems at ½× and 8× match the live mix sample-exactly from the logged index; the turn window never reads freed memory; sanitizer and telemetry-off builds pass. | verify: EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
+- Bindings regenerate and format cleanly, the symbol check passes, and the proxy bench stays within its thresholds with the real mixer path. | verify: (cd packages/segno_engine && dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart) && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)" && CI job native-bench-arm64 green
+- HARDWARE (gates this part's listening check, not its merge): the Part 1 artifact re-run on the appliance with the real mixer path at ½×, 4× and 8× stays within the Pi thresholds and the box decimation passes the listening check at 4× and 8×, else the kind-2 half-band fallback is scheduled. | verify: manual: bench_pitch_time.sh --budget-us 667 --assert on the appliance after Part 2a, plus the listening session per docs/PROGRESS.md
 NON-GOALS:
-- Transpose, tempo follow, Session persistence, mode entry, UI, mappings, anti-alias beyond the box average.
-VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
+- Dart seam beyond bindings, Transpose, tempo follow, Session persistence, mode entry, UI, mappings, anti-alias beyond the box average.
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
 ```
 
-### Part 3. Native Transpose: source renders on the cache worker (about 650 production lines)
+### Part 2b. Speed Dart seam and repository (about 250 production lines)
 
-Section 3 complete: `le_wet_entry.kind/semitones/out_len` and the key
-predicate, the kind-1 job on the cache worker (`engine_cache.c`: enqueue copy of
-every active lane's live slot at `audio_rev`, render through `le_stretch`
-with cyclic padding, publish per track), the 100 ms debounce, cap raise, the
-verdict's source selection in `snapshot_lane_cache`, the source swap through
-the turn window, `LE_CMD_TRANSPOSE`/`_BYPASS`, admission, the record guard,
-snapshot fields, fact 328, renderer parity (the stretch TU linked into
-`perf_render.c`), material resets. Dart seam:
-`AudioEngine.transposeStep/installTranspose/setTransposeBypass`,
-`TrackSnapshot.transpose` (stored, effective), `EngineSnapshot.transposeBypass`,
-fakes, bindings; repository `transposeTrack(channel, delta)`,
-`installTranspose`, `setTransposeBypass`, `Track.transpose` projection.
-
-Tests (`src/test/test_engine_transpose.h`): a +12 st render of a sine at
-220 Hz peaks within 1 % of 440 Hz in its spectrum and keeps the exact length;
-the render loops without a discontinuity at the wrap (cyclic padding: the
-first and last 1024 output frames of two consecutive laps are identical); a
-+2 st step on a playing track plays dry until the render lands, then crossfades
-to the render at the same index with the equal-gain mix and reports
-`effective == stored` only after the swap; a second step while the first
-render is pending re-keys the job and lands once; bypass swaps to dry and back
-with pitches kept; an overdub completing on a transposed track is impossible
-(refused), while Undo to a previously rendered slot re-engages its cached entry
-within one block; Clear resets to 0 st; a job over the cap leaves the track
-dry with the reason; the renderer's stem matches the live transposed mix
-sample-exactly; two rapid presses produce two receipts; render identity under a
-fixed seed (two renders of the same key compare equal). Actual-native
-repository case in `transpose_native_test.dart`.
+`AudioEngine.setSpeed(SpeedFactor) -> RequestAdmission` and
+`readRequestResult` (`audio_engine.dart:280-286` pattern),
+`EngineSnapshot.speed`, `TrackSnapshot.headRate`, `EngineResult.transformed`,
+`NativeAudioEngine`, `MockAudioEngine`, the four fakes
+(`test/helpers/fake_audio_engine.dart`, the three package fakes),
+`LooperRepository.setSpeed` through `_requestReceipt` (the renamed
+`_requestFade`, `looper_repository.dart:1972-2018`), `LooperState.speed`
+projection, the record-refusal notice path for `transformed`. One
+actual-native repository case (`packages/looper_repository/test/
+speed_native_test.dart`, fixture of `fade_native_test.dart:13-45`) confirms
+the receipt, the projection and the record refusal; mock and fake cases cover
+the admission and result mapping.
 
 ```success-criteria
-GOAL: A checked per-track Transpose plays a pitch-shifted render of the track's own takes at unchanged timing, built off the audio thread by the one cache worker, swapped click-free, truthful about what is sounding, with a global bypass that keeps stored pitches, and exact offline replay.
+GOAL: The repository can set and observe the global Speed through confirmed receipts and projects it, with the refused record reported, while the public app is unchanged.
 SUCCESS CRITERIA:
-- Render length, loop continuity, pitch, determinism and the dry-until-ready then crossfade behaviour are proven with literal and spectral oracles; `effective` never claims a pitch the mix is not playing. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- Bypass, limit (±12 reported in the receipt), capture refusal, Undo re-engagement, cap refusal and material resets behave as specified; sanitizer and telemetry-off pass. | verify: EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
-- The offline stem of a transposed track matches the live mix sample-exactly across the swap. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- Bindings, symbol parity, the Dart seam and the repository projection are complete; static gates clean. | verify: (cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/looper_repository && SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test) && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
-- HARDWARE: on the appliance, eight transposed single-lane 30 s tracks render within the Part 1 render threshold while playing, with no late period (telemetry late_periods unchanged over the run) and the listening check passes at ±12 st with and without the tonality limit. | verify: manual: appliance session per docs/PROGRESS.md hardware evidence rules, reading le_engine_get_callback_telemetry before and after
+- The actual-native repository case confirms a receipt, projects the factor and surfaces the record refusal. | verify: (cd packages/looper_repository && SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test)
+- Mock, fakes and result mapping are complete; the package and app suites pass. | verify: (cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test
+- Static gates clean. | verify: dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 NON-GOALS:
-- Transposed overdubbing, Pre prints over a transposed source, tempo follow, Session, UI.
-VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
+- Mode entry, UI, mappings, Session persistence.
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
+```
+
+### Part 3a. Native Transpose: source renders on the cache worker (about 450 production lines)
+
+Section 3 complete, native only: `le_wet_entry.kind/semitones/out_len` and the
+one key predicate with the kind-1 key rule (E8), the kind-1 job on the cache
+worker (`engine_cache.c`: enqueue copy of every active lane's live slot at
+`audio_rev`, render through `le_stretch` with cyclic padding, publish per
+track), the no-eviction rule for engaged kind-1 entries and Pre-prints-first
+eviction (E7), the worker's nice level (E9), the 100 ms debounce, the cap
+raise, the verdict's source selection in `snapshot_lane_cache`, the
+equal-power source swap through the turn window with `a_turn_source`,
+`LE_CMD_TRANSPOSE`/`_BYPASS` (next free codes), admission, the record guard,
+snapshot fields, fact 328 with `index_q32`, renderer parity (the stretch TU
+linked into `perf_render.c`), material resets. Its merge is gated by the Pi 5
+`render` measurement (E11).
+
+Tests (`src/test/test_engine_transpose.h`), each failing without the change:
+a +12 st render of a sine at 220 Hz peaks within 1 % of 440 Hz in its spectrum
+and keeps the exact length; the render loops without a discontinuity at the
+wrap (cyclic padding: the first and last 1024 output frames of two
+consecutive laps are identical); a +2 st step on a playing track plays dry
+until the render lands, then crossfades to the render at the same index with
+the equal-power mix and reports `effective == stored` only after the swap; a
+second step while the first render is pending re-keys the job and lands once;
+a volume move and a chain edit do not re-render (E8); an engaged kind-1 entry
+survives cap pressure that evicts a Pre print, and a job that cannot fit is
+refused with the reason (E7); bypass swaps to dry and back with pitches kept;
+an overdub on a transposed track is refused, while Undo to a previously
+rendered slot re-engages its cached entry within one block; Clear resets to
+0 st; the renderer's stem matches the live transposed mix sample-exactly from
+the logged index; two rapid presses produce two receipts; render identity
+under a fixed seed (two renders of the same key compare equal); a swap whose
+old source is retracted and freed inside the turn window under ASAN (E4).
+
+```success-criteria
+GOAL: A checked per-track Transpose plays a pitch-shifted render of the track's own takes at unchanged timing, built off the audio thread by the one cache worker at a priority below the UI, never evicted while it plays, swapped click-free, truthful about what is sounding, with a global bypass that keeps stored pitches, and exact offline replay.
+SUCCESS CRITERIA:
+- Render length, loop continuity, pitch, determinism and the dry-until-ready then equal-power crossfade behaviour are proven with literal and spectral oracles; `effective` never claims a pitch the mix is not playing. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Bypass, limit (±12 reported in the receipt), capture refusal, Undo re-engagement, the kind-1 key's independence from volume and chain, the no-eviction rule, cap refusal and material resets behave as specified; the turn window never reads freed memory; sanitizer and telemetry-off pass. | verify: EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
+- The offline stem of a transposed track matches the live mix sample-exactly across the swap. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
+- Bindings regenerate and format cleanly and the symbol check passes. | verify: (cd packages/segno_engine && dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart) && packages/segno_engine/tool/check_ffi_symbols.sh "$(bash packages/segno_engine/tool/build_test_lib.sh)"
+- HARDWARE (gates this part's merge): the Part 1 Pi 5 `render` threshold holds (≥ 20× real time per mono lane under load), eight transposed single-lane 30 s tracks render while playing with no late period (telemetry late_periods unchanged over the run), and the listening check passes at ±12 st with and without the tonality limit. | verify: manual: appliance session per docs/PROGRESS.md hardware evidence rules, reading le_engine_get_callback_telemetry before and after; the Pi table in the findings document
+NON-GOALS:
+- Dart seam beyond bindings, transposed overdubbing, Pre prints over a transposed source, tempo follow, Session, UI.
+VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-DLE_CALLBACK_TELEMETRY=0' bash packages/segno_engine/src/test/run_native_tests.sh
+```
+
+### Part 3b. Transpose Dart seam and repository (about 250 production lines)
+
+`AudioEngine.transposeStep/installTranspose/setTransposeBypass`,
+`TrackSnapshot.transpose` (stored, effective), `EngineSnapshot.transposeBypass`,
+`NativeAudioEngine`, `MockAudioEngine`, the four fakes; repository
+`transposeTrack(channel, delta)`, `installTranspose`, `setTransposeBypass`,
+`Track.transpose` projection with stored and effective, the record-refusal
+notice. Actual-native repository case in `transpose_native_test.dart`
+(a step, the dry-pending projection, the landed render's `effective`, the
+bypass, the record refusal); mock and fake cases for admission, the ±12 limit
+result and the mapping.
+
+```success-criteria
+GOAL: The repository can step, install and bypass Transpose through confirmed receipts and projects stored and effective pitches truthfully, while the public app is unchanged.
+SUCCESS CRITERIA:
+- The actual-native repository case confirms receipts, projects stored and effective through the pending window and the swap, and surfaces the record refusal. | verify: (cd packages/looper_repository && SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)" /Users/Tomas/development/flutter/bin/flutter test)
+- Mock, fakes, the limit result and the mapping are complete; the package and app suites pass. | verify: (cd packages/segno_engine && /Users/Tomas/development/flutter/bin/flutter test) && /Users/Tomas/development/flutter/bin/flutter test
+- Static gates clean. | verify: dart analyze --fatal-infos lib test packages && bloc lint lib test packages
+NON-GOALS:
+- Mode entry, UI, mappings, Session persistence.
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
 
 ### Part 4a. Native Audio & tempo follow (about 450 production lines)
 
-Sections 4.1–4.3 complete: `recorded_tempo_bpm`, the lock relaxation, retiming
+Sections 4.1–4.3 complete with Follow tempo DEFAULT OFF (E15, today's
+behaviour until the page can turn it off): `recorded_tempo_bpm`, the lock relaxation, retiming
 in the SET_TEMPO/tap/restore handlers with divisor rounding and position
 scaling, `play_len` in the head's rate, the detached private head for a
 non-following track, kind-1 renders with `out_len = play_len` for Unchanged
@@ -823,7 +989,8 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
 
 ### Part 4b. Audio & tempo page and Session fields (about 300 production lines)
 
-Section 4.4: schema bump with `recordedTempoBpm`, follow/pitch defaults and
+Section 4.4: the Follow tempo default flips to On together with the page
+that can turn it off (E15); schema bump with `recordedTempoBpm`, follow/pitch defaults and
 per-track overrides, strict decode, capture and install before commit;
 `loop_audio_tempo_page.dart` live against the owner for screens 07/04–06 with
 the inheritance badges, the two note lines and the scope selector, the
@@ -925,25 +1092,31 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
 ### Dependencies and sequencing
 
 ```
-Part 1 (spike; gate)
- └─ Part 2 Speed ── Part 3 Transpose ── Part 4a Follow ── Part 4b page + Session
-       │                 │                                      │
-       └─ Part 6a face   └─ Part 6b face        Part 5 Session/reopen/Adapt (after 3; schema with 4b)
+Part 1 (spike; proxy gate on CI, Pi artifact for the owner)
+ └─ Part 2a Speed native ── Part 2b Speed seam
+        │                       └─ Part 6a face
+        └─ Part 3a Transpose native (merge gated by the Pi render number)
+               ├─ Part 3b Transpose seam ── Part 6b face
+               ├─ Part 4a Follow native (default Off) ── Part 4b page + Session (default On)
+               └─ Part 5 Session/reopen/Adapt (schema bump shared with 4b)
 ```
 
-Part 2 shares `engine_read_head.h`, the turn window, `le_request_admit` and
-`le_transform_reset` with the Reverse plan's Part 1 (#1162) and the record
-guard site in `le_record_impl` with #1161: land after whichever of them is in
-the base and rebase the other. Part 3 edits `le_wet_entry`, the key predicate
-and `engine_cache.c`, which no open plan touches. Part 4a relaxes
-`le_tempo_locked`, which the MIDI clock plan (E8-1) will build on. Part 5's
-schema bump is shared with Part 4b and with Reverse Part 2 (schema 12):
-whichever lands later takes the next number. Each part runs normal, ASAN and
-telemetry-off native suites, `dart analyze --fatal-infos`, Bloc lint, and the
-independent architecture, test-quality and adversarial reviews before the human
-merge gate. Review ceiling 700 production lines per part; stop for review on
-any second read coordinate, a second render worker, a capture path through a
-non-identity head, a new Dart owner, or a change to the song clock's advance.
+Part 2a rebases onto Reverse Part 1 (#1162) and generalizes its
+`engine_direction.h` in place (E12); it also shares `le_request_admit`,
+`le_transform_reset` and the record-guard site in `le_record_impl` with
+Reverse and #1161, so it lands after both. Part 3a edits `le_wet_entry`, the
+key predicate and `engine_cache.c`, which no open plan touches. Part 4a
+relaxes `le_tempo_locked`, which the MIDI clock plan (E8-1) will build on.
+Part 5's schema bump is shared with Part 4b and follows Reverse Part 2 and
+Multiply/Divide: whichever lands later takes the next number. Command codes
+and fact codes are assigned at rebase, never in this text (E13). Each part
+runs normal, ASAN and telemetry-off native suites, `dart analyze
+--fatal-infos`, Bloc lint, and the independent architecture, test-quality and
+adversarial reviews before the human merge gate. Review ceiling 700 production
+lines per part; stop for review on any second read coordinate, a bounded song
+position, a second render worker, a capture path through a non-identity head,
+a new Dart owner, an eviction of an engaged source render, or a change to the
+song clock's advance.
 
 ## 7. Decisions taken under the standing rules
 
@@ -986,6 +1159,21 @@ non-identity head, a new Dart owner, or a change to the song clock's advance.
     (tag 1.1.0, `44c8f865`); the bench copy is removed. Rule 4.
 14. `presetCheaper` with the 8 kHz tonality limit is the starting recipe; the
     listening check on the appliance may swap either without an API change.
+15. The head's song position is unbounded and re-set at every clock
+    discontinuity (E1); provenance phases are logged in song space (E2); every
+    head change logs its exact index (E3). Rule 3: the stem is exact or it fails.
+16. The turn window pins its previous source until it ends (E4). Rule 2.
+17. Two crossfade laws by cause, equal-gain for turns and equal-power for
+    source-kind swaps (E5); the box decimation has a named, measured fallback.
+18. A repeated factor is receipt-only (E6).
+19. An engaged source render is never evicted; a source render never keys on
+    volume or chain (E7, E8). Rule 3.
+20. The Pi 5 measurement is a hardware gate on Part 3a's merge; Parts 1 and 2
+    close on the arm64 proxy (E10, E11). Rule 2: the number D2 rests on is
+    measured where it matters, without making a part impossible to close.
+21. Follow tempo ships Off until its page exists (E15). Rule 1.
+14. `presetCheaper` with the 8 kHz tonality limit is the starting recipe; the
+    listening check on the appliance may swap either without an API change.
 
 ## 8. Genuine product-direction questions (defaults above stand until the owner says otherwise)
 
@@ -1006,7 +1194,7 @@ non-identity head, a new Dart owner, or a change to the song clock's advance.
 
 The Part 1 thresholds, the per-part appliance re-runs, late-period counts from
 `le_engine_get_callback_telemetry` during eight concurrent renders, the
-listening checks (½× and 8× artefacts, ±12 st with and without the tonality
+listening checks (½× and 8× artifacts, ±12 st with and without the tonality
 limit, the 10 ms turn on sustained material), footswitch and LED proof for
 Parts 6a and 6b, and the behaviour of a retained reopen with pending renders
 on the real ALSA loss path.
