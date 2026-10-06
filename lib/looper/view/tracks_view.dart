@@ -15,6 +15,7 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
+import 'package:segno/looper/view/foot_custom_view.dart';
 import 'package:segno/looper/view/foot_fade_view.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
 import 'package:segno/looper/view/foot_peel_view.dart';
@@ -59,6 +60,7 @@ class _TracksViewState extends State<TracksView> {
     dismissAppToast(AppToastId.footFadeFailure);
     dismissAppToast(AppToastId.footReverseFailure);
     dismissAppToast(AppToastId.footPeelRefused);
+    dismissAppToast(AppToastId.assignedActionRefused);
     super.dispose();
   }
 
@@ -178,6 +180,25 @@ class _TracksViewState extends State<TracksView> {
               autoCloseDuration: const Duration(seconds: 5),
             ),
           ),
+          BlocListener<ControlCubit, ControlState>(
+            // Every other refused assignment (a Custom switch, a CTRL switch
+            // or a MIDI control), from any mode: one cause, one notice.
+            listenWhen: (before, after) =>
+                before.assignedActionFailure != after.assignedActionFailure &&
+                after.assignedActionRefusal != null,
+            listener: (context, state) => showAppToast(
+              id: AppToastId.assignedActionRefused,
+              type: ToastificationType.warning,
+              title: Text(
+                assignedActionRefusedText(
+                  context.l10n,
+                  context.read<TracksCubit>().state.names,
+                  state.assignedActionRefusal!,
+                ),
+              ),
+              autoCloseDuration: const Duration(seconds: 5),
+            ),
+          ),
           BlocListener<SessionCubit, SessionState>(
             // React to a settled action — a save or load that finished or
             // failed — never the transient `working` tick.
@@ -247,6 +268,8 @@ class _TracksViewState extends State<TracksView> {
                             ? const FootReverseView()
                             : mode == InteractionMode.peel
                             ? const FootPeelView()
+                            : mode == InteractionMode.custom
+                            ? const FootCustomView()
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [

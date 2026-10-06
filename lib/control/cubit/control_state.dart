@@ -25,6 +25,9 @@ class ControlState extends Equatable {
     this.footReverseFailure = 0,
     this.footPeelFailure = 0,
     this.footPeelRefusal = FootPeelRefusal.failed,
+    this.customLit = const <PedalButton, bool>{},
+    this.assignedActionFailure = 0,
+    this.assignedActionRefusal,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -133,6 +136,20 @@ class ControlState extends Equatable {
 
   /// Why the latest refused Peel press removed nothing.
   final FootPeelRefusal footPeelRefusal;
+
+  /// Which switches the Custom face draws lit: exactly the switch LEDs the
+  /// cubit projects in Custom mode, published so the face cannot disagree
+  /// with the plate (#1229). Empty outside Custom mode. Derived by the cubit
+  /// on every projection, never edited.
+  final Map<PedalButton, bool> customLit;
+
+  /// Each refused assigned action (a Custom switch, a CTRL switch or a MIDI
+  /// control) that has no notice of its own notifies once; the notice names
+  /// [assignedActionRefusal] (#1229, notice policy rule 3).
+  final int assignedActionFailure;
+
+  /// The action the latest [assignedActionFailure] refused.
+  final ControlAction? assignedActionRefusal;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -250,6 +267,9 @@ class ControlState extends Equatable {
     int? footReverseFailure,
     int? footPeelFailure,
     FootPeelRefusal? footPeelRefusal,
+    Map<PedalButton, bool>? customLit,
+    int? assignedActionFailure,
+    ControlAction? assignedActionRefusal,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -285,6 +305,9 @@ class ControlState extends Equatable {
     footReverseFailure: footReverseFailure ?? this.footReverseFailure,
     footPeelFailure: footPeelFailure ?? this.footPeelFailure,
     footPeelRefusal: footPeelRefusal ?? this.footPeelRefusal,
+    customLit: customLit ?? this.customLit,
+    assignedActionFailure: assignedActionFailure ?? this.assignedActionFailure,
+    assignedActionRefusal: assignedActionRefusal ?? this.assignedActionRefusal,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -322,6 +345,9 @@ class ControlState extends Equatable {
     footReverseFailure,
     footPeelFailure,
     footPeelRefusal,
+    customLit,
+    assignedActionFailure,
+    assignedActionRefusal,
     cursor,
     activeBank,
     excluded,

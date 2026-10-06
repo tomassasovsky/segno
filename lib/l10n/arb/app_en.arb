@@ -5948,6 +5948,28 @@
     "@footPeelFailure": {
         "description": "Foot Peel performance surface."
     },
+    "footCustomHold": "Hold · {action}",
+    "@footCustomHold": {
+        "description": "Foot Custom performance surface: the line under a switch caption naming the action its Hold runs.",
+        "placeholders": {
+            "action": {
+                "type": "String"
+            }
+        }
+    },
+    "footCustomStopRecording": "Stop recording",
+    "@footCustomStopRecording": {
+        "description": "Foot Custom performance surface: what a switch assigned Record performance reads while a performance recording runs."
+    },
+    "assignedActionRefused": "{action} is unavailable right now.",
+    "@assignedActionRefused": {
+        "description": "Notice when an assigned action (a Custom switch, a CTRL switch or a MIDI control) is refused. {action} is the action's catalogue name.",
+        "placeholders": {
+            "action": {
+                "type": "String"
+            }
+        }
+    },
     "mixerFading": "Fading",
     "@mixerFading": {
         "description": "Foot Fade performance surface."
