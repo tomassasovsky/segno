@@ -13,6 +13,7 @@ import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
+import 'package:segno_engine/src/volume_space.dart';
 
 /// Result of an [AudioEngine] operation.
 ///
@@ -1296,18 +1297,18 @@ abstract interface class SessionIo {
 
   /// Copies track [channel]'s lane [lane] history image at [ordinal] out for
   /// session export, or an empty list for an empty layer / out-of-range
-  /// argument. Ordinals run oldest→newest: `[0, undoDepth)` are the undo
-  /// snapshots, `undoDepth` is the live buffer, then the redo snapshots; a
+  /// argument. Ordinals run oldest→newest: `[0, undoCount)` are the undo
+  /// snapshots, `undoCount` is the live buffer, then the redo snapshots; a
   /// redo-side Peel marker holds no image and takes no ordinal
-  /// ([exportHistory], [HistoryEntry.imageCount]). Read-only — call when not
+  /// ([exportHistory], [TrackHistory.imageCount]). Read-only — call when not
   /// capturing.
   Float32List exportLayer(int channel, int lane, int ordinal);
 
-  /// Lists track [channel]'s history entries in image-ordinal order: the undo
-  /// stack oldest first, then the redo stack newest-adjacent first, so the
-  /// first `undoDepth` entries are the undo side. Empty for an out-of-range
-  /// [channel]. Read-only.
-  List<HistoryEntry> exportHistory(int channel);
+  /// Lists track [channel]'s history in image-ordinal order with its raw
+  /// split ([TrackHistory.undoCount]): split the images by that count, never
+  /// by the snapshot's `undoDepth`, which reads 0 while a Clear restore is in
+  /// flight. [TrackHistory.none] for an out-of-range [channel]. Read-only.
+  TrackHistory exportHistory(int channel);
 
   /// Stages [pcm] as track [channel]'s lane [lane] image at [ordinal] into an
   /// EMPTY track (the ordinal is the pool slot). Call once per `(lane,
@@ -1317,19 +1318,14 @@ abstract interface class SessionIo {
   EngineResult importLayer(int channel, int lane, int ordinal, Float32List pcm);
 
   /// Publishes a track reconstructed via [importLayer] with its [history]
-  /// ([exportHistory] order; the first [undoCount] entries are the undo side):
-  /// rebuilds the undo/redo stacks with their kinds and points playback at the
-  /// live image (ordinal [undoCount]), every active lane in lockstep.
-  /// [HistoryEntry.imageCount] images must already be staged on every active
-  /// lane at one length. Returns [EngineResult.invalid] for a non-empty track,
-  /// a malformed history (a Clear point on the undo side, a negative or
-  /// misplaced skipped count, more images than the pool), or a torn
-  /// (missing-image or mismatched-length) reconstruction.
-  EngineResult finalizeHistory(
-    int channel,
-    List<HistoryEntry> history,
-    int undoCount,
-  );
+  /// ([exportHistory] order): rebuilds the undo/redo stacks with their kinds
+  /// and points playback at the live image (ordinal
+  /// [TrackHistory.undoCount]), every active lane in lockstep.
+  /// [TrackHistory.imageCount] images must already be staged on every active
+  /// lane at one length. Returns [EngineResult.invalid] for a non-empty
+  /// track, a history the engine could not hold ([TrackHistory.malformation]),
+  /// or a torn (missing-image or mismatched-length) reconstruction.
+  EngineResult finalizeHistory(int channel, TrackHistory history);
 
   /// Establishes the master loop at [baseFrames] and leaves every imported
   /// track stopped at its whole-loop multiple. Launch with [AudioEngine.play].
@@ -1495,19 +1491,32 @@ abstract interface class EnginePerformanceCapture {
   /// the engine is disposed.
   EngineResult perfDisarm();
 
-  /// Free bytes on the volume holding [path], or `null` if the platform could
-  /// not answer (a path that does not exist, a filesystem that cannot report).
+  /// Total and free bytes of the volume holding [path], or `null` if the
+  /// platform could not answer (a path that does not exist, a filesystem that
+  /// cannot report).
   ///
   /// This is a question about a directory, not about a running capture, so it
-  /// is also the check made before arming one. It lives on the engine because
-  /// Dart has no free-space API, and the `df` subprocess that filled that gap
-  /// turned out to be the single most expensive thing on the appliance's
-  /// real-time path: `Process.run` is fork() + exec(), fork() holds the
-  /// process's mmap_lock for write for milliseconds while it copies a 1.7 GB
-  /// address space's page tables, and under PREEMPT_RT the audio thread's next
-  /// page fault sleeps behind it. Every audible dropout measured on the Pi 5
-  /// bench landed within 3 ms of one (#806).
-  int? volumeFreeBytes(String path);
+  /// is also the check made before arming one, and the figure the Storage page
+  /// draws for Internal and for each removable volume (#1177). It lives on the
+  /// engine because Dart has no free-space API, and the `df` subprocess that
+  /// filled that gap turned out to be the single most expensive thing on the
+  /// appliance's real-time path: `Process.run` is fork() + exec(), fork() holds
+  /// the process's mmap_lock for write for milliseconds while it copies a
+  /// 1.7 GB address space's page tables, and under PREEMPT_RT the audio
+  /// thread's next page fault sleeps behind it. Every audible dropout measured
+  /// on the Pi 5 bench landed within 3 ms of one (#806).
+  VolumeSpace? volumeSpace(String path);
+
+  /// Makes the entries of the directory at [path] durable (fsync(2) on the
+  /// directory): a file renamed into it, a file created in it. Returns whether
+  /// it was synced; false for a path that is not a directory or a sync the
+  /// device refused.
+  ///
+  /// A file's own flush makes its bytes durable but not its name, and Dart
+  /// cannot open a directory to sync it. The storage repository calls this
+  /// after every copy's rename (#1177, #1195). Synchronous, and as slow as the
+  /// device's flush; never on the audio thread.
+  bool syncDirectory(String path);
 
   /// Starts an offline render of the finalized capture at [captureDir]: a
   /// worker thread reconstructs each non-empty track's full-length DRY stem

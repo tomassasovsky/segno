@@ -1,5 +1,4 @@
 import 'dart:ffi';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -7,6 +6,7 @@ import 'package:meta/meta.dart';
 import 'package:segno_engine/src/audio_device.dart';
 import 'package:segno_engine/src/audio_engine.dart';
 import 'package:segno_engine/src/engine_config.dart';
+import 'package:segno_engine/src/engine_library.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/ffi_strings.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
@@ -20,34 +20,7 @@ import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
-
-/// Opens the bundled native engine library for the current platform.
-///
-/// On Apple platforms the engine is compiled directly into the application
-/// binary (Swift Package Manager static-links the plugin into the Runner; the
-/// CocoaPods fallback embeds it as a framework). In both cases its exported
-/// symbols live in the process's global namespace, so [DynamicLibrary.process]
-/// resolves them — there is no standalone library file to open. This relies on
-/// the `LE_EXPORT` symbols being marked `visibility("default")` + `used` so the
-/// linker keeps them. See macos/segno_engine/Package.swift.
-///
-/// On Linux/Windows the engine is a separate shared library opened by name.
-///
-/// A `SEGNO_ENGINE_LIB` environment variable overrides the lookup with an
-/// explicit path on every platform — how the device-free test suites (the
-/// sequence fuzzer via [PumpedNativeEngine]) point at a freshly built library
-/// outside an app bundle.
-DynamicLibrary _openLibrary() {
-  final override = Platform.environment['SEGNO_ENGINE_LIB'];
-  if (override != null && override.isNotEmpty) {
-    return DynamicLibrary.open(override);
-  }
-  if (Platform.isMacOS || Platform.isIOS) {
-    return DynamicLibrary.process();
-  }
-  if (Platform.isWindows) return DynamicLibrary.open('segno_engine.dll');
-  return DynamicLibrary.open('libsegno_engine.so');
-}
+import 'package:segno_engine/src/volume_space.dart';
 
 /// Production [AudioEngine] that drives the native miniaudio engine over FFI.
 ///
@@ -61,7 +34,7 @@ class NativeAudioEngine implements AudioEngine {
   /// [bindings] may be injected (e.g. against a statically linked test binary);
   /// when omitted, the platform shared library is opened.
   NativeAudioEngine({SegnoEngineBindings? bindings})
-    : _bindings = bindings ?? SegnoEngineBindings(_openLibrary()) {
+    : _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary()) {
     _engine = _bindings.le_engine_create();
     if (_engine == nullptr) {
       throw const EngineException(
@@ -1261,8 +1234,9 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  List<HistoryEntry> exportHistory(int channel) {
+  TrackHistory exportHistory(int channel) {
     _checkAlive();
+    final undoCount = calloc<Int32>();
     final empty = calloc<Int32>();
     try {
       // A zero-capacity call returns the entry count (or a negative error).
@@ -1272,8 +1246,10 @@ class NativeAudioEngine implements AudioEngine {
         empty,
         empty,
         0,
+        undoCount,
       );
-      if (count <= 0) return const [];
+      if (count < 0) return TrackHistory.none;
+      if (count == 0) return TrackHistory(const [], undoCount: undoCount.value);
       final kinds = calloc<Int32>(count);
       final skipped = calloc<Int32>(count);
       try {
@@ -1283,39 +1259,42 @@ class NativeAudioEngine implements AudioEngine {
           kinds,
           skipped,
           count,
+          undoCount,
         );
         if (n != count) {
           throw StateError('history of track $channel changed while read');
         }
-        return [
-          for (var i = 0; i < count; i++)
-            HistoryEntry(HistoryKind.values[kinds[i]], skipped: skipped[i]),
-        ];
+        return TrackHistory(
+          [
+            for (var i = 0; i < count; i++)
+              HistoryEntry(HistoryKind.values[kinds[i]], skipped: skipped[i]),
+          ],
+          undoCount: undoCount.value,
+        );
       } finally {
         calloc
           ..free(kinds)
           ..free(skipped);
       }
     } finally {
-      calloc.free(empty);
+      calloc
+        ..free(undoCount)
+        ..free(empty);
     }
   }
 
   @override
-  EngineResult finalizeHistory(
-    int channel,
-    List<HistoryEntry> history,
-    int undoCount,
-  ) {
+  EngineResult finalizeHistory(int channel, TrackHistory history) {
     _checkAlive();
-    final count = history.length;
+    final entries = history.entries;
+    final count = entries.length;
     // One element at least: the allocator refuses a zero-byte request.
     final kinds = calloc<Int32>(count == 0 ? 1 : count);
     final skipped = calloc<Int32>(count == 0 ? 1 : count);
     try {
       for (var i = 0; i < count; i++) {
-        kinds[i] = history[i].kind.index;
-        skipped[i] = history[i].skipped;
+        kinds[i] = entries[i].kind.index;
+        skipped[i] = entries[i].skipped;
       }
       return EngineResult.fromCode(
         _bindings.le_engine_finalize_history(
@@ -1324,7 +1303,7 @@ class NativeAudioEngine implements AudioEngine {
           kinds,
           skipped,
           count,
-          undoCount,
+          history.undoCount,
         ),
       );
     } finally {
@@ -2387,19 +2366,30 @@ class NativeAudioEngine implements AudioEngine {
   /// a network mount whose server has gone away it can block for that mount's
   /// timeout. The appliance's capture volume is local NVMe.
   @override
-  int? volumeFreeBytes(String path) {
+  VolumeSpace? volumeSpace(String path) {
     if (path.isEmpty) return null;
     final pathPtr = path.toNativeUtf8();
-    final outPtr = calloc<Uint64>();
+    final totalPtr = calloc<Uint64>();
+    final freePtr = calloc<Uint64>();
     try {
-      final code = _bindings.le_perf_volume_free_bytes(
-        pathPtr.cast(),
-        outPtr,
-      );
+      final code = _bindings.le_volume_space(pathPtr.cast(), totalPtr, freePtr);
       if (!EngineResult.fromCode(code).isOk) return null;
-      return outPtr.value;
+      return VolumeSpace(totalBytes: totalPtr.value, freeBytes: freePtr.value);
     } finally {
-      calloc.free(outPtr);
+      calloc
+        ..free(freePtr)
+        ..free(totalPtr);
+      malloc.free(pathPtr);
+    }
+  }
+
+  @override
+  bool syncDirectory(String path) {
+    if (path.isEmpty) return false;
+    final pathPtr = path.toNativeUtf8();
+    try {
+      return EngineResult.fromCode(_bindings.le_sync_dir(pathPtr.cast())).isOk;
+    } finally {
       malloc.free(pathPtr);
     }
   }

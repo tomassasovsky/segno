@@ -73,7 +73,12 @@ SRC_URI = "file://segno.service \
            file://segno-log-check \
            file://segno-log-check.service \
            file://var-volatile-log-journal.mount \
-           file://var-lib-systemd-coredump.mount"
+           file://var-lib-systemd-coredump.mount \
+           file://segno-usb-ctl \
+           file://segno-usb-mount@.service \
+           file://segno-usb-eject.path \
+           file://segno-usb-eject.service \
+           file://98-segno-usb-storage.rules"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
@@ -114,6 +119,7 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   bluez5 ddcutil \
                   iw \
                   weston-examples \
+                  util-linux-mount util-linux-umount util-linux-blkid util-linux-flock \
                   coreutils"
 
 inherit systemd
@@ -123,7 +129,7 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via segno-update-ctl).
 # So segno-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount"
+SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount segno-usb-eject.path"
 
 FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-wayland ${bindir}/segno-rtirq \
                 ${bindir}/segno-data-grow \
@@ -144,6 +150,11 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-way
                 ${bindir}/segno-touch-calibration-helper \
                 ${bindir}/segno-touch-persist \
                 ${sysconfdir}/udev/rules.d/97-segno-touch-output.rules \
+                ${sysconfdir}/udev/rules.d/98-segno-usb-storage.rules \
+                ${bindir}/segno-usb-ctl \
+                ${systemd_system_unitdir}/segno-usb-mount@.service \
+                ${systemd_system_unitdir}/segno-usb-eject.path \
+                ${systemd_system_unitdir}/segno-usb-eject.service \
                 ${sysconfdir}/NetworkManager/conf.d/99-segno-wifi.conf \
                 ${sysconfdir}/systemd/system/dropbear@.service.d/segno.conf \
                 ${sysconfdir}/systemd/system/dropbearkey.service.d/segno.conf \
@@ -273,6 +284,22 @@ do_install() {
     install -d ${D}${sysconfdir}/udev/rules.d
     install -m 0644 ${UNPACKDIR}/97-segno-touch-output.rules \
         ${D}${sysconfdir}/udev/rules.d/97-segno-touch-output.rules
+
+    # Removable USB storage (#1177). udev hands each USB filesystem to the
+    # segno-usb-mount@ template, which mounts it and writes the JSON the app
+    # watches; the app ejects by dropping a request file that the .path unit
+    # serves. The template is started by udev and is deliberately NOT in
+    # SYSTEMD_SERVICE; the eject service is activated by its .path unit and
+    # has no [Install] section, so only the .path is enabled. util-linux
+    # mount/umount/blkid are RDEPENDS: the helper passes per-filesystem
+    # option strings and parses util-linux's error vocabulary, not busybox's.
+    # util-linux flock serialises the helper's verbs (parallel attaches).
+    install -m 0755 ${UNPACKDIR}/segno-usb-ctl ${D}${bindir}/segno-usb-ctl
+    install -m 0644 ${UNPACKDIR}/segno-usb-mount@.service ${D}${systemd_system_unitdir}/segno-usb-mount@.service
+    install -m 0644 ${UNPACKDIR}/segno-usb-eject.path ${D}${systemd_system_unitdir}/segno-usb-eject.path
+    install -m 0644 ${UNPACKDIR}/segno-usb-eject.service ${D}${systemd_system_unitdir}/segno-usb-eject.service
+    install -m 0644 ${UNPACKDIR}/98-segno-usb-storage.rules \
+        ${D}${sysconfdir}/udev/rules.d/98-segno-usb-storage.rules
 
     # NetworkManager appliance tweaks (WiFi join reliability on brcmfmac).
     # segno-nm-persist: mkdir /data/NetworkManager/system-connections before NM

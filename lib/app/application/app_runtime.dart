@@ -38,7 +38,6 @@ class AppRuntime {
     required PedalRepository pedal,
     required PerformanceRepository performance,
     required SessionRepository sessions,
-    required Future<String> Function() exportDirectory,
     required Future<void> Function() powerOff,
   }) {
     fxPersistence = FxChainPersistence(looper: repository);
@@ -94,6 +93,7 @@ class AppRuntime {
       controller: controllers,
       midiDevices: midiDevices,
       takeLocked: () => takeLocked,
+      inputLocked: () => _closing || fxPersistence.sessionTransitionActive,
     );
     session = SessionCubit(
       repository: sessions,
@@ -114,7 +114,6 @@ class AppRuntime {
         timing: timing,
         fade: fade,
       ),
-      exportDirectory: exportDirectory,
       currentPedalBindings: () => control.state.bindings.encode(),
       onPedalBindings: (encoded) =>
           control.applySessionBindings(PedalBindingSet.decode(encoded)),
@@ -189,11 +188,11 @@ class AppRuntime {
       if (!retry) rethrow;
     }
     if (retry) {
-      final mixResult = await mix.recover();
-      if (!mixResult.isOk) throw MixSettingsRecoveryException(mixResult);
-      if (await owners.recover() case final failure?) {
-        throw StateError('${failure.key.name} still needs recovery');
-      }
+      // Retry repairs what it can. What still blocks is decided by the
+      // flushes below, under one rule: an owed value does not block on its
+      // own, because storage holds it and the next start replays it.
+      await mix.recover();
+      await owners.recover();
       await control.flushMidiConfiguration(
         retireControls: true,
       );

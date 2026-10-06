@@ -126,11 +126,14 @@ void main() {
       expect(saved.undoDepth, 1);
       expect(saved.redoDepth, 1);
       final history = engine.exportHistory(0);
-      expect(history, const [
-        HistoryEntry(HistoryKind.layer),
-        HistoryEntry(HistoryKind.peel),
-      ]);
-      final images = HistoryEntry.imageCount(history, undoCount: 1);
+      expect(
+        history,
+        const TrackHistory([
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.peel),
+        ], undoCount: 1),
+      );
+      final images = history.imageCount;
       expect(images, 2);
       final layers = [
         for (var o = 0; o < images; o++) engine.exportLayer(0, 0, o),
@@ -158,7 +161,6 @@ void main() {
                 outputMask: 1,
                 inputChannel: 0,
                 history: history,
-                undoCount: 1,
               ),
             ],
           ),

@@ -91,13 +91,30 @@
 #include <pthread.h>
 #include <sched.h>    /* SCHED_OTHER, sched_get_priority_min */
 #include <sys/stat.h> /* mkdir */
-#include <sys/statvfs.h> /* statvfs (le_perf_volume_free_bytes) */
+#include <sys/statvfs.h> /* statvfs (le_volume_space) */
 #include <time.h>     /* nanosleep */
 #include <unistd.h>   /* write, close */
 #if defined(__linux__)
 #include <sys/resource.h> /* setpriority, PRIO_PROCESS */
 #endif
 #endif
+
+/* Makes the entries of the directory at `path` durable: a rename into it, a
+ * file created in it. segno_engine_api.h has the why. */
+int32_t le_sync_dir(const char* path) {
+  if (path == NULL || path[0] == '\0') return LE_ERR_INVALID;
+#if defined(_WIN32)
+  /* NTFS journals its metadata, and Win32 has no handle on a directory that
+   * FlushFileBuffers would take without backup privileges: nothing to do. */
+  return LE_OK;
+#else
+  const int fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+  if (fd < 0) return LE_ERR_DEVICE;
+  const int rc = fsync(fd);
+  close(fd);
+  return rc == 0 ? LE_OK : LE_ERR_DEVICE;
+#endif
+}
 
 /* ---- tuning ---- */
 #define LE_PD_FLUSH_MS 250   /* drain + sidecar flush cadence */
@@ -117,17 +134,21 @@
                                * silently or overrunning the buffer */
 #define LE_PD_SCRATCH_SAMPLES 2048 /* per-drain-cycle pop buffer, in samples */
 
-/* Free bytes on the volume holding `path` — segno_engine_api.h has the why,
- * including why the caller no longer shells out to `df` for it.
+/* Total and available bytes of the volume holding `path` — segno_engine_api.h
+ * has the why, including why no caller shells out to `df` for it.
  *
  * f_bavail, not f_bfree: the reserved blocks a filesystem keeps for root are
  * not room a capture may use, and reporting them would let a take arm onto a
- * volume it cannot actually fill. */
-int32_t le_perf_volume_free_bytes(const char* path, uint64_t* out_bytes) {
-  if (path == NULL || path[0] == '\0' || out_bytes == NULL) {
+ * volume it cannot actually fill. f_blocks is the whole volume, which is what
+ * the Storage page draws as "of N GB" next to the free figure. */
+int32_t le_volume_space(const char* path, uint64_t* out_total_bytes,
+                        uint64_t* out_free_bytes) {
+  if (path == NULL || path[0] == '\0' || out_total_bytes == NULL ||
+      out_free_bytes == NULL) {
     return LE_ERR_INVALID;
   }
-  *out_bytes = 0;
+  *out_total_bytes = 0;
+  *out_free_bytes = 0;
 #if defined(_WIN32)
   /* The W entry point, not the A one: `path` is UTF-8 (it comes from Dart), and
    * GetDiskFreeSpaceExA would read it in the active ANSI code page — every
@@ -139,14 +160,18 @@ int32_t le_perf_volume_free_bytes(const char* path, uint64_t* out_bytes) {
                                            (int)(sizeof(wide) / sizeof(wide[0])));
   if (wide_len <= 0) return LE_ERR_INVALID;
   ULARGE_INTEGER avail;
+  ULARGE_INTEGER total;
   avail.QuadPart = 0;
-  if (!GetDiskFreeSpaceExW(wide, &avail, NULL, NULL)) return LE_ERR_DEVICE;
-  *out_bytes = (uint64_t)avail.QuadPart;
+  total.QuadPart = 0;
+  if (!GetDiskFreeSpaceExW(wide, &avail, &total, NULL)) return LE_ERR_DEVICE;
+  *out_total_bytes = (uint64_t)total.QuadPart;
+  *out_free_bytes = (uint64_t)avail.QuadPart;
   return LE_OK;
 #else
   struct statvfs st;
   if (statvfs(path, &st) != 0) return LE_ERR_DEVICE;
-  *out_bytes = (uint64_t)st.f_bavail * (uint64_t)st.f_frsize;
+  *out_total_bytes = (uint64_t)st.f_blocks * (uint64_t)st.f_frsize;
+  *out_free_bytes = (uint64_t)st.f_bavail * (uint64_t)st.f_frsize;
   return LE_OK;
 #endif
 }

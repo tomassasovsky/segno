@@ -458,7 +458,14 @@ class LoopOutlinedButton extends StatelessWidget {
     final foreground = tone == LoopButtonTone.accent
         ? surface.onAccent
         : surface.textPrimary;
-    final text = TextStyle(color: foreground, fontSize: fontSize, height: 1);
+    // The pen draws every accent action's label bold (`Done`, `Open session`,
+    // `Start new loop`, `Use as backing`); the other fills stay regular.
+    final text = TextStyle(
+      color: foreground,
+      fontSize: fontSize,
+      fontWeight: tone == LoopButtonTone.accent ? FontWeight.w700 : null,
+      height: 1,
+    );
     // A button with nothing to do READS as having nothing to do. A control
     // that looks live and is inert is the working-but-silent control the
     // accepted design says to explain rather than present.
@@ -901,12 +908,17 @@ class LoopSlider extends StatefulWidget {
     this.onEditCancel,
     this.semanticValueBuilder,
     this.keyboardStep = 0.01,
+    this.max = 1,
     this.enabled = true,
     super.key,
   });
 
   /// Position in `0..1`.
   final double value;
+
+  /// The highest position the slider can reach, in `0..1`. A touch, a drag and
+  /// a keyboard step all stop here, and a [value] above it is drawn here.
+  final double max;
 
   /// Previews a position without persisting it.
   final ValueChanged<double> onChanged;
@@ -946,7 +958,7 @@ class _LoopSliderState extends State<LoopSlider> {
   double? _opening;
   LoopEditCoordinator? _coordinator;
 
-  double _fraction(double dx) => (dx / widget.width).clamp(0.0, 1.0);
+  double _fraction(double dx) => (dx / widget.width).clamp(0.0, widget.max);
 
   void _beginEdit() {
     if (!widget.enabled) return;
@@ -1005,7 +1017,7 @@ class _LoopSliderState extends State<LoopSlider> {
     if (delta == 0) return KeyEventResult.ignored;
     final next = (_keyboardDraft! + delta * widget.keyboardStep).clamp(
       0.0,
-      1.0,
+      widget.max,
     );
     setState(() => _keyboardDraft = next);
     widget.onChanged(next);
@@ -1039,7 +1051,7 @@ class _LoopSliderState extends State<LoopSlider> {
     final enabled = widget.enabled;
     final clamped = (_keyboardDraft ?? _touchPreview ?? widget.value).clamp(
       0.0,
-      1.0,
+      widget.max,
     );
     return Focus(
       canRequestFocus: enabled,
