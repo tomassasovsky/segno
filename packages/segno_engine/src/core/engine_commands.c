@@ -4893,8 +4893,10 @@ int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
 /* ---- Bounce (#1202, Part 4a) ---- */
 
 /* The busy rule every Bounce admission shares: nothing may be capturing,
- * armed, launching, draining a layer, holding shadows, or waiting on another
- * state command, clear report or bounce on [t]. A content track must also be
+ * armed, launching, draining a layer, or waiting on another state command,
+ * clear report or bounce on [t]. Spare overdub shadows do not refuse it: the
+ * install drops them on the callback and le_bounce_collect reclaims them,
+ * as a Clear does. A content track must also be
  * readable by the callback's own end-of-block verdict (no seam or punch
  * tail), so the install can never meet a writer. */
 static int le_bounce_busy(le_engine* engine, int32_t channel) {
@@ -4902,7 +4904,7 @@ static int le_bounce_busy(le_engine* engine, int32_t channel) {
   const int32_t st = le_effective_state(t);
   if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) return 1;
   if (t->bounce_inflight || t->clear_restore_pending || t->cancel_pending ||
-      t->queued_undo || t->outstanding_count > 0 || engine->armed[channel] ||
+      t->queued_undo || engine->armed[channel] ||
       load_i32(&t->a_pending) || load_i32(&t->a_pending_launch) ||
       atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire) ||
       t->state_cmds_posted >
@@ -5019,6 +5021,12 @@ void le_bounce_collect(le_engine* engine) {
       }
       le_publish_undo_depth(t);
       store_i32(&t->a_redo_depth, t->redo_count);
+      /* The callback dropped the armed shadows with the install (sized for
+       * the old length); their slots return to the pool, and correctly
+       * sized spares arrive with the next dub session's replenish. Until
+       * the result is filed they stay outstanding, so nothing reuses a slot
+       * the callback may still hold. */
+      t->outstanding_count = 0;
     }
     t->bounce_inflight = NULL;
     t->bounce_pin[0] = t->bounce_pin[1] = 0;
