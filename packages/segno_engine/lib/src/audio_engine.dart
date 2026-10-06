@@ -80,6 +80,19 @@ enum EngineResult {
 /// [LooperTransport.readRequestResult].
 typedef RequestAdmission = ({EngineResult result, int request});
 
+/// One length edit of a track's material (#1168).
+enum LengthEdit {
+  /// Repeats the material: twice the length.
+  doubled,
+
+  /// Keeps the first half, `ceil(length / 2)` frames.
+  firstHalf,
+
+  /// Keeps the last half, `ceil(length / 2)` frames; an odd length's halves
+  /// share the middle frame.
+  lastHalf,
+}
+
 /// What [EngineLifecycle.reopen] did with the recorded material.
 ///
 /// Mirrors the native `le_reopen_outcome`. [retained] and [retainedPartial]
@@ -306,8 +319,18 @@ abstract interface class LooperTransport {
     required bool reversed,
   });
 
-  /// Consumes a completed Fade or Reverse callback result; null means still
-  /// pending.
+  /// Queues a length edit of track [channel] (#1168): one recoverable history
+  /// entry, applied by the callback with its image, length and clock in one
+  /// block; the playhead keeps its phase. Refused before any change with
+  /// [EngineResult.modeMismatch] when the length would not fit the looper
+  /// mode (a track holding the rig's only content re-clocks it instead),
+  /// [EngineResult.capacity] past the loop cap, [EngineResult.invalid] for a
+  /// track that is not playing or stopped and [EngineResult.notReady] while
+  /// it captures, drains or has an arm, launch or pending command.
+  RequestAdmission editLength({required int channel, required LengthEdit edit});
+
+  /// Consumes a completed Fade, Reverse or length callback result; null means
+  /// still pending.
   EngineResult? readRequestResult(int request);
 
   /// Halts track [channel]'s playback, retaining the loop buffer.

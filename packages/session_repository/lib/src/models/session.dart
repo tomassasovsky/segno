@@ -1243,6 +1243,9 @@ void _checkHistory(int channel, SessionLane lane) {
     if (entry.kind == HistoryKind.clear && i < lane.undoCount) {
       corrupt('entry $i is a Clear point on the undo side');
     }
+    if (entry.kind == HistoryKind.length) {
+      corrupt('entry $i is a length edit, whose lengths a Session lacks');
+    }
   }
   final images = HistoryEntry.imageCount(history, undoCount: lane.undoCount);
   if (lane.layers.length != images) {

@@ -1066,10 +1066,7 @@ static void le_seam_fold(le_track* t, int32_t len, int32_t F) {
     const int32_t live = load_i32(&t->lanes[l].a_live);
     float* b = t->lanes[l].pool[live];
     if (b == NULL || t->lanes[l].pool_cap[live] < len + F) continue;
-    for (int32_t i = 0; i < F; ++i) {
-      const float x = (float)i / (float)F; /* 0..1 across the fade */
-      b[i] = b[len + i] * (1.0f - x) + b[i] * x;
-    }
+    le_seam_fold_head(b, b + len, F);
   }
 }
 
@@ -1136,10 +1133,7 @@ static void le_seam_fold_dub_shadow(le_track* t, int32_t len, int32_t F) {
      * dub_slot and pushed the retire event, i.e. after it can no longer name
      * the slot. So (pointer, cap) is immutable here too. */
     if (ln->pool_cap[live] < len + F || ln->pool_cap[slot] < F) continue;
-    for (int32_t i = 0; i < F; ++i) {
-      const float x = (float)i / (float)F; /* 0..1 across the fade */
-      sb[i] = b[len + i] * (1.0f - x) + sb[i] * x;
-    }
+    le_seam_fold_head(sb, b + len, F);
   }
 }
 
@@ -2688,6 +2682,78 @@ static int le_apply_routing(le_engine* e, const le_mix_settings* mix,
   return 1;
 }
 
+/* A length edit's playhead map (#1168): index i of the old image reads
+ * (i - start) mod len in the new one, so the kept material continues at the
+ * same sample and an omitted region lands at the same phase of the kept one. */
+static int32_t le_length_map(int64_t i, int32_t start, int32_t len) {
+  int64_t m = (i - start) % len;
+  if (m < 0) m += len;
+  return (int32_t)m;
+}
+
+/* LE_CMD_SET_LENGTH accepted (#1168): one drain, before any frame of this
+ * block is mixed, swaps the image, the length, the multiple or division and,
+ * when the track holds the rig's only content, the master. The clock position
+ * goes through the edit's map too, so a zero origin stays zero (the forward
+ * segment math is unchanged); the origin is then re-derived from the mapped
+ * read index, so a Once relaunch or a reversed track keeps reading on from it.
+ * A Reverse turn still mixing the old head snaps. */
+static void le_length_apply(le_engine* e, le_track* t, const le_command* cmd,
+                            uint64_t frame) {
+  const int32_t ch = (int32_t)(t - e->tracks);
+  const int32_t len = cmd->length.len;
+  const int32_t start = cmd->length.start;
+  int32_t old_len;
+  const int64_t old_pos = le_track_base_position(e, t, &old_len);
+  const int32_t index = le_length_map(
+      le_direction_index(t->reversed, t->playback_offset, old_pos, old_len),
+      start, len);
+  const int32_t pos = le_length_map(old_pos, start, len);
+  le_dub_drop_armed(t); /* idle shadows sized for the old length */
+  for (int32_t l = le_lanes_active(t) - 1; l >= 0; --l) {
+    atomic_store_explicit(&t->lanes[l].a_live, cmd->length.pool_slot,
+                          memory_order_release);
+  }
+  le_track_set_len(t, len);
+  store_i32(&t->a_multiple, cmd->length.multiple);
+  store_i32(&t->a_sync_divisor, cmd->length.divisor);
+  const int32_t mode = load_i32(&e->a_looper_mode);
+  if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) {
+    le_loop_clock_set_length(&t->free_clock, len);
+    t->free_clock.position = pos;
+  } else if (cmd->length.reclock > 0) {
+    le_plog_push(e, frame, (le_command){.code = LE_PLOG_LOOP_LENGTH_LOCKED,
+                                       .arg_i = len});
+    le_loop_clock_set_length(&e->clock, len);
+    e->clock.position = pos;
+    e->loop_iteration = 0;
+    t->start_iter = 0;
+    store_i32(&e->a_master_len, len);
+    sync_grid_to_loop(e, len);
+    e->loop_viz_bucket = -1;
+  } else if (cmd->length.divisor == 0 && e->clock.length > 0) {
+    /* The segment the mapped position sits in, counted from the current
+     * iteration (unsigned arithmetic: only differences are ever read). */
+    const int32_t base = e->clock.length;
+    const int64_t d = (int64_t)pos - e->clock.position;
+    int64_t seg = d / base;
+    if (d < 0 && d % base != 0) seg -= 1; /* floor */
+    seg %= cmd->length.multiple;
+    if (seg < 0) seg += cmd->length.multiple;
+    t->start_iter = e->loop_iteration - (uint64_t)seg;
+  }
+  t->turn_left = 0;
+  int32_t new_len;
+  const int64_t new_pos = le_track_base_position(e, t, &new_len);
+  t->playback_offset = le_direction_origin(t->reversed, index, new_pos, len);
+  e->trk_play_pos[ch] =
+      le_length_map(e->trk_play_pos[ch] % old_len, start, len);
+  reset_track_viz(e, ch);
+  le_audio_rev_bump(t); /* [R1] length edit: other audio */
+  le_plog_push(e, frame, (le_command){.code = LE_PLOG_LENGTH,
+      .length_log = {ch, cmd->length.pool_slot, len, cmd->length.image_id}});
+}
+
 static void apply_command_image(le_engine* e, const le_command* cmd,
                                 uint64_t frame, int preserve_image);
 static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
@@ -3306,6 +3372,49 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       /* Release after a_reversed: control's le_effective_reversed reads the
        * count first (acquire) and then trusts the published direction. */
       atomic_fetch_add_explicit(&t->a_reverse_applied, 1, memory_order_release);
+      break;
+    }
+    case LE_CMD_SET_LENGTH: {
+      /* A length edit or its Undo/Redo (#1168). Control admitted it against
+       * its effective view; the rig may have moved since (a sibling started
+       * capturing, a crown or mode landed, a fresh take's seam fold or a punch
+       * tail still writes), so the verdict is recomputed here on the applied
+       * rig and must match the payload. The verdict is published before the
+       * state ack, which the control drain waits for before filing history. */
+      const int32_t ch = cmd->length.channel;
+      if (!valid_channel(e, ch)) break;
+      le_track* t = &e->tracks[ch];
+      const int32_t st = load_i32(&t->a_state);
+      int32_t verdict = LE_ERR_NOT_READY;
+      if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) &&
+          load_i32(&t->lanes[0].a_len) > 0 && t->od_gain == 0.0f &&
+          t->seam_capture == 0 && t->xfade_capture == 0 &&
+          !load_i32(&t->a_layer_in_flight)) {
+        int others = 0;
+        for (int32_t c = 0; c < e->track_count; ++c) {
+          if (c != ch && load_i32(&e->tracks[c].a_state) != LE_TRACK_EMPTY) {
+            others = 1;
+          }
+        }
+        le_length_fit fit;
+        verdict = le_length_fit_check(load_i32(&e->a_looper_mode),
+                                      e->clock.length, others,
+                                      load_i32(&e->a_primary_track) == ch,
+                                      cmd->length.len, e->max_loop_frames,
+                                      &fit);
+        if (verdict == LE_OK && (fit.multiple != cmd->length.multiple ||
+                                 fit.divisor != cmd->length.divisor ||
+                                 fit.reclock != cmd->length.reclock)) {
+          verdict = LE_ERR_NOT_READY;
+        }
+      }
+      if (verdict == LE_OK) le_length_apply(e, t, cmd, frame);
+      store_i32(&t->a_length_result, verdict);
+      if (cmd->length.receipt >= 0) {
+        atomic_store_explicit(&e->receipts[cmd->length.receipt].result,
+                              verdict, memory_order_relaxed);
+      }
+      atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
       break;
     }
     case LE_CMD_SET_RECORD_TIMING: {

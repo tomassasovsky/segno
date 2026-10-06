@@ -52,6 +52,7 @@ class Track extends Equatable {
     this.redoDepth = 0,
     this.peelDepth = 0,
     this.multiple = 1,
+    this.syncDivisor = 0,
     this.inputMask = 0x1,
     this.outputMask = 0x3,
     this.layerInFlight = false,
@@ -159,6 +160,9 @@ class Track extends Equatable {
 
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
+
+  /// A Sync/Band division of the base loop (`2` or `4`), else `0`.
+  final int syncDivisor;
 
   /// The DEFINING-recording length preset (A6, D17): `0` = AUTO, `1..64` =
   /// fixed N bars. Inert on a track that already has content; applies to the
@@ -344,6 +348,7 @@ class Track extends Equatable {
     redoDepth,
     peelDepth,
     multiple,
+    syncDivisor,
     inputMask,
     outputMask,
     layerInFlight,
@@ -392,6 +397,7 @@ class Track extends Equatable {
     redoDepth,
     peelDepth,
     multiple,
+    syncDivisor,
     inputMask,
     outputMask,
     layerInFlight,
