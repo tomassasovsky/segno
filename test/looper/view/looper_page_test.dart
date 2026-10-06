@@ -189,7 +189,10 @@ void main() {
                     looper: repository,
                     mix: mixSettings,
                     fx: fxPersistence,
-                    owners: SettingsOwners(tempo.owners),
+                    owners: SettingsOwners([
+                      ...tempo.owners,
+                      ...playback.owners,
+                    ]),
                     tempo: tempo,
                     playback: playback,
                     record: recordOptions,
