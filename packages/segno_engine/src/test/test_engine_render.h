@@ -4,7 +4,7 @@
  * the source indices it came from. The engine runs two outputs, so a live
  * output pair is directly comparable with the rendered pair. */
 #include "engine_render.h" /* le_render_worker_choice, LE_RENDER_MAX_YIELDS */
-#include "engine_wav.h"    /* le_wav_flush, le_wav_patch_sizes */
+#include "engine_wav.h"    /* le_wav_flush, le_wav_seal */
 
 #define RR_SR 48000
 
@@ -205,6 +205,37 @@ static void test_render_once_then_silence(void) {
   CHECK(rr_render(e, &q, out, 48) == 48);
   for (int f = 0; f < 48; ++f) {
     const float a = f < 16 ? rr_a(f) : 0.0f;
+    CHECK(out[2 * f] == a + rr_b(f));
+  }
+  le_engine_destroy(e);
+}
+
+/* A reversed Once source on a common cycle plays its single pass backwards
+ * (review L-D2): from the frame its law reads the lap start, A[15] down to
+ * A[0], once, and silence elsewhere (the window is a loop, so the pass may
+ * wrap at its end). */
+static void test_render_once_reversed(void) {
+  printf("test_render_once_reversed\n");
+  le_engine* e = rr_fixture();
+  CHECK(le_engine_set_one_shot_mask(e, 1u, 1) == LE_OK);
+  uint64_t rq;
+  CHECK(le_engine_toggle_reverse(e, 0, &rq) == LE_OK);
+  drain(e);
+  le_track_snapshot ts;
+  le_engine_get_track(e, 0, &ts);
+  CHECK(ts.reversed == 1);
+  le_render_request q = rr_request(0x3, LE_RENDER_CUT);
+  float out[2 * 48];
+  CHECK(rr_render(e, &q, out, 48) == 48);
+  int start = -1;
+  for (int f = 0; f < 48 && start < 0; ++f) {
+    const int prev = (f + 47) % 48;
+    if (out[2 * f] != rr_b(f) && out[2 * prev] == rr_b(prev)) start = f;
+  }
+  CHECK(start >= 0);
+  for (int k = 0; k < 48 && start >= 0; ++k) {
+    const int f = (start + k) % 48;
+    const float a = k < 16 ? rr_a(15 - k) : 0.0f;
     CHECK(out[2 * f] == a + rr_b(f));
   }
   le_engine_destroy(e);
@@ -479,6 +510,8 @@ static void test_render_refusals(void) {
 
 static void test_render_staging_tracks_changed(void) {
   printf("test_render_staging_tracks_changed\n");
+  const uint64_t budget = le_render_stage_budget_ns;
+  le_render_stage_budget_ns = 0; /* one chunk per heartbeat */
   le_engine* e = rr_fixture();
   le_render_request q = rr_request(0x3, LE_RENDER_CUT);
   uint32_t id = 0;
@@ -505,6 +538,7 @@ static void test_render_staging_tracks_changed(void) {
   float out[2 * 48];
   CHECK(le_engine_render_copy(e, id, out, 48) == 48);
   for (int f = 0; f < 48; ++f) CHECK(out[2 * f] == rr_a(f) + rr_b(f));
+  le_render_stage_budget_ns = budget;
   le_engine_destroy(e);
 }
 
@@ -720,6 +754,10 @@ static void test_render_once_chosen_length(void) {
   rr_once_fixture(&e, 15000, 30000, a);
   le_render_request q = rr_request(0x2, LE_RENDER_CUT);
   q.length_bars = 1;
+  le_render_plan plan;
+  memset(&plan, 0, sizeof(plan));
+  CHECK(le_engine_render_measure(e, &q, &plan) == LE_OK);
+  CHECK(plan.once_cut_mask == 0); /* the whole pass fits */
   CHECK(rr_render(e, &q, out, 38400) == 38400);
   for (int f = 0; f < 38400; ++f) {
     const float want = f >= 15000 ? a[f - 15000]
@@ -731,6 +769,10 @@ static void test_render_once_chosen_length(void) {
   /* Span 60,000 (k = 2 over 30,000) at segment 1: the pass starts 30,000
    * frames in and the window ends 8,400 frames later. */
   rr_once_fixture(&e, 30000, 60000, a);
+  /* The readout names it: its pass is longer than the window (L-D1). */
+  memset(&plan, 0, sizeof(plan));
+  CHECK(le_engine_render_measure(e, &q, &plan) == LE_OK);
+  CHECK(plan.once_cut_mask == 0x2);
   CHECK(rr_render(e, &q, out, 38400) == 38400);
   for (int f = 0; f < 38400; ++f) {
     CHECK(out[2 * f] == (f >= 30000 ? a[f - 30000] : 0.0f));
@@ -812,6 +854,8 @@ static void test_render_track_post_gain_live_parity(void) {
  * its last chunk was copied (review M4). */
 static void test_render_freeze_and_completion_checks(void) {
   printf("test_render_freeze_and_completion_checks\n");
+  const uint64_t budget = le_render_stage_budget_ns;
+  le_render_stage_budget_ns = 0; /* one chunk per heartbeat */
   le_engine* e = rr_fixture();
   le_render_request q = rr_request(0x3, LE_RENDER_CUT);
   uint32_t id = 0;
@@ -836,6 +880,7 @@ static void test_render_freeze_and_completion_checks(void) {
   atomic_fetch_add(&e->tracks[0].a_audio_rev, 1u);
   CHECK(rr_wait(e, id, &result) == LE_RENDER_FAILED);
   CHECK(result == LE_ERR_TRACKS_CHANGED);
+  le_render_stage_budget_ns = budget;
   le_engine_destroy(e);
 }
 
@@ -982,6 +1027,68 @@ static void test_wav_flush_and_patch_sizes(void) {
   remove(path);
 }
 
+/* Seal cuts a torn frame the caller's own write path left past the credited
+ * frames (#1198 Part 2's drain rewinds over a short write and credits only
+ * whole frames): a sealed file is exactly its header and its data. */
+static void test_wav_seal_cuts_torn_frame(void) {
+  printf("test_wav_seal_cuts_torn_frame\n");
+  char path[512];
+  snprintf(path, sizeof(path), "%s/rr_seal_%d.wav", rr_tmp(),
+           (int)test_getpid());
+  le_wav_writer w;
+  CHECK(le_wav_open(&w, path, 48000, 2, NULL, NULL, 0) == 1);
+  const float pcm[6] = {1, 2, 3, 4, 5, 6};
+  CHECK(fwrite(pcm, 1, 2 * 8 + 3, w.file) == 2 * 8 + 3); /* 2 frames + torn */
+  le_wav_note_frames(&w, 2);
+  CHECK(le_wav_seal(&w, 1) == 1);
+  unsigned char bytes[44 + 16 + 8];
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  const size_t n = fread(bytes, 1, sizeof(bytes), f);
+  fclose(f);
+  CHECK(n == 44 + 16);
+  CHECK(bytes[4] == 44 + 16 - 8 && bytes[40] == 16);
+  CHECK(memcmp(bytes + 44, pcm, 16) == 0);
+  remove(path);
+}
+
+/* Progress moves while sources are staged (review M1 of Part 2): staging is
+ * on the same permille scale as the render, so a job with a lot of material
+ * never reads 0% for seconds. One chunk per heartbeat here (a zero time
+ * budget), so the steps are observable. */
+static void test_render_staging_progress(void) {
+  printf("test_render_staging_progress\n");
+  le_engine* e = rr_engine();
+  const int32_t len = 10 * LE_RENDER_COPY_CHUNK_FRAMES;
+  float* pcm = (float*)calloc((size_t)len, sizeof(float));
+  CHECK(pcm != NULL);
+  if (pcm == NULL) return;
+  CHECK(le_engine_import_track(e, 0, pcm, len) == LE_OK);
+  free(pcm);
+  CHECK(le_engine_commit_session(e, len, 0) == LE_OK);
+  drain(e);
+  const uint64_t budget = le_render_stage_budget_ns;
+  le_render_stage_budget_ns = 0;
+  le_render_request q = rr_request(0x1, LE_RENDER_CUT);
+  uint32_t id = 0;
+  CHECK(le_engine_render_begin(e, &q, &id) == LE_OK);
+  drain(e);
+  int32_t state = LE_RENDER_NONE, permille = -1, last = 0, steps = 0;
+  for (int k = 0; k < 100; ++k) {
+    CHECK(le_engine_render_poll(e, id, &state, &permille, NULL) == LE_OK);
+    if (state != LE_RENDER_STAGING) break;
+    CHECK(permille >= last); /* never backwards */
+    if (permille > last) ++steps;
+    last = permille;
+  }
+  CHECK(steps >= 8 && last > 0 && last < 1000); /* nine of ten chunks */
+  le_render_stage_budget_ns = budget;
+  int32_t result = LE_OK;
+  CHECK(rr_wait(e, id, &result) == LE_RENDER_DONE);
+  le_engine_destroy(e);
+}
+
 static void test_render_worker_choice(void) {
   printf("test_render_worker_choice\n");
   int yields = 0;
@@ -1001,6 +1108,7 @@ static void run_render_tests(void) {
   test_render_levels_pans_gain();
   test_render_live_phase_and_reverse_offset();
   test_render_once_then_silence();
+  test_render_once_reversed();
   test_render_fade_frozen_amount();
   test_render_origin_phase_multiples();
   test_render_chosen_length_and_tempo();
@@ -1024,4 +1132,6 @@ static void run_render_tests(void) {
   test_render_configure_mid_print();
   test_render_done_releases_bytes();
   test_wav_flush_and_patch_sizes();
+  test_wav_seal_cuts_torn_frame();
+  test_render_staging_progress();
 }
