@@ -549,6 +549,7 @@ one case in its `TrackOperation` switch).
   bars, asserting REV clears the layers figure and the FX marker. The
   marker reads `Track.hasContent && Track.reversed`; the meta row's
   screen-reader label adds "Track plays reversed".
+<!-- cspell:disable -->
 - Spanish (owner's Argentine usage): the mode and operation are "Reversa",
   the forward state word is "Normal", the reversed one "Reversa", the
   overview heading "Sentido de reproducción", the overdub refusal "No se
@@ -556,6 +557,7 @@ one case in its `TrackOperation` switch).
   label "La pista se reproduce al revés", and the failure "No se pudo
   cambiar el sentido de la pista." ("invertir" reads as polarity to audio
   users).
+<!-- cspell:enable -->
 - Pen departures (segno-ui.pen, 13 Performance · Reverse):
   - the Tracks indicator is the meta-row "REV" marker, as this plan states,
     not the pen's "‹ Reverse" caption under a Tracks pedal (the app's Tracks
