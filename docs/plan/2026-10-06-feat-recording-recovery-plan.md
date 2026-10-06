@@ -613,10 +613,14 @@ eject. Save recovered audio takes its own `transfer` lease while it writes.
 | **sessionApply** (Open, New loop) | allow (a running take is finished first: today's `disarmAndFinalize`, rule 1) | refuse | refuse | allow | allow | refuse | refuse | refuse |
 | **sessionWrite** (save, Save as, rename, duplicate, delete, restore into Internal) | allow | allow (its own preservation save) | refuse (same bundle) | allow | allow | allow | allow | refuse |
 | **transfer** (export, backup, import, restore read, Save recovered audio) | refuse (same volume) | allow | allow | allow | refuse (same volume) | allow | allow | refuse |
-| **eject** | refuse (same volume) | allow | allow | refuse (same volume) | refuse | allow | allow | refuse |
+| **eject** | refuse (same volume) | allow | allow | refuse (same volume) | refuse (same volume) | allow | allow | refuse |
 | **deviceChange** (audio apply, rate change) | refuse | refuse | allow | allow | allow | refuse | refuse | refuse |
 | **calibration** (latency measurement; touch calibration when it exists) | refuse | refuse | allow | allow | allow | refuse | refuse | refuse |
 | **restart** (power off, restart, update install) | refuse (a running take is finished first) | refuse | refuse | refuse | refuse | refuse | allow (it is cancelled and keeps the old profile, AB §7.6) | – |
+
+Eject against eject is per volume (#1177's P6 review): an eject left
+unanswered on one drive, which can last until that drive is pulled, must not
+hold every other drive's eject; the helper serializes its own work anyway.
 
 Capture and a writing transfer on the same volume refuse each other
 (review L6): an export or backup to the stick a take is recorded on competes
