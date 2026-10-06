@@ -1099,7 +1099,7 @@ typedef struct le_track {
    *   clear-restore (#219)         | control | le_restore_clear (the a_live
    *                                |         | swap; the audio flip follows)
    *   session load (import)        | control | le_engine_import_track_lane
-   *   session load (layered)       | control | le_engine_finalize_layers
+   *   session load (layered)       | control | le_engine_finalize_history
    *                                |         | (covers le_engine_import_layer:
    *                                |         | layers fill while EMPTY and
    *                                |         | publish only at finalize)

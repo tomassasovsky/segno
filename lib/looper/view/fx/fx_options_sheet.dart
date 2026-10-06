@@ -69,6 +69,19 @@ class _FxOptionsSheet extends StatelessWidget {
     final head = body == null ? 102.0 : 162.0;
     final rows = options.length * _rowHeight + (options.length - 1) * _rowGap;
     final height = head + rows + 24 + 64 + 41;
+    // A list taller than the canvas (Move to folder with many folders) is
+    // capped by the canvas, and its rows scroll inside the panel; one that
+    // fits keeps the pen's layout.
+    final fits = height <= kLoopPenSize.height;
+    final list = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < options.length; i++) ...[
+          if (i > 0) const SizedBox(height: _rowGap),
+          _OptionRow(option: options[i]),
+        ],
+      ],
+    );
     return Center(
       child: FittedBox(
         fit: BoxFit.scaleDown,
@@ -110,11 +123,13 @@ class _FxOptionsSheet extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: 24),
-                    for (var i = 0; i < options.length; i++) ...[
-                      if (i > 0) const SizedBox(height: _rowGap),
-                      _OptionRow(option: options[i]),
+                    if (fits) ...[
+                      list,
+                      const Spacer(),
+                    ] else ...[
+                      Expanded(child: SingleChildScrollView(child: list)),
+                      const SizedBox(height: 24),
                     ],
-                    const Spacer(),
                     Align(
                       alignment: Alignment.centerRight,
                       child: LoopOutlinedButton(

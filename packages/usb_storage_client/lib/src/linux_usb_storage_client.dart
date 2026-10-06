@@ -23,25 +23,39 @@ import 'package:usb_storage_client/src/usb_storage_client.dart';
 /// The watch itself can fail: inotify drops events when its queue overflows
 /// and reports that as an error, and a watch can end. Either way events may
 /// have been lost, so the client logs it and re-lists the directory; a watch
-/// that ended is started again while anyone is listening.
+/// that ended is started again while anyone is listening, after a delay that
+/// doubles while the watch keeps ending straight away (an exhausted inotify
+/// limit would otherwise make that a tight log-and-relist loop).
 class LinuxUsbStorageClient implements UsbStorageClient {
   /// Creates a [LinuxUsbStorageClient] over [runDir] (the helper's
   /// `/run/segno/usb`). [newRequestId] names eject requests; the default is a
   /// random 128-bit hex id, injectable for deterministic tests. [log] receives
   /// one line per skipped file and per watch failure. [watchDirectory] is the
   /// platform's directory watcher, injectable so tests can make it fail.
+  /// [restartDelay] is the first wait before an ended watch is started again;
+  /// it doubles up to [maxRestartDelay] while watches keep ending, and comes
+  /// back to [restartDelay] once a watch delivers an event.
   LinuxUsbStorageClient({
     this.runDir = '/run/segno/usb',
     String Function()? newRequestId,
     void Function(String message)? log,
     @visibleForTesting
     Stream<FileSystemEvent> Function(String path)? watchDirectory,
+    @visibleForTesting this.restartDelay = const Duration(seconds: 1),
+    @visibleForTesting this.maxRestartDelay = const Duration(seconds: 30),
   }) : _newRequestId = newRequestId ?? _randomId,
        _log = log ?? _noLog,
-       _watchDirectory = watchDirectory ?? _platformWatch;
+       _watchDirectory = watchDirectory ?? _platformWatch,
+       _nextRestart = restartDelay;
 
   /// The helper's state directory.
   final String runDir;
+
+  /// The first wait before an ended watch is started again.
+  final Duration restartDelay;
+
+  /// The longest wait between two restarts.
+  final Duration maxRestartDelay;
 
   final String Function() _newRequestId;
   final void Function(String message) _log;
@@ -49,6 +63,8 @@ class LinuxUsbStorageClient implements UsbStorageClient {
 
   final _listeners = <StreamController<List<RemovableVolumeRecord>>>{};
   StreamSubscription<FileSystemEvent>? _watch;
+  Timer? _restart;
+  Duration _nextRestart;
   List<RemovableVolumeRecord> _last = const [];
   bool _relistScheduled = false;
 
@@ -75,7 +91,7 @@ class LinuxUsbStorageClient implements UsbStorageClient {
     controller = StreamController<List<RemovableVolumeRecord>>(
       onListen: () {
         _listeners.add(controller);
-        _watch ??= _startWatch();
+        if (_restart == null) _watch ??= _startWatch();
         _last = _readAll();
         controller.add(_last);
       },
@@ -84,6 +100,8 @@ class LinuxUsbStorageClient implements UsbStorageClient {
         if (_listeners.isEmpty) {
           unawaited(_watch?.cancel());
           _watch = null;
+          _restart?.cancel();
+          _restart = null;
         }
       },
     );
@@ -101,16 +119,33 @@ class LinuxUsbStorageClient implements UsbStorageClient {
       },
       onDone: () {
         // Only a live subscription ends this way (a cancel does not call
-        // onDone), so someone is listening: watch again, unless the
-        // directory itself is gone, where a new watch would only end again.
-        _log('usb_storage_client: watch of $volumesDir ended');
-        _watch = isSupported ? _startWatch() : null;
+        // onDone), so someone is listening: watch again after the backoff,
+        // unless the directory itself is gone, where a new watch would only
+        // end again.
+        _log(
+          'usb_storage_client: watch of $volumesDir ended; '
+          'watching again in ${_nextRestart.inMilliseconds} ms',
+        );
+        _watch = null;
         _relist();
+        if (!isSupported) return;
+        final wait = _nextRestart;
+        final doubled = _nextRestart * 2;
+        _nextRestart = doubled > maxRestartDelay ? maxRestartDelay : doubled;
+        _restart = Timer(wait, () {
+          _restart = null;
+          if (_listeners.isEmpty || !isSupported) return;
+          _watch = _startWatch();
+          _relist();
+        });
       },
     );
   }
 
   void _onEvent(FileSystemEvent event) {
+    // A watch that delivers is a working watch: the next failure starts the
+    // backoff from the beginning.
+    _nextRestart = restartDelay;
     if (!_isRecord(event.path) &&
         !(event is FileSystemMoveEvent && _isRecord(event.destination))) {
       return;
@@ -203,13 +238,16 @@ class LinuxUsbStorageClient implements UsbStorageClient {
   }
 
   @override
-  Future<void> cancelEject(String requestId) async {
+  Future<bool> cancelEject(String requestId) async {
     final file = File('$requestsDir/$requestId.json');
     try {
       file.deleteSync();
+      return true;
     } on FileSystemException {
-      // Already served (deleted by the helper) or never written: nothing to
-      // withdraw.
+      // Already taken by the helper (it deletes a request before it
+      // unmounts) or never written: nothing to withdraw, and the answer, if
+      // any, is still coming.
+      return false;
     }
   }
 

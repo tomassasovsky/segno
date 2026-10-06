@@ -113,6 +113,98 @@ void main() {
     skip: skip,
   );
 
+  test(
+    'an undone peel survives save and stopped recall: Redo re-peels and Undo '
+    'restores the layer (#1164 Part 2)',
+    () async {
+      expect(repository.peel(), EngineResult.ok); // live .5, [PEEL(.75)]
+      expect(repository.undo(), EngineResult.ok); // live .75, [L(.5)], [M]
+
+      // Save: what the Session capture reads. The redo-side marker holds no
+      // image, so two images carry three positions of history.
+      final saved = engine.snapshot().tracks[0];
+      expect(saved.undoDepth, 1);
+      expect(saved.redoDepth, 1);
+      final history = engine.exportHistory(0);
+      expect(
+        history,
+        const TrackHistory([
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.peel),
+        ], undoCount: 1),
+      );
+      final images = history.imageCount;
+      expect(images, 2);
+      final layers = [
+        for (var o = 0; o < images; o++) engine.exportLayer(0, 0, o),
+      ];
+      expect(engine.exportLayer(0, 0, images), isEmpty);
+      final original = layers[0];
+      final layered = layers[1];
+      expect(original.first, .5);
+      expect(layered.first, .75);
+
+      // Recall, stopped, into the same engine (the Session load replaces the
+      // material).
+      final rig = SessionRig(
+        baseLengthFrames: 128,
+        tracks: [
+          SessionRigTrack(
+            fadeAmount: 1,
+            channel: 0,
+            lanes: [
+              SessionRigLane(
+                lane: 0,
+                layers: layers,
+                volume: 1,
+                muted: false,
+                outputMask: 1,
+                inputChannel: 0,
+                history: history,
+              ),
+            ],
+          ),
+        ],
+      );
+      final callback = Timer.periodic(
+        const Duration(milliseconds: 1),
+        (_) => engine.pump(frames: 0),
+      );
+      try {
+        await repository.applySession(rig);
+      } finally {
+        callback.cancel();
+      }
+      var recalled = engine.snapshot().tracks[0];
+      expect(recalled.state, TrackState.stopped);
+      expect(recalled.undoDepth, 1);
+      expect(recalled.redoDepth, 1);
+      expect(recalled.peelDepth, 1);
+      expect(engine.exportHistory(0), history);
+      expect(engine.exportTrack(0).first, layered.first);
+      expect(engine.exportTrack(0), layered);
+
+      // Redo re-peels: the original plays and nothing remains to peel.
+      expect(repository.redo(), EngineResult.ok);
+      expect(engine.exportTrack(0).first, original.first);
+      expect(engine.exportTrack(0), original);
+      recalled = engine.snapshot().tracks[0];
+      expect(recalled.peelDepth, 0);
+      expect(recalled.redoDepth, 0);
+      expect(recalled.state, TrackState.stopped);
+      expect(repository.peel(), EngineResult.invalid);
+
+      // Undo restores the peeled layer.
+      expect(repository.undo(), EngineResult.ok);
+      expect(engine.exportTrack(0).first, layered.first);
+      expect(engine.exportTrack(0), layered);
+      recalled = engine.snapshot().tracks[0];
+      expect(recalled.peelDepth, 1);
+      expect(recalled.redoDepth, 1);
+    },
+    skip: skip,
+  );
+
   test('peel is refused while the track overdubs and while a Session is '
       'being applied', () async {
     expect(engine.record(), EngineResult.ok); // punch in again

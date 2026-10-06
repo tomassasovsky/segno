@@ -5,7 +5,8 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
 import 'package:segno/theme/theme.dart';
 
-/// One footswitch on a full-screen performance surface (Mixer, Fade).
+/// One footswitch on a full-screen performance surface (Mixer, Fade,
+/// Reverse).
 ///
 /// Admits pointer and keyboard contacts into the shared Control ledger with
 /// a fresh token per contact; only that contact may release or cancel it.
@@ -27,6 +28,8 @@ class PerformancePedal extends StatefulWidget {
     required this.onActivate,
     this.onHold,
     this.level,
+    this.detailIcon,
+    this.detailHighlighted = false,
     super.key,
   });
 
@@ -62,6 +65,13 @@ class PerformancePedal extends StatefulWidget {
 
   /// Optional 0–1 level bar under the title; null hides it.
   final double? level;
+
+  /// Optional glyph leading [detail].
+  final IconData? detailIcon;
+
+  /// Whether [detail] reads in the primary text colour, for a state that
+  /// departs from the default (a reversed track).
+  final bool detailHighlighted;
 
   /// Admits a timed contact identified by its token.
   final void Function(PedalButton button, Object contact) onPressed;
@@ -211,12 +221,12 @@ class _PerformancePedalState extends State<PerformancePedal> {
                         height: 32,
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
-                          child: AppText(
-                            widget.detail,
-                            style: TextStyle(
-                              fontSize: 24,
-                              color: surface.textSecondary,
-                            ),
+                          child: _PedalDetail(
+                            text: widget.detail,
+                            icon: widget.detailIcon,
+                            color: widget.detailHighlighted
+                                ? surface.textPrimary
+                                : surface.textSecondary,
                           ),
                         ),
                       ),
@@ -243,6 +253,34 @@ class _PerformancePedalState extends State<PerformancePedal> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The pedal's state line, with its optional leading glyph.
+class _PedalDetail extends StatelessWidget {
+  const _PedalDetail({
+    required this.text,
+    required this.icon,
+    required this.color,
+  });
+
+  final String text;
+  final IconData? icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = AppText(text, style: TextStyle(fontSize: 24, color: color));
+    final icon = this.icon;
+    if (icon == null) return label;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 32, color: color),
+        const SizedBox(width: 10),
+        label,
+      ],
     );
   }
 }

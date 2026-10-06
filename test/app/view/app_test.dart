@@ -325,12 +325,23 @@ class _NoticeSessionRepository extends SessionRepository {
   bool refuseRead = false;
 
   @override
-  Future<String> bundlePath(String name) async => name;
+  Future<String> bundlePathOf(String id) async => id;
 
   @override
   Future<List<SessionSummary>> listSessions() async => const [
-    SessionSummary(name: 'Replacement'),
+    SessionSummary(id: 'Replacement', name: 'Replacement'),
   ];
+
+  @override
+  Future<List<String>> listFolders() async => const [];
+
+  @override
+  Future<SessionPreview> readPreview(String id) async => SessionPreview(
+    summary: SessionSummary(id: id, name: id),
+    tracks: const [],
+    fxCount: 0,
+    sampleRate: 48000,
+  );
 
   @override
   Future<SessionBundle> read(String directory) async {
@@ -393,6 +404,12 @@ class _ClickModeStore extends FakeKeyValueStore {
     }
     await super.remove(key);
   }
+}
+
+/// Refuses every punch-in as the engine refuses one on a reversed track.
+class _ReversedEngine extends FakeAudioEngine {
+  @override
+  EngineResult record({int channel = 0}) => EngineResult.reversed;
 }
 
 class _RefusingClickModeEngine extends FakeAudioEngine {
@@ -700,7 +717,6 @@ void main() {
           waveformWindow: windowService,
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
           powerOff: powerOff,
           powerKeySource: powerKeySource,
           waveformWindowOpenDelay: waveformWindowOpenDelay,
@@ -723,7 +739,6 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
           updates: updates,
         ),
       );
@@ -809,7 +824,6 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: SessionRepository(engine: engine),
             performanceRepository: performance,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -945,7 +959,7 @@ void main() {
           if (recovery == 'Session') {
             final context = tester.element(find.byType(TracksView));
             bundles.readRelease.complete();
-            final loading = context.read<SessionCubit>().loadNamed(
+            final loading = context.read<SessionCubit>().open(
               'Replacement',
             );
             await tester.pumpAndSettle();
@@ -1249,7 +1263,7 @@ void main() {
           final context = tester.element(find.byType(TracksView));
           final monitor = context.read<MonitorCubit>();
           final session = context.read<SessionCubit>();
-          final load = session.loadNamed('Replacement');
+          final load = session.open('Replacement');
           expect(
             context.read<FxChainPersistence>().sessionTransitionActive,
             isTrue,
@@ -1312,10 +1326,12 @@ void main() {
         ..refuseBootWrite = true;
       await tester.tap(find.byKey(const Key('stage_library')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
       // Catalog refresh is unrelated work; it must not suppress Monitor Retry.
       expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
-      await tester.tap(find.text('Replacement'));
+      await tester.tap(find.byKey(const Key('library_row_Replacement')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('library_open_session')));
       await tester.pumpAndSettle();
       expect(session.state.bootRecoveryRequired, isTrue);
       expect(session.state.error, SessionError.bootPersistence);
@@ -1345,7 +1361,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(session.state.bootRecoveryRequired, isTrue);
       expect(monitor.state.inputs, isEmpty);
-      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
       expect(find.byKey(const Key('tracks_session_snackbar')), findsNothing);
       expect(find.text('Retry').hitTestable(), findsOneWidget);
       store.refuseBootWrite = false;
@@ -1688,6 +1704,43 @@ void main() {
         },
       );
     }
+
+    testWidgets('a Record press on a reversed track says overdub is '
+        'unavailable', (tester) async {
+      engine = _ReversedEngine();
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        tracks: [
+          const le.TrackSnapshot(
+            state: le.TrackState.overdubbing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 48000,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+            reversed: true,
+          ),
+          for (var channel = 1; channel < 8; channel++)
+            const le.TrackSnapshot.empty(),
+        ],
+      );
+      repository = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      );
+      addTearDown(repository.dispose);
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(repository.record(), EngineResult.reversed);
+      await tester.pumpAndSettle();
+      expect(debugAppToastActive(AppToastId.recordRefused), isTrue);
+      expect(
+        find.text('Overdub is unavailable while the track is reversed'),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
 
     for (final blockedKey in ['tempo.count_in_bars', 'looper.auto_record']) {
       testWidgets('power off waits for complete start pair: $blockedKey', (
@@ -3440,7 +3493,6 @@ void main() {
         waveformWindow: NoopWaveformWindowService(),
         sessionRepository: sessionRepository,
         performanceRepository: performanceRepository,
-        exportDirectory: () async => '.',
       );
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
@@ -3457,51 +3509,53 @@ void main() {
       expect(identical(first, second), isTrue);
     });
 
-    testWidgets('provides pedal events to the Sessions manager', (
-      tester,
-    ) async {
-      final sessionsRoot = Directory.systemTemp.createTempSync(
-        'segno-app-sessions-',
-      );
-      addTearDown(() => sessionsRoot.delete(recursive: true));
-      sessionRepository = SessionRepository(
-        engine: FakeAudioEngine(),
-        sessionsRoot: () async => sessionsRoot.path,
-      );
-      final link = FakePedalLink();
-      final pedal = PedalRepository(link);
-      link.hello();
-      await tester.pumpWidget(
-        App(
-          mixSettings: testMixSettings(repository, settings: settings),
-          repository: repository,
-          controllerRepository: controllerRepository,
-          midiDeviceRepository: midiDeviceRepository,
-          settings: settings,
-          waveformWindow: NoopWaveformWindowService(),
-          sessionRepository: sessionRepository,
-          performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
-          pedalRepository: pedal,
-        ),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+    testWidgets(
+      'the stage Library mark opens the Library, and a footswitch returns',
+      (
+        tester,
+      ) async {
+        final sessionsRoot = Directory.systemTemp.createTempSync(
+          'segno-app-sessions-',
+        );
+        addTearDown(() => sessionsRoot.delete(recursive: true));
+        sessionRepository = SessionRepository(
+          engine: FakeAudioEngine(),
+          sessionsRoot: () async => sessionsRoot.path,
+        );
+        final link = FakePedalLink();
+        final pedal = PedalRepository(link);
+        link.hello();
+        await tester.pumpWidget(
+          App(
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midiDeviceRepository,
+            settings: settings,
+            waveformWindow: NoopWaveformWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            pedalRepository: pedal,
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
 
-      await tester.tap(find.byKey(const Key('stage_library')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('stage_library')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.byKey(const Key('library_page')), findsOneWidget);
 
-      link.press(PedalButton.clear, down: true);
-      await tester.pump();
-      link.press(PedalButton.clear, down: false);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('sessions_manager')), findsNothing);
-      expect(find.byType(LooperPage), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(pedal.helloTimeout);
-    });
+        link.press(PedalButton.clear, down: true);
+        await tester.pump();
+        link.press(PedalButton.clear, down: false);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('library_page')), findsNothing);
+        expect(find.byType(LooperPage), findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      },
+    );
 
     testWidgets('always lands on the looper — no first-run gate', (
       tester,
@@ -3518,7 +3572,6 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
         ),
       );
       await tester.pumpAndSettle();
@@ -3699,7 +3752,6 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -3792,7 +3844,6 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -3915,7 +3966,6 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -4055,7 +4105,6 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
             displayCount: () => 1,
           ),
         );
@@ -4292,7 +4341,6 @@ void main() {
             waveformWindow: window,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
           ),
         );
         await tester.pumpAndSettle();
@@ -4772,7 +4820,6 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
             audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
           ),
         );
