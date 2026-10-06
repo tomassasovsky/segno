@@ -131,11 +131,16 @@ void main() {
         peelDepth: 1,
       );
       expect(playing.canPeel, isTrue);
-      expect(const Track(state: TrackState.playing, lengthFrames: 10).canPeel,
-          isFalse);
       expect(
-        const Track(state: TrackState.playing, lengthFrames: 10, undoDepth: 1)
-            .canPeel,
+        const Track(state: TrackState.playing, lengthFrames: 10).canPeel,
+        isFalse,
+      );
+      expect(
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 10,
+          undoDepth: 1,
+        ).canPeel,
         isFalse,
       );
       expect(
@@ -164,11 +169,16 @@ void main() {
         ).canPeel,
         isFalse,
       );
-      expect(playing, isNot(const Track(
-        state: TrackState.playing,
-        lengthFrames: 10,
-        undoDepth: 1,
-      )));
+      expect(
+        playing,
+        isNot(
+          const Track(
+            state: TrackState.playing,
+            lengthFrames: 10,
+            undoDepth: 1,
+          ),
+        ),
+      );
     });
   });
 
