@@ -99,6 +99,23 @@
 #endif
 #endif
 
+/* Makes the entries of the directory at `path` durable: a rename into it, a
+ * file created in it. segno_engine_api.h has the why. */
+int32_t le_sync_dir(const char* path) {
+  if (path == NULL || path[0] == '\0') return LE_ERR_INVALID;
+#if defined(_WIN32)
+  /* NTFS journals its metadata, and Win32 has no handle on a directory that
+   * FlushFileBuffers would take without backup privileges: nothing to do. */
+  return LE_OK;
+#else
+  const int fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+  if (fd < 0) return LE_ERR_DEVICE;
+  const int rc = fsync(fd);
+  close(fd);
+  return rc == 0 ? LE_OK : LE_ERR_DEVICE;
+#endif
+}
+
 /* ---- tuning ---- */
 #define LE_PD_FLUSH_MS 250   /* drain + sidecar flush cadence */
 #define LE_PD_POLL_MS 10     /* stop-flag poll granularity (snappy shutdown) */

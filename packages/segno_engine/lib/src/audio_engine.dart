@@ -1473,6 +1473,17 @@ abstract interface class EnginePerformanceCapture {
   /// on the Pi 5 bench landed within 3 ms of one (#806).
   VolumeSpace? volumeSpace(String path);
 
+  /// Makes the entries of the directory at [path] durable (fsync(2) on the
+  /// directory): a file renamed into it, a file created in it. Returns whether
+  /// it was synced; false for a path that is not a directory or a sync the
+  /// device refused.
+  ///
+  /// A file's own flush makes its bytes durable but not its name, and Dart
+  /// cannot open a directory to sync it. The storage repository calls this
+  /// after every copy's rename (#1177, #1195). Synchronous, and as slow as the
+  /// device's flush; never on the audio thread.
+  bool syncDirectory(String path);
+
   /// Starts an offline render of the finalized capture at [captureDir]: a
   /// worker thread reconstructs each non-empty track's full-length DRY stem
   /// (part 7 — wet stems are part 8) by replaying `events.log` against the
