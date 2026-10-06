@@ -210,6 +210,7 @@ class _AppState extends State<App> {
           client: const UnsupportedUsbStorageClient(),
           exportsRoot: widget.performanceRepository.exportsRoot,
           volumeSpace: widget.performanceRepository.volumeSpace,
+          guards: widget.guards,
         );
     _runtime = AppRuntime(
       repository: widget.repository,
@@ -729,6 +730,13 @@ class _AppState extends State<App> {
           // must start the moment the app composes, not whenever a widget
           // first reads this cubit — a crashed capture recovers in the
           // background whether or not the tracks view ever mounts.
+          // The recorder's Save to (#1177): read by the recorder at each arm.
+          BlocProvider(
+            create: (_) => RecordingDestinationCubit(
+              repository: _storage,
+              sampleRate: () => widget.repository.state.status.sampleRate,
+            ),
+          ),
           BlocProvider(
             lazy: false,
             create: (context) {
@@ -737,6 +745,9 @@ class _AppState extends State<App> {
                 takeLocked: () =>
                     context.read<PowerOffCubit>().state.isUiUp ||
                     _runtime.fxPersistence.sessionTransitionActive,
+                storage: _storage,
+                destination: () =>
+                    context.read<RecordingDestinationCubit>().state.destination,
               );
               unawaited(cubit.load());
               return cubit;

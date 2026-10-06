@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:storage_repository/storage_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
 
@@ -731,6 +732,113 @@ void main() {
       expect(await repo.lowInternalSpace(), isFalse);
     });
   });
+
+  group('the guard table', () {
+    late GuardRegistry guards;
+
+    StorageRepository buildGuarded() {
+      late StorageRepository built;
+      guards = GuardRegistry(sources: [_Source(() => built.activeOperations)]);
+      return built = h.build(initial: [h.record(1)], guards: guards);
+    }
+
+    test('leases and the eject in flight are reported; a recording lease is '
+        'not (the take reports itself as capture)', () async {
+      repo = buildGuarded();
+      await pumpEventQueue();
+      final copy = repo.acquire(internal, WritePurpose.copy);
+      final export = repo.acquire(usb1, WritePurpose.export);
+      final recording = repo.acquire(usb1, WritePurpose.recording);
+
+      expect(repo.activeOperations, [
+        const ActiveOperation(
+          kind: GuardKind.transfer,
+          scope: GuardScope.internal(),
+          purpose: 'copy',
+        ),
+        const ActiveOperation(
+          kind: GuardKind.transfer,
+          scope: GuardScope.removable(1),
+          purpose: 'export',
+        ),
+      ]);
+      copy.release();
+      export.release();
+      recording.release();
+
+      final outcome = repo.eject(1);
+      await pumpEventQueue();
+      expect(guards.active, [
+        const ActiveOperation(
+          kind: GuardKind.eject,
+          scope: GuardScope.removable(1),
+          purpose: StorageRepository.ejectPurpose,
+        ),
+      ]);
+      // A take on the drive being ejected is refused at its commit.
+      expect(
+        guards.blockers(GuardKind.capture, const GuardScope.removable(1)),
+        hasLength(1),
+      );
+      h.client.settleEject('req-1', ok: true);
+      await outcome;
+      expect(guards.active, isEmpty);
+    });
+
+    test('a copy is refused at its commit while a take records on that '
+        'volume; a recording lease is not checked', () async {
+      repo = buildGuarded();
+      await pumpEventQueue();
+      final take = guards.enter(
+        GuardKind.capture,
+        const GuardScope.removable(1),
+        purpose: 'recording',
+      );
+
+      expect(
+        () => repo.acquire(usb1, WritePurpose.copy),
+        throwsA(
+          isA<GuardRefused>().having(
+            (e) => e.wants,
+            'wants',
+            GuardKind.transfer,
+          ),
+        ),
+      );
+      expect(repo.leases, isEmpty);
+      // Internal is another volume.
+      repo.acquire(internal, WritePurpose.copy).release();
+      // The take's own lease.
+      repo.acquire(usb1, WritePurpose.recording).release();
+      take.release();
+      repo.acquire(usb1, WritePurpose.copy).release();
+    });
+
+    test('an eject is refused at its commit by a take on that volume or a '
+        'shutdown, and files no request', () async {
+      repo = buildGuarded();
+      await pumpEventQueue();
+      for (final (kind, scope) in [
+        (GuardKind.capture, const GuardScope.removable(1)),
+        (GuardKind.restart, const GuardScope.internal()),
+      ]) {
+        final other = guards.enter(kind, scope, purpose: kind.name);
+        await expectLater(
+          repo.eject(1),
+          throwsA(
+            isA<GuardRefused>().having(
+              (e) => e.wants,
+              'wants',
+              GuardKind.eject,
+            ),
+          ),
+        );
+        expect(h.client.pendingRequests, isEmpty);
+        expect(repo.current.single.status, RemovableVolumeStatus.mounted);
+        other.release();
+      }
+    });
+  });
 }
 
 /// A client whose eject requests cannot be written (a read-only run dir).
@@ -740,4 +848,13 @@ class _UnfileableClient extends FakeUsbStorageClient {
   @override
   Future<String> requestEject(int generation) async =>
       throw const FileSystemException('Read-only file system');
+}
+
+class _Source implements ActiveOperationSource {
+  _Source(this._read);
+
+  final Iterable<ActiveOperation> Function() _read;
+
+  @override
+  Iterable<ActiveOperation> get activeOperations => _read();
 }

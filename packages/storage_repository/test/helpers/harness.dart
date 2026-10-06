@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart'
     as engine
     show FileDigest, RenameOutcome, StorageIo;
@@ -59,6 +60,7 @@ class Harness {
     Duration volumeLossGrace = const Duration(seconds: 2),
     bool createExports = true,
     FakeUsbStorageClient? usb,
+    GuardRegistry? guards,
   }) {
     if (createExports) Directory(exports).createSync(recursive: true);
     client = usb ?? FakeUsbStorageClient(initial: initial);
@@ -67,6 +69,7 @@ class Harness {
       exportsRoot: () async => exports,
       volumeSpace: (path) => spaces[path],
       storageIo: io,
+      guards: guards,
       copyBytes: copyBytes,
       volumeLossGrace: volumeLossGrace,
     );

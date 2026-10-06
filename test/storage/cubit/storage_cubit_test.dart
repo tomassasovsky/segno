@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/storage/cubit/storage_cubit.dart';
 import 'package:storage_repository/storage_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
@@ -20,10 +21,12 @@ void main() {
     StorageCubit build({
       List<RemovableVolumeRecord> volumes = const [],
       Duration ejectServedTimeout = const Duration(minutes: 2),
+      GuardRegistry? guards,
     }) {
       rig = StorageRig(
         volumes: volumes,
         ejectServedTimeout: ejectServedTimeout,
+        guards: guards,
       );
       sampleRate = 48000;
       return cubit = StorageCubit(
@@ -260,6 +263,25 @@ void main() {
       expect(cubit.state.volumes.single.status, RemovableVolumeStatus.mounted);
       expect(cubit.state.ejectFailed, isNull);
       expect(cubit.state.ejectTaken, isFalse);
+    });
+
+    test('an eject the guard table refuses (a shutdown in flight) files '
+        'nothing and is reported as not ejected', () async {
+      final guards = GuardRegistry();
+      build(volumes: [usbRecord(1)], guards: guards);
+      await pumpEventQueue();
+      final shutdown = guards.enter(
+        GuardKind.restart,
+        const GuardScope.internal(),
+        purpose: 'power off',
+      );
+      addTearDown(shutdown.release);
+
+      await cubit.eject(1);
+
+      expect(rig.client.pendingRequests, isEmpty);
+      expect(cubit.state.ejectFailed, 1);
+      expect(cubit.state.volumes.single.status, RemovableVolumeStatus.mounted);
     });
 
     test('a cancel after the helper took the eject says it cannot be '

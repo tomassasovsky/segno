@@ -15,6 +15,10 @@ enum PerformanceStopReason {
   /// The audio device changed mid-capture, forcing a reconfigure that can't
   /// keep the capture taps running.
   deviceChanged,
+
+  /// The USB drive the take was recording to went away (pulled, or failed)
+  /// while it recorded (#1177). The loops keep playing.
+  volumeLost,
 }
 
 /// The outcome of a finished capture, carried by
@@ -85,6 +89,7 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
     this.lowDiskBlocked = false,
     this.recovering = false,
     this.refusedBy,
+    this.driveUnavailable = false,
     this.refusal = 0,
   });
 
@@ -111,6 +116,11 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// the control was pressed (accepted behaviour 6.12).
   final GuardKind? refusedBy;
 
+  /// The last arm was refused because the chosen USB drive could not take a
+  /// recording any more (gone, read-only, being ejected) between the choice
+  /// and the press.
+  final bool driveUnavailable;
+
   /// Which refusal this is: the cubit counts every refused arm, for
   /// [lowDiskBlocked] and [refusedBy] alike. Without it a second refused
   /// press would emit a state equal to the first, the cubit would drop it,
@@ -118,7 +128,13 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   final int refusal;
 
   @override
-  List<Object?> get props => [lowDiskBlocked, recovering, refusedBy, refusal];
+  List<Object?> get props => [
+    lowDiskBlocked,
+    recovering,
+    refusedBy,
+    driveUnavailable,
+    refusal,
+  ];
 }
 
 /// Armed: the engine's capture taps are running. [elapsed] and [overrun]
@@ -131,6 +147,7 @@ class PerformanceRecorderArmed extends PerformanceRecorderState {
     required this.elapsed,
     required this.overrun,
     this.lowDiskWarning = false,
+    this.volumeLabel,
   });
 
   /// Time elapsed since arm.
@@ -145,8 +162,12 @@ class PerformanceRecorderArmed extends PerformanceRecorderState {
   /// re-checked continuously.
   final bool lowDiskWarning;
 
+  /// The label of the USB drive this take records to (pen 48 `FwjUV`
+  /// "SEGNO USB"), or null on Internal.
+  final String? volumeLabel;
+
   @override
-  List<Object?> get props => [elapsed, overrun, lowDiskWarning];
+  List<Object?> get props => [elapsed, overrun, lowDiskWarning, volumeLabel];
 }
 
 /// Disarmed; converting raw PCM to WAV and assembling the bundle

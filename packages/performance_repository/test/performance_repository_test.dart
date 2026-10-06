@@ -428,6 +428,20 @@ void main() {
       expect(engine.lastPerfCaptureDir, repo.armedDirectory);
     });
 
+    test('a root puts this take under it, and the next arm without one '
+        'goes back to the exports root (#1177)', () async {
+      final usb = '${tempDir.path}/media/1-SEGNO_USB/Segno/Performances';
+      expect(await repo.arm(root: usb), EngineResult.ok);
+      expect(repo.armedDirectory, '$usb/perf-20260706-143015');
+      expect(Directory(repo.armedDirectory!).existsSync(), isTrue);
+      expect(engine.lastPerfCaptureDir, repo.armedDirectory);
+      await repo.disarmAndFinalize();
+
+      clock = clock.add(const Duration(minutes: 1));
+      expect(await repo.arm(), EngineResult.ok);
+      expect(repo.armedDirectory, startsWith('${tempDir.path}/exports/'));
+    });
+
     test('setFollowOutput forwards the policy to the engine, and the arm '
         "snapshot records the take's policy and destination 0's facts "
         '(slice 3b)', () async {
@@ -2844,6 +2858,31 @@ void main() {
       ))
         op.kind,
     ];
+
+    test('a take on a volume holds its guard there: an eject of that '
+        'volume is refused, one of another is not', () async {
+      await guarded.arm(
+        root: '${tempDir.path}/usb',
+        scope: const GuardScope.removable(3),
+      );
+      expect(guarded.armedDirectory, isNotNull);
+
+      expect(
+        guards.blockers(GuardKind.eject, const GuardScope.removable(3)),
+        [
+          const ActiveOperation(
+            kind: GuardKind.capture,
+            scope: GuardScope.removable(3),
+            purpose: PerformanceRepository.capturePurpose,
+          ),
+        ],
+      );
+      expect(
+        guards.blockers(GuardKind.eject, const GuardScope.removable(4)),
+        isEmpty,
+      );
+      await guarded.disarmAndFinalize();
+    });
 
     test('arm is refused at its commit while a device change is in '
         'flight, and says so', () async {

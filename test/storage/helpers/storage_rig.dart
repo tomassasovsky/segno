@@ -1,3 +1,4 @@
+import 'package:operation_guards/operation_guards.dart';
 import 'package:storage_repository/storage_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
 
@@ -18,11 +19,13 @@ class StorageRig {
     List<RemovableVolumeRecord> volumes = const [],
     Duration ejectTimeout = const Duration(seconds: 20),
     Duration ejectServedTimeout = const Duration(minutes: 2),
+    GuardRegistry? guards,
   }) : client = FakeUsbStorageClient(initial: volumes) {
     repository = StorageRepository(
       client: client,
       ejectTimeout: ejectTimeout,
       ejectServedTimeout: ejectServedTimeout,
+      guards: guards,
       exportsRoot: () async => exportsRoot,
       volumeSpace: (path) {
         reads++;
