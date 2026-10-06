@@ -476,12 +476,22 @@ static inline int le_wet_entry_key_matches(const le_wet_entry* ent,
  * play_len), so a tempo that moves a little does not re-render. */
 #define LE_SRC_STRETCH_TOLERANCE_PER_MILLE 5
 
+/* Whether a render `have` frames long may serve a span of `want` frames:
+ * within LE_SRC_STRETCH_TOLERANCE_PER_MILLE of it. */
+static inline int le_src_len_within(int32_t have, int32_t want) {
+  const int64_t d = (int64_t)have - (int64_t)want;
+  return (d < 0 ? -d : d) * 1000 <=
+         (int64_t)want * LE_SRC_STRETCH_TOLERANCE_PER_MILLE;
+}
+
 /* A source render's key (kind 1, E8): chain and volume fixed at 0, keyed on
  * the track's content key (le_track.a_src_key).
  * Whether source render `ent` serves a track whose content key, take length
  * and pitch are key / len / semitones and whose wanted render length is
  * `want_out` (len: no stretch; the span: pitch kept across a retime). The
- * one key predicate, with the length within the tolerance. */
+ * one key predicate, with a stretch within the tolerance. A span within the
+ * tolerance of the take already wants the take's own length
+ * (le_track_want_out), which the plain render matches exactly. */
 static inline int le_src_entry_fits(const le_wet_entry* ent, uint32_t key,
                                     int32_t len, int32_t semitones,
                                     int32_t want_out) {
@@ -490,9 +500,7 @@ static inline int le_src_entry_fits(const le_wet_entry* ent, uint32_t key,
     return 0;
   }
   if (want_out == len || ent->out_len == len) return ent->out_len == want_out;
-  const int64_t d = (int64_t)ent->out_len - (int64_t)want_out;
-  return (d < 0 ? -d : d) * 1000 <=
-         (int64_t)want_out * LE_SRC_STRETCH_TOLERANCE_PER_MILLE;
+  return le_src_len_within(ent->out_len, want_out);
 }
 
 /* One recordable input lane — the fundamental unit of captured audio.
@@ -2348,12 +2356,15 @@ static inline int32_t le_track_play_span(le_engine* e, le_track* t) {
 
 /* The render length track [t] wants (#1179 Part 4a-ii): its span when it
  * plays over another span with Pitch Unchanged (a stretch render keeps the
- * pitch), else its own length (no stretch). */
+ * pitch), else its own length (no stretch). A span within the tolerance of
+ * the take wants no stretch (4a-ii M1): the head absorbs the residual, so a
+ * small tempo move keeps a transposed track on its plain render and an
+ * untransposed one on its dry take, with no new render. */
 static inline int32_t le_track_want_out(le_engine* e, le_track* t) {
   const int32_t len = atomic_load_explicit(&t->lanes[0].a_len,
                                            memory_order_relaxed);
   const int32_t play = le_track_play_span(e, t);
-  if (play == len) return len;
+  if (play == len || le_src_len_within(len, play)) return len;
   const int32_t own = atomic_load_explicit(&t->a_pitch_override,
                                            memory_order_relaxed);
   const int follows_speed =
