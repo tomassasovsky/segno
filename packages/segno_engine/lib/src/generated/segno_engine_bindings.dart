@@ -2871,15 +2871,17 @@ class SegnoEngineBindings {
   /// Whole file (start_frame 0, max_frames 0): refused past
   /// LE_BACKING_MAX_SECONDS (LE_ERR_TOO_LONG, before reading when the length is
   /// stated), and refused as damaged when it decodes to a length other than the
-  /// one it states. Bounded read (a preview, a recording part): starts at
-  /// [start_frame] (source frames) and keeps at most [max_frames] output frames,
-  /// setting info->truncated when the file goes on.
+  /// one it states. Bounded read (a preview, a recording part): starts at the
+  /// first output frame at or after [start_frame] (source frames) and keeps at
+  /// most [max_frames] output frames, setting info->truncated when the file goes
+  /// on; its samples are exactly the whole-file decode's at the same positions.
   ///
-  /// Refuses with LE_ERR_CAPACITY when the decode's peak (source plus output)
-  /// would leave less than LE_MEM_RESERVE_BYTES available, or an allocation
-  /// fails. LE_ERR_INVALID: bad arguments, a missing, unreadable, unsupported or
-  /// damaged file, a rate or channel count out of range, a decode error mid-
-  /// stream. [info] (may be NULL) is filled as far as the file was read.
+  /// Refuses with LE_ERR_CAPACITY when the decode's peak (the source, the
+  /// planes a halving works on, and the output) would leave less than
+  /// LE_MEM_RESERVE_BYTES available, or an allocation fails. LE_ERR_UNSUPPORTED
+  /// and LE_ERR_INVALID as above; LE_ERR_INVALID also for bad arguments and a
+  /// missing or unreadable file. [info] (may be NULL) is filled as far as the
+  /// file was read.
   int le_backing_decode_file(
     ffi.Pointer<ffi.Char> path,
     int sample_rate,
@@ -2926,7 +2928,8 @@ class SegnoEngineBindings {
   /// Decodes all of [path] in small chunks, retaining no PCM, to prove it plays
   /// and to measure it: fills [info] and [buckets] per-bucket absolute peaks
   /// (max of both sides; buckets may be 0). The same refusals as a whole-file
-  /// decode, minus the memory one. What an import runs before it keeps a file.
+  /// decode, minus the memory one; a file it accepts decodes at every engine
+  /// rate. What an import runs before it keeps a file.
   int le_backing_probe_file(
     ffi.Pointer<ffi.Char> path,
     ffi.Pointer<le_backing_decode_info> info,
@@ -6553,7 +6556,9 @@ enum le_result {
 
   /// a plugin's bus topology is not a stereo (or
   /// mono-adaptable) effect — instrument / multi-bus /
-  /// sidechain / wrong channel count (D-BUS)
+  /// sidechain / wrong channel count (D-BUS); an
+  /// audio file outside the decoder's whitelist
+  /// (#1200)
   LE_ERR_UNSUPPORTED(-5),
 
   /// a requested allocation would exceed engine

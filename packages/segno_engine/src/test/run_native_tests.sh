@@ -156,11 +156,13 @@ $CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_engine_core.c $ENGINE_SRC
 "$OUT/segno_core_tests.exe"
 
 echo "== building the decoder fuzz driver =="
-# The app's audio-file decoder over mutated WAV/MP3/FLAC inputs (#1200): a
-# bounded, fixed-seed run in every configuration, so the ASan job fuzzes it on
-# every push. SEGNO_FUZZ_ITERATIONS raises the count for a longer local run.
+# The app's audio-file decoder over whole-file mutations of every accepted and
+# refused format (#1200): a bounded, fixed-seed run in every configuration, so
+# the ASan job fuzzes it on every push. FUZZ_CFLAGS adds flags for this binary
+# only (the ASan job passes UBSan here); SEGNO_FUZZ_ITERATIONS and
+# SEGNO_FUZZ_SEED widen a local run.
 # shellcheck disable=SC2086
-$CC $STD $EXTRA_CFLAGS src/test/fuzz_backing_decode.c $ENGINE_SRC "$STRETCH_OBJ" \
+$CC $STD $EXTRA_CFLAGS ${FUZZ_CFLAGS:-} src/test/fuzz_backing_decode.c $ENGINE_SRC "$STRETCH_OBJ" \
   $ENGINE_LIBS -o "$OUT/segno_fuzz_decode.exe"
 TMPDIR="$OUT" "$OUT/segno_fuzz_decode.exe"
 

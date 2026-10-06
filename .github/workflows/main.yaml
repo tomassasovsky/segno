@@ -318,8 +318,11 @@ jobs:
           # present the backend is skipped and the test cannot fail.
           sudo apt-get install -y build-essential libasound2-dev libpulse0
       - name: Build + run native tests under AddressSanitizer
+        # The decoder fuzz driver also runs under UBSan, for longer (#1200).
         run: >
           EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g"
+          FUZZ_CFLAGS="-fsanitize=undefined -fno-sanitize-recover=undefined"
+          SEGNO_FUZZ_ITERATIONS=20000
           bash packages/segno_engine/src/test/run_native_tests.sh
 
   # The same suites with the callback telemetry GATED OFF (#722). That gate is
