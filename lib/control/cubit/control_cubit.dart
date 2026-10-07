@@ -2224,17 +2224,6 @@ class ControlCubit extends Cubit<ControlState> {
     _dispatchLengthAction(hold, null);
   }
 
-  /// Applies [edit] to the selected track from the Multiply / Divide
-  /// surface. An empty selected track is silent; a recorded one that changes
-  /// nothing says why.
-  Future<void> editFootLengthTrack(LengthEdit edit) async {
-    if (!_lengthEditable) return;
-    final channel = state.cursor;
-    final track = _lengthProjection().tracks[channel];
-    if (!track.hasContent) return;
-    await _editLengthChannel(channel, edit, fromFrames: track.lengthFrames);
-  }
-
   /// Fades the recorded track in visible [slot] of the current bank.
   Future<void> toggleFootFadeTrack(int slot) async {
     final fade = _footFadeActions;
@@ -3402,6 +3391,7 @@ class ControlCubit extends Cubit<ControlState> {
     // `_l` falls back to the repository's state before the first event.
     final wasParked = isParked(_l);
     _looperState = looperState;
+    _bindLengthOutcome(looperState);
     _retryExternalReleases();
     _checkMidiSessionAndCleanup();
     _reduce(looperState, wasParked: wasParked);

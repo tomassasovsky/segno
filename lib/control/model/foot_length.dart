@@ -12,6 +12,10 @@ enum FootLengthAction {
   /// Undo the selected track's latest change, exactly as in Tracks.
   undo,
 
+  /// Redo the selected track's latest undone change: Multiply's Undo hold,
+  /// exactly as the Tracks Undo hold.
+  redo,
+
   /// Double the selected track: Multiply.
   doubleTrack,
 
@@ -99,6 +103,8 @@ class FootLengthTrack extends Equatable {
     required this.multiple,
     required this.syncDivisor,
     this.canUndo = false,
+    this.canRedo = false,
+    this.undoDepth = 0,
     this.bars,
     this.beats,
     this.totalBeats,
@@ -126,6 +132,12 @@ class FootLengthTrack extends Equatable {
 
   /// Whether Undo has anything to undo on this track.
   final bool canUndo;
+
+  /// Whether Redo has anything to redo on this track.
+  final bool canRedo;
+
+  /// Published undo steps on this track.
+  final int undoDepth;
 
   /// The length in whole bars, or null without a known whole bar count.
   final int? bars;
@@ -172,6 +184,8 @@ class FootLengthTrack extends Equatable {
     multiple,
     syncDivisor,
     canUndo,
+    canRedo,
+    undoDepth,
     bars,
     beats,
     totalBeats,
@@ -179,13 +193,25 @@ class FootLengthTrack extends Equatable {
 }
 
 /// The latest length edit the surface made, kept for the length panel's
-/// outcome line ("Repeated to 4 bars", "First 1 bar kept").
+/// outcome line ("Repeated to 4 bars", "First 1 bar kept") and Multiply's
+/// Undo caption ("Length edit").
+///
+/// It describes the track only while the track is exactly as the edit left
+/// it: the same length AND the same undo depth. The result is bound from the
+/// published state once both have moved off what they were before the edit,
+/// so an Undo of the edit, a second edit, or an overdub on top of it ends the
+/// description, whatever order the length and the history are published in.
 class FootLengthOutcome extends Equatable {
-  /// Records [edit] on [channel], which was [fromFrames] long before it.
+  /// Records [edit] on [channel], which was [fromFrames] long with
+  /// [fromUndoDepth] undo steps before it; [toFrames] and [toUndoDepth] are
+  /// the state it left, once published.
   const FootLengthOutcome({
     required this.channel,
     required this.edit,
     required this.fromFrames,
+    this.fromUndoDepth = 0,
+    this.toFrames,
+    this.toUndoDepth,
   });
 
   /// No edit made on this visit.
@@ -204,15 +230,53 @@ class FootLengthOutcome extends Equatable {
   /// The track's length before the edit.
   final int fromFrames;
 
-  /// Whether this outcome still describes [track]: the edit landed and was
-  /// not undone, so the recorded length differs from what it was before.
+  /// The track's undo depth before the edit.
+  final int fromUndoDepth;
+
+  /// The length the edit left, or null until it is published.
+  final int? toFrames;
+
+  /// The undo depth the edit left, or null until it is published.
+  final int? toUndoDepth;
+
+  /// Whether the edit's result is known.
+  bool get bound => toFrames != null && toUndoDepth != null;
+
+  /// This outcome with its result bound from [track] when [track] now shows
+  /// the edit (both its length and its undo depth moved), else unchanged.
+  FootLengthOutcome bindTo(FootLengthTrack track) {
+    if (bound || track.channel != channel || !track.hasContent) return this;
+    if (track.lengthFrames == fromFrames || track.undoDepth == fromUndoDepth) {
+      return this;
+    }
+    return FootLengthOutcome(
+      channel: channel,
+      edit: edit,
+      fromFrames: fromFrames,
+      fromUndoDepth: fromUndoDepth,
+      toFrames: track.lengthFrames,
+      toUndoDepth: track.undoDepth,
+    );
+  }
+
+  /// Whether this outcome still describes [track]: the edit's result is
+  /// bound and the track is still exactly that length at that undo depth.
   bool describes(FootLengthTrack track) =>
+      bound &&
       track.channel == channel &&
       track.hasContent &&
-      track.lengthFrames != fromFrames;
+      track.lengthFrames == toFrames &&
+      track.undoDepth == toUndoDepth;
 
   @override
-  List<Object?> get props => [channel, edit, fromFrames];
+  List<Object?> get props => [
+    channel,
+    edit,
+    fromFrames,
+    fromUndoDepth,
+    toFrames,
+    toUndoDepth,
+  ];
 }
 
 /// Shared semantic read model for captions, touch and physical feedback.
@@ -234,11 +298,14 @@ class FootLengthProjection extends Equatable {
   final List<FootLengthTrack> tracks;
 
   /// The Multiply role table (pen 16 screens 01-02): Rec/Play, Stop and Undo
-  /// keep their Tracks meaning, Clear doubles the selected track and the
-  /// track pedals select.
+  /// (tap Undo, hold Redo) keep their Tracks meaning, Clear doubles the
+  /// selected track and the track pedals select.
   static const multiplyRoles = <PedalButton, FootLengthPedal>{
     PedalButton.recPlay: FootLengthPedal(FootLengthAction.recordPlay),
-    PedalButton.undo: FootLengthPedal(FootLengthAction.undo),
+    PedalButton.undo: FootLengthPedal(
+      FootLengthAction.undo,
+      hold: FootLengthAction.redo,
+    ),
     PedalButton.clear: FootLengthPedal(FootLengthAction.doubleTrack),
     PedalButton.stop: FootLengthPedal(FootLengthAction.stop),
     PedalButton.mode: FootLengthPedal(FootLengthAction.exit),
@@ -334,6 +401,8 @@ FootLengthTrack readFootLengthTrack(LooperState looper, int channel) {
     multiple: track.multiple,
     syncDivisor: track.syncDivisor,
     canUndo: track.canUndo,
+    canRedo: track.canRedo,
+    undoDepth: track.undoDepth,
     bars: bars,
     beats: bars == null ? beats : null,
     totalBeats: beats,

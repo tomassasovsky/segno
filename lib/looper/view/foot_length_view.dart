@@ -470,6 +470,7 @@ class _FootLengthPedal extends StatelessWidget {
     final title = switch (role.press) {
       FootLengthAction.recordPlay => l10n.actionRecordPlay,
       FootLengthAction.undo => l10n.actionUndo,
+      FootLengthAction.redo => l10n.actionRedo,
       FootLengthAction.doubleTrack => l10n.footLengthDouble,
       FootLengthAction.firstHalf => l10n.footLengthFirstHalf,
       FootLengthAction.lastHalf => l10n.footLengthLastHalf,
@@ -505,7 +506,7 @@ class _FootLengthPedal extends StatelessWidget {
         projection.bank * 4 + 1,
         projection.bank * 4 + 4,
       ),
-      FootLengthAction.exit => '',
+      FootLengthAction.exit || FootLengthAction.redo => '',
     };
     final hold = role.hold;
     final selectedSlot =
@@ -537,7 +538,7 @@ class _FootLengthPedal extends StatelessWidget {
       enabled: track != null
           ? track.hasContent
           : role.press == FootLengthAction.undo
-          ? selected.canUndo
+          ? selected.canUndo || selected.canRedo
           : !edits || selected.hasContent || (hold != null && selected.canUndo),
       // The selection bar mirrors the physical LED: the selected recorded
       // track, Bank on bank B, and Exit, the way back to Tracks.

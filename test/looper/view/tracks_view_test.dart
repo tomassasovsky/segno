@@ -875,7 +875,7 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(find.byKey(const Key('foot_length_view')), findsOneWidget);
-      await control.editFootLengthTrack(LengthEdit.lastHalf);
+      control.activateFootLengthPedal(PedalButton.clear); // Last half
       await tester.pumpAndSettle();
       expect(
         find.text(

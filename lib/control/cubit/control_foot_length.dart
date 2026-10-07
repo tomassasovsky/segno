@@ -63,6 +63,9 @@ extension _FootLengthControl on ControlCubit {
         return _recAdvance(state.cursor);
       case FootLengthAction.undo:
         _undoLength(state.cursor);
+      case FootLengthAction.redo:
+        _log('redo ch=${state.cursor}  (length surface)');
+        redo(state.cursor);
       case FootLengthAction.stop:
         return _parkAllAccepted();
       case FootLengthAction.nextBank:
@@ -90,11 +93,7 @@ extension _FootLengthControl on ControlCubit {
     final track = _lengthProjection().tracks[channel];
     if (!track.hasContent) return false;
     unawaited(
-      _editLengthChannel(
-        channel,
-        FootLengthProjection.editOf(action)!,
-        fromFrames: track.lengthFrames,
-      ),
+      _editLengthChannel(channel, FootLengthProjection.editOf(action)!, track),
     );
     return true;
   }
@@ -107,14 +106,15 @@ extension _FootLengthControl on ControlCubit {
     return true;
   }
 
-  /// Applies [edit] to the recorded [channel] from the surface. An accepted
-  /// edit becomes the length panel's outcome; a press that changes nothing
-  /// says why, unless the visit it belonged to ended first.
+  /// Applies [edit] to the recorded [channel], read as [before] at the
+  /// press, from the surface. An accepted edit becomes the length panel's
+  /// outcome; a press that changes nothing says why, unless the visit it
+  /// belonged to ended first.
   Future<void> _editLengthChannel(
     int channel,
-    LengthEdit edit, {
-    required int fromFrames,
-  }) async {
+    LengthEdit edit,
+    FootLengthTrack before,
+  ) async {
     final visit = _surfaceVisit;
     final session = _looper.sessionRevision;
     final refusal = await _footLengthActions.edit(channel, edit);
@@ -128,13 +128,24 @@ extension _FootLengthControl on ControlCubit {
           footLengthOutcome: FootLengthOutcome(
             channel: channel,
             edit: edit,
-            fromFrames: fromFrames,
-          ),
+            fromFrames: before.lengthFrames,
+            fromUndoDepth: before.undoDepth,
+          ).bindTo(_lengthProjection().tracks[channel]),
         ),
       );
       return;
     }
     _reportLengthRefusal(refusal, session);
+  }
+
+  /// Binds the pending outcome's result once [looper] publishes it: the
+  /// track's length and undo depth have both moved off their values before
+  /// the edit (in either order of publication).
+  void _bindLengthOutcome(LooperState looper) {
+    final outcome = state.footLengthOutcome;
+    if (outcome.bound || outcome.channel < 0 || isClosed) return;
+    final bound = outcome.bindTo(readFootLengthTrack(looper, outcome.channel));
+    if (bound.bound) emit(state.copyWith(footLengthOutcome: bound));
   }
 
   /// Reports one refused Multiply / Divide with its reason, unless the

@@ -203,6 +203,8 @@ void main() {
           channel: 0,
           edit: LengthEdit.doubled,
           fromFrames: 48000,
+          toFrames: 96000,
+          toUndoDepth: 1,
         ),
       ),
     );
@@ -212,6 +214,74 @@ void main() {
     expect(inPedal(PedalButton.undo, 'Length edit'), findsOneWidget);
     expect(pedalSemantics(tester, PedalButton.undo).properties.enabled, true);
     expect(find.byKey(const Key('foot_length_cell_3')), findsOneWidget);
+  });
+
+  testWidgets('an overdub on top of a Double, or Undo past it, ends the '
+      'outcome and the "Length edit" caption', (tester) async {
+    const doubled = FootLengthOutcome(
+      channel: 0,
+      edit: LengthEdit.doubled,
+      fromFrames: 48000,
+      toFrames: 96000,
+      toUndoDepth: 1,
+    );
+    whenListen(
+      looper,
+      const Stream<LooperState>.empty(),
+      initialState: _withTracks([
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 96000,
+          multiple: 2,
+          undoDepth: 2, // the overdub's layer
+        ),
+        ..._rig.tracks.skip(1),
+      ]),
+    );
+    given(
+      const ControlState(
+        mode: InteractionMode.multiply,
+        footLengthOutcome: doubled,
+      ),
+    );
+    await pump(tester);
+    expect(note(tester), 'Speed and pitch unchanged');
+    expect(inPedal(PedalButton.undo, 'Last change'), findsOneWidget);
+  });
+
+  testWidgets('Double twice then Undo twice never reads "Repeated to 1 bar"', (
+    tester,
+  ) async {
+    whenListen(
+      looper,
+      const Stream<LooperState>.empty(),
+      initialState: _withTracks([
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 24000,
+          redoDepth: 2,
+        ),
+        ..._rig.tracks.skip(1),
+      ]),
+    );
+    given(
+      const ControlState(
+        mode: InteractionMode.multiply,
+        footLengthOutcome: FootLengthOutcome(
+          channel: 0,
+          edit: LengthEdit.doubled,
+          fromFrames: 48000,
+          fromUndoDepth: 1,
+          toFrames: 96000,
+          toUndoDepth: 2,
+        ),
+      ),
+    );
+    await pump(tester);
+    expect(note(tester), 'Speed and pitch unchanged');
+    expect(inPedal(PedalButton.undo, 'Nothing to undo'), findsOneWidget);
+    // Redo is still a hold away, so the pedal stays live.
+    expect(pedalSemantics(tester, PedalButton.undo).properties.enabled, true);
   });
 
   testWidgets('Divide (pen 16 03-05): halves on Undo and Clear, captioned in '
@@ -267,6 +337,8 @@ void main() {
           channel: 0,
           edit: LengthEdit.firstHalf,
           fromFrames: 48000,
+          toFrames: 24000,
+          toUndoDepth: 1,
         ),
       ),
     );
