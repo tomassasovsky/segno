@@ -33,6 +33,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.onAccent,
     required this.accentSurface,
     required this.accentAlt,
+    required this.holdTrack,
+    required this.holdProgress,
+    required this.holdPendingText,
     required this.fx,
     required this.fxSurface,
     required this.warning,
@@ -151,6 +154,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// without brightening [accent] with it will fail there.
   final Color accentSurface;
   final Color accentAlt;
+
+  /// The Pending Hold cue (#1229, pen 10 `PRSrG`): [holdProgress] fills the
+  /// 3 px bar under a pedal whose hold is pending, over [holdTrack];
+  /// [holdPendingText] is that pedal's brightened `Hold · …` line.
+  final Color holdTrack;
+  final Color holdProgress;
+  final Color holdPendingText;
 
   /// The FX-mode accent family (DS `fx`, `fx-surface`, `fx-wash`) — the purple
   /// the performance stage and its chrome adopt in FX mode (owner's call,
@@ -372,6 +382,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? onAccent,
     Color? accentSurface,
     Color? accentAlt,
+    Color? holdTrack,
+    Color? holdProgress,
+    Color? holdPendingText,
     Color? fx,
     Color? fxSurface,
     Color? warning,
@@ -432,6 +445,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     onAccent: onAccent ?? this.onAccent,
     accentSurface: accentSurface ?? this.accentSurface,
     accentAlt: accentAlt ?? this.accentAlt,
+    holdTrack: holdTrack ?? this.holdTrack,
+    holdProgress: holdProgress ?? this.holdProgress,
+    holdPendingText: holdPendingText ?? this.holdPendingText,
     fx: fx ?? this.fx,
     fxSurface: fxSurface ?? this.fxSurface,
     warning: warning ?? this.warning,
@@ -498,6 +514,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       onAccent: c(onAccent, other.onAccent),
       accentSurface: c(accentSurface, other.accentSurface),
       accentAlt: c(accentAlt, other.accentAlt),
+      holdTrack: c(holdTrack, other.holdTrack),
+      holdProgress: c(holdProgress, other.holdProgress),
+      holdPendingText: c(holdPendingText, other.holdPendingText),
       fx: c(fx, other.fx),
       fxSurface: c(fxSurface, other.fxSurface),
       warning: c(warning, other.warning),
@@ -586,6 +605,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     // the FX chip's label — see the token's doc (#768).
     accentSurface: Color(0xFF121C31),
     accentAlt: Color(0xFF738CF2),
+    holdTrack: Color(0xFF303B4B),
+    holdProgress: Color(0xFFA8C7FA),
+    holdPendingText: Color(0xFFD2E3FF),
     // #692: FX mode = purple. `fx` on the flat `fxSurface` measures 4.74:1
     // (>= AA for the 14px w700 chip label); on bg-base 5.32:1. Both pinned in
     // app_theme_test.dart.
@@ -671,6 +693,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     // that exists for contrast) so the FX chip's label clears 4.5:1 (#768).
     accentSurface: Color(0xFF203A5E),
     accentAlt: Color(0xFF9AB4FF),
+    holdTrack: Color(0xFF4A586C),
+    holdProgress: Color(0xFFC6DAFF),
+    holdPendingText: Color(0xFFFFFFFF),
     // #692: the FX purple, lifted for the high-contrast flavor — `fx` on
     // `fxSurface` measures 6.83:1, on black 10.53:1 (this is the flavor where
     // FX slipped under AA before, #768/#770, so it is checked explicitly).
