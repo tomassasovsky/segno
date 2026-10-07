@@ -273,7 +273,7 @@ void main() {
       );
       unawaited(openUpdateSettings());
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('settings_about_row')));
+      await tester.tap(find.byKey(const Key('updates_about_row')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('about_controller_firmware_row')));
       await tester.pumpAndSettle();

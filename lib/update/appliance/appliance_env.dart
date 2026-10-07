@@ -33,8 +33,18 @@ abstract interface class ApplianceEnv {
 
   /// Runs the privileged helper to download + verify + stage semver [version]
   /// (e.g. `"0.2.0"` or `"0.2.0-experimental.7"`) to the inactive slot,
-  /// emitting progress in `[0, 1]`. Throws if the helper fails.
+  /// emitting progress in `[0, 1]`. Throws if the helper fails. Cancelling the
+  /// subscription sends the helper SIGTERM; the cancel completes once it has
+  /// exited.
   Stream<double> stage(String version);
+
+  /// The version of an install the helper recorded and never finished (cut
+  /// off by a power loss, a stopped service or a cancel), or `null`. Never
+  /// throws.
+  Future<String?> updateAttempt();
+
+  /// Forgets the install [updateAttempt] reports. Never throws.
+  Future<void> clearUpdateAttempt();
 
   /// Runs the privileged helper to reboot, into the staged slot when one is
   /// staged. Throws on failure. Only `PowerCubit` calls it, after the save.
@@ -47,7 +57,8 @@ abstract interface class ApplianceEnv {
 
   /// Clears a staged-version marker that cannot be applied: a tryboot that
   /// did not take (rolled back, whether boot-bad or simply never committed),
-  /// or already running the staged version. No-op when the helper is absent.
-  /// Never throws.
-  Future<void> reconcileStaged();
+  /// or already running the staged version. Returns the helper's reason for
+  /// clearing it (`tryboot-not-taken`, `already-running`, `empty`), or `null`
+  /// when it kept the marker or could not run. Never throws.
+  Future<String?> reconcileStaged();
 }
