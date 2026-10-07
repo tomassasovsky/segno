@@ -18,6 +18,7 @@ import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart'
     show routingPlacementLabel;
+import 'package:segno/looper/view/loop_count_words.dart';
 import 'package:segno/looper/view/rename_track_dialog.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/looper/view/track_column.dart'
@@ -47,6 +48,7 @@ class MixerColumn extends StatelessWidget {
     required this.mode,
     this.isPrimary = false,
     this.bars,
+    this.beats,
     super.key,
   });
 
@@ -68,6 +70,10 @@ class MixerColumn extends StatelessWidget {
 
   /// The track's length in bars, when the grid knows it.
   final int? bars;
+
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
 
   /// The pen's strip padding, and the height of every fixed part between the
   /// meter and the edges. A COLUMN, not absolute offsets: the pen's strip is
@@ -146,6 +152,7 @@ class MixerColumn extends StatelessWidget {
               name: name,
               isPrimary: isPrimary,
               bars: bars,
+              beats: beats,
             ),
           ),
           const SizedBox(height: _gap),
@@ -213,12 +220,17 @@ class _StripInfo extends StatelessWidget {
     required this.name,
     required this.isPrimary,
     required this.bars,
+    required this.beats,
   });
 
   final Track track;
   final String name;
   final bool isPrimary;
   final int? bars;
+
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
 
   @override
   Widget build(BuildContext context) {
@@ -279,6 +291,7 @@ class _StripInfo extends StatelessWidget {
             channel: track.channel,
             layers: track.layers,
             bars: bars,
+            beats: beats,
           ),
         ),
       ],
@@ -293,11 +306,16 @@ class _StripMeta extends StatelessWidget {
     required this.channel,
     required this.layers,
     required this.bars,
+    required this.beats,
   });
 
   final int channel;
   final int layers;
   final int? bars;
+
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
 
   @override
   Widget build(BuildContext context) {
@@ -315,13 +333,11 @@ class _StripMeta extends StatelessWidget {
       fontSize: 17,
       height: 1,
     );
-    final barsCount = bars;
+    final count = loopCountWords(l10n, bars: bars, beats: beats);
     return Semantics(
       label: l10n.a11yStageTrackMeta(
         channel + 1,
-        barsCount == null
-            ? l10n.stageNoBarsFigure
-            : l10n.stageBarsFigure(barsCount),
+        count.spoken,
         l10n.stageLayersFigure(layers),
       ),
       child: ExcludeSemantics(
@@ -343,8 +359,8 @@ class _StripMeta extends StatelessWidget {
                 ),
               ),
               _MetaFigure(
-                figure: barsCount == null ? l10n.stageNoBars : '$barsCount',
-                unit: l10n.stageBarsUnit(barsCount ?? 0),
+                figure: count.figure,
+                unit: count.unit,
                 figureStyle: figure,
                 unitStyle: unit,
               ),

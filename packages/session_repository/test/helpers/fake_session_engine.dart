@@ -67,6 +67,10 @@ class FakeSessionEngine implements AudioEngine {
   int masterLength = 0;
   int mixRevision = 0;
 
+  /// The published grid (#1168): whole bars, and the beats it holds.
+  int loopBars = 0;
+  int loopBeats = 0;
+
   /// The session-level looper mode reported by [snapshot] (B5c). Mutable so a
   /// test can seed a non-default mode before calling
   /// `SessionRepository.save`, exercising the real `_sessionFrom` wiring.
@@ -227,6 +231,8 @@ class FakeSessionEngine implements AudioEngine {
     latencyState: LatencyState.idle,
     measuredLatencyMs: -1,
     masterLengthFrames: masterLength,
+    loopBars: loopBars,
+    loopBeats: loopBeats,
     mixRevision: mixRevision,
     tempoBpm: tempoBpm,
     tempoSource: tempoSource,
@@ -342,8 +348,11 @@ class FakeSessionEngine implements AudioEngine {
   );
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) =>
-      EngineResult.ok;
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) => EngineResult.ok;
 
   /// Puts track [channel] in [state] without touching its audio, as a
   /// transport press or a punch-in does.
@@ -351,7 +360,7 @@ class FakeSessionEngine implements AudioEngine {
       _tracks[channel].state = state;
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     if (baseFrames <= 0) return EngineResult.invalid;
     masterLength = baseFrames;
     for (final track in _tracks) {
@@ -542,6 +551,12 @@ class FakeSessionEngine implements AudioEngine {
   @override
   RequestAdmission toggleReverse({required int channel}) =>
       (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) => (result: EngineResult.invalid, request: 0);
 
   @override
   RequestAdmission installReverse({

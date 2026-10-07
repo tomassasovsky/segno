@@ -262,7 +262,7 @@ typedef enum le_command_code {
   LE_CMD_SET_CLICK_OUTPUT = 22,  /* click output routing. trackmask arm:
                                   * channel unused, mask = output bitmask
                                   * (default 0 = no outputs). */
-  LE_CMD_COMMIT_SESSION = 23,    /* session commit: base_frames and loop_bars;
+  LE_CMD_COMMIT_SESSION = 23,    /* session commit: base_frames and loop_beats;
                                   * publish grid with imported tracks stopped */
   LE_CMD_SET_CLICK_VOLUME = 24,  /* arg_f = 0..LE_MAX_GAIN (the click's ONLY
                                   * gain stage — master gain never applies). */
@@ -535,7 +535,8 @@ typedef enum le_command_code {
    * already records the silence that was heard. 84-131 belong to other
    * epics (the numbering ledger); 133-135 stay reserved for #1229. */
   LE_CMD_SET_TUNER_MUTE = 132,
-  /* 84 is held by Multiply/Divide's LE_CMD_SET_LENGTH (#1168 plan). */
+  LE_CMD_SET_LENGTH = 84, /* checked internal length edit (#1168); never
+                           * raw-posted */
   LE_CMD_SET_SPEED = 85, /* checked internal Speed request (#1179); never
                           * raw-posted */
   LE_CMD_TRANSPOSE = 86,        /* checked internal Transpose request (#1179) */
@@ -977,6 +978,15 @@ typedef struct le_track_snapshot {
    * bypassed, so a host never claims a pitch the mix is not playing. */
   int32_t transpose_st;
   int32_t transpose_effective_st;
+  /* Trailing (#1168): how many Undo or Redo taps on this track's length edits
+   * did nothing where the tap's own result could not say so, counted since
+   * the engine was created and never reset: a tap posted as LE_OK that the
+   * callback then refused (the rig changed in between), or taps queued behind
+   * an overdub that stopped at a length edit, which only an explicit tap
+   * undoes. A refusal returned to the tap itself is not counted: its caller
+   * reports that result, so one tap raises one notice. The host reports each
+   * increase, so a tap that did nothing is never silent. */
+  uint32_t length_history_refusals;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1274,8 +1284,9 @@ typedef struct le_snapshot {
   int32_t quantize_div; /* le_grid_div granularity (default 0 = off) */
   int32_t tempo_source; /* le_tempo_source (default 0 = none) */
   /* Whole bars in the master loop, or 0 when no grid relationship exists
-   * (sync off, no loop, or the loop predates any grid). The loop's AUDIO
-   * length is never altered by the grid — bars is a derived count. */
+   * (sync off, no loop, or the loop predates any grid) or the grid's beats
+   * do not make whole bars (loop_beats, #1168). The loop's AUDIO length is
+   * never altered by the grid — bars is a derived count. */
   int32_t loop_bars;
   int32_t current_beat; /* 0..ts_num-1 within the bar: loop-driven, or driven
                          * by the count-in / free-running click; 0 idle */
@@ -1415,6 +1426,11 @@ typedef struct le_snapshot {
   int32_t speed_denom;
   /* Trailing (#1179 Part 3a): 1 while Transpose is bypassed globally. */
   int32_t transpose_bypass;
+  /* Trailing (#1168): whole beats (denominator notes) in the master loop, the
+   * grid's own count, or 0 with no grid. loop_bars * ts_num when the loop is
+   * whole bars; a Divide of a sole 1- or 3-bar loop keeps the tempo and
+   * leaves 2 or 6 beats with loop_bars 0. */
+  int32_t loop_beats;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -3295,10 +3311,13 @@ LE_EXPORT int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel
  * `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_count)` are the
  * undo snapshots, `undo_count` is the live buffer, and the redo snapshots
  * follow, newest-adjacent first; a redo-side peel marker holds no image and
- * takes no ordinal (le_engine_export_history). Returns the frames written (the
- * loop length, clamped to `max_frames`), 0 for an empty layer, or
- * LE_ERR_INVALID for an out-of-range channel/lane/ordinal or non-positive
- * `max_frames`. Control thread; call when the track is not capturing. */
+ * takes no ordinal (le_engine_export_history). Each image has its own length
+ * (a length edit's images differ, #1168): `max_frames` 0 returns that length
+ * without copying (`out` may then be NULL). Returns the frames written (the
+ * image's length, clamped to `max_frames`), 0 for an empty layer, or
+ * LE_ERR_INVALID for an out-of-range channel/lane/ordinal, a negative
+ * `max_frames`, or a slot shorter than its image. Control thread; call when
+ * the track is not capturing. */
 LE_EXPORT int32_t le_engine_export_layer(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t ordinal,
                                          float* out, int32_t max_frames);
@@ -3306,39 +3325,47 @@ LE_EXPORT int32_t le_engine_export_layer(le_engine* engine, int32_t channel,
 /* Loads `frames` mono frames into track `channel`'s lane `lane` at image
  * `ordinal` (which becomes the pool slot index), staging a reconstruction into
  * an EMPTY track. Call once per (lane, ordinal) — ordinals contiguous from 0 —
- * then le_engine_finalize_history, then le_engine_commit_session. Importing a
- * lane >= the active count activates it. Returns LE_OK, or LE_ERR_INVALID for a
+ * then le_engine_finalize_history, which publishes the live image's length
+ * over the staged one, then le_engine_commit_session. Importing a lane >= the
+ * active count activates it. Returns LE_OK, or LE_ERR_INVALID for a
  * non-EMPTY track, an `ordinal` past the pool cap, or an oversized `frames`. */
 LE_EXPORT int32_t le_engine_import_layer(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t ordinal,
                                          const float* pcm, int32_t frames);
 
 /* Publishes a track reconstructed by le_engine_import_layer with its history
- * (#1164): `count` entries in le_engine_export_history order (`kinds[i]`,
- * `skipped[i]`), the first `undo_count` of them on the undo stack and the rest
- * on the redo stack top-down. Image-bearing entries take slot == image ordinal,
- * the live buffer is slot `undo_count`, and a redo-side peel entry becomes a
- * marker without an image; every active lane is republished in lockstep with
- * its undo, redo and peel depths. Strict: LE_ERR_INVALID for a non-EMPTY
- * track, an unknown kind, a `skipped` outside [0, LE_POOL_SLOTS) or nonzero on
- * a kind other than peel, a clear restore point anywhere but the last entry
- * on the redo side, an undo-side peel whose `skipped` exceeds the run of peel
- * entries directly beneath it (unless that run reaches the bottom: pool
- * eviction), a redo-side peel marker that would find no layer to peel when
- * Redo reaches it, more images than LE_POOL_SLOTS, or a torn reconstruction
- * (an image ordinal not staged on every active lane, or lanes at different
- * lengths). Returns LE_OK otherwise. */
-LE_EXPORT int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
-                                             const int32_t* kinds,
-                                             const int32_t* skipped,
-                                             int32_t count, int32_t undo_count);
+ * (#1164, #1168): `count` entries in le_engine_export_history order
+ * (`kinds[i]`, `skipped[i]`, `starts[i]`), the first `undo_count` of them on
+ * the undo stack and the rest on the redo stack top-down, and the length of
+ * each of its `images` images by ordinal (`lens`; the live image is ordinal
+ * `undo_count`). Image-bearing entries take slot == image ordinal and a
+ * redo-side peel entry becomes a marker without an image; every active lane
+ * is republished in lockstep with the live length and the undo, redo and peel
+ * depths. Strict: LE_ERR_INVALID for a non-EMPTY track, an unknown kind, a
+ * `skipped` outside [0, LE_POOL_SLOTS) or nonzero on a kind other than peel,
+ * a `starts` outside +-max_loop_frames or nonzero on a kind other than a
+ * length edit, a clear restore point anywhere but the last entry on the redo
+ * side, an undo-side peel whose `skipped` exceeds the run of peel entries
+ * directly beneath it (unless that run reaches the bottom: pool eviction), a
+ * redo-side peel marker that would find no layer to peel when Redo reaches
+ * it, `images` not the history's image count or more than LE_POOL_SLOTS, an
+ * image length outside (0, max_loop_frames] or other than its lineage gives
+ * (an image is as long as the nearest length edit at or nearer live on its
+ * stack names, else as long as the live image), or a torn reconstruction (an
+ * image not staged at its length on every active lane). Returns LE_OK
+ * otherwise. */
+LE_EXPORT int32_t le_engine_finalize_history(
+    le_engine* engine, int32_t channel, const int32_t* kinds,
+    const int32_t* skipped, const int32_t* starts, int32_t count,
+    int32_t undo_count, const int32_t* lens, int32_t images);
 
 /* Lists track `channel`'s history entries in image-ordinal order (#1164):
  * the undo stack oldest first, then the redo stack top-down. `kinds[i]` is the
  * entry's kind (0 overdub layer, 1 clear restore point, 2 peel, 3 loop-close
- * restoration) and `skipped[i]` its peel payload (0 for every other kind). A
- * redo-side peel entry is a marker without an image: le_engine_export_layer's
- * ordinals count image-bearing entries only, so a track's image count is
+ * restoration, 4 length edit), `skipped[i]` its peel payload and `starts[i]`
+ * a length edit's playhead map (0 for every other kind). A redo-side peel
+ * entry is a marker without an image: le_engine_export_layer's ordinals count
+ * image-bearing entries only, so a track's image count is
  * `undo_count + 1 + (redo entries that are not peel markers)`. Writes at most
  * `max` entries, stores the undo stack's entry count in `*undo_count` (the
  * first `*undo_count` entries are the undo side and ordinal `*undo_count` is
@@ -3350,20 +3377,25 @@ LE_EXPORT int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
  * Control thread. */
 LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
                                            int32_t* kinds, int32_t* skipped,
-                                           int32_t max, int32_t* undo_count);
+                                           int32_t* starts, int32_t max,
+                                           int32_t* undo_count);
 
 /* Establishes the master loop at `base_frames` and parks every imported track
  * (EMPTY with a loaded length) STOPPED at its whole-loop multiple
- * (length / base_frames). Restores exactly `loop_bars` musical bars over that
- * span; zero keeps the loop grid-free even when a tempo is known. The caller
- * restores tempo/source/signature before this commit. Does not infer bars
- * from BPM or change audio length. Requires base_frames > 0 and loop_bars in
- * 0..INT32_MAX/15 (the largest supported signature has 15 beats). Posts one
- * command; returns LE_OK or an le_result error.
+ * (length / base_frames; a base/2 or base/4 track is that Sync division).
+ * Restores exactly `loop_beats` musical beats (denominator notes; #1168: a
+ * sub-bar loop a Divide left keeps its beats) over that span; zero keeps the
+ * loop grid-free even when a tempo is known. The caller restores
+ * tempo/source/signature before this commit, so a whole-bar loop passes
+ * bars * ts_num. Does not infer beats from BPM or change audio length.
+ * Requires base_frames > 0 and loop_beats in 0..INT32_MAX/15, and every
+ * staged track a whole multiple of base_frames or exactly base/2 or base/4
+ * (LE_ERR_INVALID otherwise, before anything is posted). Posts one command;
+ * returns LE_OK or an le_result error.
  */
 LE_EXPORT int32_t le_engine_commit_session(le_engine* engine,
                                            int32_t base_frames,
-                                           int32_t loop_bars);
+                                           int32_t loop_beats);
 
 /* Fade admission returns a nonzero request id only on LE_OK. Toggle resolves
  * the opposite target on the callback, with a 0.5..30 second full traversal.
@@ -3442,9 +3474,43 @@ LE_EXPORT int32_t le_engine_set_transpose_bypass(le_engine* engine,
 LE_EXPORT int32_t le_engine_get_transpose_cache(le_engine* engine,
                                                int32_t channel,
                                                le_lane_cache_info* out);
-/* Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
- * callback publication, INVALID for an absent/consumed/retired id; otherwise
- * OK and fills result. */
+/* One length edit of a track's material (#1168). Double repeats the image
+ * ([old | old]); First half and Last half keep that half, ceil(len / 2) frames
+ * each, so an odd length's halves share the middle frame. */
+typedef enum le_length_edit {
+  LE_LENGTH_DOUBLE = 0,
+  LE_LENGTH_FIRST_HALF = 1,
+  LE_LENGTH_LAST_HALF = 2,
+} le_length_edit;
+
+/* Doubles or halves track `channel` as one recoverable history entry (#1168).
+ * Pitch and speed are unchanged; sparse material stays where it lies; a half
+ * gets the loop seam's equal-gain fold from the material it omits. The
+ * playhead keeps its phase in the kept material; a STOPPED track stays
+ * stopped. The callback swaps image, length and clock in one drain; the
+ * receipt below carries its verdict, and Undo/Redo restore the other image.
+ * Lengths must fit the looper mode against the unchanged base, except that a
+ * track holding the rig's only content re-clocks the master to its new length
+ * at the unchanged tempo, keeping a whole bar count (Free/Song spans are
+ * independent). Admission returns a nonzero request id
+ * only on LE_OK. Refusals, all before any change: LE_ERR_NOT_RUNNING when not
+ * configured; LE_ERR_INVALID for a bad channel or edit, a track that is not
+ * PLAYING or STOPPED, or a half of a length below 2; LE_ERR_CAPACITY when the
+ * result exceeds max_loop_frames or the pool has no slot; LE_ERR_MODE_MISMATCH
+ * when it would not fit the mode, a re-clock would leave a fractional bar
+ * count, or the track is the crowned Sync/Band primary of other content;
+ * LE_ERR_NOT_READY while the track captures, drains a layer, has an arm,
+ * launch, pending state, clock or lane command or an unfiled length edit,
+ * while the callback may still write its loop (a seam fold or punch tail), or
+ * when no receipt slot is free. The callback refuses (receipt
+ * LE_ERR_NOT_READY, or the verdict's own code when the rig changed) when the
+ * loop's content changed after admission. */
+LE_EXPORT int32_t le_engine_edit_length(le_engine* engine, int32_t channel,
+                                        int32_t edit, uint64_t* request);
+
+/* Consumes one completed Fade, Reverse, Speed, Transpose or length result.
+ * Returns NOT_READY before callback publication, INVALID for an
+ * absent/consumed/retired id; otherwise OK and fills result. */
 LE_EXPORT int32_t le_engine_read_request_result(le_engine* engine,
                                                uint64_t request,
                                                int32_t* result);

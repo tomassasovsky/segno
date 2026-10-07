@@ -654,7 +654,7 @@ static void test_history_import_during_capture_fails_truthfully(void) {
     for (int i = 0; i < HR_LEN; ++i) pcm[i] = .0625f;
     if (layered) {
       CHECK(le_engine_import_layer(e, 0, 0, 0, pcm, HR_LEN) == LE_OK);
-      CHECK(finalize_layer_history(e, 0, 0, 0) == LE_OK);
+      CHECK(finalize_layer_history(e, 0, 0, 0, HR_LEN) == LE_OK);
     } else {
       CHECK(le_engine_import_track(e, 0, pcm, HR_LEN) == LE_OK);
     }

@@ -271,6 +271,12 @@ class FakeAudioEngine implements AudioEngine {
       (result: EngineResult.invalid, request: 0);
 
   @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) => (result: EngineResult.invalid, request: 0);
+
+  @override
   RequestAdmission installReverse({
     required int channel,
     required bool reversed,
@@ -1514,7 +1520,11 @@ class FakeAudioEngine implements AudioEngine {
   TrackHistory exportHistory(int channel) => TrackHistory.none;
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) {
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) {
     _importedDepths[channel] = (history.undoCount, history.redoCount);
     return EngineResult.ok;
   }
@@ -1523,7 +1533,7 @@ class FakeAudioEngine implements AudioEngine {
   final _importedLengths = <(int, int), int>{};
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     final tracks = [...nextSnapshot.tracks];
     for (final entry in _importedDepths.entries) {
       final length = _importedLengths[(entry.key, entry.value.$1)];
@@ -1889,6 +1899,7 @@ class _LengthSnapshot extends EngineSnapshot {
          syncTempo: source.syncTempo,
          quantizeDiv: engine.lastQuantizeDiv ?? source.quantizeDiv,
          loopBars: source.loopBars,
+         loopBeats: source.loopBeats,
          currentBeat: source.currentBeat,
          clickMode: source.clickMode,
          clickModeRevision: source.clickModeRevision,
@@ -1960,6 +1971,8 @@ class _LengthTrack extends TrackSnapshot {
          redoDepth: source.redoDepth,
          peelDepth: source.peelDepth,
          multiple: source.multiple,
+         syncDivisor: source.syncDivisor,
+         lengthHistoryRefusals: source.lengthHistoryRefusals,
          inputMask: source.inputMask,
          outputMask: source.outputMask,
          layerInFlight: source.layerInFlight,

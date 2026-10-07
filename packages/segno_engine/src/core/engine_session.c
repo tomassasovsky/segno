@@ -151,24 +151,46 @@ int32_t le_engine_import_track(le_engine* engine, int32_t channel,
  * newest-adjacent-first (redo_stack[redo_count-1] is the layer immediately
  * above live — see le_undo_swap in engine_commands.c). Image-bearing entries
  * only: a redo-side PEEL marker (slot -1, #1164) holds no image and is skipped,
- * so an ordinal never tears on one. Returns -1 for an ordinal past the end. */
+ * so an ordinal never tears on one. Returns -1 for an ordinal past the end.
+ *
+ * *len is that image's own length (#1168): a LENGTH entry names the length of
+ * its image, and every image on the same stack between it and live (through
+ * the next LENGTH entry) was made at that length, so the nearest LENGTH entry
+ * at or nearer live than the image decides; none means the live length. */
+static int32_t le_hist_len_at(const le_hist_entry* stack, int32_t count,
+                              int32_t i, int32_t live_len) {
+  for (int32_t j = i; j < count; ++j) {
+    if (stack[j].kind == LE_HIST_LENGTH) return stack[j].len;
+  }
+  return live_len;
+}
+
 static int32_t le_layer_slot_for_ordinal(const le_track* t, int32_t ordinal,
-                                          int32_t live) {
+                                          int32_t live, int32_t live_len,
+                                          int32_t* len) {
   const int32_t undo_c = t->undo_count;
-  if (ordinal < undo_c) return t->undo_stack[ordinal].slot;
+  *len = live_len;
+  if (ordinal < undo_c) {
+    *len = le_hist_len_at(t->undo_stack, undo_c, ordinal, live_len);
+    return t->undo_stack[ordinal].slot;
+  }
   if (ordinal == undo_c) return live;
   int32_t j = ordinal - undo_c - 1; /* 0-based into the post-live images */
   for (int32_t k = t->redo_count - 1; k >= 0; --k) {
     if (t->redo_stack[k].slot < 0) continue;
-    if (j-- == 0) return t->redo_stack[k].slot;
+    if (j-- == 0) {
+      *len = le_hist_len_at(t->redo_stack, t->redo_count, k, live_len);
+      return t->redo_stack[k].slot;
+    }
   }
   return -1;
 }
 
 int32_t le_engine_export_history(le_engine* engine, int32_t channel,
                                  int32_t* kinds, int32_t* skipped,
-                                 int32_t max, int32_t* undo_count) {
-  if (engine == NULL || kinds == NULL || skipped == NULL ||
+                                 int32_t* starts, int32_t max,
+                                 int32_t* undo_count) {
+  if (engine == NULL || kinds == NULL || skipped == NULL || starts == NULL ||
       undo_count == NULL || max < 0) {
     return LE_ERR_INVALID;
   }
@@ -184,33 +206,38 @@ int32_t le_engine_export_history(le_engine* engine, int32_t channel,
     if (n >= max) continue;
     kinds[n] = t->undo_stack[i].kind;
     skipped[n] = t->undo_stack[i].skipped;
+    starts[n] = t->undo_stack[i].start;
   }
   for (int32_t k = t->redo_count - 1; k >= 0; --k, ++n) {
     if (n >= max) continue;
     kinds[n] = t->redo_stack[k].kind;
     skipped[n] = t->redo_stack[k].skipped;
+    starts[n] = t->redo_stack[k].start;
   }
   return n;
 }
 
 int32_t le_engine_export_layer(le_engine* engine, int32_t channel, int32_t lane,
                                int32_t ordinal, float* out, int32_t max_frames) {
-  if (engine == NULL || out == NULL) return LE_ERR_INVALID;
+  if (engine == NULL || (out == NULL && max_frames > 0)) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  if (ordinal < 0 || max_frames <= 0) return LE_ERR_INVALID;
+  if (ordinal < 0 || max_frames < 0) return LE_ERR_INVALID;
   le_track* t = &engine->tracks[channel];
   le_lane* ln = &t->lanes[lane];
   /* a_live is written in lockstep across lanes, so any lane's copy names the
    * shared live slot; the undo/redo stacks are track-owned slot indices. An
    * ordinal past the image-bearing entries maps to -1. */
-  const int32_t slot =
-      le_layer_slot_for_ordinal(t, ordinal, load_i32(&ln->a_live));
+  int32_t n;
+  const int32_t slot = le_layer_slot_for_ordinal(
+      t, ordinal, load_i32(&ln->a_live), load_i32(&ln->a_len), &n);
   if (slot < 0) return LE_ERR_INVALID;
-  int32_t n = load_i32(&ln->a_len);
-  if (n > max_frames) n = max_frames;
   if (n <= 0) return 0;
   if (ln->pool[slot] == NULL) return 0;
+  /* Never read past the slot: an image shorter than its entry names is torn. */
+  if (ln->pool_cap[slot] < n) return LE_ERR_INVALID;
+  if (max_frames == 0) return n; /* the size query (#1168) */
+  if (n > max_frames) n = max_frames;
   memcpy(out, ln->pool[slot], (size_t)n * sizeof(float));
   return n;
 }
@@ -262,7 +289,8 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
     memset(ln->pool[ordinal] + frames, 0,
            (size_t)(want - frames) * sizeof(float));
   }
-  /* Every layer of a lane shares the loop length; set it idempotently. */
+  /* Marks the lane staged. Images may differ in length (#1168), so this is
+   * not the loop length: le_engine_finalize_history publishes the live one. */
   store_i32(&ln->a_len, frames);
   store_i32(&ln->a_recoverable, 1); /* #595: see le_engine_import_track_lane */
   return LE_OK;
@@ -270,15 +298,20 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
 
 int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
                                    const int32_t* kinds,
-                                   const int32_t* skipped, int32_t count,
-                                   int32_t undo_count) {
+                                   const int32_t* skipped,
+                                   const int32_t* starts, int32_t count,
+                                   int32_t undo_count, const int32_t* lens,
+                                   int32_t images_in) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (count < 0 || undo_count < 0 || undo_count > count) return LE_ERR_INVALID;
-  if (count > 0 && (kinds == NULL || skipped == NULL)) return LE_ERR_INVALID;
+  if (count > 0 && (kinds == NULL || skipped == NULL || starts == NULL)) {
+    return LE_ERR_INVALID;
+  }
+  if (lens == NULL) return LE_ERR_INVALID;
   const int32_t redo_count = count - undo_count;
   if (undo_count >= LE_POOL_SLOTS || redo_count > LE_POOL_SLOTS) {
     return LE_ERR_INVALID; /* the stacks' capacity */
@@ -292,9 +325,14 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
     const int32_t kind = kinds[i];
     const int redo = i >= undo_count;
     if (kind != LE_HIST_LAYER && kind != LE_HIST_CLEAR &&
-        kind != LE_HIST_PEEL && kind != LE_HIST_PROCESSED) {
+        kind != LE_HIST_PEEL && kind != LE_HIST_PROCESSED &&
+        kind != LE_HIST_LENGTH) {
       return LE_ERR_INVALID;
     }
+    /* Only a length edit carries a playhead map, inside the loop cap. */
+    if (kind != LE_HIST_LENGTH ? starts[i] != 0
+        : starts[i] < -engine->max_loop_frames ||
+          starts[i] > engine->max_loop_frames) return LE_ERR_INVALID;
     /* No stack holds LE_POOL_SLOTS entries above a layer. */
     if (skipped[i] < 0 || skipped[i] >= LE_POOL_SLOTS) return LE_ERR_INVALID;
     if (kind != LE_HIST_PEEL && skipped[i] != 0) return LE_ERR_INVALID;
@@ -316,7 +354,30 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
     }
     if (redo && kind != LE_HIST_PEEL) ++images;
   }
-  if (images > LE_POOL_SLOTS) return LE_ERR_INVALID; /* R1 cap */
+  if (images > LE_POOL_SLOTS || images != images_in) return LE_ERR_INVALID;
+  /* Every image has its own length (#1168), and the lineage decides it: an
+   * image is as long as the nearest length edit at or nearer live on its
+   * stack names (its own, for a LENGTH entry), else as long as the live one.
+   * Only the LENGTH entries' and the live image's lengths are free. */
+  const int32_t live_len = lens[undo_count];
+  if (live_len <= 0 || live_len > engine->max_loop_frames) return LE_ERR_INVALID;
+  {
+    int32_t ruling = live_len; /* undo side, walked from live down */
+    for (int32_t i = undo_count - 1; i >= 0; --i) {
+      if (kinds[i] == LE_HIST_LENGTH) ruling = lens[i];
+      if (lens[i] != ruling || ruling <= 0 ||
+          ruling > engine->max_loop_frames) return LE_ERR_INVALID;
+    }
+    ruling = live_len; /* redo side, walked from live up */
+    int32_t ordinal = undo_count + 1;
+    for (int32_t i = undo_count; i < count; ++i) {
+      if (kinds[i] == LE_HIST_PEEL) continue; /* a marker holds no image */
+      if (kinds[i] == LE_HIST_LENGTH) ruling = lens[ordinal];
+      if (lens[ordinal] != ruling || ruling <= 0 ||
+          ruling > engine->max_loop_frames) return LE_ERR_INVALID;
+      ++ordinal;
+    }
+  }
   /* Walk the redo side as Redo would: a PEEL marker re-peels, so a layer must
    * be reachable through PEEL entries when Redo reaches it — otherwise Redo
    * refuses forever and strands every image beneath the marker. */
@@ -347,20 +408,15 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
     return LE_ERR_INVALID;
   }
   const int32_t lanes = le_lanes_active(t);
-  const int32_t len = load_i32(&t->lanes[0].a_len);
-  if (len <= 0) return LE_ERR_INVALID;
-  /* Every active lane must hold every image ordinal at the same length (the
-   * stacks are shared in lockstep) — reject a torn/partial reconstruction
-   * rather than publish it. */
+  if (load_i32(&t->lanes[0].a_len) <= 0) return LE_ERR_INVALID; /* unstaged */
+  /* Every active lane must hold every image ordinal at that image's length
+   * (the stacks are shared in lockstep) — reject a torn/partial
+   * reconstruction rather than publish it: a slot shorter than its image
+   * would be read past by playback or export. */
   for (int32_t l = 0; l < lanes; ++l) {
-    if (load_i32(&t->lanes[l].a_len) != len) return LE_ERR_INVALID;
     for (int32_t s = 0; s < images; ++s) {
-      /* Every restored slot must be allocated AND large enough to hold the loop
-       * length: a mismatched-length stage (differing frames per ordinal) could
-       * leave a slot shorter than `len`, which playback/export would then read
-       * past. Reject rather than publish an out-of-bounds layer. */
       if (t->lanes[l].pool[s] == NULL) return LE_ERR_INVALID;
-      if (t->lanes[l].pool_cap[s] < len) return LE_ERR_INVALID;
+      if (t->lanes[l].pool_cap[s] < lens[s]) return LE_ERR_INVALID;
     }
   }
   if (!le_import_fade_room(engine)) return LE_ERR_NOT_READY;
@@ -369,16 +425,22 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
    * (mirror of le_layer_slot_for_ordinal); a redo marker names slot -1. */
   int32_t image = 0;
   for (int32_t i = 0; i < undo_count; ++i) {
-    t->undo_stack[i] = le_hist_kind_entry(kinds[i], image++, skipped[i]);
+    t->undo_stack[i] = le_hist_kind_entry(kinds[i], image, skipped[i]);
+    t->undo_stack[i].len = kinds[i] == LE_HIST_LENGTH ? lens[image] : 0;
+    t->undo_stack[i].start = starts[i];
+    ++image;
   }
   t->undo_count = undo_count;
   const int32_t live = image++;
   for (int32_t j = 0; j < redo_count; ++j) {
     const int32_t i = undo_count + j;
     const int32_t slot = kinds[i] == LE_HIST_PEEL ? -1 : image++;
-    t->redo_stack[redo_count - 1 - j] =
-        le_hist_kind_entry(kinds[i], slot, skipped[i]);
+    le_hist_entry entry = le_hist_kind_entry(kinds[i], slot, skipped[i]);
+    entry.len = kinds[i] == LE_HIST_LENGTH ? lens[slot] : 0;
+    entry.start = starts[i];
+    t->redo_stack[redo_count - 1 - j] = entry;
   }
+  le_track_set_len(t, live_len); /* every active lane, the live image */
   t->redo_count = redo_count;
   t->empty_len = 0;
   t->start_iter = 0;
@@ -398,9 +460,9 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
 }
 
 int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames,
-                                  int32_t loop_bars) {
+                                  int32_t loop_beats) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (base_frames <= 0 || loop_bars < 0 || loop_bars > INT32_MAX / 15) {
+  if (base_frames <= 0 || loop_beats < 0 || loop_beats > INT32_MAX / 15) {
     return LE_ERR_INVALID;
   }
   /* Free/Song mode (B2b, adversarial-review BUG 2 fix; broadened to SONG by
@@ -426,8 +488,19 @@ int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames,
   if (mode == LE_LOOPER_MODE_FREE || mode == LE_LOOPER_MODE_SONG) {
     return LE_ERR_INVALID;
   }
+  /* Every staged track is a whole multiple of the base or exactly base/2 or
+   * base/4 (a Sync division, #1168): any other length would be recalled as
+   * a division and the mixer would read past its slot. */
+  for (int32_t t = 0; t < engine->track_count; ++t) {
+    le_track* tr = &engine->tracks[t];
+    if (load_i32(&tr->a_state) != LE_TRACK_EMPTY) continue;
+    const int32_t len = load_i32(&tr->lanes[0].a_len);
+    if (len > 0 && !le_session_length_fits(base_frames, len)) {
+      return LE_ERR_INVALID;
+    }
+  }
   return le_push_cmd(engine,
                      (le_command){.code = LE_CMD_COMMIT_SESSION,
                                   .session = {.base_frames = base_frames,
-                                              .loop_bars = loop_bars}});
+                                              .loop_beats = loop_beats}});
 }

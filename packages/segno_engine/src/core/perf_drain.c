@@ -832,6 +832,13 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  *       channel may carry several 322 facts and a reader switches images on
  *       each; LE_CMD_UNDO_TO_EMPTY (39) is logged raw at its apply frame
  *       (#1143).
+ *   7 — the direction fact LE_PLOG_REVERSE (324, #1162) and the Peel
+ *       admission record LE_PLOG_PEEL (325, #1164).
+ *   8 — assigned to pitch/time Speed (#1179 P2a, numbering ledger).
+ *   9 — LE_PLOG_LENGTH (326, #1168): a length edit or its Undo/Redo applied,
+ *       with the staged image the callback's 322 names at the same frame.
+ *       Version numbers are assigned in landing order: renumber if another
+ *       bump lands first.
  * Without the bump, "no 314 in this file" is indistinguishable from "the
  * writer did not know about 314". No reader in this repo gates on the field —
  * le_pr_load_log and daw_export's EventLogReader both check the magic and skip
@@ -841,7 +848,8 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  * this codebase can reject. */
 static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
   static const char magic[4] = {'P', 'L', 'E', 'V'};
-  const uint32_t version = 9; /* 8: LE_PLOG_SPEED; 9: LE_PLOG_TRANSPOSE (#1179) */
+  const uint32_t version = 10; /* 8: LE_PLOG_SPEED; 9: LE_PLOG_TRANSPOSE (#1179);
+                                 * 10: LE_PLOG_LENGTH (#1168) */
   if (!le_pd_write(f, magic, sizeof(magic))) return 0;
   if (!le_pd_write(f, &version, sizeof(version))) return 0;
   if (!le_pd_write(f, &sample_rate, sizeof(sample_rate))) return 0;

@@ -82,6 +82,7 @@ const Map<int, SessionMigrationStep> sessionMigrationSteps = {
   10: _v10ToV11,
   11: _v11ToV12,
   12: _v12ToV13,
+  13: _v13ToV14,
 };
 
 /// A manifest written by an older schema, converted in memory: the exact
@@ -405,6 +406,18 @@ void _v12ToV13(Map<String, dynamic> m, SessionMigrationContext c) {
     track['reversed'] = false;
     c.note('tracks[${track['channel']}].reversed', 'defaulted to forward');
   }
+}
+
+/// Schema 14 (#1168) counts the grid in beats beside the bars, so a Divide
+/// of a sole loop can keep the tempo with a sub-bar loop. Every older
+/// manifest's grid was whole bars: its beats are the bars times the saved
+/// numerator. Length edits and their playhead maps are new in 14 and absent
+/// before it, so nothing else changes.
+void _v13ToV14(Map<String, dynamic> m, SessionMigrationContext c) {
+  final bars = (m['loopBars'] as num).toInt();
+  final beatsPerBar = (m['tsNum'] as num).toInt();
+  m['loopBeats'] = bars * beatsPerBar;
+  c.note('loopBeats', 'counted from $bars bars of $beatsPerBar beats');
 }
 
 // ---- shared pieces ----

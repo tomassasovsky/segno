@@ -32,6 +32,9 @@ class ControlState extends Equatable {
     this.footTunerFailure = 0,
     this.footTunerRefusal = FootTunerRefusal.armFailed,
     this.tunerDefaultSeeded = false,
+    this.footLengthFailure = 0,
+    this.footLengthRefusal = FootLengthRefusal.failed,
+    this.footLengthOutcome = FootLengthOutcome.none,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -169,6 +172,18 @@ class ControlState extends Equatable {
   /// D11), so the app can say where the Tuner is.
   final bool tunerDefaultSeeded;
 
+  /// Each Multiply / Divide that changed nothing on a recorded track, from
+  /// the surface or an assigned action in any mode, notifies the current
+  /// flow once (#1168); the notice reads [footLengthRefusal].
+  final int footLengthFailure;
+
+  /// Why the latest refused Multiply / Divide changed nothing.
+  final FootLengthRefusal footLengthRefusal;
+
+  /// The latest Multiply or Divide the surface made on this visit, for the
+  /// length panel's outcome line; [FootLengthOutcome.none] outside a visit.
+  final FootLengthOutcome footLengthOutcome;
+
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
   /// the looper reducer; reset by clear-all.
@@ -292,6 +307,9 @@ class ControlState extends Equatable {
     int? footTunerFailure,
     FootTunerRefusal? footTunerRefusal,
     bool? tunerDefaultSeeded,
+    int? footLengthFailure,
+    FootLengthRefusal? footLengthRefusal,
+    FootLengthOutcome? footLengthOutcome,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -335,6 +353,9 @@ class ControlState extends Equatable {
     footTunerFailure: footTunerFailure ?? this.footTunerFailure,
     footTunerRefusal: footTunerRefusal ?? this.footTunerRefusal,
     tunerDefaultSeeded: tunerDefaultSeeded ?? this.tunerDefaultSeeded,
+    footLengthFailure: footLengthFailure ?? this.footLengthFailure,
+    footLengthRefusal: footLengthRefusal ?? this.footLengthRefusal,
+    footLengthOutcome: footLengthOutcome ?? this.footLengthOutcome,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -379,6 +400,9 @@ class ControlState extends Equatable {
     footTunerFailure,
     footTunerRefusal,
     tunerDefaultSeeded,
+    footLengthFailure,
+    footLengthRefusal,
+    footLengthOutcome,
     cursor,
     activeBank,
     excluded,

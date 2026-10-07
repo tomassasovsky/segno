@@ -674,6 +674,15 @@ class MockAudioEngine implements AudioEngine {
     result: _running ? EngineResult.invalid : EngineResult.notRunning,
     request: 0,
   );
+  // So does a length edit.
+  @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
   @override
   RequestAdmission installReverse({
     required int channel,
@@ -1704,11 +1713,14 @@ class MockAudioEngine implements AudioEngine {
   TrackHistory exportHistory(int channel) => TrackHistory.none;
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) =>
-      _requireRunning();
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) => _requireRunning();
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) =>
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) =>
       _requireRunning();
 
   /// The `captureDir` passed to the most recent [perfArm] call, for test

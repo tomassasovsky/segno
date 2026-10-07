@@ -47,7 +47,7 @@ void main() {
       ),
       EngineResult.ok,
     );
-    expect(engine.commitSession(4800, loopBars: 0), EngineResult.ok);
+    expect(engine.commitSession(4800, loopBeats: 0), EngineResult.ok);
     expect(engine.play(), EngineResult.ok);
     engine.pump(frames: 0);
   });

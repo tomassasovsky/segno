@@ -88,6 +88,7 @@ class SessionSettings {
     this.syncTempo = true,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    int? loopBeats,
     this.recordTiming = RecordTiming.immediately,
     this.overdubDecay = 0,
     this.defaultOneShot = false,
@@ -115,7 +116,7 @@ class SessionSettings {
     this.laneCounts = const {},
     this.inputSetup = const SessionInputSetup(),
     this.outputSetup = const SessionOutputSetup(),
-  });
+  }) : loopBeats = loopBeats ?? loopBars * tsNum;
 
   SessionSettings._detached(SessionSettings source)
     : tempoBpm = source.tempoBpm,
@@ -125,6 +126,7 @@ class SessionSettings {
       syncTempo = source.syncTempo,
       quantizeDiv = source.quantizeDiv,
       loopBars = source.loopBars,
+      loopBeats = source.loopBeats,
       recordTiming = source.recordTiming,
       overdubDecay = source.overdubDecay,
       defaultOneShot = source.defaultOneShot,
@@ -188,8 +190,12 @@ class SessionSettings {
   /// The musical grid division.
   final GridDivision quantizeDiv;
 
-  /// Saved master-loop grid relationship; zero preserves a grid-free loop.
+  /// Saved master-loop grid relationship; zero preserves a grid-free loop
+  /// or one whose beats do not make whole bars ([loopBeats]).
   final int loopBars;
+
+  /// The same grid in beats (#1168); the bars' beats when not given.
+  final int loopBeats;
 
   /// The default record timing.
   final RecordTiming recordTiming;
@@ -1578,12 +1584,51 @@ class SessionRepository {
     // Decode every lane's layers in ordinal order (undo… live … redo).
     final laneStems = <(int, int), List<Float32List>>{};
     for (final track in session.tracks) {
+      List<int>? trackLengths;
       for (final lane in track.lanes) {
         final layers = <Float32List>[];
         for (final layer in lane.layers) {
           final bytes = await File('$directory/${layer.file}').readAsBytes();
           layers.add(WavCodec.decodeFloat32(bytes).samples);
         }
+        // Every image is as long as its lineage gives (#1168), and every
+        // lane of the track carries the same lengths: refused here, before
+        // the rig is cleared, as the engine's finalize would refuse it.
+        final lengths = [for (final pcm in layers) pcm.length];
+        final reason =
+            lane.history.lengthMalformation(lengths) ??
+            (trackLengths == null || _sameLengths(lengths, trackLengths)
+                ? null
+                : 'image lengths $lengths differ from lane '
+                      '${track.lanes.first.lane}');
+        if (reason != null) {
+          throw SessionCorruptLayers(
+            channel: track.channel,
+            lane: lane.lane,
+            reason: reason,
+          );
+        }
+        // The live image is a whole multiple of the base or exactly half or
+        // a quarter of it (a Sync division); the engine would read past a
+        // shorter slot. Free and Song keep independent lengths, and a
+        // bundle without a base commits no loop.
+        final live = lengths.isEmpty ? 0 : lengths[lane.undoCount];
+        final base = session.baseLengthFrames;
+        if (session.looperMode != LooperMode.free &&
+            session.looperMode != LooperMode.song &&
+            base > 0 &&
+            live % base != 0 &&
+            live * 2 != base &&
+            live * 4 != base) {
+          throw SessionCorruptLayers(
+            channel: track.channel,
+            lane: lane.lane,
+            reason:
+                'live length $live is neither a whole multiple of the '
+                'base $base nor half or a quarter of it',
+          );
+        }
+        trackLengths ??= lengths;
         laneStems[(track.channel, lane.lane)] = layers;
       }
     }
@@ -1695,6 +1740,15 @@ class SessionRepository {
     if (session.loopBars < 0 || session.loopBars > 0x7fffffff ~/ 15) {
       throw const FormatException('session contains an invalid bar grid');
     }
+    // The beats are the grid; the bars restate them only when whole (#1168).
+    final beats = session.loopBeats;
+    if (beats < 0 ||
+        beats > 0x7fffffff ~/ 15 ||
+        session.tsNum <= 0 ||
+        session.loopBars !=
+            (beats % session.tsNum == 0 ? beats ~/ session.tsNum : 0)) {
+      throw const FormatException('session contains an invalid beat grid');
+    }
 
     final validTempo = switch (session.tempoSource) {
       TempoSource.none => session.tempoBpm == 0,
@@ -1715,10 +1769,11 @@ class SessionRepository {
   /// with their kinds (#1164), and per lane the images they name — one per
   /// undo entry, the live buffer, then one per redo entry that is not a Peel
   /// marker (the history is track-wide, so every lane carries the same
-  /// images). The split is the engine's raw stack count that comes with the
-  /// entries, never the snapshot's `undoDepth`, which reads 0 while a Clear
-  /// restore is in flight. A lane whose live buffer is empty is skipped, and
-  /// a track left with no lane is dropped.
+  /// images), each at its own length: a length edit's images differ from the
+  /// live one (#1168). The split is the engine's raw stack count that comes
+  /// with the entries, never the snapshot's `undoDepth`, which reads 0 while a
+  /// Clear restore is in flight. A lane whose live buffer is empty is skipped,
+  /// and a track left with no lane is dropped.
   _Capture _capture(SessionSettings settings) {
     final snapshot = _engine.snapshot();
     final laneStems = <(int, int), List<Float32List>>{};
@@ -1840,6 +1895,11 @@ class SessionRepository {
       syncTempo: settings.syncTempo,
       quantizeDiv: settings.quantizeDiv,
       loopBars: snapshot.isRunning ? snapshot.loopBars : settings.loopBars,
+      loopBeats: snapshot.isRunning
+          ? (snapshot.loopBeats > 0 || snapshot.loopBars == 0
+                ? snapshot.loopBeats
+                : snapshot.loopBars * snapshot.tsNum)
+          : settings.loopBeats,
       recordTiming: settings.recordTiming,
       overdubDecay: settings.overdubDecay,
       defaultOneShot: settings.defaultOneShot,
@@ -1964,4 +2024,12 @@ class _Capture {
   final Map<(int, int), List<Float32List>> laneStems;
   final List<SessionTrack> tracks;
   final Map<int, double> trackLevels;
+}
+
+bool _sameLengths(List<int> a, List<int> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }

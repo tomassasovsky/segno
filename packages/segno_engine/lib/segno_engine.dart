@@ -18,6 +18,7 @@ export 'src/audio_engine.dart'
         EngineResult,
         EngineRouting,
         InputConditioningControl,
+        LengthEdit,
         LooperModeControl,
         LooperTransport,
         MasterBusControl,
