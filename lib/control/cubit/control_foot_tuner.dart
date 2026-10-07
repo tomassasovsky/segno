@@ -88,6 +88,7 @@ extension _FootTunerControl on ControlCubit {
         _armGesture(
           _systemGesture(button) ??
               _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
+          cue: button,
           onTap: () => act(() => unawaited(_stepTunerReference(delta))),
           onHold: () => act(() => unawaited(_resetTunerReference())),
         );

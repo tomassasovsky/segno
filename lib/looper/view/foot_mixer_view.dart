@@ -365,9 +365,17 @@ class _FootMixerPedal extends StatelessWidget {
             FootMixerAction.stop => l10n.actionScopeAllTracks,
             _ => '',
           };
+    final hold = context.select<ControlCubit, ({bool pending, Duration after})>(
+      (cubit) => (
+        pending: cubit.state.pendingHolds.contains(button),
+        after: cubit.state.holdThreshold,
+      ),
+    );
     return PerformancePedal(
       keyPrefix: 'foot_mixer_pedal',
       button: button,
+      holdPending: hold.pending,
+      holdThreshold: hold.after,
       label: switch (button) {
         PedalButton.recPlay => '●+▶',
         PedalButton.stop => '■',

@@ -1176,6 +1176,20 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
+  /// FX mode's Stop no longer switches every track's effects off, and MODE
+  /// there now leaves FX instead of running its assigned modes (#1229, D13);
+  /// said once, together, at the first FX entry after the update. Nothing to
+  /// act on here: a toast.
+  void _showFxStopChangedNotice(PedalSetup setup) {
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.fxStopChanged,
+      title: AppText(l10n.footFxStopChanged),
+      description: AppText(footFxModeChangedText(l10n, setup)),
+      icon: const Icon(Icons.info_outline),
+    );
+  }
+
   /// The console now always starts in Record; said once to an install whose
   /// retired boot default was Mute. Low stakes, nothing to act on: a toast.
   void _showBootModeRetiredNotice() {
@@ -1333,6 +1347,11 @@ class _AppViewState extends State<_AppView> {
           listenWhen: (previous, current) =>
               !previous.tunerDefaultSeeded && current.tunerDefaultSeeded,
           listener: (_, _) => _showTunerSeededNotice(),
+        ),
+        BlocListener<ControlCubit, ControlState>(
+          listenWhen: (previous, current) =>
+              !previous.fxStopChangeNotice && current.fxStopChangeNotice,
+          listener: (_, state) => _showFxStopChangedNotice(state.pedalSetup),
         ),
         BlocListener<TracksCubit, TracksState>(
           listener: (_, _) => _updateDisplayContext(),
