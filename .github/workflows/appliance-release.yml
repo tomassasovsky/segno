@@ -417,6 +417,14 @@ jobs:
           # log nicety, two hours into the build.
           jq . "$out/manifest.json" || cat "$out/manifest.json"
 
+      # Keep an artifact-only dispatch installable without publishing a
+      # release or moving the channel that deployed devices follow.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: segno-update-bundle-${{ needs.determine-meta.outputs.version }}
+          path: release-artifacts
+          retention-days: 1
+
       # The flashable image. A .raucb only ever lands on a device that is
       # already running Segno; a fresh board with a blank disk needs the .wic
       # (#799). Kept as a workflow artifact rather than a release asset so the

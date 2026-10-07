@@ -30771,6 +30771,44 @@ static void test_track_gain_is_after_combined_pre_before_post(void) {
   }
 }
 
+/* Changing pan while a whole-track Pre print is engaged must invalidate that
+ * print; otherwise it contains the old lane balance and bypasses live pan. */
+static void test_track_pan_updates_with_whole_track_pre_cache(void) {
+  printf("test_track_pan_updates_with_whole_track_pre_cache\n");
+  for (int cached = 0; cached < 2; ++cached) {
+    le_engine* e = wt_engine_two_parts(
+        0.5f, cached ? LE_CACHE_DEFAULT_CAP_BYTES : 0);
+    CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+    CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f) == LE_OK);
+    CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
+    CHECK(le_engine_set_track_fx_count(e, 0, 1, 1) == LE_OK);
+    float out[128];
+    wt_pump(e, 2048, out);
+    if (cached) CHECK(wt_wait_engaged(e, out));
+    CHECK(out[126] > 0.1f);
+    CHECK(out[127] > 0.1f);
+
+    le_lane_cache_info before, after;
+    if (cached) CHECK(le_engine_get_track_cache(e, 0, &before) == LE_OK);
+    le_mix_settings mix = {
+        .revision = 81,
+        .lane_mask = (UINT64_C(1) << 0) | (UINT64_C(1) << 1),
+        .lane_gain = {1.0f, 1.0f},
+        .lane_pan = {-1.0f, -1.0f},
+    };
+    CHECK(le_engine_set_mix(e, &mix) == LE_OK);
+    wt_pump(e, 2048, out);
+    if (cached) {
+      CHECK(wt_wait_engaged(e, out));
+      CHECK(le_engine_get_track_cache(e, 0, &after) == LE_OK);
+      CHECK(after.renders > before.renders);
+    }
+    CHECK(out[126] > 0.1f);
+    CHECK(fabsf(out[127]) < 1e-5f);
+    le_engine_destroy(e);
+  }
+}
+
 /* A part carrying a POST entry keeps the whole track's Pre run LIVE, and says
  * so. This is the printability rule, and it is the whole reason the design
  * survives the accepted contract: printing the combination would have to bake
@@ -36293,6 +36331,7 @@ int main(void) {
   test_fx_recipe_deferred_block_invariance();
   test_fx_channel_refusal_preserves_stereo();
   test_track_gain_is_after_combined_pre_before_post();
+  test_track_pan_updates_with_whole_track_pre_cache();
   test_a_part_post_entry_keeps_the_track_live();
   test_whole_track_pre_stops_and_post_drains();
   test_whole_track_pre_edits_from_the_originals();

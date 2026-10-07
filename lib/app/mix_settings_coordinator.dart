@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_resolver.dart';
 import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/logging/app_log.dart';
 
 /// One atomic durable mix value, with exact rollback of the previous value.
 abstract interface class MixSettingsPersistence {
@@ -549,6 +550,7 @@ class MixSettingsCoordinator {
           ? EngineResult.ok
           : await _repository.settleMixSettings();
       MixSettingsOutcome result;
+      MixSettingsSnapshot? panRequest;
       var ordinary = <MixValueTarget>{};
       if (!_current(generation, device)) {
         result = const MixSettingsOutcome(MixSettingsStatus.superseded);
@@ -569,6 +571,7 @@ class MixSettingsCoordinator {
           if (candidate == null) break;
         }
         if (candidate != null) {
+          panRequest = candidate;
           ordinary = _ordinaryTargets(ordinaryEdits);
         }
         result = candidate == null
@@ -600,11 +603,68 @@ class MixSettingsCoordinator {
           });
         }
       }
+      final panTargets = targets
+          .where(
+            (target) =>
+                target.$1 == _Control.pan || target.$1 == _Control.inputPan,
+          )
+          .toList(growable: false);
+      if (panTargets.isNotEmpty) {
+        _logPanDiagnostic(panTargets, result, requested: panRequest);
+      }
       _report(result);
       if (!result.isOk) outcome = result;
       if (_recovery != null) _pending.clear();
     }
     return outcome;
+  }
+
+  void _logPanDiagnostic(
+    List<_Target> targets,
+    MixSettingsOutcome outcome, {
+    required MixSettingsSnapshot? requested,
+  }) {
+    final confirmed = _repository.mixSettingsSnapshot;
+    final state = outcome.isOk ? _repository.state : null;
+    final trackPans = <int, Object?>{};
+    final inputPans = <int, Object?>{};
+    for (final target in targets) {
+      final index = target.$2;
+      if (target.$1 == _Control.pan) {
+        final tracks =
+            state?.tracks.where((track) => track.channel == index).toList() ??
+            const [];
+        final track = tracks.isEmpty ? null : tracks.first;
+        trackPans[index] = {
+          'requested': requested?.trackPans[index],
+          'confirmed': confirmed.trackPans[index],
+          'trackPeaks': (left: track?.peakL, right: track?.peakR),
+          'effectiveLanePans': track?.lanes
+              .map((lane) => lane.pan)
+              .toList(growable: false),
+        };
+      } else if (target.$1 == _Control.inputPan) {
+        inputPans[index] = {
+          'requested': requested?.inputSetup.panOf(index),
+          'confirmed': confirmed.inputSetup.panOf(index),
+          'monitorPeak': state != null && index < state.monitorPeaks.length
+              ? state.monitorPeaks[index]
+              : null,
+        };
+      }
+    }
+    AppLog.info(
+      'PAN_DIAG outcome=${outcome.status.name} '
+      'engine=${outcome.engineResult?.name ?? 'none'} '
+      'trackPans=$trackPans inputPans=$inputPans '
+      'outputChannels=${state?.status.outputChannels} '
+      'outputBusCount=${state?.outputBusCount} '
+      'backend=${state?.status.activeBackend.name} '
+      'sampleRate=${state?.status.sampleRate} '
+      'outputBus0=${state?.outputSetup.of(0)} '
+      'monitorPeaks=${state?.monitorPeaks} '
+      'outputPeaks=${state?.outputPeaks}',
+    );
   }
 
   Future<MixSettingsOutcome> _commit(
