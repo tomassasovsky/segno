@@ -376,8 +376,8 @@ flushed per callback (`engine_process.c:6340`).
   The arm64 CI proxy asserts p50 at half of each percentage. Part 2a re-runs
   the joint scenario with the voices inside `le_engine_process`; Part 2c adds
   the event-routing cost to it.
-- **The proxy gate (plan delta review D8, Part 2c review H1; proposed, needs
-  the owner's sign-off).** The proxy no longer gates the joint total; it
+- **The proxy gate (plan delta review D8, Part 2c review H1; owner
+  decision, 2026-10-06: approved).** The proxy no longer gates the joint total; it
   gates what this plan adds to it, and the Pi set keeps gating the total.
   - Why: on the trunk merge `6eabf241d` the proxy failed Part 1 at 37.63 %
     against 37.5 % with no instrument change (run 37532938268). In that run
@@ -1716,14 +1716,17 @@ a dropped release, or a per-slot refusal in a batch.
 | Delta D7 stale text | §7 L4 row, Part 2a tests, D10 re-strike rule |
 | Planner question 1 | owner: Install hidden, ids as strings, Retry only for audio start |
 | Planner question 2 | owner: computer keys hidden on the appliance; M8 applies on desktop |
-| Delta D8 proxy joint gate | D2 "the proxy gate" (proposed; owner sign-off): the share and the burst increment gated on the proxy, the total on the Pi; routing made cheaper first |
+| Delta D8 proxy joint gate | D2 "the proxy gate" (owner decision, approved 2026-10-06): CI gates the instruments' share and the burst increment, the Pi run gates the total; routing made cheaper first |
 | Delta D9 expression on route edits | §2.3: a table switch that turns MIDI off or moves its port or channel releases that port's notes on the instrument and neutralises its expression; range and remap edits do not cut |
 | Delta D10 block order | §2.2: control rings, then the MIDI drain, then render (built in Part 2c) |
 
 ## 8. Genuine product-direction questions
 
 None open. Both earlier questions were answered by the owner on 2026-10-06
-(D6, D9).
+(D6, D9), and the owner approved the proxy gate change the same day (D2,
+"the proxy gate"): CI gates only the instruments' added share of the joint
+period (p50 ≤ 7.5 % of the period) and the MIDI burst's increment (p50 ≤
+10 %), and the Pi run gates the total.
 
 ## 9. Hardware-only evidence
 
