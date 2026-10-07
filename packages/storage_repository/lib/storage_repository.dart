@@ -24,6 +24,7 @@ export 'src/models/storage_destination.dart'
     show InternalDestination, RemovableDestination, StorageDestination;
 export 'src/models/storage_failure.dart'
     show
+        StorageBusy,
         StorageFailure,
         StorageFull,
         StorageIo,

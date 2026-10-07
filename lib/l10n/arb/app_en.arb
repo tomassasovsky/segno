@@ -1137,6 +1137,39 @@
     "perfPartial": "Some tracks failed to render, but the rest of the capture is intact.",
     "perfStoppedDiskFull": "Capture stopped early — the disk could not be written.",
     "perfStoppedDeviceChange": "Capture stopped early — the audio device changed.",
+    "perfStoppedVolumeLost": "Capture stopped early — the USB drive was disconnected. Your loops kept playing.",
+    "@perfStoppedVolumeLost": {
+        "description": "Completion banner when the USB drive a take recorded to went away mid-take (#1177)."
+    },
+    "perfArmDriveUnavailable": "Recording didn't start. The USB drive in Save to can't be recorded to now.",
+    "@perfArmDriveUnavailable": {
+        "description": "Snackbar when a take was to go to a USB drive that went away, turned read-only or is being ejected between the choice and the press."
+    },
+    "saveTo": "Save to",
+    "@saveTo": {
+        "description": "Heading of the destination picker (pen 48 cH9UX)."
+    },
+    "saveToUnsupported": "{label} · can't be written to",
+    "@saveToUnsupported": {
+        "description": "Under the destination picker, for a drive whose filesystem the console cannot write.",
+        "placeholders": {
+            "label": {
+                "type": "String"
+            }
+        }
+    },
+    "saveToTooSlow": "{label} · too slow to record to",
+    "@saveToTooSlow": {
+        "description": "Under the destination picker, for a drive whose measured write speed is below what the recording needs.",
+        "placeholders": {
+            "label": {
+                "type": "String"
+            }
+        }
+    },
+    "connectUsbTitle": "Connect a USB drive",
+    "connectUsbBody": "Your recording stays in Internal.",
+    "connectUsbTryAgain": "Try again",
     "perfCaptureGlitch": "Dropped audio frames detected during capture.",
     "perfDiscarded": "Capture was too short to keep — discarded.",
     "perfLowDisk": "Low disk space — the capture may run out of room.",
@@ -6156,5 +6189,23 @@
     "storageEjectStuck": "Still ejecting. If it does not finish, unplug the drive.",
     "@storageEjectStuck": {
         "description": "Under a drive whose eject the helper took and has not answered after two minutes; pulling the drive is the way out."
+    },
+    "saveToMeasuring": "{label} · checking the drive…",
+    "@saveToMeasuring": {
+        "description": "Under the destination picker, for a drive whose write probe has not landed yet; it cannot be chosen until it has.",
+        "placeholders": {
+            "label": {
+                "type": "String"
+            }
+        }
+    },
+    "saveToFellBack": "{label} was removed. Save to is Internal.",
+    "@saveToFellBack": {
+        "description": "Toast when the USB drive chosen in Save to goes away (pulled, ejected or read-only) and the next take goes to Internal.",
+        "placeholders": {
+            "label": {
+                "type": "String"
+            }
+        }
     }
 }

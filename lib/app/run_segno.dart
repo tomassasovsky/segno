@@ -182,10 +182,13 @@ Future<void> runSegno(
   // Where a write may go (#1177): Internal and the USB volumes the image's
   // helper mounts and describes. Capacity is the same engine statvfs; the
   // volumes arrive through an inotify watch, never a subprocess (#806).
+  // Registers itself with the table, so the table sees its leases and
+  // eject whichever registry the entrypoint passed (#1177).
   final storage = StorageRepository(
     client: createUsbStorageClient(),
     exportsRoot: performance.exportsRoot,
     volumeSpace: performance.volumeSpace,
+    guards: registry,
   );
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller

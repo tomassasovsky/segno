@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:meta/meta.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart' show VolumeSpace;
 import 'package:segno_engine/segno_engine.dart'
     as engine
@@ -49,7 +50,15 @@ class SourceReadFailure implements Exception {
 /// Nothing here forks the app (#806): volumes come from the USB client's
 /// inotify watch, capacity from the engine's `statvfs`, eject from a request
 /// file the image's helper serves.
-class StorageRepository {
+///
+/// It is one owner of the app's guard table (accepted behaviour 6.12, #1221):
+/// [acquire] and [eject] check the table at their commit, and the leases and
+/// the eject in flight are reported to it as [activeOperations], so a session
+/// apply, a shutdown or a take sees them at its own commit. A `recording`
+/// lease is the exception on both counts: the take's commit is the
+/// performance repository's `capture` guard, scoped to the same volume, and
+/// reporting the lease as well would make the take refuse itself.
+class StorageRepository implements ActiveOperationSource {
   /// Creates a [StorageRepository].
   ///
   /// [exportsRoot] is the resolver the performance repository is wired with:
@@ -60,10 +69,14 @@ class StorageRepository {
   /// replaces and a directory sync, both things Dart cannot do itself (see
   /// [copyFile]). It defaults to the engine's own, opened on the first copy,
   /// so watching and measuring drives never needs the native library.
+  /// [guards] is the app's one guard table; the repository registers itself
+  /// with it as a source, so the table sees its leases and eject however the
+  /// table was made.
   StorageRepository({
     required UsbStorageClient client,
     required Future<String> Function() exportsRoot,
     required VolumeSpace? Function(String path) volumeSpace,
+    required GuardRegistry guards,
     engine.StorageIo? storageIo,
     this.ejectTimeout = const Duration(seconds: 20),
     this.ejectServedTimeout = const Duration(minutes: 2),
@@ -73,8 +86,10 @@ class StorageRepository {
        _exportsRoot = exportsRoot,
        _volumeSpace = volumeSpace,
        _storageIo = storageIo,
+       _guards = guards,
        _copyBytes = copyBytes ?? copyChunks {
     _subscription = _client.volumes.listen(_onRecords);
+    guards.addSource(this);
   }
 
   /// Space kept free on Internal so the system, the session store and Undo
@@ -108,6 +123,7 @@ class StorageRepository {
   final VolumeSpace? Function(String path) _volumeSpace;
   engine.StorageIo? _storageIo;
   engine.StorageIo get _io => _storageIo ??= engine.NativeStorageIo();
+  final GuardRegistry _guards;
   final CopyBytes _copyBytes;
 
   late final StreamSubscription<List<RemovableVolumeRecord>> _subscription;
@@ -232,10 +248,28 @@ class StorageRepository {
   /// Takes a hold on [destination] for [purpose]. Throws the
   /// [StorageFailure] a write there would meet: `readOnly`, `unsupported`, or
   /// `volumeLost` for a generation that is not present, is being ejected or
-  /// has been ejected.
+  /// has been ejected; or `busy` naming what holds it when the guard table
+  /// forbids a `transfer` there now (a take on that volume, a shutdown).
+  ///
+  /// The table is checked here, at the commit, and the lease itself is then
+  /// reported through [activeOperations] for as long as it is held. A
+  /// `recording` lease is not checked or reported (see the class note).
   HeldLease acquire(StorageDestination destination, WritePurpose purpose) {
     if (destination is RemovableDestination) {
       _checkWritable(destination.generation);
+    }
+    if (purpose != WritePurpose.recording) {
+      try {
+        _guards
+            .enter(
+              GuardKind.transfer,
+              _scopeOf(destination),
+              purpose: purpose.name,
+            )
+            .release();
+      } on GuardRefused catch (refusal) {
+        throw StorageFailure.busy(refusal.blockers.first.kind);
+      }
     }
     final held = HeldLease(
       WriteLease(target: destination, purpose: purpose),
@@ -327,6 +361,11 @@ class StorageRepository {
   /// pulled: the unmount may still finish, and a writer let in meanwhile
   /// would write into the bare mount point. Ejecting it again before then
   /// also answers [stillEjecting].
+  ///
+  /// Throws [GuardRefused] when the guard table forbids an eject of this
+  /// volume now (a take or a copy on it that holds no lease here, a
+  /// shutdown); the eject in flight is then reported through
+  /// [activeOperations].
   Future<EjectOutcome> eject(int generation) async {
     final holders = leasesOn(StorageDestination.removable(generation));
     if (holders.isNotEmpty) throw EjectRefused(holders);
@@ -337,6 +376,13 @@ class StorageRepository {
     if (_unanswered.containsKey(generation)) {
       return const EjectOutcome.failed(stillEjecting);
     }
+    _guards
+        .enter(
+          GuardKind.eject,
+          GuardScope.removable(generation),
+          purpose: ejectPurpose,
+        )
+        .release();
     final eject = _Eject(generation, _client.requestEject(generation));
     _eject = eject;
     _publishPhase();
@@ -399,6 +445,37 @@ class StorageRepository {
   /// The reason an eject fails with when the helper took the request and has
   /// not answered: the drive may still be unmounting.
   static const String stillEjecting = 'stillEjecting';
+
+  /// What an eject is called in the guard table.
+  static const String ejectPurpose = 'eject';
+
+  /// The leases (as `transfer`) and the eject in flight or still unanswered
+  /// (as `eject`), for the guard table. Recording leases are left out: the
+  /// take reports itself as `capture`.
+  @override
+  Iterable<ActiveOperation> get activeOperations => [
+    for (final held in _leases)
+      if (held.purpose != WritePurpose.recording)
+        ActiveOperation(
+          kind: GuardKind.transfer,
+          scope: _scopeOf(held.target),
+          purpose: held.purpose.name,
+        ),
+    for (final generation in {?_eject?.generation, ..._unanswered.keys})
+      ActiveOperation(
+        kind: GuardKind.eject,
+        scope: GuardScope.removable(generation),
+        purpose: ejectPurpose,
+      ),
+  ];
+
+  static GuardScope _scopeOf(StorageDestination destination) =>
+      switch (destination) {
+        InternalDestination() => const GuardScope.internal(),
+        RemovableDestination(:final generation) => GuardScope.removable(
+          generation,
+        ),
+      };
 
   void _settleEject() {
     final eject = _eject;

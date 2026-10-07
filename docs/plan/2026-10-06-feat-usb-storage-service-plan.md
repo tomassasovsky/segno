@@ -720,6 +720,54 @@ NON-GOALS:
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages && npx cspell --config .github/cspell.json docs/plan/*.md
 ```
 
+As built (branch `claude/usb-storage-1177-p6`, on #1221's guard table):
+
+- The destination is its own `RecordingDestinationCubit` (app-wide,
+  `lib/performance/cubit/`), not a field on the recorder's sealed states:
+  Internal by default, back to Internal when the chosen drive stops being
+  mountable read-write, the remaining time at stereo 24-bit and the applied
+  rate, and the Connect USB wait (`awaitDrive`, `stopAwaitingDrive`). The
+  recorder reads it at each arm through a function, like `currentChains`.
+- `StorageDestinationPicker` and `ConnectUsbSheet`
+  (`lib/storage/view/storage_destination_picker.dart`) are generic;
+  `RecordingSaveTo` (`lib/performance/view/`) binds them to the recorder and
+  needs twice the frozen rate from a drive. Its host is the Record
+  performance page, which #1198 Part 13 builds; until then nothing mounts
+  it, and a take goes to Internal.
+- A take on USB: the recorder takes a `recording` lease, arms with
+  `root: <mount>/Segno/Performances` and `scope: GuardScope.removable(gen)`,
+  releases the lease when the take is finalized, and a lost lease stops the
+  take as `PerformanceStopReason.volumeLost` through the same path as a full
+  disk (`_stopEarly`, which replaces `_stopForLowDisk`). The completion
+  banner says the drive was disconnected; the pen's held-take copy (`HWH3p`)
+  comes with #1198 Parts 9 and 10. A drive that went between the choice and
+  the press refuses the arm with its own toast. An arm that throws on the
+  drive gives the lease back and says so.
+- **Follow-up for #1198 Part 13 (pedal):** a pedal arm reaches
+  `PerformanceRepository.arm` directly (`ControlCubit`), so it records to
+  Internal whatever Save to says, with no lease. Before Part 13 mounts
+  `RecordingSaveTo`, the pedal must arm through the same path as the
+  recorder (the recorder cubit's arm, or one shared arm that reads the
+  destination and takes the lease); until then no one can choose USB, so
+  nothing is ignored.
+- Only a drive whose write probe has landed at twice the recording rate or
+  more is chosen (Connect USB, Save to); a drive being measured reads
+  "checking the drive" and waits. The chosen drive going says "<label> was
+  removed. Save to is Internal." once (no pen tile: a write-back).
+- A take on a drive keeps its `capture` guard through the finalize, which
+  writes its WAVs there.
+- Guards (#1221): `StorageRepository` is an `ActiveOperationSource`
+  (leases as `transfer`, the eject in flight or unanswered as `eject`) and
+  checks the table in `acquire` and `eject`, throwing `GuardRefused`. A
+  `recording` lease is neither checked nor reported: the take's `capture`
+  guard, scoped to the drive, is its commit, and reporting both would make
+  the take refuse itself. `guards` is required, and the repository
+  registers itself with the table (`GuardRegistry.addSource`), so every
+  flavor's table sees it. A refusal reaches a copy as
+  `StorageFailure.busy(kind)`; a refused eject is shown in the table's
+  `operationBusy` words. Eject against eject refuses only on the same
+  volume, so an unanswered eject of one drive holds no other.
+
 ## 6. Order and dependencies
 
 ```

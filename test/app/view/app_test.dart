@@ -35,6 +35,7 @@ import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/owned_setting.dart';
+import 'package:segno/performance/cubit/recording_destination_cubit.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
@@ -50,7 +51,9 @@ import 'package:segno_engine/segno_engine.dart'
         TrackState;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 import 'package:update_repository/update_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -718,9 +721,11 @@ void main() {
       Duration waveformWindowOpenDelay = Duration.zero,
       bool settle = true,
       ConsoleFactsClient consoleFacts = const UnsupportedConsoleFactsClient(),
+      StorageRepository? storage,
     }) async {
       await tester.pumpWidget(
         App(
+          storage: storage,
           consoleFacts: consoleFacts,
           guards: GuardRegistry(),
           mixSettings: testMixSettings(repository, settings: settings),
@@ -3708,6 +3713,53 @@ void main() {
 
       // The layout never swaps — Tracks is the only mode.
       expect(find.byType(TracksView), findsOneWidget);
+    });
+
+    testWidgets('the drive chosen in Save to going says Save to is Internal '
+        'now (#1177)', (tester) async {
+      final usb = FakeUsbStorageClient(
+        initial: [
+          const RemovableVolumeRecord(
+            generation: 1,
+            kname: 'sda1',
+            fingerprint: 'SanDisk_Ultra_4C530001-1A2B-3C4D',
+            label: 'SEGNO USB',
+            fsType: 'exfat',
+            mountPoint: '/run/media/segno/1-SEGNO_USB',
+            sizeBytes: 32000000000,
+            status: RemovableVolumeRecordStatus.mounted,
+            readOnly: false,
+            writeBytesPerSecond: 16777216,
+          ),
+        ],
+      );
+      final storage = StorageRepository(
+        guards: GuardRegistry(),
+        client: usb,
+        exportsRoot: () async => '/segno-app-test/exports',
+        volumeSpace: (_) => null,
+      );
+      addTearDown(() => unawaited(storage.dispose()));
+      await pumpApp(tester, NoopWaveformWindowService(), storage: storage);
+      final destination = tester
+          .element(find.byType(TracksView))
+          .read<RecordingDestinationCubit>();
+      await tester.runAsync(
+        () => destination.choose(const StorageDestination.removable(1)),
+      );
+      await tester.pump();
+      expect(debugAppToastActive(AppToastId.saveToFellBack), isFalse);
+
+      usb.detach(1);
+      await tester.pumpAndSettle();
+
+      expect(debugAppToastActive(AppToastId.saveToFellBack), isTrue);
+      expect(
+        destination.state.destination,
+        const StorageDestination.internal(),
+      );
+      dismissAppToast(AppToastId.saveToFellBack, animate: false);
+      await tester.pumpAndSettle();
     });
 
     testWidgets('an install that started in Mute starts in Record and is '

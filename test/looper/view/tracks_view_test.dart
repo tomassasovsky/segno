@@ -2965,6 +2965,17 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byKey(lowDisk), findsOneWidget);
+      await tester.pumpAndSettle(const Duration(seconds: 10));
+
+      // The USB drive in Save to went between the choice and the press.
+      controller.add(
+        const PerformanceRecorderIdle(driveUnavailable: true, refusal: 4),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('tracks_perfArmDriveUnavailable_snackbar')),
+        findsOneWidget,
+      );
     });
 
     testWidgets(

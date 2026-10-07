@@ -47,6 +47,15 @@ class ArmedIndicator extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
+          // The drive a USB take goes to (pen 48 `FwjUV`).
+          if (state.volumeLabel case final label?) ...[
+            const SizedBox(width: 6),
+            AppText(
+              '· $label',
+              key: const Key('tracks_armedIndicator_volume'),
+              style: theme.textTheme.labelLarge?.copyWith(color: rec),
+            ),
+          ],
           if (state.overrun) ...[
             const SizedBox(width: 6),
             Tooltip(

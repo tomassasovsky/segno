@@ -1,3 +1,4 @@
+import 'package:operation_guards/operation_guards.dart';
 import 'package:storage_repository/storage_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
 
@@ -18,11 +19,13 @@ class StorageRig {
     List<RemovableVolumeRecord> volumes = const [],
     Duration ejectTimeout = const Duration(seconds: 20),
     Duration ejectServedTimeout = const Duration(minutes: 2),
+    GuardRegistry? guards,
   }) : client = FakeUsbStorageClient(initial: volumes) {
     repository = StorageRepository(
       client: client,
       ejectTimeout: ejectTimeout,
       ejectServedTimeout: ejectServedTimeout,
+      guards: guards ?? GuardRegistry(),
       exportsRoot: () async => exportsRoot,
       volumeSpace: (path) {
         reads++;
@@ -63,6 +66,7 @@ RemovableVolumeRecord usbRecord(
   String fsType = 'exfat',
   RemovableVolumeRecordStatus status = RemovableVolumeRecordStatus.mounted,
   bool mounted = true,
+  int? writeBytesPerSecond = 16777216,
 }) => RemovableVolumeRecord(
   generation: g,
   kname: 'sda1',
@@ -73,5 +77,5 @@ RemovableVolumeRecord usbRecord(
   sizeBytes: usbTotal,
   status: status,
   readOnly: status == RemovableVolumeRecordStatus.readOnly,
-  writeBytesPerSecond: 16777216,
+  writeBytesPerSecond: writeBytesPerSecond,
 );

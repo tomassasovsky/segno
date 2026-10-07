@@ -210,6 +210,7 @@ class _AppState extends State<App> {
           client: const UnsupportedUsbStorageClient(),
           exportsRoot: widget.performanceRepository.exportsRoot,
           volumeSpace: widget.performanceRepository.volumeSpace,
+          guards: widget.guards,
         );
     _runtime = AppRuntime(
       repository: widget.repository,
@@ -729,6 +730,13 @@ class _AppState extends State<App> {
           // must start the moment the app composes, not whenever a widget
           // first reads this cubit — a crashed capture recovers in the
           // background whether or not the tracks view ever mounts.
+          // The recorder's Save to (#1177): read by the recorder at each arm.
+          BlocProvider(
+            create: (_) => RecordingDestinationCubit(
+              repository: _storage,
+              sampleRate: () => widget.repository.state.status.sampleRate,
+            ),
+          ),
           BlocProvider(
             lazy: false,
             create: (context) {
@@ -737,6 +745,9 @@ class _AppState extends State<App> {
                 takeLocked: () =>
                     context.read<PowerOffCubit>().state.isUiUp ||
                     _runtime.fxPersistence.sessionTransitionActive,
+                storage: _storage,
+                destination: () =>
+                    context.read<RecordingDestinationCubit>().state.destination,
               );
               unawaited(cubit.load());
               return cubit;
@@ -1120,6 +1131,19 @@ class _AppViewState extends State<_AppView> {
 
   /// The console now always starts in Record; said once to an install whose
   /// retired boot default was Mute. Low stakes, nothing to act on: a toast.
+  void _showSaveToFellBack(String label) {
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.saveToFellBack,
+      type: ToastificationType.warning,
+      title: AppText(
+        l10n.saveToFellBack(label.isEmpty ? l10n.storageUsbUnnamed : label),
+      ),
+      icon: const Icon(Icons.usb_off),
+      autoCloseDuration: const Duration(seconds: 6),
+    );
+  }
+
   void _showBootModeRetiredNotice() {
     final l10n = _l10n;
     showAppToast(
@@ -1292,6 +1316,14 @@ class _AppViewState extends State<_AppView> {
         BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
           listenWhen: (previous, current) => previous.status != current.status,
           listener: (_, state) => _showAudioRecoveryBanner(state),
+        ),
+        // The drive chosen in Save to went: the next take goes to Internal,
+        // and the player is told rather than finding out afterwards.
+        BlocListener<RecordingDestinationCubit, RecordingDestinationState>(
+          listenWhen: (previous, current) =>
+              current.fellBackFrom != null &&
+              previous.fellBackFrom != current.fellBackFrom,
+          listener: (_, state) => _showSaveToFellBack(state.fellBackFrom!),
         ),
         BlocListener<UpdateCubit, UpdateState>(
           listenWhen: (previous, current) =>

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:storage_repository/storage_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
 
@@ -729,6 +730,162 @@ void main() {
         freeBytes: StorageRepository.internalReserveBytes,
       );
       expect(await repo.lowInternalSpace(), isFalse);
+    });
+  });
+
+  group('the guard table', () {
+    late GuardRegistry guards;
+
+    StorageRepository buildGuarded({int drives = 1}) {
+      guards = GuardRegistry();
+      return h.build(
+        initial: [for (var g = 1; g <= drives; g++) h.record(g)],
+        guards: guards,
+      );
+    }
+
+    test('leases and the eject in flight are reported; a recording lease is '
+        'not (the take reports itself as capture)', () async {
+      repo = buildGuarded();
+      await pumpEventQueue();
+      final copy = repo.acquire(internal, WritePurpose.copy);
+      final export = repo.acquire(usb1, WritePurpose.export);
+      final recording = repo.acquire(usb1, WritePurpose.recording);
+
+      expect(repo.activeOperations, [
+        const ActiveOperation(
+          kind: GuardKind.transfer,
+          scope: GuardScope.internal(),
+          purpose: 'copy',
+        ),
+        const ActiveOperation(
+          kind: GuardKind.transfer,
+          scope: GuardScope.removable(1),
+          purpose: 'export',
+        ),
+      ]);
+      copy.release();
+      export.release();
+      recording.release();
+
+      final outcome = repo.eject(1);
+      await pumpEventQueue();
+      expect(guards.active, [
+        const ActiveOperation(
+          kind: GuardKind.eject,
+          scope: GuardScope.removable(1),
+          purpose: StorageRepository.ejectPurpose,
+        ),
+      ]);
+      // A take on the drive being ejected is refused at its commit.
+      expect(
+        guards.blockers(GuardKind.capture, const GuardScope.removable(1)),
+        hasLength(1),
+      );
+      h.client.settleEject('req-1', ok: true);
+      await outcome;
+      expect(guards.active, isEmpty);
+    });
+
+    test('a copy is refused at its commit while a take records on that '
+        'volume; a recording lease is not checked', () async {
+      repo = buildGuarded();
+      await pumpEventQueue();
+      final take = guards.enter(
+        GuardKind.capture,
+        const GuardScope.removable(1),
+        purpose: 'recording',
+      );
+
+      expect(
+        () => repo.acquire(usb1, WritePurpose.copy),
+        throwsA(const StorageFailure.busy(GuardKind.capture)),
+      );
+      // A copy says so too, typed, before writing anything.
+      final source = h.source('take.wav', 100);
+      await expectLater(
+        repo.copyFile(
+          source.path,
+          usb1,
+          'take.wav',
+          onConflict: ConflictPolicy.ask,
+        ),
+        throwsA(const StorageFailure.busy(GuardKind.capture)),
+      );
+      expect(repo.leases, isEmpty);
+      // Internal is another volume.
+      repo.acquire(internal, WritePurpose.copy).release();
+      // The take's own lease.
+      repo.acquire(usb1, WritePurpose.recording).release();
+      take.release();
+      repo.acquire(usb1, WritePurpose.copy).release();
+    });
+
+    test('an eject left unanswered on one drive does not hold an eject of '
+        'another', () {
+      fakeAsync((async) {
+        repo = buildGuarded(drives: 2);
+        async.flushMicrotasks();
+        unawaited(repo.eject(1));
+        async.flushMicrotasks();
+        h.client.take('req-1');
+        async.elapse(const Duration(minutes: 3));
+        expect(repo.current.first.status, RemovableVolumeStatus.ejecting);
+
+        EjectOutcome? second;
+        unawaited(repo.eject(2).then((o) => second = o));
+        async.flushMicrotasks();
+        expect(h.client.pendingRequests, {'req-2': 2});
+        h.client.settleEject('req-2', ok: true);
+        async.flushMicrotasks();
+        expect(second, const EjectOutcome.safeToRemove());
+
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+        disposed = true;
+      });
+    });
+
+    test(
+      'the repository registers itself with the table it is given',
+      () async {
+        repo = buildGuarded();
+        await pumpEventQueue();
+        final copy = repo.acquire(usb1, WritePurpose.copy);
+        expect(guards.active, [
+          const ActiveOperation(
+            kind: GuardKind.transfer,
+            scope: GuardScope.removable(1),
+            purpose: 'copy',
+          ),
+        ]);
+        copy.release();
+      },
+    );
+
+    test('an eject is refused at its commit by a take on that volume or a '
+        'shutdown, and files no request', () async {
+      repo = buildGuarded();
+      await pumpEventQueue();
+      for (final (kind, scope) in [
+        (GuardKind.capture, const GuardScope.removable(1)),
+        (GuardKind.restart, const GuardScope.internal()),
+      ]) {
+        final other = guards.enter(kind, scope, purpose: kind.name);
+        await expectLater(
+          repo.eject(1),
+          throwsA(
+            isA<GuardRefused>().having(
+              (e) => e.wants,
+              'wants',
+              GuardKind.eject,
+            ),
+          ),
+        );
+        expect(h.client.pendingRequests, isEmpty);
+        expect(repo.current.single.status, RemovableVolumeStatus.mounted);
+        other.release();
+      }
     });
   });
 }
