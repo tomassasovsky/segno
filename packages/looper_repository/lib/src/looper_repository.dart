@@ -326,6 +326,11 @@ class LooperRepository {
   RecordStartEditKind _recordStartEdit = RecordStartEditKind.restore;
   final _recordingInputRequired = StreamController<int>.broadcast();
 
+  // Counts every refusal this repository announces on its own (a needed
+  // recording input, a reversed track, a lost press, an owed mix), so a
+  // caller that would otherwise say "unavailable" can tell it was said.
+  int _refusalNotices = 0;
+
   /// A fresh capture the engine refused with [EngineResult.notReady]: the
   /// one-block window after an Undo-to-empty, Clear or cancelled take in which
   /// the callback may still hold the track's buffers (#1146). Retried exactly
@@ -628,7 +633,10 @@ class LooperRepository {
   }
 
   EngineResult _mixFailure(EngineResult result) {
-    if (!_mixSettingsFailures.isClosed) _mixSettingsFailures.add(result);
+    if (!_mixSettingsFailures.isClosed) {
+      _refusalNotices++;
+      _mixSettingsFailures.add(result);
+    }
     return result;
   }
 
@@ -1386,9 +1394,9 @@ class LooperRepository {
         // whether the callback applied it, so it reads as refused.
         final unchanged =
             intent.mode == priorMode &&
-            [for (var c = 0; c < 8; c++) c].every(
-              (c) => c < priorBars.length && bars[c] == priorBars[c],
-            );
+            [
+              for (var c = 0; c < 8; c++) c,
+            ].every((c) => c < priorBars.length && bars[c] == priorBars[c]);
         final capturing = snapshot.tracks.any(
           (t) =>
               t.state == TrackState.recording ||
@@ -2988,6 +2996,7 @@ class LooperRepository {
   EngineResult record({int channel = 0}) {
     final result = _record(channel);
     if (result == EngineResult.reversed && !_overdubRefusals.isClosed) {
+      _refusalNotices++;
       _overdubRefusals.add(channel);
     }
     return result;
@@ -3050,6 +3059,7 @@ class LooperRepository {
             (applied.excludedInputMask & (1 << lane.inputChannel)) == 0,
       );
       if (!usable) {
+        _refusalNotices++;
         _recordingInputRequired.add(channel);
         return EngineResult.invalid;
       }
@@ -3158,10 +3168,7 @@ class LooperRepository {
           inherited[lane] = loaded;
           inheritedInputs[lane] = input;
           inheritedHandles[lane] = handles;
-          recipes[lane] = FxRecipe(
-            slots: slots,
-            preCount: fxPreCount(loaded),
-          );
+          recipes[lane] = FxRecipe(slots: slots, preCount: fxPreCount(loaded));
         }
       } on _FxPreparationRefused catch (failure) {
         preparationFailure = failure.result;
@@ -4285,11 +4292,7 @@ class LooperRepository {
       restoredMix.monitorLevels[input] = 1;
       _requireSessionSetting(setMonitorMute(input: input, muted: false));
       _requireSessionSetting(
-        setMonitorEffects(
-          input: input,
-          effects: const [],
-          chainEnabled: true,
-        ),
+        setMonitorEffects(input: input, effects: const [], chainEnabled: true),
       );
     }
     for (final monitor in rig.monitors) {
@@ -7481,6 +7484,12 @@ class LooperRepository {
   /// Pair refusals and autonomous restart uncertainty.
   Stream<EngineResult> get recordStartSettingsFailures => _recordStart.failures;
 
+  /// How many refusals this repository has announced on its own streams
+  /// ([recordingInputRequired], [overdubRefusals], [recordRefusals] and the
+  /// mix failures). A caller compares it across a call to know whether the
+  /// refusal it got already has a notice (#1229).
+  int get refusalNotices => _refusalNotices;
+
   /// Empty Sound-start target needing a real selected recording input.
   Stream<int> get recordingInputRequired => _recordingInputRequired.stream;
 
@@ -7530,6 +7539,7 @@ class LooperRepository {
       _retryingRecord = false;
     }
     if (!result.isOk && !_retrySuperseded && !_recordRefusals.isClosed) {
+      _refusalNotices++;
       _recordRefusals.add(retry.channel);
     }
   }
@@ -7552,10 +7562,10 @@ class LooperRepository {
       return EngineResult.invalid;
     }
     _recordStartEdit = editKind;
-    final result = _recordStart.request(
-      (countInBars: countInBars, soundStart: soundStart),
-      restart: releasedSettings,
-    );
+    final result = _recordStart.request((
+      countInBars: countInBars,
+      soundStart: soundStart,
+    ), restart: releasedSettings);
     _recordStartEdit = RecordStartEditKind.restore;
     _reproject();
     return result.isOk && _recordStart.settled
@@ -7638,9 +7648,7 @@ class LooperRepository {
     return result.isOk && _clickMode.settled ? _clickMode.lastResult : result;
   }
 
-  ({EngineResult result, ReceiptCheck? check}) _sendClickMode(
-    ClickMode mode,
-  ) {
+  ({EngineResult result, ReceiptCheck? check}) _sendClickMode(ClickMode mode) {
     if (clickModeCaptureLocked) {
       return (result: EngineResult.invalid, check: null);
     }
@@ -7841,10 +7849,7 @@ class LooperRepository {
       !_intendRunning || _length.settled ? _looperMode : null;
 
   /// Mode and latent track retirement land in the same native transaction.
-  EngineResult setLooperMode(
-    LooperMode mode, {
-    Map<int, int>? trackOverrides,
-  }) {
+  EngineResult setLooperMode(LooperMode mode, {Map<int, int>? trackOverrides}) {
     if (trackOverrides != null &&
         trackOverrides.entries.any(
           (entry) =>
@@ -7947,10 +7952,8 @@ class LooperRepository {
         return admitted
             ? (
                 result: EngineResult.ok,
-                check: () => (
-                  verdict: ReceiptVerdict.uncertain,
-                  result: result,
-                ),
+                check: () =>
+                    (verdict: ReceiptVerdict.uncertain, result: result),
               )
             : (result: result, check: null);
       }
@@ -8145,14 +8148,10 @@ class _MixIntent {
   final Map<int, int> counts;
   InputSetup input;
   OutputSetup output;
-  StereoMix laneMix((int, int) key) => (
-    gain: levels[key] ?? 1,
-    pan: pans[key.$1] ?? 0,
-  );
-  StereoMix laneImage((int, int) key) => (
-    gain: balances[key] ?? 1,
-    pan: images[key] ?? 0,
-  );
+  StereoMix laneMix((int, int) key) =>
+      (gain: levels[key] ?? 1, pan: pans[key.$1] ?? 0);
+  StereoMix laneImage((int, int) key) =>
+      (gain: balances[key] ?? 1, pan: images[key] ?? 0);
   StereoMix monitorMix(int i) => (
     gain: (monitorLevels[i] ?? 1) * input.balanceGainOf(i),
     pan: input.effectivePanOf(i),

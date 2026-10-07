@@ -184,6 +184,7 @@ void main() {
       takeIsLocked = false;
       looper = _MockLooperRepository();
       when(() => looper.sessionRevision).thenReturn(0);
+      when(() => looper.refusalNotices).thenReturn(0);
       when(() => looper.mixGeneration).thenReturn(0);
       when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
       when(() => looper.laneCount(any())).thenReturn(1);
