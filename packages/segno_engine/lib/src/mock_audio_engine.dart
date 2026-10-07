@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:segno_engine/src/audio_device.dart';
 import 'package:segno_engine/src/audio_engine.dart';
+import 'package:segno_engine/src/audition.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_fingerprint.dart';
@@ -238,6 +240,10 @@ class MockAudioEngine implements AudioEngine {
     _masterGain = 1; // unity on every fresh start, mirroring the native engine
     _perfArmed = false; // disarmed on every fresh start/reconfigure
     _perfFrames = 0;
+    // A configure (start or reopen) ends a preview and bumps the epoch, as
+    // the native voice does.
+    _endAudition();
+    _auditionEpoch++;
     // The output destinations go back to their defaults on a fresh start,
     // like the native engine's configure. The capture policy deliberately
     // does NOT: it is a preference, not device state.
@@ -256,6 +262,7 @@ class MockAudioEngine implements AudioEngine {
   EngineResult stop() {
     if (!_running) return EngineResult.notRunning;
     _running = false;
+    _endAudition();
     _lastSampleRate = _activeConfig?.sampleRate ?? 48000;
     _activeConfig = null;
     return EngineResult.ok;
@@ -310,6 +317,11 @@ class MockAudioEngine implements AudioEngine {
       final buffer = _activeConfig?.bufferFrames ?? 128;
       _framesProcessed += buffer;
       if (_perfArmed) _perfFrames += buffer;
+      // A preview plays a block per snapshot and ends after its last frame.
+      if (_auditionFrames > 0) {
+        _auditionPosition += buffer;
+        if (_auditionPosition >= _auditionFrames) _endAudition();
+      }
     }
     final inputs = _running ? _negotiatedInputs : 0;
     final outputs = _running ? _negotiatedOutputs : 0;
@@ -869,6 +881,7 @@ class MockAudioEngine implements AudioEngine {
     if (!result.isOk) return result;
     cutSoundCalls++;
     _tailResetRev++;
+    _endAudition(); // a preview is sound too
     return EngineResult.ok;
   }
 
@@ -976,6 +989,57 @@ class MockAudioEngine implements AudioEngine {
   @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       _requireRunning();
+
+  /// The preview the mock is "playing": its length in frames, 0 when none.
+  /// The mock decodes nothing: any existing file plays as one second, a
+  /// block per [snapshot], and ends like the native voice: after its last
+  /// frame, on a performance arm, a Cut sound, a stop, a start or a reopen.
+  int _auditionFrames = 0;
+  int _auditionPosition = 0;
+  int _auditionBus = -1;
+  int _auditionEpoch = 0;
+
+  void _endAudition() {
+    _auditionFrames = 0;
+    _auditionPosition = 0;
+    _auditionBus = -1;
+  }
+
+  @override
+  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async {
+    final running = _requireRunning();
+    if (!running.isOk) return AuditionStart(result: running);
+    if (!File(path).existsSync() || bus < 0 || 2 * bus >= _negotiatedOutputs) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    // Refused while a take records, as the native voice is.
+    if (_perfArmed) {
+      return const AuditionStart(result: EngineResult.alreadyRunning);
+    }
+    final rate = _activeConfig?.sampleRate ?? 48000;
+    _auditionFrames = rate;
+    _auditionPosition = 0;
+    _auditionBus = bus;
+    return AuditionStart(
+      result: EngineResult.ok,
+      frames: rate,
+      sourceRate: rate,
+    );
+  }
+
+  @override
+  EngineResult auditionStop() {
+    _endAudition();
+    return EngineResult.ok;
+  }
+
+  @override
+  AuditionState auditionState() => AuditionState(
+    epoch: _auditionEpoch,
+    frames: _auditionFrames,
+    position: _auditionPosition,
+    bus: _auditionBus,
+  );
 
   @override
   EngineResult setOutputEnabled({
@@ -1661,6 +1725,7 @@ class MockAudioEngine implements AudioEngine {
     if (!result.isOk) return result;
     if (!_perfArmed) _perfFollowArmed = _perfFollowPending; // frozen per take
     _perfArmed = true; // idempotent: re-arming just keeps it armed
+    _endAudition(); // the take starts with the rig alone sounding
     lastPerfCaptureDir = captureDir;
     return EngineResult.ok;
   }

@@ -136,6 +136,15 @@ $CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_fx_recipe_plugins.c \
   $RECIPE_SRC "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_fx_recipe_tests.exe"
 "$OUT/segno_fx_recipe_tests.exe"
 
+echo "== building backing handoff race tests =="
+# The backing player's buffer handoff (#1200): the audio thread advances End =
+# Next inside blocks while the control thread loads, stages and clears. Before
+# the races-only exit so the TSAN job covers it; ASan covers it in its job.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_backing_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_backing_race_tests.exe"
+"$OUT/segno_backing_race_tests.exe"
+
 if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then
   exit 0
 fi
@@ -145,6 +154,17 @@ echo "== building engine tests =="
 $CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_engine_core.c $ENGINE_SRC "$STRETCH_OBJ" $ENGINE_LIBS \
   -o "$OUT/segno_core_tests.exe"
 "$OUT/segno_core_tests.exe"
+
+echo "== building the decoder fuzz driver =="
+# The app's audio-file decoder over whole-file mutations of every accepted and
+# refused format (#1200): a bounded, fixed-seed run in every configuration, so
+# the ASan job fuzzes it on every push. FUZZ_CFLAGS adds flags for this binary
+# only (the ASan job passes UBSan here); SEGNO_FUZZ_ITERATIONS and
+# SEGNO_FUZZ_SEED widen a local run.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS ${FUZZ_CFLAGS:-} src/test/fuzz_backing_decode.c $ENGINE_SRC "$STRETCH_OBJ" \
+  $ENGINE_LIBS -o "$OUT/segno_fuzz_decode.exe"
+TMPDIR="$OUT" "$OUT/segno_fuzz_decode.exe"
 
 echo "== building midi tests =="
 # shellcheck disable=SC2086

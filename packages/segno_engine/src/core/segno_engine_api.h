@@ -42,7 +42,9 @@ typedef enum le_result {
   LE_ERR_DEVICE = -4,        /* miniaudio failed to init/start the device */
   LE_ERR_UNSUPPORTED = -5,   /* a plugin's bus topology is not a stereo (or
                               * mono-adaptable) effect — instrument / multi-bus /
-                              * sidechain / wrong channel count (D-BUS) */
+                              * sidechain / wrong channel count (D-BUS); an
+                              * audio file outside the decoder's whitelist
+                              * (#1200) */
   LE_ERR_CAPACITY = -6,      /* a requested allocation would exceed engine
                               * capacity (A6, D17): N bars of the current
                               * signature at the slowest possible tempo (30
@@ -51,7 +53,9 @@ typedef enum le_result {
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
   LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
                               * is unavailable while Reverse is on */
-  /* -10 .. -17 are assigned to other work (the numbering ledger). */
+  /* -10 and -11 belong to pitch/time (#1179); -12 and -13 to the backing
+   * player (#1200); the rest up to -17 to other work (the numbering ledger). */
+  LE_ERR_TOO_LONG = -12, /* a backing file over LE_BACKING_MAX_SECONDS (#1200) */
   LE_ERR_NOT_FOUND = -18,    /* the file (or a directory on its path) does not
                               * exist (#1198) */
   LE_ERR_TRUNCATED = -19,    /* the file exists but is shorter than the range
@@ -245,10 +249,11 @@ typedef enum le_command_code {
   LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record
                        * (any trigger). */
   /* ---- click + count-in (A2, D5/D9). The click is its own routable source:
-   * it sums into the channels of its output mask AFTER the master bus and the
-   * performance tap, so it bypasses master gain / limiter / metering and is
-   * excluded from performance capture and export by construction. None of
-   * these commands is therefore perf-logged. */
+   * since slice 3b it sums into the channels of its output mask BEFORE the
+   * output buses, so a destination's chain, level and mute, the master gain,
+   * the limiter and metering all apply, and a performance capture contains it
+   * when it is routed to the captured bus. None of these commands is
+   * perf-logged, so stems and the offline master never contain it. */
   LE_CMD_SET_CLICK_MODE = 19, /* typed mode + revision; raw posts rejected. */
   LE_CMD_SET_LANE_FX = 20, /* set a lane chain entry's type (and reset its DSP
                             * state). arg_i = (channel << 16) | (lane << 8) |
@@ -523,6 +528,20 @@ typedef enum le_command_code {
   LE_CMD_RESET_TRANSFORMS = 82, /* internal material-import transform reset
                                  * (Fade and direction); never raw-posted */
   LE_CMD_REVERSE = 83, /* checked internal Reverse request; never raw-posted */
+  /* ---- backing player (#1200; 88-95 reserved for it, 93-95 unused). Typed
+   * producers only (le_engine_backing_*): LOAD and STAGE_NEXT carry an owned
+   * buffer pointer, so raw posts of any of these are refused. None is
+   * perf-logged: the backing never reaches stems or the offline master. */
+  LE_CMD_BACKING_LOAD = 88,       /* buffer + item token + play flag */
+  LE_CMD_BACKING_STAGE_NEXT = 89, /* buffer (NULL clears) + item token */
+  LE_CMD_BACKING_CLEAR = 90,      /* unload current and staged */
+  LE_CMD_BACKING_TRANSPORT = 91,  /* arg_i = le_backing_transport_op */
+  LE_CMD_BACKING_SEEK = 92,       /* arg_i = frame of the loaded buffer */
+  /* ---- Library audition voice (#1178; 136-137 in the numbering ledger).
+   * Typed producers only (le_engine_audition_*): START carries an owned
+   * buffer pointer, so raw posts are refused. Never perf-logged. */
+  LE_CMD_AUDITION_START = 136, /* buffer + output pair */
+  LE_CMD_AUDITION_STOP = 137,
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -2222,13 +2241,13 @@ LE_EXPORT int32_t le_engine_set_clock_mode(le_engine* engine, int32_t mode);
 
 /* ---- click + count-in (A2, decisions D5/D9) ----
  * The click is a synthesized voice (sine 1000 Hz on beats / 1500 Hz on the
- * bar downbeat, 30 ms linear decay) with its OWN output routing and volume,
- * summed into its masked output channels after the master bus and the
- * performance tap. Consequences, all by design: the click bypasses master
- * gain, the limiter, and output metering (its own volume is its only gain
- * stage — it must stay audible and constant regardless of master moves), and
- * it never appears in performance captures, bounces, or exports. It defaults
- * to NO outputs: nothing sounds until a mask is assigned. */
+ * bar downbeat, 30 ms linear decay) with its OWN output routing, volume and
+ * pan, summed into its masked output channels BEFORE the output buses (slice
+ * 3b): a destination's chain, level and mute process it, master gain, the
+ * limiter and output metering apply, and a performance capture contains it
+ * when it is routed to the captured bus. It is never perf-logged, so stems,
+ * the offline master and bounces never contain it. It defaults to NO
+ * outputs: nothing sounds until a mask is assigned. */
 
 /* Enqueues one callback-confirmed click mode; capturing refuses, arms do not.
  * One request at a time. Confirm via commands_settled then snapshot receipt.
@@ -2245,6 +2264,299 @@ LE_EXPORT int32_t le_engine_set_click_output(le_engine* engine, int32_t mask);
 /* Sets the click volume, clamped to 0..LE_MAX_GAIN (default 1.0). This is the
  * click's only gain stage — master gain and the limiter never touch it. */
 LE_EXPORT int32_t le_engine_set_click_volume(le_engine* engine, float volume);
+
+/* Sets the click pan, clamped to -1..1 (default 0). The click is mono; the
+ * pan places it in the first masked pair with the unity-centre law of
+ * le_engine_set_lane_pan (the near side stays at unity), and further masked
+ * channels get the pair's mid, as every routed source does. Centre is
+ * bit-identical to an unpanned click. A direct store: works while stopped,
+ * persists across configure like the other click settings. NaN is refused. */
+LE_EXPORT int32_t le_engine_set_click_pan(le_engine* engine, float pan);
+
+/* ---- backing player (#1200) ----
+ * One engine-owned stereo voice played from RAM, independent of the loops:
+ * loop Stop, Undo, Clear and mode changes never touch it; Cut sound stops and
+ * rewinds it at once. It sums into its masked output channels after the live
+ * monitors and the click and BEFORE the output buses, exactly like the click:
+ * output FX, level, Mono and mute process it; master gain, the limiter and
+ * output metering see it; a performance capture contains it when it is routed
+ * to the captured bus. It is never perf-logged, so stems, the offline master
+ * and loop takes never contain it.
+ *
+ * Buffers: le_backing_buffer_from_pcm (and, later, a file decoder) create an
+ * interleaved stereo float32 buffer at a given rate, owned by the caller. A
+ * successful le_engine_backing_load / _stage_next transfers ownership to the
+ * engine; on any refusal the caller still owns it. The engine frees buffers
+ * only on the control thread: in le_engine_backing_state (the collect point),
+ * before every load or stage, at configure, at reopen and at destroy, never
+ * on the audio thread. At most LE_BACKING_MAX_BUFFERS buffers and
+ * LE_BACKING_BUDGET_BYTES of PCM are engine-owned at once. A load or stage
+ * past either bound reads LE_ERR_NOT_READY while a buffer is in transit (one
+ * posted and not yet applied by the callback, or a replaced one still fading
+ * out or waiting to be handed back: retry after one block), else
+ * LE_ERR_CAPACITY.
+ *
+ * Handoff protocol. Only the audio thread changes which buffer is loaded or
+ * staged: loads, stages and clears travel the command ring in posting order,
+ * and an End = Next advance happens inside the callback, so no control-side
+ * swap can race it. The callback hands a buffer it will never read again back
+ * through one of LE_BACKING_MAX_BUFFERS return slots (release store); the
+ * control thread exchanges the slot empty (acquire) before freeing. A return
+ * slot always exists for every engine-owned buffer, so a return never fails;
+ * should one ever find no free slot, the callback refuses the End = Next
+ * advance (stops with LE_BACKING_EV_NEXT_MISSING) rather than lose or
+ * overwrite a buffer.
+ *
+ * Declick: Pause, Stop, a seek while playing, a replace while playing and
+ * Clear while playing fade the outgoing sound out over LE_BACKING_RAMP_MS on
+ * a second, overlapping voice; a resume or a seek while playing fades the new
+ * position in over the same time. A Play from the very start, an End =
+ * Repeat wrap and an End = Next continuation are sample-exact and unfaded.
+ *
+ * Lifetimes: configure frees every buffer; a retained reopen keeps the loaded
+ * and staged buffers and returns the transport to Stopped at 0; both bump
+ * le_backing_state.epoch. The settings (output mask, level, pan, End) are
+ * direct stores seeded once at create and persist across configure, like the
+ * click settings. */
+#define LE_BACKING_MAX_BUFFERS 4
+/* 1.5 GiB: two 15-minute 96 kHz stereo buffers (691 MB each) plus headroom,
+ * the backing's share of the appliance memory budget (#1200 plan, M1). */
+#define LE_BACKING_BUDGET_BYTES (1536ll * 1024 * 1024)
+#define LE_BACKING_RAMP_MS 5
+
+typedef struct le_backing_buffer le_backing_buffer;
+
+/* Copies [frames] interleaved frames of [channels] (1 or 2) at [sample_rate]
+ * into a new stereo buffer (mono is duplicated into both sides). Any thread.
+ * LE_ERR_INVALID on NULL, frames <= 0, channels outside 1..2, a
+ * non-positive rate or any non-finite sample (a NaN or Inf would poison the
+ * output-bus FX state for good); LE_ERR_CAPACITY when the allocation
+ * fails. */
+LE_EXPORT int32_t le_backing_buffer_from_pcm(const float* interleaved,
+                                             int32_t frames, int32_t channels,
+                                             int32_t sample_rate,
+                                             le_backing_buffer** out);
+LE_EXPORT int32_t le_backing_buffer_frames(const le_backing_buffer* buffer);
+LE_EXPORT int32_t le_backing_buffer_rate(const le_backing_buffer* buffer);
+/* Writes [buckets] per-bucket absolute peaks (max of both sides) over the
+ * whole buffer into [out]; returns the count written, or LE_ERR_INVALID. */
+LE_EXPORT int32_t le_backing_buffer_peaks(const le_backing_buffer* buffer,
+                                          float* out, int32_t buckets);
+/* ---- the audio-file decoder (#1200; the app's one decoder of audio
+ * samples: the backing player, the Library preview and recording recovery
+ * all read files here) --
+ * Accepted, by our own header check before any decoder sees the file: WAV
+ * (RIFF) with 16/24/32-bit PCM or 32-bit float, plain or EXTENSIBLE, and
+ * MPEG Layer III. Sources must be mono or stereo, 8-192 kHz, at a rate the
+ * converter reaches from every engine rate (44.1, 48, 88.2 and 96 kHz).
+ * Everything else is LE_ERR_UNSUPPORTED: 8-bit or 64-bit WAV, ADPCM, mu-law,
+ * A-law, RIFX, RF64, BW64, Wave64, AIFF, FLAC (compiled out until #1235),
+ * Ogg, MPEG Layer I/II, more channels or another rate. A file that claims an
+ * accepted format but is inconsistent (a chunk past the end of the file, a
+ * short `fact` chunk, a block align that does not match, a length other than
+ * the one stated, a float sample that is non-finite or more than 60 dB over
+ * full scale) is LE_ERR_INVALID. No input can make these loop: reads and
+ * seeks stay inside the file and stop after a bounded amount of work. Any
+ * thread but the audio thread; no engine handle;
+ * nothing here touches engine state. */
+
+/* The longest whole file accepted, in seconds of source audio. */
+#define LE_BACKING_MAX_SECONDS 900
+/* What a decode must leave free (MemAvailable on Linux) for loops, capture
+ * and the system: the appliance memory budget's floor (#1200 plan, M1). */
+#define LE_MEM_RESERVE_BYTES (512ll * 1024 * 1024)
+
+typedef struct le_backing_decode_info {
+  int32_t source_rate;     /* the file's own rate */
+  int32_t source_channels; /* 1 or 2 */
+  int64_t source_frames;   /* frames decoded, at the source rate */
+  int32_t truncated;       /* a bounded read stopped before the end */
+} le_backing_decode_info;
+
+/* Decodes [path] into a new stereo buffer at [sample_rate] (mono plays as
+ * dual mono), converting the rate with the band-limited offline converter
+ * after exact half-band halving for reductions below one half.
+ *
+ * Whole file (start_frame 0, max_frames 0): refused past
+ * LE_BACKING_MAX_SECONDS (LE_ERR_TOO_LONG, before reading when the length is
+ * stated), and refused as damaged when it decodes to a length other than the
+ * one it states. Bounded read (a preview, a recording part): starts at the
+ * first output frame at or after [start_frame] (source frames) and keeps at
+ * most [max_frames] output frames, setting info->truncated when the file goes
+ * on; its samples are exactly the whole-file decode's at the same positions.
+ * A bounded read that starts past the last output frame (the last source
+ * frame of a reduction) returns LE_OK with an empty (0-frame) buffer, which
+ * the voice refuses to load.
+ *
+ * Refuses with LE_ERR_CAPACITY when the decode's peak (the source, the
+ * planes a halving works on, and the output) would leave less than
+ * LE_MEM_RESERVE_BYTES available, or an allocation fails. LE_ERR_UNSUPPORTED
+ * and LE_ERR_INVALID as above; LE_ERR_INVALID also for bad arguments and a
+ * missing or unreadable file. [info] (may be NULL) is filled as far as the
+ * file was read. */
+LE_EXPORT int32_t le_backing_decode_file(const char* path, int32_t sample_rate,
+                                         int64_t start_frame,
+                                         int32_t max_frames,
+                                         le_backing_buffer** out,
+                                         le_backing_decode_info* info);
+
+/* Decodes all of [path] in small chunks, retaining no PCM, to prove it plays
+ * and to measure it: fills [info] and [buckets] per-bucket absolute peaks
+ * (max of both sides; buckets may be 0). The same refusals as a whole-file
+ * decode, minus the memory one; a file it accepts decodes at every engine
+ * rate. What an import runs before it keeps a file. */
+LE_EXPORT int32_t le_backing_probe_file(const char* path,
+                                        le_backing_decode_info* info,
+                                        float* peaks, int32_t buckets);
+
+/* The buffer's interleaved stereo float32 samples (frames x 2), for a
+ * consumer that copies them (the Library preview). */
+LE_EXPORT const float* le_backing_buffer_pcm(const le_backing_buffer* buffer);
+
+/* Frees a buffer the caller still owns. NULL is a no-op. */
+LE_EXPORT void le_backing_buffer_free(le_backing_buffer* buffer);
+
+typedef enum le_backing_transport {
+  LE_BACKING_STOPPED = 0,
+  LE_BACKING_PLAYING = 1,
+  LE_BACKING_PAUSED = 2,
+} le_backing_transport;
+
+typedef enum le_backing_transport_op {
+  LE_BACKING_OP_PLAY = 0,  /* from the position; resume fades in */
+  LE_BACKING_OP_PAUSE = 1, /* fade out, keep the position */
+  LE_BACKING_OP_STOP = 2,  /* fade out, rewind to 0 */
+} le_backing_transport_op;
+
+typedef enum le_backing_end {
+  LE_BACKING_END_STOP = 0,   /* stop and rewind (default) */
+  LE_BACKING_END_REPEAT = 1, /* wrap to frame 0, no gap */
+  LE_BACKING_END_NEXT = 2,   /* continue into the staged buffer, else stop */
+} le_backing_end;
+
+typedef enum le_backing_end_event {
+  LE_BACKING_EV_NONE = 0,
+  LE_BACKING_EV_STOPPED = 1,
+  LE_BACKING_EV_REPEATED = 2,
+  LE_BACKING_EV_ADVANCED = 3,
+  LE_BACKING_EV_NEXT_MISSING = 4,
+} le_backing_end_event;
+
+/* Replaces the loaded buffer at the next block: the old one fades out if it
+ * was sounding; the new one starts at frame 0, playing when [play] is 1,
+ * else Stopped. [item] is the caller's token, reported back in the state.
+ * LE_ERR_INVALID: NULL, an empty buffer, a buffer the engine already owns, a
+ * rate other than the engine's, or the command ring full. LE_ERR_NOT_RUNNING: not
+ * configured. Past LE_BACKING_MAX_BUFFERS or LE_BACKING_BUDGET_BYTES:
+ * LE_ERR_NOT_READY while a buffer is in transit, else LE_ERR_CAPACITY (see
+ * Buffers above). */
+LE_EXPORT int32_t le_engine_backing_load(le_engine* engine,
+                                         le_backing_buffer* buffer,
+                                         int32_t item, int32_t play);
+/* Stages the buffer End = Next continues into (NULL clears the stage). Same
+ * ownership and refusals as le_engine_backing_load. */
+LE_EXPORT int32_t le_engine_backing_stage_next(le_engine* engine,
+                                               le_backing_buffer* buffer,
+                                               int32_t item);
+/* Unloads the loaded and staged buffers (fading out a sounding one). */
+LE_EXPORT int32_t le_engine_backing_clear(le_engine* engine);
+/* le_backing_transport_op; a no-op with nothing loaded. */
+LE_EXPORT int32_t le_engine_backing_transport(le_engine* engine, int32_t op);
+/* Moves the loaded buffer's position to [frame], clamped to its length;
+ * playing or paused is kept. A no-op with nothing loaded. */
+LE_EXPORT int32_t le_engine_backing_seek(le_engine* engine, int32_t frame);
+/* le_backing_end; LE_ERR_INVALID outside the enum. Direct store. */
+LE_EXPORT int32_t le_engine_backing_set_end(le_engine* engine, int32_t mode);
+/* Output channel bitmask (bit c = hardware output c), default 0 = unrouted.
+ * Direct store. */
+LE_EXPORT int32_t le_engine_backing_set_output(le_engine* engine,
+                                               int32_t mask);
+/* Gain, clamped to 0..LE_MAX_GAIN (default 1); NaN refused. Direct store. */
+LE_EXPORT int32_t le_engine_backing_set_level(le_engine* engine, float gain);
+/* Balance, clamped to -1..1 (default 0) with the unity-centre law; NaN
+ * refused. Direct store. */
+LE_EXPORT int32_t le_engine_backing_set_pan(le_engine* engine, float pan);
+
+typedef struct le_backing_state {
+  uint32_t epoch;      /* bumps at configure and at every reopen */
+  int32_t item;        /* loaded buffer's token, -1 none */
+  int32_t next_item;   /* staged buffer's token, -1 none */
+  int32_t transport;   /* le_backing_transport */
+  int32_t position;    /* frames into the loaded buffer */
+  int32_t frames;      /* loaded buffer length, 0 none */
+  uint32_t end_count;  /* bumps on every end-of-buffer handling */
+  int32_t last_end;    /* le_backing_end_event of the latest one */
+  int32_t end_mode;    /* le_backing_end */
+  uint32_t mask;
+  float level;
+  float pan;
+  float click_pan;
+  int32_t owned;       /* buffers the engine owns after this collect */
+  int64_t owned_bytes; /* their PCM bytes */
+} le_backing_state;
+
+/* Reads the published state (as of the last processed block) and frees every
+ * buffer the audio thread has finished with. Control thread. LE_ERR_INVALID
+ * on NULL arguments. */
+LE_EXPORT int32_t le_engine_backing_state(le_engine* engine,
+                                          le_backing_state* out);
+
+/* ---- Library audition voice (#1178) ----
+ * One preview voice for the Library's Listen, isolated from the rig. It plays
+ * an engine-rate stereo le_backing_buffer once, from frame 0, into one output
+ * pair, summed AFTER the output-bus loop and BEFORE the master bus: no
+ * destination's chain, level or mute touches it, the performance capture
+ * (tapped inside the output buses) never contains it, it is never
+ * perf-logged, so stems, the offline master and loop takes never contain it,
+ * and only the master gain and the limiter shape it. It does not loop.
+ *
+ * A preview is decoded by the app's one decoder as a bounded read:
+ * le_backing_decode_file(path, rate, 0, LE_AUDITION_MAX_SECONDS * rate, ...)
+ * keeps the first LE_AUDITION_MAX_SECONDS of a longer file and sets
+ * info.truncated.
+ *
+ * Buffers are the backing player's type and follow its ownership rules: the
+ * caller owns a buffer until le_engine_audition_start accepts it; the
+ * callback hands back a buffer it will never read again (replaced, stopped,
+ * ended, cleared by a performance arm or Cut sound) and the control thread
+ * frees it in le_engine_audition_state (the collect point), before every
+ * start, at configure, at reopen and at destroy, never on the audio thread.
+ * At most LE_AUDITION_MAX_BUFFERS are engine-owned at once, so a start that
+ * replaces a playing preview while the one before it is not yet handed back
+ * reads LE_ERR_NOT_READY; retry after one block. */
+#define LE_AUDITION_MAX_SECONDS 120
+#define LE_AUDITION_MAX_BUFFERS 2
+
+/* Starts [buffer] from frame 0 into output pair [bus] at the next block,
+ * replacing a preview already playing (no fade). LE_ERR_INVALID: NULL, a
+ * buffer the engine already owns, a rate other than the engine's, more than
+ * LE_AUDITION_MAX_SECONDS of frames, a bus outside 0..LE_MAX_OUTPUT_BUSES-1
+ * or one the open device has no channels for, or the command ring full.
+ * LE_ERR_NOT_RUNNING: not configured. LE_ERR_ALREADY_RUNNING: a performance
+ * capture is armed. LE_ERR_NOT_READY: LE_AUDITION_MAX_BUFFERS already owned.
+ * On every refusal the caller still owns the buffer. A start that reaches
+ * the callback after a performance arm (posted between the arm and its
+ * apply) never sounds: the callback hands the buffer back unplayed. */
+LE_EXPORT int32_t le_engine_audition_start(le_engine* engine,
+                                           le_backing_buffer* buffer,
+                                           int32_t bus);
+/* Silences the preview at the next block (no fade). A no-op when none
+ * plays. */
+LE_EXPORT int32_t le_engine_audition_stop(le_engine* engine);
+
+typedef struct le_audition_state {
+  uint32_t epoch;   /* bumps at configure and at every reopen */
+  int32_t frames;   /* the playing preview's length, 0 when none plays */
+  int32_t position; /* frames played of it */
+  int32_t bus;      /* its output pair, -1 when none plays */
+  int32_t owned;    /* buffers the engine owns after this collect */
+} le_audition_state;
+
+/* Reads the published state (as of the last processed block) and frees every
+ * buffer the audio thread has handed back. Control thread. LE_ERR_INVALID on
+ * NULL arguments. */
+LE_EXPORT int32_t le_engine_audition_state(le_engine* engine,
+                                           le_audition_state* out);
 
 /* Enqueues a coherent Count-in/Sound-start pair. Bars must be 0, 1, 2 or 4;
  * sound_start must be 0/1 and cannot be enabled with positive bars. Actual
