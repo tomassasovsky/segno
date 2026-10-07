@@ -40,6 +40,7 @@ import 'package:segno/control/model/foot_reverse.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'control_foot_fade.dart';
@@ -186,6 +187,7 @@ class ControlCubit extends Cubit<ControlState> {
     PerformanceChains Function() currentChains = _noChains,
     bool Function() takeLocked = _neverLocked,
     bool Function() inputLocked = _neverLocked,
+    Future<int?> Function(String path)? freeSpaceBytes,
   }) : _looper = looper,
        _pedal = pedal,
        _settings = settings,
@@ -205,6 +207,9 @@ class ControlCubit extends Cubit<ControlState> {
        _currentChains = currentChains,
        _takeLocked = takeLocked,
        _inputLocked = inputLocked,
+       _freeSpaceBytes =
+           freeSpaceBytes ??
+           ((String path) async => performance.volumeSpace(path)?.freeBytes),
        super(const ControlState()) {
     _fxPersistence.onOrdinaryWrite = _onOrdinaryFxWrite;
     _mixSettings.onOrdinaryValues = _onOrdinaryMixValues;
@@ -228,6 +233,14 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   final MidiDeviceRepository? _midiDevices;
+
+  // The free room on the exports volume, for an assigned Record
+  // performance's low-disk refusal.
+  final Future<int?> Function(String path) _freeSpaceBytes;
+
+  // Refusals this cubit announced with their own words, so the generic
+  // assigned-action notice can tell it was said.
+  int _ownNotices = 0;
   final Duration Function()? _midiClock;
   final _midiStopwatch = Stopwatch()..start();
   Duration _midiReadTime = Duration.zero;
@@ -2649,15 +2662,25 @@ class ControlCubit extends Cubit<ControlState> {
   /// its own toast.
   FutureOr<bool> _runAction(ControlAction action, List<int> channels) {
     final session = _looper.sessionRevision;
+    final noticed = _noticeMark(action);
     final result = _runAssigned(action, channels);
     if (_hasOwnRefusalNotice(action)) return result;
+    // One cause, one notice: a refusal the looper or a guard already
+    // announced (a needed recording input, a reversed track, an owed mix,
+    // low disk) adds nothing here.
+    void settle({required bool accepted}) {
+      if (!accepted && _noticeMark(action) == noticed) {
+        _reportAssignedAction(action, session);
+      }
+    }
+
     if (result is Future<bool>) {
       return result.then((accepted) {
-        if (!accepted) _reportAssignedAction(action, session);
+        settle(accepted: accepted);
         return accepted;
       });
     }
-    if (!result) _reportAssignedAction(action, session);
+    settle(accepted: result);
     return result;
   }
 
@@ -2668,21 +2691,61 @@ class ControlCubit extends Cubit<ControlState> {
           TrackOperation.peel,
     ) =>
       true,
-    CommandAction(command: ControlCommand.recordPerformance) => true,
     _ => false,
+  };
+
+  /// How many refusals have been announced elsewhere that [action] could
+  /// cause: the record actions read the looper's own notices.
+  int _noticeMark(ControlAction action) => switch (action) {
+    TrackPedalAction() || CommandAction(command: ControlCommand.recordPlay) =>
+      _ownNotices + _looper.refusalNotices,
+    _ => _ownNotices,
   };
 
   /// Notifies one refused assigned [action], unless the Session it was fired
   /// in has since been replaced (the refusal then belongs to a rig that is
-  /// gone).
-  void _reportAssignedAction(ControlAction action, int session) {
+  /// gone). [lowDisk] names the cause when an assigned Record performance
+  /// could not start for want of room.
+  void _reportAssignedAction(
+    ControlAction action,
+    int session, {
+    bool lowDisk = false,
+  }) {
     if (isClosed || _closing || _looper.sessionRevision != session) return;
     emit(
       state.copyWith(
         assignedActionFailure: state.assignedActionFailure + 1,
         assignedActionRefusal: action,
+        assignedActionLowDisk: lowDisk,
       ),
     );
+  }
+
+  /// An assigned Record performance: a capture that has not enough room is
+  /// refused with the recorder's own low-disk words, as its toolbar button
+  /// does; an engine refusal falls to the generic notice.
+  Future<bool> _assignedPerformanceToggle() async {
+    if (!_performanceArmed && await _volumeTooFullToArm()) {
+      _ownNotices++;
+      _reportAssignedAction(
+        const CommandAction(ControlCommand.recordPerformance),
+        _looper.sessionRevision,
+        lowDisk: true,
+      );
+      return false;
+    }
+    return _togglePerformanceRecordAccepted();
+  }
+
+  Future<bool> _volumeTooFullToArm() async {
+    try {
+      final root = await _performance.exportsRoot();
+      final free = await _freeSpaceBytes(root);
+      return free != null &&
+          free < PerformanceRecorderCubit.lowDiskThresholdBytes;
+    } on Object {
+      return false; // Not this gate's call to block.
+    }
   }
 
   FutureOr<bool> _runAssigned(ControlAction action, List<int> channels) {
@@ -2767,7 +2830,7 @@ class ControlCubit extends Cubit<ControlState> {
       case ControlCommand.cutSound:
         return _looper.cutSound().isOk;
       case ControlCommand.recordPerformance:
-        return _togglePerformanceRecordAccepted();
+        return _assignedPerformanceToggle();
       case ControlCommand.nextBank:
         toggleBankWithCursor();
         return true;

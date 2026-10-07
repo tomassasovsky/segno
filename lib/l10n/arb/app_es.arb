@@ -2411,6 +2411,8 @@
     "footPeelFailure": "No se pudo quitar la capa. Inténtalo de nuevo.",
     "footCustomHold": "Mantener · {action}",
     "footCustomStopRecording": "Detener grabación",
+    "footCustomUnavailableAction": "Acción no disponible",
+    "assignedActionUnknownRefused": "La acción de este control no está disponible en esta versión. Reasígnala.",
     "assignedActionRefused": "{action} no está disponible ahora.",
     "mixerFading": "En Fade",
     "mixerFadeLevel": "Fade {value}%",

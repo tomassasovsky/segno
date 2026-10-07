@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/foundation.dart';
@@ -99,6 +100,9 @@ void main() {
   late SettingsRepository settings;
   late SessionCubit session;
   late PerformanceRepository performance;
+  late FakeAudioEngine performanceEngine;
+  // The free room an assigned Record performance sees; null is unknown.
+  int? freeBytes;
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
   late AudioSetupCubit audioSetup;
@@ -172,10 +176,12 @@ void main() {
     pedalLink = FakePedalLink();
     pedalRepo = PedalRepository(pedalLink);
     addTearDown(pedalRepo.dispose);
+    performanceEngine = FakeAudioEngine();
+    freeBytes = null;
     performance = PerformanceRepository(
       guards: GuardRegistry(),
-      engine: FakeAudioEngine(),
-      exportsRoot: () async => '.',
+      engine: performanceEngine,
+      exportsRoot: () async => Directory.systemTemp.path,
     );
     // The stage status bar is unconditional now; its tempo/clock readout
     // selects a TransportClockCubit. Mocked so no tick timer outlives a pump.
@@ -197,6 +203,7 @@ void main() {
       settings: settings,
       performance: performance,
       fadeSettings: ownedFade,
+      freeSpaceBytes: (_) async => freeBytes,
       ownedValues: OwnedValuePort(
         looper: repository,
         clickVolume: FakeClickVolumeControl(),
@@ -819,13 +826,72 @@ void main() {
     await tester.tap(find.byKey(const Key('foot_custom_pedal_clear')));
     await tester.pumpAndSettle();
     expect(
-      find.text('future:thing is unavailable right now.').hitTestable(),
+      find
+          .text(
+            "This control's action isn't available in this version. "
+            'Reassign it.',
+          )
+          .hitTestable(),
       findsOneWidget,
     );
     expect(control.state.assignedActionFailure, 1);
     dismissAppToast(AppToastId.assignedActionRefused);
     await tester.pump(const Duration(seconds: 10));
   });
+
+  for (final lowDisk in [false, true]) {
+    testWidgets('an assigned Record performance the rig refuses says why '
+        '(lowDisk: $lowDisk)', (tester) async {
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      seed(const LooperState(tracks: [Track()]));
+      if (lowDisk) {
+        freeBytes = 1;
+      } else {
+        performanceEngine.perfArmResult = EngineResult.invalid;
+      }
+      pedalLink.hello();
+      await tester.runAsync(
+        () => control.setPedalSetup(
+          const PedalSetup().withCustom(
+            PedalButton.stop,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: CommandAction(ControlCommand.recordPerformance),
+            ),
+          ),
+        ),
+      );
+      await pump(tester);
+      control.setMode(InteractionMode.custom);
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        pedalLink.press(PedalButton.stop, down: true);
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        pedalLink.press(PedalButton.stop, down: false);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      });
+      await tester.pumpAndSettle();
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(
+        find
+            .text(
+              lowDisk
+                  ? l10n.perfLowDiskBlocked
+                  : l10n.assignedActionRefused(l10n.actionRecordPerformance),
+            )
+            .hitTestable(),
+        findsOneWidget,
+      );
+      expect(control.state.assignedActionFailure, 1);
+      expect(performanceEngine.perfArmCalls, lowDisk ? 0 : 1);
+      dismissAppToast(AppToastId.assignedActionRefused);
+      await tester.pump(const Duration(seconds: 10));
+    });
+  }
 
   testWidgets('a refused assignment is named in its notice', (
     tester,

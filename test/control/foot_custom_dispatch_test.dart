@@ -24,6 +24,13 @@ import '../helpers/helpers.dart';
 
 /// Tracks 1 and 2 are recorded; the rest are empty.
 class _Engine extends FakeAudioEngine {
+  /// A result [record] returns instead of recording.
+  EngineResult? recordResult;
+
+  @override
+  EngineResult record({int channel = 0}) =>
+      recordResult ?? super.record(channel: channel);
+
   void publish() => nextSnapshot = nextSnapshot.copyWith(
     tracks: [
       for (var channel = 0; channel < 8; channel++)
@@ -119,6 +126,7 @@ class _Rig {
       controller: controller,
       midiDevices: midi,
       takeLocked: () => powerOffUp,
+      freeSpaceBytes: (_) async => freeBytes,
     );
     link.hello();
   }
@@ -140,6 +148,9 @@ class _Rig {
 
   /// The power-off route is up: takes and performance actions are locked.
   bool powerOffUp = false;
+
+  /// The free room on the exports volume; null is unknown.
+  int? freeBytes;
 
   final _contacts = <PedalButton, Object>{};
   void press(PedalButton button) {
@@ -520,23 +531,75 @@ void main() {
       }
     });
 
-    test('a refused performance arm keeps its own toast', () async {
-      final rig = await enter(
-        const PedalSetup().withCustom(
-          PedalButton.stop,
-          bank: 0,
-          pair: const ControlGesturePair(
-            press: CommandAction(ControlCommand.recordPerformance),
-          ),
-        ),
-      );
+    const perform = CommandAction(ControlCommand.recordPerformance);
+    final performOnStop = const PedalSetup().withCustom(
+      PedalButton.stop,
+      bank: 0,
+      pair: const ControlGesturePair(press: perform),
+    );
+
+    test('a performance arm the engine refuses says so once', () async {
+      final rig = await enter(performOnStop);
       try {
         rig.engine.perfArmResult = EngineResult.invalid;
         await rig.stomp(PedalButton.stop);
         await _pump(const Duration(milliseconds: 30));
         expect(rig.engine.perfArmCalls, 1);
-        expect(rig.refused, isEmpty);
+        expect(rig.refused, [perform]);
+        expect(rig.control.state.assignedActionLowDisk, isFalse);
       } finally {
+        await rig.close();
+      }
+    });
+
+    test('a performance arm with too little room is refused before the '
+        'engine, and says so in the recorder words', () async {
+      final rig = await enter(performOnStop);
+      try {
+        rig.freeBytes = 1;
+        await rig.stomp(PedalButton.stop);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.engine.perfArmCalls, 0);
+        expect(rig.refused, [perform]);
+        expect(rig.control.state.assignedActionLowDisk, isTrue);
+        // Room again: it arms, and says nothing.
+        rig.freeBytes = null;
+        await rig.stomp(PedalButton.stop);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.engine.perfArmCalls, 1);
+        expect(rig.refused, [perform]);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('a Record / Play the looper refuses with its own notice gets no '
+        'second one', () async {
+      const recordPlay = CommandAction(ControlCommand.recordPlay);
+      final rig = await enter(
+        const PedalSetup().withCustom(
+          PedalButton.undo,
+          bank: 0,
+          pair: const ControlGesturePair(press: recordPlay),
+        ),
+      );
+      final announced = <int>[];
+      final subscription = rig.looper.overdubRefusals.listen(announced.add);
+      try {
+        // Track 1 plays reversed: an overdub is refused, and the looper says
+        // so itself.
+        rig.engine.recordResult = EngineResult.reversed;
+        await rig.stomp(PedalButton.undo);
+        await _pump(const Duration(milliseconds: 30));
+        expect(announced, [0]);
+        expect(rig.refused, isEmpty);
+        // A refusal the looper does not announce still gets the generic one.
+        rig.engine.recordResult = EngineResult.invalid;
+        await rig.stomp(PedalButton.undo);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.refused, [recordPlay]);
+      } finally {
+        await subscription.cancel();
         await rig.close();
       }
     });

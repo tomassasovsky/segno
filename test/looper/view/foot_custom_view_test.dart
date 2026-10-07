@@ -47,7 +47,10 @@ final PedalSetup _setup = const PedalSetup()
     .withCustom(
       PedalButton.clear,
       bank: 0,
-      pair: const ControlGesturePair(press: UnavailableAction('future:thing')),
+      pair: const ControlGesturePair(
+        press: UnavailableAction('future:thing'),
+        hold: UnavailableAction('future:other'),
+      ),
     )
     .withCustom(
       PedalButton.stop,
@@ -142,7 +145,12 @@ void main() {
     expect(within(PedalButton.undo, 'Undo'), findsOneWidget);
     expect(within(PedalButton.undo, 'Hold · Redo'), findsOneWidget);
     expect(
-      within(PedalButton.clear, 'Unavailable · future:thing'),
+      within(PedalButton.clear, 'Unavailable action'),
+      findsOneWidget,
+    );
+    // The hint never shows a saved key either.
+    expect(
+      within(PedalButton.clear, 'Hold · Unavailable action'),
       findsOneWidget,
     );
     expect(within(PedalButton.stop, 'Record performance'), findsOneWidget);
@@ -158,7 +166,12 @@ void main() {
     given(custom(bank: 1));
     await pump(tester);
     expect(within(PedalButton.bank, 'Bank B'), findsOneWidget);
-    expect(within(PedalButton.track1, 'Selected track · Fade'), findsOneWidget);
+    // The separator stays at the end of a wrapped first line.
+    expect(
+      within(PedalButton.track1, 'Selected track\u00a0· Fade'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('future:thing'), findsNothing);
     expect(within(PedalButton.track2, 'Track 6'), findsOneWidget);
     expect(
       pedalSemantics(tester, PedalButton.bank).properties.selected,
@@ -175,7 +188,7 @@ void main() {
     Color? colorOf(PedalButton button, String text) =>
         tester.widget<Text>(within(button, text)).style?.color;
     expect(
-      colorOf(PedalButton.clear, 'Unavailable · future:thing'),
+      colorOf(PedalButton.clear, 'Unavailable action'),
       surface.textMuted,
     );
     expect(

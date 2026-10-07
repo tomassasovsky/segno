@@ -329,16 +329,20 @@ void main() {
     final overdubs = <int>[];
     final sub = repo.overdubRefusals.listen(overdubs.add);
     addTearDown(sub.cancel);
+    final noticed = repo.refusalNotices;
     engine.recordResult = EngineResult.reversed;
     expect(repo.record(channel: 1), EngineResult.reversed);
+    // Counted at once, so a caller can tell the refusal was announced.
+    expect(repo.refusalNotices, noticed + 1);
     await poll();
     expect(overdubs, [1]);
     expect(refusals, isEmpty);
     expect(repo.recordRetryPending(1), isFalse);
-    // Any other refusal is not an overdub refusal.
+    // Any other refusal is not an overdub refusal, and announces nothing.
     engine.recordResult = EngineResult.invalid;
     repo.record(channel: 1);
     await poll();
     expect(overdubs, [1]);
+    expect(repo.refusalNotices, noticed + 1);
   });
 }
