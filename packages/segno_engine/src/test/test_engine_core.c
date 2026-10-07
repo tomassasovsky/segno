@@ -23778,6 +23778,26 @@ static void test_preset_edits_preserve_current_capture_and_mode_only_presets(voi
   le_engine_destroy(e);
 }
 
+static void test_four_bar_preset_fits_default_loop_cap(void) {
+  printf("test_four_bar_preset_fits_default_loop_cap\n");
+  int32_t bars[LE_MAX_TRACKS] = {4};
+  le_snapshot s;
+
+  le_engine* e = tg_make_engine_cap(1000, 0);
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_preset_bars == 4);
+  CHECK(le_engine_commands_settled(e) == 1);
+  le_engine_destroy(e);
+
+  e = tg_make_engine_cap(1000, 30000);
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) ==
+        LE_ERR_CAPACITY);
+  CHECK(le_engine_commands_settled(e) == 1);
+  le_engine_destroy(e);
+}
+
 static void test_free_mode_defining_recording_sets_own_clock_not_master(void) {
   printf("test_free_mode_defining_recording_sets_own_clock_not_master\n");
   le_engine* e = fm_make_free_engine(1000);
@@ -36077,6 +36097,7 @@ int main(void) {
   test_length_presets_batch_queue_atomicity();
   test_mode_presets_recheck_before_stopping();
   test_length_presets_recheck_capacity_and_preserve_capture();
+  test_four_bar_preset_fits_default_loop_cap();
 
   test_free_mode_defining_recording_sets_own_clock_not_master();
   test_free_mode_independent_lengths_prime_wraps();

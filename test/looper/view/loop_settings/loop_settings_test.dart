@@ -760,6 +760,35 @@ void main() {
     verify(() => repository.settleLengthSettings()).called(1);
   });
 
+  testWidgets('capacity refusal explains how to raise the loop limit', (
+    tester,
+  ) async {
+    final failures = StreamController<EngineResult>.broadcast();
+    addTearDown(failures.close);
+    when(() => repository.lengthSettingsFailures).thenAnswer(
+      (_) => failures.stream,
+    );
+    when(() => repository.setDefaultLengthPreset(any())).thenAnswer((_) {
+      failures.add(EngineResult.capacity);
+      return EngineResult.capacity;
+    });
+    await pump(tester, initial: LoopSettingsPageId.length);
+    clearInteractions(repository);
+
+    await tester.tap(find.byKey(const Key('loop_length_bars')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(l10nOf(tester).loopLengthCapacityNotApplied('Auto')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(l10nOf(tester).loopLengthNotApplied('Auto')),
+      findsNothing,
+    );
+    expect(options.state.defaultLengthBars, 0);
+  });
+
   for (final remount in [false, true]) {
     testWidgets(
       'late Use default refusal belongs only to its page (remount $remount)',

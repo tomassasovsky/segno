@@ -83,6 +83,7 @@ class RecordOptionsCubit extends Cubit<RecordOptionsViewState> {
           phase: outcome.isOk
               ? LengthEditPhase.applied
               : LengthEditPhase.refused,
+          capacityFailure: outcome.engineResult == EngineResult.capacity,
         ),
       ),
     );

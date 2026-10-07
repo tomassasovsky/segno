@@ -778,7 +778,7 @@
             }
         }
     },
-    "maxLoopDefault30s": "Default (30 s)",
+    "maxLoopDefault1m": "Default (1 min)",
     "maxLoopMinutes": "{minutes} min",
     "@maxLoopMinutes": {
         "placeholders": {
@@ -3303,7 +3303,16 @@
     "loopLengthNoteAuto": "Press the pedal again to set the length.",
     "loopLengthNotApplied": "Not applied. Current length: {current}. Try another bar count.",
     "@loopLengthNotApplied": {
-        "description": "Shown beside an editable bar count after a length request is refused.",
+        "description": "Shown beside an editable bar count after a length request is refused for a reason other than capacity.",
+        "placeholders": {
+            "current": {
+                "type": "String"
+            }
+        }
+    },
+    "loopLengthCapacityNotApplied": "Not applied: this preset exceeds the maximum loop length. Increase the limit in Audio setup or choose fewer bars. Current length: {current}.",
+    "@loopLengthCapacityNotApplied": {
+        "description": "Shown beside an editable bar count when the engine refuses it because the preset exceeds the configured maximum loop duration.",
         "placeholders": {
             "current": {
                 "type": "String"

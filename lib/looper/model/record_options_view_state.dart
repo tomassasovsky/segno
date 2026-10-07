@@ -11,14 +11,16 @@ final class LengthEditAttempt extends Equatable {
     required this.channel,
     required this.bars,
     required this.phase,
+    this.capacityFailure = false,
   });
   final int id;
   final int? channel;
   final int? bars;
   final LengthEditPhase phase;
+  final bool capacityFailure;
 
   @override
-  List<Object?> get props => [id, channel, bars, phase];
+  List<Object?> get props => [id, channel, bars, phase, capacityFailure];
 }
 
 /// Accepted owner projection plus presentation-only edit acknowledgement.

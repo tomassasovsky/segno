@@ -249,7 +249,7 @@ class _InputChoiceCard extends StatelessWidget {
                     ),
                   ),
                   Positioned(
-                    left: 278,
+                    right: 0,
                     top: 10.5,
                     child: RoutingCheck(selected: selected),
                   ),
