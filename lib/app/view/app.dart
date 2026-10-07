@@ -20,6 +20,8 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/app/view/control_settings_notices.dart';
 import 'package:segno/app/view/encoder_navigation.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
+import 'package:segno/appliance/idle_dim_cubit.dart';
+import 'package:segno/appliance/idle_dim_host.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/appliance/power_off/power_off_goodbye.dart';
@@ -80,6 +82,7 @@ class App extends StatefulWidget {
     ),
     this.wifi = const WifiRepository(client: UnsupportedWifiClient()),
     this.brightness = const UnsupportedBrightnessClient(),
+    this.displayOutputs = const UnknownDisplayOutputs(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     this.removableVolumes = const InternalOnlyVolumes(),
     this.powerKeySource,
@@ -95,8 +98,12 @@ class App extends StatefulWidget {
   /// Appliance WiFi repository (Control Center). Defaults unsupported.
   final WifiRepository wifi;
 
-  /// Appliance brightness client (Control Center slider). Defaults unsupported.
+  /// Appliance brightness client (per-panel DDC/CI). Defaults unsupported.
   final BrightnessClient brightness;
+
+  /// Which connector each window is shown on and whether a panel is plugged
+  /// in. Defaults unknown (a desktop).
+  final DisplayOutputs displayOutputs;
 
   /// Reads what the appliance knows about itself — the disk, the box, and
   /// where it can export to. Defaults to the client that answers "unknown",
@@ -464,6 +471,7 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.updates),
         RepositoryProvider.value(value: widget.wifi),
         RepositoryProvider.value(value: widget.brightness),
+        RepositoryProvider.value(value: widget.displayOutputs),
         RepositoryProvider.value(value: widget.consoleFacts),
         RepositoryProvider<RemovableVolumes>.value(
           value: widget.removableVolumes,
@@ -487,14 +495,29 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
-          // App-wide brightness: software dim in [MaterialApp.builder] + DDC
-          // when the host helper supports it (LG TVs often do not).
+          // Each panel's brightness: DDC/CI on a panel that answers it (LG
+          // TVs often do not), else a software dim over its window — the
+          // main window in [MaterialApp.builder], the Track display window
+          // through its readout.
           BlocProvider(
             lazy: false,
             create: (context) {
               final cubit = DisplayBrightnessCubit(
                 settings: context.read<SettingsRepository>(),
                 client: context.read<BrightnessClient>(),
+                outputs: context.read<DisplayOutputs>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          // Dims both panels after the chosen idle period; IdleDimHost in
+          // [MaterialApp.builder] feeds it and carries the dim to the panels.
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = IdleDimCubit(
+                settings: context.read<SettingsRepository>(),
               );
               unawaited(cubit.load());
               return cubit;
@@ -778,6 +801,10 @@ class _AppViewState extends State<_AppView> {
     _recoverySub = context.read<LooperRepository>().recoveryRefusals.listen(
       _showRecoveryRefusal,
     );
+    // A touch on the Track display wakes an idle-dimmed console.
+    widget.waveformWindow.onWindowActivity = () {
+      if (mounted) context.read<IdleDimCubit>().activity();
+    };
     _display = WaveformDisplayController(
       repository: context.read<LooperRepository>(),
       window: widget.waveformWindow,
@@ -886,6 +913,9 @@ class _AppViewState extends State<_AppView> {
           context.read<AudioSetupCubit>().state.deviceConnectivity ==
           DeviceConnectivity.lost,
       goodbye: readoutGoodbyeOf(context.read<PowerOffCubit>().state.phase),
+      brightness: context.read<DisplayBrightnessCubit>().state.softwareOf(
+        DisplayRole.track,
+      ),
     );
   }
 
@@ -907,6 +937,7 @@ class _AppViewState extends State<_AppView> {
 
   @override
   void dispose() {
+    widget.waveformWindow.onWindowActivity = null;
     unawaited(_displayFailures?.cancel());
     unawaited(
       _display.close().catchError((Object error, StackTrace stack) {
@@ -1194,12 +1225,14 @@ class _AppViewState extends State<_AppView> {
             child: AppTextDefaults(child: child ?? const SizedBox.shrink()),
           ),
         );
-        return BlocBuilder<DisplayBrightnessCubit, double>(
-          buildWhen: (previous, current) => previous != current,
+        return BlocBuilder<DisplayBrightnessCubit, DisplayBrightnessState>(
+          buildWhen: (previous, current) =>
+              previous.softwareOf(DisplayRole.main) !=
+              current.softwareOf(DisplayRole.main),
           builder: (context, brightness) {
             final dimmed = SoftwareBrightness(
-              brightness: brightness,
-              child: typed,
+              brightness: brightness.softwareOf(DisplayRole.main),
+              child: IdleDimHost(child: typed),
             );
             return BlocBuilder<PowerOffCubit, PowerOffState>(
               buildWhen: (previous, current) => previous.phase != current.phase,
@@ -1258,6 +1291,12 @@ class _AppViewState extends State<_AppView> {
           listener: (_, _) => _updateDisplayContext(),
         ),
         BlocListener<PowerOffCubit, PowerOffState>(
+          listener: (_, _) => _updateDisplayContext(),
+        ),
+        BlocListener<DisplayBrightnessCubit, DisplayBrightnessState>(
+          listenWhen: (previous, current) =>
+              previous.softwareOf(DisplayRole.track) !=
+              current.softwareOf(DisplayRole.track),
           listener: (_, _) => _updateDisplayContext(),
         ),
         BlocListener<WaveformWindowCubit, WaveformWindowState>(

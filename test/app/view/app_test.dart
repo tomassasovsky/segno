@@ -127,6 +127,9 @@ class _RecordingWindowService implements WaveformWindowService {
   void Function()? onWindowReady;
 
   @override
+  void Function()? onWindowActivity;
+
+  @override
   Future<void> pushReadout(PerformanceReadout readout) async {
     readouts.add(readout);
     if (failNextReadoutPushes > 0) {
@@ -3772,7 +3775,7 @@ void main() {
       // (Tracks is the only mode now, so the window follows this toggle).
       await tester.tap(find.byKey(const Key('settings_tile_displays')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('system_waveform_switch')));
+      await tester.tap(find.byKey(const Key('displays_waveform_switch')));
       await tester.pumpAndSettle();
 
       expect(windowService.isOpen, isFalse);

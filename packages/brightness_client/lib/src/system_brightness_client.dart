@@ -16,17 +16,17 @@ class SystemBrightnessClient implements BrightnessClient {
   bool get _helperPresent => File(helperPath).existsSync();
 
   @override
-  Future<bool> isSupported() async {
+  Future<bool> isSupported(String connector) async {
     if (!_helperPresent) return false;
-    final json = await _runJson(['supported']);
+    final json = await _runJson(['supported', '--connector', connector]);
     return json is Map && json['supported'] == true;
   }
 
   @override
-  Future<void> set(double value) async {
+  Future<void> set(String connector, double value) async {
     if (!_helperPresent) return;
     final pct = (value.clamp(0.0, 1.0) * 100).round();
-    await _run(['set', '$pct']);
+    await _run(['set', '$pct', '--connector', connector]);
   }
 
   Future<Object?> _runJson(List<String> args) async {
