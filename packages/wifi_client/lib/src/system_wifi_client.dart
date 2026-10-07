@@ -56,26 +56,48 @@ class SystemWifiClient implements WifiClient {
     return _run(['radio', if (enabled) 'on' else 'off']);
   }
 
+  @override
+  Future<void> setAutoConnect(String ssid, {required bool enabled}) =>
+      _run(['autoconnect', ssid, if (enabled) 'on' else 'off']);
+
+  /// The key goes to the helper on stdin: an argument would be readable by
+  /// every process on the console through `/proc/<pid>/cmdline`.
+  @override
+  Future<void> changePassword(String ssid, String psk) =>
+      _run(['set-password', ssid], stdin: '$psk\n');
+
+  @override
+  Future<bool> checkConnectivity() async {
+    final json = await _runJson(const ['connectivity']);
+    return json is Map<String, dynamic> && json['internet'] == true;
+  }
+
   Future<Object?> _runJson(List<String> args) async {
-    final result = await _run(args);
-    final text = result.stdout.toString().trim();
+    final stdout = await _run(args);
+    final text = stdout.trim();
     if (text.isEmpty) return null;
     return jsonDecode(text);
   }
 
-  Future<ProcessResult> _run(List<String> args) async {
-    final result = await Process.run(helperPath, args);
-    if (result.exitCode != 0) {
+  /// Runs the helper with [args], writing [stdin] to it when given, and
+  /// returns its stdout; a non-zero exit throws with its stderr.
+  Future<String> _run(List<String> args, {String? stdin}) async {
+    final process = await Process.start(helperPath, args);
+    final stdout = process.stdout.transform(utf8.decoder).join();
+    final stderr = process.stderr.transform(utf8.decoder).join();
+    if (stdin != null) process.stdin.write(stdin);
+    await process.stdin.close();
+    final exitCode = await process.exitCode;
+    final err = (await stderr).trim();
+    if (exitCode != 0) {
       throw ProcessException(
         helperPath,
         args,
-        '${result.stderr}'.trim().isEmpty
-            ? 'wifi helper failed'
-            : '${result.stderr}'.trim(),
-        result.exitCode,
+        err.isEmpty ? 'wifi helper failed' : err,
+        exitCode,
       );
     }
-    return result;
+    return stdout;
   }
 }
 

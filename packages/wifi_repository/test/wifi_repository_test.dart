@@ -3,6 +3,10 @@ import 'package:wifi_repository/wifi_repository.dart';
 
 class _FakeClient implements WifiClient {
   bool enabled = false;
+  final autoConnect = <String, bool>{};
+  final passwords = <String, String>{};
+  bool internet = true;
+  int connectivityChecks = 0;
 
   @override
   bool get isSupported => true;
@@ -12,6 +16,7 @@ class _FakeClient implements WifiClient {
     supported: true,
     enabled: enabled,
     connected: false,
+    autoConnect: Map.of(autoConnect),
   );
 
   @override
@@ -30,6 +35,22 @@ class _FakeClient implements WifiClient {
   Future<void> setEnabled({required bool enabled}) async {
     this.enabled = enabled;
   }
+
+  @override
+  Future<void> setAutoConnect(String ssid, {required bool enabled}) async {
+    autoConnect[ssid] = enabled;
+  }
+
+  @override
+  Future<void> changePassword(String ssid, String psk) async {
+    passwords[ssid] = psk;
+  }
+
+  @override
+  Future<bool> checkConnectivity() async {
+    connectivityChecks++;
+    return internet;
+  }
 }
 
 void main() {
@@ -40,5 +61,27 @@ void main() {
     expect(client.enabled, isTrue);
     expect((await repo.status()).enabled, isTrue);
     expect((await repo.status()).connected, isFalse);
+  });
+
+  test('setAutoConnect delegates to client', () async {
+    final client = _FakeClient();
+    final repo = WifiRepository(client: client);
+    await repo.setAutoConnect('The Studio', enabled: false);
+    expect((await repo.status()).autoConnect, {'The Studio': false});
+  });
+
+  test('changePassword delegates to client', () async {
+    final client = _FakeClient();
+    await WifiRepository(
+      client: client,
+    ).changePassword('The Studio', 'n3w-s3cret');
+    expect(client.passwords, {'The Studio': 'n3w-s3cret'});
+  });
+
+  test('checkConnectivity delegates to client, once per call', () async {
+    final client = _FakeClient()..internet = false;
+    final repo = WifiRepository(client: client);
+    expect(await repo.checkConnectivity(), isFalse);
+    expect(client.connectivityChecks, 1);
   });
 }

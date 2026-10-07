@@ -115,6 +115,44 @@ class _FakeWifiClient implements WifiClient {
       signal: statusValue.signal,
     );
   }
+
+  final autoConnectCalls = <(String, bool)>[];
+  final passwordChanges = <(String, String)>[];
+
+  /// What the internet check answers.
+  bool internet = true;
+  int connectivityChecks = 0;
+
+  @override
+  Future<void> setAutoConnect(String ssid, {required bool enabled}) async {
+    autoConnectCalls.add((ssid, enabled));
+    statusValue = _withAutoConnect({
+      ...statusValue.autoConnect,
+      ssid: enabled,
+    });
+  }
+
+  @override
+  Future<void> changePassword(String ssid, String psk) async {
+    passwordChanges.add((ssid, psk));
+  }
+
+  @override
+  Future<bool> checkConnectivity() async {
+    connectivityChecks++;
+    return internet;
+  }
+
+  WifiStatus _withAutoConnect(Map<String, bool> autoConnect) => WifiStatus(
+    supported: statusValue.supported,
+    enabled: statusValue.enabled,
+    connected: statusValue.connected,
+    ssid: statusValue.ssid,
+    ip: statusValue.ip,
+    signal: statusValue.signal,
+    autoConnect: autoConnect,
+    lastSsid: statusValue.lastSsid,
+  );
 }
 
 WifiRepository _repo(_FakeWifiClient client) => WifiRepository(client: client);
@@ -235,11 +273,11 @@ void main() {
     );
 
     blocTest<WifiCubit, WifiState>(
-      'toggleEnabled flips radio',
+      'setEnabled switches the radio',
       build: () => WifiCubit(repository: _repo(_FakeWifiClient())),
       act: (cubit) async {
         await cubit.load();
-        await cubit.toggleEnabled();
+        await cubit.setEnabled(enabled: false);
       },
       verify: (cubit) {
         expect(cubit.state.status.enabled, isFalse);
@@ -663,5 +701,277 @@ void main() {
         await expectLater(pending, completes);
       },
     );
+  });
+
+  group('connection lost', () {
+    const studio = WifiStatus(
+      supported: true,
+      enabled: true,
+      connected: false,
+      autoConnect: {'The Studio': true},
+      lastSsid: 'The Studio',
+    );
+
+    test('the saved network that was up, radio on, nothing joined', () async {
+      final cubit = WifiCubit(
+        repository: _repo(_FakeWifiClient(status: studio)),
+      );
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      expect(cubit.state.lostSsid, 'The Studio');
+    });
+
+    test('not while the radio is off', () async {
+      final cubit = WifiCubit(
+        repository: _repo(
+          _FakeWifiClient(
+            status: const WifiStatus(
+              supported: true,
+              enabled: false,
+              connected: false,
+              autoConnect: {'The Studio': true},
+              lastSsid: 'The Studio',
+            ),
+          ),
+        ),
+      );
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      expect(cubit.state.lostSsid, isNull);
+    });
+
+    test('not for a network that is no longer saved', () async {
+      final cubit = WifiCubit(
+        repository: _repo(
+          _FakeWifiClient(
+            status: const WifiStatus(
+              supported: true,
+              enabled: true,
+              connected: false,
+              lastSsid: 'The Studio',
+            ),
+          ),
+        ),
+      );
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      expect(cubit.state.lostSsid, isNull);
+    });
+
+    test('not after Disconnect, and again once a later link drops', () async {
+      final client = _FakeWifiClient(
+        status: const WifiStatus(
+          supported: true,
+          enabled: true,
+          connected: true,
+          ssid: 'The Studio',
+          autoConnect: {'The Studio': true},
+          lastSsid: 'The Studio',
+        ),
+      );
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      await cubit.disconnect();
+      client.statusValue = studio;
+      await cubit.refresh();
+      expect(cubit.state.lostSsid, isNull);
+
+      // Back on it, then dropped without being asked: lost.
+      await cubit.connect('The Studio');
+      expect(cubit.state.status.connected, isTrue);
+      client.statusValue = studio;
+      await cubit.refresh();
+      expect(cubit.state.lostSsid, 'The Studio');
+    });
+
+    test('not while the radio switch brings it back on its own', () async {
+      final client = _FakeWifiClient(
+        status: const WifiStatus(
+          supported: true,
+          enabled: false,
+          connected: false,
+          autoConnect: {'The Studio': true},
+          lastSsid: 'The Studio',
+        ),
+      );
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      await cubit.setEnabled(enabled: true);
+      expect(cubit.state.status.enabled, isTrue);
+      expect(cubit.state.lostSsid, isNull);
+    });
+  });
+
+  group('connectivity', () {
+    const connected = WifiStatus(
+      supported: true,
+      enabled: true,
+      connected: true,
+      ssid: 'The Studio',
+    );
+
+    test('no answer while connected reads "No internet"', () async {
+      final client = _FakeWifiClient(status: connected)..internet = false;
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      expect(cubit.state.noInternet, isFalse);
+      await cubit.checkConnectivity();
+      expect(client.connectivityChecks, 1);
+      expect(cubit.state.noInternet, isTrue);
+    });
+
+    test('an answer reads connected', () async {
+      final client = _FakeWifiClient(status: connected);
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      await cubit.checkConnectivity();
+      expect(cubit.state.noInternet, isFalse);
+    });
+
+    test('never more often than every 30 s for one connection', () async {
+      var now = DateTime(2026, 10, 7, 12);
+      final client = _FakeWifiClient(status: connected);
+      final cubit = WifiCubit(repository: _repo(client), clock: () => now);
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      await cubit.checkConnectivity();
+      now = now.add(const Duration(seconds: 10));
+      await cubit.checkConnectivity();
+      await cubit.refresh();
+      now = now.add(const Duration(seconds: 19));
+      await cubit.checkConnectivity();
+      expect(client.connectivityChecks, 1);
+
+      now = now.add(const Duration(seconds: 1));
+      await cubit.checkConnectivity();
+      expect(client.connectivityChecks, 2);
+    });
+
+    test('a new connection is checked at once', () async {
+      final now = DateTime(2026, 10, 7, 12);
+      final client = _FakeWifiClient(status: connected);
+      final cubit = WifiCubit(repository: _repo(client), clock: () => now);
+      addTearDown(cubit.close);
+      await cubit.load();
+      await cubit.checkConnectivity();
+
+      await cubit.connect('Rehearsal', psk: 'goodpass');
+      await cubit.checkConnectivity();
+      expect(client.connectivityChecks, 2);
+    });
+
+    test('nothing is checked while not connected', () async {
+      final client = _FakeWifiClient();
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      await cubit.checkConnectivity();
+      expect(client.connectivityChecks, 0);
+    });
+
+    test('nothing is checked once the page has closed the cubit', () async {
+      final client = _FakeWifiClient(status: connected);
+      final cubit = WifiCubit(repository: _repo(client));
+      await cubit.load();
+      await cubit.close();
+
+      await cubit.checkConnectivity();
+      await cubit.refresh();
+      expect(client.connectivityChecks, 0);
+    });
+
+    test('the answer belongs to the connection it was made over', () async {
+      final client = _FakeWifiClient(status: connected)..internet = false;
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+      await cubit.checkConnectivity();
+      expect(cubit.state.noInternet, isTrue);
+
+      client.internet = true;
+      await cubit.connect('Rehearsal', psk: 'goodpass');
+      // Not checked yet: no stale "No internet" carried over.
+      expect(cubit.state.noInternet, isFalse);
+    });
+  });
+
+  group('saved network controls', () {
+    test('Connect automatically goes to the helper and back', () async {
+      final client = _FakeWifiClient(
+        status: const WifiStatus(
+          supported: true,
+          enabled: true,
+          connected: false,
+          autoConnect: {'The Studio': true},
+        ),
+      );
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      await cubit.setAutoConnect('The Studio', enabled: false);
+      expect(client.autoConnectCalls, [('The Studio', false)]);
+      expect(cubit.state.status.autoConnect, {'The Studio': false});
+      expect(cubit.state.busy, isFalse);
+    });
+
+    test(
+      'a new password for a network in range is tested by joining',
+      () async {
+        final client = _FakeWifiClient(
+          networks: const [
+            WifiNetwork(
+              ssid: 'The Studio',
+              signal: -40,
+              secured: true,
+              saved: true,
+            ),
+          ],
+        );
+        final cubit = WifiCubit(repository: _repo(client));
+        addTearDown(cubit.close);
+        await cubit.load();
+        await cubit.scan();
+
+        await cubit.changePassword('The Studio', 'n3w-s3cret');
+        expect(client.connects, [('The Studio', 'n3w-s3cret')]);
+        expect(client.passwordChanges, isEmpty);
+      },
+    );
+
+    test('a new password for a network out of range is stored', () async {
+      final client = _FakeWifiClient(
+        networks: const [
+          WifiNetwork(
+            ssid: 'The Studio',
+            signal: 0,
+            secured: true,
+            saved: true,
+            inRange: false,
+          ),
+        ],
+      );
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+      await cubit.scan();
+
+      await cubit.changePassword('The Studio', 'n3w-s3cret');
+      expect(client.passwordChanges, [('The Studio', 'n3w-s3cret')]);
+      expect(client.connects, isEmpty);
+    });
   });
 }
