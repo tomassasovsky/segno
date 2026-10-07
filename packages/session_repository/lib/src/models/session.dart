@@ -756,6 +756,10 @@ class Session {
     this.pedalBindings = '',
     this.inputSetup = const SessionInputSetup(),
     this.outputSetup = const SessionOutputSetup(),
+    this.defaultFollowTempo = true,
+    this.trackFollowTempoOverrides = const {},
+    this.defaultPitchMode = PitchMode.unchanged,
+    this.trackPitchModeOverrides = const {},
   });
 
   /// Projects a [Session] from a decoded JSON map.
@@ -855,12 +859,27 @@ class Session {
       outputSetup: SessionOutputSetup.fromJson(
         json['outputSetup'] as Map<String, dynamic>?,
       ),
+      defaultFollowTempo: json['defaultFollowTempo'] as bool,
+      trackFollowTempoOverrides: _readTrackOverrides(
+        json['trackFollowTempoOverrides'] as Map<String, dynamic>,
+        (value) => value! as bool,
+      ),
+      defaultPitchMode: _readEnum(json['defaultPitchMode'], PitchMode.values),
+      trackPitchModeOverrides: _readTrackOverrides(
+        json['trackPitchModeOverrides'] as Map<String, dynamic>,
+        (value) => _readEnum(value, PitchMode.values),
+      ),
     );
   }
 
   /// The current manifest schema stores per-track settings (including each
-  /// track's playback direction since 13) and all FX stages.
-  static const int formatVersion = 13;
+  /// track's playback direction since 13, and the Audio & tempo settings
+  /// since 14) and all FX stages.
+  ///
+  /// 14 is the next number on this base; it lands as 16, after
+  /// Multiply/Divide (14) and the backing player (15), with its conversion
+  /// step keyed by 15 (#1179 Part 4b).
+  static const int formatVersion = 14;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -1030,6 +1049,19 @@ class Session {
   /// recorded. Omitted from the manifest when it is the default setup.
   final SessionOutputSetup outputSetup;
 
+  /// The Follow tempo default every track inherits (#1179, schema 14).
+  final bool defaultFollowTempo;
+
+  /// Explicit Follow tempo choices; missing tracks follow
+  /// [defaultFollowTempo].
+  final Map<int, bool> trackFollowTempoOverrides;
+
+  /// The Pitch default every following track inherits (#1179, schema 14).
+  final PitchMode defaultPitchMode;
+
+  /// Explicit Pitch choices; missing tracks follow [defaultPitchMode].
+  final Map<int, PitchMode> trackPitchModeOverrides;
+
   /// Explicit source choices retained for inactive lanes and empty tracks.
   final Map<(int, int), int> laneInputs;
 
@@ -1107,6 +1139,16 @@ class Session {
     'pedalBindings': pedalBindings,
     if (!inputSetup.isEmpty) 'inputSetup': inputSetup.toJson(),
     if (!outputSetup.isEmpty) 'outputSetup': outputSetup.toJson(),
+    'defaultFollowTempo': defaultFollowTempo,
+    'trackFollowTempoOverrides': {
+      for (final entry in trackFollowTempoOverrides.entries)
+        '${entry.key}': entry.value,
+    },
+    'defaultPitchMode': defaultPitchMode.name,
+    'trackPitchModeOverrides': {
+      for (final entry in trackPitchModeOverrides.entries)
+        '${entry.key}': entry.value.name,
+    },
   };
 
   @override
@@ -1169,7 +1211,14 @@ class Session {
           _laneMapEquals(laneOutputs, other.laneOutputs) &&
           _mapEquals(laneCounts, other.laneCounts) &&
           inputSetup == other.inputSetup &&
-          outputSetup == other.outputSetup;
+          outputSetup == other.outputSetup &&
+          defaultFollowTempo == other.defaultFollowTempo &&
+          _mapEquals(
+            trackFollowTempoOverrides,
+            other.trackFollowTempoOverrides,
+          ) &&
+          defaultPitchMode == other.defaultPitchMode &&
+          _mapEquals(trackPitchModeOverrides, other.trackPitchModeOverrides);
 
   // hashAll, not hash: the field count passed v6's addition of
   // [pedalBindings], and `Object.hash` caps at 20 positional arguments.
@@ -1219,6 +1268,10 @@ class Session {
     _mapHash(laneCounts),
     inputSetup,
     outputSetup,
+    defaultFollowTempo,
+    _mapHash(trackFollowTempoOverrides),
+    defaultPitchMode,
+    _mapHash(trackPitchModeOverrides),
   ]);
 }
 

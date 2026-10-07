@@ -694,6 +694,55 @@ void main() {
       });
     });
 
+    group('saved Audio & tempo initialization (#1179)', () {
+      test('nothing stored stages Follow on and Pitch unchanged before audio '
+          'opens', () async {
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+          mixSettings: testMixSettings(repository, settings: settings),
+        );
+        expect(result.started, isTrue);
+        expect(repository.defaultFollowTempo, isTrue);
+        expect(repository.trackFollowTempoOverrides, isEmpty);
+        expect(repository.defaultPitchMode, PitchMode.unchanged);
+        expect(repository.followTempoSettingsSettled, isTrue);
+        // Absent defaults never materialize stored keys.
+        expect(
+          store.values.containsKey('looper.default_follow_tempo'),
+          isFalse,
+        );
+      });
+
+      test('stored choices are staged and replayed exactly', () async {
+        await settings.restoreFollowTempoCheckpoint(
+          channel: null,
+          follow: false,
+        );
+        await settings.restoreFollowTempoCheckpoint(channel: 3, follow: true);
+        await settings.restorePitchFollowsSpeedCheckpoint(
+          channel: null,
+          followsSpeed: true,
+        );
+        await settings.restorePitchFollowsSpeedCheckpoint(
+          channel: 5,
+          followsSpeed: false,
+        );
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+          mixSettings: testMixSettings(repository, settings: settings),
+        );
+        expect(result.started, isTrue);
+        expect(repository.defaultFollowTempo, isFalse);
+        expect(repository.trackFollowTempoOverrides, {3: true});
+        expect(repository.defaultPitchMode, PitchMode.followsSpeed);
+        expect(repository.trackPitchModeOverrides, {5: PitchMode.unchanged});
+        expect(repository.followTempoSettingsSettled, isTrue);
+        expect(repository.pitchModeSettingsSettled, isTrue);
+      });
+    });
+
     group('saved playback initialization', () {
       for (final hasAudioConfig in [false, true]) {
         for (final defaultOnce in [false, true]) {

@@ -1,15 +1,18 @@
 import 'dart:async';
 
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/looper/application/audio_tempo_families.dart';
 import 'package:segno/looper/application/settings_families.dart';
 import 'package:segno/looper/application/settings_owner.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/playback_options.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-/// Presents the Decay and Loop/Once owners in one [PlaybackOptions]. The
-/// transactions are the owners'; this only builds them and projects them.
+/// Presents the Decay, Loop/Once, Follow tempo and Pitch owners in one
+/// [PlaybackOptions]. The transactions are the owners'; this only builds
+/// them and projects them.
 class PlaybackSettings {
   /// Builds both owners over [repository] and [settings].
   PlaybackSettings({
@@ -22,6 +25,14 @@ class PlaybackSettings {
        oneShotOwner = SettingsOwner(
          repository: repository,
          family: OneShotFamily(repository: repository, settings: settings),
+       ),
+       followTempoOwner = SettingsOwner(
+         repository: repository,
+         family: FollowTempoFamily(repository: repository, settings: settings),
+       ),
+       pitchModeOwner = SettingsOwner(
+         repository: repository,
+         family: PitchModeFamily(repository: repository, settings: settings),
        ) {
     _subscriptions = [
       repository.looperState.listen((_) => _sync()),
@@ -35,8 +46,19 @@ class PlaybackSettings {
   /// The Loop/Once transaction.
   final SettingsOwner<OneShotSnapshot, bool?> oneShotOwner;
 
+  /// The Follow tempo transaction (#1179 Audio & tempo).
+  final SettingsOwner<InheritSnapshot<bool>, bool?> followTempoOwner;
+
+  /// The Pitch transaction (#1179 Audio & tempo).
+  final SettingsOwner<InheritSnapshot<PitchMode>, bool?> pitchModeOwner;
+
   /// The owners in the registry's fixed order.
-  List<SettingsOwner<Object, Object?>> get owners => [decayOwner, oneShotOwner];
+  List<SettingsOwner<Object, Object?>> get owners => [
+    decayOwner,
+    oneShotOwner,
+    followTempoOwner,
+    pitchModeOwner,
+  ];
 
   /// ControlCubit's Decay port over [decayOwner].
   late final decayControl = DecayOwnerControl(decayOwner);
@@ -72,6 +94,8 @@ class PlaybackSettings {
       defaultOneShot: once.defaultOneShot,
       trackOneShotOverrides: once.trackOverrides,
       oneShotReady: oneShotOwner.ready,
+      followTempo: followTempoOwner.value,
+      pitchMode: pitchModeOwner.value,
     );
     if (next == _state) return;
     _state = next;

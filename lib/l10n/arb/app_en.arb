@@ -3220,10 +3220,6 @@
                 }
         }
     },
-    "loopSummaryAudioTempo": "Recorded speed · Same pitch",
-    "@loopSummaryAudioTempo": {
-        "description": "Hub summary of the audio and tempo readout."
-    },
     "loopTimingImmediately": "Immediately",
     "@loopTimingImmediately": {
         "description": "Record timing choice."
@@ -3576,9 +3572,33 @@
     "@loopAudioNotePitchUnchanged": {
         "description": "Audio note."
     },
-    "loopAudioUnavailable": "Tempo following is not available yet. Every track keeps its recorded speed.",
-    "@loopAudioUnavailable": {
-        "description": "Readout note on the Audio & tempo page."
+    "loopAudioNoteOn": "Recorded audio follows the song tempo.",
+    "@loopAudioNoteOn": {
+        "description": "Note under Follow tempo when it is on."
+    },
+    "loopAudioNotePitchKept": "Changes speed without changing the notes.",
+    "@loopAudioNotePitchKept": {
+        "description": "Note under Pitch when it is Unchanged and the track follows the tempo."
+    },
+    "loopAudioNotePitchFollows": "Faster raises the pitch. Slower lowers it.",
+    "@loopAudioNotePitchFollows": {
+        "description": "Note under Pitch when it follows the speed."
+    },
+    "loopSummaryFollowOn": "Follow tempo",
+    "@loopSummaryFollowOn": {
+        "description": "Hub summary when tracks follow the song tempo."
+    },
+    "loopSummaryFollowOff": "Recorded speed",
+    "@loopSummaryFollowOff": {
+        "description": "Hub summary when tracks keep their recorded speed."
+    },
+    "loopSummaryPitchSame": "Same pitch",
+    "@loopSummaryPitchSame": {
+        "description": "Hub summary when the pitch is unchanged."
+    },
+    "loopSummaryPitchFollows": "Pitch follows speed",
+    "@loopSummaryPitchFollows": {
+        "description": "Hub summary when the pitch follows the speed."
     },
     "loopSettingsRefused": "Could not apply this change. Try a shorter length or stop recording, then retry.",
     "@loopSettingsRefused": {
@@ -3808,6 +3828,30 @@
     "oneShotSettingsRecoveryBody": "Retry to recover the playback setting.",
     "@oneShotSettingsRecoveryBody": {
         "description": "Explicit retry for a failed playback preference."
+    },
+    "followTempoSettingsRefusedTitle": "Follow tempo change was not applied",
+    "@followTempoSettingsRefusedTitle": {
+        "description": "Follow tempo preference could not be confirmed."
+    },
+    "followTempoSettingsRecoveryTitle": "Follow tempo settings need recovery",
+    "@followTempoSettingsRecoveryTitle": {
+        "description": "Persistent recovery title for a Follow tempo preference."
+    },
+    "followTempoSettingsRecoveryBody": "Retry to recover the Follow tempo setting.",
+    "@followTempoSettingsRecoveryBody": {
+        "description": "Explicit retry for a failed Follow tempo preference."
+    },
+    "pitchModeSettingsRefusedTitle": "Pitch change was not applied",
+    "@pitchModeSettingsRefusedTitle": {
+        "description": "Pitch preference could not be confirmed."
+    },
+    "pitchModeSettingsRecoveryTitle": "Pitch settings need recovery",
+    "@pitchModeSettingsRecoveryTitle": {
+        "description": "Persistent recovery title for a Pitch preference."
+    },
+    "pitchModeSettingsRecoveryBody": "Retry to recover the Pitch setting.",
+    "@pitchModeSettingsRecoveryBody": {
+        "description": "Explicit retry for a failed Pitch preference."
     },
     "decaySettingsRefusedTitle": "Decay change was not applied",
     "@decaySettingsRefusedTitle": {

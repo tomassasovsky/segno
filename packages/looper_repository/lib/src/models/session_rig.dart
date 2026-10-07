@@ -9,6 +9,7 @@ import 'package:segno_engine/segno_engine.dart'
         ClickMode,
         GridDivision,
         LooperMode,
+        PitchMode,
         RecordTiming,
         TempoSource,
         TrackHistory;
@@ -203,7 +204,23 @@ class SessionRig {
     this.trackLevels = const {},
     this.trackPans = const {},
     this.outputSetup = const OutputSetup(),
+    this.defaultFollowTempo = true,
+    this.trackFollowTempoOverrides = const {},
+    this.defaultPitchMode = PitchMode.unchanged,
+    this.trackPitchModeOverrides = const {},
   });
+
+  /// The Follow tempo default every track inherits (#1179).
+  final bool defaultFollowTempo;
+
+  /// Explicit Follow tempo choices; missing tracks inherit.
+  final Map<int, bool> trackFollowTempoOverrides;
+
+  /// The Pitch default every following track inherits (#1179).
+  final PitchMode defaultPitchMode;
+
+  /// Explicit Pitch choices; missing tracks inherit.
+  final Map<int, PitchMode> trackPitchModeOverrides;
 
   /// Whole-track gain intent, including tracks without recorded audio.
   final Map<int, double> trackLevels;
