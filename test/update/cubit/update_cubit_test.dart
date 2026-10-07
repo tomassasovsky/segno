@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -22,7 +24,10 @@ void main() {
   late UpdateRepository updates;
   late SettingsRepository settings;
 
-  setUpAll(() => registerFallbackValue(_v2));
+  setUpAll(() {
+    registerFallbackValue(_v2);
+    registerFallbackValue(Version.none);
+  });
 
   setUp(() {
     updates = _MockUpdateRepository();
@@ -46,6 +51,18 @@ void main() {
       () => settings.saveDismissedUpdateVersions(any()),
     ).thenAnswer((_) async {});
     when(() => updates.setChannel(any())).thenAnswer((_) async {});
+    when(
+      () => updates.recover(),
+    ).thenAnswer((_) async => const UpdateRecovery());
+    when(() => updates.clearInterrupted()).thenAnswer((_) async {});
+    when(() => settings.loadUpdateRollback()).thenAnswer((_) async => null);
+    when(
+      () => settings.saveUpdateRollback(
+        attempted: any(named: 'attempted'),
+        restored: any(named: 'restored'),
+      ),
+    ).thenAnswer((_) async {});
+    when(() => settings.clearUpdateRollback()).thenAnswer((_) async {});
   });
 
   UpdateCubit build() => UpdateCubit(updates: updates, settings: settings);
@@ -219,6 +236,369 @@ void main() {
         ),
         isA<UpdateState>().having((s) => s.phase, 'phase', UpdatePhase.error),
       ],
+    );
+  });
+
+  group('cancelDownload', () {
+    test('kills the helper, forgets the attempt its kill left, and returns '
+        'to the offer with nothing staged', () async {
+      var cancelled = false;
+      final helper = StreamController<double>(
+        onCancel: () => cancelled = true,
+      );
+      when(
+        () => updates.downloadAndStage(_v2),
+      ).thenAnswer((_) => helper.stream);
+      final cubit = build()..emit(UpdateState(available: _v2));
+
+      final download = cubit.startDownload();
+      helper.add(0.2);
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.phase, UpdatePhase.downloading);
+      expect(cubit.state.progress, 0.2);
+
+      await cubit.cancelDownload();
+      // The download's own future ends with the cancel rather than hanging.
+      await download;
+
+      expect(cancelled, isTrue);
+      verify(() => updates.clearInterrupted()).called(1);
+      expect(cubit.state.phase, UpdatePhase.available);
+      expect(cubit.state.available, _v2);
+      expect(cubit.state.progress, 0);
+      await cubit.close();
+    });
+
+    test('is refused once RAUC is writing the slot', () async {
+      var cancelled = false;
+      final helper = StreamController<double>(
+        onCancel: () => cancelled = true,
+      );
+      when(
+        () => updates.downloadAndStage(_v2),
+      ).thenAnswer((_) => helper.stream);
+      final cubit = build()..emit(UpdateState(available: _v2));
+      unawaited(cubit.startDownload());
+      helper.add(0.6);
+      await Future<void>.delayed(Duration.zero);
+
+      await cubit.cancelDownload();
+
+      expect(cancelled, isFalse);
+      expect(cubit.state.phase, UpdatePhase.downloading);
+      verifyNever(() => updates.clearInterrupted());
+      await helper.close();
+      await cubit.close();
+    });
+
+    blocTest<UpdateCubit, UpdateState>(
+      'is a no-op with nothing downloading',
+      build: build,
+      act: (cubit) => cubit.cancelDownload(),
+      expect: () => const <UpdateState>[],
+      verify: (_) => verifyNever(() => updates.clearInterrupted()),
+    );
+
+    test('closing the cubit kills a download in flight', () async {
+      var cancelled = false;
+      final helper = StreamController<double>(
+        onCancel: () => cancelled = true,
+      );
+      when(
+        () => updates.downloadAndStage(_v2),
+      ).thenAnswer((_) => helper.stream);
+      final cubit = build()..emit(UpdateState(available: _v2));
+      unawaited(cubit.startDownload());
+      await Future<void>.delayed(Duration.zero);
+
+      await cubit.close();
+
+      expect(cancelled, isTrue);
+    });
+  });
+
+  group('an interrupted install', () {
+    final paused = Version.parse('0.2.0');
+
+    blocTest<UpdateCubit, UpdateState>(
+      'loads as interrupted with nothing staged, and waits rather than '
+      'checking over it',
+      setUp: () => when(
+        () => updates.recover(),
+      ).thenAnswer((_) async => UpdateRecovery(interrupted: paused)),
+      build: build,
+      act: (cubit) => cubit.load(),
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.interrupted)
+            .having((s) => s.interrupted, 'interrupted', paused),
+      ],
+      verify: (_) {
+        verifyNever(() => updates.checkForUpdate());
+        verifyNever(() => updates.clearInterrupted());
+      },
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'is moot when a build was staged since',
+      setUp: () {
+        when(
+          () => updates.recover(),
+        ).thenAnswer((_) async => UpdateRecovery(interrupted: paused));
+        when(() => updates.stagedVersion()).thenAnswer((_) async => _v2Number);
+        when(
+          () => settings.loadUpdateAutoCheck(),
+        ).thenAnswer((_) async => false);
+      },
+      build: build,
+      act: (cubit) => cubit.load(),
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.idle)
+            .having((s) => s.interrupted, 'interrupted', isNull),
+      ],
+      verify: (_) => verify(() => updates.clearInterrupted()).called(1),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'Retry forgets the attempt, checks, and starts the download',
+      seed: () => UpdateState(
+        supported: true,
+        phase: UpdatePhase.interrupted,
+        interrupted: paused,
+      ),
+      setUp: () {
+        when(() => updates.checkForUpdate()).thenAnswer((_) async => _v2);
+        when(
+          () => updates.downloadAndStage(_v2),
+        ).thenAnswer((_) => Stream.fromIterable([1.0]));
+      },
+      build: build,
+      act: (cubit) => cubit.retryInterrupted(),
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.checking)
+            .having((s) => s.interrupted, 'interrupted', isNull),
+        isA<UpdateState>().having(
+          (s) => s.phase,
+          'phase',
+          UpdatePhase.available,
+        ),
+        isA<UpdateState>().having(
+          (s) => s.phase,
+          'phase',
+          UpdatePhase.downloading,
+        ),
+        isA<UpdateState>().having((s) => s.progress, 'progress', 1.0),
+        isA<UpdateState>().having((s) => s.phase, 'phase', UpdatePhase.staged),
+      ],
+      verify: (_) {
+        verify(() => updates.clearInterrupted()).called(1);
+        verify(() => updates.downloadAndStage(_v2)).called(1);
+      },
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'Retry that finds nothing newer shows that instead',
+      seed: () => UpdateState(
+        supported: true,
+        phase: UpdatePhase.interrupted,
+        interrupted: paused,
+      ),
+      build: build,
+      act: (cubit) => cubit.retryInterrupted(),
+      skip: 1,
+      expect: () => [
+        isA<UpdateState>().having(
+          (s) => s.phase,
+          'phase',
+          UpdatePhase.upToDate,
+        ),
+      ],
+      verify: (_) => verifyNever(() => updates.downloadAndStage(any())),
+    );
+
+    test('a second Retry press while the first runs does nothing', () async {
+      final checked = Completer<UpdateManifest?>();
+      when(() => updates.checkForUpdate()).thenAnswer((_) => checked.future);
+      final cubit = build()
+        ..emit(
+          UpdateState(
+            supported: true,
+            phase: UpdatePhase.interrupted,
+            interrupted: paused,
+          ),
+        );
+
+      final first = cubit.retryInterrupted();
+      await cubit.retryInterrupted();
+      checked.complete(null);
+      await first;
+
+      verify(() => updates.checkForUpdate()).called(1);
+      verify(() => updates.clearInterrupted()).called(1);
+      await cubit.close();
+    });
+
+    blocTest<UpdateCubit, UpdateState>(
+      'Check instead of Retry settles the attempt too',
+      seed: () => UpdateState(
+        supported: true,
+        phase: UpdatePhase.interrupted,
+        interrupted: paused,
+      ),
+      build: build,
+      act: (cubit) => cubit.check(),
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.checking)
+            .having((s) => s.interrupted, 'interrupted', isNull),
+        isA<UpdateState>().having(
+          (s) => s.phase,
+          'phase',
+          UpdatePhase.upToDate,
+        ),
+      ],
+      verify: (_) => verify(() => updates.clearInterrupted()).called(1),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'switching channel settles the attempt too',
+      seed: () => UpdateState(
+        supported: true,
+        channel: 'experimental',
+        phase: UpdatePhase.interrupted,
+        interrupted: paused,
+      ),
+      build: build,
+      act: (cubit) => cubit.setExperimentalChannel(value: false),
+      verify: (cubit) {
+        verify(() => updates.clearInterrupted()).called(1);
+        expect(cubit.state.interrupted, isNull);
+      },
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'Cancel forgets the attempt and goes back to Software updates',
+      seed: () => UpdateState(
+        supported: true,
+        phase: UpdatePhase.interrupted,
+        interrupted: paused,
+      ),
+      build: build,
+      act: (cubit) => cubit.discardInterrupted(),
+      expect: () => [
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.idle)
+            .having((s) => s.interrupted, 'interrupted', isNull),
+      ],
+      verify: (_) => verify(() => updates.clearInterrupted()).called(1),
+    );
+  });
+
+  group('a rolled-back update', () {
+    final staged = Version.parse('1.1.0');
+    final installed = Version.parse('1.0.0');
+
+    blocTest<UpdateCubit, UpdateState>(
+      'tryboot-not-taken: a notice naming the staged and installed versions, '
+      'saved so it outlives a restart',
+      setUp: () {
+        when(
+          () => updates.currentVersion(),
+        ).thenAnswer((_) async => installed);
+        when(
+          () => updates.recover(),
+        ).thenAnswer((_) async => UpdateRecovery(rolledBack: staged));
+        when(
+          () => settings.loadUpdateAutoCheck(),
+        ).thenAnswer((_) async => false);
+      },
+      build: build,
+      act: (cubit) => cubit.load(),
+      expect: () => [
+        isA<UpdateState>().having(
+          (s) => s.rollback,
+          'rollback',
+          (attempted: staged, restored: installed),
+        ),
+      ],
+      verify: (_) => verify(
+        () => settings.saveUpdateRollback(
+          attempted: staged,
+          restored: installed,
+        ),
+      ).called(1),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'already-running (no rollback reported): no notice',
+      setUp: () => when(
+        () => settings.loadUpdateAutoCheck(),
+      ).thenAnswer((_) async => false),
+      build: build,
+      act: (cubit) => cubit.load(),
+      expect: () => [
+        isA<UpdateState>().having((s) => s.rollback, 'rollback', isNull),
+      ],
+      verify: (_) => verifyNever(
+        () => settings.saveUpdateRollback(
+          attempted: any(named: 'attempted'),
+          restored: any(named: 'restored'),
+        ),
+      ),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'an undismissed notice from an earlier start is still shown',
+      setUp: () {
+        when(
+          () => settings.loadUpdateRollback(),
+        ).thenAnswer((_) async => (attempted: staged, restored: installed));
+        when(
+          () => settings.loadUpdateAutoCheck(),
+        ).thenAnswer((_) async => false);
+      },
+      build: build,
+      act: (cubit) => cubit.load(),
+      expect: () => [
+        isA<UpdateState>().having(
+          (s) => s.rollback,
+          'rollback',
+          (attempted: staged, restored: installed),
+        ),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'a notice whose build is running now is dropped',
+      setUp: () {
+        when(() => updates.currentVersion()).thenAnswer((_) async => staged);
+        when(
+          () => settings.loadUpdateRollback(),
+        ).thenAnswer((_) async => (attempted: staged, restored: installed));
+        when(
+          () => settings.loadUpdateAutoCheck(),
+        ).thenAnswer((_) async => false);
+      },
+      build: build,
+      act: (cubit) => cubit.load(),
+      expect: () => [
+        isA<UpdateState>().having((s) => s.rollback, 'rollback', isNull),
+      ],
+      verify: (_) => verify(() => settings.clearUpdateRollback()).called(1),
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'dismissing clears it for good',
+      seed: () =>
+          UpdateState(rollback: (attempted: staged, restored: installed)),
+      build: build,
+      act: (cubit) => cubit.dismissRollback(),
+      expect: () => [
+        isA<UpdateState>().having((s) => s.rollback, 'rollback', isNull),
+      ],
+      verify: (_) => verify(() => settings.clearUpdateRollback()).called(1),
     );
   });
 

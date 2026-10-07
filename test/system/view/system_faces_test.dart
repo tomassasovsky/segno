@@ -10,22 +10,16 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
-import 'package:segno/appliance/power_off/power_cubit.dart';
-import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/high_contrast_cubit.dart';
 import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
-import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
-import 'package:segno/session/cubit/session_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/system/view/about_system_tab.dart';
 import 'package:segno/system/view/storage_system_tab.dart';
-import 'package:segno/system/view/updates_system_tab.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
@@ -37,17 +31,6 @@ import '../../helpers/helpers.dart';
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
-
-class _MockPowerCubit extends MockCubit<PowerState> implements PowerCubit {}
-
-class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
-
-class _MockRecorder extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
-
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
 
 /// The fake, plus a record of what the face asked it to export.
 class _RecordingFactsClient implements ConsoleFactsClient {
@@ -173,9 +156,8 @@ final _running = UpdateState(
   currentVersion: Version.parse('0.1.0'),
 );
 
-/// The three bodies the Updates, Storage and About pages show.
+/// The two bodies the Storage and About pages show.
 enum _SystemBody {
-  updates,
   storage,
   about,
 }
@@ -191,12 +173,10 @@ void main() {
   late PedalCubit pedal;
   late ConsoleFactsCubit facts;
   late _MockUpdateCubit update;
-  late _MockPowerCubit power;
 
   setUpAll(() {
     registerFallbackValue(const EngineConfig());
     registerFallbackValue(Duration.zero);
-    registerFallbackValue(const PowerSnapshot());
   });
 
   setUp(() {
@@ -264,38 +244,6 @@ void main() {
       settings: settings,
     );
     update = _MockUpdateCubit();
-    when(update.startDownload).thenAnswer((_) async {});
-    when(update.check).thenAnswer((_) async {});
-    power = _MockPowerCubit();
-    whenListen(
-      power,
-      const Stream<PowerState>.empty(),
-      initialState: const PowerState(),
-    );
-    final looper = _MockLooperBloc();
-    whenListen(
-      looper,
-      const Stream<LooperState>.empty(),
-      initialState: const LooperState(),
-    );
-    final recorder = _MockRecorder();
-    whenListen(
-      recorder,
-      const Stream<PerformanceRecorderState>.empty(),
-      initialState: const PerformanceRecorderIdle(),
-    );
-    final session = _MockSessionCubit();
-    whenListen(
-      session,
-      const Stream<SessionState>.empty(),
-      initialState: const SessionState(currentSessionName: 'set'),
-    );
-    when(
-      () => update.setAutoCheck(value: any(named: 'value')),
-    ).thenAnswer((_) async {});
-    when(
-      () => update.setExperimentalChannel(value: any(named: 'value')),
-    ).thenAnswer((_) async {});
     whenListen(
       update,
       const Stream<UpdateState>.empty(),
@@ -334,16 +282,11 @@ void main() {
               BlocProvider.value(value: pedal),
               BlocProvider.value(value: facts),
               BlocProvider<UpdateCubit>.value(value: update),
-              BlocProvider<PowerCubit>.value(value: power),
-              BlocProvider<LooperBloc>.value(value: looper),
-              BlocProvider<PerformanceRecorderCubit>.value(value: recorder),
-              BlocProvider<SessionCubit>.value(value: session),
             ],
             child: Scaffold(
               body: Padding(
                 padding: const EdgeInsets.all(19),
                 child: switch (tab) {
-                  _SystemBody.updates => const UpdatesSystemTab(),
                   _SystemBody.storage => const StorageSystemTab(),
                   _SystemBody.about => const AboutSystemTab(),
                 },
@@ -355,220 +298,6 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
-
-  group('SYSTEM / updates', () {
-    testWidgets('an offer sits untouched until the button is pressed', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        tab: _SystemBody.updates,
-        updateState: _running.copyWith(
-          phase: UpdatePhase.available,
-          available: UpdateManifest(
-            version: Version.parse('0.1.1'),
-            bundle: 'b',
-            channel: 'experimental',
-          ),
-        ),
-      );
-      final l10n = l10nOf(tester);
-
-      verifyNever(update.startDownload);
-      expect(find.text(l10n.updatesAvailableBanner('0.1.1')), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('system_update_action')));
-      await tester.pumpAndSettle();
-
-      verify(update.startDownload).called(1);
-    });
-
-    testWidgets('downloading draws a real progress bar, not a spinner', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        tab: _SystemBody.updates,
-        updateState: _running.copyWith(
-          phase: UpdatePhase.downloading,
-          progress: 0.42,
-          available: UpdateManifest(
-            version: Version.parse('0.1.1'),
-            bundle: 'b',
-            channel: 'experimental',
-          ),
-        ),
-      );
-
-      final bar = tester.widget<LinearProgressIndicator>(
-        find.byKey(ConsoleBanner.progressKey),
-      );
-      expect(bar.value, closeTo(0.42, 0.001));
-      // Nothing to press while it runs.
-      expect(find.byKey(const Key('system_update_action')), findsNothing);
-    });
-
-    testWidgets('a failed DOWNLOAD names the download and retries the '
-        'download — not the check', (tester) async {
-      await pump(
-        tester,
-        tab: _SystemBody.updates,
-        updateState: _running.copyWith(
-          phase: UpdatePhase.error,
-          failure: UpdateFailure.download,
-          errorMessage: 'connection reset',
-          available: UpdateManifest(
-            version: Version.parse('0.1.1'),
-            bundle: 'b',
-            channel: 'experimental',
-          ),
-        ),
-      );
-      final l10n = l10nOf(tester);
-
-      expect(
-        find.text(l10n.updatesDownloadFailedBanner('connection reset')),
-        findsOneWidget,
-      );
-      expect(
-        find.text(l10n.updatesCheckFailedBanner('connection reset')),
-        findsNothing,
-      );
-
-      await tester.tap(find.byKey(const Key('system_update_action')));
-      await tester.pumpAndSettle();
-
-      // Retrying a broken download by looking again for a build already on
-      // offer is the wrong button under the right word.
-      verify(update.startDownload).called(1);
-      verifyNever(update.check);
-    });
-
-    testWidgets('a failed check is red and offers a retry', (tester) async {
-      await pump(
-        tester,
-        tab: _SystemBody.updates,
-        updateState: _running.copyWith(
-          phase: UpdatePhase.error,
-          failure: UpdateFailure.check,
-          errorMessage: 'connection refused',
-        ),
-      );
-      final l10n = l10nOf(tester);
-
-      final banner = tester.widget<ConsoleBanner>(
-        find.byKey(const Key('system_update_banner')),
-      );
-      expect(banner.tone, ConsoleBannerTone.failure);
-      expect(
-        find.text(l10n.updatesCheckFailedBanner('connection refused')),
-        findsOneWidget,
-      );
-
-      await tester.tap(find.byKey(const Key('system_update_action')));
-      await tester.pumpAndSettle();
-      verify(update.check).called(1);
-    });
-
-    testWidgets('idle and up-to-date are restful, and never a dead end', (
-      tester,
-    ) async {
-      await pump(tester, tab: _SystemBody.updates);
-      final l10n = l10nOf(tester);
-
-      var banner = tester.widget<ConsoleBanner>(
-        find.byKey(const Key('system_update_banner')),
-      );
-      expect(banner.tone, ConsoleBannerTone.steady);
-      expect(find.text(l10n.updatesCheckNowTitle), findsOneWidget);
-
-      whenListen(
-        update,
-        Stream.value(_running.copyWith(phase: UpdatePhase.upToDate)),
-        initialState: _running,
-      );
-      await tester.pumpAndSettle();
-
-      banner = tester.widget<ConsoleBanner>(
-        find.byKey(const Key('system_update_banner')),
-      );
-      expect(banner.tone, ConsoleBannerTone.steady);
-      expect(find.byKey(const Key('system_update_action')), findsOneWidget);
-    });
-
-    testWidgets('a staged build restarts only after the confirm — the one '
-        'action on this console that throws away the take', (tester) async {
-      await pump(
-        tester,
-        tab: _SystemBody.updates,
-        updateState: _running.copyWith(
-          phase: UpdatePhase.staged,
-          available: UpdateManifest(
-            version: Version.parse('0.1.1'),
-            bundle: 'b',
-            channel: 'experimental',
-          ),
-        ),
-      );
-      final l10n = l10nOf(tester);
-
-      // The prose warning rides under the banner, ahead of the tap.
-      expect(find.text(l10n.updatesRestartBusySubtitle), findsWidgets);
-
-      await tester.tap(find.byKey(const Key('system_update_action')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('console_confirm_cancel')));
-      await tester.pumpAndSettle();
-
-      verifyNever(
-        () => power.restart(any(), save: any(named: 'save')),
-      );
-
-      await tester.tap(find.byKey(const Key('system_update_action')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('console_confirm_confirm')));
-      await tester.pumpAndSettle();
-
-      verify(
-        () => power.restart(
-          const PowerSnapshot(currentSessionName: 'set'),
-          save: any(named: 'save'),
-        ),
-      ).called(1);
-    });
-
-    testWidgets('a check in flight is amber and offers nothing to press', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        tab: _SystemBody.updates,
-        updateState: _running.copyWith(phase: UpdatePhase.checking),
-      );
-      final l10n = l10nOf(tester);
-
-      final banner = tester.widget<ConsoleBanner>(
-        find.byKey(const Key('system_update_banner')),
-      );
-      expect(banner.tone, ConsoleBannerTone.pending);
-      expect(find.text(l10n.updatesCheckingLabel), findsOneWidget);
-      expect(find.byKey(const Key('system_update_action')), findsNothing);
-    });
-
-    testWidgets('an unsupported platform offers nothing at all', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        tab: _SystemBody.updates,
-        updateState: const UpdateState(),
-      );
-      final l10n = l10nOf(tester);
-
-      expect(find.text(l10n.updatesUnsupportedBanner), findsOneWidget);
-      expect(find.byKey(const Key('system_update_action')), findsNothing);
-    });
-  });
 
   group('SYSTEM / storage', () {
     testWidgets('deleting captures asks first, and the figures afterwards '

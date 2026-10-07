@@ -13,6 +13,8 @@ void main() {
       expect(await backend.currentVersion(), Version.none);
       expect(await backend.stagedVersion(), Version.none);
       expect(await backend.fetchManifest(), isNull);
+      expect(await backend.recover(), const UpdateRecovery());
+      await backend.clearInterrupted();
     });
 
     test(

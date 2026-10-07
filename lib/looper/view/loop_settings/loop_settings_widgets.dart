@@ -17,11 +17,16 @@ class LoopFocusable extends StatelessWidget {
     this.enabled = true,
     this.radius = 8,
     this.autofocus = false,
+    this.focusNode,
     super.key,
   });
 
   /// Whether this stop takes focus when its page opens.
   final bool autofocus;
+
+  /// The stop's node, for a page that moves the encoder to it when the page
+  /// changes under it (the Updates page's next action).
+  final FocusNode? focusNode;
 
   /// The visual control.
   final Widget child;
@@ -49,6 +54,7 @@ class LoopFocusable extends StatelessWidget {
   );
 
   Widget _focus(BuildContext context) => Focus(
+    focusNode: focusNode,
     canRequestFocus: enabled,
     autofocus: autofocus,
     onKeyEvent: (_, event) {
@@ -538,8 +544,12 @@ class LoopOutlinedButton extends StatelessWidget {
     this.fontSize = 24,
     this.radius = 7,
     this.borderColor,
+    this.focusNode,
     super.key,
   });
+
+  /// The button's focus node; see [LoopFocusable.focusNode].
+  final FocusNode? focusNode;
 
   /// The line around the button, when its pen node draws one other than
   /// its tone's.
@@ -633,6 +643,7 @@ class LoopOutlinedButton extends StatelessWidget {
       label: semanticLabel ?? label,
       value: semanticValue,
       child: LoopFocusable(
+        focusNode: focusNode,
         enabled: onTap != null,
         radius: radius,
         onActivate: onTap ?? () {},

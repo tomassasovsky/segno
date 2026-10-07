@@ -2,8 +2,6 @@
     "@@locale": "en",
     "appMenuLabel": "Segno",
     "settingsMenuItem": "Settings…",
-    "updatesInstalledVersionLabel": "Installed version",
-    "updatesChannelLabel": "Channel",
     "updatesVersionValue": "v{version}",
     "@updatesVersionValue": {
         "placeholders": {
@@ -12,14 +10,7 @@
             }
         }
     },
-    "updatesAutoCheckTitle": "Check for updates automatically",
-    "updatesAutoCheckSubtitle": "Looks for a newer version in the background. Never downloads or installs on its own.",
-    "updatesExperimentalChannelTitle": "Experimental channel",
-    "updatesExperimentalChannelSubtitle": "Get pre-release builds. Turn off to follow production releases only.",
-    "updatesCheckNowTitle": "Check now",
-    "updatesCheckNowSubtitle": "Look for a newer version right now.",
     "updatesCheckingLabel": "Checking for updates…",
-    "updatesUpToDateTitle": "You're up to date",
     "updatesUpToDateSubtitle": "This is the latest version on the {channel} channel.",
     "@updatesUpToDateSubtitle": {
         "placeholders": {
@@ -28,17 +19,7 @@
             }
         }
     },
-    "updatesDownloadTitle": "Download & install",
-    "updatesStagedSubtitle": "v{version} is installed and ready. Restart when you're not mid-session.",
-    "@updatesStagedSubtitle": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            }
-        }
-    },
     "updatesRestartBusySubtitle": "Playback will stop and your session will be saved before restarting.",
-    "updatesErrorTitle": "Update check failed",
     "updateBannerTitle": "Update available — v{version}",
     "@updateBannerTitle": {
         "placeholders": {
@@ -2087,7 +2068,6 @@
             }
         }
     },
-    "systemAutomaticGroup": "AUTOMATIC",
     "systemThisConsoleGroup": "THIS CONSOLE",
     "systemHousekeepingGroup": "HOUSEKEEPING",
     "systemHardwareGroup": "HARDWARE",
@@ -2101,38 +2081,6 @@
     "@updatesUnsupportedBanner": {
         "description": "Update banner on a platform with no update flow at all. No action: a dead check button is worse than none."
     },
-    "updatesAvailableBanner": "v{version} is available.",
-    "@updatesAvailableBanner": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesStagingBanner": "Staging v{version} to the standby system — {percent}%",
-    "@updatesStagingBanner": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            },
-            "percent": {
-                "type": "int"
-            }
-        }
-    },
-    "updatesCheckFailedBanner": "Update check failed — {reason}",
-    "@updatesCheckFailedBanner": {
-        "placeholders": {
-            "reason": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesCheckFailedReason": "could not reach the update server.",
-    "@updatesCheckFailedReason": {
-        "description": "Fallback reason when the failure carried no message of its own."
-    },
-    "updatesRestartNow": "Restart now",
     "storageSessionsTitle": "Sessions and takes",
     "storageCapturesTitle": "Captures",
     "storageCapturesSubtitle": "exports and stems",
@@ -2232,14 +2180,6 @@
         }
     },
     "storageActionFailed": "That didn't finish. Nothing on the disk was changed.",
-    "updatesDownloadFailedBanner": "Download failed — {reason}",
-    "@updatesDownloadFailedBanner": {
-        "placeholders": {
-            "reason": {
-                "type": "String"
-            }
-        }
-    },
     "licencesReading": "Reading the licence registry…",
     "licenceCount": "{count, plural, =1{1 licence} other{{count} licences}}",
     "@licenceCount": {
@@ -6170,10 +6110,6 @@
     "@settingsAboutTitle": {
         "description": "Title of the About page, and the row on the Updates page that opens it."
     },
-    "settingsAboutSubtitle": "Name, version, controller and licences",
-    "@settingsAboutSubtitle": {
-        "description": "Subtitle of the About row on the Updates page."
-    },
     "aboutThisConsolePanel": "This console",
     "@aboutThisConsolePanel": {
         "description": "Heading of the About page's panel of facts about the console itself."
@@ -6262,6 +6198,60 @@
     "@controllerSoftwareUpdates": {
         "description": "Controller firmware page button that opens the Updates page."
     },
+    "updatesPageInstalled": "Installed Segno {version}",
+    "@updatesPageInstalled": {"description": "Updates page heading: the running version.", "placeholders": {"version": {"type": "String"}}},
+    "updatesPageCheck": "Check for updates",
+    "@updatesPageCheck": {"description": "Updates page button that runs the read-only check."},
+    "updatesPanelSoftware": "Software updates",
+    "@updatesPanelSoftware": {"description": "Updates page status panel title when nothing is on offer."},
+    "updatesPanelAvailable": "Update available",
+    "@updatesPanelAvailable": {"description": "Updates page status panel title when a newer build is offered."},
+    "updatesPanelDownloading": "Downloading",
+    "@updatesPanelDownloading": {"description": "Updates page status panel title while the update downloads and installs."},
+    "updatesPanelReady": "Ready to install",
+    "@updatesPanelReady": {"description": "Updates page status panel title when an update is staged."},
+    "updatesPanelPaused": "Update paused",
+    "@updatesPanelPaused": {"description": "Updates page status panel title when an install was cut off."},
+    "updatesPageVersion": "Segno {version}",
+    "@updatesPageVersion": {"description": "Updates page status panel meta: the version on offer.", "placeholders": {"version": {"type": "String"}}},
+    "updatesPageVersionSize": "Segno {version} · {megabytes} MB",
+    "@updatesPageVersionSize": {"description": "Updates page status panel meta: the version on offer and its download size.", "placeholders": {"version": {"type": "String"}, "megabytes": {"type": "int"}}},
+    "updatesPageIdle": "Look for a newer version of Segno.",
+    "@updatesPageIdle": {"description": "Updates page status sentence before any check."},
+    "updatesPageCheckFailed": "Could not reach the update server. Check the network and try again.",
+    "@updatesPageCheckFailed": {"description": "Updates page status sentence when the check failed."},
+    "updatesPageDownloadFailed": "The download did not finish. The current software is unchanged.",
+    "@updatesPageDownloadFailed": {"description": "Updates page status sentence when the download or install failed."},
+    "updatesPageInterrupted": "Download interrupted. The current software is unchanged.",
+    "@updatesPageInterrupted": {"description": "Updates page status sentence when an install was cut off by a crash or power loss."},
+    "updatesPagePercent": "{percent}%",
+    "@updatesPagePercent": {"description": "Updates page download progress.", "placeholders": {"percent": {"type": "int"}}},
+    "updatesPageDownload": "Download and install",
+    "@updatesPageDownload": {"description": "Updates page button that downloads and stages the offered build."},
+    "updatesPageInstallRestart": "Install and restart",
+    "@updatesPageInstallRestart": {"description": "Updates page button that restarts into the staged build through the power flow."},
+    "updatesPageRetry": "Retry",
+    "@updatesPageRetry": {"description": "Updates page button that retries a failed or cut-off download."},
+    "updatesPageCancel": "Cancel",
+    "@updatesPageCancel": {"description": "Updates page button that cancels a download or drops a cut-off install."},
+    "updatesPageRollback": "Segno {attempted} did not start, so the console went back to {restored}.",
+    "@updatesPageRollback": {"description": "Updates page notice after a staged update rolled back.", "placeholders": {"attempted": {"type": "String"}, "restored": {"type": "String"}}},
+    "updatesPageDismiss": "Dismiss",
+    "@updatesPageDismiss": {"description": "Updates page button that dismisses the rollback notice."},
+    "updatesPageAutomaticPanel": "Automatic",
+    "@updatesPageAutomaticPanel": {"description": "Updates page panel heading for the automatic check and the channel."},
+    "updatesPageAutoCheck": "Check automatically",
+    "@updatesPageAutoCheck": {"description": "Updates page row: whether the read-only check runs on its own."},
+    "updatesPageAutoCheckCaption": "Never downloads or installs on its own.",
+    "@updatesPageAutoCheckCaption": {"description": "Updates page caption under Check automatically."},
+    "updatesPageChannel": "Update channel",
+    "@updatesPageChannel": {"description": "Updates page row: which release channel the console follows."},
+    "updatesPageChannelProduction": "Production",
+    "@updatesPageChannelProduction": {"description": "Updates page channel choice: production releases."},
+    "updatesPageChannelExperimental": "Experimental",
+    "@updatesPageChannelExperimental": {"description": "Updates page channel choice: pre-release builds."},
+    "updatesPageConsolePanel": "This console",
+    "@updatesPageConsolePanel": {"description": "Updates page panel heading for the About and Controller firmware links."},
     "settingsMidiTitle": "MIDI",
     "@settingsMidiTitle": {
         "description": "The MIDI tile on the Settings page."
