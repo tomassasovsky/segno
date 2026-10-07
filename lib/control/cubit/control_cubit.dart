@@ -42,6 +42,7 @@ import 'package:segno/control/model/foot_tuner.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -192,6 +193,7 @@ class ControlCubit extends Cubit<ControlState> {
     PerformanceChains Function() currentChains = _noChains,
     bool Function() takeLocked = _neverLocked,
     bool Function() inputLocked = _neverLocked,
+    Future<int?> Function(String path)? freeSpaceBytes,
   }) : _looper = looper,
        _pedal = pedal,
        _settings = settings,
@@ -214,6 +216,9 @@ class ControlCubit extends Cubit<ControlState> {
        _currentChains = currentChains,
        _takeLocked = takeLocked,
        _inputLocked = inputLocked,
+       _freeSpaceBytes =
+           freeSpaceBytes ??
+           ((String path) async => performance.volumeSpace(path)?.freeBytes),
        super(const ControlState()) {
     _fxPersistence.onOrdinaryWrite = _onOrdinaryFxWrite;
     _mixSettings.onOrdinaryValues = _onOrdinaryMixValues;
@@ -241,6 +246,14 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   final MidiDeviceRepository? _midiDevices;
+
+  // The free room on the exports volume, for an assigned Record
+  // performance's low-disk refusal.
+  final Future<int?> Function(String path) _freeSpaceBytes;
+
+  // Refusals this cubit announced with their own words, so the generic
+  // assigned-action notice can tell it was said.
+  int _ownNotices = 0;
   final Duration Function()? _midiClock;
   final _midiStopwatch = Stopwatch()..start();
   Duration _midiReadTime = Duration.zero;
@@ -2225,6 +2238,53 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
+  /// Admits a screen contact on the Custom face into the shared ledger.
+  void footCustomPressed(PedalButton button, Object contact) {
+    if (state.mode != InteractionMode.custom || isClosed) return;
+    _handleEvent(ButtonPressed(button), contact: contact);
+  }
+
+  /// Only the admitted screen contact may complete its Custom gesture.
+  void footCustomReleased(PedalButton button, Object contact) =>
+      footMixerReleased(button, contact);
+
+  /// Cancels an abandoned Custom contact without its short action.
+  void footCustomCancelled(PedalButton button, Object contact) {
+    if (isClosed ||
+        _inputRetired ||
+        !identical(_pressedButtons[button], contact)) {
+      return;
+    }
+    _bindingGestures[button]?.cancel();
+    _pressedButtons.remove(button);
+    _acceptedContacts.remove(button);
+    _customActiveKeys.remove(button);
+    _pushProjected();
+  }
+
+  /// Accessible semantic activation: [button]'s Press, or its Hold when
+  /// [hold] is set, as the foot would run it.
+  void activateFootCustomPedal(PedalButton button, {bool hold = false}) {
+    if (state.mode != InteractionMode.custom || isClosed || _takeLocked()) {
+      return;
+    }
+    switch (button) {
+      case PedalButton.mode:
+        setMode(InteractionMode.record);
+      case PedalButton.bank:
+        if (!hold) toggleBankWithCursor();
+      case PedalButton.recPlay ||
+          PedalButton.stop ||
+          PedalButton.undo ||
+          PedalButton.clear ||
+          PedalButton.track1 ||
+          PedalButton.track2 ||
+          PedalButton.track3 ||
+          PedalButton.track4:
+        _fireCustomAction(button, hold: hold);
+    }
+  }
+
   /// Admits a screen contact on the Tuner face into the shared ledger.
   void footTunerPressed(PedalButton button, Object contact) {
     if (state.mode != InteractionMode.tuner || isClosed) return;
@@ -2647,7 +2707,13 @@ class ControlCubit extends Cubit<ControlState> {
     final bank = state.activeBank;
     final pair = state.pedalSetup.customFor(button, bank: bank);
     final action = hold ? pair.hold : pair.press;
-    if (action == null || action is UnavailableAction) return;
+    if (action == null) return;
+    if (action is UnavailableAction) {
+      // A saved assignment this build cannot honour says so, as any refused
+      // assignment does (#1229).
+      _reportAssignedAction(action, _looper.sessionRevision);
+      return;
+    }
     _syncCustomSession();
     final key = PedalBindingKey(
       button: button,
@@ -2734,7 +2800,100 @@ class ControlCubit extends Cubit<ControlState> {
   };
 
   /// One dispatcher for the current supported catalogue actions.
+  /// Runs an ASSIGNED [action] (a Custom switch, a CTRL switch or a MIDI
+  /// control) and says so once when it is refused (#1229, notice policy rule
+  /// 3). Actions with a notice of their own keep it and add none: Fade,
+  /// Reverse and Peel report from any mode, and a refused performance arm has
+  /// its own toast.
   FutureOr<bool> _runAction(ControlAction action, List<int> channels) {
+    final session = _looper.sessionRevision;
+    final noticed = _noticeMark(action);
+    final result = _runAssigned(action, channels);
+    if (_hasOwnRefusalNotice(action)) return result;
+    // One cause, one notice: a refusal the looper or a guard already
+    // announced (a needed recording input, a reversed track, an owed mix,
+    // low disk) adds nothing here.
+    void settle({required bool accepted}) {
+      if (!accepted && _noticeMark(action) == noticed) {
+        _reportAssignedAction(action, session);
+      }
+    }
+
+    if (result is Future<bool>) {
+      return result.then((accepted) {
+        settle(accepted: accepted);
+        return accepted;
+      });
+    }
+    settle(accepted: result);
+    return result;
+  }
+
+  static bool _hasOwnRefusalNotice(ControlAction action) => switch (action) {
+    TrackOperationAction(
+      operation: TrackOperation.fade ||
+          TrackOperation.reverse ||
+          TrackOperation.peel,
+    ) =>
+      true,
+    _ => false,
+  };
+
+  /// How many refusals have been announced elsewhere that [action] could
+  /// cause: the record actions read the looper's own notices.
+  int _noticeMark(ControlAction action) => switch (action) {
+    TrackPedalAction() || CommandAction(command: ControlCommand.recordPlay) =>
+      _ownNotices + _looper.refusalNotices,
+    _ => _ownNotices,
+  };
+
+  /// Notifies one refused assigned [action], unless the Session it was fired
+  /// in has since been replaced (the refusal then belongs to a rig that is
+  /// gone). [lowDisk] names the cause when an assigned Record performance
+  /// could not start for want of room.
+  void _reportAssignedAction(
+    ControlAction action,
+    int session, {
+    bool lowDisk = false,
+  }) {
+    if (isClosed || _closing || _looper.sessionRevision != session) return;
+    emit(
+      state.copyWith(
+        assignedActionFailure: state.assignedActionFailure + 1,
+        assignedActionRefusal: action,
+        assignedActionLowDisk: lowDisk,
+      ),
+    );
+  }
+
+  /// An assigned Record performance: a capture that has not enough room is
+  /// refused with the recorder's own low-disk words, as its toolbar button
+  /// does; an engine refusal falls to the generic notice.
+  Future<bool> _assignedPerformanceToggle() async {
+    if (!_performanceArmed && await _volumeTooFullToArm()) {
+      _ownNotices++;
+      _reportAssignedAction(
+        const CommandAction(ControlCommand.recordPerformance),
+        _looper.sessionRevision,
+        lowDisk: true,
+      );
+      return false;
+    }
+    return _togglePerformanceRecordAccepted();
+  }
+
+  Future<bool> _volumeTooFullToArm() async {
+    try {
+      final root = await _performance.exportsRoot();
+      final free = await _freeSpaceBytes(root);
+      return free != null &&
+          free < PerformanceRecorderCubit.lowDiskThresholdBytes;
+    } on Object {
+      return false; // Not this gate's call to block.
+    }
+  }
+
+  FutureOr<bool> _runAssigned(ControlAction action, List<int> channels) {
     switch (action) {
       case UnavailableAction():
         return false;
@@ -2816,7 +2975,7 @@ class ControlCubit extends Cubit<ControlState> {
       case ControlCommand.cutSound:
         return _looper.cutSound().isOk;
       case ControlCommand.recordPerformance:
-        return _togglePerformanceRecordAccepted();
+        return _assignedPerformanceToggle();
       case ControlCommand.nextBank:
         toggleBankWithCursor();
         return true;
@@ -3510,6 +3669,13 @@ class ControlCubit extends Cubit<ControlState> {
     // until some audio activity happened to push a state.
     final looperState = _l;
     final customFunctions = _customFunctionStates(looperState);
+    final physicalCustom = _physicalCustomStates(looperState, customFunctions);
+    // The Custom face reads the same values the switch LEDs do, so the screen
+    // and the plate can never disagree (#1229). Published only on change; the
+    // frame below already reflects it.
+    if (!isClosed && !_sameLit(state.customLit, physicalCustom)) {
+      super.emit(state.copyWith(customLit: physicalCustom));
+    }
     final frame = projectFrame(
       looperState,
       state,
@@ -3518,12 +3684,16 @@ class ControlCubit extends Cubit<ControlState> {
       masterGain: _masterGain,
       boundChains: _boundChains(),
       customFunctions: customFunctions,
-      physicalCustomStates: _physicalCustomStates(looperState, customFunctions),
+      physicalCustomStates: physicalCustom,
       tunerStates: _tunerStates(),
       acceptedContacts: _acceptedContacts,
     );
     _pedal.pushState(frame);
   }
+
+  static bool _sameLit(Map<PedalButton, bool> a, Map<PedalButton, bool> b) =>
+      a.length == b.length &&
+      a.entries.every((entry) => b[entry.key] == entry.value);
 
   void _syncCustomSession() {
     final session = _looper.sessionRevision;
