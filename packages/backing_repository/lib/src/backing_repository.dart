@@ -37,6 +37,19 @@ class BackingRepository {
     _readDevice();
   }
 
+  /// The repository over one engine object that both plays the voice and
+  /// reports its rate: the app's engine.
+  factory BackingRepository.forEngine(
+    AudioEngine engine, {
+    required AudioDecoder decoder,
+    required BackingAssetStore store,
+  }) => BackingRepository(
+    engine: engine,
+    metering: engine,
+    decoder: decoder,
+    store: store,
+  );
+
   final BackingControl _engine;
   final EngineMetering _metering;
   final AudioDecoder _decoder;
@@ -72,6 +85,10 @@ class BackingRepository {
   double _level = 1;
   double _pan = 0;
   int _output = 0;
+  double _clickPan = 0;
+
+  /// The managed store the player loads from.
+  BackingAssetStore get store => _store;
 
   /// The player now.
   BackingPlayerState get state => _state;
@@ -125,10 +142,10 @@ class BackingRepository {
       () => generation == _loadGeneration,
       (audio, token) => _engine.backingLoad(audio, item: token, play: play),
     );
-    if (generation == _loadGeneration) {
-      _emit(_state.copyWith(clearLoading: true));
-    }
-    refresh();
+    // The engine's answer and the end of the load in one state: a state
+    // with neither the file loaded nor loading would read as "nothing
+    // loaded" (review of P5, M1).
+    _refresh(clearLoading: generation == _loadGeneration);
     return ok;
   }
 
@@ -241,14 +258,45 @@ class BackingRepository {
   }
 
   /// Plays the loaded file (a resume after a pause).
-  void play() => _transport(BackingTransportOp.play);
+  ///
+  /// An engine restart not yet seen is handled first; while its reload of the
+  /// loaded file is still decoding, Play waits for it, so the press is never
+  /// spent on the reload (review of P5, M1). A later Pause, Stop or Clear
+  /// wins over a Play still waiting (review of P5, L3).
+  void play() {
+    refresh();
+    final reload = _reload;
+    final press = ++_press;
+    if (reload == null) {
+      _transport(BackingTransportOp.play);
+      return;
+    }
+    unawaited(
+      reload.then((ok) {
+        if (ok && !_disposed && press == _press) {
+          _transport(BackingTransportOp.play);
+        }
+      }),
+    );
+  }
+
+  /// The reload a restart started, while it decodes.
+  Future<bool>? _reload;
+
+  /// Counts transport presses, so a Play waiting on [_reload] runs only if
+  /// nothing was pressed after it: the last press wins.
+  int _press = 0;
 
   /// Pauses, keeping the position.
-  void pause() => _transport(BackingTransportOp.pause);
+  void pause() {
+    _press++;
+    _transport(BackingTransportOp.pause);
+  }
 
   /// Stops and rewinds; a load in progress is cancelled (its result is
   /// freed, the old file stays loaded).
   void stop() {
+    _press++;
     _loadGeneration++;
     _emit(_state.copyWith(clearLoading: true));
     _transport(BackingTransportOp.stop);
@@ -261,6 +309,7 @@ class BackingRepository {
 
   /// Unloads the loaded and staged files (cancelling a load in progress).
   void clear() {
+    _press++;
     _loadGeneration++;
     _stageGeneration++;
     _emit(_state.copyWith(clearLoading: true));
@@ -305,20 +354,30 @@ class BackingRepository {
     refresh();
   }
 
+  /// The click's balance (it sums where the backing does, plan D6).
+  void setClickPan(double pan) {
+    _clickPan = pan;
+    _engine.setClickPan(pan);
+  }
+
   /// Reads the engine's voice now: maps its tokens back to digests, replays
   /// the settings and reloads after an engine restart, and keeps polling
   /// while anything is playing or loading.
-  void refresh() {
+  void refresh() => _refresh();
+
+  void _refresh({bool clearLoading = false}) {
     if (_disposed) return;
     final s = _engine.backingState();
     if (s.epoch != _epoch) {
       _epoch = s.epoch;
       _readDevice();
+      if (clearLoading) _emit(_state.copyWith(clearLoading: true));
       _restarted(s);
       return;
     }
     _emit(
       _state.copyWith(
+        clearLoading: clearLoading,
         loaded: _tokens[s.item],
         clearLoaded: !_tokens.containsKey(s.item),
         staged: _tokens[s.nextItem],
@@ -358,11 +417,19 @@ class BackingRepository {
       ..setBackingEnd(_end)
       ..setBackingLevel(_level)
       ..setBackingPan(_pan)
-      ..setBackingOutput(_output);
+      ..setBackingOutput(_output)
+      ..setClickPan(_clickPan);
     if (wasPlaying) _notices.add(BackingNotice.interfaceChanged);
     final kept = s.item >= 0 && _tokens.containsKey(s.item);
     _emit(_state.copyWith(transport: BackingTransport.stopped, position: 0));
-    if (!kept && loaded != null) unawaited(load(loaded));
+    if (!kept && loaded != null) {
+      final reload = _reload = load(loaded);
+      unawaited(
+        reload.whenComplete(() {
+          if (identical(_reload, reload)) _reload = null;
+        }),
+      );
+    }
     if (s.nextItem < 0 && staged != null) unawaited(stageNext(staged));
     refresh();
   }

@@ -278,7 +278,8 @@ void main() {
       ..setEnd(BackingEnd.repeat)
       ..setLevel(0.25)
       ..setPan(0.5)
-      ..setOutput(12);
+      ..setOutput(12)
+      ..setClickPan(-0.75);
     await repo.load(a.digest, play: true);
     await repo.stageNext(b.digest);
     engine.settings.clear();
@@ -294,7 +295,9 @@ void main() {
       'level 0.25',
       'pan 0.5',
       'output 12',
+      'click pan -0.75',
     ]);
+    expect(inner.backingState().clickPan, -0.75);
     expect(notices, [BackingNotice.interfaceChanged]);
     expect(decoder.mock.decoded, decodes + 2);
     expect(repo.state.loaded, a.digest);

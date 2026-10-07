@@ -5774,6 +5774,12 @@
     "fadeSettingsRecoveryTitle": "Fade duration needs recovery",
     "fadeSettingsRefusedTitle": "Fade duration change was not saved",
     "fadeSettingsRecoveryBody": "Retry to recover the Fade duration settings.",
+    "backingMixSettingsRecoveryTitle": "Backing volume and routing need recovery",
+    "backingMixSettingsRefusedTitle": "Backing volume or routing change was not saved",
+    "backingMixSettingsRecoveryBody": "Retry to recover the backing volume, pan, outputs and At end.",
+    "clickPanSettingsRecoveryTitle": "Click pan needs recovery",
+    "clickPanSettingsRefusedTitle": "Click pan change was not saved",
+    "clickPanSettingsRecoveryBody": "Retry to recover the click pan.",
     "actionModeFade": "Fade",
     "@actionModeFade": {
         "description": "Foot Fade performance surface."
