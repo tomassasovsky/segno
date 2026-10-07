@@ -296,7 +296,8 @@ List<PedalColor> projectPedalColors(
         PedalButton.track4 => trackColor(button),
         PedalButton.recPlay => switch (global) {
           GlobalColor.red => _stateRed,
-          GlobalColor.amber => _stateOverdub,
+          // Amber is overdub, or a new take over playing loops: both record.
+          GlobalColor.amber => _stateRed,
           GlobalColor.green => _statePlaying,
           GlobalColor.blue => _stateEngaged,
           GlobalColor.off => _statePale,
@@ -307,7 +308,6 @@ List<PedalColor> projectPedalColors(
 }
 
 final PedalColor _stateRed = PedalPaletteColor.red.color;
-final PedalColor _stateOverdub = PedalPaletteColor.orange.color;
 final PedalColor _statePlaying = PedalPaletteColor.green.color;
 final PedalColor _stateEngaged = PedalPaletteColor.blue.color;
 final PedalColor _statePale = PedalPaletteColor.white.color;
