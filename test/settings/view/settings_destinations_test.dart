@@ -71,7 +71,11 @@ void main() {
         unawaited(open());
         await tester.pumpAndSettle();
         expect(find.byType(page), findsOneWidget);
-        expect(find.byKey(const Key('settings_destination_panel')), findsOne);
+        // About has its accepted page; the others still host a tray body on
+        // the interim destination panel.
+        if (page != AboutSettingsPage) {
+          expect(find.byKey(const Key('settings_destination_panel')), findsOne);
+        }
 
         await tester.tap(find.byKey(const Key('loop_settings_back')));
         await tester.pumpAndSettle();
@@ -319,7 +323,7 @@ void main() {
       await tester.tap(find.byKey(const Key('settings_about_row')));
       await tester.pumpAndSettle();
       expect(find.byType(AboutSettingsPage), findsOneWidget);
-      expect(find.byKey(const Key('system_about_tab')), findsOneWidget);
+      expect(find.byKey(const Key('about_this_console')), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('loop_settings_stage')));
       await tester.pumpAndSettle();

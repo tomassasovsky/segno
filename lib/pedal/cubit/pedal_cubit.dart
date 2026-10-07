@@ -15,6 +15,7 @@ class PedalCubit extends Cubit<PedalState> {
         PedalState(
           status: pedal.status,
           firmwareVersion: pedal.firmwareVersion,
+          protocolVersion: pedal.protocolVersion,
           frame: pedal.lastFrame,
         ),
       ) {
@@ -39,6 +40,7 @@ class PedalCubit extends Cubit<PedalState> {
       state.copyWith(
         status: status,
         firmwareVersion: () => _pedal.firmwareVersion,
+        protocolVersion: () => _pedal.protocolVersion,
         ctrl: status == PedalLinkStatus.connected ? null : const {},
       ),
     );

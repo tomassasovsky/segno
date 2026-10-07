@@ -72,7 +72,8 @@ class FakeConsoleFactsClient implements ConsoleFactsClient {
       name: 'VAMP 16',
       serial: 'VMP-16-0042',
       systemImage: 'Yocto scarthgap · kernel 6.12-rt',
-      panel: '16″ 1920×1080 · touch',
+      panels: ['Segno 15.6', 'Segno 7'],
+      lastFlashed: ConsoleBoardFlash(firmware: '1.4', protocol: 8),
     );
   }
 

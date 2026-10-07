@@ -63,6 +63,7 @@ run() {
     SEGNO_OPENOCD="$work/bin/openocd" \
     SEGNO_PINCTRL="$work/bin/pinctrl" \
     SEGNO_CONSOLE_LISTEN_SECONDS=1 \
+    SEGNO_CONSOLE_RECORD="$work/data/last-flashed" \
     OPENOCD_EXIT="${OPENOCD_EXIT:-0}" \
     bash "$SCRIPT" 2>"$work/log"
 }

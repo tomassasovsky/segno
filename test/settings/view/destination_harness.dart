@@ -109,6 +109,8 @@ class DestinationHarness {
     Widget home = const SizedBox.shrink(),
     AudioSetupState audioState = const AudioSetupState(),
     UpdateState updateState = const UpdateState(),
+    ConsoleFactsClient? factsClient,
+    PedalLink? pedalLink,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -163,9 +165,11 @@ class DestinationHarness {
     whenListen(refresh, const Stream<int>.empty(), initialState: 60);
     brightness = DisplayBrightnessCubit(settings: settings);
     final tracks = TracksCubit(settings: settings);
-    final pedal = PedalCubit(pedal: PedalRepository(NoopPedalLink()));
+    final pedal = PedalCubit(
+      pedal: PedalRepository(pedalLink ?? NoopPedalLink()),
+    );
     final facts = ConsoleFactsCubit(
-      client: FakeConsoleFactsClient(latency: Duration.zero),
+      client: factsClient ?? FakeConsoleFactsClient(latency: Duration.zero),
       settings: settings,
     );
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
