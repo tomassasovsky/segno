@@ -256,6 +256,50 @@ else
   fail "SPM le_stretch.cpp forwarder should compile; $(cat "$tmp/le_stretch_spm.err")"
 fi
 
+# The instrument voice TUs (#1197) are pure C listed explicitly, like the
+# restore DSP: every build that compiles the engine must list both, and the
+# macOS SPM and CocoaPods targets each need a forwarder that resolves.
+echo "== macOS instrument synth wiring =="
+readonly BUILD_TEST_LIB="$PLUGIN/tool/build_test_lib.sh"
+# The two CPU benches link the real engine sources too: a TU missing from one
+# breaks that bench's CI step as soon as an engine*.c file calls into it.
+readonly BENCH_PITCH_TIME="$PLUGIN/src/test/bench/bench_pitch_time.sh"
+readonly BENCH_INSTRUMENTS="$PLUGIN/src/test/bench/bench_instruments.sh"
+for tu in synth_voice.c synth_patch.c; do
+  for list in "$CMAKE" "$NATIVE_TESTS" "$BUILD_TEST_LIB" "$BENCH_PITCH_TIME" \
+              "$BENCH_INSTRUMENTS"; do
+    if grep -q "core/$tu" "$list"; then
+      pass "$(basename "$list") lists core/$tu"
+    else
+      fail "$(basename "$list") does not list core/$tu"
+    fi
+  done
+  for fwd in "$SPM_SRC/$tu" "$CLASSES/$tu"; do
+    if [ -f "$fwd" ] && target="$(resolve_include "$fwd")" && \
+       [ "$target" -ef "$PLUGIN/src/core/$tu" ]; then
+      pass "$(basename "$(dirname "$fwd")")/$tu forwards to src/core/$tu"
+    else
+      fail "forwarder $fwd missing or not resolving to src/core/$tu"
+    fi
+  done
+done
+
+# engine_instruments.c (#1197 Part 2a) rides the engine*.c glob in the test
+# scripts, so only CMake and the two macOS forwarders list it.
+if grep -q "core/engine_instruments.c" "$CMAKE"; then
+  pass "CMakeLists.txt lists core/engine_instruments.c"
+else
+  fail "CMakeLists.txt does not list core/engine_instruments.c"
+fi
+for fwd in "$SPM_SRC/engine_instruments.c" "$CLASSES/engine_instruments.c"; do
+  if [ -f "$fwd" ] && target="$(resolve_include "$fwd")" && \
+     [ "$target" -ef "$PLUGIN/src/core/engine_instruments.c" ]; then
+    pass "$(basename "$(dirname "$fwd")")/engine_instruments.c forwards to src/core/engine_instruments.c"
+  else
+    fail "forwarder $fwd missing or not resolving to src/core/engine_instruments.c"
+  fi
+done
+
 if [ "$fails" -eq 0 ]; then
   echo "ALL PASSED"
   exit 0

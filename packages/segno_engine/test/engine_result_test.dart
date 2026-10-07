@@ -15,6 +15,8 @@ void main() {
       expect(EngineResult.fromCode(-8), EngineResult.notReady);
       expect(EngineResult.fromCode(-9), EngineResult.reversed);
       expect(EngineResult.fromCode(-10), EngineResult.transformed);
+      expect(EngineResult.fromCode(-14), EngineResult.noInstrument);
+      expect(EngineResult.fromCode(-15), EngineResult.unknownPatch);
     });
 
     test('maps unknown codes to invalid', () {

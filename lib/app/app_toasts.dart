@@ -47,6 +47,9 @@ abstract final class AppToastId {
 
   /// Persistent Fade duration storage recovery.
   static const fadeSettings = 'app_fadeSettings_error';
+
+  /// Persistent instrument definitions storage recovery (#1197).
+  static const instrumentsSettings = 'app_instrumentsSettings_error';
 }
 
 final Map<String, ToastificationItem> _active = {};

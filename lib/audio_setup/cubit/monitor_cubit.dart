@@ -174,12 +174,12 @@ class MonitorCubit extends Cubit<MonitorState> {
   }
 
   Future<void> _restore(bool Function() stillOwned) async {
-    // Scan the monitor path's own ceiling ([kMaxMonitoredInputs] ==
-    // `LE_MAX_MONITORED_INPUTS`).
-    // Only inputs with saved state populate the map.
+    // Scan every hardware input ([kMaxChannels]). The monitor path also
+    // covers instrument sources (#1197), whose saved state belongs to the
+    // instrument (a later part); only inputs with saved state populate the
+    // map.
     final loaded = await Future.wait([
-      for (var input = 0; input < kMaxMonitoredInputs; input++)
-        _restoreInput(input),
+      for (var input = 0; input < kMaxChannels; input++) _restoreInput(input),
     ]);
     if (!stillOwned()) return;
     final restored = <int, InputMonitor>{};

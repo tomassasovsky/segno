@@ -155,6 +155,14 @@ class LooperRepository {
   final AudioEngine _engine;
   final Stream<void>? _ticker;
   Duration _pollInterval;
+  final _engineSnapshots = StreamController<EngineSnapshot>.broadcast(
+    sync: true,
+  );
+
+  /// Every snapshot the poll reads, for owners of other engine state (the
+  /// instruments, #1197) so the engine is read once per poll. Emits only
+  /// while [looperState] is listened to, as the poll runs then.
+  Stream<EngineSnapshot> get engineSnapshots => _engineSnapshots.stream;
 
   /// Fired when the repository changes a lane's chain or resets a remembered
   /// true mute on its own initiative. The bloc persists the resulting lane
@@ -2099,6 +2107,7 @@ class LooperRepository {
     final receiptsSettled = _observeSettingsReceipts();
     _drainHistoryFx();
     final snapshot = _snapshotAndSettleImages();
+    _engineSnapshots.add(snapshot);
     _retryRefusedRecord(snapshot);
     _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
@@ -3276,6 +3285,10 @@ class LooperRepository {
   /// Null covers every non-inheritable shape: no such input, and the two dry
   /// ones the record-time snapshot bails on (an empty chain, and a
   /// chain-DISABLED one — D2/D-CHAINDIS, R18).
+  ///
+  /// Bounded by [kMaxMonitoredInputs], which covers instrument sources
+  /// (#1197): an instrument lane inherits its monitor chain like a
+  /// hardware one. No caller passes one before Part 3c.
   List<TrackEffect>? _inheritableChain(int channel, int lane) {
     final input = _laneInput[(channel, lane)] ?? lane;
     if (input < 0 || input >= kMaxMonitoredInputs) return null;
@@ -4953,6 +4966,8 @@ class LooperRepository {
   /// chains never diverge (even if their raw fingerprints differ), a dry
   /// chain always diverges from an audible one, and two audible chains
   /// compare by sound fingerprint.
+  ///
+  /// Like [_inheritableChain], it covers instrument sources (#1197).
   bool laneChainDivergesFromInput(int channel, int lane) {
     final input = _laneInput[(channel, lane)] ?? lane;
     if (input < 0 || input >= kMaxMonitoredInputs) return false;
@@ -5345,7 +5360,9 @@ class LooperRepository {
   }
 
   /// Mutes or unmutes monitor [input]. Remembered and re-applied on every
-  /// (re)start; takes effect immediately only while running.
+  /// (re)start; takes effect immediately only while running. An instrument
+  /// source (#1197, sources 32-39) has a monitor too, so the bound is
+  /// [kMaxMonitoredInputs]; no caller passes one before Part 3c.
   EngineResult setMonitorMute({required int input, required bool muted}) {
     if (input < 0 || input >= kMaxMonitoredInputs) {
       return EngineResult.invalid;
@@ -5363,12 +5380,14 @@ class LooperRepository {
   /// hum-notch / expander utility stage). Remembered and re-applied on every
   /// successful (re)start — the engine resets conditioning on each configure —
   /// and takes effect immediately only while running. Returns
-  /// [EngineResult.invalid] for an input outside `[0, kMaxMonitoredInputs)`.
+  /// [EngineResult.invalid] for an input outside `[0, kMaxChannels)`:
+  /// conditioning is a hardware stage, which instrument sources (#1197) do
+  /// not have, and the engine refuses them.
   EngineResult setInputConditioningEnabled({
     required int input,
     required bool enabled,
   }) {
-    if (input < 0 || input >= kMaxMonitoredInputs) {
+    if (input < 0 || input >= kMaxChannels) {
       return EngineResult.invalid;
     }
     _condEnabled[input] = enabled;
@@ -5382,13 +5401,14 @@ class LooperRepository {
   /// and re-applied on every (re)start; takes effect immediately only while
   /// running. Independent of the enable flag — a value set while the stage is
   /// off is applied and takes effect when it is next enabled. Returns
-  /// [EngineResult.invalid] for an input outside `[0, kMaxMonitoredInputs)`.
+  /// [EngineResult.invalid] for an input outside `[0, kMaxChannels)`, as
+  /// [setInputConditioningEnabled] does.
   EngineResult setInputConditioningParam({
     required int input,
     required InputConditioningParam param,
     required double value,
   }) {
-    if (input < 0 || input >= kMaxMonitoredInputs) {
+    if (input < 0 || input >= kMaxChannels) {
       return EngineResult.invalid;
     }
     (_condParams[input] ??= {})[param] = value;
@@ -8015,6 +8035,7 @@ class LooperRepository {
     }
     _paramAnnounceWindows.clear();
     _paramAnnounceDirty.clear();
+    await _engineSnapshots.close();
     await _monitorChanges.close();
     await _monitorParamChanges.close();
     await _fxReplayConfirmed.close();
