@@ -108,6 +108,7 @@ class StorageRepository {
   final _volumeListeners = <StreamController<List<RemovableVolume>>>{};
   final _phaseListeners = <StreamController<EjectPhase>>{};
   final _leases = <HeldLease>[];
+  final _settledWaiters = <Completer<void>>[];
   final _liveParts = <String>{};
   final _random = Random.secure();
   Map<int, RemovableVolumeRecord> _records = const {};
@@ -207,6 +208,24 @@ class StorageRepository {
   /// Whether a write or an eject is in progress (shutdown's guard, §7.8).
   bool get transferInFlight => _leases.isNotEmpty || _eject != null;
 
+  /// Completes once no lease is held and no eject is in flight; at once when
+  /// none is. Restart and shutdown wait on it before they halt (§7.8).
+  Future<void> settled() {
+    if (!transferInFlight) return Future<void>.value();
+    final waiter = Completer<void>();
+    _settledWaiters.add(waiter);
+    return waiter.future;
+  }
+
+  void _notifySettled() {
+    if (transferInFlight || _settledWaiters.isEmpty) return;
+    final waiters = List.of(_settledWaiters);
+    _settledWaiters.clear();
+    for (final waiter in waiters) {
+      waiter.complete();
+    }
+  }
+
   /// Takes a hold on [destination] for [purpose]. Throws the
   /// [StorageFailure] a write there would meet: `readOnly`, `unsupported`, or
   /// `volumeLost` for a generation that is not present, is being ejected or
@@ -217,7 +236,10 @@ class StorageRepository {
     }
     final held = HeldLease(
       WriteLease(target: destination, purpose: purpose),
-      onRelease: _leases.remove,
+      onRelease: (released) {
+        _leases.remove(released);
+        _notifySettled();
+      },
     );
     _leases.add(held);
     return held;
@@ -338,6 +360,7 @@ class StorageRepository {
       _eject = null;
       _publishPhase();
       _publishVolumes();
+      _notifySettled();
     }
   }
 
