@@ -60,6 +60,12 @@ void main() {
   late Map<int, int> confirmedTrackDecay;
   late bool confirmedOneShot;
   late Map<int, bool> confirmedTrackOneShot;
+  late bool confirmedFollow;
+  late Map<int, bool> confirmedTrackFollow;
+  late PitchMode confirmedPitch;
+  late Map<int, PitchMode> confirmedTrackPitch;
+  late bool followRecovery;
+  late int followRequests;
   late RecordTiming confirmedTiming;
   late GridDivision rememberedDivision;
   late Map<int, RecordTiming> confirmedTrackTiming;
@@ -78,6 +84,9 @@ void main() {
     registerFallbackValue(<int, RecordTiming>{});
     registerFallbackValue(ClickMode.off);
     registerFallbackValue(RecordStartEditKind.restore);
+    registerFallbackValue(PitchMode.unchanged);
+    registerFallbackValue(<int, bool>{});
+    registerFallbackValue(<int, PitchMode>{});
   });
 
   setUp(() {
@@ -97,6 +106,12 @@ void main() {
     confirmedTrackDecay = {};
     confirmedOneShot = false;
     confirmedTrackOneShot = {};
+    confirmedFollow = false;
+    confirmedTrackFollow = {};
+    confirmedPitch = PitchMode.unchanged;
+    confirmedTrackPitch = {};
+    followRecovery = false;
+    followRequests = 0;
     confirmedTiming = RecordTiming.immediately;
     rememberedDivision = GridDivision.off;
     confirmedTrackTiming = {};
@@ -148,6 +163,71 @@ void main() {
       confirmedOneShot = call.namedArguments[#defaultOneShot] as bool;
       confirmedTrackOneShot = Map.of(
         call.namedArguments[#trackOverrides] as Map<int, bool>,
+      );
+      return EngineResult.ok;
+    });
+
+    // Audio & tempo (#1179): the repository's accepted vectors.
+    when(
+      () => repository.defaultFollowTempo,
+    ).thenAnswer((_) => confirmedFollow);
+    when(
+      () => repository.trackFollowTempoOverrides,
+    ).thenAnswer((_) => Map.unmodifiable(confirmedTrackFollow));
+    when(
+      () => repository.followTempoRecoveryRequired,
+    ).thenAnswer((_) => followRecovery);
+    when(
+      () => repository.followTempoFailures,
+    ).thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(
+      () => repository.settleFollowTempo(),
+    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.followTempoRestartIntent).thenAnswer(
+      (_) => (
+        defaultFollow: confirmedFollow,
+        trackOverrides: Map<int, bool>.unmodifiable(confirmedTrackFollow),
+      ),
+    );
+    when(
+      () => repository.setFollowTempoSettings(
+        defaultFollow: any(named: 'defaultFollow'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      followRequests++;
+      confirmedFollow = call.namedArguments[#defaultFollow] as bool;
+      confirmedTrackFollow = Map.of(
+        call.namedArguments[#trackOverrides] as Map<int, bool>,
+      );
+      return EngineResult.ok;
+    });
+    when(() => repository.defaultPitchMode).thenAnswer((_) => confirmedPitch);
+    when(
+      () => repository.trackPitchModeOverrides,
+    ).thenAnswer((_) => Map.unmodifiable(confirmedTrackPitch));
+    when(() => repository.pitchModeRecoveryRequired).thenReturn(false);
+    when(
+      () => repository.pitchModeFailures,
+    ).thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(
+      () => repository.settlePitchMode(),
+    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.pitchModeRestartIntent).thenAnswer(
+      (_) => (
+        defaultMode: confirmedPitch,
+        trackOverrides: Map<int, PitchMode>.unmodifiable(confirmedTrackPitch),
+      ),
+    );
+    when(
+      () => repository.setPitchModeSettings(
+        defaultMode: any(named: 'defaultMode'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedPitch = call.namedArguments[#defaultMode] as PitchMode;
+      confirmedTrackPitch = Map.of(
+        call.namedArguments[#trackOverrides] as Map<int, PitchMode>,
       );
       return EngineResult.ok;
     });
@@ -1992,17 +2072,144 @@ void main() {
     });
   });
 
-  group('Audio & tempo', () {
-    testWidgets('reads out the recorded-speed state and takes no taps', (
+  group('Audio & tempo (#1179)', () {
+    testWidgets('nothing stored restores Follow on and Pitch unchanged '
+        '(07/04): no tags on Defaults, the On and Unchanged notes', (
       tester,
     ) async {
       await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
-      expect(find.text(l10n.loopAudioUnavailable), findsOneWidget);
+      expect(playback.state.followTempo?.defaultValue, isTrue);
+      expect(playback.state.pitchMode?.defaultValue, PitchMode.unchanged);
+      expect(find.text(l10n.loopAudioNoteOn), findsOneWidget);
+      expect(find.text(l10n.loopAudioNotePitchKept), findsOneWidget);
+      expect(find.text(l10n.loopOriginDefault), findsNothing);
+      expect(find.text(l10n.loopOriginCustom), findsNothing);
+      expect(
+        find.byKey(const Key('loop_audio_pitch_unchanged')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('loop_audio_follow_use_default')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('Defaults Off writes the default and turns Pitch into the '
+        'recorded-pitch readout; On brings the choice back', (tester) async {
+      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+      await tester.tap(find.byKey(const Key('loop_audio_follow_off')));
+      await tester.pumpAndSettle();
+      expect(confirmedFollow, isFalse);
+      expect(store.values['looper.default_follow_tempo'], isFalse);
       expect(find.text(l10n.loopAudioNoteOff), findsOneWidget);
+      expect(find.byKey(const Key('loop_audio_pitch_readout')), findsOneWidget);
+      expect(find.byKey(const Key('loop_audio_pitch_unchanged')), findsNothing);
+      expect(find.text(l10n.loopAudioNotePitchUnchanged), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_audio_follow_on')));
       await tester.pumpAndSettle();
-      expect(find.text(l10n.loopAudioNoteOff), findsOneWidget);
+      expect(confirmedFollow, isTrue);
+      expect(find.byKey(const Key('loop_audio_pitch_readout')), findsNothing);
+      expect(
+        find.byKey(const Key('loop_audio_pitch_unchanged')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a track inherits (Default tags), takes a Custom Pitch '
+        '(07/05) and Use default removes only its override', (tester) async {
+      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+      await tester.tap(find.byKey(const Key('loop_scope_track_2')));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.loopOriginDefault), findsNWidgets(2));
+      await tester.tap(find.byKey(const Key('loop_audio_pitch_follows')));
+      await tester.pumpAndSettle();
+      expect(confirmedTrackPitch, {2: PitchMode.followsSpeed});
+      expect(confirmedPitch, PitchMode.unchanged);
+      expect(store.values['track_pitch_follows_speed.2'], isTrue);
+      expect(find.text(l10n.loopAudioNotePitchFollows), findsOneWidget);
+      expect(find.text(l10n.loopOriginCustom), findsOneWidget);
+      await tester.tap(find.byKey(const Key('loop_audio_pitch_use_default')));
+      await tester.pumpAndSettle();
+      expect(confirmedTrackPitch, isEmpty);
+      expect(store.values.containsKey('track_pitch_follows_speed.2'), isFalse);
+      expect(find.text(l10n.loopAudioNotePitchKept), findsOneWidget);
+      expect(
+        find.byKey(const Key('loop_audio_pitch_use_default')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a track that keeps its recorded speed (07/06): Custom Off, '
+        'the readout, and Use default back to following', (tester) async {
+      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+      await tester.tap(find.byKey(const Key('loop_scope_track_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_audio_follow_off')));
+      await tester.pumpAndSettle();
+      expect(confirmedTrackFollow, {1: false});
+      expect(confirmedFollow, isTrue);
+      expect(store.values['track_follow_tempo.1'], isFalse);
+      expect(find.text(l10n.loopOriginCustom), findsOneWidget);
+      expect(find.byKey(const Key('loop_audio_pitch_readout')), findsOneWidget);
+      // Defaults still follow.
+      await tester.tap(find.byKey(const Key('loop_scope_defaults')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('loop_audio_pitch_readout')), findsNothing);
+      await tester.tap(find.byKey(const Key('loop_scope_track_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_audio_follow_use_default')));
+      await tester.pumpAndSettle();
+      expect(confirmedTrackFollow, isEmpty);
+      expect(find.byKey(const Key('loop_audio_pitch_readout')), findsNothing);
+    });
+
+    testWidgets('an owed Follow vector disables the choice: a tap requests '
+        'nothing', (tester) async {
+      followRecovery = true;
+      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await tester.pumpAndSettle();
+      expect(playback.state.followTempo, isNull);
+      final before = followRequests;
+      await tester.tap(find.byKey(const Key('loop_audio_follow_off')));
+      await tester.pumpAndSettle();
+      expect(followRequests, before);
+    });
+
+    testWidgets('the hub reads the defaults: Follow tempo · Same pitch, '
+        'then Recorded speed, then Pitch follows speed', (tester) async {
+      await pump(tester);
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+      String summary(String follow, String pitch) =>
+          l10n.loopSummaryPair(follow, pitch);
+      expect(
+        find.text(summary(l10n.loopSummaryFollowOn, l10n.loopSummaryPitchSame)),
+        findsOneWidget,
+      );
+      await playback.setPitchMode(mode: PitchMode.followsSpeed);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          summary(l10n.loopSummaryFollowOn, l10n.loopSummaryPitchFollows),
+        ),
+        findsOneWidget,
+      );
+      await playback.setFollowTempo(follow: false);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          summary(l10n.loopSummaryFollowOff, l10n.loopSummaryPitchSame),
+        ),
+        findsOneWidget,
+      );
     });
   });
 }

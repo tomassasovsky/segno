@@ -12,6 +12,8 @@ enum OwnedSetting {
   fade,
   backingMix,
   clickPan,
+  followTempo,
+  pitchMode,
 }
 
 /// The session and device generation that own a captured setting write.

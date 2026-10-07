@@ -107,6 +107,7 @@ void main() {
     'v13_reverse_576826cfa',
     'v14_length_1168',
     'v15_length_backing',
+    'v16_audio_tempo',
   ]) {
     test('$name maps to a valid rig', () async {
       final opened = await SessionRepository(
@@ -117,7 +118,7 @@ void main() {
       expect(MixSettingsSnapshot.fromRig(rig).isValid, isTrue);
       expect(
         opened.conversion?.fromVersion,
-        name.startsWith('v15') ? isNull : isNotNull,
+        name.startsWith('v16') ? isNull : isNotNull,
       );
     });
   }

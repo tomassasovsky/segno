@@ -432,6 +432,55 @@ enum SpeedFactor {
   }
 }
 
+/// What a song-tempo change does now (#1179 Audio & tempo follow). Mirrors
+/// the native `le_tempo_follow_state`.
+enum TempoFollowState {
+  /// No recorded material: the tempo changes freely.
+  free,
+
+  /// A change retimes the recorded tracks that follow the tempo.
+  retimes,
+
+  /// Locked: the loop has no bar grid to follow.
+  noGrid,
+
+  /// Locked: no track follows the tempo.
+  noFollower,
+
+  /// Locked while a track records, overdubs, is armed or launching, or a
+  /// count-in runs.
+  busy;
+
+  /// Projects a native code; an unknown one reads [busy] (locked) rather
+  /// than claiming a change would retime.
+  static TempoFollowState fromCode(int code) => switch (code) {
+    0 => TempoFollowState.free,
+    1 => TempoFollowState.retimes,
+    2 => TempoFollowState.noGrid,
+    3 => TempoFollowState.noFollower,
+    _ => TempoFollowState.busy,
+  };
+}
+
+/// What happens to a following track's pitch when a tempo change retimes it
+/// (#1179). Mirrors the native Pitch setting's values.
+enum PitchMode {
+  /// The pitch stays: the take is time-stretched to the new span.
+  unchanged(0),
+
+  /// The pitch moves with the tempo ratio: faster raises it.
+  followsSpeed(1);
+
+  const PitchMode(this.code);
+
+  /// The native value.
+  final int code;
+
+  /// Projects a native value; anything but 1 reads [unchanged], the default.
+  static PitchMode fromCode(int code) =>
+      code == 1 ? PitchMode.followsSpeed : PitchMode.unchanged;
+}
+
 /// A track's Transpose (#1179): the pitch the player set (`stored`, -12..12
 /// semitones) and the pitch actually sounding (`effective`). `effective` is 0
 /// while the track's pitch-shifted render is pending or refused, and while
@@ -688,6 +737,10 @@ class TrackSnapshot {
     this.headRate = 1,
     this.transpose = (stored: 0, effective: 0),
     this.lengthHistoryRefusals = 0,
+    this.followTempoOverride,
+    this.pitchModeOverride,
+    this.pitchEffectiveCents = 0,
+    this.spanFrames = 0,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -730,6 +783,10 @@ class TrackSnapshot {
       headRate = 1,
       transpose = (stored: 0, effective: 0),
       lengthHistoryRefusals = 0,
+      followTempoOverride = null,
+      pitchModeOverride = null,
+      pitchEffectiveCents = 0,
+      spanFrames = 0,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -790,6 +847,14 @@ class TrackSnapshot {
       effective: native.transpose_effective_st,
     ),
     lengthHistoryRefusals: native.length_history_refusals,
+    followTempoOverride: native.follow_override < 0
+        ? null
+        : native.follow_override != 0,
+    pitchModeOverride: native.pitch_override < 0
+        ? null
+        : PitchMode.fromCode(native.pitch_override),
+    pitchEffectiveCents: native.pitch_effective_cents,
+    spanFrames: native.span_frames,
     imageRevision: native.image_revision,
     peakL: native.peak_l,
     peakR: native.peak_r,
@@ -819,6 +884,26 @@ class TrackSnapshot {
   /// overdub stopped at a length edit. Counted since the engine was created
   /// and never reset; the host reports each increase.
   final int lengthHistoryRefusals;
+
+  /// This track's Follow tempo override (#1179): null inherits
+  /// [EngineSnapshot.followTempo], true follows, false keeps its recorded
+  /// speed.
+  final bool? followTempoOverride;
+
+  /// This track's Pitch override (#1179): null inherits
+  /// [EngineSnapshot.pitchMode].
+  final PitchMode? pitchModeOverride;
+
+  /// The pitch a tempo retime puts on what the track sounds now, in cents
+  /// (#1179): 0 at its own tempo or once its time-stretched render plays,
+  /// the tempo ratio's shift while that render is pending or with
+  /// [PitchMode.followsSpeed]. Speed and Transpose are not included.
+  final int pitchEffectiveCents;
+
+  /// The shared-clock length this track's take was laid down against once a
+  /// retime moved the clock (#1179), 0 for the clock in force. A Session
+  /// saves it so a recall reads every take at its own ratio.
+  final int spanFrames;
 
   /// Sequence of the coherent native tuple publication.
   final int fadeRevision;
@@ -1011,6 +1096,10 @@ class TrackSnapshot {
           headRate == other.headRate &&
           transpose == other.transpose &&
           lengthHistoryRefusals == other.lengthHistoryRefusals &&
+          followTempoOverride == other.followTempoOverride &&
+          pitchModeOverride == other.pitchModeOverride &&
+          pitchEffectiveCents == other.pitchEffectiveCents &&
+          spanFrames == other.spanFrames &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -1049,6 +1138,10 @@ class TrackSnapshot {
     headRate,
     transpose,
     lengthHistoryRefusals,
+    followTempoOverride,
+    pitchModeOverride,
+    pitchEffectiveCents,
+    spanFrames,
     Object.hashAll(lanes),
   ]);
 }
@@ -1418,6 +1511,11 @@ class EngineSnapshot {
     this.primaryTrack = -1,
     this.speed = SpeedFactor.normal,
     this.transposeBypass = false,
+    this.recordedTempoBpm = 0,
+    this.recordedLengthFrames = 0,
+    this.followTempo = false,
+    this.tempoFollow = TempoFollowState.free,
+    this.pitchMode = PitchMode.unchanged,
     this.quantize = false,
     this.recordTimingRevision = 0,
     this.recordTimingResult = 0,
@@ -1506,6 +1604,11 @@ class EngineSnapshot {
       primaryTrack = -1,
       speed = SpeedFactor.normal,
       transposeBypass = false,
+      recordedTempoBpm = 0,
+      recordedLengthFrames = 0,
+      followTempo = false,
+      tempoFollow = TempoFollowState.free,
+      pitchMode = PitchMode.unchanged,
       quantize = false,
       recordTimingRevision = 0,
       recordTimingResult = 0,
@@ -1609,6 +1712,11 @@ class EngineSnapshot {
       primaryTrack: native.primary_track,
       speed: SpeedFactor.fromRatio(native.speed_numer, native.speed_denom),
       transposeBypass: native.transpose_bypass != 0,
+      recordedTempoBpm: native.recorded_tempo_bpm,
+      recordedLengthFrames: native.recorded_length_frames,
+      followTempo: native.follow_tempo != 0,
+      tempoFollow: TempoFollowState.fromCode(native.tempo_follow),
+      pitchMode: PitchMode.fromCode(native.pitch_follows_speed),
       quantize: native.quantize != 0,
       recordTimingRevision: native.record_timing_revision,
       recordTimingResult: native.record_timing_result,
@@ -1705,6 +1813,11 @@ class EngineSnapshot {
     int? primaryTrack,
     SpeedFactor? speed,
     bool? transposeBypass,
+    double? recordedTempoBpm,
+    int? recordedLengthFrames,
+    bool? followTempo,
+    TempoFollowState? tempoFollow,
+    PitchMode? pitchMode,
     bool? quantize,
     int? recordTimingRevision,
     int? recordTimingResult,
@@ -1790,6 +1903,11 @@ class EngineSnapshot {
     primaryTrack: primaryTrack ?? this.primaryTrack,
     speed: speed ?? this.speed,
     transposeBypass: transposeBypass ?? this.transposeBypass,
+    recordedTempoBpm: recordedTempoBpm ?? this.recordedTempoBpm,
+    recordedLengthFrames: recordedLengthFrames ?? this.recordedLengthFrames,
+    followTempo: followTempo ?? this.followTempo,
+    tempoFollow: tempoFollow ?? this.tempoFollow,
+    pitchMode: pitchMode ?? this.pitchMode,
     quantize: quantize ?? this.quantize,
     recordTimingRevision: recordTimingRevision ?? this.recordTimingRevision,
     recordTimingResult: recordTimingResult ?? this.recordTimingResult,
@@ -2102,6 +2220,25 @@ class EngineSnapshot {
   /// its stored pitch kept ([TrackSnapshot.transpose]).
   final bool transposeBypass;
 
+  /// The tempo the takes were recorded at (#1179 Audio & tempo follow), 0
+  /// with no material.
+  final double recordedTempoBpm;
+
+  /// The master length [recordedTempoBpm] measured (#1179), 0 with none. A
+  /// Session saves the pair so a recall commits the takes at the tempo they
+  /// were laid down at and retimes from there.
+  final int recordedLengthFrames;
+
+  /// The Follow tempo default every track inherits (#1179): with it, a
+  /// song-tempo change retimes the recorded tracks.
+  final bool followTempo;
+
+  /// What a song-tempo change does now, and why not when it is locked.
+  final TempoFollowState tempoFollow;
+
+  /// The Pitch default every track inherits (#1179).
+  final PitchMode pitchMode;
+
   /// The global loop-grid record quantize gate the engine holds (slice 2b):
   /// what a record press over a master waits for, together with
   /// [quantizeDiv]. Published so the effective record timing is read from
@@ -2286,6 +2423,11 @@ class EngineSnapshot {
           primaryTrack == other.primaryTrack &&
           speed == other.speed &&
           transposeBypass == other.transposeBypass &&
+          recordedTempoBpm == other.recordedTempoBpm &&
+          recordedLengthFrames == other.recordedLengthFrames &&
+          followTempo == other.followTempo &&
+          tempoFollow == other.tempoFollow &&
+          pitchMode == other.pitchMode &&
           quantize == other.quantize &&
           recordTimingRevision == other.recordTimingRevision &&
           recordTimingResult == other.recordTimingResult &&
@@ -2373,6 +2515,11 @@ class EngineSnapshot {
     primaryTrack,
     speed,
     transposeBypass,
+    recordedTempoBpm,
+    recordedLengthFrames,
+    followTempo,
+    tempoFollow,
+    pitchMode,
     quantize,
     recordTimingRevision,
     recordTimingResult,

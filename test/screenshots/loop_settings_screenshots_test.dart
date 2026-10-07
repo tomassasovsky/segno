@@ -15,6 +15,7 @@ import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
@@ -334,6 +335,9 @@ void main() {
     required LoopSettingsPageId page,
     LooperState state = _rig,
     Future<void> Function(TempoSettings tempo, RecordSettings options)? prepare,
+    InheritSnapshot<bool>? followTempo,
+    InheritSnapshot<PitchMode>? pitchMode,
+    Locale? locale,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -366,6 +370,15 @@ void main() {
         defaultOneShot: false,
         trackOverrides: const {1: true},
       ),
+      followTempo:
+          followTempo ??
+          InheritSnapshot(defaultValue: true, trackOverrides: const {}),
+      pitchMode:
+          pitchMode ??
+          InheritSnapshot(
+            defaultValue: PitchMode.unchanged,
+            trackOverrides: const {},
+          ),
     );
     addTearDown(playback.close);
     final timingOwner = RecordTimingSettings(
@@ -396,6 +409,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
+        locale: locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
@@ -584,11 +598,57 @@ void main() {
     );
   }, skip: !hasScreenshotFonts);
 
-  testWidgets('Audio & tempo readout', (tester) async {
-    await pump(tester, page: LoopSettingsPageId.audioTempo);
-    await expectLater(
-      find.byType(LoopSettingsPage),
-      matchesGoldenFile('goldens/loop_settings_audio_tempo.png'),
-    );
-  }, skip: !hasScreenshotFonts);
+  // The pen's 07/04 to 07/06 (#1179 Audio & tempo), in English and Spanish.
+  for (final locale in const [Locale('en'), Locale('es')]) {
+    final suffix = locale.languageCode == 'en' ? '' : '_es';
+    testWidgets('Audio & tempo defaults (07/04) $locale', (tester) async {
+      await pump(tester, page: LoopSettingsPageId.audioTempo, locale: locale);
+      await expectLater(
+        find.byType(LoopSettingsPage),
+        matchesGoldenFile('goldens/loop_settings_audio_tempo$suffix.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+
+    testWidgets('Audio & tempo, a track whose pitch follows speed (07/05) '
+        '$locale', (tester) async {
+      await pump(
+        tester,
+        page: LoopSettingsPageId.audioTempo,
+        locale: locale,
+        pitchMode: InheritSnapshot(
+          defaultValue: PitchMode.unchanged,
+          trackOverrides: const {1: PitchMode.followsSpeed},
+        ),
+      );
+      await tester.tap(find.byKey(const Key('loop_scope_track_1')));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(LoopSettingsPage),
+        matchesGoldenFile(
+          'goldens/loop_settings_audio_tempo_pitch_follows$suffix.png',
+        ),
+      );
+    }, skip: !hasScreenshotFonts);
+
+    testWidgets('Audio & tempo, a track that keeps its recorded speed (07/06) '
+        '$locale', (tester) async {
+      await pump(
+        tester,
+        page: LoopSettingsPageId.audioTempo,
+        locale: locale,
+        followTempo: InheritSnapshot(
+          defaultValue: true,
+          trackOverrides: const {1: false},
+        ),
+      );
+      await tester.tap(find.byKey(const Key('loop_scope_track_1')));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(LoopSettingsPage),
+        matchesGoldenFile(
+          'goldens/loop_settings_audio_tempo_recorded_speed$suffix.png',
+        ),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
 }

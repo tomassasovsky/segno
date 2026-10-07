@@ -85,6 +85,8 @@ const Map<int, SessionMigrationStep> sessionMigrationSteps = {
   13: _v13ToV14,
   // #1200's backing setup and click pan; landed after #1168's 14.
   14: _v14ToV15,
+  // #1179's Audio & tempo; landed after #1168's 14 and #1200's 15.
+  15: _addAudioTempo,
 };
 
 /// A manifest written by an older schema, converted in memory: the exact
@@ -432,6 +434,33 @@ void _v13ToV14(Map<String, dynamic> m, SessionMigrationContext c) {
 void _v14ToV15(Map<String, dynamic> m, SessionMigrationContext c) {
   _fill(m, c, 'backing', c.live.backing.toJson(), live: true);
   _fill(m, c, 'clickPan', c.live.clickPan, live: true);
+}
+
+/// 15 → 16: the Audio & tempo settings and the recorded
+/// tempo (#1179). Follow tempo and Pitch were the player's global
+/// preferences before (rule 1, the schema-8 precedent), so a session that
+/// never carried them keeps the live values, as opening it did. Nothing
+/// could retime a rig before this schema, so its takes are at its own tempo
+/// on its own master: no recorded pair, no spans.
+void _addAudioTempo(Map<String, dynamic> m, SessionMigrationContext c) {
+  final live = c.live;
+  _fill(m, c, 'defaultFollowTempo', live.defaultFollowTempo, live: true);
+  _fill(m, c, 'trackFollowTempoOverrides', <String, dynamic>{
+    for (final entry in live.trackFollowTempoOverrides.entries)
+      '${entry.key}': entry.value,
+  }, live: true);
+  _fill(m, c, 'defaultPitchMode', live.defaultPitchMode.name, live: true);
+  _fill(m, c, 'trackPitchModeOverrides', <String, dynamic>{
+    for (final entry in live.trackPitchModeOverrides.entries)
+      '${entry.key}': entry.value.name,
+  }, live: true);
+  _fill(m, c, 'recordedTempoBpm', 0.0);
+  _fill(m, c, 'recordedLengthFrames', 0);
+  for (final track in _list(m, 'tracks').cast<Map<String, dynamic>>()) {
+    if (track.containsKey('spanFrames')) continue;
+    track['spanFrames'] = 0;
+    c.note('tracks[${track['channel']}].spanFrames', 'its own master');
+  }
 }
 
 // ---- shared pieces ----

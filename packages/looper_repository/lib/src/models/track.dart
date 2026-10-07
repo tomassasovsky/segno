@@ -41,6 +41,9 @@ class Track extends Equatable {
     this.fade = const FadeImage(),
     this.reversed = false,
     this.transpose = (stored: 0, effective: 0),
+    this.followTempoOverride,
+    this.pitchModeOverride,
+    this.pitchEffectiveCents = 0,
     this.muted = false,
     this.pan = 0,
     this.solo = false,
@@ -99,6 +102,20 @@ class Track extends Equatable {
   /// with a stored pitch refuses punch-ins (`EngineResult.transformed`) unless
   /// Transpose is bypassed, its render pending or not.
   final TransposePitch transpose;
+
+  /// This track's Follow tempo override (#1179); null inherits
+  /// `LooperState.defaultFollowTempo`. The repository's accepted setting.
+  final bool? followTempoOverride;
+
+  /// This track's Pitch override (#1179); null inherits
+  /// `LooperState.defaultPitchMode`.
+  final PitchMode? pitchModeOverride;
+
+  /// The pitch a tempo retime puts on what the track sounds now, in cents
+  /// (#1179): 0 at its own tempo or once its time-stretched render plays;
+  /// the tempo ratio's shift while that render is pending, or with Pitch
+  /// following the speed. Speed and Transpose are not included.
+  final int pitchEffectiveCents;
 
   /// Whether the track is muted.
   final bool muted;
@@ -374,6 +391,9 @@ class Track extends Equatable {
     fade,
     reversed,
     transpose,
+    followTempoOverride,
+    pitchModeOverride,
+    pitchEffectiveCents,
     muted,
     pan,
     solo,
@@ -424,6 +444,9 @@ class Track extends Equatable {
     fade,
     reversed,
     transpose,
+    followTempoOverride,
+    pitchModeOverride,
+    pitchEffectiveCents,
     muted,
     pan,
     solo,

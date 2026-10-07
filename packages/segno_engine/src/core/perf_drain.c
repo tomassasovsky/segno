@@ -1004,8 +1004,10 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  * this codebase can reject. */
 static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
   static const char magic[4] = {'P', 'L', 'E', 'V'};
-  const uint32_t version = 10; /* 8: LE_PLOG_SPEED; 9: LE_PLOG_TRANSPOSE (#1179);
-                                 * 10: LE_PLOG_LENGTH (#1168) */
+  const uint32_t version = 12; /* 8: LE_PLOG_SPEED; 9: LE_PLOG_TRANSPOSE (#1179);
+                                 * 10: LE_PLOG_LENGTH (#1168);
+                                 * 11: LE_PLOG_HEAD_SPAN, LE_PLOG_RETIME;
+                                 * 12: LE_PLOG_SOURCE_LEN (#1179) */
   if (!le_pd_write(f, magic, sizeof(magic))) return 0;
   if (!le_pd_write(f, &version, sizeof(version))) return 0;
   if (!le_pd_write(f, &sample_rate, sizeof(sample_rate))) return 0;

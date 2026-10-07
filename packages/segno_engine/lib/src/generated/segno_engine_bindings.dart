@@ -2641,28 +2641,65 @@ class SegnoEngineBindings {
   late final _le_engine_set_one_shot_mask = _le_engine_set_one_shot_maskPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// Sets the MIDI clock mode (le_clock_mode: 0 off, 1 send). RECEIVE (2) and
-  /// any value outside the enum return LE_ERR_INVALID without posting — receive
-  /// is Phase E's clock follower, not yet implemented; this setter stubs the
-  /// tri-state field now so that part can reuse it without a breaking rename.
-  int le_engine_set_clock_mode(
+  /// Turns clock send on (1) or off (0). Returns LE_ERR_INVALID for any other
+  /// value or a null engine. The setting persists across configure.
+  int le_engine_set_clock_send(
     ffi.Pointer<le_engine> engine,
-    int mode,
+    int enabled,
   ) {
-    return _le_engine_set_clock_mode(
+    return _le_engine_set_clock_send(
       engine,
-      mode,
+      enabled,
     );
   }
 
-  late final _le_engine_set_clock_modePtr =
+  late final _le_engine_set_clock_sendPtr =
       _lookup<
         ffi.NativeFunction<
           ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
         >
-      >('le_engine_set_clock_mode');
-  late final _le_engine_set_clock_mode = _le_engine_set_clock_modePtr
+      >('le_engine_set_clock_send');
+  late final _le_engine_set_clock_send = _le_engine_set_clock_sendPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Selects the tempo source: `source_port` -1 for Internal, or an input port
+  /// 0..LE_MAX_MIDI_PORTS-1 whose capture is (or will be) attached.
+  /// `follow_transport` (0/1) and `loss_policy` (le_clock_loss_policy) are
+  /// stored with it; Follow Play/Stop and the loss policy act from #1228 Parts
+  /// 4 and 5. Each accepted call is one complete vector: the n-th accepted call
+  /// carries receipt sequence n, published in le_snapshot.clock_receipt with
+  /// clock_result once the audio thread has applied or refused it. Returns
+  /// LE_OK, LE_ERR_INVALID (bad argument), LE_ERR_NOT_RUNNING (unconfigured),
+  /// or LE_ERR_SYNC_LOCKED when changing the source while a track records,
+  /// overdubs, is armed or counting in (re-selecting the same source with other
+  /// settings is allowed).
+  int le_engine_set_clock_sync(
+    ffi.Pointer<le_engine> engine,
+    int source_port,
+    int follow_transport,
+    int loss_policy,
+  ) {
+    return _le_engine_set_clock_sync(
+      engine,
+      source_port,
+      follow_transport,
+      loss_policy,
+    );
+  }
+
+  late final _le_engine_set_clock_syncPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_clock_sync');
+  late final _le_engine_set_clock_sync = _le_engine_set_clock_syncPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
   /// Enqueues one callback-confirmed click mode; capturing refuses, arms do not.
   /// One request at a time. Confirm via commands_settled then snapshot receipt.
@@ -5726,6 +5763,44 @@ class SegnoEngineBindings {
         )
       >();
 
+  /// Repairs a float WAV part the engine's writer opened but never sealed (a
+  /// power cut or a crash), or cuts one back to a trusted length, for the
+  /// recording recovery (#1198) and anything else that salvages a part: keeps
+  /// the first min(whole frames present, `max_frames`) frames, truncates
+  /// anything after them (a torn last frame included), patches the RIFF and data
+  /// sizes and fsyncs. UINT64_MAX keeps every whole frame. `*kept` (may be NULL)
+  /// receives the frames kept. The file must be 32-bit float in the writer's
+  /// layout (RIFF/WAVE, `fmt `, an optional caller chunk such as `sgno`, then
+  /// `data`, whose size may still be the open file's zero). Returns 1 on
+  /// success, 0 when the file is not in that layout or a read or write fails.
+  /// The one size patcher; implemented by the native WAV writer (engine_wav.c).
+  int le_wav_patch_sizes(
+    ffi.Pointer<ffi.Char> path,
+    int max_frames,
+    ffi.Pointer<ffi.Uint64> kept,
+  ) {
+    return _le_wav_patch_sizes(
+      path,
+      max_frames,
+      kept,
+    );
+  }
+
+  late final _le_wav_patch_sizesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Uint64,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_wav_patch_sizes');
+  late final _le_wav_patch_sizes = _le_wav_patch_sizesPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Char>, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
   /// Starts an offline render of the finalized capture at `capture_dir`: spawns
   /// a worker thread that writes `stems/dry/track<channel>.wav` +
   /// `stems/wet/track<channel>.wav` under `capture_dir` for every non-empty
@@ -6327,18 +6402,50 @@ class SegnoEngineBindings {
         )
       >();
 
+  /// Sets the span an imported take was laid down against (#1179 Part 4b):
+  /// the shared-clock length it played over at its own speed, as a Session
+  /// saved it from le_track_snapshot.span_frames. Track `channel` must be EMPTY
+  /// with lane 0 imported (LE_ERR_INVALID otherwise, and for a span outside
+  /// 1..max_loop_frames); 0 clears it. le_engine_commit_session then parks the
+  /// track at length / span laps and keeps the span, so a take recorded after a
+  /// retime reads at its own ratio on the recorded clock and follows the next
+  /// retime like the takes around it. Call after the take's lanes are imported
+  /// (a lane-0 le_engine_import_track_lane, or le_engine_import_layer of lane 0
+  /// ordinal 0, starts a new take and clears it) and before the commit.
+  /// Control thread.
+  int le_engine_import_span(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int span_frames,
+  ) {
+    return _le_engine_import_span(
+      engine,
+      channel,
+      span_frames,
+    );
+  }
+
+  late final _le_engine_import_spanPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_import_span');
+  late final _le_engine_import_span = _le_engine_import_spanPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
   /// Establishes the master loop at `base_frames` and parks every imported track
   /// (EMPTY with a loaded length) STOPPED at its whole-loop multiple
-  /// (length / base_frames; a base/2 or base/4 track is that Sync division).
-  /// Restores exactly `loop_beats` musical beats (denominator notes; #1168: a
-  /// sub-bar loop a Divide left keeps its beats) over that span; zero keeps the
-  /// loop grid-free even when a tempo is known. The caller restores
-  /// tempo/source/signature before this commit, so a whole-bar loop passes
-  /// bars * ts_num. Does not infer beats from BPM or change audio length.
-  /// Requires base_frames > 0 and loop_beats in 0..INT32_MAX/15, and every
-  /// staged track a whole multiple of base_frames or exactly base/2 or base/4
-  /// (LE_ERR_INVALID otherwise, before anything is posted). Posts one command;
-  /// returns LE_OK or an le_result error.
+  /// (length / base_frames, or length / its imported span; a base/2 or base/4
+  /// track is that Sync division). Restores exactly `loop_beats` musical beats
+  /// (denominator notes; #1168: a sub-bar loop a Divide left keeps its beats)
+  /// over that span; zero keeps the loop grid-free even when a tempo is known.
+  /// The caller restores tempo/source/signature before this commit, so a
+  /// whole-bar loop passes bars * ts_num. Does not infer beats from BPM or
+  /// change audio length. Requires base_frames > 0 and loop_beats in
+  /// 0..INT32_MAX/15, and every staged track a whole multiple of base_frames
+  /// or exactly base/2 or base/4 (LE_ERR_INVALID otherwise, before anything is
+  /// posted). Posts one command; returns LE_OK or an le_result error.
   int le_engine_commit_session(
     ffi.Pointer<le_engine> engine,
     int base_frames,
@@ -6742,9 +6849,94 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
       >();
 
-  /// Consumes one completed Fade, Reverse, Speed, Transpose or length result.
-  /// Returns NOT_READY before callback publication, INVALID for an
-  /// absent/consumed/retired id; otherwise OK and fills result.
+  /// Follow tempo (#1179 Part 4a). With content on a bar grid, a song-tempo
+  /// change (le_engine_set_tempo, a tap pair) retimes the shared clock: the
+  /// master length becomes the recorded length scaled by recorded / new tempo
+  /// (rounded up to a whole number of the largest active Sync division), the
+  /// position keeps its phase, bars and beats keep their count, and every track
+  /// that follows reads its take at speed * take length / span, its pitch
+  /// following. A track that does not follow keeps its recorded speed, its lap
+  /// no longer the song lap, until the tempo returns. A take recorded at the
+  /// new tempo plays at its own speed. While a track plays at another span
+  /// than its take's, a punch-in on it is refused with LE_ERR_TRANSFORMED.
+  /// [channel] -1 sets the default every track inherits ([value] 0 keeps the
+  /// recorded speed, 1 follows; 0 until set); a track sets its override (-1
+  /// inherits the default). LE_ERR_INVALID for a bad channel or value.
+  int le_engine_set_follow_tempo(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int value,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_set_follow_tempo(
+      engine,
+      channel,
+      value,
+      request,
+    );
+  }
+
+  late final _le_engine_set_follow_tempoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_set_follow_tempo');
+  late final _le_engine_set_follow_tempo = _le_engine_set_follow_tempoPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  /// Pitch across a retime (#1179 Part 4a-ii). A following track that plays
+  /// over another span than its take's either keeps its pitch (0 Unchanged,
+  /// the default): the cache worker renders the take time-stretched to the
+  /// span (with its Transpose pitch, one render) and the track crossfades to
+  /// it at the same position; until it lands the take plays through the
+  /// varispeed head, timing exact, its pitch off by the tempo ratio and
+  /// reported in le_track_snapshot.pitch_effective_cents. A render within
+  /// 0.5 % of the span serves it (the head absorbs the rest), so a small tempo
+  /// move does not re-render. Or its pitch follows the ratio (1 Follows
+  /// speed), with no render. [channel] -1 sets the default ([value] 0/1); a
+  /// track sets its override (-1 inherits). LE_ERR_INVALID for a bad channel
+  /// or value.
+  int le_engine_set_pitch_mode(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int value,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_set_pitch_mode(
+      engine,
+      channel,
+      value,
+      request,
+    );
+  }
+
+  late final _le_engine_set_pitch_modePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_set_pitch_mode');
+  late final _le_engine_set_pitch_mode = _le_engine_set_pitch_modePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  /// Consumes one completed Fade, Reverse, Speed, Transpose, length, Follow
+  /// tempo or Pitch result. Returns NOT_READY before callback publication,
+  /// INVALID for an absent/consumed/retired id; otherwise OK and fills result.
   int le_engine_read_request_result(
     ffi.Pointer<le_engine> engine,
     int request,
@@ -7121,6 +7313,255 @@ class SegnoEngineBindings {
       .asFunction<
         int Function(ffi.Pointer<le_midi_out>, ffi.Pointer<ffi.Uint8>, int)
       >();
+
+  /// Admission only: the verdict and the plan, with no job. Returns LE_OK,
+  /// LE_ERR_NO_COMMON_CYCLE, LE_ERR_CAPACITY (over max_frames), LE_ERR_INVALID
+  /// (no sources, an empty source, a chosen length without a tempo, a file
+  /// target without a path), LE_ERR_NOT_READY (a source is recording or
+  /// overdubbing, counting a posted command that will make it so, or has a
+  /// layer in flight) or LE_ERR_NOT_RUNNING.
+  int le_engine_render_measure(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_render_request> request,
+    ffi.Pointer<le_render_plan> plan,
+  ) {
+    return _le_engine_render_measure(
+      engine,
+      request,
+      plan,
+    );
+  }
+
+  late final _le_engine_render_measurePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_render_request>,
+            ffi.Pointer<le_render_plan>,
+          )
+        >
+      >('le_engine_render_measure');
+  late final _le_engine_render_measure = _le_engine_render_measurePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_render_request>,
+          ffi.Pointer<le_render_plan>,
+        )
+      >();
+
+  /// Starts the job: re-measures and posts LE_CMD_RENDER_FREEZE. Returns LE_OK
+  /// with *job set, any measure refusal, LE_ERR_ALREADY_RUNNING while a job
+  /// exists, LE_ERR_CAPACITY when the job's bytes exceed the recipe's own
+  /// budget (it never evicts the wet cache), LE_ERR_UNSUPPORTED without a
+  /// render worker, or a ring refusal.
+  int le_engine_render_begin(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_render_request> request,
+    ffi.Pointer<ffi.Uint32> job,
+  ) {
+    return _le_engine_render_begin(
+      engine,
+      request,
+      job,
+    );
+  }
+
+  late final _le_engine_render_beginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_render_request>,
+            ffi.Pointer<ffi.Uint32>,
+          )
+        >
+      >('le_engine_render_begin');
+  late final _le_engine_render_begin = _le_engine_render_beginPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_render_request>,
+          ffi.Pointer<ffi.Uint32>,
+        )
+      >();
+
+  /// Progress of job `job`: *state (le_render_state), *permille (0..1000, one
+  /// scale over staging, then the render) and,
+  /// once FAILED, *result (LE_ERR_TRACKS_CHANGED, LE_ERR_CAPACITY,
+  /// LE_ERR_INVALID on an effect allocation failure, LE_ERR_DEVICE on a write
+  /// failure or a configure/stop that joined the worker; a file whose
+  /// directory sync alone failed is published and reads DONE). Also the staging
+  /// heartbeat: call it from the control thread until DONE or FAILED. Returns
+  /// LE_OK, or LE_ERR_INVALID for an unknown job.
+  int le_engine_render_poll(
+    ffi.Pointer<le_engine> engine,
+    int job,
+    ffi.Pointer<ffi.Int32> state,
+    ffi.Pointer<ffi.Int32> permille,
+    ffi.Pointer<ffi.Int32> result,
+  ) {
+    return _le_engine_render_poll(
+      engine,
+      job,
+      state,
+      permille,
+      result,
+    );
+  }
+
+  late final _le_engine_render_pollPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_engine_render_poll');
+  late final _le_engine_render_poll = _le_engine_render_pollPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
+
+  /// Copies a DONE memory result (interleaved stereo) into `out`. Returns the
+  /// frames copied (at most max_frames), or LE_ERR_INVALID / LE_ERR_NOT_READY.
+  int le_engine_render_copy(
+    ffi.Pointer<le_engine> engine,
+    int job,
+    ffi.Pointer<ffi.Float> out,
+    int max_frames,
+  ) {
+    return _le_engine_render_copy(
+      engine,
+      job,
+      out,
+      max_frames,
+    );
+  }
+
+  late final _le_engine_render_copyPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_render_copy');
+  late final _le_engine_render_copy = _le_engine_render_copyPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Float>, int)
+      >();
+
+  /// Cancels and releases job `job` (any state). A file target leaves no
+  /// partial file. Returns LE_OK or LE_ERR_INVALID for an unknown job.
+  int le_engine_render_cancel(
+    ffi.Pointer<le_engine> engine,
+    int job,
+  ) {
+    return _le_engine_render_cancel(
+      engine,
+      job,
+    );
+  }
+
+  late final _le_engine_render_cancelPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Uint32)
+        >
+      >('le_engine_render_cancel');
+  late final _le_engine_render_cancel = _le_engine_render_cancelPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Admits a bounce. Returns LE_OK with *request (read the callback outcome
+  /// with le_engine_read_request_result), LE_ERR_NOT_READY (the render is not a
+  /// finished memory job, or the destination is busy: capturing, armed, a
+  /// pending command, a layer in flight, a previous bounce not yet filed, or
+  /// a full undo stack), LE_ERR_TRACKS_CHANGED (a source changed after the
+  /// render froze it), LE_ERR_MODE_MISMATCH (the length does not fit the loop
+  /// mode), LE_ERR_CAPACITY (no slot or buffer), LE_ERR_UNSUPPORTED (Clear
+  /// sources) or LE_ERR_INVALID. The history entry is filed when the outcome is
+  /// collected (the next le_engine_drain_events after the callback applied).
+  int le_engine_bounce(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_bounce_request> request,
+    ffi.Pointer<ffi.Uint64> receipt,
+  ) {
+    return _le_engine_bounce(
+      engine,
+      request,
+      receipt,
+    );
+  }
+
+  late final _le_engine_bouncePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_bounce_request>,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_bounce');
+  late final _le_engine_bounce = _le_engine_bouncePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_bounce_request>,
+          ffi.Pointer<ffi.Uint64>,
+        )
+      >();
+
+  /// Undoes or redoes a whole bounce in one callback drain. Plain le_engine_undo
+  /// and le_engine_redo refuse a BOUNCE entry on top (LE_ERR_INVALID), so no path
+  /// restores part of one. Returns LE_OK with *receipt, LE_ERR_INVALID (no
+  /// bounce on top), LE_ERR_NOT_READY (busy, as le_engine_bounce),
+  /// LE_ERR_MODE_MISMATCH or a ring refusal.
+  int le_engine_bounce_recover(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_bounce_recover_request> request,
+    ffi.Pointer<ffi.Uint64> receipt,
+  ) {
+    return _le_engine_bounce_recover(
+      engine,
+      request,
+      receipt,
+    );
+  }
+
+  late final _le_engine_bounce_recoverPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_bounce_recover_request>,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_bounce_recover');
+  late final _le_engine_bounce_recover = _le_engine_bounce_recoverPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_bounce_recover_request>,
+          ffi.Pointer<ffi.Uint64>,
+        )
+      >();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -7158,13 +7599,24 @@ enum le_result {
   /// is unavailable while Reverse is on
   LE_ERR_REVERSED(-9),
 
-  /// a record or overdub while Speed is not 1x
-  /// (#1179): capture never writes through a
-  /// fractional read head
+  /// a record or overdub while Speed is not 1x,
+  /// or a punch-in on a transposed track or one
+  /// playing at another span than its take's
+  /// (#1179): capture never writes under playback
+  /// it does not hear
   LE_ERR_TRANSFORMED(-10),
 
   /// a backing file over LE_BACKING_MAX_SECONDS (#1200)
   LE_ERR_TOO_LONG(-12),
+
+  /// render recipe (#1202): the selected tracks'
+  /// lengths share no common cycle within the
+  /// cap; a chosen length is required
+  LE_ERR_NO_COMMON_CYCLE(-16),
+
+  /// render recipe (#1202): a source's material
+  /// changed after the render froze it
+  LE_ERR_TRACKS_CHANGED(-17),
 
   /// the file (or a directory on its path) does not
   /// exist (#1198)
@@ -7172,7 +7624,15 @@ enum le_result {
 
   /// the file exists but is shorter than the range
   /// it must hold (#1198)
-  LE_ERR_TRUNCATED(-19);
+  LE_ERR_TRUNCATED(-19),
+
+  /// tempo is owned by an external MIDI clock
+  /// source (#1228); select Internal first
+  LE_ERR_EXTERNAL_CLOCK(-20),
+
+  /// the clock source cannot change while a track
+  /// records, overdubs, is armed or counting in
+  LE_ERR_SYNC_LOCKED(-21);
 
   final int value;
   const le_result(this.value);
@@ -7190,8 +7650,12 @@ enum le_result {
     -9 => LE_ERR_REVERSED,
     -10 => LE_ERR_TRANSFORMED,
     -12 => LE_ERR_TOO_LONG,
+    -16 => LE_ERR_NO_COMMON_CYCLE,
+    -17 => LE_ERR_TRACKS_CHANGED,
     -18 => LE_ERR_NOT_FOUND,
     -19 => LE_ERR_TRUNCATED,
+    -20 => LE_ERR_EXTERNAL_CLOCK,
+    -21 => LE_ERR_SYNC_LOCKED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
   };
 }
@@ -7491,9 +7955,8 @@ enum le_command_code {
   /// arg_i = channel, arg_f = 0/1
   LE_CMD_SET_ONE_SHOT(47),
 
-  /// arg_i = le_clock_mode. RECEIVE (2) is
-  /// rejected — see le_engine_set_clock_mode.
-  LE_CMD_SET_CLOCK_MODE(48),
+  /// arg_i = 0/1
+  LE_CMD_SET_CLOCK_SEND(48),
 
   /// set a track's Track-stage chain entry type (and
   /// reset its DSP state). fx arm: channel, index,
@@ -7676,7 +8139,33 @@ enum le_command_code {
 
   /// buffer + output pair
   LE_CMD_AUDITION_START(136),
-  LE_CMD_AUDITION_STOP(137);
+  LE_CMD_AUDITION_STOP(137),
+
+  /// render recipe (#1202): the callback records
+  /// every source's read law; never raw-posted
+  LE_CMD_RENDER_FREEZE(112),
+
+  /// Bounce (#1202): installs a rendered result on
+  /// the destination in one drain; checked,
+  /// never raw-posted
+  LE_CMD_BOUNCE(113),
+
+  /// Bounce Undo/Redo (#1202): reinstalls the
+  /// other side of a bounce; never raw-posted
+  LE_CMD_BOUNCE_RECOVER(114),
+
+  /// MIDI clock sync (#1228; codes 124-131 are this epic's): one complete
+  /// vector {source port or -1, follow transport, loss policy} with a receipt
+  /// sequence. Rechecked by the callback (LE_ERR_SYNC_LOCKED).
+  LE_CMD_SET_CLOCK_SYNC(124),
+
+  /// checked internal Follow tempo setting
+  /// (#1179 Part 4a)
+  LE_CMD_SET_FOLLOW_TEMPO(120),
+
+  /// checked internal Pitch setting (#1179 Part
+  /// 4a-ii); 122-123 are held for #1179
+  LE_CMD_SET_PITCH_MODE(121);
 
   final int value;
   const le_command_code(this.value);
@@ -7729,7 +8218,7 @@ enum le_command_code {
     45 => LE_CMD_SET_LOOPER_MODE,
     46 => LE_CMD_CROWN_PRIMARY,
     47 => LE_CMD_SET_ONE_SHOT,
-    48 => LE_CMD_SET_CLOCK_MODE,
+    48 => LE_CMD_SET_CLOCK_SEND,
     49 => LE_CMD_SET_TRACK_FX,
     50 => LE_CMD_SET_TRACK_FX_COUNT,
     53 => LE_CMD_SET_TUNER_INPUT,
@@ -7776,6 +8265,12 @@ enum le_command_code {
     92 => LE_CMD_BACKING_SEEK,
     136 => LE_CMD_AUDITION_START,
     137 => LE_CMD_AUDITION_STOP,
+    112 => LE_CMD_RENDER_FREEZE,
+    113 => LE_CMD_BOUNCE,
+    114 => LE_CMD_BOUNCE_RECOVER,
+    124 => LE_CMD_SET_CLOCK_SYNC,
+    120 => LE_CMD_SET_FOLLOW_TEMPO,
+    121 => LE_CMD_SET_PITCH_MODE,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -8365,6 +8860,30 @@ final class le_track_snapshot extends ffi.Struct {
   /// increase, so a tap that did nothing is never silent.
   @ffi.Uint32()
   external int length_history_refusals;
+
+  /// Trailing (#1179 Part 4a): this track's Follow tempo override (-1
+  /// inherits le_snapshot.follow_tempo, 0 keeps its recorded speed, 1 follows
+  /// the song tempo).
+  @ffi.Int32()
+  external int follow_override;
+
+  /// Trailing (#1179 Part 4a-ii): this track's Pitch override (-1 inherits
+  /// le_snapshot.pitch_follows_speed, 0 Unchanged, 1 Follows speed), and the
+  /// pitch the tempo retime puts on what it sounds now, in cents: 0 at its
+  /// own span or once a stretch render plays (within the 0.5 % tolerance,
+  /// about 9 cents), the varispeed's shift while that render is pending or
+  /// with Follows speed. Speed and Transpose are not included.
+  @ffi.Int32()
+  external int pitch_override;
+
+  @ffi.Int32()
+  external int pitch_effective_cents;
+
+  /// Trailing (#1179 Part 4b): the shared-clock length this track's take was
+  /// laid down against once a retime moved the clock (0: the clock in force).
+  /// A Session saves it so a recall reads every take at its own ratio.
+  @ffi.Int32()
+  external int span_frames;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
@@ -8787,11 +9306,11 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int primary_track;
 
-  /// ---- MIDI clock (Phase C, D15; trailing for the same offset-stability
-  /// reason as the blocks above). le_clock_mode; default 0 = OFF, so an
-  /// untouched engine emits no clock bytes. See le_engine_set_clock_mode.
+  /// ---- MIDI clock send (Phase C, D15; trailing for the same
+  /// offset-stability reason as the blocks above). 0/1; default 0, so an
+  /// untouched engine emits no clock bytes. See le_engine_set_clock_send.
   @ffi.Int32()
-  external int clock_mode;
+  external int clock_send;
 
   /// ---- input clip detector + conditioning activity (input clip, S2;
   /// trailing for the same offset-stability reason as the blocks above).
@@ -9008,6 +9527,70 @@ final class le_snapshot extends ffi.Struct {
   /// leaves 2 or 6 beats with loop_bars 0.
   @ffi.Int32()
   external int loop_beats;
+
+  /// ---- MIDI clock sync (#1228 Part 2; trailing). clock_state is an
+  /// le_clock_state; clock_source_port is -1 for Internal. clock_bpm is the
+  /// external tempo for display (0.1 BPM steps with hysteresis, Segno's
+  /// denominator-note unit; the last value is kept while LOST, 0 before the
+  /// first acquisition). clock_out_of_range is 1 while a steady clock lies
+  /// outside 30..300 BPM in the current signature. clock_pulses counts every
+  /// pulse received or recognised as missed since the source was selected
+  /// (low 32 bits). clock_receipt is the sequence of the last applied
+  /// le_engine_set_clock_sync, clock_result its outcome (LE_OK or
+  /// LE_ERR_SYNC_LOCKED). clock_losses counts Synced -> Lost transitions.
+  @ffi.Int32()
+  external int clock_state;
+
+  @ffi.Int32()
+  external int clock_source_port;
+
+  @ffi.Int32()
+  external int clock_follow_transport;
+
+  @ffi.Int32()
+  external int clock_loss_policy;
+
+  @ffi.Float()
+  external double clock_bpm;
+
+  @ffi.Int32()
+  external int clock_out_of_range;
+
+  @ffi.Uint32()
+  external int clock_pulses;
+
+  @ffi.Uint32()
+  external int clock_receipt;
+
+  @ffi.Int32()
+  external int clock_result;
+
+  @ffi.Uint32()
+  external int clock_losses;
+
+  /// Trailing (#1179 Part 4a): the tempo the takes were recorded at (0 with
+  /// no master), the Follow tempo default every track inherits (0 = keep the
+  /// recorded speed), and what a song-tempo change does now
+  /// (le_tempo_follow_state).
+  @ffi.Float()
+  external double recorded_tempo_bpm;
+
+  @ffi.Int32()
+  external int follow_tempo;
+
+  @ffi.Int32()
+  external int tempo_follow;
+
+  /// Trailing (#1179 Part 4a-ii): the Pitch default every track inherits
+  /// (0 Unchanged, the default; 1 Follows speed).
+  @ffi.Int32()
+  external int pitch_follows_speed;
+
+  /// Trailing (#1179 Part 4b): the master length recorded_tempo_bpm
+  /// measured (0 with none). A Session saves the pair, so a recall commits
+  /// the takes at the tempo they were laid down at and retimes from there.
+  @ffi.Int32()
+  external int recorded_length_frames;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -9460,6 +10043,133 @@ typedef le_midi_event_cb =
 final class le_midi extends ffi.Opaque {}
 
 final class le_midi_out extends ffi.Opaque {}
+
+final class le_render_request extends ffi.Struct {
+  /// bit t = track t
+  @ffi.Uint32()
+  external int source_mask;
+
+  /// 0 = the common cycle
+  @ffi.Int32()
+  external int length_bars;
+
+  /// le_render_tails
+  @ffi.Int32()
+  external int tails;
+
+  /// 1 = include the All tracks chain
+  @ffi.Int32()
+  external int mix_fx;
+
+  /// le_render_target
+  @ffi.Int32()
+  external int target;
+
+  /// file target: the final path ("<path>.part" while
+  /// writing)
+  external ffi.Pointer<ffi.Char> path;
+
+  /// 0 = no cap beyond the cycle cap; Bounce passes the
+  /// destination's capacity
+  @ffi.Int32()
+  external int max_frames;
+}
+
+final class le_render_plan extends ffi.Struct {
+  /// the window, in frames
+  @ffi.Int32()
+  external int frames;
+
+  /// le_render_method
+  @ffi.Int32()
+  external int method;
+
+  /// the window in beats x 1000 (0 without a tempo)
+  @ffi.Int32()
+  external int beats_milli;
+
+  /// 0 = no tempo: lengths read in seconds
+  @ffi.Int32()
+  external int tempo_set;
+
+  /// sources whose chains hold a hosted plugin, which
+  /// renders dry
+  @ffi.Uint32()
+  external int plugin_mask;
+
+  /// sources whose Fade amount is below unity
+  @ffi.Uint32()
+  external int faded_mask;
+
+  /// sources heard through a not-yet-ready transform
+  @ffi.Uint32()
+  external int pending_mask;
+
+  /// Once sources longer than a chosen length: only
+  /// the part of their single pass inside the window
+  /// sounds, none when it starts after the window
+  @ffi.Uint32()
+  external int once_cut_mask;
+}
+
+/// ---- Bounce (#1202, Part 4a: Keep sources) ----
+///
+/// Installs a finished memory render (le_engine_render_begin with
+/// LE_RENDER_TARGET_MEMORY) on one destination track in ONE callback drain:
+/// the image as a stereo pair (lanes 0 and 1, image pans -1/+1, the other
+/// lanes silent), its length and clock, STOPPED, and the destination's
+/// processing reset — unity gain, unity lane levels, centred lane pans, mutes
+/// off, Fade and direction reset, and the chains given here (empty when NULL).
+/// `topology` (optional) is the destination's lane count, routing and mix,
+/// applied first through the ordinary mix path; the reset values then win.
+/// The destination's previous state becomes one LE_HIST_BOUNCE history entry;
+/// le_engine_bounce_recover undoes or redoes it whole.
+final class le_bounce_request extends ffi.Struct {
+  /// a DONE memory render
+  @ffi.Uint32()
+  external int job;
+
+  /// the track that receives the result
+  @ffi.Int32()
+  external int destination;
+
+  /// must be 1 until Clear sources lands (Part 4b)
+  @ffi.Int32()
+  external int keep_sources;
+
+  /// NULL: keep lane count and routing
+  external ffi.Pointer<le_mix_settings> topology;
+
+  /// lane_fx_count recipes; NULL: empty chains
+  external ffi.Pointer<le_fx_recipe> lane_fx;
+
+  @ffi.Int32()
+  external int lane_fx_count;
+
+  /// NULL: an empty track chain
+  external ffi.Pointer<le_fx_recipe> track_fx;
+}
+
+final class le_bounce_recover_request extends ffi.Struct {
+  @ffi.Int32()
+  external int destination;
+
+  /// 0: undo the bounce on top of the undo stack;
+  /// 1: redo the one on top of the redo stack
+  @ffi.Int32()
+  external int redo;
+
+  /// the side being restored
+  external ffi.Pointer<le_mix_settings> topology;
+
+  /// its chains; NULL: empty
+  external ffi.Pointer<le_fx_recipe> lane_fx;
+
+  @ffi.Int32()
+  external int lane_fx_count;
+
+  external ffi.Pointer<le_fx_recipe> track_fx;
+}
 
 const int LE_MAX_CHANNELS = 32;
 

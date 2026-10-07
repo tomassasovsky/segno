@@ -247,6 +247,12 @@ typedef const char* (*le_channel_name_fn)(void* ctx, int channel);
 uint32_t le_excluded_mask_from_names(le_channel_name_fn get_name, void* ctx,
                                      int channel_count);
 
+/* Replaces the MIDI clock follower's time base (le_now_ns) with `fn(ctx)`, so
+ * pulse timestamps and loss timeouts can be driven deterministically. NULL
+ * restores le_now_ns. Not part of the FFI surface. */
+void le_engine_set_now_fn_for_test(le_engine* engine, uint64_t (*fn)(void*),
+                                   void* ctx);
+
 /* Overrides the excluded-input-channel mask without opening a device, so the
  * capture-average / monitoring / SET_INPUT_MASK exclusion paths can be tested
  * deterministically. Not part of the FFI surface. */
@@ -436,6 +442,19 @@ struct le_prepared_fx* le_fx_prepare_capture(le_engine* e, int channel,
 void le_fx_recipe_admitted(le_engine* e, struct le_prepared_fx* edit,
                            uint32_t image_revision);
 void le_fx_recipe_abandon(struct le_prepared_fx* edit);
+/* Prepares `owner`'s chains on track `channel` (#1202 Bounce): lanes
+ * [0, count) for LE_FX_OWNER_LANE, the track chain for LE_FX_OWNER_TRACK.
+ * recipes[i] (or an empty chain when `recipes` is NULL or i >= recipe_count)
+ * becomes the chain, through the same validation and plugin bookkeeping as a
+ * recipe edit. NULL when a recipe is invalid or an edit is pending there. */
+/* Bounce (#1202): files collected outcomes (each drain), and drops every
+ * bundle when the audio thread is gone for good (configure, destroy). */
+void le_bounce_collect(le_engine* engine);
+void le_bounce_abandon_all(le_engine* engine);
+struct le_prepared_fx* le_fx_prepare_chains(le_engine* e, int owner,
+                                            int channel, int count,
+                                            const le_fx_recipe* recipes,
+                                            int recipe_count);
 void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* edit, uint64_t frame);
 struct le_command;
 void le_plog_push(le_engine* e, uint64_t frame, struct le_command command);

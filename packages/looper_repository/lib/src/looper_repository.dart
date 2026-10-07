@@ -17,12 +17,14 @@ import 'package:looper_repository/src/models/mix_settings_snapshot.dart';
 import 'package:looper_repository/src/models/output_setup.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart'
     show PluginDescriptor, PluginParamInfo, pluginParamInfoFromEngine;
+import 'package:looper_repository/src/models/selected_render.dart';
 import 'package:looper_repository/src/models/session_rig.dart';
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
 import 'package:looper_repository/src/models/tuner_reading.dart';
 import 'package:looper_repository/src/plugin_catalog.dart';
+import 'package:looper_repository/src/render_job.dart';
 import 'package:looper_repository/src/settings_receipt.dart';
 import 'package:segno_engine/segno_engine.dart'
     hide
@@ -141,11 +143,15 @@ class LooperRepository {
     Duration pollInterval = const Duration(milliseconds: 16),
     Stream<void>? reconnectTicker,
     Duration reconnectInterval = const Duration(seconds: 1),
+    Duration renderPollInterval = const Duration(milliseconds: 16),
+    Duration renderFreezeTimeout = const Duration(seconds: 2),
   }) : _engine = engine,
        _ticker = ticker,
        _pollInterval = pollInterval,
        _reconnectTicker = reconnectTicker,
-       _reconnectInterval = reconnectInterval {
+       _reconnectInterval = reconnectInterval,
+       _renderPollInterval = renderPollInterval,
+       _renderFreezeTimeout = renderFreezeTimeout {
     _controller = StreamController<LooperState>.broadcast(
       onListen: _startPolling,
       onCancel: _stopPolling,
@@ -155,6 +161,11 @@ class LooperRepository {
   final AudioEngine _engine;
   final Stream<void>? _ticker;
   Duration _pollInterval;
+  final Duration _renderPollInterval;
+  final Duration _renderFreezeTimeout;
+
+  /// The shared-recipe render this repository started last (#1202).
+  RenderJob? _renderJob;
 
   /// Fired when the repository changes a lane's chain or resets a remembered
   /// true mute on its own initiative. The bloc persists the resulting lane
@@ -309,6 +320,38 @@ class LooperRepository {
 
   /// Playback refusals and autonomous restart uncertainty.
   Stream<EngineResult> get oneShotFailures => _oneShot.failures;
+
+  /// Follow tempo and Pitch (#1179 Audio & tempo follow): Loop settings
+  /// with the inherit grammar, a default every track inherits and per-track
+  /// overrides, each a callback-confirmed vector like One Shot.
+  late final _followTempo = SettingsReceipt<_InheritIntent<bool>>(
+    _InheritIntent(const {}, defaultValue: false),
+    send: (intent) => _sendInherit(
+      intent,
+      published: (s) => (
+        s.followTempo,
+        [for (final t in s.tracks) t.followTempoOverride],
+      ),
+      post: (channel, value) =>
+          _engine.setFollowTempo(channel: channel, follow: value),
+    ),
+    running: () => _intendRunning,
+    publish: () => _reproject(forcePublication: true),
+  );
+  late final _pitchMode = SettingsReceipt<_InheritIntent<PitchMode>>(
+    _InheritIntent(const {}, defaultValue: PitchMode.unchanged),
+    send: (intent) => _sendInherit(
+      intent,
+      published: (s) => (
+        s.pitchMode,
+        [for (final t in s.tracks) t.pitchModeOverride],
+      ),
+      post: (channel, value) =>
+          _engine.setPitchMode(channel: channel, mode: value),
+    ),
+    running: () => _intendRunning,
+    publish: () => _reproject(forcePublication: true),
+  );
 
   /// Per-track forced loop multiples (absent => auto). The global rec/dub and
   /// auto-record (sound-activated) flags. All re-applied on every (re)start.
@@ -826,6 +869,8 @@ class LooperRepository {
       _clickVolume,
       _recordStart,
       _oneShot,
+      _followTempo,
+      _pitchMode,
       _timing,
       _length,
       _mix,
@@ -2120,6 +2165,8 @@ class LooperRepository {
     var changed = _drainReceipts();
     for (final observation in [
       _oneShot.observation,
+      _followTempo.observation,
+      _pitchMode.observation,
       _clickVolume.observation,
       _clickMode.observation,
       _recordStart.observation,
@@ -2357,6 +2404,9 @@ class LooperRepository {
               fade: s.tracks[i].fade,
               reversed: s.tracks[i].reversed,
               transpose: s.tracks[i].transpose,
+              followTempoOverride: _followTempo.live.overrides[i],
+              pitchModeOverride: _pitchMode.live.overrides[i],
+              pitchEffectiveCents: s.tracks[i].pitchEffectiveCents,
               // An untouched live fader is unity. Native volume already
               // includes
               // source balance, which must never become a second saved level.
@@ -2428,6 +2478,10 @@ class LooperRepository {
     }),
     speed: s.speed,
     transposeBypass: s.transposeBypass,
+    recordedTempoBpm: s.recordedTempoBpm,
+    tempoFollow: s.tempoFollow,
+    defaultFollowTempo: _followTempo.live.defaultValue,
+    defaultPitchMode: _pitchMode.live.defaultValue,
     outputBusCount: s.outputBusCount,
     tailResetRev: s.tailResetRev,
     // Sized by the engine to the channels the device has.
@@ -2682,6 +2736,16 @@ class LooperRepository {
       if (!onceResult.isOk) {
         stopEngine();
         return onceResult;
+      }
+      for (final receipt in <SettingsReceipt<Object>>[
+        _followTempo,
+        _pitchMode,
+      ]) {
+        final replayed = receipt.replay();
+        if (!replayed.isOk) {
+          stopEngine();
+          return replayed;
+        }
       }
       var decayReplay = _engine.setOverdubFeedback(
         feedbackOfDecay(_restartOverdubDecay),
@@ -3828,6 +3892,104 @@ class LooperRepository {
     return _engine.peel(channel: channel);
   }
 
+  // ---- the shared render recipe (#1202): Bounce and Save selected audio ----
+
+  /// The engine's verdict on [render]: its plan (length in frames, seconds
+  /// and, with a tempo, beats and bars; the tracks whose plugins render dry,
+  /// that are faded, or that are heard through a pending transform), or the
+  /// refusal: [EngineResult.noCommonCycle], [EngineResult.capacity] (over
+  /// [maxFrames]), [EngineResult.invalid], [EngineResult.notReady] (a source
+  /// is recording, or a Session is being applied) or
+  /// [EngineResult.unsupported].
+  SelectedRenderMeasurement measureRender(
+    SelectedRender render, {
+    int? maxFrames,
+  }) {
+    if (_sessionAudioReserved) {
+      return (result: EngineResult.notReady, plan: null);
+    }
+    final measured = _engine.measureRender(
+      _renderRequest(render, RenderTarget.memory, maxFrames: maxFrames),
+    );
+    final plan = measured.plan;
+    if (!measured.result.isOk || plan == null) {
+      return (result: measured.result, plan: null);
+    }
+    final snapshot = _engine.snapshot();
+    return (
+      result: EngineResult.ok,
+      plan: SelectedRenderPlan.fromEngine(
+        plan,
+        sampleRate: snapshot.sampleRate,
+        beatsPerBar: snapshot.tsNum,
+      ),
+    );
+  }
+
+  /// Renders [render] into a stereo float WAV published at [path]. The
+  /// returned job reports progress and its outcome; it never leaves a
+  /// partial file. Refusals are [measureRender]'s, plus
+  /// [EngineResult.alreadyRunning] while a render runs or a finished memory
+  /// render's result is still held (its owner has not released it), and
+  /// [EngineResult.capacity] when the job does not fit in memory.
+  ({EngineResult result, RenderJob? job}) renderToFile(
+    SelectedRender render,
+    String path,
+  ) => _beginRender(
+    _renderRequest(render, RenderTarget.file, path: path),
+  );
+
+  /// Renders [render] into the engine's memory, at most [maxFrames] frames
+  /// (a Bounce destination's capacity). The finished job keeps its result
+  /// until it is released; no other render starts meanwhile.
+  ({EngineResult result, RenderJob? job}) renderToMemory(
+    SelectedRender render, {
+    required int maxFrames,
+  }) => _beginRender(
+    _renderRequest(render, RenderTarget.memory, maxFrames: maxFrames),
+  );
+
+  RenderRequest _renderRequest(
+    SelectedRender render,
+    RenderTarget target, {
+    String? path,
+    int? maxFrames,
+  }) => RenderRequest(
+    sources: render.sources,
+    lengthBars: render.lengthBars,
+    tails: switch (render.tails) {
+      RenderTailRule.wrap => RenderTails.wrap,
+      RenderTailRule.cut => RenderTails.cut,
+    },
+    mixFx: render.mixFx,
+    target: target,
+    path: path,
+    maxFrames: maxFrames,
+  );
+
+  ({EngineResult result, RenderJob? job}) _beginRender(RenderRequest request) {
+    if (_sessionAudioReserved) {
+      return (result: EngineResult.notReady, job: null);
+    }
+    // A kept memory result (a Bounce waiting for its commit) is never
+    // replaced behind its owner's back: the engine would retire it.
+    if (_renderJob?.holdsResult ?? false) {
+      return (result: EngineResult.alreadyRunning, job: null);
+    }
+    final admission = _engine.beginRender(request);
+    if (!admission.result.isOk) return (result: admission.result, job: null);
+    final job = RenderJob(
+      engine: _engine,
+      id: admission.job,
+      target: request.target,
+      path: request.path,
+      pollInterval: _renderPollInterval,
+      freezeTimeout: _renderFreezeTimeout,
+    );
+    _renderJob = job;
+    return (result: EngineResult.ok, job: job);
+  }
+
   /// Applies a loaded session [rig] to the engine THROUGH this repository —
   /// the ONE session-apply path (F2). Every write lands in the remembered
   /// caches as well as the engine, so a device restart / reconnect replays the
@@ -3933,6 +4095,22 @@ class LooperRepository {
         )) {
       throw StateError('session mix cannot be restored');
     }
+    // Audio & tempo (#1179): the recorded pair is both or neither, at a tempo
+    // the engine takes, beside a session tempo it retimes to; spans and
+    // overrides name real tracks. Refused here, before the rig is cleared.
+    final recordedSet =
+        rig.recordedTempoBpm != 0 || rig.recordedLengthFrames != 0;
+    if ((recordedSet &&
+            (!rig.recordedTempoBpm.isFinite ||
+                rig.recordedTempoBpm < 30 ||
+                rig.recordedTempoBpm > 300 ||
+                rig.recordedLengthFrames <= 0 ||
+                rig.tempoSource == TempoSource.none)) ||
+        rig.tracks.any((t) => t.spanFrames < 0) ||
+        rig.trackFollowTempoOverrides.keys.any((c) => c < 0 || c >= 8) ||
+        rig.trackPitchModeOverrides.keys.any((c) => c < 0 || c >= 8)) {
+      throw StateError('session audio and tempo cannot be restored');
+    }
     final restoredMix = _MixIntent(
       pans: rig.trackPans,
       trackLevels: rig.trackLevels,
@@ -3986,10 +4164,14 @@ class LooperRepository {
     _clickVolume.reset();
     _recordStart.reset();
     _oneShot.reset();
+    _followTempo.reset();
+    _pitchMode.reset();
     // Own the settings before the first await. Callers may reuse their maps.
     final recordTimingOverrides = Map.of(rig.trackRecordTimingOverrides);
     final overdubDecayOverrides = Map.of(rig.trackOverdubDecayOverrides);
     final oneShotOverrides = Map.of(rig.trackOneShotOverrides);
+    final followOverrides = Map.of(rig.trackFollowTempoOverrides);
+    final pitchOverrides = Map.of(rig.trackPitchModeOverrides);
     final lengthPresetOverrides = Map.of(rig.trackLengthPresetOverrides);
     _requireSessionSetting(
       await settleFxRecipes(
@@ -4104,8 +4286,13 @@ class LooperRepository {
     _tempoBpm = rig.tempoBpm;
     _tempoSource = rig.tempoSource;
     if (_intendRunning) {
+      // A retimed rig's takes commit at the tempo they were laid down at
+      // (#1179); the session tempo retimes them after the commit.
       _requireSessionSetting(
-        _engine.restoreTempo(bpm: rig.tempoBpm, source: rig.tempoSource),
+        _engine.restoreTempo(
+          bpm: rig.retimed ? rig.recordedTempoBpm : rig.tempoBpm,
+          source: rig.tempoSource,
+        ),
       );
     }
     _requireSessionSetting(setSyncTempo(on: rig.syncTempo));
@@ -4137,6 +4324,32 @@ class LooperRepository {
     _requireSessionSetting(setClickOutput(rig.clickMask));
     _requireSessionSetting(setClickVolume(rig.clickVolume));
     _requireSessionSetting(await settleClickVolume());
+    requireCurrent();
+
+    // Audio & tempo (#1179), before the takes so they commit at their rates.
+    // A retimed rig follows on every track until its retime has landed: the
+    // retime needs a follower, and the session's own vector may have none
+    // (a song retimed and then set to keep its recorded speed).
+    _requireSessionSetting(
+      setPitchModeSettings(
+        defaultMode: rig.defaultPitchMode,
+        trackOverrides: pitchOverrides,
+      ),
+    );
+    _requireSessionSetting(await settlePitchMode());
+    requireCurrent();
+    _requireSessionSetting(
+      rig.retimed
+          ? setFollowTempoSettings(
+              defaultFollow: true,
+              trackOverrides: const {},
+            )
+          : setFollowTempoSettings(
+              defaultFollow: rig.defaultFollowTempo,
+              trackOverrides: followOverrides,
+            ),
+    );
+    _requireSessionSetting(await settleFollowTempo());
     requireCurrent();
 
     // Session-level mode + crown (B5c), applied here — before any content is
@@ -4189,6 +4402,22 @@ class LooperRepository {
       attempts: clearPollAttempts,
     );
     requireCurrent();
+    if (rig.retimed) {
+      await _retimeSession(
+        rig,
+        interval: clearPollInterval,
+        attempts: clearPollAttempts,
+      );
+      requireCurrent();
+      _requireSessionSetting(
+        setFollowTempoSettings(
+          defaultFollow: rig.defaultFollowTempo,
+          trackOverrides: followOverrides,
+        ),
+      );
+      _requireSessionSetting(await settleFollowTempo());
+      requireCurrent();
+    }
 
     // Restore per-lane routing / mix through the cached setters so the caches
     // stay truthful (and a restart replays them). Lane count first — so an
@@ -4471,6 +4700,16 @@ class LooperRepository {
             'failed to finalize track ${track.channel}: ${finalized.name}',
           );
         }
+        // A take laid down against another master than the recorded one
+        // (#1179) commits over that span, at its own ratio.
+        if (rig.retimed && track.spanFrames > 0) {
+          final spanned = _engine.importSpan(track.channel, track.spanFrames);
+          if (!spanned.isOk) {
+            throw StateError(
+              'failed to restore track ${track.channel} span: ${spanned.name}',
+            );
+          }
+        }
       }
       // Finalization queues a material reset. Its callback must publish the
       // new Fade generation before an image can target that imported material.
@@ -4522,9 +4761,13 @@ class LooperRepository {
       }
       // An empty session establishes no master: the engine stays free to define
       // a fresh loop length.
-      if (rig.tracks.isNotEmpty && rig.baseLengthFrames > 0) {
+      // A retimed rig commits on its recorded master (#1179).
+      final base = rig.retimed
+          ? rig.recordedLengthFrames
+          : rig.baseLengthFrames;
+      if (rig.tracks.isNotEmpty && base > 0) {
         final committed = _engine.commitSession(
-          rig.baseLengthFrames,
+          base,
           loopBeats: rig.gridBeats,
         );
         if (!committed.isOk) {
@@ -4537,7 +4780,7 @@ class LooperRepository {
         if (_engine.commandsSettled) {
           final snapshot = _engine.snapshot();
           final committed =
-              snapshot.masterLengthFrames == rig.baseLengthFrames &&
+              snapshot.masterLengthFrames == base &&
               rig.tracks.every((track) {
                 if (track.channel >= snapshot.tracks.length) return false;
                 final actual = snapshot.tracks[track.channel];
@@ -4576,6 +4819,31 @@ class LooperRepository {
       }
       rethrow;
     }
+  }
+
+  /// Moves a retimed rig, committed on its recorded master, to the session
+  /// tempo (#1179): the engine retimes from the recorded pair, so the clock
+  /// lands exactly on the saved master and every take at the ratio it had.
+  /// A retime the engine refuses fails the recall.
+  Future<void> _retimeSession(
+    SessionRig rig, {
+    required Duration interval,
+    required int attempts,
+  }) async {
+    if (rig.tempoBpm != rig.recordedTempoBpm) {
+      _requireSessionSetting(_engine.setTempo(rig.tempoBpm));
+    }
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      if (_engine.commandsSettled) {
+        if (_engine.snapshot().masterLengthFrames != rig.baseLengthFrames) {
+          throw StateError('session retime was refused');
+        }
+        _reproject();
+        return;
+      }
+      await Future<void>.delayed(interval);
+    }
+    throw StateError('session retime did not settle');
   }
 
   static bool _audioCleared(EngineSnapshot snapshot) =>
@@ -8029,6 +8297,161 @@ class LooperRepository {
     );
   }
 
+  /// The accepted Follow tempo default and per-track overrides (#1179).
+  bool get defaultFollowTempo => _followTempo.live.defaultValue;
+
+  /// The accepted per-track Follow tempo overrides; absent inherits.
+  Map<int, bool> get trackFollowTempoOverrides => _followTempo.live.overrides;
+
+  /// The accepted Pitch default (#1179).
+  PitchMode get defaultPitchMode => _pitchMode.live.defaultValue;
+
+  /// The accepted per-track Pitch overrides; absent inherits.
+  Map<int, PitchMode> get trackPitchModeOverrides => _pitchMode.live.overrides;
+
+  /// Stages a stopped Follow tempo vector or requests one callback-confirmed
+  /// vector (#1179): [defaultFollow] every track inherits, [trackOverrides]
+  /// per track (absent inherits). With content on a bar grid and a
+  /// following track, a song-tempo change retimes the recorded tracks
+  /// ([LooperState.tempoFollow]).
+  EngineResult setFollowTempoSettings({
+    required bool defaultFollow,
+    required Map<int, bool> trackOverrides,
+  }) => _requestInherit(
+    _followTempo,
+    _InheritIntent(trackOverrides, defaultValue: defaultFollow),
+  );
+
+  /// Stages or requests the Pitch vector (#1179): what a retime does to a
+  /// following track's pitch, [defaultMode] inherited, [trackOverrides] per
+  /// track.
+  EngineResult setPitchModeSettings({
+    required PitchMode defaultMode,
+    required Map<int, PitchMode> trackOverrides,
+  }) => _requestInherit(
+    _pitchMode,
+    _InheritIntent(trackOverrides, defaultValue: defaultMode),
+  );
+
+  EngineResult _requestInherit<V extends Object>(
+    SettingsReceipt<_InheritIntent<V>> receipt,
+    _InheritIntent<V> intent,
+  ) {
+    if (intent.overrides.keys.any((c) => c < 0 || c >= 8)) {
+      return EngineResult.invalid;
+    }
+    final result = receipt.request(intent);
+    _reproject();
+    return result.isOk && receipt.settled ? receipt.lastResult : result;
+  }
+
+  /// Sends the parts of an inherit vector the engine does not already hold:
+  /// the default, then each track's override (null inherits). Accepted once
+  /// every request's callback result is OK; a refusal after a part was
+  /// admitted, or a failed result, leaves the vector owed.
+  ({EngineResult result, ReceiptCheck? check}) _sendInherit<V extends Object>(
+    _InheritIntent<V> intent, {
+    required (V, List<V?>) Function(EngineSnapshot) published,
+    required RequestAdmission Function(int? channel, V? value) post,
+  }) {
+    final (current, overrides) = published(_engine.snapshot());
+    final sends = <(int?, V?)>[
+      if (current != intent.defaultValue) (null, intent.defaultValue),
+      for (var c = 0; c < overrides.length && c < 8; c++)
+        if (overrides[c] != intent.overrides[c]) (c, intent.overrides[c]),
+    ];
+    final results = <int, EngineResult?>{};
+    for (final (channel, value) in sends) {
+      final admission = post(channel, value);
+      if (!admission.result.isOk) {
+        return results.isEmpty
+            ? (result: admission.result, check: null)
+            : (
+                result: EngineResult.ok,
+                check: () => (
+                  verdict: ReceiptVerdict.uncertain,
+                  result: admission.result,
+                ),
+              );
+      }
+      results[admission.request] = null;
+    }
+    return (
+      result: EngineResult.ok,
+      check: () {
+        for (final request in results.keys) {
+          results[request] ??= _engine.readRequestResult(request);
+        }
+        if (results.values.any((r) => r == null)) return null;
+        return results.values.every((r) => r!.isOk)
+            ? (verdict: ReceiptVerdict.accepted, result: EngineResult.ok)
+            : (verdict: ReceiptVerdict.uncertain, result: EngineResult.invalid);
+      },
+    );
+  }
+
+  /// No Follow tempo vector is awaiting its callback receipt (#1179).
+  bool get followTempoSettingsSettled => _followTempo.settled;
+
+  /// An uncertain Follow tempo receipt owes its vector until Retry or a
+  /// restart.
+  bool get followTempoRecoveryRequired => _followTempo.recoveryRequired;
+
+  /// Follow tempo refusals and autonomous restart uncertainty.
+  Stream<EngineResult> get followTempoFailures => _followTempo.failures;
+
+  /// The durable Follow tempo vector a restart replays and a session captures.
+  ({bool defaultFollow, Map<int, bool> trackOverrides})
+  get followTempoRestartIntent => (
+    defaultFollow: _followTempo.restart.defaultValue,
+    trackOverrides: _followTempo.restart.overrides,
+  );
+
+  /// Waits for the Follow tempo callback receipt, with a lifetime-bound
+  /// timeout.
+  Future<EngineResult> settleFollowTempo({
+    Duration pollInterval = const Duration(milliseconds: 10),
+    int attempts = 50,
+  }) => _followTempo.settle(pollInterval: pollInterval, attempts: attempts);
+
+  /// Retry re-requests the owed Follow tempo vector while running and stages it
+  /// stopped.
+  EngineResult recoverFollowTempoSettings() {
+    final result = _followTempo.recover();
+    _reproject();
+    return result;
+  }
+
+  /// No Pitch vector is awaiting its callback receipt (#1179).
+  bool get pitchModeSettingsSettled => _pitchMode.settled;
+
+  /// An uncertain Pitch receipt owes its vector until Retry or a restart.
+  bool get pitchModeRecoveryRequired => _pitchMode.recoveryRequired;
+
+  /// Pitch refusals and autonomous restart uncertainty.
+  Stream<EngineResult> get pitchModeFailures => _pitchMode.failures;
+
+  /// The durable Pitch vector a restart replays and a session captures.
+  ({PitchMode defaultMode, Map<int, PitchMode> trackOverrides})
+  get pitchModeRestartIntent => (
+    defaultMode: _pitchMode.restart.defaultValue,
+    trackOverrides: _pitchMode.restart.overrides,
+  );
+
+  /// Waits for the Pitch callback receipt, with a lifetime-bound timeout.
+  Future<EngineResult> settlePitchMode({
+    Duration pollInterval = const Duration(milliseconds: 10),
+    int attempts = 50,
+  }) => _pitchMode.settle(pollInterval: pollInterval, attempts: attempts);
+
+  /// Retry re-requests the owed Pitch vector while running and stages it
+  /// stopped.
+  EngineResult recoverPitchModeSettings() {
+    final result = _pitchMode.recover();
+    _reproject();
+    return result;
+  }
+
   /// No playback vector is awaiting its callback receipt.
   bool get oneShotSettingsSettled => _oneShot.settled;
 
@@ -8053,6 +8476,7 @@ class LooperRepository {
 
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {
+    _renderJob?.release();
     _retireEngineLifetime();
     await _stopPollingAndClose();
     _engine.dispose();
@@ -8076,6 +8500,8 @@ class LooperRepository {
     await _clickMode.dispose();
     await _clickVolume.dispose();
     await _recordStart.dispose();
+    await _followTempo.dispose();
+    await _pitchMode.dispose();
     await _recordingInputRequired.close();
     await _recordRefusals.close();
     await _overdubRefusals.close();
@@ -8245,6 +8671,15 @@ class _FxPreparationRefused implements Exception {
   const _FxPreparationRefused(this.result);
 
   final EngineResult result;
+}
+
+/// A Loop setting with the inherit grammar (#1179 Follow tempo and Pitch):
+/// the default every track inherits and per-track overrides.
+final class _InheritIntent<V extends Object> {
+  _InheritIntent(Map<int, V> overrides, {required this.defaultValue})
+    : overrides = Map.unmodifiable(overrides);
+  final V defaultValue;
+  final Map<int, V> overrides;
 }
 
 final class _OneShotIntent {

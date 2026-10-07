@@ -35,6 +35,7 @@
 
 #include "audio_ring.h" /* le_audio_ring_release (capture-ring teardown) */
 #include "engine_cache.h" /* le_cache_init/shutdown (wet-cache lifecycle) */
+#include "engine_render.h" /* le_render_destroy (render recipe jobs) */
 #include "engine_restore.h" /* le_restore_init/shutdown (restoration worker) */
 #include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
 #include "../host/plugin_slot.h" /* le_plugin_slot_destroy (teardown of slots) */
@@ -363,6 +364,7 @@ static void le_engine_quiesce_workers(le_engine* engine) {
    * le_engine_reset_runtime once the pools are settled. */
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
+  le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
   /* Offline restoration worker (#697 S9, [R2](d)): join before the pools are
    * touched — its enqueue copies read pool memory. */
   le_restore_shutdown(engine);
@@ -431,6 +433,18 @@ static int le_engine_reset_material(le_engine* engine,
   le_backing_release(engine, 0);
   /* So was a preview (#1178). */
   le_audition_release(engine);
+  /* Follow tempo and the recorded tempo are material (#1179 Part 4a). */
+  engine->follow_tempo = 0;
+  store_i32(&engine->a_follow_tempo, 0);
+  engine->pitch_follows = 0; /* Unchanged (#1179 Part 4a-ii) */
+  store_i32(&engine->a_pitch_follows, 0);
+  store_f32(&engine->a_recorded_tempo_bits, 0.0f);
+  engine->rec_bpm = 0.0f;
+  engine->rec_master_len = 0;
+  store_i32(&engine->a_rec_master_len, 0);
+  engine->retime_len = 0;
+  engine->retime_frac = 0.0;
+  store_i32(&engine->a_retime_len, 0);
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
     /* Track transport: one lane active by default, empty, one base loop. */
@@ -458,6 +472,14 @@ static int le_engine_reset_material(le_engine* engine,
     store_i32(&tr->a_transpose_st, 0);
     le_track_forget_slot_keys(tr); /* no slot holds a keyed take any more */
     tr->pass_key = 0;
+    tr->follow_override = -1;
+    store_i32(&tr->a_follow_override, -1);
+    tr->pitch_override = -1;
+    store_i32(&tr->a_pitch_override, -1);
+    store_i32(&tr->a_src_out, 0);
+    tr->log_play_len = 0;
+    tr->span_clock = 0;
+    store_i32(&tr->a_span_clock, 0);
     store_i32(&tr->a_undo_depth, 0);
     store_i32(&tr->a_clear_restore, 0);
     store_i32(&tr->a_redo_depth, 0);
@@ -798,9 +820,16 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   /* MIDI clock send (C1): the RUNNING generator state resets per session,
    * exactly like the click/count-in state above — a fresh configure must
    * never carry a stale active-run frame count (or an unpaired Stop owed)
-   * into the next session. The SETTING (a_clock_mode) persists, seeded once
+   * into the next session. The SETTING (a_clock_send) persists, seeded once
    * in le_engine_create like a_looper_mode/a_primary_track. */
   le_midi_clock_reset(&engine->midi_clock);
+  /* MIDI clock sync (#1228): the source persists; its follower starts over
+   * (a new sample rate or session re-acquires rather than trusting a stale
+   * phase). */
+  if (engine->clock_source >= 0) {
+    le_clock_follow_reset(&engine->clock_follow, load_i32(&engine->a_ts_den));
+    store_i32(&engine->a_clock_state, LE_CLOCK_STATE_WAITING);
+  }
   /* Callback telemetry + the flat dropout tally (#722), cleared together and
    * per session. Rate 0 = INERT on purpose: the device is not open yet at
    * configure time (le_engine_start calls le_engine_configure_callback_budget
@@ -1016,6 +1045,13 @@ const char* le_version(void) {
 /* Loopback channel exclusion is per-OS: macOS reads Core Audio channel labels
  * (engine_apple.c), Linux/Windows exclude nothing for now. The mask is fetched
  * through le_platform_excluded_input_mask (engine_platform.h) at device open. */
+
+void le_engine_set_now_fn_for_test(le_engine* engine, uint64_t (*fn)(void*),
+                                   void* ctx) {
+  if (engine == NULL) return;
+  engine->now_fn = fn;
+  engine->now_ctx = ctx;
+}
 
 void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
                                                 uint32_t mask) {
@@ -1241,11 +1277,16 @@ le_engine* le_engine_create(void) {
    * thread's le_primary_reconcile keeps that invariant afterwards). -1 is
    * NOT calloc's zero-fill, so this store is load-bearing. */
   store_i32(&engine->a_primary_track, -1);
-  /* MIDI clock mode SETTING (Phase C/E, D15): same seeded-once persistence as
-   * the looper mode / primary track above. OFF (0) is both the enum's zero
-   * value and calloc's zero-fill; kept explicit for the same legibility
-   * reason as a_looper_mode's redundant store. */
-  store_i32(&engine->a_clock_mode, LE_CLOCK_OFF);
+  /* MIDI clock send SETTING (Phase C, D15): same seeded-once persistence as
+   * the looper mode / primary track above. Off (0), kept explicit for the
+   * same legibility reason as a_looper_mode's redundant store. */
+  store_i32(&engine->a_clock_send, 0);
+  /* MIDI clock sync (#1228): Internal, the follower idle. */
+  engine->clock_source = -1;
+  store_i32(&engine->a_clock_source, -1);
+  engine->clock_source_requested = -1;
+  store_i32(&engine->a_clock_state, LE_CLOCK_STATE_INTERNAL);
+  engine->now_fn = NULL;
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
   for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
     store_f32(&engine->a_in_trim_bits[c], 1.0f); /* unity until set */
@@ -1284,9 +1325,11 @@ void le_engine_destroy(le_engine* engine) {
    * destroy-during-active-render test pins exactly this ordering). */
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
+  le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
   le_restore_shutdown(engine); /* #697 S9: join before the pool frees below */
   le_backing_release(engine, 0); /* #1200: no audio thread any more */
   le_audition_release(engine);   /* #1178: likewise */
+  le_render_destroy(engine); /* render recipe jobs (#1202): worker joined */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &engine->tracks[t].lanes[l];
@@ -1561,6 +1604,7 @@ int32_t le_engine_stop(le_engine* engine) {
    * configure re-initializes it. */
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
+  le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
   le_restore_shutdown(engine); /* #697 S9: join the restoration worker on stop */
   /* Per-OS teardown on stop (not only destroy) so a forced quantum doesn't
    * outlive a running engine for other PipeWire clients. No-op off Linux. */
@@ -1589,10 +1633,15 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (code == LE_CMD_FADE) return LE_ERR_INVALID;
   if (code == LE_CMD_REVERSE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_SPEED) return LE_ERR_INVALID;
+  if (code == LE_CMD_SET_FOLLOW_TEMPO || code == LE_CMD_SET_PITCH_MODE) {
+    return LE_ERR_INVALID;
+  }
   if (code == LE_CMD_TRANSPOSE || code == LE_CMD_TRANSPOSE_BYPASS) {
     return LE_ERR_INVALID;
   }
   if (code == LE_CMD_SET_LENGTH) return LE_ERR_INVALID;
+  if (code == LE_CMD_RENDER_FREEZE) return LE_ERR_INVALID;
+  if (code == LE_CMD_BOUNCE || code == LE_CMD_BOUNCE_RECOVER) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_CLICK_MODE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_RECORD_START) return LE_ERR_INVALID;
   /* Backing (#1200): LOAD and STAGE_NEXT carry an owned buffer pointer that a

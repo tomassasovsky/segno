@@ -19,6 +19,7 @@ import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/perf_target.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
+import 'package:segno_engine/src/selected_render.dart';
 import 'package:segno_engine/src/track_effect.dart';
 import 'package:segno_engine/src/volume_space.dart';
 
@@ -258,9 +259,16 @@ class MockAudioEngine implements AudioEngine {
     _measuredLatencyMs = -1;
     _masterGain = 1; // unity on every fresh start, mirroring the native engine
     _perfArmed = false; // disarmed on every fresh start/reconfigure
-    // The Transpose bypass resets with the material at configure; receipts
-    // die with it.
+    // The Transpose bypass, Follow tempo and Pitch reset with the material
+    // at configure, as natively; receipts die with them.
     _transposeBypass = false;
+    _followTempo = false;
+    _pitchMode = PitchMode.unchanged;
+    for (final track in _tracks) {
+      track
+        ..followTempoOverride = null
+        ..pitchModeOverride = null;
+    }
     _requestResults.clear();
     _perfFrames = 0;
     // A configure (start or reopen) ends a preview and bumps the epoch, as
@@ -365,6 +373,8 @@ class MockAudioEngine implements AudioEngine {
     final outputs = _running ? _negotiatedOutputs : 0;
     return EngineSnapshot(
       transposeBypass: _transposeBypass,
+      followTempo: _followTempo,
+      pitchMode: _pitchMode,
       mixRevision: _mixRevision,
       isRunning: _running,
       devicePresent: _running,
@@ -760,6 +770,45 @@ class MockAudioEngine implements AudioEngine {
     _requestResults[request] = EngineResult.ok;
     return (result: EngineResult.ok, request: request);
   }
+
+  // Follow tempo and Pitch are settings, admitted whenever configured, so the
+  // mock models them with a receipt. It holds no material, so nothing
+  // retimes (its snapshot's tempoFollow stays free).
+  bool _followTempo = false;
+  PitchMode _pitchMode = PitchMode.unchanged;
+
+  RequestAdmission _setting(int? channel, bool hasValue, void Function() set) {
+    final result = _requireRunning();
+    if (!result.isOk) return (result: result, request: 0);
+    if ((channel == null && !hasValue) ||
+        (channel != null && (channel < 0 || channel >= _tracks.length))) {
+      return (result: EngineResult.invalid, request: 0);
+    }
+    set();
+    final request = ++_nextRequest;
+    _requestResults[request] = EngineResult.ok;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) =>
+      _setting(channel, follow != null, () {
+        if (channel == null) {
+          _followTempo = follow!;
+        } else {
+          _tracks[channel].followTempoOverride = follow;
+        }
+      });
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) =>
+      _setting(channel, mode != null, () {
+        if (channel == null) {
+          _pitchMode = mode!;
+        } else {
+          _tracks[channel].pitchModeOverride = mode;
+        }
+      });
 
   @override
   EngineResult? readRequestResult(int request) =>
@@ -1819,6 +1868,9 @@ class MockAudioEngine implements AudioEngine {
   EngineResult commitSession(int baseFrames, {required int loopBeats}) =>
       _requireRunning();
 
+  @override
+  EngineResult importSpan(int channel, int spanFrames) => _requireRunning();
+
   /// The capture directory of the most recent [perfArm] call, for test
   /// assertions. `null` until the first arm.
   String? lastPerfCaptureDir;
@@ -1895,6 +1947,26 @@ class MockAudioEngine implements AudioEngine {
   @override
   List<PerformanceRenderTrackStatus> renderTrackStatuses() =>
       _renderStarted ? mockRenderTrackStatuses : const [];
+
+  // ---- shared render recipe (#1202): the mock models no PCM, so it has
+  // nothing to render and says so rather than inventing audio. ----
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, plan: null);
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, job: 0);
+
+  @override
+  RenderJobStatus? pollRender(int job) => null;
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) => null;
+
+  @override
+  EngineResult cancelRender(int job) => EngineResult.invalid;
 
   @override
   EngineResult renderCancel() {
@@ -2274,6 +2346,8 @@ class _MockTrack {
   /// test sets it directly to exercise the disarm-image take-identity seam.
   int settledTakeId = 0;
   int imageRevision = 0;
+  bool? followTempoOverride;
+  PitchMode? pitchModeOverride;
 
   _MockLane laneAt(int lane) => _lanes[lane.clamp(0, kMaxLanes - 1)];
 
@@ -2311,6 +2385,8 @@ class _MockTrack {
       settledTakeId: settledTakeId,
       solo: solo,
       imageRevision: imageRevision,
+      followTempoOverride: followTempoOverride,
+      pitchModeOverride: pitchModeOverride,
       lanes: lanes,
     );
   }

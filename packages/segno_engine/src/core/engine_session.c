@@ -101,6 +101,7 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
    * record route (input == lane index) but is NEVER reset for lane 0, whose
    * buffer/config we are filling here. */
   if (lane == 0) {
+    store_i32(&t->a_import_span, 0); /* a new take: no span until told */
     t->redo_count = 0;
     t->empty_len = 0;
     store_i32(&t->a_redo_depth, 0);
@@ -145,6 +146,27 @@ int32_t le_engine_import_track(le_engine* engine, int32_t channel,
   return le_engine_import_track_lane(engine, channel, 0, pcm, frames);
 }
 
+/* The span is published only: the callback adopts it at the commit, which
+ * is the one place an EMPTY track's span becomes the one it plays over. */
+int32_t le_engine_import_span(le_engine* engine, int32_t channel,
+                              int32_t span_frames) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (span_frames < 0 || span_frames > engine->max_loop_frames) {
+    return LE_ERR_INVALID;
+  }
+  le_track* t = &engine->tracks[channel];
+  if (load_i32(&t->a_state) != LE_TRACK_EMPTY ||
+      load_i32(&t->lanes[0].a_len) <= 0) {
+    return LE_ERR_INVALID;
+  }
+  store_i32(&t->a_import_span, span_frames);
+  return LE_OK;
+}
+
 /* Maps an export ordinal (0 = oldest undo layer ... undo_count = live ...
  * then the redo images) to the pool slot that holds it. The linear timeline
  * is undo_stack[0..undo_count) then a_live then the redo stack read
@@ -165,18 +187,46 @@ static int32_t le_hist_len_at(const le_hist_entry* stack, int32_t count,
   return live_len;
 }
 
+/* The part of a track's history a Session can carry (#1202). A Bounce is
+ * never saved: on the Undo side the export starts above the newest BOUNCE
+ * entry (the bounced take is the saved base), and on the Redo side it stops
+ * at the first BOUNCE or grouped entry (a group must not come back as a lone
+ * Redo). *undo_from is the first exported undo index; *redo_floor the lowest
+ * exported redo index (the redo stack exports from redo_count - 1 down). */
+static void le_export_window(const le_track* t, int32_t* undo_from,
+                             int32_t* redo_floor) {
+  *undo_from = 0;
+  for (int32_t i = t->undo_count - 1; i >= 0; --i) {
+    if (t->undo_stack[i].kind == LE_HIST_BOUNCE) {
+      *undo_from = i + 1;
+      break;
+    }
+  }
+  *redo_floor = 0;
+  for (int32_t k = t->redo_count - 1; k >= 0; --k) {
+    if (t->redo_stack[k].kind == LE_HIST_BOUNCE ||
+        t->redo_stack[k].group_id != 0) {
+      *redo_floor = k + 1;
+      break;
+    }
+  }
+}
+
 static int32_t le_layer_slot_for_ordinal(const le_track* t, int32_t ordinal,
                                           int32_t live, int32_t live_len,
                                           int32_t* len) {
-  const int32_t undo_c = t->undo_count;
+  int32_t undo_from, redo_floor;
+  le_export_window(t, &undo_from, &redo_floor);
+  const int32_t undo_c = t->undo_count - undo_from;
   *len = live_len;
   if (ordinal < undo_c) {
-    *len = le_hist_len_at(t->undo_stack, undo_c, ordinal, live_len);
-    return t->undo_stack[ordinal].slot;
+    *len = le_hist_len_at(t->undo_stack, t->undo_count, undo_from + ordinal,
+                          live_len);
+    return t->undo_stack[undo_from + ordinal].slot;
   }
   if (ordinal == undo_c) return live;
   int32_t j = ordinal - undo_c - 1; /* 0-based into the post-live images */
-  for (int32_t k = t->redo_count - 1; k >= 0; --k) {
+  for (int32_t k = t->redo_count - 1; k >= redo_floor; --k) {
     if (t->redo_stack[k].slot < 0) continue;
     if (j-- == 0) {
       *len = le_hist_len_at(t->redo_stack, t->redo_count, k, live_len);
@@ -200,15 +250,17 @@ int32_t le_engine_export_history(le_engine* engine, int32_t channel,
    * gated (0 while a content-giving command is in flight, until the next
    * drain republishes it), so a caller that split these entries by it could
    * misread the live image's ordinal (#1164 review finding 1). */
-  *undo_count = t->undo_count;
+  int32_t undo_from, redo_floor;
+  le_export_window(t, &undo_from, &redo_floor);
+  *undo_count = t->undo_count - undo_from;
   int32_t n = 0;
-  for (int32_t i = 0; i < t->undo_count; ++i, ++n) {
+  for (int32_t i = undo_from; i < t->undo_count; ++i, ++n) {
     if (n >= max) continue;
     kinds[n] = t->undo_stack[i].kind;
     skipped[n] = t->undo_stack[i].skipped;
     starts[n] = t->undo_stack[i].start;
   }
-  for (int32_t k = t->redo_count - 1; k >= 0; --k, ++n) {
+  for (int32_t k = t->redo_count - 1; k >= redo_floor; --k, ++n) {
     if (n >= max) continue;
     kinds[n] = t->redo_stack[k].kind;
     skipped[n] = t->redo_stack[k].skipped;
@@ -274,6 +326,8 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
     }
     atomic_store_explicit(&t->lane_count, lane + 1, memory_order_release);
   }
+  /* A new take's first image: no span until le_engine_import_span (#1179). */
+  if (lane == 0 && ordinal == 0) store_i32(&t->a_import_span, 0);
   le_lane* ln = &t->lanes[lane];
   /* Undo/redo layers are quantized to the loop length (as the live rig sizes
    * them); no path record-grows an imported slot, so full max_loop_frames is
@@ -324,6 +378,8 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
   for (int32_t i = 0; i < count; ++i) {
     const int32_t kind = kinds[i];
     const int redo = i >= undo_count;
+    /* LE_HIST_BOUNCE (#1202) is refused like any unknown kind: export cuts
+     * it, so a Session that carries one was not written by this engine. */
     if (kind != LE_HIST_LAYER && kind != LE_HIST_CLEAR &&
         kind != LE_HIST_PEEL && kind != LE_HIST_PROCESSED &&
         kind != LE_HIST_LENGTH) {
@@ -490,11 +546,15 @@ int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames,
   }
   /* Every staged track is a whole multiple of the base or exactly base/2 or
    * base/4 (a Sync division, #1168): any other length would be recalled as
-   * a division and the mixer would read past its slot. */
+   * a division and the mixer would read past its slot. A take imported with
+   * its own span (#1179 Part 4b) reads at its own rate over it instead, so
+   * any length laps it. */
   for (int32_t t = 0; t < engine->track_count; ++t) {
     le_track* tr = &engine->tracks[t];
     if (load_i32(&tr->a_state) != LE_TRACK_EMPTY) continue;
     const int32_t len = load_i32(&tr->lanes[0].a_len);
+    const int32_t span = load_i32(&tr->a_import_span);
+    if (span > 0 && span != base_frames) continue;
     if (len > 0 && !le_session_length_fits(base_frames, len)) {
       return LE_ERR_INVALID;
     }
