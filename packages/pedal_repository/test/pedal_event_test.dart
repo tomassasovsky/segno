@@ -75,11 +75,29 @@ void main() {
       });
     });
 
+    group('EncoderPressed / EncoderReleased', () {
+      test('values with the same timestamp are equal', () {
+        expect(const EncoderPressed(), const EncoderPressed());
+        expect(
+          const EncoderPressed(timestamp: Duration(milliseconds: 1)),
+          isNot(const EncoderPressed()),
+        );
+        expect(const EncoderReleased(), const EncoderReleased());
+      });
+
+      test('toString names the edge', () {
+        expect(const EncoderPressed().toString(), contains('EncoderPressed'));
+        expect(const EncoderReleased().toString(), contains('EncoderReleased'));
+      });
+    });
+
     test('the hierarchy is exhaustively switchable', () {
       String describe(PedalEvent event) => switch (event) {
         ButtonPressed() => 'pressed',
         ButtonReleased() => 'released',
         EncoderDelta() => 'encoder',
+        EncoderPressed() => 'encoder pressed',
+        EncoderReleased() => 'encoder released',
         CtrlChanged() => 'ctrl',
       };
 
@@ -96,6 +114,8 @@ void main() {
         'ctrl',
       );
       expect(describe(const EncoderDelta(1)), 'encoder');
+      expect(describe(const EncoderPressed()), 'encoder pressed');
+      expect(describe(const EncoderReleased()), 'encoder released');
     });
   });
 }

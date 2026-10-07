@@ -106,6 +106,10 @@ flutter:
     # The ten Settings tiles' art: the owner's Segno menu set from the design
     # program (docs/design/settings-art at 56410d148), byte for byte.
     - assets/settings/
+    # The bundled fonts' licences, which About's notices show.
+    - assets/fonts/LICENSE-Arimo.txt
+    - assets/fonts/OFL-Inter.txt
+    - assets/fonts/OFL-JetBrainsMono.txt
   fonts:
     - family: Inter
       fonts:
@@ -116,6 +120,9 @@ flutter:
           weight: 600
         - asset: assets/fonts/Inter-Bold.ttf
           weight: 700
+    - family: Arimo
+      fonts:
+        - asset: assets/fonts/Arimo-Regular.ttf
     - family: JetBrains Mono
       fonts:
         - asset: assets/fonts/JetBrainsMono-Regular.ttf
