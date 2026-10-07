@@ -261,17 +261,21 @@ class BackingRepository {
   ///
   /// An engine restart not yet seen is handled first; while its reload of the
   /// loaded file is still decoding, Play waits for it, so the press is never
-  /// spent on the reload (review of P5, M1).
+  /// spent on the reload (review of P5, M1). A later Pause, Stop or Clear
+  /// wins over a Play still waiting (review of P5, L3).
   void play() {
     refresh();
     final reload = _reload;
+    final press = ++_press;
     if (reload == null) {
       _transport(BackingTransportOp.play);
       return;
     }
     unawaited(
       reload.then((ok) {
-        if (ok && !_disposed) _transport(BackingTransportOp.play);
+        if (ok && !_disposed && press == _press) {
+          _transport(BackingTransportOp.play);
+        }
       }),
     );
   }
@@ -279,12 +283,20 @@ class BackingRepository {
   /// The reload a restart started, while it decodes.
   Future<bool>? _reload;
 
+  /// Counts transport presses, so a Play waiting on [_reload] runs only if
+  /// nothing was pressed after it: the last press wins.
+  int _press = 0;
+
   /// Pauses, keeping the position.
-  void pause() => _transport(BackingTransportOp.pause);
+  void pause() {
+    _press++;
+    _transport(BackingTransportOp.pause);
+  }
 
   /// Stops and rewinds; a load in progress is cancelled (its result is
   /// freed, the old file stays loaded).
   void stop() {
+    _press++;
     _loadGeneration++;
     _emit(_state.copyWith(clearLoading: true));
     _transport(BackingTransportOp.stop);
@@ -297,6 +309,7 @@ class BackingRepository {
 
   /// Unloads the loaded and staged files (cancelling a load in progress).
   void clear() {
+    _press++;
     _loadGeneration++;
     _stageGeneration++;
     _emit(_state.copyWith(clearLoading: true));
