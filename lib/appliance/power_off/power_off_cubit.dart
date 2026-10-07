@@ -41,7 +41,21 @@ class PowerOffCubit extends Cubit<PowerOffState> {
         _set(PowerOffPhase.refuse);
       case PowerOffDisposition.confirm:
         _set(PowerOffPhase.confirm);
-      case PowerOffDisposition.skip:
+      case PowerOffDisposition.confirmEmpty:
+        _set(PowerOffPhase.confirmEmpty);
+    }
+  }
+
+  /// Power off from the plain confirm. Re-reads the gate: a take that
+  /// started refuses, and loops recorded meanwhile get the three choices.
+  void confirmPowerOff(PowerOffSnapshot snapshot) {
+    if (state.phase != PowerOffPhase.confirmEmpty) return;
+    switch (powerOffGate(snapshot)) {
+      case PowerOffDisposition.refuse:
+        _set(PowerOffPhase.refuse);
+      case PowerOffDisposition.confirm:
+        _set(PowerOffPhase.confirm);
+      case PowerOffDisposition.confirmEmpty:
         unawaited(_halt());
     }
   }

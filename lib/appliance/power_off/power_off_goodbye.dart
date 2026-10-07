@@ -17,6 +17,7 @@ ReadoutGoodbye readoutGoodbyeOf(PowerOffPhase phase) => switch (phase) {
   PowerOffPhase.idle ||
   PowerOffPhase.refuse ||
   PowerOffPhase.confirm ||
+  PowerOffPhase.confirmEmpty ||
   PowerOffPhase.saveAs ||
   PowerOffPhase.flushFailed ||
   PowerOffPhase.saveFailed => ReadoutGoodbye.none,

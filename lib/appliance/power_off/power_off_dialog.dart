@@ -73,6 +73,13 @@ class PowerOffDialog extends StatelessWidget {
                     )
                   : refuse
                   ? _RefuseBody(onKeepPlaying: () => _keepPlaying(context))
+                  : state.phase == PowerOffPhase.confirmEmpty
+                  ? _ConfirmEmptyBody(
+                      onKeepPlaying: () => _keepPlaying(context),
+                      onPowerOff: () => context
+                          .read<PowerOffCubit>()
+                          .confirmPowerOff(snapshot()),
+                    )
                   : _ConfirmBody(
                       failed: state.phase == PowerOffPhase.saveFailed,
                       onKeepPlaying: () => _keepPlaying(context),
@@ -276,6 +283,67 @@ class _ConfirmBody extends StatelessWidget {
               label: l10n.powerOffWithoutSaving,
               tone: ConsoleDialogTone.destructive,
               onPressed: onDiscard,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ConfirmEmptyBody extends StatelessWidget {
+  const _ConfirmEmptyBody({
+    required this.onKeepPlaying,
+    required this.onPowerOff,
+  });
+
+  final VoidCallback onKeepPlaying;
+  final VoidCallback onPowerOff;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppText(
+          l10n.powerOffConfirmTitle,
+          style: TextStyle(
+            color: surface.textPrimary,
+            fontSize: 19,
+            height: 1.15,
+            fontWeight: FontWeight.w600,
+            leadingDistribution: TextLeadingDistribution.even,
+          ),
+        ),
+        const SizedBox(height: 10),
+        AppText(
+          l10n.powerOffConfirmEmptyBody,
+          style: TextStyle(
+            color: surface.textSecondary,
+            fontSize: 16,
+            height: 1.4,
+            leadingDistribution: TextLeadingDistribution.even,
+          ),
+        ),
+        const SizedBox(height: 19),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            ConsoleDialogButton(
+              key: const Key('power_off_keep_playing'),
+              label: l10n.powerOffKeepPlaying,
+              onPressed: onKeepPlaying,
+            ),
+            ConsoleDialogButton(
+              key: const Key('power_off_confirm'),
+              label: l10n.powerOffConfirmAction,
+              tone: ConsoleDialogTone.destructive,
+              onPressed: onPowerOff,
             ),
           ],
         ),
