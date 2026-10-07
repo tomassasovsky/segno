@@ -1240,6 +1240,7 @@ void main() {
         ...session.toJson(),
         'name': 'Evening loop',
         'loopBars': 4,
+        'loopBeats': 24,
         'primaryTrack': 0,
         'tempoBpm': 96,
         'tempoSource': 'manual',
@@ -1252,6 +1253,7 @@ void main() {
         ..['tracks'] = <Object?>[]
         ..['baseLengthFrames'] = 0
         ..['loopBars'] = 0
+        ..['loopBeats'] = 0
         ..['primaryTrack'] = -1;
       expect(jsonEncode(source.forNewLoop().toJson()), jsonEncode(json));
     });

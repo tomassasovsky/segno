@@ -1409,6 +1409,7 @@ void main() {
         'tsDen',
         'quantizeDiv',
         'loopBars',
+        'loopBeats',
         'recordTiming',
         'overdubDecay',
         'clickMode',
@@ -1462,6 +1463,7 @@ void main() {
         'tracks': <Object?>[],
         'baseLengthFrames': 0,
         'loopBars': 0,
+        'loopBeats': 0,
         'primaryTrack': -1,
       };
 
