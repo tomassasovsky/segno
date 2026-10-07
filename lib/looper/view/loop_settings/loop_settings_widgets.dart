@@ -493,6 +493,9 @@ class LoopOutlinedButton extends StatelessWidget {
       fontFamily: tone == LoopButtonTone.frameRaised
           ? SurfaceTheme.frameFont
           : null,
+      // The pen sets the frame's label untracked; the theme's labels carry
+      // 0.25.
+      letterSpacing: tone == LoopButtonTone.frameRaised ? 0 : null,
       fontSize: fontSize,
       fontWeight: tone == LoopButtonTone.accent ? FontWeight.w700 : null,
       height: 1,

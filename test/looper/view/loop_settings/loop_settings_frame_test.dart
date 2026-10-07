@@ -107,6 +107,16 @@ void main() {
       expect(styleOf('Stage').color, surface.frameText);
       expect(styleOf('Settings').fontFamily, SurfaceTheme.frameFont);
       expect(styleOf('Settings').color, surface.frameText);
+      // The pen tracks none of them; the theme's labels carry 0.25.
+      expect(styleOf('SETTINGS').letterSpacing, 0);
+      expect(styleOf('Stage').letterSpacing, 0);
+      // Stage's label sits 2 px above the box's centre, where the pen's text
+      // box puts Arimo.
+      final stage = tester.getCenter(
+        find.byKey(const Key('loop_settings_stage')),
+      );
+      final label = tester.getCenter(find.text('Stage'));
+      expect(label.dy, lessThan(stage.dy - 1));
     });
 
     testWidgets('centres the title in a 72 high row, or a 64 high row when '
@@ -116,12 +126,23 @@ void main() {
         find.byKey(const Key('loop_settings_title')),
       );
       expect(alone.dy, kLoopTopBarHeight + 28 + 72 / 2);
+      TextStyle title() => tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byKey(const Key('loop_settings_title')),
+              matching: find.byType(Text),
+            ),
+          )
+          .style!;
+      expect(title().letterSpacing, -1.1);
 
       await pump(tester, actions: const SizedBox(width: 64, height: 64));
       final withActions = tester.getCenter(
         find.byKey(const Key('loop_settings_title')),
       );
       expect(withActions.dy, kLoopTopBarHeight + 30 + 64 / 2);
+      // Settings and Pedals, the pen's titles with actions, are untracked.
+      expect(title().letterSpacing, 0);
     });
   });
 }

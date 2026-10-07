@@ -83,12 +83,16 @@ class LoopSettingsFrame extends StatelessWidget {
   /// reads as one titlebar rather than a heading with a stray button.
   final Widget? actions;
 
-  /// The title row's top and height in the main area. The pen draws a row
-  /// that carries actions (Settings' Power, the Pedals page's Cancel and
-  /// Save) 64 high at 30, the height of its buttons, and a title alone 72
-  /// high at 28; the title is centred in either.
-  static ({double top, double height}) _titleRow({required bool actions}) =>
-      actions ? (top: 30, height: 64) : (top: 28, height: 72);
+  /// The title row in the main area, as the pen draws its two kinds. A row
+  /// that carries actions (Settings' Power, the Pedals pages' Cancel and
+  /// Save) is 64 high at 30, the height of its buttons, and its title has no
+  /// tracking; a title alone is 72 high at 28 and tracked -1.1. The title is
+  /// centred in either.
+  static ({double top, double height, double tracking}) _titleRow({
+    required bool actions,
+  }) => actions
+      ? (top: 30, height: 64, tracking: 0)
+      : (top: 28, height: 72, tracking: -1.1);
 
   @override
   Widget build(BuildContext context) {
@@ -131,6 +135,7 @@ class LoopSettingsFrame extends StatelessWidget {
                         color: surface.frameCrumb,
                         fontFamily: SurfaceTheme.frameFont,
                         fontSize: 20,
+                        letterSpacing: 0,
                         height: 1,
                       ),
                     ),
@@ -138,13 +143,18 @@ class LoopSettingsFrame extends StatelessWidget {
                 Positioned(
                   left: 1771,
                   top: 16,
-                  child: LoopOutlinedButton(
-                    key: const Key('loop_settings_stage'),
-                    width: 113,
-                    radius: 8,
-                    tone: LoopButtonTone.frameRaised,
-                    label: l10n.loopSettingsStage,
-                    onTap: onStage,
+                  // Arimo's line metrics put a label centred in a 64 high
+                  // box 2 px under where the pen's text box sets it.
+                  child: AppTextOptics(
+                    opticalOffset: const Offset(0, -2),
+                    child: LoopOutlinedButton(
+                      key: const Key('loop_settings_stage'),
+                      width: 113,
+                      radius: 8,
+                      tone: LoopButtonTone.frameRaised,
+                      label: l10n.loopSettingsStage,
+                      onTap: onStage,
+                    ),
                   ),
                 ),
               ],
@@ -167,7 +177,7 @@ class LoopSettingsFrame extends StatelessWidget {
                         color: surface.frameText,
                         fontFamily: SurfaceTheme.frameFont,
                         fontSize: 42,
-                        letterSpacing: -1.1,
+                        letterSpacing: row.tracking,
                         height: 1,
                       ),
                     ),
