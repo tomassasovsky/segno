@@ -179,7 +179,9 @@ class _TracksViewState extends State<TracksView> {
                 (current is PerformanceRecorderRendering &&
                     previous is! PerformanceRecorderRendering) ||
                 (current is PerformanceRecorderCompleted &&
-                    previous is! PerformanceRecorderCompleted),
+                    previous is! PerformanceRecorderCompleted) ||
+                (current is PerformanceRecorderIdle &&
+                    current.notRecovered > 0),
             listener: onPerformanceRecorderState,
           ),
           BlocListener<ControlCubit, ControlState>(

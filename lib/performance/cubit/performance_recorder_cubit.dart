@@ -207,7 +207,9 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       // In a finally so the flag can never wedge true past this call: if
       // recovery itself blew up (a genuine bug escaping its guards), a
       // permanently-disabled record button must not be the second casualty.
-      _clearRecoveringWhenRenderSettles();
+      _clearRecoveringWhenRenderSettles(
+        _performance.unrecoveredTakes.length,
+      );
     }
   }
 
@@ -222,11 +224,21 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// (and the disabled button) up until arming genuinely works again.
   /// Only ever clears the exact state [load] set — anything else on screen
   /// is not this method's to stomp.
-  void _clearRecoveringWhenRenderSettles() {
+  ///
+  /// The idle it settles on carries how many takes could not be recovered,
+  /// so the player is told (#1198): a take left unrecovered silently would
+  /// look lost.
+  void _clearRecoveringWhenRenderSettles(int notRecovered) {
     const recovering = PerformanceRecorderIdle(recovering: true);
-    if (state != recovering) return;
+    final settled = PerformanceRecorderIdle(notRecovered: notRecovered);
+    if (state != recovering) {
+      if (notRecovered > 0 && state == const PerformanceRecorderIdle()) {
+        _emit(settled);
+      }
+      return;
+    }
     if (_performance.renderProgress.done) {
-      _emit(const PerformanceRecorderIdle());
+      _emit(settled);
       return;
     }
     _recoveringPoller?.cancel();
@@ -237,7 +249,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       }
       if (!_performance.renderProgress.done) return;
       timer.cancel();
-      _emit(const PerformanceRecorderIdle());
+      _emit(settled);
     });
   }
 

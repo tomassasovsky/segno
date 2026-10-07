@@ -823,6 +823,7 @@
     "perfDiscarded": "La captura era demasiado corta para conservarla — descartada.",
     "perfLowDisk": "Poco espacio en disco — la captura podría quedarse sin espacio.",
     "perfLowDiskBlocked": "No hay espacio suficiente en disco para iniciar una captura. Libera espacio e inténtalo de nuevo.",
+    "perfTakesNotRecovered": "{count, plural, =1{No se pudo recuperar esta toma. Se conservan sus archivos.} other{No se pudieron recuperar {count} tomas. Se conservan sus archivos.}}",
     "perfStoppedLowDisk": "Captura detenida — el disco se estaba quedando sin espacio. Se ha guardado lo grabado.",
     "perfArmDisabledRendering": "No se puede armar mientras se renderiza la captura anterior.",
     "perfRenameTitle": "Renombrar captura",
