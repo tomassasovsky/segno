@@ -35,6 +35,7 @@
 #include <wchar.h>
 #if !defined(_WIN32)
 #include <sys/statvfs.h> /* the oracle for test_volume_space */
+#include <fcntl.h>         /* F_GETFD, FD_CLOEXEC (WAV writer) */
 #endif
 #if defined(__linux__)
 #include <dirent.h>     /* /proc/self/fd walk (probe FD leak, #721) */
@@ -49,6 +50,7 @@
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
 #include "engine_core.h"      /* le_push (raw ring pushes for the tempo tests) */
 #include "engine_digest.h"    /* le_sha256_ctx (#1198 streaming digests) */
+#include "engine_wav.h"       /* le_wav_writer (close-on-exec, torn-tail seal) */
 #include "engine_fx.h" /* LE_FX_ENABLE_RAMP_MS (FX enable-flag tests) */
 #include "engine_cache.h" /* LE_CACHE_SETTLE_MS (wet-cache tests) */
 #include "engine_internal.h"
@@ -8895,6 +8897,19 @@ static const char* perf_test_dir(void) {
   return dir;
 }
 
+/* Arms a take into `dir` with every other target field at its default (an
+ * Internal take: the live sidecar in `dir`, 2 GB parts, the default ring, a
+ * zero take id). The suite's captures predate the target struct (#1198); the
+ * tests of the struct itself call le_perf_arm directly. */
+static int32_t perf_arm_dir(le_engine* e, const char* dir) {
+  le_perf_target target;
+  memset(&target, 0, sizeof(target));
+  target.capture_dir = dir;
+  target.volume_generation = -1;
+  return le_perf_arm(e, &target);
+}
+
+
 /* The drain thread flushes every ~250 ms (LE_PD_FLUSH_MS, perf_drain.c) on a
  * real background thread — the perf_drain tests below need to actually wait
  * for it rather than call it synchronously. */
@@ -9195,6 +9210,28 @@ static size_t read_binary_file_for_test(const char* path, unsigned char* out,
   return n;
 }
 
+/* A capture part opened at its payload, past the LE_PERF_PART_HEADER_BYTES
+ * header — how the suite reads what the drain wrote now that each stream is
+ * float WAV parts (`master-001.wav`, #1198) rather than a headerless .pcm. */
+static FILE* perf_fopen_payload(const char* path) {
+  FILE* f = fopen(path, "rb");
+  if (f != NULL && fseek(f, LE_PERF_PART_HEADER_BYTES, SEEK_SET) != 0) {
+    fclose(f);
+    f = NULL;
+  }
+  return f;
+}
+
+/* read_binary_file_for_test for a part's payload. */
+static size_t read_payload_file_for_test(const char* path, unsigned char* out,
+                                         size_t cap) {
+  FILE* f = perf_fopen_payload(path);
+  if (f == NULL) return 0;
+  const size_t n = fread(out, 1, cap, f);
+  fclose(f);
+  return n;
+}
+
 static void decode_log_entry(const unsigned char* raw, le_perf_log_entry* out) {
   memcpy(&out->frame, raw, sizeof(out->frame));
   memcpy(&out->cmd.code, raw + sizeof(out->frame), sizeof(out->cmd.code));
@@ -9341,9 +9378,9 @@ static void test_volume_space(void) {
 static void test_perf_arm_requires_configure(void) {
   printf("test_perf_arm_requires_configure\n");
   le_engine* e = le_engine_create();
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_ERR_NOT_RUNNING); /* not configured yet */
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_ERR_NOT_RUNNING); /* not configured yet */
   le_engine_configure(e, 48000, 1, 1, 100);
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   le_engine_destroy(e);
 }
 
@@ -9358,7 +9395,7 @@ static void test_perf_reconfigure_while_armed_resets_cleanly(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 1000);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
@@ -9373,7 +9410,7 @@ static void test_perf_reconfigure_while_armed_resets_cleanly(void) {
 
   /* A fresh arm afterward works cleanly (the old rings were actually freed,
    * not merely forgotten). */
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_armed == 1);
@@ -9386,7 +9423,7 @@ static void test_perf_arm_rejects_no_enabled_output(void) {
   le_engine* e = make_configured_engine(); /* mono in/out */
   CHECK(le_engine_set_output_enabled(e, 0, 0) == LE_OK); /* disable the only output */
   drain(e);
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_ERR_INVALID); /* nothing to capture */
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_ERR_INVALID); /* nothing to capture */
   le_engine_destroy(e);
 }
 
@@ -9412,14 +9449,14 @@ static void test_perf_arm_cleans_up_when_drain_thread_fails_to_start(void) {
   CHECK(f != NULL);
   if (f != NULL) fclose(f);
 
-  CHECK(le_perf_arm(e, blocked_path) == LE_ERR_DEVICE);
+  CHECK(perf_arm_dir(e, blocked_path) == LE_ERR_DEVICE);
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_armed == 0); /* never published: the arm never reached that point */
 
   /* A subsequent arm at a real directory works cleanly — proves the failed
    * attempt didn't leak a ring or leave stale input_mask/config behind. */
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_armed == 1);
@@ -9431,7 +9468,7 @@ static void test_perf_arm_cleans_up_when_drain_thread_fails_to_start(void) {
 
 static void test_perf_null_safety(void) {
   printf("test_perf_null_safety\n");
-  CHECK(le_perf_arm(NULL, perf_test_dir()) == LE_ERR_INVALID);
+  CHECK(perf_arm_dir(NULL, perf_test_dir()) == LE_ERR_INVALID);
   CHECK(le_perf_disarm(NULL) == LE_ERR_INVALID);
 }
 
@@ -9441,8 +9478,8 @@ static void test_perf_null_safety(void) {
 static void test_perf_arm_rejects_bad_capture_dir(void) {
   printf("test_perf_arm_rejects_bad_capture_dir\n");
   le_engine* e = make_configured_engine();
-  CHECK(le_perf_arm(e, NULL) == LE_ERR_INVALID);
-  CHECK(le_perf_arm(e, "") == LE_ERR_INVALID);
+  CHECK(perf_arm_dir(e, NULL) == LE_ERR_INVALID);
+  CHECK(perf_arm_dir(e, "") == LE_ERR_INVALID);
   le_engine_destroy(e);
 }
 
@@ -9455,7 +9492,7 @@ static void test_perf_arm_rejects_capture_dir_too_long(void) {
   char huge[2048];
   memset(huge, 'a', sizeof(huge) - 1);
   huge[sizeof(huge) - 1] = '\0';
-  CHECK(le_perf_arm(e, huge) == LE_ERR_DEVICE);
+  CHECK(perf_arm_dir(e, huge) == LE_ERR_DEVICE);
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_armed == 0);
@@ -9477,13 +9514,13 @@ static void test_perf_arm_disarm_lifecycle(void) {
   CHECK(s.perf_armed == 0);
   CHECK(le_perf_disarm(e) == LE_OK); /* idempotent: never armed */
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e); /* apply LE_CMD_PERF_ARM */
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_armed == 1);
   CHECK(s.perf_frames == 0); /* nothing processed yet besides the 0-frame drain */
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK); /* idempotent: already armed */
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK); /* idempotent: already armed */
 
   CHECK(le_perf_disarm(e) == LE_OK);
   drain(e); /* apply LE_CMD_PERF_DISARM */
@@ -9491,7 +9528,7 @@ static void test_perf_arm_disarm_lifecycle(void) {
   CHECK(s.perf_armed == 0);
   CHECK(le_perf_disarm(e) == LE_OK); /* idempotent: already disarmed */
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK); /* re-arm after a clean disarm */
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK); /* re-arm after a clean disarm */
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_armed == 1);
@@ -9515,20 +9552,20 @@ static void test_perf_arm_refuses_when_drain_thread_still_live(void) {
   printf("test_perf_arm_refuses_when_drain_thread_still_live\n");
   le_engine* e = make_configured_engine();
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   store_i32(&e->a_perf_armed, 0); /* the state a stalled-bailout disarm leaves */
   CHECK(e->perf.drain != NULL); /* the old session's thread/rings are still live */
 
   /* A retry must refuse, not orphan the still-live old session. */
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_ERR_DEVICE);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_ERR_DEVICE);
 
   /* Recovery: once the session is actually torn down (a real disarm, which
    * clears perf.drain), a fresh arm works cleanly again. */
   store_i32(&e->a_perf_armed, 1); /* restore so le_perf_disarm doesn't no-op */
   CHECK(le_perf_disarm(e) == LE_OK);
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   le_engine_destroy(e);
@@ -9547,7 +9584,7 @@ static void test_perf_master_tap_bit_identical_mono(void) {
   le_engine_record(e, 0);              /* finalize -> PLAYING */
   drain(e);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_perf_master_channels_for_test(e) == 1);
 
@@ -9580,7 +9617,7 @@ static void test_perf_master_tap_pre_level_by_default(void) {
   CHECK(le_engine_set_output_level(e, 0, 0.5f) == LE_OK);
   drain(e);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_perf_master_channels_for_test(e) == 2);
 
@@ -9620,7 +9657,7 @@ static void test_perf_master_tap_follow_output_excludes_hardware_gain(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_follow_output == 1);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_perf_set_follow_output(e, 0) == LE_OK); /* too late for this take */
   drain(e);
@@ -9668,7 +9705,7 @@ static void test_perf_capture_first_bus_with_enabled_channel(void) {
   CHECK(le_engine_set_output_enabled(e, 1, 0) == LE_OK);
   CHECK(le_engine_set_output_level(e, 1, 0.5f) == LE_OK);
   drain(e);
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_perf_master_channels_for_test(e) == 2);
   float zin[LOOP_N] = {0};
@@ -9692,7 +9729,7 @@ static void test_perf_capture_first_bus_with_enabled_channel(void) {
   CHECK(le_engine_set_output_enabled(e, 1, 1) == LE_OK);
   CHECK(le_engine_set_output_balance(e, 0, 0.0f) == LE_OK);
   drain(e);
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_perf_master_channels_for_test(e) == 2);
   CHECK(le_engine_set_output_mute(e, 0, 1) == LE_OK);
@@ -9722,7 +9759,7 @@ static void test_perf_capture_first_bus_with_enabled_channel(void) {
   CHECK(le_engine_set_output_enabled(e, 1, 1) == LE_OK);
   CHECK(le_engine_set_output_balance(e, 0, -1.0f) == LE_OK);
   drain(e);
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_perf_master_channels_for_test(e) == 1);
   le_engine_process(e, out4, zin, LOOP_N);
@@ -9755,7 +9792,7 @@ static void test_perf_monitor_tap_matches_mix_contribution(void) {
   CHECK(le_engine_set_monitor_input_volume(e, 0, 0.5f) == LE_OK);
   drain(e);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK); /* freezes input_mask = {0} */
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK); /* freezes input_mask = {0} */
   drain(e);
 
   float out[2 * LOOP_N];
@@ -9794,7 +9831,7 @@ static void test_perf_monitor_tap_pads_silence_when_muted(void) {
   CHECK(le_engine_set_monitor_input_output(e, 0, 0x1) == LE_OK);
   drain(e);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK); /* mute after arm */
@@ -9825,7 +9862,7 @@ static void test_perf_monitor_tap_pads_silence_when_disabled(void) {
   CHECK(le_engine_set_monitor_input_output(e, 0, 0x1) == LE_OK);
   drain(e);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   CHECK(le_engine_set_monitor_input(e, 0, 0) == LE_OK); /* disable after arm */
@@ -9861,7 +9898,7 @@ static void test_perf_arm_skips_inputs_the_device_does_not_have(void) {
   CHECK(le_engine_set_monitor_input(e, 2, 1) == LE_OK);
   drain(e);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   CHECK(e->perf.input_mask == 0x1u); /* input 0 only; 2 is not a real input */
@@ -9880,7 +9917,7 @@ static void test_perf_arm_skips_inputs_the_device_does_not_have(void) {
   CHECK(s.perf_zero_filled_frames == 0);
 
   char path[600];
-  snprintf(path, sizeof(path), "%s/input-2.pcm", perf_test_dir());
+  snprintf(path, sizeof(path), "%s/input-2-001.wav", perf_test_dir());
   FILE* f = fopen(path, "rb");
   CHECK(f == NULL);
   if (f != NULL) fclose(f);
@@ -9891,7 +9928,7 @@ static void test_perf_arm_skips_inputs_the_device_does_not_have(void) {
 /* On a full ring the audio thread drops the whole frame and increments the
  * shared overrun atomic; it never blocks. A tiny sample rate yields a tiny
  * (deterministic) ring capacity so the overflow is exactly reproducible: mono
- * capacity = next_pow2(1 * 4 * LE_PERF_CAPTURE_SECONDS) = 8 samples, 7 usable. */
+ * capacity = next_pow2(1 * 4 * LE_PERF_RING_SECONDS_DEFAULT) = 8 samples, 7 usable. */
 static void test_perf_overflow_counts_and_drops(void) {
   printf("test_perf_overflow_counts_and_drops\n");
   le_engine* e = le_engine_create();
@@ -9903,7 +9940,7 @@ static void test_perf_overflow_counts_and_drops(void) {
   le_engine_record(e, 0); /* finalize -> PLAYING */
   drain(e);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   float big_out[32];
@@ -9928,7 +9965,7 @@ static void test_perf_frames_advance_during_latency_measurement(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 1000); /* lat_buf_cap = 48000/10 = 4800 */
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   CHECK(le_engine_begin_latency_for_test(e) == LE_OK);
@@ -9965,7 +10002,7 @@ static void test_perf_drain_writes_master_pcm_byte_identical(void) {
   le_engine_record(e, 0); /* finalize -> PLAYING */
   drain(e);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   float out2[LOOP_N];
@@ -9975,8 +10012,8 @@ static void test_perf_drain_writes_master_pcm_byte_identical(void) {
   CHECK(le_perf_disarm(e) == LE_OK); /* blocks until the final flush completes */
 
   char path[600];
-  snprintf(path, sizeof(path), "%s/master.pcm", perf_test_dir());
-  FILE* f = fopen(path, "rb");
+  snprintf(path, sizeof(path), "%s/master-001.wav", perf_test_dir());
+  FILE* f = perf_fopen_payload(path);
   CHECK(f != NULL);
   if (f != NULL) {
     float captured[LOOP_N];
@@ -10004,7 +10041,7 @@ static void test_perf_drain_silence_fills_overrun_gap(void) {
   le_engine_record(e, 0);
   drain(e);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   float big_out[32];
@@ -10021,8 +10058,8 @@ static void test_perf_drain_silence_fills_overrun_gap(void) {
   CHECK(le_perf_disarm(e) == LE_OK);
 
   char path[600];
-  snprintf(path, sizeof(path), "%s/master.pcm", perf_test_dir());
-  FILE* f = fopen(path, "rb");
+  snprintf(path, sizeof(path), "%s/master-001.wav", perf_test_dir());
+  FILE* f = perf_fopen_payload(path);
   CHECK(f != NULL);
   if (f != NULL) {
     float buf[64];
@@ -10068,7 +10105,7 @@ static void test_perf_zero_fill_counter_visible_while_armed(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 4, 1, 1, 1000); /* tiny rate -> 7 usable ring frames */
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   float big_out[32];
@@ -10081,8 +10118,9 @@ static void test_perf_zero_fill_counter_visible_while_armed(void) {
 
   /* 32 frames of mono float = 128 bytes once the gap is padded. */
   char master_path[600];
-  snprintf(master_path, sizeof(master_path), "%s/master.pcm", perf_test_dir());
-  CHECK(poll_file_reaches_size_for_test(master_path, 32 * 4, 3000));
+  snprintf(master_path, sizeof(master_path), "%s/master-001.wav", perf_test_dir());
+  CHECK(poll_file_reaches_size_for_test(
+      master_path, LE_PERF_PART_HEADER_BYTES + 32 * 4, 3000));
 
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_armed == 1); /* still armed: this is a live reading */
@@ -10152,7 +10190,7 @@ static void test_perf_zero_fill_counts_only_silence_actually_written(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 4, 1, 1, 1000); /* tiny rate -> 7 usable ring frames */
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   float big_out[32];
@@ -10339,7 +10377,7 @@ static void test_perf_ring_short_write_does_not_desync_file(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 2, 48000); /* stereo master, roomy ring */
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(e->perf.master_channels == 2); /* the divisor under test is 2, not 1 */
 
@@ -10367,17 +10405,17 @@ static void test_perf_ring_short_write_does_not_desync_file(void) {
   CHECK(s.perf_zero_filled_frames == LE_TEST_SHORT_RING_FRAMES - 1);
 
   char path[600];
-  snprintf(path, sizeof(path), "%s/master.pcm", perf_test_dir());
-  FILE* f = fopen(path, "rb");
+  snprintf(path, sizeof(path), "%s/master-001.wav", perf_test_dir());
+  FILE* f = perf_fopen_payload(path);
   CHECK(f != NULL);
   if (f != NULL) {
     float got[LE_TEST_SHORT_RING_FRAMES * 2];
     const size_t samples =
         fread(got, sizeof(float), sizeof(got) / sizeof(got[0]), f);
     CHECK(fseek(f, 0, SEEK_END) == 0);
-    const long bytes = ftell(f);
+    const long bytes = ftell(f) - LE_PERF_PART_HEADER_BYTES;
     fclose(f);
-    printf("  master.pcm %ld bytes = %ld stereo frames (elapsed %d)\n", bytes,
+    printf("  master-001.wav payload %ld bytes = %ld stereo frames (elapsed %d)\n", bytes,
            bytes / (long)(2 * sizeof(float)), LE_TEST_SHORT_RING_FRAMES);
     /* Exactly elapsed, and frame-aligned: the 4 orphan bytes were overwritten
      * by the pad rather than shifting the whole rest of the take half a frame
@@ -10409,7 +10447,7 @@ static void test_perf_zero_fill_short_write_does_not_desync_file(void) {
   le_engine_record(e, 0);
   drain(e);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   perf_short_pad_ctx ctx = {e, 0};
@@ -10435,8 +10473,8 @@ static void test_perf_zero_fill_short_write_does_not_desync_file(void) {
   CHECK(ctx.stage == 2); /* both cycles ran: partial pad, then the top-up */
 
   char path[600];
-  snprintf(path, sizeof(path), "%s/master.pcm", perf_test_dir());
-  FILE* f = fopen(path, "rb");
+  snprintf(path, sizeof(path), "%s/master-001.wav", perf_test_dir());
+  FILE* f = perf_fopen_payload(path);
   CHECK(f != NULL);
   if (f != NULL) {
     float buf[64];
@@ -10474,7 +10512,7 @@ static void test_perf_drain_samples_elapsed_before_draining(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 1000); /* real ring: nothing may drop */
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   float out[LOOP_N];
@@ -10524,7 +10562,7 @@ static void test_perf_sidecar_bytes_are_exact(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 1000);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   float out[LOOP_N];
@@ -10543,6 +10581,12 @@ static void test_perf_sidecar_bytes_are_exact(void) {
    * the single processed block above. */
   const char* slug = strrchr(perf_test_dir(), '/');
   slug = slug != NULL ? slug + 1 : perf_test_dir();
+  /* The one sealed part's digest, computed here from the processed output
+   * the drain was given (the mono master is that output, frame for frame). */
+  uint8_t digest[32];
+  CHECK(le_digest_bytes(out, sizeof(out), digest) == LE_OK);
+  char sha_hex[65];
+  for (int i = 0; i < 32; ++i) snprintf(sha_hex + 2 * i, 3, "%02x", digest[i]);
   char expected[4096];
   snprintf(expected, sizeof(expected),
           "{\n"
@@ -10554,16 +10598,475 @@ static void test_perf_sidecar_bytes_are_exact(void) {
           "  \"overrun_count\": 0,\n"
           "  \"zero_filled_frames\": 0,\n"
           "  \"overrun_gaps\": [],\n"
+          "  \"take_id\": \"00000000000000000000000000000000\",\n"
+          "  \"encoding\": \"f32\",\n"
+          "  \"volume_generation\": -1,\n"
+          "  \"ring_seconds\": 2,\n"
+          "  \"overs\": 0,\n"
+          "  \"parts\": [{\"stream\": 0, \"index\": 1, "
+          "\"file\": \"master-001.wav\", \"frames\": %d, \"bytes\": %d, "
+          "\"overs\": 0, \"sha256\": \"%s\"}],\n"
           "  \"layers\": [],\n"
           "  \"finalized\": false\n"
           "}\n",
-          slug, LOOP_N);
+          slug, LOOP_N, LOOP_N, LE_PERF_PART_HEADER_BYTES + LOOP_N * 4,
+          sha_hex);
   if (strcmp(json, expected) != 0) {
     printf("  sidecar mismatch\n--- expected ---\n%s--- actual ---\n%s",
           expected, json);
   }
   CHECK(strcmp(json, expected) == 0);
 
+  le_engine_destroy(e);
+}
+
+
+/* ---- ordered float parts (#1198 Part 2) ----
+ * The oracles are literal bytes: the part header is the same 84-byte fixture
+ * wav_codec's RecordedPartHeader test pins (packages/wav_codec/test/
+ * recorded_part_test.dart), sample bytes are IEEE float little-endian
+ * spelled out, and digests are recomputed here from the samples the engine
+ * was given. */
+
+static const unsigned char kPerfPartHeaderFixture[84] = {
+    'R', 'I', 'F', 'F', 0x4C, 0x00, 0x00, 0x00, 'W', 'A', 'V', 'E',
+    'f', 'm', 't', ' ', 0x10, 0x00, 0x00, 0x00,
+    0x03, 0x00, 0x02, 0x00, 0x80, 0xBB, 0x00, 0x00,
+    0x00, 0xDC, 0x05, 0x00, 0x08, 0x00, 0x20, 0x00,
+    's', 'g', 'n', 'o', 0x20, 0x00, 0x00, 0x00,
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+    0x00, 0x00, 0x01, 0x00,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    'd', 'a', 't', 'a', 0x00, 0x00, 0x00, 0x00};
+
+static int32_t perf_arm_target_for_test(le_engine* e, const char* dir,
+                                        uint64_t part_bytes,
+                                        const char* sidecar_dir,
+                                        int32_t ring_seconds) {
+  le_perf_target target;
+  memset(&target, 0, sizeof(target));
+  target.capture_dir = dir;
+  target.live_sidecar_dir = sidecar_dir;
+  for (int i = 0; i < 16; ++i) target.take_id[i] = (uint8_t)i;
+  target.volume_generation = -1;
+  target.part_bytes = part_bytes;
+  target.ring_seconds = ring_seconds;
+  return le_perf_arm(e, &target);
+}
+
+static long file_size_for_test(const char* path) {
+  FILE* f = fopen(path, "rb");
+  if (f == NULL) return -1;
+  long n = -1;
+  if (fseek(f, 0, SEEK_END) == 0) n = ftell(f);
+  fclose(f);
+  return n;
+}
+
+static uint32_t le32_at(const unsigned char* p) {
+  return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
+         ((uint32_t)p[3] << 24);
+}
+
+static void test_perf_part_header_matches_fixture(void) {
+  printf("test_perf_part_header_matches_fixture\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000); /* stereo master */
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 0, NULL, 0) == LE_OK);
+  drain(e);
+  CHECK(le_perf_disarm(e) == LE_OK); /* no audio: the sealed sizes stay 0 */
+
+  char path[700];
+  snprintf(path, sizeof(path), "%s/master-001.wav", perf_test_dir());
+  unsigned char header[100];
+  CHECK(read_binary_file_for_test(path, header, sizeof(header)) == 84);
+  CHECK(memcmp(header, kPerfPartHeaderFixture, 84) == 0);
+  le_engine_destroy(e);
+}
+
+/* Samples reach the part unchanged — overs included — and the overs are
+ * counted. The master here is a mono passthrough of input 0, routed only
+ * AFTER arm so input 0 itself is not a captured stream. */
+static void test_perf_parts_keep_samples_and_count_overs(void) {
+  printf("test_perf_parts_keep_samples_and_count_overs\n");
+  le_engine* e = make_configured_engine(); /* mono in, mono out */
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 0, NULL, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  drain(e);
+
+  /* Exactly full scale is not an over; past it, either sign, is. */
+  float in[4] = {1.0f, -1.0f, 1.5f, -2.0f};
+  float out[4];
+  le_engine_process(e, out, in, 4);
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[700];
+  snprintf(path, sizeof(path), "%s/master-001.wav", perf_test_dir());
+  unsigned char payload[32];
+  CHECK(read_payload_file_for_test(path, payload, sizeof(payload)) == 16);
+  static const unsigned char kExpected[16] = {
+      0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x80, 0xBF,
+      0x00, 0x00, 0xC0, 0x3F, 0x00, 0x00, 0x00, 0xC0};
+  CHECK(memcmp(payload, kExpected, 16) == 0);
+
+  char json[8192];
+  snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
+  CHECK(read_file_for_test(path, json, sizeof(json)) > 0);
+  CHECK(strstr(json, "\"overs\": 2,\n") != NULL); /* the take's total */
+  CHECK(strstr(json, "\"file\": \"master-001.wav\", \"frames\": 4, "
+                     "\"bytes\": 100, \"overs\": 2, \"sha256\": ") != NULL);
+  le_engine_destroy(e);
+}
+
+/* 2500 stereo frames into parts of 84 + 8 * 1000 bytes: two full parts and
+ * one of 500 frames, each sealed with its sizes, index and digest. */
+static void test_perf_parts_roll_over_and_seal(void) {
+  printf("test_perf_parts_roll_over_and_seal\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000);
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 84 + 8 * 1000, NULL, 0) ==
+        LE_OK);
+  drain(e);
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 3) == LE_OK);
+  drain(e);
+
+  static float all_out[2500 * 2];
+  for (int base = 0; base < 2500; base += 50) {
+    float in[50];
+    for (int i = 0; i < 50; ++i) in[i] = (float)(base + i) * 0.0001f;
+    le_engine_process(e, all_out + base * 2, in, 50);
+  }
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  const long sizes[3] = {8084, 8084, 4084};
+  const int frames[3] = {1000, 1000, 500};
+  char json[16384];
+  char path[700];
+  snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
+  CHECK(read_file_for_test(path, json, sizeof(json)) > 0);
+  int start = 0;
+  for (int p = 0; p < 3; ++p) {
+    snprintf(path, sizeof(path), "%s/master-%03d.wav", perf_test_dir(), p + 1);
+    CHECK(file_size_for_test(path) == sizes[p]);
+    unsigned char header[84];
+    CHECK(read_binary_file_for_test(path, header, 84) == 84);
+    CHECK(le32_at(header + 4) == (uint32_t)(sizes[p] - 8));   /* RIFF size */
+    CHECK(le32_at(header + 80) == (uint32_t)(sizes[p] - 84)); /* data size */
+    CHECK(header[60] == 0 && header[61] == 0);                /* stream 0 */
+    CHECK(header[62] == p + 1 && header[63] == 0);            /* index */
+
+    /* The digest the drain recorded equals the file's payload digest and the
+     * digest of the frames the engine output, taken independently. */
+    uint8_t from_file[32];
+    uint8_t from_output[32];
+    CHECK(le_digest_file(path, 84, UINT64_MAX, from_file) == LE_OK);
+    CHECK(le_digest_bytes(all_out + start * 2,
+                          (uint64_t)frames[p] * 2 * sizeof(float),
+                          from_output) == LE_OK);
+    CHECK(memcmp(from_file, from_output, 32) == 0);
+    char expected[200];
+    char hex[65];
+    for (int i = 0; i < 32; ++i) snprintf(hex + 2 * i, 3, "%02x", from_file[i]);
+    snprintf(expected, sizeof(expected),
+             "\"index\": %d, \"file\": \"master-%03d.wav\", \"frames\": %d, "
+             "\"bytes\": %ld, \"overs\": 0, \"sha256\": \"%s\"}",
+             p + 1, p + 1, frames[p], sizes[p], hex);
+    CHECK(strstr(json, expected) != NULL);
+    start += frames[p];
+  }
+  snprintf(path, sizeof(path), "%s/master-004.wav", perf_test_dir());
+  CHECK(file_size_for_test(path) == -1); /* no empty trailing part */
+  le_engine_destroy(e);
+}
+
+/* A part boundary inside a zero-filled gap: the tiny-ring overrun of
+ * test_perf_drain_silence_fills_overrun_gap, written into 10-frame parts. */
+static void test_perf_zero_fill_crosses_part_boundaries(void) {
+  printf("test_perf_zero_fill_crosses_part_boundaries\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 4, 1, 1, 1000); /* tiny rate -> 7 usable ring frames */
+  le_engine_record(e, 0);
+  float out[LOOP_N];
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 84 + 4 * 10, NULL, 0) ==
+        LE_OK);
+  drain(e);
+  float big_out[32];
+  process_const(e, 0.0f, 32, big_out); /* 7 land, 25 are dropped */
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_zero_filled_frames == 25);
+  const int frames[4] = {10, 10, 10, 2};
+  float all[32];
+  int at = 0;
+  for (int p = 0; p < 4; ++p) {
+    char path[700];
+    snprintf(path, sizeof(path), "%s/master-%03d.wav", perf_test_dir(), p + 1);
+    CHECK(file_size_for_test(path) == 84 + 4 * frames[p]);
+    CHECK(read_payload_file_for_test(path, (unsigned char*)(all + at),
+                                     (size_t)frames[p] * sizeof(float)) ==
+          (size_t)frames[p] * sizeof(float));
+    at += frames[p];
+  }
+  for (int i = 0; i < 7; ++i) CHECK(all[i] == 1.0f);
+  for (int i = 7; i < 32; ++i) CHECK(all[i] == 0.0f);
+  /* Each part's recorded digest covers its padding too. */
+  char json[16384];
+  char path[700];
+  snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
+  CHECK(read_file_for_test(path, json, sizeof(json)) > 0);
+  for (int p = 0; p < 4; ++p) {
+    snprintf(path, sizeof(path), "%s/master-%03d.wav", perf_test_dir(), p + 1);
+    uint8_t digest[32];
+    CHECK(le_digest_file(path, 84, UINT64_MAX, digest) == LE_OK);
+    char hex[65];
+    for (int i = 0; i < 32; ++i) snprintf(hex + 2 * i, 3, "%02x", digest[i]);
+    char expected[160];
+    snprintf(expected, sizeof(expected), "\"sha256\": \"%s\"", hex);
+    CHECK(strstr(json, expected) != NULL);
+  }
+  le_engine_destroy(e);
+}
+
+/* Every file the one WAV writer opens is close-on-exec, so a child process
+ * the app starts while a take is open never inherits a writable descriptor
+ * onto it. */
+static void test_wav_writer_opens_close_on_exec(void) {
+  printf("test_wav_writer_opens_close_on_exec\n");
+#if defined(_WIN32)
+  printf("  (skipped: the handle is opened _O_NOINHERIT on Windows)\n");
+#else
+  char path[700];
+  snprintf(path, sizeof(path), "%s/cloexec.wav", perf_test_dir());
+  le_wav_writer w;
+  CHECK(le_wav_open(&w, path, 48000, 2, NULL, NULL, 0));
+  CHECK(w.file != NULL);
+  if (w.file != NULL) {
+    CHECK((fcntl(fileno(w.file), F_GETFD) & FD_CLOEXEC) != 0);
+  }
+  le_wav_abandon(&w);
+  remove(path);
+#endif
+}
+
+/* A part sealed after a write the disk never took back: the torn partial
+ * frame is cut, so the file is exactly its header and its whole frames, and
+ * the final pass seals it even though the write failed. */
+static void test_perf_seal_after_failed_write_cuts_torn_tail(void) {
+  printf("test_perf_seal_after_failed_write_cuts_torn_tail\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000); /* stereo master */
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  le_perf_drain_set_write_budget_for_test(12); /* one frame and a half */
+  float out[64 * 2];
+  process_const(e, 0.5f, 64, out);
+  CHECK(poll_drain_self_stopped_for_test(e->perf.drain, 3000));
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_drain_set_write_budget_for_test(-1);
+
+  char path[700];
+  snprintf(path, sizeof(path), "%s/master-001.wav", perf_test_dir());
+  CHECK(file_size_for_test(path) == 84 + 8);
+  unsigned char header[84];
+  CHECK(read_binary_file_for_test(path, header, 84) == 84);
+  CHECK(le32_at(header + 4) == 84 - 8 + 8);
+  CHECK(le32_at(header + 80) == 8);
+  le_engine_destroy(e);
+}
+
+/* Part indexes past 255 use both bytes of the sgno field, and a take that
+ * would outgrow the parts list stops with every part on disk sealed and
+ * listed: 2-frame parts, 512 of them, the last sealed by the final pass. */
+static void test_perf_part_list_limit(void) {
+  printf("test_perf_part_list_limit\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000); /* mono master */
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 84 + 8, NULL, 0) ==
+        LE_OK);
+  drain(e);
+  float out[50];
+  for (int base = 0; base < 1100; base += 50) process_const(e, 0.25f, 50, out);
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[700];
+  unsigned char header[84];
+  snprintf(path, sizeof(path), "%s/master-256.wav", perf_test_dir());
+  CHECK(read_binary_file_for_test(path, header, 84) == 84);
+  CHECK(header[62] == 0 && header[63] == 1); /* part 256 */
+  snprintf(path, sizeof(path), "%s/master-512.wav", perf_test_dir());
+  CHECK(read_binary_file_for_test(path, header, 84) == 84);
+  CHECK(header[62] == 0 && header[63] == 2); /* part 512 */
+  CHECK(le32_at(header + 80) == 8);          /* sealed */
+  snprintf(path, sizeof(path), "%s/master-513.wav", perf_test_dir());
+  CHECK(file_size_for_test(path) == -1);
+  static char json[262144];
+  snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
+  CHECK(read_file_for_test(path, json, sizeof(json)) > 0);
+  CHECK(strstr(json, "\"index\": 512, \"file\": \"master-512.wav\", "
+                     "\"frames\": 2, \"bytes\": 92, \"overs\": 0, "
+                     "\"sha256\": ") != NULL);
+  CHECK(strstr(json, "\"stopped_early\": \"disk_full\"") != NULL);
+  le_engine_destroy(e);
+}
+
+/* The live sidecar's take `overs` counts the open part too, so a take reads
+ * its overs while it runs, not only once a part seals. */
+static void test_perf_live_overs_include_the_open_part(void) {
+  printf("test_perf_live_overs_include_the_open_part\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  drain(e);
+  float in[4] = {1.0f, -1.0f, 1.5f, -2.0f}; /* two overs, as above */
+  float out[4];
+  le_engine_process(e, out, in, 4);
+
+  char path[700];
+  snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
+  const char* expected = "\"overs\": 2,\n  \"parts\": [";
+  int seen = 0;
+  for (int i = 0; i < 300 && !seen; ++i) {
+    char json[16384];
+    if (read_file_for_test(path, json, sizeof(json)) > 0 &&
+        strstr(json, expected) != NULL) {
+      seen = 1;
+    }
+    if (!seen) test_sleep_ms(10);
+  }
+  CHECK(seen); /* while armed: nothing has sealed yet */
+  CHECK(e->perf.drain != NULL);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_engine_destroy(e);
+}
+
+/* A monitored input is its own stereo stream, 1 + n in the sgno chunk. */
+static void test_perf_input_stream_parts(void) {
+  printf("test_perf_input_stream_parts\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  CHECK(le_engine_set_monitor_input(e, 1, 1) == LE_OK);
+  drain(e);
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 0, NULL, 0) == LE_OK);
+  drain(e);
+  float in[8] = {0};
+  float out[8];
+  le_engine_process(e, out, in, 4);
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[700];
+  snprintf(path, sizeof(path), "%s/input-1-001.wav", perf_test_dir());
+  unsigned char header[84];
+  CHECK(read_binary_file_for_test(path, header, 84) == 84);
+  CHECK(header[22] == 2 && header[23] == 0);  /* stereo */
+  CHECK(header[60] == 2 && header[61] == 0);  /* stream 1 + 1 */
+  CHECK(header[62] == 1 && header[63] == 0);  /* part 1 */
+  CHECK(le32_at(header + 80) == 4 * 2 * sizeof(float));
+  le_engine_destroy(e);
+}
+
+/* The ring seconds an arm grants: 8 requested with the master and 8 stereo
+ * inputs at 96 kHz is 9 rings of next_pow2(96000 * 2 * s) samples; s = 8, 7
+ * and 6 each round to 2^21 samples (72 MiB in all), s = 5 to 2^20 (36 MiB),
+ * so 5 is granted. With 32 inputs even 2 s is over the cap; the default is
+ * the floor. */
+static void test_perf_ring_seconds_are_capped(void) {
+  printf("test_perf_ring_seconds_are_capped\n");
+  const int inputs[2] = {8, 32};
+  const int granted[2] = {5, 2};
+  for (int k = 0; k < 2; ++k) {
+    le_engine* e = le_engine_create();
+    le_engine_configure(e, 96000, inputs[k], 2, 1000);
+    for (int c = 0; c < inputs[k]; ++c) {
+      CHECK(le_engine_set_monitor_input(e, c, 1) == LE_OK);
+    }
+    drain(e);
+    CHECK(perf_arm_target_for_test(e, perf_test_dir(), 0, NULL, 8) == LE_OK);
+    drain(e);
+    const size_t want = (size_t)1
+                        << (granted[k] == 5 ? 20 : 19); /* samples per ring */
+    CHECK(e->perf.master_ring.capacity == want);
+    CHECK(e->perf.monitor_ring[0].capacity == want);
+    CHECK(le_perf_disarm(e) == LE_OK);
+    char json[16384];
+    char path[700];
+    snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
+    CHECK(read_file_for_test(path, json, sizeof(json)) > 0);
+    char expected[64];
+    snprintf(expected, sizeof(expected), "\"ring_seconds\": %d,", granted[k]);
+    CHECK(strstr(json, expected) != NULL);
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.perf_ring_seconds == granted[k]);
+    le_engine_destroy(e);
+  }
+  /* Past LE_PERF_RING_SECONDS_MAX is refused, not lowered one at a time. */
+  le_engine* e = make_configured_engine();
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 0, NULL,
+                                 LE_PERF_RING_SECONDS_MAX + 1) ==
+        LE_ERR_INVALID);
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 0, NULL, INT32_MAX) ==
+        LE_ERR_INVALID);
+  CHECK(e->perf.drain == NULL);
+  le_engine_destroy(e);
+}
+
+/* A live sidecar directory apart from the take (a USB take's Internal
+ * mirror): the take directory receives only parts and events.log. */
+static void test_perf_live_sidecar_elsewhere(void) {
+  printf("test_perf_live_sidecar_elsewhere\n");
+  char take[700];
+  char mirror[700];
+  snprintf(take, sizeof(take), "%s/usb-take", perf_test_dir());
+  snprintf(mirror, sizeof(mirror), "%s/mirror", perf_test_dir());
+  le_engine* e = make_configured_engine();
+  CHECK(perf_arm_target_for_test(e, take, 0, mirror, 0) == LE_OK);
+  drain(e);
+  float out[LOOP_N];
+  process_const(e, 0.25f, LOOP_N, out);
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[800];
+  snprintf(path, sizeof(path), "%s/performance.json", mirror);
+  CHECK(file_size_for_test(path) > 0);
+  snprintf(path, sizeof(path), "%s/performance.json", take);
+  CHECK(file_size_for_test(path) == -1);
+  snprintf(path, sizeof(path), "%s/performance.json.tmp", take);
+  CHECK(file_size_for_test(path) == -1);
+  snprintf(path, sizeof(path), "%s/master-001.wav", take);
+  CHECK(file_size_for_test(path) == 84 + LOOP_N * 4);
+  snprintf(path, sizeof(path), "%s/events.log", take);
+  CHECK(file_size_for_test(path) > 0);
+  le_engine_destroy(e);
+}
+
+static void test_perf_arm_rejects_bad_target(void) {
+  printf("test_perf_arm_rejects_bad_target\n");
+  le_engine* e = make_configured_engine();
+  CHECK(le_perf_arm(e, NULL) == LE_ERR_INVALID);
+  /* One stereo frame after the header is the smallest part. */
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 84 + 7, NULL, 0) ==
+        LE_ERR_INVALID);
+  /* The RIFF size (file size - 8) must fit 32 bits. */
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 0x100000008ull + 1, NULL,
+                                 0) == LE_ERR_INVALID);
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 0, NULL, -1) ==
+        LE_ERR_INVALID);
+  CHECK(e->perf.drain == NULL);
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 84 + 8, NULL, 0) ==
+        LE_OK);
+  CHECK(le_perf_disarm(e) == LE_OK);
   le_engine_destroy(e);
 }
 
@@ -10634,7 +11137,7 @@ typedef struct {
 /* Frames pushed per 25 ms tick. LE_PD_SCRATCH_SAMPLES is 2048, so ~40k frames
  * per 250 ms cycle keeps the drain looping on full scratch buffers instead of
  * emptying the ring in one short pop — while staying inside the ring's
- * LE_PERF_CAPTURE_SECONDS so nothing overruns except where this test asks. */
+ * LE_PERF_RING_SECONDS_DEFAULT so nothing overruns except where this test asks. */
 #define LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK 4096
 /* The forced gap, in frames: four of le_pd_catch_up's 1024-sample kZeros
  * chunks on this mono fixture, so padding it takes the chunk loop, not one
@@ -10723,7 +11226,7 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
    * so counting across the arm catches perf_drain.c's own session-struct
    * calloc. */
   tl_count_allocations = 1;
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   tl_count_allocations = 0;
   CHECK(atomic_load(&g_test_alloc_count) > 0);
   /* WHAT CLEARS THIS FLOOR, measured on this fixture rather than assumed,
@@ -10733,7 +11236,7 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
    *   - le_perf_drain itself, 724104 bytes — sizeof the struct, which since
    *     #722 carries json_buf (LE_PD_JSON_BUF = 512 KB) inside it;
    *   - le_perf_arm's master ring, 524288 bytes — le_perf_ring_capacity
-   *     rounds 1 ch x 48000 x LE_PERF_CAPTURE_SECONDS up to a power of two
+   *     rounds 1 ch x 48000 x LE_PERF_RING_SECONDS_DEFAULT up to a power of two
    *     (131072 samples x 4 B), landing EXACTLY on this floor.
    *
    * HOW MANY ALLOCATIONS THE ARM ACTUALLY COUNTS IS PLATFORM-SPECIFIC, so do
@@ -10751,7 +11254,7 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
    * So the control does not depend on the change under test: the ring clears
    * it on its own, as it did before #722. But it clears it by zero bytes, so
    * do not read a failure here as "interposition broke" without checking
-   * whether LE_PD_JSON_BUF, LE_PERF_CAPTURE_SECONDS or this fixture's
+   * whether LE_PD_JSON_BUF, LE_PERF_RING_SECONDS_DEFAULT or this fixture's
    * configure() moved first. Retuning the floor is the right fix in that case;
    * its job is only to rule out an incidental small allocation satisfying the
    * non-zero check above. */
@@ -10789,7 +11292,7 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
      * costing that run the burst's coverage and nothing else. */
     if (!burst_pushed_once && atomic_load(&ctx.cycles) >= 4) {
       burst_pushed_once = 1;
-      push_frames_for_test(e, 0.25f, 48000 * (LE_PERF_CAPTURE_SECONDS + 1));
+      push_frames_for_test(e, 0.25f, 48000 * (LE_PERF_RING_SECONDS_DEFAULT + 1));
     }
     test_sleep_ms(25);
     waited += 25;
@@ -10870,7 +11373,7 @@ static void test_perf_drain_disk_full_stops_cleanly(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 1000);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   le_perf_drain_force_write_failure_for_test(1);
@@ -10943,7 +11446,7 @@ static void test_perf_drain_files_are_crash_consistent_mid_capture(void) {
   le_engine_record(e, 0);
   drain(e);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   float out2[LOOP_N];
@@ -10968,8 +11471,8 @@ static void test_perf_drain_files_are_crash_consistent_mid_capture(void) {
   CHECK(strstr(json, "\"stopped_early\"") == NULL); /* still running normally */
 
   char pcm_path[600];
-  snprintf(pcm_path, sizeof(pcm_path), "%s/master.pcm", perf_test_dir());
-  FILE* pf = fopen(pcm_path, "rb");
+  snprintf(pcm_path, sizeof(pcm_path), "%s/master-001.wav", perf_test_dir());
+  FILE* pf = perf_fopen_payload(pcm_path);
   CHECK(pf != NULL);
   if (pf != NULL) {
     float buf[LOOP_N];
@@ -10992,7 +11495,7 @@ static void test_perf_reconfigure_while_armed_marks_sidecar_device_changed(void)
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 1000);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   float out[LOOP_N];
@@ -11022,7 +11525,7 @@ static void test_perf_events_log_table_round_trip_and_frame_accuracy(void) {
   le_engine* e = make_configured_engine();
   float out[LOOP_N];
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   process_const(e, 0.0f, LOOP_N, out);
@@ -11177,7 +11680,7 @@ static void test_perf_events_log_transport_facts(void) {
   le_engine* e = make_configured_engine();
   float out[LOOP_N];
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   CHECK(le_engine_record(e, 0) == LE_OK); /* EMPTY -> RECORDING, no master yet */
@@ -11310,7 +11813,7 @@ static void test_perf_armed_fact_carries_loop_phase(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.master_position_frames == 2);
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e); /* applies LE_CMD_PERF_ARM at capture frame 0, logs PERF_ARMED */
   CHECK(le_perf_disarm(e) == LE_OK);
 
@@ -11349,7 +11852,7 @@ static void test_take_id_monotonic_per_channel(void) {
   le_engine* e = make_configured_engine();
   float out[LOOP_N];
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   /* Channel 0, take 1: defines the master. */
@@ -11425,7 +11928,7 @@ static void test_perf_transport_held_logged(void) {
   le_engine* e = make_configured_engine();
   float out[LOOP_N];
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   /* Define a master and let it play to position 2. */
@@ -11481,7 +11984,7 @@ static void test_perf_events_log_command_storm_no_loss(void) {
   printf("test_perf_events_log_command_storm_no_loss\n");
   le_engine* e = make_configured_engine();
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   const int total = 2500;
@@ -11530,7 +12033,7 @@ static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
   le_engine* e = make_configured_engine();
   float out[LOOP_N];
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
   CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
@@ -11615,7 +12118,7 @@ static void test_perf_events_log_readable_after_abrupt_stop(void) {
   snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
   remove(path); /* clear any stale content from a prior test session */
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_set_master_gain(e, 0.42f) == LE_OK);
   drain(e);
@@ -11652,7 +12155,7 @@ static void test_perf_layer_persists_through_pool_eviction(void) {
   le_engine* e = make_configured_engine();
   float out[64];
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   record_base_loop(e, 1.0f);
@@ -11733,7 +12236,7 @@ static void test_perf_layer_persists_through_clear_during_dub(void) {
   le_engine* e = make_configured_engine();
   float out[64];
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   record_base_loop(e, 1.0f);
@@ -11815,7 +12318,7 @@ static void test_perf_layer_persists_through_redo_invalidation(void) {
   le_engine* e = make_configured_engine();
   float out[64];
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   record_base_loop(e, 1.0f);
@@ -11897,7 +12400,7 @@ static void test_perf_layer_hand_off_ordering_on_write_failure(void) {
   le_engine* e = make_configured_engine();
   float out[64];
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   record_base_loop(e, 1.0f);
@@ -12006,7 +12509,7 @@ static void test_perf_layer_persists_burst_of_two_in_one_drain(void) {
   le_engine* e = make_configured_engine();
   float out[64];
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   record_base_loop(e, 1.0f);
@@ -14566,9 +15069,9 @@ static void test_count_in_click_captured_when_routed(void) {
   ck_run(e, 1, 1, NULL, NULL);
 
   char path[600];
-  snprintf(path, sizeof(path), "%s/master.pcm", perf_test_dir());
+  snprintf(path, sizeof(path), "%s/master-001.wav", perf_test_dir());
   remove(path); /* clear any stale capture from a prior test */
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   CHECK(le_engine_record(e, 0) == LE_OK);
@@ -14581,7 +15084,7 @@ static void test_count_in_click_captured_when_routed(void) {
   CHECK(le_perf_disarm(e) == LE_OK); /* blocks: final flush + join */
 
   static float pcm[262144];
-  FILE* f = fopen(path, "rb");
+  FILE* f = perf_fopen_payload(path);
   CHECK(f != NULL);
   if (f != NULL) {
     const size_t n = fread(pcm, sizeof(float), 262144, f);
@@ -20877,7 +21380,7 @@ static void test_perf_render_fresh_midloop_second_track_phase(void) {
 
   le_engine* e = le_engine_create();
   le_engine_configure(e, sr, 1, 1, 1000);
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
 
   /* Track 0 defines the master: frames 0-3 record 0.6, finalize applies at
@@ -20971,8 +21474,8 @@ static void test_perf_render_fresh_midloop_second_track_phase(void) {
 
   /* Master parity, the golden gate's own criterion. */
   char pcm_path[700];
-  snprintf(pcm_path, sizeof(pcm_path), "%s/master.pcm", dir);
-  FILE* pf = fopen(pcm_path, "rb");
+  snprintf(pcm_path, sizeof(pcm_path), "%s/master-001.wav", dir);
+  FILE* pf = perf_fopen_payload(pcm_path);
   CHECK(pf != NULL);
   float live[32] = {0};
   size_t live_n = 0;
@@ -21015,7 +21518,7 @@ static void test_perf_render_fresh_multiloop_second_track_phase(void) {
 
   le_engine* e = le_engine_create();
   le_engine_configure(e, sr, 1, 1, 1000);
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
 
   /* Track 0 defines the 4-frame master; finalize (clock reset + lock)
@@ -21100,8 +21603,8 @@ static void test_perf_render_fresh_multiloop_second_track_phase(void) {
 
   /* Master parity, the golden gate's own criterion. */
   char pcm_path[700];
-  snprintf(pcm_path, sizeof(pcm_path), "%s/master.pcm", dir);
-  FILE* pf = fopen(pcm_path, "rb");
+  snprintf(pcm_path, sizeof(pcm_path), "%s/master-001.wav", dir);
+  FILE* pf = perf_fopen_payload(pcm_path);
   CHECK(pf != NULL);
   float live[32] = {0};
   size_t live_n = 0;
@@ -21161,7 +21664,7 @@ static void test_perf_render_aborted_take_does_not_claim_disarm_image(void) {
 
   le_engine* e = le_engine_create();
   le_engine_configure(e, sr, 1, 1, 1000);
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
 
   /* Track 0 defines the master; finalize applies at capture frame 4. */
@@ -21349,7 +21852,7 @@ static void test_finalize_take_ends_live_take_at_call_frame(void) {
 
   le_engine* e = le_engine_create();
   le_engine_configure(e, sr, 1, 1, 1000);
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
 
   /* Track 0 defines the master: 4 frames, locked at capture frame 4. */
@@ -21423,7 +21926,7 @@ static void test_cancel_arm_aborts_count_in(void) {
   le_engine_configure(e, 1000, 1, 1, 20000);
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* 500 frames per beat */
   CHECK(record_start_count(e, 1) == LE_OK);   /* 4 beats = 2000 frames */
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   tg_advance(e, 1);
 
   CHECK(le_engine_record(e, 1) == LE_OK); /* the defining press: counts in */
@@ -21510,7 +22013,7 @@ static void run_perf_render_golden_master_parity(int follow,
   /* Arm from silence: nothing recorded yet, no master loop defined. The
    * capture policy (slice 3b) is frozen here and written to the manifest. */
   CHECK(le_perf_set_follow_output(e, follow) == LE_OK);
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
 
   /* Record fresh while armed, then finalize to PLAYING — le_loop_clock_set_
@@ -21614,8 +22117,8 @@ static void run_perf_render_golden_master_parity(int follow,
   CHECK(succeeded == 1);
 
   char master_pcm_path[700];
-  snprintf(master_pcm_path, sizeof(master_pcm_path), "%s/master.pcm", dir);
-  FILE* mf = fopen(master_pcm_path, "rb");
+  snprintf(master_pcm_path, sizeof(master_pcm_path), "%s/master-001.wav", dir);
+  FILE* mf = perf_fopen_payload(master_pcm_path);
   CHECK(mf != NULL);
   float* live = (float*)malloc((size_t)capture_frames * sizeof(float));
   size_t live_n = 0;
@@ -21731,7 +22234,7 @@ static void test_perf_render_quantized_round_down_truncation_log_frame(void) {
 
   le_engine* e = le_engine_create();
   le_engine_configure(e, sr, 1, 1, 20000);
-  CHECK(le_perf_arm(e, dir) == LE_OK); /* arm from silence, nothing recorded yet */
+  CHECK(perf_arm_dir(e, dir) == LE_OK); /* arm from silence, nothing recorded yet */
   drain(e);
 
   /* Track 0 defines a SILENT 3000-frame master (tg_record_defining_loop always
@@ -24099,7 +24602,7 @@ static void test_one_shot_wrap_logs_synthetic_stop(void) {
 
   CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
   drain(e);
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   fm_record_track(e, 0, 300);
@@ -24155,7 +24658,7 @@ static void test_one_shot_wrap_mid_overdub_logs_stop_no_record_end(void) {
 
   CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
   drain(e);
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   fm_record_track(e, 0, 300);
@@ -28035,7 +28538,7 @@ static void test_fx_enable_plog_events(void) {
   le_engine* e = make_configured_engine();
   float out[LOOP_N];
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   process_const(e, 0.0f, LOOP_N, out);
   const uint64_t expected_frame =
@@ -29902,7 +30405,7 @@ static void test_perf_follow_survives_configure_and_capture_bus(void) {
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_capture_bus == 1);
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   /* Re-enabling bus 0 does not move the armed take's bus. */
   CHECK(le_engine_set_output_enabled(e, 0, 1) == LE_OK);
@@ -29973,7 +30476,7 @@ static void test_cut_sound_stops_tracks_and_clears_tails(void) {
    * le_one_shot_stop precedent: the log records what a listener heard. */
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   process_n(e, 0.0f, 64, cap);
   CHECK(le_engine_cut_sound(e) == LE_OK);
@@ -30169,7 +30672,7 @@ static void test_output_fx_logs_exact_edits_track_fx_stays_manifest_only(void) {
   le_engine* e = make_configured_engine();
   float out[64];
 
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
@@ -33254,7 +33757,7 @@ static void test_perf_selected_output_chain_pan_parity(void) {
     char path[700]; snprintf(path, sizeof(path), "%s/loop.wav", dir);
     test_write_wav_mono(path, source, n, sr);
     CHECK(le_perf_set_follow_output(e, follow) == LE_OK);
-    CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+    CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
     le_output_fx_snapshot armed_chain;
     CHECK(le_engine_get_output_fx_snapshot(e, 1, &armed_chain) == LE_OK);
     CHECK(armed_chain.count == 1 && armed_chain.params[0][1] == 0.5f);
@@ -33288,8 +33791,8 @@ static void test_perf_selected_output_chain_pan_parity(void) {
     CHECK(le_perf_render_track_status(e, 0, &channel, &succeeded) == LE_OK);
     CHECK(succeeded == 1);
     float live[64], offline[64];
-    snprintf(path, sizeof(path), "%s/master.pcm", dir);
-    FILE* f = fopen(path, "rb"); CHECK(f != NULL);
+    snprintf(path, sizeof(path), "%s/master-001.wav", dir);
+    FILE* f = perf_fopen_payload(path); CHECK(f != NULL);
     CHECK(fread(live, sizeof(float), 64, f) == 64); fclose(f);
     snprintf(path, sizeof(path), "%s/stems/wet/master.wav", dir);
     f = fopen(path, "rb"); CHECK(f != NULL);
@@ -33461,13 +33964,13 @@ static void test_perf_disarm_cancels_unpublished_arm(void) {
   test_render_mkdir(perf_test_dir());
   le_engine* e = le_engine_create();
   CHECK(le_engine_configure(e, 1000, 1, 1, 1000) == LE_OK);
-  CHECK(le_perf_arm(e, render_test_dir("pending-perf-arm")) == LE_OK);
+  CHECK(perf_arm_dir(e, render_test_dir("pending-perf-arm")) == LE_OK);
   le_snapshot snap; le_engine_get_snapshot(e, &snap);
   CHECK(!snap.perf_armed);
   CHECK(le_perf_disarm(e) == LE_OK);
   CHECK(e->perf.drain == NULL && e->perf.master_ring.buffer == NULL);
   drain(e); le_engine_get_snapshot(e, &snap); CHECK(!snap.perf_armed);
-  CHECK(le_perf_arm(e, render_test_dir("pending-full-cancel")) == LE_OK);
+  CHECK(perf_arm_dir(e, render_test_dir("pending-full-cancel")) == LE_OK);
   for (int i = 0; i < LE_RING_CAPACITY - 2; ++i)
     CHECK(le_engine_set_track_volume(e, 0, 1) == LE_OK);
   CHECK(le_perf_disarm(e) == LE_ERR_INVALID);
@@ -33478,7 +33981,7 @@ static void test_perf_disarm_cancels_unpublished_arm(void) {
   float out[32]; process_const(e, .5f, 32, out);
   le_engine_get_snapshot(e, &snap);
   CHECK(!snap.perf_armed && snap.perf_frames == 0);
-  CHECK(le_perf_arm(e, render_test_dir("rearmed-after-cancel")) == LE_OK);
+  CHECK(perf_arm_dir(e, render_test_dir("rearmed-after-cancel")) == LE_OK);
   drain(e); le_engine_get_snapshot(e, &snap); CHECK(snap.perf_armed);
   CHECK(le_perf_disarm(e) == LE_OK);
   le_engine_destroy(e);
@@ -34202,6 +34705,18 @@ int main(void) {
   test_perf_ring_short_write_does_not_desync_file();
   test_perf_drain_samples_elapsed_before_draining();
   test_perf_sidecar_bytes_are_exact();
+  test_perf_part_header_matches_fixture();
+  test_perf_parts_keep_samples_and_count_overs();
+  test_perf_parts_roll_over_and_seal();
+  test_perf_zero_fill_crosses_part_boundaries();
+  test_perf_input_stream_parts();
+  test_wav_writer_opens_close_on_exec();
+  test_perf_seal_after_failed_write_cuts_torn_tail();
+  test_perf_part_list_limit();
+  test_perf_live_overs_include_the_open_part();
+  test_perf_ring_seconds_are_capped();
+  test_perf_live_sidecar_elsewhere();
+  test_perf_arm_rejects_bad_target();
   test_perf_drain_steady_state_cycle_is_allocation_free();
   test_perf_drain_disk_full_stops_cleanly();
   test_perf_drain_files_are_crash_consistent_mid_capture();

@@ -4659,12 +4659,34 @@ static size_t le_perf_next_pow2(size_t n) {
 }
 
 /* Ring capacity in SAMPLES for `channels` at `sample_rate`: at least
- * LE_PERF_CAPTURE_SECONDS of audio, rounded up to the power of two
- * le_audio_ring requires. */
-static size_t le_perf_ring_capacity(int32_t channels, int32_t sample_rate) {
-  const size_t want =
-      (size_t)channels * (size_t)sample_rate * LE_PERF_CAPTURE_SECONDS;
+ * `seconds` of audio, rounded up to the power of two le_audio_ring requires. */
+static size_t le_perf_ring_capacity(int32_t channels, int32_t sample_rate,
+                                    int32_t seconds) {
+  const size_t want = (size_t)channels * (size_t)sample_rate * (size_t)seconds;
   return le_perf_next_pow2(want < 2 ? 2 : want);
+}
+
+/* The ring seconds an arm grants (#1198): the requested seconds (at most
+ * LE_PERF_RING_SECONDS_MAX, checked by the caller), lowered one at a time —
+ * never below LE_PERF_RING_SECONDS_DEFAULT — until every ring of
+ * the take together fits LE_PERF_RING_BYTES_MAX. A take on a removable volume
+ * asks for more than the default to ride out flash stalls; with many captured
+ * inputs at a high rate the cap keeps arm from allocating (and prefaulting)
+ * hundreds of megabytes. */
+static int32_t le_perf_ring_seconds_granted(int32_t requested,
+                                            int32_t master_channels,
+                                            int32_t stereo_inputs,
+                                            int32_t sample_rate) {
+  int32_t seconds = requested;
+  while (seconds > LE_PERF_RING_SECONDS_DEFAULT) {
+    const size_t samples =
+        le_perf_ring_capacity(master_channels, sample_rate, seconds) +
+        (size_t)stereo_inputs *
+            le_perf_ring_capacity(2, sample_rate, seconds);
+    if (samples * sizeof(float) <= (size_t)LE_PERF_RING_BYTES_MAX) break;
+    seconds--;
+  }
+  return seconds;
 }
 
 /* The first one or two ENABLED output channels, in ascending index order — the
@@ -4709,8 +4731,18 @@ static void le_perf_free_unpublished(le_engine* e, uint32_t monitors_done) {
   }
 }
 
-int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
-  if (engine == NULL || capture_dir == NULL || capture_dir[0] == '\0') {
+int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
+  if (engine == NULL || target == NULL || target->capture_dir == NULL ||
+      target->capture_dir[0] == '\0' || target->ring_seconds < 0 ||
+      target->ring_seconds > LE_PERF_RING_SECONDS_MAX) {
+    return LE_ERR_INVALID;
+  }
+  /* A part must hold at least one stereo frame after its header, and its
+   * RIFF size (file size - 8) must fit 32 bits. */
+  if (target->part_bytes != 0 &&
+      (target->part_bytes <
+           (uint64_t)LE_PERF_PART_HEADER_BYTES + 2u * sizeof(float) ||
+       target->part_bytes > 0xFFFFFFFFull + 8u)) {
     return LE_ERR_INVALID;
   }
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
@@ -4731,16 +4763,6 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   if (found == 0) return LE_ERR_INVALID; /* nothing enabled to capture */
 
   const int32_t sr = engine->sample_rate > 0 ? engine->sample_rate : 48000;
-  const size_t master_cap = le_perf_ring_capacity(found, sr);
-  if (!le_audio_ring_alloc(&engine->perf.master_ring, master_cap)) {
-    return LE_ERR_INVALID;
-  }
-  engine->perf.master_channels = found;
-  engine->perf.master_out_ch[0] = out_ch[0];
-  engine->perf.master_out_ch[1] = out_ch[1];
-  /* The capture policy is frozen per take (accepted design): the flag as it
-   * stands at arm, read by the audio thread through this plain field. */
-  engine->perf.follow_output = load_i32(&engine->a_perf_follow_output);
 
   /* The monitor capture set is frozen at arm: whichever inputs are enabled
    * right now, and no others — an input enabled later is logged, not tapped
@@ -4756,14 +4778,39 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
    * nothing counted the padding; now that a zero-fill raises the capture's
    * glitch flag, it would light the warning on every single capture and drown
    * the real signal. An input that does not exist is not a captured input. */
-  uint32_t input_mask = 0;
+  uint32_t wanted_inputs = 0;
+  int32_t input_count = 0;
   const int32_t monitor_ch_limit =
       (engine->in_channels > 0 && engine->in_channels < LE_MAX_MONITORED_INPUTS)
           ? engine->in_channels
           : LE_MAX_MONITORED_INPUTS;
-  const size_t monitor_cap = le_perf_ring_capacity(2, sr);
   for (int32_t c = 0; c < monitor_ch_limit; ++c) {
     if (!load_i32(&engine->monitors[c].a_enabled)) continue;
+    wanted_inputs |= (1u << c);
+    input_count++;
+  }
+  const int32_t ring_seconds = le_perf_ring_seconds_granted(
+      target->ring_seconds > 0 ? target->ring_seconds
+                               : LE_PERF_RING_SECONDS_DEFAULT,
+      found, input_count, sr);
+  atomic_store_explicit(&engine->a_perf_ring_seconds, ring_seconds,
+                        memory_order_relaxed);
+
+  const size_t master_cap = le_perf_ring_capacity(found, sr, ring_seconds);
+  if (!le_audio_ring_alloc(&engine->perf.master_ring, master_cap)) {
+    return LE_ERR_INVALID;
+  }
+  engine->perf.master_channels = found;
+  engine->perf.master_out_ch[0] = out_ch[0];
+  engine->perf.master_out_ch[1] = out_ch[1];
+  /* The capture policy is frozen per take (accepted design): the flag as it
+   * stands at arm, read by the audio thread through this plain field. */
+  engine->perf.follow_output = load_i32(&engine->a_perf_follow_output);
+
+  uint32_t input_mask = 0;
+  const size_t monitor_cap = le_perf_ring_capacity(2, sr, ring_seconds);
+  for (int32_t c = 0; c < monitor_ch_limit; ++c) {
+    if (!(wanted_inputs & (1u << c))) continue;
     if (!le_audio_ring_alloc(&engine->perf.monitor_ring[c], monitor_cap)) {
       le_perf_free_unpublished(engine, input_mask);
       return LE_ERR_INVALID;
@@ -4813,7 +4860,7 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
    * finds empty rings until the audio thread begins producing. Arming without
    * a working drain thread would silently drop every captured frame, so a
    * failure here aborts the whole arm. */
-  engine->perf.drain = le_perf_drain_start(engine, capture_dir);
+  engine->perf.drain = le_perf_drain_start(engine, target, ring_seconds);
   if (engine->perf.drain == NULL) {
     le_perf_free_unpublished(engine, input_mask);
     engine->perf.input_mask = 0;

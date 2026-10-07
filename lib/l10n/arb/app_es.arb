@@ -709,6 +709,7 @@
     "operationBusy": "{kind, select, capture{Hay una grabación en curso. Detenla primero.} sessionApply{Se está abriendo una sesión. Inténtalo cuando termine de abrirse.} sessionWrite{Se está guardando una sesión. Inténtalo en un momento.} transfer{Hay una transferencia USB en curso. Inténtalo cuando termine.} eject{Se está expulsando una unidad. Inténtalo cuando termine.} deviceChange{La interfaz de audio está cambiando. Inténtalo en un momento.} calibration{Se está midiendo la latencia. Inténtalo cuando termine.} restart{La consola se está apagando.} other{Hay otra operación en curso. Inténtalo en un momento.}}",
     "perfArmRefused": "La grabación no empezó. {reason}",
     "perfLowDiskBlocked": "No hay espacio suficiente en disco para iniciar una captura. Libera espacio e inténtalo de nuevo.",
+    "perfTakesNotRecovered": "{count, plural, =1{No se pudo recuperar esta toma. Se conservan sus archivos.} other{No se pudieron recuperar {count} tomas. Se conservan sus archivos.}}",
     "perfStoppedLowDisk": "Captura detenida — el disco se estaba quedando sin espacio. Se ha guardado lo grabado.",
     "perfArmDisabledRendering": "No se puede armar mientras se renderiza la captura anterior.",
     "perfRenameTitle": "Renombrar captura",

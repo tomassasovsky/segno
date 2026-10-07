@@ -937,7 +937,7 @@ class FakeSessionEngine implements AudioEngine {
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult perfArm(String captureDir) => EngineResult.ok;
+  EngineResult perfArm(PerfTarget target) => EngineResult.ok;
   @override
   EngineResult perfDisarm() => EngineResult.ok;
 

@@ -122,9 +122,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// free-space sample and the stop taking effect.
   ///
   /// A *fixed* floor was the first attempt and it was the wrong shape.
-  /// Finalize does not write "headers and a manifest" — it writes a **full
-  /// second copy** of every captured stream as WAV, keeping the `.pcm`
-  /// alongside it. Measured on the appliance at 96 kHz: 384 KB/s per stream,
+  /// Finalize used to write a **full second copy** of every captured stream
+  /// as WAV, keeping the `.pcm` alongside it. Since #1198 it copies nothing
+  /// (the drain writes the parts), so this floor is now stricter than it
+  /// needs to be; it stays unchanged until Part 3 replaces it with the
+  /// engine's reserve stop. Measured on the appliance at 96 kHz: 384 KB/s per stream,
   /// three continuous streams (two inputs plus master), so a 20-minute capture
   /// is ~1.4 GB of `.pcm` needing ~1.4 GB more to finalize. Any constant would
   /// be either uselessly large for a short take or catastrophically small for
@@ -205,8 +207,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
 
   /// Silently salvages any capture a crash left unfinalized (D-SALVAGE,
   /// #679): [PerformanceRepository.runBootRecovery] finalizes + renders each
-  /// one in the background into the repository's `recovered/` area (pruned
-  /// there after [PerformanceRepository.recoveredRetention]) — no prompt and
+  /// one in the background into the repository's `recovered/` area, where
+  /// it stays until the user removes it — no prompt and
   /// no dialog-triggering state. The one thing surfaced is the honest busy
   /// fact: while there is actual salvage work, idle carries
   /// [PerformanceRecorderIdle.recovering] so the record button can disable
@@ -236,7 +238,9 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       // In a finally so the flag can never wedge true past this call: if
       // recovery itself blew up (a genuine bug escaping its guards), a
       // permanently-disabled record button must not be the second casualty.
-      _clearRecoveringWhenRenderSettles();
+      _clearRecoveringWhenRenderSettles(
+        _performance.unrecoveredTakes.length,
+      );
     }
   }
 
@@ -251,11 +255,21 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// (and the disabled button) up until arming genuinely works again.
   /// Only ever clears the exact state [load] set — anything else on screen
   /// is not this method's to stomp.
-  void _clearRecoveringWhenRenderSettles() {
+  ///
+  /// The idle it settles on carries how many takes could not be recovered,
+  /// so the player is told (#1198): a take left unrecovered silently would
+  /// look lost.
+  void _clearRecoveringWhenRenderSettles(int notRecovered) {
     const recovering = PerformanceRecorderIdle(recovering: true);
-    if (state != recovering) return;
+    final settled = PerformanceRecorderIdle(notRecovered: notRecovered);
+    if (state != recovering) {
+      if (notRecovered > 0 && state == const PerformanceRecorderIdle()) {
+        _emit(settled);
+      }
+      return;
+    }
     if (_performance.renderProgress.done) {
-      _emit(const PerformanceRecorderIdle());
+      _emit(settled);
       return;
     }
     _recoveringPoller?.cancel();
@@ -266,7 +280,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       }
       if (!_performance.renderProgress.done) return;
       timer.cancel();
-      _emit(const PerformanceRecorderIdle());
+      _emit(settled);
     });
   }
 

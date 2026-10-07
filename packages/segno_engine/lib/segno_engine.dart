@@ -75,6 +75,7 @@ export 'src/mock_audio_engine.dart' show MockAudioEngine, MockPluginSlotHandle;
 export 'src/native_audio_engine.dart'
     show NativeAudioEngine, PumpedNativeEngine;
 export 'src/output_fx_snapshot.dart';
+export 'src/perf_target.dart' show PerfTarget;
 export 'src/performance_render_progress.dart'
     show PerformanceRenderProgress, PerformanceRenderTrackStatus;
 export 'src/plugin_descriptor.dart'

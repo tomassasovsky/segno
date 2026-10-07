@@ -71,8 +71,10 @@ final class AppModel: ObservableObject {
     if value { selected.insert(id) } else { selected.remove(id) }
   }
   func selectMain(_ recording: Recording, _ value: Bool) {
-    if value, let file = recording.files.first(where: { $0.path == "master.wav" }) {
-      toggle(recording, file, selected: true)
+    // Every part of the main recording: one master.wav before #1198, or the
+    // ordered master-NNN.wav parts after it.
+    if value {
+      for file in recording.files where file.isMain { toggle(recording, file, selected: true) }
     }
     if !value { for file in recording.files { selected.remove(key(recording, file)) } }
   }
