@@ -90,7 +90,9 @@ Map<String, String> parseWestonAppIdConnectors(String ini) {
   String? name;
   var appIds = <String>[];
   void flush() {
-    if (section == 'output' && name != null) {
+    // An output with no name pins nothing: an empty connector would reach
+    // whichever display the helper finds first.
+    if (section == 'output' && (name?.isNotEmpty ?? false)) {
       for (final id in appIds) {
         pins[id] = name!;
       }

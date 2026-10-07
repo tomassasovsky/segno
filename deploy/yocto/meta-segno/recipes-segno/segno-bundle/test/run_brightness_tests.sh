@@ -81,8 +81,8 @@ echo "a connector with no DDC bus"
 setup
 rm "$work/drm/card1-HDMI-A-2/ddc"
 check "is unsupported" '{"supported":false}' "$(run_ctl supported --connector HDMI-A-2)"
-out=$(run_ctl set 50 --connector HDMI-A-2)
-check "set says unsupported" '{"supported":false,"percent":50}' "$out"
+run_ctl set 50 --connector HDMI-A-2 >/dev/null; rc=$?
+check "set fails, so the app falls back" 1 "$rc"
 check "and never runs ddcutil" "" "$(calls)"
 teardown
 
@@ -92,6 +92,21 @@ rm "$work/drm/card1-HDMI-A-2/ddc"
 mkdir -p "$work/devices/i2c-9"
 ln -s "$work/devices/i2c-9" "$work/drm/card1-HDMI-A-2/ddc"
 check "is unsupported" '{"supported":false}' "$(run_ctl supported --connector HDMI-A-2)"
+run_ctl set 50 --connector HDMI-A-2 >/dev/null; rc=$?
+check "set fails rather than reporting success" 1 "$rc"
+teardown
+
+echo "set never reads before writing"
+setup
+run_ctl set 50 --connector HDMI-A-2 >/dev/null
+check "one call, the write" "--bus 7 setvcp 10 50" "$(calls)"
+teardown
+
+echo "an empty connector name"
+setup
+run_ctl set 50 --connector "" >/dev/null; rc=$?
+check "is refused" 2 "$rc"
+check "with no ddcutil call" "" "$(calls)"
 teardown
 
 echo "get on one connector"

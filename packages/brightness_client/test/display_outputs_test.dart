@@ -36,6 +36,15 @@ void main() {
     expect(parseWestonAppIdConnectors('[output]\nname=HDMI-A-1\n'), isEmpty);
   });
 
+  test('an output with an empty name pins nothing', () {
+    expect(
+      parseWestonAppIdConnectors(
+        '[output]\nname=\napp-ids=dev.aquiles.segno\n',
+      ),
+      isEmpty,
+    );
+  });
+
   group('SystemDisplayOutputs', () {
     late Directory root;
     late SystemDisplayOutputs outputs;

@@ -94,6 +94,17 @@ do_set() {
     pct=$1
     case "$pct" in ''|*[!0-9]*) log "set needs integer 0-100"; return 2 ;; esac
     if [ "$pct" -gt 100 ]; then pct=100; fi
+    if [ -n "$connector" ]; then
+        # The app asks for one panel it already probed: a panel that cannot
+        # be reached now is a failure it must hear about (it falls back to
+        # dimming in software), never a silent "unsupported" success. No
+        # getvcp first, so one flaky read cannot drop the write.
+        resolve_bus || exit 1
+        # shellcheck disable=SC2086
+        ddcutil $bus_args setvcp 10 "$pct" >/dev/null
+        printf '{"supported":true,"percent":%s}\n' "$pct"
+        return 0
+    fi
     if ! detect_ok; then
         echo '{"supported":false,"percent":'"$pct"'}'
         return 0
@@ -117,6 +128,9 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --connector)
             [ $# -ge 2 ] || usage
+            # An empty name would mean "the first display", maybe the
+            # other panel.
+            [ -n "$2" ] || { log "empty connector name"; exit 2; }
             connector=$2
             shift 2
             ;;
