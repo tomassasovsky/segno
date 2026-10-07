@@ -337,12 +337,4 @@ void main() {
       verify: (_) => verify(() => updates.setChannel('experimental')).called(1),
     );
   });
-
-  group('applyAndRestart', () {
-    test('delegates to the repository', () async {
-      when(() => updates.applyAndRestart()).thenAnswer((_) async {});
-      await build().applyAndRestart();
-      verify(() => updates.applyAndRestart()).called(1);
-    });
-  });
 }

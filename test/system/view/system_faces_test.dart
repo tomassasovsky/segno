@@ -10,13 +10,18 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/high_contrast_cubit.dart';
 import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
+import 'package:segno/session/cubit/session_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/system/view/about_system_tab.dart';
 import 'package:segno/system/view/storage_system_tab.dart';
@@ -32,6 +37,17 @@ import '../../helpers/helpers.dart';
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
+
+class _MockPowerCubit extends MockCubit<PowerState> implements PowerCubit {}
+
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
+
+class _MockRecorder extends MockCubit<PerformanceRecorderState>
+    implements PerformanceRecorderCubit {}
+
+class _MockSessionCubit extends MockCubit<SessionState>
+    implements SessionCubit {}
 
 /// The fake, plus a record of what the face asked it to export.
 class _RecordingFactsClient implements ConsoleFactsClient {
@@ -175,10 +191,12 @@ void main() {
   late PedalCubit pedal;
   late ConsoleFactsCubit facts;
   late _MockUpdateCubit update;
+  late _MockPowerCubit power;
 
   setUpAll(() {
     registerFallbackValue(const EngineConfig());
     registerFallbackValue(Duration.zero);
+    registerFallbackValue(const PowerSnapshot());
   });
 
   setUp(() {
@@ -248,7 +266,30 @@ void main() {
     update = _MockUpdateCubit();
     when(update.startDownload).thenAnswer((_) async {});
     when(update.check).thenAnswer((_) async {});
-    when(update.applyAndRestart).thenAnswer((_) async {});
+    power = _MockPowerCubit();
+    whenListen(
+      power,
+      const Stream<PowerState>.empty(),
+      initialState: const PowerState(),
+    );
+    final looper = _MockLooperBloc();
+    whenListen(
+      looper,
+      const Stream<LooperState>.empty(),
+      initialState: const LooperState(),
+    );
+    final recorder = _MockRecorder();
+    whenListen(
+      recorder,
+      const Stream<PerformanceRecorderState>.empty(),
+      initialState: const PerformanceRecorderIdle(),
+    );
+    final session = _MockSessionCubit();
+    whenListen(
+      session,
+      const Stream<SessionState>.empty(),
+      initialState: const SessionState(currentSessionName: 'set'),
+    );
     when(
       () => update.setAutoCheck(value: any(named: 'value')),
     ).thenAnswer((_) async {});
@@ -293,6 +334,10 @@ void main() {
               BlocProvider.value(value: pedal),
               BlocProvider.value(value: facts),
               BlocProvider<UpdateCubit>.value(value: update),
+              BlocProvider<PowerCubit>.value(value: power),
+              BlocProvider<LooperBloc>.value(value: looper),
+              BlocProvider<PerformanceRecorderCubit>.value(value: recorder),
+              BlocProvider<SessionCubit>.value(value: session),
             ],
             child: Scaffold(
               body: Padding(
@@ -475,14 +520,21 @@ void main() {
       await tester.tap(find.byKey(const Key('console_confirm_cancel')));
       await tester.pumpAndSettle();
 
-      verifyNever(update.applyAndRestart);
+      verifyNever(
+        () => power.restart(any(), save: any(named: 'save')),
+      );
 
       await tester.tap(find.byKey(const Key('system_update_action')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('console_confirm_confirm')));
       await tester.pumpAndSettle();
 
-      verify(update.applyAndRestart).called(1);
+      verify(
+        () => power.restart(
+          const PowerSnapshot(currentSessionName: 'set'),
+          save: any(named: 'save'),
+        ),
+      ).called(1);
     });
 
     testWidgets('a check in flight is amber and offers nothing to press', (

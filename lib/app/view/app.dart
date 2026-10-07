@@ -22,9 +22,9 @@ import 'package:segno/app/view/encoder_navigation.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/appliance/idle_dim_host.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/appliance/power_off/power_goodbye.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
-import 'package:segno/appliance/power_off/power_off_goodbye.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
@@ -50,6 +50,7 @@ import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 import 'package:toastification/toastification.dart';
 import 'package:update_repository/update_repository.dart';
 import 'package:wifi_repository/wifi_repository.dart';
@@ -87,6 +88,8 @@ class App extends StatefulWidget {
     this.removableVolumes = const InternalOnlyVolumes(),
     this.powerKeySource,
     this.powerOff,
+    this.reboot,
+    this.storage,
     super.key,
   });
 
@@ -121,6 +124,15 @@ class App extends StatefulWidget {
 
   /// Injected halt. Null (the default) runs `segno-update-ctl poweroff`.
   final Future<void> Function()? powerOff;
+
+  /// Injected reboot. Null (the default) runs `segno-update-ctl reboot`,
+  /// which boots a staged update slot when one is staged.
+  final Future<void> Function()? reboot;
+
+  /// The USB storage service, when this build has one. Restart and shutdown
+  /// refuse while it holds a lease and wait for leases taken after the save;
+  /// null (the default) means nothing can be held.
+  final StorageRepository? storage;
 
   /// The app's one guard table (accepted behaviour 6.12), shared with the
   /// session and performance repositories it was built with. Required: an
@@ -184,7 +196,7 @@ class App extends StatefulWidget {
 /// Resolves the optional pedal pair once so a replacement [App] keeps
 /// [ControlCubit], [PedalCubit], and dialog routes on one repository.
 class _AppState extends State<App> {
-  StreamSubscription<PowerOffState>? _powerNoticeSubscription;
+  StreamSubscription<PowerState>? _powerNoticeSubscription;
   late final PedalRepository _pedal;
   late final AppRuntime _runtime;
   late final RecordOptionsCubit _recordView;
@@ -213,6 +225,8 @@ class _AppState extends State<App> {
       performance: widget.performanceRepository,
       sessions: widget.sessionRepository,
       powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
+      reboot: widget.reboot ?? const SystemApplianceEnv().reboot,
+      storageSettled: widget.storage?.settled ?? () async {},
       guards: widget.guards,
     );
     _powerNoticeSubscription = _runtime.power.stream.listen(
@@ -440,7 +454,7 @@ class _AppState extends State<App> {
     );
   }
 
-  void _syncControlNoticesWithPower(PowerOffState state) {
+  void _syncControlNoticesWithPower(PowerState state) {
     if (!mounted) return;
     _controlNotices.setPowerVisible(visible: state.isUiUp);
     if (state.isUiUp) dismissAppToast(AppToastId.recordingInputRequired);
@@ -478,6 +492,8 @@ class _AppState extends State<App> {
         ),
         if (_powerKeySource != null)
           RepositoryProvider<PowerKeySource>.value(value: _powerKeySource!),
+        if (widget.storage case final storage?)
+          RepositoryProvider<StorageRepository>.value(value: storage),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -703,7 +719,7 @@ class _AppState extends State<App> {
               repository: context.read<MidiDeviceRepository>(),
             ),
           ),
-          BlocProvider<PowerOffCubit>.value(value: _runtime.power),
+          BlocProvider<PowerCubit>.value(value: _runtime.power),
           BlocProvider<ControlCubit>.value(value: _runtime.control),
           // Eager (not lazy): the pedal LINK feature owns the repository's
           // lifecycle and mirrors the board's status. It shares the
@@ -740,7 +756,7 @@ class _AppState extends State<App> {
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
                 takeLocked: () =>
-                    context.read<PowerOffCubit>().state.isUiUp ||
+                    context.read<PowerCubit>().state.isUiUp ||
                     _runtime.fxPersistence.sessionTransitionActive,
               );
               unawaited(cubit.load());
@@ -912,7 +928,7 @@ class _AppViewState extends State<_AppView> {
       deviceLost:
           context.read<AudioSetupCubit>().state.deviceConnectivity ==
           DeviceConnectivity.lost,
-      goodbye: readoutGoodbyeOf(context.read<PowerOffCubit>().state.phase),
+      goodbye: readoutGoodbyeOf(context.read<PowerCubit>().state.phase),
       brightness: context.read<DisplayBrightnessCubit>().state.softwareOf(
         DisplayRole.track,
       ),
@@ -1234,16 +1250,16 @@ class _AppViewState extends State<_AppView> {
               brightness: brightness.softwareOf(DisplayRole.main),
               child: IdleDimHost(child: typed),
             );
-            return BlocBuilder<PowerOffCubit, PowerOffState>(
-              buildWhen: (previous, current) => previous.phase != current.phase,
-              builder: (context, powerOff) {
-                final face = readoutGoodbyeOf(powerOff.phase);
+            return BlocBuilder<PowerCubit, PowerState>(
+              buildWhen: (previous, current) => previous != current,
+              builder: (context, power) {
+                final face = readoutGoodbyeOf(power.phase);
                 if (face == ReadoutGoodbye.none) return dimmed;
                 return Stack(
                   fit: StackFit.expand,
                   children: [
                     dimmed,
-                    PowerOffGoodbye(face: face),
+                    PowerGoodbye(face: face, action: power.action),
                   ],
                 );
               },
@@ -1290,7 +1306,7 @@ class _AppViewState extends State<_AppView> {
         BlocListener<TracksCubit, TracksState>(
           listener: (_, _) => _updateDisplayContext(),
         ),
-        BlocListener<PowerOffCubit, PowerOffState>(
+        BlocListener<PowerCubit, PowerState>(
           listener: (_, _) => _updateDisplayContext(),
         ),
         BlocListener<DisplayBrightnessCubit, DisplayBrightnessState>(

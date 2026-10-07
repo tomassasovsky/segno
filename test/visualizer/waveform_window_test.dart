@@ -380,7 +380,7 @@ void main() {
       );
       addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
 
-      expect(find.byKey(const Key('power_off_mark')), findsOneWidget);
+      expect(find.byKey(const Key('power_mark')), findsOneWidget);
     });
 
     testWidgets('PerformanceReadout.brightness dims the panel in software', (

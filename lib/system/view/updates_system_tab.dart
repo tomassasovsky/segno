@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:segno/appliance/power_off/power_host.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
@@ -217,7 +218,7 @@ class UpdatesSystemTab extends StatelessWidget {
             ConsoleSmallButton(
               key: const Key('system_update_action'),
               label: l10n.updatesRestartNow,
-              onPressed: () => unawaited(_confirmRestart(context, cubit)),
+              onPressed: () => unawaited(_confirmRestart(context)),
             ),
           ],
         ),
@@ -255,11 +256,11 @@ class UpdatesSystemTab extends StatelessWidget {
     };
   }
 
-  /// Restarting throws away whatever is in the rig, so it asks first — the
-  /// same treatment every destructive action on this console gets. The prose
-  /// under the banner says the same thing ahead of time; the dialog is what
-  /// stops it happening on a mis-tap.
-  Future<void> _confirmRestart(BuildContext context, UpdateCubit cubit) async {
+  /// Restarting stops playback, so it asks first; the prose under the banner
+  /// says the same thing ahead of time. The restart itself is the power
+  /// flow's: refused during a take, and the session is saved before the
+  /// helper reboots into the staged slot.
+  Future<void> _confirmRestart(BuildContext context) async {
     final l10n = context.l10n;
     final confirmed = await showConsoleConfirmDialog(
       context,
@@ -267,7 +268,7 @@ class UpdatesSystemTab extends StatelessWidget {
       body: l10n.updatesRestartBusySubtitle,
       confirmLabel: l10n.updatesRestartNow,
     );
-    if (confirmed) await cubit.applyAndRestart();
+    if (confirmed && context.mounted) requestRestart(context);
   }
 
   static ({Widget widget, double height}) _wrap(Widget widget, double height) =>

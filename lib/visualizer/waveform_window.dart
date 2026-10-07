@@ -4,7 +4,7 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:screen_retriever/screen_retriever.dart';
-import 'package:segno/appliance/power_off/power_off_goodbye.dart';
+import 'package:segno/appliance/power_off/power_goodbye.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
@@ -328,7 +328,7 @@ class WaveformWindowApp extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   face,
-                  const PowerOffGoodbye(face: ReadoutGoodbye.mark),
+                  const PowerGoodbye(face: ReadoutGoodbye.mark),
                 ],
               );
             },
