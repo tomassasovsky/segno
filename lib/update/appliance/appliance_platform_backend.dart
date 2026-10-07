@@ -76,15 +76,32 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   Future<Version> currentVersion() async => _readVersion(versionFile);
 
   @override
-  Future<Version> stagedVersion() async {
-    // Drop a staged marker left behind by a failed tryboot / rollback so
-    // Check Now can re-offer the published build.
-    await _env.reconcileStaged();
-    return _readVersion(stagedFile);
+  Future<Version> stagedVersion() async => _readVersion(stagedFile);
+
+  /// Reconciles the staged marker, once per start: a marker left by a
+  /// tryboot that did not take is dropped so the check can offer the build
+  /// again, and the version it named is the one that rolled back. The
+  /// marker is read first because the reconcile removes it.
+  @override
+  Future<UpdateRecovery> recover() async {
+    final staged = _readVersion(stagedFile);
+    final reason = await _env.reconcileStaged();
+    final attempt = _parse(await _env.updateAttempt());
+    return UpdateRecovery(
+      rolledBack: reason == 'tryboot-not-taken' && staged != Version.none
+          ? staged
+          : null,
+      interrupted: attempt == Version.none ? null : attempt,
+    );
   }
 
-  Version _readVersion(String path) {
-    final text = _env.readTextSync(path)?.trim();
+  @override
+  Future<void> clearInterrupted() => _env.clearUpdateAttempt();
+
+  Version _readVersion(String path) => _parse(_env.readTextSync(path));
+
+  Version _parse(String? raw) {
+    final text = raw?.trim();
     if (text == null || text.isEmpty) return Version.none;
     try {
       return Version.parse(text);

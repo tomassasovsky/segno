@@ -71,9 +71,9 @@ void main() {
         unawaited(open());
         await tester.pumpAndSettle();
         expect(find.byType(page), findsOneWidget);
-        // About has its accepted page; the others still host a tray body on
-        // the interim destination panel.
-        if (page != AboutSettingsPage) {
+        // About and Updates have their accepted pages; the others still host
+        // a tray body on the interim destination panel.
+        if (page != AboutSettingsPage && page != UpdatesSettingsPage) {
           expect(find.byKey(const Key('settings_destination_panel')), findsOne);
         }
 
@@ -93,7 +93,7 @@ void main() {
       await pump(tester);
       unawaited(openUpdateSettings());
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('settings_about_row')));
+      await tester.tap(find.byKey(const Key('updates_about_row')));
       await tester.pumpAndSettle();
       expect(find.byType(AboutSettingsPage), findsOneWidget);
 
@@ -311,16 +311,16 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
     });
 
-    testWidgets('Updates hosts the update face and leads to About', (
+    testWidgets('Updates is the accepted page and leads to About', (
       tester,
     ) async {
       await pump(tester);
       unawaited(openUpdateSettings());
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('system_updates_tab')), findsOneWidget);
+      expect(find.byKey(const Key('updates_status')), findsOneWidget);
       expect(isSegnoUpdatesSettingsOpen, isTrue);
 
-      await tester.tap(find.byKey(const Key('settings_about_row')));
+      await tester.tap(find.byKey(const Key('updates_about_row')));
       await tester.pumpAndSettle();
       expect(find.byType(AboutSettingsPage), findsOneWidget);
       expect(find.byKey(const Key('about_this_console')), findsOneWidget);

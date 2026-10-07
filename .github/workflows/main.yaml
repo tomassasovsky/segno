@@ -461,8 +461,8 @@ jobs:
           ctest --test-dir build/vst3 --output-on-failure
 
   # The appliance shell suites (bt, wifi, mark-good, journal persist, weston
-  # drop-in wiring, reconcile-staged), which share one shape: inject every
-  # path, stub the privileged call — no hardware.
+  # drop-in wiring, reconcile-staged, the update attempt marker), which share
+  # one shape: inject every path, stub the privileged call — no hardware.
   appliance-shell-tests:
     runs-on: ubuntu-latest
     steps:
@@ -515,6 +515,10 @@ jobs:
         run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_reconcile_staged_tests.sh
       - name: Run reconcile-staged tests (dash)
         run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_reconcile_staged_tests.sh
+      - name: Run update attempt-marker tests (bash)
+        run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_update_attempt_tests.sh
+      - name: Run update attempt-marker tests (dash)
+        run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_update_attempt_tests.sh
 
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1

@@ -2012,6 +2012,34 @@ void main() {
     });
   });
 
+  group('update rollback', () {
+    test('defaults to none', () async {
+      expect(await repository.loadUpdateRollback(), isNull);
+    });
+
+    test('round-trips the pair, and clearing forgets it', () async {
+      await repository.saveUpdateRollback(
+        attempted: Version.parse('1.1.0'),
+        restored: Version.parse('1.0.0'),
+      );
+      expect(store.values['updates.rollback'], '1.1.0,1.0.0');
+      expect(
+        await repository.loadUpdateRollback(),
+        (attempted: Version.parse('1.1.0'), restored: Version.parse('1.0.0')),
+      );
+
+      await repository.clearUpdateRollback();
+      expect(await repository.loadUpdateRollback(), isNull);
+    });
+
+    test('reads an unparseable value as none', () async {
+      await store.setString('updates.rollback', '1.1.0');
+      expect(await repository.loadUpdateRollback(), isNull);
+      await store.setString('updates.rollback', 'x,1.0.0');
+      expect(await repository.loadUpdateRollback(), isNull);
+    });
+  });
+
   group('dismissed update versions', () {
     test('defaults to an empty set', () async {
       expect(await repository.loadDismissedUpdateVersions(), isEmpty);

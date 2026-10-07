@@ -1,6 +1,7 @@
 import 'package:pub_semver/pub_semver.dart';
 import 'package:update_repository/src/platform_update_backend.dart';
 import 'package:update_repository/src/update_manifest.dart';
+import 'package:update_repository/src/update_recovery.dart';
 
 /// App-facing entry point to the update system. Thin orchestration over a
 /// [PlatformUpdateBackend]: it owns the "is this actually newer?" policy so the
@@ -26,6 +27,16 @@ class UpdateRepository {
 
   /// The version staged and awaiting a restart ([Version.none] if none).
   Future<Version> stagedVersion() => _backend.stagedVersion();
+
+  /// What the previous run left behind: a staged build that did not start
+  /// and an install that was cut off. Call once at startup, before
+  /// [checkForUpdate].
+  Future<UpdateRecovery> recover() => _backend.isSupported
+      ? _backend.recover()
+      : Future.value(const UpdateRecovery());
+
+  /// Forgets an install that was cut off.
+  Future<void> clearInterrupted() => _backend.clearInterrupted();
 
   /// Read-only availability check. Returns the manifest only when it advertises
   /// a version with strictly greater semver precedence than both the running

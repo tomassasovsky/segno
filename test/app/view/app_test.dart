@@ -68,6 +68,10 @@ class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   Future<Version> stagedVersion() async => Version.none;
   @override
+  Future<UpdateRecovery> recover() async => const UpdateRecovery();
+  @override
+  Future<void> clearInterrupted() async {}
+  @override
   Future<UpdateManifest?> fetchManifest() async => UpdateManifest(
     version: Version.parse('0.2.0'),
     bundle: 'b.raucb',
