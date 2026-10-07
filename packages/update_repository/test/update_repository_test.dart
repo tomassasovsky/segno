@@ -22,7 +22,6 @@ class _FakeBackend implements PlatformUpdateBackend {
 
   int fetchCount = 0;
   UpdateManifest? stagedArg;
-  int applyCount = 0;
 
   @override
   Future<void> setChannel(String channel) async {
@@ -47,9 +46,6 @@ class _FakeBackend implements PlatformUpdateBackend {
     yield 0.5;
     yield 1;
   }
-
-  @override
-  Future<void> applyAndRestart() async => applyCount++;
 }
 
 /// Builds a manifest with minor component [minor] (e.g. `_manifest(2)` ==
@@ -157,11 +153,5 @@ void main() {
         expect(backend.stagedArg, _manifest(2));
       },
     );
-
-    test('applyAndRestart forwards to the backend', () async {
-      final backend = _FakeBackend();
-      await UpdateRepository(backend: backend).applyAndRestart();
-      expect(backend.applyCount, 1);
-    });
   });
 }

@@ -8,8 +8,10 @@ part 'update_state.dart';
 /// Drives the opt-in update UX: a passive read-only availability check that
 /// powers the startup notification, plus the user-triggered download/stage and
 /// apply. Nothing downloads or installs without an explicit call to
-/// [startDownload] / [applyAndRestart]; only [check] runs automatically (and
-/// only when [UpdateState.autoCheck] is on).
+/// [startDownload]; only [check] runs automatically (and only when
+/// [UpdateState.autoCheck] is on). Install and restart is the power flow's
+/// restart (`PowerCubit.restart`), which saves the session first; the
+/// helper's reboot boots a staged slot whenever one is staged.
 class UpdateCubit extends Cubit<UpdateState> {
   /// Creates an [UpdateCubit]. Off until [load] restores preferences and (when
   /// auto-check is on) runs the first check.
@@ -135,10 +137,6 @@ class UpdateCubit extends Cubit<UpdateState> {
       }
     }
   }
-
-  /// Restarts into the staged update (reboot on the appliance, relaunch on
-  /// desktop). Opt-in — call only from an explicit user action.
-  Future<void> applyAndRestart() => _updates.applyAndRestart();
 
   /// Records that the user dismissed the notification for [version], so it will
   /// not be shown again until a newer version appears.

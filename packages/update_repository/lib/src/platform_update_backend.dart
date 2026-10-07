@@ -45,8 +45,4 @@ abstract interface class PlatformUpdateBackend {
   /// progress in `[0, 1]`; completes when the update is fully staged. Throws on
   /// verification or transport failure.
   Stream<double> downloadAndStage(UpdateManifest manifest);
-
-  /// Applies the staged update by restarting into it: reboot on the appliance,
-  /// relaunch on desktop. Meaningful only after [downloadAndStage] completes.
-  Future<void> applyAndRestart();
 }
