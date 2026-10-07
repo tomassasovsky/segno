@@ -54,6 +54,7 @@ teardown() { rm -rf "$work"; }
 run_reboot() {
     PATH="$work/bin:$PATH" \
     SEGNO_STAGED_FILE="$staged" \
+    SEGNO_TRYBOOT_REQUESTED_FILE="$work/tryboot-requested" \
         "$TEST_SHELL" "$SCRIPT" reboot 2>"$work/stderr"
 }
 
@@ -83,6 +84,8 @@ check "passes the tryboot argument" yes \
 check "uses --reboot-argument= (not a positional arg)" yes \
     "$(grep -qx -- '--reboot-argument=0 tryboot' "$work/systemctl-args" && echo yes || echo no)"
 check "full argv" "reboot --reboot-argument=0 tryboot" "$args"
+check "records that the staged slot was asked for" yes \
+    "$([ -e "$work/tryboot-requested" ] && echo yes || echo no)"
 teardown
 
 # The guard the tryboot argument makes necessary: passed unconditionally, a

@@ -63,6 +63,9 @@ PENDING_FLAG="${SEGNO_PENDING_FLAG:-/run/segno-update-pending}"
 # The install in progress, on /data so a power loss cannot take it with it.
 # Holds the version alone, like the staged marker.
 ATTEMPT_FILE="${SEGNO_UPDATE_ATTEMPT_FILE:-/data/segno/update-attempt}"
+# Written by `reboot` when it asks for the staged slot: a reboot without it
+# (Shut down, a power cut, a watchdog) never tried the staged build.
+TRYBOOT_FILE="${SEGNO_TRYBOOT_REQUESTED_FILE:-/data/.ota-tryboot-requested}"
 
 log() { echo "segno-update-ctl: $*" >&2; }
 progress() { echo "PROGRESS $1"; }
@@ -86,6 +89,8 @@ _on_exit() {
 # app can report the install as cut off.
 _on_terminate() {
     attempt_open=""
+    # A TERM between the fork and `child=$!` still finds the job in $!.
+    [ -n "$child" ] || child=${!:-}
     [ -z "$child" ] || kill "$child" 2>/dev/null || true
     [ -z "${work:-}" ] || rm -rf "$work"
     exit 143
@@ -233,7 +238,7 @@ do_install() {
     log "staged v$version to the inactive slot; reboot to apply"
 }
 
-clear_staged_marker() { rm -f "$STAGED_FILE" "$STAGED_BOOT_FILE"; }
+clear_staged_marker() { rm -f "$STAGED_FILE" "$STAGED_BOOT_FILE" "$TRYBOOT_FILE"; }
 
 # The install that was cut off, as JSON for the app: {"version":"<v>"} or {}.
 do_attempt() {
@@ -282,9 +287,19 @@ do_reconcile_staged() {
     staged_boot=$(tr -d '[:space:]' <"$STAGED_BOOT_FILE" 2>/dev/null || true)
     booted=$(tr -d '[:space:]' <"$BOOT_ID_FILE" 2>/dev/null || true)
     if [ -n "$booted" ] && [ "$staged_boot" != "$booted" ]; then
+        if [ -e "$TRYBOOT_FILE" ]; then
+            clear_staged_marker
+            log "cleared staged=$staged (staged in a previous boot; tryboot did not take)"
+            echo '{"cleared":true,"reason":"tryboot-not-taken"}'
+            return 0
+        fi
+        # Rebooted without asking for the staged slot: nothing was tried, so
+        # no rollback to report. The marker goes all the same — the slot's
+        # contents are not vouched for across a reboot — and the build is
+        # offered again by the next check.
         clear_staged_marker
-        log "cleared staged=$staged (staged in a previous boot; tryboot did not take)"
-        echo '{"cleared":true,"reason":"tryboot-not-taken"}'
+        log "cleared staged=$staged (rebooted without trying it)"
+        echo '{"cleared":true,"reason":"not-applied"}'
         return 0
     fi
     echo '{"cleared":false}'
@@ -304,6 +319,9 @@ case "${1:-}" in
         # would commit it: a silent permanent downgrade with no install record.
         if [ -s "$STAGED_FILE" ]; then
             log "rebooting into the staged slot"
+            # What lets reconcile tell a tryboot that did not take from a
+            # reboot or power cut that never tried the staged slot.
+            : > "$TRYBOOT_FILE" 2>/dev/null || true
             exec systemctl reboot --reboot-argument="0 tryboot"
         fi
         log "no update staged; plain reboot"
