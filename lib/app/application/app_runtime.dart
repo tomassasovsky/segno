@@ -10,7 +10,7 @@ import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
@@ -40,6 +40,8 @@ class AppRuntime {
     required PerformanceRepository performance,
     required SessionRepository sessions,
     required Future<void> Function() powerOff,
+    required Future<void> Function() reboot,
+    required Future<void> Function() storageSettled,
     required GuardRegistry guards,
   }) {
     fxPersistence = FxChainPersistence(looper: repository);
@@ -61,10 +63,18 @@ class AppRuntime {
       ...timing.owners,
       ...fade.owners,
     ]);
-    power = PowerOffCubit(
+    power = PowerCubit(
+      stopTransport: () {
+        for (final track in repository.state.tracks) {
+          repository.stopTrack(channel: track.channel);
+        }
+      },
       flush: prepareShutdown,
+      storageSettled: storageSettled,
+      guards: guards,
       pedalGoodbye: pedal.goodbye,
       powerOff: powerOff,
+      reboot: reboot,
     );
     looper = LooperBloc(
       repository: repository,
@@ -147,7 +157,7 @@ class AppRuntime {
   late final LooperBloc looper;
   late final ControlCubit control;
   late final SessionCubit session;
-  late final PowerOffCubit power;
+  late final PowerCubit power;
 
   bool _closing = false;
   Future<void>? _startFuture;

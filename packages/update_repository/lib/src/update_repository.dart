@@ -47,8 +47,4 @@ class UpdateRepository {
   /// progress in `[0, 1]`. Opt-in: only call in response to a user action.
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
       _backend.downloadAndStage(manifest);
-
-  /// Restarts into the staged update (reboot on the appliance, relaunch on
-  /// desktop). Opt-in: only call in response to a user action.
-  Future<void> applyAndRestart() => _backend.applyAndRestart();
 }

@@ -1031,7 +1031,7 @@ void main() {
       await tester.tap(find.byKey(const Key('settingsTray_brightness')));
       await tester.pumpAndSettle();
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.text(l10n.powerOffSaveFailedTitle), findsOneWidget);
+      expect(find.text(l10n.displayBrightnessSaveFailed), findsOneWidget);
       expect(store.values['ui.brightness'], isNull);
 
       await tester.drag(
@@ -1041,7 +1041,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(await settings.loadBrightness(), displayBrightness.state);
       await tester.pump(const Duration(seconds: 10));
-      expect(find.text(l10n.powerOffSaveFailedTitle), findsNothing);
+      expect(find.text(l10n.displayBrightnessSaveFailed), findsNothing);
     });
 
     testWidgets('dragging down (toward the bottom) lowers the value', (
