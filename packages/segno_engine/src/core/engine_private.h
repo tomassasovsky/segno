@@ -1259,6 +1259,17 @@ typedef struct le_track {
    * so a freshly created engine sees no edge. Never read by control. */
   int32_t proc_prev_state;
 
+  /* A Bounce over a sounding destination (#1202, review M1 of Part 4a): the
+   * callback stops the track as a Stop does and holds the bundle here while
+   * the old chains' tails drain, then installs it once the track's output
+   * has been quiet for a delay ring's length (or after
+   * LE_BOUNCE_TAIL_MAX_SECONDS). Audio-thread owned; cleared with the
+   * bundle by le_bounce_abandon_all when the audio thread is stopped. */
+  struct le_bounce_bundle* bounce_parked;
+  int32_t bounce_park_slot;  /* the receipt slot the outcome goes to */
+  int64_t bounce_park_left;  /* frames before the install is forced */
+  int64_t bounce_park_quiet; /* consecutive quiet output frames */
+
   /* Free/Song mode (B2b + B4, index Architecture §4): this track's OWN loop
    * clock, structurally identical to (and reusing) the master's
    * le_loop_clock — length 0 means "not yet established", exactly like
@@ -1474,6 +1485,11 @@ typedef struct le_record_timing_readback {
  * length, clock, state, mutes, Fade, direction — and first records the track
  * as it was into `prev`, which control files as the history entry. */
 enum { LE_BOUNCE_APPLY = 0, LE_BOUNCE_UNDO = 1, LE_BOUNCE_REDO = 2 };
+
+/* The longest a Bounce waits for a replaced chain's tail to drain, and the
+ * output level below which the tail counts as gone (-80 dBFS). */
+#define LE_BOUNCE_TAIL_MAX_SECONDS 8
+#define LE_BOUNCE_TAIL_QUIET 1.0e-4f
 typedef struct le_bounce_bundle {
   int32_t channel;
   int32_t op;         /* LE_BOUNCE_APPLY / _UNDO / _REDO */
@@ -1484,6 +1500,10 @@ typedef struct le_bounce_bundle {
   struct le_prepared_fx* lane_fx;
   struct le_prepared_fx* track_fx;
   le_hist_entry prev; /* callback-written: the track before the install */
+  /* Callback-written when the install waited for a tail: the state the
+   * track had before the Bounce stopped it, which Undo restores. */
+  int32_t parked;
+  int32_t parked_state;
   _Atomic int32_t a_result; /* 1 while pending, then LE_OK / LE_ERR_NOT_READY */
 } le_bounce_bundle;
 

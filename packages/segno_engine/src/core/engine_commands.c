@@ -4977,6 +4977,18 @@ static int32_t le_bounce_post(le_engine* engine, le_bounce_bundle* b,
   t->bounce_inflight = b;
   t->bounce_pin[0] = pin_a >= 0 ? pin_a + 1 : 0;
   t->bounce_pin[1] = pin_b >= 0 ? pin_b + 1 : 0;
+  /* The bounced lanes hold material one Undo or Redo away from now on (plan
+   * 5.4, review H1 of Part 4a): a shrink below them (le_mix_valid) or the
+   * trailing-lane trim would otherwise drop a lane that a Redo regrows
+   * zeroed, losing the right channel. The latch is sticky until the track's
+   * whole history dies (le_track_drop_recoverable_if_dead). */
+  const int32_t lanes =
+      b->has_mix && (b->mix.lane_count_mask & (1u << b->channel))
+          ? b->mix.lane_count[b->channel]
+          : le_lanes_active(t);
+  for (int32_t l = 0; l < lanes && l < LE_MAX_LANES; ++l) {
+    store_i32(&t->lanes[l].a_recoverable, 1);
+  }
   if (b->target.state == LE_TRACK_EMPTY) {
     /* The Clear body runs on the callback: mirror its generation bump so a
      * retire event from before it reads as stale. */
@@ -5017,6 +5029,14 @@ void le_bounce_collect(le_engine* engine) {
         } else {
           le_clear_redo(t); /* a new audio edit retires the Redo branch */
         }
+        if (t->undo_count >= LE_POOL_SLOTS) {
+          /* Admission checked room, and every slot on the stack is a pool
+           * slot, so this cannot fill; if it ever did, the oldest step goes
+           * rather than a write past the stack. */
+          memmove(&t->undo_stack[0], &t->undo_stack[1],
+                  (size_t)(LE_POOL_SLOTS - 1) * sizeof(t->undo_stack[0]));
+          t->undo_count = LE_POOL_SLOTS - 1;
+        }
         t->undo_stack[t->undo_count++] = prev;
       }
       le_publish_undo_depth(t);
@@ -5038,6 +5058,8 @@ void le_bounce_abandon_all(le_engine* engine) {
   if (engine == NULL) return;
   for (int32_t ch = 0; ch < LE_MAX_TRACKS; ++ch) {
     le_track* t = &engine->tracks[ch];
+    /* A bundle the callback parked while a tail drained goes with it. */
+    t->bounce_parked = NULL;
     /* Called with the audio thread stopped: a bundle still pending never
      * applied and never will (the ring is reset or quiesced). */
     if (t->bounce_inflight != NULL &&
@@ -5125,6 +5147,24 @@ int32_t le_engine_bounce(le_engine* engine, const le_bounce_request* request,
       memset(dst, 0, (size_t)len * sizeof(float));
     }
   }
+  /* A lane the bounce adds plays and records nothing while Redo holds the
+   * bounce: after Undo it reads the replaced take's slot, which on a lane
+   * that did not exist then holds silence (plan 5.4). The lane is inactive
+   * until the callback applies the topology, so control writes it. */
+  const int32_t live0 = load_i32(&t->lanes[0].a_live);
+  const int32_t prev_len = le_effective_state(t) == LE_TRACK_EMPTY
+                               ? 0
+                               : load_i32(&t->lanes[0].a_len);
+  for (int32_t l = le_lanes_active(t); rc == LE_OK && prev_len > 0 &&
+                                       l < lanes_after; ++l) {
+    le_lane* ln = &t->lanes[l];
+    const int32_t frames = le_layer_slot_frames(engine, prev_len);
+    if (!le_lane_ensure_slot(ln, live0, frames)) {
+      rc = LE_ERR_CAPACITY;
+      break;
+    }
+    memset(ln->pool[live0], 0, (size_t)ln->pool_cap[live0] * sizeof(float));
+  }
   if (rc != LE_OK) {
     le_fx_recipe_abandon(b->lane_fx);
     le_fx_recipe_abandon(b->track_fx);
@@ -5165,6 +5205,12 @@ int32_t le_engine_bounce_recover(le_engine* engine,
   const int32_t count = redo ? t->redo_count : t->undo_count;
   const le_hist_entry* stack = redo ? t->redo_stack : t->undo_stack;
   if (count == 0 || stack[count - 1].kind != LE_HIST_BOUNCE) {
+    /* A Bounce further down: a newer edit sits on top of it (plain Undo or
+     * Redo takes that first), so the Bounce the caller remembers is no
+     * longer the track's newest step. */
+    for (int32_t i = 0; i < count; ++i) {
+      if (stack[i].kind == LE_HIST_BOUNCE) return LE_ERR_TRACKS_CHANGED;
+    }
     return LE_ERR_INVALID;
   }
   if (le_bounce_busy(engine, ch)) return LE_ERR_NOT_READY;
