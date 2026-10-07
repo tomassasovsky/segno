@@ -146,7 +146,7 @@ static void test_speed_repeated_factor_receipt_only(void) {
   le_engine* e = reverse_fixture(48000, len, len);
   le_engine* twin = reverse_fixture(48000, len, len);
   const char* dir = render_test_dir("speed-repeat");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   static float a[2048], b[2048];
   rev_process(e, a, 37, 64);
@@ -328,7 +328,7 @@ static void test_speed_no_spurious_transport_facts(void) {
   const int len = 1000;
   le_engine* e = reverse_fixture(48000, len, len);
   const char* dir = render_test_dir("speed-provenance");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   static float out[2048];
   rev_process(e, out, 64, 512);
@@ -358,7 +358,7 @@ static void test_speed_render_parity(void) {
   const int len = 1000;
   le_engine* e = reverse_fixture(48000, len, len);
   const char* dir = render_test_dir("speed-render");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   static float live[4400], replay[4400];
   uint64_t id;
@@ -517,7 +517,7 @@ static void test_speed_clear_undo_stem_exact(void) {
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
   const char* dir = render_test_dir("speed-clear-undo");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   static float live[2600], replay[2600];
   rev_process(e, live, 37, 512);
@@ -605,7 +605,7 @@ static void test_speed_integral_step_inside_window(void) {
   const int len = 1000, F = 480;
   le_engine* e = reverse_fixture(48000, len, len);
   const char* dir = render_test_dir("speed-land");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   static float live[4000], replay[4000];
   rev_process(e, live, 37, 512);
@@ -653,7 +653,7 @@ static void test_speed_step_inside_window(void) {
   const int len = 1000;
   le_engine* e = reverse_fixture(48000, len, len);
   const char* dir = render_test_dir("speed-double-step");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   static float live[1200], replay[1200];
   rev_process(e, live, 37, 64);
@@ -731,7 +731,7 @@ static void test_speed_arm_while_sped_up_and_fade(void) {
   rev_process(e, live, 601, 512); /* the window is over: index 37 + 300.5 */
   fade_result(e, id, LE_OK);
   const char* dir = render_test_dir("speed-armed");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   rev_process(e, live, 1024, 512);
   CHECK(le_perf_disarm(e) == LE_OK);
@@ -821,7 +821,7 @@ static void test_speed_track_print_and_resets(void) {
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
   const char* dir = render_test_dir("speed-resets");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   id = speed_set(e, 1, 2);
   rev_process(e, out, 64, 64);

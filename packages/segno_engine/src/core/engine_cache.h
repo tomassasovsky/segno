@@ -75,6 +75,71 @@ void le_cache_tick(le_engine* engine);
 void le_cache_evict_lanes(le_engine* engine, int32_t channel, int32_t from,
                           int32_t to);
 
+/* ---- Offline chain rendering shared by the cache and the render recipe ----
+ *
+ * A chain frozen at one instant: the entries an offline render processes, in
+ * the form fx_apply_chain reads. `effective` is chain_on && slot enabled
+ * (D-EFFBITS); `chan`/`chan_any` the per-entry channel handling (slice 3e). */
+typedef struct le_fx_frozen_chain {
+  int32_t count; /* entries frozen */
+  int32_t pre;   /* leading Pre entries (0 for stages without the split) */
+  int32_t type[LE_FX_MAX];
+  float params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t effective[LE_FX_MAX];
+  int32_t chan_any;
+  le_fx_chan chan[LE_FX_MAX];
+} le_fx_frozen_chain;
+
+/* Fills a frozen chain from snapshotted locals (the cache schedulers'). */
+void le_fx_frozen_fill(le_fx_frozen_chain* c, int32_t count, int32_t pre,
+                       int32_t chain_on, const int32_t* types,
+                       const int32_t* enabled,
+                       const float params[LE_FX_MAX][LE_FX_PARAMS],
+                       const le_fx_chan* chan, int32_t chan_any);
+
+/* Freezes a lane's or a bus's whole chain from its published atomics (the
+ * two owners share the field names). */
+#define LE_FX_FROZEN_CAPTURE(out, owner)                                      \
+  le_fx_frozen_capture((out), &(owner)->a_fx_count, &(owner)->a_fx_pre_count, \
+                       &(owner)->a_fx_chain_enabled, (owner)->a_fx_type,      \
+                       (owner)->a_fx_enabled, (owner)->a_fx_param,            \
+                       (owner)->a_fx_chan_in, (owner)->a_fx_chan_out,         \
+                       (owner)->a_fx_chan_gl_bits, (owner)->a_fx_chan_gr_bits, \
+                       (owner)->a_fx_chan_level_bits)
+void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
+                          _Atomic int32_t* pre, _Atomic int32_t* chain_on,
+                          _Atomic int32_t* type, _Atomic int32_t* enabled,
+                          _Atomic uint32_t (*param)[LE_FX_PARAMS],
+                          _Atomic int32_t* chan_in, _Atomic int32_t* chan_out,
+                          _Atomic uint32_t* gl, _Atomic uint32_t* gr,
+                          _Atomic uint32_t* level);
+
+/* 1 when any entry in [from, to) has `type` (LE_FX_NONE: any real entry). */
+int le_fx_frozen_has(const le_fx_frozen_chain* c, int32_t from, int32_t to,
+                     int32_t type);
+
+/* The bits fx_apply_chain reads when only entries [from, to) may process. */
+void le_fx_frozen_bits(const le_fx_frozen_chain* c, int32_t from, int32_t to,
+                       int32_t out[LE_FX_MAX]);
+
+/* Seeds a calloc'd heap state for entries [0, count): effective entries in
+ * [from, to) settled wet, everything else settled bypass, every entry reset
+ * and prepared (a hosted plugin slot stays NULL and renders dry). Returns
+ * LE_OK or LE_ERR_INVALID on an allocation failure (never a silent dry
+ * slot). The caller frees with le_fx_state_free_buffers. */
+int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
+                                int32_t from, int32_t to, int32_t cap);
+
+/* The print: `len` frames of `src` (mono x `vol`, or interleaved stereo when
+ * `stereo`) through entries [0, count) of `c`, rendered twice back to back
+ * with the second pass kept (RENDER-TWICE-KEEP-SECOND), into `out` (2 x len
+ * interleaved). `abort_fn` (may be NULL) is polled every 4096 frames.
+ * Returns LE_OK, LE_ERR_INVALID (allocation) or LE_ERR_NOT_READY (aborted). */
+int32_t le_fx_print(const le_fx_frozen_chain* c, int32_t count,
+                    const float* src, int stereo, float vol, int32_t len,
+                    int32_t sample_rate, int32_t cap, float* out,
+                    int (*abort_fn)(void*), void* arg);
+
 #ifdef __cplusplus
 }
 #endif

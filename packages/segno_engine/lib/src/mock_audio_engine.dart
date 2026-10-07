@@ -13,6 +13,7 @@ import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
 import 'package:segno_engine/src/output_fx_snapshot.dart';
+import 'package:segno_engine/src/perf_target.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
@@ -1711,13 +1712,18 @@ class MockAudioEngine implements AudioEngine {
   EngineResult commitSession(int baseFrames, {required int loopBars}) =>
       _requireRunning();
 
-  /// The `captureDir` passed to the most recent [perfArm] call, for test
+  /// The capture directory of the most recent [perfArm] call, for test
   /// assertions. `null` until the first arm.
   String? lastPerfCaptureDir;
 
+  /// The target of the most recent [perfArm] call. `null` until the first.
+  PerfTarget? lastPerfTarget;
+
   @override
-  EngineResult perfArm(String captureDir) {
+  EngineResult perfArm(PerfTarget target) {
+    final captureDir = target.captureDir;
     if (captureDir.isEmpty) return EngineResult.invalid;
+    lastPerfTarget = target;
     final result = _requireRunning();
     if (!result.isOk) return result;
     if (!_perfArmed) _perfFollowArmed = _perfFollowPending; // frozen per take
@@ -1748,16 +1754,6 @@ class MockAudioEngine implements AudioEngine {
   @override
   VolumeSpace? volumeSpace(String path) =>
       path.isEmpty ? null : volumeSpaceValue;
-
-  /// Every directory [syncDirectory] was asked to sync, in order.
-  final List<String> syncedDirectories = [];
-
-  @override
-  bool syncDirectory(String path) {
-    if (path.isEmpty) return false;
-    syncedDirectories.add(path);
-    return true;
-  }
 
   /// The `captureDir` passed to the most recent [renderBegin] call, for test
   /// assertions. `null` until the first render.

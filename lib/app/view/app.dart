@@ -38,6 +38,7 @@ import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/storage/cubit/storage_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/application/tuner_settings.dart';
@@ -53,6 +54,7 @@ import 'package:settings_repository/settings_repository.dart';
 import 'package:storage_repository/storage_repository.dart';
 import 'package:toastification/toastification.dart';
 import 'package:update_repository/update_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 /// The root application widget.
@@ -86,10 +88,10 @@ class App extends StatefulWidget {
     this.displayOutputs = const UnknownDisplayOutputs(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     this.removableVolumes = const InternalOnlyVolumes(),
+    this.storage,
     this.powerKeySource,
     this.powerOff,
     this.reboot,
-    this.storage,
     super.key,
   });
 
@@ -118,6 +120,13 @@ class App extends StatefulWidget {
   /// the storage service (#1177) stands behind the port.
   final RemovableVolumes removableVolumes;
 
+  /// Where a write may go: Internal and the USB volumes. Null (the default)
+  /// builds one over no USB at all, measuring Internal through
+  /// [performanceRepository]; the entrypoint injects the appliance's.
+  /// Restart and shutdown refuse while it holds a lease and wait for leases
+  /// taken after the save.
+  final StorageRepository? storage;
+
   /// Injected power-button source. Null (the default) starts an evdev
   /// listener on Linux when `segno-update-ctl` exists, and nothing elsewhere.
   final PowerKeySource? powerKeySource;
@@ -128,11 +137,6 @@ class App extends StatefulWidget {
   /// Injected reboot. Null (the default) runs `segno-update-ctl reboot`,
   /// which boots a staged update slot when one is staged.
   final Future<void> Function()? reboot;
-
-  /// The USB storage service, when this build has one. Restart and shutdown
-  /// refuse while it holds a lease and wait for leases taken after the save;
-  /// null (the default) means nothing can be held.
-  final StorageRepository? storage;
 
   /// The app's one guard table (accepted behaviour 6.12), shared with the
   /// session and performance repositories it was built with. Required: an
@@ -198,6 +202,7 @@ class App extends StatefulWidget {
 class _AppState extends State<App> {
   StreamSubscription<PowerState>? _powerNoticeSubscription;
   late final PedalRepository _pedal;
+  late final StorageRepository _storage;
   late final AppRuntime _runtime;
   late final RecordOptionsCubit _recordView;
   StreamSubscription<MixSettingsOutcome>? _mixFailureSubscription;
@@ -215,6 +220,14 @@ class _AppState extends State<App> {
   void initState() {
     super.initState();
     _pedal = widget.pedalRepository ?? PedalRepository(NoopPedalLink());
+    _storage =
+        widget.storage ??
+        StorageRepository(
+          client: const UnsupportedUsbStorageClient(),
+          exportsRoot: widget.performanceRepository.exportsRoot,
+          volumeSpace: widget.performanceRepository.volumeSpace,
+          guards: widget.guards,
+        );
     _runtime = AppRuntime(
       repository: widget.repository,
       settings: widget.settings,
@@ -224,9 +237,10 @@ class _AppState extends State<App> {
       pedal: _pedal,
       performance: widget.performanceRepository,
       sessions: widget.sessionRepository,
+      storage: _storage,
       powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
       reboot: widget.reboot ?? const SystemApplianceEnv().reboot,
-      storageSettled: widget.storage?.settled ?? () async {},
+      storageSettled: _storage.settled,
       guards: widget.guards,
     );
     _powerNoticeSubscription = _runtime.power.stream.listen(
@@ -292,6 +306,9 @@ class _AppState extends State<App> {
     // Runtime close stops control ingress synchronously, before adapters close.
     final closed = _runtime.close();
     await Future.wait([
+      // Only the repository this widget built; an injected one is its
+      // owner's.
+      if (widget.storage == null) closed.then((_) => _storage.dispose()),
       _timingView.close(),
       _recordView.close(),
       _playbackView.close(),
@@ -490,10 +507,9 @@ class _AppState extends State<App> {
         RepositoryProvider<RemovableVolumes>.value(
           value: widget.removableVolumes,
         ),
+        RepositoryProvider.value(value: _storage),
         if (_powerKeySource != null)
           RepositoryProvider<PowerKeySource>.value(value: _powerKeySource!),
-        if (widget.storage case final storage?)
-          RepositoryProvider<StorageRepository>.value(value: storage),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -663,6 +679,7 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
+          BlocProvider<StorageCubit>.value(value: _runtime.storage),
           BlocProvider<RecordTimingCubit>.value(value: _timingView),
           BlocProvider<TempoCubit>.value(value: _tempoView),
           BlocProvider<PlaybackOptionsCubit>.value(value: _playbackView),
@@ -750,6 +767,13 @@ class _AppState extends State<App> {
           // must start the moment the app composes, not whenever a widget
           // first reads this cubit — a crashed capture recovers in the
           // background whether or not the tracks view ever mounts.
+          // The recorder's Save to (#1177): read by the recorder at each arm.
+          BlocProvider(
+            create: (_) => RecordingDestinationCubit(
+              repository: _storage,
+              sampleRate: () => widget.repository.state.status.sampleRate,
+            ),
+          ),
           BlocProvider(
             lazy: false,
             create: (context) {
@@ -758,6 +782,9 @@ class _AppState extends State<App> {
                 takeLocked: () =>
                     context.read<PowerCubit>().state.isUiUp ||
                     _runtime.fxPersistence.sessionTransitionActive,
+                storage: _storage,
+                destination: () =>
+                    context.read<RecordingDestinationCubit>().state.destination,
               );
               unawaited(cubit.load());
               return cubit;
@@ -1163,6 +1190,19 @@ class _AppViewState extends State<_AppView> {
 
   /// The console now always starts in Record; said once to an install whose
   /// retired boot default was Mute. Low stakes, nothing to act on: a toast.
+  void _showSaveToFellBack(String label) {
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.saveToFellBack,
+      type: ToastificationType.warning,
+      title: AppText(
+        l10n.saveToFellBack(label.isEmpty ? l10n.storageUsbUnnamed : label),
+      ),
+      icon: const Icon(Icons.usb_off),
+      autoCloseDuration: const Duration(seconds: 6),
+    );
+  }
+
   void _showBootModeRetiredNotice() {
     final l10n = _l10n;
     showAppToast(
@@ -1367,6 +1407,14 @@ class _AppViewState extends State<_AppView> {
         BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
           listenWhen: (previous, current) => previous.status != current.status,
           listener: (_, state) => _showAudioRecoveryBanner(state),
+        ),
+        // The drive chosen in Save to went: the next take goes to Internal,
+        // and the player is told rather than finding out afterwards.
+        BlocListener<RecordingDestinationCubit, RecordingDestinationState>(
+          listenWhen: (previous, current) =>
+              current.fellBackFrom != null &&
+              previous.fellBackFrom != current.fellBackFrom,
+          listener: (_, state) => _showSaveToFellBack(state.fellBackFrom!),
         ),
         BlocListener<UpdateCubit, UpdateState>(
           listenWhen: (previous, current) =>

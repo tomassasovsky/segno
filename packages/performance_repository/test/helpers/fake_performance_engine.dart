@@ -46,6 +46,9 @@ class FakePerformanceEngine implements AudioEngine {
   bool perfArmPending = false;
   void Function()? onPerfArmQueued;
   String? lastPerfCaptureDir;
+
+  /// The target of the most recent perfArm.
+  PerfTarget? lastPerfTarget;
   EngineResult perfArmResult = EngineResult.ok;
   EngineResult perfDisarmResult = EngineResult.ok;
   int perfArmCalls = 0;
@@ -59,6 +62,9 @@ class FakePerformanceEngine implements AudioEngine {
 
   /// Whether the drain thread reports it self-stopped on a failed write.
   bool perfStopped = false;
+
+  /// Why the take stopped, as the snapshot reports it (#1198).
+  PerfStopReason perfStopReason = PerfStopReason.none;
 
   /// Seeds track [channel] lane [lane] with settled [pcm] (state defaults to
   /// [TrackState.playing] — a settled, exportable lane).
@@ -139,6 +145,7 @@ class FakePerformanceEngine implements AudioEngine {
     perfOverruns: perfOverruns,
     perfZeroFilledFrames: perfZeroFilledFrames,
     perfStopped: perfStopped,
+    perfStopReason: perfStopReason,
     perfFollowOutput: perfArmed
         ? armedFollowOutput
         : (perfFollowOutput ?? false),
@@ -225,7 +232,9 @@ class FakePerformanceEngine implements AudioEngine {
       EngineResult.ok;
 
   @override
-  EngineResult perfArm(String captureDir) {
+  EngineResult perfArm(PerfTarget target) {
+    final captureDir = target.captureDir;
+    lastPerfTarget = target;
     perfArmCalls++;
     lastPerfCaptureDir = captureDir;
     if (!perfArmResult.isOk) return perfArmResult;
@@ -274,9 +283,6 @@ class FakePerformanceEngine implements AudioEngine {
     perfArmPending = false;
     return EngineResult.ok;
   }
-
-  @override
-  bool syncDirectory(String path) => path.isNotEmpty;
 
   @override
   VolumeSpace? volumeSpace(String path) => freeBytes == null

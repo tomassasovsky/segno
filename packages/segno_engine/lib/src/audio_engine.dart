@@ -10,6 +10,7 @@ import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
 import 'package:segno_engine/src/output_fx_snapshot.dart';
+import 'package:segno_engine/src/perf_target.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
@@ -1475,32 +1476,32 @@ abstract interface class EnginePluginHosting {
 }
 
 /// Performance-recording capture (parts 1-2 of the DAW-export stack): arming
-/// and disarming the RT-safe audio-thread taps that copy the post-limiter
-/// master output and each actively-monitored input into lock-free capture
-/// rings, and the background drain thread that empties those rings into raw
-/// PCM files plus a `performance.json` sidecar under [perfArm]'s capture
-/// directory.
+/// and disarming the RT-safe audio-thread taps that copy the master capture
+/// (before the master gain and limiter) and each actively-monitored input
+/// into lock-free capture rings, and the background drain thread that writes
+/// each stream as ordered 32-bit float WAV parts (`master-001.wav`, …,
+/// `input-<n>-001.wav`) plus a `performance.json` sidecar (#1198).
 ///
 /// Status is read back via [EngineSnapshot] ([EngineSnapshot.isPerfArmed] /
 /// [EngineSnapshot.perfFrames] / [EngineSnapshot.perfOverruns]), the same way
-/// every other engine status surfaces. WAV headers are written only at
-/// finalize (a later part) — the raw PCM + sidecar left on disk here are
-/// already crash-salvageable.
+/// every other engine status surfaces. A part's header carries zero sizes
+/// until it is sealed, so whatever a crash leaves is still whole frames after
+/// a fixed 84-byte header.
 abstract interface class EnginePerformanceCapture {
   /// Arms performance-recording capture: allocates the master + per-monitor
   /// rings, freezes the set of captured inputs to whichever are currently
   /// monitored, publishes them to the audio thread, and starts the drain
-  /// thread writing into [captureDir] (created if it does not already exist).
+  /// thread writing [target] (its capture directory is created if missing).
   /// Idempotent — calling this while already armed is a no-op success (the
-  /// armed session's original [captureDir] keeps draining; a non-empty
-  /// [captureDir] is still required on the repeat call, but otherwise
-  /// unused). Returns [EngineResult.notRunning] if the engine is not
-  /// configured, [EngineResult.invalid] when [captureDir] is empty, nothing
-  /// is enabled to capture (every output disabled), or the rings could not
-  /// be allocated, or [EngineResult.device] if the drain thread could not be
-  /// started (e.g. the directory could not be created) or a previous
-  /// disarm's quiescent wait bailed out and left a stale drain session live.
-  EngineResult perfArm(String captureDir);
+  /// armed take keeps its original target). Returns [EngineResult.notRunning]
+  /// if the engine is not configured, [EngineResult.invalid] when the capture
+  /// directory is empty, the part size has no room for a frame or exceeds the
+  /// RIFF limit, the ring seconds are negative, nothing is enabled to capture
+  /// (every output disabled), or the rings could not be allocated, or
+  /// [EngineResult.device] if the drain thread could not be started (e.g. a
+  /// directory could not be created) or a previous disarm's quiescent wait
+  /// bailed out and left a stale drain session live.
+  EngineResult perfArm(PerfTarget target);
 
   /// Sets the capture policy the NEXT [perfArm] freezes for its take (slice
   /// 3b). `false` (the initial value) taps the captured destination after
@@ -1540,17 +1541,6 @@ abstract interface class EnginePerformanceCapture {
   /// thread's next page fault sleeps behind it. Every audible dropout measured
   /// on the Pi 5 bench landed within 3 ms of one (#806).
   VolumeSpace? volumeSpace(String path);
-
-  /// Makes the entries of the directory at [path] durable (fsync(2) on the
-  /// directory): a file renamed into it, a file created in it. Returns whether
-  /// it was synced; false for a path that is not a directory or a sync the
-  /// device refused.
-  ///
-  /// A file's own flush makes its bytes durable but not its name, and Dart
-  /// cannot open a directory to sync it. The storage repository calls this
-  /// after every copy's rename (#1177, #1195). Synchronous, and as slow as the
-  /// device's flush; never on the audio thread.
-  bool syncDirectory(String path);
 
   /// Starts an offline render of the finalized capture at [captureDir]: a
   /// worker thread reconstructs each non-empty track's full-length DRY stem

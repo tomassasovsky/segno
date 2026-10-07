@@ -25,6 +25,7 @@
     "**/third_party/vst3sdk/**"
   ],
   "words": [
+    "sgno",
     "unrecognised",
     "repoint",
     "repoints",
@@ -527,6 +528,7 @@
     "NOMINMAX",
     "nonint",
     "nopi",
+    "noreplace",
     "normalisation",
     "normalise",
     "notarization",
@@ -1009,6 +1011,8 @@
     "mountpoint",
     "ntfs",
     "ntfs3",
+    "nodev",
+    "nosuid",
     "RRECOMMENDS",
     "statvfs",
     "superfloppy",

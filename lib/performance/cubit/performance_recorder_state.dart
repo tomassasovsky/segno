@@ -3,18 +3,29 @@ part of 'performance_recorder_cubit.dart';
 /// Why a capture stopped before disarm (D-FAIL): reported inside
 /// [PerformanceRecordStoppedEarly].
 enum PerformanceStopReason {
-  /// A write to the export volume could not be completed mid-capture — the
-  /// preventive free-space floor, or `perf_drain.c`'s own self-stop, which
-  /// fires on a full disk, a quota, a read-only remount or an I/O error.
+  /// A write to the export volume failed mid-capture — a full disk, a quota,
+  /// a read-only remount or an I/O error.
   ///
   /// Named for the common case, but the message must not assert it: three of
-  /// the four self-stop causes leave the volume with space on it, and telling
-  /// the operator to free some sends them after the wrong thing.
+  /// the four causes leave the volume with space on it, and telling the
+  /// operator to free some sends them after the wrong thing.
   diskFull,
+
+  /// The export volume reached its reserve: every stream ends at the last
+  /// whole frame it could hold above it (#1198).
+  reserveReached,
+
+  /// The storage fell behind and a capture ring overflowed: the take ends at
+  /// the first frame that could not be kept, with no gap filled (#1198).
+  slowStorage,
 
   /// The audio device changed mid-capture, forcing a reconfigure that can't
   /// keep the capture taps running.
   deviceChanged,
+
+  /// The USB drive the take was recording to went away (pulled, or failed)
+  /// while it recorded (#1177). The loops keep playing.
+  volumeLost,
 }
 
 /// The outcome of a finished capture, carried by
@@ -85,7 +96,9 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
     this.lowDiskBlocked = false,
     this.recovering = false,
     this.refusedBy,
+    this.driveUnavailable = false,
     this.refusal = 0,
+    this.notRecovered = 0,
   });
 
   /// An arm was refused because the export volume is already below the
@@ -111,14 +124,31 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// the control was pressed (accepted behaviour 6.12).
   final GuardKind? refusedBy;
 
+  /// The last arm was refused because the chosen USB drive could not take a
+  /// recording any more (gone, read-only, being ejected) between the choice
+  /// and the press.
+  final bool driveUnavailable;
+
   /// Which refusal this is: the cubit counts every refused arm, for
   /// [lowDiskBlocked] and [refusedBy] alike. Without it a second refused
   /// press would emit a state equal to the first, the cubit would drop it,
   /// and the operator would see no answer to the second press.
   final int refusal;
 
+  /// Takes the boot salvage could not recover this boot (a raw take too
+  /// large to convert yet, a damaged sidecar). Each stays where it is with
+  /// every file kept; the player is told once, as the salvage settles.
+  final int notRecovered;
+
   @override
-  List<Object?> get props => [lowDiskBlocked, recovering, refusedBy, refusal];
+  List<Object?> get props => [
+    lowDiskBlocked,
+    recovering,
+    refusedBy,
+    driveUnavailable,
+    refusal,
+    notRecovered,
+  ];
 }
 
 /// Armed: the engine's capture taps are running. [elapsed] and [overrun]
@@ -131,6 +161,7 @@ class PerformanceRecorderArmed extends PerformanceRecorderState {
     required this.elapsed,
     required this.overrun,
     this.lowDiskWarning = false,
+    this.volumeLabel,
   });
 
   /// Time elapsed since arm.
@@ -145,8 +176,12 @@ class PerformanceRecorderArmed extends PerformanceRecorderState {
   /// re-checked continuously.
   final bool lowDiskWarning;
 
+  /// The label of the USB drive this take records to (pen 48 `FwjUV`
+  /// "SEGNO USB"), or null on Internal.
+  final String? volumeLabel;
+
   @override
-  List<Object?> get props => [elapsed, overrun, lowDiskWarning];
+  List<Object?> get props => [elapsed, overrun, lowDiskWarning, volumeLabel];
 }
 
 /// Disarmed; converting raw PCM to WAV and assembling the bundle

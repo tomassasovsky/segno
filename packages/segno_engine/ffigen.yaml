@@ -33,6 +33,7 @@ structs:
     - 'le_plugin_desc'
     - 'le_plugin_param_info'
     - 'le_lane_cache_info'
+    - 'le_perf_target'
 enums:
   include:
     - 'le_result'
@@ -46,6 +47,7 @@ enums:
     - 'le_cache_reason'
     - 'le_xrun_kind'
     - 'le_reopen_outcome'
+    - 'le_perf_stop_reason'
 preamble: |
   // ignore_for_file: type=lint, doc_directive_unknown
   // coverage:ignore-file

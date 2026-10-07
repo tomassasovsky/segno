@@ -63,6 +63,9 @@ class FakeAudioEngine implements AudioEngine {
   /// without rebuilding the whole snapshot.
   bool perfStopped = false;
 
+  /// Why the take stopped, overlaid onto [nextSnapshot] when set (#1198).
+  PerfStopReason? perfStopReason;
+
   /// The device name reported while running.
   String runningDeviceName = 'Fake Device';
 
@@ -159,6 +162,7 @@ class FakeAudioEngine implements AudioEngine {
     publishedMode,
     publishedMixRevision,
     perfStopped: perfStopped,
+    perfStopReason: perfStopReason,
     perfArmed: publishPerfCommands ? _publishedPerfArmed : null,
     perfFollowOutput: _frozenPerfFollowOutput,
     perfCaptureBus: _frozenPerfCaptureBus,
@@ -1564,6 +1568,9 @@ class FakeAudioEngine implements AudioEngine {
   /// The `captureDir` passed to the most recent [perfArm] call.
   String? lastPerfCaptureDir;
 
+  /// The target of the most recent perfArm.
+  PerfTarget? lastPerfTarget;
+
   bool? _publishedPerfArmed;
   bool? _frozenPerfFollowOutput;
   int? _frozenPerfCaptureBus;
@@ -1573,7 +1580,9 @@ class FakeAudioEngine implements AudioEngine {
   bool? _frozenPerfOutputMuted;
 
   @override
-  EngineResult perfArm(String captureDir) {
+  EngineResult perfArm(PerfTarget target) {
+    final captureDir = target.captureDir;
+    lastPerfTarget = target;
     perfArmCalls++;
     lastPerfCaptureDir = captureDir;
     if (!perfArmResult.isOk) return perfArmResult;
@@ -1607,9 +1616,6 @@ class FakeAudioEngine implements AudioEngine {
     if (publishPerfCommands) _publishedPerfArmed = false;
     return EngineResult.ok;
   }
-
-  @override
-  bool syncDirectory(String path) => path.isNotEmpty;
 
   @override
   VolumeSpace? volumeSpace(String path) => freeBytes == null
@@ -1834,6 +1840,7 @@ class _LengthSnapshot extends EngineSnapshot {
     LooperMode? mode,
     int mixRevision, {
     required bool perfStopped,
+    required PerfStopReason? perfStopReason,
     required bool? perfArmed,
     required bool? perfFollowOutput,
     required int? perfCaptureBus,
@@ -1875,6 +1882,10 @@ class _LengthSnapshot extends EngineSnapshot {
          perfOverruns: source.perfOverruns,
          perfZeroFilledFrames: source.perfZeroFilledFrames,
          perfStopped: perfStopped || source.perfStopped,
+         perfStopReason: perfStopReason ?? source.perfStopReason,
+         perfOvers: source.perfOvers,
+         perfCaptureStreams: source.perfCaptureStreams,
+         perfCaptureFrameBytes: source.perfCaptureFrameBytes,
          perfFollowOutput: perfFollowOutput ?? source.perfFollowOutput,
          perfCaptureBus: perfCaptureBus ?? source.perfCaptureBus,
          perfCaptureMask: perfCaptureMask ?? source.perfCaptureMask,

@@ -1998,7 +1998,6 @@
     },
     "storageSystemTitle": "System and updates",
     "storageSystemSubtitle": "includes the standby system",
-    "storageFreeTitle": "Free",
     "storageGigabytes": "{value} GB",
     "@storageGigabytes": {
         "description": "One figure of the disk breakdown. Formatted rather than pre-printed, so the decimal separator is the locale's — the sample rate beside it in About already is.",
@@ -2034,11 +2033,6 @@
         }
     },
     "storageDeleteCapturesConfirm": "Delete them",
-    "storageExportTitle": "Export everything to USB",
-    "storageNoUsb": "no USB volume",
-    "@storageNoUsb": {
-        "description": "Trailing readout when there is nowhere to export. A fact about the rig, not a failure — the row simply stops being tappable."
-    },
     "aboutNameRow": "Name",
     "aboutRenameTitle": "Rename console",
     "aboutSerialRow": "Serial",
@@ -2207,9 +2201,9 @@
     "@fxAddScanning": {
         "description": "Stands in for the browse row's count while the scan is still running — a count of zero mid-scan is not a fact about the machine."
     },
-    "fxAddTitle": "Add an effect",
+    "fxAddTitle": "Add effects",
     "@fxAddTitle": {
-        "description": "Title of the dialog that puts a new entry on the end of a chain."
+        "description": "Title of the effect library."
     },
     "fxAddInto": "Into “{chain}”, at the end of the chain.",
     "@fxAddInto": {
@@ -2414,7 +2408,11 @@
     "powerStagedUpdate": "Segno {version} installs during the restart.",
     "@powerStagedUpdate": {
         "description": "Power options line when an update is staged; the restart boots it.",
-        "placeholders": {"version": {"type": "String"}}
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
     },
     "powerCancel": "Cancel",
     "@powerCancel": {
@@ -2951,11 +2949,11 @@
         }
     },
     "a11yReadoutNoTrack": "No track selected",
-  "recoveryModeTitle": "Loop does not fit this mode",
-  "recoveryModeUndoBody": "Choose Free in Loop settings, then try Undo again. Your session is unchanged.",
-  "recoveryModeRedoBody": "Choose Free in Loop settings, then try Redo again. Your session is unchanged.",
-  "recoveryWaitTitle": "Recovery is not ready yet",
-  "recoveryWaitBody": "Let the current change finish, then try again. Your session is unchanged.",
+    "recoveryModeTitle": "Loop does not fit this mode",
+    "recoveryModeUndoBody": "Choose Free in Loop settings, then try Undo again. Your session is unchanged.",
+    "recoveryModeRedoBody": "Choose Free in Loop settings, then try Redo again. Your session is unchanged.",
+    "recoveryWaitTitle": "Recovery is not ready yet",
+    "recoveryWaitBody": "Let the current change finish, then try again. Your session is unchanged.",
     "loopSettingsTitle": "Loop settings",
     "@loopSettingsTitle": {
         "description": "Title of the Loop settings hub."
@@ -3012,42 +3010,42 @@
     "@loopSummarySound": {
         "description": "Hub summary prefix when recording starts on sound.",
         "placeholders": {
-                "rest": {
-                        "type": "String"
-                }
+            "rest": {
+                "type": "String"
+            }
         }
     },
     "loopSummaryTempo": "{bpm} BPM · {signature}",
     "@loopSummaryTempo": {
         "description": "Hub summary of the tempo and signature.",
         "placeholders": {
-                "bpm": {
-                        "type": "String"
-                },
-                "signature": {
-                        "type": "String"
-                }
+            "bpm": {
+                "type": "String"
+            },
+            "signature": {
+                "type": "String"
+            }
         }
     },
     "loopSummaryTempoUnset": "Tempo not set · {signature}",
     "@loopSummaryTempoUnset": {
         "description": "Hub summary when no tempo is set.",
         "placeholders": {
-                "signature": {
-                        "type": "String"
-                }
+            "signature": {
+                "type": "String"
+            }
         }
     },
     "loopSummaryPair": "{first} · {second}",
     "@loopSummaryPair": {
         "description": "Two hub summary parts joined.",
         "placeholders": {
-                "first": {
-                        "type": "String"
-                },
-                "second": {
-                        "type": "String"
-                }
+            "first": {
+                "type": "String"
+            },
+            "second": {
+                "type": "String"
+            }
         }
     },
     "loopSummaryNoDecay": "No decay",
@@ -3058,9 +3056,9 @@
     "@loopSummaryDecay": {
         "description": "Hub summary part for a default decay.",
         "placeholders": {
-                "percent": {
-                        "type": "int"
-                }
+            "percent": {
+                "type": "int"
+            }
         }
     },
     "loopSummaryAudioTempo": "Recorded speed · Same pitch",
@@ -3123,9 +3121,9 @@
     "@loopModeReasonFollowPrimary": {
         "description": "Why Sync or Band is unavailable.",
         "placeholders": {
-                "track": {
-                        "type": "int"
-                }
+            "track": {
+                "type": "int"
+            }
         }
     },
     "loopRecordingStart": "Start recording",
@@ -3160,9 +3158,9 @@
     "@loopRecordingNoteCountIn": {
         "description": "Recording note with a count-in.",
         "placeholders": {
-                "bars": {
-                        "type": "int"
-                }
+            "bars": {
+                "type": "int"
+            }
         }
     },
     "loopRecordingNoteSound": "Waits for sound after you arm the track.",
@@ -3233,9 +3231,9 @@
     "@loopScopeTrack": {
         "description": "Accessible name of a scope selector track button.",
         "placeholders": {
-                "track": {
-                        "type": "int"
-                }
+            "track": {
+                "type": "int"
+            }
         }
     },
     "loopLengthLabel": "Loop length",
@@ -3291,9 +3289,9 @@
     "@loopLengthNoteBars": {
         "description": "Length note for a fixed bar count.",
         "placeholders": {
-                "bars": {
-                        "type": "int"
-                }
+            "bars": {
+                "type": "int"
+            }
         }
     },
     "loopDefaultMultipleLabel": "Later tracks",
@@ -3320,9 +3318,9 @@
     "@loopTimingNoteGrid": {
         "description": "Timing note for a grid division.",
         "placeholders": {
-                "unit": {
-                        "type": "String"
-                }
+            "unit": {
+                "type": "String"
+            }
         }
     },
     "loopLengthLocked": "Finish recording to change length or timing.",
@@ -3361,9 +3359,9 @@
     "@loopDecayPercent": {
         "description": "Decay readout.",
         "placeholders": {
-                "percent": {
-                        "type": "int"
-                }
+            "percent": {
+                "type": "int"
+            }
         }
     },
     "loopDecayKeep": "Keep layers",
@@ -3382,9 +3380,9 @@
     "@loopDecayNote": {
         "description": "Decay note.",
         "placeholders": {
-                "percent": {
-                        "type": "int"
-                }
+            "percent": {
+                "type": "int"
+            }
         }
     },
     "loopDecayNoteReplace": "Each overdub pass replaces the earlier audio. Playback is unchanged.",
@@ -3437,184 +3435,184 @@
     },
     "routingTitle": "Audio routing",
     "@routingTitle": {
-            "description": "Title of the Audio routing settings route."
+        "description": "Title of the Audio routing settings route."
     },
     "routingTabInputSetup": "Input setup",
     "@routingTabInputSetup": {
-            "description": "Audio routing task: set an input up."
+        "description": "Audio routing task: set an input up."
     },
     "routingTabRecordingInputs": "Recording inputs",
     "@routingTabRecordingInputs": {
-            "description": "Audio routing task: choose what a track records."
+        "description": "Audio routing task: choose what a track records."
     },
     "routingTabOutputRouting": "Output routing",
     "@routingTabOutputRouting": {
-            "description": "Audio routing task: choose where a source is sent."
+        "description": "Audio routing task: choose where a source is sent."
     },
     "routingTabOutputSetup": "Output setup",
     "@routingTabOutputSetup": {
-            "description": "Audio routing task: set an output destination up."
+        "description": "Audio routing task: set an output destination up."
     },
     "routingRecordAs": "Record as",
     "@routingRecordAs": {
-            "description": "Heading of the mono/stereo choice for an input."
+        "description": "Heading of the mono/stereo choice for an input."
     },
     "routingFormatMono": "Separate mono",
     "@routingFormatMono": {
-            "description": "Record this input on its own."
+        "description": "Record this input on its own."
     },
     "routingFormatStereo": "Stereo pair",
     "@routingFormatStereo": {
-            "description": "Record this input and its partner as one stereo pair."
+        "description": "Record this input and its partner as one stereo pair."
     },
     "routingFormatMonoNote": "Each input records separately.",
     "@routingFormatMonoNote": {
-            "description": "Note beside the mono recording format."
+        "description": "Note beside the mono recording format."
     },
     "routingPairLeft": "L",
     "@routingPairLeft": {
-            "description": "Side tag on the lower jack of a stereo pair."
+        "description": "Side tag on the lower jack of a stereo pair."
     },
     "routingPairRight": "R",
     "@routingPairRight": {
-            "description": "Side tag on the upper jack of a stereo pair."
+        "description": "Side tag on the upper jack of a stereo pair."
     },
     "routingPan": "Pan",
     "@routingPan": {
-            "description": "Placement control for a mono input."
+        "description": "Placement control for a mono input."
     },
     "routingBalance": "Balance",
     "@routingBalance": {
-            "description": "Placement control shared by a stereo pair."
+        "description": "Placement control shared by a stereo pair."
     },
     "routingPanLeft": "Left",
     "@routingPanLeft": {
-            "description": "Left end of the placement slider."
+        "description": "Left end of the placement slider."
     },
     "routingPanRight": "Right",
     "@routingPanRight": {
-            "description": "Right end of the placement slider."
+        "description": "Right end of the placement slider."
     },
     "routingPanCenter": "Center",
     "@routingPanCenter": {
-            "description": "Placement readout when the input sits in the middle."
+        "description": "Placement readout when the input sits in the middle."
     },
     "routingPanLeftAmount": "{percent}% left",
     "@routingPanLeftAmount": {
-            "description": "Placement readout towards the left.",
-            "placeholders": {
-                    "percent": {
-                            "type": "int"
-                    }
+        "description": "Placement readout towards the left.",
+        "placeholders": {
+            "percent": {
+                "type": "int"
             }
+        }
     },
     "routingPanRightAmount": "{percent}% right",
     "@routingPanRightAmount": {
-            "description": "Placement readout towards the right.",
-            "placeholders": {
-                    "percent": {
-                            "type": "int"
-                    }
+        "description": "Placement readout towards the right.",
+        "placeholders": {
+            "percent": {
+                "type": "int"
             }
+        }
     },
     "routingTrim": "Recording trim",
     "@routingTrim": {
-            "description": "Capture gain for an input."
+        "description": "Capture gain for an input."
     },
     "routingTrimDb": "{db} dB",
     "@routingTrimDb": {
-            "description": "Recording trim readout in decibels.",
-            "placeholders": {
-                    "db": {
-                            "type": "String"
-                    }
+        "description": "Recording trim readout in decibels.",
+        "placeholders": {
+            "db": {
+                "type": "String"
             }
+        }
     },
     "routingTrimNote": "New recordings only. Live level stays in Mixer.",
     "@routingTrimNote": {
-            "description": "Note under the recording trim."
+        "description": "Note under the recording trim."
     },
     "routingSignal": "Recording signal",
     "@routingSignal": {
-            "description": "Name of the input meter."
+        "description": "Name of the input meter."
     },
     "routingClipNote": "Input is clipping. Lower the source level.",
     "@routingClipNote": {
-            "description": "Note shown while an input is clipping."
+        "description": "Note shown while an input is clipping."
     },
     "routingLockedFormat": "Finish recording to change mono or stereo.",
     "@routingLockedFormat": {
-            "description": "Why the recording format cannot change right now."
+        "description": "Why the recording format cannot change right now."
     },
     "routingRecordFrom": "Record from",
     "@routingRecordFrom": {
-            "description": "Heading over the inputs a track records."
+        "description": "Heading over the inputs a track records."
     },
     "routingLockedInputs": "Finish recording to change inputs.",
     "@routingLockedInputs": {
-            "description": "Why a capturing track cannot change its sources."
+        "description": "Why a capturing track cannot change its sources."
     },
     "routingNoInputs": "No inputs selected for this track.",
     "@routingNoInputs": {
-            "description": "Shown when a track records nothing."
+        "description": "Shown when a track records nothing."
     },
     "outputPairLabel": "Outputs {first}–{second}",
     "@outputPairLabel": {
-            "placeholders": {
-                    "first": {
-                            "type": "int"
-                    },
-                    "second": {
-                            "type": "int"
-                    }
+        "placeholders": {
+            "first": {
+                "type": "int"
             },
-            "description": "The pair of jacks one destination drives."
+            "second": {
+                "type": "int"
+            }
+        },
+        "description": "The pair of jacks one destination drives."
     },
     "outputPairShort": "Out {first}–{second}",
     "@outputPairShort": {
-            "placeholders": {
-                    "first": {
-                            "type": "int"
-                    },
-                    "second": {
-                            "type": "int"
-                    }
+        "placeholders": {
+            "first": {
+                "type": "int"
             },
-            "description": "The short form of a destination, used where a name would go."
+            "second": {
+                "type": "int"
+            }
+        },
+        "description": "The short form of a destination, used where a name would go."
     },
     "outputSingleLabel": "Output {channelNumber}",
     "@outputSingleLabel": {
-            "placeholders": {
-                    "channelNumber": {
-                            "type": "int"
-                    }
-            },
-            "description": "A destination holding one jack, on an odd-channel device."
+        "placeholders": {
+            "channelNumber": {
+                "type": "int"
+            }
+        },
+        "description": "A destination holding one jack, on an odd-channel device."
     },
     "routingKindLive": "Live inputs",
     "@routingKindLive": {
-            "description": "The source kind: what the jacks are hearing now."
+        "description": "The source kind: what the jacks are hearing now."
     },
     "routingKindTracks": "Recorded tracks",
     "@routingKindTracks": {
-            "description": "The source kind: what the tracks play back."
+        "description": "The source kind: what the tracks play back."
     },
     "routingKindPlayers": "Backing & click",
     "@routingKindPlayers": {
-            "description": "The source kind: the click and the backing player."
+        "description": "The source kind: the click and the backing player."
     },
     "routingSourceClick": "Click",
     "@routingSourceClick": {
-            "description": "The metronome, as a routable source."
+        "description": "The metronome, as a routable source."
     },
     "routingInputOrdinal": "Input {number}",
     "@routingInputOrdinal": {
-            "placeholders": {
-                    "number": {
-                            "type": "int"
-                    }
-            },
-            "description": "The ordinal line on an input source card."
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        },
+        "description": "The ordinal line on an input source card."
     },
     "fxTitle": "Effects",
     "fxChangeNotApplied": "That effect change was not applied. Try again.",
@@ -3724,7 +3722,7 @@
     "@fxNoTrackPart": {
         "description": "Shown when a selected track has no recorded parts to point effects at."
     },
-    "fxRackPositionRange": "{first}\u2013{last} / {total}",
+    "fxRackPositionRange": "{first}–{last} / {total}",
     "@fxRackPositionRange": {
         "description": "Which of the chain's effects are in view.",
         "placeholders": {
@@ -3755,10 +3753,6 @@
                 "type": "String"
             }
         }
-    },
-    "fxAddTitle": "Add effects",
-    "@fxAddTitle": {
-        "description": "Title of the effect library."
     },
     "fxAddCrumb": "EFFECTS / {destination}",
     "@fxAddCrumb": {
@@ -3916,36 +3910,36 @@
     },
     "fxModuleCount": "{count, plural, =1{1 effect} other{{count} effects}}",
     "@fxModuleCount": {
-            "description": "How many pedals a rack holds, on its card's status line.",
-            "placeholders": {
-                    "count": {
-                            "type": "int"
-                    }
+        "description": "How many pedals a rack holds, on its card's status line.",
+        "placeholders": {
+            "count": {
+                "type": "int"
             }
+        }
     },
     "fxRackOptions": "Rack options",
     "@fxRackOptions": {
-            "description": "Opens rename, reorder and removal for one rack."
+        "description": "Opens rename, reorder and removal for one rack."
     },
     "fxRackRename": "Rename",
     "@fxRackRename": {
-            "description": "Rack options row: give this rack another name."
+        "description": "Rack options row: give this rack another name."
     },
     "fxRackRenameField": "Rack name",
     "@fxRackRenameField": {
-            "description": "Announced label of the rack-name field."
+        "description": "Announced label of the rack-name field."
     },
     "fxReorderEffects": "Reorder effects",
     "@fxReorderEffects": {
-            "description": "Title of the reorder surface, and the rack-options row that opens it."
+        "description": "Title of the reorder surface, and the rack-options row that opens it."
     },
     "fxRemoveAnEffect": "Remove an effect",
     "@fxRemoveAnEffect": {
-            "description": "Rack options row: take one pedal out of this rack."
+        "description": "Rack options row: take one pedal out of this rack."
     },
     "fxRemoveRack": "Remove rack",
     "@fxRemoveRack": {
-            "description": "Rack options row: take the whole rack out of the chain."
+        "description": "Rack options row: take the whole rack out of the chain."
     },
     "fxRemoveRackTitle": "Remove {name}?",
     "@fxRemoveRackTitle": {
@@ -3962,92 +3956,92 @@
     },
     "fxRemoveEffect": "Remove {name}",
     "@fxRemoveEffect": {
-            "description": "Takes one named pedal out of a rack.",
-            "placeholders": {
-                    "name": {
-                            "type": "String"
-                    }
+        "description": "Takes one named pedal out of a rack.",
+        "placeholders": {
+            "name": {
+                "type": "String"
             }
+        }
     },
     "fxBypassRack": "Rack",
     "@fxBypassRack": {
-            "description": "Label of the rack-wide power button in the rack editor's titlebar."
+        "description": "Label of the rack-wide power button in the rack editor's titlebar."
     },
     "fxAddEffect": "Add effect",
     "@fxAddEffect": {
-            "description": "Adds one more pedal to the rack being edited."
+        "description": "Adds one more pedal to the rack being edited."
     },
     "fxRackInput": "Rack input",
     "@fxRackInput": {
-            "description": "How the rack takes the pair it is handed."
+        "description": "How the rack takes the pair it is handed."
     },
     "fxRackOutput": "Rack output",
     "@fxRackOutput": {
-            "description": "How the rack hands its result on."
+        "description": "How the rack hands its result on."
     },
     "fxRackLevel": "Rack level",
     "@fxRackLevel": {
-            "description": "The rack's own level, applied after its pedals."
+        "description": "The rack's own level, applied after its pedals."
     },
     "fxMoveLeft": "Move left",
     "@fxMoveLeft": {
-            "description": "Moves the picked card one place earlier in the chain."
+        "description": "Moves the picked card one place earlier in the chain."
     },
     "fxMoveRight": "Move right",
     "@fxMoveRight": {
-            "description": "Moves the picked card one place later in the chain."
+        "description": "Moves the picked card one place later in the chain."
     },
     "fxOrderPosition": "{name}, position {position} of {total}",
     "@fxOrderPosition": {
-            "description": "Announced label of a card on the reorder surface.",
-            "placeholders": {
-                    "name": {
-                            "type": "String"
-                    },
-                    "position": {
-                            "type": "int"
-                    },
-                    "total": {
-                            "type": "int"
-                    }
+        "description": "Announced label of a card on the reorder surface.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "position": {
+                "type": "int"
+            },
+            "total": {
+                "type": "int"
             }
+        }
     },
     "fxSavePresetTitle": "Save preset",
     "@fxSavePresetTitle": {
-            "description": "Title of the sheet that names a sound before saving it."
+        "description": "Title of the sheet that names a sound before saving it."
     },
     "fxPresetNameField": "Preset name",
     "@fxPresetNameField": {
-            "description": "Announced label of the preset-name field."
+        "description": "Announced label of the preset-name field."
     },
     "fxReplacePresetTitle": "Replace {name}?",
     "@fxReplacePresetTitle": {
-            "description": "Asked when the typed preset name is already taken.",
-            "placeholders": {
-                    "name": {
-                            "type": "String"
-                    }
+        "description": "Asked when the typed preset name is already taken.",
+        "placeholders": {
+            "name": {
+                "type": "String"
             }
+        }
     },
     "fxPresetExists": "A preset with this name is already in My presets.",
     "@fxPresetExists": {
-            "description": "Why the replace question is being asked."
+        "description": "Why the replace question is being asked."
     },
     "fxReplacePreset": "Replace preset",
     "@fxReplacePreset": {
-            "description": "Overwrites the saved preset of the same name."
+        "description": "Overwrites the saved preset of the same name."
     },
     "fxUseAnotherName": "Use another name",
     "@fxUseAnotherName": {
-            "description": "Goes back to naming instead of replacing."
+        "description": "Goes back to naming instead of replacing."
     },
     "fxMyPresetsTitle": "My presets",
     "@fxMyPresetsTitle": {
-            "description": "Title of the saved-sounds page."
+        "description": "Title of the saved-sounds page."
     },
     "fxPresetRename": "Rename",
     "@fxPresetRename": {
-            "description": "Renames a saved preset."
+        "description": "Renames a saved preset."
     },
     "fxPresetExport": "Export",
     "@fxPresetExport": {
@@ -4063,186 +4057,186 @@
     },
     "fxPresetDelete": "Delete",
     "@fxPresetDelete": {
-            "description": "Deletes a saved preset."
+        "description": "Deletes a saved preset."
     },
     "fxPresetDeleteTitle": "Delete {name}?",
     "@fxPresetDeleteTitle": {
-            "description": "Asked before deleting a saved preset.",
-            "placeholders": {
-                    "name": {
-                            "type": "String"
-                    }
+        "description": "Asked before deleting a saved preset.",
+        "placeholders": {
+            "name": {
+                "type": "String"
             }
+        }
     },
     "fxPresetDeleteBody": "Effects already added from it are not affected.",
     "@fxPresetDeleteBody": {
-            "description": "What deleting a saved preset does not do."
+        "description": "What deleting a saved preset does not do."
     },
     "fxPresetSaved": "Saved {name}",
     "@fxPresetSaved": {
-            "description": "Confirms a sound was saved for reuse.",
-            "placeholders": {
-                    "name": {
-                            "type": "String"
-                    }
+        "description": "Confirms a sound was saved for reuse.",
+        "placeholders": {
+            "name": {
+                "type": "String"
             }
+        }
     },
     "fxRackRemoved": "Removed {name}",
     "@fxRackRemoved": {
-            "description": "Confirms a rack left the chain.",
-            "placeholders": {
-                    "name": {
-                            "type": "String"
-                    }
+        "description": "Confirms a rack left the chain.",
+        "placeholders": {
+            "name": {
+                "type": "String"
             }
+        }
     },
     "routingHearLive": "Hear live",
     "@routingHearLive": {
-            "description": "Heading over the live-monitoring choice."
+        "description": "Heading over the live-monitoring choice."
     },
     "routingHearOff": "Off",
     "@routingHearOff": {
-            "description": "Never hear this input live."
+        "description": "Never hear this input live."
     },
     "routingHearAuto": "Auto",
     "@routingHearAuto": {
-            "description": "Hear this input while a track that records it is armed."
+        "description": "Hear this input while a track that records it is armed."
     },
     "routingHearOn": "On",
     "@routingHearOn": {
-            "description": "Always hear this input live."
+        "description": "Always hear this input live."
     },
     "routingHearAutoOff": "Live off · follows armed or recording tracks",
     "@routingHearAutoOff": {
-            "description": "Auto is chosen and nothing is armed, so the input is not heard."
+        "description": "Auto is chosen and nothing is armed, so the input is not heard."
     },
     "routingHearAutoOn": "Live on · follows armed or recording tracks",
     "@routingHearAutoOn": {
-            "description": "Auto is chosen and a track that records this input is armed."
+        "description": "Auto is chosen and a track that records this input is armed."
     },
     "routingHearMuted": "Muted in Mixer · nothing is heard",
     "@routingHearMuted": {
-            "description": "The input monitor is muted, so the choice above changes nothing."
+        "description": "The input monitor is muted, so the choice above changes nothing."
     },
     "routingSendTo": "Send to",
     "@routingSendTo": {
-            "description": "Heading over the destinations a source reaches."
+        "description": "Heading over the destinations a source reaches."
     },
     "routingNoDestinations": "No outputs selected. This source reaches nothing.",
     "@routingNoDestinations": {
-            "description": "Shown when the chosen source drives no destination."
+        "description": "Shown when the chosen source drives no destination."
     },
     "routingNoDestinationsYet": "No outputs until an interface is open.",
     "@routingNoDestinationsYet": {
-            "description": "Shown when no device has been opened yet."
+        "description": "Shown when no device has been opened yet."
     },
     "routingOutputStereo": "Stereo",
     "@routingOutputStereo": {
-            "description": "The destination carries a stereo pair."
+        "description": "The destination carries a stereo pair."
     },
     "routingOutputMono": "Mono",
     "@routingOutputMono": {
-            "description": "The destination carries one mix on both jacks."
+        "description": "The destination carries one mix on both jacks."
     },
     "routingOutputMonoNote": "Same mix on both jacks.",
     "@routingOutputMonoNote": {
-            "description": "What Mono does to a destination."
+        "description": "What Mono does to a destination."
     },
     "routingOutputMute": "Mute output",
     "@routingOutputMute": {
-            "description": "Silences everything routed to this destination."
+        "description": "Silences everything routed to this destination."
     },
     "routingOutputMuted": "Muted",
     "@routingOutputMuted": {
-            "description": "The destination is silenced."
+        "description": "The destination is silenced."
     },
     "routingOutputLevel": "Level",
     "@routingOutputLevel": {
-            "description": "How loud a destination is."
+        "description": "How loud a destination is."
     },
     "routingOutputLevelPercent": "{percent}%",
     "@routingOutputLevelPercent": {
-            "placeholders": {
-                    "percent": {
-                            "type": "int"
-                    }
-            },
-            "description": "A destination level as a percentage."
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        },
+        "description": "A destination level as a percentage."
     },
     "routingOutputDbfs": "{db} dBFS",
     "@routingOutputDbfs": {
-            "placeholders": {
-                    "db": {
-                            "type": "String"
-                    }
-            },
-            "description": "A meter reading in dBFS."
+        "placeholders": {
+            "db": {
+                "type": "String"
+            }
+        },
+        "description": "A meter reading in dBFS."
     },
     "routingOutputSilent": "−∞",
     "@routingOutputSilent": {
-            "description": "A meter reading below the scale: nothing is coming out."
+        "description": "A meter reading below the scale: nothing is coming out."
     },
     "routingOutputAppliesNote": "Applies to everything routed here.",
     "@routingOutputAppliesNote": {
-            "description": "That these settings are the destination\\u2019s, not one source\\u2019s."
+        "description": "That these settings are the destination\\u2019s, not one source\\u2019s."
     },
     "routingInputNames": "Input names",
     "@routingInputNames": {
-            "description": "The page that names the hardware inputs."
+        "description": "The page that names the hardware inputs."
     },
     "routingOutputNames": "Output names",
     "@routingOutputNames": {
-            "description": "The page that names the destinations."
+        "description": "The page that names the destinations."
     },
     "routingRename": "Rename",
     "@routingRename": {
-            "description": "Changes what a port is called."
+        "description": "Changes what a port is called."
     },
     "routingRenameTitle": "Rename",
     "@routingRenameTitle": {
-            "description": "Title of the rename sheet."
+        "description": "Title of the rename sheet."
     },
     "routingRenameField": "{port} name",
     "@routingRenameField": {
-            "placeholders": {
-                    "port": {
-                            "type": "String"
-                    }
-            },
-            "description": "The rename field, named after the port it renames."
+        "placeholders": {
+            "port": {
+                "type": "String"
+            }
+        },
+        "description": "The rename field, named after the port it renames."
     },
     "routingNoPortsYet": "No ports until an interface is open.",
     "@routingNoPortsYet": {
-            "description": "Shown on a names page with no device open."
+        "description": "Shown on a names page with no device open."
     },
     "routingRowSubtitle": "Inputs, recording, destinations and output setup",
     "@routingRowSubtitle": {
-            "description": "What the Audio routing row leads to."
+        "description": "What the Audio routing row leads to."
     },
     "routingInputOrdinalSide": "Input {number} · {side}",
     "@routingInputOrdinalSide": {
-            "placeholders": {
-                    "number": {
-                            "type": "int"
-                    },
-                    "side": {
-                            "type": "String"
-                    }
+        "placeholders": {
+            "number": {
+                "type": "int"
             },
-            "description": "A jack that is one half of a linked stereo pair."
+            "side": {
+                "type": "String"
+            }
+        },
+        "description": "A jack that is one half of a linked stereo pair."
     },
     "routingTrimSide": "Recording trim · {side}",
     "@routingTrimSide": {
-            "placeholders": {
-                    "side": {
-                            "type": "String"
-                    }
-            },
-            "description": "The recording trim of one half of a linked pair."
+        "placeholders": {
+            "side": {
+                "type": "String"
+            }
+        },
+        "description": "The recording trim of one half of a linked pair."
     },
     "routingClip": "CLIP",
     "@routingClip": {
-            "description": "The meter reading when the engine holds a clip on this input."
+        "description": "The meter reading when the engine holds a clip on this input."
     },
     "routingNameSaveFailed": "Could not save this name. Try again.",
     "routingNameChangedDevice": "The audio device changed. Close this sheet and open the name again.",
@@ -4251,116 +4245,116 @@
     "routingInputUnavailable": "Input unavailable on this device",
     "routingTrackFull": "A track records at most {count} inputs. Free one to add another.",
     "@routingTrackFull": {
-            "placeholders": {
-                    "count": {
-                            "type": "int"
-                    }
-            },
-            "description": "Why a track can take no more recording inputs."
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        },
+        "description": "Why a track can take no more recording inputs."
     },
     "stageViewMixer": "Mixer",
     "@stageViewMixer": {
-            "description": "The third stage view: level, pan and mute per track."
+        "description": "The third stage view: level, pan and mute per track."
     },
     "mixerMute": "Mute",
     "@mixerMute": {
-            "description": "Silences a track without changing its level."
+        "description": "Silences a track without changing its level."
     },
     "mixerSolo": "Solo",
     "@mixerSolo": {
-            "description": "While any track is soloed, only soloed tracks are heard."
+        "description": "While any track is soloed, only soloed tracks are heard."
     },
     "mixerLevel": "Level",
     "@mixerLevel": {
-            "description": "A track’s playback level."
+        "description": "A track’s playback level."
     },
     "mixerReset": "Reset mixer",
     "@mixerReset": {
-            "description": "Every level back to unity and every pan to centre."
+        "description": "Every level back to unity and every pan to centre."
     },
     "mixerResetConfirmBody": "Reset levels and pan for all eight tracks? Mute, Solo, effects and audio stay as they are.",
     "@mixerResetConfirmBody": {
-            "description": "Confirmation before the atomic eight-track mixer reset."
+        "description": "Confirmation before the atomic eight-track mixer reset."
     },
     "a11yMixerMute": "Mute track {number}",
     "@a11yMixerMute": {
-            "placeholders": {
-                    "number": {
-                            "type": "int"
-                    }
+        "placeholders": {
+            "number": {
+                "type": "int"
             }
+        }
     },
     "a11yMixerUnmute": "Unmute track {number}",
     "@a11yMixerUnmute": {
-            "placeholders": {
-                    "number": {
-                            "type": "int"
-                    }
+        "placeholders": {
+            "number": {
+                "type": "int"
             }
+        }
     },
     "a11yMixerSolo": "Solo track {number}",
     "@a11yMixerSolo": {
-            "placeholders": {
-                    "number": {
-                            "type": "int"
-                    }
+        "placeholders": {
+            "number": {
+                "type": "int"
             }
+        }
     },
     "a11yMixerUnsolo": "Stop soloing track {number}",
     "@a11yMixerUnsolo": {
-            "placeholders": {
-                    "number": {
-                            "type": "int"
-                    }
+        "placeholders": {
+            "number": {
+                "type": "int"
             }
+        }
     },
     "a11yMixerClearSolo": "Clear every solo",
     "@a11yMixerClearSolo": {
-            "description": "The long press on a Solo button."
+        "description": "The long press on a Solo button."
     },
     "a11yMixerEditFx": "Edit track {number} effects",
     "@a11yMixerEditFx": {
-            "placeholders": {
-                    "number": {
-                            "type": "int"
-                    }
+        "placeholders": {
+            "number": {
+                "type": "int"
             }
+        }
     },
     "a11yMixerBypassFx": "Bypass track {number} effects",
     "@a11yMixerBypassFx": {
-            "placeholders": {
-                    "number": {
-                            "type": "int"
-                    }
+        "placeholders": {
+            "number": {
+                "type": "int"
             }
+        }
     },
     "a11yMixerEnableFx": "Enable track {number} effects",
     "@a11yMixerEnableFx": {
-            "placeholders": {
-                    "number": {
-                            "type": "int"
-                    }
+        "placeholders": {
+            "number": {
+                "type": "int"
             }
+        }
     },
     "a11yMixerPan": "Track {number} pan",
     "@a11yMixerPan": {
-            "placeholders": {
-                    "number": {
-                            "type": "int"
-                    }
+        "placeholders": {
+            "number": {
+                "type": "int"
             }
+        }
     },
     "a11yMixerLevel": "Track {number} level",
     "@a11yMixerLevel": {
-            "placeholders": {
-                    "number": {
-                            "type": "int"
-                    }
+        "placeholders": {
+            "number": {
+                "type": "int"
             }
+        }
     },
     "a11yMixerReset": "Reset every level to unity and every pan to centre",
     "@a11yMixerReset": {
-            "description": "The top bar’s Reset mixer action."
+        "description": "The top bar’s Reset mixer action."
     },
     "actionNone": "None",
     "@actionNone": {
@@ -4555,7 +4549,13 @@
     "pedalSetupSaveUncertain": "Saved pedal setup is uncertain. Save again to confirm it.",
     "pedalSetupSaveFailed": "Couldn't save. Your changes are still here.",
     "actionUnavailable": "Unavailable · {key}",
-    "@actionUnavailable": {"placeholders": {"key": {"type": "String"}}},
+    "@actionUnavailable": {
+        "placeholders": {
+            "key": {
+                "type": "String"
+            }
+        }
+    },
     "pedalSetupSaved": "Saved",
     "@pedalSetupSaved": {
         "description": "Shown beside the Pedals setup actions after a successful save."
@@ -4706,7 +4706,7 @@
     "@pedalColorBrightness": {
         "description": "How hard the LED is driven."
     },
-    "pedalColorDegrees": "{value}\u00b0",
+    "pedalColorDegrees": "{value}°",
     "@pedalColorDegrees": {
         "description": "The hue readout, in degrees.",
         "placeholders": {
@@ -4805,7 +4805,7 @@
     "@expressionToe": {
         "description": "The end of an expression pedal's travel with the foot forward."
     },
-    "expressionNoReading": "\u2014",
+    "expressionNoReading": "—",
     "@expressionNoReading": {
         "description": "Shown in place of a position when the jack has reported none."
     },
@@ -5429,57 +5429,97 @@
     },
     "midiRetryOff": "Retry Off",
     "midiRetryDevice": "Retry device",
-    "@midiRetryDevice": {"description": "Retry saving the selected MIDI device after persistence failed."},
+    "@midiRetryDevice": {
+        "description": "Retry saving the selected MIDI device after persistence failed."
+    },
     "midiDeviceSettingFailed": "Could not save MIDI device setting",
-    "@midiDeviceSettingFailed": {"description": "Persistent warning when the selected MIDI input was not durably confirmed."},
+    "@midiDeviceSettingFailed": {
+        "description": "Persistent warning when the selected MIDI input was not durably confirmed."
+    },
     "midiResumeOn": "Resume On",
     "midiResetConfiguration": "Reset mappings",
     "midiConfigurationUnavailable": "Saved mappings could not be read. Reset them to start again.",
     "powerRetry": "Retry",
-    "@powerRetry": {"description": "Retries a failed save before a restart or shutdown; also the click settings recovery action."},
+    "@powerRetry": {
+        "description": "Retries a failed save before a restart or shutdown; also the click settings recovery action."
+    },
     "displayBrightnessSaveFailed": "Couldn't save",
-    "@displayBrightnessSaveFailed": {"description": "Toast when a brightness change could not be saved."},
+    "@displayBrightnessSaveFailed": {
+        "description": "Toast when a brightness change could not be saved."
+    },
     "clickSettingsRecoveryTitle": "Click settings need recovery",
-    "@clickSettingsRecoveryTitle": {"description": "Click settings and safe shutdown recovery message."},
+    "@clickSettingsRecoveryTitle": {
+        "description": "Click settings and safe shutdown recovery message."
+    },
     "clickSettingsRefusedTitle": "Click change was not applied",
-    "@clickSettingsRefusedTitle": {"description": "Click settings and safe shutdown recovery message."},
+    "@clickSettingsRefusedTitle": {
+        "description": "Click settings and safe shutdown recovery message."
+    },
     "clickSettingsRecoveryBody": "Retry to recover the Click setting.",
-    "@clickSettingsRecoveryBody": {"description": "Click settings and safe shutdown recovery message."},
+    "@clickSettingsRecoveryBody": {
+        "description": "Click settings and safe shutdown recovery message."
+    },
     "recordLengthSharedInMulti": "Track length follows Loop defaults in Multi.",
-    "@recordLengthSharedInMulti": {"description": "Shared record length controls and recovery message."},
+    "@recordLengthSharedInMulti": {
+        "description": "Shared record length controls and recovery message."
+    },
     "recordLengthCaptureLocked": "Finish recording to change record length.",
-    "@recordLengthCaptureLocked": {"description": "Shared record length controls and recovery message."},
+    "@recordLengthCaptureLocked": {
+        "description": "Shared record length controls and recovery message."
+    },
     "recordTimingCaptureLocked": "Finish recording to change record timing.",
-    "@recordTimingCaptureLocked": {"description": "Reason a Record timing mapping cannot be edited during capture."},
+    "@recordTimingCaptureLocked": {
+        "description": "Reason a Record timing mapping cannot be edited during capture."
+    },
     "recordLengthSettingsRecoveryTitle": "Record length needs recovery",
-    "@recordLengthSettingsRecoveryTitle": {"description": "Shared record length controls and recovery message."},
+    "@recordLengthSettingsRecoveryTitle": {
+        "description": "Shared record length controls and recovery message."
+    },
     "recordLengthSettingsRefusedTitle": "Record length change was not applied",
-    "@recordLengthSettingsRefusedTitle": {"description": "Shared record length controls and recovery message."},
+    "@recordLengthSettingsRefusedTitle": {
+        "description": "Shared record length controls and recovery message."
+    },
     "recordLengthSettingsRecoveryBody": "Retry to recover the record length settings.",
-    "@recordLengthSettingsRecoveryBody": {"description": "Shared record length controls and recovery message."},
+    "@recordLengthSettingsRecoveryBody": {
+        "description": "Shared record length controls and recovery message."
+    },
     "recordTimingSettingsRecoveryTitle": "Record timing needs recovery",
-    "@recordTimingSettingsRecoveryTitle": {"description": "Persistent shared recording timing recovery message."},
+    "@recordTimingSettingsRecoveryTitle": {
+        "description": "Persistent shared recording timing recovery message."
+    },
     "recordTimingSettingsRefusedTitle": "Record timing change was not applied",
-    "@recordTimingSettingsRefusedTitle": {"description": "Brief feedback after a refused recording timing edit."},
+    "@recordTimingSettingsRefusedTitle": {
+        "description": "Brief feedback after a refused recording timing edit."
+    },
     "recordTimingSettingsRecoveryBody": "Retry to recover the record timing settings.",
-    "@recordTimingSettingsRecoveryBody": {"description": "Recovery action for recording timing."},
+    "@recordTimingSettingsRecoveryBody": {
+        "description": "Recovery action for recording timing."
+    },
     "recordTimingUnavailable": "Record timing is not ready",
-    "@recordTimingUnavailable": {"description": "Timing has no confirmed value during initialization or recovery."},
+    "@recordTimingUnavailable": {
+        "description": "Timing has no confirmed value during initialization or recovery."
+    },
     "clickModeCaptureLocked": "Finish recording to change Hear click.",
     "clickModeUnavailable": "Hear click is unavailable.",
     "clickModeSettingsRecoveryTitle": "Hear click needs attention",
     "clickModeSettingsRefusedTitle": "Hear click was not changed",
     "clickModeSettingsRecoveryBody": "Retry to confirm the saved click setting.",
     "recordStartUnavailable": "Recording start is unavailable.",
-    "@recordStartUnavailable": {"description": "No confirmed Count-in and Sound pair is available during initialization or recovery."},
+    "@recordStartUnavailable": {
+        "description": "No confirmed Count-in and Sound pair is available during initialization or recovery."
+    },
     "recordStartCaptureLocked": "Recording start cannot change during capture.",
-    "@recordStartCaptureLocked": {"description": "Count-in and Sound controls are locked only while audio is being captured."},
+    "@recordStartCaptureLocked": {
+        "description": "Count-in and Sound controls are locked only while audio is being captured."
+    },
     "recordStartSettingsRecoveryTitle": "Recording start needs recovery",
     "recordStartSettingsRefusedTitle": "Recording start could not change",
     "recordStartSettingsRecoveryBody": "Recording start could not be confirmed. Retry before saving or switching off.",
     "recordingInputRequiredTitle": "Choose recording inputs",
     "recordRefusedTitle": "Recording did not start. Press Record again.",
-    "@recordRefusedTitle": {"description": "A fresh-capture Record press was refused by the engine twice in a row (the track was still being emptied); the press was dropped."},
+    "@recordRefusedTitle": {
+        "description": "A fresh-capture Record press was refused by the engine twice in a row (the track was still being emptied); the press was dropped."
+    },
     "monitorRestoreFailedTitle": "Input monitoring needs recovery",
     "monitorRestoreFailedBody": "Saved input monitoring could not be fully restored. Retry to apply the saved settings.",
     "actionModeMixer": "Foot Mixer",
@@ -6132,59 +6172,144 @@
         "description": "Controller firmware page button that opens the Updates page."
     },
     "updatesPageInstalled": "Installed Segno {version}",
-    "@updatesPageInstalled": {"description": "Updates page heading: the running version.", "placeholders": {"version": {"type": "String"}}},
+    "@updatesPageInstalled": {
+        "description": "Updates page heading: the running version.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
     "updatesPageCheck": "Check for updates",
-    "@updatesPageCheck": {"description": "Updates page button that runs the read-only check."},
+    "@updatesPageCheck": {
+        "description": "Updates page button that runs the read-only check."
+    },
     "updatesPanelSoftware": "Software updates",
-    "@updatesPanelSoftware": {"description": "Updates page status panel title when nothing is on offer."},
+    "@updatesPanelSoftware": {
+        "description": "Updates page status panel title when nothing is on offer."
+    },
     "updatesPanelAvailable": "Update available",
-    "@updatesPanelAvailable": {"description": "Updates page status panel title when a newer build is offered."},
+    "@updatesPanelAvailable": {
+        "description": "Updates page status panel title when a newer build is offered."
+    },
     "updatesPanelDownloading": "Downloading",
-    "@updatesPanelDownloading": {"description": "Updates page status panel title while the update downloads and installs."},
+    "@updatesPanelDownloading": {
+        "description": "Updates page status panel title while the update downloads and installs."
+    },
     "updatesPanelReady": "Ready to install",
-    "@updatesPanelReady": {"description": "Updates page status panel title when an update is staged."},
+    "@updatesPanelReady": {
+        "description": "Updates page status panel title when an update is staged."
+    },
     "updatesPanelPaused": "Update paused",
-    "@updatesPanelPaused": {"description": "Updates page status panel title when an install was cut off."},
+    "@updatesPanelPaused": {
+        "description": "Updates page status panel title when an install was cut off."
+    },
     "updatesPageVersion": "Segno {version}",
-    "@updatesPageVersion": {"description": "Updates page status panel meta: the version on offer.", "placeholders": {"version": {"type": "String"}}},
+    "@updatesPageVersion": {
+        "description": "Updates page status panel meta: the version on offer.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
     "updatesPageVersionSize": "Segno {version} · {megabytes} MB",
-    "@updatesPageVersionSize": {"description": "Updates page status panel meta: the version on offer and its download size.", "placeholders": {"version": {"type": "String"}, "megabytes": {"type": "int"}}},
+    "@updatesPageVersionSize": {
+        "description": "Updates page status panel meta: the version on offer and its download size.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            },
+            "megabytes": {
+                "type": "int"
+            }
+        }
+    },
     "updatesPageIdle": "Look for a newer version of Segno.",
-    "@updatesPageIdle": {"description": "Updates page status sentence before any check."},
+    "@updatesPageIdle": {
+        "description": "Updates page status sentence before any check."
+    },
     "updatesPageCheckFailed": "Could not reach the update server. Check the network and try again.",
-    "@updatesPageCheckFailed": {"description": "Updates page status sentence when the check failed."},
+    "@updatesPageCheckFailed": {
+        "description": "Updates page status sentence when the check failed."
+    },
     "updatesPageDownloadFailed": "The download did not finish. The current software is unchanged.",
-    "@updatesPageDownloadFailed": {"description": "Updates page status sentence when the download or install failed."},
+    "@updatesPageDownloadFailed": {
+        "description": "Updates page status sentence when the download or install failed."
+    },
     "updatesPageInterrupted": "Download interrupted. The current software is unchanged.",
-    "@updatesPageInterrupted": {"description": "Updates page status sentence when an install was cut off by a crash or power loss."},
+    "@updatesPageInterrupted": {
+        "description": "Updates page status sentence when an install was cut off by a crash or power loss."
+    },
     "updatesPagePercent": "{percent}%",
-    "@updatesPagePercent": {"description": "Updates page download progress.", "placeholders": {"percent": {"type": "int"}}},
+    "@updatesPagePercent": {
+        "description": "Updates page download progress.",
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
     "updatesPageDownload": "Download and install",
-    "@updatesPageDownload": {"description": "Updates page button that downloads and stages the offered build."},
+    "@updatesPageDownload": {
+        "description": "Updates page button that downloads and stages the offered build."
+    },
     "updatesPageInstallRestart": "Install and restart",
-    "@updatesPageInstallRestart": {"description": "Updates page button that restarts into the staged build through the power flow."},
+    "@updatesPageInstallRestart": {
+        "description": "Updates page button that restarts into the staged build through the power flow."
+    },
     "updatesPageRetry": "Retry",
-    "@updatesPageRetry": {"description": "Updates page button that retries a failed or cut-off download."},
+    "@updatesPageRetry": {
+        "description": "Updates page button that retries a failed or cut-off download."
+    },
     "updatesPageCancel": "Cancel",
-    "@updatesPageCancel": {"description": "Updates page button that cancels a download or drops a cut-off install."},
+    "@updatesPageCancel": {
+        "description": "Updates page button that cancels a download or drops a cut-off install."
+    },
     "updatesPageRollback": "Segno {attempted} did not start, so the console went back to {restored}.",
-    "@updatesPageRollback": {"description": "Updates page notice after a staged update rolled back.", "placeholders": {"attempted": {"type": "String"}, "restored": {"type": "String"}}},
+    "@updatesPageRollback": {
+        "description": "Updates page notice after a staged update rolled back.",
+        "placeholders": {
+            "attempted": {
+                "type": "String"
+            },
+            "restored": {
+                "type": "String"
+            }
+        }
+    },
     "updatesPageDismiss": "Dismiss",
-    "@updatesPageDismiss": {"description": "Updates page button that dismisses the rollback notice."},
+    "@updatesPageDismiss": {
+        "description": "Updates page button that dismisses the rollback notice."
+    },
     "updatesPageAutomaticPanel": "Automatic",
-    "@updatesPageAutomaticPanel": {"description": "Updates page panel heading for the automatic check and the channel."},
+    "@updatesPageAutomaticPanel": {
+        "description": "Updates page panel heading for the automatic check and the channel."
+    },
     "updatesPageAutoCheck": "Check automatically",
-    "@updatesPageAutoCheck": {"description": "Updates page row: whether the read-only check runs on its own."},
+    "@updatesPageAutoCheck": {
+        "description": "Updates page row: whether the read-only check runs on its own."
+    },
     "updatesPageAutoCheckCaption": "Never downloads or installs on its own.",
-    "@updatesPageAutoCheckCaption": {"description": "Updates page caption under Check automatically."},
+    "@updatesPageAutoCheckCaption": {
+        "description": "Updates page caption under Check automatically."
+    },
     "updatesPageChannel": "Update channel",
-    "@updatesPageChannel": {"description": "Updates page row: which release channel the console follows."},
+    "@updatesPageChannel": {
+        "description": "Updates page row: which release channel the console follows."
+    },
     "updatesPageChannelProduction": "Production",
-    "@updatesPageChannelProduction": {"description": "Updates page channel choice: production releases."},
+    "@updatesPageChannelProduction": {
+        "description": "Updates page channel choice: production releases."
+    },
     "updatesPageChannelExperimental": "Experimental",
-    "@updatesPageChannelExperimental": {"description": "Updates page channel choice: pre-release builds."},
+    "@updatesPageChannelExperimental": {
+        "description": "Updates page channel choice: pre-release builds."
+    },
     "updatesPageConsolePanel": "This console",
-    "@updatesPageConsolePanel": {"description": "Updates page panel heading for the About and Controller firmware links."},
+    "@updatesPageConsolePanel": {
+        "description": "Updates page panel heading for the About and Controller firmware links."
+    },
     "settingsMidiTitle": "MIDI",
     "@settingsMidiTitle": {
         "description": "The MIDI tile on the Settings page."
@@ -6218,8 +6343,12 @@
     "@footFxSlot": {
         "description": "FX face: an unbound track switch whose track chain is empty, named by bank and position (pen 10/03).",
         "placeholders": {
-            "bank": {"type": "String"},
-            "number": {"type": "int"}
+            "bank": {
+                "type": "String"
+            },
+            "number": {
+                "type": "int"
+            }
         }
     },
     "footFxHold": "Hold",
@@ -6230,7 +6359,9 @@
     "@footFxHoldAction": {
         "description": "FX face: what a bound switch's Hold drives.",
         "placeholders": {
-            "action": {"type": "String"}
+            "action": {
+                "type": "String"
+            }
         }
     },
     "footFxUnavailable": "This pedal's effect is no longer available. Reassign it.",
@@ -6273,5 +6404,215 @@
     "footFxTargetMissing": "Target missing",
     "@footFxTargetMissing": {
         "description": "FX face: a bound switch whose chain or effect is gone."
+    },
+    "perfStoppedVolumeLost": "Capture stopped early — the USB drive was disconnected. Your loops kept playing.",
+    "@perfStoppedVolumeLost": {
+        "description": "Completion banner when the USB drive a take recorded to went away mid-take (#1177)."
+    },
+    "perfArmDriveUnavailable": "Recording didn't start. The USB drive in Save to can't be recorded to now.",
+    "@perfArmDriveUnavailable": {
+        "description": "Snackbar when a take was to go to a USB drive that went away, turned read-only or is being ejected between the choice and the press."
+    },
+    "saveTo": "Save to",
+    "@saveTo": {
+        "description": "Heading of the destination picker (pen 48 cH9UX)."
+    },
+    "saveToUnsupported": "{label} · can't be written to",
+    "@saveToUnsupported": {
+        "description": "Under the destination picker, for a drive whose filesystem the console cannot write.",
+        "placeholders": {
+            "label": {
+                "type": "String"
+            }
+        }
+    },
+    "saveToTooSlow": "{label} · too slow to record to",
+    "@saveToTooSlow": {
+        "description": "Under the destination picker, for a drive whose measured write speed is below what the recording needs.",
+        "placeholders": {
+            "label": {
+                "type": "String"
+            }
+        }
+    },
+    "connectUsbTitle": "Connect a USB drive",
+    "connectUsbBody": "Your recording stays in Internal.",
+    "connectUsbTryAgain": "Try again",
+    "perfStoppedReserve": "Storage reserve reached. The recorded part of this take is kept.",
+    "@perfStoppedReserve": {
+        "description": "Completion banner when a capture stopped at the storage reserve (pen yzmtU copy)."
+    },
+    "perfStoppedSlowStorage": "Recording stopped because the storage could not keep up. The recorded part of this take is kept.",
+    "@perfStoppedSlowStorage": {
+        "description": "Completion banner when a capture stopped because the storage fell behind and a capture buffer overflowed."
+    },
+    "perfTakesNotRecovered": "{count, plural, =1{This take could not be recovered. Its files are kept.} other{{count} takes could not be recovered. Their files are kept.}}",
+    "@perfTakesNotRecovered": {
+        "description": "Shown once at startup when the boot salvage could not recover one or more crashed captures; their files stay where they are.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "storageInternalTitle": "Internal",
+    "storageInternalSubtitle": "Sessions and audio",
+    "storageOpenLibrary": "Open library",
+    "storageFreeGigabytes": "{value} GB free",
+    "@storageFreeGigabytes": {
+        "description": "A volume's free space on the Storage page (pen 31). Decimal gigabytes, one place.",
+        "placeholders": {
+            "value": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "storageOfGigabytes": "of {value} GB",
+    "@storageOfGigabytes": {
+        "description": "A volume's size beside its free space, in whole decimal gigabytes.",
+        "placeholders": {
+            "value": {
+                "type": "int"
+            }
+        }
+    },
+    "storageCapacityUnavailable": "Capacity unavailable",
+    "@storageCapacityUnavailable": {
+        "description": "Where the free figure would be, when the volume cannot be measured (pen 47 T8ACW)."
+    },
+    "storageRecordingRemaining": "{hours} hr {minutes} min recording remaining · estimated",
+    "@storageRecordingRemaining": {
+        "placeholders": {
+            "hours": {
+                "type": "int"
+            },
+            "minutes": {
+                "type": "int"
+            }
+        }
+    },
+    "storageNoRecordingSpace": "No recording space",
+    "storageRecordingTimeUnavailable": "Remaining time unavailable",
+    "@storageRecordingTimeUnavailable": {
+        "description": "Unknown capacity cannot claim available time (accepted behaviour 6.7)."
+    },
+    "storageRecordingFormat": "{rate} kHz · 24-bit · Stereo",
+    "@storageRecordingFormat": {
+        "description": "The format the recording estimate is made at: the applied rate, stereo 24-bit PCM.",
+        "placeholders": {
+            "rate": {
+                "type": "double",
+                "format": "decimalPattern"
+            }
+        }
+    },
+    "storageReserveNote": "Internal storage · {reserve} GB reserved. Extra recordings and Undo audio use more space.",
+    "@storageReserveNote": {
+        "placeholders": {
+            "reserve": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "storageLowInternal": "Internal storage is nearly full.",
+    "storageUsbTitle": "USB drive",
+    "storageUsbNotConnected": "Not connected",
+    "storageUsbConnectHint": "Connect a drive to import or export audio.",
+    "storageUsbUnnamed": "Unnamed drive",
+    "@storageUsbUnnamed": {
+        "description": "Stands in for a USB drive's label when it has none."
+    },
+    "storageUsbEjecting": "Ejecting…",
+    "storageUsbSafeToRemove": "Safe to remove",
+    "storageUsbSafeToRemoveBody": "Your internal audio stays available.",
+    "storageUsbReadOnly": "{label} · read-only",
+    "@storageUsbReadOnly": {
+        "placeholders": {
+            "label": {
+                "type": "String"
+            }
+        }
+    },
+    "storageUsbInUse": "{label} · in use for {purpose}",
+    "@storageUsbInUse": {
+        "description": "Under a drive whose Eject is disabled because something is writing to it; purpose is one or more of the storagePurpose words, joined with a comma.",
+        "placeholders": {
+            "label": {
+                "type": "String"
+            },
+            "purpose": {
+                "type": "String"
+            }
+        }
+    },
+    "storageUsbUnsupported": "{fsType} isn't supported. Format the drive as exFAT.",
+    "@storageUsbUnsupported": {
+        "placeholders": {
+            "fsType": {
+                "type": "String"
+            }
+        }
+    },
+    "storageUsbUnformatted": "This drive isn't formatted. Format it as exFAT.",
+    "storageUsbMountFailed": "This drive could not be opened.",
+    "storageEject": "Eject",
+    "storageEjectFailed": "Could not eject. The drive is still connected. Try again.",
+    "storageEjectUnderway": "Already ejecting. Wait for it to finish.",
+    "@storageEjectUnderway": {
+        "description": "Under a drive whose Cancel came after the eject had started syncing and unmounting; it cannot be stopped."
+    },
+    "storagePurposeRecording": "recording",
+    "@storagePurposeRecording": {
+        "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
+    "storagePurposeCopy": "copying files",
+    "@storagePurposeCopy": {
+        "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
+    "storagePurposeExport": "export",
+    "@storagePurposeExport": {
+        "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
+    "storagePurposeBackup": "backup",
+    "@storagePurposeBackup": {
+        "description": "What is writing to a drive, after 'in use for' (storageUsbInUse)."
+    },
+    "powerTransferTitle": "Wait for the transfer",
+    "@powerTransferTitle": {
+        "description": "Power dialog title while a copy, export, backup or USB eject is in progress. The only action is Keep playing."
+    },
+    "powerTransferBody": "Audio is being copied, or a USB drive is being ejected. Wait for it to finish, then press the power button again if you want to power off.",
+    "@powerTransferBody": {
+        "description": "Power refuse body for a transfer in flight (accepted behaviour 7.8: transfers and eject guard power)."
+    },
+    "storageEjectStuck": "Still ejecting. If it does not finish, unplug the drive.",
+    "@storageEjectStuck": {
+        "description": "Under a drive whose eject the helper took and has not answered after two minutes; pulling the drive is the way out."
+    },
+    "saveToMeasuring": "{label} · checking the drive…",
+    "@saveToMeasuring": {
+        "description": "Under the destination picker, for a drive whose write probe has not landed yet; it cannot be chosen until it has.",
+        "placeholders": {
+            "label": {
+                "type": "String"
+            }
+        }
+    },
+    "saveToFellBack": "{label} was removed. Save to is Internal.",
+    "@saveToFellBack": {
+        "description": "Toast when the USB drive chosen in Save to goes away (pulled, ejected or read-only) and the next take goes to Internal.",
+        "placeholders": {
+            "label": {
+                "type": "String"
+            }
+        }
     }
 }

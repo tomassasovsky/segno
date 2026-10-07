@@ -2808,6 +2808,27 @@ void main() {
   });
 
   group('performance recorder', () {
+    testWidgets('a take the salvage could not recover is announced (#1198)', (
+      tester,
+    ) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderIdle(recovering: true),
+          PerformanceRecorderIdle(notRecovered: 1),
+        ]),
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+
+      expect(
+        find.text('This take could not be recovered. Its files are kept.'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('A toggles arm', (tester) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
@@ -2917,6 +2938,17 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byKey(lowDisk), findsOneWidget);
+      await tester.pumpAndSettle(const Duration(seconds: 10));
+
+      // The USB drive in Save to went between the choice and the press.
+      controller.add(
+        const PerformanceRecorderIdle(driveUnavailable: true, refusal: 4),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('tracks_perfArmDriveUnavailable_snackbar')),
+        findsOneWidget,
+      );
     });
 
     testWidgets(

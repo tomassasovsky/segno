@@ -967,7 +967,7 @@ static void test_reopen_ends_performance_capture(void) {
   printf("test_reopen_ends_performance_capture\n");
   le_engine* e = make_configured_engine();
   le_snapshot s;
-  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
   record_base_loop(e, 1.0f);
   le_engine_get_snapshot(e, &s);

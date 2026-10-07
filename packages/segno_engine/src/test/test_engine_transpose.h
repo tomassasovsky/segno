@@ -121,7 +121,7 @@ static void test_transpose_dry_until_ready_then_swap(void) {
   static float live[6 * TP_LEN], replay[6 * TP_LEN];
   le_engine* e = tp_engine(1);
   const char* dir = render_test_dir("transpose-swap");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   rev_process(e, live, 1000, 64);
   const uint64_t id = tp_install(e, 0, 2);
@@ -467,7 +467,7 @@ static void test_transpose_arm_while_transposed(void) {
   fade_result(e, id, LE_OK);
   rev_process(e, scratch, 1000, 64);
   const char* dir = render_test_dir("transpose-arm");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   const int total = 2 * TP_LEN;
   rev_process(e, live, total, 64);

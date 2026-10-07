@@ -3,7 +3,11 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:meta/meta.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart' show VolumeSpace;
+import 'package:segno_engine/segno_engine.dart'
+    as engine
+    show NativeStorageIo, RenameOutcome, StorageIo;
 import 'package:storage_repository/src/models/conflict_policy.dart';
 import 'package:storage_repository/src/models/eject_outcome.dart';
 import 'package:storage_repository/src/models/removable_volume.dart';
@@ -46,20 +50,34 @@ class SourceReadFailure implements Exception {
 /// Nothing here forks the app (#806): volumes come from the USB client's
 /// inotify watch, capacity from the engine's `statvfs`, eject from a request
 /// file the image's helper serves.
-class StorageRepository {
+///
+/// It is one owner of the app's guard table (accepted behaviour 6.12, #1221):
+/// [acquire] and [eject] check the table at their commit, and the leases and
+/// the eject in flight are reported to it as [activeOperations], so a session
+/// apply, a shutdown or a take sees them at its own commit. A `recording`
+/// lease is the exception on both counts: the take's commit is the
+/// performance repository's `capture` guard, scoped to the same volume, and
+/// reporting the lease as well would make the take refuse itself.
+class StorageRepository implements ActiveOperationSource {
   /// Creates a [StorageRepository].
   ///
   /// [exportsRoot] is the resolver the performance repository is wired with:
   /// Internal is measured there and Internal copies land under it.
   /// [volumeSpace] is the engine's `statvfs` (synchronous, microseconds on a
-  /// local volume; null when the path cannot be measured). [syncDirectory]
-  /// is the engine's directory fsync: Dart cannot open a directory, and
-  /// without it a copy's rename is not durable (see [copyFile]).
+  /// local volume; null when the path cannot be measured). [storageIo] is
+  /// the engine's durable-publication primitives (#1198): a rename that never
+  /// replaces and a directory sync, both things Dart cannot do itself (see
+  /// [copyFile]). It defaults to the engine's own, opened on the first copy,
+  /// so watching and measuring drives never needs the native library.
+  /// [guards] is the app's one guard table; the repository registers itself
+  /// with it as a source, so the table sees its leases and eject however the
+  /// table was made.
   StorageRepository({
     required UsbStorageClient client,
     required Future<String> Function() exportsRoot,
     required VolumeSpace? Function(String path) volumeSpace,
-    required bool Function(String directory) syncDirectory,
+    required GuardRegistry guards,
+    engine.StorageIo? storageIo,
     this.ejectTimeout = const Duration(seconds: 20),
     this.ejectServedTimeout = const Duration(minutes: 2),
     this.volumeLossGrace = const Duration(seconds: 10),
@@ -67,9 +85,11 @@ class StorageRepository {
   }) : _client = client,
        _exportsRoot = exportsRoot,
        _volumeSpace = volumeSpace,
-       _syncDirectory = syncDirectory,
+       _storageIo = storageIo,
+       _guards = guards,
        _copyBytes = copyBytes ?? copyChunks {
     _subscription = _client.volumes.listen(_onRecords);
+    guards.addSource(this);
   }
 
   /// Space kept free on Internal so the system, the session store and Undo
@@ -101,7 +121,9 @@ class StorageRepository {
   final UsbStorageClient _client;
   final Future<String> Function() _exportsRoot;
   final VolumeSpace? Function(String path) _volumeSpace;
-  final bool Function(String directory) _syncDirectory;
+  engine.StorageIo? _storageIo;
+  engine.StorageIo get _io => _storageIo ??= engine.NativeStorageIo();
+  final GuardRegistry _guards;
   final CopyBytes _copyBytes;
 
   late final StreamSubscription<List<RemovableVolumeRecord>> _subscription;
@@ -110,6 +132,8 @@ class StorageRepository {
   final _leases = <HeldLease>[];
   final _settledWaiters = <Completer<void>>[];
   final _liveParts = <String>{};
+  final _sweptDirectories = <String>{};
+  final _unanswered = <int, String>{};
   final _random = Random.secure();
   Map<int, RemovableVolumeRecord> _records = const {};
   _Eject? _eject;
@@ -133,9 +157,14 @@ class StorageRepository {
     for (final record in _records.values)
       RemovableVolume.fromRecord(
         record,
-        ejecting: _eject?.generation == record.generation,
+        ejecting: _ejecting(record.generation),
       ),
   ];
+
+  // In flight now, or taken by the helper and still unanswered after the
+  // eject gave up waiting: either way the drive may be unmounting.
+  bool _ejecting(int generation) =>
+      _eject?.generation == generation || _unanswered.containsKey(generation);
 
   /// Whether an eject is in flight: the current phase for each new listener,
   /// then every change.
@@ -176,6 +205,14 @@ class StorageRepository {
       }
     }
     _records = next;
+    // A taken eject that outlived the wait is over once the drive answers
+    // (its record names the request, or turns ejected) or goes.
+    _unanswered.removeWhere((generation, request) {
+      final record = next[generation];
+      return record == null ||
+          record.eject?.request == request ||
+          record.status == RemovableVolumeRecordStatus.ejected;
+    });
     _settleEject();
     _publishVolumes();
   }
@@ -206,7 +243,8 @@ class StorageRepository {
   ];
 
   /// Whether a write or an eject is in progress (shutdown's guard, §7.8).
-  bool get transferInFlight => _leases.isNotEmpty || _eject != null;
+  bool get transferInFlight =>
+      _leases.isNotEmpty || _eject != null || _unanswered.isNotEmpty;
 
   /// Completes once no lease is held and no eject is in flight; at once when
   /// none is. Restart and shutdown wait on it before they halt (§7.8).
@@ -229,10 +267,28 @@ class StorageRepository {
   /// Takes a hold on [destination] for [purpose]. Throws the
   /// [StorageFailure] a write there would meet: `readOnly`, `unsupported`, or
   /// `volumeLost` for a generation that is not present, is being ejected or
-  /// has been ejected.
-  HeldLease acquire(StorageDestination destination, String purpose) {
+  /// has been ejected; or `busy` naming what holds it when the guard table
+  /// forbids a `transfer` there now (a take on that volume, a shutdown).
+  ///
+  /// The table is checked here, at the commit, and the lease itself is then
+  /// reported through [activeOperations] for as long as it is held. A
+  /// `recording` lease is not checked or reported (see the class note).
+  HeldLease acquire(StorageDestination destination, WritePurpose purpose) {
     if (destination is RemovableDestination) {
       _checkWritable(destination.generation);
+    }
+    if (purpose != WritePurpose.recording) {
+      try {
+        _guards
+            .enter(
+              GuardKind.transfer,
+              _scopeOf(destination),
+              purpose: purpose.name,
+            )
+            .release();
+      } on GuardRefused catch (refusal) {
+        throw StorageFailure.busy(refusal.blockers.first.kind);
+      }
     }
     final held = HeldLease(
       WriteLease(target: destination, purpose: purpose),
@@ -253,7 +309,7 @@ class StorageRepository {
   /// a body must stop at its first failure rather than recreate directories.
   Future<T> withWriteLease<T>(
     StorageDestination target,
-    String purpose,
+    WritePurpose purpose,
     Future<T> Function(String root) body,
   ) async {
     final held = acquire(target, purpose);
@@ -270,7 +326,7 @@ class StorageRepository {
 
   void _checkWritable(int generation) {
     final record = _records[generation];
-    if (record == null || _eject?.generation == generation) {
+    if (record == null || _ejecting(generation)) {
       throw StorageFailure.volumeLost(generation);
     }
     switch (record.status) {
@@ -321,7 +377,17 @@ class StorageRepository {
   /// [ejectTimeout] a request the helper has not taken is withdrawn and the
   /// eject fails. One the helper has taken cannot be withdrawn (it is already
   /// syncing and unmounting), so the eject stays in flight until the helper
-  /// answers, or for [ejectServedTimeout] at most.
+  /// answers, for [ejectServedTimeout] at most. Past that it completes
+  /// [stillEjecting], and the drive goes on reading `ejecting` (no lease can
+  /// start on it, shutdown waits) until the helper answers or the drive is
+  /// pulled: the unmount may still finish, and a writer let in meanwhile
+  /// would write into the bare mount point. Ejecting it again before then
+  /// also answers [stillEjecting].
+  ///
+  /// Throws [GuardRefused] when the guard table forbids an eject of this
+  /// volume now (a take or a copy on it that holds no lease here, a
+  /// shutdown); the eject in flight is then reported through
+  /// [activeOperations].
   Future<EjectOutcome> eject(int generation) async {
     final holders = leasesOn(StorageDestination.removable(generation));
     if (holders.isNotEmpty) throw EjectRefused(holders);
@@ -329,6 +395,16 @@ class StorageRepository {
     if (!_records.containsKey(generation)) {
       return const EjectOutcome.failed('removed');
     }
+    if (_unanswered.containsKey(generation)) {
+      return const EjectOutcome.failed(stillEjecting);
+    }
+    _guards
+        .enter(
+          GuardKind.eject,
+          GuardScope.removable(generation),
+          purpose: ejectPurpose,
+        )
+        .release();
     final eject = _Eject(generation, _client.requestEject(generation));
     _eject = eject;
     _publishPhase();
@@ -352,7 +428,10 @@ class StorageRepository {
           // ejected anyway.
           return answer.timeout(
             ejectServedTimeout,
-            onTimeout: () => const EjectOutcome.failed('timeout'),
+            onTimeout: () {
+              _unanswered[generation] = eject.requestId!;
+              return const EjectOutcome.failed(stillEjecting);
+            },
           );
         },
       );
@@ -364,25 +443,62 @@ class StorageRepository {
     }
   }
 
-  /// Withdraws the eject in flight if the helper has not taken it yet; the
-  /// eject then completes cancelled. A no-op when nothing is in flight. A
-  /// request the helper has already taken cannot be withdrawn: the eject
-  /// carries on and completes with the helper's answer, which the volume's
-  /// status also shows.
-  Future<void> cancelEject() async {
+  /// Withdraws the eject in flight if the helper has not taken it yet, and
+  /// says whether it did; the eject then completes cancelled. `false` when
+  /// nothing is in flight, and when the helper has already taken the request:
+  /// it is syncing and unmounting, the eject carries on and completes with
+  /// the helper's answer, and a caller should say so rather than look as if
+  /// the cancel worked.
+  Future<bool> cancelEject() async {
     final eject = _eject;
-    if (eject == null) return;
+    if (eject == null) return false;
     final String requestId;
     try {
       requestId = await eject.request;
     } on FileSystemException {
-      return; // never filed: eject() reports that itself
+      return false; // never filed: eject() reports that itself
     }
     final withdrawn = await _client.cancelEject(requestId);
     if (withdrawn && !eject.outcome.isCompleted) {
       eject.outcome.complete(const EjectOutcome.cancelled());
     }
+    return withdrawn;
   }
+
+  /// The reason an eject fails with when the helper took the request and has
+  /// not answered: the drive may still be unmounting.
+  static const String stillEjecting = 'stillEjecting';
+
+  /// What an eject is called in the guard table.
+  static const String ejectPurpose = 'eject';
+
+  /// The leases (as `transfer`) and the eject in flight or still unanswered
+  /// (as `eject`), for the guard table. Recording leases are left out: the
+  /// take reports itself as `capture`.
+  @override
+  Iterable<ActiveOperation> get activeOperations => [
+    for (final held in _leases)
+      if (held.purpose != WritePurpose.recording)
+        ActiveOperation(
+          kind: GuardKind.transfer,
+          scope: _scopeOf(held.target),
+          purpose: held.purpose.name,
+        ),
+    for (final generation in {?_eject?.generation, ..._unanswered.keys})
+      ActiveOperation(
+        kind: GuardKind.eject,
+        scope: GuardScope.removable(generation),
+        purpose: ejectPurpose,
+      ),
+  ];
+
+  static GuardScope _scopeOf(StorageDestination destination) =>
+      switch (destination) {
+        InternalDestination() => const GuardScope.internal(),
+        RemovableDestination(:final generation) => GuardScope.removable(
+          generation,
+        ),
+      };
 
   void _settleEject() {
     final eject = _eject;
@@ -450,10 +566,14 @@ class StorageRepository {
 
   /// Whether Internal has less free space than [internalReserveBytes]. False
   /// when Internal cannot be measured: unknown is not full.
-  Future<bool> lowInternalSpace() async {
-    final measured = await space(const StorageDestination.internal());
-    return measured != null && measured.freeBytes < internalReserveBytes;
-  }
+  Future<bool> lowInternalSpace() async =>
+      isLowInternalSpace(await space(const StorageDestination.internal()));
+
+  /// The rule [lowInternalSpace] applies, for a reading of Internal a caller
+  /// already holds (the Storage page reads it every few seconds and must not
+  /// measure twice, or keep its own copy of the rule).
+  static bool isLowInternalSpace(VolumeSpace? internal) =>
+      internal != null && internal.freeBytes < internalReserveBytes;
 
   String? _mountedPath(int generation) {
     final record = _records[generation];
@@ -483,18 +603,25 @@ class StorageRepository {
   /// The bytes go to a part file of the copy's own (`.<name>.<random>.part`,
   /// hidden, so neither the Library nor a computer lists it, and never shared
   /// with another copy in flight), are fsynced, and are renamed to the final
-  /// name; then the directory is synced so the rename itself is durable. The
-  /// destination never holds a half-written file under its final name, and
-  /// on any failure the part is deleted and the source is not touched. Parts
-  /// a crash left behind in the directory are swept by the next copy into it.
+  /// name; then the directory is synced so the rename itself is durable, and
+  /// so is every parent the copy created, bottom up, so a new directory's own
+  /// entry survives too. A sync the device refuses fails the copy as `io`:
+  /// the file is in place but not known to be durable, and "copied" is not
+  /// claimed. The destination never holds a half-written file under its final
+  /// name, and on any failure the part is deleted and the source is not
+  /// touched. Parts a crash left behind are swept by the first copy into each
+  /// directory.
   ///
   /// A name already there (a file or a directory) is handled per
   /// [onConflict]: `ask` throws [NameConflict] before writing anything,
   /// `keepBoth` writes `name (2).ext` (then ` (3)`, ...), `replace` renames
-  /// over it. For `ask` and `keepBoth` the final name is claimed atomically
-  /// (an exclusive create) just before the rename, so a file that appears
-  /// under it while the bytes are copied is never overwritten: `ask` then
-  /// throws [NameConflict] after all, and `keepBoth` takes the next suffix.
+  /// over it. For `ask` and `keepBoth` the part is published with a rename
+  /// that never replaces (`renameat2(RENAME_NOREPLACE)` through the engine),
+  /// so a file that appears under the name while the bytes are copied is
+  /// never overwritten: `ask` then throws [NameConflict] after all, and
+  /// `keepBoth` takes the next suffix. Where the filesystem cannot refuse a
+  /// replacement, the name is claimed with an exclusive create first and the
+  /// part renamed over the empty claim.
   ///
   /// Failures are typed [StorageFailure]s: `full` (ENOSPC), `readOnly` (EROFS,
   /// or a read-only volume), `volumeLost` when the volume goes away before or
@@ -518,7 +645,7 @@ class StorageRepository {
         'must be a relative path inside the destination',
       );
     }
-    final held = acquire(destination, 'copy');
+    final held = acquire(destination, WritePurpose.copy);
     try {
       final wanted = '${await _writeRoot(destination)}/$relativePath';
       if (onConflict == ConflictPolicy.ask && _taken(wanted)) {
@@ -530,12 +657,25 @@ class StorageRepository {
       );
       _liveParts.add(part.path);
       try {
-        directory.createSync(recursive: true);
+        final created = _createDirectories(directory);
         _sweepStaleParts(directory);
         await _copyBytes(File(sourcePath), part, () => held.isLost);
         if (held.isLost) throw const FileSystemException('volume lost');
         final target = _publish(part, wanted, onConflict);
-        _syncDirectory(directory.path);
+        try {
+          _io.syncDirectory(directory.path);
+          for (final made in created) {
+            _io.syncDirectory(made.parent.path);
+          }
+        } on FileSystemException catch (e) {
+          // The file is in place and complete; only its durability is in
+          // doubt. A pulled drive is still a lost volume (the sync carries
+          // the errno); anything else says where the file is.
+          final failure = await _classify(e, destination, held);
+          throw failure is StorageIo
+              ? StorageFailure.io(failure.reason, writtenTo: target)
+              : failure;
+        }
         return target;
       } on SourceReadFailure catch (e) {
         _discard(part);
@@ -567,9 +707,27 @@ class StorageRepository {
 
   static final _partName = RegExp(r'^\..+\.[0-9a-f]{16}\.part$');
 
+  /// Creates [directory] and the parents it lacks, and returns the ones it
+  /// created, deepest first.
+  static List<Directory> _createDirectories(Directory directory) {
+    final missing = <Directory>[];
+    for (
+      var dir = directory;
+      !_taken(dir.path) && dir.parent.path != dir.path;
+      dir = dir.parent
+    ) {
+      missing.add(dir);
+    }
+    directory.createSync(recursive: true);
+    return missing;
+  }
+
   /// Deletes the part files a crash left in [directory]; never one a copy in
-  /// flight is writing.
+  /// flight is writing. Once per directory per run: a crash leaves its parts
+  /// before this run starts, and a stick's root can hold thousands of files
+  /// to list.
   void _sweepStaleParts(Directory directory) {
+    if (!_sweptDirectories.add(directory.path)) return;
     for (final entity in directory.listSync(followLinks: false)) {
       final name = entity.path.substring(entity.path.lastIndexOf('/') + 1);
       if (entity is File &&
@@ -581,14 +739,15 @@ class StorageRepository {
   }
 
   /// Renames [part] to its final name under [onConflict] and returns it.
-  static String _publish(File part, String wanted, ConflictPolicy onConflict) {
+  String _publish(File part, String wanted, ConflictPolicy onConflict) {
     switch (onConflict) {
       case ConflictPolicy.replace:
         part.renameSync(wanted);
         return wanted;
       case ConflictPolicy.ask:
-        if (!_claim(wanted)) throw NameConflict(wanted);
-        _renameOntoClaim(part, wanted);
+        if (!_publishWithoutReplacing(part, wanted)) {
+          throw NameConflict(wanted);
+        }
         return wanted;
       case ConflictPolicy.keepBoth:
         final slash = wanted.lastIndexOf('/');
@@ -599,18 +758,33 @@ class StorageRepository {
         final extension = wanted.substring(split);
         for (var n = 1; ; n++) {
           final candidate = n == 1 ? wanted : '$stem ($n)$extension';
-          if (_claim(candidate)) {
-            _renameOntoClaim(part, candidate);
-            return candidate;
-          }
+          if (_publishWithoutReplacing(part, candidate)) return candidate;
         }
+    }
+  }
+
+  /// Renames [part] to [path] unless something is there, and says whether it
+  /// did. Through the engine's no-replace rename; where the filesystem cannot
+  /// refuse a replacement, through an exclusive-create claim instead.
+  bool _publishWithoutReplacing(File part, String path) {
+    switch (_io.renameWithoutReplacing(part.path, path)) {
+      case engine.RenameOutcome.renamed:
+        return true;
+      case engine.RenameOutcome.nameTaken:
+        return false;
+      case engine.RenameOutcome.unsupported:
+        if (!_claim(path)) return false;
+        _renameOntoClaim(part, path);
+        return true;
     }
   }
 
   /// Takes [path] for this copy by creating it exclusively (O_EXCL), so no
   /// other writer can get it between this check and the rename onto it.
   /// False when something (a file, a directory, a link) is already there:
-  /// O_EXCL refuses all three with EEXIST.
+  /// O_EXCL refuses all three with EEXIST. The fallback for filesystems that
+  /// cannot rename without replacing: for the rename's window an empty file
+  /// stands at the final name.
   static bool _claim(String path) {
     try {
       File(path).createSync(exclusive: true);

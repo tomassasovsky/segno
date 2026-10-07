@@ -41,6 +41,7 @@ export 'src/engine_snapshot.dart'
         LooperMode,
         LooperModeGate,
         PendingLaunchAction,
+        PerfStopReason,
         RecordStartEditKind,
         RecordTiming,
         SpeedFactor,
@@ -75,6 +76,7 @@ export 'src/mock_audio_engine.dart' show MockAudioEngine, MockPluginSlotHandle;
 export 'src/native_audio_engine.dart'
     show NativeAudioEngine, PumpedNativeEngine;
 export 'src/output_fx_snapshot.dart';
+export 'src/perf_target.dart' show PerfTarget;
 export 'src/performance_render_progress.dart'
     show PerformanceRenderProgress, PerformanceRenderTrackStatus;
 export 'src/plugin_descriptor.dart'
@@ -92,6 +94,7 @@ export 'src/storage_io.dart'
         FileTruncated,
         FileUnreadable,
         NativeStorageIo,
+        RenameOutcome,
         StorageIo;
 export 'src/track_effect.dart'
     show

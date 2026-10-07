@@ -12,7 +12,8 @@ without importing engine code.
 
 ## Where it lives
 
-`events.log` sits alongside `master.pcm`, `input-<N>.pcm`, and
+`events.log` sits alongside the audio parts (`master-NNN.wav`,
+`input-<N>-NNN.wav`; `master.pcm` and `input-<N>.pcm` before #1198) and
 `performance.json` under the capture directory passed to `le_perf_arm`
 (`packages/segno_engine/src/core/perf_drain.c`). It is opened once at arm,
 appended to every ~250ms drain cycle, and never truncated or rewritten —

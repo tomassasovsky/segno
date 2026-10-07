@@ -476,11 +476,31 @@ void onPerformanceRecorderState(
     _showPerformanceLowDiskBlocked(context);
     return;
   }
+  if (state is PerformanceRecorderIdle && state.driveUnavailable) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('tracks_perfArmDriveUnavailable_snackbar'),
+          content: Semantics(
+            liveRegion: true,
+            child: AppText(context.l10n.perfArmDriveUnavailable),
+          ),
+        ),
+      );
+    return;
+  }
   // Refused at its commit by an operation in flight (#1198): a toast, since
   // nothing needs doing beyond waiting for it (the popup-severity rule).
   final refusedBy = state is PerformanceRecorderIdle ? state.refusedBy : null;
   if (refusedBy != null) {
     _showPerformanceArmRefused(context, refusedBy);
+    return;
+  }
+  // A take the boot salvage could not recover must not just vanish from
+  // view: say so; its files are kept (#1198).
+  if (state is PerformanceRecorderIdle && state.notRecovered > 0) {
+    _showPerformanceNotRecovered(context, state.notRecovered);
     return;
   }
   // Entering Rendering opens the dialog on its rendering face; entering
@@ -512,6 +532,20 @@ void _showPerformanceArmRefused(BuildContext context, GuardKind refusedBy) {
           child: AppText(
             l10n.perfArmRefused(l10n.operationBusy(refusedBy.name)),
           ),
+        ),
+      ),
+    );
+}
+
+void _showPerformanceNotRecovered(BuildContext context, int count) {
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(
+        key: const Key('tracks_perfNotRecovered_snackbar'),
+        content: Semantics(
+          liveRegion: true,
+          child: AppText(context.l10n.perfTakesNotRecovered(count)),
         ),
       ),
     );

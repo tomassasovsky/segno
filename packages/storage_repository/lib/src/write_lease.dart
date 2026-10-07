@@ -4,6 +4,24 @@ import 'package:equatable/equatable.dart';
 import 'package:storage_repository/src/models/storage_destination.dart';
 import 'package:storage_repository/src/models/storage_failure.dart';
 
+/// What a write is for. The Storage page names it, in the user's language,
+/// beside a disabled Eject; it is a closed set so every writer's word has a
+/// translation and two writers of one kind read as one.
+enum WritePurpose {
+  /// A take being recorded to the destination.
+  recording,
+
+  /// A file copy (`StorageRepository.copyFile`): an import or an export of
+  /// files.
+  copy,
+
+  /// An export rendered straight to the destination.
+  export,
+
+  /// A backup.
+  backup,
+}
+
 /// A write in progress on a destination: where it goes and what it is for.
 ///
 /// A value, so it can be listed, compared and built `const` (the Library's
@@ -17,9 +35,8 @@ class WriteLease extends Equatable {
   /// Where the write goes.
   final StorageDestination target;
 
-  /// What for, in words the Storage page shows next to a disabled Eject
-  /// (`recording`, `export`, `backup`, `copy`).
-  final String purpose;
+  /// What for; the Storage page names it next to a disabled Eject.
+  final WritePurpose purpose;
 
   @override
   List<Object?> get props => [target, purpose];
@@ -45,7 +62,7 @@ class HeldLease {
   StorageDestination get target => lease.target;
 
   /// What for.
-  String get purpose => lease.purpose;
+  WritePurpose get purpose => lease.purpose;
 
   final void Function(HeldLease held) _onRelease;
   final _lost = Completer<StorageFailure>();
