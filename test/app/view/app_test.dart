@@ -663,6 +663,7 @@ class _WaveformAudioEngine extends FakeAudioEngine {
 }
 
 const _named = PowerSnapshot(currentSessionName: 'set');
+
 /// Marks the one-shot `Hold · Tuner` default (#1229) as already attempted,
 /// for tests about other boot work: on a fresh store, boot adds it and says
 /// so with a toast of its own.
