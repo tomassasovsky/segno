@@ -1287,7 +1287,7 @@ static int le_pd_seal_part(le_perf_drain* d, le_pd_file* pf) {
 static int32_t le_pd_stream_count(const le_perf_drain* d) {
   int32_t n = 1;
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (d->engine->perf.input_mask & (1u << c)) n++;
+    if (d->engine->perf.input_mask & (UINT64_C(1) << c)) n++;
   }
   return n;
 }
@@ -1551,7 +1551,7 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
 
   int first = 1;
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (!(d->engine->perf.input_mask & (1u << c))) continue;
+    if (!(d->engine->perf.input_mask & (UINT64_C(1) << c))) continue;
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "%s%d",
                     first ? "" : ", ", c);
     first = 0;
@@ -1607,7 +1607,7 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
     int first_part = 1;
     for (int32_t k = -1; k < LE_MAX_MONITORED_INPUTS; ++k) {
       const le_pd_file* pf = k < 0 ? &d->master_file : &d->monitor_file[k];
-      if (k >= 0 && !(d->engine->perf.input_mask & (1u << k))) continue;
+      if (k >= 0 && !(d->engine->perf.input_mask & (UINT64_C(1) << k))) continue;
       const uint64_t frame_bytes = (uint64_t)pf->channels * sizeof(float);
       for (int i = 0; i < d->sealed_count && off >= 0 && off < LE_PD_JSON_BUF;
            ++i) {
@@ -1748,7 +1748,7 @@ done:
 /* The streams a take writes: the master, then each captured input. */
 static le_pd_file* le_pd_stream(le_perf_drain* d, int32_t k) {
   if (k < 0) return &d->master_file;
-  if (!(d->engine->perf.input_mask & (1u << k))) return NULL;
+  if (!(d->engine->perf.input_mask & (UINT64_C(1) << k))) return NULL;
   return &d->monitor_file[k];
 }
 
@@ -2050,7 +2050,7 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
     ok = 0;
   }
   for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (!(e->perf.input_mask & (1u << c))) continue;
+    if (!(e->perf.input_mask & (UINT64_C(1) << c))) continue;
     if (!le_pd_drain_ring(d, &d->monitor_file[c], &e->perf.monitor_ring[c],
                           scratch, LE_PD_SCRATCH_SAMPLES, pop_to)) {
       ok = 0;
@@ -2077,7 +2077,7 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
       ok = 0;
     }
     for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
-      if (!(e->perf.input_mask & (1u << c))) continue;
+      if (!(e->perf.input_mask & (UINT64_C(1) << c))) continue;
       if (!le_pd_catch_up(d, &d->monitor_file[c], fill_to)) ok = 0;
     }
   }
@@ -2101,7 +2101,7 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
     ok = 0;
   }
   for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (!(e->perf.input_mask & (1u << c))) continue;
+    if (!(e->perf.input_mask & (UINT64_C(1) << c))) continue;
     if (d->monitor_file[c].w.file == NULL || !le_pd_flush(d->monitor_file[c].w.file)) {
       ok = 0;
     }
@@ -2308,7 +2308,7 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
   d->master_file.channels = engine->perf.master_channels;
   int ok = le_pd_open_part(d, &d->master_file);
   for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (!(engine->perf.input_mask & (1u << c))) continue;
+    if (!(engine->perf.input_mask & (UINT64_C(1) << c))) continue;
     d->monitor_file[c].stream = 1 + c;
     d->monitor_file[c].channels = 2;
     ok = le_pd_open_part(d, &d->monitor_file[c]);

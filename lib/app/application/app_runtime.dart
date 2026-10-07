@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:backing_repository/backing_repository.dart';
 import 'package:controller_repository/controller_repository.dart';
+import 'package:instrument_repository/instrument_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -17,6 +18,7 @@ import 'package:segno/backing/application/session_backing.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
 import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/instruments/application/instrument_settings.dart';
 import 'package:segno/looper/application/backing_settings.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
@@ -54,6 +56,7 @@ class AppRuntime {
     required Future<void> Function() reboot,
     required Future<void> Function() storageSettled,
     required GuardRegistry guards,
+    InstrumentRepository? instruments,
   }) {
     fxPersistence = FxChainPersistence(looper: repository);
     mixPersistence = SettingsMixPersistence(settings);
@@ -77,6 +80,13 @@ class AppRuntime {
       repository: backing,
       settings: backingSettings,
     );
+    this.instruments = instruments == null
+        ? null
+        : InstrumentSettings(
+            looper: repository,
+            instruments: instruments,
+            settings: settings,
+          );
     owners = SettingsOwners([
       ...tempo.owners,
       ...playback.owners,
@@ -84,6 +94,7 @@ class AppRuntime {
       ...timing.owners,
       ...fade.owners,
       ...backingSettings.owners,
+      ...?this.instruments?.owners,
     ]);
     // App-wide: shutdown asks it about transfers outside the Storage page.
     this.storage = StorageCubit(
@@ -197,6 +208,10 @@ class AppRuntime {
   late final BackingCubit backingView;
   late final BackingMixCubit backingMixView;
 
+  /// The instruments' edits and their owner (#1197); null without an
+  /// instrument repository.
+  late final InstrumentSettings? instruments;
+
   /// The owned settings that run on the shared owner, in their fixed order.
   late final SettingsOwners owners;
 
@@ -229,6 +244,7 @@ class AppRuntime {
       tuner.load(),
       backingSettings.load(),
       backingPlayer.start(),
+      ?instruments?.load(),
       control.load(),
     ]).then((_) => session.recordBaseline());
   }
@@ -304,6 +320,7 @@ class AppRuntime {
       backingSettings.close,
       fade.close,
       tuner.close,
+      ?instruments?.close,
       timing.close,
       record.close,
       playback.close,

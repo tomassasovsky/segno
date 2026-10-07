@@ -62,6 +62,9 @@ abstract final class AppToastId {
   /// Persistent backing mix and click pan storage recovery (#1200).
   static const backingMixSettings = 'app_backingMixSettings_error';
   static const clickPanSettings = 'app_clickPanSettings_error';
+
+  /// Persistent instrument definitions storage recovery (#1197).
+  static const instrumentsSettings = 'app_instrumentsSettings_error';
 }
 
 final Map<String, ToastificationItem> _active = {};

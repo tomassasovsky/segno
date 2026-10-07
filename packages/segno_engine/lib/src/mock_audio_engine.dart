@@ -20,6 +20,7 @@ import 'package:segno_engine/src/perf_target.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/selected_render.dart';
+import 'package:segno_engine/src/simulated_instruments.dart';
 import 'package:segno_engine/src/track_effect.dart';
 import 'package:segno_engine/src/volume_space.dart';
 
@@ -28,7 +29,9 @@ import 'package:segno_engine/src/volume_space.dart';
 ///
 /// Reports [inputChannels] × [outputChannels] (default 18 × 20), enumerates a
 /// single duplex device, and reflects lane / monitor routing in [snapshot].
-class MockAudioEngine implements AudioEngine {
+/// Instrument slots follow [SimulatedInstruments]: events are recorded and
+/// voices reported, no audio is made.
+class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   /// Creates a [MockAudioEngine].
   MockAudioEngine({
     int inputChannels = defaultInputChannels,
@@ -38,7 +41,10 @@ class MockAudioEngine implements AudioEngine {
        outputChannels = outputChannels,
        deviceLabel =
            deviceLabel ??
-           'Mock Interface (${inputChannels}i${outputChannels}o)';
+           'Mock Interface (${inputChannels}i${outputChannels}o)' {
+    // Like the native engine: instrument calls need a configured engine.
+    simulatedInstrumentsConfigured = false;
+  }
 
   /// The input the tuner is armed on, or `-1`. Mirrors the native gate.
   int _tunerInput = -1;
@@ -297,6 +303,9 @@ class MockAudioEngine implements AudioEngine {
       _backingRelease();
     }
     _backingEpoch++;
+    // Configure re-initialises the synth: slots, voices and routes are gone
+    // and the epoch advances, as on the engine.
+    resetSimulatedInstruments();
     return EngineResult.ok;
   }
 
@@ -442,6 +451,8 @@ class MockAudioEngine implements AudioEngine {
       monitorPeaks: List<double>.filled(inputs, 0),
       outputPeaks: List<double>.filled(outputs, 0),
       tracks: [for (final track in _tracks) track.snapshot()],
+      instruments: simulatedInstrumentsSnapshot,
+      midiInput: simulatedMidiInputSnapshot,
     );
   }
 

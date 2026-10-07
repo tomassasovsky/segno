@@ -36,6 +36,8 @@ structs:
     - 'le_perf_target'
     - 'le_audition_state'
     - 'le_backing_decode_info'
+    - 'le_synth_patch_desc'
+    - 'le_synth_param_desc'
 enums:
   include:
     - 'le_result'
@@ -50,6 +52,8 @@ enums:
     - 'le_xrun_kind'
     - 'le_reopen_outcome'
     - 'le_perf_stop_reason'
+    - 'le_synth_family'
+    - 'le_synth_param_unit'
 preamble: |
   // ignore_for_file: type=lint, doc_directive_unknown
   // coverage:ignore-file

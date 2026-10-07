@@ -18,6 +18,8 @@ void main() {
       expect(EngineResult.fromCode(-12), EngineResult.tooLong);
       expect(EngineResult.fromCode(-16), EngineResult.noCommonCycle);
       expect(EngineResult.fromCode(-17), EngineResult.tracksChanged);
+      expect(EngineResult.fromCode(-14), EngineResult.noInstrument);
+      expect(EngineResult.fromCode(-15), EngineResult.unknownPatch);
     });
 
     test('maps unknown codes to invalid', () {

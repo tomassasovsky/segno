@@ -5739,6 +5739,12 @@
     "fadeSettingsRecoveryTitle": "Fade duration needs recovery",
     "fadeSettingsRefusedTitle": "Fade duration change was not saved",
     "fadeSettingsRecoveryBody": "Retry to recover the Fade duration settings.",
+    "instrumentsSettingsRecoveryTitle": "Instruments need recovery",
+    "@instrumentsSettingsRecoveryTitle": {
+        "description": "Persistent instrument definitions could not be read or confirmed."
+    },
+    "instrumentsSettingsRefusedTitle": "Instrument change was not saved",
+    "instrumentsSettingsRecoveryBody": "Retry to recover the instruments.",
     "backingMixSettingsRecoveryTitle": "Backing volume and routing need recovery",
     "backingMixSettingsRefusedTitle": "Backing volume or routing change was not saved",
     "backingMixSettingsRecoveryBody": "Retry to recover the backing volume, pan, outputs and At end.",
