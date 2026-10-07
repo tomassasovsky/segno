@@ -3925,6 +3925,12 @@ class LooperRepository {
         )) {
       throw StateError('session mix cannot be restored');
     }
+    // Audio & tempo (#1179): overrides name real tracks. Refused here,
+    // before the rig is cleared.
+    if (rig.trackFollowTempoOverrides.keys.any((c) => c < 0 || c >= 8) ||
+        rig.trackPitchModeOverrides.keys.any((c) => c < 0 || c >= 8)) {
+      throw StateError('session audio and tempo cannot be restored');
+    }
     final restoredMix = _MixIntent(
       pans: rig.trackPans,
       trackLevels: rig.trackLevels,
@@ -3984,6 +3990,8 @@ class LooperRepository {
     final recordTimingOverrides = Map.of(rig.trackRecordTimingOverrides);
     final overdubDecayOverrides = Map.of(rig.trackOverdubDecayOverrides);
     final oneShotOverrides = Map.of(rig.trackOneShotOverrides);
+    final followOverrides = Map.of(rig.trackFollowTempoOverrides);
+    final pitchOverrides = Map.of(rig.trackPitchModeOverrides);
     final lengthPresetOverrides = Map.of(rig.trackLengthPresetOverrides);
     _requireSessionSetting(
       await settleFxRecipes(
@@ -4131,6 +4139,25 @@ class LooperRepository {
     _requireSessionSetting(setClickOutput(rig.clickMask));
     _requireSessionSetting(setClickVolume(rig.clickVolume));
     _requireSessionSetting(await settleClickVolume());
+    requireCurrent();
+
+    // Audio & tempo (#1179): the session's vectors replace the live ones,
+    // before the takes so they commit at their rates.
+    _requireSessionSetting(
+      setPitchModeSettings(
+        defaultMode: rig.defaultPitchMode,
+        trackOverrides: pitchOverrides,
+      ),
+    );
+    _requireSessionSetting(await settlePitchMode());
+    requireCurrent();
+    _requireSessionSetting(
+      setFollowTempoSettings(
+        defaultFollow: rig.defaultFollowTempo,
+        trackOverrides: followOverrides,
+      ),
+    );
+    _requireSessionSetting(await settleFollowTempo());
     requireCurrent();
 
     // Session-level mode + crown (B5c), applied here — before any content is

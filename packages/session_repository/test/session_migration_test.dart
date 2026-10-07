@@ -22,6 +22,10 @@ const _live = SessionSettings(
   defaultMultiple: 4,
   recordTiming: RecordTiming.loopStart,
   trackRecordTimingOverrides: {3: RecordTiming.bar},
+  defaultFollowTempo: false,
+  trackFollowTempoOverrides: {2: true},
+  defaultPitchMode: PitchMode.followsSpeed,
+  trackPitchModeOverrides: {4: PitchMode.unchanged},
 );
 
 void main() {
@@ -292,8 +296,37 @@ void main() {
       });
     }
 
-    test('the current schema opens with no conversion', () async {
+    test('v13_reverse_576826cfa keeps its directions and takes the live '
+        'Audio & tempo settings (#1179)', () async {
       final dir = copyFixture('v13_reverse_576826cfa');
+      final (:bundle, :conversion) = await repo().open(
+        dir,
+        liveSettings: () => _live,
+      );
+      final session = bundle.session;
+      expect(conversion!.fromVersion, 13);
+      expect(session.tracks.map((t) => t.reversed), [
+        false,
+        true,
+        false,
+        false,
+      ]);
+      // Global preferences before this schema: opening kept the live ones.
+      expect(session.defaultFollowTempo, isFalse);
+      expect(session.trackFollowTempoOverrides, {2: true});
+      expect(session.defaultPitchMode, PitchMode.followsSpeed);
+      expect(session.trackPitchModeOverrides, {4: PitchMode.unchanged});
+      expect(
+        conversion.notes,
+        containsAll([
+          'defaultFollowTempo: taken from the live setting',
+          'trackPitchModeOverrides: taken from the live setting',
+        ]),
+      );
+    });
+
+    test('the current schema opens with no conversion', () async {
+      final dir = copyFixture('v14_audio_tempo_4b');
       final before = snapshotOf(dir);
       final (:bundle, :conversion) = await repo().open(dir);
       expect(conversion, isNull);
@@ -307,17 +340,30 @@ void main() {
         false,
         false,
       ]);
+      expect(bundle.session.defaultFollowTempo, isFalse);
       expect(snapshotOf(dir), before);
     });
 
     test('the current schema stays strict: a track without a direction is '
         'refused, not defaulted', () {
-      final manifest = manifestOf(copyFixture('v13_reverse_576826cfa'));
-      ((manifest['tracks'] as List)[1] as Map).remove('reversed');
-      expect(
-        () => decodeSessionManifest(jsonEncode(manifest)),
-        throwsFormatException,
-      );
+      for (final key in ['reversed']) {
+        final manifest = manifestOf(copyFixture('v14_audio_tempo_4b'));
+        ((manifest['tracks'] as List)[1] as Map).remove(key);
+        expect(
+          () => decodeSessionManifest(jsonEncode(manifest)),
+          throwsFormatException,
+          reason: key,
+        );
+      }
+      for (final key in ['defaultFollowTempo', 'trackPitchModeOverrides']) {
+        final manifest = manifestOf(copyFixture('v14_audio_tempo_4b'))
+          ..remove(key);
+        expect(
+          () => decodeSessionManifest(jsonEncode(manifest)),
+          throwsA(anyOf(isA<FormatException>(), isA<TypeError>())),
+          reason: key,
+        );
+      }
     });
   });
 

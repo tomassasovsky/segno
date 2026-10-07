@@ -115,6 +115,10 @@ class SessionSettings {
     this.laneCounts = const {},
     this.inputSetup = const SessionInputSetup(),
     this.outputSetup = const SessionOutputSetup(),
+    this.defaultFollowTempo = true,
+    this.trackFollowTempoOverrides = const {},
+    this.defaultPitchMode = PitchMode.unchanged,
+    this.trackPitchModeOverrides = const {},
   });
 
   SessionSettings._detached(SessionSettings source)
@@ -168,6 +172,14 @@ class SessionSettings {
         muted: Map.unmodifiable(source.outputSetup.muted),
         mono: Map.unmodifiable(source.outputSetup.mono),
         balance: Map.unmodifiable(source.outputSetup.balance),
+      ),
+      defaultFollowTempo = source.defaultFollowTempo,
+      trackFollowTempoOverrides = Map.unmodifiable(
+        source.trackFollowTempoOverrides,
+      ),
+      defaultPitchMode = source.defaultPitchMode,
+      trackPitchModeOverrides = Map.unmodifiable(
+        source.trackPitchModeOverrides,
       );
 
   /// Denominator-note beats per minute; zero means unset.
@@ -268,6 +280,18 @@ class SessionSettings {
 
   /// Session-owned recording trim, mono pan, and stereo pair balance.
   final SessionInputSetup inputSetup;
+
+  /// The Follow tempo default every track inherits (#1179).
+  final bool defaultFollowTempo;
+
+  /// Explicit Follow tempo choices for any track.
+  final Map<int, bool> trackFollowTempoOverrides;
+
+  /// The Pitch default every following track inherits (#1179).
+  final PitchMode defaultPitchMode;
+
+  /// Explicit Pitch choices for any track.
+  final Map<int, PitchMode> trackPitchModeOverrides;
 
   /// The output setup (slice 3b), persisted session-level.
   final SessionOutputSetup outputSetup;
@@ -1765,6 +1789,10 @@ class SessionRepository {
       laneCounts: settings.laneCounts,
       inputSetup: settings.inputSetup,
       outputSetup: settings.outputSetup,
+      defaultFollowTempo: settings.defaultFollowTempo,
+      trackFollowTempoOverrides: settings.trackFollowTempoOverrides,
+      defaultPitchMode: settings.defaultPitchMode,
+      trackPitchModeOverrides: settings.trackPitchModeOverrides,
       clickMode: settings.clickMode,
       clickOutputMask: settings.clickMask,
       clickVolume: settings.clickVolume,

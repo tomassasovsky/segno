@@ -711,6 +711,26 @@ void main() {
     expect([for (final t in bundle.session.tracks) t.reversed], [true, false]);
   });
 
+  test('save captures both Audio & tempo vectors (#1179)', () async {
+    final source = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+    final dir = '${tempDir.path}/s';
+    await repoFor(source).save(
+      dir,
+      settings: const SessionSettings(
+        defaultFollowTempo: false,
+        trackFollowTempoOverrides: {0: true},
+        defaultPitchMode: PitchMode.followsSpeed,
+        trackPitchModeOverrides: {1: PitchMode.unchanged},
+      ),
+    );
+    final session = (await repoFor(FakeSessionEngine()).read(dir)).session;
+    expect(session.defaultFollowTempo, isFalse);
+    expect(session.trackFollowTempoOverrides, {0: true});
+    expect(session.defaultPitchMode, PitchMode.followsSpeed);
+    expect(session.trackPitchModeOverrides, {1: PitchMode.unchanged});
+  });
+
   test('save then read round-trips a multi-lane track per lane', () async {
     final source = FakeSessionEngine()
       ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))

@@ -39,6 +39,12 @@ abstract final class AppToastId {
   static const clickSettings = 'app_clickSettings_error';
   static const decaySettings = 'app_decaySettings_error';
   static const oneShotSettings = 'app_oneShotSettings_error';
+
+  /// Follow tempo transaction failures (#1179).
+  static const followTempoSettings = 'app_followTempoSettings_error';
+
+  /// Pitch transaction failures (#1179).
+  static const pitchModeSettings = 'app_pitchModeSettings_error';
   static const recordLengthSettings = 'app_recordLengthSettings_error';
   static const recordTimingSettings = 'app_recordTimingSettings_error';
 

@@ -187,13 +187,72 @@ void main() {
       }
     });
 
-    test('the schema that carries direction is version 13', () {
-      expect(Session.formatVersion, 13);
+    test('the schema that carries direction is version 13 or later', () {
+      expect(Session.formatVersion, greaterThanOrEqualTo(13));
       final json = session.toJson()..['version'] = 11;
       expect(
         () => Session.fromJson(json),
         throwsA(isA<SessionUnsupportedVersion>()),
       );
+    });
+  });
+
+  group('Audio & tempo (#1179, schema 14)', () {
+    const audio = Session(
+      sampleRate: 48000,
+      channels: 1,
+      baseLengthFrames: 0,
+      tracks: [],
+      defaultFollowTempo: false,
+      trackFollowTempoOverrides: {1: true, 3: false},
+      defaultPitchMode: PitchMode.followsSpeed,
+      trackPitchModeOverrides: {2: PitchMode.unchanged},
+    );
+
+    test('round-trips both settings', () {
+      final json = jsonDecode(jsonEncode(audio.toJson()));
+      final back = Session.fromJson(json as Map<String, dynamic>);
+      expect(back, audio);
+      expect(back.defaultFollowTempo, isFalse);
+      expect(back.trackFollowTempoOverrides, {1: true, 3: false});
+      expect(back.defaultPitchMode, PitchMode.followsSpeed);
+      expect(back.trackPitchModeOverrides, {2: PitchMode.unchanged});
+      expect(back.hashCode, audio.hashCode);
+    });
+
+    test('defaults: Follow on, Pitch unchanged', () {
+      const plain = Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: [],
+      );
+      final json = plain.toJson();
+      expect(json['defaultFollowTempo'], isTrue);
+      expect(json['defaultPitchMode'], 'unchanged');
+      expect(Session.fromJson(json), plain);
+    });
+
+    test('refuses malformed values at decode, field by field', () {
+      final good = audio.toJson();
+      for (final (key, bad) in <(String, Object?)>[
+        ('defaultFollowTempo', null),
+        ('defaultFollowTempo', 'on'),
+        ('trackFollowTempoOverrides', null),
+        ('trackFollowTempoOverrides', {'8': true}),
+        ('trackFollowTempoOverrides', {'1': 'yes'}),
+        ('defaultPitchMode', null),
+        ('defaultPitchMode', 'sideways'),
+        ('trackPitchModeOverrides', null),
+        ('trackPitchModeOverrides', {'-1': 'unchanged'}),
+        ('trackPitchModeOverrides', {'1': 'sideways'}),
+      ]) {
+        expect(
+          () => Session.fromJson({...good, key: bad}),
+          throwsA(anyOf(isA<FormatException>(), isA<TypeError>())),
+          reason: '$key: $bad',
+        );
+      }
     });
   });
 
@@ -334,10 +393,10 @@ void main() {
       );
     });
 
-    test('serializes the manifest version (v13)', () {
+    test('serializes the manifest version (v14)', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 13);
+      expect(json['version'], 14);
       expect(json['baseLengthFrames'], 96000);
     });
 

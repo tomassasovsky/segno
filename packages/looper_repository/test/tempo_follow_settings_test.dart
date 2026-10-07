@@ -22,6 +22,19 @@ void main() {
       await ticks.close();
     });
 
+    test('a Session with an override past the eighth track is refused '
+        'before anything is cleared (Part 4b)', () async {
+      repository.startEngine(const EngineConfig());
+      engine.calls.clear();
+      for (final rig in [
+        const SessionRig(trackFollowTempoOverrides: {8: true}),
+        const SessionRig(trackPitchModeOverrides: {-1: PitchMode.unchanged}),
+      ]) {
+        await expectLater(repository.applySession(rig), throwsStateError);
+      }
+      expect(engine.calls, isEmpty);
+    });
+
     test('a vector sends only what the engine does not hold and is accepted '
         'on every receipt', () async {
       repository.startEngine(const EngineConfig());

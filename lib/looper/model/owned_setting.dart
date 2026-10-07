@@ -10,6 +10,8 @@ enum OwnedSetting {
   recordLength,
   recordTiming,
   fade,
+  followTempo,
+  pitchMode,
 }
 
 /// The session and device generation that own a captured setting write.

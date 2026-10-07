@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:bloc/bloc.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/playback_options.dart';
@@ -49,6 +51,30 @@ class PlaybackOptionsCubit extends Cubit<PlaybackOptions> {
     await _settings.oneShotControl.setTrackOneShot(
       channel: channel,
       oneShot: oneShot,
+    );
+  }
+
+  /// Sets Follow tempo for [channel] (null: the default); a null [follow]
+  /// on a track removes its override (Use default).
+  Future<void> setFollowTempo({required bool? follow, int? channel}) async {
+    final address = channel == null
+        ? const AudioTempoAddress.defaults()
+        : AudioTempoAddress.track(channel);
+    await _settings.followTempoOwner.update(
+      (live) => live.withValue(address, follow),
+      address: address,
+    );
+  }
+
+  /// Sets Pitch for [channel] (null: the default); a null [mode] on a track
+  /// removes its override (Use default).
+  Future<void> setPitchMode({required PitchMode? mode, int? channel}) async {
+    final address = channel == null
+        ? const AudioTempoAddress.defaults()
+        : AudioTempoAddress.track(channel);
+    await _settings.pitchModeOwner.update(
+      (live) => live.withValue(address, mode),
+      address: address,
     );
   }
 
