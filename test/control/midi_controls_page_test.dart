@@ -33,7 +33,6 @@ import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/click_mode.dart';
@@ -110,7 +109,6 @@ void main() {
   late RecordTiming confirmedTiming;
   late GridDivision rememberedDivision;
   var captureMicros = 0;
-  late SettingsTrayCubit tray;
 
   setUp(() {
     captureMicros = 0;
@@ -260,8 +258,6 @@ void main() {
       division: rememberedDivision.code,
       trackOverrides: {},
     ));
-    tray = SettingsTrayCubit();
-    addTearDown(() => unawaited(tray.close()));
     if (malformed) {
       await store.setString('midi.configuration', '{bad json');
     }
@@ -1828,19 +1824,18 @@ void main() {
     expect(control.state.midiEdit, isNull);
   });
 
-  testWidgets('Control tray entry Stage closes tray and MIDI route', (
+  testWidgets('Stage runs the caller hook and closes the MIDI route', (
     tester,
   ) async {
     await pump(tester, seeded: true, routeEntry: true);
-    tray.open();
-    expect(tray.state.dragProgress, 1);
-    unawaited(openMidiControls(onStage: tray.closeTray));
+    var staged = 0;
+    unawaited(openMidiControls(onStage: () => staged++));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('midi_row_edit_m1')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('loop_settings_stage')));
     await tester.pumpAndSettle();
-    expect(tray.state.dragProgress, 0);
+    expect(staged, 1);
     expect(find.text('Stage root'), findsOneWidget);
     expect(find.byKey(const Key('midi_controls_page')), findsNothing);
     expect(control.state.midiEdit, isNull);

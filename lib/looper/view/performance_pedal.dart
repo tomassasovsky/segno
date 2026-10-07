@@ -30,6 +30,8 @@ class PerformancePedal extends StatefulWidget {
     this.level,
     this.detailIcon,
     this.detailHighlighted = false,
+    this.titleMuted = false,
+    this.titleMaxLines = 1,
     super.key,
   });
 
@@ -72,6 +74,14 @@ class PerformancePedal extends StatefulWidget {
   /// Whether [detail] reads in the primary text colour, for a state that
   /// departs from the default (a reversed track).
   final bool detailHighlighted;
+
+  /// Whether [title] reads muted while the pedal stays enabled, for an
+  /// assignment this build cannot run (Custom).
+  final bool titleMuted;
+
+  /// Lines [title] may wrap to before it is cut short, for a caption that
+  /// names an assignment (Custom).
+  final int titleMaxLines;
 
   /// Admits a timed contact identified by its token.
   final void Function(PedalButton button, Object contact) onPressed;
@@ -198,9 +208,17 @@ class _PerformancePedalState extends State<PerformancePedal> {
                     const SizedBox(height: 16),
                     AppText(
                       widget.title,
-                      maxLines: 1,
+                      maxLines: widget.titleMaxLines,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 24),
+                      // A wrapped caption centres each line; a single line
+                      // keeps its own width, centred by the column.
+                      textAlign: widget.titleMaxLines > 1
+                          ? TextAlign.center
+                          : null,
+                      style: TextStyle(
+                        fontSize: 24,
+                        color: widget.titleMuted ? surface.textMuted : null,
+                      ),
                     ),
                     if (widget.level case final level?) ...[
                       const SizedBox(height: 14),

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:segno/common/encoder_intents.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_edit_scope.dart';
 import 'package:segno/theme/theme.dart';
 
-/// A single stop for keyboard and future physical encoder focus. Enter is the
-/// encoder press seam; the amber outline is distinct from the blue selection.
+/// A single stop for keyboard and physical encoder focus. Enter, Space and the
+/// encoder press ([ActivateIntent]) activate it; the amber outline is distinct
+/// from the blue selection.
 class LoopFocusable extends StatelessWidget {
   /// Creates a focus stop around one actionable control.
   const LoopFocusable({
@@ -34,7 +36,19 @@ class LoopFocusable extends StatelessWidget {
   final double radius;
 
   @override
-  Widget build(BuildContext context) => Focus(
+  Widget build(BuildContext context) => Actions(
+    actions: <Type, Action<Intent>>{
+      ActivateIntent: CallbackAction<ActivateIntent>(
+        onInvoke: (_) {
+          if (enabled) onActivate();
+          return null;
+        },
+      ),
+    },
+    child: _focus(context),
+  );
+
+  Widget _focus(BuildContext context) => Focus(
     canRequestFocus: enabled,
     autofocus: autofocus,
     onKeyEvent: (_, event) {
@@ -377,7 +391,8 @@ enum LoopButtonTone {
   /// Transparent with the strong border (the pen's plain action button).
   outlined,
 
-  /// The raised card fill with the strong border (the top bar's Stage).
+  /// The raised card fill with the strong border (a secondary action on a
+  /// page, such as a disabled Done).
   raised,
 
   /// The card fill with the subtle border (the time signature chip).
@@ -385,6 +400,14 @@ enum LoopButtonTone {
 
   /// The accent fill and text (a dialog's confirming action).
   accent,
+
+  /// The settings frame's Back: no fill, the frame's control line, and the
+  /// frame's icon colour.
+  frame,
+
+  /// The settings frame's Stage: the frame's control fill and line, its
+  /// label in the frame's text colour and typeface.
+  frameRaised,
 }
 
 /// The pen's 64-high action button in its four fills: a label with an
@@ -459,21 +482,34 @@ class LoopOutlinedButton extends StatelessWidget {
       LoopButtonTone.raised => surface.cardHigh,
       LoopButtonTone.card => surface.card,
       LoopButtonTone.accent => surface.accent,
+      LoopButtonTone.frame => Colors.transparent,
+      LoopButtonTone.frameRaised => surface.frameControlFill,
     };
     final border =
         borderColor ??
         switch (tone) {
           LoopButtonTone.card => surface.borderSubtle,
           LoopButtonTone.accent => surface.accent,
+          LoopButtonTone.frame ||
+          LoopButtonTone.frameRaised => surface.frameControlLine,
           _ => surface.borderStrong,
         };
-    final foreground = tone == LoopButtonTone.accent
-        ? surface.onAccent
-        : surface.textPrimary;
+    final foreground = switch (tone) {
+      LoopButtonTone.accent => surface.onAccent,
+      LoopButtonTone.frame => surface.frameIcon,
+      LoopButtonTone.frameRaised => surface.frameText,
+      _ => surface.textPrimary,
+    };
     // The pen draws every accent action's label bold (`Done`, `Open session`,
     // `Start new loop`, `Use as backing`); the other fills stay regular.
     final text = TextStyle(
       color: foreground,
+      fontFamily: tone == LoopButtonTone.frameRaised
+          ? SurfaceTheme.frameFont
+          : null,
+      // The pen sets the frame's label untracked; the theme's labels carry
+      // 0.25.
+      letterSpacing: tone == LoopButtonTone.frameRaised ? 0 : null,
       fontSize: fontSize,
       fontWeight: tone == LoopButtonTone.accent ? FontWeight.w700 : null,
       height: 1,
@@ -781,16 +817,7 @@ class _LoopStepperState extends State<LoopStepper> {
     if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter ||
         key == LogicalKeyboardKey.space) {
-      if (_draft == null) {
-        _coordinator = LoopEditScope.maybeOf(context);
-        _coordinator?.begin(_cancel);
-        setState(() => _draft = widget.value);
-      } else {
-        final value = _draft!;
-        _coordinator?.finish(_cancel);
-        setState(() => _draft = null);
-        widget.onCommit(value);
-      }
+      _press();
       return KeyEventResult.handled;
     }
     if (_draft == null) return KeyEventResult.ignored;
@@ -804,8 +831,29 @@ class _LoopStepperState extends State<LoopStepper> {
       _ => 0,
     };
     if (delta == 0) return KeyEventResult.ignored;
-    setState(() => _draft = (_draft! + delta).clamp(1, 64));
+    _step(delta);
     return KeyEventResult.handled;
+  }
+
+  /// Enter or the encoder press: open a draft, or commit the open one.
+  void _press() {
+    if (!widget.enabled) return;
+    if (_draft == null) {
+      _coordinator = LoopEditScope.maybeOf(context);
+      _coordinator?.begin(_cancel);
+      setState(() => _draft = widget.value);
+    } else {
+      final value = _draft!;
+      _coordinator?.finish(_cancel);
+      setState(() => _draft = null);
+      widget.onCommit(value);
+    }
+  }
+
+  /// Arrows or an encoder turn: move the open draft.
+  void _step(int delta) {
+    if (_draft == null) return;
+    setState(() => _draft = (_draft! + delta).clamp(1, 64));
   }
 
   @override
@@ -840,49 +888,63 @@ class _LoopStepperState extends State<LoopStepper> {
               top: 0,
               width: 220,
               height: 112,
-              child: Focus(
-                canRequestFocus: widget.enabled,
-                onKeyEvent: _handleKey,
-                onFocusChange: (focused) {
-                  if (!focused && _draft != null) _cancel();
+              child: Actions(
+                actions: <Type, Action<Intent>>{
+                  ActivateIntent: CallbackAction<ActivateIntent>(
+                    onInvoke: (_) {
+                      _press();
+                      return null;
+                    },
+                  ),
+                  EncoderTurnIntent: EncoderDraftAction(
+                    isDrafting: () => _draft != null,
+                    onTurn: _step,
+                  ),
                 },
-                child: Builder(
-                  builder: (context) => Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: Focus.of(context).hasFocus
-                            ? surface.encoderFocus
-                            : Colors.transparent,
-                        width: 3,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        AppText(
-                          '${_draft ?? widget.value}',
-                          key: const Key('loop_stepper_value'),
-                          style: TextStyle(
-                            color: surface.textPrimary,
-                            fontSize: 68,
-                            fontFamily: SurfaceTheme.monoFont,
-                            height: 1,
-                          ),
+                child: Focus(
+                  canRequestFocus: widget.enabled,
+                  onKeyEvent: _handleKey,
+                  onFocusChange: (focused) {
+                    if (!focused && _draft != null) _cancel();
+                  },
+                  child: Builder(
+                    builder: (context) => Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Focus.of(context).hasFocus
+                              ? surface.encoderFocus
+                              : Colors.transparent,
+                          width: 3,
                         ),
-                        const SizedBox(width: 15),
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: AppText(
-                            widget.unit,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          AppText(
+                            '${_draft ?? widget.value}',
+                            key: const Key('loop_stepper_value'),
                             style: TextStyle(
-                              color: surface.textSecondary,
-                              fontSize: 24,
+                              color: surface.textPrimary,
+                              fontSize: 68,
+                              fontFamily: SurfaceTheme.monoFont,
+                              height: 1,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 15),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: AppText(
+                              widget.unit,
+                              style: TextStyle(
+                                color: surface.textSecondary,
+                                fontSize: 24,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -1027,13 +1089,17 @@ class _LoopSliderState extends State<LoopSlider> {
       _ => 0,
     };
     if (delta == 0) return KeyEventResult.ignored;
-    final next = (_keyboardDraft! + delta * widget.keyboardStep).clamp(
-      0.0,
-      widget.max,
-    );
+    _step(delta);
+    return KeyEventResult.handled;
+  }
+
+  /// Arrows or an encoder turn: move the open draft by whole steps.
+  void _step(int delta) {
+    final draft = _keyboardDraft;
+    if (draft == null) return;
+    final next = (draft + delta * widget.keyboardStep).clamp(0.0, widget.max);
     setState(() => _keyboardDraft = next);
     widget.onChanged(next);
-    return KeyEventResult.handled;
   }
 
   /// A screen reader's increase or decrease: one keyboard step, committed at
@@ -1081,6 +1147,30 @@ class _LoopSliderState extends State<LoopSlider> {
       0.0,
       widget.max,
     );
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            _keyboardDraft == null ? _beginEdit() : _finishEdit();
+            return null;
+          },
+        ),
+        EncoderTurnIntent: EncoderDraftAction(
+          isDrafting: () => _keyboardDraft != null,
+          onTurn: _step,
+        ),
+      },
+      child: _focus(context, surface, width, enabled, clamped),
+    );
+  }
+
+  Widget _focus(
+    BuildContext context,
+    SurfaceTheme surface,
+    double width,
+    bool enabled,
+    double clamped,
+  ) {
     return Focus(
       canRequestFocus: enabled,
       onKeyEvent: _handleKey,

@@ -81,17 +81,16 @@ class CountingWifiClient extends UnsupportedWifiClient {
 /// navigator the way the app mounts them, so a test can open a page through
 /// the navigator functions and find it.
 class DestinationHarness {
-  /// Creates a harness with fresh settings, a stubbed audio cubit and a
-  /// counting Wi-Fi client.
-  DestinationHarness() {
+  /// Creates a harness with fresh settings (over [store], when a test needs
+  /// writes to fail), a stubbed audio cubit and a counting Wi-Fi client.
+  DestinationHarness({KeyValueStore? store})
+    : settings = SettingsRepository(store: store ?? FakeKeyValueStore()) {
     when(audio.beginDeviceScan).thenReturn(null);
     when(audio.endDeviceScan).thenReturn(null);
   }
 
   /// The settings store behind the real cubits.
-  final SettingsRepository settings = SettingsRepository(
-    store: FakeKeyValueStore(),
-  );
+  final SettingsRepository settings;
 
   /// The audio setup the Device page reads.
   final MockAudioSetupCubit audio = MockAudioSetupCubit();

@@ -10,6 +10,7 @@ import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
+import 'package:segno/looper/view/fx/fx_pedal_assignments_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/settings/settings.dart';
@@ -30,6 +31,9 @@ const String segnoAudioRoutingRouteName = 'segno/audio-routing';
 
 /// Route name for the Effects page.
 const String segnoFxRouteName = 'segno/fx';
+
+/// Route name for the FX page's pedal assignments.
+const String segnoFxPedalAssignmentsRouteName = 'segno/fx/pedal-assignments';
 
 /// Route name for the Pedals setup page.
 const String segnoPedalSetupRouteName = 'segno/pedal-setup';
@@ -124,6 +128,14 @@ Future<void> _pushOnce(
     _openRoutes.remove(name);
   }
 }
+
+/// Pushes the FX page's pedal assignments: which effect chain each footswitch
+/// drives in FX mode, per bank.
+Future<void> openFxPedalAssignments() => _pushOnce(
+  segnoFxPedalAssignmentsRouteName,
+  () =>
+      (_) => const FxPedalAssignmentsPage(),
+);
 
 /// Pushes the Audio routing route (the accepted input and output setup
 /// tasks) onto the root navigator, opened on [initial]; guarded against

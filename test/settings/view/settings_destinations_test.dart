@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/appliance/display_brightness_edit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
@@ -18,6 +19,18 @@ import 'package:segno/wifi/wifi_cubit.dart';
 
 import '../../helpers/helpers.dart';
 import 'destination_harness.dart';
+
+class _BrightnessStore extends FakeKeyValueStore {
+  bool refuse = true;
+
+  @override
+  Future<void> setDouble(String key, double value) async {
+    if (key == 'ui.brightness' && refuse) {
+      throw StateError('brightness storage unavailable');
+    }
+    await super.setDouble(key, value);
+  }
+}
 
 void main() {
   late DestinationHarness harness;
@@ -104,37 +117,21 @@ void main() {
   });
 
   group('Device', () {
-    testWidgets('opens on Device, with the interface rows', (tester) async {
+    testWidgets('is one page: the interface rows and the loop cap, no tabs; '
+        'what a record press does and how long later tracks record live in '
+        'Loop settings', (tester) async {
       await pump(tester);
       unawaited(openDeviceSettings());
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('device_settings_tabs')), findsOneWidget);
       expect(find.byKey(const Key('audio_device_tab')), findsOneWidget);
       expect(find.byKey(const Key('audio_routing_card')), findsOneWidget);
+      expect(find.byKey(const Key('audio_max_loop_row')), findsOneWidget);
+      expect(find.byKey(const Key('device_settings_tabs')), findsNothing);
+      expect(find.byKey(const Key('audio_default_length_row')), findsNothing);
+      expect(find.byKey(const Key('audio_quantize_row')), findsNothing);
+      expect(find.byKey(const Key('audio_rec_dub_row')), findsNothing);
+      expect(find.byKey(const Key('audio_auto_record_row')), findsNothing);
     });
-
-    testWidgets(
-      'Device carries the loop cap; Recording keeps only the default length; '
-      'what a record press does lives in Loop settings',
-      (tester) async {
-        await pump(tester);
-        unawaited(openDeviceSettings());
-        await tester.pumpAndSettle();
-        expect(find.byKey(const Key('audio_max_loop_row')), findsOneWidget);
-
-        await tester.tap(find.text(l10n(tester).audioRecordingTab));
-        await tester.pumpAndSettle();
-        expect(find.byKey(const Key('audio_recording_tab')), findsOneWidget);
-        expect(find.byKey(const Key('audio_max_loop_row')), findsNothing);
-        expect(
-          find.byKey(const Key('audio_default_length_row')),
-          findsOneWidget,
-        );
-        expect(find.byKey(const Key('audio_quantize_row')), findsNothing);
-        expect(find.byKey(const Key('audio_rec_dub_row')), findsNothing);
-        expect(find.byKey(const Key('audio_auto_record_row')), findsNothing);
-      },
-    );
   });
 
   group('Displays', () {
@@ -167,6 +164,27 @@ void main() {
       await tester.pump(kDoubleTapTimeout);
       await tester.pumpAndSettle();
       expect(harness.brightness.state, closeTo(0.55, 0.01));
+    });
+
+    testWidgets('a brightness that did not save says so over the page, and '
+        'the next change that saves clears it', (tester) async {
+      final store = _BrightnessStore();
+      harness = DestinationHarness(store: store);
+      await openDisplays(tester);
+
+      await tester.drag(slider(), const Offset(-4000, 0));
+      await tester.pumpAndSettle();
+      // The dim applies even though the write failed.
+      expect(harness.brightness.state, 0.1);
+      expect(store.values['ui.brightness'], isNull);
+      expect(debugAppToastActive(displayBrightnessSaveFailedToast), isTrue);
+
+      store.refuse = false;
+      await tester.drag(slider(), const Offset(4000, 0));
+      await tester.pumpAndSettle();
+      expect(await harness.settings.loadBrightness(), 1);
+      await tester.pump(const Duration(seconds: 2));
+      expect(debugAppToastActive(displayBrightnessSaveFailedToast), isFalse);
     });
 
     testWidgets('a double tap returns to full brightness', (tester) async {

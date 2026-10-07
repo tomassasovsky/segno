@@ -664,6 +664,11 @@ class _WaveformAudioEngine extends FakeAudioEngine {
   }
 }
 
+/// Marks the one-shot `Hold · Tuner` default (#1229) as already attempted,
+/// for tests about other boot work: on a fresh store, boot adds it and says
+/// so with a toast of its own.
+const _tunerSeededKey = 'pedal.tuner_default_seeded';
+
 void main() {
   group('App', () {
     late FakeAudioEngine engine;
@@ -1446,6 +1451,7 @@ void main() {
         ) async {
           final gate = Completer<void>();
           final store = _MonitorRestoreStore()..readGate = gate;
+          store.values[_tunerSeededKey] = true;
           settings = SettingsRepository(store: store);
           await pumpApp(tester, NoopWaveformWindowService());
           final monitor = tester
@@ -1511,6 +1517,7 @@ void main() {
         (tester) async {
           final store = _LengthStore()..refuseNextRead = !malformed;
           store.values.addAll({
+            _tunerSeededKey: true,
             'looper.mode': LooperMode.free.code,
             'looper.default_length_bars': 4,
             'tempo.length_preset.7': malformed ? 65 : 0,
@@ -1559,6 +1566,7 @@ void main() {
         (tester) async {
           final store = _TimingStore()..refuseNextRead = !malformed;
           store.values.addAll({
+            _tunerSeededKey: true,
             'looper.quantize': true,
             'tempo.quantize_div': 3,
             'track_record_timing.7': malformed ? 7 : 0,
@@ -1608,6 +1616,7 @@ void main() {
           final store = _RecordStartStore()..refuseNextRead = !malformed;
           store.values['tempo.count_in_bars'] = malformed ? 3 : 4;
           store.values['looper.auto_record'] = false;
+          store.values[_tunerSeededKey] = true;
           final before = Map<String, Object>.of(store.values);
           settings = SettingsRepository(store: store);
           await pumpApp(tester, NoopWaveformWindowService());
@@ -1626,7 +1635,11 @@ void main() {
           expect(
             store.values,
             malformed
-                ? {'tempo.count_in_bars': 0, 'looper.auto_record': false}
+                ? {
+                    'tempo.count_in_bars': 0,
+                    'looper.auto_record': false,
+                    _tunerSeededKey: true,
+                  }
                 : before,
           );
           expect(
@@ -1688,6 +1701,7 @@ void main() {
           final store = FakeKeyValueStore();
           store.values['tempo.count_in_bars'] = 0;
           store.values['looper.auto_record'] = true;
+          store.values[_tunerSeededKey] = true;
           settings = SettingsRepository(store: store);
           await pumpApp(tester, NoopWaveformWindowService());
           final context = tester.element(find.byType(TracksView));
@@ -1918,6 +1932,7 @@ void main() {
         (tester) async {
           final store = _ClickModeStore()..refuseNextRead = !malformed;
           store.values['tempo.click_mode'] = malformed ? 4 : 0;
+          store.values[_tunerSeededKey] = true;
           final before = Map<String, Object>.of(store.values);
           settings = SettingsRepository(store: store);
           await pumpApp(tester, NoopWaveformWindowService());
@@ -3789,6 +3804,31 @@ void main() {
       resetAppToastsForTest();
       await pumpApp(tester, NoopWaveformWindowService());
       expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
+    });
+
+    testWidgets('a fresh install gets Hold · Tuner on Custom pedal 2 and is '
+        'told once where the Tuner is (#1229)', (tester) async {
+      final store = FakeKeyValueStore();
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      final control = tester
+          .element(find.byType(TracksView))
+          .read<ControlCubit>();
+      expect(
+        control.state.pedalSetup.customFor(PedalButton.track2, bank: 0).hold,
+        const ModeAction(InteractionMode.tuner),
+      );
+      expect(debugAppToastActive(AppToastId.tunerSeeded), isTrue);
+      expect(store.values['pedal.tuner_default_seeded'], isTrue);
+
+      dismissAppToast(AppToastId.tunerSeeded);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      resetAppToastsForTest();
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(debugAppToastActive(AppToastId.tunerSeeded), isFalse);
     });
 
     testWidgets('an install that started in Record is not told anything', (

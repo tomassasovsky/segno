@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_destination.dart';
+import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -314,53 +314,25 @@ class _InputChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final surface = context.surface;
     String label(FxChannelInput input) => switch (input) {
       FxChannelInput.stereo => l10n.fxChannelStereo,
       FxChannelInput.left => l10n.fxChannelLeft,
       FxChannelInput.right => l10n.fxChannelRight,
       FxChannelInput.monoSum => l10n.fxChannelMonoSum,
     };
-    return PopupMenuButton<FxChannelInput>(
+    return LoopSelect<FxChannelInput>(
       key: const Key('fx_input_choice'),
+      value: value,
       onSelected: onChanged,
-      itemBuilder: (context) => [
+      width: 210,
+      items: [
         for (final input in FxChannelInput.values)
-          PopupMenuItem(value: input, child: AppText(label(input))),
+          LoopSelectItem(
+            key: Key('fx_input_${input.name}'),
+            value: input,
+            label: label(input),
+          ),
       ],
-      child: Container(
-        width: 210,
-        height: 64,
-        decoration: BoxDecoration(
-          color: surface.card,
-          border: Border.all(color: surface.borderSubtle),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 19),
-        child: Row(
-          children: [
-            Expanded(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: AppText(
-                  label(value),
-                  style: TextStyle(
-                    color: surface.textPrimary,
-                    fontSize: 22,
-                    height: 1,
-                  ),
-                ),
-              ),
-            ),
-            Icon(
-              LucideIcons.chevronDown,
-              size: 28,
-              color: surface.textSecondary,
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
