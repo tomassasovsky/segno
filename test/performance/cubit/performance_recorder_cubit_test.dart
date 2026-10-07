@@ -1328,8 +1328,7 @@ void main() {
     test('each refused press emits its own state, so each gets an answer '
         '(#1198)', () async {
       final cubit = build(
-        freeSpaceBytes: (_) async =>
-            PerformanceRecorderCubit.lowDiskThresholdBytes - 1,
+        freeSpaceBytes: (_) async => performance.minimumFreeBytesToArm - 1,
       );
       addTearDown(cubit.close);
       final states = <PerformanceRecorderState>[];
