@@ -37,7 +37,7 @@ void main() {
       engine.importTrack(0, Float32List.fromList(List.filled(128, .5))),
       EngineResult.ok,
     );
-    expect(engine.commitSession(128, loopBars: 0), EngineResult.ok);
+    expect(engine.commitSession(128, loopBeats: 0), EngineResult.ok);
     expect(engine.play(), EngineResult.ok);
     engine.pump(frames: 0);
   });
@@ -61,7 +61,7 @@ void main() {
           EngineResult.ok,
         );
       }
-      expect(engine.commitSession(128, loopBars: 0), EngineResult.ok);
+      expect(engine.commitSession(128, loopBeats: 0), EngineResult.ok);
       expect(engine.play(), EngineResult.ok);
       expect(engine.play(channel: 2), EngineResult.ok);
       engine.pump(frames: 0);

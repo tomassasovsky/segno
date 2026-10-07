@@ -187,8 +187,8 @@ void main() {
       }
     });
 
-    test('the schema that carries direction is version 13', () {
-      expect(Session.formatVersion, 13);
+    test('direction is carried since version 13', () {
+      expect(Session.formatVersion, greaterThanOrEqualTo(13));
       final json = session.toJson()..['version'] = 11;
       expect(
         () => Session.fromJson(json),
@@ -334,10 +334,12 @@ void main() {
       );
     });
 
-    test('serializes the manifest version (v13)', () {
+    test('serializes the manifest version (v14) and the grid in beats', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 13);
+      expect(json['version'], 14);
+      // Constructed with bars only, the beats are the bars' (#1168).
+      expect(json['loopBeats'], session.loopBars * session.tsNum);
       expect(json['baseLengthFrames'], 96000);
     });
 
@@ -983,6 +985,26 @@ void main() {
         );
       });
 
+      test('round-trips length edits with their playhead maps (#1168)', () {
+        const lengthHistory = [
+          {'kind': 'length', 'skipped': 0, 'start': 0},
+          {'kind': 'layer', 'skipped': 0},
+          {'kind': 'length', 'skipped': 0, 'start': -96000},
+        ];
+        final json = withHistory(lengthHistory, undoCount: 2, layers: 4);
+        final lane = Session.fromJson(json).tracks.first.lanes.first;
+        expect(lane.history.entries, const [
+          HistoryEntry(HistoryKind.length),
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.length, start: -96000),
+        ]);
+        // A length edit always writes its map, even zero; others never do.
+        expect(
+          track0Lanes(Session.fromJson(json).toJson()).first['history'],
+          lengthHistory,
+        );
+      });
+
       test('a redo marker takes no image; an undo Peel takes one', () {
         // Treating the marker as an image (7 layers) is as corrupt as
         // dropping the undo Peel's image (5).
@@ -1003,6 +1025,8 @@ void main() {
           {'kind': 'layer', 'skipped': 0.5},
           {'kind': 1, 'skipped': 0},
           {'kind': 'layer', 'skipped': 0, 'slot': 3},
+          {'kind': 'length', 'skipped': 0, 'start': 0.5},
+          {'kind': 'length', 'skipped': 0, 'start': 0, 'slot': 3},
           'layer',
         ]) {
           final json = withHistory(
@@ -1028,6 +1052,14 @@ void main() {
           (
             [
               {'kind': 'clear', 'skipped': 0},
+            ],
+            1,
+            2,
+          ),
+          // A playhead map on a kind that has none (#1168).
+          (
+            [
+              {'kind': 'layer', 'skipped': 0, 'start': 4},
             ],
             1,
             2,

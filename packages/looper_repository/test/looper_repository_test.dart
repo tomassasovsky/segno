@@ -1607,6 +1607,38 @@ void main() {
       expect(track.multiple, 2);
       expect(track.isMultiple, isTrue);
       expect(track.lengthFrames, 96000);
+      expect(track.syncDivisor, 0);
+    });
+
+    test('projects a Sync division from the snapshot (#1168)', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        masterLengthFrames: 48000,
+        tracks: [
+          TrackSnapshot(
+            state: TrackState.playing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 12000,
+            undoDepth: 1,
+            rms: 0,
+            peak: 0,
+            syncDivisor: 4,
+          ),
+        ],
+      );
+      final track = buildRepo().state.tracks.first;
+      expect(track.syncDivisor, 4);
+      expect(track.multiple, 1);
     });
 
     test('initial snapshot projects an empty looper', () {
@@ -6357,10 +6389,42 @@ void main() {
         );
         expect(engine.importedTracks[0], pcm);
         expect(engine.committedBaseFrames, 4);
+        expect(engine.committedLoopBeats, 0);
         expect(engine.laneVol[(0, 0)], 0.5);
         expect(engine.laneMute[(0, 0)], isTrue);
       },
     );
+
+    test('commits the grid in beats: whole bars times the signature, or '
+        'the saved beats of a sub-bar loop (#1168)', () async {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      for (final (rig, beats) in [
+        (
+          SessionRig(
+            baseLengthFrames: 4,
+            loopBars: 3,
+            tsNum: 7,
+            tsDen: 8,
+            tracks: [rigTrack(0, pcm)],
+          ),
+          21,
+        ),
+        (
+          SessionRig(
+            baseLengthFrames: 4,
+            loopBeats: 2,
+            tracks: [rigTrack(0, pcm)],
+          ),
+          2,
+        ),
+      ]) {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        await repo.applySession(rig, clearPollInterval: Duration.zero);
+        expect(engine.committedLoopBeats, beats);
+        await repo.dispose();
+      }
+    });
 
     test('fires rigReplaced once on a successful apply — the explicit seam '
         '(the cleared window is transient, so the projection alone cannot '
@@ -7335,6 +7399,49 @@ void main() {
         expect(engine.importedLayers.containsKey((0, 0, 3)), isFalse);
         // The reconstructed stacks are published with their kinds.
         expect(engine.finalizedHistory[0], history);
+      },
+    );
+
+    test(
+      'finalizes length edits with every image at its own length (#1168)',
+      () async {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        final original = Float32List.fromList([1, 2, 3, 4]);
+        final doubled = Float32List.fromList([1, 2, 3, 4, 1, 2, 3, 4]);
+        const history = TrackHistory([
+          HistoryEntry(HistoryKind.length),
+          HistoryEntry(HistoryKind.length, start: 4),
+        ], undoCount: 1);
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              SessionRigTrack(
+                fadeAmount: 1,
+                reversed: false,
+                channel: 0,
+                lanes: [
+                  SessionRigLane(
+                    lane: 0,
+                    layers: [original, doubled, original],
+                    volume: 1,
+                    muted: false,
+                    outputMask: 0x3,
+                    inputChannel: 0,
+                    history: history,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.finalizedHistory[0], history);
+        expect(engine.finalizedLengths[0], [4, 8, 4]);
       },
     );
   });

@@ -292,8 +292,32 @@ void main() {
       });
     }
 
-    test('the current schema opens with no conversion', () async {
+    test('schema 13 opens with its beats counted from its bars and every '
+        'direction kept (#1168)', () async {
       final dir = copyFixture('v13_reverse_576826cfa');
+      final original = manifestOf(dir);
+      final (:bundle, :conversion) = await repo().open(dir);
+      expect(conversion!.fromVersion, 13);
+      final session = bundle.session;
+      expect(session.loopBars, original['loopBars']);
+      expect(
+        session.loopBeats,
+        (original['loopBars'] as int) * (original['tsNum'] as int),
+      );
+      expect(conversion.notes, ['loopBeats: counted from 0 bars of 3 beats']);
+      expect(session.tracks.map((t) => t.reversed), [
+        false,
+        true,
+        false,
+        false,
+      ]);
+      // Every older grid was whole bars: 2 bars of 3/4 are 6 beats.
+      final barred = jsonEncode({...original, 'loopBars': 2});
+      expect(decodeSessionManifest(barred).session.loopBeats, 6);
+    });
+
+    test('the current schema opens with no conversion', () async {
+      final dir = copyFixture('v14_length_1168');
       final before = snapshotOf(dir);
       final (:bundle, :conversion) = await repo().open(dir);
       expect(conversion, isNull);
@@ -306,18 +330,37 @@ void main() {
         true,
         false,
         false,
+        false,
       ]);
+      // A sub-bar grid of 2 beats, and a track whose length edits keep
+      // their images at their own lengths.
+      expect(bundle.session.loopBars, 0);
+      expect(bundle.session.loopBeats, 2);
+      final lane = bundle.session.tracks.last.lanes.single;
+      expect(lane.history.entries, const [
+        HistoryEntry(HistoryKind.length),
+        HistoryEntry(HistoryKind.length, start: 2400),
+      ]);
+      expect(
+        [for (final pcm in bundle.laneStems[(4, 0)]!) pcm.length],
+        [2400, 4800, 2400],
+      );
       expect(snapshotOf(dir), before);
     });
 
-    test('the current schema stays strict: a track without a direction is '
-        'refused, not defaulted', () {
-      final manifest = manifestOf(copyFixture('v13_reverse_576826cfa'));
-      ((manifest['tracks'] as List)[1] as Map).remove('reversed');
-      expect(
-        () => decodeSessionManifest(jsonEncode(manifest)),
-        throwsFormatException,
-      );
+    test('the current schema stays strict: a track without a direction, or '
+        'a grid without its beats, is refused, not defaulted', () {
+      for (final edit in <void Function(Map<String, dynamic>)>[
+        (m) => ((m['tracks'] as List)[1] as Map).remove('reversed'),
+        (m) => m.remove('loopBeats'),
+      ]) {
+        final manifest = manifestOf(copyFixture('v14_length_1168'));
+        edit(manifest);
+        expect(
+          () => decodeSessionManifest(jsonEncode(manifest)),
+          throwsA(anyOf(isFormatException, isA<TypeError>())),
+        );
+      }
     });
   });
 
@@ -412,7 +455,7 @@ void main() {
     }
 
     test('newer than this build', () async {
-      final dir = copyFixture('v13_reverse_576826cfa');
+      final dir = copyFixture('v14_length_1168');
       rewrite(dir, (m) => m['version'] = Session.formatVersion + 1);
       await expectRefused(dir, isA<SessionUnsupportedVersion>());
     });

@@ -664,6 +664,7 @@ class TrackSnapshot {
     this.redoDepth = 0,
     this.peelDepth = 0,
     this.multiple = 1,
+    this.syncDivisor = 0,
     this.inputMask = 0x1,
     this.outputMask = 0x3,
     this.layerInFlight = false,
@@ -686,6 +687,7 @@ class TrackSnapshot {
     this.reversed = false,
     this.headRate = 1,
     this.transpose = (stored: 0, effective: 0),
+    this.lengthHistoryRefusals = 0,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -704,6 +706,7 @@ class TrackSnapshot {
       rms = 0,
       peak = 0,
       multiple = 1,
+      syncDivisor = 0,
       inputMask = 0x1,
       outputMask = 0x3,
       layerInFlight = false,
@@ -726,6 +729,7 @@ class TrackSnapshot {
       reversed = false,
       headRate = 1,
       transpose = (stored: 0, effective: 0),
+      lengthHistoryRefusals = 0,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -756,6 +760,7 @@ class TrackSnapshot {
     rms: native.rms,
     peak: native.peak,
     multiple: native.multiple,
+    syncDivisor: native.sync_divisor,
     inputMask: native.input_mask,
     outputMask: native.output_mask,
     layerInFlight: native.layer_in_flight != 0,
@@ -784,6 +789,7 @@ class TrackSnapshot {
       stored: native.transpose_st,
       effective: native.transpose_effective_st,
     ),
+    lengthHistoryRefusals: native.length_history_refusals,
     imageRevision: native.image_revision,
     peakL: native.peak_l,
     peakR: native.peak_r,
@@ -808,6 +814,12 @@ class TrackSnapshot {
   /// with the material.
   final TransposePitch transpose;
 
+  /// How many Undo or Redo taps on this track's length edits did nothing
+  /// (#1168): the length no longer fit the rig, or a tap queued behind an
+  /// overdub stopped at a length edit. Counted since the engine was created
+  /// and never reset; the host reports each increase.
+  final int lengthHistoryRefusals;
+
   /// Sequence of the coherent native tuple publication.
   final int fadeRevision;
 
@@ -825,6 +837,10 @@ class TrackSnapshot {
 
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
+
+  /// A Sync/Band division of the base loop (`2` or `4`), else `0`; while
+  /// nonzero [multiple] is an inert `1`.
+  final int syncDivisor;
 
   /// Available undo steps (overdub layers).
   final int undoDepth;
@@ -966,6 +982,7 @@ class TrackSnapshot {
           muted == other.muted &&
           lengthFrames == other.lengthFrames &&
           multiple == other.multiple &&
+          syncDivisor == other.syncDivisor &&
           undoDepth == other.undoDepth &&
           redoDepth == other.redoDepth &&
           peelDepth == other.peelDepth &&
@@ -993,6 +1010,7 @@ class TrackSnapshot {
           reversed == other.reversed &&
           headRate == other.headRate &&
           transpose == other.transpose &&
+          lengthHistoryRefusals == other.lengthHistoryRefusals &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -1002,6 +1020,7 @@ class TrackSnapshot {
     muted,
     lengthFrames,
     multiple,
+    syncDivisor,
     undoDepth,
     redoDepth,
     peelDepth,
@@ -1029,6 +1048,7 @@ class TrackSnapshot {
     reversed,
     headRate,
     transpose,
+    lengthHistoryRefusals,
     Object.hashAll(lanes),
   ]);
 }
@@ -1347,6 +1367,7 @@ class EngineSnapshot {
     this.syncTempo = true,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    this.loopBeats = 0,
     this.currentBeat = 0,
     this.clickMode = ClickMode.off,
     this.clickModeRevision = 0,
@@ -1428,6 +1449,7 @@ class EngineSnapshot {
       syncTempo = true,
       quantizeDiv = GridDivision.off,
       loopBars = 0,
+      loopBeats = 0,
       currentBeat = 0,
       clickMode = ClickMode.off,
       clickModeRevision = 0,
@@ -1524,6 +1546,7 @@ class EngineSnapshot {
       syncTempo: native.sync_tempo != 0,
       quantizeDiv: GridDivision.fromCode(native.quantize_div),
       loopBars: native.loop_bars,
+      loopBeats: native.loop_beats,
       currentBeat: native.current_beat,
       clickMode: ClickMode.fromCode(native.click_mode),
       clickModeRevision: native.click_mode_revision,
@@ -1613,6 +1636,7 @@ class EngineSnapshot {
     bool? syncTempo,
     GridDivision? quantizeDiv,
     int? loopBars,
+    int? loopBeats,
     int? currentBeat,
     ClickMode? clickMode,
     int? clickModeRevision,
@@ -1691,6 +1715,7 @@ class EngineSnapshot {
     syncTempo: syncTempo ?? this.syncTempo,
     quantizeDiv: quantizeDiv ?? this.quantizeDiv,
     loopBars: loopBars ?? this.loopBars,
+    loopBeats: loopBeats ?? this.loopBeats,
     currentBeat: currentBeat ?? this.currentBeat,
     clickMode: clickMode ?? this.clickMode,
     clickModeRevision: clickModeRevision ?? this.clickModeRevision,
@@ -1912,9 +1937,16 @@ class EngineSnapshot {
   final GridDivision quantizeDiv;
 
   /// Whole bars in the master loop, or `0` when no grid relationship exists
-  /// (sync off, no loop, or the loop predates any grid). The loop's audio
-  /// length is never altered by the grid — this is a derived count.
+  /// (sync off, no loop, or the loop predates any grid) or the grid's beats
+  /// do not make whole bars ([loopBeats]). The loop's audio length is never
+  /// altered by the grid — this is a derived count.
   final int loopBars;
+
+  /// Whole beats (denominator notes) in the master loop, the grid's own
+  /// count, or `0` with no grid (#1168). [loopBars] × [tsNum] for a
+  /// whole-bar loop; a Divide of a sole 1- or 3-bar loop keeps the tempo and
+  /// leaves 2 or 6 beats with [loopBars] `0`.
+  final int loopBeats;
 
   /// Beat index (`0..tsNum-1`) within the bar: loop-driven, or driven by the
   /// count-in / free-running click; `0` when idle.
@@ -2147,6 +2179,7 @@ class EngineSnapshot {
           syncTempo == other.syncTempo &&
           quantizeDiv == other.quantizeDiv &&
           loopBars == other.loopBars &&
+          loopBeats == other.loopBeats &&
           currentBeat == other.currentBeat &&
           clickMode == other.clickMode &&
           clickModeRevision == other.clickModeRevision &&
@@ -2227,6 +2260,7 @@ class EngineSnapshot {
     syncTempo,
     quantizeDiv,
     loopBars,
+    loopBeats,
     currentBeat,
     clickMode,
     clickModeRevision,

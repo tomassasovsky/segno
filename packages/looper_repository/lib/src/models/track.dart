@@ -53,6 +53,7 @@ class Track extends Equatable {
     this.redoDepth = 0,
     this.peelDepth = 0,
     this.multiple = 1,
+    this.syncDivisor = 0,
     this.inputMask = 0x1,
     this.outputMask = 0x3,
     this.layerInFlight = false,
@@ -170,6 +171,9 @@ class Track extends Equatable {
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
 
+  /// A Sync/Band division of the base loop (`2` or `4`), else `0`.
+  final int syncDivisor;
+
   /// The DEFINING-recording length preset (A6, D17): `0` = AUTO, `1..64` =
   /// fixed N bars. Inert on a track that already has content; applies to the
   /// next defining recording only. See `LooperRepository.setTrackLengthPreset`.
@@ -284,26 +288,50 @@ class Track extends Equatable {
     required TransportState transport,
     required int sampleRate,
   }) {
+    final perBeat = _framesPerBeat(transport, sampleRate);
+    if (perBeat == null || transport.tsNum <= 0) return null;
+    return _whole(perBeat * transport.tsNum);
+  }
+
+  /// Completed take length in whole beats (denominator notes), or `null`
+  /// without a known whole count, on the same grid as [wholeBars]. A Divide
+  /// of a sole 1-bar loop leaves 2 beats and no whole bar (#1168).
+  int? wholeBeats({
+    required TransportState transport,
+    required int sampleRate,
+  }) {
+    final perBeat = _framesPerBeat(transport, sampleRate);
+    return perBeat == null ? null : _whole(perBeat);
+  }
+
+  /// One beat in frames: the master grid's own when it exists, else the
+  /// nominal tempo's; null without either.
+  double? _framesPerBeat(TransportState transport, int sampleRate) {
     if (!hasContent || state == TrackState.recording) return null;
-    final double framesPerBar;
-    if (transport.masterLengthFrames > 0 && transport.loopBars > 0) {
-      framesPerBar = transport.masterLengthFrames / transport.loopBars;
-    } else {
-      if (sampleRate <= 0 ||
-          transport.tempoSource == TempoSource.none ||
-          !transport.tempoBpm.isFinite ||
-          transport.tempoBpm <= 0 ||
-          transport.tsNum <= 0) {
-        return null;
-      }
-      framesPerBar = sampleRate * 60 * transport.tsNum / transport.tempoBpm;
+    if (transport.masterLengthFrames > 0 && transport.loopBeats > 0) {
+      return transport.masterLengthFrames / transport.loopBeats;
     }
-    final bars = lengthFrames / framesPerBar;
-    if (!bars.isFinite) return null;
-    final whole = bars.round();
-    return whole > 0 && (lengthFrames - whole * framesPerBar).abs() <= 1
-        ? whole
-        : null;
+    if (transport.masterLengthFrames > 0 &&
+        transport.loopBars > 0 &&
+        transport.tsNum > 0) {
+      return transport.masterLengthFrames /
+          (transport.loopBars * transport.tsNum);
+    }
+    if (sampleRate <= 0 ||
+        transport.tempoSource == TempoSource.none ||
+        !transport.tempoBpm.isFinite ||
+        transport.tempoBpm <= 0) {
+      return null;
+    }
+    return sampleRate * 60 / transport.tempoBpm;
+  }
+
+  /// [lengthFrames] in whole [unit]s within a frame of rounding, else null.
+  int? _whole(double unit) {
+    final count = lengthFrames / unit;
+    if (!count.isFinite) return null;
+    final whole = count.round();
+    return whole > 0 && (lengthFrames - whole * unit).abs() <= 1 ? whole : null;
   }
 
   /// Everything in [props] EXCEPT the live [peak] level and [positionFrames].
@@ -355,6 +383,7 @@ class Track extends Equatable {
     redoDepth,
     peelDepth,
     multiple,
+    syncDivisor,
     inputMask,
     outputMask,
     layerInFlight,
@@ -404,6 +433,7 @@ class Track extends Equatable {
     redoDepth,
     peelDepth,
     multiple,
+    syncDivisor,
     inputMask,
     outputMask,
     layerInFlight,

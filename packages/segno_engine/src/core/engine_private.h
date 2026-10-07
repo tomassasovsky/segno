@@ -176,7 +176,8 @@ extern "C" {
  *
  * The audio thread only reads pool[a_live] (and writes into it while recording/
  * overdubbing). All undo/redo bookkeeping — the pool, the stacks, and a_live
- * (whose sole writer is the control thread) — lives on the control thread, so
+ * (whose sole writer is the control thread, except LE_CMD_SET_LENGTH's store,
+ * fenced by le_track.length_pending) — lives on the control thread, so
  * undo/redo never races the audio callback. */
 /* How one chain entry takes the pair it is handed (slice 3e). The accepted
  * design's rack input choice, and a single effect's "Effect input". */
@@ -836,6 +837,10 @@ typedef enum {
   LE_HIST_PROCESSED = 3, /* a loop-close restoration commit (#697 S9): the raw
                           * take beneath a conditioned live image. Undo/Redo
                           * swap it like a LAYER; Peel never consumes it. */
+  LE_HIST_LENGTH = 4, /* a length edit (#1168): `slot` holds the image to put
+                       * back, `len` its length and `start` where its frame 0
+                       * sits in the live image. Undo/Redo re-apply it through
+                       * LE_CMD_SET_LENGTH; Peel never crosses it. */
 } le_hist_kind;
 
 /* One entry on a track's undo/redo history (control-thread-owned). A bare pool
@@ -862,6 +867,8 @@ typedef struct {
                     * peel consumed. Undo re-inserts that LAYER `skipped`
                     * entries below the PEEL's position (clamped to the
                     * bottom), restoring the exact pre-peel stack. */
+  int32_t start; /* LENGTH: the playhead map into `slot`'s image, index
+                  * (i - start) mod len for live index i. */
 } le_hist_entry;
 
 /* Positional aggregate init, not the designated initializer the rest of the
@@ -1089,6 +1096,20 @@ typedef struct le_track {
    * (#1146, le_record_impl). The ack alone lands before the block's frames
    * finish. Configure resets it with the command counters. */
   uint64_t empty_command;
+  /* control: a posted LE_CMD_SET_LENGTH not yet filed (#1168) — 1 + the pool
+   * slot it publishes, else 0. It is a state command (state_cmds_posted), so
+   * `length_ack` names its acknowledgement; until then every history motion,
+   * capture, Clear and restoration commit on the track is refused NOT_READY,
+   * which keeps the callback's a_live store from racing them. At the ack the
+   * drain files `length_file` per `length_op` if a_length_result is LE_OK. */
+  int32_t length_pending;
+  int32_t length_op; /* 0 edit, 1 undo of a LENGTH entry, 2 its redo */
+  int length_ack;
+  le_hist_entry length_file;
+  _Atomic int32_t a_length_result; /* audio: the verdict, before the ack */
+  /* Control: Undo/Redo taps on LENGTH entries that did nothing (published as
+   * le_track_snapshot.length_history_refusals; never reset). */
+  _Atomic uint32_t a_length_history_refusals;
   _Atomic int32_t a_state_acks; /* audio: state-flip commands applied */
   uint32_t dub_generation; /* bumped on clear; audio mirrors it in handle_clear
                             * and tags retire events, so a stale event from
@@ -1143,6 +1164,11 @@ typedef struct le_track {
    *   clear                        | audio   | handle_clear
    *   clear-restore (#219)         | control | le_restore_clear (the a_live
    *                                |         | swap; the audio flip follows)
+   *   length edit, its Undo/Redo   | audio   | apply_command
+   *   (#1168)                      |         | (LE_CMD_SET_LENGTH: a_live,
+   *                                |         | length and clock in one drain;
+   *                                |         | the one audio-side a_live
+   *                                |         | store, fenced by length_pending)
    *   session load (import)        | control | le_engine_import_track_lane
    *   session load (layered)       | control | le_engine_finalize_history
    *                                |         | (covers le_engine_import_layer:
@@ -1811,7 +1837,12 @@ struct le_engine {
   _Atomic int32_t a_sync_tempo;      /* default 1 */
   _Atomic int32_t a_quantize_div;    /* le_grid_div; default 0 = off */
   _Atomic int32_t a_tempo_source;    /* le_tempo_source; default 0 = none */
-  _Atomic int32_t a_loop_bars;       /* whole bars in the master loop; 0 none */
+  _Atomic int32_t a_loop_bars;       /* whole bars in the master loop; 0 none
+                                      * or not whole bars (see a_loop_beats) */
+  _Atomic int32_t a_loop_beats;      /* whole beats (denominator notes) in the
+                                      * master loop, the grid's own count; 0
+                                      * none (#1168: a Divide of a sole 1- or
+                                      * 3-bar loop keeps 2 or 6 beats) */
   _Atomic int32_t a_current_beat;    /* 0..ts_num-1; loop-driven, or click/
                                       * count-in-driven while those free-run */
 
@@ -2059,7 +2090,7 @@ struct le_engine {
    * (advanced once per process call by the block size — tap timing needs only
    * block granularity because taps arrive via the ring, which drains at block
    * start). grid_total_beats > 0 iff a loop-driven beat grid is live
-   * (loop_bars * ts_num); grid_prev_beat is the last published beat index
+   * (a_loop_beats); grid_prev_beat is the last published beat index
    * (-1 re-arms publication at the next frame). */
   uint64_t frame_clock;
   uint64_t last_tap_frame;
