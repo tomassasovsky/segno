@@ -28,6 +28,7 @@ import 'package:segno/looper/view/fx/fx_library_page.dart';
 import 'package:segno/looper/view/fx/fx_options_sheet.dart';
 import 'package:segno/looper/view/fx/fx_rack_editor.dart';
 import 'package:segno/looper/view/fx/fx_reorder_page.dart';
+import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -1121,64 +1122,37 @@ class _PartPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final surface = context.surface;
     final cubit = context.read<FxCubit>();
     final names = context.watch<InputsCubit>().state;
-    final lanes = context.select<LooperBloc, List<int>>(
+    final recorded = context.select<LooperBloc, List<int>>(
       (b) => _recordedLanes(b.state, destination.index),
     );
-    final part = destination.part;
-    final label = switch (part) {
-      FxWholeTrack() => l10n.fxWholeTrack,
-      FxRecordedPart(:final lane) => _partName(context, lanes, lane, names),
+    // The part being edited keeps its row even if its audio was just
+    // cleared, so the picker always names what the editor is pointing at.
+    final lanes = switch (destination.part) {
+      FxRecordedPart(:final lane) when !recorded.contains(lane) => [
+        ...recorded,
+        lane,
+      ],
+      _ => recorded,
     };
-    return PopupMenuButton<FxTrackPart>(
+    return LoopSelect<FxTrackPart>(
       key: const Key('fx_part_picker'),
+      value: destination.part,
       onSelected: cubit.selectPart,
-      itemBuilder: (context) => [
-        PopupMenuItem(
+      items: [
+        LoopSelectItem(
+          key: const Key('fx_part_whole'),
           value: FxTrackPart.whole,
-          child: AppText(l10n.fxWholeTrack),
+          label: l10n.fxWholeTrack,
         ),
         for (final lane in lanes)
-          PopupMenuItem(
+          LoopSelectItem(
+            key: Key('fx_part_$lane'),
             value: FxTrackPart.part(lane),
-            child: AppText(_partName(context, lanes, lane, names)),
+            label: _partName(context, lanes, lane, names),
           ),
       ],
-      child: Container(
-        width: 240,
-        height: 64,
-        decoration: BoxDecoration(
-          color: surface.card,
-          border: Border.all(color: surface.borderSubtle),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Row(
-          children: [
-            Expanded(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: AppText(
-                  label,
-                  style: TextStyle(
-                    color: surface.textPrimary,
-                    fontSize: 24,
-                    height: 1,
-                  ),
-                ),
-              ),
-            ),
-            Icon(
-              LucideIcons.chevronDown,
-              size: 28,
-              color: surface.textSecondary,
-            ),
-          ],
-        ),
-      ),
     );
   }
 
