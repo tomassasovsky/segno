@@ -869,8 +869,14 @@ void main() {
   );
 
   check(
-    'built-in toggle and equal restore supersede older MIDI power hold',
-    ExternalJackSetup.empty,
+    'built-in toggle and equal Track FX on supersede older MIDI power hold',
+    const ExternalJackSetup(
+      single: ExternalSwitchSetup(
+        gestures: ControlGesturePair(
+          press: CommandAction(ControlCommand.trackFxOn),
+        ),
+      ),
+    ),
     (r) {
       r
         ..bindMidi()
@@ -883,7 +889,11 @@ void main() {
       expect(looper.trackChainEnabled(0), isTrue);
       r
         ..midiValue(127)
-        ..cubit.restoreAllTrackChains()
+        // An equal-value write from the Track FX on command (the former
+        // FX-mode Stop hold) still takes ownership from the MIDI hold.
+        ..sample(255)
+        ..settle()
+        ..sample(0)
         ..settle()
         ..midiValue(0);
       expect(looper.trackChainEnabled(0), isTrue);
