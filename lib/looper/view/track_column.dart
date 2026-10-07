@@ -383,8 +383,6 @@ class TrackColumn extends StatelessWidget {
               onTap: () {
                 context.read<ControlCubit>().selectTrack(track.channel);
                 switch (mode) {
-                  case InteractionMode.record:
-                    bloc.add(LooperRecordPressed(track.channel));
                   case InteractionMode.mute:
                     bloc.add(LooperMuteToggled(track.channel));
                   case InteractionMode.fx:
@@ -396,15 +394,16 @@ class TrackColumn extends StatelessWidget {
                       context,
                     ).announceFxChainToggle(track.channel);
                     bloc.add(LooperTrackChainToggled(track.channel));
+                  case InteractionMode.record:
                   case InteractionMode.mixer:
                   case InteractionMode.fade:
                   case InteractionMode.reverse:
                   case InteractionMode.peel:
                   case InteractionMode.custom:
-                    // Selection only. What a control does in Custom controls
-                    // is assigned per FOOTSWITCH, and a tile is not one —
-                    // running some other switch's assignment from a tap
-                    // would be a guess.
+                    // Selection only. Record/Play operates the selected
+                    // track, so a tap arms it rather than recording. What a
+                    // control does in Custom controls is assigned per
+                    // FOOTSWITCH, and a tile is not one.
                     break;
                 }
               },

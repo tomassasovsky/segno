@@ -796,7 +796,15 @@ class _StripPanBarState extends State<_StripPanBar> {
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             color: surface.controlStrong,
-                            borderRadius: BorderRadius.circular(8),
+                            // Only the extended end is rounded; the edge at
+                            // the centre stays square against the tick.
+                            borderRadius: widget.pan < 0
+                                ? const BorderRadius.horizontal(
+                                    left: Radius.circular(8),
+                                  )
+                                : const BorderRadius.horizontal(
+                                    right: Radius.circular(8),
+                                  ),
                           ),
                         ),
                       ),

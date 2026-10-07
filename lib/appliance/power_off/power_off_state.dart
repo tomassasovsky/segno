@@ -11,6 +11,9 @@ enum PowerOffPhase {
   /// Loops in RAM — three choices.
   confirm,
 
+  /// Nothing would vanish — Power off or Keep playing.
+  confirmEmpty,
+
   /// Host should open Save As.
   saveAs,
 
@@ -52,6 +55,7 @@ class PowerOffState extends Equatable {
   bool get isDismissible =>
       phase == PowerOffPhase.refuse ||
       phase == PowerOffPhase.confirm ||
+      phase == PowerOffPhase.confirmEmpty ||
       phase == PowerOffPhase.saveAs ||
       phase == PowerOffPhase.flushFailed ||
       phase == PowerOffPhase.saveFailed;

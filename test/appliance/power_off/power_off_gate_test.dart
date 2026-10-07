@@ -22,14 +22,17 @@ void main() {
       );
     });
 
-    test('empty → skip confirm', () {
-      expect(powerOffGate(const PowerOffSnapshot()), PowerOffDisposition.skip);
+    test('empty → plain confirm', () {
+      expect(
+        powerOffGate(const PowerOffSnapshot()),
+        PowerOffDisposition.confirmEmpty,
+      );
     });
 
-    test('named session with empty tracks still skips', () {
+    test('named session with empty tracks gets the plain confirm', () {
       expect(
         powerOffGate(const PowerOffSnapshot(currentSessionName: 'set')),
-        PowerOffDisposition.skip,
+        PowerOffDisposition.confirmEmpty,
       );
     });
   });

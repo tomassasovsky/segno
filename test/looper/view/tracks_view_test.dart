@@ -896,14 +896,16 @@ void main() {
     expect(trayState(tester).dragProgress, 0);
   });
 
-  testWidgets('tapping a tile records that channel in record mode', (
+  testWidgets('tapping a tile only selects that channel in record mode', (
     tester,
   ) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
 
     await tester.tap(find.byKey(const Key('tracks_tile_1')));
-    verify(() => bloc.add(const LooperRecordPressed(1))).called(1);
+    // Record/Play operates the selected track; the tap arms it, never records.
+    verifyNever(() => bloc.add(const LooperRecordPressed(1)));
+    expect(control.state.cursor, 1);
   });
 
   testWidgets('tapping a tile mutes/unmutes that channel in mute mode', (
@@ -1588,12 +1590,15 @@ void main() {
     testWidgets('the cue is a readout: the tap still reaches the tile', (
       tester,
     ) async {
-      seed(const LooperState(tracks: [Track(pending: true)]));
+      seed(
+        const LooperState(tracks: [Track(), Track(channel: 1, pending: true)]),
+      );
       await pump(tester);
 
-      await tester.tap(find.byKey(const Key('tracks_queued_0')));
-      // A second press cancels the arm — the tile's record path, not a cue.
-      verify(() => bloc.add(const LooperRecordPressed(0))).called(1);
+      await tester.tap(find.byKey(const Key('tracks_queued_1')));
+      // The tap reaches the tile underneath, which selects; it never records.
+      expect(control.state.cursor, 1);
+      verifyNever(() => bloc.add(const LooperRecordPressed(1)));
     });
   });
 
@@ -2686,7 +2691,7 @@ void main() {
         await tester.tap(row);
         await tester.pump();
         expect(control.state.cursor, channel);
-        verify(() => bloc.add(LooperRecordPressed(channel))).called(1);
+        verifyNever(() => bloc.add(LooperRecordPressed(channel)));
         expect(tester.takeException(), isNull);
       }
     });
