@@ -99,6 +99,45 @@ void main() {
       },
     );
 
+    test(
+      'follow tempo and pitch are settings with receipts that configure '
+      'resets',
+      () {
+        expect(
+          engine.setFollowTempo(follow: true).result,
+          EngineResult.notRunning,
+        );
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        expect(engine.setFollowTempo().result, EngineResult.invalid);
+        expect(engine.setPitchMode().result, EngineResult.invalid);
+        expect(
+          engine.setFollowTempo(channel: 99, follow: true).result,
+          EngineResult.invalid,
+        );
+        final follow = engine.setFollowTempo(follow: true);
+        expect(engine.readRequestResult(follow.request), EngineResult.ok);
+        engine
+          ..setFollowTempo(channel: 2, follow: false)
+          ..setPitchMode(mode: PitchMode.followsSpeed)
+          ..setPitchMode(channel: 1, mode: PitchMode.unchanged);
+        final s = engine.snapshot();
+        expect(s.followTempo, isTrue);
+        expect(s.pitchMode, PitchMode.followsSpeed);
+        expect(s.tracks[2].followTempoOverride, isFalse);
+        expect(s.tracks[1].pitchModeOverride, PitchMode.unchanged);
+        expect(s.tracks[0].followTempoOverride, isNull);
+        expect(s.tempoFollow, TempoFollowState.free); // no material
+        engine.setFollowTempo(channel: 2);
+        expect(engine.snapshot().tracks[2].followTempoOverride, isNull);
+        expect(engine.stop(), EngineResult.ok);
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        final fresh = engine.snapshot();
+        expect(fresh.followTempo, isFalse);
+        expect(fresh.pitchMode, PitchMode.unchanged);
+        expect(fresh.tracks[1].pitchModeOverride, isNull);
+      },
+    );
+
     test('peel is unavailable because the mock keeps no overdub layers', () {
       expect(engine.peel(), EngineResult.notRunning);
       expect(engine.start(engine.defaultConfig), EngineResult.ok);

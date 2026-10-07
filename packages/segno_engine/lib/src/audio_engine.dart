@@ -367,8 +367,22 @@ abstract interface class LooperTransport {
   /// it; admitted whenever the engine is configured.
   RequestAdmission setTransposeBypass({required bool bypassed});
 
-  /// Consumes a completed Fade, Reverse, Speed or Transpose callback result;
-  /// null means still pending.
+  /// Sets the Follow tempo default every track inherits ([channel] null,
+  /// [follow] required) or track [channel]'s override ([follow] null
+  /// inherits), #1179. With content on a bar grid and a following track, a
+  /// song-tempo change retimes the recorded tracks
+  /// ([EngineSnapshot.tempoFollow]). Admitted whenever the engine is
+  /// configured; [EngineResult.invalid] for a bad channel or a default
+  /// without a value.
+  RequestAdmission setFollowTempo({int? channel, bool? follow});
+
+  /// Sets the Pitch default ([channel] null, [mode] required) or track
+  /// [channel]'s override ([mode] null inherits), #1179: what a retime does
+  /// to a following track's pitch. Admitted like [setFollowTempo].
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode});
+
+  /// Consumes a completed Fade, Reverse, Speed, Transpose, Follow tempo or
+  /// Pitch callback result; null means still pending.
   EngineResult? readRequestResult(int request);
 
   /// Halts track [channel]'s playback, retaining the loop buffer.
@@ -1371,8 +1385,19 @@ abstract interface class SessionIo {
   /// or a torn (missing-image or mismatched-length) reconstruction.
   EngineResult finalizeHistory(int channel, TrackHistory history);
 
+  /// Gives imported track [channel] the span its take was laid down against
+  /// (#1179 Part 4b), as a Session saved it ([TrackSnapshot.spanFrames], or
+  /// the master length in force when that was 0): [commitSession] parks it at
+  /// its length over that span and keeps the span, so a take recorded after
+  /// a retime reads at its own ratio on the recorded clock. Call after the
+  /// track's lane-0 import and before the commit; 0 clears it.
+  /// [EngineResult.invalid] for a track that is not EMPTY with a take, or a
+  /// span past the buffer cap.
+  EngineResult importSpan(int channel, int spanFrames);
+
   /// Establishes the master loop at [baseFrames] and leaves every imported
-  /// track stopped at its whole-loop multiple. Launch with [AudioEngine.play].
+  /// track stopped at its whole-loop multiple (or its length over its
+  /// [importSpan]). Launch with [AudioEngine.play].
   EngineResult commitSession(int baseFrames, {required int loopBars});
 }
 

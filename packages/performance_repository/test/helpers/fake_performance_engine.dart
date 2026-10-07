@@ -196,6 +196,9 @@ class FakePerformanceEngine implements AudioEngine {
   EngineResult importTrack(int channel, Float32List pcm) => EngineResult.ok;
 
   @override
+  EngineResult importSpan(int channel, int spanFrames) => EngineResult.ok;
+
+  @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       EngineResult.ok;
 
@@ -451,6 +454,14 @@ class FakePerformanceEngine implements AudioEngine {
 
   @override
   RequestAdmission setTransposeBypass({required bool bypassed}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) =>
       (result: EngineResult.invalid, request: 0);
 
   @override

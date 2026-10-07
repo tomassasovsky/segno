@@ -2211,6 +2211,52 @@ class SettingsRepository {
     });
   }
 
+  /// Follow tempo and Pitch (#1179 Audio & tempo): a default and eight
+  /// track overrides each, one nullable bool per address like Loop/Once.
+  /// Pitch stores whether it follows the speed (absent default: Unchanged).
+  String _audioTempoKey(String name, int? channel) {
+    if (channel != null && (channel < 0 || channel >= 8)) {
+      throw ArgumentError.value(channel, 'channel');
+    }
+    return channel == null ? 'looper.default_$name' : 'track_$name.$channel';
+  }
+
+  /// Reads an exact nullable Follow tempo scalar without repairing it.
+  Future<bool?> readFollowTempoCheckpoint({required int? channel}) async {
+    final key = _audioTempoKey('follow_tempo', channel);
+    await _serializedWrite;
+    return _store.getBool(key);
+  }
+
+  /// Saves/removes and verifies one exact Follow tempo scalar.
+  Future<void> restoreFollowTempoCheckpoint({
+    required int? channel,
+    required bool? follow,
+  }) {
+    final key = _audioTempoKey('follow_tempo', channel);
+    return _serialize(() async {
+      await _writeBoolScalar(key, follow, 'Follow tempo was not confirmed');
+    });
+  }
+
+  /// Reads an exact nullable Pitch scalar (true: follows the speed).
+  Future<bool?> readPitchFollowsSpeedCheckpoint({required int? channel}) async {
+    final key = _audioTempoKey('pitch_follows_speed', channel);
+    await _serializedWrite;
+    return _store.getBool(key);
+  }
+
+  /// Saves/removes and verifies one exact Pitch scalar.
+  Future<void> restorePitchFollowsSpeedCheckpoint({
+    required int? channel,
+    required bool? followsSpeed,
+  }) {
+    final key = _audioTempoKey('pitch_follows_speed', channel);
+    return _serialize(() async {
+      await _writeBoolScalar(key, followsSpeed, 'Pitch was not confirmed');
+    });
+  }
+
   String _laneMuteKey(int channel, int lane) => 'lane_mute.$channel.$lane';
   String _laneEffectsKey(int channel, int lane) =>
       'lane_effects.$channel.$lane';

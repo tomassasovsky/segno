@@ -5727,9 +5727,41 @@ class SegnoEngineBindings {
         )
       >();
 
+  /// Sets the span an imported take was laid down against (#1179 Part 4b):
+  /// the shared-clock length it played over at its own speed, as a Session
+  /// saved it from le_track_snapshot.span_frames. Track `channel` must be EMPTY
+  /// with lane 0 imported (LE_ERR_INVALID otherwise, and for a span outside
+  /// 1..max_loop_frames); 0 clears it. le_engine_commit_session then parks the
+  /// track at length / span laps and keeps the span, so a take recorded after a
+  /// retime reads at its own ratio on the recorded clock and follows the next
+  /// retime like the takes around it. Call after the take's lanes are imported
+  /// (a lane-0 le_engine_import_track_lane, or le_engine_import_layer of lane 0
+  /// ordinal 0, starts a new take and clears it) and before the commit.
+  /// Control thread.
+  int le_engine_import_span(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int span_frames,
+  ) {
+    return _le_engine_import_span(
+      engine,
+      channel,
+      span_frames,
+    );
+  }
+
+  late final _le_engine_import_spanPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_import_span');
+  late final _le_engine_import_span = _le_engine_import_spanPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
   /// Establishes the master loop at `base_frames` and parks every imported track
   /// (EMPTY with a loaded length) STOPPED at its whole-loop multiple
-  /// (length / base_frames). Restores exactly `loop_bars` musical bars over that
+  /// (length / base_frames, or length / its imported span). Restores exactly `loop_bars` musical bars over that
   /// span; zero keeps the loop grid-free even when a tempo is known. The caller
   /// restores tempo/source/signature before this commit. Does not infer bars
   /// from BPM or change audio length. Requires base_frames > 0 and loop_bars in
@@ -6084,6 +6116,91 @@ class SegnoEngineBindings {
           int,
           ffi.Pointer<le_lane_cache_info>,
         )
+      >();
+
+  /// Follow tempo (#1179 Part 4a). With content on a bar grid, a song-tempo
+  /// change (le_engine_set_tempo, a tap pair) retimes the shared clock: the
+  /// master length becomes the recorded length scaled by recorded / new tempo
+  /// (rounded up to a whole number of the largest active Sync division), the
+  /// position keeps its phase, bars and beats keep their count, and every track
+  /// that follows reads its take at speed * take length / span, its pitch
+  /// following. A track that does not follow keeps its recorded speed, its lap
+  /// no longer the song lap, until the tempo returns. A take recorded at the
+  /// new tempo plays at its own speed. While a track plays at another span
+  /// than its take's, a punch-in on it is refused with LE_ERR_TRANSFORMED.
+  /// [channel] -1 sets the default every track inherits ([value] 0 keeps the
+  /// recorded speed, 1 follows; 0 until set); a track sets its override (-1
+  /// inherits the default). LE_ERR_INVALID for a bad channel or value.
+  int le_engine_set_follow_tempo(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int value,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_set_follow_tempo(
+      engine,
+      channel,
+      value,
+      request,
+    );
+  }
+
+  late final _le_engine_set_follow_tempoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_set_follow_tempo');
+  late final _le_engine_set_follow_tempo = _le_engine_set_follow_tempoPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  /// Pitch across a retime (#1179 Part 4a-ii). A following track that plays
+  /// over another span than its take's either keeps its pitch (0 Unchanged,
+  /// the default): the cache worker renders the take time-stretched to the
+  /// span (with its Transpose pitch, one render) and the track crossfades to
+  /// it at the same position; until it lands the take plays through the
+  /// varispeed head, timing exact, its pitch off by the tempo ratio and
+  /// reported in le_track_snapshot.pitch_effective_cents. A render within
+  /// 0.5 % of the span serves it (the head absorbs the rest), so a small tempo
+  /// move does not re-render. Or its pitch follows the ratio (1 Follows
+  /// speed), with no render. [channel] -1 sets the default ([value] 0/1); a
+  /// track sets its override (-1 inherits). LE_ERR_INVALID for a bad channel
+  /// or value.
+  int le_engine_set_pitch_mode(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int value,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_set_pitch_mode(
+      engine,
+      channel,
+      value,
+      request,
+    );
+  }
+
+  late final _le_engine_set_pitch_modePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_set_pitch_mode');
+  late final _le_engine_set_pitch_mode = _le_engine_set_pitch_modePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
       >();
 
   /// Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
@@ -6749,9 +6866,11 @@ enum le_result {
   /// is unavailable while Reverse is on
   LE_ERR_REVERSED(-9),
 
-  /// a record or overdub while Speed is not 1x
-  /// (#1179): capture never writes through a
-  /// fractional read head
+  /// a record or overdub while Speed is not 1x,
+  /// or a punch-in on a transposed track or one
+  /// playing at another span than its take's
+  /// (#1179): capture never writes under playback
+  /// it does not hear
   LE_ERR_TRANSFORMED(-10),
 
   /// render recipe (#1202): the selected tracks'
@@ -7278,7 +7397,15 @@ enum le_command_code {
   /// MIDI clock sync (#1228; codes 124-131 are this epic's): one complete
   /// vector {source port or -1, follow transport, loss policy} with a receipt
   /// sequence. Rechecked by the callback (LE_ERR_SYNC_LOCKED).
-  LE_CMD_SET_CLOCK_SYNC(124);
+  LE_CMD_SET_CLOCK_SYNC(124),
+
+  /// checked internal Follow tempo setting
+  /// (#1179 Part 4a)
+  LE_CMD_SET_FOLLOW_TEMPO(120),
+
+  /// checked internal Pitch setting (#1179 Part
+  /// 4a-ii); 122-123 are held for #1179
+  LE_CMD_SET_PITCH_MODE(121);
 
   final int value;
   const le_command_code(this.value);
@@ -7374,6 +7501,8 @@ enum le_command_code {
     113 => LE_CMD_BOUNCE,
     114 => LE_CMD_BOUNCE_RECOVER,
     124 => LE_CMD_SET_CLOCK_SYNC,
+    120 => LE_CMD_SET_FOLLOW_TEMPO,
+    121 => LE_CMD_SET_PITCH_MODE,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -7952,6 +8081,30 @@ final class le_track_snapshot extends ffi.Struct {
 
   @ffi.Int32()
   external int transpose_effective_st;
+
+  /// Trailing (#1179 Part 4a): this track's Follow tempo override (-1
+  /// inherits le_snapshot.follow_tempo, 0 keeps its recorded speed, 1 follows
+  /// the song tempo).
+  @ffi.Int32()
+  external int follow_override;
+
+  /// Trailing (#1179 Part 4a-ii): this track's Pitch override (-1 inherits
+  /// le_snapshot.pitch_follows_speed, 0 Unchanged, 1 Follows speed), and the
+  /// pitch the tempo retime puts on what it sounds now, in cents: 0 at its
+  /// own span or once a stretch render plays (within the 0.5 % tolerance,
+  /// about 9 cents), the varispeed's shift while that render is pending or
+  /// with Follows speed. Speed and Transpose are not included.
+  @ffi.Int32()
+  external int pitch_override;
+
+  @ffi.Int32()
+  external int pitch_effective_cents;
+
+  /// Trailing (#1179 Part 4b): the shared-clock length this track's take was
+  /// laid down against once a retime moved the clock (0: the clock in force).
+  /// A Session saves it so a recall reads every take at its own ratio.
+  @ffi.Int32()
+  external int span_frames;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
@@ -8583,6 +8736,30 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Uint32()
   external int clock_losses;
+
+  /// Trailing (#1179 Part 4a): the tempo the takes were recorded at (0 with
+  /// no master), the Follow tempo default every track inherits (0 = keep the
+  /// recorded speed), and what a song-tempo change does now
+  /// (le_tempo_follow_state).
+  @ffi.Float()
+  external double recorded_tempo_bpm;
+
+  @ffi.Int32()
+  external int follow_tempo;
+
+  @ffi.Int32()
+  external int tempo_follow;
+
+  /// Trailing (#1179 Part 4a-ii): the Pitch default every track inherits
+  /// (0 Unchanged, the default; 1 Follows speed).
+  @ffi.Int32()
+  external int pitch_follows_speed;
+
+  /// Trailing (#1179 Part 4b): the master length recorded_tempo_bpm
+  /// measured (0 with none). A Session saves the pair, so a recall commits
+  /// the takes at the tempo they were laid down at and retimes from there.
+  @ffi.Int32()
+  external int recorded_length_frames;
 }
 
 /// The plugin format a descriptor was discovered in.

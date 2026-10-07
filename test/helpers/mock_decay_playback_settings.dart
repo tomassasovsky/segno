@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/playback_options.dart';
@@ -13,6 +15,8 @@ class MockDecayPlaybackSettings extends Mock
   MockDecayPlaybackSettings({
     DecaySnapshot? snapshot,
     OneShotSnapshot? oneShot,
+    InheritSnapshot<bool>? followTempo,
+    InheritSnapshot<PitchMode>? pitchMode,
   }) {
     registerFallbackValue(const DecayAddress.defaults());
     registerFallbackValue(const OneShotAddress.defaults());
@@ -24,6 +28,8 @@ class MockDecayPlaybackSettings extends Mock
         defaultOneShot: oneShotSnapshot?.defaultOneShot ?? false,
         trackOneShotOverrides: oneShotSnapshot?.trackOverrides ?? const {},
         oneShotReady: oneShotSnapshot != null,
+        followTempo: followTempo,
+        pitchMode: pitchMode,
       ),
     );
     when(() => stream).thenAnswer((_) => _states.stream);
