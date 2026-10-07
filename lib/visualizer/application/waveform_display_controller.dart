@@ -18,6 +18,7 @@ class WaveformDisplayContext extends Equatable {
     required this.bank,
     required this.deviceLost,
     required this.goodbye,
+    this.brightness = 1,
   });
 
   /// Selected track channel.
@@ -41,6 +42,9 @@ class WaveformDisplayContext extends Equatable {
   /// Current shutdown presentation.
   final ReadoutGoodbye goodbye;
 
+  /// The software dim over the second screen's window (`1` = none).
+  final double brightness;
+
   @override
   List<Object?> get props => [
     cursor,
@@ -50,6 +54,7 @@ class WaveformDisplayContext extends Equatable {
     bank,
     deviceLost,
     goodbye,
+    brightness,
   ];
 }
 
@@ -366,6 +371,7 @@ class WaveformDisplayController {
       activeBank: _context.bank,
       deviceLost: _context.deviceLost,
       goodbye: _context.goodbye,
+      brightness: _context.brightness,
     );
   }
 }

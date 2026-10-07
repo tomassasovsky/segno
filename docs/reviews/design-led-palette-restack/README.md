@@ -15,8 +15,9 @@ Pen changes before these report-only additions.
 
 - Eight named colors and reusable custom colors. Hue, Saturation and Brightness
   edit an exact RGB value. New setups use full white; black is a valid choice.
-- Colors belong to physical switches across banks. Bank selects its own lamp
-  in the color editor, and fixed-action switches remain editable there.
+- Colors belong to physical switches across banks. Superseded by #1274: the
+  palette applies only in Custom mode and only to Custom-assignable switches;
+  Record, Mute and FX light in fixed state colours.
 - Draft colors preview only in setup. The confirmed pedal frame is unchanged
   until a successful durable Save. Selection never changes the activity mask.
 - Saving only colors preserves held contacts, pending Press/Hold gestures,

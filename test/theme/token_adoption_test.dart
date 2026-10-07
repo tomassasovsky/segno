@@ -40,7 +40,7 @@ const _allowed = <String, String>{
 
   // Must match the Plymouth splash field (#08080A), not a theme token —
   // the goodbye mark is the same pixel the unit booted with.
-  'lib/appliance/power_off/power_off_goodbye.dart':
+  'lib/appliance/power_off/power_goodbye.dart':
       'Plymouth goodbye field — must match the boot splash hex',
 };
 

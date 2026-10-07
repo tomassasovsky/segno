@@ -164,6 +164,8 @@ final goldenMessages = <String, PedalLinkMessage>{
   'button_bank_up': const ButtonMessage(PedalButton.bank, pressed: false),
   'encoder_plus1': const EncoderMessage(1),
   'encoder_minus3': const EncoderMessage(-3),
+  'encoder_button_down': const EncoderButtonMessage(pressed: true),
+  'encoder_button_up': const EncoderButtonMessage(pressed: false),
   'ctrl1_switch_down': const CtrlMessage(
     jack: PedalCtrlJack.ctrl1,
     kind: PedalCtrlKind.switchPedal,

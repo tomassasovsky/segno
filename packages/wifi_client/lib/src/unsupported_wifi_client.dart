@@ -26,4 +26,13 @@ class UnsupportedWifiClient implements WifiClient {
 
   @override
   Future<void> setEnabled({required bool enabled}) async {}
+
+  @override
+  Future<void> setAutoConnect(String ssid, {required bool enabled}) async {}
+
+  @override
+  Future<void> changePassword(String ssid, String psk) async {}
+
+  @override
+  Future<bool> checkConnectivity() async => false;
 }

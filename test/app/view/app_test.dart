@@ -22,9 +22,9 @@ import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
-import 'package:segno/appliance/power_off/power_off_gate.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
@@ -68,6 +68,10 @@ class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   Future<Version> stagedVersion() async => Version.none;
   @override
+  Future<UpdateRecovery> recover() async => const UpdateRecovery();
+  @override
+  Future<void> clearInterrupted() async {}
+  @override
   Future<UpdateManifest?> fetchManifest() async => UpdateManifest(
     version: Version.parse('0.2.0'),
     bundle: 'b.raucb',
@@ -76,8 +80,6 @@ class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
       Stream.fromIterable(const [1]);
-  @override
-  Future<void> applyAndRestart() async {}
 }
 
 /// Same as [_FakeUpdateBackend], but [fetchManifest] waits until [complete] so
@@ -125,6 +127,9 @@ class _RecordingWindowService implements WaveformWindowService {
 
   @override
   void Function()? onWindowReady;
+
+  @override
+  void Function()? onWindowActivity;
 
   @override
   Future<void> pushReadout(PerformanceReadout readout) async {
@@ -664,6 +669,13 @@ class _WaveformAudioEngine extends FakeAudioEngine {
   }
 }
 
+const _named = PowerSnapshot(currentSessionName: 'set');
+
+/// Marks the one-shot `Hold · Tuner` default (#1229) as already attempted,
+/// for tests about other boot work: on a fresh store, boot adds it and says
+/// so with a toast of its own.
+const _tunerSeededKey = 'pedal.tuner_default_seeded';
+
 void main() {
   group('App', () {
     late FakeAudioEngine engine;
@@ -850,7 +862,7 @@ void main() {
         final context = tester.element(find.byType(TracksView));
         final looper = context.read<LooperBloc>();
         final control = context.read<ControlCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         final closed = <String>{};
         context.read<TempoSettings>().stream.listen(
           (_) {},
@@ -929,13 +941,14 @@ void main() {
       );
       await tester.pump();
       expect(await settings.loadTrackFxChain(0), isNull);
-      final power = tracksContext.read<PowerOffCubit>()
-        ..press(const PowerOffSnapshot());
+      final power = tracksContext.read<PowerCubit>()
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pump();
       // No virtual time has elapsed: shutdown, not the debounce timer,
       // must begin the edit's persistence and await it before goodbye.
       expect(store.writeEntered, isTrue);
-      expect(power.state.phase, PowerOffPhase.flushing);
+      expect(power.state.phase, PowerPhase.saving);
       expect(await settings.loadTrackFxChain(0), isNull);
       store.releaseWrite.complete();
       await tester.pump();
@@ -954,7 +967,7 @@ void main() {
       expect(engine.recordCalls, 0);
       expect(engine.clearCalls, 0);
       await tester.pumpAndSettle();
-      expect(power.state.phase, PowerOffPhase.goodbye);
+      expect(power.state.phase, PowerPhase.goodbye);
       await tester.pump(const Duration(seconds: 3));
       expect(savedAtHalt, saved);
     });
@@ -990,12 +1003,13 @@ void main() {
             );
           } else if (recovery == 'Power') {
             final context = tester.element(find.byType(TracksView));
-            final power = context.read<PowerOffCubit>()
-              ..press(const PowerOffSnapshot());
+            final power = context.read<PowerCubit>()
+              ..press(_named)
+              ..shutDown(_named, save: () async {});
             await tester.pumpAndSettle();
             expect(halted, isFalse);
             store.values.remove('looper.fade_durations');
-            power.retryPowerOff(const PowerOffSnapshot());
+            power.retry(_named);
             await tester.pumpAndSettle();
             await tester.pump(const Duration(seconds: 6));
             expect(halted, isTrue);
@@ -1028,14 +1042,16 @@ void main() {
       await pumpApp(tester, window, powerOff: () async => halted = true);
       final context = tester.element(find.byType(TracksView));
       final tempo = context.read<TempoCubit>();
-      final power = context.read<PowerOffCubit>();
+      final power = context.read<PowerCubit>();
       store.pendingWrite = Completer<void>();
       unawaited(tempo.setClickVolume(1.5));
       await tester.pump();
       expect(store.writeEntered, isTrue);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pump(const Duration(milliseconds: 100));
-      expect(power.state.phase, PowerOffPhase.flushing);
+      expect(power.state.phase, PowerPhase.saving);
       expect(halted, isFalse);
       store.pendingWrite!.complete();
       await tester.pump();
@@ -1058,21 +1074,22 @@ void main() {
       );
       final context = tester.element(find.byType(TracksView));
       final tempo = context.read<TempoCubit>();
-      final power = context.read<PowerOffCubit>();
+      final power = context.read<PowerCubit>();
       store.refuseWrite = true;
       unawaited(tempo.setClickVolume(1.5));
       await tester.pump();
       // The owed rollback makes Click unavailable until Retry.
       expect(tempo.state.confirmedClickVolume, isNull);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pumpAndSettle();
-      expect(power.state.phase, PowerOffPhase.flushFailed);
-      expect(find.text('Settings could not be confirmed'), findsOneWidget);
-      expect(find.byKey(const Key('power_off_retry')), findsOneWidget);
-      expect(find.byKey(const Key('power_off_discard')), findsNothing);
+      expect(power.state.phase, PowerPhase.saveFailed);
+      expect(find.text('Segno is staying on'), findsOneWidget);
+      expect(find.byKey(const Key('power_retry')), findsOneWidget);
       expect(halted, isFalse);
       store.refuseWrite = false;
-      await tester.tap(find.byKey(const Key('power_off_retry')));
+      await tester.tap(find.byKey(const Key('power_retry')));
       await tester.pump();
       await tester.pump(const Duration(seconds: 6));
       await tester.pumpAndSettle();
@@ -1097,7 +1114,7 @@ void main() {
       final context = tester.element(find.byType(TracksView));
       final control = context.read<ControlCubit>();
       final tempo = context.read<TempoCubit>();
-      final power = context.read<PowerOffCubit>();
+      final power = context.read<PowerCubit>();
       final editor = Object();
       control.beginMidiEdit(device: 'shutdown-test', owner: editor);
       MidiSaveResult? saved;
@@ -1131,9 +1148,11 @@ void main() {
       midi.push(127);
       await tester.pumpAndSettle();
       expect(tempo.state.confirmedClickVolume, 1.5);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pumpAndSettle();
-      expect(power.state.phase, PowerOffPhase.goodbye);
+      expect(power.state.phase, PowerPhase.goodbye);
       expect(tempo.state.confirmedClickVolume, .25);
       expect(store.values['tempo.click_volume'], .25);
       expect(haltCalls, 0);
@@ -1368,12 +1387,11 @@ void main() {
           .hitTestable();
       expect(retry, findsOneWidget);
       expect(find.text('Retry').hitTestable(), findsOneWidget);
-      final power = context.read<PowerOffCubit>()
-        ..press(const PowerOffSnapshot(anyHasContent: true));
+      final power = context.read<PowerCubit>()..press(_named);
       await tester.pumpAndSettle();
       expect(debugAppToastActive(AppToastId.sessionBootRecovery), isFalse);
       expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
-      power.keepPlaying();
+      power.dismiss();
       await tester.pumpAndSettle();
       expect(retry, findsOneWidget);
       expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
@@ -1438,6 +1456,7 @@ void main() {
         ) async {
           final gate = Completer<void>();
           final store = _MonitorRestoreStore()..readGate = gate;
+          store.values[_tunerSeededKey] = true;
           settings = SettingsRepository(store: store);
           await pumpApp(tester, NoopWaveformWindowService());
           final monitor = tester
@@ -1477,19 +1496,18 @@ void main() {
             .element(find.byType(TracksView))
             .read<MonitorCubit>();
         expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
-        final power =
-            tester.element(find.byType(TracksView)).read<PowerOffCubit>()
-              ..press(const PowerOffSnapshot(anyHasContent: true));
+        final power = tester.element(find.byType(TracksView)).read<PowerCubit>()
+          ..press(_named);
         await tester.pumpAndSettle();
         expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
-        power.keepPlaying();
+        power.dismiss();
         await tester.pumpAndSettle();
         expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
-        power.press(const PowerOffSnapshot(anyHasContent: true));
+        power.press(_named);
         await tester.pumpAndSettle();
         monitor.projectFromRepository();
         await tester.pumpAndSettle();
-        power.keepPlaying();
+        power.dismiss();
         await tester.pumpAndSettle();
         expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -1503,6 +1521,7 @@ void main() {
         (tester) async {
           final store = _LengthStore()..refuseNextRead = !malformed;
           store.values.addAll({
+            _tunerSeededKey: true,
             'looper.mode': LooperMode.free.code,
             'looper.default_length_bars': 4,
             'tempo.length_preset.7': malformed ? 65 : 0,
@@ -1551,6 +1570,7 @@ void main() {
         (tester) async {
           final store = _TimingStore()..refuseNextRead = !malformed;
           store.values.addAll({
+            _tunerSeededKey: true,
             'looper.quantize': true,
             'tempo.quantize_div': 3,
             'track_record_timing.7': malformed ? 7 : 0,
@@ -1600,6 +1620,7 @@ void main() {
           final store = _RecordStartStore()..refuseNextRead = !malformed;
           store.values['tempo.count_in_bars'] = malformed ? 3 : 4;
           store.values['looper.auto_record'] = false;
+          store.values[_tunerSeededKey] = true;
           final before = Map<String, Object>.of(store.values);
           settings = SettingsRepository(store: store);
           await pumpApp(tester, NoopWaveformWindowService());
@@ -1618,7 +1639,11 @@ void main() {
           expect(
             store.values,
             malformed
-                ? {'tempo.count_in_bars': 0, 'looper.auto_record': false}
+                ? {
+                    'tempo.count_in_bars': 0,
+                    'looper.auto_record': false,
+                    _tunerSeededKey: true,
+                  }
                 : before,
           );
           expect(
@@ -1680,6 +1705,7 @@ void main() {
           final store = FakeKeyValueStore();
           store.values['tempo.count_in_bars'] = 0;
           store.values['looper.auto_record'] = true;
+          store.values[_tunerSeededKey] = true;
           settings = SettingsRepository(store: store);
           await pumpApp(tester, NoopWaveformWindowService());
           final context = tester.element(find.byType(TracksView));
@@ -1776,16 +1802,18 @@ void main() {
         );
         final context = tester.element(find.byType(TracksView));
         final tempo = context.read<TempoCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         expect(tempo.state.confirmedRecordStart?.countInBars, 1);
         expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
         store.pendingWrite = Completer<void>();
         unawaited(tempo.setSoundStart(enabled: true));
         await tester.pump();
         expect(store.writeEntered, isTrue);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
         await tester.pump(const Duration(milliseconds: 100));
-        expect(power.state.phase, PowerOffPhase.flushing);
+        expect(power.state.phase, PowerPhase.saving);
         expect(haltCalls, 0);
         expect(tempo.state.confirmedRecordStart?.countInBars, 1);
         expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
@@ -1820,22 +1848,23 @@ void main() {
         );
         final context = tester.element(find.byType(TracksView));
         final tempo = context.read<TempoCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         store.refuseWrite = true;
         unawaited(tempo.setSoundStart(enabled: true));
         await tester.pumpAndSettle();
         expect(tempo.state.confirmedRecordStart?.countInBars, 1);
         expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
         expect(tempo.state.recordStartSnapshot, isNull);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
         await tester.pumpAndSettle();
-        expect(power.state.phase, PowerOffPhase.flushFailed);
+        expect(power.state.phase, PowerPhase.saveFailed);
         expect(haltCalls, 0);
-        expect(find.byKey(const Key('power_off_discard')), findsNothing);
         expect(debugAppToastActive(AppToastId.recordStartSettings), isFalse);
         store.refuseWrite = false;
         await tester.tap(
-          find.byKey(Key(retry ? 'power_off_retry' : 'power_off_keep_playing')),
+          find.byKey(Key(retry ? 'power_retry' : 'power_stay_on')),
         );
         await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 6));
@@ -1875,7 +1904,7 @@ void main() {
       await tester.pumpAndSettle();
       final context = tester.element(find.byType(TracksView));
       final tempo = context.read<TempoCubit>();
-      final power = context.read<PowerOffCubit>();
+      final power = context.read<PowerCubit>();
       engine.recordStartResult = EngineResult.invalid;
       bool? accepted;
       unawaited(
@@ -1891,9 +1920,11 @@ void main() {
       expect(store.values.containsKey('tempo.count_in_bars'), isFalse);
       expect(store.values.containsKey('looper.auto_record'), isFalse);
       expect(repository.recordStartRecoveryRequired, isFalse);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pumpAndSettle();
-      expect(power.state.phase, PowerOffPhase.goodbye);
+      expect(power.state.phase, PowerPhase.goodbye);
       await tester.pump(const Duration(seconds: 6));
       expect(haltCalls, 1);
     });
@@ -1904,6 +1935,7 @@ void main() {
         (tester) async {
           final store = _ClickModeStore()..refuseNextRead = !malformed;
           store.values['tempo.click_mode'] = malformed ? 4 : 0;
+          store.values[_tunerSeededKey] = true;
           final before = Map<String, Object>.of(store.values);
           settings = SettingsRepository(store: store);
           await pumpApp(tester, NoopWaveformWindowService());
@@ -1941,15 +1973,17 @@ void main() {
       );
       final context = tester.element(find.byType(TracksView));
       final tempo = context.read<TempoCubit>();
-      final power = context.read<PowerOffCubit>();
+      final power = context.read<PowerCubit>();
       expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
       store.pendingWrite = Completer<void>();
       unawaited(tempo.setClickMode(ClickMode.playRec));
       await tester.pump();
       expect(store.writeEntered, isTrue);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pump(const Duration(milliseconds: 100));
-      expect(power.state.phase, PowerOffPhase.flushing);
+      expect(power.state.phase, PowerPhase.saving);
       expect(haltCalls, 0);
       expect(tempo.state.clickMode, ClickMode.recFirst);
       store.pendingWrite!.complete();
@@ -1977,21 +2011,22 @@ void main() {
         );
         final context = tester.element(find.byType(TracksView));
         final tempo = context.read<TempoCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         store.refuseWrite = true;
         unawaited(tempo.setClickMode(ClickMode.playRec));
         await tester.pumpAndSettle();
         expect(tempo.state.clickMode, ClickMode.recFirst);
         expect(tempo.state.clickModeSnapshot, isNull);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
         await tester.pumpAndSettle();
-        expect(power.state.phase, PowerOffPhase.flushFailed);
+        expect(power.state.phase, PowerPhase.saveFailed);
         expect(haltCalls, 0);
-        expect(find.byKey(const Key('power_off_discard')), findsNothing);
         expect(debugAppToastActive(AppToastId.clickModeSettings), isFalse);
         store.refuseWrite = false;
         await tester.tap(
-          find.byKey(Key(retry ? 'power_off_retry' : 'power_off_keep_playing')),
+          find.byKey(Key(retry ? 'power_retry' : 'power_stay_on')),
         );
         await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 6));
@@ -2126,7 +2161,7 @@ void main() {
       await tester.pumpAndSettle();
       final context = tester.element(find.byType(TracksView));
       final tempo = context.read<TempoCubit>();
-      final power = context.read<PowerOffCubit>();
+      final power = context.read<PowerCubit>();
       rejectingEngine.refuseMode = true;
       bool? accepted;
       unawaited(
@@ -2141,9 +2176,11 @@ void main() {
       expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
       expect(store.values.containsKey('tempo.click_mode'), isFalse);
       expect(repository.clickModeRecoveryRequired, isFalse);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pumpAndSettle();
-      expect(power.state.phase, PowerOffPhase.goodbye);
+      expect(power.state.phase, PowerPhase.goodbye);
       await tester.pump(const Duration(seconds: 6));
       expect(haltCalls, 1);
     });
@@ -2174,7 +2211,7 @@ void main() {
           final context = tester.element(find.byType(TracksView));
           final control = context.read<ControlCubit>();
           final tempo = context.read<TempoCubit>();
-          final power = context.read<PowerOffCubit>();
+          final power = context.read<PowerCubit>();
           final editor = Object();
           control.beginMidiEdit(device: 'shutdown-test', owner: editor);
           MidiSaveResult? saved;
@@ -2222,16 +2259,18 @@ void main() {
             expect(tempo.state.clickMode, ClickMode.playRec);
           }
           final stopCalls = engine.stopCalls;
-          power.press(const PowerOffSnapshot());
+          power
+            ..press(_named)
+            ..shutDown(_named, save: () async {});
           await tester.pumpAndSettle();
-          expect(power.state.phase, PowerOffPhase.flushFailed);
+          expect(power.state.phase, PowerPhase.saveFailed);
           expect(haltCalls, 0);
           expect(engine.stopCalls, stopCalls);
           expect(tempo.state.clickMode, ClickMode.playRec);
           expect(store.values['tempo.click_mode'], 0);
           expect(debugAppToastActive(AppToastId.clickModeSettings), isFalse);
           expect(
-            find.byKey(const Key('power_off_retry')).hitTestable(),
+            find.byKey(const Key('power_retry')).hitTestable(),
             findsOneWidget,
           );
           final commandsBeforeLateInput = engine.clickModeRequests.length;
@@ -2239,10 +2278,10 @@ void main() {
           await tester.pumpAndSettle();
           expect(engine.clickModeRequests.length, commandsBeforeLateInput);
           rejectingEngine.refuseMode = false;
-          await tester.tap(find.byKey(const Key('power_off_retry')));
+          await tester.tap(find.byKey(const Key('power_retry')));
           await tester.pumpAndSettle();
           expect(tempo.state.clickMode, ClickMode.off);
-          expect(power.state.phase, PowerOffPhase.goodbye);
+          expect(power.state.phase, PowerPhase.goodbye);
           await tester.pump(const Duration(seconds: 6));
           expect(haltCalls, 1);
         },
@@ -2263,7 +2302,7 @@ void main() {
         );
         final context = tester.element(find.byType(TracksView));
         final timing = context.read<RecordTimingCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         store.pendingWrite = Completer<void>();
         if (channel == null) {
           unawaited(timing.setTiming(RecordTiming.half));
@@ -2277,9 +2316,11 @@ void main() {
         }
         await tester.pump();
         expect(store.writeEntered, isTrue);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
         await tester.pump(const Duration(milliseconds: 100));
-        expect(power.state.phase, PowerOffPhase.flushing);
+        expect(power.state.phase, PowerPhase.saving);
         expect(halted, isFalse);
         store.pendingWrite!.complete();
         await tester.pump();
@@ -2308,20 +2349,21 @@ void main() {
         );
         final context = tester.element(find.byType(TracksView));
         final timing = context.read<RecordTimingCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         store.refuseWrite = true;
         unawaited(timing.setTiming(RecordTiming.half));
         await tester.pumpAndSettle();
         expect(timing.state.defaultTiming, RecordTiming.immediately);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
         await tester.pumpAndSettle();
-        expect(power.state.phase, PowerOffPhase.flushFailed);
+        expect(power.state.phase, PowerPhase.saveFailed);
         expect(halted, isFalse);
-        expect(find.byKey(const Key('power_off_discard')), findsNothing);
         store.refuseWrite = false;
         await tester.tap(
           find.byKey(
-            Key(retry ? 'power_off_retry' : 'power_off_keep_playing'),
+            Key(retry ? 'power_retry' : 'power_stay_on'),
           ),
         );
         await tester.pumpAndSettle();
@@ -2365,7 +2407,7 @@ void main() {
         );
         final context = tester.element(find.byType(TracksView));
         final decay = context.read<PlaybackOptionsCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         store.pendingWrite = Completer<void>();
         if (channel == null) {
           unawaited(decay.setOverdubDecay(65));
@@ -2374,9 +2416,11 @@ void main() {
         }
         await tester.pump();
         expect(store.writeEntered, isTrue);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
         await tester.pump(const Duration(milliseconds: 100));
-        expect(power.state.phase, PowerOffPhase.flushing);
+        expect(power.state.phase, PowerPhase.saving);
         expect(halted, isFalse);
         store.pendingWrite!.complete();
         await tester.pump();
@@ -2403,22 +2447,23 @@ void main() {
         );
         final context = tester.element(find.byType(TracksView));
         final decay = context.read<PlaybackOptionsCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         store.refuseWrite = true;
         unawaited(decay.setOverdubDecay(80));
         await tester.pumpAndSettle();
         expect(decay.state.overdubDecay, 0);
         expect(debugAppToastActive(AppToastId.decaySettings), isTrue);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
         await tester.pumpAndSettle();
-        expect(power.state.phase, PowerOffPhase.flushFailed);
+        expect(power.state.phase, PowerPhase.saveFailed);
         expect(debugAppToastActive(AppToastId.decaySettings), isFalse);
-        expect(find.text('Settings could not be confirmed'), findsOneWidget);
-        expect(find.byKey(const Key('power_off_discard')), findsNothing);
+        expect(find.text('Segno is staying on'), findsOneWidget);
         expect(halted, isFalse);
         store.refuseWrite = false;
         await tester.tap(
-          find.byKey(Key(retry ? 'power_off_retry' : 'power_off_keep_playing')),
+          find.byKey(Key(retry ? 'power_retry' : 'power_stay_on')),
         );
         await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 6));
@@ -2454,7 +2499,7 @@ void main() {
         );
         final context = tester.element(find.byType(TracksView));
         final options = context.read<PlaybackOptionsCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         decayStore.refuseWrite = true;
         onceStore.refuseWrite = true;
         if (decay) {
@@ -2471,9 +2516,11 @@ void main() {
           onceStore.values.containsKey('looper.default_one_shot'),
           isFalse,
         );
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
         await tester.pumpAndSettle();
-        expect(power.state.phase, PowerOffPhase.goodbye);
+        expect(power.state.phase, PowerPhase.goodbye);
         await tester.pump(const Duration(seconds: 6));
         expect(halted, isTrue);
       });
@@ -2496,7 +2543,7 @@ void main() {
       final context = tester.element(find.byType(TracksView));
       final control = context.read<ControlCubit>();
       final decay = context.read<PlaybackOptionsCubit>();
-      final power = context.read<PowerOffCubit>();
+      final power = context.read<PowerCubit>();
       final editor = Object();
       control.beginMidiEdit(device: 'shutdown-test', owner: editor);
       MidiSaveResult? saved;
@@ -2536,9 +2583,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(decay.state.overdubDecay, 80);
       expect(decay.state.trackOverdubDecayOverrides, {7: 75});
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pumpAndSettle();
-      expect(power.state.phase, PowerOffPhase.goodbye);
+      expect(power.state.phase, PowerPhase.goodbye);
       expect(decay.state.overdubDecay, 20);
       expect(decay.state.trackOverdubDecayOverrides, {7: 0});
       expect(store.values['looper.overdub_decay'], 20);
@@ -2569,7 +2618,7 @@ void main() {
         );
         final context = tester.element(find.byType(TracksView));
         final once = context.read<PlaybackOptionsCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         store.pendingWrite = Completer<void>();
         if (channel == null) {
           unawaited(once.setDefaultOneShot(value: true));
@@ -2578,9 +2627,11 @@ void main() {
         }
         await tester.pump();
         expect(store.writeEntered, isTrue);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
         await tester.pump(const Duration(milliseconds: 100));
-        expect(power.state.phase, PowerOffPhase.flushing);
+        expect(power.state.phase, PowerPhase.saving);
         expect(halted, isFalse);
         store.pendingWrite!.complete();
         await tester.pump();
@@ -2607,20 +2658,21 @@ void main() {
         );
         final context = tester.element(find.byType(TracksView));
         final once = context.read<PlaybackOptionsCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         store.refuseWrite = true;
         unawaited(once.setDefaultOneShot(value: true));
         await tester.pumpAndSettle();
         expect(once.state.defaultOneShot, isFalse);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
         await tester.pumpAndSettle();
-        expect(power.state.phase, PowerOffPhase.flushFailed);
-        expect(find.text('Settings could not be confirmed'), findsOneWidget);
-        expect(find.byKey(const Key('power_off_discard')), findsNothing);
+        expect(power.state.phase, PowerPhase.saveFailed);
+        expect(find.text('Segno is staying on'), findsOneWidget);
         expect(halted, isFalse);
         store.refuseWrite = false;
         await tester.tap(
-          find.byKey(Key(retry ? 'power_off_retry' : 'power_off_keep_playing')),
+          find.byKey(Key(retry ? 'power_retry' : 'power_stay_on')),
         );
         await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 6));
@@ -2659,7 +2711,7 @@ void main() {
       final context = tester.element(find.byType(TracksView));
       final control = context.read<ControlCubit>();
       final once = context.read<PlaybackOptionsCubit>();
-      final power = context.read<PowerOffCubit>();
+      final power = context.read<PowerCubit>();
       final editor = Object();
       control.beginMidiEdit(device: 'shutdown-test', owner: editor);
       MidiSaveResult? saved;
@@ -2699,9 +2751,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(once.state.defaultOneShot, isTrue);
       expect(once.state.trackOneShotOverrides, {7: true});
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pumpAndSettle();
-      expect(power.state.phase, PowerOffPhase.goodbye);
+      expect(power.state.phase, PowerPhase.goodbye);
       expect(once.state.defaultOneShot, isFalse);
       expect(once.state.trackOneShotOverrides, {7: false});
       expect(store.values['looper.default_one_shot'], false);
@@ -2733,7 +2787,7 @@ void main() {
         );
         final context = tester.element(find.byType(TracksView));
         final length = context.read<RecordOptionsCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         store.pendingWrite = Completer<void>();
         if (channel == null) {
           unawaited(length.setDefaultLengthBars(4));
@@ -2742,9 +2796,11 @@ void main() {
         }
         await tester.pump();
         expect(store.writeEntered, isTrue);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
         await tester.pump(const Duration(milliseconds: 100));
-        expect(power.state.phase, PowerOffPhase.flushing);
+        expect(power.state.phase, PowerPhase.saving);
         expect(halted, isFalse);
         store.pendingWrite!.complete();
         await tester.pump();
@@ -2774,21 +2830,22 @@ void main() {
           );
           final context = tester.element(find.byType(TracksView));
           final length = context.read<RecordOptionsCubit>();
-          final power = context.read<PowerOffCubit>();
+          final power = context.read<PowerCubit>();
           store.refuseWrite = true;
           unawaited(length.setDefaultLengthBars(4));
           await tester.pumpAndSettle();
           expect(length.state.options.defaultLengthBars, 0);
-          power.press(const PowerOffSnapshot());
+          power
+            ..press(_named)
+            ..shutDown(_named, save: () async {});
           await tester.pumpAndSettle();
-          expect(power.state.phase, PowerOffPhase.flushFailed);
-          expect(find.text('Settings could not be confirmed'), findsOneWidget);
-          expect(find.byKey(const Key('power_off_discard')), findsNothing);
+          expect(power.state.phase, PowerPhase.saveFailed);
+          expect(find.text('Segno is staying on'), findsOneWidget);
           expect(halted, isFalse);
           store.refuseWrite = false;
           await tester.tap(
             find.byKey(
-              Key(retry ? 'power_off_retry' : 'power_off_keep_playing'),
+              Key(retry ? 'power_retry' : 'power_stay_on'),
             ),
           );
           await tester.pumpAndSettle();
@@ -2828,16 +2885,18 @@ void main() {
       );
       final context = tester.element(find.byType(TracksView));
       final length = context.read<RecordOptionsCubit>();
-      final power = context.read<PowerOffCubit>();
+      final power = context.read<PowerCubit>();
       store.refuseWrite = true;
       unawaited(length.setDefaultLengthBars(4));
       await tester.pumpAndSettle();
       // The write was refused and its rollback landed: nothing is owed.
       expect(length.state.options.defaultLengthBars, 0);
       expect(store.values.containsKey('looper.default_length_bars'), isFalse);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pumpAndSettle();
-      expect(power.state.phase, PowerOffPhase.goodbye);
+      expect(power.state.phase, PowerPhase.goodbye);
       await tester.pump(const Duration(seconds: 6));
       expect(halted, isTrue);
     });
@@ -2863,7 +2922,7 @@ void main() {
       await tester.pumpAndSettle();
       final context = tester.element(find.byType(TracksView));
       final timing = context.read<RecordTimingCubit>();
-      final power = context.read<PowerOffCubit>();
+      final power = context.read<PowerCubit>();
       rejectingEngine.refuseTiming = true;
       bool? accepted;
       unawaited(
@@ -2879,10 +2938,12 @@ void main() {
       expect(store.values.containsKey('looper.quantize'), isFalse);
       expect(store.values.containsKey('tempo.quantize_div'), isFalse);
       expect(repository.recordTimingRecoveryRequired, isFalse);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pumpAndSettle();
-      expect(power.state.phase, PowerOffPhase.goodbye);
-      expect(find.byKey(const Key('power_off_retry')), findsNothing);
+      expect(power.state.phase, PowerPhase.goodbye);
+      expect(find.byKey(const Key('power_retry')), findsNothing);
       // Let both the goodbye and the earlier refusal toast finish.
       await tester.pump(const Duration(seconds: 6));
       expect(haltCalls, 1);
@@ -2915,7 +2976,7 @@ void main() {
           final context = tester.element(find.byType(TracksView));
           final control = context.read<ControlCubit>();
           final timing = context.read<RecordTimingCubit>();
-          final power = context.read<PowerOffCubit>();
+          final power = context.read<PowerCubit>();
           final editor = Object();
           control.beginMidiEdit(device: 'shutdown-test', owner: editor);
           MidiSaveResult? saved;
@@ -2967,25 +3028,27 @@ void main() {
             expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
           }
           final stopCalls = engine.stopCalls;
-          power.press(const PowerOffSnapshot());
+          power
+            ..press(_named)
+            ..shutDown(_named, save: () async {});
           await tester.pumpAndSettle();
-          expect(power.state.phase, PowerOffPhase.flushFailed);
-          expect(find.byKey(const Key('power_off_retry')), findsOneWidget);
+          expect(power.state.phase, PowerPhase.saveFailed);
+          expect(find.byKey(const Key('power_retry')), findsOneWidget);
           expect(haltCalls, 0);
           expect(engine.stopCalls, stopCalls);
           expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
           expect(store.values['track_record_timing.0'], 0);
           expect(debugAppToastActive(AppToastId.recordTimingSettings), isFalse);
           expect(
-            find.byKey(const Key('power_off_retry')).hitTestable(),
+            find.byKey(const Key('power_retry')).hitTestable(),
             findsOneWidget,
           );
 
           rejectingEngine.refuseTiming = false;
-          await tester.tap(find.byKey(const Key('power_off_retry')));
+          await tester.tap(find.byKey(const Key('power_retry')));
           await tester.pumpAndSettle();
           expect(timing.state.trackOverrides[0], RecordTiming.immediately);
-          expect(power.state.phase, PowerOffPhase.goodbye);
+          expect(power.state.phase, PowerPhase.goodbye);
           await tester.pump(const Duration(seconds: 6));
           expect(haltCalls, 1);
         },
@@ -3019,7 +3082,7 @@ void main() {
         final context = tester.element(find.byType(TracksView));
         final control = context.read<ControlCubit>();
         final timing = context.read<RecordTimingCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         final editor = Object();
         control.beginMidiEdit(device: 'shutdown-test', owner: editor);
         MidiSaveResult? saved;
@@ -3108,13 +3171,12 @@ void main() {
         final stopCalls = engine.stopCalls;
         key.press();
         await tester.pumpAndSettle();
-        expect(power.state.phase, PowerOffPhase.refuse);
-        expect(find.byKey(const Key('power_off_keep_playing')), findsOneWidget);
-        expect(find.byKey(const Key('power_off_discard')), findsNothing);
+        expect(power.state.phase, PowerPhase.refuse);
+        expect(find.byKey(const Key('power_keep_playing')), findsOneWidget);
         expect(halted, isFalse);
         expect(engine.stopCalls, stopCalls);
         expect(repository.state.tracks.first.isCapturing, isTrue);
-        await tester.tap(find.byKey(const Key('power_off_keep_playing')));
+        await tester.tap(find.byKey(const Key('power_keep_playing')));
         await tester.pumpAndSettle();
 
         // The player ends capture; the owed release can now retire safely.
@@ -3127,6 +3189,11 @@ void main() {
         expect(timing.state.rememberedDivision, GridDivision.quarter);
         expect(engine.stopCalls, stopCalls);
         key.press();
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.options);
+        expect(find.byKey(const Key('power_shut_down')), findsOneWidget);
+        expect(halted, isFalse);
+        power.shutDown(_named, save: () async {});
         await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 3));
         expect(halted, isTrue);
@@ -3162,7 +3229,7 @@ void main() {
         final context = tester.element(find.byType(TracksView));
         final control = context.read<ControlCubit>();
         final length = context.read<RecordOptionsCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         final editor = Object();
         control.beginMidiEdit(device: 'shutdown-test', owner: editor);
         MidiSaveResult? saved;
@@ -3238,13 +3305,12 @@ void main() {
         final stopCalls = engine.stopCalls;
         key.press();
         await tester.pumpAndSettle();
-        expect(power.state.phase, PowerOffPhase.refuse);
-        expect(find.byKey(const Key('power_off_keep_playing')), findsOneWidget);
-        expect(find.byKey(const Key('power_off_discard')), findsNothing);
+        expect(power.state.phase, PowerPhase.refuse);
+        expect(find.byKey(const Key('power_keep_playing')), findsOneWidget);
         expect(halted, isFalse);
         expect(engine.stopCalls, stopCalls);
         expect(repository.state.tracks.first.isCapturing, isTrue);
-        await tester.tap(find.byKey(const Key('power_off_keep_playing')));
+        await tester.tap(find.byKey(const Key('power_keep_playing')));
         await tester.pumpAndSettle();
 
         // The player ends capture; the owed release can now retire safely.
@@ -3256,6 +3322,11 @@ void main() {
         expect(length.state.options.defaultLengthBars, 0);
         expect(engine.stopCalls, stopCalls);
         key.press();
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.options);
+        expect(find.byKey(const Key('power_shut_down')), findsOneWidget);
+        expect(halted, isFalse);
+        power.shutDown(_named, save: () async {});
         await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 3));
         expect(halted, isTrue);
@@ -3284,7 +3355,7 @@ void main() {
         final context = tester.element(find.byType(TracksView));
         final control = context.read<ControlCubit>();
         final length = context.read<RecordOptionsCubit>();
-        final power = context.read<PowerOffCubit>();
+        final power = context.read<PowerCubit>();
         final editor = Object();
         control.beginMidiEdit(device: 'shutdown-test', owner: editor);
         MidiSaveResult? saved;
@@ -3324,9 +3395,11 @@ void main() {
         await tester.pumpAndSettle();
         expect(length.state.options.defaultLengthBars, 4);
         expect(length.state.options.trackLengthPresetOverrides, {7: 4});
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
         await tester.pumpAndSettle();
-        expect(power.state.phase, PowerOffPhase.goodbye);
+        expect(power.state.phase, PowerPhase.goodbye);
         expect(length.state.options.defaultLengthBars, 0);
         expect(length.state.options.trackLengthPresetOverrides, {7: 0});
         expect(store.values['looper.default_length_bars'], 0);
@@ -3697,7 +3770,7 @@ void main() {
       // (Tracks is the only mode now, so the window follows this toggle).
       await tester.tap(find.byKey(const Key('settings_tile_displays')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('system_waveform_switch')));
+      await tester.tap(find.byKey(const Key('displays_waveform_switch')));
       await tester.pumpAndSettle();
 
       expect(windowService.isOpen, isFalse);
@@ -3729,6 +3802,31 @@ void main() {
       resetAppToastsForTest();
       await pumpApp(tester, NoopWaveformWindowService());
       expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
+    });
+
+    testWidgets('a fresh install gets Hold · Tuner on Custom pedal 2 and is '
+        'told once where the Tuner is (#1229)', (tester) async {
+      final store = FakeKeyValueStore();
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      final control = tester
+          .element(find.byType(TracksView))
+          .read<ControlCubit>();
+      expect(
+        control.state.pedalSetup.customFor(PedalButton.track2, bank: 0).hold,
+        const ModeAction(InteractionMode.tuner),
+      );
+      expect(debugAppToastActive(AppToastId.tunerSeeded), isTrue);
+      expect(store.values['pedal.tuner_default_seeded'], isTrue);
+
+      dismissAppToast(AppToastId.tunerSeeded);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      resetAppToastsForTest();
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(debugAppToastActive(AppToastId.tunerSeeded), isFalse);
     });
 
     testWidgets('an install that started in Record is not told anything', (
@@ -4257,11 +4355,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 40));
       expect(windowService.readouts.last.goodbye, ReadoutGoodbye.none);
 
-      final power =
-          tester.element(find.byType(LooperPage)).read<PowerOffCubit>()
-            ..press(const PowerOffSnapshot());
+      final power = tester.element(find.byType(LooperPage)).read<PowerCubit>()
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pump(const Duration(milliseconds: 40));
-      expect(power.state.phase, PowerOffPhase.goodbye);
+      expect(power.state.phase, PowerPhase.goodbye);
       expect(windowService.readouts.last.goodbye, ReadoutGoodbye.mark);
       await tester.pump(const Duration(seconds: 2));
       expect(haltCalls, 1);

@@ -31,7 +31,6 @@ import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/one_shot.dart';
@@ -107,6 +106,7 @@ void main() {
       'assets/fonts/Inter-SemiBold.ttf',
       'assets/fonts/Inter-Bold.ttf',
     ]);
+    await loadScreenshotFont('Arimo', ['assets/fonts/Arimo-Regular.ttf']);
     await loadScreenshotFont('JetBrains Mono', [
       'assets/fonts/JetBrainsMono-Regular.ttf',
       'assets/fonts/JetBrainsMono-Medium.ttf',
@@ -127,7 +127,6 @@ void main() {
   late RecordTimingCubit timing;
   late RecordTiming confirmedTiming;
   late GridDivision rememberedDivision;
-  late SettingsTrayCubit tray;
 
   setUp(() {
     looper = _MockLooper();
@@ -269,8 +268,6 @@ void main() {
       division: GridDivision.off.code,
       trackOverrides: {},
     ));
-    tray = SettingsTrayCubit();
-    addTearDown(() => unawaited(tray.close()));
     if (malformed) {
       await store.setString('midi.configuration', '{bad json');
     }

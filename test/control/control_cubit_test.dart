@@ -989,9 +989,11 @@ void main() {
           final recolored = transport.lastFrame!;
           expect(recolored.isLit(PedalButton.undo), isTrue);
           expect(recolored.activeButtonMask, held.activeButtonMask);
+          // Record mode lights in fixed state colours; the saved hue waits
+          // for Custom mode.
           expect(
             recolored.colorFor(PedalButton.undo),
-            PedalPaletteColor.cyan.color,
+            held.colorFor(PedalButton.undo),
           );
           expect(await settings.loadPedalSetup(), next.encode());
           transport.press(PedalButton.undo, down: false);
@@ -1825,7 +1827,8 @@ void main() {
       });
 
       test('the encoder still drives master gain', () async {
-        transport.turn(4);
+        // EncoderNavigation routes a stage turn here (#1276).
+        cubit.encoderTurned(4);
         await pumpEventQueue();
         verify(() => looper.setMasterGain(any())).called(1);
       });
@@ -3090,7 +3093,7 @@ void main() {
       });
 
       test('the encoder drives the master gain', () async {
-        transport.turn(-8); // -8 detents
+        cubit.encoderTurned(-8); // -8 detents, routed by EncoderNavigation
         await pumpEventQueue();
         verify(() => looper.setMasterGain(any())).called(1);
       });
@@ -4209,7 +4212,7 @@ void main() {
         transport.sent.clear();
 
         // -8 detents at step 1/64 -> gain 0.875 (the pedal renders this).
-        transport.turn(-8);
+        cubit.encoderTurned(-8);
         await pumpEventQueue();
 
         expect(transport.sent, isNotEmpty);

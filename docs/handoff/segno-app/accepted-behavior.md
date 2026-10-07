@@ -86,7 +86,10 @@ Sources:
    consistent horizontal padding and readable full-size geometry.
 8. A slider double tap resets its meaningful default; no redundant Default
    button. Encoder press enters a draft, turn adjusts, press commits and Back
-   cancels. Changing target/editor cancels unfinished edits; unrelated saves do
+   cancels. Outside a draft a turn moves focus to the next or previous control
+   and a press activates it. On the Stage, with nothing open above it, a turn
+   stays master volume (the level in foot Mixer) and a press opens Settings
+   (#1276). Changing target/editor cancels unfinished edits; unrelated saves do
    not commit them. Focus scrolls into view, stays inside unclipped bounds, is
    trapped in the active dialog and returns to the opener. Fixed/readout controls
    never enter focus. Rename/password entry uses a fixed bottom keyboard sheet:
@@ -284,9 +287,12 @@ Sources:
    gesture. Resolve fixed targets by identity, never visible slot/name. Cancel
    pending gestures on invalidating navigation, disconnect or configuration.
 4. LEDs represent function state: momentary lights only while active contact is
-   held; toggle stays lit until toggled again. Color is configurable on all ten,
-   including pedals with fixed actions. Custom colors can be added, edited and
-   reused; changing color never resets active state. Selection feedback in setup
+   held; toggle stays lit until toggled again. Color belongs to the mode
+   (#1274): Record, Mute and FX light in fixed state colours (recording and
+   overdub red, playing green, engaged FX/Fade/Reverse/Peel blue, otherwise
+   pale) and are not editable. Only Custom mode takes the performer's color,
+   chosen per Custom-assignable switch (not MODE or BANK). Custom colors can be
+   added, edited and reused; changing color never resets active state. Selection feedback in setup
    must not masquerade as a saved performance latch.
 5. Performance functions retain the same physical map and a foot Exit. Their
    musical meanings are fixed below; exact current pedal captions are in the

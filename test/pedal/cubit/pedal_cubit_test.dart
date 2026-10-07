@@ -28,6 +28,7 @@ void main() {
       await pumpEventQueue();
       expect(cubit.state.status, PedalLinkStatus.connected);
       expect(cubit.state.firmwareVersion, '1.2');
+      expect(cubit.state.protocolVersion, PedalLinkCodec.protocolVersion);
       await cubit.close();
     });
 
@@ -37,6 +38,7 @@ void main() {
       final cubit = PedalCubit(pedal: pedal);
       expect(cubit.state.status, PedalLinkStatus.connected);
       expect(cubit.state.firmwareVersion, '1.0');
+      expect(cubit.state.protocolVersion, PedalLinkCodec.protocolVersion);
       await cubit.close();
     });
 

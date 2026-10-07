@@ -55,6 +55,31 @@ void main() {
       expect(events, const [EncoderDelta(1), EncoderDelta(-2)]);
     });
 
+    test('encoder push-switch messages become timestamped edges', () async {
+      link.hello();
+      await pumpEventQueue();
+      final events = <PedalEvent>[];
+      repo.events.listen(events.add);
+      now = const Duration(milliseconds: 40);
+      link.pressEncoder(down: true);
+      await pumpEventQueue();
+      now = const Duration(milliseconds: 300);
+      link.pressEncoder(down: false);
+      await pumpEventQueue();
+      expect(events, const [
+        EncoderPressed(timestamp: Duration(milliseconds: 40)),
+        EncoderReleased(timestamp: Duration(milliseconds: 300)),
+      ]);
+    });
+
+    test('drops encoder push-switch messages until a hello', () async {
+      final events = <PedalEvent>[];
+      repo.events.listen(events.add);
+      link.pressEncoder(down: true);
+      await pumpEventQueue();
+      expect(events, isEmpty);
+    });
+
     test('publishes frames without hardware and holds goodbye', () async {
       final frames = <PedalStateFrame>[];
       final subscription = repo.frames.listen(frames.add);
@@ -167,6 +192,7 @@ void main() {
         await pumpEventQueue();
         expect(repo.status, PedalLinkStatus.connected);
         expect(repo.firmwareVersion, '1.4');
+        expect(repo.protocolVersion, PedalLinkCodec.protocolVersion);
         link.hello(firmwareMinor: 4);
         await pumpEventQueue();
         expect(statuses, [PedalLinkStatus.connected]); // dedups repeats
@@ -223,6 +249,7 @@ void main() {
       await pumpEventQueue();
       expect(logged.status, PedalLinkStatus.incompatible);
       expect(logged.firmwareVersion, '2.0');
+      expect(logged.protocolVersion, PedalLinkCodec.protocolVersion + 1);
       expect(lines.single, contains('incompatible'));
       expect(
         lines.single,
@@ -349,6 +376,7 @@ void main() {
       await repo.dispose();
       expect(repo.status, PedalLinkStatus.disconnected);
       expect(repo.firmwareVersion, isNull);
+      expect(repo.protocolVersion, isNull);
       expect(statuses, [
         PedalLinkStatus.connected,
         PedalLinkStatus.disconnected,

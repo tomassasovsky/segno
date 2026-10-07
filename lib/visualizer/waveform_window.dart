@@ -4,7 +4,8 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:screen_retriever/screen_retriever.dart';
-import 'package:segno/appliance/power_off/power_off_goodbye.dart';
+import 'package:segno/appliance/power_off/power_goodbye.dart';
+import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
@@ -266,6 +267,20 @@ class WaveformWindowApp extends StatelessWidget {
     // Real localization delegates, not a one-off `lookupAppLocalizations`
     // against the platform locale: the readout has real copy in it now, and a
     // second engine is still an app.
+    // A touch on the Track display is activity: it wakes an idle-dimmed
+    // console. Nothing here is pressable, so the waking touch needs no
+    // barrier of its own.
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => waveformWindowChannel
+          .invokeMethod(waveformWindowActivityMethod)
+          .catchError((Object _) => null)
+          .ignore(),
+      child: _app(),
+    );
+  }
+
+  Widget _app() {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: AppTheme.neon,
@@ -299,17 +314,21 @@ class WaveformWindowApp extends StatelessWidget {
                         ),
                 ),
               );
-              // Full-bleed: the console view carries its own inset.
-              final face = ConsoleReadoutView(
-                readout: readoutData,
-                waveform: waveform,
+              // Full-bleed: the console view carries its own inset. Dimmed
+              // as its panel is set when the panel cannot dim itself.
+              final face = SoftwareBrightness(
+                brightness: readoutData.brightness,
+                child: ConsoleReadoutView(
+                  readout: readoutData,
+                  waveform: waveform,
+                ),
               );
               if (readoutData.goodbye != ReadoutGoodbye.mark) return face;
               return Stack(
                 fit: StackFit.expand,
                 children: [
                   face,
-                  const PowerOffGoodbye(face: ReadoutGoodbye.mark),
+                  const PowerGoodbye(face: ReadoutGoodbye.mark),
                 ],
               );
             },

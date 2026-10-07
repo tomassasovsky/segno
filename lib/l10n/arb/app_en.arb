@@ -2,8 +2,6 @@
     "@@locale": "en",
     "appMenuLabel": "Segno",
     "settingsMenuItem": "Settings…",
-    "updatesInstalledVersionLabel": "Installed version",
-    "updatesChannelLabel": "Channel",
     "updatesVersionValue": "v{version}",
     "@updatesVersionValue": {
         "placeholders": {
@@ -12,14 +10,7 @@
             }
         }
     },
-    "updatesAutoCheckTitle": "Check for updates automatically",
-    "updatesAutoCheckSubtitle": "Looks for a newer version in the background. Never downloads or installs on its own.",
-    "updatesExperimentalChannelTitle": "Experimental channel",
-    "updatesExperimentalChannelSubtitle": "Get pre-release builds. Turn off to follow production releases only.",
-    "updatesCheckNowTitle": "Check now",
-    "updatesCheckNowSubtitle": "Look for a newer version right now.",
     "updatesCheckingLabel": "Checking for updates…",
-    "updatesUpToDateTitle": "You're up to date",
     "updatesUpToDateSubtitle": "This is the latest version on the {channel} channel.",
     "@updatesUpToDateSubtitle": {
         "placeholders": {
@@ -28,17 +19,7 @@
             }
         }
     },
-    "updatesDownloadTitle": "Download & install",
-    "updatesStagedSubtitle": "v{version} is installed and ready. Restart when you're not mid-session.",
-    "@updatesStagedSubtitle": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesRestartBusySubtitle": "Stop recording and clear your session before restarting.",
-    "updatesErrorTitle": "Update check failed",
+    "updatesRestartBusySubtitle": "Playback will stop and your session will be saved before restarting.",
     "updateBannerTitle": "Update available — v{version}",
     "@updateBannerTitle": {
         "placeholders": {
@@ -339,7 +320,7 @@
     "@shortcutFocusTraverse": {
         "description": "Legend description for the Tab shortcut."
     },
-    "a11yTrackTile": "{name}, {state}, activate to record",
+    "a11yTrackTile": "{name}, {state}, activate to select",
     "@a11yTrackTile": {
         "placeholders": {
             "name": {
@@ -445,11 +426,7 @@
     "toggleOn": "On",
     "toggleOff": "Off",
     "auto": "Auto",
-    "viewGroupLabel": "VIEW",
-    "waveformWindowTitle": "Selected-track display",
-    "waveformWindowSubtitle": "Open a second window showing the selected track and its waveform",
     "highContrastTitle": "High contrast",
-    "highContrastSubtitle": "Force a brighter, higher-contrast palette. On desktop the OS contrast setting is not applied automatically.",
     "refreshRateHz": "{hz} Hz",
     "@refreshRateHz": {
         "placeholders": {
@@ -898,7 +875,6 @@
             }
         }
     },
-    "recordingGroupLabel": "RECORDING",
     "maxLoopDefault30s": "Default (30 s)",
     "maxLoopMinutes": "{minutes} min",
     "@maxLoopMinutes": {
@@ -1270,10 +1246,6 @@
     "modeChangeBlockedCapturing": "Finish the take first.",
     "modeChangeBlockedQueued": "A queued action must fire or be cancelled first.",
     "modeChangeBlockedSpans": "The recorded loop lengths do not fit this mode.",
-    "trayLoopLabel": "Loop",
-    "@trayLoopLabel": {
-        "description": "Navigation-rail caption for the console's Loop domain."
-    },
     "loopTempoUnset": "not set",
     "@loopTempoUnset": {
         "description": "Shown where the tempo would be when none has been established. The console never draws an unknown fact as a zero."
@@ -1299,10 +1271,6 @@
     "@a11yTrayHandle": {
         "description": "Accessible label for the settings tray's always-visible pull-tab handle (tap or drag to open/close)."
     },
-    "trayWifiLabel": "WiFi",
-    "@trayWifiLabel": {
-        "description": "Label for the settings tray's WiFi shortcut button (stub — no real functionality yet)."
-    },
     "trayBrightnessPercent": "{percent}%",
     "@trayBrightnessPercent": {
         "description": "The readout above the brightness capsule in its popover.",
@@ -1311,14 +1279,6 @@
                 "type": "int"
             }
         }
-    },
-    "trayBrightLabel": "Bright",
-    "@trayBrightLabel": {
-        "description": "Navigation rail entry for screen brightness, pinned below the eight domains as the mockups draw it."
-    },
-    "a11yTrayRail": "Tray destinations",
-    "@a11yTrayRail": {
-        "description": "Accessible label for the settings tray's vertical navigation rail, which selects which config face fills the open tray."
     },
     "tunerCentsAndHz": "{cents} cents · {hz} Hz",
     "@tunerCentsAndHz": {
@@ -1339,14 +1299,6 @@
     "tunerNoTunableInput": "No input to tune",
     "@tunerNoTunableInput": {
         "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
-    },
-    "tunerNoDevice": "No audio device",
-    "@tunerNoDevice": {
-        "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
-    },
-    "trayTunerLabel": "Tuner",
-    "@trayTunerLabel": {
-        "description": "Label for the settings tray's Tuner rail entry."
     },
     "trayBrightnessLabel": "Brightness",
     "@trayBrightnessLabel": {
@@ -1557,42 +1509,6 @@
     "a11yMidiLearnLo": "Range low",
     "a11yMidiLearnHi": "Range high",
     "a11yMidiLearnThreshold": "On threshold",
-    "wifiRescan": "Rescan",
-    "@wifiRescan": {
-        "description": "Tooltip for the Wi-Fi picker's rescan button."
-    },
-    "wifiUnsupported": "Wi-Fi is managed by your computer on this build.",
-    "@wifiUnsupported": {
-        "description": "Shown on the Wi-Fi page for builds that do not manage the radio (desktop)."
-    },
-    "wifiNoNetworks": "No networks found.",
-    "@wifiNoNetworks": {
-        "description": "Empty state on the Wi-Fi picker when a scan returned nothing."
-    },
-    "wifiConnected": "Connected",
-    "@wifiConnected": {
-        "description": "Subtitle of the currently connected Wi-Fi network."
-    },
-    "wifiSecured": "Password required",
-    "@wifiSecured": {
-        "description": "Subtitle of a secured Wi-Fi network with no saved profile."
-    },
-    "wifiOpen": "Open",
-    "@wifiOpen": {
-        "description": "Subtitle of an unsecured Wi-Fi network."
-    },
-    "wifiForget": "Forget",
-    "@wifiForget": {
-        "description": "Tooltip for deleting a saved Wi-Fi network."
-    },
-    "wifiJoin": "Join",
-    "@wifiJoin": {
-        "description": "Confirm button on the Wi-Fi password dialog."
-    },
-    "wifiPassword": "Password",
-    "@wifiPassword": {
-        "description": "Label of the Wi-Fi password field."
-    },
     "signalPluginBypassTooltip": "Bypass plugin",
     "fxEditorChainIn": "IN",
     "fxEditorChainOut": "OUT",
@@ -1605,15 +1521,11 @@
             }
         }
     },
-    "wifiUnsupportedBody": "WiFi is only available on the Segno console appliance.",
+    "wifiUnsupportedBody": "Wi-Fi is only available on the Segno console.",
     "@wifiUnsupportedBody": {
         "description": "Shown on the WiFi page when segno-wifi-ctl is not present (desktop builds)."
     },
-    "wifiStatusLabel": "Status",
-    "@wifiStatusLabel": {
-        "description": "WiFi status table label."
-    },
-    "wifiConnectFailedPassword": "Couldn’t join — check the password and try again.",
+    "wifiConnectFailedPassword": "Incorrect password. Try again.",
     "@wifiConnectFailedPassword": {
         "description": "Shown when WPA authentication fails while joining a network."
     },
@@ -1629,144 +1541,9 @@
     "@wifiConnectFailedBackend": {
         "description": "Shown when a join fails for backend/transient reasons (iwd race, NM no-secrets on a saved network) after automatic retries — explicitly not a credentials problem, so the owner does not forget the network and re-type the password (#829)."
     },
-    "wifiSsidLabel": "Network",
-    "@wifiSsidLabel": {
-        "description": "WiFi SSID table label."
-    },
-    "wifiIpLabel": "IP address",
-    "@wifiIpLabel": {
-        "description": "WiFi IP address table label."
-    },
-    "wifiDisconnectTitle": "Disconnect",
-    "@wifiDisconnectTitle": {
-        "description": "WiFi disconnect action title."
-    },
-    "wifiDisconnectSubtitle": "Drop the current WiFi association",
-    "@wifiDisconnectSubtitle": {
-        "description": "WiFi disconnect action subtitle."
-    },
-    "wifiForgetSubtitle": "Remove saved credentials for {ssid}",
-    "@wifiForgetSubtitle": {
-        "description": "WiFi forget action subtitle.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiScanSubtitle": "Refresh the list of nearby networks",
-    "@wifiScanSubtitle": {
-        "description": "WiFi scan action subtitle when idle."
-    },
-    "wifiScanningSubtitle": "Scanning…",
-    "@wifiScanningSubtitle": {
-        "description": "WiFi scan action subtitle while scanning."
-    },
-    "wifiEmptyNetworks": "No networks found. Tap scan to try again.",
-    "@wifiEmptyNetworks": {
-        "description": "Empty state when a WiFi scan returns no SSIDs."
-    },
-    "wifiJoinAction": "Join",
-    "@wifiJoinAction": {
-        "description": "Confirm button on the WiFi password dialog."
-    },
-    "bluetoothIntro": "Make this console discoverable so a phone or sidecar can find it. Pairing comes later.",
-    "@bluetoothIntro": {
-        "description": "Intro copy on the Bluetooth page (discovery/broadcast only)."
-    },
-    "bluetoothAliasLabel": "Name",
-    "@bluetoothAliasLabel": {
-        "description": "Bluetooth adapter alias table label."
-    },
-    "bluetoothPoweredLabel": "Adapter",
-    "@bluetoothPoweredLabel": {
-        "description": "Bluetooth powered table label."
-    },
-    "bluetoothScanSubtitle": "Find nearby Bluetooth devices",
-    "@bluetoothScanSubtitle": {
-        "description": "Bluetooth scan action subtitle when idle."
-    },
-    "trayNetworkLabel": "Network",
-    "@trayNetworkLabel": {
-        "description": "Navigation rail entry for the Network domain — WiFi and Bluetooth as two tabs of one destination. One word, like every rail entry."
-    },
-    "networkStateConnected": "connected",
-    "@networkStateConnected": {
-        "description": "State word at the trailing edge of a Network row: a live association or link. Lower case — it is a machine readout about the row, not a sentence."
-    },
-    "networkStateSaved": "saved",
-    "@networkStateSaved": {
-        "description": "State word for a WiFi network whose credentials this console already holds."
-    },
-    "networkStateOpen": "open",
-    "@networkStateOpen": {
-        "description": "State word for a WiFi network that needs no passphrase."
-    },
     "consoleKeepIt": "Keep it",
     "@consoleKeepIt": {
         "description": "The dismissive answer on any console confirm dialog — forgetting a network, switching looper mode. Leaves the thing alone."
-    },
-    "wifiNotInRange": "not in range",
-    "@wifiNotInRange": {
-        "description": "Row subtitle for a saved network the last scan did not see."
-    },
-    "wifiSecurityWpa2": "WPA2",
-    "@wifiSecurityWpa2": {
-        "description": "Security label for a secured network, shown in the row subtitle and beside the join sheet's title."
-    },
-    "wifiSignalDbm": "{signal} dBm",
-    "@wifiSignalDbm": {
-        "description": "Signal strength in a WiFi row subtitle.",
-        "placeholders": {
-            "signal": {
-                "type": "int"
-            }
-        }
-    },
-    "wifiJoiningShort": "joining {ssid}",
-    "@wifiJoiningShort": {
-        "description": "Live-state line beside the WiFi face's title while a join is in flight. Lower case — it continues the title rather than starting a sentence.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiJoinFailedShort": "could not join {ssid}",
-    "@wifiJoinFailedShort": {
-        "description": "Live-state line beside the WiFi face's title after a join failed.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiJoiningBanner": "Joining {ssid}…",
-    "@wifiJoiningBanner": {
-        "description": "In-flight banner at the top of the WiFi list while a join is running.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiRetryingBanner": "Network error — retrying {ssid}…",
-    "@wifiRetryingBanner": {
-        "description": "In-flight banner while the console automatically re-activates a join after a backend/transient failure (#829). Never worded as a password problem.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiJoinSheetTitle": "Join {ssid}",
-    "@wifiJoinSheetTitle": {
-        "description": "Title of the passphrase sheet.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
     },
     "wifiPassphraseTooShort": "A WPA2 passphrase is at least {count} characters.",
     "@wifiPassphraseTooShort": {
@@ -1794,17 +1571,177 @@
     "@wifiForgetConfirmAction": {
         "description": "Destructive action on the forget-network confirmation."
     },
-    "trayControlLabel": "Control",
-    "@trayControlLabel": {
-        "description": "Navigation rail entry for the Control domain — the footswitch plate and the MIDI foot controller as two tabs of one destination."
+    "networkWifiLabel": "Wi-Fi",
+    "@networkWifiLabel": {
+        "description": "The radio switch in the Network page title row."
     },
-    "controlPedalTab": "Pedal",
-    "@controlPedalTab": {
-        "description": "Tab of the Control domain: the footswitch plate's assignable switches."
+    "networkUnavailableTitle": "Wi-Fi is not available",
+    "@networkUnavailableTitle": {
+        "description": "Connection card title on a build without the Wi-Fi helper."
     },
-    "controlControllersTab": "Controllers",
-    "@controlControllersTab": {
-        "description": "Tab of the Control domain: everything plugged in — a MIDI foot controller, and the pedals in the CTRL jacks — and the mappings off them."
+    "networkOffTitle": "Wi-Fi is off",
+    "@networkOffTitle": {
+        "description": "Connection card title while the radio is off (pen 29/07)."
+    },
+    "networkOffDetail": "Turn on to find nearby networks.",
+    "@networkOffDetail": {
+        "description": "Connection card line while the radio is off."
+    },
+    "networkConnectingTitle": "Connecting…",
+    "@networkConnectingTitle": {
+        "description": "Connection card title while a join is in flight."
+    },
+    "networkLostTitle": "Connection lost",
+    "@networkLostTitle": {
+        "description": "Connection card title when the saved network that was up dropped (pen 29/06)."
+    },
+    "networkIdleTitle": "Choose a network",
+    "@networkIdleTitle": {
+        "description": "Connection card title with the radio on and nothing joined."
+    },
+    "networkIdleDetail": "Saved networks reconnect automatically.",
+    "@networkIdleDetail": {
+        "description": "Connection card line with the radio on and nothing joined."
+    },
+    "networkConnected": "Connected",
+    "@networkConnected": {
+        "description": "Status line of the connected network."
+    },
+    "networkConnectedNoInternet": "Connected · No internet",
+    "@networkConnectedNoInternet": {
+        "description": "Status line when Wi-Fi is associated but the internet check got no answer (pen 29/08)."
+    },
+    "networkIp": "IP {address}",
+    "@networkIp": {
+        "description": "The connection address beside its status line.",
+        "placeholders": {
+            "address": {
+                "type": "String"
+            }
+        }
+    },
+    "networkManage": "Manage",
+    "@networkManage": {
+        "description": "Opens the connected network details from the connection card."
+    },
+    "networkReconnect": "Reconnect",
+    "@networkReconnect": {
+        "description": "Joins the lost network again from the connection card."
+    },
+    "networkNetworksHeading": "Networks",
+    "@networkNetworksHeading": {
+        "description": "Heading over the list of nearby and saved networks."
+    },
+    "networkScan": "Scan",
+    "@networkScan": {
+        "description": "Refreshes the network list."
+    },
+    "networkScanning": "Scanning…",
+    "@networkScanning": {
+        "description": "The Scan button while a scan is in flight."
+    },
+    "networkListOff": "No networks while Wi-Fi is off.",
+    "@networkListOff": {
+        "description": "Network list while the radio is off."
+    },
+    "networkListEmpty": "No networks found. Scan to try again.",
+    "@networkListEmpty": {
+        "description": "Network list when a scan found nothing."
+    },
+    "networkSaved": "Saved",
+    "@networkSaved": {
+        "description": "Line under a saved network in the list."
+    },
+    "networkSavedNotInRange": "Saved · Not in range",
+    "@networkSavedNotInRange": {
+        "description": "Line under a saved network the last scan did not see."
+    },
+    "networkSecured": "Password required",
+    "@networkSecured": {
+        "description": "Accessible note for a secured network row."
+    },
+    "networkSavedNetwork": "Saved network",
+    "@networkSavedNetwork": {
+        "description": "Network details status for a saved network that is not connected."
+    },
+    "networkPasswordRequired": "Password required",
+    "@networkPasswordRequired": {
+        "description": "Network details status for a secured network with no saved key."
+    },
+    "networkOpenNetwork": "Open network",
+    "@networkOpenNetwork": {
+        "description": "Network details status for a network with no password."
+    },
+    "networkConnectingTo": "Connecting to {ssid}",
+    "@networkConnectingTo": {
+        "description": "Title of the Connecting dialog (pen 29/03).",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "networkConnectingFallback": "If this fails, Segno reconnects to {ssid}.",
+    "@networkConnectingFallback": {
+        "description": "Connecting dialog note when another network was up: one radio cannot keep it during the join, so a failed join brings it back (#1270 D13).",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "networkConnectingChecking": "Checking the connection.",
+    "@networkConnectingChecking": {
+        "description": "Connecting dialog note when nothing was connected before."
+    },
+    "networkRetrying": "Network error. Trying again…",
+    "@networkRetrying": {
+        "description": "Connecting dialog note while the console re-activates after a backend failure (#829). Never worded as a password problem."
+    },
+    "networkPasswordLabel": "Password",
+    "@networkPasswordLabel": {
+        "description": "Label over the password field in the join sheet."
+    },
+    "networkPasswordPlaceholder": "Enter password",
+    "@networkPasswordPlaceholder": {
+        "description": "The empty password field."
+    },
+    "networkPasswordShow": "Show",
+    "@networkPasswordShow": {
+        "description": "Reveals the typed password in the join sheet."
+    },
+    "networkPasswordHide": "Hide",
+    "@networkPasswordHide": {
+        "description": "Masks the typed password again."
+    },
+    "networkPasswordLength": "Password, {count} characters",
+    "@networkPasswordLength": {
+        "description": "Accessible value of the masked password field.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "networkConnect": "Connect",
+    "@networkConnect": {
+        "description": "Joins a network."
+    },
+    "networkDisconnect": "Disconnect",
+    "@networkDisconnect": {
+        "description": "Drops the current connection. Reversible, so it asks nothing."
+    },
+    "networkDetailsClose": "Close network details",
+    "@networkDetailsClose": {
+        "description": "Accessible name of the close button on the network details dialog."
+    },
+    "networkAutoConnect": "Connect automatically",
+    "@networkAutoConnect": {
+        "description": "Saved network setting: whether the console joins it on its own."
+    },
+    "networkChangePassword": "Change password",
+    "@networkChangePassword": {
+        "description": "Opens the join sheet to give a saved network a new key."
     },
     "controlTransportGroup": "TRANSPORT SWITCHES",
     "@controlTransportGroup": {
@@ -1984,21 +1921,6 @@
             }
         }
     },
-    "trayTracksLabel": "Tracks",
-    "@trayTracksLabel": {
-        "description": "Navigation-rail caption for the console's Tracks domain — names, lengths and routing as three tabs of one destination."
-    },
-    "tracksOrdinal": "track {number}",
-    "@tracksOrdinal": {
-        "description": "The mono readout beside a track's name, and the line under the routing dialog's title: which pad on the pedal this track is. Lower case, like every other mono readout on this surface.",
-        "placeholders": {
-            "number": {
-                "type": "int"
-            }
-        }
-    },
-    "tracksNamesFootnote": "Rename tracks. The name is what the stage, the pedal targets and the 7-inch readout all show.",
-    "tracksEmpty": "No tracks — the engine is not running.",
     "tracksRenameSheetTitle": "Rename track",
     "trackLanesGroup": "LANES",
     "trackLaneOutputsGroup": "OUTPUTS FOR THIS LANE",
@@ -2035,10 +1957,6 @@
     "@a11yTrackLaneStopRecording": {
         "description": "The lane row's custom action: what the check gutter does. Published on the row because the gutter's own semantics sit inside the row's ExcludeSemantics, and without it a screen reader can only reach `None (clean)`, which clears every lane on the track."
     },
-    "a11yTracksRenameField": "Track name",
-    "trayAudioLabel": "Audio",
-    "audioDeviceTab": "Device",
-    "audioRecordingTab": "Recording",
     "audioGroupLabel": "AUDIO",
     "audioRateBufferRow": "Sample rate / buffer",
     "audioRoundTripEstimate": "round-trip {milliseconds} ms",
@@ -2116,8 +2034,6 @@
     "audioOpenAsio4all": "Open asio4all.org",
     "audioMaxLoopTitle": "Maximum loop length",
     "audioMaxLoopSubtitle": "A higher cap reserves more memory per track. Changing it reopens the device.",
-    "audioDefaultLoopLengthTitle": "Default loop length",
-    "audioDefaultLoopLengthSubtitle": "Auto rounds up to whole base loops; a fixed multiple records that many.",
     "audioRenameInputTitle": "Rename input",
     "inputOrdinal": "input {number}",
     "@inputOrdinal": {
@@ -2152,23 +2068,11 @@
             }
         }
     },
-    "traySystemLabel": "System",
-    "@traySystemLabel": {
-        "description": "Rail entry for the System domain — what this console is and how it behaves."
-    },
-    "systemDisplayTab": "Display",
-    "systemUpdatesTab": "Updates",
-    "systemStorageTab": "Storage",
-    "systemAboutTab": "About",
-    "systemPerformanceGroup": "PERFORMANCE",
-    "systemHelpGroup": "HELP",
-    "systemAutomaticGroup": "AUTOMATIC",
     "systemThisConsoleGroup": "THIS CONSOLE",
     "systemHousekeepingGroup": "HOUSEKEEPING",
     "systemHardwareGroup": "HARDWARE",
     "systemLegalGroup": "LEGAL",
     "systemRefreshRateTitle": "UI refresh rate",
-    "systemRefreshRateSubtitle": "How often waveforms and meters update. Higher is smoother but uses more CPU.",
     "consoleTryAgain": "Try again",
     "@consoleTryAgain": {
         "description": "Retry on any console banner. Was networkTryAgain until a second domain needed it — a primitive keeps no domain in its name."
@@ -2177,38 +2081,6 @@
     "@updatesUnsupportedBanner": {
         "description": "Update banner on a platform with no update flow at all. No action: a dead check button is worse than none."
     },
-    "updatesAvailableBanner": "v{version} is available.",
-    "@updatesAvailableBanner": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesStagingBanner": "Staging v{version} to the standby system — {percent}%",
-    "@updatesStagingBanner": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            },
-            "percent": {
-                "type": "int"
-            }
-        }
-    },
-    "updatesCheckFailedBanner": "Update check failed — {reason}",
-    "@updatesCheckFailedBanner": {
-        "placeholders": {
-            "reason": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesCheckFailedReason": "could not reach the update server.",
-    "@updatesCheckFailedReason": {
-        "description": "Fallback reason when the failure carried no message of its own."
-    },
-    "updatesRestartNow": "Restart now",
     "storageSessionsTitle": "Sessions and takes",
     "storageCapturesTitle": "Captures",
     "storageCapturesSubtitle": "exports and stems",
@@ -2308,14 +2180,6 @@
         }
     },
     "storageActionFailed": "That didn't finish. Nothing on the disk was changed.",
-    "updatesDownloadFailedBanner": "Download failed — {reason}",
-    "@updatesDownloadFailedBanner": {
-        "placeholders": {
-            "reason": {
-                "type": "String"
-            }
-        }
-    },
     "licencesReading": "Reading the licence registry…",
     "licenceCount": "{count, plural, =1{1 licence} other{{count} licences}}",
     "@licenceCount": {
@@ -2620,49 +2484,74 @@
     "@signalNoOutputs": {
         "description": "Master tab with no hardware outputs to list."
     },
-    "powerOffRefuseTitle": "Stop the take first",
-    "@powerOffRefuseTitle": {
-        "description": "Power-off dialog title while a take is in flight. The only action is Keep playing."
+    "powerRefuseTitle": "Stop the take first",
+    "@powerRefuseTitle": {
+        "description": "Power dialog title while a take or transfer is in flight. The only action is Keep playing."
     },
-    "powerOffRefuseBody": "Recording is in progress. Stop it, then press the power button again if you want to power off.",
-    "@powerOffRefuseBody": {
-        "description": "Power-off refuse body. Accidental bump mid-take must not offer discard."
+    "powerRefuseBody": "Recording is in progress. Stop it, then press the power button again if you want to power off.",
+    "@powerRefuseBody": {
+        "description": "Power refuse body. Accidental bump mid-take must not offer discard."
     },
-    "powerOffConfirmTitle": "Power off?",
-    "@powerOffConfirmTitle": {
-        "description": "Power-off three-choice dialog title when loops in RAM would vanish."
+    "powerKeepPlaying": "Keep playing",
+    "@powerKeepPlaying": {
+        "description": "Dismisses the power refusal and leaves the set running."
     },
-    "powerOffConfirmBody": "Loops in RAM vanish if you power off without saving. The last on-disk save is kept.",
-    "@powerOffConfirmBody": {
-        "description": "Power-off three-choice body. There is no dirty flag; a named session still asks."
+    "powerOptionsTitle": "Power options",
+    "@powerOptionsTitle": {
+        "description": "Title of the card opened by the power button or Settings' Power row (pen 32)."
     },
-    "powerOffKeepPlaying": "Keep playing",
-    "@powerOffKeepPlaying": {
-        "description": "Dismisses the power-off dialog and leaves the set running."
+    "powerOptionsBody": "Playback will stop and your session will be saved.",
+    "@powerOptionsBody": {
+        "description": "Power options body: both Restart and Shut down save first."
     },
-    "powerOffSaveAndPowerOff": "Save & power off",
-    "@powerOffSaveAndPowerOff": {
-        "description": "Writes the session (Save As if unnamed) then the goodbye halt."
+    "powerSessionUnnamed": "This session has no name yet. You'll name it before it saves.",
+    "@powerSessionUnnamed": {
+        "description": "Power options line in place of the session name when the open session is unnamed."
     },
-    "powerOffWithoutSaving": "Power off without saving",
-    "@powerOffWithoutSaving": {
-        "description": "Destructive halt that drops loops in RAM. Last on-disk save is kept."
+    "powerStagedUpdate": "Segno {version} installs during the restart.",
+    "@powerStagedUpdate": {
+        "description": "Power options line when an update is staged; the restart boots it.",
+        "placeholders": {"version": {"type": "String"}}
     },
-    "powerOffSaving": "Saving…",
-    "@powerOffSaving": {
-        "description": "Goodbye face while the session bundle is writing. No spinner."
+    "powerCancel": "Cancel",
+    "@powerCancel": {
+        "description": "Closes Power options and leaves the set running."
     },
-    "powerOffSaveFailedTitle": "Couldn't save",
-    "@powerOffSaveFailedTitle": {
-        "description": "Power-off surface after a save I/O failure. The unit does not halt."
+    "powerRestart": "Restart",
+    "@powerRestart": {
+        "description": "Saves the session, then restarts the console."
     },
-    "powerOffSaveFailedBody": "The session didn't write. Nothing was powered off — your loops are still in RAM.",
-    "@powerOffSaveFailedBody": {
-        "description": "Save-failure body on the power-off dialog. Keep playing stays available."
+    "powerShutDown": "Shut down",
+    "@powerShutDown": {
+        "description": "Saves the session, then shuts the console down."
     },
-    "a11yPowerOffMark": "Segno",
-    "@a11yPowerOffMark": {
-        "description": "Announced name of the Plymouth lockup on the goodbye mark."
+    "powerSaving": "Saving…",
+    "@powerSaving": {
+        "description": "Full-screen face while the session and settings are writing. No spinner."
+    },
+    "powerSaveFailedTitle": "Segno is staying on",
+    "@powerSaveFailedTitle": {
+        "description": "Title when the save before a restart or shutdown failed. The console does not halt."
+    },
+    "powerSaveFailedBody": "Your session could not be saved, so nothing was switched off. Your loops are still here.",
+    "@powerSaveFailedBody": {
+        "description": "Body when the save before a restart or shutdown failed. Stay on and Retry are offered."
+    },
+    "powerStayOn": "Stay on",
+    "@powerStayOn": {
+        "description": "Closes the save-failed card; the audio and the loops stay."
+    },
+    "powerSafeToSwitchOff": "Safe to switch off",
+    "@powerSafeToSwitchOff": {
+        "description": "Terminal face after a shutdown has saved."
+    },
+    "powerRestarting": "Restarting",
+    "@powerRestarting": {
+        "description": "Terminal face after a restart has saved. No ellipsis."
+    },
+    "a11yPowerMark": "Segno",
+    "@a11yPowerMark": {
+        "description": "Announced name of the Plymouth lockup on the Track display's goodbye mark."
     },
     "stageLibrary": "Library",
     "@stageLibrary": {
@@ -3504,6 +3393,14 @@
                 }
         }
     },
+    "loopDefaultMultipleLabel": "Later tracks",
+    "@loopDefaultMultipleLabel": {
+        "description": "Length & quantize, Defaults scope: label of the row that sets how long tracks recorded after the first loop are, as a multiple of it (Auto, ×1, ×2, ×3)."
+    },
+    "loopDefaultMultipleNote": "Multiples of the first loop. Auto rounds up to whole loops.",
+    "@loopDefaultMultipleNote": {
+        "description": "Length & quantize, Defaults scope: the note beside Later tracks, saying what ×2 is a multiple of and what Auto does."
+    },
     "loopTimingLabel": "Record timing",
     "@loopTimingLabel": {
         "description": "Record timing field label."
@@ -3827,6 +3724,14 @@
     "fxPedalAssignments": "Pedal assignments",
     "@fxPedalAssignments": {
         "description": "Opens the pedal assignment surface from the Effects page."
+    },
+    "fxPedalAssignmentsTitle": "Pedals",
+    "@fxPedalAssignmentsTitle": {
+        "description": "Title of the FX page's pedal assignments page, where each footswitch is pointed at an effect chain for FX mode (pen 04 / 02 Pedal banks)."
+    },
+    "fxPedalAssignmentsCrumb": "EFFECTS / PEDAL ASSIGNMENTS",
+    "@fxPedalAssignmentsCrumb": {
+        "description": "Breadcrumb of the FX page's pedal assignments page."
     },
     "fxKindLiveInputs": "Live inputs",
     "@fxKindLiveInputs": {
@@ -4809,17 +4714,9 @@
     "@pedalSetupFixedNote": {
         "description": "Shown in place of the editor when a dimmed, unassignable footswitch is selected."
     },
-    "controlPedalSetupRow": "Pedal setup",
-    "@controlPedalSetupRow": {
-        "description": "Opens the Pedals setup page from the Control face's Pedal tab."
-    },
-    "controlPedalSetupSub": "What each footswitch does on a press and on a hold",
-    "@controlPedalSetupSub": {
-        "description": "Subtitle of the row that opens the Pedals setup page."
-    },
-    "pedalSetupContextLeds": "LED colors",
+    "pedalSetupContextLeds": "Custom colors",
     "@pedalSetupContextLeds": {
-        "description": "Opens the LED colors context of the Pedals setup, where each footswitch's indicator colour is chosen."
+        "description": "Opens the Custom colors context of the Pedals setup, where each Custom-assignable footswitch's indicator colour is chosen. Record, Mute and FX use fixed state colours."
     },
     "pedalSetupLedColor": "LED color",
     "@pedalSetupLedColor": {
@@ -5623,10 +5520,6 @@
     "@midiWhen": {
         "description": "Label before the choice of when an action runs."
     },
-    "midiControlsEntryDetail": "Choose a controller and assign its buttons, keys and knobs.",
-    "@midiControlsEntryDetail": {
-        "description": "Entry into the shared MIDI controls editor."
-    },
     "actionTapTempo": "Tap tempo",
     "@actionTapTempo": {
         "description": "Shared action for setting tempo by tapping a control."
@@ -5639,16 +5532,10 @@
     "midiResumeOn": "Resume On",
     "midiResetConfiguration": "Reset mappings",
     "midiConfigurationUnavailable": "Saved mappings could not be read. Reset them to start again.",
-    "powerOffSettingsFailedTitle": "Settings could not be confirmed",
-    "@powerOffSettingsFailedTitle": {"description": "Click settings and safe shutdown recovery message."},
-    "powerOffSettingsFailedBody": "Segno is still on. Retry to finish saving before powering off.",
-    "@powerOffSettingsFailedBody": {"description": "Click settings and safe shutdown recovery message."},
-    "powerOffRetry": "Retry",
-    "@powerOffRetry": {"description": "Click settings and safe shutdown recovery message."},
-    "powerOffSettingsRetryFailedBody": "Segno could not confirm your last change was saved. Retry again, or power off anyway.",
-    "@powerOffSettingsRetryFailedBody": {"description": "Shown after a Retry of the power-off settings flush also failed."},
-    "powerOffAnyway": "Power off anyway",
-    "@powerOffAnyway": {"description": "Powers off without confirming the last settings change, after a failed Retry."},
+    "powerRetry": "Retry",
+    "@powerRetry": {"description": "Retries a failed save before a restart or shutdown; also the click settings recovery action."},
+    "displayBrightnessSaveFailed": "Couldn't save",
+    "@displayBrightnessSaveFailed": {"description": "Toast when a brightness change could not be saved."},
     "clickSettingsRecoveryTitle": "Click settings need recovery",
     "@clickSettingsRecoveryTitle": {"description": "Click settings and safe shutdown recovery message."},
     "clickSettingsRefusedTitle": "Click change was not applied",
@@ -5916,6 +5803,117 @@
     "@actionModePeel": {
         "description": "Foot Peel performance surface."
     },
+    "actionModeTuner": "Tuner",
+    "@actionModeTuner": {
+        "description": "Foot Tuner: the mode's name, in pickers and on its face (#1229)."
+    },
+    "footTunerReference": "A4 reference",
+    "@footTunerReference": {
+        "description": "Foot Tuner face: the label over the A4 reference value."
+    },
+    "footTunerHzUnit": "Hz",
+    "@footTunerHzUnit": {
+        "description": "Foot Tuner face: the unit beside the A4 reference value."
+    },
+    "footTunerInputMuted": "Input muted",
+    "@footTunerInputMuted": {
+        "description": "Foot Tuner face: the tuned input is silent while tuning."
+    },
+    "footTunerInputAudible": "Input audible",
+    "@footTunerInputAudible": {
+        "description": "Foot Tuner face: the tuned input is heard while tuning."
+    },
+    "footTunerMuteInput": "Mute input",
+    "@footTunerMuteInput": {
+        "description": "Foot Tuner Stop switch while the input is audible."
+    },
+    "footTunerUnmuteInput": "Unmute input",
+    "@footTunerUnmuteInput": {
+        "description": "Foot Tuner Stop switch while the input is muted."
+    },
+    "footTunerReferenceDown": "Reference −",
+    "@footTunerReferenceDown": {
+        "description": "Foot Tuner Undo switch: lowers the A4 reference by 1 Hz."
+    },
+    "footTunerReferenceUp": "Reference +",
+    "@footTunerReferenceUp": {
+        "description": "Foot Tuner Clear switch: raises the A4 reference by 1 Hz."
+    },
+    "footTunerHoldReset": "Hold · {hz} Hz",
+    "@footTunerHoldReset": {
+        "description": "Foot Tuner Undo and Clear: holding resets the A4 reference to {hz}.",
+        "placeholders": {
+            "hz": {
+                "type": "int"
+            }
+        }
+    },
+    "footTunerInputs": "Inputs {first}–{last}",
+    "@footTunerInputs": {
+        "description": "Foot Tuner Bank switch: the inputs on the current page, 1-based.",
+        "placeholders": {
+            "first": {
+                "type": "int"
+            },
+            "last": {
+                "type": "int"
+            }
+        }
+    },
+    "footTunerInputsOne": "Input {number}",
+    "@footTunerInputsOne": {
+        "description": "Foot Tuner Bank switch: a page that holds one input.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "footTunerNextInputs": "Next inputs",
+    "@footTunerNextInputs": {
+        "description": "Foot Tuner Bank switch hint when there are more pages."
+    },
+    "footTunerFlat": "Flat",
+    "@footTunerFlat": {
+        "description": "Foot Tuner reading: the note is below pitch."
+    },
+    "footTunerInTune": "In tune",
+    "@footTunerInTune": {
+        "description": "Foot Tuner reading: the note is in tune."
+    },
+    "footTunerSharp": "Sharp",
+    "@footTunerSharp": {
+        "description": "Foot Tuner reading: the note is above pitch."
+    },
+    "footTunerCents": "{cents} cents",
+    "@footTunerCents": {
+        "description": "Foot Tuner reading: the deviation, one decimal, signed.",
+        "placeholders": {
+            "cents": {
+                "type": "String"
+            }
+        }
+    },
+    "footTunerPlayOneNote": "Play one note",
+    "@footTunerPlayOneNote": {
+        "description": "Foot Tuner reading with no pitch (pen 23/3)."
+    },
+    "footTunerSaveFailed": "Tuner settings could not be saved. Try again.",
+    "@footTunerSaveFailed": {
+        "description": "Foot Tuner: the A4 reference or input could not be saved."
+    },
+    "footTunerStartFailed": "The tuner could not start. Try again.",
+    "@footTunerStartFailed": {
+        "description": "Foot Tuner: the engine refused to arm the tuner or mute the input; the input stays audible."
+    },
+    "footTunerAtLimit": "A4 reference is at its limit.",
+    "@footTunerAtLimit": {
+        "description": "Foot Tuner: Reference + at 460 Hz or Reference − at 420 Hz."
+    },
+    "footTunerSeeded": "Tuner is on Custom: hold MODE, then hold pedal 2.",
+    "@footTunerSeeded": {
+        "description": "One-time notice when Hold · Tuner is added to Custom pedal 2 (#1229, D11)."
+    },
     "actionOperationPeel": "Peel",
     "@actionOperationPeel": {
         "description": "Foot Peel performance surface."
@@ -6065,6 +6063,71 @@
     "@settingsDisplaysTitle": {
         "description": "Title of the Displays settings page."
     },
+    "displaysTrackDisplay": "Track display",
+    "@displaysTrackDisplay": {
+        "description": "Heading of the Displays page card for the small panel that shows the selected track (the 7-inch panel)."
+    },
+    "displaysMainDisplay": "Main display",
+    "@displaysMainDisplay": {
+        "description": "Heading of the Displays page card for the large panel that shows the stage and pages."
+    },
+    "displaysTrackRole": "Selected track and waveform",
+    "@displaysTrackRole": {
+        "description": "What the Track display shows, under its heading."
+    },
+    "displaysMainRole": "Stage and settings",
+    "@displaysMainRole": {
+        "description": "What the Main display shows, under its heading."
+    },
+    "displaysTrackPanel": "7″",
+    "@displaysTrackPanel": {
+        "description": "The Track display's panel size, drawn in its preview."
+    },
+    "displaysMainPanel": "15.6″",
+    "@displaysMainPanel": {
+        "description": "The Main display's panel size, drawn in its preview."
+    },
+    "displaysConnected": "Connected",
+    "@displaysConnected": {
+        "description": "A display card's status when its panel is plugged in."
+    },
+    "displaysNotConnected": "Not connected",
+    "@displaysNotConnected": {
+        "description": "A display card's status when its panel is unplugged."
+    },
+    "displaysCalibrateTouch": "Calibrate touch",
+    "@displaysCalibrateTouch": {
+        "description": "Button on a display card that starts touch calibration for that panel."
+    },
+    "displaysDimWhileIdle": "Dim while idle",
+    "@displaysDimWhileIdle": {
+        "description": "Heading of the idle dimming choice on the Displays page."
+    },
+    "displaysDimNever": "Never",
+    "@displaysDimNever": {
+        "description": "Idle dimming choice: the displays never dim."
+    },
+    "displaysDimNote": "Playing or recording keeps both displays awake. A touch, the encoder, a pedal or MIDI wakes them.",
+    "@displaysDimNote": {
+        "description": "Note under the idle dimming choice explaining what keeps the displays awake and what wakes them."
+    },
+    "displaysOptions": "Display options",
+    "@displaysOptions": {
+        "description": "Heading of the row of other display settings on the Displays page."
+    },
+    "displaysTrackWindow": "Track display window",
+    "@displaysTrackWindow": {
+        "description": "Switch that opens or closes the Track display window."
+    },
+    "displaysDimMinutes": "{minutes} min",
+    "@displaysDimMinutes": {
+        "description": "Idle dimming choice: dim after this many minutes.",
+        "placeholders": {
+            "minutes": {
+                "type": "int"
+            }
+        }
+    },
     "settingsStorageTitle": "Storage",
     "@settingsStorageTitle": {
         "description": "Title of the Storage settings page."
@@ -6077,10 +6140,148 @@
     "@settingsAboutTitle": {
         "description": "Title of the About page, and the row on the Updates page that opens it."
     },
-    "settingsAboutSubtitle": "Name, version, controller and licences",
-    "@settingsAboutSubtitle": {
-        "description": "Subtitle of the About row on the Updates page."
+    "aboutThisConsolePanel": "This console",
+    "@aboutThisConsolePanel": {
+        "description": "Heading of the About page's panel of facts about the console itself."
     },
+    "aboutControllerPanel": "Controller",
+    "@aboutControllerPanel": {
+        "description": "Heading of the About page's panel about the console board (the controller)."
+    },
+    "aboutLicensesPanel": "Licenses",
+    "@aboutLicensesPanel": {
+        "description": "Heading of the About page's panel that opens the open-source notices."
+    },
+    "aboutRename": "Rename",
+    "@aboutRename": {
+        "description": "Button on the About page's Name row that renames the console."
+    },
+    "aboutDefaultName": "Segno",
+    "@aboutDefaultName": {
+        "description": "What the About page's Name row shows before the console has been renamed."
+    },
+    "aboutSegnoVersionRow": "Segno version",
+    "@aboutSegnoVersionRow": {
+        "description": "About page row: the installed Segno software version."
+    },
+    "aboutDisplaysRow": "Displays",
+    "@aboutDisplaysRow": {
+        "description": "About page row: the attached panels, by the names their EDID reports."
+    },
+    "aboutConnectionRow": "Connection",
+    "@aboutConnectionRow": {
+        "description": "About page row: whether the console board is talking to the app."
+    },
+    "aboutConnectionConnected": "Connected",
+    "@aboutConnectionConnected": {
+        "description": "Connection row value: the console board is talking."
+    },
+    "aboutConnectionDisconnected": "Not connected",
+    "@aboutConnectionDisconnected": {
+        "description": "Connection row value: the console board is silent."
+    },
+    "aboutConnectionIncompatible": "Different link protocol",
+    "@aboutConnectionIncompatible": {
+        "description": "Connection row value: the board talks, on a link protocol this build does not speak."
+    },
+    "aboutFirmwareRow": "Firmware",
+    "@aboutFirmwareRow": {
+        "description": "Row naming the console board's firmware version."
+    },
+    "aboutWireProtocolRow": "Wire protocol",
+    "@aboutWireProtocolRow": {
+        "description": "Row naming the link protocol the console board speaks."
+    },
+    "aboutNotReported": "Not reported",
+    "@aboutNotReported": {
+        "description": "Value of the controller's firmware and wire protocol rows when no version was read."
+    },
+    "aboutLastFlashedCaption": "Last flashed by this console",
+    "@aboutLastFlashedCaption": {
+        "description": "Caption under the controller firmware when it comes from this console's flash record, not from the board."
+    },
+    "aboutNotReportedCaption": "No device version was read",
+    "@aboutNotReportedCaption": {
+        "description": "Caption under the controller firmware when neither the board nor a flash record named a version."
+    },
+    "aboutControllerFirmwareRow": "Controller firmware",
+    "@aboutControllerFirmwareRow": {
+        "description": "About page row that opens the Controller firmware page."
+    },
+    "controllerFirmwareTitle": "Controller firmware",
+    "@controllerFirmwareTitle": {
+        "description": "Title of the Controller firmware page."
+    },
+    "controllerFirmwareCrumb": "SETTINGS / About Segno / Controller firmware",
+    "@controllerFirmwareCrumb": {
+        "description": "Breadcrumb over the Controller firmware page."
+    },
+    "controllerInstalledPanel": "Installed",
+    "@controllerInstalledPanel": {
+        "description": "Heading of the Controller firmware page's panel of what the board runs."
+    },
+    "controllerUpdateUnsupported": "Controller update support has not been established for this hardware.",
+    "@controllerUpdateUnsupported": {
+        "description": "Controller firmware page: the console cannot update the board's firmware itself."
+    },
+    "controllerSoftwareUpdates": "Software updates",
+    "@controllerSoftwareUpdates": {
+        "description": "Controller firmware page button that opens the Updates page."
+    },
+    "updatesPageInstalled": "Installed Segno {version}",
+    "@updatesPageInstalled": {"description": "Updates page heading: the running version.", "placeholders": {"version": {"type": "String"}}},
+    "updatesPageCheck": "Check for updates",
+    "@updatesPageCheck": {"description": "Updates page button that runs the read-only check."},
+    "updatesPanelSoftware": "Software updates",
+    "@updatesPanelSoftware": {"description": "Updates page status panel title when nothing is on offer."},
+    "updatesPanelAvailable": "Update available",
+    "@updatesPanelAvailable": {"description": "Updates page status panel title when a newer build is offered."},
+    "updatesPanelDownloading": "Downloading",
+    "@updatesPanelDownloading": {"description": "Updates page status panel title while the update downloads and installs."},
+    "updatesPanelReady": "Ready to install",
+    "@updatesPanelReady": {"description": "Updates page status panel title when an update is staged."},
+    "updatesPanelPaused": "Update paused",
+    "@updatesPanelPaused": {"description": "Updates page status panel title when an install was cut off."},
+    "updatesPageVersion": "Segno {version}",
+    "@updatesPageVersion": {"description": "Updates page status panel meta: the version on offer.", "placeholders": {"version": {"type": "String"}}},
+    "updatesPageVersionSize": "Segno {version} · {megabytes} MB",
+    "@updatesPageVersionSize": {"description": "Updates page status panel meta: the version on offer and its download size.", "placeholders": {"version": {"type": "String"}, "megabytes": {"type": "int"}}},
+    "updatesPageIdle": "Look for a newer version of Segno.",
+    "@updatesPageIdle": {"description": "Updates page status sentence before any check."},
+    "updatesPageCheckFailed": "Could not reach the update server. Check the network and try again.",
+    "@updatesPageCheckFailed": {"description": "Updates page status sentence when the check failed."},
+    "updatesPageDownloadFailed": "The download did not finish. The current software is unchanged.",
+    "@updatesPageDownloadFailed": {"description": "Updates page status sentence when the download or install failed."},
+    "updatesPageInterrupted": "Download interrupted. The current software is unchanged.",
+    "@updatesPageInterrupted": {"description": "Updates page status sentence when an install was cut off by a crash or power loss."},
+    "updatesPagePercent": "{percent}%",
+    "@updatesPagePercent": {"description": "Updates page download progress.", "placeholders": {"percent": {"type": "int"}}},
+    "updatesPageDownload": "Download and install",
+    "@updatesPageDownload": {"description": "Updates page button that downloads and stages the offered build."},
+    "updatesPageInstallRestart": "Install and restart",
+    "@updatesPageInstallRestart": {"description": "Updates page button that restarts into the staged build through the power flow."},
+    "updatesPageRetry": "Retry",
+    "@updatesPageRetry": {"description": "Updates page button that retries a failed or cut-off download."},
+    "updatesPageCancel": "Cancel",
+    "@updatesPageCancel": {"description": "Updates page button that cancels a download or drops a cut-off install."},
+    "updatesPageRollback": "Segno {attempted} did not start, so the console went back to {restored}.",
+    "@updatesPageRollback": {"description": "Updates page notice after a staged update rolled back.", "placeholders": {"attempted": {"type": "String"}, "restored": {"type": "String"}}},
+    "updatesPageDismiss": "Dismiss",
+    "@updatesPageDismiss": {"description": "Updates page button that dismisses the rollback notice."},
+    "updatesPageAutomaticPanel": "Automatic",
+    "@updatesPageAutomaticPanel": {"description": "Updates page panel heading for the automatic check and the channel."},
+    "updatesPageAutoCheck": "Check automatically",
+    "@updatesPageAutoCheck": {"description": "Updates page row: whether the read-only check runs on its own."},
+    "updatesPageAutoCheckCaption": "Never downloads or installs on its own.",
+    "@updatesPageAutoCheckCaption": {"description": "Updates page caption under Check automatically."},
+    "updatesPageChannel": "Update channel",
+    "@updatesPageChannel": {"description": "Updates page row: which release channel the console follows."},
+    "updatesPageChannelProduction": "Production",
+    "@updatesPageChannelProduction": {"description": "Updates page channel choice: production releases."},
+    "updatesPageChannelExperimental": "Experimental",
+    "@updatesPageChannelExperimental": {"description": "Updates page channel choice: pre-release builds."},
+    "updatesPageConsolePanel": "This console",
+    "@updatesPageConsolePanel": {"description": "Updates page panel heading for the About and Controller firmware links."},
     "settingsMidiTitle": "MIDI",
     "@settingsMidiTitle": {
         "description": "The MIDI tile on the Settings page."

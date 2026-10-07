@@ -22,6 +22,46 @@ void main() {
       );
     });
 
+    test('the encoder push switch is one 0/1 byte', () {
+      expect(
+        PedalLinkCodec.encode(const EncoderButtonMessage(pressed: true)),
+        [0xA5, 0x05, 0x01, 0x01, 0x05 ^ 0x01 ^ 0x01],
+      );
+      expect(
+        PedalLinkCodec.encode(const EncoderButtonMessage(pressed: false)),
+        [0xA5, 0x05, 0x01, 0x00, 0x05 ^ 0x01],
+      );
+      for (final pressed in [true, false]) {
+        final message = EncoderButtonMessage(pressed: pressed);
+        expect(PedalLinkParser().push(PedalLinkCodec.encode(message)), [
+          message,
+        ]);
+      }
+      expect(PedalLinkCodec.payloadLengthFor(0x05), 1);
+    });
+
+    test('rejects a malformed encoder push-switch payload', () {
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeEncoderButton, [2]),
+        isNull,
+      );
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeEncoderButton, []),
+        isNull,
+      );
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeEncoderButton, [1, 0]),
+        isNull,
+      );
+      // A checksum-valid frame with an out-of-range byte is dropped, counted.
+      final parser = PedalLinkParser();
+      expect(
+        parser.push([0xA5, 0x05, 0x01, 0x02, 0x05 ^ 0x01 ^ 0x02]),
+        isEmpty,
+      );
+      expect(parser.droppedFrames, 1);
+    });
+
     test('state payload round-trips every field', () {
       final frame = PedalStateFrame(
         globalColor: GlobalColor.amber,

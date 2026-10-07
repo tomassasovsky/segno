@@ -39,13 +39,13 @@ class DiskSpace {
 /// support/documents volume. Measuring the repositories' own paths is what
 /// makes that split correct without this client ever naming a partition.
 ///
-/// The other three questions stay honestly unanswered here: [facts] is what the
-/// box *is* (not derivable from the filesystem), and export + capture retention
-/// are unimplemented on the appliance side — so those keep the same "unknown"
-/// answers the unsupported client gave, per-field, rather than this class
-/// pretending to a completeness it does not have. Only the disk figures are
-/// real. [isSupported] is nonetheless `true`: the build *can* read the disk,
-/// which is the one thing that flag gates.
+/// [facts] reads what the box *is* from the files the kernel and the image
+/// already publish (see [facts]); every read is a plain file read, never a
+/// fork (#806). Export and capture retention are unimplemented on the
+/// appliance side, so those keep the same "unknown" answers the unsupported
+/// client gave rather than this class pretending to a completeness it does not
+/// have. [isSupported] is `true`: the build *can* read the disk, which is the
+/// one thing that flag gates.
 class LocalConsoleFactsClient implements ConsoleFactsClient {
   /// Creates a [LocalConsoleFactsClient].
   ///
@@ -62,15 +62,21 @@ class LocalConsoleFactsClient implements ConsoleFactsClient {
     required Future<String> Function() capturesRoot,
     required Future<DiskSpace?> Function(String path) diskSpace,
     String bluetoothState = kRetiredBluetoothState,
+    String factsRoot = '/',
   }) : _sessionsRoot = sessionsRoot,
        _capturesRoot = capturesRoot,
        _diskSpace = diskSpace,
-       _bluetoothState = bluetoothState;
+       _bluetoothState = bluetoothState,
+       _factsRoot = factsRoot.endsWith('/') ? factsRoot : '$factsRoot/';
 
   final Future<String> Function() _sessionsRoot;
   final Future<String> Function() _capturesRoot;
   final Future<DiskSpace?> Function(String path) _diskSpace;
   final String _bluetoothState;
+
+  /// The filesystem root [facts] reads under: `/` on the box, a fixture tree
+  /// in tests. Always ends in `/`.
+  final String _factsRoot;
 
   @override
   bool get isSupported => true;
@@ -112,11 +118,73 @@ class LocalConsoleFactsClient implements ConsoleFactsClient {
     );
   }
 
-  /// What the box *is* — not something a filesystem read can answer, so still
-  /// unknown here. Kept honest per-field rather than fabricated (#656 is disk
-  /// accounting only).
+  /// What the box *is*, from the files that already say so:
+  ///
+  /// * the serial from the device tree ([kSerialNumberPath]), as the Pi's
+  ///   firmware writes it — NUL-terminated;
+  /// * the system image from [kBuildVersionPath], the version the image was
+  ///   baked with;
+  /// * each attached panel's own name from its EDID under [kDrmPath];
+  /// * what the boot-time flasher last put on the console board, from
+  ///   [kConsoleBoardRecordPath].
+  ///
+  /// A fact whose file is missing or unreadable stays empty (or null), and
+  /// the face leaves its row out. Nothing here is guessed: there is no default
+  /// name, because no file names the console.
   @override
-  Future<ConsoleFacts> facts() async => ConsoleFacts.unknown;
+  Future<ConsoleFacts> facts() async => ConsoleFacts(
+    serial: _readText(kSerialNumberPath),
+    systemImage: _readText(kBuildVersionPath),
+    panels: _panelNames(),
+    lastFlashed: _lastFlashed(),
+  );
+
+  String _readText(String path) {
+    try {
+      return File(
+        '$_factsRoot$path',
+      ).readAsStringSync().replaceAll('\x00', '').trim();
+    } on FileSystemException {
+      return '';
+    }
+  }
+
+  List<String> _panelNames() {
+    final drm = Directory('$_factsRoot$kDrmPath');
+    if (!drm.existsSync()) return const [];
+    try {
+      final connectors = <(String, String)>[];
+      for (final entry in drm.listSync()) {
+        // `card1-HDMI-A-1`: a connector of a card. The bare `card1` and the
+        // `renderD128` nodes carry no EDID.
+        final match = _drmConnector.firstMatch(_name(entry.path));
+        if (match == null) continue;
+        final List<int> edid;
+        try {
+          edid = File('${entry.path}/edid').readAsBytesSync();
+        } on FileSystemException {
+          continue;
+        }
+        final name = edidMonitorName(edid);
+        if (name != null) connectors.add((match.group(1)!, name));
+      }
+      connectors.sort((a, b) => a.$1.compareTo(b.$1));
+      return [for (final (_, name) in connectors) name];
+    } on FileSystemException {
+      return const [];
+    }
+  }
+
+  ConsoleBoardFlash? _lastFlashed() {
+    final record = _readText(kConsoleBoardRecordPath);
+    final firmware = _recordFirmware.firstMatch(record)?.group(1);
+    // A damaged record is no record: it must not fail the whole facts load.
+    final protocol = int.tryParse(
+      _recordProtocol.firstMatch(record)?.group(1) ?? '',
+    );
+    if (firmware == null || protocol == null) return null;
+    return ConsoleBoardFlash(firmware: firmware, protocol: protocol);
+  }
 
   /// Capture retention is unimplemented on the appliance side; nothing is
   /// removed and nothing is claimed to be.
@@ -142,9 +210,9 @@ class LocalConsoleFactsClient implements ConsoleFactsClient {
     try {
       var count = 0;
       for (final adapter in root.listSync().whereType<Directory>()) {
-        if (!_bluetoothAddress.hasMatch(_name(adapter))) continue;
+        if (!_bluetoothAddress.hasMatch(_name(adapter.path))) continue;
         for (final device in adapter.listSync().whereType<Directory>()) {
-          if (_bluetoothAddress.hasMatch(_name(device)) &&
+          if (_bluetoothAddress.hasMatch(_name(device.path)) &&
               File('${device.path}/info').existsSync()) {
             count++;
           }
@@ -161,13 +229,64 @@ class LocalConsoleFactsClient implements ConsoleFactsClient {
 /// retired Bluetooth service bound it over `/var/lib/bluetooth`.
 const kRetiredBluetoothState = '/data/bluetooth';
 
+/// The board serial the Pi's firmware publishes, relative to the facts root.
+const kSerialNumberPath = 'sys/firmware/devicetree/base/serial-number';
+
+/// The running image's build version, relative to the facts root. The same
+/// file the update helper compares a manifest against.
+const kBuildVersionPath = 'etc/segno/build-version';
+
+/// Where the kernel lists display connectors, relative to the facts root.
+const kDrmPath = 'sys/class/drm';
+
+/// What `segno-console-flash` writes after a verified program, relative to
+/// the facts root: `firmware=<major.minor> protocol=<n>`.
+const kConsoleBoardRecordPath = 'data/segno/console-board/last-flashed';
+
+/// A DRM connector entry: `card<N>-<connector>`.
+final _drmConnector = RegExp(r'^card\d+-(.+)$');
+
+final _recordFirmware = RegExp('firmware=([0-9][0-9.]*)');
+final _recordProtocol = RegExp('protocol=([0-9]+)');
+
+/// The monitor name an EDID base block carries in its display-name
+/// descriptor (tag `0xFC`), or null when the block is not an EDID or names
+/// nothing.
+///
+/// The base block is 128 bytes: an 8-byte header, then four 18-byte
+/// descriptors from byte 54. A display descriptor starts with three zero
+/// bytes and its tag; the name is the 13 bytes after the tag's padding byte,
+/// ended by a line feed and padded with spaces.
+String? edidMonitorName(List<int> edid) {
+  const header = [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00];
+  if (edid.length < 128) return null;
+  for (var i = 0; i < header.length; i++) {
+    if (edid[i] != header[i]) return null;
+  }
+  for (var offset = 54; offset <= 108; offset += 18) {
+    if (edid[offset] != 0 || edid[offset + 1] != 0 || edid[offset + 2] != 0) {
+      continue;
+    }
+    if (edid[offset + 3] != 0xFC) continue;
+    final text = edid.sublist(offset + 5, offset + 18);
+    final end = text.indexOf(0x0A);
+    final name = String.fromCharCodes(
+      end < 0 ? text : text.sublist(0, end),
+    ).trim();
+    return name.isEmpty ? null : name;
+  }
+  return null;
+}
+
 /// A Bluetooth device address as BlueZ names its directories.
 final _bluetoothAddress = RegExp(r'^[0-9A-F]{2}(:[0-9A-F]{2}){5}$');
 
-String _name(Directory dir) => dir.uri.pathSegments.lastWhere(
-  (segment) => segment.isNotEmpty,
-  orElse: () => '',
-);
+String _name(String path) => path
+    .split('/')
+    .lastWhere(
+      (segment) => segment.isNotEmpty,
+      orElse: () => '',
+    );
 
 /// The nearest existing directory at or above [path], or `null` if even the
 /// filesystem root is unreadable. Lets the capacity reader measure the right

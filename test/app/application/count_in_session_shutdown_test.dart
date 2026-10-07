@@ -13,8 +13,8 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/app_runtime.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
-import 'package:segno/appliance/power_off/power_off_gate.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
@@ -148,6 +148,8 @@ void main() {
           performance: performance,
           sessions: sessions,
           powerOff: () async => halts++,
+          reboot: () async => halts++,
+          storageSettled: () async {},
         );
         addTearDown(() async {
           store.refuse = false;
@@ -252,18 +254,18 @@ void main() {
             2,
           );
           store.refuse = true;
-          const snapshot = PowerOffSnapshot(anyHasContent: true);
+          const snapshot = PowerSnapshot(currentSessionName: 'set');
           runtime.power
             ..press(snapshot)
-            ..powerOffWithoutSaving(snapshot);
+            ..shutDown(snapshot, save: () async {});
           await _until(
-            () => runtime.power.state.phase == PowerOffPhase.flushFailed,
+            () => runtime.power.state.phase == PowerPhase.saveFailed,
             description: 'Shutdown must refuse failed release',
           );
           expect(halts, 0);
           expect(engine.snapshot().countInBars, 2);
           store.refuse = false;
-          runtime.power.retryPowerOff(snapshot);
+          runtime.power.retry(snapshot);
           await _until(
             () => halts == 1,
             description: 'Retry must halt after repair',

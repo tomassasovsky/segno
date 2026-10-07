@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/pedal_binding.dart';
 
 /// The named hues offered by the pedal editor. These are design values; the
 /// pedal's renderer applies its own gamma, spatial weighting, and current cap.
@@ -97,8 +98,14 @@ class PedalPalette extends Equatable {
         throw const FormatException('Dangling custom palette reference');
       }
     }
+    // Colour is the performer's only on the switches Custom mode can assign
+    // (#1274): a stored MODE or BANK choice is dropped, not kept unreachable.
     final normalized = Map<PedalButton, PedalPaletteEntry>.of(choices)
-      ..removeWhere((_, entry) => entry == defaultEntry);
+      ..removeWhere(
+        (button, entry) =>
+            entry == defaultEntry ||
+            PedalBindingKey.unbindable.contains(button),
+      );
     return PedalPalette._(customs, normalized);
   }
 

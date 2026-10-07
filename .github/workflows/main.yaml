@@ -461,8 +461,8 @@ jobs:
           ctest --test-dir build/vst3 --output-on-failure
 
   # The appliance shell suites (bt, wifi, mark-good, journal persist, weston
-  # drop-in wiring, reconcile-staged), which share one shape: inject every
-  # path, stub the privileged call — no hardware.
+  # drop-in wiring, reconcile-staged, the update attempt marker), which share
+  # one shape: inject every path, stub the privileged call — no hardware.
   appliance-shell-tests:
     runs-on: ubuntu-latest
     steps:
@@ -479,6 +479,8 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-core/bootfs/test/run_bootfs_tests.sh
       - name: Run console-board flash tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-console-board/test/run_console_flash_tests.sh
+      - name: Run console-board flash record tests
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-console-board/test/run_flash_record_tests.sh
       # Twice: the appliance's /bin/sh is busybox ash, so the helper must hold
       # under a strict POSIX shell (dash) as well as bash.
       - name: Run usb-ctl tests (bash)
@@ -495,6 +497,14 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_saved_tests.sh
       - name: Run wifi boot-retry tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_retry_tests.sh
+      - name: Run wifi network-management tests
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_manage_tests.sh
+      # Twice: the appliance's /bin/sh is busybox ash, so the helper must hold
+      # under a strict POSIX shell (dash) as well as bash.
+      - name: Run brightness-ctl tests (bash)
+        run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_brightness_tests.sh
+      - name: Run brightness-ctl tests (dash)
+        run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_brightness_tests.sh
       - name: Run mark-good tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
       - name: Run update-ctl reboot tryboot tests
@@ -513,6 +523,10 @@ jobs:
         run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_reconcile_staged_tests.sh
       - name: Run reconcile-staged tests (dash)
         run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_reconcile_staged_tests.sh
+      - name: Run update attempt-marker tests (bash)
+        run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_update_attempt_tests.sh
+      - name: Run update attempt-marker tests (dash)
+        run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_update_attempt_tests.sh
 
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
