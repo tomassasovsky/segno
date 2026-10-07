@@ -1112,7 +1112,8 @@ class Session {
   /// [loopBars] 0, because an empty rig that kept a grid would lock the next
   /// take's length; [primaryTrack] -1, because the crown goes with the
   /// content; no [name], because the new loop takes its own. Every other
-  /// field is copied as it is: tempo, signature, mode, defaults and their
+  /// field is copied as it is (the recorded tempo and length go with the
+  /// takes): tempo, signature, mode, defaults and their
   /// per-track overrides, click, count-in, Fade durations, levels, pans,
   /// lane routing, input and output setup, all four chain stages and the
   /// pedal remap.
@@ -1162,6 +1163,12 @@ class Session {
     pedalBindings: pedalBindings,
     inputSetup: inputSetup,
     outputSetup: outputSetup,
+    // The recorded pair describes the takes, which New loop drops; Follow
+    // tempo and Pitch are settings and stay.
+    defaultFollowTempo: defaultFollowTempo,
+    trackFollowTempoOverrides: trackFollowTempoOverrides,
+    defaultPitchMode: defaultPitchMode,
+    trackPitchModeOverrides: trackPitchModeOverrides,
   );
 
   /// Serializes this session manifest to a JSON map. Always writes the

@@ -60,7 +60,8 @@ enum EngineResult {
   /// transposed track (`LE_ERR_TRANSFORMED`, #1179): capture never writes
   /// under playback it does not hear. Play, Stop, Mute, Fade and history stay
   /// available.
-  transformed;
+  transformed,
+
   /// The tracks selected for a render share no common cycle within the cap
   /// (`LE_ERR_NO_COMMON_CYCLE`); a chosen length is required.
   noCommonCycle,

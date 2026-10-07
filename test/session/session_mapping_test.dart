@@ -1478,6 +1478,12 @@ void main() {
         pairs: {0: 1},
       ),
       outputSetup: const SessionOutputSetup(level: {0: 0.5}),
+      recordedTempoBpm: 90,
+      recordedLengthFrames: 96000,
+      defaultFollowTempo: false,
+      trackFollowTempoOverrides: const {1: true},
+      defaultPitchMode: PitchMode.followsSpeed,
+      trackPitchModeOverrides: const {2: PitchMode.unchanged},
     );
 
     test('the source session sets every manifest field away from its '
@@ -1532,6 +1538,12 @@ void main() {
         'pedalBindings',
         'inputSetup',
         'outputSetup',
+        'recordedTempoBpm',
+        'recordedLengthFrames',
+        'defaultFollowTempo',
+        'trackFollowTempoOverrides',
+        'defaultPitchMode',
+        'trackPitchModeOverrides',
       });
       final defaults = const Session(
         sampleRate: 48000,
@@ -1549,7 +1561,7 @@ void main() {
     });
 
     test('keeps every field and drops exactly the tracks, the grid, the '
-        'crown and the name', () {
+        'crown, the recorded tempo and length, and the name', () {
       final source = full.toJson();
       final expected = {
         for (final entry in source.entries)
@@ -1558,6 +1570,8 @@ void main() {
         'baseLengthFrames': 0,
         'loopBars': 0,
         'primaryTrack': -1,
+        'recordedTempoBpm': 0.0,
+        'recordedLengthFrames': 0,
       };
 
       expect(
