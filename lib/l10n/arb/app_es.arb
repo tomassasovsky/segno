@@ -703,6 +703,8 @@
     "perfPartial": "Algunas pistas no se pudieron renderizar, pero el resto de la captura está intacto.",
     "perfStoppedDiskFull": "La captura se detuvo antes de tiempo — no se pudo escribir en el disco.",
     "perfStoppedDeviceChange": "La captura se detuvo antes de tiempo — cambió el dispositivo de audio.",
+    "perfStoppedReserve": "Se alcanzó la reserva de almacenamiento. Se conserva la parte grabada de esta toma.",
+    "perfStoppedSlowStorage": "La grabación se detuvo porque el almacenamiento no pudo seguir el ritmo. Se conserva la parte grabada de esta toma.",
     "perfCaptureGlitch": "Se detectaron cuadros de audio perdidos durante la captura.",
     "perfDiscarded": "La captura era demasiado corta para conservarla — descartada.",
     "perfLowDisk": "Poco espacio en disco — la captura podría quedarse sin espacio.",

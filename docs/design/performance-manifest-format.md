@@ -88,7 +88,7 @@ What a standalone tool should conclude from each combination:
 | `channel_layout.captured_inputs` | int[] | Hardware input indices monitored at arm time (frozen for the session, D-INPUT); each has its own `input-<n>-NNN.wav` parts, stereo. |
 | `capture_frames` | int | Total frames elapsed since arm, regardless of any ring drop. In a MID-CAPTURE sidecar this is elapsed *as of that cycle's start*, not as of the moment the file was written (the cycle samples the frame count before it drains a single ring — see #710 — so audio produced while the cycle was writing is counted next cycle instead). The final sidecar is unaffected, since no audio is produced after it; only a crash-recovered bundle, whose newest sidecar is a mid-capture one, ever sees the difference. |
 | `overrun_count` | int | Capture-ring overruns (frames the audio thread could not enqueue) since arm. Not the whole story — see `zero_filled_frames`. |
-| `zero_filled_frames` | int | Frames of digital silence the drain actually wrote into the capture files since arm, summed over every file it writes. A superset of `overrun_count`'s consequences: every dropped frame is silence-filled, but a file can also fall behind for reasons no overrun explains, which is how #710's takes carried audible silence while `overrun_count` read `0`. Counts bytes that reached disk, so a pad the disk refused (a `disk_full` stop mid-pad) is excluded even though `overrun_gaps` may still name the span. Absent from any sidecar written before #710. |
+| `zero_filled_frames` | int | Frames of digital silence the drain actually wrote into the capture files since arm, summed over every file it writes. Since #1198 a dropped frame is never silence-filled: it ends the take (`slow_storage`). What is filled is audio counted but never tapped, which is how #710's takes carried audible silence while `overrun_count` read `0`. Counts bytes that reached disk, so a pad the disk refused (a `disk_full` stop mid-pad) is excluded even though `overrun_gaps` may still name the span. Absent from any sidecar written before #710. |
 | `overrun_gaps` | array | Up to 128 individually-logged `{frame, duration_frames}` gaps — where a file fell behind and by how much it was *asked* to pad. Beyond 128, frames are still silence-filled, just not itemized here; `zero_filled_frames` stays exact regardless. |
 | `layers` | array | Every retired overdub layer's raw PCM, persisted before pool eviction/clear/redo could destroy it (part 5, D-LAYER) — see below. |
 | `take_id` | string | The take's 16-byte identity as 32 lowercase hex digits, minted by the repository before arm and written into every part's `sgno` chunk (#1198). |
@@ -97,7 +97,7 @@ What a standalone tool should conclude from each combination:
 | `ring_seconds` | int | Seconds each capture ring was granted at arm, after the 64 MiB total cap. |
 | `overs` | int | Samples with a magnitude above 1.0 across every part, sealed and open. Kept as written, never clipped. |
 | `parts` | array | The take's audio parts in playback order — see "Audio parts" below. |
-| `stopped_early` | string? | `"disk_full"` or `"device_changed"` when capture stopped abnormally; absent for a normal disarm. |
+| `stopped_early` | string? | Why the take stopped before a normal disarm; absent otherwise. `"disk_full"`: a write failed (a full disk, a quota, a read-only remount, an I/O error). `"device_changed"`: the audio device changed. `"reserve_reached"` (#1198): the destination reached its reserve, and every stream ends at the last whole frame it could hold above it. `"slow_storage"` (#1198): a capture ring overflowed because the storage fell behind, and every stream ends at the first frame that could not be kept, with nothing filled in after it. For the last two, `capture_frames` is the frame the take ends at. |
 | `armSnapshot` | object? | See below. `null`/absent only if the app crashed before arm's own crash-survival file (`arm-snapshot.json`, deleted at finalize) could even be written. |
 | `disarmSnapshot` | object? | See below. Absent for a capture recovered from a crash — there is no live engine left for a second pass. |
 | `finalized` | bool | `true` once finalize completed. The salvage *trigger* (D-SALVAGE): `false`/absent is what routes a bundle to crash recovery — but since the silent boot salvage (#679) it is no longer the sole salvage marker; the `.boot-recovery` / `.recovered-at` sibling files carry the move half of the story (see "Salvage sibling files" above). |
@@ -307,3 +307,73 @@ writes it to its own crash-survival file, `arm-snapshot.json`, right at arm
 time, and only folds it into `performance.json` (deleting `arm-snapshot.json`)
 once finalize actually runs — normal disarm, or `recoverCapture` reading it
 back after a crash.
+
+## Checkpoints (`checkpoint-a.json`, `checkpoint-b.json`; #1198 D4, #727)
+
+`performance.json` says what the drain has handed the operating system, not
+what is on the device: nothing in the drain syncs, and after a power cut the
+page cache it relied on is gone. The checkpoint is the durable record.
+
+**What is owed.** After a power cut at most the last checkpoint interval of a
+take is lost (5 seconds for a real take, `le_perf_target.checkpoint_ms`).
+After an app crash on a volume that stayed mounted nothing written is lost.
+
+**How one is written.** A checkpoint thread, started and stopped with the
+take, never makes the drain wait on the device. After each cycle's flush the
+drain publishes its progress (each stream's open part, how many parts are
+sealed, how many layer files are written, `events.log`'s length, the frames
+every stream holds). Every interval the thread copies that, syncs (fdatasync) every
+file it names, syncs the take directory, then rewrites one slot file in
+place: truncate, write, fsync. The slots alternate, and a slot whose write
+fails is written again next time, so the other slot always stands. Neither
+slot is ever renamed over: FAT and exFAT do not make a rename over a file
+atomic. A final checkpoint is written whenever the take stops: a disarm, the
+take stopping itself (written before any disarm, in case the app dies), or
+the audio device changing. A failed sync or slot write is counted in
+`le_snapshot.perf_checkpoint_failures`; the take goes on.
+
+**The slot.** JSON, then a checksum:
+
+```jsonc
+{
+  "version": 1,
+  "sequence": 12,
+  "take_id": "000102030405060708090a0b0c0d0e0f",
+  "boot_id": "b5c4b7e5-6f0f-4f69-9d7f-6a9a3a8d2c11",
+  "volume_generation": -1,
+  "sample_rate": 48000,
+  "encoding": "f32",
+  "frames": 2000,
+  "overs": 0,
+  "streams": [
+    {"stream": 0, "channels": 2, "parts": [
+      {"index": 1, "file": "master-001.wav", "frames": 2000, "bytes": 16084, "overs": 0}]}
+  ],
+  "events_bytes": 40,
+  "layers": ["layer-1-4800-4.pcm"],
+  "written_at_ms": 1791244800000,
+  "checksum": "…"
+}
+```
+
+`checksum` is the SHA-256, 64 lowercase hex digits, of every byte before the
+`"checksum"` key. A reader takes the valid slot (checksum matches, it
+parses) with the higher `sequence`; a torn slot fails its checksum and the
+other one stands. A sealed part carries its `sha256`; the open part does not.
+`frames` per part is what the device is known to hold; `boot_id` is the boot
+the slot was written in (empty where the platform has none).
+
+**The mirror.** A take on a removable volume names an Internal `mirror_dir`:
+each checkpoint goes to the same slot there, from the same bytes, after the
+stick's. The mirror wins when both are valid and disagree (it is on ext4,
+written second), and the live `performance.json` is kept there too, so the
+stick's take directory receives no per-cycle file.
+
+**What recovery trusts.** The files as written (every whole frame present in
+every stream) only when the slot's `boot_id` is the current boot, the volume
+stayed mounted for the whole take (Internal, or the same
+`volume_generation`), and recovery is not reading the mirror alone.
+Otherwise only the checkpoint's counts: after a power cut or a pulled stick,
+a size on a FAT or exFAT volume can cover clusters that never received the
+audio. That is the copy the app shows: "The saved checkpoint can be
+recovered. Audio after it may be unavailable."

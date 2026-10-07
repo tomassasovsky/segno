@@ -35,6 +35,22 @@ void main() {
       }
     });
 
+    test('checkpoints every 5 s by default and refuses a negative interval '
+        '(#1198 D4)', () {
+      expect(
+        PerfTarget(captureDir: '/take', takeId: Uint8List(16)).checkpointMs,
+        5000,
+      );
+      expect(
+        () => PerfTarget(
+          captureDir: '/take',
+          takeId: Uint8List(16),
+          checkpointMs: -1,
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('refuses a negative part size', () {
       expect(
         () => PerfTarget(

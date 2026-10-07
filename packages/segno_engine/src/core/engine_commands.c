@@ -4734,7 +4734,8 @@ static void le_perf_free_unpublished(le_engine* e, uint32_t monitors_done) {
 int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
   if (engine == NULL || target == NULL || target->capture_dir == NULL ||
       target->capture_dir[0] == '\0' || target->ring_seconds < 0 ||
-      target->ring_seconds > LE_PERF_RING_SECONDS_MAX) {
+      target->ring_seconds > LE_PERF_RING_SECONDS_MAX ||
+      target->checkpoint_ms < 0) {
     return LE_ERR_INVALID;
   }
   /* A part must hold at least one stereo frame after its header, and its
@@ -4827,6 +4828,18 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
   atomic_store_explicit(&engine->a_perf_log_ctrl_overruns, 0u,
                         memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_layer_overruns, 0u,
+                        memory_order_relaxed);
+  /* Take accounting (#1198). Safe before LE_CMD_PERF_ARM is pushed: the
+   * audio thread writes the first-drop frame only while armed, and the drain
+   * thread is not started yet. */
+  atomic_store_explicit(&engine->a_perf_stop_reason, LE_PERF_STOP_NONE,
+                        memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_bytes_written, 0u,
+                        memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_overs, 0u, memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_first_drop_frame, UINT64_MAX,
+                        memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_checkpoint_failures, 0u,
                         memory_order_relaxed);
   /* Reset both perf-log rings so a fresh session never sees a stale entry
    * left over from a previous one — safe here (before LE_CMD_PERF_ARM is
