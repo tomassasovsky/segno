@@ -1345,10 +1345,31 @@ default limit again. A native-library case plays a chord through the
 repository; CI's fuzz job runs it. 39 package tests, 100 % line coverage,
 12 mutations caught.
 
-**3b-3, next.** The app side: the `instruments` family and its
-`SettingsOwner` with the `SettingsRepository` checkpoint, the wiring (the
-engine snapshot stream, device ports, the desktop-only key handler from
-D9), and the removal sequence's guard.
+**3b-3, built (`claude/instruments-1197-p3b-3`, about 300 lines).** The
+app side:
+- `OwnedSetting.instruments` and `InstrumentsFamily`: the working copy as
+  one stored record (`SettingsRepository.readInstrumentsCheckpoint` /
+  `restoreInstrumentsCheckpoint`, key `instruments.working_copy`), applied
+  to the engine through `InstrumentRepository.apply` by the owner before it
+  is confirmed, rolled back by the owner on refusal. An absent record is no
+  instruments; an unreadable one asks for recovery (Retry stores none, owner
+  rule 5), with its own recovery toast.
+- `InstrumentSettings` (`lib/instruments/application/`): add (the first free
+  slot, controllers off, or the refusal; ids from `SlotIds.mint`), rename,
+  choose sound (the audition's Apply, with that sound's defaults), commit
+  the parameter draft, MIDI input and computer keys, and remove, all
+  through the owner. Remove is refused while a track captures from the
+  instrument or waits to launch, and leaves a tombstone when a lane still
+  holds material recorded from it.
+- `AppRuntime` owns it among the settings owners (load, Session exclusion,
+  flush, close) when the app has an `InstrumentRepository`; `runSegno` and
+  the mock flavour build one over the shared engine, reading the engine
+  through `LooperRepository.engineSnapshots` (the poll's own snapshot, so
+  the engine is read once).
+- Not here: the device ports (Part 4's registry calls `setPorts`), the
+  desktop key handler (Part 7b, with the D9 focus rules; the dispatcher it
+  calls is built), Hear live On at 75 % and route retirement (3c), and the
+  Session capture of the family (Part 5).
 
 ### Part 3c. Dart source space, instrument-keyed targets and removal labels (about 550 production lines)
 
