@@ -362,6 +362,23 @@ void main() {
   LooperRepository buildRepo() =>
       LooperRepository(engine: engine, ticker: ticker.stream);
 
+  test('hands every polled snapshot to engineSnapshots, read once', () async {
+    engine.nextSnapshot = _playingSnapshot;
+    final repo = buildRepo();
+    addTearDown(repo.dispose);
+    final seen = <EngineSnapshot>[];
+    final snaps = repo.engineSnapshots.listen(seen.add);
+    addTearDown(snaps.cancel);
+    final sub = repo.looperState.listen((_) {});
+    addTearDown(sub.cancel);
+    await Future<void>.delayed(Duration.zero);
+    final calls = engine.snapshotCalls;
+    ticker.add(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, hasLength(2));
+    expect(engine.snapshotCalls, calls + 1, reason: 'no second engine read');
+  });
+
   group('lastState (the cached projection)', () {
     test("serves the poll's projection without walking the engine", () async {
       engine.nextSnapshot = _playingSnapshot;
@@ -4629,6 +4646,23 @@ void main() {
         ..startEngine(const EngineConfig())
         ..setInputConditioningEnabled(input: 0, enabled: true);
       expect(engine.conditioningEnabled[0], isTrue);
+    });
+
+    test('conditioning refuses instrument sources, which have no stage', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(
+        repo.setInputConditioningEnabled(input: kMaxChannels, enabled: true),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setInputConditioningParam(
+          input: kMaxChannels,
+          param: InputConditioningParam.hpfHz,
+          value: 80,
+        ),
+        EngineResult.invalid,
+      );
+      expect(engine.conditioningEnabled, isNot(contains(kMaxChannels)));
     });
 
     test('setInputConditioningParam forwards the code + real-unit value', () {

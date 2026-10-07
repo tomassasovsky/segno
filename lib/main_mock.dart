@@ -1,4 +1,5 @@
 import 'package:backing_repository/backing_repository.dart';
+import 'package:instrument_repository/instrument_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -18,9 +19,10 @@ Future<void> main(List<String> args) async {
   final mock = createMockEngine();
   final guards = GuardRegistry();
   final decoder = createMockAudioDecoder();
+  final looper = LooperRepository(engine: mock.engine);
   await runSegno(
     args,
-    repository: LooperRepository(engine: mock.engine),
+    repository: looper,
     sessionRepository: SessionRepository(
       engine: mock.engine,
       sessionsRoot: defaultSessionsRoot,
@@ -37,6 +39,10 @@ Future<void> main(List<String> args) async {
       mock.engine,
       decoder: decoder,
       store: backingStoreFor(decoder),
+    ),
+    instrumentRepository: InstrumentRepository(
+      engine: mock.engine,
+      snapshots: looper.engineSnapshots,
     ),
     startConfig: mock.startConfig,
   );

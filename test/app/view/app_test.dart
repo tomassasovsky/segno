@@ -2097,7 +2097,8 @@ void main() {
       });
     }
 
-    // Decay, Fade, the backing mix and click pan have no native receipt, so
+    // Decay, Fade, the backing mix and click pan have no native receipt, and
+    // the instruments apply through their repository (no owed value), so
     // nothing can owe a value a restart lands.
     for (final key in OwnedSetting.values.where(
       (key) => !const {
@@ -2105,6 +2106,7 @@ void main() {
         OwnedSetting.fade,
         OwnedSetting.backingMix,
         OwnedSetting.clickPan,
+        OwnedSetting.instruments,
       }.contains(key),
     )) {
       testWidgets(
@@ -2164,7 +2166,8 @@ void main() {
             OwnedSetting.decay ||
             OwnedSetting.fade ||
             OwnedSetting.backingMix ||
-            OwnedSetting.clickPan => throw StateError('No receipt'),
+            OwnedSetting.clickPan ||
+            OwnedSetting.instruments => throw StateError('No receipt'),
           };
           engine
             ..publishClickCommands = key != OwnedSetting.clickVolume
@@ -2204,7 +2207,8 @@ void main() {
             OwnedSetting.decay ||
             OwnedSetting.fade ||
             OwnedSetting.backingMix ||
-            OwnedSetting.clickPan => throw StateError('No receipt'),
+            OwnedSetting.clickPan ||
+            OwnedSetting.instruments => throw StateError('No receipt'),
           });
           await tester.pump(const Duration(milliseconds: 600));
           await tester.pump();

@@ -4,6 +4,7 @@ import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart';
 import 'package:midi_client/src/midi_device.dart';
 import 'package:midi_client/src/native_library.dart';
+import 'package:segno_engine/segno_engine.dart' show MidiCaptureHandle;
 import 'package:segno_engine/segno_engine_ffi.dart';
 
 /// Thrown when the native MIDI handle cannot be allocated.
@@ -94,6 +95,15 @@ class MidiClient {
     } finally {
       calloc.free(idPtr);
     }
+  }
+
+  /// The handle an engine reads this capture through
+  /// (`MidiInputSink.attachMidiInput`), so its messages reach the audio
+  /// thread without passing through Dart. Valid until [dispose]; [close],
+  /// [open] (which closes first) and [dispose] detach it from the engine.
+  MidiCaptureHandle get captureHandle {
+    _checkAlive();
+    return MidiCaptureHandle(_handle);
   }
 
   /// Stops capture and closes the open port. Idempotent (a no-op when nothing

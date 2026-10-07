@@ -41,6 +41,7 @@ $CC $STD -shared "$OUT_DIR/le_stretch.o" \
   src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
   src/core/restore_declip.c src/core/restore_halfband.c \
+  src/core/synth_voice.c src/core/synth_patch.c \
   src/core/audio_ring.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c src/midi/le_clock_follow.c \
   third_party/rnnoise/src/denoise.c third_party/rnnoise/src/rnn.c \

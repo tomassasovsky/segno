@@ -54,7 +54,7 @@ class _FakeTrack {
 /// A stateful in-memory [AudioEngine] that models the looper state, settings,
 /// and per-track PCM closely enough to exercise the session repository's
 /// save/load without the native engine.
-class FakeSessionEngine implements AudioEngine {
+class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
   FakeSessionEngine({this.channels = 1, this.sampleRate = 48000});
 
   // The audition voice (#1178): records what it was asked to play.
