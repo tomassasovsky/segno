@@ -295,6 +295,23 @@ void main() {
     }
   });
 
+  test(
+    'a clear-all from another surface leaves the Tuner and disarms',
+    () async {
+      final rig = await enter();
+      try {
+        // A MIDI or External clear-all reaches clearAll without setMode.
+        await rig.control.clearAll();
+        await _pump();
+        expect(rig.control.state.mode, InteractionMode.record);
+        expect(rig.engine.tunerInput, -1);
+        expect(rig.engine.tunerMuteMask, 0);
+      } finally {
+        await rig.close();
+      }
+    },
+  );
+
   test('any mode change disarms, and so does close', () async {
     final rig = await enter();
     rig.control.setMode(InteractionMode.mute);
