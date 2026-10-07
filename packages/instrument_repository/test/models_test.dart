@@ -60,6 +60,7 @@ void main() {
       expect(renamed.byId('i1')!.name, 'Bass');
       expect(renamed.bySlot(1)!.id, 'i1');
       expect(renamed.bySlot(5), isNull);
+      expect(renamed.byId('i1')!.source, 33); // sources 32-39
     });
 
     test('round-trips through JSON', () {

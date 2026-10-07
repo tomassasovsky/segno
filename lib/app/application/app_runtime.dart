@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:controller_repository/controller_repository.dart';
+import 'package:instrument_repository/instrument_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -11,6 +12,7 @@ import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/instruments/application/instrument_settings.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
@@ -39,6 +41,7 @@ class AppRuntime {
     required PerformanceRepository performance,
     required SessionRepository sessions,
     required Future<void> Function() powerOff,
+    InstrumentRepository? instruments,
   }) {
     fxPersistence = FxChainPersistence(looper: repository);
     mixPersistence = SettingsMixPersistence(settings);
@@ -52,12 +55,20 @@ class AppRuntime {
       sessionBlocked: () => fxPersistence.sessionTransitionActive,
     );
     timing = RecordTimingSettings(repository: repository, settings: settings);
+    this.instruments = instruments == null
+        ? null
+        : InstrumentSettings(
+            looper: repository,
+            instruments: instruments,
+            settings: settings,
+          );
     owners = SettingsOwners([
       ...tempo.owners,
       ...playback.owners,
       ...record.owners,
       ...timing.owners,
       ...fade.owners,
+      ...?this.instruments?.owners,
     ]);
     power = PowerOffCubit(
       flush: prepareShutdown,
@@ -137,6 +148,10 @@ class AppRuntime {
   late final RecordTimingSettings timing;
   late final FadeSettings fade;
 
+  /// The instruments' edits and their owner (#1197); null without an
+  /// instrument repository.
+  late final InstrumentSettings? instruments;
+
   /// The owned settings that run on the shared owner, in their fixed order.
   late final SettingsOwners owners;
 
@@ -163,6 +178,7 @@ class AppRuntime {
       record.load(),
       timing.load(),
       fade.load(),
+      ?instruments?.load(),
       control.load(),
     ]).then((_) {});
   }
@@ -232,6 +248,7 @@ class AppRuntime {
       // and the repository still live. A failure must not skip disposal.
       fxPersistence.flush,
       fade.close,
+      ?instruments?.close,
       timing.close,
       record.close,
       playback.close,

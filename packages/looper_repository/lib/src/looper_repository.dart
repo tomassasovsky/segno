@@ -155,6 +155,14 @@ class LooperRepository {
   final AudioEngine _engine;
   final Stream<void>? _ticker;
   Duration _pollInterval;
+  final _engineSnapshots = StreamController<EngineSnapshot>.broadcast(
+    sync: true,
+  );
+
+  /// Every snapshot the poll reads, for owners of other engine state (the
+  /// instruments, #1197) so the engine is read once per poll. Emits only
+  /// while [looperState] is listened to, as the poll runs then.
+  Stream<EngineSnapshot> get engineSnapshots => _engineSnapshots.stream;
 
   /// Fired when the repository changes a lane's chain or resets a remembered
   /// true mute on its own initiative. The bloc persists the resulting lane
@@ -2050,6 +2058,7 @@ class LooperRepository {
     final receiptsSettled = _observeSettingsReceipts();
     _drainHistoryFx();
     final snapshot = _snapshotAndSettleImages();
+    _engineSnapshots.add(snapshot);
     _retryRefusedRecord(snapshot);
     _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
@@ -7928,6 +7937,7 @@ class LooperRepository {
     }
     _paramAnnounceWindows.clear();
     _paramAnnounceDirty.clear();
+    await _engineSnapshots.close();
     await _monitorChanges.close();
     await _monitorParamChanges.close();
     await _fxReplayConfirmed.close();

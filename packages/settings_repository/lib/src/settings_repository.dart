@@ -260,6 +260,28 @@ class SettingsRepository {
         }
       });
 
+  static const _instrumentsKey = 'instruments.working_copy';
+
+  /// The instruments family's stored record (#1197): exact bytes or
+  /// absence, ordered after preceding settings writes. The record's shape is
+  /// the instrument repository's; this store keeps it verbatim.
+  Future<String?> readInstrumentsCheckpoint() =>
+      _serialize(() => _store.getString(_instrumentsKey));
+
+  /// Restores the instruments record's exact bytes or absence and verifies
+  /// the write.
+  Future<void> restoreInstrumentsCheckpoint(String? record) =>
+      _serialize(() async {
+        if (record == null) {
+          await _store.remove(_instrumentsKey);
+        } else {
+          await _store.setString(_instrumentsKey, record);
+        }
+        if (await _store.getString(_instrumentsKey) != record) {
+          throw StateError('Instruments persistence was not confirmed');
+        }
+      });
+
   Future<T> _serialize<T>(Future<T> Function() write) {
     final operation = _serializedWrite.then((_) => write());
     _serializedWrite = operation.then<void>(
