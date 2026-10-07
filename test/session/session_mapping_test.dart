@@ -1383,6 +1383,8 @@ void main() {
         pairs: {0: 1},
       ),
       outputSetup: const SessionOutputSetup(level: {0: 0.5}),
+      backing: const SessionBacking(level: 0.5, pan: 0.25, outputMask: 0x3),
+      clickPan: -0.5,
     );
 
     test('the source session sets every manifest field away from its '
@@ -1438,6 +1440,8 @@ void main() {
         'pedalBindings',
         'inputSetup',
         'outputSetup',
+        'backing',
+        'clickPan',
       });
       final defaults = const Session(
         sampleRate: 48000,

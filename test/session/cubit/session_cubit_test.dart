@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:backing_repository/backing_repository.dart'
+    show BackingEnd, BackingTransport;
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -11,6 +13,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
+import 'package:segno/backing/application/session_backing.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
@@ -29,6 +32,7 @@ import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
+import '../../helpers/backing_fixture.dart';
 import '../../helpers/fake_key_value_store.dart';
 
 class _MockSessionRepository extends Mock implements SessionRepository {}
@@ -810,6 +814,8 @@ void main() {
       expect(cubit.state.status, SessionStatus.failure);
       expect(cubit.state.error, SessionError.busy);
       expect(cubit.state.refusedBy, GuardKind.deviceChange);
+      // Counted like every other failure, so the Library shows it once.
+      expect(cubit.state.failureCount, 1);
       verifyNever(performance.disarmAndFinalize);
       verifyNever(() => looper.applySession(any()));
       expect(fxPersistence.sessionTransitionActive, isFalse);
@@ -1489,8 +1495,8 @@ void main() {
         ),
       );
 
-      test('a changed named rig is saved to its identity before the target '
-          'is read and applied', () async {
+      test('the target is read first, then a changed named rig is saved to '
+          'its identity, then the target applied', () async {
         stubOpen();
         final cubit = build();
         addTearDown(cubit.close);
@@ -1504,6 +1510,10 @@ void main() {
         await cubit.open('B');
 
         verifyInOrder([
+          () => repository.open(
+            '/root/B',
+            liveSettings: any(named: 'liveSettings'),
+          ),
           () => repository.save(
             '/root/A',
             chains: any(named: 'chains'),
@@ -1511,10 +1521,6 @@ void main() {
             pedalBindings: any(named: 'pedalBindings'),
             name: 'A',
             captureStillValid: any(named: 'captureStillValid'),
-          ),
-          () => repository.open(
-            '/root/B',
-            liveSettings: any(named: 'liveSettings'),
           ),
           () => looper.applySession(any()),
         ]);
@@ -1619,18 +1625,12 @@ void main() {
           expect(cubit.state.status, SessionStatus.failure);
           expect(cubit.state.error, SessionError.saveFailed);
           expect(cubit.state.currentSessionId, 'A');
-          verifyNever(
-            () => repository.open(
-              any(),
-              liveSettings: any(named: 'liveSettings'),
-            ),
-          );
           verifyNever(() => looper.applySession(any()));
         },
       );
 
-      test('a target refused after preservation keeps the saved outgoing '
-          'rig current under its new name', () async {
+      test('a refused target saves nothing, keeps the current session, and '
+          "keeps the player's arms (#1178 Part 4 lows review, 1)", () async {
         stubOpen();
         when(
           () => repository.open(
@@ -1648,13 +1648,24 @@ void main() {
         await cubit.recordBaseline();
         liveFingerprint = 'edited';
 
+        when(() => looper.state).thenReturn(
+          LooperState(
+            tracks: [
+              const Track(state: TrackState.stopped, lengthFrames: 48000),
+              const Track(channel: 1, pending: true),
+              for (var c = 2; c < 8; c++) Track(channel: c),
+            ],
+          ),
+        );
+
         await cubit.open('B');
 
         expect(cubit.state.status, SessionStatus.failure);
         expect(cubit.state.error, SessionError.sampleRateMismatch);
-        expect(cubit.state.currentSessionId, 'new');
-        expect(cubit.state.currentSessionName, 'New loop 3');
-        verifySavedTo('/root/new', name: 'New loop 3').called(1);
+        expect(cubit.state.currentSessionId, isNull);
+        verifyNoSave();
+        verifyNever(() => looper.cancelArm(channel: any(named: 'channel')));
+        verifyNever(looper.cancelCountIn);
         verifyNever(() => looper.applySession(any()));
       });
 
@@ -1729,8 +1740,8 @@ void main() {
         );
 
         for (final capture in [TrackState.recording, TrackState.overdubbing]) {
-          test('a ${capture.name} take is ended, then saved with the rig, '
-              'before the target is read', () async {
+          test('once the target is read, a ${capture.name} take is ended, '
+              'then saved with the rig', () async {
             stubOpen();
             var live = rig(capture);
             when(() => looper.state).thenAnswer((_) => live);
@@ -1756,6 +1767,10 @@ void main() {
             await cubit.open('B');
 
             verifyInOrder([
+              () => repository.open(
+                '/root/B',
+                liveSettings: any(named: 'liveSettings'),
+              ),
               () => looper.stopRecordControl(channel: 1),
               () => repository.save(
                 '/root/A',
@@ -1765,15 +1780,106 @@ void main() {
                 name: 'A',
                 captureStillValid: any(named: 'captureStillValid'),
               ),
-              () => repository.open(
-                '/root/B',
-                liveSettings: any(named: 'liveSettings'),
-              ),
             ]);
             verifyNever(() => looper.stopRecordControl(channel: 0));
             expect(cubit.state.currentSessionId, 'B');
           });
         }
+
+        test('an arm waiting for its boundary, and a Count-in, are withdrawn '
+            'before the outgoing rig is saved (review D-1)', () async {
+          stubOpen();
+          var live = LooperState(
+            tracks: [
+              const Track(state: TrackState.playing, lengthFrames: 48000),
+              const Track(channel: 1, pending: true),
+              const Track(
+                channel: 2,
+                pendingLaunch: PendingLaunchAction.record,
+              ),
+              for (var c = 3; c < 8; c++) Track(channel: c),
+            ],
+          );
+          when(() => looper.state).thenAnswer((_) => live);
+          when(() => looper.laneCount(any())).thenReturn(1);
+          when(
+            () => looper.cancelArm(channel: any(named: 'channel')),
+          ).thenReturn(EngineResult.ok);
+          when(looper.cancelCountIn).thenAnswer((_) {
+            // The engine has taken both withdrawals by its next block.
+            live = LooperState(
+              tracks: [
+                const Track(state: TrackState.playing, lengthFrames: 48000),
+                for (var c = 1; c < 8; c++) Track(channel: c),
+              ],
+            );
+            return EngineResult.ok;
+          });
+          final cubit = build();
+          addTearDown(cubit.close);
+          cubit.emit(
+            const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+          );
+          await cubit.save();
+          clearInteractions(repository);
+          liveFingerprint = 'changed';
+
+          await cubit.open('B');
+
+          verifyInOrder([
+            () => looper.cancelArm(channel: 1),
+            looper.cancelCountIn,
+            () => repository.save(
+              '/root/A',
+              chains: any(named: 'chains'),
+              settings: any(named: 'settings'),
+              pedalBindings: any(named: 'pedalBindings'),
+              name: 'A',
+              captureStillValid: any(named: 'captureStillValid'),
+            ),
+          ]);
+          verifyNever(() => looper.cancelArm(channel: 0));
+          verifyNever(
+            () => looper.stopRecordControl(channel: any(named: 'channel')),
+          );
+          expect(cubit.state.currentSessionId, 'B');
+        });
+
+        test('an arm that is not withdrawn in time refuses the Open', () async {
+          stubOpen();
+          when(() => looper.state).thenReturn(
+            LooperState(
+              tracks: [
+                const Track(pending: true),
+                for (var c = 1; c < 8; c++) Track(channel: c),
+              ],
+            ),
+          );
+          when(
+            () => looper.cancelArm(channel: any(named: 'channel')),
+          ).thenReturn(EngineResult.ok);
+          final cubit = SessionCubit(
+            captureSettings: captureSettings,
+            fxPersistence: fxPersistence,
+            settings: settings,
+            repository: repository,
+            looper: looper,
+            performance: performance,
+            mixSettings: mixSettings,
+            mixPersistence: mixPersistence,
+            guards: GuardRegistry(),
+            captureEndTimeout: const Duration(milliseconds: 20),
+          );
+          addTearDown(cubit.close);
+          cubit.emit(
+            const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+          );
+
+          await cubit.open('B');
+
+          expect(cubit.state.error, SessionError.captureInProgress);
+          verifyNoSave();
+        });
 
         test('a take that does not end in time refuses the Open and changes '
             'nothing', () async {
@@ -1805,12 +1911,6 @@ void main() {
           expect(cubit.state.error, SessionError.captureInProgress);
           expect(cubit.state.currentSessionId, 'A');
           verifyNoSave();
-          verifyNever(
-            () => repository.open(
-              any(),
-              liveSettings: any(named: 'liveSettings'),
-            ),
-          );
           verifyNever(() => looper.applySession(any()));
         });
       });
@@ -2702,6 +2802,50 @@ void main() {
       ],
     );
 
+    test('every failure counts once, and a refresh keeps the last result '
+        'as it was', () async {
+      stubCatalog();
+      final cubit = build();
+      addTearDown(cubit.close);
+      cubit.emit(
+        const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+      );
+
+      await cubit.deleteSession('A');
+      expect(cubit.state.failureCount, 1);
+      await cubit.deleteSession('A');
+      expect(cubit.state.failureCount, 2);
+
+      await cubit.refreshSessions();
+      expect(cubit.state.status, SessionStatus.failure);
+      expect(cubit.state.error, SessionError.currentSessionProtected);
+      expect(cubit.state.failureCount, 2);
+      expect(cubit.state.sessions, summaries);
+    });
+
+    test('a refresh keeps who refused the last action and the last '
+        'conversion notice', () async {
+      stubCatalog();
+      final cubit = build();
+      addTearDown(cubit.close);
+      const notice = SessionConversionNotice(fromVersion: 7, written: true);
+      cubit.emit(
+        const SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.busy,
+          refusedBy: GuardKind.transfer,
+          conversion: notice,
+          failureCount: 1,
+        ),
+      );
+
+      await cubit.refreshSessions();
+
+      expect(cubit.state.refusedBy, GuardKind.transfer);
+      expect(cubit.state.conversion, notice);
+      expect(cubit.state.sessions, summaries);
+    });
+
     blocTest<SessionCubit, SessionState>(
       'a write-back preserves the open session + catalog across the '
       'transition (C1)',
@@ -2830,6 +2974,103 @@ void main() {
         await closing;
       },
     );
+  });
+
+  group('SessionCubit backing (#1200)', () {
+    late BackingFixture backing;
+    setUp(() async {
+      backing = BackingFixture();
+      await backing.start();
+      addTearDown(backing.dispose);
+    });
+
+    SessionSettingsCoordinator withBacking() => SessionSettingsCoordinator(
+      fade: fade,
+      looper: looper,
+      mix: mixSettings,
+      fx: fxPersistence,
+      owners: SettingsOwners([
+        _LengthOwner(looper),
+        ...fade.owners,
+        ...backing.settings.owners,
+      ]),
+      tempo: _TempoOwner(),
+      playback: _PlaybackOwner(looper),
+      record: _RecordOwner(looper),
+      timing: _TimingOwner(looper),
+      backing: SessionBackingPort(
+        player: backing.player,
+        settings: backing.settings,
+      ),
+    );
+
+    test('Open stops the backing and installs the session setup, loaded '
+        'again stopped at 0; capture reads it back', () async {
+      final a = await backing.asset('a.wav');
+      final b = await backing.asset('b.wav');
+      await backing.player.addToPrepared(a);
+      await backing.player.play();
+      await backing.advance(50);
+      final saved = SessionBacking(
+        prepared: [SessionBackingItem(digest: b.digest, name: 'b.wav')],
+        loaded: SessionBackingItem(digest: b.digest, name: 'b.wav'),
+        endMode: BackingEnd.repeat,
+        level: 0.4,
+        pan: 0.25,
+        outputMask: 0x3,
+      );
+      when(
+        () => repository.bundlePathOf(any()),
+      ).thenAnswer((_) async => '/b/X');
+      when(
+        () => repository.open(any(), liveSettings: any(named: 'liveSettings')),
+      ).thenAnswer(
+        _opened(
+          (_) async => (
+            session: Session(
+              sampleRate: 48000,
+              channels: 1,
+              baseLengthFrames: 0,
+              tracks: const [],
+              backing: saved,
+              clickPan: -0.5,
+            ),
+            laneStems: <(int, int), List<Float32List>>{},
+          ),
+        ),
+      );
+      when(() => looper.applySession(any())).thenAnswer((_) async {});
+      when(repository.listSessions).thenAnswer((_) async => const []);
+      final coordinator = withBacking();
+      final cubit = SessionCubit(
+        captureSettings: coordinator,
+        fxPersistence: fxPersistence,
+        settings: settings,
+        repository: repository,
+        looper: looper,
+        performance: performance,
+        mixSettings: mixSettings,
+        mixPersistence: mixPersistence,
+        guards: GuardRegistry(),
+      );
+      addTearDown(cubit.close);
+
+      await cubit.open('X');
+
+      expect(cubit.state.status, isNot(SessionStatus.failure));
+      final state = backing.player.state;
+      expect(state.prepared.map((i) => i.name), ['b.wav']);
+      expect(state.loaded?.digest, b.digest);
+      expect(backing.repository.state.loaded, b.digest);
+      expect(backing.repository.state.transport, BackingTransport.stopped);
+      expect(backing.repository.state.position, 0);
+      expect(backing.settings.mix.level, 0.4);
+      expect(backing.settings.clickPan, -0.5);
+      expect(backing.engine.backingState().endMode, BackingEnd.repeat);
+      final current = coordinator.current();
+      expect(current.backing, saved);
+      expect(current.clickPan, -0.5);
+    });
   });
 
   group('SessionCubit pedal remap (part 6b)', () {

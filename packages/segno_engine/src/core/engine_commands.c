@@ -5175,6 +5175,8 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
                         memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_checkpoint_failures, 0u,
                         memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_backing_blocks, 0u,
+                        memory_order_relaxed);
   /* Reset both perf-log rings so a fresh session never sees a stale entry
    * left over from a previous one — safe here (before LE_CMD_PERF_ARM is
    * pushed below) the same way publishing the audio rings above is: the

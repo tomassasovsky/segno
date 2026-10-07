@@ -2307,11 +2307,242 @@ static void le_fx_state_clear_tails_range(le_fx_state* fx,
 /* Cut all sound (accepted design): every audible recorded track stops (a
  * take in progress finalizes as a Stop would), the count-in is cancelled,
  * and every chain's tail is cleared. Monitors keep their preferences. */
+
+/* ---- backing player, audio thread (#1200; contract in segno_engine_api.h,
+ * ownership in engine_backing.c) ----
+ *
+ * Two read heads over engine-owned stereo buffers: the loaded voice
+ * (backing_cur, which owns its buffer) and an outgoing fade voice
+ * (backing_fade) that declicks a Pause, Stop, seek, replace or Clear over
+ * LE_BACKING_RAMP_MS. The fade voice owns its buffer only after the loaded
+ * voice let go of it (replace, Clear, End = Next); after a Pause, Stop or
+ * seek it shares the loaded buffer. A buffer the callback will never read
+ * again goes back to the control thread through an a_backing_dead slot; the
+ * callback never frees. Nothing here is perf-logged. */
+
+static inline int32_t le_backing_ramp_frames(const le_engine* e) {
+  const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  const int32_t n = sr * LE_BACKING_RAMP_MS / 1000;
+  return n > 0 ? n : 1;
+}
+
+/* Returns [b] to the control thread. Never full: every buffer in a slot is
+ * engine-owned and distinct, and the engine owns at most
+ * LE_BACKING_MAX_BUFFERS (engine_backing.c's registry), so a slot is free for
+ * any buffer not already returned. le_backing_can_return lets the one path
+ * that could otherwise have to drop a buffer (the End = Next advance) refuse
+ * instead; the test hook fills the slots to prove it. */
+static int le_backing_can_return(le_engine* e) {
+  for (int i = 0; i < LE_BACKING_MAX_BUFFERS; ++i) {
+    if (atomic_load_explicit(&e->a_backing_dead[i], memory_order_relaxed) ==
+        NULL) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void le_backing_return(le_engine* e, le_backing_buffer* b) {
+  if (b == NULL) return;
+  for (int i = 0; i < LE_BACKING_MAX_BUFFERS; ++i) {
+    le_backing_buffer* expected = NULL;
+    if (atomic_compare_exchange_strong_explicit(
+            &e->a_backing_dead[i], &expected, b, memory_order_release,
+            memory_order_relaxed)) {
+      return;
+    }
+  }
+}
+
+/* The loaded voice lets go of its buffer: the fade voice inherits it when it
+ * is still reading it, otherwise it goes back. */
+static void le_backing_drop_cur(le_engine* e) {
+  le_backing_buffer* b = e->backing_cur.buf;
+  e->backing_cur = (le_backing_voice){0};
+  if (b == NULL) return;
+  if (e->backing_fade.buf == b) {
+    e->backing_fade.owns = 1;
+    atomic_store_explicit(&e->a_backing_fade_owns, 1, memory_order_relaxed);
+  } else {
+    le_backing_return(e, b);
+  }
+}
+
+/* Ends the fade voice at once. */
+static void le_backing_end_fade(le_engine* e) {
+  if (e->backing_fade.owns) {
+    le_backing_return(e, e->backing_fade.buf);
+    atomic_store_explicit(&e->a_backing_fade_owns, 0, memory_order_release);
+  }
+  e->backing_fade = (le_backing_voice){0};
+}
+
+/* Hands the loaded voice's current sound to the fade voice (it fades out from
+ * whatever gain it has now). The loaded voice keeps the buffer. */
+static void le_backing_fade_out_cur(le_engine* e) {
+  le_backing_voice* c = &e->backing_cur;
+  le_backing_end_fade(e);
+  if (c->buf == NULL || e->backing_state != LE_BACKING_PLAYING) return;
+  const float g = c->ramp_len > 0
+                      ? (float)c->ramp_n / (float)c->ramp_len
+                      : 1.0f;
+  e->backing_fade = (le_backing_voice){.buf = c->buf,
+                                       .pos = c->pos,
+                                       .ramp_len = le_backing_ramp_frames(e),
+                                       .ramp_from = g};
+}
+
+static void le_backing_publish(le_engine* e) {
+  store_i32(&e->a_backing_item, e->backing_item);
+  store_i32(&e->a_backing_next_item, e->backing_next_item);
+  store_i32(&e->a_backing_transport, e->backing_state);
+  store_i32(&e->a_backing_position, e->backing_cur.pos);
+  store_i32(&e->a_backing_frames,
+            e->backing_cur.buf != NULL ? e->backing_cur.buf->frames : 0);
+  store_i32(&e->a_backing_last_end, e->backing_last_end);
+  atomic_store_explicit(&e->a_backing_end_count, e->backing_end_count,
+                        memory_order_relaxed);
+}
+
+static void le_backing_apply(le_engine* e, const le_command* cmd) {
+  le_backing_voice* c = &e->backing_cur;
+  switch (cmd->code) {
+    case LE_CMD_BACKING_LOAD:
+      le_backing_fade_out_cur(e);
+      le_backing_drop_cur(e);
+      e->backing_cur = (le_backing_voice){.buf = cmd->backing.buffer};
+      e->backing_item = cmd->backing.item;
+      e->backing_state =
+          cmd->backing.play ? LE_BACKING_PLAYING : LE_BACKING_STOPPED;
+      break;
+    case LE_CMD_BACKING_STAGE_NEXT:
+      le_backing_return(e, e->backing_next);
+      e->backing_next = cmd->backing.buffer;
+      e->backing_next_item = cmd->backing.buffer ? cmd->backing.item : -1;
+      break;
+    case LE_CMD_BACKING_CLEAR:
+      le_backing_fade_out_cur(e);
+      le_backing_drop_cur(e);
+      le_backing_return(e, e->backing_next);
+      e->backing_next = NULL;
+      e->backing_item = -1;
+      e->backing_next_item = -1;
+      e->backing_state = LE_BACKING_STOPPED;
+      break;
+    case LE_CMD_BACKING_TRANSPORT:
+      if (c->buf == NULL) break;
+      if (cmd->arg_i == LE_BACKING_OP_PLAY) {
+        if (e->backing_state == LE_BACKING_PLAYING) break;
+        /* From the very start a file begins as written; anywhere else the
+         * resumed sound fades in. */
+        c->ramp_n = 0;
+        c->ramp_len = (e->backing_state == LE_BACKING_STOPPED && c->pos == 0)
+                          ? 0
+                          : le_backing_ramp_frames(e);
+        e->backing_state = LE_BACKING_PLAYING;
+      } else if (cmd->arg_i == LE_BACKING_OP_PAUSE) {
+        if (e->backing_state != LE_BACKING_PLAYING) break;
+        le_backing_fade_out_cur(e);
+        e->backing_state = LE_BACKING_PAUSED;
+      } else if (cmd->arg_i == LE_BACKING_OP_STOP) {
+        le_backing_fade_out_cur(e);
+        e->backing_state = LE_BACKING_STOPPED;
+        c->pos = 0;
+      }
+      break;
+    case LE_CMD_BACKING_SEEK: {
+      if (c->buf == NULL) break;
+      int32_t to = cmd->arg_i;
+      if (to < 0) to = 0;
+      if (to > c->buf->frames - 1) to = c->buf->frames - 1;
+      if (e->backing_state == LE_BACKING_PLAYING) {
+        le_backing_fade_out_cur(e);
+        c->ramp_n = 0;
+        c->ramp_len = le_backing_ramp_frames(e);
+      }
+      c->pos = to;
+      break;
+    }
+    default:
+      break;
+  }
+  if ((cmd->code == LE_CMD_BACKING_LOAD ||
+       cmd->code == LE_CMD_BACKING_STAGE_NEXT) &&
+      cmd->backing.buffer != NULL) {
+    atomic_fetch_add_explicit(&e->a_backing_applied, 1u, memory_order_release);
+  }
+  le_backing_publish(e);
+}
+
+/* Cut sound (#1200 D4): the backing stops and rewinds at once, no ramp. */
+static void le_backing_cut(le_engine* e) {
+  le_backing_end_fade(e);
+  e->backing_cur.pos = 0;
+  e->backing_cur.ramp_len = 0;
+  e->backing_state = LE_BACKING_STOPPED;
+  le_backing_publish(e);
+}
+
+/* ---- Library audition voice, audio thread (#1178; contract in
+ * segno_engine_api.h, ownership in engine_audition.c) ----
+ *
+ * One read head over an engine-owned stereo buffer, summed into one output
+ * pair after the output buses and before the master bus. A buffer the
+ * callback will never read again goes back through an a_audition_dead slot;
+ * the callback never frees. Nothing here is perf-logged. */
+
+/* Hands [b] back to the control thread. Never full: the engine owns at most
+ * LE_AUDITION_MAX_BUFFERS audition buffers in total. */
+static void le_audition_return(le_engine* e, le_backing_buffer* b) {
+  if (b == NULL) return;
+  for (int i = 0; i < LE_AUDITION_MAX_BUFFERS; ++i) {
+    le_backing_buffer* expected = NULL;
+    if (atomic_compare_exchange_strong_explicit(
+            &e->a_audition_dead[i], &expected, b, memory_order_release,
+            memory_order_relaxed)) {
+      return;
+    }
+  }
+}
+
+static void le_audition_publish(le_engine* e) {
+  store_i32(&e->a_audition_frames,
+            e->audition_buf != NULL ? e->audition_buf->frames : 0);
+  store_i32(&e->a_audition_position, e->audition_pos);
+  store_i32(&e->a_audition_bus, e->audition_buf != NULL ? e->audition_bus : -1);
+}
+
+/* Silences the voice and hands its buffer back. */
+static void le_audition_clear(le_engine* e) {
+  le_audition_return(e, e->audition_buf);
+  e->audition_buf = NULL;
+  e->audition_pos = 0;
+  e->audition_bus = -1;
+  le_audition_publish(e);
+}
+
+static void le_audition_apply(le_engine* e, const le_command* cmd) {
+  le_audition_clear(e);
+  if (cmd->code != LE_CMD_AUDITION_START) return;
+  /* A start posted after a performance arm but checked before the callback
+   * applied it (the control side reads a_perf_armed, which the arm sets
+   * here) must not sound over the take: hand the buffer back unplayed. */
+  if (e->perf.armed) {
+    le_audition_return(e, cmd->backing.buffer);
+    return;
+  }
+  e->audition_buf = cmd->backing.buffer;
+  e->audition_bus = cmd->backing.item;
+  le_audition_publish(e);
+}
+
 static void handle_cut_sound(le_engine* e, uint64_t frame) {
   /* Retire the pulse already sounding. Future beats still follow the
    * existing scheduler and click preferences. */
   e->click_remaining = 0;
   e->click_phase = 0.0f;
+  le_backing_cut(e);
+  le_audition_clear(e); /* #1178: a preview is sound too */
   const int fx_cap = e->fx_delay_frames;
   for (int32_t ch = 0; ch < e->track_count; ++ch) {
     le_track* t = &e->tracks[ch];
@@ -4308,6 +4539,20 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_plog_push(e, frame, *cmd);
       handle_cut_sound(e, frame);
       break;
+    /* Backing player (#1200): never perf-logged — the backing reaches the
+     * capture only as audio on the captured bus, never stems. */
+    case LE_CMD_BACKING_LOAD:
+    case LE_CMD_BACKING_STAGE_NEXT:
+    case LE_CMD_BACKING_CLEAR:
+    case LE_CMD_BACKING_TRANSPORT:
+    case LE_CMD_BACKING_SEEK:
+      le_backing_apply(e, cmd);
+      break;
+    /* Audition (#1178): never perf-logged, never in any capture. */
+    case LE_CMD_AUDITION_START:
+    case LE_CMD_AUDITION_STOP:
+      le_audition_apply(e, cmd);
+      break;
     case LE_CMD_SET_MONITOR_INPUT_OUTPUT: {
       const int32_t input = cmd->trackmask.channel;
       if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) break;
@@ -4405,6 +4650,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       e->perf.armed = 1;
       atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
+      /* A performance arm ends a Library preview (#1178): the take starts
+       * with the rig alone sounding. */
+      le_audition_clear(e);
       /* Transport fact (#262): the master loop phase at THIS frame — capture
        * frame 0 (le_perf_arm reset a_perf_frames to 0 before posting this
        * command, so `frame` is 0 here). Logged AFTER e->perf.armed flips so
@@ -4881,7 +5129,8 @@ static void le_count_in_commit(le_engine* e, uint64_t frame) {
  * audio-thread-local ints that read 0). */
 static inline void click_frame(le_engine* e, float* out, uint32_t f,
                                int ch_out, int click_on, uint32_t mask,
-                               float vol, int sr, uint64_t frame) {
+                               float vol, float gl, float gr, int sr,
+                               uint64_t frame) {
   /* click_free_running joins the fuse so a gate that fell while no burst was
    * sounding still gets its one clean-up pass (the free-run reset below) —
    * after that the whole term reads 0 again and this stays one compare. */
@@ -4955,11 +5204,96 @@ static inline void click_frame(le_engine* e, float* out, uint32_t f,
     if (e->click_phase > LE_CLICK_TWO_PI) e->click_phase -= LE_CLICK_TWO_PI;
     e->click_remaining--;
     if (mask != 0u) {
-      float* o = out + (size_t)f * (size_t)ch_out;
-      for (int c = 0; c < ch_out; ++c) {
-        if (mask & (1u << c)) o[c] += s;
+      /* The routed fan-out every source uses: at the centre (gl == gr == 1)
+       * each masked channel gets exactly s, the unpanned click. */
+      le_fx_route_frame(out + (size_t)f * (size_t)ch_out, ch_out, mask,
+                        s * gl, s * gr);
+    }
+  }
+}
+
+/* One frame of the backing voices (#1200), summed into the masked channels
+ * like the click: before the output buses. Handles End at the loaded
+ * buffer's last frame. The caller skips it while both voices are idle. */
+static inline void backing_frame(le_engine* e, float* out, uint32_t f,
+                                 int ch_out, uint32_t mask, float level,
+                                 float gl, float gr, int32_t end_mode) {
+  float l = 0.0f, r = 0.0f;
+  le_backing_voice* fv = &e->backing_fade;
+  if (fv->buf != NULL) {
+    if (fv->pos < fv->buf->frames && fv->ramp_n < fv->ramp_len) {
+      const float g =
+          fv->ramp_from * (1.0f - (float)(fv->ramp_n + 1) / (float)fv->ramp_len);
+      l += fv->buf->pcm[2 * fv->pos] * g;
+      r += fv->buf->pcm[2 * fv->pos + 1] * g;
+      fv->pos++;
+      fv->ramp_n++;
+    }
+    if (fv->pos >= fv->buf->frames || fv->ramp_n >= fv->ramp_len) {
+      le_backing_end_fade(e);
+    }
+  }
+  le_backing_voice* c = &e->backing_cur;
+  if (c->buf != NULL && e->backing_state == LE_BACKING_PLAYING) {
+    float g = 1.0f;
+    if (c->ramp_len > 0) {
+      g = (float)(c->ramp_n + 1) / (float)c->ramp_len;
+      if (++c->ramp_n >= c->ramp_len) c->ramp_len = 0;
+    }
+    l += c->buf->pcm[2 * c->pos] * g;
+    r += c->buf->pcm[2 * c->pos + 1] * g;
+    if (++c->pos >= c->buf->frames) {
+      e->backing_end_count++;
+      if (end_mode == LE_BACKING_END_REPEAT) {
+        c->pos = 0;
+        e->backing_last_end = LE_BACKING_EV_REPEATED;
+      } else if (end_mode == LE_BACKING_END_NEXT && e->backing_next != NULL &&
+                 (e->backing_fade.buf == c->buf || le_backing_can_return(e))) {
+        le_backing_drop_cur(e);
+        e->backing_cur = (le_backing_voice){.buf = e->backing_next};
+        e->backing_item = e->backing_next_item;
+        e->backing_next = NULL;
+        e->backing_next_item = -1;
+        e->backing_last_end = LE_BACKING_EV_ADVANCED;
+      } else {
+        c->pos = 0;
+        c->ramp_len = 0;
+        e->backing_state = LE_BACKING_STOPPED;
+        e->backing_last_end = end_mode == LE_BACKING_END_NEXT
+                                  ? LE_BACKING_EV_NEXT_MISSING
+                                  : LE_BACKING_EV_STOPPED;
       }
     }
+  }
+  if (mask != 0u) {
+    l *= level;
+    r *= level;
+    le_fx_route_frame(out + (size_t)f * (size_t)ch_out, ch_out, mask, l * gl,
+                      r * gr);
+  }
+}
+
+/* One frame of the audition voice (#1178) into its pair: after the output
+ * buses, before the master bus. A disabled channel of the pair stays
+ * untouched; a single-channel last pair takes the mid. The preview ends after
+ * its last frame and hands its buffer back. The caller skips it while no
+ * preview plays. */
+static inline void audition_frame(le_engine* e, float* out, uint32_t f,
+                                  int ch_out, uint32_t out_enabled) {
+  le_backing_buffer* b = e->audition_buf;
+  const float l = b->pcm[2 * e->audition_pos];
+  const float r = b->pcm[2 * e->audition_pos + 1];
+  float* o = out + (size_t)f * (size_t)ch_out;
+  const int c0 = 2 * e->audition_bus;
+  const int c1 = c0 + 1;
+  if (c0 < ch_out && (out_enabled & (1u << c0))) {
+    o[c0] += c1 < ch_out ? l : 0.5f * (l + r);
+  }
+  if (c1 < ch_out && (out_enabled & (1u << c1))) o[c1] += r;
+  if (++e->audition_pos >= b->frames) {
+    le_audition_return(e, b);
+    e->audition_buf = NULL;
+    e->audition_bus = -1;
   }
 }
 
@@ -7237,6 +7571,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const uint32_t click_mask =
       atomic_load_explicit(&e->a_click_mask, memory_order_relaxed);
   const float click_vol = load_f32(&e->a_click_volume_bits);
+  float click_gl, click_gr;
+  le_pan_gains(load_f32(&e->a_click_pan_bits), &click_gl, &click_gr);
   /* ~50 ms release toward unity once the signal drops below the ceiling. */
   float lim_release = 1.0f / (0.05f * (float)(e->sample_rate > 0
                                                   ? e->sample_rate
@@ -7485,6 +7821,22 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const uint32_t out_enabled =
       atomic_load_explicit(&e->a_output_enabled_mask, memory_order_relaxed);
 
+  /* Audition voice (#1178): dormant cost one compare per frame. */
+  int audition_live = e->audition_buf != NULL;
+  const int audition_ran = audition_live;
+
+  /* Backing player settings (#1200), read once per block like the click's. */
+  int backing_live = e->backing_fade.buf != NULL ||
+                     (e->backing_cur.buf != NULL &&
+                      e->backing_state == LE_BACKING_PLAYING);
+  const int backing_ran = backing_live;
+  const uint32_t backing_mask =
+      atomic_load_explicit(&e->a_backing_mask, memory_order_relaxed);
+  const float backing_level = load_f32(&e->a_backing_level_bits);
+  const int32_t backing_end = load_i32(&e->a_backing_end_mode);
+  float backing_gl, backing_gr;
+  le_pan_gains(load_f32(&e->a_backing_pan_bits), &backing_gl, &backing_gr);
+
   /* Output buses (slice 3b), snapshotted once per buffer: each bus's chain
    * (see snapshot_bus_fx; an empty chain skips the chain call, and a bus at
    * unity, stereo, centred and unmuted passes bit-exact) and its facts. */
@@ -7615,13 +7967,29 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         click_mode != LE_CLICK_OFF ? le_click_gate(e, click_mode, tc, st) : 0;
     grid_beat_frame(e, pos, click_on, nominal_fpb); /* dormant-grid cost: one int compare */
     click_frame(e, out, f, ch_out, click_on, click_mask & out_enabled,
-                click_vol, sr, perf_frame_base + f);
+                click_vol, click_gl, click_gr, sr, perf_frame_base + f);
+    /* The backing (#1200) sums in at the same point, for the same reasons;
+     * dormant cost while nothing sounds: this one compare. */
+    if (backing_live) {
+      backing_frame(e, out, f, ch_out, backing_mask & out_enabled,
+                    backing_level, backing_gl, backing_gr, backing_end);
+      backing_live = e->backing_fade.buf != NULL ||
+                     (e->backing_cur.buf != NULL &&
+                      e->backing_state == LE_BACKING_PLAYING);
+    }
     /* Output buses (slice 3b): chain, the pre-level capture tap, level,
      * Mono, balance, mute, per pair, over everything summed above. */
     for (int k = 0; k < bus_n && k < LE_MAX_OUTPUT_BUSES; ++k) {
       const int tap_here = k == perf_bus;
       if (!obus[k].active && !tap_here) continue;
       output_bus_frame(e, out, f, ch_out, sr, fx_cap, k, &obus[k], tap_here);
+    }
+    /* The audition (#1178) joins here, past every bus and its capture tap:
+     * no destination level, mute or chain, no performance capture; the
+     * master gain and the limiter below still shape it. */
+    if (audition_live) {
+      audition_frame(e, out, f, ch_out, out_enabled);
+      audition_live = e->audition_buf != NULL;
     }
     master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
                      lim_release, &out_sumsq, &frame_out_peak, out_peak_ch);
@@ -7631,6 +7999,18 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     track_viz_tap_frame(e, tc, st, frame_trk_peak);
     advance_transport_frame(e, tc, st, perf_frame_base + f);
   }
+
+  if (backing_ran) {
+    le_backing_publish(e);
+    /* The DAW package says when the master holds backing audio the stems
+     * cannot (#1200 L8): count the blocks it reached the captured pair. */
+    if (perf_bus >= 0 &&
+        (backing_mask & out_enabled & (3u << (2 * perf_bus))) != 0u) {
+      atomic_fetch_add_explicit(&e->a_perf_backing_blocks, 1u,
+                                memory_order_relaxed);
+    }
+  }
+  if (audition_ran) le_audition_publish(e);
 
   /* Input RMS is normalised by the active (non-loopback) channel count only. */
   const uint32_t total_in = frames * (uint32_t)active_in;

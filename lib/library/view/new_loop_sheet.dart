@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_sessions_tab.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -12,6 +13,7 @@ import 'package:segno/theme/theme.dart';
 /// [SessionCubit.newLoop]. `Cancel` changes nothing.
 Future<void> startNewLoop(BuildContext context) async {
   final session = context.read<SessionCubit>();
+  final library = context.read<LibraryCubit>();
   final confirmed = await showDialog<bool>(
     context: context,
     barrierColor: context.surface.scrim,
@@ -23,7 +25,10 @@ Future<void> startNewLoop(BuildContext context) async {
       ],
     ),
   );
-  if (confirmed ?? false) await session.newLoop();
+  if (!(confirmed ?? false)) return;
+  // A New loop ends Listen (plan D10).
+  library.stopListening();
+  await session.newLoop();
 }
 
 /// The New loop sheet (pen 19/02 `New loop / Keep current session`): the

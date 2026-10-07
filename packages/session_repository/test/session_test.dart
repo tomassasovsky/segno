@@ -334,13 +334,134 @@ void main() {
       );
     });
 
-    test('serializes the manifest version (v14) and the grid in beats', () {
+    test('serializes the manifest version (v15) and the grid in beats', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 14);
+      expect(json['version'], 15);
       // Constructed with bars only, the beats are the bars' (#1168).
       expect(json['loopBeats'], session.loopBars * session.tsNum);
       expect(json['baseLengthFrames'], 96000);
+    });
+
+    group('backing (schema 15, #1200)', () {
+      const a = SessionBackingItem(
+        digest:
+            'sha256:00112233445566778899aabbccddeeff'
+            '00112233445566778899aabbccddeeff',
+        name: 'Evening lights.wav',
+      );
+      const b = SessionBackingItem(
+        digest:
+            'sha256:ffeeddccbbaa99887766554433221100'
+            'ffeeddccbbaa99887766554433221100',
+        name: 'Count-in.mp3',
+      );
+      const backing = SessionBacking(
+        prepared: [a, b],
+        loaded: b,
+        endMode: BackingEnd.next,
+        level: 0.5,
+        pan: -0.25,
+        outputMask: 0xC,
+      );
+      final withBacking = Session.fromJson({
+        ...session.toJson(),
+        'backing': backing.toJson(),
+        'clickPan': 0.75,
+      });
+
+      test('round-trips every field, a loaded item outside the list too', () {
+        expect(withBacking.backing, backing);
+        expect(withBacking.clickPan, 0.75);
+        const outside = SessionBacking(prepared: [a], loaded: b);
+        expect(
+          Session.fromJson({
+            ...session.toJson(),
+            'backing': jsonDecode(jsonEncode(outside.toJson())),
+          }).backing,
+          outside,
+        );
+        expect(
+          Session.fromJson(
+            jsonDecode(jsonEncode(withBacking.toJson()))
+                as Map<String, dynamic>,
+          ),
+          withBacking,
+        );
+      });
+
+      test('the default is an empty, silent backing and a centred click', () {
+        final json = session.toJson();
+        expect(json['backing'], {
+          'prepared': <Object>[],
+          'loaded': null,
+          'endMode': 'stop',
+          'level': 1.0,
+          'pan': 0.0,
+          'outputMask': 0,
+        });
+        expect(json['clickPan'], 0.0);
+      });
+
+      test('the current schema refuses a missing backing or click pan', () {
+        final json = withBacking.toJson()..remove('backing');
+        expect(() => Session.fromJson(json), throwsFormatException);
+        final noPan = withBacking.toJson()..remove('clickPan');
+        expect(() => Session.fromJson(noPan), throwsFormatException);
+      });
+
+      test('refuses malformed items and values', () {
+        Map<String, dynamic> with_(Map<String, dynamic> edit) => {
+          ...withBacking.toJson(),
+          'backing': {...backing.toJson(), ...edit},
+        };
+        for (final bad in <Map<String, dynamic>>[
+          {
+            'prepared': [
+              {'digest': 'sha256:1234', 'name': 'x.wav'},
+            ],
+          },
+          {
+            'prepared': [
+              {'digest': a.digest.toUpperCase(), 'name': 'x.wav'},
+            ],
+          },
+          {
+            'prepared': [
+              {'digest': a.digest, 'name': ' '},
+            ],
+          },
+          {
+            'prepared': [
+              {'digest': a.digest, 'name': 'x.wav', 'extra': 1},
+            ],
+          },
+          {
+            'prepared': [a.toJson(), a.toJson()],
+          },
+          {'loaded': 'sha256:00'},
+          {'endMode': 'shuffle'},
+          {'level': 2.5},
+          {'level': -0.1},
+          {'pan': 1.5},
+          {'outputMask': -1},
+          {'outputMask': 0.5},
+          {'surprise': true},
+        ]) {
+          expect(
+            () => Session.fromJson(with_(bad)),
+            throwsFormatException,
+            reason: '$bad',
+          );
+        }
+        for (final pan in <Object>[1.01, -2, 'centre']) {
+          expect(
+            () => Session.fromJson({...withBacking.toJson(), 'clickPan': pan}),
+            throwsFormatException,
+            reason: '$pan',
+          );
+        }
+      });
     });
 
     test('schema 9 keeps output setup and all four nullable override maps', () {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -18,7 +19,8 @@ import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
-import 'package:segno_engine/segno_engine.dart' show FxOwner, TrackSnapshot;
+import 'package:segno_engine/segno_engine.dart'
+    show FxOwner, MockAudioDecoder, MockAudioEngine, TrackSnapshot;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:storage_repository/storage_repository.dart';
@@ -93,6 +95,7 @@ void main() {
   late SettingsRepository settings;
   late PerformanceRepository performance;
   late String exportsDirectory;
+  late _CountingBacking backing;
   var closeFailureExpected = false;
   var halts = 0;
 
@@ -151,6 +154,7 @@ void main() {
         exportsRoot: () async => '.',
         volumeSpace: performance.volumeSpace,
       ),
+      backing: backing = _CountingBacking(),
       powerOff: () async => halts++,
       reboot: () async => halts++,
       storageSettled: () async {},
@@ -200,9 +204,23 @@ void main() {
         tracks: [],
       ),
     );
-    // The target refuses, so only the preservation is under test.
-    when(() => sessions.read(any())).thenThrow(
-      const SessionUnsupportedVersion(version: 99, supported: 11),
+    // The target is read first and must pass (an Open the target refuses
+    // keeps the rig as it is, #1178 Part 5 lows); an empty one, so only the
+    // preservation is under test.
+    when(
+      () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
+    ).thenAnswer(
+      _opened(
+        (_) async => (
+          session: const Session(
+            sampleRate: 48000,
+            channels: 1,
+            baseLengthFrames: 0,
+            tracks: [],
+          ),
+          laneStems: const <(int, int), List<Float32List>>{},
+        ),
+      ),
     );
 
     await runtime.session.open('Incoming');
@@ -459,6 +477,22 @@ void main() {
         },
       );
     }
+  });
+
+  test('an engine restart refreshes the backing, so its file reloads when '
+      'the interface comes back (#1200 review of P5, M1)', () async {
+    await pumpEventQueue();
+    final before = backing.refreshes;
+    repository.stopEngine();
+    await pumpEventQueue();
+    repository.startEngine(const EngineConfig());
+    await pumpEventQueue();
+    expect(backing.refreshes, greaterThan(before));
+    final settled = backing.refreshes;
+    // Nothing else moves it: an ordinary state change refreshes nothing.
+    repository.setMasterGain(0.5);
+    await pumpEventQueue();
+    expect(backing.refreshes, settled);
   });
 
   test('stopped Session stays reserved through the real boot write', () async {
@@ -932,3 +966,30 @@ Future<OpenedSession> Function(Invocation) _opened(
   FutureOr<SessionBundle> Function(Invocation) answer,
 ) =>
     (invocation) async => (bundle: await answer(invocation), conversion: null);
+
+/// A backing repository that counts refreshes.
+class _CountingBacking extends BackingRepository {
+  _CountingBacking() : this._(MockAudioEngine(), MockAudioDecoder());
+
+  _CountingBacking._(MockAudioEngine engine, MockAudioDecoder decoder)
+    : super(
+        engine: engine,
+        metering: engine,
+        decoder: decoder,
+        store: BackingAssetStore(
+          root: () async => Directory.systemTemp.path,
+          decoder: decoder,
+          copier: (source, relative) async => throw UnsupportedError('copy'),
+          digester: (path) async => null,
+          syncDirectory: (_) {},
+        ),
+      );
+
+  int refreshes = 0;
+
+  @override
+  void refresh() {
+    refreshes++;
+    super.refresh();
+  }
+}

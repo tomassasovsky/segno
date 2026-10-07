@@ -108,6 +108,7 @@ class SessionCubit extends Cubit<SessionState> {
   String? _pendingLoadedName;
   List<SessionSummary>? _pendingLoadedSessions;
   FadeDurations? _pendingLoadedFade;
+  ({SessionBacking backing, double clickPan})? _pendingLoadedBacking;
   SessionConversionNotice? _pendingConversion;
   final _activeOperations = <Future<void>>{};
   Future<void>? _closingFuture;
@@ -128,7 +129,19 @@ class SessionCubit extends Cubit<SessionState> {
     final sessions = await _repository.listSessions();
     final folders = await _listFolders();
     if (_closing || isClosed) return;
-    emit(state.copyWith(sessions: sessions, folders: folders));
+    // A quiet re-list: the last action's result stays as it was.
+    emit(
+      state.copyWith(
+        sessions: sessions,
+        folders: folders,
+        outcome: state.outcome,
+        error: state.error,
+        errorMessage: state.errorMessage,
+        failedSessionId: state.failedSessionId,
+        conversion: state.conversion,
+        refusedBy: state.refusedBy,
+      ),
+    );
   }
 
   /// The catalog's folders, or the ones already in state when they cannot be
@@ -361,14 +374,29 @@ class SessionCubit extends Cubit<SessionState> {
   /// [SessionError.captureInProgress] before anything else changes. Runs
   /// inside `runExclusive`.
   Future<void> _endCaptures() async {
+    // An arm still waiting for its boundary (the loop top, a bar, a signal,
+    // the Count-in downbeat) would fire during the save and be cleared by
+    // the apply: withdraw it first, so no take can start from here on
+    // (#1178 Part 4 review, D-1).
+    bool armed() => _looper.state.tracks.any(
+      (t) => t.pending || t.pendingLaunch != null,
+    );
     bool capturing() => _looper.state.tracks.any((t) => t.isCapturing);
-    if (!capturing()) return;
+    if (!armed() && !capturing()) return;
+    for (final track in _looper.state.tracks) {
+      if (track.pending) _looper.cancelArm(channel: track.channel);
+    }
+    if (_looper.state.tracks.any((t) => t.pendingLaunch != null)) {
+      _looper.cancelCountIn();
+    }
     for (final track in _looper.state.tracks) {
       if (track.isCapturing) _looper.stopRecordControl(channel: track.channel);
     }
-    final deadline = DateTime.now().add(_captureEndTimeout);
-    while (capturing()) {
-      if (DateTime.now().isAfter(deadline)) {
+    // A Stopwatch, not the wall clock: an NTP step at boot on the RTC-less
+    // appliance must not shorten or stretch the wait.
+    final waited = Stopwatch()..start();
+    while (armed() || capturing()) {
+      if (waited.elapsed > _captureEndTimeout) {
         throw const _SessionRefusal(SessionError.captureInProgress);
       }
       await Future<void>.delayed(const Duration(milliseconds: 8));
@@ -466,13 +494,17 @@ class SessionCubit extends Cubit<SessionState> {
     () async {
       try {
         return await _captureSettings.runExclusive(() async {
-          await _endCaptures();
-          await _preserveOutgoing();
+          // The target is read and validated first (read-only: a refusal
+          // leaves every bundle as it was), so an Open the target refuses
+          // never withdraws the player's arms or Count-in, nor stops a take
+          // (#1178 Part 4 lows review, 1).
           final path = await _repository.bundlePathOf(id);
           final (:bundle, :conversion) = await _repository.open(
             path,
             liveSettings: _captureSettings.current,
           );
+          await _endCaptures();
+          await _preserveOutgoing();
           // The header shows the manifest's name; a bundle saved before names
           // were metadata shows its directory name, as the catalog does.
           final loadedName = bundle.session.name ?? id;
@@ -485,6 +517,10 @@ class SessionCubit extends Cubit<SessionState> {
               overrides: bundle.session.trackFadeDurationOverrides,
             ),
             pedalBindings: bundle.session.pedalBindings,
+            backing: (
+              backing: bundle.session.backing,
+              clickPan: bundle.session.clickPan,
+            ),
             path: path,
             conversion: conversion,
           );
@@ -613,6 +649,7 @@ class SessionCubit extends Cubit<SessionState> {
     required SessionRig rig,
     required FadeDurations fade,
     required String pedalBindings,
+    ({SessionBacking backing, double clickPan})? backing,
     String? path,
     SessionConversion? conversion,
   }) async {
@@ -729,6 +766,7 @@ class SessionCubit extends Cubit<SessionState> {
         _pendingLoadedBindings = pedalBindings;
         _pendingLoadedSessions = sessions;
         _pendingLoadedFade = fade;
+        _pendingLoadedBacking = backing;
         _pendingConversion = notice;
         // The live rig is the new session, even if boot keys fail later.
         // Do not publish loaded or enable its bindings until persistence
@@ -745,6 +783,7 @@ class SessionCubit extends Cubit<SessionState> {
         }
         await _fxPersistence.persistLoadedSession(_settings);
         await _captureSettings.installFade(fade);
+        await _installBacking(backing);
         _onPedalBindings(pedalBindings);
         _fxPersistence.completeSessionBoot();
         _looper.clearSessionBootStartBlock();
@@ -753,6 +792,7 @@ class SessionCubit extends Cubit<SessionState> {
         _pendingLoadedBindings = null;
         _pendingLoadedSessions = null;
         _pendingLoadedFade = null;
+        _pendingLoadedBacking = null;
         _pendingConversion = null;
         return (sessions: sessions, notice: notice);
       } on Object catch (error) {
@@ -767,6 +807,19 @@ class SessionCubit extends Cubit<SessionState> {
     } finally {
       applying?.release();
     }
+  }
+
+  /// Installs an Open's recalled backing setup and click pan (#1200 D9),
+  /// loaded again stopped at 0; a New loop has none and only stops the
+  /// backing, keeping its prepared setup.
+  Future<void> _installBacking(
+    ({SessionBacking backing, double clickPan})? backing,
+  ) async {
+    if (backing == null) {
+      _captureSettings.stopBacking();
+      return;
+    }
+    await _captureSettings.installBacking(backing.backing, backing.clickPan);
   }
 
   /// Writes an applied [conversion] back to the bundle at [path] and returns
@@ -806,6 +859,7 @@ class SessionCubit extends Cubit<SessionState> {
       final bindings = _pendingLoadedBindings;
       final sessions = _pendingLoadedSessions;
       final fade = _pendingLoadedFade;
+      final backing = _pendingLoadedBacking;
       final conversion = _pendingConversion;
       if (id == null ||
           name == null ||
@@ -818,6 +872,7 @@ class SessionCubit extends Cubit<SessionState> {
       try {
         await _fxPersistence.retrySessionBoot();
         await _captureSettings.installFade(fade);
+        await _installBacking(backing);
         _onPedalBindings(bindings);
         _fxPersistence.completeSessionBoot();
         _looper.clearSessionBootStartBlock();
@@ -826,6 +881,7 @@ class SessionCubit extends Cubit<SessionState> {
         _pendingLoadedBindings = null;
         _pendingLoadedSessions = null;
         _pendingLoadedFade = null;
+        _pendingLoadedBacking = null;
         _pendingConversion = null;
         await _recordOpenedFingerprint();
         return _ActionResult(
@@ -979,6 +1035,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failureCount: state.failureCount + 1,
           failedSessionId: subject,
           error: SessionError.bootPersistence,
           errorMessage: 'session boot settings still need recovery',
@@ -993,6 +1050,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failureCount: state.failureCount + 1,
           failedSessionId: subject,
           error: SessionError.unknown,
           errorMessage: 'session load is still in progress',
@@ -1005,6 +1063,7 @@ class SessionCubit extends Cubit<SessionState> {
         emit(
           state.copyWith(
             status: SessionStatus.failure,
+            failureCount: state.failureCount + 1,
             failedSessionId: subject,
             error: SessionError.unknown,
             errorMessage: 'a session load is already active',
@@ -1037,6 +1096,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failureCount: state.failureCount + 1,
           error: refusal.error,
           errorMessage: '${refusal.cause ?? refusal.error.name}',
         ),
@@ -1046,6 +1106,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failureCount: state.failureCount + 1,
           failedSessionId: subject,
           error: SessionError.bootPersistence,
           errorMessage: '${error.cause}',
@@ -1062,6 +1123,7 @@ class SessionCubit extends Cubit<SessionState> {
           error: SessionError.busy,
           errorMessage: '$error',
           refusedBy: error.blockers.first.kind,
+          failureCount: state.failureCount + 1,
         ),
       );
     } on SessionException catch (error) {
@@ -1070,6 +1132,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failureCount: state.failureCount + 1,
           failedSessionId: subject,
           error: _classify(error),
           errorMessage: '$error',
@@ -1080,6 +1143,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failureCount: state.failureCount + 1,
           failedSessionId: subject,
           error: SessionError.unknown,
           errorMessage: '$error',

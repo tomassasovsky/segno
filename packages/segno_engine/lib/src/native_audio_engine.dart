@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'dart:ffi';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart';
 import 'package:segno_engine/src/audio_device.dart';
 import 'package:segno_engine/src/audio_engine.dart';
+import 'package:segno_engine/src/audition.dart';
+import 'package:segno_engine/src/backing.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_library.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
@@ -16,6 +20,7 @@ import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
+import 'package:segno_engine/src/native_audio_decoder.dart';
 import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/perf_target.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
@@ -1928,6 +1933,144 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
+  // ---- backing player (#1200) ----
+
+  /// The native buffer behind [audio], or null when it is not a native
+  /// decode the caller still owns.
+  static Pointer<le_backing_buffer>? _ownedBuffer(DecodedAudio audio) {
+    final payload = audio.payload;
+    if (!audio.isOwned || payload is! NativeDecodedAudioPayload) return null;
+    return payload.buffer;
+  }
+
+  @override
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  }) {
+    _checkAlive();
+    final buffer = _ownedBuffer(audio);
+    if (buffer == null) return EngineResult.invalid;
+    final result = EngineResult.fromCode(
+      _bindings.le_engine_backing_load(_engine, buffer, item, play ? 1 : 0),
+    );
+    if (result.isOk) audio.markTransferred();
+    return result;
+  }
+
+  @override
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item}) {
+    _checkAlive();
+    if (audio == null) {
+      return EngineResult.fromCode(
+        _bindings.le_engine_backing_stage_next(_engine, nullptr, item),
+      );
+    }
+    final buffer = _ownedBuffer(audio);
+    if (buffer == null) return EngineResult.invalid;
+    final result = EngineResult.fromCode(
+      _bindings.le_engine_backing_stage_next(_engine, buffer, item),
+    );
+    if (result.isOk) audio.markTransferred();
+    return result;
+  }
+
+  @override
+  EngineResult backingClear() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_backing_clear(_engine));
+  }
+
+  @override
+  EngineResult backingTransport(BackingTransportOp op) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_transport(_engine, op.index),
+    );
+  }
+
+  @override
+  EngineResult backingSeek(int frame) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_seek(_engine, frame),
+    );
+  }
+
+  @override
+  EngineResult setBackingEnd(BackingEnd mode) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_set_end(_engine, mode.index),
+    );
+  }
+
+  @override
+  EngineResult setBackingOutput(int mask) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_set_output(_engine, mask),
+    );
+  }
+
+  @override
+  EngineResult setBackingLevel(double gain) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_set_level(_engine, gain),
+    );
+  }
+
+  @override
+  EngineResult setBackingPan(double pan) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_set_pan(_engine, pan),
+    );
+  }
+
+  @override
+  EngineResult setClickPan(double pan) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_click_pan(_engine, pan),
+    );
+  }
+
+  @override
+  BackingState backingState() {
+    _checkAlive();
+    final out = calloc<le_backing_state>();
+    try {
+      if (!EngineResult.fromCode(
+        _bindings.le_engine_backing_state(_engine, out),
+      ).isOk) {
+        return const BackingState();
+      }
+      final s = out.ref;
+      return BackingState(
+        epoch: s.epoch,
+        item: s.item,
+        nextItem: s.next_item,
+        transport: BackingTransport.fromCode(s.transport),
+        position: s.position,
+        frames: s.frames,
+        endCount: s.end_count,
+        lastEnd: BackingEndEvent.fromCode(s.last_end),
+        endMode: BackingEnd.fromCode(s.end_mode),
+        outputMask: s.mask,
+        level: s.level,
+        pan: s.pan,
+        clickPan: s.click_pan,
+        owned: s.owned,
+        ownedBytes: s.owned_bytes,
+      );
+    } finally {
+      calloc.free(out);
+    }
+  }
+
   @override
   EngineResult setRecordStartSettings({
     required int countInBars,
@@ -2599,6 +2742,115 @@ class NativeAudioEngine implements AudioEngine {
     return EngineResult.fromCode(_bindings.le_perf_render_cancel(_engine));
   }
 
+  /// What [auditionStartFile] waits for before its one retry: longer than
+  /// one audio block, so the voice has handed back the preview before last.
+  /// A test that pumps the engine itself replaces it.
+  @visibleForTesting
+  Future<void> Function() auditionRetryWait = () =>
+      Future<void>.delayed(const Duration(milliseconds: 30));
+
+  /// Runs the audition's decode off the calling isolate ([Isolate.run]). A
+  /// test replaces it to see that every decode goes through it.
+  @visibleForTesting
+  OffIsolateRunner offIsolate = Isolate.run;
+
+  @override
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async {
+    _checkAlive();
+    final rate = snapshot().sampleRate;
+    if (rate <= 0) return const AuditionStart(result: EngineResult.notRunning);
+    // The decode reads and converts up to two minutes of audio: never on the
+    // calling (UI) isolate. The buffer crosses back as an address.
+    final decoded = await _decodeAuditionOffIsolate(
+      offIsolate,
+      path,
+      rate,
+      kAuditionMaxSeconds * rate,
+    );
+    if (decoded.code != 0) {
+      return AuditionStart(
+        result: EngineResult.fromCode(decoded.code),
+        sourceRate: decoded.sourceRate,
+      );
+    }
+    final buffer = Pointer<le_backing_buffer>.fromAddress(decoded.address);
+    if (_disposed) {
+      _bindings.le_backing_buffer_free(buffer);
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    bool withdrawn() => stillWanted != null && !stillWanted();
+    if (withdrawn()) {
+      _bindings.le_backing_buffer_free(buffer);
+      return const AuditionStart(result: EngineResult.invalid, cancelled: true);
+    }
+    var result = EngineResult.fromCode(
+      _bindings.le_engine_audition_start(_engine, buffer, bus),
+    );
+    if (result == EngineResult.notReady) {
+      await auditionRetryWait();
+      if (!_disposed && withdrawn()) {
+        _bindings.le_backing_buffer_free(buffer);
+        return const AuditionStart(
+          result: EngineResult.invalid,
+          cancelled: true,
+        );
+      }
+      result = _disposed
+          ? EngineResult.invalid
+          : EngineResult.fromCode(
+              _bindings.le_engine_audition_start(_engine, buffer, bus),
+            );
+    }
+    if (result != EngineResult.ok) {
+      // Refused: the buffer is still ours.
+      _bindings.le_backing_buffer_free(buffer);
+      return AuditionStart(result: result, sourceRate: decoded.sourceRate);
+    }
+    return AuditionStart(
+      result: result,
+      frames: decoded.frames,
+      rate: rate,
+      sourceRate: decoded.sourceRate,
+      truncated: decoded.truncated,
+    );
+  }
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async {
+    if (buckets <= 0) return null;
+    return Isolate.run(() => _filePeaks(path, buckets));
+  }
+
+  @override
+  EngineResult auditionStop() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_audition_stop(_engine));
+  }
+
+  @override
+  AuditionState auditionState() {
+    _checkAlive();
+    final out = calloc<le_audition_state>();
+    try {
+      if (_bindings.le_engine_audition_state(_engine, out) != 0) {
+        return const AuditionState();
+      }
+      final s = out.ref;
+      return AuditionState(
+        epoch: s.epoch,
+        frames: s.frames,
+        position: s.position,
+        bus: s.bus,
+      );
+    } finally {
+      calloc.free(out);
+    }
+  }
+
   @override
   void dispose() {
     if (_disposed) return;
@@ -2746,7 +2998,7 @@ class PumpedNativeEngine extends NativeAudioEngine {
   /// because the native side treats input/output as interleaved across the
   /// engine's configured channel counts (set in [start]); `input` is
   /// broadcast as a constant across every input channel.
-  void pump({int frames = 512, double input = 0}) {
+  void pump({int frames = 512, double input = 0, Float32List? output}) {
     _checkAlive();
     if (frames < 0) return;
     final inPtr = calloc<Float>(frames == 0 ? 1 : frames * _inputChannels);
@@ -2756,6 +3008,16 @@ class PumpedNativeEngine extends NativeAudioEngine {
         inPtr[i] = input;
       }
       _bindings.le_engine_process(_engine, outPtr, inPtr, frames);
+      // A test that reads what the engine played passes [output]: the block's
+      // interleaved frames, as many as fit.
+      if (output != null) {
+        final n = frames * _outputChannels;
+        output.setRange(
+          0,
+          n < output.length ? n : output.length,
+          outPtr.asTypedList(n == 0 ? 1 : n),
+        );
+      }
     } finally {
       calloc
         ..free(inPtr)
@@ -2794,4 +3056,76 @@ class _NativePluginSlotHandle implements PluginSlotHandle {
 
   @override
   int get hashCode => pointer.hashCode;
+}
+
+/// How [NativeAudioEngine.offIsolate] runs a computation: [Isolate.run]'s
+/// shape.
+typedef OffIsolateRunner =
+    Future<R> Function<R>(FutureOr<R> Function() computation);
+
+/// Runs [_decodeAudition] through [run]. A top-level function, so the
+/// closure sent to the isolate captures only these values and never the
+/// caller's scope (which may hold objects that cannot cross isolates).
+Future<({int code, int address, int frames, int sourceRate, bool truncated})>
+_decodeAuditionOffIsolate(
+  OffIsolateRunner run,
+  String path,
+  int rate,
+  int maxFrames,
+) => run(() => _decodeAudition(path, rate, maxFrames));
+
+/// Decodes at most [maxFrames] frames of the preview at [path] at [rate],
+/// a bounded read of the app's one decoder (`le_backing_decode_file`). Runs
+/// inside `Isolate.run`, so it opens the library itself and hands the buffer
+/// back as an address the caller owns.
+({int code, int address, int frames, int sourceRate, bool truncated})
+_decodeAudition(String path, int rate, int maxFrames) {
+  final bindings = SegnoEngineBindings(openSegnoEngineLibrary());
+  final out = calloc<Pointer<le_backing_buffer>>();
+  final info = calloc<le_backing_decode_info>();
+  final cPath = path.toNativeUtf8();
+  try {
+    final code = bindings.le_backing_decode_file(
+      cPath.cast(),
+      rate,
+      0,
+      maxFrames,
+      out,
+      info,
+    );
+    return (
+      code: code,
+      address: code == 0 ? out.value.address : 0,
+      frames: code == 0 ? bindings.le_backing_buffer_frames(out.value) : 0,
+      sourceRate: info.ref.source_rate,
+      truncated: info.ref.truncated != 0,
+    );
+  } finally {
+    calloc
+      ..free(out)
+      ..free(info);
+    malloc.free(cPath);
+  }
+}
+
+/// Streams the file at [path] through the decoder (`le_backing_probe_file`)
+/// and reads [buckets] peaks, keeping no PCM. Runs inside `Isolate.run`;
+/// null when the file does not decode.
+Float32List? _filePeaks(String path, int buckets) {
+  final bindings = SegnoEngineBindings(openSegnoEngineLibrary());
+  final info = calloc<le_backing_decode_info>();
+  final peaks = calloc<Float>(buckets);
+  final cPath = path.toNativeUtf8();
+  try {
+    if (bindings.le_backing_probe_file(cPath.cast(), info, peaks, buckets) !=
+        0) {
+      return null;
+    }
+    return Float32List.fromList(peaks.asTypedList(buckets));
+  } finally {
+    calloc
+      ..free(info)
+      ..free(peaks);
+    malloc.free(cPath);
+  }
 }

@@ -126,6 +126,7 @@ class SessionState extends Equatable {
     this.bootRecoveryRequired = false,
     this.conversion,
     this.refusedBy,
+    this.failureCount = 0,
   });
 
   /// The current action status.
@@ -172,6 +173,11 @@ class SessionState extends Equatable {
   /// Per-transition, like [error].
   final GuardKind? refusedBy;
 
+  /// How many actions have failed so far. Durable: a later emit that only
+  /// re-lists the catalog keeps it, so a view can tell a failure it has
+  /// already seen from a new one.
+  final int failureCount;
+
   /// Returns a copy for the next emit.
   ///
   /// The **result** fields ([outcome] / [error] / [errorMessage] /
@@ -193,6 +199,7 @@ class SessionState extends Equatable {
     bool? bootRecoveryRequired,
     SessionConversionNotice? conversion,
     GuardKind? refusedBy,
+    int? failureCount,
   }) => SessionState(
     status: status ?? this.status,
     outcome: outcome,
@@ -206,6 +213,7 @@ class SessionState extends Equatable {
     bootRecoveryRequired: bootRecoveryRequired ?? this.bootRecoveryRequired,
     conversion: conversion,
     refusedBy: refusedBy,
+    failureCount: failureCount ?? this.failureCount,
   );
 
   @override
@@ -222,6 +230,7 @@ class SessionState extends Equatable {
     bootRecoveryRequired,
     conversion,
     refusedBy,
+    failureCount,
   ];
 }
 

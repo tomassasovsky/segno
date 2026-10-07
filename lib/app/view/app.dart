@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
@@ -27,6 +28,8 @@ import 'package:segno/appliance/power_off/power_goodbye.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/backing/cubit/backing_cubit.dart';
+import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -75,6 +78,7 @@ class App extends StatefulWidget {
     required this.sessionRepository,
     required this.performanceRepository,
     required this.guards,
+    required this.backingRepository,
     this.pedalRepository,
     this.displayCount,
     this.waveformWindowOpenDelay = Duration.zero,
@@ -193,6 +197,10 @@ class App extends StatefulWidget {
   /// The shared performance-recording repository, sharing the engine.
   final PerformanceRepository performanceRepository;
 
+  /// The backing player's repository and managed store (#1200), sharing the
+  /// engine.
+  final BackingRepository backingRepository;
+
   @override
   State<App> createState() => _AppState();
 }
@@ -239,6 +247,7 @@ class _AppState extends State<App> {
       performance: widget.performanceRepository,
       sessions: widget.sessionRepository,
       storage: _storage,
+      backing: widget.backingRepository,
       powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
       reboot: widget.reboot ?? const SystemApplianceEnv().reboot,
       storageSettled: _storage.settled,
@@ -407,6 +416,18 @@ class _AppState extends State<App> {
       refused: (context) => context.l10n.fadeSettingsRefusedTitle,
       body: (context) => context.l10n.fadeSettingsRecoveryBody,
     ),
+    OwnedSetting.backingMix => (
+      id: AppToastId.backingMixSettings,
+      recovery: (context) => context.l10n.backingMixSettingsRecoveryTitle,
+      refused: (context) => context.l10n.backingMixSettingsRefusedTitle,
+      body: (context) => context.l10n.backingMixSettingsRecoveryBody,
+    ),
+    OwnedSetting.clickPan => (
+      id: AppToastId.clickPanSettings,
+      recovery: (context) => context.l10n.clickPanSettingsRecoveryTitle,
+      refused: (context) => context.l10n.clickPanSettingsRefusedTitle,
+      body: (context) => context.l10n.clickPanSettingsRecoveryBody,
+    ),
   };
 
   void _showRecordingInputRequired(int channel) {
@@ -507,6 +528,8 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: _runtime.fxPersistence),
         RepositoryProvider.value(value: _runtime.tempo),
         RepositoryProvider.value(value: _runtime.playback),
+        RepositoryProvider.value(value: _runtime.backingSettings),
+        RepositoryProvider.value(value: _runtime.backingPlayer),
         RepositoryProvider<MixSettingsPersistence>.value(
           value: _runtime.mixPersistence,
         ),
@@ -522,6 +545,10 @@ class _AppState extends State<App> {
           value: widget.removableVolumes,
         ),
         RepositoryProvider.value(value: _storage),
+        // The one guard table (#1198), for the owners the views build: the
+        // Library's exports and backups enter transfer guards on what
+        // they read.
+        RepositoryProvider<GuardRegistry>.value(value: widget.guards),
         if (_powerKeySource != null)
           RepositoryProvider<PowerKeySource>.value(value: _powerKeySource!),
       ],
@@ -576,6 +603,8 @@ class _AppState extends State<App> {
           // Remote and console controls are interpreted by ControlCubit.
           BlocProvider<LooperBloc>.value(value: _runtime.looper),
           BlocProvider<SessionCubit>.value(value: _runtime.session),
+          BlocProvider<BackingCubit>.value(value: _runtime.backingView),
+          BlocProvider<BackingMixCubit>.value(value: _runtime.backingMixView),
           BlocProvider(
             create: (context) {
               final cubit = TracksCubit(

@@ -1082,14 +1082,6 @@
     "@perfExportReasonUnrepresented": {
         "description": "Fallback reason shown under a bounced-audio track: its chain includes an effect type this Segno version doesn't recognize as exportable."
     },
-    "perfExportReExport": "Re-export",
-    "@perfExportReExport": {
-        "description": "Button label: regenerate .als/fx-chains.txt from this already-finalized capture without re-recording."
-    },
-    "perfExportReExportFailed": "Couldn't regenerate the export.",
-    "@perfExportReExportFailed": {
-        "description": "Error message shown when re-export fails."
-    },
     "timeSignatureNoteValueLabel": "Note value",
     "clickModeOffLabel": "Off",
     "clickModeRecLabel": "Recording",
@@ -2458,6 +2450,46 @@
     "@stageLibrary": {
         "description": "Accessible name of the top-bar Library icon."
     },
+    "libraryListen": "Listen",
+    "@libraryListen": {
+        "description": "Plays the selected session's saved preview (19/01 session:listen)."
+    },
+    "libraryListenStop": "Stop",
+    "@libraryListenStop": {
+        "description": "Stops the preview that is playing."
+    },
+    "libraryListenProgress": "{played} / {total}",
+    "@libraryListenProgress": {
+        "description": "How far the preview has played, as m:ss of m:ss.",
+        "placeholders": {
+            "played": {
+                "type": "String"
+            },
+            "total": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryListenTruncated": "Preview plays the first 2:00",
+    "@libraryListenTruncated": {
+        "description": "Under Listen when the saved preview is longer than two minutes."
+    },
+    "libraryListenFailed": "This preview cannot be played.",
+    "@libraryListenFailed": {
+        "description": "Listen refused: no preview file, or one that does not decode."
+    },
+    "libraryListenNoDevice": "Connect an audio device to listen.",
+    "@libraryListenNoDevice": {
+        "description": "Listen refused: the audio device is not running."
+    },
+    "libraryListenRecording": "Not while a performance is recording.",
+    "@libraryListenRecording": {
+        "description": "Listen refused: a performance capture is armed."
+    },
+    "libraryListenBusy": "The last preview is still stopping. Try again.",
+    "@libraryListenBusy": {
+        "description": "Listen refused: the previous preview has not been released yet."
+    },
     "sessionNewLoopNotSaved": "{name} started, but it could not be saved yet. Save it to keep it.",
     "@sessionNewLoopNotSaved": {
         "description": "A New loop cleared the tracks and took its name, but its empty bundle could not be written; the first Save writes it.",
@@ -2488,7 +2520,7 @@
     "@libraryNewLoopStart": {
         "description": "Confirms New loop."
     },
-    "libraryTakeStillRunning": "The take has not finished yet. Nothing was changed; try again when it has.",
+    "libraryTakeStillRunning": "The take is finishing. Try again when it has stopped.",
     "@libraryTakeStillRunning": {
         "description": "An Open or New loop ended a take in progress and it did not finish in time; nothing was saved, opened or cleared."
     },
@@ -3602,6 +3634,14 @@
         "description": "The source kind: the click and the backing player."
     },
     "routingSourceClick": "Click",
+    "routingSourceBacking": "Backing track",
+    "mixerBackingClick": "Backing & click",
+    "mixerBackingChannel": "Backing",
+    "mixerBackingNothingLoaded": "Nothing loaded",
+    "mixerBackingVolume": "Backing volume",
+    "mixerBackingPan": "Backing pan",
+    "mixerClickPan": "Click pan",
+    "a11yMixerBackingClick": "Backing and click volume and pan",
     "@routingSourceClick": {
         "description": "The metronome, as a routable source."
     },
@@ -5655,6 +5695,12 @@
     "fadeSettingsRecoveryTitle": "Fade duration needs recovery",
     "fadeSettingsRefusedTitle": "Fade duration change was not saved",
     "fadeSettingsRecoveryBody": "Retry to recover the Fade duration settings.",
+    "backingMixSettingsRecoveryTitle": "Backing volume and routing need recovery",
+    "backingMixSettingsRefusedTitle": "Backing volume or routing change was not saved",
+    "backingMixSettingsRecoveryBody": "Retry to recover the backing volume, pan, outputs and At end.",
+    "clickPanSettingsRecoveryTitle": "Click pan needs recovery",
+    "clickPanSettingsRefusedTitle": "Click pan change was not saved",
+    "clickPanSettingsRecoveryBody": "Retry to recover the click pan.",
     "actionModeFade": "Fade",
     "@actionModeFade": {
         "description": "Foot Fade performance surface."
@@ -6330,6 +6376,323 @@
                 "type": "int"
             }
         }
+    },
+    "libraryAudio": "Audio",
+    "@libraryAudio": {
+        "description": "The Library's Audio crumb tab."
+    },
+    "libraryAudioTitle": "Audio library",
+    "@libraryAudioTitle": {
+        "description": "Title of Library > Audio (pen 18/01)."
+    },
+    "libraryUsbDrive": "USB drive",
+    "@libraryUsbDrive": {
+        "description": "Library > Audio's USB location (pen 18/01)."
+    },
+    "librarySearchAudio": "Search audio",
+    "@librarySearchAudio": {
+        "description": "Library > Audio's search box and its keyboard sheet."
+    },
+    "libraryAudioPerformances": "Performances",
+    "@libraryAudioPerformances": {
+        "description": "The folder of finished recordings in Library > Audio."
+    },
+    "libraryAudioFolderCount": "{count, plural, =0{Empty} =1{1 file} other{{count} files}}",
+    "@libraryAudioFolderCount": {
+        "description": "A folder row's count in Library > Audio.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "libraryAudioEmpty": "Nothing here yet.",
+    "@libraryAudioEmpty": {
+        "description": "An empty folder in Library > Audio."
+    },
+    "libraryAudioNoMatches": "No audio matches.",
+    "@libraryAudioNoMatches": {
+        "description": "A search with no match in Library > Audio."
+    },
+    "libraryAudioNoSelection": "Choose a file to preview it.",
+    "@libraryAudioNoSelection": {
+        "description": "The Audio preview card with nothing selected."
+    },
+    "libraryAudioParentFolder": "Parent folder",
+    "@libraryAudioParentFolder": {
+        "description": "Accessible name of the browser's back-up-one-folder button."
+    },
+    "libraryAudioWav": "WAV",
+    "@libraryAudioWav": {
+        "description": "The preview card's file kind."
+    },
+    "libraryAudioParts": "WAV · {count} parts",
+    "@libraryAudioParts": {
+        "description": "The file kind of a recording written as several consecutive parts.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "libraryAudioRecovered": "Recovered",
+    "@libraryAudioRecovered": {
+        "description": "Marks a recording that was recovered after a crash or power loss."
+    },
+    "libraryAudioPreview": "Preview",
+    "@libraryAudioPreview": {
+        "description": "Library > Audio's preview button (pen 18/01)."
+    },
+    "libraryAudioExportUsb": "Export to USB",
+    "@libraryAudioExportUsb": {
+        "description": "Action on an audio file in Library > Audio."
+    },
+    "libraryAudioDawProject": "DAW project",
+    "@libraryAudioDawProject": {
+        "description": "Writes a recording's Ableton project and effect chains into it."
+    },
+    "libraryAudioDawProjectWritten": "The DAW project is saved in this recording.",
+    "@libraryAudioDawProjectWritten": {
+        "description": "After DAW project succeeds."
+    },
+    "libraryAudioExportStems": "Export stems",
+    "@libraryAudioExportStems": {
+        "description": "Exports a session's stems to USB."
+    },
+    "libraryAudioDelete": "Delete",
+    "@libraryAudioDelete": {
+        "description": "Deletes a recording from the console's storage."
+    },
+    "libraryAudioDeleteTitle": "Delete “{name}”?",
+    "@libraryAudioDeleteTitle": {
+        "description": "Confirms a recording's Delete.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryAudioDeleteBody": "The recording is removed from this console. Copies on USB drives are not touched.",
+    "@libraryAudioDeleteBody": {
+        "description": "Body of a recording's Delete confirmation."
+    },
+    "libraryAudioChooserTitle": "Export to USB",
+    "@libraryAudioChooserTitle": {
+        "description": "Title of a recording's export choice."
+    },
+    "libraryAudioChooseRecording": "Recording only (WAV)",
+    "@libraryAudioChooseRecording": {
+        "description": "Exports the recording alone."
+    },
+    "libraryAudioChooseDaw": "DAW package (WAV, stems, Ableton project)",
+    "@libraryAudioChooseDaw": {
+        "description": "Exports the recording with its stems and Ableton project."
+    },
+    "libraryAudioExporting": "Exporting audio",
+    "@libraryAudioExporting": {
+        "description": "Title while an export runs (pen 20/08)."
+    },
+    "libraryAudioExportRoute": "Internal → USB drive / {folder}",
+    "@libraryAudioExportRoute": {
+        "description": "Where a running export goes (pen 20/08).",
+        "placeholders": {
+            "folder": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryAudioExportPlace": "USB drive / {folder}",
+    "@libraryAudioExportPlace": {
+        "description": "Where a finished export is (pen 20/12).",
+        "placeholders": {
+            "folder": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryAudioExported": "Exported to USB",
+    "@libraryAudioExported": {
+        "description": "Title once an export is done (pen 20/12)."
+    },
+    "libraryAudioRecordingKept": "Your internal recording is kept.",
+    "@libraryAudioRecordingKept": {
+        "description": "After a recording is exported (pen 20/12)."
+    },
+    "libraryAudioSessionKept": "Your internal session is kept.",
+    "@libraryAudioSessionKept": {
+        "description": "After a session's audio is exported."
+    },
+    "libraryAudioDone": "Done",
+    "@libraryAudioDone": {
+        "description": "Closes the finished export (pen 20/12)."
+    },
+    "libraryAudioConflictTitle": "Already on USB",
+    "@libraryAudioConflictTitle": {
+        "description": "The export name is taken on the drive (pen 20/09)."
+    },
+    "libraryAudioKeepBoth": "Keep both",
+    "@libraryAudioKeepBoth": {
+        "description": "Exports beside the existing file under a new name."
+    },
+    "libraryAudioReplace": "Replace file",
+    "@libraryAudioReplace": {
+        "description": "Exports over the existing file."
+    },
+    "libraryAudioConnectBody": "Your recording stays in Internal.",
+    "@libraryAudioConnectBody": {
+        "description": "Export with no drive (pen 20/10)."
+    },
+    "libraryAudioTryAgain": "Try again",
+    "@libraryAudioTryAgain": {
+        "description": "Retries an export once a drive is connected."
+    },
+    "libraryAudioNotEnoughSpace": "Not enough space. Free up storage and try again.",
+    "@libraryAudioNotEnoughSpace": {
+        "description": "The drive is too full for the export (pen 20/11)."
+    },
+    "libraryAudioReadOnly": "This USB drive is read-only. Nothing was written.",
+    "@libraryAudioReadOnly": {
+        "description": "The drive refuses writes."
+    },
+    "libraryAudioExportFailed": "Could not export. Nothing was left on the drive.",
+    "@libraryAudioExportFailed": {
+        "description": "An export failed and was removed from the drive."
+    },
+    "libraryAudioDawProjectFailed": "Could not write the DAW project.",
+    "@libraryAudioDawProjectFailed": {
+        "description": "DAW project failed."
+    },
+    "libraryAudioDeleteBusy": "Not while a performance is recording or rendering.",
+    "@libraryAudioDeleteBusy": {
+        "description": "A recording's Delete was refused."
+    },
+    "libraryAudioDeleteFailed": "Could not delete the recording.",
+    "@libraryAudioDeleteFailed": {
+        "description": "A recording's Delete failed."
+    },
+    "libraryAudioPurpose": "Exporting {name}",
+    "@libraryAudioPurpose": {
+        "description": "What the Storage page shows on Eject while an export runs.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryAudioStillRendering": "The recording is still rendering. Try again when it has finished.",
+    "@libraryAudioStillRendering": {
+        "description": "The DAW project and package wait for a take's render."
+    },
+    "libraryAudioExportBusy": "Something else is using this recording. Try again in a moment.",
+    "@libraryAudioExportBusy": {
+        "description": "The guard table refused an export."
+    },
+    "libraryAudioDeleteWaits": "{purpose}. Delete is available when it finishes.",
+    "@libraryAudioDeleteWaits": {
+        "description": "A recording's Delete waits for an export of it.",
+        "placeholders": {
+            "purpose": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryBackUp": "Back up to USB",
+    "@libraryBackUp": {
+        "description": "Backs the selected session up to a USB drive (pen 19/01, section 34)."
+    },
+    "libraryBackingUp": "Backing up {name}…",
+    "@libraryBackingUp": {
+        "description": "Inline progress while a session is backed up (pen 34).",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryBackupPurpose": "Backing up {name}",
+    "@libraryBackupPurpose": {
+        "description": "What the Storage page shows on Eject while a backup runs.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryBackedUp": "Backed up to USB.",
+    "@libraryBackedUp": {
+        "description": "After a backup lands on the drive."
+    },
+    "libraryBackupConflictTitle": "A backup has this name",
+    "@libraryBackupConflictTitle": {
+        "description": "The drive already holds a backup of this session (pen 34)."
+    },
+    "libraryBackupReplace": "Replace",
+    "@libraryBackupReplace": {
+        "description": "Replaces the backup already on the drive."
+    },
+    "libraryBackupInterrupted": "Backup interrupted",
+    "@libraryBackupInterrupted": {
+        "description": "A backup stopped with nothing changed (pen 34)."
+    },
+    "libraryBackupDriveLost": "USB drive disconnected. Nothing was changed.",
+    "@libraryBackupDriveLost": {
+        "description": "The drive went away during a backup (pen 34)."
+    },
+    "libraryBackupFull": "Not enough space on the USB drive. Nothing was changed.",
+    "@libraryBackupFull": {
+        "description": "The drive is too full for the backup."
+    },
+    "libraryBackupReadOnly": "This USB drive is read-only. Nothing was changed.",
+    "@libraryBackupReadOnly": {
+        "description": "The drive refuses writes."
+    },
+    "libraryBackupFailed": "The copy failed. Nothing was changed.",
+    "@libraryBackupFailed": {
+        "description": "Another write error during a backup."
+    },
+    "libraryBackupNoDrive": "Your session stays in Internal.",
+    "@libraryBackupNoDrive": {
+        "description": "Back up with no drive plugged in."
+    },
+    "libraryBackupRetry": "Retry",
+    "@libraryBackupRetry": {
+        "description": "Repeats an interrupted backup with the same choices (pen 34)."
+    },
+    "libraryBackupSession": "Session",
+    "@libraryBackupSession": {
+        "description": "The USB backup list's name column (pen 34)."
+    },
+    "libraryBackupSaved": "Saved",
+    "@libraryBackupSaved": {
+        "description": "The USB backup list's date column (pen 34)."
+    },
+    "libraryBackupMeta": "{tracks} · {fx} FX",
+    "@libraryBackupMeta": {
+        "description": "A backup row's facts.",
+        "placeholders": {
+            "tracks": {
+                "type": "String"
+            },
+            "fx": {
+                "type": "int"
+            }
+        }
+    },
+    "libraryBackupsEmpty": "No sessions are backed up on this drive.",
+    "@libraryBackupsEmpty": {
+        "description": "The USB list with no backups."
+    },
+    "libraryRestore": "Restore to Library",
+    "@libraryRestore": {
+        "description": "Adds the selected backup as a new session (pen 34)."
+    },
+    "libraryRestoreAdds": "Adds a new session to Library.",
+    "@libraryRestoreAdds": {
+        "description": "Beside Restore to Library (pen 34)."
+    },
+    "libraryRestoreFailed": "Could not restore. Nothing was added.",
+    "@libraryRestoreFailed": {
+        "description": "Restore to Library failed."
     },
     "actionTrackFxOff": "Track FX off",
     "@actionTrackFxOff": {

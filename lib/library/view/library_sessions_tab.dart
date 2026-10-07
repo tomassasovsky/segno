@@ -9,6 +9,7 @@ import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
+import 'package:segno/library/view/library_backup_view.dart';
 import 'package:segno/library/view/library_manage.dart';
 import 'package:segno/library/view/library_preview_card.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -33,6 +34,11 @@ class LibrarySessionsTab extends StatelessWidget {
     final unusable = context.select<LibraryCubit, RemovableVolume?>(
       (c) => c.state.unusableVolume,
     );
+    // A readable drive's backups take the whole width (pen 34 `USB session
+    // list`).
+    if (location == LibraryLocation.usb && readable) {
+      return const LibraryBackupList();
+    }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -40,9 +46,6 @@ class LibrarySessionsTab extends StatelessWidget {
           width: 709,
           child: switch (location) {
             LibraryLocation.internal => const LibrarySessionList(),
-            // Backups on a drive are listed in Part 8; until then a mounted
-            // drive shows an empty list rather than a fake one.
-            LibraryLocation.usb when readable => const SizedBox.shrink(),
             LibraryLocation.usb when unusable != null => LibraryUnusableUsb(
               volume: unusable,
             ),
@@ -125,18 +128,22 @@ class LibrarySearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final query = context.select<LibraryCubit, String>((c) => c.state.query);
-    return LibrarySearchBox(
-      key: const Key('library_search'),
-      text: query.isEmpty ? l10n.librarySearchSessions : query,
-      placeholder: query.isEmpty,
-      semanticLabel: l10n.librarySearchSessions,
-      onTap: () => unawaited(_edit(context, query)),
+    return SizedBox(
+      width: 556,
+      child: LibrarySearchBox(
+        key: const Key('library_search'),
+        text: query.isEmpty ? l10n.librarySearchSessions : query,
+        placeholder: query.isEmpty,
+        semanticLabel: l10n.librarySearchSessions,
+        onTap: () => unawaited(_edit(context, query)),
+      ),
     );
   }
 }
 
-/// The pen's 556 x 64 search box: an outlined box with the query or the
-/// placeholder, which opens a keyboard sheet instead of taking keys.
+/// The pen's 64-high search box, as wide as its parent allows (556 on the
+/// Sessions tab, 310 on the Audio tab): an outlined box with the query or
+/// the placeholder, which opens a keyboard sheet instead of taking keys.
 class LibrarySearchBox extends StatelessWidget {
   /// Creates the search box.
   const LibrarySearchBox({
@@ -181,7 +188,6 @@ class LibrarySearchBox extends StatelessWidget {
             canRequestFocus: false,
             onTap: onTap,
             child: SizedBox(
-              width: 556,
               height: 64,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 19),
@@ -341,7 +347,9 @@ class LibrarySessionRows extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final library = context.watch<LibraryCubit>().state;
+    final library = context.select<LibraryCubit, LibraryState>(
+      (c) => c.state.withoutListen,
+    );
     final session = context.watch<SessionCubit>().state;
     final rows = library.filter(session.sessions);
     if (rows.isEmpty) {

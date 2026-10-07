@@ -5,6 +5,7 @@
 library;
 
 export 'package:segno_engine/segno_engine.dart' show PerfStopReason;
+export 'src/models/capture_summary.dart';
 export 'src/models/performance_chains.dart';
 export 'src/models/performance_manifest.dart';
 export 'src/models/recording_format.dart';

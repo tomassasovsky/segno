@@ -237,7 +237,7 @@ void main() {
   // The post-clear-all toast renders into a toastification overlay, which
   // needs the app's Navigator above it (hence wrapping MaterialApp, not its
   // child). Inert for the tests that never raise a toast.
-  Future<void> pump(
+  Future<void> pumpStage(
     WidgetTester tester, {
     KeyEventResult Function(FocusNode, KeyEvent)? onAncestorKey,
     Locale? locale,
@@ -309,6 +309,28 @@ void main() {
       ),
     ),
   );
+
+  Future<void> pump(
+    WidgetTester tester, {
+    KeyEventResult Function(FocusNode, KeyEvent)? onAncestorKey,
+    Locale? locale,
+    Size size = const Size(1920, 1080),
+    List<NavigatorObserver> navigatorObservers = const [],
+  }) {
+    // The appliance's 1920 x 1080 page: the Mixer's top bar holds Backing &
+    // click, Reset mixer and the Tuner together, wider than the default
+    // 800 px test surface.
+    tester.view
+      ..physicalSize = size
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    return pumpStage(
+      tester,
+      onAncestorKey: onAncestorKey,
+      locale: locale,
+      navigatorObservers: navigatorObservers,
+    );
+  }
 
   // A clear-all on a rig with content now raises the undo toast, which mounts a
   // frame late and, once shown, holds a ~6s auto-close timer plus toast
@@ -2615,7 +2637,8 @@ void main() {
         ),
       );
       await tracks.rename(0, 'GUITAR');
-      await pump(tester);
+      // Wide enough for the Mixer's top bar, short enough to reduce it.
+      await pump(tester, size: const Size(1920, 600));
       await showMixer(tester);
       final scale = tester.getRect(find.byType(StageDbScale).first);
       final meter = tester.getRect(find.byKey(const Key('mixer_level_0')));
@@ -2683,6 +2706,21 @@ void main() {
         );
         expect(upper.bottom, lessThanOrEqualTo(lower.top));
       }
+    });
+
+    testWidgets('Backing & click belongs to the Mixer (#1200)', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      expect(find.byKey(const Key('stage_backing_click')), findsNothing);
+      await showMixer(tester);
+      expect(find.byKey(const Key('stage_backing_click')), findsOneWidget);
+      // Beside Reset mixer, before it.
+      expect(
+        tester.getRect(find.byKey(const Key('stage_backing_click'))).right,
+        lessThan(
+          tester.getRect(find.byKey(const Key('stage_reset_mixer'))).left,
+        ),
+      );
     });
 
     testWidgets('Reset mixer belongs to the Mixer, and resets the mix', (

@@ -34,6 +34,8 @@ structs:
     - 'le_plugin_param_info'
     - 'le_lane_cache_info'
     - 'le_perf_target'
+    - 'le_audition_state'
+    - 'le_backing_decode_info'
 enums:
   include:
     - 'le_result'

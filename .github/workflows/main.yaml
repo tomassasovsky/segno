@@ -99,6 +99,17 @@ jobs:
       working_directory: packages/storage_repository
       run_bloc_lint: false
       min_coverage: 100
+  # backing_repository (#1200): the managed Backing tracks store and the
+  # player over the engine's backing voice. It depends on segno_engine, a
+  # Flutter plugin, so it runs on flutter_package.yml; its native-library test
+  # self-skips here (the fuzz job builds the library).
+  backing-repository:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    with:
+      flutter_version: "3.47.x"
+      working_directory: packages/backing_repository
+      run_bloc_lint: false
+      min_coverage: 95
   performance-repository:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
     with:
@@ -318,8 +329,11 @@ jobs:
           # present the backend is skipped and the test cannot fail.
           sudo apt-get install -y build-essential libasound2-dev libpulse0
       - name: Build + run native tests under AddressSanitizer
+        # The decoder fuzz driver also runs under UBSan, for longer (#1200).
         run: >
           EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g"
+          FUZZ_CFLAGS="-fsanitize=undefined -fno-sanitize-recover=undefined"
+          SEGNO_FUZZ_ITERATIONS=20000
           bash packages/segno_engine/src/test/run_native_tests.sh
 
   # The same suites with the callback telemetry GATED OFF (#722). That gate is
@@ -436,6 +450,14 @@ jobs:
       - name: Run the looper_repository native agreement tests
         working-directory: packages/looper_repository
         run: |
+          flutter pub get
+          flutter test --tags fuzz
+      # The backing repository over the real digest, decoder and engine
+      # (#1200): fuzz-tagged and self-skipping in its own package job.
+      - name: Run the backing_repository native tests
+        working-directory: packages/backing_repository
+        run: |
+          test -s "$SEGNO_ENGINE_LIB"
           flutter pub get
           flutter test --tags fuzz
 

@@ -83,6 +83,8 @@ const Map<int, SessionMigrationStep> sessionMigrationSteps = {
   11: _v11ToV12,
   12: _v12ToV13,
   13: _v13ToV14,
+  // #1200's backing setup and click pan; landed after #1168's 14.
+  14: _v14ToV15,
 };
 
 /// A manifest written by an older schema, converted in memory: the exact
@@ -418,6 +420,18 @@ void _v13ToV14(Map<String, dynamic> m, SessionMigrationContext c) {
   final beatsPerBar = (m['tsNum'] as num).toInt();
   m['loopBeats'] = bars * beatsPerBar;
   c.note('loopBeats', 'counted from $bars bars of $beatsPerBar beats');
+}
+
+/// 14 → 15: the backing player's setup and the click's pan (#1200). A session
+/// written before them said nothing about either, and opening it on the build
+/// that had no backing changed nothing there; so the conversion keeps the
+/// player's live setup (its prepared list, loaded file, End, level, pan,
+/// outputs and the click pan) the way schema 8 kept the former global
+/// preferences. Without a live player they are an empty, silent backing and
+/// a centred click.
+void _v14ToV15(Map<String, dynamic> m, SessionMigrationContext c) {
+  _fill(m, c, 'backing', c.live.backing.toJson(), live: true);
+  _fill(m, c, 'clickPan', c.live.clickPan, live: true);
 }
 
 // ---- shared pieces ----

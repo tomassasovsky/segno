@@ -1,3 +1,4 @@
+import 'package:backing_repository/backing_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -11,11 +12,12 @@ import 'package:storage_repository/storage_repository.dart';
 ///
 /// The mock engine + its start config come from [createMockEngine], so this
 /// entrypoint never imports the engine package. The single mock engine is
-/// shared by all three repositories, matching the native wiring in
+/// shared by all four repositories, matching the native wiring in
 /// [runSegno].
 Future<void> main(List<String> args) async {
   final mock = createMockEngine();
   final guards = GuardRegistry();
+  final decoder = createMockAudioDecoder();
   await runSegno(
     args,
     repository: LooperRepository(engine: mock.engine),
@@ -31,6 +33,11 @@ Future<void> main(List<String> args) async {
       reserveBytes: StorageRepository.internalReserveBytes,
     ),
     guards: guards,
+    backingRepository: BackingRepository.forEngine(
+      mock.engine,
+      decoder: decoder,
+      store: backingStoreFor(decoder),
+    ),
     startConfig: mock.startConfig,
   );
 }
