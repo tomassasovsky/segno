@@ -1,0 +1,11 @@
+# VGV review — runtime and root integration
+
+This is one sequential, read-only review perspective, not a separate reviewer. Scope: other authors' M3.15 native timing command and snapshot, FFI, repository, Settings checkpoint, `RecordTimingCubit`, Control dispatch, and root App/bootstrap/Session/Bloc/audio/Loop settings composition against base `8749688c51912f808c3f36d4eb5bca665ede3ade` and the accepted shared-record-timing plan. The model, target catalogue, and control editor authored by this reviewer are excluded. Source hashes are recorded in the private review binding. No tests or builds were run for this review.
+
+## Actionable finding
+
+- **Compensated refusal poisons future flush and shutdown.** `lib/looper/cubit/record_timing_cubit.dart:397-406` records an ordinary rejected outcome after the exact Settings checkpoint has been restored and neither store nor native recovery is needed. `flushRecordTiming()` at lines 412–424 then returns that same `_last` result indefinitely. `lib/app/view/app.dart:809-811` treats it as unconfirmed shutdown state. Trigger: apply a valid timing choice, make the next native command return a known refusal with unchanged prior tuple, then try to power off. The rejected choice is safely rolled back, but power-off enters recovery until the user explicitly retries; the ordinary failure toast itself has no Retry. The accepted plan requires a successfully compensated refusal not to poison future flush. Make flush report confirmed owner state when no transaction/recovery obligation remains, while preserving the rejected result for the edit call and toast. Extend the known-refusal test in `test/looper/cubit/record_timing_cubit_test.dart:209-221` to assert a clean flush without calling recovery.
+
+## Other checks
+
+The single native vector, callback-side capture refusal, end-of-block receipt publication, and full-snapshot override array preserve the intended all-or-none and same-tuple boundaries on the inspected paths. The generated FFI symbol and appended fields match the C surface; obsolete split timing setters have no remaining production callers in the reviewed tree. Root's App uses one app-owned timing cubit, and Session acquires it after Mixer, Click, Playback, and Record length. This is source inspection, not a claim of physical-device or test execution.

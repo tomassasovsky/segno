@@ -20,6 +20,7 @@ class TransportState extends Equatable {
     this.syncTempo = true,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    this.loopBeats = 0,
     this.currentBeat = 0,
     this.clickMode = ClickMode.off,
     this.clickMask = 0,
@@ -29,6 +30,15 @@ class TransportState extends Equatable {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.outputPeak = 0,
+    this.recDub = false,
+    this.quantize = false,
+    this.autoRecord = false,
+    this.overdubDecay = 0,
+    this.defaultOneShot = false,
+    this.defaultLengthPresetBars = 0,
+    this.defaultMultiple = 0,
+    this.recordTiming = RecordTiming.immediately,
   });
 
   /// Whether the audio device is open and processing.
@@ -59,8 +69,14 @@ class TransportState extends Equatable {
   /// Musical quantization granularity (default [GridDivision.off]).
   final GridDivision quantizeDiv;
 
-  /// Whole bars in the master loop, or `0` when no grid relationship exists.
+  /// Whole bars in the master loop, or `0` when no grid relationship exists
+  /// or its beats do not make whole bars ([loopBeats]).
   final int loopBars;
+
+  /// Whole beats (denominator notes) in the master loop, the grid's own
+  /// count, or `0` with no grid. A Divide of a sole 1- or 3-bar loop keeps
+  /// the tempo and leaves 2 or 6 beats with [loopBars] `0` (#1168).
+  final int loopBeats;
 
   /// Beat index (`0..tsNum-1`) within the bar; `0` when idle.
   final int currentBeat;
@@ -74,7 +90,9 @@ class TransportState extends Equatable {
   /// Click volume in `0..LE_MAX_GAIN` (default `1`).
   final double clickVolume;
 
-  /// Count-in length in measures; `0` = off (default).
+  /// Count-in length in measures; `0` = off (default). The repository's
+  /// held value (slice 2b), which a Sound start clears (D9) and which reads
+  /// right while the engine is stopped.
   final int countInBars;
 
   /// Whether a count-in is currently running.
@@ -88,10 +106,57 @@ class TransportState extends Equatable {
   /// exist yet for the non-multi values (B2a — see [LooperMode]'s class doc).
   final LooperMode looperMode;
 
-  /// The crowned primary track's channel index (Sync/Band, D18), or `-1`
-  /// when none has ever been crowned (default). See
-  /// [EngineSnapshot.primaryTrack]'s doc.
+  /// The crowned track every surface draws, or `-1` for an empty session.
+  ///
+  /// The first completed recording is crowned; a later, lower-numbered take
+  /// or a selection never moves it, an explicit handoff does. Resolved from
+  /// the engine's designation ([EngineSnapshot.primaryTrack]) so it always
+  /// names a track that holds a completed take — see
+  /// `resolvedPrimaryTrack`.
   final int primaryTrack;
+
+  /// Master-bus absolute peak for the most recent block, in `0..1`, after the
+  /// master gain and limiter — what reaches the outputs. Moves at the poll
+  /// rate while audio flows, like [masterPositionFrames].
+  final double outputPeak;
+
+  /// The rec/dub second-press setting the repository holds and re-applies to
+  /// the engine: with it on, a take's end lands the track OVERDUBBING rather
+  /// than PLAYING — what a queued take-end will do.
+  final bool recDub;
+
+  /// The default record quantize gate the repository holds and re-applies:
+  /// whether a record or overdub request over an existing loop waits for the
+  /// grid at all. With [quantizeDiv] it names the default [recordTiming].
+  final bool quantize;
+
+  /// Whether recording starts on sound at the input (Sound start) rather
+  /// than on the press. The repository's held value, which mirrors the
+  /// engine's rule that a count-in clears it and it clears the count-in
+  /// (D9), so this and [countInBars] never both read on.
+  final bool autoRecord;
+
+  /// The default overdub decay in percent (`0..100`): what each overdub pass
+  /// removes from the existing layer before adding the new input; `0` keeps
+  /// it all. Tracks inherit it unless they carry
+  /// `Track.overdubDecayOverride`.
+  final int overdubDecay;
+
+  /// Shared playback choice for tracks without their own override.
+  final bool defaultOneShot;
+
+  /// Default length for future recordings: zero is Auto, otherwise bars.
+  final int defaultLengthPresetBars;
+
+  /// Shared future recording length; zero means Auto.
+  final int defaultMultiple;
+
+  /// The default record timing the repository holds and re-applies
+  /// (accepted design, Length & quantize): the one setting [quantize] and the
+  /// division pair into. Held beside [quantizeDiv] (the engine's live
+  /// division) rather than derived from it, so it reads right while the
+  /// engine is stopped and has nothing to report.
+  final RecordTiming recordTiming;
 
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
@@ -112,6 +177,7 @@ class TransportState extends Equatable {
     syncTempo,
     quantizeDiv,
     loopBars,
+    loopBeats,
     currentBeat,
     clickMode,
     clickMask,
@@ -121,5 +187,14 @@ class TransportState extends Equatable {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
+    outputPeak,
+    recDub,
+    quantize,
+    autoRecord,
+    overdubDecay,
+    defaultOneShot,
+    defaultLengthPresetBars,
+    defaultMultiple,
+    recordTiming,
   ];
 }

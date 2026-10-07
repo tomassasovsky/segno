@@ -28,6 +28,11 @@ size_t pedal_link_encode_encoder(int8_t delta, uint8_t *out) {
   return pedal_link_encode(PEDAL_LINK_TYPE_ENCODER, p, 1, out);
 }
 
+size_t pedal_link_encode_encoder_button(uint8_t pressed, uint8_t *out) {
+  const uint8_t p[1] = {pressed ? 1u : 0u};
+  return pedal_link_encode(PEDAL_LINK_TYPE_ENCODER_BUTTON, p, 1, out);
+}
+
 size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out) {
   const uint8_t p[3] = {PEDAL_LINK_PROTOCOL_VERSION, fw_major, fw_minor};
   return pedal_link_encode(PEDAL_LINK_TYPE_HELLO, p, 3, out);
@@ -44,6 +49,7 @@ size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8
 }
 
 size_t pedal_link_encode_state(const pedal_state *s, uint8_t *out) {
+  if (s->active_button_mask & ~0x03FFu) return 0;
   uint8_t p[PEDAL_LINK_STATE_LEN];
   p[0] = (uint8_t)((s->clear_fade ? 0x01u : 0u) | (s->goodbye ? 0x02u : 0u) |
                    (s->performance_armed ? 0x04u : 0u) | (s->counting_in ? 0x08u : 0u));
@@ -58,12 +64,20 @@ size_t pedal_link_encode_state(const pedal_state *s, uint8_t *out) {
   p[16] = (uint8_t)((s->loop_length_micros >> 16) & 0xFFu);
   p[17] = (uint8_t)((s->loop_length_micros >> 24) & 0xFFu);
   p[18] = s->master_gain;
+  for (uint8_t i = 0; i < PEDAL_BTN_COUNT; ++i) {
+    p[19 + i * 3] = s->pedal_colors[i].r;
+    p[20 + i * 3] = s->pedal_colors[i].g;
+    p[21 + i * 3] = s->pedal_colors[i].b;
+  }
+  p[49] = (uint8_t)s->active_button_mask;
+  p[50] = (uint8_t)(s->active_button_mask >> 8);
   return pedal_link_encode(PEDAL_LINK_TYPE_STATE, p, PEDAL_LINK_STATE_LEN, out);
 }
 
 int pedal_link_decode_state(const uint8_t *p, uint8_t len, pedal_state *out) {
   if (len != PEDAL_LINK_STATE_LEN) return 0;
   if (p[0] & ~0x0Fu) return 0;
+  if (p[50] & ~0x03u) return 0;
   if (p[1] >= PEDAL_MODE_COUNT) return 0;
   if (p[2] >= PEDAL_LOOPER_COUNT) return 0;
   if (p[3] >= PEDAL_GLOBAL_COUNT) return 0;
@@ -85,6 +99,12 @@ int pedal_link_decode_state(const uint8_t *p, uint8_t len, pedal_state *out) {
   out->loop_length_micros = (uint32_t)p[14] | ((uint32_t)p[15] << 8) |
                             ((uint32_t)p[16] << 16) | ((uint32_t)p[17] << 24);
   out->master_gain = p[18];
+  for (uint8_t i = 0; i < PEDAL_BTN_COUNT; ++i) {
+    out->pedal_colors[i].r = p[19 + i * 3];
+    out->pedal_colors[i].g = p[20 + i * 3];
+    out->pedal_colors[i].b = p[21 + i * 3];
+  }
+  out->active_button_mask = (uint16_t)p[49] | (uint16_t)p[50] << 8;
   return 1;
 }
 
@@ -94,6 +114,7 @@ int pedal_link_payload_len(uint8_t type) {
     case PEDAL_LINK_TYPE_ENCODER: return 1;
     case PEDAL_LINK_TYPE_HELLO: return 3;
     case PEDAL_LINK_TYPE_CTRL: return 4;
+    case PEDAL_LINK_TYPE_ENCODER_BUTTON: return 1;
     case PEDAL_LINK_TYPE_STATE: return (int)PEDAL_LINK_STATE_LEN;
     default: return -1;
   }

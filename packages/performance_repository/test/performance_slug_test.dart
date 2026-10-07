@@ -69,4 +69,20 @@ void main() {
       },
     );
   });
+
+  group('performanceSlugTime', () {
+    test('reads the local time a slug was folded from, with or without its '
+        'same-second disambiguator', () {
+      final time = DateTime(2026, 10, 6, 20, 15, 9);
+      expect(performanceSlugTime(performanceSlug(time)), time);
+      expect(performanceSlugTime('${performanceSlug(time)}-2'), time);
+    });
+
+    test('is null for a renamed take and for a slug naming no real time', () {
+      expect(performanceSlugTime('Evening loop'), isNull);
+      expect(performanceSlugTime('perf-20261306-201509'), isNull);
+      expect(performanceSlugTime('perf-20261006-246000'), isNull);
+      expect(performanceSlugTime('perf-2026106-201509'), isNull);
+    });
+  });
 }

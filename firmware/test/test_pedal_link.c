@@ -67,7 +67,8 @@ static const enum_pin BTN_PINS[] = {
   {"track3", PEDAL_BTN_TRACK3}, {"track4", PEDAL_BTN_TRACK4}, {"clear", PEDAL_BTN_CLEAR},
   {"bank", PEDAL_BTN_BANK}};
 static const enum_pin MODE_PINS[] = {
-  {"rec", PEDAL_MODE_REC}, {"play", PEDAL_MODE_PLAY}, {"fx", PEDAL_MODE_FX}};
+  {"rec", PEDAL_MODE_REC}, {"play", PEDAL_MODE_PLAY}, {"fx", PEDAL_MODE_FX},
+  {"custom", PEDAL_MODE_CUSTOM}};
 static const enum_pin LOOPER_PINS[] = {
   {"multi", PEDAL_LOOPER_MULTI}, {"sync", PEDAL_LOOPER_SYNC}, {"song", PEDAL_LOOPER_SONG},
   {"band", PEDAL_LOOPER_BAND}, {"free", PEDAL_LOOPER_FREE}};
@@ -160,6 +161,10 @@ static void check_fixture(const char *dir, const char *name) {
       CHECK(len == 1, "%s: bad encoder payload", name);
       m = pedal_link_encode_encoder((int8_t)payload[0], again);
       break;
+    case PEDAL_LINK_TYPE_ENCODER_BUTTON:
+      CHECK(len == 1 && payload[0] <= 1, "%s: bad encoder button payload", name);
+      m = pedal_link_encode_encoder_button(payload[0], again);
+      break;
     case PEDAL_LINK_TYPE_CTRL:
       CHECK(len == 4, "%s: ctrl with %u payload bytes, want 4", name, len);
       CHECK(payload[0] < PEDAL_CTRL_COUNT, "%s: ctrl jack %u out of range", name, payload[0]);
@@ -201,6 +206,10 @@ static void check_fixture(const char *dir, const char *name) {
     CHECK((int8_t)payload[0] == -3, "encoder_minus3: %d", (int8_t)payload[0]);
   } else if (strcmp(name, "encoder_plus1.bin") == 0) {
     CHECK((int8_t)payload[0] == 1, "encoder_plus1: %d", (int8_t)payload[0]);
+  } else if (strcmp(name, "encoder_button_down.bin") == 0) {
+    CHECK(payload[0] == 1, "encoder_button_down: %u", payload[0]);
+  } else if (strcmp(name, "encoder_button_up.bin") == 0) {
+    CHECK(payload[0] == 0, "encoder_button_up: %u", payload[0]);
   } else if (strcmp(name, "playing_bankb.bin") == 0) {
     CHECK(st.active_bank == 1 && st.selected_track == 6 && st.mode == PEDAL_MODE_PLAY &&
               st.global_color == PEDAL_GLOBAL_AMBER && st.looper_mode == PEDAL_LOOPER_SYNC &&
@@ -216,6 +225,13 @@ static void check_fixture(const char *dir, const char *name) {
               st.loop_length_micros == 0xFFFFFFFFu && st.track_leds[0] == PEDAL_LED_BLUE &&
               st.track_leds[1] == PEDAL_LED_OFF && st.selected_track == 2,
           "fx_mode: fields differ");
+  } else if (strcmp(name, "custom_mode_bankb.bin") == 0) {
+    CHECK(st.mode == PEDAL_MODE_CUSTOM && st.active_bank == 1 && st.selected_track == 5 &&
+              st.global_color == PEDAL_GLOBAL_AMBER && st.looper_mode == PEDAL_LOOPER_BAND &&
+              st.counting_in && st.loop_length_micros == 1234567u && st.master_gain == 128 &&
+              st.track_leds[1] == PEDAL_LED_RED && st.track_leds[5] == PEDAL_LED_BLUE &&
+              !st.goodbye && !st.clear_fade,
+          "custom_mode_bankb: fields differ");
   } else if (strcmp(name, "mode_counting_in.bin") == 0) {
     CHECK(st.counting_in == 1 && st.looper_mode == PEDAL_LOOPER_BAND && st.global_color == PEDAL_GLOBAL_RED,
           "mode_counting_in: fields differ");
@@ -287,6 +303,10 @@ static void check_rejections(void) {
   pl[0] = 0x10;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 0, "reserved flag accepted");
   pl[0] = 0;
+  pl[1] = PEDAL_MODE_CUSTOM;
+  CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 1 &&
+            out.mode == PEDAL_MODE_CUSTOM,
+        "custom mode rejected");
   pl[1] = PEDAL_MODE_COUNT;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 0, "bad mode accepted");
   pl[1] = 0;
@@ -294,6 +314,37 @@ static void check_rejections(void) {
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 0, "bad LED accepted");
   pl[13] = 0;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN - 1, &out) == 0, "short payload accepted");
+}
+
+static void check_physical_state(void) {
+  const uint8_t p[51] = {0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,255,
+    0,128,255,165,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,
+    18,19,20,21,22,23,254,253,252,1,2};
+  pedal_state state;
+  CHECK(PEDAL_LINK_PROTOCOL_VERSION == 9 && PEDAL_LINK_STATE_LEN == 51,
+        "wire reservation changed");
+  CHECK(pedal_link_decode_state(p,51,&state),"literal RGB state refused");
+  CHECK(state.active_button_mask == 0x201 && state.pedal_colors[0].g == 128 &&
+        state.pedal_colors[1].r == 165 && state.pedal_colors[9].b == 252,
+        "literal RGB/mask positions changed");
+  uint8_t encoded[PEDAL_LINK_MAX_FRAME];
+  CHECK(pedal_link_encode_state(&state,encoded)==55 && !memcmp(encoded+3,p,51),
+        "literal state encoding differs");
+  uint8_t bad[52]; memcpy(bad,p,51); bad[51]=0;
+  for (unsigned bit=2; bit<8; ++bit) {
+    bad[50]=(uint8_t)(1u<<bit);
+    pedal_state before; memset(&before,0x5a,sizeof(before));
+    state=before;
+    CHECK(!pedal_link_decode_state(bad,51,&state),"reserved mask accepted");
+    CHECK(!memcmp(&state,&before,sizeof(state)),"refusal mutated output");
+  }
+  bad[50]=2;
+  const uint8_t lengths[]={0,19,21,49,50,52};
+  for (size_t i=0;i<sizeof(lengths);++i) {
+    pedal_state before; memset(&before,0x5a,sizeof(before)); state=before;
+    CHECK(!pedal_link_decode_state(bad,lengths[i],&state),"wrong length accepted");
+    CHECK(!memcmp(&state,&before,sizeof(state)),"length refusal mutated output");
+  }
 }
 
 int main(int argc, char **argv) {
@@ -324,6 +375,7 @@ int main(int argc, char **argv) {
           TABLES[t].table, g_enum_seen[t], TABLES[t].count);
   }
   check_rejections();
+  check_physical_state();
   if (g_failures) {
     fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

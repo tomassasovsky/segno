@@ -10,7 +10,10 @@ otherwise hold. Read it before upgrading.
   top of [`miniaudio.h`](miniaudio.h)), from
   [mackron/miniaudio](https://github.com/mackron/miniaudio).
 - **License:** dual **Unlicense (public domain)** / **MIT No Attribution**, at
-  your option. The full text is kept intact at the bottom of `miniaudio.h`. Both
+  your option. The full text is kept intact at the bottom of `miniaudio.h`, and
+  copied verbatim to [`LICENSE`](LICENSE), the file the app shows in its
+  open source notices (`registerVendoredLicenses`, #1179; a Dart test checks
+  the copy still matches the header). Both
   are GPLv3-compatible, so this changes nothing about the repository's
   GPL-3.0-or-later posture.
 - **Files:** `miniaudio.h` (the single-header library, patched — see below) and
@@ -31,7 +34,7 @@ where they are, this tells you why they must survive an upgrade.
 **On upgrade: re-apply every cluster below, or prove upstream fixed it.** A
 plain drop-in replacement silently reverts all of them.
 
-The 21 markers split 10 / 4 / 7 across the three clusters below. If you are
+The 24 markers split 10 / 4 / 7 / 3 across the four clusters below. If you are
 auditing by hand, that split is the number to check against — a cluster that
 comes up short is a patch that did not survive.
 
@@ -157,6 +160,38 @@ reset` and the `test_cb_timing_*` suite), and the gate-off build is built AND
 run by the `native-tests-telemetry-off` CI job, so the `#if` branches here
 cannot rot silently.
 
+<!-- cspell:ignore postinit ADPCM -->
+
+### 4. Decoder post-init double uninit (#1200 Part 2 review H1) — 3 markers
+
+The three `ma_decoder_init_*` paths that open through a backend's own
+`onInitFile`/`onInitMemory` (file, wide-char file, memory) called the
+backend's `onUninit` a second time after `ma_decoder__postinit` failed, and
+passed `&pDecoder->pBackend` (the field's address) instead of its value.
+`ma_decoder__postinit` has already run `ma_decoder_uninit` on that failure,
+so the call is removed. Upstream's version freed a stack or struct address:
+a WAV with 255 or 256 channels (over `MA_MAX_CHANNELS`, so post-init fails)
+aborted the process.
+
+**Covered by tests?** The app no longer reaches these paths: `engine_decode.c`
+opens files with `ma_decoder_init` and its own callbacks after its own header
+whitelist (which refuses more than two channels). The reproducer
+(`src/test/fixtures/backing/ch256_s16.wav`) is a refusal test there. The patch
+stays as defense in depth for any later caller of `ma_decoder_init_file`.
+
+### Build-time cuts in `miniaudio_impl.c`
+
+Not markers, but upgrade-relevant: `MA_NO_FLAC` (CVE-2024-41147, an
+out-of-bounds write in the FLAC LPC path, unfixed in 0.11.21; #1235 re-enables
+it with an update) and `MA_DR_MP3_ONLY_MP3` (no MPEG Layer I/II decoding).
+
+Upstream defects the decoder's whitelist works around, to re-check after an
+update (#1235): the double uninit above; dr_wav's `fact` chunk handler, which
+reads four bytes and subtracts four from a shorter chunk's size, wrapping it
+around into an endless `ma_dr_wav__seek_forward`; and the MS-ADPCM block
+predictor, a file byte used to index a 7-entry coefficient table without a
+bound.
+
 ## Not upstream's, not ours either
 
 `#if 0` blocks (the disabled `ma_device_uninit` stop, the AVX helpers, the MMAP
@@ -168,7 +203,8 @@ first.
 ## Auditing an upgrade
 
 ```sh
-grep -c "SEGNO PATCH" packages/segno_engine/src/miniaudio/miniaudio.h   # expect 21
+grep -c "SEGNO PATCH" packages/segno_engine/src/miniaudio/miniaudio.h   # expect 24
 ```
 
-with 10 in the ALSA cluster, 4 in the Pulse one and 7 in the dropout hook.
+with 10 in the ALSA cluster, 4 in the Pulse one, 7 in the dropout hook and 3
+in the decoder uninit.

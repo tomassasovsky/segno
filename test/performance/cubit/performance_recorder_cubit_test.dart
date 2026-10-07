@@ -5,17 +5,24 @@ import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/performance/application/daw_project_export.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno_engine/segno_engine.dart'
     show
+        EngineResult,
         EngineSnapshot,
         LaneSnapshot,
         LatencyState,
+        PerfTarget,
         PerformanceRenderProgress,
         PerformanceRenderTrackStatus,
         TrackSnapshot,
         TrackState;
+
+import 'package:storage_repository/storage_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -75,6 +82,44 @@ Future<PerformanceRecorderCompleted> waitForCompleted(
       .then((s) => s as PerformanceRecorderCompleted);
 }
 
+/// One stopped track with one settled lane: a completion over it exports one
+/// DAW track.
+const _settledLaneSnapshot = EngineSnapshot(
+  isRunning: true,
+  sampleRate: 48000,
+  bufferFrames: 128,
+  outputChannels: 2,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: LatencyState.idle,
+  measuredLatencyMs: -1,
+  tracks: [
+    TrackSnapshot(
+      state: TrackState.stopped,
+      volume: 1,
+      muted: false,
+      lengthFrames: 4800,
+      undoDepth: 0,
+      rms: 0,
+      peak: 0,
+      lanes: [
+        LaneSnapshot(
+          inputChannel: 0,
+          outputMask: 0x1,
+          volume: 1,
+          muted: false,
+          lengthFrames: 4800,
+          rms: 0,
+          peak: 0,
+        ),
+      ],
+    ),
+  ],
+);
+
 void main() {
   late Directory tempDir;
   late FakeAudioEngine engine;
@@ -86,6 +131,7 @@ void main() {
     engine = FakeAudioEngine();
     clock = DateTime(2026, 7, 6, 14, 30, 15);
     performance = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: engine,
       exportsRoot: () async => '${tempDir.path}/exports',
       now: () => clock,
@@ -139,8 +185,8 @@ void main() {
 
   /// Arms, disarms, and waits for a full [PerformanceRecorderCompleted] with
   /// a [PerformanceRecordDone] result — the shared "already-finished
-  /// capture" starting point for [renameCompletedCapture] and [reExport]
-  /// tests alike, both of which act on a state past the render pipeline.
+  /// capture" starting point for the [renameCompletedCapture] tests, which
+  /// act on a state past the render pipeline.
   Future<PerformanceRecorderCubit> completedCubit() async {
     engine.renderStatuses = const [
       PerformanceRenderTrackStatus(channel: 0, succeeded: true),
@@ -281,6 +327,7 @@ void main() {
         writeManifest(dir.path, finalized: false);
         var rootCalls = 0;
         final blowingRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async {
             rootCalls++;
@@ -719,6 +766,39 @@ void main() {
       expect(completed.result, isA<PerformanceRecordDone>());
     });
 
+    test('PerformanceRecordPartial when the render cannot use its manifest '
+        '(no track results)', () async {
+      engine
+        ..renderStatuses = const []
+        ..renderProgress = const PerformanceRenderProgress(
+          done: true,
+          progressPercent: 100,
+          failed: true,
+        );
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
+
+      await cubit.toggleArm();
+      final completed = await waitForCompleted(cubit);
+      expect(completed.result, isA<PerformanceRecordPartial>());
+    });
+
+    test('a valid render with zero tracks is still Done', () async {
+      engine.renderStatuses = const [];
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
+
+      await cubit.toggleArm();
+      final completed = await waitForCompleted(cubit);
+      expect(completed.result, isA<PerformanceRecordDone>());
+    });
+
     test('PerformanceRecordPartial when at least one track fails', () async {
       engine.renderStatuses = const [
         PerformanceRenderTrackStatus(channel: 0, succeeded: true),
@@ -761,6 +841,29 @@ void main() {
       },
     );
 
+    for (final (field, reason) in const [
+      ('reserve_reached', PerformanceStopReason.reserveReached),
+      ('slow_storage', PerformanceStopReason.slowStorage),
+    ]) {
+      test('PerformanceRecordStoppedEarly reports $reason for $field '
+          '(#1198)', () async {
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+        final cubit = build();
+        addTearDown(cubit.close);
+        final dir = await armWithLog(performance);
+        await pumpEventQueue();
+        writeManifest(dir, stoppedEarly: field, finalized: false);
+        clock = clock.add(const Duration(seconds: 5));
+
+        await cubit.toggleArm();
+        final completed = await waitForCompleted(cubit);
+        final result = completed.result! as PerformanceRecordStoppedEarly;
+        expect(result.reason, reason);
+      });
+    }
+
     test(
       'PerformanceRecordStoppedEarly reports deviceChanged for that field '
       'value',
@@ -785,45 +888,11 @@ void main() {
 
   group('export summary (tracks)', () {
     test(
-      'a fresh completion (not re-export) populates tracks from a real '
-      "settled lane, proving _finishRender's own read-and-assign wiring — "
-      'not just reExport()',
+      'a fresh completion populates tracks from a real settled lane, '
+      "proving _finishRender's own read-and-assign wiring",
       () async {
         engine
-          ..nextSnapshot = const EngineSnapshot(
-            isRunning: true,
-            sampleRate: 48000,
-            bufferFrames: 128,
-            framesProcessed: 0,
-            xrunCount: 0,
-            inputRms: 0,
-            inputPeak: 0,
-            outputRms: 0,
-            latencyState: LatencyState.idle,
-            measuredLatencyMs: -1,
-            tracks: [
-              TrackSnapshot(
-                state: TrackState.stopped,
-                volume: 1,
-                muted: false,
-                lengthFrames: 4800,
-                undoDepth: 0,
-                rms: 0,
-                peak: 0,
-                lanes: [
-                  LaneSnapshot(
-                    inputChannel: 0,
-                    outputMask: 0x1,
-                    volume: 1,
-                    muted: false,
-                    lengthFrames: 4800,
-                    rms: 0,
-                    peak: 0,
-                  ),
-                ],
-              ),
-            ],
-          )
+          ..nextSnapshot = _settledLaneSnapshot
           ..laneExports[(0, 0)] = Float32List.fromList([0.1, 0.2, 0.3])
           ..renderStatuses = const [
             PerformanceRenderTrackStatus(channel: 0, succeeded: true),
@@ -859,6 +928,7 @@ void main() {
       isRunning: true,
       sampleRate: 48000,
       bufferFrames: 128,
+      outputChannels: 2,
       framesProcessed: 0,
       xrunCount: 0,
       inputRms: 0,
@@ -872,9 +942,9 @@ void main() {
     test(
       "the capture's own persisted tempo reaches the exported .als "
       '(end-to-end: engine snapshot -> repository manifest -> '
-      '_writeDawExports -> DawManifestReader.read -> DawProject -> '
-      "buildAls), and reExport() re-reads the same manifest — an old take's "
-      'tempo can never drift after the fact',
+      'writeDawProject -> DawManifestReader.read -> DawProject -> '
+      'buildAls), and a later DAW project write re-reads the same manifest — '
+      "an old take's tempo can never drift after the fact",
       () async {
         engine
           ..renderStatuses = const [
@@ -891,11 +961,11 @@ void main() {
         await waitForCompleted(cubit);
         expect(readAls(dir), contains('<Manual Value="96.0"/>'));
 
-        // Re-export long after: whatever the live transport reads now is
-        // irrelevant — the manifest is the only tempo source (#281).
+        // Written again long after (Library > Audio's DAW project):
+        // whatever the live transport reads now is irrelevant — the
+        // manifest is the only tempo source (#281).
         engine.nextSnapshot = snapshotWithTempo(150);
-        await cubit.reExport();
-        await pumpEventQueue();
+        await writeDawProject(dir);
 
         expect(readAls(dir), contains('<Manual Value="96.0"/>'));
       },
@@ -1053,41 +1123,19 @@ void main() {
     );
 
     test('preserves the export summary tracks across a rename', () async {
-      final cubit = await completedCubit();
-      final path =
-          ((cubit.state as PerformanceRecorderCompleted).result!
-                  as PerformanceRecordDone)
-              .path;
-      Directory('$path/stems/wet').createSync(recursive: true);
-      File('$path/stems/wet/track0.wav').writeAsBytesSync([0]);
-      File('$path/performance.json').writeAsStringSync(
-        jsonEncode({
-          'slug': 'perf-x',
-          'sample_rate': 48000,
-          'capture_frames': 4800,
-          'channel_layout': {'master_channels': 2, 'captured_inputs': <int>[]},
-          'overrun_count': 0,
-          'overrun_gaps': <Map<String, dynamic>>[],
-          'layers': <Map<String, dynamic>>[],
-          'finalized': true,
-          'armSnapshot': {
-            'tracks': [
-              {
-                'channel': 0,
-                'lanes': [
-                  {
-                    'lane': 0,
-                    'deferred': false,
-                    'pcmRef': 'stems/wet/track0.wav',
-                  },
-                ],
-              },
-            ],
-          },
-        }),
-      );
-      await cubit.reExport();
-      final before = cubit.state as PerformanceRecorderCompleted;
+      engine
+        ..nextSnapshot = _settledLaneSnapshot
+        ..laneExports[(0, 0)] = Float32List.fromList([0.1, 0.2, 0.3])
+        ..renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
+      await cubit.toggleArm();
+      final before = await waitForCompleted(cubit);
       expect(before.tracks, hasLength(1));
 
       await cubit.renameCompletedCapture('Renamed Take');
@@ -1097,153 +1145,19 @@ void main() {
     });
   });
 
-  group('reExport', () {
-    test('is a no-op when not currently Completed', () async {
-      final cubit = build();
-      addTearDown(cubit.close);
-      await cubit.reExport();
-      expect(cubit.state, isA<PerformanceRecorderIdle>());
-    });
-
-    test(
-      'regenerates project.als/fx-chains.txt without touching audio files',
-      () async {
-        final cubit = await completedCubit();
-        final path =
-            ((cubit.state as PerformanceRecorderCompleted).result!
-                    as PerformanceRecordDone)
-                .path;
-        final wavFile = File('$path/stems/wet/track0.wav')
-          ..createSync(recursive: true)
-          ..writeAsBytesSync([1, 2, 3, 4]);
-        final beforeBytes = wavFile.readAsBytesSync();
-        final beforeModified = wavFile.lastModifiedSync();
-        // Written by the original finish-render pass — reExport should
-        // still find it (proving it's re-invoking the same generation step,
-        // not something new).
-        expect(File('$path/project.als').existsSync(), isTrue);
-
-        await cubit.reExport();
-
-        expect(wavFile.readAsBytesSync(), beforeBytes);
-        expect(wavFile.lastModifiedSync(), beforeModified);
-        expect(File('$path/project.als').existsSync(), isTrue);
-      },
-    );
-
-    test('emits isReExporting: true, then false, around the call', () async {
-      final cubit = await completedCubit();
-      // expectLater + emitsInOrder (not a manual listen/cancel) so this
-      // waits for both emissions regardless of exactly when the second
-      // one's microtask lands relative to `reExport()`'s own Future
-      // resolving — a manual `listen`-then-`cancel` right after `await
-      // cubit.reExport()` is a real race here, since _writeDawExports does
-      // genuine (non-microtask) file I/O.
-      final expectation = expectLater(
-        cubit.stream,
-        emitsInOrder([
-          isA<PerformanceRecorderCompleted>().having(
-            (s) => s.isReExporting,
-            'isReExporting',
-            isTrue,
-          ),
-          isA<PerformanceRecorderCompleted>().having(
-            (s) => s.isReExporting,
-            'isReExporting',
-            isFalse,
-          ),
-        ]),
-      );
-
-      await cubit.reExport();
-      await expectation;
-    });
-
-    test(
-      're-reads the manifest fresh — a manifest that gained real track data '
-      'since the original export is reflected in tracks',
-      () async {
-        final cubit = await completedCubit();
-        final path =
-            ((cubit.state as PerformanceRecorderCompleted).result!
-                    as PerformanceRecordDone)
-                .path;
-        expect((cubit.state as PerformanceRecorderCompleted).tracks, isEmpty);
-
-        Directory('$path/stems/wet').createSync(recursive: true);
-        File('$path/stems/wet/track0.wav').writeAsBytesSync([0]);
-        File('$path/performance.json').writeAsStringSync(
-          jsonEncode({
-            'slug': 'perf-x',
-            'sample_rate': 48000,
-            'capture_frames': 4800,
-            'channel_layout': {
-              'master_channels': 2,
-              'captured_inputs': <int>[],
-            },
-            'overrun_count': 0,
-            'overrun_gaps': <Map<String, dynamic>>[],
-            'layers': <Map<String, dynamic>>[],
-            'finalized': true,
-            'armSnapshot': {
-              'tracks': [
-                {
-                  'channel': 0,
-                  'lanes': [
-                    {
-                      'lane': 0,
-                      'deferred': false,
-                      'pcmRef': 'stems/wet/track0.wav',
-                    },
-                  ],
-                },
-              ],
-            },
-          }),
-        );
-
-        await cubit.reExport();
-
-        final after = cubit.state as PerformanceRecorderCompleted;
-        expect(after.tracks, hasLength(1));
-      },
-    );
-
-    test(
-      'a write failure sets reExportFailed and leaves tracks unchanged',
-      () async {
-        final cubit = await completedCubit();
-        final before = cubit.state as PerformanceRecorderCompleted;
-        final path = (before.result! as PerformanceRecordDone).path;
-        // Replace the file reExport would overwrite with a directory of the
-        // same name, so the write throws a real FileSystemException instead
-        // of silently succeeding — the simplest reliable way to force an
-        // I/O failure without mocking dart:io.
-        File('$path/project.als').deleteSync();
-        Directory('$path/project.als').createSync();
-
-        await cubit.reExport();
-
-        final after = cubit.state as PerformanceRecorderCompleted;
-        expect(after.reExportFailed, isTrue);
-        expect(after.isReExporting, isFalse);
-        expect(after.tracks, before.tracks);
-      },
-    );
-  });
-
-  group('free-space floor (#640)', () {
+  group('free space (#640, #1198)', () {
     // A capture that armed onto a healthy disk ran 13.5 hours and filled a
-    // 110GB partition, because the only check ran once at arm. These pin both
-    // gates: refuse to start on a full volume, and stop a running capture
-    // before it can get there.
+    // 110GB partition, because the only check ran once at arm. The engine now
+    // stops a take at the destination's reserve itself, counting every byte
+    // it writes; the cubit refuses to start a take that could not hold
+    // PerformanceRepository.minimumTake, warns while armed, and finalizes
+    // whatever the engine stopped.
 
     test(
       'refuses to arm below the floor, and does not create a bundle',
       () async {
         final cubit = build(
-          freeSpaceBytes: (_) async =>
-              PerformanceRecorderCubit.lowDiskThresholdBytes - 1,
+          freeSpaceBytes: (_) async => performance.minimumFreeBytesToArm - 1,
         );
         addTearDown(cubit.close);
 
@@ -1258,6 +1172,26 @@ void main() {
       },
     );
 
+    test('each refused press emits its own state, so each gets an answer '
+        '(#1198)', () async {
+      final cubit = build(
+        freeSpaceBytes: (_) async => performance.minimumFreeBytesToArm - 1,
+      );
+      addTearDown(cubit.close);
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
+      addTearDown(sub.cancel);
+
+      await cubit.toggleArm();
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      expect(states, const [
+        PerformanceRecorderIdle(lowDiskBlocked: true, refusal: 1),
+        PerformanceRecorderIdle(lowDiskBlocked: true, refusal: 2),
+      ]);
+    });
+
     test(
       'defaults to the repository, which asks the engine — never a subprocess '
       '(#806)',
@@ -1267,7 +1201,7 @@ void main() {
         // mmap_lock held for write and an audible dropout in the monitor.
         // Built WITHOUT a freeSpaceBytes override, so this exercises the real
         // default path end to end.
-        engine.freeBytes = PerformanceRecorderCubit.lowDiskThresholdBytes - 1;
+        engine.freeBytes = performance.minimumFreeBytesToArm - 1;
         final cubit = PerformanceRecorderCubit(
           performance: performance,
           armedTickInterval: const Duration(milliseconds: 10),
@@ -1281,7 +1215,7 @@ void main() {
 
         expect((cubit.state as PerformanceRecorderIdle).lowDiskBlocked, isTrue);
 
-        engine.freeBytes = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
+        engine.freeBytes = performance.minimumFreeBytesToArm;
         await cubit.toggleArm();
         await pumpEventQueue();
 
@@ -1301,9 +1235,44 @@ void main() {
       },
     );
 
+    test('the arm minimum is the reserve, the allowance and ten seconds of '
+        'every captured stream with a header each', () {
+      final reserved = PerformanceRepository(
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        guards: GuardRegistry(),
+        reserveBytes: 1000000000,
+      );
+      engine.nextSnapshot = const EngineSnapshot.initial().copyWith(
+        sampleRate: 96000,
+      );
+      expect(
+        reserved.minimumFreeBytesToArm,
+        1000000000 + (1 << 20) + 84 + 96000 * 10 * 8,
+      );
+      expect(
+        performance.minimumFreeBytesToArm,
+        (1 << 20) + 84 + 96000 * 10 * 8,
+        reason: 'no reserve: the allowance and the ten seconds alone',
+      );
+
+      // A stereo master and four captured stereo inputs: five streams of
+      // eight bytes a frame each.
+      engine.nextSnapshot = const EngineSnapshot.initial().copyWith(
+        sampleRate: 96000,
+        perfCaptureStreams: 5,
+        perfCaptureFrameBytes: 40,
+      );
+      expect(
+        reserved.minimumFreeBytesToArm,
+        1000000000 + (1 << 20) + 5 * 84 + 96000 * 10 * 40,
+      );
+    });
+
     test('arms normally when the volume has room', () async {
       final cubit = build(
         freeSpaceBytes: (_) async =>
+            performance.minimumFreeBytesToArm +
             PerformanceRecorderCubit.lowDiskThresholdBytes * 2,
       );
       addTearDown(cubit.close);
@@ -1321,7 +1290,8 @@ void main() {
     test(
       'warns while armed once free space falls under the warning line',
       () async {
-        var free = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
+        final minimum = performance.minimumFreeBytesToArm;
+        var free = minimum + PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
         final cubit = build(freeSpaceBytes: (_) async => free);
         addTearDown(cubit.close);
 
@@ -1332,8 +1302,10 @@ void main() {
           isFalse,
         );
 
-        // Between the warning line and the stop floor: warn, keep recording.
-        free = PerformanceRecorderCubit.lowDiskThresholdBytes - 1;
+        // Under the warning line: warn, keep recording. Even with no room at
+        // all the cubit does not stop the take; the engine does, at the
+        // reserve, and says so.
+        free = minimum + PerformanceRecorderCubit.lowDiskThresholdBytes - 1;
         await Future<void>.delayed(const Duration(milliseconds: 400));
         await pumpEventQueue();
 
@@ -1345,79 +1317,49 @@ void main() {
       },
     );
 
-    test(
-      'stops a running capture when free space crosses the stop floor',
-      () async {
-        var free = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
-        final cubit = build(freeSpaceBytes: (_) async => free);
-        addTearDown(cubit.close);
-
-        await cubit.toggleArm();
-        await pumpEventQueue();
-        expect(cubit.state, isA<PerformanceRecorderArmed>());
-
-        free = PerformanceRecorderCubit.finalizeHeadroomBytes ~/ 2;
-        await Future<void>.delayed(const Duration(milliseconds: 400));
-        await pumpEventQueue();
-
-        // It must leave armed under its own steam -- nothing else disarmed it.
-        expect(cubit.state, isNot(isA<PerformanceRecorderArmed>()));
-        expect(performance.armedDirectory, isNull);
-      },
-    );
-
-    test('the stopped capture is reported as stopped-early for disk', () async {
-      // The reason cannot come from the manifest here: perf_drain.c only
-      // writes `stopped_early` when IT self-stops on a failed write, and this
-      // stop happens BEFORE any write fails. Without the cubit carrying its
-      // own reason the take would be reported as an ordinary success.
-      var free = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
+    test('a low reading never stops the take from here', () async {
+      var free = performance.minimumFreeBytesToArm;
       final cubit = build(freeSpaceBytes: (_) async => free);
       addTearDown(cubit.close);
 
-      // A capture with real content, so finalize delivers a bundle instead of
-      // discarding it as short-and-empty.
-      await armWithLog(performance);
+      await cubit.toggleArm();
       await pumpEventQueue();
+      free = 0;
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      await pumpEventQueue();
+
       expect(cubit.state, isA<PerformanceRecorderArmed>());
-
-      free = PerformanceRecorderCubit.finalizeHeadroomBytes ~/ 2;
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      await pumpEventQueue();
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      await pumpEventQueue();
-
-      final state = cubit.state;
-      expect(state, isA<PerformanceRecorderCompleted>());
-      final result = (state as PerformanceRecorderCompleted).result;
-      expect(result, isA<PerformanceRecordStoppedEarly>());
-      expect(
-        (result! as PerformanceRecordStoppedEarly).reason,
-        PerformanceStopReason.diskFull,
-      );
+      expect(performance.armedDirectory, isNotNull);
     });
 
-    test('the floor scales with what has been captured, not a constant', () {
-      // The floor has to cover a FULL SECOND COPY of the capture: finalize
-      // writes every stream out as WAV and keeps the .pcm alongside. Measured
-      // on the appliance at 96kHz that is 384 KB/s per stream across three
-      // continuous streams, so a long take needs GBs, not a constant.
-      const captured = 4 * 1024 * 1024;
-      expect(
-        PerformanceRecorderCubit.stopFloorFor(captured),
-        greaterThan(captured),
-        reason: 'the floor must leave room to duplicate what was captured',
-      );
-      expect(
-        PerformanceRecorderCubit.stopFloorFor(captured * 100),
-        greaterThan(PerformanceRecorderCubit.stopFloorFor(captured)),
-        reason: 'a bigger capture must demand a bigger floor',
-      );
-      expect(
-        PerformanceRecorderCubit.stopFloorFor(0),
-        PerformanceRecorderCubit.finalizeHeadroomBytes,
-      );
-    });
+    for (final (engineReason, reason) in const [
+      (PerfStopReason.reserveReached, PerformanceStopReason.reserveReached),
+      (PerfStopReason.slowStorage, PerformanceStopReason.slowStorage),
+      (PerfStopReason.writeFailed, PerformanceStopReason.diskFull),
+    ]) {
+      test('a take the engine stopped for $engineReason finalizes as '
+          'stopped early for $reason (#1198)', () async {
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+        final cubit = build();
+        addTearDown(cubit.close);
+        await armWithLog(performance);
+        await pumpEventQueue();
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
+
+        engine
+          ..perfStopReason = engineReason
+          ..perfStopped = true;
+        final completed = await waitForCompleted(cubit);
+
+        expect(
+          (completed.result! as PerformanceRecordStoppedEarly).reason,
+          reason,
+        );
+        expect(performance.armedDirectory, isNull);
+      });
+    }
 
     test(
       'a full disk during the .als export still completes the capture',
@@ -1459,24 +1401,28 @@ void main() {
         // in _finishRender, so a reason left over from a stop would be
         // reported against the next capture -- a healthy take blamed on a
         // full disk.
-        var free = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
-        final cubit = build(freeSpaceBytes: (_) async => free);
+        final cubit = build();
         addTearDown(cubit.close);
 
-        // First capture: stopped for disk, but too short/empty to keep.
+        // First capture: the engine stopped it at the reserve, but it is too
+        // short/empty to keep.
         await cubit.toggleArm();
         await pumpEventQueue();
-        free = PerformanceRecorderCubit.finalizeHeadroomBytes ~/ 2;
+        engine
+          ..perfStopReason = PerfStopReason.reserveReached
+          ..perfStopped = true;
         await Future<void>.delayed(const Duration(milliseconds: 400));
         await pumpEventQueue();
         await Future<void>.delayed(const Duration(milliseconds: 400));
         await pumpEventQueue();
 
-        // Second capture on a healthy volume, disarmed normally.
-        free = PerformanceRecorderCubit.lowDiskThresholdBytes * 4;
-        engine.renderStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
+        // Second capture, disarmed normally.
+        engine
+          ..perfStopReason = null
+          ..perfStopped = false
+          ..renderStatuses = const [
+            PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+          ];
         await armWithLog(performance);
         await pumpEventQueue();
         clock = clock.add(const Duration(seconds: 5));
@@ -1500,18 +1446,16 @@ void main() {
       engine.renderStatuses = const [
         PerformanceRenderTrackStatus(channel: 0, succeeded: true),
       ];
-      // Plenty of room -- this must NOT be the floor doing the work.
-      final cubit = build(
-        freeSpaceBytes: (_) async =>
-            PerformanceRecorderCubit.lowDiskThresholdBytes * 100,
-      );
+      final cubit = build();
       addTearDown(cubit.close);
 
       await armWithLog(performance);
       await pumpEventQueue();
       expect(cubit.state, isA<PerformanceRecorderArmed>());
 
-      engine.perfStopped = true;
+      engine
+        ..perfStopReason = PerfStopReason.writeFailed
+        ..perfStopped = true;
       final completed = await waitForCompleted(cubit);
 
       expect(completed.result, isA<PerformanceRecordStoppedEarly>());
@@ -1543,6 +1487,32 @@ void main() {
   });
 
   group('salvage boot (D-SALVAGE, silent since #679)', () {
+    test('a take the salvage could not recover is reported once it settles, '
+        'its files kept (#1198)', () async {
+      final dir = Directory('${tempDir.path}/exports/perf-20260913-003635')
+        ..createSync(recursive: true);
+      writeManifest(dir.path, finalized: false);
+      // A raw take too large to convert yet (sparse: no real disk use).
+      File('${dir.path}/master.pcm').openSync(mode: FileMode.write)
+        ..setPositionSync(PerformanceRepository.legacyConvertMaxBytes)
+        ..writeFromSync([0, 0, 0, 0])
+        ..closeSync();
+
+      final cubit = build();
+      addTearDown(cubit.close);
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
+      await cubit.load();
+      await pumpEventQueue();
+      await sub.cancel();
+
+      expect(states, const [
+        PerformanceRecorderIdle(recovering: true),
+        PerformanceRecorderIdle(notRecovered: 1),
+      ]);
+      expect(File('${dir.path}/master.pcm').existsSync(), isTrue);
+    });
+
     test(
       'a capture dir left unfinalized on disk (performance.json without '
       'finalized: true) is recovered end-to-end at load: finalized, '
@@ -1590,7 +1560,8 @@ void main() {
 
     test(
       'a crashed capture that cannot finalize (corrupt sidecar) is left in '
-      'place — never deleted, no crash, still no state emitted',
+      'place — never deleted, no crash — and reported as not recovered '
+      '(#1198)',
       () async {
         final dir = Directory('${tempDir.path}/exports/perf-20260706-140000')
           ..createSync(recursive: true);
@@ -1602,8 +1573,379 @@ void main() {
 
         expect(dir.existsSync(), isTrue);
         expect(engine.lastRenderCaptureDir, isNull);
-        expect(cubit.state, const PerformanceRecorderIdle());
+        expect(cubit.state, const PerformanceRecorderIdle(notRecovered: 1));
       },
     );
   });
+
+  group('guard table (#1198)', () {
+    late GuardRegistry guards;
+    late PerformanceRepository guarded;
+
+    setUp(() {
+      guards = GuardRegistry();
+      guarded = PerformanceRepository(
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+        guards: guards,
+      );
+    });
+
+    tearDown(() => guarded.dispose());
+
+    PerformanceRecorderCubit buildGuarded() => PerformanceRecorderCubit(
+      performance: guarded,
+      armedTickInterval: const Duration(milliseconds: 10),
+      renderPollInterval: const Duration(milliseconds: 10),
+      now: () => clock,
+      freeSpaceBytes: (_) async => null,
+    );
+
+    test('an arm refused at its commit lands on idle naming what refused '
+        'it, from the toggle and from a direct call alike', () async {
+      final cubit = buildGuarded();
+      addTearDown(cubit.close);
+      final apply = guards.enter(
+        GuardKind.sessionApply,
+        const GuardScope.internal(),
+        purpose: 'opening a session',
+      );
+
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
+      addTearDown(sub.cancel);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      expect(states, const [
+        PerformanceRecorderIdle(
+          refusedBy: GuardKind.sessionApply,
+          refusal: 1,
+        ),
+      ]);
+      expect(engine.perfArmCalls, 0);
+
+      // The pedal reaches the repository directly, with no cubit in front.
+      // Its refusal is a second, distinct state: the toast answers it too.
+      await guarded.arm();
+      await pumpEventQueue();
+      expect(states, hasLength(2));
+      expect(
+        states.last,
+        const PerformanceRecorderIdle(
+          refusedBy: GuardKind.sessionApply,
+          refusal: 2,
+        ),
+      );
+      expect(engine.perfArmCalls, 0);
+
+      apply.release();
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+      expect(engine.perfArmCalls, 1);
+    });
+
+    test('a refusal does not stomp the recovering idle', () async {
+      final cubit = buildGuarded()
+        ..emit(const PerformanceRecorderIdle(recovering: true));
+      addTearDown(cubit.close);
+      guards.enter(
+        GuardKind.restart,
+        const GuardScope.internal(),
+        purpose: 'power off',
+      );
+      await guarded.arm();
+      await pumpEventQueue();
+      expect(cubit.state, const PerformanceRecorderIdle(recovering: true));
+    });
+  });
+
+  group('recording to a USB drive (#1177)', () {
+    late FakeUsbStorageClient client;
+    late StorageRepository storage;
+    late String mount;
+    late StorageDestination destination;
+
+    RemovableVolumeRecord usb(int generation) => RemovableVolumeRecord(
+      generation: generation,
+      kname: 'sda1',
+      fingerprint: 'SanDisk_Ultra_4C530001-1A2B-3C4D',
+      label: 'SEGNO USB',
+      fsType: 'exfat',
+      mountPoint: mount,
+      sizeBytes: 32000000000,
+      status: RemovableVolumeRecordStatus.mounted,
+      readOnly: false,
+      writeBytesPerSecond: 16777216,
+    );
+
+    setUp(() async {
+      mount = '${tempDir.path}/media/1-SEGNO_USB';
+      Directory(mount).createSync(recursive: true);
+      destination = const StorageDestination.removable(1);
+      client = FakeUsbStorageClient(initial: [usb(1)]);
+      storage = StorageRepository(
+        guards: GuardRegistry(),
+        client: client,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        volumeSpace: (_) => null,
+      );
+      await pumpEventQueue();
+    });
+
+    tearDown(() async {
+      await storage.dispose();
+      await client.dispose();
+    });
+
+    PerformanceRecorderCubit buildUsb() => PerformanceRecorderCubit(
+      performance: performance,
+      armedTickInterval: const Duration(milliseconds: 10),
+      renderPollInterval: const Duration(milliseconds: 10),
+      now: () => clock,
+      freeSpaceBytes: (_) async => null,
+      storage: storage,
+      destination: () => destination,
+    );
+
+    /// [waitForCompleted] with room for a loaded machine: the finalize and
+    /// render here do real file work.
+    Future<PerformanceRecorderCompleted> completedWithin(
+      PerformanceRecorderCubit cubit,
+    ) async {
+      final state = cubit.state;
+      if (state is PerformanceRecorderCompleted) return state;
+      return cubit.stream
+          .firstWhere((s) => s is PerformanceRecorderCompleted)
+          .timeout(const Duration(seconds: 30))
+          .then((s) => s as PerformanceRecorderCompleted);
+    }
+
+    void seedLog(String dir) {
+      File('$dir/events.log').writeAsBytesSync(
+        (BytesBuilder()
+              ..add(_eventLogHeader())
+              ..add(_eventLogEntry()))
+            .toBytes(),
+      );
+      writeManifest(dir, finalized: false);
+    }
+
+    test('a take arms on the drive under a recording lease, and the armed '
+        'readout names the drive', () async {
+      final cubit = buildUsb();
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      expect(
+        performance.armedDirectory,
+        '$mount/Segno/Performances/perf-20260706-143015',
+      );
+      expect(storage.leasesOn(destination), [
+        WriteLease(target: destination, purpose: WritePurpose.recording),
+      ]);
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderArmed>().having(
+          (s) => s.volumeLabel,
+          'volumeLabel',
+          'SEGNO USB',
+        ),
+      );
+      await performance.disarmAndFinalize();
+    });
+
+    test('pulling the drive ends the take as volumeLost, once, and frees '
+        'the drive; the next take defaults back to Internal', () async {
+      final cubit = buildUsb();
+      addTearDown(cubit.close);
+      final finalizing = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(finalizing.add);
+      addTearDown(sub.cancel);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      seedLog(performance.armedDirectory!);
+
+      client.detach(1);
+      final completed = await completedWithin(cubit);
+
+      expect(
+        completed.result,
+        isA<PerformanceRecordStoppedEarly>().having(
+          (r) => r.reason,
+          'reason',
+          PerformanceStopReason.volumeLost,
+        ),
+      );
+      expect(
+        finalizing.whereType<PerformanceRecorderFinalizing>(),
+        hasLength(1),
+        reason: 'one stop',
+      );
+      expect(storage.leases, isEmpty);
+
+      destination = const StorageDestination.internal();
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      expect(performance.armedDirectory, startsWith('${tempDir.path}/exports'));
+      await performance.disarmAndFinalize();
+    });
+
+    test('a finished take releases the drive', () async {
+      final cubit = buildUsb();
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      seedLog(performance.armedDirectory!);
+      clock = clock.add(const Duration(seconds: 5));
+      await performance.disarmAndFinalize();
+      await completedWithin(cubit);
+
+      expect(storage.leases, isEmpty);
+    });
+
+    test('a chosen drive that is gone at the press refuses the arm and says '
+        'why', () async {
+      final cubit = buildUsb();
+      addTearDown(cubit.close);
+      client.detach(1);
+      await pumpEventQueue();
+
+      await cubit.toggleArm();
+
+      expect(performance.armedDirectory, isNull);
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderIdle>().having(
+          (s) => s.driveUnavailable,
+          'driveUnavailable',
+          isTrue,
+        ),
+      );
+      expect(storage.leases, isEmpty);
+    });
+
+    test('an arm that throws on the drive gives the drive back and says '
+        'why, and a later arm on Internal still works', () async {
+      // A file where the take's directory must go: the bundle cannot be
+      // created, as on a full or read-only-on-error stick.
+      File('$mount/Segno').writeAsStringSync('in the way');
+      final cubit = buildUsb();
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+
+      expect(performance.armedDirectory, isNull);
+      expect(storage.leases, isEmpty);
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderIdle>().having(
+          (s) => s.driveUnavailable,
+          'driveUnavailable',
+          isTrue,
+        ),
+      );
+
+      destination = const StorageDestination.internal();
+      await cubit.toggleArm();
+      expect(performance.armedDirectory, startsWith('${tempDir.path}/exports'));
+      await performance.disarmAndFinalize();
+    });
+
+    test('a take that started on the drive but failed a later arm step '
+        'keeps its lease, names the drive, and ends as volumeLost when the '
+        'drive goes', () async {
+      engine = _SnapshotBlockingEngine();
+      final blocked = PerformanceRepository(
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(blocked.dispose);
+      final cubit = PerformanceRecorderCubit(
+        performance: blocked,
+        armedTickInterval: const Duration(milliseconds: 10),
+        renderPollInterval: const Duration(milliseconds: 10),
+        now: () => clock,
+        freeSpaceBytes: (_) async => null,
+        storage: storage,
+        destination: () => destination,
+      );
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      expect(blocked.armedDirectory, isNotNull, reason: 'the take is live');
+      expect(storage.leasesOn(destination), [
+        WriteLease(target: destination, purpose: WritePurpose.recording),
+      ]);
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderArmed>().having(
+          (s) => s.volumeLabel,
+          'volumeLabel',
+          'SEGNO USB',
+        ),
+      );
+
+      seedLog(blocked.armedDirectory!);
+      client.detach(1);
+      final completed = await completedWithin(cubit);
+      expect(
+        completed.result,
+        isA<PerformanceRecordStoppedEarly>().having(
+          (r) => r.reason,
+          'reason',
+          PerformanceStopReason.volumeLost,
+        ),
+      );
+    });
+
+    test('an arm refused at its commit gives the drive back', () async {
+      final guards = GuardRegistry();
+      final guarded = PerformanceRepository(
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+        guards: guards,
+      );
+      addTearDown(guarded.dispose);
+      final cubit = PerformanceRecorderCubit(
+        performance: guarded,
+        freeSpaceBytes: (_) async => null,
+        storage: storage,
+        destination: () => destination,
+      );
+      addTearDown(cubit.close);
+      final apply = guards.enter(
+        GuardKind.sessionApply,
+        const GuardScope.internal(),
+        purpose: 'opening a session',
+      );
+      addTearDown(apply.release);
+
+      await cubit.toggleArm();
+
+      expect(guarded.armedDirectory, isNull);
+      expect(storage.leases, isEmpty);
+    });
+  });
+}
+
+/// Starts the take, then makes the arm snapshot unpublishable: a directory
+/// stands where its pending file must be written.
+class _SnapshotBlockingEngine extends FakeAudioEngine {
+  @override
+  EngineResult perfArm(PerfTarget target) {
+    Directory('${target.captureDir}/arm-snapshot.json.pending').createSync();
+    return super.perfArm(target);
+  }
 }

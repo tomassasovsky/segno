@@ -42,11 +42,43 @@ typedef enum le_result {
   LE_ERR_DEVICE = -4,        /* miniaudio failed to init/start the device */
   LE_ERR_UNSUPPORTED = -5,   /* a plugin's bus topology is not a stereo (or
                               * mono-adaptable) effect — instrument / multi-bus /
-                              * sidechain / wrong channel count (D-BUS) */
+                              * sidechain / wrong channel count (D-BUS); an
+                              * audio file outside the decoder's whitelist
+                              * (#1200) */
   LE_ERR_CAPACITY = -6,      /* a requested allocation would exceed engine
                               * capacity (A6, D17): N bars of the current
                               * signature at the slowest possible tempo (30
                               * BPM) would not fit in max_loop_frames */
+  LE_ERR_MODE_MISMATCH = -7, /* history would not fit the current mode/clock */
+  LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
+  LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
+                              * is unavailable while Reverse is on */
+  LE_ERR_TRANSFORMED = -10,  /* a record or overdub while Speed is not 1x,
+                              * or a punch-in on a transposed track or one
+                              * playing at another span than its take's
+                              * (#1179): capture never writes under playback
+                              * it does not hear */
+  /* -11 belongs to pitch/time (#1179); -12 and -13 to the backing
+   * player (#1200); -14 and -15 to instruments (#1197; the numbering
+   * ledger). */
+  LE_ERR_TOO_LONG = -12, /* a backing file over LE_BACKING_MAX_SECONDS (#1200) */
+  LE_ERR_NO_INSTRUMENT = -14, /* a note for an instrument slot with no patch
+                               * (#1197); returned only by the single-event
+                               * API, never by a batch */
+  LE_ERR_UNKNOWN_PATCH = -15, /* a patch index this build does not define */
+  LE_ERR_NO_COMMON_CYCLE = -16, /* render recipe (#1202): the selected tracks'
+                                 * lengths share no common cycle within the
+                                 * cap; a chosen length is required */
+  LE_ERR_TRACKS_CHANGED = -17,  /* render recipe (#1202): a source's material
+                                 * changed after the render froze it */
+  LE_ERR_NOT_FOUND = -18,    /* the file (or a directory on its path) does not
+                              * exist (#1198) */
+  LE_ERR_TRUNCATED = -19,    /* the file exists but is shorter than the range
+                              * it must hold (#1198) */
+  LE_ERR_EXTERNAL_CLOCK = -20, /* tempo is owned by an external MIDI clock
+                                * source (#1228); select Internal first */
+  LE_ERR_SYNC_LOCKED = -21,    /* the clock source cannot change while a track
+                                * records, overdubs, is armed or counting in */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -70,7 +102,8 @@ typedef enum le_track_state {
  * (D7 precedence). MANUAL and TAPPED are last-writer-wins; DERIVED is set only
  * when a defining loop finalizes with sync on and the source was NONE (a set
  * tempo is never re-derived); EXTERNAL is reserved for the Phase E MIDI-clock
- * follower and unused here. A DERIVED tempo survives clearing the loop that
+ * follower (#1228): written once per beat while an external clock source is
+ * selected and the tempo is not locked. A DERIVED tempo survives clearing the loop that
  * produced it (the "dead tempo" lesson): only an explicit reset returns the
  * source to NONE. */
 typedef enum le_tempo_source {
@@ -78,7 +111,7 @@ typedef enum le_tempo_source {
   LE_TEMPO_SOURCE_MANUAL = 1,   /* LE_CMD_SET_TEMPO */
   LE_TEMPO_SOURCE_TAPPED = 2,   /* LE_CMD_TAP_TEMPO */
   LE_TEMPO_SOURCE_DERIVED = 3,  /* derived from a defining loop (D7) */
-  LE_TEMPO_SOURCE_EXTERNAL = 4, /* reserved: MIDI clock receive (Phase E) */
+  LE_TEMPO_SOURCE_EXTERNAL = 4, /* the selected MIDI clock source (#1228) */
 } le_tempo_source;
 
 /* Click (metronome) audibility mode, mirrored in le_snapshot.click_mode — a
@@ -100,7 +133,7 @@ typedef enum le_click_mode {
  * default. Sync/Band (primary-track sync + multiples/divisions, B3/B3b),
  * Free (independent per-track clocks, B2b), and Song (independent per-track
  * sections, B4) all have their full behavior as of this part; B2a itself was
- * only the field plus D4's content-lock gate (le_looper_mode_locked,
+ * only the field plus a content gate; the accepted content rules (slice 2)
  * engine_process.c) that guards switching it, with every value's audio path
  * staying MULTI behavior until its own part landed. This is a DIFFERENT axis
  * from InteractionMode (Dart-only: record/mute, what a track press does) —
@@ -127,26 +160,50 @@ typedef enum le_looper_mode {
   LE_LOOPER_MODE_FREE = 4,  /* independent per-track clocks (B2b) */
 } le_looper_mode;
 
-/* MIDI clock tri-state (Phase C/E, D15), mirrored in le_snapshot.clock_mode.
- * `off` and `send` are fully implemented by this part (C1): a native 24-PPQN
- * emitter (src/midi/le_midi_clock.h) drives 0xF8/Start/Stop through the
- * grid/transport each block whenever `send` is active AND the looper mode is
- * Multi/Sync/Band (manual-verified: Song and Free stay silent regardless of
- * this field — see le_engine_set_clock_mode). `receive` is REJECTED by the
- * setter for now — the enum value exists so Phase E (clock follower) can
- * reuse this same tri-state field without a breaking rename, per the index
- * plan's "Phase 5 reuses the tri-state clock_mode introduced here". Send and
- * receive are mutually exclusive by construction (only one non-off value is
- * ever accepted at a time). */
-typedef enum le_clock_mode {
-  LE_CLOCK_OFF = 0,     /* default: no MIDI clock I/O */
-  LE_CLOCK_SEND = 1,    /* segno is MIDI clock master (C1) */
-  LE_CLOCK_RECEIVE = 2, /* segno follows an external clock (Phase E; the
-                         * setter rejects this value until then) */
-} le_clock_mode;
+/* Why a looper-mode change is refused, or what it will do first — the answer
+ * of le_engine_looper_mode_gate. Codes are >= 0 so they never collide with
+ * the LE_ERR_* results that function can also return. */
+typedef enum le_mode_gate {
+  LE_MODE_GATE_OPEN = 0,      /* the change applies as posted */
+  LE_MODE_GATE_CAPTURING = 1, /* a take or an overdub pass is being captured
+                               * (or a count-in runs): finish it first */
+  LE_MODE_GATE_QUEUED = 2,    /* an armed action has neither fired nor been
+                               * cancelled: let it land or cancel it first */
+  LE_MODE_GATE_SPANS = 3,     /* the recorded spans do not fit the target
+                               * mode (see le_engine_looper_mode_gate) */
+  LE_MODE_GATE_PLAYING = 4,   /* loops are playing: le_engine_set_looper_mode
+                               * stops every playing track before switching */
+} le_mode_gate;
 
-/* Maximum count-in length in measures (le_engine_set_count_in). */
-#define LE_COUNT_IN_MAX_BARS 64
+/* MIDI clock sync state (#1228), mirrored in le_snapshot.clock_state.
+ * INTERNAL: Segno's own tempo; incoming clock is ignored. With an external
+ * source selected (le_engine_set_clock_sync): WAITING until six consecutive
+ * valid pulse intervals arrive, then SYNCED; LOST when a Synced clock goes
+ * silent for max(6 pulse periods, 250 ms) or its device goes away. Silence
+ * after a received Stop reads WAITING, not LOST. */
+typedef enum le_clock_state {
+  LE_CLOCK_STATE_INTERNAL = 0,
+  LE_CLOCK_STATE_WAITING = 1,
+  LE_CLOCK_STATE_SYNCED = 2,
+  LE_CLOCK_STATE_LOST = 3,
+} le_clock_state;
+
+/* What happens to the loops when an external clock is lost (#1228 D5). The
+ * setting is stored now; the engine acts on it from #1228 Part 5. */
+typedef enum le_clock_loss_policy {
+  LE_CLOCK_LOSS_KEEP_PLAYING = 0,
+  LE_CLOCK_LOSS_STOP_LOOPS = 1,
+} le_clock_loss_policy;
+
+/* Atomic recording-start edits retain their distinct transient semantics. */
+typedef enum le_record_start_edit_kind {
+  LE_RECORD_START_COUNT_IN = 0,
+  LE_RECORD_START_SOUND = 1,
+  LE_RECORD_START_RESTORE = 2,
+} le_record_start_edit_kind;
+
+/* Supported count-in lengths are exactly 0, 1, 2 and 4 bars. */
+#define LE_COUNT_IN_MAX_BARS 4
 
 /* Maximum track length preset in bars (A6, D17;
  * le_engine_set_track_length_preset). 0 is AUTO, not a bar count. */
@@ -213,16 +270,13 @@ typedef enum le_command_code {
                        * action; see le_engine_toggle_section. */
   LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record
                        * (any trigger). */
-  LE_CMD_SET_QUANTIZE_DIV = 18, /* arg_i = le_grid_div (tempo_grid.h): 0 off /
-                                 * 1 bar / 2..5 = 1/2..1/16 note. State only in
-                                 * this part — the musical arm machinery that
-                                 * consumes it lands in A3. Default off. */
   /* ---- click + count-in (A2, D5/D9). The click is its own routable source:
-   * it sums into the channels of its output mask AFTER the master bus and the
-   * performance tap, so it bypasses master gain / limiter / metering and is
-   * excluded from performance capture and export by construction. None of
-   * these commands is therefore perf-logged. */
-  LE_CMD_SET_CLICK_MODE = 19, /* arg_i = le_click_mode (0..3). Default off. */
+   * since slice 3b it sums into the channels of its output mask BEFORE the
+   * output buses, so a destination's chain, level and mute, the master gain,
+   * the limiter and metering all apply, and a performance capture contains it
+   * when it is routed to the captured bus. None of these commands is
+   * perf-logged, so stems and the offline master never contain it. */
+  LE_CMD_SET_CLICK_MODE = 19, /* typed mode + revision; raw posts rejected. */
   LE_CMD_SET_LANE_FX = 20, /* set a lane chain entry's type (and reset its DSP
                             * state). arg_i = (channel << 16) | (lane << 8) |
                             * index, arg_f = le_fx_type. */
@@ -232,18 +286,16 @@ typedef enum le_command_code {
   LE_CMD_SET_CLICK_OUTPUT = 22,  /* click output routing. trackmask arm:
                                   * channel unused, mask = output bitmask
                                   * (default 0 = no outputs). */
-  LE_CMD_COMMIT_SESSION = 23,    /* arg_i = base loop length in frames: publish
-                                  * the master loop and start imported tracks */
+  LE_CMD_COMMIT_SESSION = 23,    /* session commit: base_frames and loop_beats;
+                                  * publish grid with imported tracks stopped */
   LE_CMD_SET_CLICK_VOLUME = 24,  /* arg_f = 0..LE_MAX_GAIN (the click's ONLY
                                   * gain stage — master gain never applies). */
-  LE_CMD_SET_COUNT_IN = 25,      /* arg_i = count-in length in measures
-                                  * (0 = off, up to LE_COUNT_IN_MAX_BARS).
-                                  * 0 also cancels an in-progress count-in. */
+  LE_CMD_SET_RECORD_START = 25, /* typed pair + edit kind + callback receipt */
   /* ---- multi-lane recording (a track owns an array of lanes) ----
    * Each lane records one hardware input into its own clean mono buffer; all
-   * lanes of a track share one transport and one undo span. The lane *count* is
-   * a control-thread plain int (le_engine_set_lane_count), not a ring command;
-   * these RT-concurrent lane edits go through the ring. arg packing differs per
+   * lanes of a track share one transport and one undo span. Count activation
+   * and these RT-concurrent lane edits go through the ring; control-side
+   * preparation allocates before activation. Argument packing differs per
    * command so a 32-bit mask / a negative channel / a float volume each
    * round-trips exactly (see the lane setters). */
   LE_CMD_SET_LANE_INPUT = 26,  /* lane records this input channel (-1 = none).
@@ -335,72 +387,60 @@ typedef enum le_command_code {
 
   /* ---- looper mode (B2a, D4) ----
    * The five-mode axis (le_looper_mode). LOCKED (silently rejected, no-op)
-   * whenever ANY track has content (state != EMPTY) — le_looper_mode_locked,
-   * engine_process.c. Simpler than the D6 tempo lock: content alone, no grid
-   * or count-in check. Only clearing every track releases the lock. Mode
-   * semantics beyond the field itself land in B2b onward; this part accepts
-   * any of the 5 values unconditionally once unlocked. Not perf-logged (a
-   * mode switch changes no audible output in this part). */
+   * over capture, pending arms, playing takes or incompatible spans —
+   * le_looper_mode_switch_blocked,
+   * the audio-thread twin of le_engine_looper_mode_gate. See the looper-mode
+   * section of the control API for the content rules. */
   LE_CMD_SET_LOOPER_MODE = 45, /* arg_i = le_looper_mode (0..4) */
 
   /* ---- primary track / Sync + Band (B3, D16/D18) ----
    * Designates track [arg_i] the "crowned" primary track for Sync/Band's
-   * multiple-or-division sync (a_primary_track). Accepted in ANY mode (the
-   * crown is a persistent per-session designation per D18 — it simply has no
-   * effect outside Sync/Band); rejected only for an out-of-range channel.
-   * There is no "un-crown": D18's no-auto-reassignment rule means the only
-   * way to change it is another CROWN_PRIMARY. See le_sync_quantize_active
-   * (engine_private.h) for how this gates Sync/Band's finalize + section-
-   * transport behavior. */
+   * multiple-or-division sync (a_primary_track) — the explicit TIMING
+   * HANDOFF. Accepted in ANY mode (the crown is a persistent per-session
+   * designation per D18 — it simply has no effect outside Sync/Band);
+   * rejected only for an out-of-range channel. There is no "un-crown"
+   * command: the engine itself clears the designation when every track is
+   * empty, and crowns the first completed take while nothing is crowned
+   * (le_primary_reconcile, engine_process.c — the accepted-design rule
+   * that supersedes D18's never-auto-assign reading). See
+   * le_sync_quantize_active (engine_private.h) for how this gates Sync/Band's
+   * finalize + section-transport behavior. */
   LE_CMD_CROWN_PRIMARY = 46, /* arg_i = channel */
 
-  /* ---- One Shot (B4, Sheeran manual §5.9.4) ----
-   * A per-track flag: "plays just once and then stops" instead of looping.
-   * Settable on any channel in any mode (mirrors LE_CMD_CROWN_PRIMARY's D18
-   * pattern — a persistent per-track designation, not gated by the D4 mode
-   * lock or by mode itself), but only behaviorally active where the engine
-   * has a per-track transport wrap to hook: FREE and SONG (both driven by
-   * each track's own free_clock — see advance_track_clock_frame,
-   * engine_process.c). Inert in Multi/Sync/Band, where a track's own "lap"
-   * is a derived point on the SHARED master clock, not an independent
-   * per-track event this flag can observe without much larger transport
-   * surgery the manual's Song-specific tool does not call for (deliberately
-   * out of B4's scope — see the header doc above le_engine_set_one_shot). */
+  /* One Shot: a per-track setting in every mode. Finishes the current
+   * playback pass; explicit launch after automatic end starts at frame zero
+   * without moving the shared musical clock. See le_engine_set_one_shot. */
   LE_CMD_SET_ONE_SHOT = 47, /* arg_i = channel, arg_f = 0/1 */
 
-  /* ---- MIDI clock (Phase C/E, D15) ----
-   * The tri-state le_clock_mode. Not perf-logged, for the same reason as
-   * LE_CMD_SET_LOOPER_MODE above (clock output is a routing/sync concern,
-   * not a captured audible source — the emitter sums nothing into the mix,
-   * it only ever pushes bytes out through le_midi_out_send). */
-  LE_CMD_SET_CLOCK_MODE = 48, /* arg_i = le_clock_mode. RECEIVE (2) is
-                               * rejected — see le_engine_set_clock_mode. */
+  /* ---- MIDI clock (Phase C, D15; #1228) ----
+   * Not perf-logged, for the same reason as LE_CMD_SET_LOOPER_MODE above
+   * (clock output is a routing/sync concern, not a captured audible source).
+   * Code 48 was the tri-state clock mode; receive moved to
+   * LE_CMD_SET_CLOCK_SYNC (124), and the send switch keeps 48 until the
+   * per-output send table (#1228 Part 6) replaces it. */
+  LE_CMD_SET_CLOCK_SEND = 48, /* arg_i = 0/1 */
 
-  /* ---- Track-stage + Master insert chains (FX v3 part 1b) ----
+  /* ---- Track-stage chains (FX v3 part 1b) ----
    * The bus twins of the lane / monitor FX commands: type/count ride the ring
    * so the audio thread resets the entry's DSP state in lockstep, while
-   * params and the enable flags are direct atomic stores (no command). The
-   * track commands reuse the typed `fx` / `fxcount` arms with the lane field
-   * unused; the master commands need no channel (one engine-level chain), so
-   * their channel field is unused too. NONE of these are perf-logged:
-   * track/master chains are manifest-only (part 9's stems decision — the arm
-   * manifest carries them from part 3; nothing replays them). */
+   * params and the enable flags are direct atomic stores (no command). They
+   * reuse the typed `fx` / `fxcount` arms with the lane field unused. NONE of
+   * these are perf-logged: track chains are manifest-only (part 9's stems
+   * decision — the arm manifest carries them from part 3; nothing replays
+   * them). The output-bus chains (65, 66) follow the same rules. */
   LE_CMD_SET_TRACK_FX = 49, /* set a track's Track-stage chain entry type (and
                              * reset its DSP state). fx arm: channel, index,
                              * type (lane unused). */
   LE_CMD_SET_TRACK_FX_COUNT = 50, /* set a track's Track-stage active chain
                                    * length. fxcount arm: channel, count
                                    * (lane unused). */
-  LE_CMD_SET_MASTER_FX = 51, /* set the Master insert chain entry type (and
-                              * reset its DSP state). fx arm: index, type
-                              * (channel + lane unused). */
-  LE_CMD_SET_MASTER_FX_COUNT = 52, /* set the Master insert active chain
-                                    * length. fxcount arm: count (channel +
-                                    * lane unused). */
+
   /* Arm the chromatic tuner on one hardware input, or -1 to disarm. arg_i =
-   * channel. Gating is the contract, not an optimization: detection runs only
-   * while an input is armed, so a console that never opens the Tuner face
-   * pays one atomic load per block. */
+   * channel. The gate is the contract, not an optimization: a disarmed tuner
+   * runs no detection at all. Not perf-logged — the tuner changes no
+   * output. (51 and 52 were the Master insert family, retired in slice 3b
+   * when that insert became output bus 0's chain; the codes stay
+   * unallocated so an old event log can never be misread.) */
   LE_CMD_SET_TUNER_INPUT = 53,
 
   /* ---- per-input conditioning stage (input conditioning, S1) ----
@@ -437,27 +477,149 @@ typedef enum le_command_code {
    * re-checks its precondition on the audio thread and is a strict no-op
    * anywhere else, so a state change in the one-block window between
    * le_engine_finalize_take's control-side guards and the apply can never
-   * turn it into a capture start or a punch-in/out. During a count-in it
-   * cancels the count-in (global transport state — the addressed channel is
-   * irrelevant) and logs LE_PLOG_RECORD_ABORT for the counting channel. Not
-   * itself perf-logged (like LE_CMD_ARM/DISARM: the transport fact it causes
-   * — LE_PLOG_RECORD_END / LE_PLOG_RECORD_ABORT — is what is logged). */
+   * turn it into a capture start or a punch-in/out. Pending Count-in members
+   * use explicit cancellation instead. Not itself perf-logged (the resulting
+   * LE_PLOG_RECORD_END is logged by the actual finalization). */
   LE_CMD_FINALIZE_TAKE = 56,
+  /* Cancel a take in progress on arg_i (le_engine_undo while RECORDING): the
+   * take is finalized at its captured length exactly as a press would end
+   * it — grid, tempo derivation and loop span included — and the track then
+   * reads EMPTY with that finalized content held for redo, which plays it
+   * immediately (LE_CMD_REDO_FROM_EMPTY). LE_EVT_TAKE_CANCELLED carries the
+   * finalized length back so the control thread can file the redo entry. */
+  LE_CMD_CANCEL_TAKE = 57,
+  /* Exact musical tempo restoration on a stopped rig. arg_i = tempo source,
+   * arg_f = BPM (0 only with NONE). Rechecked by the callback. */
+  LE_CMD_RESTORE_TEMPO = 58,
+  /* One queued command updates a subset of tracks together. arg_i = track
+   * bitmask, arg_f = 0/1; uses the same pass semantics as SET_ONE_SHOT. */
+  LE_CMD_SET_ONE_SHOT_MASK = 59,
+  /* Named bounded payload: all configured tracks' future length presets. */
+  LE_CMD_SET_LENGTH_PRESETS = 61,
+  /* Lane pan (accepted design, slice 3). lanef arm: channel, lane, value in
+   * -1..1 (clamped). Placement of the lane's stereo pair across its first two
+   * masked outputs, applied after the lane's chain: a unity-centre balance
+   * law (see le_engine_set_lane_pan). Perf-logged like volume. */
+  LE_CMD_SET_LANE_PAN = 62,
+  /* Track solo. Generic arm: arg_i = channel, arg_f != 0 = soloed. While any
+   * track is soloed, only soloed tracks route (mute is untouched and still
+   * gates on its own). Perf-logged. */
+  LE_CMD_SET_TRACK_SOLO = 63,
+  /* Monitor pan. lanef arm: channel = input, value in -1..1. The monitor
+   * mirror of LE_CMD_SET_LANE_PAN. Perf-logged. */
+  LE_CMD_SET_MONITOR_INPUT_PAN = 64,
+  LE_CMD_SET_MIX = 65, /* one bounded, atomic mix transaction */
+  LE_CMD_RECORD_IMAGE = 66, /* RECORD/ARM plus its frozen input image */
+  /* Output bus facts (slice 3b). lanef arm: channel = bus, value. Level
+   * 0..1, mute/mono as 0/1 in value, balance -1..1. Perf-logged. */
+  LE_CMD_SET_OUTPUT_LEVEL = 67,
+  LE_CMD_SET_OUTPUT_MUTE = 68,
+  LE_CMD_SET_OUTPUT_MONO = 69,
+  LE_CMD_SET_OUTPUT_BALANCE = 70,
+  /* Output bus chain entry type / active length: fx / fxcount arms with
+   * channel = bus; bus 0's chain is what the app calls the Master insert. */
+  LE_CMD_SET_OUTPUT_FX = 71,
+  LE_CMD_SET_OUTPUT_FX_COUNT = 72,
+  /* Cut all sound (accepted design): stops every audible recorded track and
+   * the count-in, and clears every effect tail on every chain (lane, track,
+   * monitor, output) while keeping their settings; the snapshot's
+   * tail_reset_rev advances. Monitors keep their preferences: new live
+   * input sounds again at once. Perf-logged. */
+  LE_CMD_CUT_SOUND = 73,
+  LE_CMD_SET_LANE_COUNT = 74, /* internal structural activation; callback-owned */
+  /* All tracks recorded-mix chain entry type / active length (slice 3e): the
+   * fx / fxcount arms with channel = 0 (there is one such chain). One shared
+   * config; the audio thread runs it once per output bus over the recorded
+   * contribution to that bus. */
+  LE_CMD_SET_ALL_TRACKS_FX = 75,
+  LE_CMD_SET_ALL_TRACKS_FX_COUNT = 76,
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
   LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
                                * channel, slot, generation. */
+  LE_EVT_TAKE_CANCELLED = 101, /* LE_CMD_CANCEL_TAKE landed: lanei arm —
+                                * channel, value = the finalized length the
+                                * emptied track holds for redo (0: nothing
+                                * was captured, nothing to redo). */
+  LE_CMD_SET_FX_RECIPE = 77,
+  LE_CMD_SET_RECORD_TIMING = 78, /* one complete timing vector and receipt */
+  LE_CMD_STOP_RECORD_CONTROL = 79, /* cohort cancel or non-acquiring capture finish */
+  LE_CMD_CANCEL_COUNT_IN = 80, /* only the shared launch cohort/grace */
+  LE_CMD_FADE = 81, /* checked internal Fade request; never raw-posted */
+  LE_CMD_RESET_TRANSFORMS = 82, /* internal material-import transform reset
+                                 * (Fade and direction); never raw-posted */
+  LE_CMD_REVERSE = 83, /* checked internal Reverse request; never raw-posted */
+
+  /* Silence the live monitors of the inputs in the mask while the tuner is
+   * armed (#1229). arg_i = the mask, bit c = input c. Owned by the tuner arm:
+   * refused (stored as 0) while the tuner is disarmed, and cleared by every
+   * LE_CMD_SET_TUNER_INPUT, so it can never outlive or follow a tuning. Not
+   * perf-logged: it changes no recorded material, and a captured monitor stem
+   * already records the silence that was heard. 84-131 belong to other
+   * epics (the numbering ledger); 133-135 stay reserved for #1229. */
+  LE_CMD_SET_TUNER_MUTE = 132,
+  LE_CMD_SET_LENGTH = 84, /* checked internal length edit (#1168); never
+                           * raw-posted */
+  LE_CMD_SET_SPEED = 85, /* checked internal Speed request (#1179); never
+                          * raw-posted */
+  LE_CMD_TRANSPOSE = 86,        /* checked internal Transpose request (#1179) */
+  LE_CMD_TRANSPOSE_BYPASS = 87, /* checked internal Transpose bypass */
+  /* ---- backing player (#1200; 88-95 reserved for it, 93-95 unused). Typed
+   * producers only (le_engine_backing_*): LOAD and STAGE_NEXT carry an owned
+   * buffer pointer, so raw posts of any of these are refused. None is
+   * perf-logged: the backing never reaches stems or the offline master. */
+  LE_CMD_BACKING_LOAD = 88,       /* buffer + item token + play flag */
+  LE_CMD_BACKING_STAGE_NEXT = 89, /* buffer (NULL clears) + item token */
+  LE_CMD_BACKING_CLEAR = 90,      /* unload current and staged */
+  LE_CMD_BACKING_TRANSPORT = 91,  /* arg_i = le_backing_transport_op */
+  LE_CMD_BACKING_SEEK = 92,       /* arg_i = frame of the loaded buffer */
+  /* ---- Library audition voice (#1178; 136-137 in the numbering ledger).
+   * Typed producers only (le_engine_audition_*): START carries an owned
+   * buffer pointer, so raw posts are refused. Never perf-logged. */
+  LE_CMD_AUDITION_START = 136, /* buffer + output pair */
+  LE_CMD_AUDITION_STOP = 137,
+  LE_CMD_RENDER_FREEZE = 112, /* render recipe (#1202): the callback records
+                               * every source's read law; never raw-posted */
+  LE_CMD_BOUNCE = 113,         /* Bounce (#1202): installs a rendered result on
+                                * the destination in one drain; checked,
+                                * never raw-posted */
+  LE_CMD_BOUNCE_RECOVER = 114, /* Bounce Undo/Redo (#1202): reinstalls the
+                                * other side of a bounce; never raw-posted */
+  /* MIDI clock sync (#1228; codes 124-131 are this epic's): one complete
+   * vector {source port or -1, follow transport, loss policy} with a receipt
+   * sequence. Rechecked by the callback (LE_ERR_SYNC_LOCKED). */
+  LE_CMD_SET_CLOCK_SYNC = 124,
+  LE_CMD_SET_FOLLOW_TEMPO = 120, /* checked internal Follow tempo setting
+                                  * (#1179 Part 4a) */
+  LE_CMD_SET_PITCH_MODE = 121, /* checked internal Pitch setting (#1179 Part
+                                * 4a-ii); 122-123 are held for #1179 */
+
+  /* Instruments (#1197; the ledger assigns 96-111). Patch changes are not
+   * commands: they ride the ordered note ring (le_engine_set_instrument). */
+  LE_CMD_SET_VOICE_LIMIT = 96, /* arg_i = sounding-voice limit */
+  LE_CMD_INSTRUMENT_RESET = 97, /* arg_i = slot: fade its voices out */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
  * carries an ordered chain of up to LE_FX_MAX entries, each with a type and
  * LE_FX_PARAMS normalized (0..1) parameters. The chain is non-destructive (the
  * recording is ALWAYS dry; effects color playback only) and every active entry
- * applies in chain order — there is no pre/post stage. The cap exists only so
- * the audio thread reads a fixed-size, allocation-free array — it is far beyond
- * musical need, not a CPU limit. */
-#define LE_FX_MAX 8
+ * applies in chain order. The cap exists only so the audio thread reads a
+ * fixed-size, allocation-free array — it is not a CPU limit: the audio path
+ * iterates the ACTIVE count, and the per-slot DSP heap (delay rings, the
+ * octaver's vocoder buffers) is allocated lazily on first use, so an unused
+ * slot costs nothing but its place in the struct.
+ *
+ * Raised from 8 to 64 in slice 3f. The accepted FX design builds a chain out
+ * of RACKS — named groups of pedals — and one factory rack is about six, so
+ * eight slots held roughly one rack where the design shows ten. Sixty-four
+ * holds ten full racks.
+ *
+ * The per-buffer snapshots live in engine-owned scratch rather than growing
+ * the callback stack. Recipe commands carry retained prepared pointers, so
+ * raising this ceiling does not enlarge each command-ring entry. */
+#define LE_FX_MAX 64
 #define LE_FX_PARAMS 4
 
 /* Built-in effect types. Designed so a hosted VST3/CLAP plugin can later slot
@@ -557,6 +719,27 @@ typedef struct le_config {
 
 /* Maximum number of simultaneous looper tracks (two banks of four). */
 #define LE_MAX_TRACKS 8
+/* Instrument slots (#1197): each a synthesized mono source. */
+#define LE_MAX_INSTRUMENTS 8
+/* The source index space every input-keyed route, monitor and mix entry uses
+ * (#1197): sources [0, LE_MAX_CHANNELS) are device input channels, and
+ * LE_INSTRUMENT_SOURCE_BASE + k is instrument slot k. The index never depends
+ * on the interface's channel count. Physical-only stages (loopback exclusion,
+ * clip detection, conditioning, capture trim, the tuner) cover device
+ * channels only. */
+#define LE_INSTRUMENT_SOURCE_BASE LE_MAX_CHANNELS
+#define LE_MAX_SOURCES (LE_MAX_CHANNELS + LE_MAX_INSTRUMENTS)
+
+/* Default and fixed-track recording choices: 0 immediately, 1 loop start,
+ * 2 bar, 3 half, 4 quarter, 5 eighth, 6 sixteenth. Track -1 inherits. */
+typedef struct le_record_timing_settings {
+  int32_t default_timing;
+  int32_t remembered_division;
+  int32_t track_timing[LE_MAX_TRACKS];
+  uint32_t edit_mask; /* bit 0 default, bits 1..8 track intentions */
+} le_record_timing_settings;
+
+
 
 /* Lanes a single track may own: one lane per hardware input it records. A lane
  * is the fundamental recordable unit — one clean mono buffer fed by one input —
@@ -565,22 +748,32 @@ typedef struct le_config {
  * worst-case LE_MAX_TRACKS * LE_MAX_LANES does not inflate idle memory. */
 #define LE_MAX_LANES 8
 
-/* Input channels the live-monitor path covers, [0, LE_MAX_MONITORED_INPUTS).
+/* Sources the live-monitor path covers, [0, LE_MAX_MONITORED_INPUTS).
  * Bounds the per-input monitor array (le_engine_set_monitor_input and friends)
  * and the per-input capture rings beside it.
  *
- * A DISTINCT bound from LE_MAX_LANES, which is the reason this name exists: an
- * input past it can still be RECORDED (le_engine_set_lane_input accepts any
- * in-range channel), it simply cannot be monitored. A rig on an 18-in
- * interface records channel 18 exactly as well as channel 1; only the monitor
- * path stops short.
- *
- * Its own literal, not an alias: it merely HAPPENS to equal LE_MAX_LANES
- * today. As an alias, raising the lane ceiling would silently grow the monitor
- * array (each le_monitor_input embeds a whole le_fx_state) and every
- * per-buffer monitor array in le_engine_process — the one-number-two-meanings
- * this constant was split to end. */
-#define LE_MAX_MONITORED_INPUTS 8
+ * Every hardware input the engine can open can be monitored (accepted
+ * design, slice 3: an 18-input interface monitors channel 18 exactly as
+ * well as channel 1), and so can every instrument source (#1197), so this
+ * is LE_MAX_SOURCES. It stays a distinct name from LE_MAX_LANES, which
+ * bounds a different thing (lanes per track), and the monitor arrays are
+ * sized by it, never by the lane ceiling. Each le_monitor_input is about
+ * 3.3 KB, so 40 of them cost ~132 KB. */
+#define LE_MAX_MONITORED_INPUTS LE_MAX_SOURCES
+
+/* Output destinations (accepted design, slice 3b): output bus k is the
+ * hardware pair (2k, 2k + 1); the last bus of an odd-count device is its one
+ * channel. Every source's output mask still says which channels it reaches;
+ * a bus is what those channels share downstream: one effect chain over the
+ * sum of everything routed there (live inputs, loops, click), then its
+ * level, Stereo/Mono, balance and mute. See le_engine_set_output_level. */
+#define LE_MAX_OUTPUT_BUSES (LE_MAX_CHANNELS / 2)
+
+typedef struct le_output_fx_snapshot {
+  int32_t count, chain_enabled;
+  int32_t type[LE_FX_MAX], enabled[LE_FX_MAX];
+  float params[LE_FX_MAX][LE_FX_PARAMS];
+} le_output_fx_snapshot;
 
 /* ---- Input clip ("HOT") detector (input clip, S2) ---- *
  * Always on, no parameters, RAW path: LE_CLIP_RUN or more CONSECUTIVE samples
@@ -599,6 +792,99 @@ typedef struct le_config {
  * UI can boost a quiet take/input up to +6 dB rather than only attenuate from
  * unity (1.0 = 0 dB). The output limiter downstream still guards the bus. */
 #define LE_MAX_GAIN 2.0f
+
+/* Ceiling of le_engine_set_input_trim's linear capture gain: +12 dB. The
+ * accepted range is -24..+12 dB in half-decibel steps; the floor is 0. */
+#define LE_MAX_INPUT_TRIM 3.98107170553f
+
+/* One user-visible mix edit. Masks address only the supplied entries; all
+ * values are finite and bounded. Lane index = track * LE_MAX_LANES + lane.
+ * The caller supplies a nonzero revision, published only after the entire
+ * edit applies. The engine copies this POD into one command, never retains
+ * the caller's pointer. No state changes on validation/queue refusal. */
+typedef struct le_mix_settings {
+  uint32_t revision;
+  uint32_t track_gain_mask;
+  float track_gain[LE_MAX_TRACKS]; /* after whole-track Pre, before Post */
+  uint64_t lane_mask, image_mask;
+  uint64_t monitor_mask; /* bit s: source s (#1197: instruments are 32-39) */
+  uint32_t trim_mask, solo_mask, solo_values; /* trim: device channels only */
+  float lane_gain[LE_MAX_TRACKS * LE_MAX_LANES];
+  float lane_pan[LE_MAX_TRACKS * LE_MAX_LANES];
+  /* Source image is separate from live lane gain and track pan offset. */
+  float image_gain[LE_MAX_TRACKS * LE_MAX_LANES];
+  float image_pan[LE_MAX_TRACKS * LE_MAX_LANES];
+  float monitor_gain[LE_MAX_SOURCES], monitor_pan[LE_MAX_SOURCES];
+  float input_trim[LE_MAX_CHANNELS];
+  uint32_t output_mask, output_muted, output_mono;
+  float output_level[LE_MAX_OUTPUT_BUSES], output_balance[LE_MAX_OUTPUT_BUSES];
+  /* Future capture assignments and playback routes share this publication.
+   * Source guards include pair edits even when no assignment changes. */
+  uint64_t routing_input_mask, routing_output_mask;
+  uint32_t lane_count_mask, source_track_mask;
+  int32_t lane_input[LE_MAX_TRACKS * LE_MAX_LANES];
+  uint32_t lane_output[LE_MAX_TRACKS * LE_MAX_LANES];
+  int32_t lane_count[LE_MAX_TRACKS];
+} le_mix_settings;
+
+typedef struct le_engine le_engine;
+
+/* One bounded command; enqueue is not application. The full snapshot carries
+ * the coherent applied tuple and its even receipt revision/result. */
+LE_EXPORT int32_t le_engine_set_record_timing_settings(
+    le_engine* engine, const le_record_timing_settings* settings);
+
+typedef struct le_plugin_slot le_plugin_slot;
+
+/* Complete structural recipe, copied before admission. Hosted pointers must
+ * belong to this chain or have been prepared by this engine. */
+typedef struct le_fx_recipe {
+  int32_t count, pre_count, enabled;
+  int32_t type[LE_FX_MAX], slot_enabled[LE_FX_MAX];
+  float params[LE_FX_MAX][LE_FX_PARAMS];
+  int32_t input_mode[LE_FX_MAX], output_mode[LE_FX_MAX];
+  float placement[LE_FX_MAX], level[LE_FX_MAX];
+  le_plugin_slot* plugin[LE_FX_MAX];
+} le_fx_recipe;
+
+typedef enum le_fx_owner {
+  LE_FX_OWNER_LANE = 0,
+  LE_FX_OWNER_TRACK = 1,
+  LE_FX_OWNER_MONITOR = 2,
+  LE_FX_OWNER_ALL_TRACKS = 3,
+  LE_FX_OWNER_OUTPUT = 4,
+} le_fx_owner;
+
+/* Structural changes publish in one callback command. A pending structural
+ * edit fences granular writes to that chain until publication. Refusal leaves
+ * the active recipe and prepared-plugin ownership unchanged. */
+LE_EXPORT int32_t le_engine_set_fx_recipe(le_engine* engine, int32_t owner,
+    int32_t channel, int32_t lane, uint32_t revision, const le_fx_recipe* recipe);
+LE_EXPORT uint32_t le_engine_fx_recipe_revision(le_engine* engine, int32_t owner,
+    int32_t channel, int32_t lane);
+LE_EXPORT int32_t le_engine_prepare_plugin(le_engine* engine,
+    const char* plugin_id, le_plugin_slot** out_slot);
+LE_EXPORT int32_t le_engine_discard_prepared_plugin(le_engine* engine,
+    le_plugin_slot* slot);
+LE_EXPORT int32_t le_engine_prepare_plugin_param(le_engine* engine,
+    le_plugin_slot* slot, uint32_t param_id, double value);
+
+/* Source context frozen at the accepted record/arm gesture. The image is
+ * applied only when capture starts, including count-in/signal/grid starts.
+ * Cancelling an arm drops it without changing existing lane playback.
+ * gain is source balance (0..1); pan is source position (-1..1). Live lane
+ * level and track pan offset remain independent throughout an arm.
+ * image_revision survives short takes and finalization until reconfigure. */
+typedef struct le_record_image {
+  uint32_t revision, lane_mask;
+  float gain[LE_MAX_LANES], pan[LE_MAX_LANES];
+  /* Optional per-lane recipes frozen with this arm. The producer copies the
+   * array during this call; the caller retains its own memory. */
+  uint32_t fx_lane_mask;
+  const le_fx_recipe* lane_fx;
+} le_record_image;
+
+
 
 /* Number of points in the loop visualization buffer (le_engine_read_visual):
  * one peak per loop position, spanning exactly one master loop. */
@@ -624,6 +910,9 @@ typedef struct le_lane_snapshot {
    * whether a specific lane's slot is safe to reclaim. Drops to 0 only once
    * nothing on the lane can come back. */
   int32_t recoverable;
+  /* Trailing (accepted design, slice 3): the lane's pan, -1 (left) .. 1
+   * (right), 0 centre — see le_engine_set_lane_pan. */
+  float pan;
 } le_lane_snapshot;
 
 /* Per-track state published in le_snapshot.tracks.
@@ -633,7 +922,16 @@ typedef struct le_lane_snapshot {
  * input_mask/output_mask/rms/peak fields mirror lane 0 for backward
  * compatibility (a track always has at least one lane); per-lane state is read
  * with le_engine_get_lane. */
+/* One coherent Fade image. Lifetime/generation bind an install to the engine
+ * configuration and recorded material that were observed by the caller. */
+typedef struct le_fade_image {
+  float amount, target, full_travel_seconds;
+  uint64_t lifetime, generation;
+} le_fade_image;
+
 typedef struct le_track_snapshot {
+  le_fade_image fade;
+  uint64_t fade_revision;
   int32_t state;         /* le_track_state */
   float volume;          /* lane 0 volume, 0..LE_MAX_GAIN */
   int32_t muted;         /* lane 0 mute, 0/1 */
@@ -671,8 +969,8 @@ typedef struct le_track_snapshot {
    * a division track). Only ever nonzero in Sync/Band mode on a non-primary
    * track. See le_sync_quantize_active (engine_private.h) for how it's set. */
   int32_t sync_divisor;
-  /* Trailing (B4, One Shot): 0/1, default 0. Settable in any mode; only
-   * behaviorally active in Free/Song — see LE_CMD_SET_ONE_SHOT's doc. */
+  /* Trailing (B4, One Shot): 0/1, default 0. Live in every mode; see
+   * le_engine_set_one_shot for playback and relaunch semantics. */
   int32_t one_shot;
   /* Trailing (#819): the monotonic per-track id of the currently-SETTLED take
    * — the take the RECORD_END that last finalized this track logged, published
@@ -690,6 +988,91 @@ typedef struct le_track_snapshot {
    * revert affordance — this field is only the in-progress indicator. See
    * le_engine_restore_track. */
   int32_t restore_state;
+  /* Trailing (accepted design, slice 1): this track's OWN playhead in frames
+   * within its own length — a multiple's segment offset, a Sync division's
+   * folded phase and a Free/Song track's private clock are all already
+   * applied, so `position_frames / length_frames` is the track's progress
+   * without the reader re-deriving the mode's position rule. It is the read
+   * index of the block's LAST frame (so one behind master_position_frames,
+   * which is advanced after each frame); while RECORDING it is the write
+   * head instead (frames captured so far). 0 for an empty or never-played
+   * track. Published once per block beside the level. */
+  int32_t position_frames;
+  /* Trailing (accepted design, slice 1): what the arm reported by `pending`
+   * waits for — 0 = the quantize grid (next loop top / subdivision), 1 = a
+   * signal at the recording input (Sound start), 2 = a Band section toggle
+   * at the primary's loop top; -1 while nothing is pending. The stage names
+   * the boundary from this rather than guessing from the settings. */
+  int32_t pending_trigger;
+  /* ---- per-track record timing and decay overrides (accepted design,
+   * slice 2b; trailing). What the engine holds, so a surface and a session
+   * capture read the setting back rather than what was last sent. */
+  int32_t quantize_override; /* -1 inherit, 0 forced off, 1 forced on
+                              * (record timing vector) */
+  int32_t quantize_div_override; /* -1 inherit, else le_grid_div
+                                  * (record timing vector) */
+  float overdub_feedback_override; /* negative = inherit, else 0..1
+                                    * (le_engine_set_track_overdub_feedback) */
+  /* Trailing (accepted design, slice 3): the Mixer's per-track facts. */
+  int32_t solo; /* 0/1 — le_engine_set_track_solo; independent of muted */
+  /* Absolute stereo peaks AFTER volume, pan and track FX, BEFORE output
+   * routing/downmix and the master bus. Values may exceed unity (clipping
+   * headroom); never clamped to 1. A mono destination folds the pair later
+   * and need not equal either meter. 0 when no enabled route is audible. */
+  float peak_l;
+  float peak_r;
+  uint32_t image_revision; /* last image applied at capture start */
+  int32_t pending_launch; /* 0 none, 1 Record, 2 Play, 3 Overdub: shared Count-in */
+  /* A just-committed member can still be canceled in the next command drain.
+   * This is cancellation authority, not pending membership or fresh admission. */
+  int32_t count_in_cancel_grace;
+  /* Trailing (#1162, Reverse): 0 forward, 1 reversed — the callback-owned
+   * read direction of the track's recorded material, published with every
+   * accepted le_engine_toggle_reverse / le_engine_install_reverse and reset to
+   * forward with the material (Clear, Undo to empty, a new capture, import).
+   * A performance transform, not an audio edit: never in the undo history. */
+  int32_t reversed;
+  /* Trailing (#1164): how many overdub layers le_engine_peel can still remove
+   * — the LAYER entries above the newest history entry that is neither an
+   * overdub nor a peel. Published under undo_depth's gates, so an EMPTY track
+   * reads 0 here too. The host derives its layer count from this: PEEL
+   * entries keep undo_depth constant while a layer disappears. */
+  int32_t peel_depth;
+  /* Trailing (#1179): the track's effective read rate x1000 (source frames
+   * per song frame; 500 at 1/2x Speed, 8000 at 8x), so the host shows the
+   * derived pitch and progress without re-deriving them. position_frames
+   * moves at this rate. */
+  int32_t head_rate_milli;
+  /* Trailing (#1179 Part 3a): the stored Transpose pitch (-12..12) and the
+   * pitch actually sounding — 0 while its render is pending, refused or
+   * bypassed, so a host never claims a pitch the mix is not playing. */
+  int32_t transpose_st;
+  int32_t transpose_effective_st;
+  /* Trailing (#1168): how many Undo or Redo taps on this track's length edits
+   * did nothing where the tap's own result could not say so, counted since
+   * the engine was created and never reset: a tap posted as LE_OK that the
+   * callback then refused (the rig changed in between), or taps queued behind
+   * an overdub that stopped at a length edit, which only an explicit tap
+   * undoes. A refusal returned to the tap itself is not counted: its caller
+   * reports that result, so one tap raises one notice. The host reports each
+   * increase, so a tap that did nothing is never silent. */
+  uint32_t length_history_refusals;
+  /* Trailing (#1179 Part 4a): this track's Follow tempo override (-1
+   * inherits le_snapshot.follow_tempo, 0 keeps its recorded speed, 1 follows
+   * the song tempo). */
+  int32_t follow_override;
+  /* Trailing (#1179 Part 4a-ii): this track's Pitch override (-1 inherits
+   * le_snapshot.pitch_follows_speed, 0 Unchanged, 1 Follows speed), and the
+   * pitch the tempo retime puts on what it sounds now, in cents: 0 at its
+   * own span or once a stretch render plays (within the 0.5 % tolerance,
+   * about 9 cents), the varispeed's shift while that render is pending or
+   * with Follows speed. Speed and Transpose are not included. */
+  int32_t pitch_override;
+  int32_t pitch_effective_cents;
+  /* Trailing (#1179 Part 4b): the shared-clock length this track's take was
+   * laid down against once a retime moved the clock (0: the clock in force).
+   * A Session saves it so a recall reads every take at its own ratio. */
+  int32_t span_frames;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -967,6 +1350,10 @@ typedef struct le_snapshot {
    * the UI cannot tell "armed and silent" from "not armed yet", and those two
    * need different words on screen. */
   int32_t tuner_input;
+  /* Inputs whose live monitors the tuner is silencing (bit c = input c); 0
+   * whenever the tuner is disarmed. Persistent monitor mute is separate and
+   * unaffected (le_engine_set_monitor_input_mute). */
+  uint32_t tuner_mute_mask;
 
   /* Tracks. */
   int32_t track_count; /* number of usable tracks (<= LE_MAX_TRACKS) */
@@ -983,8 +1370,9 @@ typedef struct le_snapshot {
   int32_t quantize_div; /* le_grid_div granularity (default 0 = off) */
   int32_t tempo_source; /* le_tempo_source (default 0 = none) */
   /* Whole bars in the master loop, or 0 when no grid relationship exists
-   * (sync off, no loop, or the loop predates any grid). The loop's AUDIO
-   * length is never altered by the grid — bars is a derived count. */
+   * (sync off, no loop, or the loop predates any grid) or the grid's beats
+   * do not make whole bars (loop_beats, #1168). The loop's AUDIO length is
+   * never altered by the grid — bars is a derived count. */
   int32_t loop_bars;
   int32_t current_beat; /* 0..ts_num-1 within the bar: loop-driven, or driven
                          * by the count-in / free-running click; 0 idle */
@@ -994,9 +1382,17 @@ typedef struct le_snapshot {
    * mask 0 (unrouted), volume 1, count-in 0 bars — the untouched engine is
    * bit-identical to the click-free build. */
   int32_t click_mode;   /* le_click_mode (default 0 = off) */
+  /* Exact command receipt: acquire commands_settled BEFORE a synchronous
+   * snapshot read; do not admit another mode write until the read completes.
+   * Revision advances on callback acceptance/refusal, including same-value
+   * requests. It resets on configure; the actual mode survives configure. */
+  uint32_t click_mode_revision;
+  int32_t click_mode_result; /* LE_OK or LE_ERR_INVALID; prior mode on refusal */
   uint32_t click_mask;  /* click output bitmask (default 0 = no outputs) */
   float click_volume;   /* 0..LE_MAX_GAIN (default 1); the click's only gain */
   int32_t count_in_bars; /* count-in length in measures; 0 = off (default) */
+  uint32_t record_start_revision;
+  int32_t record_start_result; /* prior pair remains on callback refusal */
   int32_t counting_in;   /* 0/1: a count-in is currently running */
   /* Beat countdown while counting in: the number of count-in beats still to
    * come, INCLUSIVE of the one currently sounding (a one-bar 4/4 count-in
@@ -1009,18 +1405,21 @@ typedef struct le_snapshot {
    * the content-lock gate and what each value means. */
   int32_t looper_mode; /* le_looper_mode (default 0 = MULTI) */
 
-  /* ---- primary track (B3, D18; trailing for the same offset-stability
-   * reason as the blocks above). -1 = none (default). Persists through the
-   * primary track being cleared/undone-to-empty; only an explicit re-crown
-   * (le_engine_crown_primary) changes it — see LE_CMD_CROWN_PRIMARY's doc.
-   * Meaningful only in Sync/Band mode (see le_sync_quantize_active); a
-   * nonzero value in any other mode is inert. */
+  /* ---- primary track (B3, D18 as revised by the accepted design; trailing
+   * for the same offset-stability reason as the blocks above). -1 = none
+   * (default, and again whenever every track is empty). The engine crowns
+   * the FIRST COMPLETED TAKE while nothing is crowned; an explicit re-crown
+   * (le_engine_crown_primary) is the timing handoff. The designation
+   * survives the primary alone being cleared/undone-to-empty while a sibling
+   * still holds audio (so its re-record re-establishes it), and dies with
+   * the last take. Every mode publishes it; it only GATES timing in
+   * Sync/Band (see le_sync_quantize_active). */
   int32_t primary_track;
 
-  /* ---- MIDI clock (Phase C, D15; trailing for the same offset-stability
-   * reason as the blocks above). le_clock_mode; default 0 = OFF, so an
-   * untouched engine emits no clock bytes. See le_engine_set_clock_mode. */
-  int32_t clock_mode;
+  /* ---- MIDI clock send (Phase C, D15; trailing for the same
+   * offset-stability reason as the blocks above). 0/1; default 0, so an
+   * untouched engine emits no clock bytes. See le_engine_set_clock_send. */
+  int32_t clock_send;
 
   /* ---- input clip detector + conditioning activity (input clip, S2;
    * trailing for the same offset-stability reason as the blocks above).
@@ -1037,9 +1436,188 @@ typedef struct le_snapshot {
    * (the UI truth for a "conditioning on" badge; a stage enabled on an
    * excluded channel reads 0 here because it never runs). */
   uint32_t input_cond_mask;
+  /* Trailing (accepted design, slice 1): the master bus's absolute peak over
+   * the most recent block, 0..1 (1.0 = full scale), read AFTER the master
+   * gain and limiter — what actually reaches the outputs. Sums can clip when
+   * no single track does, so the stage footer meters this rather than the
+   * per-track peaks. Sibling of output_rms above. */
+  float output_peak;
+  /* ---- record start settings (accepted design, slice 2b; trailing).
+   * Quantize is the control-side gate; auto_record and count_in_bars are
+   * decoded together from the callback's applied recording-start choice.
+   * le_engine_set_record_start publishes the exclusive pair together. */
+  int32_t quantize;    /* 0/1: the global loop-grid record quantize gate */
+  int32_t auto_record; /* 0/1: sound-activated record start */
+  float overdub_feedback; /* the global coefficient, 0..1 (default 1) */
+  /* ---- per-channel meters and capture trim (accepted design, slice 3;
+   * trailing). Absolute block peaks may exceed unity; they are not clamped.
+   * input_peaks[c] is input c's RAW device level (before conditioning and
+   * trim, like input_clip_mask, so a hot ADC reads hot however the trim is
+   * set); monitor_peaks[c] is its post-chain/gain/pan stereo peak BEFORE
+   * output folding (0 while off, muted or without an enabled route).
+   * output_peaks[c] follows master gain/limiter but EXCLUDES click.
+   * input_trim[c] is the capture gain le_engine_set_input_trim holds
+   * (linear, default 1). Indexed by source; device entries past the
+   * device's channel count read 0 (trim 1). Instrument sources (#1197,
+   * LE_INSTRUMENT_SOURCE_BASE + k) report their bus's block peak as the
+   * input peak and a trim of 1. */
+  float input_peaks[LE_MAX_SOURCES];
+  float monitor_peaks[LE_MAX_SOURCES];
+  float output_peaks[LE_MAX_CHANNELS];
+  float input_trim[LE_MAX_SOURCES];
+  uint32_t mix_revision; /* last wholly applied mix transaction */
+  /* ---- output buses (slice 3b; trailing). output_bus_count is how many
+   * the device has ((output_channels + 1) / 2); entries past it read the
+   * defaults. */
+  int32_t output_bus_count;
+  float output_level[LE_MAX_OUTPUT_BUSES];   /* 0..1, default 1 */
+  int32_t output_muted[LE_MAX_OUTPUT_BUSES]; /* 0/1 */
+  int32_t output_mono[LE_MAX_OUTPUT_BUSES];  /* 0/1 */
+  float output_balance[LE_MAX_OUTPUT_BUSES]; /* -1..1 */
+  /* Advances on every Cut all sound the audio thread applied. */
+  uint32_t tail_reset_rev;
+  /* The capture policy of the armed take (1 = Follow output volume), or the
+   * policy the next arm would freeze while not armed. */
+  int32_t perf_follow_output;
+  /* The output bus the armed take captures (the first bus with an enabled
+   * channel at arm), or the one the next arm would capture; -1 when no
+   * output is enabled. The offline render replays this bus's level and
+   * mute under Follow output volume. */
+  int32_t perf_capture_bus;
+  float perf_output_level;
+  int32_t perf_output_muted;
+  uint32_t perf_capture_mask;
+  uint32_t perf_output_enabled_mask;
   /* NOTE: the audio-callback telemetry (#722) is deliberately NOT here — see
    * le_callback_telemetry and le_engine_get_callback_telemetry. */
+  /* One coherent applied timing tuple, never producer desired state. */
+  uint32_t record_timing_revision;
+  int32_t record_timing_result;
+  int32_t record_timing_overrides[LE_MAX_TRACKS];
+  /* ---- Instruments (#1197; trailing) ----
+   * instrument_patch[k]: the patch slot k plays (-1: none), as applied by the
+   * callback. instrument_voices[k]: its sounding voices (held or releasing,
+   * not fading). instrument_peaks[k]: the block peak of its bus.
+   * voice_limit: the sounding-voice limit in force. voices_stolen /
+   * voices_stolen_hard: voices taken for new notes with a fade / without
+   * one (no room). synth_epoch: bumped whenever the synth is re-initialised
+   * (configure, reopen); every voice and latch is gone after a change.
+   * instrument_events_refused: note-ons refused because the event ring was
+   * full. instrument_fallback_blocks: blocks larger than the bus scratch,
+   * which render no instrument audio. */
+  int32_t instrument_patch[LE_MAX_INSTRUMENTS];
+  int32_t instrument_voices[LE_MAX_INSTRUMENTS];
+  float instrument_peaks[LE_MAX_INSTRUMENTS];
+  int32_t voice_limit;
+  uint32_t voices_stolen;
+  uint32_t voices_stolen_hard;
+  uint32_t synth_epoch;
+  uint32_t instrument_events_refused;
+  uint32_t instrument_fallback_blocks;
+  /* sustain contributors refused because an instrument already had
+   * LE_SYNTH_SUSTAIN_MAX (16) (#1197 Part 2c) */
+  uint32_t instrument_sustain_refused;
+  /* ---- native MIDI input (#1228 Part 1; trailing). Totals across all
+   * LE_MAX_MIDI_PORTS ports since the engine was created: events delivered
+   * from the current binding, events dropped as stale (pushed by a binding
+   * that has since ended), gaps (places where a full ring or an OS overrun
+   * lost messages), ports that went lost, and binding changes (an attach,
+   * detach, rebind or close, counted once per drain that sees the
+   * generation move). midi_in_attached_mask has bit p set while a capture is
+   * attached to p. */
+  uint32_t midi_in_events;
+  uint32_t midi_in_stale;
+  uint32_t midi_in_overflows;
+  uint32_t midi_in_lost;
+  uint32_t midi_in_attached_mask;
+  uint32_t midi_in_rebinds;
+  /* Trailing (#1179): the global Speed the callback applies, as
+   * numer/denom (1/2, 1/1, 2/1, 4/1 or 8/1; 1/1 before any request). */
+  int32_t speed_numer;
+  int32_t speed_denom;
+  /* Trailing (#1179 Part 3a): 1 while Transpose is bypassed globally. */
+  int32_t transpose_bypass;
+  /* Seconds each capture ring of the most recent take was granted
+   * (le_perf_target.ring_seconds after the memory cap); 0 before any arm. */
+  int32_t perf_ring_seconds;
+  /* ---- performance take accounting (#1198; trailing) ---- */
+  /* Why the most recent take stopped: an le_perf_stop_reason, NONE while it
+   * runs. Survives disarm; reset by the next arm. */
+  int32_t perf_stop_reason;
+  /* Bytes the drain has written for the take: part headers and samples,
+   * events.log and layer files. */
+  uint64_t perf_bytes_written;
+  /* The first capture frame a ring could not take, or UINT64_MAX. A take
+   * that drops a frame ends there (LE_PERF_STOP_SLOW_STORAGE). Neither this
+   * nor perf_overruns moves once the take has stopped: a full ring after a
+   * stop is not part of the take. */
+  uint64_t perf_first_drop_frame;
+  /* Samples above full scale (|x| > 1.0) across every stream so far. */
+  uint64_t perf_overs;
+  /* The streams the armed take captures (or the next arm would: the first
+   * enabled output pair plus every monitored input the device has), and the
+   * bytes one frame of all of them takes, so the app can tell whether a
+   * volume holds a minimum take of every stream before it arms. 0 when
+   * nothing could be captured. */
+  int32_t perf_capture_streams;
+  uint32_t perf_capture_frame_bytes;
+  /* Checkpoints of the most recent take that could not be written (a failed
+   * sync or slot write); each leaves the other slot standing and the take
+   * running. Reset by the next arm. */
+  uint32_t perf_checkpoint_failures;
+  /* Trailing (#1168): whole beats (denominator notes) in the master loop, the
+   * grid's own count, or 0 with no grid. loop_bars * ts_num when the loop is
+   * whole bars; a Divide of a sole 1- or 3-bar loop keeps the tempo and
+   * leaves 2 or 6 beats with loop_bars 0. */
+  int32_t loop_beats;
+  /* ---- MIDI clock sync (#1228 Part 2; trailing). clock_state is an
+   * le_clock_state; clock_source_port is -1 for Internal. clock_bpm is the
+   * external tempo for display (0.1 BPM steps with hysteresis, Segno's
+   * denominator-note unit; the last value is kept while LOST, 0 before the
+   * first acquisition). clock_out_of_range is 1 while a steady clock lies
+   * outside 30..300 BPM in the current signature. clock_pulses counts every
+   * pulse received or recognised as missed since the source was selected
+   * (low 32 bits). clock_receipt is the sequence of the last applied
+   * le_engine_set_clock_sync, clock_result its outcome (LE_OK or
+   * LE_ERR_SYNC_LOCKED). clock_losses counts Synced -> Lost transitions. */
+  int32_t clock_state;
+  int32_t clock_source_port;
+  int32_t clock_follow_transport;
+  int32_t clock_loss_policy;
+  float clock_bpm;
+  int32_t clock_out_of_range;
+  uint32_t clock_pulses;
+  uint32_t clock_receipt;
+  int32_t clock_result;
+  uint32_t clock_losses;
+  /* Trailing (#1179 Part 4a): the tempo the takes were recorded at (0 with
+   * no master), the Follow tempo default every track inherits (0 = keep the
+   * recorded speed), and what a song-tempo change does now
+   * (le_tempo_follow_state). */
+  float recorded_tempo_bpm;
+  int32_t follow_tempo;
+  int32_t tempo_follow;
+  /* Trailing (#1179 Part 4a-ii): the Pitch default every track inherits
+   * (0 Unchanged, the default; 1 Follows speed). */
+  int32_t pitch_follows_speed;
+  /* Trailing (#1179 Part 4b): the master length recorded_tempo_bpm
+   * measured (0 with none). A Session saves the pair, so a recall commits
+   * the takes at the tempo they were laid down at and retimes from there. */
+  int32_t recorded_length_frames;
 } le_snapshot;
+
+/* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part
+ * 4a). With no content the tempo is free. With content it retimes the shared
+ * clock only on a bar grid (Multi, Sync or Band with a tempo) with at least
+ * one track following, and never while a track records, overdubs, is armed
+ * or launching, or a count-in runs. */
+typedef enum le_tempo_follow_state {
+  LE_TEMPO_FOLLOW_FREE = 0,        /* no content: the tempo changes freely */
+  LE_TEMPO_FOLLOW_RETIMES = 1,     /* a change retimes the recorded tracks */
+  LE_TEMPO_FOLLOW_NO_GRID = 2,     /* locked: no bar grid to follow */
+  LE_TEMPO_FOLLOW_NO_FOLLOWER = 3, /* locked: no track follows the tempo */
+  LE_TEMPO_FOLLOW_BUSY = 4,        /* locked while capture, arm or count-in */
+} le_tempo_follow_state;
 
 /* ============================ Plugin hosting ==============================
  * Discovery of installed VST3 / CLAP audio-effect plugins. This first slice is
@@ -1075,7 +1653,12 @@ typedef struct le_plugin_desc {
 } le_plugin_desc;
 
 /* Opaque engine handle. */
-typedef struct le_engine le_engine;
+
+
+LE_EXPORT int32_t le_engine_set_mix(le_engine* engine,
+                                    const le_mix_settings* settings);
+LE_EXPORT int32_t le_engine_record_with_image(le_engine* engine, int32_t channel,
+                                              const le_record_image* image);
 
 /* Returns the miniaudio + engine version string (never NULL). */
 LE_EXPORT const char* le_version(void);
@@ -1151,7 +1734,7 @@ LE_EXPORT int32_t le_plugin_scan_cancel(le_engine* engine);
  * allocation — runs on the CONTROL thread; the audio thread only ever reads an
  * atomically-published "ready" flag and forwards samples. No plugin is ever
  * created, destroyed, or dylib-loaded on the audio callback. */
-typedef struct le_plugin_slot le_plugin_slot;
+
 
 /* Loads the plugin identified by `plugin_id` (a scanned le_plugin_desc.id) into
  * FX chain slot `index` of a lane (channel, lane) or a monitor input. The load
@@ -1294,6 +1877,50 @@ LE_EXPORT int32_t le_engine_start(le_engine* engine, const le_config* config);
 /* Stops and closes the device. Returns LE_OK or an le_result error. */
 LE_EXPORT int32_t le_engine_stop(le_engine* engine);
 
+/* What le_engine_reopen did with the recorded material (#1140). */
+typedef enum le_reopen_outcome {
+  LE_REOPEN_RETAINED = 0,     /* loops, history, Fade kept; tracks STOPPED */
+  LE_REOPEN_CLEARED_RATE = 1, /* the device negotiated another sample rate */
+  LE_REOPEN_CLEARED_CAP = 2,  /* max_loop_frames differs from the buffers */
+  LE_REOPEN_RETAINED_PARTIAL = 3, /* retained, except the tracks named in the
+                                   * dropped mask: a Clear/Undo/Redo/cancel or
+                                   * Session commit on them was still
+                                   * unapplied at the loss */
+} le_reopen_outcome;
+
+/* Reopens the audio device after a loss WITHOUT discarding the recorded loops
+ * (#1140). Requires a stopped (le_engine_stop) engine that was started
+ * before: LE_ERR_ALREADY_RUNNING while running, LE_ERR_NOT_RUNNING when never
+ * configured (a cold engine goes through le_engine_start). Opens the device
+ * like le_engine_start, then — at the same negotiated sample rate and loop
+ * cap — keeps every lane's PCM, the undo/redo history, loop multiples, take
+ * ids and the crown, and brings each content track back STOPPED at the loop
+ * head with its Fade frozen (the ramp resumes toward its target at the
+ * original full-travel rate on the next Play). A take still capturing at the
+ * loss is dropped: a first recording leaves its track EMPTY, an in-progress
+ * overdub pass is reverted sample-exactly (committed layers stay), a take
+ * still in its seam crossfade or trailing fold goes with it. Recording never
+ * resumes. A track whose Clear/Undo/Redo/cancel or Session commit the audio
+ * thread never applied is dropped the same way — EMPTY, its history gone —
+ * and named in *dropped_track_mask (bit t = track t, NULL to not ask), with
+ * *outcome LE_REOPEN_RETAINED_PARTIAL; every other track is retained. A
+ * drop that empties the rig resets the master as a clear does. Only another
+ * sample rate or loop cap clears the whole engine, exactly as le_engine_start
+ * does, with *outcome LE_REOPEN_CLEARED_RATE / _CAP and a zero mask. A
+ * running performance capture ends with DEVICE_CHANGED either way. Every
+ * setting the host replays after a start (routing, mix, FX, monitors,
+ * conditioning, output gates) is reset here too; routes to inputs or outputs
+ * the new device lacks stay silent.
+ *
+ * Returns LE_OK or an le_result error. A failed open changes nothing (the
+ * material is still held, still stopped, *outcome and the mask untouched), so
+ * the caller may retry. A failed start returns LE_ERR_DEVICE with the material
+ * already settled per *outcome — still retained and stopped on
+ * LE_REOPEN_RETAINED / _PARTIAL. */
+LE_EXPORT int32_t le_engine_reopen(le_engine* engine, const le_config* config,
+                                   int32_t* outcome,
+                                   int32_t* dropped_track_mask);
+
 /* ---- device-free test pump ----
  *
  * The two calls a test harness needs to drive the engine deterministically
@@ -1309,6 +1936,25 @@ LE_EXPORT int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
                                       int32_t input_channels,
                                       int32_t output_channels,
                                       int32_t max_loop_frames);
+
+/* le_engine_reopen without the device: the retention decision, the material
+ * settle and the runtime reset, on an engine le_engine_configure (or a
+ * previous start) already configured. `max_loop_frames <= 0` selects the
+ * default, as in le_engine_configure. Same preconditions, results, *outcome
+ * values and dropped-track mask as le_engine_reopen. */
+LE_EXPORT int32_t le_engine_reopen_configured(le_engine* engine,
+                                              int32_t sample_rate,
+                                              int32_t input_channels,
+                                              int32_t output_channels,
+                                              int32_t max_loop_frames,
+                                              int32_t* outcome,
+                                              int32_t* dropped_track_mask);
+
+/* Flips the published device-present flag to 0 while the engine keeps
+ * running — what the backend's device-lost notification does — so a host
+ * driving the device-free pump can rehearse its reconnect path (a stop,
+ * then le_engine_reopen_configured) without a device to unplug. */
+LE_EXPORT void le_engine_mark_device_lost(le_engine* engine);
 
 /* Processes one block exactly like the device callback: drains the command
  * ring, records/mixes `frames` frames from `input` (interleaved f32, may be
@@ -1349,8 +1995,10 @@ LE_EXPORT void le_engine_get_track(le_engine* engine, int32_t channel,
 LE_EXPORT int32_t le_engine_read_visual(le_engine* engine, float* out,
                                         int32_t max_points);
 
-/* Like le_engine_read_visual but for a single track's own contribution
- * (channel 0..track_count-1), for per-track waveform thumbnails. */
+/* Copies a single track's waveform over its full recorded length (channel
+ * 0..track_count-1). Pair with the track snapshot's position_frames and
+ * length_frames. The shape is retained while stopped and cleared when its
+ * take is removed; a first recording gains its shape as playback sweeps it. */
 LE_EXPORT int32_t le_engine_read_track_visual(le_engine* engine,
                                               int32_t channel, float* out,
                                               int32_t max_points);
@@ -1395,7 +2043,42 @@ LE_EXPORT int32_t le_engine_clear(le_engine* engine, int32_t channel);
  * recording on this track overwrites the live slot it names, or when the pool
  * runs out of room for it. `undo` is never a promise, only an offer. */
 LE_EXPORT int32_t le_engine_clear_undoable(le_engine* engine, int32_t channel);
+/* Undo on track [channel]: peels the most recent overdub pass, restores a
+ * cleared take, or empties the track past its base take (redo-ably). During
+ * a capture (accepted design, slice 2):
+ *   - OVERDUBBING: the pass punches out now (not at the grid) and the layer
+ *     it was writing is peeled as soon as it retires, so the track plays its
+ *     pre-pass audio; redo puts the partial pass back without resuming the
+ *     capture. A pass that had written nothing peels the previous layer.
+ *   - RECORDING: the take is cancelled — finalized at its captured length
+ *     (a defining take still establishes the grid it would have) and held
+ *     for redo while the track reads EMPTY; redo plays it immediately
+ *     (LE_CMD_CANCEL_TAKE / LE_EVT_TAKE_CANCELLED).
+ * A user clear (le_engine_clear_undoable) on a capturing track freezes the
+ * take STOPPED at the clear and keeps it restorable the same way. An undo
+ * that reaches the engine while the take is already ending (a finalize that
+ * landed in the same block) is declined: the take stays as it finalized.
+ * Restoring completed audio returns LE_ERR_MODE_MISMATCH when it would not
+ * fit the current mode/clock, or LE_ERR_NOT_READY while its required report
+ * or preceding clock changes are pending. Neither refusal changes history,
+ * audio, mutes, or transport; retry after an explicit compatible mode choice
+ * or after pending work settles. */
 LE_EXPORT int32_t le_engine_undo(le_engine* engine, int32_t channel);
+/* Projects the selected channels' next undo (redo = 0) or redo (redo = 1)
+ * in ascending channel order without consuming history or posting commands.
+ * Returns LE_OK when the resulting recovered spans fit the current mode and
+ * clock, LE_ERR_MODE_MISMATCH when they do not, or LE_ERR_NOT_READY while a
+ * selected recovery length or an earlier clear/mode/crown/defining-record
+ * command is pending, including a sibling cancellation that may establish
+ * the shared clock.
+ * Invalid handles, masks, or redo values return LE_ERR_INVALID; an engine
+ * that is not configured returns LE_ERR_NOT_RUNNING. An empty mask is valid.
+ * A group must preflight its whole mask before executing members in ascending
+ * order. On either refusal the caller must leave the entire group untouched.
+ * Free/Song accept arbitrary completed spans once pending work settles. */
+LE_EXPORT int32_t le_engine_history_mode_gate(le_engine* engine,
+                                              uint32_t channels, int32_t redo);
+
 /* Whether the NEXT le_engine_undo on `channel` would restore a cleared take
  * (1) rather than peel an overdub layer or empty the track (0). Also 0 for an
  * invalid channel or a stopped engine.
@@ -1408,7 +2091,33 @@ LE_EXPORT int32_t le_engine_undo(le_engine* engine, int32_t channel);
  * exact the moment it returns. */
 LE_EXPORT int32_t le_engine_undo_restores_clear(le_engine* engine,
                                                 int32_t channel);
+/* Whether a user clear on a capturing track has frozen the take and its
+ * restore point is still to be filed (1) — the next le_engine_undo_restores_
+ * clear answer will be 1 once the audio thread's report lands. 0 otherwise,
+ * for an invalid channel or a stopped engine. A host grouping clears asks
+ * this beside le_engine_undo_restores_clear to know which tracks the clear
+ * can give back. */
+LE_EXPORT int32_t le_engine_clear_restore_pending(le_engine* engine,
+                                                  int32_t channel);
+/* Whether the NEXT le_engine_redo on `channel` re-applies a clear that an
+ * undo took back (1) rather than re-stacking an overdub layer or
+ * resurrecting an undone-to-empty track (0). The redo twin of
+ * le_engine_undo_restores_clear, for the same host bookkeeping. */
+LE_EXPORT int32_t le_engine_redo_reclears(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_redo(le_engine* engine, int32_t channel);
+/* Removes the newest overdub layer as one history entry (#1164): the pre-pass
+ * image becomes live, the removed image is kept for le_engine_undo, and the
+ * Redo branch is dropped. Never touches the original take: Peel consumes the
+ * topmost overdub layer reachable through earlier peels only, so the deepest
+ * layer (the pre-first-overdub image) is swapped in but never consumed, and
+ * any non-overdub history above the layers (a clear, a loop-close restoration)
+ * blocks it. Undo of a Peel restores the layer; Redo re-peels. A synchronous
+ * control-thread swap like the in-track undo: no command, no receipt.
+ * LE_ERR_INVALID when no overdub layer can be peeled (none remain, the track
+ * is empty or cleared, or the newest edit is not an overdub); LE_ERR_NOT_READY
+ * while the track captures, drains a layer, or has a pending state command,
+ * cancel, Clear report or Count-in launch — never queued, nothing mutated. */
+LE_EXPORT int32_t le_engine_peel(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
                                              float volume);
 LE_EXPORT int32_t le_engine_set_track_mute(le_engine* engine, int32_t channel,
@@ -1436,12 +2145,13 @@ LE_EXPORT int32_t le_engine_set_output_mask(le_engine* engine, int32_t channel,
  * (volume/mute/input/output mask) operate on lane 0 for backward
  * compatibility. */
 
-/* Sets track [channel]'s active lane count to [count] (clamped 1..LE_MAX_LANES)
- * on the calling (control) thread, lazily allocating the loop buffers for any
- * newly added lanes before the audio thread can read them. New lanes default to
- * recording input channel == their lane index, full stereo output, unity
- * volume, unmuted. Shrinking the count leaves the dropped lanes' buffers
- * allocated for reuse but stops playing/recording them. */
+/* Internal structural count command. Valid count is 1..LE_MAX_LANES.
+ * Allocates only newly needed inactive buffers on the control thread and
+ * queues activation; LE_OK means accepted, not published. Await commandsSettled
+ * before depending on the count or importing. A prior count command retains
+ * its buffer lifetime through the end of the callback block. Shrinking refuses
+ * recoverable lanes. Retained routing and effects remain attached to their
+ * lane identities. User routing edits use the atomic mix transaction instead. */
 LE_EXPORT int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
                                            int32_t count);
 
@@ -1466,6 +2176,43 @@ LE_EXPORT int32_t le_engine_set_lane_volume(le_engine* engine, int32_t channel,
 LE_EXPORT int32_t le_engine_set_lane_mute(le_engine* engine, int32_t channel,
                                           int32_t lane, int32_t muted);
 
+/* Sets lane [lane] of track [channel]'s pan, -1 (left) .. 1 (right), 0 centre
+ * (accepted design, slice 3). A lane's output is a stereo pair (mono content
+ * reads as an equal pair until a stereo effect spreads it); the pan scales
+ * that pair before le_fx_route places it, with a unity-centre balance law:
+ * the near side stays at unity and the far side falls on a quarter-sine
+ * (left = cos(max(pan, 0) * pi/2), right = cos(max(-pan, 0) * pi/2)). Centre
+ * is therefore bit-identical to an unpanned lane, and hard left is the left
+ * output alone. A single masked output receives the (l + r) / 2 mid as
+ * before, so pan on a mono route is a plain attenuation. Applied on the
+ * legacy per-lane route and on the summed track bus alike; the loop-stage
+ * wet cache stores the unpanned render, so a pan change never invalidates
+ * it. Reset to centre by (re)configure, like volume; remembered and
+ * re-applied by the caller. */
+LE_EXPORT int32_t le_engine_set_lane_pan(le_engine* engine, int32_t channel,
+                                         int32_t lane, float pan);
+
+/* Solos or un-solos track [channel] (accepted design, slice 3). While any
+ * track is soloed, only soloed tracks route to the outputs; every other
+ * track's lanes keep playing (their chains keep running, their meters keep
+ * reading the dry content) but route nothing, exactly as a muted lane does.
+ * Independent of mute: a soloed muted track is still silent, and clearing
+ * every solo leaves the mutes as they were. Monitors are not tracks and are
+ * unaffected. Reset by (re)configure. */
+LE_EXPORT int32_t le_engine_set_track_solo(le_engine* engine, int32_t channel,
+                                           int32_t solo);
+
+/* Sets hardware input [input]'s capture trim (accepted design, slice 3):
+ * a linear gain, default 1, applied to the sample a lane RECORDS from that
+ * input and to nothing else — the monitor path, the input meters, the clip
+ * detector, the sound-activated trigger and the tuner all read the
+ * untrimmed input: raw for meters/clipping, conditioned for trigger/tuner.
+ * Clamped to 0..LE_MAX_INPUT_TRIM. Takes
+ * effect on the next block (a direct store, so it works while stopped);
+ * reset to 1 by (re)configure. */
+LE_EXPORT int32_t le_engine_set_input_trim(le_engine* engine, int32_t input,
+                                           float gain);
+
 /* Copies lane [lane] of track [channel]'s snapshot into *out. Out-of-range
  * channels/lanes yield an empty lane. No-op if either pointer is NULL. */
 LE_EXPORT void le_engine_get_lane(le_engine* engine, int32_t channel,
@@ -1474,19 +2221,6 @@ LE_EXPORT void le_engine_get_lane(le_engine* engine, int32_t channel,
 /* Sets the record-offset latency compensation in frames (clamped >= 0). */
 LE_EXPORT int32_t le_engine_set_record_offset(le_engine* engine,
                                               int32_t frames);
-
-/* Enables or disables quantized recording. When enabled, a record/overdub press
- * over an existing master loop is deferred to the next base-loop top, so
- * captures start and finalize aligned to the loop grid; a second press before
- * the boundary cancels the pending action. The defining recording (no master
- * yet) always acts immediately. Disabling cancels any pending arms. */
-LE_EXPORT int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled);
-
-/* Sets track [channel]'s quantize override: a negative [mode] inherits the
- * global default (le_engine_set_quantize), 0 forces quantize off for the track,
- * and a positive value forces it on. */
-LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
-                                               int32_t channel, int32_t mode);
 
 /* Cancels track [channel]'s pending record arm, whatever armed it — the
  * quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
@@ -1506,6 +2240,14 @@ LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
  * same call falls through and STARTS a capture instead. A caller that means
  * "make sure nothing fires later" — the app's FX-mode entry, which hands the
  * user a surface with no transport controls — needs this, not that. */
+/* Explicit transport intents, resolved atomically by the callback. Rec Stop
+ * cancels the shared launch cohort/grace, otherwise finishes only an actual
+ * cursor capture with normal Record timing. It never acquires a new take.
+ * Cancel Count-in touches only that cohort/grace, never ordinary arms or an
+ * older running capture. Both report queue/admission refusal synchronously. */
+LE_EXPORT int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel);
+LE_EXPORT int32_t le_engine_cancel_count_in(le_engine* engine);
+
 LE_EXPORT int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel);
 
 /* Finalizes track [channel]'s live NON-DEFINING recording take NOW,
@@ -1531,10 +2273,7 @@ LE_EXPORT int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel);
  *   to another command and must be retired first (le_engine_cancel_arm) —
  *   finalizing under it would leave it to fire onto the settled loop later.
  *
- * The one exception to the RECORDING guard: while a count-in is running the
- * call is accepted for ANY valid channel and cancels the count-in outright —
- * the count-in is global transport state that has captured nothing, and its
- * abort is logged as LE_PLOG_RECORD_ABORT for the counting channel.
+ * Pending Count-in members are retired explicitly with cancel_arm.
  *
  * Like cancel_arm, LE_OK means the command actually reached the ring; the
  * audio thread re-checks the RECORDING/non-defining precondition on apply,
@@ -1551,11 +2290,24 @@ LE_EXPORT int32_t le_engine_finalize_take(le_engine* engine, int32_t channel);
  * (loop_bars > 0 or tempo_source != none), set_tempo / set_time_signature /
  * tap_tempo are accepted but IGNORED by the audio thread (the published state
  * is unchanged). Clearing every track releases the lock; the tempo VALUE and
- * its source survive the clear (a derived tempo outlives its source loop). */
+ * its source survive the clear (a derived tempo outlives its source loop).
+ * Follow tempo (#1179 Part 4a, le_engine_set_follow_tempo) lifts the lock for
+ * set_tempo and tap_tempo when a following track plays on a bar grid: the
+ * change then retimes the recorded tracks (le_snapshot.tempo_follow). */
 
 /* Sets the tempo in denominator-note beats per minute, clamped to 30..300.
  * Sets tempo_source = manual; ignored while the tempo is locked. */
 LE_EXPORT int32_t le_engine_set_tempo(le_engine* engine, float bpm);
+/* Restores a session's exact musical tempo and its source while stopped.
+ * NONE requires BPM 0; MANUAL/TAPPED/DERIVED require finite BPM in 30..300.
+ * EXTERNAL is live clock state and cannot be restored by a session.
+ * Invalid arguments return LE_ERR_INVALID; unconfigured engines return
+ * LE_ERR_NOT_RUNNING. Sounding/capturing/armed tracks or unacknowledged
+ * transport changes return LE_ERR_NOT_READY without posting. The callback
+ * rechecks transport before applying. Post after clear settlement and before
+ * the new session's mode/crown/import commands. No audio or loop span changes. */
+LE_EXPORT int32_t le_engine_restore_tempo(le_engine* engine, float bpm,
+                                          int32_t source);
 
 /* Sets the time signature. Only the 17 Sheeran signatures are valid — x/4 for
  * num 2..7 and x/8 for num 5..15 — anything else returns LE_ERR_INVALID
@@ -1579,33 +2331,52 @@ LE_EXPORT int32_t le_engine_tap_tempo(le_engine* engine);
  * stays free-form (loop_bars 0, tempo untouched) — the tempo-free behavior. */
 LE_EXPORT int32_t le_engine_set_sync_tempo(le_engine* engine, int32_t on);
 
-/* Sets the musical quantization granularity (le_grid_div, tempo_grid.h):
- * 0 = off (default), 1 = bar, 2..5 = 1/2..1/16 note. Values outside 0..5
- * return LE_ERR_INVALID. State only in this part (published in the snapshot;
- * consumed by the musical arm machinery in a later part). */
-LE_EXPORT int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div);
-
-/* ---- looper mode (B2a, decision D4) ----
+/* ---- looper mode (B2a; content rules per the accepted design, slice 2) ----
  * The five architectural looper modes (le_looper_mode). Mode is a
- * session-level choice, LOCKED while any track has content (state != EMPTY):
- * a switch attempted then is silently rejected (no-op) — a simpler predicate
- * than the D6 tempo lock (content alone, no grid or count-in check; see
- * le_looper_mode_locked, engine_process.c). Only clearing every track
- * releases the lock. Mode switching is NOT a pedal action (D4) and has no UI
- * in this part (that lands in B5c). Semantics beyond the field itself
- * (Sync/Song/Band/Free behavior) land in B2b onward — this part accepts any
- * of the 5 values unconditionally once unlocked, with the engine's audio path
- * staying today's MULTI behavior regardless of the published value. Persists
- * across configure() exactly like tempo_source: seeded once in
- * le_engine_create, never reset by configure (same 2f0513a persistence
- * pattern) — and untouched by clear-all, since no engine-side "revert to
- * Multi" event is specified anywhere in the plan; the mode simply stays at
- * whatever it was last explicitly set to. */
+ * session-level choice. With recorded audio it changes only when the takes
+ * fit the target and the rig is not capturing or waiting on an armed action:
+ *   - MULTI needs whole multiples of the shortest populated track;
+ *   - SYNC and BAND need every populated track to be a whole multiple of the
+ *     primary's span, or one of the divisions the engine plays (a half or a
+ *     quarter of it); the primary is the crowned track when it holds a take,
+ *     else the lowest populated track;
+ *   - SONG and FREE take independent spans as they are.
+ * No take is trimmed, repeated, stretched or padded to fit: an unfit set is
+ * refused (LE_MODE_GATE_SPANS). Playing loops are stopped first — the
+ * switch itself lands on a stopped rig, so every playhead restarts from the
+ * top — and stopped loops stay stopped: the performer starts them again.
+ * Mode switching is NOT a pedal action (D4). Persists across configure()
+ * exactly like tempo_source: seeded once in le_engine_create, never reset by
+ * configure — and untouched by clear-all. */
+
+/* What le_engine_set_looper_mode would do with [mode] right now: one of
+ * le_mode_gate (>= 0), or LE_ERR_INVALID for a bad handle/mode and
+ * LE_ERR_NOT_RUNNING for an unconfigured engine. Selecting the current mode
+ * is always LE_MODE_GATE_OPEN (a no-op). Ask before offering the choice: an
+ * LE_MODE_GATE_PLAYING answer is what a "stop loops and switch"
+ * confirmation stands for. */
+LE_EXPORT int32_t le_engine_looper_mode_gate(le_engine* engine, int32_t mode);
 
 /* Sets the looper mode (le_looper_mode, 0..4). Values outside the enum
- * return LE_ERR_INVALID without posting. Ignored (no-op) while the mode is
- * locked (see the class doc) — the audio thread silently drops it. */
+ * return LE_ERR_INVALID without posting. Refused with LE_ERR_INVALID while
+ * the gate above reads CAPTURING, QUEUED or SPANS; with PLAYING every
+ * playing track is stopped in the same command after callback revalidation; a
+ * no-op (LE_OK) for the current mode. Landing on the audio thread, a switch
+ * over recorded audio re-clocks the takes for the target: the shared master
+ * is established from the shortest take for MULTI or the primary for
+ * SYNC/BAND (or goes dormant for SONG/FREE, whose tracks run their own clocks), and each take's multiple or division
+ * is re-derived from its unchanged length. Content, layers, history, mutes
+ * and lane settings are untouched. */
 LE_EXPORT int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode);
+
+/* Atomically switches mode and replaces every track's future length preset.
+ * bars/count obey le_engine_set_track_length_presets. One queued command
+ * rechecks the mode gate before stopping playback, switching mode or applying
+ * any preset. A refused callback gate leaves all three unchanged; successful
+ * enqueue alone is not proof of application. The current mode changes presets
+ * only, without stopping playback. Existing PCM and history are untouched. */
+LE_EXPORT int32_t le_engine_set_looper_mode_with_presets(
+    le_engine* engine, int32_t mode, const int32_t* bars, int32_t count);
 
 /* ---- primary track / Sync + Band (B3/B3b, decisions D16/D18) ----
  * Sync: one primary track; every other track's DEFINING recording is
@@ -1620,10 +2391,12 @@ LE_EXPORT int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode);
  * then Sync/Band's non-primary tracks record exactly like Multi (D16
  * fallback). */
 
-/* Crowns [channel] the primary track (D18). Rejects only an out-of-range
- * channel; accepted in every looper mode (the crown persists regardless of
- * mode, per D18) though it is inert outside Sync/Band. No "un-crown" call
- * exists — re-crowning a different channel is the only way to change it. */
+/* Crowns [channel] the primary track — the explicit timing handoff (D18).
+ * Rejects only an out-of-range channel; accepted in every looper mode (the
+ * crown persists regardless of mode) though it only gates timing in
+ * Sync/Band. There is no "un-crown" call: the engine crowns the first
+ * completed take on its own and clears the crown when the session empties
+ * (LE_CMD_CROWN_PRIMARY's doc). */
 LE_EXPORT int32_t le_engine_crown_primary(le_engine* engine, int32_t channel);
 
 /* Toggles Band section transport (D19 §2 Q3) on [channel]: a play/stop
@@ -1640,30 +2413,35 @@ LE_EXPORT int32_t le_engine_crown_primary(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_toggle_section(le_engine* engine,
                                            int32_t channel);
 
-/* ---- One Shot (B4, Sheeran manual §5.9.4) ----
+/* ---- One Shot (B4, Sheeran manual §5.9.4; every mode since slice 2b) ----
  * "A track plays just once and then stops" — the manual's tool for a
  * non-looping section (an intro/outro, or a one-off sample bed), "particularly
- * useful for playing backing tracks". A per-track boolean; the manual does
- * not gate it by mode, but segno's engine currently has a natural per-track
- * transport-wrap hook ONLY in Free and Song mode (each track ticks its own
- * free_clock there — see le_track's doc, engine_private.h); in Multi/Sync/
- * Band a track's own "lap" is a derived point on the ONE shared master
- * clock, and giving it an independent per-track stop-after-one-lap would
- * mean much larger transport surgery (and raises un-spec'd questions, e.g.
- * how a one-shot interacts with a Sync/Band division's multiple/divisor)
- * that the manual's Song-specific tool does not call for. Deliberate,
- * documented scope line: the FLAG itself is settable and persists in ANY
- * mode (mirrors LE_CMD_CROWN_PRIMARY's D18 pattern), but the STOP-instead-
- * of-loop behavior only fires in Free/Song — see
- * advance_track_clock_frame's doc, engine_process.c. Applies at the natural
- * wrap point (le_loop_clock_tick's boundary return on that track's OWN
- * clock), reusing handle_stop's exact PLAYING/OVERDUBBING -> STOPPED
- * transition (pending mutes land the same way a manual Stop press would;
- * an overdub in flight ends its capture and drains/retires normally). */
+ * useful for playing backing tracks". A per-track boolean, available in all
+ * five looper modes (accepted design, Playback & overdub): the track plays
+ * to the end of its own lap and stops itself, without stopping other tracks
+ * or the shared clock. What "its own lap" means per mode:
+ *   - Free/Song: one full turn of the track's OWN clock (le_loop_clock_tick's
+ *     boundary return on free_clock; advance_track_clock_frame);
+ *   - Multi/Sync/Band: the track's lap is a derived point on the ONE shared
+ *     master clock — a k-multiple ends when the master wraps back to the
+ *     track's first segment, a Sync/Band division every base/n frames, a
+ *     plain 1x take at the master wrap (le_shared_clock_one_shots). A fresh
+ *     take already set to Once plays a complete lap before stopping. An
+ *     explicit launch after automatic end instead starts that track's audio
+ *     at frame zero and plays exactly one pass, even while siblings play.
+ *     Its playback origin changes; the shared musical capture clock does not.
+ *     Recovery retains shared phase and does not perform this relaunch.
+ * Enabling Once during a pass finishes that pass. A record or overdub
+ * request queued for the lap end on a Once track wins over the stop: the
+ * new pass runs, and Once ends the track at that pass's end. The stop reuses
+ * handle_stop's exact PLAYING/OVERDUBBING -> STOPPED transition (pending
+ * mutes land the same way a manual Stop press would; an overdub in flight
+ * ends its capture and drains/retires normally) and logs a synthetic STOP.
+ * A sibling's launch never automatically resumes an ended Once track. */
 
 /* Sets track [channel]'s One Shot flag (0/1). Rejects only an out-of-range
- * channel; accepted in every looper mode, though inert outside Free/Song
- * (see the class doc above). A SETTING, not content: like
+ * channel; accepted and live in every looper mode (see the class doc
+ * above). A SETTING, not content: like
  * a_length_preset_bars and target_multiple, it is untouched by clear /
  * undo-to-empty / mode switches — handle_clear's per-track reset
  * (engine_process.c) deliberately does not include it, the same "cleared
@@ -1674,32 +2452,67 @@ LE_EXPORT int32_t le_engine_toggle_section(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_one_shot(le_engine* engine, int32_t channel,
                                          int32_t enabled);
 
-/* ---- MIDI clock (Phase C/E, decision D15) ----
- * The tri-state le_clock_mode (off / send / receive). This part (C1)
- * implements send: a native 24-PPQN emitter (src/midi/le_midi_clock.h) drives
- * 0xF8 clock ticks plus Start/Stop through the existing verbatim
- * le_midi_out_send transport, gated on the transport actually running
- * (recording/overdubbing/playing — manual-verified, not free-running while
- * idle) AND the looper mode being Multi/Sync/Band (Song/Free stay silent
- * regardless of this field). */
+/* Updates all selected One Shot flags with one queued command. Bit c in
+ * channels selects track c. A zero mask or any bit outside track_count is
+ * invalid. A full command ring refuses the entire update without changing
+ * any track; accepted updates land together before the next audio block.
+ * Per-track default/override provenance remains the caller's responsibility. */
+LE_EXPORT int32_t le_engine_set_one_shot_mask(le_engine* engine,
+                                              uint32_t channels,
+                                              int32_t enabled);
 
-/* Sets the MIDI clock mode (le_clock_mode: 0 off, 1 send). RECEIVE (2) and
- * any value outside the enum return LE_ERR_INVALID without posting — receive
- * is Phase E's clock follower, not yet implemented; this setter stubs the
- * tri-state field now so that part can reuse it without a breaking rename. */
-LE_EXPORT int32_t le_engine_set_clock_mode(le_engine* engine, int32_t mode);
+/* ---- MIDI clock (Phase C, decision D15; #1228) ----
+ * Send: a native 24-PPQN emitter (src/midi/le_midi_clock.h) drives 0xF8 clock
+ * ticks plus Start/Stop, gated on the transport actually running
+ * (recording/overdubbing/playing — manual-verified, not free-running while
+ * idle), the looper mode being Multi/Sync/Band (Song/Free stay silent), and
+ * the Internal clock source (an external source is relayed, never
+ * regenerated).
+ *
+ * Receive (#1228 Part 2): an external source port (le_engine_attach_midi_input)
+ * owns the tempo. The follower runs on the audio thread from the port's
+ * timestamped Timing Clock bytes; while SYNCED and the tempo is not locked by
+ * recorded content, it writes the session tempo once per beat with
+ * LE_TEMPO_SOURCE_EXTERNAL, in the denominator-note unit. Meanwhile
+ * le_engine_set_tempo, le_engine_tap_tempo and a non-NONE
+ * le_engine_restore_tempo return LE_ERR_EXTERNAL_CLOCK (and the callback
+ * ignores any that were already queued). Selecting Internal again keeps the
+ * last tempo as MANUAL. */
+
+/* Turns clock send on (1) or off (0). Returns LE_ERR_INVALID for any other
+ * value or a null engine. The setting persists across configure. */
+LE_EXPORT int32_t le_engine_set_clock_send(le_engine* engine, int32_t enabled);
+
+/* Selects the tempo source: `source_port` -1 for Internal, or an input port
+ * 0..LE_MAX_MIDI_PORTS-1 whose capture is (or will be) attached.
+ * `follow_transport` (0/1) and `loss_policy` (le_clock_loss_policy) are
+ * stored with it; Follow Play/Stop and the loss policy act from #1228 Parts
+ * 4 and 5. Each accepted call is one complete vector: the n-th accepted call
+ * carries receipt sequence n, published in le_snapshot.clock_receipt with
+ * clock_result once the audio thread has applied or refused it. Returns
+ * LE_OK, LE_ERR_INVALID (bad argument), LE_ERR_NOT_RUNNING (unconfigured),
+ * or LE_ERR_SYNC_LOCKED when changing the source while a track records,
+ * overdubs, is armed or counting in (re-selecting the same source with other
+ * settings is allowed). */
+LE_EXPORT int32_t le_engine_set_clock_sync(le_engine* engine,
+                                           int32_t source_port,
+                                           int32_t follow_transport,
+                                           int32_t loss_policy);
 
 /* ---- click + count-in (A2, decisions D5/D9) ----
  * The click is a synthesized voice (sine 1000 Hz on beats / 1500 Hz on the
- * bar downbeat, 30 ms linear decay) with its OWN output routing and volume,
- * summed into its masked output channels after the master bus and the
- * performance tap. Consequences, all by design: the click bypasses master
- * gain, the limiter, and output metering (its own volume is its only gain
- * stage — it must stay audible and constant regardless of master moves), and
- * it never appears in performance captures, bounces, or exports. It defaults
- * to NO outputs: nothing sounds until a mask is assigned. */
+ * bar downbeat, 30 ms linear decay) with its OWN output routing, volume and
+ * pan, summed into its masked output channels BEFORE the output buses (slice
+ * 3b): a destination's chain, level and mute process it, master gain, the
+ * limiter and output metering apply, and a performance capture contains it
+ * when it is routed to the captured bus. It is never perf-logged, so stems,
+ * the offline master and bounces never contain it. It defaults to NO
+ * outputs: nothing sounds until a mask is assigned. */
 
-/* Sets the click audibility mode (le_click_mode, 0..3). Values outside the
+/* Enqueues one callback-confirmed click mode; capturing refuses, arms do not.
+ * One request at a time. Confirm via commands_settled then snapshot receipt.
+ * Raw LE_CMD_SET_CLICK_MODE posts are invalid. Sets mode (le_click_mode, 0..3).
+ * Values outside the
  * enum return LE_ERR_INVALID. Default off. */
 LE_EXPORT int32_t le_engine_set_click_mode(le_engine* engine, int32_t mode);
 
@@ -1712,21 +2525,309 @@ LE_EXPORT int32_t le_engine_set_click_output(le_engine* engine, int32_t mask);
  * click's only gain stage — master gain and the limiter never touch it. */
 LE_EXPORT int32_t le_engine_set_click_volume(le_engine* engine, float volume);
 
-/* Sets the count-in length in measures (0 = off .. LE_COUNT_IN_MAX_BARS;
- * values outside return LE_ERR_INVALID). Default 0 = off on the wire — the
- * manual's 1-bar default is applied by the app layer when the user enables
- * counting in. With count-in on and a tempo set, a record press on an idle,
- * empty looper (the DEFINING recording) first clicks [bars] measures — the
- * counting state is published via counting_in / count_in_beats_left — and
- * recording then starts exactly on the downbeat. A record press during the
- * count-in cancels it (back to idle); so does a stop press, and so does
- * setting this to 0. With no tempo set there is nothing to click against and
- * recording starts immediately. Once anything is recorded, record presses
- * behave exactly as without count-in (quantize governs — D9). Mutually
- * exclusive with sound-activated recording: enabling count-in disables
- * auto-record (and cancels its threshold arms), and enabling auto-record
- * clears the count-in — count-in wins when both are somehow set at once. */
-LE_EXPORT int32_t le_engine_set_count_in(le_engine* engine, int32_t bars);
+/* Sets the click pan, clamped to -1..1 (default 0). The click is mono; the
+ * pan places it in the first masked pair with the unity-centre law of
+ * le_engine_set_lane_pan (the near side stays at unity), and further masked
+ * channels get the pair's mid, as every routed source does. Centre is
+ * bit-identical to an unpanned click. A direct store: works while stopped,
+ * persists across configure like the other click settings. NaN is refused. */
+LE_EXPORT int32_t le_engine_set_click_pan(le_engine* engine, float pan);
+
+/* ---- backing player (#1200) ----
+ * One engine-owned stereo voice played from RAM, independent of the loops:
+ * loop Stop, Undo, Clear and mode changes never touch it; Cut sound stops and
+ * rewinds it at once. It sums into its masked output channels after the live
+ * monitors and the click and BEFORE the output buses, exactly like the click:
+ * output FX, level, Mono and mute process it; master gain, the limiter and
+ * output metering see it; a performance capture contains it when it is routed
+ * to the captured bus. It is never perf-logged, so stems, the offline master
+ * and loop takes never contain it.
+ *
+ * Buffers: le_backing_buffer_from_pcm (and, later, a file decoder) create an
+ * interleaved stereo float32 buffer at a given rate, owned by the caller. A
+ * successful le_engine_backing_load / _stage_next transfers ownership to the
+ * engine; on any refusal the caller still owns it. The engine frees buffers
+ * only on the control thread: in le_engine_backing_state (the collect point),
+ * before every load or stage, at configure, at reopen and at destroy, never
+ * on the audio thread. At most LE_BACKING_MAX_BUFFERS buffers and
+ * LE_BACKING_BUDGET_BYTES of PCM are engine-owned at once. A load or stage
+ * past either bound reads LE_ERR_NOT_READY while a buffer is in transit (one
+ * posted and not yet applied by the callback, or a replaced one still fading
+ * out or waiting to be handed back: retry after one block), else
+ * LE_ERR_CAPACITY.
+ *
+ * Handoff protocol. Only the audio thread changes which buffer is loaded or
+ * staged: loads, stages and clears travel the command ring in posting order,
+ * and an End = Next advance happens inside the callback, so no control-side
+ * swap can race it. The callback hands a buffer it will never read again back
+ * through one of LE_BACKING_MAX_BUFFERS return slots (release store); the
+ * control thread exchanges the slot empty (acquire) before freeing. A return
+ * slot always exists for every engine-owned buffer, so a return never fails;
+ * should one ever find no free slot, the callback refuses the End = Next
+ * advance (stops with LE_BACKING_EV_NEXT_MISSING) rather than lose or
+ * overwrite a buffer.
+ *
+ * Declick: Pause, Stop, a seek while playing, a replace while playing and
+ * Clear while playing fade the outgoing sound out over LE_BACKING_RAMP_MS on
+ * a second, overlapping voice; a resume or a seek while playing fades the new
+ * position in over the same time. A Play from the very start, an End =
+ * Repeat wrap and an End = Next continuation are sample-exact and unfaded.
+ *
+ * Lifetimes: configure frees every buffer; a retained reopen keeps the loaded
+ * and staged buffers and returns the transport to Stopped at 0; both bump
+ * le_backing_state.epoch. The settings (output mask, level, pan, End) are
+ * direct stores seeded once at create and persist across configure, like the
+ * click settings. */
+#define LE_BACKING_MAX_BUFFERS 4
+/* 1.5 GiB: two 15-minute 96 kHz stereo buffers (691 MB each) plus headroom,
+ * the backing's share of the appliance memory budget (#1200 plan, M1). */
+#define LE_BACKING_BUDGET_BYTES (1536ll * 1024 * 1024)
+#define LE_BACKING_RAMP_MS 5
+
+typedef struct le_backing_buffer le_backing_buffer;
+
+/* Copies [frames] interleaved frames of [channels] (1 or 2) at [sample_rate]
+ * into a new stereo buffer (mono is duplicated into both sides). Any thread.
+ * LE_ERR_INVALID on NULL, frames <= 0, channels outside 1..2, a
+ * non-positive rate or any non-finite sample (a NaN or Inf would poison the
+ * output-bus FX state for good); LE_ERR_CAPACITY when the allocation
+ * fails. */
+LE_EXPORT int32_t le_backing_buffer_from_pcm(const float* interleaved,
+                                             int32_t frames, int32_t channels,
+                                             int32_t sample_rate,
+                                             le_backing_buffer** out);
+LE_EXPORT int32_t le_backing_buffer_frames(const le_backing_buffer* buffer);
+LE_EXPORT int32_t le_backing_buffer_rate(const le_backing_buffer* buffer);
+/* Writes [buckets] per-bucket absolute peaks (max of both sides) over the
+ * whole buffer into [out]; returns the count written, or LE_ERR_INVALID. */
+LE_EXPORT int32_t le_backing_buffer_peaks(const le_backing_buffer* buffer,
+                                          float* out, int32_t buckets);
+/* ---- the audio-file decoder (#1200; the app's one decoder of audio
+ * samples: the backing player, the Library preview and recording recovery
+ * all read files here) --
+ * Accepted, by our own header check before any decoder sees the file: WAV
+ * (RIFF) with 16/24/32-bit PCM or 32-bit float, plain or EXTENSIBLE, and
+ * MPEG Layer III. Sources must be mono or stereo, 8-192 kHz, at a rate the
+ * converter reaches from every engine rate (44.1, 48, 88.2 and 96 kHz).
+ * Everything else is LE_ERR_UNSUPPORTED: 8-bit or 64-bit WAV, ADPCM, mu-law,
+ * A-law, RIFX, RF64, BW64, Wave64, AIFF, FLAC (compiled out until #1235),
+ * Ogg, MPEG Layer I/II, more channels or another rate. A file that claims an
+ * accepted format but is inconsistent (a chunk past the end of the file, a
+ * short `fact` chunk, a block align that does not match, a length other than
+ * the one stated, a float sample that is non-finite or more than 60 dB over
+ * full scale) is LE_ERR_INVALID. No input can make these loop: reads and
+ * seeks stay inside the file and stop after a bounded amount of work. Any
+ * thread but the audio thread; no engine handle;
+ * nothing here touches engine state. */
+
+/* The longest whole file accepted, in seconds of source audio. */
+#define LE_BACKING_MAX_SECONDS 900
+/* What a decode must leave free (MemAvailable on Linux) for loops, capture
+ * and the system: the appliance memory budget's floor (#1200 plan, M1). */
+#define LE_MEM_RESERVE_BYTES (512ll * 1024 * 1024)
+
+typedef struct le_backing_decode_info {
+  int32_t source_rate;     /* the file's own rate */
+  int32_t source_channels; /* 1 or 2 */
+  int64_t source_frames;   /* frames decoded, at the source rate */
+  int32_t truncated;       /* a bounded read stopped before the end */
+} le_backing_decode_info;
+
+/* Decodes [path] into a new stereo buffer at [sample_rate] (mono plays as
+ * dual mono), converting the rate with the band-limited offline converter
+ * after exact half-band halving for reductions below one half.
+ *
+ * Whole file (start_frame 0, max_frames 0): refused past
+ * LE_BACKING_MAX_SECONDS (LE_ERR_TOO_LONG, before reading when the length is
+ * stated), and refused as damaged when it decodes to a length other than the
+ * one it states. Bounded read (a preview, a recording part): starts at the
+ * first output frame at or after [start_frame] (source frames) and keeps at
+ * most [max_frames] output frames, setting info->truncated when the file goes
+ * on; its samples are exactly the whole-file decode's at the same positions.
+ * A bounded read that starts past the last output frame (the last source
+ * frame of a reduction) returns LE_OK with an empty (0-frame) buffer, which
+ * the voice refuses to load.
+ *
+ * Refuses with LE_ERR_CAPACITY when the decode's peak (the source, the
+ * planes a halving works on, and the output) would leave less than
+ * LE_MEM_RESERVE_BYTES available, or an allocation fails. LE_ERR_UNSUPPORTED
+ * and LE_ERR_INVALID as above; LE_ERR_INVALID also for bad arguments and a
+ * missing or unreadable file. [info] (may be NULL) is filled as far as the
+ * file was read. */
+LE_EXPORT int32_t le_backing_decode_file(const char* path, int32_t sample_rate,
+                                         int64_t start_frame,
+                                         int32_t max_frames,
+                                         le_backing_buffer** out,
+                                         le_backing_decode_info* info);
+
+/* Decodes all of [path] in small chunks, retaining no PCM, to prove it plays
+ * and to measure it: fills [info] and [buckets] per-bucket absolute peaks
+ * (max of both sides; buckets may be 0). The same refusals as a whole-file
+ * decode, minus the memory one; a file it accepts decodes at every engine
+ * rate. What an import runs before it keeps a file. */
+LE_EXPORT int32_t le_backing_probe_file(const char* path,
+                                        le_backing_decode_info* info,
+                                        float* peaks, int32_t buckets);
+
+/* The buffer's interleaved stereo float32 samples (frames x 2), for a
+ * consumer that copies them (the Library preview). */
+LE_EXPORT const float* le_backing_buffer_pcm(const le_backing_buffer* buffer);
+
+/* Frees a buffer the caller still owns. NULL is a no-op. */
+LE_EXPORT void le_backing_buffer_free(le_backing_buffer* buffer);
+
+typedef enum le_backing_transport {
+  LE_BACKING_STOPPED = 0,
+  LE_BACKING_PLAYING = 1,
+  LE_BACKING_PAUSED = 2,
+} le_backing_transport;
+
+typedef enum le_backing_transport_op {
+  LE_BACKING_OP_PLAY = 0,  /* from the position; resume fades in */
+  LE_BACKING_OP_PAUSE = 1, /* fade out, keep the position */
+  LE_BACKING_OP_STOP = 2,  /* fade out, rewind to 0 */
+} le_backing_transport_op;
+
+typedef enum le_backing_end {
+  LE_BACKING_END_STOP = 0,   /* stop and rewind (default) */
+  LE_BACKING_END_REPEAT = 1, /* wrap to frame 0, no gap */
+  LE_BACKING_END_NEXT = 2,   /* continue into the staged buffer, else stop */
+} le_backing_end;
+
+typedef enum le_backing_end_event {
+  LE_BACKING_EV_NONE = 0,
+  LE_BACKING_EV_STOPPED = 1,
+  LE_BACKING_EV_REPEATED = 2,
+  LE_BACKING_EV_ADVANCED = 3,
+  LE_BACKING_EV_NEXT_MISSING = 4,
+} le_backing_end_event;
+
+/* Replaces the loaded buffer at the next block: the old one fades out if it
+ * was sounding; the new one starts at frame 0, playing when [play] is 1,
+ * else Stopped. [item] is the caller's token, reported back in the state.
+ * LE_ERR_INVALID: NULL, an empty buffer, a buffer the engine already owns, a
+ * rate other than the engine's, or the command ring full. LE_ERR_NOT_RUNNING: not
+ * configured. Past LE_BACKING_MAX_BUFFERS or LE_BACKING_BUDGET_BYTES:
+ * LE_ERR_NOT_READY while a buffer is in transit, else LE_ERR_CAPACITY (see
+ * Buffers above). */
+LE_EXPORT int32_t le_engine_backing_load(le_engine* engine,
+                                         le_backing_buffer* buffer,
+                                         int32_t item, int32_t play);
+/* Stages the buffer End = Next continues into (NULL clears the stage). Same
+ * ownership and refusals as le_engine_backing_load. */
+LE_EXPORT int32_t le_engine_backing_stage_next(le_engine* engine,
+                                               le_backing_buffer* buffer,
+                                               int32_t item);
+/* Unloads the loaded and staged buffers (fading out a sounding one). */
+LE_EXPORT int32_t le_engine_backing_clear(le_engine* engine);
+/* le_backing_transport_op; a no-op with nothing loaded. */
+LE_EXPORT int32_t le_engine_backing_transport(le_engine* engine, int32_t op);
+/* Moves the loaded buffer's position to [frame], clamped to its length;
+ * playing or paused is kept. A no-op with nothing loaded. */
+LE_EXPORT int32_t le_engine_backing_seek(le_engine* engine, int32_t frame);
+/* le_backing_end; LE_ERR_INVALID outside the enum. Direct store. */
+LE_EXPORT int32_t le_engine_backing_set_end(le_engine* engine, int32_t mode);
+/* Output channel bitmask (bit c = hardware output c), default 0 = unrouted.
+ * Direct store. */
+LE_EXPORT int32_t le_engine_backing_set_output(le_engine* engine,
+                                               int32_t mask);
+/* Gain, clamped to 0..LE_MAX_GAIN (default 1); NaN refused. Direct store. */
+LE_EXPORT int32_t le_engine_backing_set_level(le_engine* engine, float gain);
+/* Balance, clamped to -1..1 (default 0) with the unity-centre law; NaN
+ * refused. Direct store. */
+LE_EXPORT int32_t le_engine_backing_set_pan(le_engine* engine, float pan);
+
+typedef struct le_backing_state {
+  uint32_t epoch;      /* bumps at configure and at every reopen */
+  int32_t item;        /* loaded buffer's token, -1 none */
+  int32_t next_item;   /* staged buffer's token, -1 none */
+  int32_t transport;   /* le_backing_transport */
+  int32_t position;    /* frames into the loaded buffer */
+  int32_t frames;      /* loaded buffer length, 0 none */
+  uint32_t end_count;  /* bumps on every end-of-buffer handling */
+  int32_t last_end;    /* le_backing_end_event of the latest one */
+  int32_t end_mode;    /* le_backing_end */
+  uint32_t mask;
+  float level;
+  float pan;
+  float click_pan;
+  int32_t owned;       /* buffers the engine owns after this collect */
+  int64_t owned_bytes; /* their PCM bytes */
+} le_backing_state;
+
+/* Reads the published state (as of the last processed block) and frees every
+ * buffer the audio thread has finished with. Control thread. LE_ERR_INVALID
+ * on NULL arguments. */
+LE_EXPORT int32_t le_engine_backing_state(le_engine* engine,
+                                          le_backing_state* out);
+
+/* ---- Library audition voice (#1178) ----
+ * One preview voice for the Library's Listen, isolated from the rig. It plays
+ * an engine-rate stereo le_backing_buffer once, from frame 0, into one output
+ * pair, summed AFTER the output-bus loop and BEFORE the master bus: no
+ * destination's chain, level or mute touches it, the performance capture
+ * (tapped inside the output buses) never contains it, it is never
+ * perf-logged, so stems, the offline master and loop takes never contain it,
+ * and only the master gain and the limiter shape it. It does not loop.
+ *
+ * A preview is decoded by the app's one decoder as a bounded read:
+ * le_backing_decode_file(path, rate, 0, LE_AUDITION_MAX_SECONDS * rate, ...)
+ * keeps the first LE_AUDITION_MAX_SECONDS of a longer file and sets
+ * info.truncated.
+ *
+ * Buffers are the backing player's type and follow its ownership rules: the
+ * caller owns a buffer until le_engine_audition_start accepts it; the
+ * callback hands back a buffer it will never read again (replaced, stopped,
+ * ended, cleared by a performance arm or Cut sound) and the control thread
+ * frees it in le_engine_audition_state (the collect point), before every
+ * start, at configure, at reopen and at destroy, never on the audio thread.
+ * At most LE_AUDITION_MAX_BUFFERS are engine-owned at once, so a start that
+ * replaces a playing preview while the one before it is not yet handed back
+ * reads LE_ERR_NOT_READY; retry after one block. */
+#define LE_AUDITION_MAX_SECONDS 120
+#define LE_AUDITION_MAX_BUFFERS 2
+
+/* Starts [buffer] from frame 0 into output pair [bus] at the next block,
+ * replacing a preview already playing (no fade). LE_ERR_INVALID: NULL, a
+ * buffer the engine already owns, a rate other than the engine's, more than
+ * LE_AUDITION_MAX_SECONDS of frames, a bus outside 0..LE_MAX_OUTPUT_BUSES-1
+ * or one the open device has no channels for, or the command ring full.
+ * LE_ERR_NOT_RUNNING: not configured. LE_ERR_ALREADY_RUNNING: a performance
+ * capture is armed. LE_ERR_NOT_READY: LE_AUDITION_MAX_BUFFERS already owned.
+ * On every refusal the caller still owns the buffer. A start that reaches
+ * the callback after a performance arm (posted between the arm and its
+ * apply) never sounds: the callback hands the buffer back unplayed. */
+LE_EXPORT int32_t le_engine_audition_start(le_engine* engine,
+                                           le_backing_buffer* buffer,
+                                           int32_t bus);
+/* Silences the preview at the next block (no fade). A no-op when none
+ * plays. */
+LE_EXPORT int32_t le_engine_audition_stop(le_engine* engine);
+
+typedef struct le_audition_state {
+  uint32_t epoch;   /* bumps at configure and at every reopen */
+  int32_t frames;   /* the playing preview's length, 0 when none plays */
+  int32_t position; /* frames played of it */
+  int32_t bus;      /* its output pair, -1 when none plays */
+  int32_t owned;    /* buffers the engine owns after this collect */
+} le_audition_state;
+
+/* Reads the published state (as of the last processed block) and frees every
+ * buffer the audio thread has handed back. Control thread. LE_ERR_INVALID on
+ * NULL arguments. */
+LE_EXPORT int32_t le_engine_audition_state(le_engine* engine,
+                                           le_audition_state* out);
+
+/* Enqueues a coherent Count-in/Sound-start pair. Bars must be 0, 1, 2 or 4;
+ * sound_start must be 0/1 and cannot be enabled with positive bars. Actual
+ * capture refuses, including capture begun earlier in the same callback.
+ * Count edits cancel a countdown; positive Count also cancels Sound arms.
+ * Sound-on cancels countdowns, Sound-off cancels Sound arms. Restore cancels
+ * both. One unpublished request is reserved; raw posts are invalid.
+ * Acquire commands_settled BEFORE a synchronous snapshot read to classify its
+ * new revision/result; no other mode writer may run between those calls. */
+LE_EXPORT int32_t le_engine_set_record_start(le_engine* engine, int32_t bars,
+    int32_t sound_start, int32_t edit_kind);
 
 /* Fixes track [channel]'s loop length to [multiple] whole base loops (>= 1), or
  * 0 to inherit the global default (le_engine_set_default_multiple). Applies to
@@ -1788,6 +2889,15 @@ LE_EXPORT int32_t le_engine_set_track_length_preset(le_engine* engine,
                                                      int32_t channel,
                                                      int32_t bars);
 
+/* Replaces all configured tracks' future length presets in one command.
+ * count must equal the configured track count and each bars entry must be
+ * 0..LE_LENGTH_PRESET_MAX_BARS and pass the single-track capacity rule above.
+ * The caller array is copied before return. Invalid/unconfigured/full-queue
+ * requests change nothing. The callback rechecks all capacity constraints
+ * before applying any entry; existing PCM and capture targets are unchanged. */
+LE_EXPORT int32_t le_engine_set_track_length_presets(
+    le_engine* engine, const int32_t* bars, int32_t count);
+
 /* Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
  * with a record press continues into overdub instead of playback. A stop press
  * always ends in playback/stopped. Independent of this setting, a track recorded
@@ -1814,6 +2924,24 @@ LE_EXPORT int32_t le_engine_set_master_gain(le_engine* engine, float gain);
  * costs nothing. */
 LE_EXPORT int32_t le_engine_set_tuner_input(le_engine* engine, int32_t input);
 
+/* Silences the live monitors of the inputs in `input_mask` (bit c = input c)
+ * for as long as the tuner stays armed — the foot Tuner's temporary mute of
+ * the input (or stereo pair) being tuned (#1229).
+ *
+ * This is NOT le_engine_set_monitor_input_mute: that mute is the player's
+ * persistent intent, and this one belongs to the tuner arm. The two are
+ * ORed; neither changes the other. Arm the input first: a mask posted while
+ * the tuner is disarmed is stored as 0, and every le_engine_set_tuner_input
+ * (re-arm, move or disarm) clears it, so a tuning can never leave an input
+ * silent behind it. Bits for inputs the device does not have are dropped.
+ *
+ * Only monitoring changes. Track lanes still record the input, the detector
+ * still hears it (it taps before any monitor), and the mask is not
+ * perf-logged; a captured monitor stem holds the silence that was heard.
+ * Results ride the snapshot as `tuner_mute_mask`. */
+LE_EXPORT int32_t le_engine_set_tuner_mute(le_engine* engine,
+                                           uint32_t input_mask);
+
 /* Enables/disables the master peak limiter and sets its ceiling (clamped to
  * (0,1], default 0.99). The limiter is applied post master-gain so the summed
  * output of all tracks, overdub layers, and monitoring cannot exceed the ceiling
@@ -1831,25 +2959,45 @@ LE_EXPORT int32_t le_engine_set_limiter(le_engine* engine, int32_t enabled,
 LE_EXPORT int32_t le_engine_set_overdub_feedback(le_engine* engine,
                                                  float feedback);
 
-/* Enables sound-activated recording: a record press on an empty track waits and
- * begins capturing the first frame the input level crosses the threshold. A
- * second press before then cancels. Disabling cancels tracks still waiting. */
-LE_EXPORT int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled);
+/* Sets track [channel]'s overdub feedback override (accepted design, slice
+ * 2b): a negative [feedback] inherits the global coefficient
+ * (le_engine_set_overdub_feedback); otherwise the value is clamped to [0,1]
+ * and used for this track's overdub passes. Live: a change during a pass
+ * reaches the write head through a ~10 ms ramp, never a step, so the
+ * retained layer has no level seam. Like the global coefficient, only
+ * overdub passes apply it; playback never decays. */
+LE_EXPORT int32_t le_engine_set_track_overdub_feedback(le_engine* engine,
+                                                       int32_t channel,
+                                                       float feedback);
 
 /* Sets chain entry [index] (0..LE_FX_MAX-1) on lane [lane] of track [channel] to
  * [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY lazily
  * allocates the entry's delay line (on this calling thread) and seeds the type's
- * default parameters. The chain is non-destructive and stageless — every active
- * entry colors playback in order. This sets the entry's value only; use
- * le_engine_set_lane_fx_count to make entries active. */
+ * default parameters. Every active entry colors playback in order. This sets
+ * the entry's value only; use le_engine_set_lane_fx_count to make entries
+ * active. */
 LE_EXPORT int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel,
                                         int32_t lane, int32_t index,
                                         int32_t type);
 
 /* Sets the active chain length on lane [lane] of track [channel] to [count]
- * (0..LE_FX_MAX): only entries [0, count) are processed, in order. */
+ * (0..LE_FX_MAX): only entries [0, count) are processed, in order.
+ *
+ * [pre_count] (0..count, clamped) splits that order into the take's own
+ * processing and what runs after its player. Entries [0, pre_count) are PRE:
+ * the loop-stage cache renders exactly them from the lane's dry recording and
+ * swaps the result in at a loop boundary, so they are heard as part of the
+ * take and a track Stop takes their tails with it. Entries [pre_count, count)
+ * are POST: they always run live over whichever source is playing, and their
+ * tails drain past a Stop. The recording itself stays dry either way — the
+ * print is a rendered copy, never a write back into the take.
+ *
+ * pre_count travels with count in one command so the audio thread never sees
+ * a split naming more Pre entries than the chain has. 0 is the default and
+ * means an all-Post chain. */
 LE_EXPORT int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
-                                              int32_t lane, int32_t count);
+                                              int32_t lane, int32_t count,
+                                              int32_t pre_count);
 
 /* Sets parameter [param] (0..LE_FX_PARAMS-1) of chain entry [index] on lane
  * [lane] of track [channel] to [value] (clamped to 0..1). The parameter's
@@ -1917,6 +3065,12 @@ LE_EXPORT int32_t le_engine_set_monitor_input_volume(le_engine* engine,
 /* Mutes or unmutes hardware input [input]'s monitor. */
 LE_EXPORT int32_t le_engine_set_monitor_input_mute(le_engine* engine,
                                                    int32_t input, int32_t muted);
+
+/* Sets hardware input [input]'s monitor pan, -1..1 (accepted design, slice
+ * 3): the same unity-centre balance law as le_engine_set_lane_pan, applied
+ * to the monitor's stereo pair after its chain and gain. */
+LE_EXPORT int32_t le_engine_set_monitor_input_pan(le_engine* engine,
+                                                  int32_t input, float pan);
 
 /* Sets chain entry [index] (0..LE_FX_MAX-1) on hardware input [input]'s monitor
  * chain to [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY
@@ -2080,9 +3234,23 @@ LE_EXPORT int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
 
 /* Sets track [channel]'s Track-stage active chain length to [count]
  * (0..LE_FX_MAX): only entries [0, count) are processed, in order. Count 0
- * (empty) restores the bit-identical per-lane routing path. */
+ * (empty) restores the bit-identical per-lane routing path.
+ *
+ * [pre_count] (0..count, clamped) splits that order the way a lane's does.
+ * Entries [0, pre_count) are PRE: the engine renders them over the COMBINED
+ * material of the track's parts — each part's dry recording through that
+ * part's own chain, at its level, pan and mute, summed — and swaps the result
+ * in at the track's loop top, so they are heard as part of the take. Entries
+ * [pre_count, count) are POST: always live over whatever is playing, and
+ * their tails drain past a Stop. The recordings themselves stay dry; the
+ * render is a copy, and every part, overdub layer and undo step survives it.
+ *
+ * A part's Post entries keep their live tails. A track with part Post or
+ * hosted part plugins therefore runs its Pre chain live instead of printing
+ * that upstream processing; the cache telemetry reports the obstruction. */
 LE_EXPORT int32_t le_engine_set_track_fx_count(le_engine* engine,
-                                               int32_t channel, int32_t count);
+                                               int32_t channel, int32_t count,
+                                               int32_t pre_count);
 
 /* Sets parameter [param] (0..LE_FX_PARAMS-1) of track [channel]'s Track-stage
  * chain entry [index] to [value] (clamped to 0..1). Direct atomic publish —
@@ -2111,49 +3279,69 @@ LE_EXPORT int32_t le_engine_set_track_fx_chain_enabled(le_engine* engine,
                                                        int32_t channel,
                                                        int32_t enabled);
 
-/* ---- Master insert chain (FX v3 part 1b) ---- *
- * ONE engine-level chain inserted on the summed track mix, before master
- * gain/limiter. Live monitor signals are summed AFTER it and stay uncolored
- * (live-through sound stays predictable); master gain + limiter still apply
- * to both, unchanged. While the chain is EMPTY the output is bit-identical
- * to the chain never having existed. FX kernels are strict stereo, so for
- * ch_out != 2 the chain processes the FIRST ENABLED output pair and passes
- * every other channel through bit-exact dry; ch_out == 1 processes mono as
- * l == r. Like the Track stage, this sits post-capture and leaves
- * fx_added_latency_frames untouched. */
-
-/* Sets Master insert chain entry [index] (0..LE_FX_MAX-1) to [type]. Same
- * contract as le_engine_set_track_fx (type change resets DSP state, buffers
- * allocate on this calling thread, defaults seeded on an actual change). Use
- * le_engine_set_master_fx_count to make entries active. */
-LE_EXPORT int32_t le_engine_set_master_fx(le_engine* engine, int32_t index,
-                                          int32_t type);
-
-/* Sets the Master insert active chain length to [count] (0..LE_FX_MAX).
- * Count 0 (empty) restores bit-identical output. */
-LE_EXPORT int32_t le_engine_set_master_fx_count(le_engine* engine,
+/* ---- output buses (accepted design, slice 3b) ----
+ * Bus [bus] is the hardware pair (2 bus, 2 bus + 1). After every source has
+ * summed onto the outputs (tracks, monitors, the click), each bus runs its
+ * chain over its pair, then applies its level (0..1, default 1), Mono (the
+ * pair averaged onto both channels; balance then disabled), balance (-1..1,
+ * the unity-centre law of le_engine_set_lane_pan: it attenuates one side)
+ * and mute (silence; the level is kept). The global master gain and limiter
+ * follow. A bus a source is not routed to is untouched by that source.
+ * Bus 0's chain is what the app calls the Master insert. All remembered by
+ * the caller and reset by (re)configure. */
+LE_EXPORT int32_t le_engine_set_output_level(le_engine* engine, int32_t bus,
+                                             float level);
+LE_EXPORT int32_t le_engine_set_output_mute(le_engine* engine, int32_t bus,
+                                            int32_t muted);
+LE_EXPORT int32_t le_engine_set_output_mono(le_engine* engine, int32_t bus,
+                                            int32_t mono);
+LE_EXPORT int32_t le_engine_set_output_balance(le_engine* engine, int32_t bus,
+                                               float balance);
+/* Bus [bus]'s chain, the bus twin of the Track-stage family: the type
+ * change resets that entry's DSP state, buffers allocate on this calling
+ * thread, defaults are seeded on an actual change; count clamps to
+ * 0..LE_FX_MAX; params and the enable flags are direct stores that work
+ * while stopped. While a chain is EMPTY its bus passes bit-identical. FX
+ * kernels are strict stereo; a single-channel last bus processes l == r.
+ * Post-capture: leaves fx_added_latency_frames untouched. */
+LE_EXPORT int32_t le_engine_get_output_fx_snapshot(le_engine* engine,
+    int32_t bus, le_output_fx_snapshot* out);
+LE_EXPORT int32_t le_engine_set_output_fx(le_engine* engine, int32_t bus,
+                                          int32_t index, int32_t type);
+LE_EXPORT int32_t le_engine_set_output_fx_count(le_engine* engine, int32_t bus,
                                                 int32_t count);
-
-/* Sets parameter [param] (0..LE_FX_PARAMS-1) of Master insert chain entry
- * [index] to [value] (clamped to 0..1). Direct atomic publish — works
- * whether or not the device is running. */
-LE_EXPORT int32_t le_engine_set_master_fx_param(le_engine* engine,
+LE_EXPORT int32_t le_engine_set_output_fx_param(le_engine* engine, int32_t bus,
                                                 int32_t index, int32_t param,
                                                 float value);
-
-/* Enables/disables Master insert chain entry [index] — same contract as
- * le_engine_set_track_fx_enabled (direct store, works while stopped,
- * click-free ramp, no tail spill, re-enable reset, default enabled, type
- * change re-seeds to 1). */
-LE_EXPORT int32_t le_engine_set_master_fx_enabled(le_engine* engine,
-                                                  int32_t index,
+LE_EXPORT int32_t le_engine_set_output_fx_enabled(le_engine* engine,
+                                                  int32_t bus, int32_t index,
                                                   int32_t enabled);
-
-/* Enables/disables the WHOLE Master insert chain in one atomic flip without
- * touching the per-entry flags — same contract as
- * le_engine_set_track_fx_chain_enabled. Default enabled. */
-LE_EXPORT int32_t le_engine_set_master_fx_chain_enabled(le_engine* engine,
+LE_EXPORT int32_t le_engine_set_output_fx_chain_enabled(le_engine* engine,
+                                                        int32_t bus,
                                                         int32_t enabled);
+
+/* Cut all sound (accepted design, slice 3b): see LE_CMD_CUT_SOUND. Posted
+ * through the ring; returns LE_ERR_NOT_RUNNING while stopped (nothing
+ * sounds then). Every built-in chain's state AND its delay rings clear in
+ * the one callback that applies the command, unlike a chain stomp's spaced
+ * re-enable clears: deferring a slot means passing it dry, and dry is the
+ * wrong output for a fully wet effect. The cost is therefore proportional
+ * to the rings actually allocated (one is sample_rate floats per channel),
+ * paid once on a deliberate press. A hosted plugin has no reset seam, so
+ * its own tail is not cut. */
+LE_EXPORT int32_t le_engine_cut_sound(le_engine* engine);
+
+/* Whether capture applies the selected output bus's level and mute (1),
+ * or taps after its chain before those controls (0,
+ * the default: adjusting the PA during a performance does not alter the
+ * saved performance; accepted design, "Follow output volume"). A direct
+ * store, frozen into the take at le_perf_arm, so a running take keeps the
+ * policy it was armed with; le_snapshot.perf_follow_output publishes the
+ * armed take's policy, or the pending one while disarmed. This is a
+ * PREFERENCE, not device state: unlike the mix settings it is NOT reset by
+ * (re)configure, so a device change or reconnect leaves it as the player
+ * set it. */
+LE_EXPORT int32_t le_perf_set_follow_output(le_engine* engine, int32_t follow);
 
 /* ---- Loop-stage wet cache (FX v3 part 2) ---- *
  * A background worker renders a stable lane chain's whole loop offline; the
@@ -2166,7 +3354,10 @@ LE_EXPORT int32_t le_engine_set_master_fx_chain_enabled(le_engine* engine,
 /* Default wet-cache memory budget in bytes (appliance-tuned: ~5 stereo 30 s
  * entries at 48 kHz). Seeded once in le_engine_create; persists across
  * configure like the tempo/click settings. */
-#define LE_CACHE_DEFAULT_CAP_BYTES (64ll * 1024 * 1024)
+#define LE_CACHE_DEFAULT_CAP_BYTES (192ll * 1024 * 1024) /* the prints'
+     * 64 MiB plus Transpose's source renders (#1179): eight single-lane 30 s
+     * tracks at 96 kHz (11.5 MiB each) and one job in flight; sized against
+     * the appliance's joint memory table (pitch-time findings document) */
 
 /* Per-lane cache telemetry states (le_lane_cache_info.state). */
 typedef enum le_cache_state {
@@ -2183,6 +3374,9 @@ typedef enum le_cache_reason {
   LE_CACHE_REASON_PLUGIN = 1, /* chain hosts a plugin slot: an offline render
                                * would pass it dry, so the lane stays live */
   LE_CACHE_REASON_RENDER_FAILED = 2, /* repeated render failures */
+  LE_CACHE_REASON_PART_POST = 3, /* a part Post chain must keep live tails */
+  LE_CACHE_REASON_BUDGET = 4, /* a Transpose source render does not fit the
+                               * cap; the track plays dry (#1179) */
 } le_cache_reason;
 
 /* Snapshot of one lane's cache state (le_engine_get_lane_cache). */
@@ -2199,6 +3393,15 @@ typedef struct le_lane_cache_info {
 /* Fills [out] with lane [lane] of track [channel]'s cache telemetry. Control
  * thread; also drains events / runs a scheduler tick first, so polling this is
  * enough to drive the cache forward in a device-free test. */
+/* The whole-track Pre print's telemetry (slice 3e): the lane query's twin,
+ * one per track. `reason` is where the engine says WHY a track's Pre run is
+ * running live rather than printed — a part carrying a Post entry (the print
+ * would have to bake it, and a baked tail cannot drain past a Stop), a hosted
+ * plugin, a budget that does not fit, a render that failed. Log/test-only in
+ * v3, like the lane query. */
+LE_EXPORT int32_t le_engine_get_track_cache(le_engine* engine, int32_t channel,
+                                            le_lane_cache_info* out);
+
 LE_EXPORT int32_t le_engine_get_lane_cache(le_engine* engine, int32_t channel,
                                            int32_t lane,
                                            le_lane_cache_info* out);
@@ -2223,6 +3426,92 @@ LE_EXPORT int32_t le_engine_get_all_lane_caches(le_engine* engine,
  * thread — no ring command (no heap pointer crosses to the audio thread
  * here; entries publish through their own atomic seam). The default is
  * appliance-tuned (LE_CACHE_DEFAULT_CAP_BYTES, 64 MiB). */
+/* ---- the All tracks recorded-mix chain (slice 3e) ----
+ *
+ * The accepted design's third FX destination, beside the live inputs and the
+ * per-track chains: "the single shared chain applied after the loop tracks are
+ * combined". It is NOT the output bus — an output chain processes every source
+ * routed to it (live monitoring, the click, backing), where this one processes
+ * the recorded tracks alone, and runs before those other sources join.
+ *
+ * Its entries are always Post: the stage has no dry original of its own,
+ * because it processes a sum computed live from lanes that each own their own
+ * recording. There is no Pre count here.
+ *
+ * ONE config, N instances. Since slice 3b every source picks its own output
+ * destinations, so the combined recorded mix is a per-destination quantity —
+ * a track on Main and a track on Monitor are two different mixes. The chain
+ * runs once per output bus, over the recorded contribution to that bus, on
+ * that bus's own filter memory. Setting a type prepares every bus of the
+ * configured device; le_engine_configure re-prepares them.
+ *
+ * An EMPTY chain (the default) leaves the per-track routing path bit-identical
+ * to the pre-slice-3e engine — topology keys off emptiness, exactly like the
+ * track bus. */
+LE_EXPORT int32_t le_engine_set_all_tracks_fx(le_engine* engine, int32_t index,
+                                              int32_t type);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_count(le_engine* engine,
+                                                    int32_t count);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_param(le_engine* engine,
+                                                    int32_t index,
+                                                    int32_t param, float value);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_enabled(le_engine* engine,
+                                                      int32_t index,
+                                                      int32_t enabled);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_chain_enabled(le_engine* engine,
+                                                            int32_t enabled);
+
+/* ---- per-entry channel handling and level (slice 3e) ----
+ *
+ * The accepted design puts an input choice, an output choice and a level
+ * around each instance in a chain: the input choice before its effects, the
+ * output choice and then the level after them.
+ *
+ *   in_mode   0 Stereo (default, left and right as they arrive)
+ *             1 Left only   — the incoming left on both sides
+ *             2 Right only  — the incoming right on both sides
+ *             3 Mono sum    — their average on both sides
+ *   out_mode  0 Stereo (default) — keeps what the effects made; [placement]
+ *                                  is a BALANCE over the two sides
+ *             1 Mono            — averages them; [placement] is a PAN
+ *   placement -1..1, centre 0 (default). One unity-centre law, the same the
+ *             lanes, monitors and output buses use, so centre is exactly
+ *             unity and a hard side is exactly silent.
+ *   level     0..LE_MAX_GAIN, unity 1 (default). Applied last.
+ *
+ * Set as one call, because the four values are one control surface and a
+ * half-applied change would be audible. Direct atomic publishes: they change
+ * gain within an entry, never its DSP state, so nothing resets and there is
+ * no ring command to order against. An entry left at its defaults is
+ * bit-identical to one with no channel handling at all.
+ *
+ * A BYPASSED entry passes the signal through exactly as it arrived — the
+ * choices belong to the entry, so they leave with it. */
+LE_EXPORT int32_t le_engine_set_lane_fx_channels(le_engine* engine,
+                                                 int32_t channel, int32_t lane,
+                                                 int32_t index,
+                                                 int32_t in_mode,
+                                                 int32_t out_mode,
+                                                 float placement, float level);
+LE_EXPORT int32_t le_engine_set_monitor_input_fx_channels(
+    le_engine* engine, int32_t input, int32_t index, int32_t in_mode,
+    int32_t out_mode, float placement, float level);
+LE_EXPORT int32_t le_engine_set_track_fx_channels(le_engine* engine,
+                                                  int32_t channel,
+                                                  int32_t index,
+                                                  int32_t in_mode,
+                                                  int32_t out_mode,
+                                                  float placement, float level);
+LE_EXPORT int32_t le_engine_set_output_fx_channels(le_engine* engine,
+                                                   int32_t bus, int32_t index,
+                                                   int32_t in_mode,
+                                                   int32_t out_mode,
+                                                   float placement,
+                                                   float level);
+LE_EXPORT int32_t le_engine_set_all_tracks_fx_channels(
+    le_engine* engine, int32_t index, int32_t in_mode, int32_t out_mode,
+    float placement, float level);
+
 LE_EXPORT int32_t le_engine_set_fx_cache_cap(le_engine* engine, int64_t bytes);
 
 /* Current wet-cache memory accounting in bytes (entries + in-flight copies).
@@ -2249,36 +3538,136 @@ LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output
 /* ---- performance recording (RT capture taps + capture-to-disk; parts 1-2 of
  * the DAW-export stack) ---- *
  * While armed, the audio thread copies two kinds of streams into pre-published
- * lock-free rings: the post-limiter master output (stereo from the first
- * enabled output pair; mono when the device has only one), and each hardware
- * input actively monitored AT ARM (post-monitor-FX, pre-route; frozen for the
- * whole arm session — an input enabled later is not retroactively captured).
- * Rings are allocated control-side at arm (>= 2 s of audio at the device rate)
- * and published to the audio thread with LE_CMD_PERF_ARM; on overflow the
- * audio thread drops the frame and increments the overrun atomic — it never
- * blocks or allocates. Status (armed / frames / overruns) is exposed only via
+ * lock-free rings: the master capture (the first enabled output pair, tapped
+ * BEFORE the master gain and limiter; mono when only one channel of it is
+ * enabled), and each hardware input actively monitored AT ARM (post-monitor-
+ * FX, pre-route; frozen for the whole arm session — an input enabled later is
+ * not retroactively captured). Rings are allocated control-side at arm and
+ * published to the audio thread with LE_CMD_PERF_ARM; on overflow the audio
+ * thread drops the frame and increments the overrun atomic — it never blocks
+ * or allocates. Status (armed / frames / overruns) is exposed only via
  * le_snapshot; there is no separate query call.
  *
  * A dedicated background drain thread (perf_drain.h; spawned by le_perf_arm,
- * joined by le_perf_disarm) empties those rings into raw PCM temp files plus a
- * `performance.json` sidecar under the capture directory, flushed every
- * ~250 ms. WAV headers are written only at finalize (a later part): a crash
- * mid-capture leaves salvageable raw PCM + a parseable sidecar, never a
- * truncated WAV. */
+ * joined by le_perf_disarm) writes each stream as ORDERED 32-bit float WAV
+ * PARTS (#1198): `master-001.wav`, `master-002.wav`, … and
+ * `input-<n>-001.wav`, each at most `part_bytes` long, header included. Every
+ * part starts with the same 84-byte header — RIFF/WAVE, a 16-byte `fmt `
+ * chunk (IEEE float, tag 3, 32 bits), a 32-byte `sgno` chunk (the take id,
+ * the stream: 0 master, 1 + n input n, and the part index from 1), then
+ * `data` — written with zero sizes and patched when the part is SEALED (full,
+ * or at the end of the take), at which point its SHA-256 over the payload is
+ * recorded. Samples are written as captured, never clamped; samples whose
+ * magnitude exceeds 1.0 are counted per part (`overs`). A `performance.json`
+ * sidecar listing the parts is rewritten every ~250 ms in `live_sidecar_dir`.
+ * Finalize therefore copies nothing: the parts are the take.
+ *
+ * Every stream ends at the same frame, and a take stops on its own in three
+ * cases (le_snapshot.perf_stop_reason, the sidecar's `stopped_early`):
+ *   - the destination reaches its reserve: the drain re-reads the volume's
+ *     free bytes every ~5 s and, between readings, subtracts every byte it
+ *     writes; it writes the whole frames every stream can still take
+ *     together above `reserve_bytes` plus LE_PERF_ALLOWANCE_BYTES, then stops
+ *     (`reserve_reached`). A volume whose free space cannot be read has no
+ *     budget and stops only on a failed write;
+ *   - the storage falls behind: the first frame the audio thread could not
+ *     queue ends the take there, with no padding and nothing after it
+ *     (`slow_storage`). Frames counted but never tapped (#710) are not a
+ *     storage fault: they are still filled with silence and the take goes on;
+ *   - a write fails (`disk_full`, kept for every bundle already on disk).
+ *
+ * DURABILITY (#727, #1198 D4). A checkpoint thread, started and stopped with
+ * the take, makes the take durable every `checkpoint_ms` without ever making
+ * the drain wait on the device: it copies the progress the drain has
+ * flushed, fdatasyncs every part, events.log and layer file that progress
+ * names, syncs the take directory, then rewrites one of two fixed slot
+ * files, `checkpoint-a.json` and `checkpoint-b.json`, alternately, in place
+ * (truncate, write, fsync; never a rename, which FAT and exFAT do not make
+ * atomic). Each slot names the take, the boot it was written in, its parts
+ * with their frames, and ends with `"checksum"`: the SHA-256 hex of every
+ * byte before that key. With `mirror_dir` the same bytes go to the same slot
+ * there too. A final checkpoint is written when the take stops, on every
+ * path. After a power cut at most the last `checkpoint_ms` is lost. */
+
+/* Where and how one take is written (#1198). */
+typedef struct le_perf_target {
+  /* The take's directory on its destination (created if missing). */
+  const char* capture_dir;
+  /* Where performance.json is rewritten every drain cycle: the capture
+   * directory for an Internal take, an Internal mirror directory for a take
+   * on a removable volume (whose filesystem must not be touched every cycle).
+   * NULL means capture_dir. */
+  const char* live_sidecar_dir;
+  /* The take's identity, written into every part's `sgno` chunk and the
+   * sidecar. */
+  uint8_t take_id[16];
+  /* The removable volume generation the take is armed on, or -1 for Internal;
+   * recorded in the sidecar so recovery can tell whether the volume stayed
+   * mounted for the whole take. */
+  int64_t volume_generation;
+  /* The most one part file may hold, header included; 0 means
+   * LE_PERF_PART_BYTES. Must leave room for at least one stereo frame and fit
+   * the 32-bit RIFF size field. */
+  uint64_t part_bytes;
+  /* Seconds of audio each capture ring holds, 1 to LE_PERF_RING_SECONDS_MAX;
+   * 0 means LE_PERF_RING_SECONDS_DEFAULT. Lowered (never below the default,
+   * nor below the request) so that every ring together stays within
+   * LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 stereo inputs
+   * at 96 kHz take 33 rings of 2^19 samples, 66 MiB. The sidecar's
+   * `ring_seconds` and le_snapshot.perf_ring_seconds report what was
+   * granted. */
+  int32_t ring_seconds;
+  /* Bytes the take must leave free on its destination, on top of
+   * LE_PERF_ALLOWANCE_BYTES: Internal keeps its storage reserve, a removable
+   * volume a small floor. UINT64_MAX means no budget: the take stops only on
+   * a failed write. */
+  uint64_t reserve_bytes;
+  /* An Internal directory that receives a copy of every checkpoint, for a
+   * take on a removable volume (the mirror wins over the stick's own slots);
+   * NULL or empty for none. Created if missing. */
+  const char* mirror_dir;
+  /* How often the checkpoint thread makes the take durable, in ms (5000 for
+   * a real take); 0 checkpoints only when the take stops. */
+  int32_t checkpoint_ms;
+} le_perf_target;
+
+/* 2,000,000,000 bytes: under FAT32's 4 GiB file limit, RIFF's 32-bit size
+ * fields, and 2^31 for readers that keep RIFF sizes in a signed int. */
+#define LE_PERF_PART_BYTES 2000000000ULL
+#define LE_PERF_PART_HEADER_BYTES 84
+#define LE_PERF_RING_SECONDS_DEFAULT 2
+#define LE_PERF_RING_SECONDS_MAX 8
+#define LE_PERF_RING_BYTES_MAX (64u * 1024u * 1024u)
+/* Room kept above `reserve_bytes` for the files rewritten in place while a
+ * take runs (the sidecar), which the budget does not count write by write. */
+#define LE_PERF_ALLOWANCE_BYTES 1048576
+
+/* Why the most recent take stopped (le_snapshot.perf_stop_reason). NONE while
+ * a take runs; the first reason to happen is kept until the next arm. */
+typedef enum le_perf_stop_reason {
+  LE_PERF_STOP_NONE = 0,
+  LE_PERF_STOP_DISARM = 1,          /* le_perf_disarm */
+  LE_PERF_STOP_DEVICE_CHANGED = 2,  /* the engine reconfigured while armed */
+  LE_PERF_STOP_WRITE_FAILED = 3,    /* a write failed; sidecar `disk_full` */
+  LE_PERF_STOP_RESERVE_REACHED = 4, /* the destination reached its reserve */
+  LE_PERF_STOP_SLOW_STORAGE = 5,    /* a capture ring overflowed */
+} le_perf_stop_reason;
 
 /* Arms performance-recording capture: allocates the master + per-monitor
  * rings, freezes the captured input set from whichever inputs are currently
  * monitored, publishes them to the audio thread, and starts the drain thread
- * writing into `capture_dir` (created if it does not already exist).
+ * writing `target` (copied; its strings need not outlive the call).
  * Idempotent (a second call while already armed is a no-op success — the
- * armed session's original `capture_dir` keeps draining; the repeat call's
- * `capture_dir` argument is still required to be non-null/non-empty but is
- * otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING (not configured),
- * LE_ERR_INVALID (null/empty `capture_dir`, no output enabled to capture, or
- * ring allocation failure), or LE_ERR_DEVICE (the drain thread could not be
- * started — e.g. the directory could not be created — or a previous disarm's
- * quiescent wait bailed out and left a stale drain session still live). */
-LE_EXPORT int32_t le_perf_arm(le_engine* engine, const char* capture_dir);
+ * armed session keeps its original target; the repeat call's target must
+ * still be valid but is otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING
+ * (not configured), LE_ERR_INVALID (null target, null/empty `capture_dir`, a
+ * `part_bytes` with no room for a frame or past the RIFF limit, a
+ * `ring_seconds` outside 0 to LE_PERF_RING_SECONDS_MAX, a negative
+ * `checkpoint_ms`, no output enabled to capture, or ring allocation failure),
+ * or LE_ERR_DEVICE (the drain thread could not be started — e.g. a directory
+ * could not be created — or a previous disarm's quiescent wait bailed out and
+ * left a stale drain session still live). */
+LE_EXPORT int32_t le_perf_arm(le_engine* engine, const le_perf_target* target);
 
 /* Disarms performance-recording capture: tells the audio thread to stop
  * writing, waits for a published-quiescent handshake to confirm it has (so
@@ -2292,11 +3681,14 @@ LE_EXPORT int32_t le_perf_arm(le_engine* engine, const char* capture_dir);
  * le_engine_destroy). */
 LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
 
-/* Free bytes on the volume holding `path`, into `*out_bytes`. Returns LE_OK,
- * LE_ERR_INVALID (null/empty `path` or null `out_bytes`), or LE_ERR_DEVICE if
- * the platform refused to answer (a path that does not exist, a filesystem that
- * cannot report). Engine-free: it is a question about a directory, not about a
- * running capture, so it is also the check made BEFORE arming one.
+/* Total and available bytes of the volume holding `path`, into
+ * `*out_total_bytes` and `*out_free_bytes`. Returns LE_OK, LE_ERR_INVALID
+ * (null/empty `path` or a null output), or LE_ERR_DEVICE if the platform
+ * refused to answer (a path that does not exist, a filesystem that cannot
+ * report). Both outputs are zeroed on failure so a stale read cannot leak.
+ * Engine-free: it is a question about a directory, not about a running
+ * capture, so it is also the check made BEFORE arming one, and the figure the
+ * Storage page draws for Internal and for each removable volume (#1177).
  *
  * It is here rather than in the caller because the caller is Dart, which has no
  * free-space API at all — and the shell-out that filled that gap turned out to
@@ -2317,8 +3709,97 @@ LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
  * has never applied there. It does now. That is the behaviour the floor was
  * written for, but it is a change on a platform the click work did not
  * otherwise touch, so it is stated here rather than left to be discovered. */
-LE_EXPORT int32_t le_perf_volume_free_bytes(const char* path,
-                                            uint64_t* out_bytes);
+LE_EXPORT int32_t le_volume_space(const char* path, uint64_t* out_total_bytes,
+                                  uint64_t* out_free_bytes);
+
+/* ---- recorded-audio identity and durable publication (#1198) ----
+ * Engine-free, like le_volume_space: questions about bytes and paths, safe to
+ * call from any thread and from a Dart background isolate with no engine.
+ *
+ * Recorded audio is identified by the SHA-256 of its sample payload, so an
+ * intact copy is recognised wherever it is and whatever it is called, and a
+ * damaged or different file never passes for it (accepted behaviour 6.10:
+ * "same name is not enough"). `out` receives the 32-byte digest. */
+
+/* SHA-256 of `length` bytes at `data` (`data` may be NULL only when `length`
+ * is 0). Returns LE_OK, or LE_ERR_INVALID for a NULL `out`, a NULL `data`
+ * with a non-zero length, or a length this platform cannot address. */
+LE_EXPORT int32_t le_digest_bytes(const void* data, uint64_t length,
+                                  uint8_t* out);
+
+/* SHA-256 of `length` bytes of the regular file at `path` (UTF-8) starting at
+ * byte `offset`; `length` = UINT64_MAX means through the end of the file.
+ * Reads in 64 KiB chunks, so a multi-gigabyte recording costs no memory.
+ * Returns LE_OK; LE_ERR_INVALID for a NULL or empty `path` or NULL `out`;
+ * LE_ERR_NOT_FOUND when nothing exists at `path`; LE_ERR_TRUNCATED when the
+ * file is shorter than `offset` + `length` (a damaged file never yields a
+ * digest of what happens to be left); LE_ERR_DEVICE when it cannot be opened
+ * for another reason, is not a regular file, or a read fails. The codes tell
+ * a missing recording from a damaged one without a separate stat that the
+ * file could change under. */
+LE_EXPORT int32_t le_digest_file(const char* path, uint64_t offset,
+                                 uint64_t length, uint8_t* out);
+
+/* Incremental SHA-256 over memory the caller feeds in pieces, so a large
+ * buffer in another language's heap is hashed through a small native window
+ * instead of being copied whole. `state` is caller-owned, at least
+ * LE_DIGEST_STATE_BYTES long and 8-byte aligned; begin initialises it,
+ * update adds `length` bytes, end writes the 32-byte digest to `out` (the
+ * state must be begun again before reuse). Each returns LE_OK, or
+ * LE_ERR_INVALID for a NULL state or out, a `state_bytes` below
+ * LE_DIGEST_STATE_BYTES, NULL `data` with a non-zero length, or a length this
+ * platform cannot address. */
+/* Keep this a plain number: ffigen only exports a macro that is a literal,
+ * and the Dart side sizes its state buffer from the generated constant. */
+#define LE_DIGEST_STATE_BYTES 128
+LE_EXPORT int32_t le_digest_begin(void* state, uint64_t state_bytes);
+LE_EXPORT int32_t le_digest_update(void* state, const void* data,
+                                   uint64_t length);
+LE_EXPORT int32_t le_digest_end(void* state, uint8_t* out);
+
+/* Makes the directory entries of `path` durable: open + fsync on POSIX, which
+ * is what makes a rename into that directory survive a power cut (fsync on
+ * the renamed file does not cover its name). Dart cannot open a directory, so
+ * the atomic publication of a bundle (tmp, fsync, rename, then this) needs it
+ * here. On Windows there is no directory handle to flush; it reports only
+ * whether the directory exists. Returns LE_OK; LE_ERR_INVALID for a NULL or
+ * empty `path`; LE_ERR_DEVICE when the directory cannot be opened or the sync
+ * fails. */
+LE_EXPORT int32_t le_fs_sync_dir(const char* path);
+
+/* le_fs_sync_dir, also reporting why it failed: on LE_ERR_DEVICE,
+ * *out_errno (when not NULL) is the OS error (ENOENT for a missing path,
+ * ENOTDIR for a file, EIO from a drive that went away mid-sync), so a caller
+ * can tell a pulled drive from a failing one (#1177). *out_errno is 0 on
+ * LE_OK. */
+LE_EXPORT int32_t le_fs_sync_dir_errno(const char* path, int32_t* out_errno);
+
+/* Renames `from` to `to` (both UTF-8) only if nothing is at `to`, as one
+ * atomic step: renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL)
+ * on macOS, MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows. A copy
+ * publishes its part this way, so a name another writer took meanwhile is
+ * never overwritten and no empty placeholder ever stands at the final name
+ * (#1177, #1195).
+ *
+ * Returns LE_OK with *out_errno = 0; LE_ERR_INVALID for a NULL or empty path
+ * or a NULL `out_errno`; LE_ERR_UNSUPPORTED when this kernel or filesystem
+ * cannot refuse a replacement (the caller then falls back); LE_ERR_DEVICE
+ * with *out_errno set to the OS error otherwise, EEXIST when `to` is taken. */
+LE_EXPORT int32_t le_fs_rename_noreplace(const char* from, const char* to,
+                                         int32_t* out_errno);
+/* Repairs a float WAV part the engine's writer opened but never sealed (a
+ * power cut or a crash), or cuts one back to a trusted length, for the
+ * recording recovery (#1198) and anything else that salvages a part: keeps
+ * the first min(whole frames present, `max_frames`) frames, truncates
+ * anything after them (a torn last frame included), patches the RIFF and data
+ * sizes and fsyncs. UINT64_MAX keeps every whole frame. `*kept` (may be NULL)
+ * receives the frames kept. The file must be 32-bit float in the writer's
+ * layout (RIFF/WAVE, `fmt `, an optional caller chunk such as `sgno`, then
+ * `data`, whose size may still be the open file's zero). Returns 1 on
+ * success, 0 when the file is not in that layout or a read or write fails.
+ * The one size patcher; implemented by the native WAV writer (engine_wav.c). */
+LE_EXPORT int32_t le_wav_patch_sizes(const char* path, uint64_t max_frames,
+                                     uint64_t* kept);
 
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's
@@ -2348,7 +3829,11 @@ LE_EXPORT int32_t le_perf_render_begin(le_engine* engine,
  * progressively as each track's stem completes, not only once `*done`).
  * Safe to call whether or not a render is active — with none active,
  * `*done` reads 1, `*progress_pct` reads 100, `*track_count` reads 0. Any
- * output pointer may be NULL to skip that field. Returns LE_OK, or
+ * output pointer may be NULL to skip that field. Returns LE_OK while
+ * rendering, with none active, or after a finished render; after a render
+ * that could not read a complete, valid manifest it returns that terminal
+ * failure (LE_ERR_INVALID for unusable data, LE_ERR_DEVICE when the worker
+ * could not allocate) with `*done` 1 and no invented track results. Returns
  * LE_ERR_INVALID for a null engine. */
 LE_EXPORT int32_t le_perf_render_poll(le_engine* engine, int32_t* done,
                                      int32_t* progress_pct,
@@ -2392,7 +3877,7 @@ LE_EXPORT uint64_t le_engine_monitor_fx_fingerprint(le_engine* engine,
 /* ---- session persistence ---- *
  * Save: read each track's loop PCM with le_engine_export_track. Load: clear the
  * engine (so every track is EMPTY), le_engine_import_track each stem, then
- * le_engine_commit_session to establish the master and start playback. Per-track
+ * le_engine_commit_session to establish the master with tracks stopped. Per-track
  * buffers are mono (one sample per frame). */
 
 /* Copies up to `max_frames` frames of track `channel`'s mono loop into `out`;
@@ -2419,7 +3904,7 @@ LE_EXPORT int32_t le_engine_export_track_lane(le_engine* engine,
 
 /* Loads `frames` mono frames of PCM into track `channel`'s buffer and records
  * the length. The track must be EMPTY (LE_ERR_INVALID otherwise); the unfilled
- * tail is zeroed. The track starts playing on le_engine_commit_session. Returns
+ * tail is zeroed. The track becomes STOPPED on le_engine_commit_session. Returns
  * LE_OK or an le_result error. Equivalent to le_engine_import_track_lane with
  * lane == 0. */
 LE_EXPORT int32_t le_engine_import_track(le_engine* engine, int32_t channel,
@@ -2439,51 +3924,274 @@ LE_EXPORT int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel
                                               int32_t frames);
 
 /* ---- overdub-layer (undo/redo) persistence ---- *
- * A track's full history is the ordered set of pool buffers per lane:
- * undo_stack[0..undo_depth) (oldest first) then the live buffer then the redo
- * stack. le_engine_export_layer reads them by a linear `ordinal`, and
- * le_engine_import_layer + le_engine_finalize_layers rebuild them. The stacks
- * are track-owned and shared across lanes in lockstep, so every lane carries
- * the same layer count at the same ordinals. */
+ * A track's full history is its list of entries (le_engine_export_history)
+ * plus the ordered set of pool buffers per lane they name:
+ * undo_stack[0..undo_count) (oldest first), then the live buffer, then the
+ * redo stack read top-down. le_engine_export_layer reads the buffers by a
+ * linear image `ordinal`, and le_engine_import_layer + le_engine_finalize_history
+ * rebuild them with their kinds. The stacks are track-owned and shared across
+ * lanes in lockstep, so every lane carries the same image count at the same
+ * ordinals. */
 
-/* Copies up to `max_frames` frames of track `channel`'s lane `lane` layer at
- * `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_depth)` are the
- * undo snapshots, `undo_depth` is the live buffer, and the next `redo_depth`
- * are the redo snapshots. Returns the frames written (the loop length, clamped
- * to `max_frames`), 0 for an empty layer, or LE_ERR_INVALID for an out-of-range
- * channel/lane/ordinal or non-positive `max_frames`. Control thread; call when
+/* Copies up to `max_frames` frames of track `channel`'s lane `lane` image at
+ * `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_count)` are the
+ * undo snapshots, `undo_count` is the live buffer, and the redo snapshots
+ * follow, newest-adjacent first; a redo-side peel marker holds no image and
+ * takes no ordinal (le_engine_export_history). Each image has its own length
+ * (a length edit's images differ, #1168): `max_frames` 0 returns that length
+ * without copying (`out` may then be NULL). Returns the frames written (the
+ * image's length, clamped to `max_frames`), 0 for an empty layer, or
+ * LE_ERR_INVALID for an out-of-range channel/lane/ordinal, a negative
+ * `max_frames`, or a slot shorter than its image. Control thread; call when
  * the track is not capturing. */
 LE_EXPORT int32_t le_engine_export_layer(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t ordinal,
                                          float* out, int32_t max_frames);
 
-/* Loads `frames` mono frames into track `channel`'s lane `lane` at layer
+/* Loads `frames` mono frames into track `channel`'s lane `lane` at image
  * `ordinal` (which becomes the pool slot index), staging a reconstruction into
  * an EMPTY track. Call once per (lane, ordinal) — ordinals contiguous from 0 —
- * then le_engine_finalize_layers, then le_engine_commit_session. Importing a
- * lane >= the active count activates it. Returns LE_OK, or LE_ERR_INVALID for a
+ * then le_engine_finalize_history, which publishes the live image's length
+ * over the staged one, then le_engine_commit_session. Importing a lane >= the
+ * active count activates it. Returns LE_OK, or LE_ERR_INVALID for a
  * non-EMPTY track, an `ordinal` past the pool cap, or an oversized `frames`. */
 LE_EXPORT int32_t le_engine_import_layer(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t ordinal,
                                          const float* pcm, int32_t frames);
 
-/* Publishes a track reconstructed by le_engine_import_layer: rebuilds the
- * undo/redo stacks (slot index == ordinal), points a_live at the live buffer
- * (slot `undo_count`), and republishes the undo/redo depths — every active lane
- * in lockstep. `undo_count + 1 + redo_count` layers must already be staged on
- * every active lane at the same loop length. Returns LE_OK, or LE_ERR_INVALID
- * for a non-EMPTY track, a layer count past LE_POOL_SLOTS, or a torn/partial
- * reconstruction (a missing slot or mismatched lane length). */
-LE_EXPORT int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
-                                            int32_t undo_count,
-                                            int32_t redo_count);
+/* Publishes a track reconstructed by le_engine_import_layer with its history
+ * (#1164, #1168): `count` entries in le_engine_export_history order
+ * (`kinds[i]`, `skipped[i]`, `starts[i]`), the first `undo_count` of them on
+ * the undo stack and the rest on the redo stack top-down, and the length of
+ * each of its `images` images by ordinal (`lens`; the live image is ordinal
+ * `undo_count`). Image-bearing entries take slot == image ordinal and a
+ * redo-side peel entry becomes a marker without an image; every active lane
+ * is republished in lockstep with the live length and the undo, redo and peel
+ * depths. Strict: LE_ERR_INVALID for a non-EMPTY track, an unknown kind, a
+ * `skipped` outside [0, LE_POOL_SLOTS) or nonzero on a kind other than peel,
+ * a `starts` outside +-max_loop_frames or nonzero on a kind other than a
+ * length edit, a clear restore point anywhere but the last entry on the redo
+ * side, an undo-side peel whose `skipped` exceeds the run of peel entries
+ * directly beneath it (unless that run reaches the bottom: pool eviction), a
+ * redo-side peel marker that would find no layer to peel when Redo reaches
+ * it, `images` not the history's image count or more than LE_POOL_SLOTS, an
+ * image length outside (0, max_loop_frames] or other than its lineage gives
+ * (an image is as long as the nearest length edit at or nearer live on its
+ * stack names, else as long as the live image), or a torn reconstruction (an
+ * image not staged at its length on every active lane). Returns LE_OK
+ * otherwise. */
+LE_EXPORT int32_t le_engine_finalize_history(
+    le_engine* engine, int32_t channel, const int32_t* kinds,
+    const int32_t* skipped, const int32_t* starts, int32_t count,
+    int32_t undo_count, const int32_t* lens, int32_t images);
 
-/* Establishes the master loop at `base_frames` and starts every imported track
- * (EMPTY with a loaded length) playing at its whole-loop multiple
- * (length / base_frames). Posts a command; returns LE_OK or an le_result error.
+/* Lists track `channel`'s history entries in image-ordinal order (#1164):
+ * the undo stack oldest first, then the redo stack top-down. `kinds[i]` is the
+ * entry's kind (0 overdub layer, 1 clear restore point, 2 peel, 3 loop-close
+ * restoration, 4 length edit), `skipped[i]` its peel payload and `starts[i]`
+ * a length edit's playhead map (0 for every other kind). A redo-side peel
+ * entry is a marker without an image: le_engine_export_layer's ordinals count
+ * image-bearing entries only, so a track's image count is
+ * `undo_count + 1 + (redo entries that are not peel markers)`. Writes at most
+ * `max` entries, stores the undo stack's entry count in `*undo_count` (the
+ * first `*undo_count` entries are the undo side and ordinal `*undo_count` is
+ * the live image), and returns the track's TOTAL entry count (which may exceed
+ * `max`), or LE_ERR_INVALID for a bad handle, channel, NULL pointer or
+ * negative `max`. `*undo_count` is the raw stack count, not the snapshot's
+ * undo_depth: that one reads 0 while a content-giving command (a clear
+ * restore) is in flight, so a Session capture must split by this value.
+ * Control thread. */
+LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
+                                           int32_t* kinds, int32_t* skipped,
+                                           int32_t* starts, int32_t max,
+                                           int32_t* undo_count);
+
+/* Sets the span an imported take was laid down against (#1179 Part 4b):
+ * the shared-clock length it played over at its own speed, as a Session
+ * saved it from le_track_snapshot.span_frames. Track `channel` must be EMPTY
+ * with lane 0 imported (LE_ERR_INVALID otherwise, and for a span outside
+ * 1..max_loop_frames); 0 clears it. le_engine_commit_session then parks the
+ * track at length / span laps and keeps the span, so a take recorded after a
+ * retime reads at its own ratio on the recorded clock and follows the next
+ * retime like the takes around it. Call after the take's lanes are imported
+ * (a lane-0 le_engine_import_track_lane, or le_engine_import_layer of lane 0
+ * ordinal 0, starts a new take and clears it) and before the commit.
+ * Control thread. */
+LE_EXPORT int32_t le_engine_import_span(le_engine* engine, int32_t channel,
+                                        int32_t span_frames);
+
+/* Establishes the master loop at `base_frames` and parks every imported track
+ * (EMPTY with a loaded length) STOPPED at its whole-loop multiple
+ * (length / base_frames, or length / its imported span; a base/2 or base/4
+ * track is that Sync division). Restores exactly `loop_beats` musical beats
+ * (denominator notes; #1168: a sub-bar loop a Divide left keeps its beats)
+ * over that span; zero keeps the loop grid-free even when a tempo is known.
+ * The caller restores tempo/source/signature before this commit, so a
+ * whole-bar loop passes bars * ts_num. Does not infer beats from BPM or
+ * change audio length. Requires base_frames > 0 and loop_beats in
+ * 0..INT32_MAX/15, and every staged track a whole multiple of base_frames
+ * or exactly base/2 or base/4 (LE_ERR_INVALID otherwise, before anything is
+ * posted). Posts one command; returns LE_OK or an le_result error.
  */
 LE_EXPORT int32_t le_engine_commit_session(le_engine* engine,
-                                           int32_t base_frames);
+                                           int32_t base_frames,
+                                           int32_t loop_beats);
+
+/* Fade admission returns a nonzero request id only on LE_OK. Toggle resolves
+ * the opposite target on the callback, with a 0.5..30 second full traversal.
+ * Install accepts amount/target 0..1; zero seconds requires amount == target.
+ * Both use bounded receipt storage and leave the image unchanged on refusal. */
+LE_EXPORT int32_t le_engine_toggle_fade(le_engine* engine, int32_t channel,
+                                       float seconds, uint64_t* request);
+LE_EXPORT int32_t le_engine_install_fade(le_engine* engine, int32_t channel,
+                                        const le_fade_image* image,
+                                        uint64_t* request);
+/* Reverse (#1162): flips, or installs, the read direction of track
+ * [channel]'s recorded material at its current position, click-free. Speed
+ * and pitch are unchanged; a STOPPED track stays stopped and plays reversed
+ * from its re-entry coordinate. Admission returns a nonzero request id only on
+ * LE_OK; the callback decides and the receipt below carries its verdict.
+ * Toggle refusals: LE_ERR_INVALID for a bad channel or a track that reads
+ * EMPTY, RECORDING or OVERDUBBING; LE_ERR_NOT_READY while an arm or Count-in
+ * launch is pending on the track (it may fire into OVERDUBBING before the
+ * toggle lands) or when no receipt slot is free; LE_ERR_NOT_RUNNING when not
+ * configured. Install accepts an EMPTY track that already holds imported
+ * material (Session recall, before the commit) and otherwise refuses like
+ * toggle. The callback refuses either (receipt LE_ERR_INVALID) while a punch
+ * tail is still writing or the loop has no length. Overdubbing into a
+ * reversed track is refused by le_engine_record with LE_ERR_REVERSED. */
+LE_EXPORT int32_t le_engine_toggle_reverse(le_engine* engine, int32_t channel,
+                                          uint64_t* request);
+LE_EXPORT int32_t le_engine_install_reverse(le_engine* engine, int32_t channel,
+                                           int32_t reversed, uint64_t* request);
+/* Speed (#1179): plays every recorded track at numer/denom of its speed —
+ * 1/2, 1/1, 2/1, 4/1 or 8/1 (anything else is LE_ERR_INVALID) — through one
+ * fractional read head per track, click-free (each sounding track mixes its
+ * old head out over ~10 ms); pitch follows the speed. The song clock, click,
+ * quantize and capture are untouched. A request equal to the factor in force
+ * is accepted and changes nothing. Admission returns a nonzero request id
+ * only on LE_OK; the receipt below carries the callback's verdict.
+ * Refusals: LE_ERR_NOT_READY while any track reads RECORDING or OVERDUBBING,
+ * an arm or Count-in launch is pending, a count-in runs, or no receipt slot
+ * is free (the callback refuses the same states with receipt
+ * LE_ERR_NOT_READY, plus a punch-out tail still writing); LE_ERR_NOT_RUNNING
+ * when not configured. While Speed is not 1x le_engine_record refuses a
+ * record or punch-in with LE_ERR_TRANSFORMED. An empty loop has no speed:
+ * a request while no track holds material is refused with LE_ERR_INVALID
+ * (admission, or the receipt when the rig empties before it lands), as
+ * Reverse refuses an empty track, so a host shows the factors unavailable
+ * until a loop exists; and when the last track becomes empty, Speed returns
+ * to 1x (le_snapshot shows it), so the next loop records. */
+LE_EXPORT int32_t le_engine_set_speed(le_engine* engine, int32_t numer,
+                                     int32_t denom, uint64_t* request);
+/* Transpose (#1179 Part 3a): plays track [channel] as a pitch-shifted render
+ * of its own takes at unchanged timing. The render is built off the audio
+ * thread by the cache worker (about 100 ms after the last step, plus the
+ * render); until it lands the track plays its dry take at true pitch and
+ * le_track_snapshot.transpose_effective_st reads 0, then it crossfades to the
+ * render at the same position. Step moves the stored pitch by [delta] (+1 or
+ * -1); at +-12 the receipt is LE_ERR_CAPACITY and nothing changes. Install
+ * sets [semitones] (-12..12; Session recall) and also accepts an EMPTY track
+ * holding imported material. Refusals as Reverse's: LE_ERR_INVALID for a bad
+ * channel or argument or a track that reads EMPTY (step), RECORDING or
+ * OVERDUBBING; LE_ERR_NOT_READY while an arm or Count-in launch is pending or
+ * no receipt slot is free. While a track's pitch is not 0 and Transpose is
+ * not bypassed, le_engine_record refuses a punch-in with LE_ERR_TRANSFORMED. */
+LE_EXPORT int32_t le_engine_transpose_step(le_engine* engine, int32_t channel,
+                                          int32_t delta, uint64_t* request);
+LE_EXPORT int32_t le_engine_install_transpose(le_engine* engine,
+                                             int32_t channel,
+                                             int32_t semitones,
+                                             uint64_t* request);
+/* Bypasses every track's Transpose (dry, stored pitches kept) or restores
+ * it. Admitted whenever configured. */
+LE_EXPORT int32_t le_engine_set_transpose_bypass(le_engine* engine,
+                                                int32_t on,
+                                                uint64_t* request);
+/* Track [channel]'s Transpose source-render telemetry, the track cache
+ * query's twin: `reason` LE_CACHE_REASON_BUDGET when the render does not fit
+ * the cap and the track stays dry. */
+LE_EXPORT int32_t le_engine_get_transpose_cache(le_engine* engine,
+                                               int32_t channel,
+                                               le_lane_cache_info* out);
+/* One length edit of a track's material (#1168). Double repeats the image
+ * ([old | old]); First half and Last half keep that half, ceil(len / 2) frames
+ * each, so an odd length's halves share the middle frame. */
+typedef enum le_length_edit {
+  LE_LENGTH_DOUBLE = 0,
+  LE_LENGTH_FIRST_HALF = 1,
+  LE_LENGTH_LAST_HALF = 2,
+} le_length_edit;
+
+/* Doubles or halves track `channel` as one recoverable history entry (#1168).
+ * Pitch and speed are unchanged; sparse material stays where it lies; a half
+ * gets the loop seam's equal-gain fold from the material it omits. The
+ * playhead keeps its phase in the kept material; a STOPPED track stays
+ * stopped. The callback swaps image, length and clock in one drain; the
+ * receipt below carries its verdict, and Undo/Redo restore the other image.
+ * Lengths must fit the looper mode against the unchanged base, except that a
+ * track holding the rig's only content re-clocks the master to its new length
+ * at the unchanged tempo, keeping a whole bar count (Free/Song spans are
+ * independent). Admission returns a nonzero request id
+ * only on LE_OK. Refusals, all before any change: LE_ERR_NOT_RUNNING when not
+ * configured; LE_ERR_INVALID for a bad channel or edit, a track that is not
+ * PLAYING or STOPPED, or a half of a length below 2; LE_ERR_CAPACITY when the
+ * result exceeds max_loop_frames or the pool has no slot; LE_ERR_MODE_MISMATCH
+ * when it would not fit the mode, a re-clock would leave a fractional bar
+ * count, or the track is the crowned Sync/Band primary of other content;
+ * LE_ERR_NOT_READY while the track captures, drains a layer, has an arm,
+ * launch, pending state, clock or lane command or an unfiled length edit,
+ * while the callback may still write its loop (a seam fold or punch tail), or
+ * when no receipt slot is free. The callback refuses (receipt
+ * LE_ERR_NOT_READY, or the verdict's own code when the rig changed) when the
+ * loop's content changed after admission. */
+LE_EXPORT int32_t le_engine_edit_length(le_engine* engine, int32_t channel,
+                                        int32_t edit, uint64_t* request);
+
+/* Follow tempo (#1179 Part 4a). With content on a bar grid, a song-tempo
+ * change (le_engine_set_tempo, a tap pair) retimes the shared clock: the
+ * master length becomes the recorded length scaled by recorded / new tempo
+ * (rounded up to a whole number of the largest active Sync division), the
+ * position keeps its phase, bars and beats keep their count, and every track
+ * that follows reads its take at speed * take length / span, its pitch
+ * following. A track that does not follow keeps its recorded speed, its lap
+ * no longer the song lap, until the tempo returns. A take recorded at the
+ * new tempo plays at its own speed. While a track plays at another span
+ * than its take's, a punch-in on it is refused with LE_ERR_TRANSFORMED.
+ * [channel] -1 sets the default every track inherits ([value] 0 keeps the
+ * recorded speed, 1 follows; 0 until set); a track sets its override (-1
+ * inherits the default). LE_ERR_INVALID for a bad channel or value. */
+LE_EXPORT int32_t le_engine_set_follow_tempo(le_engine* engine,
+                                            int32_t channel, int32_t value,
+                                            uint64_t* request);
+/* Pitch across a retime (#1179 Part 4a-ii). A following track that plays
+ * over another span than its take's either keeps its pitch (0 Unchanged,
+ * the default): the cache worker renders the take time-stretched to the
+ * span (with its Transpose pitch, one render) and the track crossfades to
+ * it at the same position; until it lands the take plays through the
+ * varispeed head, timing exact, its pitch off by the tempo ratio and
+ * reported in le_track_snapshot.pitch_effective_cents. A render within
+ * 0.5 % of the span serves it (the head absorbs the rest), so a small tempo
+ * move does not re-render. Or its pitch follows the ratio (1 Follows
+ * speed), with no render. [channel] -1 sets the default ([value] 0/1); a
+ * track sets its override (-1 inherits). LE_ERR_INVALID for a bad channel
+ * or value. */
+LE_EXPORT int32_t le_engine_set_pitch_mode(le_engine* engine, int32_t channel,
+                                          int32_t value, uint64_t* request);
+/* Consumes one completed Fade, Reverse, Speed, Transpose, length, Follow
+ * tempo or Pitch result. Returns NOT_READY before callback publication,
+ * INVALID for an absent/consumed/retired id; otherwise OK and fills result. */
+LE_EXPORT int32_t le_engine_read_request_result(le_engine* engine,
+                                               uint64_t request,
+                                               int32_t* result);
+
+/* Read-only control-thread query: 1 when every successfully queued command
+ * has been consumed (including rejected/no-op outcomes) and the callback has
+ * published its resulting snapshot values; 0 while pending, unconfigured or
+ * null. Acquire this before taking the snapshot for a running-session save.
+ * Does not wait or drain. Direct atomic setters need no command settlement;
+ * active capture and pending overdub layers still require their own checks. */
+LE_EXPORT int32_t le_engine_commands_settled(le_engine* engine);
 
 /* ---- native USB MIDI input (foot-pedal control) ---- *
  *
@@ -2554,8 +4262,54 @@ LE_EXPORT int32_t le_midi_open(le_midi* m, const char* id,
 
 /* Stops capture and closes the open port. Idempotent (a no-op when nothing is
  * open). After it returns the callback registered by le_midi_open is guaranteed
- * not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle). */
+ * not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle).
+ * A capture attached to an engine port (le_engine_attach_midi_input) is
+ * detached first: the port's generation advances and it reads lost. Because
+ * le_midi_open closes the current port before opening another, re-opening also
+ * detaches; attach again after opening. */
 LE_EXPORT int32_t le_midi_close(le_midi* m);
+
+/* Whether the capture's backend thread runs at real-time priority (#1228):
+ * 1 granted, -1 refused by the OS (no RTPRIO), 0 not applicable (no port
+ * open, or a backend whose OS owns the thread, as CoreMIDI does). */
+LE_EXPORT int32_t le_midi_priority_state(le_midi* m);
+
+/* ---- the native MIDI input sink (#1228 Part 1; shared with #1197) ----
+ *
+ * An open capture can be attached to one of LE_MAX_MIDI_PORTS engine input
+ * ports. Its OS MIDI thread then pushes every note, CC, pitch bend, channel
+ * pressure, Timing Clock, Start, Continue, Stop and Song Position message,
+ * stamped with a CLOCK_MONOTONIC time, into that port's ring, and the audio
+ * thread drains the ring at the start of every block. Nothing in this path
+ * passes through Dart; the Dart callback keeps receiving Note, CC and Program
+ * exactly as before.
+ *
+ * Generations: each attach and detach advances the port's generation; events
+ * pushed under an older one are dropped by the audio thread and counted
+ * (le_snapshot.midi_in_stale). A push into a full ring sets the port's
+ * overflow flag, counted once per block that finds it
+ * (le_snapshot.midi_in_overflows), so a consumer can release whatever the
+ * dropped messages would have released. A capture whose device disappears, or
+ * that is closed while attached, marks its port lost (midi_in_lost counts
+ * each such edge).
+ *
+ * Threading: attach, detach, le_midi_close/destroy and le_engine_destroy run
+ * on one control thread and are not called concurrently. Detach and close
+ * wait until no push is in flight, so when they return the capture can no
+ * longer write the port; le_engine_destroy detaches every port first. */
+#define LE_MAX_MIDI_PORTS 8
+
+/* Attaches capture `m` to engine input port `port` (0..LE_MAX_MIDI_PORTS-1).
+ * A capture already attached elsewhere moves; a capture already on `port` is
+ * detached first. Returns LE_OK, or LE_ERR_INVALID for a null handle or a port
+ * out of range. Valid whether or not the engine is configured or running. */
+LE_EXPORT int32_t le_engine_attach_midi_input(le_engine* engine, le_midi* m,
+                                              int32_t port);
+
+/* Detaches whatever capture is on `port`. Returns LE_OK (also when nothing
+ * was attached) or LE_ERR_INVALID for a null engine or a port out of range. */
+LE_EXPORT int32_t le_engine_detach_midi_input(le_engine* engine,
+                                              int32_t port);
 
 /* ---- native USB MIDI output (foot-pedal LED feedback) ---- *
  *
@@ -2611,6 +4365,373 @@ LE_EXPORT int32_t le_midi_out_close(le_midi_out* m);
  * len), or LE_ERR_DEVICE (no port open or the OS rejected the send). */
 LE_EXPORT int32_t le_midi_out_send(le_midi_out* m, const uint8_t* data,
                                    int32_t len);
+
+/* ---- Shared render recipe (#1202): Bounce and Save selected audio ----
+ *
+ * Renders the selected recorded tracks offline, regardless of transport, Mute
+ * and Solo, with their levels, pans, track gain, frozen Fade, direction, Pre
+ * (the take, as printed) and Post processing, optionally the All tracks chain
+ * (Mix FX), and never live inputs, monitors, click, output buses, output FX or
+ * the master. One job per engine, run in slices on the wet cache's worker.
+ * Lengths: the exact common cycle of the sources (at most 1024 beats, or 512
+ * seconds without a tempo) or a chosen whole number of bars. Tails: Wrap
+ * renders the window twice and keeps the second pass; Cut renders it once
+ * from cold Post states. Output is interleaved stereo float. */
+typedef enum le_render_tails {
+  LE_RENDER_WRAP = 0,
+  LE_RENDER_CUT = 1,
+} le_render_tails;
+
+typedef enum le_render_target {
+  LE_RENDER_TARGET_MEMORY = 0, /* kept in the job (Bounce; le_engine_render_copy) */
+  LE_RENDER_TARGET_FILE = 1,   /* a stereo float WAV published at `path` */
+} le_render_target;
+
+typedef enum le_render_method {
+  LE_RENDER_COMMON_CYCLE = 0,
+  LE_RENDER_CHOSEN_LENGTH = 1,
+} le_render_method;
+
+typedef enum le_render_state {
+  LE_RENDER_NONE = 0,
+  LE_RENDER_FREEZING = 1,
+  LE_RENDER_STAGING = 2,
+  LE_RENDER_RENDERING = 3,
+  LE_RENDER_DONE = 4,
+  LE_RENDER_FAILED = 5,
+} le_render_state;
+
+typedef struct le_render_request {
+  uint32_t source_mask; /* bit t = track t */
+  int32_t length_bars;  /* 0 = the common cycle */
+  int32_t tails;        /* le_render_tails */
+  int32_t mix_fx;       /* 1 = include the All tracks chain */
+  int32_t target;       /* le_render_target */
+  const char* path;     /* file target: the final path ("<path>.part" while
+                         * writing) */
+  int32_t max_frames;   /* 0 = no cap beyond the cycle cap; Bounce passes the
+                         * destination's capacity */
+} le_render_request;
+
+typedef struct le_render_plan {
+  int32_t frames;        /* the window, in frames */
+  int32_t method;        /* le_render_method */
+  int32_t beats_milli;   /* the window in beats x 1000 (0 without a tempo) */
+  int32_t tempo_set;     /* 0 = no tempo: lengths read in seconds */
+  uint32_t plugin_mask;  /* sources whose chains hold a hosted plugin, which
+                          * renders dry */
+  uint32_t faded_mask;   /* sources whose Fade amount is below unity */
+  uint32_t pending_mask; /* sources heard through a not-yet-ready transform */
+  uint32_t once_cut_mask; /* Once sources longer than a chosen length: only
+                           * the part of their single pass inside the window
+                           * sounds, none when it starts after the window */
+} le_render_plan;
+
+/* Admission only: the verdict and the plan, with no job. Returns LE_OK,
+ * LE_ERR_NO_COMMON_CYCLE, LE_ERR_CAPACITY (over max_frames), LE_ERR_INVALID
+ * (no sources, an empty source, a chosen length without a tempo, a file
+ * target without a path), LE_ERR_NOT_READY (a source is recording or
+ * overdubbing, counting a posted command that will make it so, or has a
+ * layer in flight) or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_render_measure(le_engine* engine,
+                                           const le_render_request* request,
+                                           le_render_plan* plan);
+
+/* Starts the job: re-measures and posts LE_CMD_RENDER_FREEZE. Returns LE_OK
+ * with *job set, any measure refusal, LE_ERR_ALREADY_RUNNING while a job
+ * exists, LE_ERR_CAPACITY when the job's bytes exceed the recipe's own
+ * budget (it never evicts the wet cache), LE_ERR_UNSUPPORTED without a
+ * render worker, or a ring refusal. */
+LE_EXPORT int32_t le_engine_render_begin(le_engine* engine,
+                                         const le_render_request* request,
+                                         uint32_t* job);
+
+/* Progress of job `job`: *state (le_render_state), *permille (0..1000, one
+ * scale over staging, then the render) and,
+ * once FAILED, *result (LE_ERR_TRACKS_CHANGED, LE_ERR_CAPACITY,
+ * LE_ERR_INVALID on an effect allocation failure, LE_ERR_DEVICE on a write
+ * failure or a configure/stop that joined the worker; a file whose
+ * directory sync alone failed is published and reads DONE). Also the staging
+ * heartbeat: call it from the control thread until DONE or FAILED. Returns
+ * LE_OK, or LE_ERR_INVALID for an unknown job. */
+LE_EXPORT int32_t le_engine_render_poll(le_engine* engine, uint32_t job,
+                                        int32_t* state, int32_t* permille,
+                                        int32_t* result);
+
+/* Copies a DONE memory result (interleaved stereo) into `out`. Returns the
+ * frames copied (at most max_frames), or LE_ERR_INVALID / LE_ERR_NOT_READY. */
+LE_EXPORT int32_t le_engine_render_copy(le_engine* engine, uint32_t job,
+                                        float* out, int32_t max_frames);
+
+/* Cancels and releases job `job` (any state). A file target leaves no
+ * partial file. Returns LE_OK or LE_ERR_INVALID for an unknown job. */
+LE_EXPORT int32_t le_engine_render_cancel(le_engine* engine, uint32_t job);
+
+/* ---- Bounce (#1202, Part 4a: Keep sources) ----
+ *
+ * Installs a finished memory render (le_engine_render_begin with
+ * LE_RENDER_TARGET_MEMORY) on one destination track in ONE callback drain:
+ * the image as a stereo pair (lanes 0 and 1, image pans -1/+1, the other
+ * lanes silent), its length and clock, STOPPED, and the destination's
+ * processing reset — unity gain, unity lane levels, centred lane pans, mutes
+ * off, Fade and direction reset, and the chains given here (empty when NULL).
+ * `topology` (optional) is the destination's lane count, routing and mix,
+ * applied first through the ordinary mix path; the reset values then win.
+ * The destination's previous state becomes one LE_HIST_BOUNCE history entry;
+ * le_engine_bounce_recover undoes or redoes it whole. */
+typedef struct le_bounce_request {
+  uint32_t job;          /* a DONE memory render */
+  int32_t destination;   /* the track that receives the result */
+  int32_t keep_sources;  /* must be 1 until Clear sources lands (Part 4b) */
+  const le_mix_settings* topology; /* NULL: keep lane count and routing */
+  const le_fx_recipe* lane_fx; /* lane_fx_count recipes; NULL: empty chains */
+  int32_t lane_fx_count;
+  const le_fx_recipe* track_fx; /* NULL: an empty track chain */
+} le_bounce_request;
+
+/* Admits a bounce. Returns LE_OK with *request (read the callback outcome
+ * with le_engine_read_request_result), LE_ERR_NOT_READY (the render is not a
+ * finished memory job, or the destination is busy: capturing, armed, a
+ * pending command, a layer in flight, a previous bounce not yet filed, or
+ * a full undo stack), LE_ERR_TRACKS_CHANGED (a source changed after the
+ * render froze it), LE_ERR_MODE_MISMATCH (the length does not fit the loop
+ * mode), LE_ERR_CAPACITY (no slot or buffer), LE_ERR_UNSUPPORTED (Clear
+ * sources) or LE_ERR_INVALID. The history entry is filed when the outcome is
+ * collected (the next le_engine_drain_events after the callback applied). */
+LE_EXPORT int32_t le_engine_bounce(le_engine* engine,
+                                   const le_bounce_request* request,
+                                   uint64_t* receipt);
+
+typedef struct le_bounce_recover_request {
+  int32_t destination;
+  int32_t redo;          /* 0: undo the bounce on top of the undo stack;
+                          * 1: redo the one on top of the redo stack */
+  const le_mix_settings* topology; /* the side being restored */
+  const le_fx_recipe* lane_fx;     /* its chains; NULL: empty */
+  int32_t lane_fx_count;
+  const le_fx_recipe* track_fx;
+} le_bounce_recover_request;
+
+/* Undoes or redoes a whole bounce in one callback drain. Plain le_engine_undo
+ * and le_engine_redo refuse a BOUNCE entry on top (LE_ERR_INVALID), so no path
+ * restores part of one. Returns LE_OK with *receipt, LE_ERR_INVALID (no
+ * bounce on top), LE_ERR_NOT_READY (busy, as le_engine_bounce),
+ * LE_ERR_MODE_MISMATCH or a ring refusal. */
+LE_EXPORT int32_t le_engine_bounce_recover(
+    le_engine* engine, const le_bounce_recover_request* request,
+    uint64_t* receipt);
+/* ---- Instrument slots and notes (#1197) ----------------------------------- *
+ *
+ * Up to LE_MAX_INSTRUMENTS instruments, each playing one of the
+ * LE_SYNTH_PATCHES patches into its own mono bus, rendered inside the audio
+ * callback after the command drain. Patch changes and notes travel on two
+ * single-producer rings drained at block start in the order they were
+ * posted: note-ons and patch changes (LE_INST_EVENT_CAPACITY) and a reserved
+ * lane for releases (LE_INST_RELEASE_CAPACITY), so a burst of note-ons can
+ * never crowd out a note-off, and a note posted after its instrument was set
+ * always meets that patch. A slot's three parameters are continuous controls
+ * read once per block. All of these are control-thread calls (one producer,
+ * like every command). */
+
+#define LE_INST_EVENT_CAPACITY 256    /* note-on ring slots (one kept empty) */
+#define LE_INST_RELEASE_CAPACITY 1024 /* release ring slots (one kept empty) */
+
+/* Gives instrument `slot` patch `patch` (0..LE_SYNTH_PATCHES-1, or -1 for
+ * none) with `params` (three 0..100 values, or NULL for the patch's
+ * defaults). A changed patch fades the slot's voices out. Returns LE_OK,
+ * LE_ERR_INVALID (bad slot or parameter), LE_ERR_UNKNOWN_PATCH,
+ * LE_ERR_CAPACITY (the note-on ring is full: nothing changed, retry) or
+ * LE_ERR_NOT_RUNNING before configure. */
+LE_EXPORT int32_t le_engine_set_instrument(le_engine* engine, int32_t slot,
+                                           int32_t patch, const float* params);
+
+/* Sets family parameter `param` (0..2) of `slot` to `value` (0..100, clamped),
+ * applied from the next block. Returns LE_OK, LE_ERR_INVALID,
+ * LE_ERR_NO_INSTRUMENT (the slot has no patch) or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_set_instrument_param(le_engine* engine, int32_t slot,
+                                                 int32_t param, float value);
+
+/* The voice pool: the highest voice limit. */
+#define LE_INST_MAX_VOICES 64
+
+/* Limits the sounding voices of all instruments together to `limit`
+ * (1..LE_INST_MAX_VOICES): lowering it fades the excess, the overload
+ * control. The default after configure is 32. Returns LE_OK, LE_ERR_INVALID
+ * or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_set_voice_limit(le_engine* engine, int32_t limit);
+
+/* Fades every voice of `slot` out (its definition was removed). Returns
+ * LE_OK, LE_ERR_INVALID or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_reset_instrument(le_engine* engine, int32_t slot);
+
+/* Starts `note` (0..127) at `velocity` (1..127) on `slot` for `origin` (the
+ * caller's identity for the note; its release names the same origin).
+ * Returns LE_OK, LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (the slot has no
+ * patch), LE_ERR_CAPACITY (the note-on ring is full, keeping its last
+ * LE_MAX_INSTRUMENTS slots for patch changes: the note is not played and is
+ * counted in instrument_events_refused) or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_instrument_note_on(le_engine* engine, int32_t slot,
+                                               uint32_t origin, int32_t note,
+                                               int32_t velocity);
+
+/* One origin, one sounding note: a note-on for an origin whose voice is
+ * still held on that slot replaces it (the repeated-strike rule; a voice
+ * held on only by sustain rings on). A chord with one identity goes through
+ * here instead: `count` (1..LE_INST_CHORD_NOTES) notes started together
+ * for `origin`, released together by its note-off. All or nothing: returns
+ * LE_OK, LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT, LE_ERR_CAPACITY (no room
+ * for every note; nothing is played, one refusal is counted) or
+ * LE_ERR_NOT_RUNNING. */
+#define LE_INST_CHORD_NOTES 8
+LE_EXPORT int32_t le_engine_instrument_chord_on(le_engine* engine,
+                                                int32_t slot, uint32_t origin,
+                                                const int32_t* notes,
+                                                int32_t count,
+                                                int32_t velocity);
+
+/* Releases every voice started for `origin`, on every instrument. Rides the
+ * reserved release lane. Returns LE_OK, LE_ERR_CAPACITY (the release lane is
+ * full: the caller must retry, never drop it) or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_instrument_note_off(le_engine* engine,
+                                                uint32_t origin);
+
+/* Adds (`on` 1) or removes (0) sustain contributor `origin` on `slot`: a
+ * pedal or external switch holding sustain. Released notes ring until every
+ * contributor, these and each port's CC64, lets go. Adding rides the note-on
+ * ring (LE_ERR_CAPACITY like a note-on), removing rides the release lane
+ * (LE_ERR_CAPACITY only when it is full: retry, never drop). Returns LE_OK,
+ * LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (adding on an empty slot) or
+ * LE_ERR_NOT_RUNNING. Control-thread origins share a space of their own:
+ * they never collide with a MIDI port's notes. */
+LE_EXPORT int32_t le_engine_instrument_sustain(le_engine* engine, int32_t slot,
+                                               uint32_t origin, int32_t on);
+
+/* ---- Instrument MIDI routes (#1197 Part 2c) ---------------------------------
+ * Which MIDI each instrument plays, from the ports of the shared input sink
+ * (le_engine_attach_midi_input). Routing runs on the audio thread, in the
+ * sink's drain: a Note Off (or Note On at velocity 0) releases every voice
+ * that note started, on every instrument, before any table is read, so
+ * editing a route never strands a held note; CC64 below 64 likewise removes
+ * that port and channel's sustain everywhere. Otherwise each message goes to
+ * every instrument it matches (layers), and channels and ranges make splits:
+ *   - a remap matching the message's port, channel (0: any) and kind/number
+ *     plays its notes (a chord with one identity) instead of the ordinary
+ *     handling of that message on that instrument (so a remapped CC64 does
+ *     not also sustain);
+ *   - otherwise, with MIDI enabled and the port and channel matching: Note
+ *     On within [low, high] plays the incoming note and velocity; CC64 >= 64
+ *     sustains; CC1 sets modulation; pitch bend (two semitones) and channel
+ *     pressure set expression.
+ * A port whose capture is detached, replaced, lost or overran its ring
+ * releases every voice it started, after the events queued before the loss
+ * have been played; nothing from an old binding replays. */
+
+#define LE_INST_MAX_REMAPS 32
+#define LE_INST_REMAP_NOTES 8
+#define LE_INST_REMAP_NOTE 0
+#define LE_INST_REMAP_CC 1
+
+typedef struct le_inst_remap {
+  int32_t port;    /* 0..LE_MAX_MIDI_PORTS-1 */
+  int32_t channel; /* 0: any, 1..16 */
+  int32_t kind;    /* LE_INST_REMAP_NOTE or LE_INST_REMAP_CC */
+  int32_t number;  /* the note or controller, 0..127 */
+  int32_t count;   /* notes to play, 1..LE_INST_REMAP_NOTES */
+  int32_t notes[LE_INST_REMAP_NOTES];
+} le_inst_remap;
+
+typedef struct le_inst_route {
+  int32_t midi_enabled; /* 0/1: ordinary notes and controllers */
+  int32_t port;         /* 0..LE_MAX_MIDI_PORTS-1 */
+  int32_t channel;      /* 0: any, 1..16 */
+  int32_t low, high;    /* note range, 0 <= low <= high <= 127 */
+  int32_t remap_count;  /* 0..LE_INST_MAX_REMAPS; remaps, like ordinary
+                         * notes, need midi_enabled */
+  le_inst_remap remaps[LE_INST_MAX_REMAPS];
+} le_inst_route;
+
+typedef struct le_inst_routes {
+  le_inst_route inst[LE_MAX_INSTRUMENTS];
+} le_inst_routes;
+
+/* Publishes a complete routing table (copied; the caller keeps its own).
+ * While the audio callback runs, a table is switched in at the next block
+ * and acknowledged there; a second publish before that acknowledgement
+ * returns LE_ERR_NOT_READY (retry on the next snapshot, latest wins). While
+ * the engine is stopped the table switches at once. Returns LE_OK,
+ * LE_ERR_INVALID (a field out of range), LE_ERR_NOT_READY or
+ * LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_set_instrument_routes(le_engine* engine,
+                                                  const le_inst_routes* routes);
+
+/* ---- Instrument synthesis catalogue (#1197) ------------------------------ *
+ *
+ * The nineteen Segno synthesis patches the instrument voices play (synth_voice.h,
+ * synth_patch.c). The engine owns the definitions; the app reads them here and
+ * keeps only presentation (names, art) keyed by the patch id, so a readout can
+ * never drift from what the voice does. Pure reads of static tables: safe from
+ * any thread, no engine handle. */
+
+#define LE_SYNTH_PATCHES 19
+#define LE_SYNTH_FAMILIES 7
+#define LE_SYNTH_FAMILY_PARAMS 3
+#define LE_SYNTH_ID_CHARS 24  /* patch id, NUL-terminated */
+#define LE_SYNTH_KEY_CHARS 16 /* parameter key, NUL-terminated */
+
+/* Instrument families, in catalogue order. */
+typedef enum le_synth_family {
+  LE_SYNTH_KEYS = 0,
+  LE_SYNTH_ORGANS = 1,
+  LE_SYNTH_SYNTHS = 2,
+  LE_SYNTH_BASS = 3,
+  LE_SYNTH_STRINGS = 4,
+  LE_SYNTH_DRUMS = 5,
+  LE_SYNTH_PERCUSSION = 6,
+} le_synth_family;
+
+/* The unit a family parameter's value is shown in. */
+typedef enum le_synth_param_unit {
+  LE_SYNTH_UNIT_PERCENT = 0,
+  LE_SYNTH_UNIT_SECONDS = 1,
+  LE_SYNTH_UNIT_HERTZ = 2,
+} le_synth_param_unit;
+
+/* One patch. `defaults` are the three family parameters on the 0..100 scale
+ * every surface edits. */
+typedef struct le_synth_patch_desc {
+  char id[LE_SYNTH_ID_CHARS];
+  int32_t family; /* le_synth_family */
+  float defaults[LE_SYNTH_FAMILY_PARAMS];
+} le_synth_patch_desc;
+
+/* One family parameter. A setting v in 0..100 means
+ *   at_min + (at_max - at_min) * v / 100            when exponential == 0,
+ *   at_min * (at_max / at_min) ^ (v / 100)          when exponential == 1,
+ * in `unit` (percent parameters map 0..100 to 0..100). The voice uses exactly
+ * this value, with one exception kept from the reference: Drums' decay (d,
+ * 0.08..2.48 s) sets each piece's hit length through the piece's own formula
+ * (kick 0.15 + 0.55 d, snare and clap 0.08 + 0.3 d, hat 0.04 + 0.13 d), so
+ * the readout names the kit's decay setting, not one hit's length. */
+typedef struct le_synth_param_desc {
+  char key[LE_SYNTH_KEY_CHARS];
+  int32_t unit; /* le_synth_param_unit */
+  float at_min;
+  float at_max;
+  int32_t exponential;
+} le_synth_param_desc;
+
+/* Number of patches (LE_SYNTH_PATCHES). */
+LE_EXPORT int32_t le_synth_patch_count(void);
+
+/* Fills *out with patch `index` (0..count-1). Returns LE_OK, or
+ * LE_ERR_INVALID for a NULL `out` or an index out of range. */
+LE_EXPORT int32_t le_synth_patch_info(int32_t index, le_synth_patch_desc* out);
+
+/* Fills *out with parameter `param` (0..2) of `family`. Returns LE_OK, or
+ * LE_ERR_INVALID for a NULL `out`, an unknown family or a parameter out of
+ * range. */
+LE_EXPORT int32_t le_synth_param_info(int32_t family, int32_t param,
+                                      le_synth_param_desc* out);
 
 #ifdef __cplusplus
 }

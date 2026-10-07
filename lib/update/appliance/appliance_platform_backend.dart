@@ -6,8 +6,9 @@ import 'package:update_repository/update_repository.dart';
 
 /// The Raspberry Pi appliance update backend. Reads the running semantic
 /// version and channel from marker files, fetches the channel manifest over
-/// HTTPS, and delegates the privileged download/stage and reboot to the
-/// `segno-update-ctl` helper (via the injected [ApplianceEnv]).
+/// HTTPS, and delegates the privileged download/stage to the
+/// `segno-update-ctl` helper (via the injected [ApplianceEnv]). The restart
+/// that boots a staged slot is the power flow's, which saves first.
 ///
 /// Channel resolution (same order as the shell helpers):
 ///   1. [channelOverrideFile] on `/data` (user toggle; survives OS updates)
@@ -16,7 +17,7 @@ import 'package:update_repository/update_repository.dart';
 ///
 /// [isSupported] additionally requires the helper to be present, so on a build
 /// that hasn't shipped it the update UI stays hidden rather than offering a
-/// stage/reboot that would fail.
+/// stage that would fail.
 class AppliancePlatformBackend implements PlatformUpdateBackend {
   /// Creates an [AppliancePlatformBackend]. All paths and the base URL are
   /// overridable for tests; [env] defaults to the real [SystemApplianceEnv].
@@ -75,15 +76,32 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   Future<Version> currentVersion() async => _readVersion(versionFile);
 
   @override
-  Future<Version> stagedVersion() async {
-    // Drop a staged marker left behind by a failed tryboot / rollback so
-    // Check Now can re-offer the published build.
-    await _env.reconcileStaged();
-    return _readVersion(stagedFile);
+  Future<Version> stagedVersion() async => _readVersion(stagedFile);
+
+  /// Reconciles the staged marker, once per start: a marker left by a
+  /// tryboot that did not take is dropped so the check can offer the build
+  /// again, and the version it named is the one that rolled back. The
+  /// marker is read first because the reconcile removes it.
+  @override
+  Future<UpdateRecovery> recover() async {
+    final staged = _readVersion(stagedFile);
+    final reason = await _env.reconcileStaged();
+    final attempt = _parse(await _env.updateAttempt());
+    return UpdateRecovery(
+      rolledBack: reason == 'tryboot-not-taken' && staged != Version.none
+          ? staged
+          : null,
+      interrupted: attempt == Version.none ? null : attempt,
+    );
   }
 
-  Version _readVersion(String path) {
-    final text = _env.readTextSync(path)?.trim();
+  @override
+  Future<void> clearInterrupted() => _env.clearUpdateAttempt();
+
+  Version _readVersion(String path) => _parse(_env.readTextSync(path));
+
+  Version _parse(String? raw) {
+    final text = raw?.trim();
     if (text == null || text.isEmpty) return Version.none;
     try {
       return Version.parse(text);
@@ -111,7 +129,4 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   @override
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
       _env.stage(manifest.version.toString());
-
-  @override
-  Future<void> applyAndRestart() => _env.reboot();
 }

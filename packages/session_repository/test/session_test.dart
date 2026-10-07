@@ -11,11 +11,11 @@ void main() {
     baseLengthFrames: 96000,
     tracks: [
       SessionTrack(
+        fadeAmount: 1,
+        reversed: false,
         channel: 0,
         multiple: 1,
         lengthFrames: 96000,
-        lengthPresetBars: 4,
-        oneShot: true,
         lanes: [
           SessionLane(
             lane: 0,
@@ -24,6 +24,7 @@ void main() {
             outputMask: 0x3,
             inputChannel: 0,
             layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+            history: TrackHistory.none,
           ),
           SessionLane(
             lane: 1,
@@ -32,10 +33,13 @@ void main() {
             outputMask: 0x2,
             inputChannel: 1,
             layers: [SessionLayer(file: 'track0_lane1_L0.wav')],
+            history: TrackHistory.none,
           ),
         ],
       ),
       SessionTrack(
+        fadeAmount: 1,
+        reversed: false,
         channel: 1,
         multiple: 2,
         lengthFrames: 192000,
@@ -47,6 +51,7 @@ void main() {
             outputMask: 0x3,
             inputChannel: 0,
             layers: [SessionLayer(file: 'track1_lane0_L0.wav')],
+            history: TrackHistory.none,
           ),
         ],
       ),
@@ -58,7 +63,7 @@ void main() {
     monitors: [
       SessionMonitor(
         input: 0,
-        enabled: true,
+        mode: 'on',
         outputMask: 0x3,
         volume: 0.9,
         muted: false,
@@ -78,22 +83,36 @@ void main() {
         encoded: '{"chainEnabled":true,"entries":[]}',
       ),
     ],
-    masterChain: '{"chainEnabled":true,"entries":[{"t":9}]}',
+    outputChains: [
+      SessionOutputChain(
+        bus: 0,
+        encoded: '{"chainEnabled":true,"entries":[{"t":9}]}',
+      ),
+    ],
     tempoBpm: 128.5,
     tempoSource: TempoSource.manual,
     tsNum: 6,
     tsDen: 8,
     quantizeDiv: GridDivision.eighth,
+    loopBars: 5,
+    recordTiming: RecordTiming.eighth,
+    overdubDecay: 25,
     clickMode: ClickMode.rec,
     clickOutputMask: 0x3,
     clickVolume: 0.75,
     countInBars: 2,
     looperMode: LooperMode.band,
     primaryTrack: 1,
-    // Channel 2 has NO SessionTrack entry (content-less) — its One Shot flag
-    // only round-trips through this session-level set, alongside channel 0's
-    // (which also has a per-track `oneShot: true` above; both should agree).
-    oneShotChannels: [0, 2],
+    defaultOneShot: true,
+    defaultLengthPresetBars: 8,
+    trackOneShotOverrides: {0: true, 2: false},
+    trackRecordTimingOverrides: {0: RecordTiming.bar, 2: RecordTiming.eighth},
+    trackOverdubDecayOverrides: {0: 30, 2: 25},
+    trackLengthPresetOverrides: {0: 4, 2: 8},
+    syncTempo: false,
+    recDub: true,
+    autoRecord: true,
+    defaultMultiple: 3,
     // The pedal remap (schema v6) — opaque here exactly like the chain
     // strings above; a binding-set shape stands in for the real
     // `PedalBindingSet.encode()` output the control layer produces.
@@ -102,24 +121,577 @@ void main() {
         r'\"index\":5}","behavior":"momentary"}]',
   );
 
+  group('SessionTrack Fade amount', () {
+    test('strictly preserves stationary endpoints and value identity', () {
+      final original = session.tracks.first;
+      for (final amount in [0.0, .25, 1.0]) {
+        final json = {...original.toJson(), 'fadeAmount': amount};
+        final decoded = SessionTrack.fromJson(json);
+        expect(decoded.fadeAmount, amount);
+        expect(decoded.toJson()['fadeAmount'], amount);
+        expect(SessionTrack.fromJson(decoded.toJson()), decoded);
+        expect(
+          SessionTrack.fromJson(decoded.toJson()).hashCode,
+          decoded.hashCode,
+        );
+        if (amount != original.fadeAmount) {
+          expect(decoded, isNot(original));
+        }
+      }
+    });
+    test(
+      'rejects missing and malformed amounts rather than assuming unity',
+      () {
+        final json = session.tracks.first.toJson()..remove('fadeAmount');
+        expect(() => SessionTrack.fromJson(json), throwsFormatException);
+        for (final invalid in [
+          null,
+          '0.5',
+          true,
+          -.1,
+          1.1,
+          double.nan,
+          double.infinity,
+          double.negativeInfinity,
+        ]) {
+          expect(
+            () => SessionTrack.fromJson({...json, 'fadeAmount': invalid}),
+            throwsFormatException,
+          );
+        }
+      },
+    );
+  });
+
+  group('SessionTrack playback direction', () {
+    test('round-trips and takes part in value identity', () {
+      final original = session.tracks.first;
+      final json = {...original.toJson(), 'reversed': true};
+      final decoded = SessionTrack.fromJson(json);
+      expect(decoded.reversed, isTrue);
+      expect(decoded.toJson()['reversed'], isTrue);
+      expect(SessionTrack.fromJson(decoded.toJson()), decoded);
+      expect(decoded, isNot(original));
+      expect(decoded.hashCode, isNot(original.hashCode));
+    });
+
+    test('rejects a missing or malformed direction rather than assuming '
+        'forward', () {
+      final json = session.tracks.first.toJson()..remove('reversed');
+      expect(() => SessionTrack.fromJson(json), throwsFormatException);
+      for (final invalid in [null, 0, 1, 'true', 'reversed']) {
+        expect(
+          () => SessionTrack.fromJson({...json, 'reversed': invalid}),
+          throwsFormatException,
+        );
+      }
+    });
+
+    test('direction is carried since version 13', () {
+      expect(Session.formatVersion, greaterThanOrEqualTo(13));
+      final json = session.toJson()..['version'] = 11;
+      expect(
+        () => Session.fromJson(json),
+        throwsA(isA<SessionUnsupportedVersion>()),
+      );
+    });
+  });
+
+  group('Audio & tempo (#1179, schema 14)', () {
+    const retimed = Session(
+      sampleRate: 48000,
+      channels: 1,
+      baseLengthFrames: 2400,
+      tempoBpm: 100,
+      tempoSource: TempoSource.manual,
+      loopBars: 1,
+      recordedTempoBpm: 120,
+      recordedLengthFrames: 2000,
+      defaultFollowTempo: false,
+      trackFollowTempoOverrides: {1: true, 3: false},
+      defaultPitchMode: PitchMode.followsSpeed,
+      trackPitchModeOverrides: {2: PitchMode.unchanged},
+      tracks: [
+        SessionTrack(
+          channel: 0,
+          multiple: 1,
+          lengthFrames: 2400,
+          fadeAmount: 1,
+          reversed: false,
+          spanFrames: 2400,
+          lanes: [
+            SessionLane(
+              lane: 0,
+              volume: 1,
+              muted: false,
+              outputMask: 3,
+              inputChannel: 0,
+              layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+              history: TrackHistory.none,
+            ),
+          ],
+        ),
+      ],
+    );
+
+    test('round-trips the recorded pair, spans and both settings', () {
+      final json = jsonDecode(jsonEncode(retimed.toJson()));
+      final back = Session.fromJson(json as Map<String, dynamic>);
+      expect(back, retimed);
+      expect(back.recordedTempoBpm, 120);
+      expect(back.recordedLengthFrames, 2000);
+      expect(back.tracks.single.spanFrames, 2400);
+      expect(back.defaultFollowTempo, isFalse);
+      expect(back.trackFollowTempoOverrides, {1: true, 3: false});
+      expect(back.defaultPitchMode, PitchMode.followsSpeed);
+      expect(back.trackPitchModeOverrides, {2: PitchMode.unchanged});
+      expect(back.hashCode, retimed.hashCode);
+    });
+
+    test('defaults: Follow on, Pitch unchanged, no recorded pair', () {
+      const plain = Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: [],
+      );
+      final json = plain.toJson();
+      expect(json['defaultFollowTempo'], isTrue);
+      expect(json['defaultPitchMode'], 'unchanged');
+      expect(json['recordedTempoBpm'], 0);
+      expect(json['recordedLengthFrames'], 0);
+      expect(Session.fromJson(json), plain);
+    });
+
+    test('refuses malformed values at decode, field by field', () {
+      final good = retimed.toJson();
+      Map<String, dynamic> withTrack(Object? span) => {
+        ...good,
+        'tracks': [
+          {...(good['tracks'] as List).single as Map<String, dynamic>}
+            ..['spanFrames'] = span,
+        ],
+      };
+      for (final (key, bad) in <(String, Object?)>[
+        ('recordedTempoBpm', null),
+        ('recordedTempoBpm', 25),
+        ('recordedTempoBpm', 301),
+        ('recordedTempoBpm', double.nan),
+        ('recordedTempoBpm', 0), // a length without a tempo
+        ('recordedLengthFrames', null),
+        ('recordedLengthFrames', -1),
+        ('recordedLengthFrames', 0), // a tempo without a length
+        ('recordedLengthFrames', 2000.5),
+        ('defaultFollowTempo', null),
+        ('defaultFollowTempo', 'on'),
+        ('trackFollowTempoOverrides', null),
+        ('trackFollowTempoOverrides', {'8': true}),
+        ('trackFollowTempoOverrides', {'1': 'yes'}),
+        ('defaultPitchMode', null),
+        ('defaultPitchMode', 'sideways'),
+        ('trackPitchModeOverrides', null),
+        ('trackPitchModeOverrides', {'-1': 'unchanged'}),
+        ('trackPitchModeOverrides', {'1': 'sideways'}),
+      ]) {
+        expect(
+          () => Session.fromJson({...good, key: bad}),
+          throwsA(anyOf(isA<FormatException>(), isA<TypeError>())),
+          reason: '$key: $bad',
+        );
+      }
+      for (final bad in <Object?>[null, -1, 1.5, '0']) {
+        expect(
+          () => Session.fromJson(withTrack(bad)),
+          throwsFormatException,
+          reason: 'spanFrames: $bad',
+        );
+      }
+      expect(Session.fromJson(withTrack(0)).tracks.single.spanFrames, 0);
+    });
+  });
+
   group('Session', () {
     test('round-trips through JSON (including jsonEncode/decode)', () {
       final json = jsonDecode(jsonEncode(session.toJson()));
       expect(Session.fromJson(json as Map<String, dynamic>), session);
     });
 
-    test('serializes the manifest version (v7)', () {
+    test('refuses an unsupported count-in at decode', () {
+      for (final bad in <Object?>[3, 5, -1, 1.5, '2', null]) {
+        expect(
+          () => Session.fromJson({...session.toJson(), 'countInBars': bad}),
+          throwsFormatException,
+          reason: '$bad',
+        );
+      }
+      for (final good in [0, 1, 2, 4]) {
+        expect(
+          Session.fromJson({
+            ...session.toJson(),
+            'countInBars': good,
+          }).countInBars,
+          good,
+        );
+      }
+    });
+
+    for (final key in [
+      'trackRecordTimingOverrides',
+      'trackOverdubDecayOverrides',
+      'trackOneShotOverrides',
+      'trackLengthPresetOverrides',
+      'trackPans',
+    ]) {
+      test('refuses a $key key outside the eight tracks at decode', () {
+        final valid = session.toJson()[key] as Map<String, dynamic>? ?? {};
+        final value = switch (key) {
+          'trackRecordTimingOverrides' => 'bar',
+          'trackOneShotOverrides' => true,
+          'trackPans' => 0.5,
+          _ => 4,
+        };
+        for (final bad in ['8', '-1']) {
+          expect(
+            () => Session.fromJson({
+              ...session.toJson(),
+              key: {...valid, bad: value},
+            }),
+            throwsFormatException,
+            reason: bad,
+          );
+        }
+        expect(
+          () => Session.fromJson({
+            ...session.toJson(),
+            key: {...valid, '7': value},
+          }),
+          returnsNormally,
+        );
+      });
+    }
+
+    test(
+      'Fade duration equality distinguishes Default and Custom membership',
+      () {
+        final base = session.toJson();
+        final changedDefault = Session.fromJson({
+          ...base,
+          'defaultFadeDurationMs': 8000,
+        });
+        final explicitDefault = Session.fromJson({
+          ...base,
+          'trackFadeDurationOverrides': const {'0': 4000},
+        });
+        expect(changedDefault, isNot(session));
+        expect(explicitDefault, isNot(session));
+        expect({session, changedDefault, explicitDefault}, hasLength(3));
+        final forward = Session.fromJson({
+          ...base,
+          'trackFadeDurationOverrides': const {'0': 4000, '7': 8000},
+        });
+        final reversed = Session.fromJson({
+          ...base,
+          'trackFadeDurationOverrides': const {'7': 8000, '0': 4000},
+        });
+        expect(forward, reversed);
+        expect(forward.hashCode, reversed.hashCode);
+        expect({forward, reversed}, hasLength(1));
+      },
+    );
+
+    test('requires exact Fade fields and preserves Custom membership', () {
+      final json = session.toJson()
+        ..['defaultFadeDurationMs'] = 8000
+        ..['trackFadeDurationOverrides'] = {'0': 8000, '7': 500};
+      final decoded = Session.fromJson(json);
+      expect(decoded.defaultFadeDurationMs, 8000);
+      expect(decoded.trackFadeDurationOverrides, {0: 8000, 7: 500});
+      expect(
+        Session.fromJson(decoded.toJson()).trackFadeDurationOverrides,
+        decoded.trackFadeDurationOverrides,
+      );
+      for (final field in [
+        'defaultFadeDurationMs',
+        'trackFadeDurationOverrides',
+      ]) {
+        expect(
+          () => Session.fromJson({...json}..remove(field)),
+          throwsFormatException,
+        );
+      }
+      for (final invalid in [0, 499, 501, 30001, 500.0, '500']) {
+        expect(
+          () => Session.fromJson({...json, 'defaultFadeDurationMs': invalid}),
+          throwsFormatException,
+        );
+        expect(
+          () => Session.fromJson({
+            ...json,
+            'trackFadeDurationOverrides': {'0': invalid},
+          }),
+          throwsFormatException,
+        );
+      }
+      for (final key in ['8', '-1', '00']) {
+        expect(
+          () => Session.fromJson({
+            ...json,
+            'trackFadeDurationOverrides': {key: 500},
+          }),
+          throwsFormatException,
+        );
+      }
+      expect(
+        () => Session.fromJson({...json, 'version': 11}),
+        throwsA(isA<SessionUnsupportedVersion>()),
+      );
+    });
+
+    test('serializes the manifest version (v16) and the grid in beats', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 7);
+      expect(json['version'], 16);
+      // Constructed with bars only, the beats are the bars' (#1168).
+      expect(json['loopBeats'], session.loopBars * session.tsNum);
       expect(json['baseLengthFrames'], 96000);
     });
 
-    group('monitor gate (schema v7)', () {
+    group('backing (schema 15, #1200)', () {
+      const a = SessionBackingItem(
+        digest:
+            'sha256:00112233445566778899aabbccddeeff'
+            '00112233445566778899aabbccddeeff',
+        name: 'Evening lights.wav',
+      );
+      const b = SessionBackingItem(
+        digest:
+            'sha256:ffeeddccbbaa99887766554433221100'
+            'ffeeddccbbaa99887766554433221100',
+        name: 'Count-in.mp3',
+      );
+      const backing = SessionBacking(
+        prepared: [a, b],
+        loaded: b,
+        endMode: BackingEnd.next,
+        level: 0.5,
+        pan: -0.25,
+        outputMask: 0xC,
+      );
+      final withBacking = Session.fromJson({
+        ...session.toJson(),
+        'backing': backing.toJson(),
+        'clickPan': 0.75,
+      });
+
+      test('round-trips every field, a loaded item outside the list too', () {
+        expect(withBacking.backing, backing);
+        expect(withBacking.clickPan, 0.75);
+        const outside = SessionBacking(prepared: [a], loaded: b);
+        expect(
+          Session.fromJson({
+            ...session.toJson(),
+            'backing': jsonDecode(jsonEncode(outside.toJson())),
+          }).backing,
+          outside,
+        );
+        expect(
+          Session.fromJson(
+            jsonDecode(jsonEncode(withBacking.toJson()))
+                as Map<String, dynamic>,
+          ),
+          withBacking,
+        );
+      });
+
+      test('the default is an empty, silent backing and a centred click', () {
+        final json = session.toJson();
+        expect(json['backing'], {
+          'prepared': <Object>[],
+          'loaded': null,
+          'endMode': 'stop',
+          'level': 1.0,
+          'pan': 0.0,
+          'outputMask': 0,
+        });
+        expect(json['clickPan'], 0.0);
+      });
+
+      test('the current schema refuses a missing backing or click pan', () {
+        final json = withBacking.toJson()..remove('backing');
+        expect(() => Session.fromJson(json), throwsFormatException);
+        final noPan = withBacking.toJson()..remove('clickPan');
+        expect(() => Session.fromJson(noPan), throwsFormatException);
+      });
+
+      test('refuses malformed items and values', () {
+        Map<String, dynamic> with_(Map<String, dynamic> edit) => {
+          ...withBacking.toJson(),
+          'backing': {...backing.toJson(), ...edit},
+        };
+        for (final bad in <Map<String, dynamic>>[
+          {
+            'prepared': [
+              {'digest': 'sha256:1234', 'name': 'x.wav'},
+            ],
+          },
+          {
+            'prepared': [
+              {'digest': a.digest.toUpperCase(), 'name': 'x.wav'},
+            ],
+          },
+          {
+            'prepared': [
+              {'digest': a.digest, 'name': ' '},
+            ],
+          },
+          {
+            'prepared': [
+              {'digest': a.digest, 'name': 'x.wav', 'extra': 1},
+            ],
+          },
+          {
+            'prepared': [a.toJson(), a.toJson()],
+          },
+          {'loaded': 'sha256:00'},
+          {'endMode': 'shuffle'},
+          {'level': 2.5},
+          {'level': -0.1},
+          {'pan': 1.5},
+          {'outputMask': -1},
+          {'outputMask': 0.5},
+          {'surprise': true},
+        ]) {
+          expect(
+            () => Session.fromJson(with_(bad)),
+            throwsFormatException,
+            reason: '$bad',
+          );
+        }
+        for (final pan in <Object>[1.01, -2, 'centre']) {
+          expect(
+            () => Session.fromJson({...withBacking.toJson(), 'clickPan': pan}),
+            throwsFormatException,
+            reason: '$pan',
+          );
+        }
+      });
+    });
+
+    test('schema 9 keeps output setup and all four nullable override maps', () {
+      final manifest = session.toJson()
+        ..['tracks'] = <Object>[]
+        ..['outputSetup'] = {
+          'level': {'1': 0.5},
+          'muted': {'1': true},
+          'mono': {'0': true},
+          'balance': {'0': -0.25},
+        }
+        ..['trackRecordTimingOverrides'] = {'0': 'bar'}
+        ..['trackOverdubDecayOverrides'] = {'1': 30}
+        ..['trackOneShotOverrides'] = {'2': false}
+        ..['trackLengthPresetOverrides'] = {'3': 0};
+      final parsed = Session.fromJson(manifest);
+      final roundTrip = Session.fromJson(
+        jsonDecode(jsonEncode(parsed.toJson())) as Map<String, dynamic>,
+      );
+      expect(
+        roundTrip.outputSetup,
+        const SessionOutputSetup(
+          level: {1: .5},
+          muted: {1: true},
+          mono: {0: true},
+          balance: {0: -.25},
+        ),
+      );
+      expect(roundTrip.trackRecordTimingOverrides, {0: RecordTiming.bar});
+      expect(roundTrip.trackOverdubDecayOverrides, {1: 30});
+      expect(roundTrip.trackOneShotOverrides, {2: false});
+      expect(roundTrip.trackLengthPresetOverrides, {3: 0});
+    });
+
+    test('invalid output facts in schema 9 are rejected', () {
+      final manifest = session.toJson();
+      expect(
+        () => Session.fromJson(
+          manifest
+            ..['outputSetup'] = {
+              'muted': {'0': 'yes'},
+            },
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => Session.fromJson(
+          session.toJson()
+            ..['outputSetup'] = {
+              'level': {'16': .5},
+            },
+        ),
+        throwsFormatException,
+      );
+    });
+
+    group('the All tracks chain (schema v9)', () {
+      test('round-trips as an opaque envelope string', () {
+        const encoded = '{"chainEnabled":true,"entries":[{"type":1}]}';
+        final json = Session(
+          sampleRate: session.sampleRate,
+          channels: session.channels,
+          baseLengthFrames: session.baseLengthFrames,
+          tracks: session.tracks,
+          allTracksChain: encoded,
+        ).toJson();
+        expect(json['allTracksChain'], encoded);
+        expect(Session.fromJson(json).allTracksChain, encoded);
+      });
+
+      test('a current manifest requires the All tracks field', () {
+        final json = session.toJson()..remove('allTracksChain');
+        expect(() => Session.fromJson(json), throwsA(isA<TypeError>()));
+      });
+
+      test('schema 8 is not silently upgraded to schema 9', () {
+        final json = session.toJson()..['version'] = 8;
+        expect(
+          () => Session.fromJson(json),
+          throwsA(isA<SessionUnsupportedVersion>()),
+        );
+      });
+    });
+
+    group('monitor volume', () {
+      for (final value in [-0.1, 1.01, double.nan, double.infinity]) {
+        test('refuses invalid saved gain $value', () {
+          final json = const SessionMonitor(
+            input: 0,
+            mode: 'on',
+            outputMask: 3,
+            volume: 1,
+            muted: false,
+            encoded: '[]',
+          ).toJson()..['volume'] = value;
+          expect(() => SessionMonitor.fromJson(json), throwsFormatException);
+        });
+      }
+      for (final value in [0.0, 0.5, 1.0]) {
+        test('round-trips accepted gain $value', () {
+          final monitor = SessionMonitor(
+            input: 0,
+            mode: 'on',
+            outputMask: 3,
+            volume: value,
+            muted: false,
+            encoded: '[]',
+          );
+          expect(SessionMonitor.fromJson(monitor.toJson()), monitor);
+        });
+      }
+    });
+
+    group('monitor gate (schema 9)', () {
       test('a named gate round-trips', () {
         const monitor = SessionMonitor(
           input: 2,
-          enabled: true,
           mode: 'auto',
           outputMask: 0x3,
           volume: 1,
@@ -131,28 +703,22 @@ void main() {
         expect(SessionMonitor.fromJson(monitor.toJson()), monitor);
       });
 
-      test('a v6 monitor keeps the key out of the manifest entirely', () {
-        const monitor = SessionMonitor(
+      test('a current-schema monitor requires its mode', () {
+        final json = const SessionMonitor(
           input: 2,
-          enabled: true,
+          mode: 'on',
           outputMask: 0x3,
           volume: 1,
           muted: false,
           encoded: '',
-        );
-
-        // Presence-keyed, like every rung before it: absent means "this
-        // manifest did not say", which is a different thing from a monitor
-        // whose gate happens to be named the empty string.
-        expect(monitor.toJson().containsKey('mode'), isFalse);
-        expect(SessionMonitor.fromJson(monitor.toJson()).mode, isEmpty);
+        ).toJson()..remove('mode');
+        expect(() => SessionMonitor.fromJson(json), throwsFormatException);
       });
 
       test('participates in equality — two monitors differing only in their '
           'gate are different monitors', () {
         const on = SessionMonitor(
           input: 0,
-          enabled: true,
           mode: 'on',
           outputMask: 0x3,
           volume: 1,
@@ -161,7 +727,6 @@ void main() {
         );
         const auto = SessionMonitor(
           input: 0,
-          enabled: true,
           mode: 'auto',
           outputMask: 0x3,
           volume: 1,
@@ -174,7 +739,7 @@ void main() {
       });
     });
 
-    group('pedal remap blob (schema v6)', () {
+    group('pedal remap blob (schema 9)', () {
       test('round-trips byte-intact — the control layer compares these '
           'strings for equality, so a single character of drift would look '
           'like an edit', () {
@@ -200,10 +765,9 @@ void main() {
         );
       });
 
-      test('a v5-or-earlier manifest loads with no session remap, so the '
-          'global set applies (A12)', () {
+      test('a missing required remap field is corrupt schema 9', () {
         final json = session.toJson()..remove('pedalBindings');
-        expect(Session.fromJson(json).pedalBindings, isEmpty);
+        expect(() => Session.fromJson(json), throwsA(isA<TypeError>()));
       });
 
       test('participates in equality — two sessions differing only in their '
@@ -213,7 +777,23 @@ void main() {
       });
     });
 
-    test('serializes the schema-v5 bus stages (Track + Master)', () {
+    test('rejects malformed and duplicate output destinations', () {
+      for (final bus in [-1, 16, 0.5, '1']) {
+        final json = session.toJson()
+          ..['outputChains'] = [
+            {'bus': bus, 'encoded': ''},
+          ];
+        expect(() => Session.fromJson(json), throwsFormatException);
+      }
+      final json = session.toJson()
+        ..['outputChains'] = [
+          {'bus': 1, 'encoded': ''},
+          {'bus': 1, 'encoded': ''},
+        ];
+      expect(() => Session.fromJson(json), throwsFormatException);
+    });
+
+    test('serializes the bus stages (Track + outputs)', () {
       final json = session.toJson();
       expect(json['trackChains'], [
         {
@@ -222,10 +802,15 @@ void main() {
         },
         {'channel': 1, 'encoded': '{"chainEnabled":true,"entries":[]}'},
       ]);
-      expect(json['masterChain'], '{"chainEnabled":true,"entries":[{"t":9}]}');
+      expect(json['outputChains'], [
+        {
+          'bus': 0,
+          'encoded': '{"chainEnabled":true,"entries":[{"t":9}]}',
+        },
+      ]);
     });
 
-    test('v5 round-trips the bus stages, chain strings byte-intact', () {
+    test('round-trips bus-stage chain strings byte-intact', () {
       final json = jsonDecode(jsonEncode(session.toJson()));
       final loaded = Session.fromJson(json as Map<String, dynamic>);
       expect(loaded.trackChains, hasLength(2));
@@ -240,12 +825,16 @@ void main() {
         loaded.trackChains[1].encoded,
         '{"chainEnabled":true,"entries":[]}',
       );
-      expect(loaded.masterChain, '{"chainEnabled":true,"entries":[{"t":9}]}');
+      expect(loaded.outputChains.single.bus, 0);
+      expect(
+        loaded.outputChains.single.encoded,
+        '{"chainEnabled":true,"entries":[{"t":9}]}',
+      );
       expect(loaded, session);
     });
 
     test(
-      'save -> load -> save is byte-idempotent at v5 (the manifest a load '
+      'save -> load -> save is byte-idempotent (the manifest a load '
       're-serializes is the manifest it read; slot ids ride the opaque chain '
       'strings, so nothing is re-minted here)',
       () {
@@ -257,216 +846,139 @@ void main() {
       },
     );
 
-    test(
-      'a v4 manifest (no bus stages, bare-array chain strings) loads with '
-      'both bus stages EMPTY and its chain content byte-identical — the '
-      'presence-keyed v4 -> v5 migration, zero data loss',
-      () {
-        final v4 = {
-          'version': 4,
-          'sampleRate': 48000,
-          'channels': 1,
-          'baseLengthFrames': 96000,
-          'tracks': [
-            {
-              'channel': 0,
-              'multiple': 1,
-              'lengthFrames': 96000,
-              'lanes': [
-                {
-                  'lane': 0,
-                  'volume': 0.8,
-                  'muted': false,
-                  'outputMask': 0x3,
-                  'inputChannel': 0,
-                  'layers': [
-                    {'file': 'track0_lane0_L0.wav'},
-                  ],
-                },
-              ],
-            },
-          ],
-          // Pre-envelope wire format: the bare entries array. It stays opaque
-          // here; the looper domain's decoder defaults every level to enabled.
-          'laneChains': [
-            {'channel': 0, 'lane': 0, 'encoded': '[{"t":1}]'},
-          ],
-          'monitors': [
-            {
-              'input': 0,
-              'enabled': true,
-              'outputMask': 0x3,
-              'volume': 0.9,
-              'muted': false,
-              'encoded': '[{"t":2}]',
-            },
-          ],
-          'tempoBpm': 128.5,
-          'looperMode': 'band',
-        };
+    test('rejects a prior schema even when its fields parse', () {
+      final json = session.toJson()..['version'] = 7;
+      expect(
+        () => Session.fromJson(json),
+        throwsA(isA<SessionUnsupportedVersion>()),
+      );
+    });
 
-        final loaded = Session.fromJson(v4);
-
-        expect(loaded.trackChains, isEmpty);
-        expect(loaded.masterChain, '');
-        // Everything v4 DID describe survives untouched.
-        expect(loaded.laneChains.single.encoded, '[{"t":1}]');
-        expect(loaded.monitors.single.encoded, '[{"t":2}]');
-        expect(loaded.tempoBpm, 128.5);
-        expect(loaded.looperMode, LooperMode.band);
-        expect(loaded.tracks.single.lanes.single.volume, 0.8);
-        // And re-saving stamps the CURRENT version without inventing
-        // bus-stage content (or a remap the v4 bundle never carried).
-        final resaved = loaded.toJson();
-        expect(resaved['version'], Session.formatVersion);
-        expect(resaved['trackChains'], isEmpty);
-        expect(resaved['masterChain'], '');
-        expect(resaved['pedalBindings'], '');
-      },
-    );
-
-    test('serializes every schema-v4 tempo/click/count-in field', () {
+    test('serializes every tempo/click/count-in field', () {
       final json = session.toJson();
       expect(json['tempoBpm'], 128.5);
       expect(json['tempoSource'], 'manual');
       expect(json['tsNum'], 6);
       expect(json['tsDen'], 8);
       expect(json['quantizeDiv'], 'eighth');
+      expect(json['loopBars'], 5);
       expect(json['clickMode'], 'rec');
       expect(json['clickOutputMask'], 0x3);
       expect(json['clickVolume'], 0.75);
       expect(json['countInBars'], 2);
       expect(json['looperMode'], 'band');
       expect(json['primaryTrack'], 1);
-      expect(json['oneShotChannels'], [0, 2]);
-      final track0 = (json['tracks'] as List).first as Map<String, dynamic>;
-      expect(track0['lengthPresetBars'], 4);
-      expect(track0['oneShot'], isTrue);
+      expect(json['defaultOneShot'], isTrue);
+      expect(json['trackOneShotOverrides'], {'0': true, '2': false});
+      expect(json['defaultLengthPresetBars'], 8);
+      expect(json['trackLengthPresetOverrides'], {'0': 4, '2': 8});
     });
 
-    test(
-      'v4 round-trips every new field (tempo/signature/quantize/click/ '
-      'count-in, looperMode/primaryTrack, per-track '
-      'lengthPresetBars/oneShot, and the session-level oneShotChannels set)',
-      () {
-        final json = jsonDecode(jsonEncode(session.toJson()));
-        final loaded = Session.fromJson(json as Map<String, dynamic>);
-        expect(loaded.tempoBpm, 128.5);
-        expect(loaded.tempoSource, TempoSource.manual);
-        expect(loaded.tsNum, 6);
-        expect(loaded.tsDen, 8);
-        expect(loaded.quantizeDiv, GridDivision.eighth);
-        expect(loaded.clickMode, ClickMode.rec);
-        expect(loaded.clickOutputMask, 0x3);
-        expect(loaded.clickVolume, 0.75);
-        expect(loaded.countInBars, 2);
-        expect(loaded.looperMode, LooperMode.band);
-        expect(loaded.primaryTrack, 1);
-        expect(loaded.tracks[0].lengthPresetBars, 4);
-        expect(loaded.tracks[0].oneShot, isTrue);
-        // AUTO (0) / off round-trip too — not just non-default values.
-        expect(loaded.tracks[1].lengthPresetBars, 0);
-        expect(loaded.tracks[1].oneShot, isFalse);
-        // Channel 2's flag has no SessionTrack to live on (no content) — it
-        // only survives through this session-level set.
-        expect(loaded.oneShotChannels, [0, 2]);
-        expect(loaded, session);
-      },
-    );
+    test('round-trips settings independently of recorded tracks', () {
+      final loaded = Session.fromJson(
+        jsonDecode(jsonEncode(session.toJson())) as Map<String, dynamic>,
+      );
+      expect(loaded, session);
+      expect(loaded.defaultOneShot, isTrue);
+      expect(loaded.trackOneShotOverrides, {0: true, 2: false});
+      expect(loaded.trackRecordTimingOverrides, {
+        0: RecordTiming.bar,
+        2: RecordTiming.eighth,
+      });
+      expect(loaded.trackOverdubDecayOverrides, {0: 30, 2: 25});
+      expect(loaded.trackLengthPresetOverrides, {0: 4, 2: 8});
+      expect(loaded.defaultLengthPresetBars, 8);
+      expect(loaded.trackOneShotOverrides.containsKey(1), isFalse);
+      expect(loaded.tracks.map((track) => track.channel), [0, 1]);
+      expect(loaded.syncTempo, isFalse);
+      expect(loaded.recDub, isTrue);
+      expect(loaded.autoRecord, isTrue);
+      expect(loaded.defaultMultiple, 3);
+    });
 
-    test(
-      'a v3 manifest (no tempo grid fields at all) loads with every new '
-      'field at its grid-off default — zero data loss',
-      () {
-        final v3 = {
-          'version': 3,
-          'sampleRate': 48000,
-          'channels': 1,
-          'baseLengthFrames': 96000,
-          'tracks': [
-            {
-              'channel': 0,
-              'multiple': 1,
-              'lengthFrames': 96000,
-              'lanes': [
-                {
-                  'lane': 0,
-                  'volume': 1.0,
-                  'muted': false,
-                  'outputMask': 0x3,
-                  'inputChannel': 0,
-                  'layers': [
-                    {'file': 'track0_lane0_L0.wav'},
-                  ],
-                },
-              ],
-            },
-          ],
-          'laneChains': <dynamic>[],
-          'monitors': <dynamic>[],
-        };
-        final loaded = Session.fromJson(v3);
-        expect(loaded.tempoBpm, 0);
-        expect(loaded.tempoSource, TempoSource.none);
-        expect(loaded.tsNum, 4);
-        expect(loaded.tsDen, 4);
-        expect(loaded.quantizeDiv, GridDivision.off);
-        expect(loaded.clickMode, ClickMode.off);
-        expect(loaded.clickOutputMask, 0);
-        expect(loaded.clickVolume, 1);
-        expect(loaded.countInBars, 0);
-        expect(loaded.tracks.single.lengthPresetBars, 0);
-        expect(loaded.oneShotChannels, isEmpty);
-        // The rest of the v3 manifest still loads intact.
-        expect(loaded.baseLengthFrames, 96000);
-        expect(loaded.tracks.single.lanes.single.volume, 1.0);
-      },
-    );
+    test('rejects invalid whole-track gain facts', () {
+      for (final invalid in [
+        {'8': .5},
+        {'0': -0.1},
+        {'0': 2.1},
+        {'0': 'unity'},
+      ]) {
+        expect(
+          () => Session.fromJson(session.toJson()..['trackLevels'] = invalid),
+          throwsFormatException,
+        );
+      }
+    });
 
-    test(
-      'a v4 manifest missing later-phase (C/D) fields still loads — the '
-      'loader only reads the fields it knows about',
-      () {
-        final json = session.toJson();
-        // Simulate a build that hasn't shipped Phase C/D yet reading a file
-        // written by a build that HAS: extra top-level and per-track fields
-        // this code has never heard of (session_repository.dart:8-9 doesn't
-        // read any of these keys, so they should simply be ignored). B5c
-        // (looperMode/primaryTrack/oneShot) is EXCLUDED from this list — this
-        // code understands those now, see the test below.
-        json['clockMode'] = 'send';
-        json['syncAudioToTempo'] = true;
-        final track0 = (json['tracks'] as List).first as Map<String, dynamic>;
-        track0['freeLengthFrames'] = 48000;
-        track0['originalTempoBpm'] = 90.0;
+    test('all-empty sessions retain explicit defaults and Use default', () {
+      const empty = Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: [],
+        recordTiming: RecordTiming.bar,
+        overdubDecay: 25,
+        trackRecordTimingOverrides: {0: RecordTiming.bar},
+        trackOverdubDecayOverrides: {0: 25, 1: 0},
+        trackOneShotOverrides: {0: false, 1: true},
+        trackLengthPresetOverrides: {0: 4},
+        trackLevels: {7: .65},
+      );
+      final loaded = Session.fromJson(
+        jsonDecode(jsonEncode(empty.toJson())) as Map<String, dynamic>,
+      );
+      expect(loaded.tracks, isEmpty);
+      expect(loaded.trackRecordTimingOverrides, {0: RecordTiming.bar});
+      expect(loaded.trackOverdubDecayOverrides, {0: 25, 1: 0});
+      expect(loaded.trackOneShotOverrides, {0: false, 1: true});
+      expect(loaded.trackLengthPresetOverrides, {0: 4});
+      expect(loaded.trackLevels, {7: .65});
+      expect(loaded, empty);
+      expect(loaded.hashCode, empty.hashCode);
+    });
 
-        final loaded = Session.fromJson(json);
-        expect(loaded, session);
-      },
-    );
+    test('equality distinguishes each setting from its default', () {
+      final variants = <String, Object>{
+        'loopBars': 0,
+        'recordTiming': 'bar',
+        'overdubDecay': 60,
+        'defaultOneShot': false,
+        'syncTempo': true,
+        'recDub': false,
+        'autoRecord': false,
+        'defaultMultiple': 2,
+        'trackRecordTimingOverrides': {'0': 'bar'},
+        'trackOverdubDecayOverrides': {'0': 30},
+        'trackOneShotOverrides': {'0': true},
+        'trackLengthPresetOverrides': {'0': 4},
+        'trackLevels': {'7': .65},
+      };
+      for (final entry in variants.entries) {
+        final changed = Session.fromJson(
+          session.toJson()..[entry.key] = entry.value,
+        );
+        expect(changed, isNot(session), reason: entry.key);
+      }
+    });
 
-    test(
-      'reads looperMode, primaryTrack, per-track oneShot, and the '
-      'session-level oneShotChannels set when present (B5c + independent '
-      'review of #295) — unlike the still-future C/D fields above, these '
-      'ARE understood by this code',
-      () {
-        final json = session.toJson();
-        json['looperMode'] = 'sync';
-        json['primaryTrack'] = 0;
-        json['oneShotChannels'] = [3];
-        final track0 = (json['tracks'] as List).first as Map<String, dynamic>;
-        track0['oneShot'] = true;
+    test('override map equality and hashing ignore insertion order', () {
+      final reordered = Session.fromJson(
+        session.toJson()
+          ..['trackOneShotOverrides'] = {'2': false, '0': true}
+          ..['trackRecordTimingOverrides'] = {'2': 'eighth', '0': 'bar'}
+          ..['trackOverdubDecayOverrides'] = {'2': 25, '0': 30}
+          ..['trackLengthPresetOverrides'] = {'2': 8, '0': 4},
+      );
+      expect(reordered, session);
+      expect(reordered.hashCode, session.hashCode);
+    });
 
-        final loaded = Session.fromJson(json);
-        expect(loaded.looperMode, LooperMode.sync);
-        expect(loaded.primaryTrack, 0);
-        expect(loaded.tracks[0].oneShot, isTrue);
-        // Track 1 (not touched above) still defaults to off.
-        expect(loaded.tracks[1].oneShot, isFalse);
-        expect(loaded.oneShotChannels, [3]);
-      },
-    );
+    test('requires an integer version field', () {
+      final absent = session.toJson()..remove('version');
+      final fractional = session.toJson()..['version'] = 8.5;
+      expect(() => Session.fromJson(absent), throwsFormatException);
+      expect(() => Session.fromJson(fractional), throwsFormatException);
+    });
 
     test('serializes tracks as per-lane layers', () {
       final json = session.toJson();
@@ -482,72 +994,22 @@ void main() {
         'layers': [
           {'file': 'track0_lane0_L0.wav'},
         ],
+        'history': <Object>[],
         'undoCount': 0,
         'redoCount': 0,
       });
     });
 
-    test('a v1 manifest (single stem, no chains) migrates to one lane', () {
-      // A legacy bundle: one `stem` per track, track-level mix, no lanes/chains.
-      final v1 = {
-        'version': 1,
-        'sampleRate': 48000,
-        'channels': 1,
-        'baseLengthFrames': 96000,
-        'tracks': [
-          {
-            'channel': 0,
-            'volume': 0.8,
-            'muted': false,
-            'multiple': 1,
-            'lengthFrames': 96000,
-            'stem': 'track0.wav',
-          },
-        ],
+    test('does not migrate a stem-only track into a lane', () {
+      final track = {
+        'channel': 0,
+        'multiple': 1,
+        'lengthFrames': 96000,
+        'stem': 'track0.wav',
+        'fadeAmount': 1,
+        'reversed': false,
       };
-      final loaded = Session.fromJson(v1);
-      expect(loaded.laneChains, isEmpty);
-      expect(loaded.monitors, isEmpty);
-      expect(loaded.tracks, hasLength(1));
-      final track = loaded.tracks.single;
-      expect(track.lanes, hasLength(1));
-      final lane = track.lanes.single;
-      expect(lane.lane, 0);
-      expect(lane.volume, 0.8);
-      expect(lane.muted, isFalse);
-      expect(lane.inputChannel, -1);
-      expect(lane.undoCount, 0);
-      expect(lane.layers, [const SessionLayer(file: 'track0.wav')]);
-    });
-
-    test('a v2 manifest (single stem + chains) migrates to one lane', () {
-      final v2 = {
-        'version': 2,
-        'sampleRate': 48000,
-        'channels': 1,
-        'baseLengthFrames': 96000,
-        'tracks': [
-          {
-            'channel': 0,
-            'volume': 0.5,
-            'muted': true,
-            'multiple': 2,
-            'lengthFrames': 192000,
-            'stem': 'track0.wav',
-          },
-        ],
-        'laneChains': [
-          {'channel': 0, 'lane': 0, 'encoded': '[{"t":1}]'},
-        ],
-        'monitors': <dynamic>[],
-      };
-      final loaded = Session.fromJson(v2);
-      expect(loaded.laneChains, hasLength(1));
-      expect(loaded.tracks.single.lanes, hasLength(1));
-      final lane = loaded.tracks.single.lanes.single;
-      expect(lane.volume, 0.5);
-      expect(lane.muted, isTrue);
-      expect(lane.layers.single.file, 'track0.wav');
+      expect(() => SessionTrack.fromJson(track), throwsA(isA<TypeError>()));
     });
 
     test('tracks, lanes, layers, chains, and monitors have value equality', () {
@@ -583,8 +1045,11 @@ void main() {
         muted: false,
         outputMask: 0x3,
         inputChannel: 0,
-        undoCount: 2,
-        redoCount: 1,
+        history: TrackHistory([
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.layer),
+        ], undoCount: 2),
         layers: [
           SessionLayer(file: 'u0.wav'),
           SessionLayer(file: 'u1.wav'),
@@ -605,11 +1070,11 @@ void main() {
     });
 
     test(
-      'rejects a hypothetical v8 manifest (an extra unknown field does not '
+      'rejects a newer manifest (an extra unknown field does not '
       'change the outcome) via the existing version-gate check',
       () {
         final json = session.toJson()
-          ..['version'] = 8
+          ..['version'] = Session.formatVersion + 1
           // A field a hypothetical future schema might add — proves the
           // rejection is purely the version-number gate, not incidentally
           // triggered by an unparseable shape.
@@ -620,20 +1085,50 @@ void main() {
           () => Session.fromJson(json),
           throwsA(
             isA<SessionUnsupportedVersion>()
-                .having((e) => e.version, 'version', 8)
+                .having((e) => e.version, 'version', Session.formatVersion + 1)
                 .having((e) => e.supported, 'supported', Session.formatVersion),
           ),
         );
       },
     );
 
-    test('rejects a lane whose layer count disagrees with its undo/redo', () {
-      // undoCount 2 + live + redoCount 0 claims 3 layers but lists 1.
+    /// Track 0's lane maps in [json]: both lanes share one history, so a
+    /// history edit applies to each.
+    List<Map<String, dynamic>> track0Lanes(Map<String, dynamic> json) => [
+      for (final lane
+          in ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
+              as List)
+        lane as Map<String, dynamic>,
+    ];
+
+    /// Gives every lane of track 0 [history] (`{kind, skipped}` maps) with
+    /// [undoCount] entries on the undo side and [layers] image files.
+    Map<String, dynamic> withHistory(
+      List<Map<String, Object>> history, {
+      required int undoCount,
+      required int layers,
+    }) {
       final json = session.toJson();
-      final lane0 =
-          ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
-              as List;
-      (lane0.first as Map<String, dynamic>)
+      for (final lane in track0Lanes(json)) {
+        lane
+          ..['history'] = history
+          ..['undoCount'] = undoCount
+          ..['redoCount'] = history.length - undoCount
+          ..['layers'] = [
+            for (var i = 0; i < layers; i++) {'file': 'x$i.wav'},
+          ];
+      }
+      return json;
+    }
+
+    test('rejects a lane whose layer count disagrees with its history', () {
+      // Two undo entries + live name 3 images but the lane lists 1.
+      final json = session.toJson();
+      track0Lanes(json).first
+        ..['history'] = [
+          {'kind': 'layer', 'skipped': 0},
+          {'kind': 'layer', 'skipped': 0},
+        ]
         ..['undoCount'] = 2
         ..['redoCount'] = 0;
       expect(
@@ -643,36 +1138,31 @@ void main() {
     });
 
     test('rejects a lane claiming more layers than the pool cap', () {
-      final json = session.toJson();
-      final lane0 =
-          ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
-              as List;
-      (lane0.first as Map<String, dynamic>)
-        ..['undoCount'] = SessionLane.maxLayers
-        ..['redoCount'] = 0
-        ..['layers'] = [
-          for (var i = 0; i < SessionLane.maxLayers + 1; i++)
-            {'file': 'x$i.wav'},
-        ];
+      final json = withHistory(
+        [
+          for (var i = 0; i < SessionLane.maxLayers; i++)
+            {'kind': 'layer', 'skipped': 0},
+        ],
+        undoCount: SessionLane.maxLayers,
+        layers: SessionLane.maxLayers + 1,
+      );
       expect(
         () => Session.fromJson(json),
-        throwsA(isA<SessionCorruptLayers>()),
+        throwsA(
+          isA<SessionCorruptLayers>().having(
+            (e) => e.reason,
+            'reason',
+            contains('cap'),
+          ),
+        ),
       );
     });
 
     test('rejects a lane with a negative undo/redo count', () {
-      final json = session.toJson();
-      final lane0 =
-          ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
-              as List;
-      (lane0.first as Map<String, dynamic>)
+      final json = withHistory(const [], undoCount: 0, layers: 1);
+      track0Lanes(json).first
         ..['undoCount'] = -1
-        ..['redoCount'] = 1
-        // length matches undoCount+1+redoCount (== 1) so only the negativity
-        // branch can reject this.
-        ..['layers'] = [
-          {'file': 'x.wav'},
-        ];
+        ..['redoCount'] = 1;
       expect(
         () => Session.fromJson(json),
         throwsA(isA<SessionCorruptLayers>()),
@@ -680,18 +1170,326 @@ void main() {
     });
 
     test('accepts a lane at exactly the pool cap', () {
-      final json = session.toJson();
-      final lane0 =
-          ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
-              as List;
-      (lane0.first as Map<String, dynamic>)
-        ..['undoCount'] = SessionLane.maxLayers - 1
-        ..['redoCount'] = 0
-        ..['layers'] = [
-          for (var i = 0; i < SessionLane.maxLayers; i++) {'file': 'x$i.wav'},
-        ];
+      final json = withHistory(
+        [
+          for (var i = 0; i < SessionLane.maxLayers - 1; i++)
+            {'kind': 'layer', 'skipped': 0},
+        ],
+        undoCount: SessionLane.maxLayers - 1,
+        layers: SessionLane.maxLayers,
+      );
       final loaded = Session.fromJson(json);
       expect(loaded.tracks.first.lanes.first.layers, hasLength(256));
+    });
+
+    group('history (#1164)', () {
+      // Undo side: a restoration, an overdub and a Peel above it. Redo side:
+      // the marker of an undone Peel (it re-peels the overdub), a layer, and
+      // the Clear point as the deepest entry, so 3 + 1 + 2 images.
+      const peelHistory = [
+        {'kind': 'processed', 'skipped': 0},
+        {'kind': 'layer', 'skipped': 0},
+        {'kind': 'peel', 'skipped': 0},
+        {'kind': 'peel', 'skipped': 1},
+        {'kind': 'layer', 'skipped': 0},
+        {'kind': 'clear', 'skipped': 0},
+      ];
+
+      test('round-trips every kind, skipped counts and redo markers', () {
+        final json = withHistory(peelHistory, undoCount: 3, layers: 6);
+        final lane = Session.fromJson(json).tracks.first.lanes.first;
+        expect(lane.history.entries, const [
+          HistoryEntry(HistoryKind.processed),
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.peel),
+          HistoryEntry(HistoryKind.peel, skipped: 1),
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.clear),
+        ]);
+        expect(lane.undoCount, 3);
+        expect(lane.redoCount, 3);
+        final again = Session.fromJson(
+          jsonDecode(jsonEncode(Session.fromJson(json).toJson()))
+              as Map<String, dynamic>,
+        );
+        expect(again, Session.fromJson(json));
+        expect(
+          track0Lanes(Session.fromJson(json).toJson()).first['history'],
+          peelHistory,
+        );
+      });
+
+      test('round-trips length edits with their playhead maps (#1168)', () {
+        const lengthHistory = [
+          {'kind': 'length', 'skipped': 0, 'start': 0},
+          {'kind': 'layer', 'skipped': 0},
+          {'kind': 'length', 'skipped': 0, 'start': -96000},
+        ];
+        final json = withHistory(lengthHistory, undoCount: 2, layers: 4);
+        final lane = Session.fromJson(json).tracks.first.lanes.first;
+        expect(lane.history.entries, const [
+          HistoryEntry(HistoryKind.length),
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.length, start: -96000),
+        ]);
+        // A length edit always writes its map, even zero; others never do.
+        expect(
+          track0Lanes(Session.fromJson(json).toJson()).first['history'],
+          lengthHistory,
+        );
+      });
+
+      test('a redo marker takes no image; an undo Peel takes one', () {
+        // Treating the marker as an image (7 layers) is as corrupt as
+        // dropping the undo Peel's image (5).
+        for (final layers in [5, 7]) {
+          expect(
+            () => Session.fromJson(
+              withHistory(peelHistory, undoCount: 3, layers: layers),
+            ),
+            throwsA(isA<SessionCorruptLayers>()),
+          );
+        }
+      });
+
+      test('rejects malformed entries before anything else', () {
+        for (final entry in <Object>[
+          {'kind': 'overdub', 'skipped': 0},
+          {'kind': 'layer'},
+          {'kind': 'layer', 'skipped': 0.5},
+          {'kind': 1, 'skipped': 0},
+          {'kind': 'layer', 'skipped': 0, 'slot': 3},
+          {'kind': 'length', 'skipped': 0, 'start': 0.5},
+          {'kind': 'length', 'skipped': 0, 'start': 0, 'slot': 3},
+          'layer',
+        ]) {
+          final json = withHistory(
+            [
+              {'kind': 'layer', 'skipped': 0},
+            ],
+            undoCount: 1,
+            layers: 2,
+          );
+          for (final lane in track0Lanes(json)) {
+            lane['history'] = [entry];
+          }
+          expect(() => Session.fromJson(json), throwsFormatException);
+        }
+        final missing = session.toJson();
+        track0Lanes(missing).first.remove('history');
+        expect(() => Session.fromJson(missing), throwsFormatException);
+      });
+
+      test('rejects entries the engine could not rebuild', () {
+        final cases = <(List<Map<String, Object>>, int, int)>[
+          // A Clear point beneath the live image.
+          (
+            [
+              {'kind': 'clear', 'skipped': 0},
+            ],
+            1,
+            2,
+          ),
+          // A playhead map on a kind that has none (#1168).
+          (
+            [
+              {'kind': 'layer', 'skipped': 0, 'start': 4},
+            ],
+            1,
+            2,
+          ),
+          // A skipped count on a kind that has none, and a negative one.
+          (
+            [
+              {'kind': 'layer', 'skipped': 1},
+            ],
+            1,
+            2,
+          ),
+          (
+            [
+              {'kind': 'peel', 'skipped': -1},
+            ],
+            1,
+            2,
+          ),
+        ];
+        for (final (history, undoCount, layers) in cases) {
+          expect(
+            () => Session.fromJson(
+              withHistory(history, undoCount: undoCount, layers: layers),
+            ),
+            throwsA(isA<SessionCorruptLayers>()),
+          );
+        }
+        // Counts that disagree with the entries.
+        final json = withHistory(peelHistory, undoCount: 3, layers: 6);
+        track0Lanes(json).first['redoCount'] = 2;
+        expect(
+          () => Session.fromJson(json),
+          throwsA(isA<SessionCorruptLayers>()),
+        );
+      });
+
+      /// Expects the history to be refused with a reason containing [reason].
+      void expectRefused(
+        List<Map<String, Object>> history, {
+        required int undoCount,
+        required int layers,
+        required String reason,
+      }) {
+        expect(
+          () => Session.fromJson(
+            withHistory(history, undoCount: undoCount, layers: layers),
+          ),
+          throwsA(
+            isA<SessionCorruptLayers>().having(
+              (e) => e.reason,
+              'reason',
+              contains(reason),
+            ),
+          ),
+        );
+      }
+
+      test('refuses a Clear point that is not the deepest Redo entry', () {
+        // Clear drops the Redo branch, so nothing can sit beneath it: a Redo
+        // of this Clear would discard the layer below.
+        expectRefused(
+          const [
+            {'kind': 'layer', 'skipped': 0},
+            {'kind': 'clear', 'skipped': 0},
+            {'kind': 'layer', 'skipped': 0},
+          ],
+          undoCount: 1,
+          layers: 4,
+          reason: 'not the deepest',
+        );
+        expectRefused(
+          const [
+            {'kind': 'clear', 'skipped': 0},
+            {'kind': 'clear', 'skipped': 0},
+          ],
+          undoCount: 0,
+          layers: 3,
+          reason: 'not the deepest',
+        );
+      });
+
+      test('refuses a Redo marker with nothing to peel', () {
+        // A restoration on top blocks Peel, and an empty Undo side has
+        // nothing beneath the original: Redo would refuse forever and strand
+        // the layer below the marker.
+        expectRefused(
+          const [
+            {'kind': 'processed', 'skipped': 0},
+            {'kind': 'peel', 'skipped': 0},
+            {'kind': 'layer', 'skipped': 0},
+          ],
+          undoCount: 1,
+          layers: 3,
+          reason: 'no layer to peel',
+        );
+        expectRefused(
+          const [
+            {'kind': 'peel', 'skipped': 0},
+          ],
+          undoCount: 0,
+          layers: 1,
+          reason: 'no layer to peel',
+        );
+        // A marker reached after an earlier Redo re-files a layer is fine.
+        final json = withHistory(
+          const [
+            {'kind': 'processed', 'skipped': 0},
+            {'kind': 'layer', 'skipped': 0},
+            {'kind': 'peel', 'skipped': 0},
+          ],
+          undoCount: 1,
+          layers: 3,
+        );
+        expect(Session.fromJson(json).tracks.first.lanes.first.redoCount, 2);
+      });
+
+      test('refuses an oversized skipped count', () {
+        // Only an overdub sits beneath the Peel, yet it claims to have
+        // skipped one Peel entry: Undo would re-insert out of order.
+        expectRefused(
+          const [
+            {'kind': 'layer', 'skipped': 0},
+            {'kind': 'layer', 'skipped': 0},
+            {'kind': 'peel', 'skipped': 1},
+          ],
+          undoCount: 3,
+          layers: 4,
+          reason: 'only 0 sit beneath',
+        );
+        // No stack holds that many entries.
+        expectRefused(
+          const [
+            {'kind': 'peel', 'skipped': 256},
+          ],
+          undoCount: 1,
+          layers: 2,
+          reason: 'invalid skipped count 256',
+        );
+        // Pool eviction removes the oldest entries, so a run of Peel entries
+        // that reaches the bottom may be shorter than a skipped count.
+        final evicted = withHistory(
+          const [
+            {'kind': 'peel', 'skipped': 0},
+            {'kind': 'peel', 'skipped': 3},
+          ],
+          undoCount: 2,
+          layers: 3,
+        );
+        expect(Session.fromJson(evicted).tracks.first.lanes.first.undoCount, 2);
+      });
+
+      test('rejects lanes of one track with different histories', () {
+        final json = withHistory(
+          [
+            {'kind': 'layer', 'skipped': 0},
+          ],
+          undoCount: 1,
+          layers: 2,
+        );
+        track0Lanes(json).last['history'] = [
+          {'kind': 'processed', 'skipped': 0},
+        ];
+        expect(
+          () => Session.fromJson(json),
+          throwsA(
+            isA<SessionCorruptLayers>().having((e) => e.lane, 'lane', 1),
+          ),
+        );
+      });
+    });
+  });
+
+  group('forNewLoop', () {
+    test('drops the tracks, the grid, the crown and the name, and keeps '
+        'every other field', () {
+      final source = Session.fromJson({
+        ...session.toJson(),
+        'name': 'Evening loop',
+        'loopBars': 4,
+        'loopBeats': 24,
+        'primaryTrack': 0,
+        'tempoBpm': 96,
+        'tempoSource': 'manual',
+        'countInBars': 2,
+        'pedalBindings': 'remap',
+      });
+
+      final json = source.toJson()
+        ..remove('name')
+        ..['tracks'] = <Object?>[]
+        ..['baseLengthFrames'] = 0
+        ..['loopBars'] = 0
+        ..['loopBeats'] = 0
+        ..['primaryTrack'] = -1;
+      expect(jsonEncode(source.forNewLoop().toJson()), jsonEncode(json));
     });
   });
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -12,27 +13,48 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_client/midi_client.dart' show MidiControllerSource;
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
 import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
-import 'package:segno/appliance/power_off/power_off_gate.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/appliance/power_off/power_gate.dart';
+import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/logging/app_log.dart';
+import 'package:segno/looper/application/playback_settings.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
-import 'package:segno/update/view/updates_settings_section.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
+import 'package:segno/looper/model/owned_setting.dart';
+import 'package:segno/performance/cubit/recording_destination_cubit.dart';
+import 'package:segno/session/session.dart';
+import 'package:segno/settings/settings.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/visualizer.dart';
-// Engine-typed fixtures fed to the fake engine use the `le` prefix, as in
-// audio_bootstrap_test.
 import 'package:segno_engine/segno_engine.dart'
     as le
-    show EngineSnapshot, LaneSnapshot, LatencyState, TrackSnapshot, TrackState;
+    show
+        AudioDevice,
+        EngineSnapshot,
+        LaneSnapshot,
+        LatencyState,
+        TrackSnapshot,
+        TrackState;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 import 'package:update_repository/update_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -50,6 +72,10 @@ class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   Future<Version> stagedVersion() async => Version.none;
   @override
+  Future<UpdateRecovery> recover() async => const UpdateRecovery();
+  @override
+  Future<void> clearInterrupted() async {}
+  @override
   Future<UpdateManifest?> fetchManifest() async => UpdateManifest(
     version: Version.parse('0.2.0'),
     bundle: 'b.raucb',
@@ -58,8 +84,6 @@ class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
       Stream.fromIterable(const [1]);
-  @override
-  Future<void> applyAndRestart() async {}
 }
 
 /// Same as [_FakeUpdateBackend], but [fetchManifest] waits until [complete] so
@@ -91,6 +115,7 @@ class _RecordingWindowService implements WaveformWindowService {
 
   int openCalls = 0;
   int closeCalls = 0;
+  bool failClose = false;
   int pushCalls = 0;
   bool _open = false;
 
@@ -104,13 +129,11 @@ class _RecordingWindowService implements WaveformWindowService {
   int failNextReadoutPushes = 0;
   Duration readoutFailDelay = Duration.zero;
 
-  /// The command handler the app registered — tests invoke it to simulate
-  /// the sub-window's volume overlay sending a control.
-  @override
-  void Function(ReadoutControl control)? onControl;
-
   @override
   void Function()? onWindowReady;
+
+  @override
+  void Function()? onWindowActivity;
 
   @override
   Future<void> pushReadout(PerformanceReadout readout) async {
@@ -139,11 +162,13 @@ class _RecordingWindowService implements WaveformWindowService {
   Future<void> close() async {
     closeCalls++;
     _open = false;
+    if (failClose) {
+      throw StateError('window enumeration failed during disposal');
+    }
   }
 
-  /// Every waveform frame the app handed over, in order — the playhead and
-  /// the label it carried.
-  final waveforms = <({double progress, String selectedTrack})>[];
+  /// Every waveform frame delivered, including a copy of its selected audio.
+  final waveforms = <WaveformFrame>[];
 
   /// How many of the next waveform pushes are lost in flight. The real
   /// service reports that by completing the future with an error.
@@ -165,7 +190,11 @@ class _RecordingWindowService implements WaveformWindowService {
       if (failDelay > Duration.zero) await Future<void>.delayed(failDelay);
       throw const _WindowGone();
     }
-    waveforms.add((progress: progress, selectedTrack: selectedTrack));
+    waveforms.add((
+      samples: Float32List.fromList(samples),
+      progress: progress,
+      selectedTrack: selectedTrack,
+    ));
   }
 }
 
@@ -177,6 +206,479 @@ class _WindowGone implements Exception {
 /// A MIDI source whose enumeration the test drives by hand, so a pinned
 /// controller can be made to vanish and return through `refresh()`.
 class _MockMidiSource extends Mock implements MidiControllerSource {}
+
+class _TrackFxStore extends FakeKeyValueStore {
+  final releaseWrite = Completer<void>();
+  bool writeEntered = false;
+  bool refuseWrite = false;
+
+  @override
+  Future<void> setString(String key, String value) async {
+    if (key == 'track_fx_chain.0') {
+      writeEntered = true;
+      await releaseWrite.future;
+      if (refuseWrite) {
+        throw StateError('FX storage unavailable during disposal');
+      }
+    }
+    await super.setString(key, value);
+  }
+}
+
+class _ClickStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  bool writeEntered = false;
+  bool refuseWrite = false;
+
+  @override
+  Future<void> setDouble(String key, double value) async {
+    if (key == 'tempo.click_volume') {
+      writeEntered = true;
+      await pendingWrite?.future;
+    }
+    await super.setDouble(key, value);
+    if (key == 'tempo.click_volume' && refuseWrite) {
+      throw StateError('Click write failed after mutation');
+    }
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if (key == 'tempo.click_volume' && refuseWrite) {
+      throw StateError('Click compensation unavailable');
+    }
+    await super.remove(key);
+  }
+}
+
+class _RecordStartStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  String blockedKey = 'looper.auto_record';
+  bool writeEntered = false;
+  bool refuseWrite = false;
+  bool refuseNextRead = false;
+
+  @override
+  Future<int?> getInt(String key) async {
+    if (key == 'tempo.count_in_bars' && refuseNextRead) {
+      refuseNextRead = false;
+      throw StateError('Recording start temporarily unreadable');
+    }
+    return super.getInt(key);
+  }
+
+  Future<void> _beforeWrite(String key) async {
+    if (key == blockedKey) {
+      writeEntered = true;
+      await pendingWrite?.future;
+    }
+  }
+
+  void _afterWrite(String key) {
+    if (key == blockedKey && refuseWrite) {
+      throw StateError('Recording start write failed after mutation');
+    }
+  }
+
+  @override
+  Future<void> setInt(String key, int value) async {
+    await _beforeWrite(key);
+    await super.setInt(key, value);
+    _afterWrite(key);
+  }
+
+  @override
+  Future<void> setBool(String key, {required bool value}) async {
+    await _beforeWrite(key);
+    await super.setBool(key, value: value);
+    _afterWrite(key);
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if ((key == 'tempo.count_in_bars' || key == 'looper.auto_record') &&
+        refuseWrite) {
+      throw StateError('Recording start compensation unavailable');
+    }
+    await super.remove(key);
+  }
+}
+
+class _MonitorRestoreStore extends FakeKeyValueStore {
+  bool refuseRead = true;
+  bool refuseBootWrite = false;
+  Completer<void>? readGate;
+
+  @override
+  Future<void> setString(String key, String value) async {
+    if (refuseBootWrite && key == 'monitor_input_mode.0') {
+      throw StateError('monitor boot image unavailable');
+    }
+    await super.setString(key, value);
+  }
+
+  @override
+  Future<String?> getString(String key) async {
+    if (key == 'monitor_input_mode.0') await readGate?.future;
+    if (refuseRead && key == 'monitor_input_mode.0') {
+      throw StateError('saved monitor temporarily unreadable');
+    }
+    return super.getString(key);
+  }
+}
+
+class _NoticeSessionRepository extends SessionRepository {
+  _NoticeSessionRepository()
+    : super(engine: FakeAudioEngine(), guards: GuardRegistry());
+
+  final readEntered = Completer<void>();
+  final readRelease = Completer<void>();
+  bool refuseRead = false;
+
+  @override
+  Future<String> bundlePathOf(String id) async => id;
+
+  @override
+  Future<List<SessionSummary>> listSessions() async => const [
+    SessionSummary(id: 'Replacement', name: 'Replacement'),
+  ];
+
+  @override
+  Future<List<String>> listFolders() async => const [];
+
+  @override
+  Future<SessionPreview> readPreview(String id) async => SessionPreview(
+    summary: SessionSummary(id: id, name: id),
+    tracks: const [],
+    fxCount: 0,
+    sampleRate: 48000,
+  );
+
+  @override
+  Future<OpenedSession> open(
+    String directory, {
+    FutureOr<SessionSettings> Function()? liveSettings,
+  }) async {
+    if (!readEntered.isCompleted) readEntered.complete();
+    await readRelease.future;
+    if (refuseRead) throw StateError('session read unavailable');
+    return (bundle: _bundle, conversion: null);
+  }
+
+  static final SessionBundle _bundle = (
+    session: const Session(
+      sampleRate: 48000,
+      channels: 2,
+      baseLengthFrames: 0,
+      tracks: [],
+      monitors: [
+        SessionMonitor(
+          input: 0,
+          mode: 'on',
+          outputMask: 16,
+          volume: .65,
+          muted: true,
+          encoded: '',
+        ),
+      ],
+    ),
+    laneStems: <(int, int), List<Float32List>>{},
+  );
+}
+
+class _ClickModeStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  bool writeEntered = false;
+  bool refuseWrite = false;
+  bool refuseNextRead = false;
+
+  @override
+  Future<int?> getInt(String key) async {
+    if (key == 'tempo.click_mode' && refuseNextRead) {
+      refuseNextRead = false;
+      throw StateError('Hear click temporarily unreadable');
+    }
+    return super.getInt(key);
+  }
+
+  @override
+  Future<void> setInt(String key, int value) async {
+    if (key == 'tempo.click_mode') {
+      writeEntered = true;
+      await pendingWrite?.future;
+    }
+    await super.setInt(key, value);
+    if (key == 'tempo.click_mode' && refuseWrite) {
+      throw StateError('Hear click write failed after mutation');
+    }
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if (key == 'tempo.click_mode' && refuseWrite) {
+      throw StateError('Hear click compensation unavailable');
+    }
+    await super.remove(key);
+  }
+}
+
+/// Refuses every punch-in as the engine refuses one on a reversed track.
+class _ReversedEngine extends FakeAudioEngine {
+  @override
+  EngineResult record({int channel = 0}) => EngineResult.reversed;
+}
+
+class _RefusingClickModeEngine extends FakeAudioEngine {
+  bool refuseMode = false;
+
+  @override
+  EngineResult setClickMode(ClickMode mode) =>
+      refuseMode ? EngineResult.invalid : super.setClickMode(mode);
+}
+
+class _DecayStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  bool writeEntered = false;
+  bool refuseWrite = false;
+  bool refuseCompensation = true;
+
+  @override
+  Future<void> setInt(String key, int value) async {
+    if (key == 'looper.overdub_decay' ||
+        key.startsWith('track_overdub_decay.')) {
+      writeEntered = true;
+      await pendingWrite?.future;
+      await super.setInt(key, value);
+      if (refuseWrite) throw StateError('Decay write failed after mutation');
+      return;
+    }
+    await super.setInt(key, value);
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if ((key == 'looper.overdub_decay' ||
+            key.startsWith('track_overdub_decay.')) &&
+        refuseWrite &&
+        refuseCompensation) {
+      throw StateError('Decay compensation unavailable');
+    }
+    await super.remove(key);
+  }
+}
+
+class _OneShotStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  bool writeEntered = false;
+  bool refuseWrite = false;
+  bool refuseCompensation = true;
+
+  @override
+  Future<void> setBool(String key, {required bool value}) async {
+    if (key == 'looper.default_one_shot' || key.startsWith('track_one_shot.')) {
+      writeEntered = true;
+      await pendingWrite?.future;
+      await super.setBool(key, value: value);
+      if (refuseWrite) {
+        throw StateError('Playback write failed after mutation');
+      }
+      return;
+    }
+    await super.setBool(key, value: value);
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if ((key == 'looper.default_one_shot' ||
+            key.startsWith('track_one_shot.')) &&
+        refuseWrite &&
+        refuseCompensation) {
+      throw StateError('Playback compensation unavailable');
+    }
+    await super.remove(key);
+  }
+}
+
+class _LengthStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  bool writeEntered = false;
+  bool refuseWrite = false;
+  bool refuseNextRead = false;
+
+  @override
+  Future<int?> getInt(String key) async {
+    if (key == 'tempo.length_preset.7' && refuseNextRead) {
+      refuseNextRead = false;
+      throw StateError('Record length preference temporarily unavailable');
+    }
+    return super.getInt(key);
+  }
+
+  bool refuseCompensation = true;
+
+  static bool _isLength(String key) =>
+      key == 'looper.default_length_bars' ||
+      key.startsWith('tempo.length_preset.');
+
+  @override
+  Future<void> setInt(String key, int value) async {
+    if (_isLength(key)) {
+      writeEntered = true;
+      await pendingWrite?.future;
+      await super.setInt(key, value);
+      if (refuseWrite) {
+        throw StateError('Record length write failed after mutation');
+      }
+      return;
+    }
+    await super.setInt(key, value);
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if (_isLength(key) && refuseWrite && refuseCompensation) {
+      throw StateError('Record length compensation unavailable');
+    }
+    await super.remove(key);
+  }
+}
+
+class _TimingStore extends FakeKeyValueStore {
+  Completer<void>? pendingWrite;
+  bool writeEntered = false;
+  bool refuseWrite = false;
+  bool refuseNextRead = false;
+
+  bool _isTiming(String key) =>
+      key == 'looper.quantize' ||
+      key == 'tempo.quantize_div' ||
+      key.startsWith('track_record_timing.');
+
+  @override
+  Future<int?> getInt(String key) async {
+    if (key == 'track_record_timing.7' && refuseNextRead) {
+      refuseNextRead = false;
+      throw StateError('Record timing preference temporarily unavailable');
+    }
+    return super.getInt(key);
+  }
+
+  Future<void> _beforeWrite(String key) async {
+    if (_isTiming(key)) {
+      writeEntered = true;
+      await pendingWrite?.future;
+    }
+  }
+
+  @override
+  Future<void> setBool(String key, {required bool value}) async {
+    await _beforeWrite(key);
+    await super.setBool(key, value: value);
+    if (_isTiming(key) && refuseWrite) {
+      throw StateError('Record timing write failed after mutation');
+    }
+  }
+
+  @override
+  Future<void> setInt(String key, int value) async {
+    await _beforeWrite(key);
+    await super.setInt(key, value);
+    if (_isTiming(key) && refuseWrite) {
+      throw StateError('Record timing write failed after mutation');
+    }
+  }
+
+  @override
+  Future<void> remove(String key) async {
+    if (_isTiming(key) && refuseWrite) {
+      throw StateError('Record timing compensation unavailable');
+    }
+    await super.remove(key);
+  }
+}
+
+class _PowerKey implements PowerKeySource {
+  final _presses = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> get presses => _presses.stream;
+
+  void press() => _presses.add(null);
+
+  @override
+  Future<void> close() => _presses.close();
+}
+
+class _ShutdownMidi extends MidiDeviceRepository {
+  _ShutdownMidi(SettingsRepository settings)
+    : super(source: null, settings: settings, pollInterval: Duration.zero);
+
+  final _inputs = StreamController<MidiInputMessage>.broadcast();
+
+  @override
+  MidiInputSession get session => const MidiInputSession('shutdown-test', 1);
+
+  @override
+  Stream<MidiInputMessage> get messages => _inputs.stream;
+
+  void push(int value) => _inputs.add(
+    MidiInputMessage(
+      session,
+      RawControllerInput(
+        kind: ControllerSourceKind.midiCc,
+        id: 21,
+        value: value,
+      ),
+    ),
+  );
+
+  @override
+  Future<void> dispose() async {
+    await _inputs.close();
+    await super.dispose();
+  }
+}
+
+class _RefusingTimingEngine extends FakeAudioEngine {
+  bool refuseTiming = false;
+
+  @override
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
+  }) => refuseTiming
+      ? EngineResult.notReady
+      : super.setRecordTimingSettings(
+          defaultTiming: defaultTiming,
+          rememberedDivision: rememberedDivision,
+          trackOverrides: trackOverrides,
+          editMask: editMask,
+        );
+}
+
+/// Distinct track and mixed-output shapes expose a wrong waveform source.
+class _WaveformAudioEngine extends FakeAudioEngine {
+  final trackSamples = <int, Float32List>{};
+  final mixedSamples = Float32List.fromList([0.9, 0.8, 0.7]);
+
+  @override
+  Float32List readVisual() => mixedSamples;
+
+  @override
+  Float32List readTrackVisual(int channel) {
+    trackVisualReads++;
+    return trackSamples[channel] ?? Float32List(0);
+  }
+}
+
+const _named = PowerSnapshot(currentSessionName: 'set');
+
+/// Marks the one-shot `Hold · Tuner` default (#1229) as already attempted,
+/// for tests about other boot work: on a fresh store, boot adds it and says
+/// so with a toast of its own.
+const _tunerSeededKey = 'pedal.tuner_default_seeded';
 
 void main() {
   group('App', () {
@@ -205,8 +707,12 @@ void main() {
       );
       controllerRepository = ControllerRepository(sources: const []);
       settings = SettingsRepository(store: FakeKeyValueStore());
-      sessionRepository = SessionRepository(engine: FakeAudioEngine());
+      sessionRepository = SessionRepository(
+        guards: GuardRegistry(),
+        engine: FakeAudioEngine(),
+      );
       performanceRepository = PerformanceRepository(
+        guards: GuardRegistry(),
         engine: FakeAudioEngine(),
         exportsRoot: () async => '.',
       );
@@ -224,11 +730,18 @@ void main() {
       WidgetTester tester,
       WaveformWindowService windowService, {
       Future<void> Function()? powerOff,
+      PowerKeySource? powerKeySource,
       Duration waveformWindowOpenDelay = Duration.zero,
       bool settle = true,
+      ConsoleFactsClient consoleFacts = const UnsupportedConsoleFactsClient(),
+      StorageRepository? storage,
     }) async {
       await tester.pumpWidget(
         App(
+          storage: storage,
+          consoleFacts: consoleFacts,
+          guards: GuardRegistry(),
+          mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
           midiDeviceRepository: midiDeviceRepository,
@@ -236,8 +749,9 @@ void main() {
           waveformWindow: windowService,
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
+          backingRepository: testBackingRepository(),
           powerOff: powerOff,
+          powerKeySource: powerKeySource,
           waveformWindowOpenDelay: waveformWindowOpenDelay,
         ),
       );
@@ -250,6 +764,8 @@ void main() {
     ) async {
       await tester.pumpWidget(
         App(
+          guards: GuardRegistry(),
+          mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
           midiDeviceRepository: midiDeviceRepository,
@@ -257,12 +773,2797 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
+          backingRepository: testBackingRepository(),
           updates: updates,
         ),
       );
       await tester.pumpAndSettle();
     }
+
+    testWidgets('disposal logs a window close failure and retires delivery', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        final directory = Directory.systemTemp.createTempSync('segno-window-');
+        AppLog.close();
+        addTearDown(() {
+          AppLog.close();
+          directory.deleteSync(recursive: true);
+        });
+        await AppLog.init(directory: directory);
+        final window = _RecordingWindowService();
+        await pumpApp(tester, window);
+        expect(window.openCalls, 1);
+        final context = tester.element(find.byType(TracksView));
+        final control = context.read<ControlCubit>();
+        final looper = context.read<LooperBloc>();
+        window.failClose = true;
+        await tester.pumpWidget(const SizedBox.shrink());
+        await pumpEventQueue();
+        expect(window.closeCalls, 1);
+        expect(window.onWindowReady, isNull);
+        expect(control.isClosed, isTrue);
+        expect(looper.isClosed, isTrue);
+        expect(tester.takeException(), isNull);
+        final log = File(
+          '${directory.path}/${AppLog.fileName}',
+        ).readAsStringSync();
+        expect(
+          'waveform display teardown failed'.allMatches(log),
+          hasLength(1),
+        );
+        expect(log, contains('window enumeration failed during disposal'));
+        expect(log, contains('_RecordingWindowService.close'));
+      });
+    });
+
+    testWidgets('disposal logs FX persistence failure after closing owners', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        final logDirectory = Directory.systemTemp.createTempSync(
+          'segno-dispose-',
+        );
+        AppLog.close();
+        addTearDown(() {
+          AppLog.close();
+          logDirectory.deleteSync(recursive: true);
+        });
+        await AppLog.init(directory: logDirectory);
+        final store = _TrackFxStore()..refuseWrite = true;
+        // Stream cancellation uses a cached real-zone future in this SDK, so
+        // the complete disposal journey stays inside runAsync.
+        final settings = SettingsRepository(store: store);
+        final engine = FakeAudioEngine();
+        final repository = LooperRepository(
+          engine: engine,
+          ticker: const Stream<void>.empty(),
+        );
+        final controllers = ControllerRepository(sources: const []);
+        final midi = MidiDeviceRepository(source: null, settings: settings);
+        final performance = PerformanceRepository(
+          guards: GuardRegistry(),
+          engine: engine,
+          exportsRoot: () async => '.',
+        );
+        addTearDown(() => unawaited(repository.dispose()));
+        addTearDown(() => unawaited(controllers.dispose()));
+        addTearDown(() => unawaited(midi.dispose()));
+        addTearDown(performance.dispose);
+        await tester.pumpWidget(
+          App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            controllerRepository: controllers,
+            midiDeviceRepository: midi,
+            settings: settings,
+            waveformWindow: NoopWaveformWindowService(),
+            sessionRepository: SessionRepository(
+              guards: GuardRegistry(),
+              engine: engine,
+            ),
+            performanceRepository: performance,
+            backingRepository: testBackingRepository(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final context = tester.element(find.byType(TracksView));
+        final looper = context.read<LooperBloc>();
+        final control = context.read<ControlCubit>();
+        final power = context.read<PowerCubit>();
+        final closed = <String>{};
+        context.read<TempoSettings>().stream.listen(
+          (_) {},
+          onDone: () => closed.add('tempo'),
+        );
+        context.read<RecordSettings>().stream.listen(
+          (_) {},
+          onDone: () => closed.add('record'),
+        );
+        context.read<RecordTimingSettings>().stream.listen(
+          (_) {},
+          onDone: () => closed.add('timing'),
+        );
+        repository.setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        );
+        looper.add(
+          const LooperBusEffectParamChanged(
+            FxAddress(stage: FxStage.track),
+            0,
+            1,
+            .65,
+          ),
+        );
+        await tester.pump();
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        expect(store.writeEntered, isTrue);
+        expect(closed, isEmpty);
+        store.releaseWrite.complete();
+        await pumpEventQueue();
+        await tester.pumpAndSettle();
+        expect(closed, {'tempo', 'record', 'timing'});
+        expect(looper.isClosed, isTrue);
+        expect(control.isClosed, isTrue);
+        expect(power.isClosed, isTrue);
+        expect(tester.takeException(), isNull);
+        final log = File(
+          '${logDirectory.path}/${AppLog.fileName}',
+        ).readAsStringSync();
+        expect('application teardown failed'.allMatches(log), hasLength(1));
+        expect(log, contains('FX storage unavailable during disposal'));
+        expect(log, contains('_TrackFxStore.setString'));
+      });
+    });
+
+    testWidgets('shutdown flushes the track editor before its debounce', (
+      tester,
+    ) async {
+      final store = _TrackFxStore();
+      settings = SettingsRepository(store: store);
+      String? savedAtHalt;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async {
+          savedAtHalt = await settings.loadTrackFxChain(0);
+        },
+      );
+      final tracksContext = tester.element(find.byType(TracksView));
+      final shellContext = tester.element(find.byType(LooperPage));
+      final looper = tracksContext.read<LooperBloc>();
+      expect(repository.onLaneChainChanged, isNotNull);
+      repository.setTrackEffects(
+        channel: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.delay)],
+      );
+      looper.add(
+        const LooperBusEffectParamChanged(
+          FxAddress(stage: FxStage.track),
+          0,
+          1,
+          0.65,
+        ),
+      );
+      await tester.pump();
+      expect(await settings.loadTrackFxChain(0), isNull);
+      final power = tracksContext.read<PowerCubit>()
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
+      await tester.pump();
+      // No virtual time has elapsed: shutdown, not the debounce timer,
+      // must begin the edit's persistence and await it before goodbye.
+      expect(store.writeEntered, isTrue);
+      expect(power.state.phase, PowerPhase.saving);
+      expect(await settings.loadTrackFxChain(0), isNull);
+      store.releaseWrite.complete();
+      await tester.pump();
+      final saved = await settings.loadTrackFxChain(0);
+      expect(saved, isNotNull);
+      expect(identical(looper, shellContext.read<LooperBloc>()), isTrue);
+      expect(
+        (decodeFxChain(saved).entries.single as BuiltInEffect).params[1],
+        0.65,
+      );
+      expect(power.state.isUiUp, isTrue);
+      looper
+        ..add(const LooperRecordPressed(0))
+        ..add(const LooperClearPressed(0));
+      await tester.pump();
+      expect(engine.recordCalls, 0);
+      expect(engine.clearCalls, 0);
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerPhase.goodbye);
+      await tester.pump(const Duration(seconds: 3));
+      expect(savedAtHalt, saved);
+    });
+
+    for (final recovery in ['Retry', 'Session', 'Power']) {
+      testWidgets(
+        'Fade startup notice resolves through $recovery',
+        (tester) async {
+          final store = FakeKeyValueStore()
+            ..values['looper.fade_durations'] =
+                '{"defaultMs":501,"overrides":{}}';
+          settings = SettingsRepository(store: store);
+          final bundles = _NoticeSessionRepository();
+          sessionRepository = bundles;
+          var halted = false;
+          await pumpApp(
+            tester,
+            NoopWaveformWindowService(),
+            powerOff: () async => halted = true,
+          );
+          expect(find.text('Fade duration needs recovery'), findsOneWidget);
+          if (recovery == 'Session') {
+            final context = tester.element(find.byType(TracksView));
+            bundles.readRelease.complete();
+            final loading = context.read<SessionCubit>().open(
+              'Replacement',
+            );
+            await tester.pumpAndSettle();
+            await loading;
+            expect(
+              context.read<SessionCubit>().state.outcome,
+              SessionOutcome.loaded,
+            );
+          } else if (recovery == 'Power') {
+            final context = tester.element(find.byType(TracksView));
+            final power = context.read<PowerCubit>()
+              ..press(_named)
+              ..shutDown(_named, save: () async {});
+            await tester.pumpAndSettle();
+            expect(halted, isFalse);
+            store.values.remove('looper.fade_durations');
+            power.retry(_named);
+            await tester.pumpAndSettle();
+            await tester.pump(const Duration(seconds: 6));
+            expect(halted, isTrue);
+          } else {
+            store.values.remove('looper.fade_durations');
+            await tester.tap(
+              find.descendant(
+                of: find.byKey(const Key(AppToastId.fadeSettings)),
+                matching: find.text('Retry'),
+              ),
+            );
+            await tester.pumpAndSettle();
+          }
+          expect(find.text('Fade duration needs recovery'), findsNothing);
+          expect(debugAppToastActive(AppToastId.fadeSettings), isFalse);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+          expect(debugAppToastActive(AppToastId.fadeSettings), isFalse);
+        },
+      );
+    }
+
+    testWidgets('power off waits for an ordinary Click preference', (
+      tester,
+    ) async {
+      final store = _ClickStore();
+      settings = SettingsRepository(store: store);
+      var halted = false;
+      final window = _RecordingWindowService();
+      await pumpApp(tester, window, powerOff: () async => halted = true);
+      final context = tester.element(find.byType(TracksView));
+      final tempo = context.read<TempoCubit>();
+      final power = context.read<PowerCubit>();
+      store.pendingWrite = Completer<void>();
+      unawaited(tempo.setClickVolume(1.5));
+      await tester.pump();
+      expect(store.writeEntered, isTrue);
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(power.state.phase, PowerPhase.saving);
+      expect(halted, isFalse);
+      store.pendingWrite!.complete();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      expect(halted, isTrue);
+      expect(store.values['tempo.click_volume'], 1.5);
+      expect(tempo.state.confirmedClickVolume, 1.5);
+    });
+
+    testWidgets('Click refusal prevents halt and visible Retry recovers', (
+      tester,
+    ) async {
+      final store = _ClickStore();
+      settings = SettingsRepository(store: store);
+      var halted = false;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => halted = true,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final tempo = context.read<TempoCubit>();
+      final power = context.read<PowerCubit>();
+      store.refuseWrite = true;
+      unawaited(tempo.setClickVolume(1.5));
+      await tester.pump();
+      // The owed rollback makes Click unavailable until Retry.
+      expect(tempo.state.confirmedClickVolume, isNull);
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerPhase.saveFailed);
+      expect(find.text('Segno is staying on'), findsOneWidget);
+      expect(find.byKey(const Key('power_retry')), findsOneWidget);
+      expect(halted, isFalse);
+      store.refuseWrite = false;
+      await tester.tap(find.byKey(const Key('power_retry')));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+      expect(halted, isTrue);
+      expect(store.values.containsKey('tempo.click_volume'), isFalse);
+    });
+
+    testWidgets('power off retires held Click before refusing later MIDI', (
+      tester,
+    ) async {
+      final store = _ClickStore();
+      settings = SettingsRepository(store: store);
+      final midi = _ShutdownMidi(settings);
+      midiDeviceRepository = midi;
+      addTearDown(() => unawaited(midi.dispose()));
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final control = context.read<ControlCubit>();
+      final tempo = context.read<TempoCubit>();
+      final power = context.read<PowerCubit>();
+      final editor = Object();
+      control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+      MidiSaveResult? saved;
+      unawaited(
+        control
+            .saveMidiMapping(
+              MidiMapping(
+                id: 'shutdown-click',
+                source: MidiSource(
+                  device: 'shutdown-test',
+                  kind: ControllerSourceKind.midiCc,
+                  number: 21,
+                ),
+                behavior: MidiBehavior.momentary,
+                controls: [
+                  MidiParameterControl(
+                    key: '{"ctl":"clickVolume"}',
+                    low: .125,
+                    high: .75,
+                  ),
+                ],
+              ),
+              owner: editor,
+              create: true,
+            )
+            .then((result) => saved = result),
+      );
+      await tester.pumpAndSettle();
+      expect(saved?.saved, isTrue);
+      control.endMidiEdit(editor);
+      midi.push(127);
+      await tester.pumpAndSettle();
+      expect(tempo.state.confirmedClickVolume, 1.5);
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerPhase.goodbye);
+      expect(tempo.state.confirmedClickVolume, .25);
+      expect(store.values['tempo.click_volume'], .25);
+      expect(haltCalls, 0);
+
+      // A new controller event after the final flush must not start a save.
+      store
+        ..writeEntered = false
+        ..pendingWrite = Completer<void>();
+      midi.push(127);
+      await tester.pump();
+      expect(store.writeEntered, isFalse);
+      expect(tempo.state.confirmedClickVolume, .25);
+      store.pendingWrite!.complete();
+      await tester.pump(const Duration(seconds: 2));
+      expect(haltCalls, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
+    for (final failedRestore in [false, true]) {
+      testWidgets('Foot Mixer live input gain; failed restore=$failedRestore', (
+        tester,
+      ) async {
+        tester.view.physicalSize = const Size(1920, 1080);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        settings = SettingsRepository(
+          store: _MonitorRestoreStore()..refuseRead = failedRestore,
+        );
+        engine.nextSnapshot = engine.nextSnapshot.copyWith(inputChannels: 2);
+        repository.startEngine(const EngineConfig());
+        await pumpApp(tester, NoopWaveformWindowService());
+        final context = tester.element(find.byType(TracksView));
+        final monitor = context.read<MonitorCubit>();
+        final control = context.read<ControlCubit>()
+          ..setMode(InteractionMode.mixer)
+          ..selectFootMixerDomain(FootMixerDomain.inputs);
+        await tester.pumpAndSettle();
+        final gain = find.byKey(const Key('foot_mixer_selected_gain'));
+        expect(tester.widget<AppText>(gain).data, '100%');
+        await tester.tap(find.byKey(const Key('foot_mixer_pedal_undo')));
+        await tester.pumpAndSettle();
+        expect(repository.monitorVolume(0), closeTo(.95, 1e-9));
+        expect(tester.widget<AppText>(gain).data, '95%');
+        expect(
+          tester
+              .widget<LinearProgressIndicator>(
+                find.byKey(const Key('foot_mixer_gain_bar')),
+              )
+              .value,
+          closeTo(.95, 1e-9),
+        );
+        // External/MIDI controllers share this exact transaction owner.
+        await context.read<MixSettingsCoordinator>().setControllerValues({
+          const MonitorVolumeTarget(0): .4,
+        });
+        await tester.pumpAndSettle();
+        expect(tester.widget<AppText>(gain).data, '40%');
+        expect(repository.monitorVolume(0), .4);
+        await context.read<MixSettingsCoordinator>().setControllerValues({
+          const MonitorVolumeTarget(0): .98,
+        });
+        await tester.pumpAndSettle();
+        expect(tester.widget<AppText>(gain).data, '98%');
+        expect(find.text('Limit · Hold reset'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('foot_mixer_pedal_clear')));
+        await tester.pumpAndSettle();
+        expect(repository.monitorVolume(0), .98);
+        expect(tester.widget<AppText>(gain).data, '98%');
+        expect(control.state.footMixer.domain, FootMixerDomain.inputs);
+        expect(monitor.state.restoreFailed, failedRestore);
+        if (failedRestore) expect(monitor.state.inputs, isEmpty);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 100));
+      });
+    }
+
+    testWidgets(
+      'Foot Mixer mute caption follows admitted input after failed restore',
+      (
+        tester,
+      ) async {
+        tester.view.physicalSize = const Size(1920, 1080);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        settings = SettingsRepository(store: _MonitorRestoreStore());
+        engine.nextSnapshot = engine.nextSnapshot.copyWith(inputChannels: 2);
+        repository.startEngine(const EngineConfig());
+        await pumpApp(tester, NoopWaveformWindowService());
+        final context = tester.element(find.byType(TracksView));
+        final monitor = context.read<MonitorCubit>();
+        context.read<ControlCubit>()
+          ..setMode(InteractionMode.mixer)
+          ..selectFootMixerDomain(FootMixerDomain.inputs);
+        await tester.pumpAndSettle();
+        final pedal = find.byKey(const Key('foot_mixer_pedal_track1'));
+        final hold = await tester.startGesture(tester.getCenter(pedal));
+        await tester.pump(const Duration(milliseconds: 801));
+        await hold.up();
+        await tester.pumpAndSettle();
+        expect(repository.monitorMuted(0), isTrue);
+        expect(await settings.loadMonitorMute(0), isTrue);
+        expect(monitor.state.restoreFailed, isTrue);
+        expect(monitor.state.inputs, isEmpty);
+        expect(
+          find.descendant(of: pedal, matching: find.text('Hold · Unmute')),
+          findsOneWidget,
+        );
+        expect(find.text('100% · Muted'), findsOneWidget);
+        final unmute = await tester.startGesture(tester.getCenter(pedal));
+        await tester.pump(const Duration(milliseconds: 801));
+        await unmute.up();
+        await tester.pumpAndSettle();
+        expect(repository.monitorMuted(0), isFalse);
+        expect(
+          find.descendant(of: pedal, matching: find.text('Hold · Mute')),
+          findsOneWidget,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 100));
+      },
+    );
+
+    for (final cancelLoad in [false, true]) {
+      testWidgets(
+        'monitor notice yields during Session load; cancel=$cancelLoad',
+        (
+          tester,
+        ) async {
+          final store = _MonitorRestoreStore()
+            ..refuseRead = false
+            ..readGate = Completer<void>();
+          settings = SettingsRepository(store: store);
+          await settings.saveMonitorInputMode(0, mode: 'on');
+          await settings.saveMonitorOutput(0, 8);
+          final bundles = _NoticeSessionRepository()..refuseRead = cancelLoad;
+          sessionRepository = bundles;
+          addTearDown(() {
+            if (!bundles.readRelease.isCompleted) {
+              bundles.readRelease.complete();
+            }
+          });
+          repository.startEngine(const EngineConfig());
+          await pumpApp(tester, NoopWaveformWindowService());
+          final context = tester.element(find.byType(TracksView));
+          final monitor = context.read<MonitorCubit>();
+          final session = context.read<SessionCubit>();
+          final load = session.open('Replacement');
+          expect(
+            context.read<FxChainPersistence>().sessionTransitionActive,
+            isTrue,
+          );
+          store.readGate!.complete();
+          await bundles.readEntered.future;
+          await tester.pumpAndSettle();
+          expect(monitor.state.restoreFailed, isTrue);
+          expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+          expect(find.text('Input monitoring needs recovery'), findsNothing);
+          bundles.readRelease.complete();
+          await load;
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const Key('tracks_session_snackbar')),
+            findsOneWidget,
+          );
+          if (cancelLoad) {
+            expect(session.state.status, SessionStatus.failure);
+            expect(monitor.state.restoreFailed, isTrue);
+            final retry = find
+                .descendant(
+                  of: find.byKey(const Key(AppToastId.monitorRestore)),
+                  matching: find.text('Retry'),
+                )
+                .hitTestable();
+            expect(retry, findsOneWidget);
+            await tester.tap(retry);
+            await tester.pumpAndSettle();
+            expect(monitor.state.forInput(0).outputMask, 8);
+          } else {
+            expect(session.state.outcome, SessionOutcome.loaded);
+            expect(monitor.state.forInput(0).outputMask, 16);
+            expect(monitor.state.forInput(0).volume, .65);
+          }
+          expect(monitor.state.restoreFailed, isFalse);
+          expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(const Duration(milliseconds: 100));
+        },
+      );
+    }
+
+    testWidgets('monitor notice yields to actionable Session boot Retry', (
+      tester,
+    ) async {
+      final store = _MonitorRestoreStore();
+      settings = SettingsRepository(store: store);
+      final bundles = _NoticeSessionRepository();
+      bundles.readRelease.complete();
+      sessionRepository = bundles;
+      repository.startEngine(const EngineConfig());
+      await pumpApp(tester, NoopWaveformWindowService());
+      final context = tester.element(find.byType(TracksView));
+      final monitor = context.read<MonitorCubit>();
+      final session = context.read<SessionCubit>();
+      expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+      store
+        ..refuseRead = false
+        ..refuseBootWrite = true;
+      await tester.tap(find.byKey(const Key('stage_library')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
+      // Catalog refresh is unrelated work; it must not suppress Monitor Retry.
+      expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+      await tester.tap(find.byKey(const Key('library_row_Replacement')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('library_open_session')));
+      await tester.pumpAndSettle();
+      expect(session.state.bootRecoveryRequired, isTrue);
+      expect(session.state.error, SessionError.bootPersistence);
+      expect(engine.snapshot().isRunning, isFalse);
+      expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+      expect(monitor.state.inputs, isEmpty);
+      expect(debugAppToastActive(AppToastId.sessionBootRecovery), isTrue);
+      expect(find.byKey(const Key('tracks_session_snackbar')), findsNothing);
+      final retry = find
+          .descendant(
+            of: find.byKey(const Key(AppToastId.sessionBootRecovery)),
+            matching: find.text('Retry'),
+          )
+          .hitTestable();
+      expect(retry, findsOneWidget);
+      expect(find.text('Retry').hitTestable(), findsOneWidget);
+      final power = context.read<PowerCubit>()..press(_named);
+      await tester.pumpAndSettle();
+      expect(debugAppToastActive(AppToastId.sessionBootRecovery), isFalse);
+      expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+      power.dismiss();
+      await tester.pumpAndSettle();
+      expect(retry, findsOneWidget);
+      expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+      await tester.tap(retry);
+      await tester.pumpAndSettle();
+      expect(session.state.bootRecoveryRequired, isTrue);
+      expect(monitor.state.inputs, isEmpty);
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_session_snackbar')), findsNothing);
+      expect(find.text('Retry').hitTestable(), findsOneWidget);
+      store.refuseBootWrite = false;
+      await tester.tap(find.text('Retry').hitTestable());
+      await tester.pumpAndSettle();
+      expect(session.state.bootRecoveryRequired, isFalse);
+      expect(session.state.outcome, SessionOutcome.loaded);
+      expect(monitor.state.restoreFailed, isFalse);
+      expect(monitor.state.forInput(0).outputMask, 16);
+      expect(monitor.state.forInput(0).volume, .65);
+      expect(await settings.loadMonitorOutput(0), 16);
+      expect(debugAppToastActive(AppToastId.sessionBootRecovery), isFalse);
+      expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+      expect(find.text('Retry').hitTestable(), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 100));
+    });
+
+    testWidgets('initial monitor restore failure exposes persistent Retry', (
+      tester,
+    ) async {
+      final store = _MonitorRestoreStore();
+      settings = SettingsRepository(store: store);
+      await settings.saveMonitorInputMode(0, mode: 'on');
+      await settings.saveMonitorOutput(0, 8);
+      await settings.saveMonitorVolume(0, .35);
+      await settings.saveMonitorMute(0, muted: true);
+      await pumpApp(tester, NoopWaveformWindowService());
+      final monitor = tester
+          .element(find.byType(TracksView))
+          .read<MonitorCubit>();
+      expect(monitor.state.restoreFailed, isTrue);
+      expect(find.text('Input monitoring needs recovery'), findsOneWidget);
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(monitor.state.restoreFailed, isTrue);
+      expect(find.text('Retry'), findsOneWidget);
+      store.refuseRead = false;
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(monitor.state.restoreFailed, isFalse);
+      expect(monitor.state.forInput(0).mode, MonitorMode.on);
+      expect(monitor.state.forInput(0).outputMask, 8);
+      expect(find.text('Input monitoring needs recovery'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 100));
+    });
+
+    for (final projectBeforeFrame in [false, true]) {
+      testWidgets(
+        'idle monitor failure requests frame; projected=$projectBeforeFrame',
+        (
+          tester,
+        ) async {
+          final gate = Completer<void>();
+          final store = _MonitorRestoreStore()..readGate = gate;
+          store.values[_tunerSeededKey] = true;
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final monitor = tester
+              .element(find.byType(TracksView))
+              .read<MonitorCubit>();
+          expect(tester.binding.hasScheduledFrame, isFalse);
+          final failed = monitor.stream.firstWhere(
+            (state) => state.restoreFailed,
+          );
+          gate.complete();
+          await failed;
+          // Drain stream listeners without pumping a frame: failure itself must
+          // request one, rather than depending on another player interaction.
+          await Future<void>.value();
+          expect(tester.binding.hasScheduledFrame, isTrue);
+          if (projectBeforeFrame) monitor.projectFromRepository();
+          await tester.pumpAndSettle();
+          expect(
+            find.text('Input monitoring needs recovery'),
+            projectBeforeFrame ? findsNothing : findsOneWidget,
+          );
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(const Duration(milliseconds: 100));
+        },
+      );
+    }
+
+    testWidgets(
+      'Session projection retires monitor recovery across Power overlay',
+      (
+        tester,
+      ) async {
+        final store = _MonitorRestoreStore();
+        settings = SettingsRepository(store: store);
+        await pumpApp(tester, NoopWaveformWindowService());
+        final monitor = tester
+            .element(find.byType(TracksView))
+            .read<MonitorCubit>();
+        expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+        final power = tester.element(find.byType(TracksView)).read<PowerCubit>()
+          ..press(_named);
+        await tester.pumpAndSettle();
+        expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+        power.dismiss();
+        await tester.pumpAndSettle();
+        expect(debugAppToastActive(AppToastId.monitorRestore), isTrue);
+        power.press(_named);
+        await tester.pumpAndSettle();
+        monitor.projectFromRepository();
+        await tester.pumpAndSettle();
+        power.dismiss();
+        await tester.pumpAndSettle();
+        expect(debugAppToastActive(AppToastId.monitorRestore), isFalse);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 100));
+      },
+    );
+
+    for (final malformed in [false, true]) {
+      testWidgets(
+        'Record length startup recovery stays reachable; malformed=$malformed',
+        (tester) async {
+          final store = _LengthStore()..refuseNextRead = !malformed;
+          store.values.addAll({
+            _tunerSeededKey: true,
+            'looper.mode': LooperMode.free.code,
+            'looper.default_length_bars': 4,
+            'tempo.length_preset.7': malformed ? 65 : 0,
+          });
+          final before = Map<String, Object>.of(store.values);
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final context = tester.element(find.byType(TracksView));
+          final length = context.read<RecordOptionsCubit>();
+          expect(length.state.options.recordLengthReady, isFalse);
+          expect(find.text('Record length needs recovery'), findsOneWidget);
+          await tester.pump(const Duration(seconds: 6));
+          expect(find.text('Record length needs recovery'), findsOneWidget);
+          expect(find.text('Retry'), findsOneWidget);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(length.state.options.recordLengthReady, isTrue);
+          expect(find.text('Record length needs recovery'), findsNothing);
+          if (malformed) {
+            // Retry removes only the unreadable key, then restores the rest.
+            expect(
+              store.values.containsKey('tempo.length_preset.7'),
+              isFalse,
+            );
+            before.remove('tempo.length_preset.7');
+            for (final entry in before.entries) {
+              expect(store.values[entry.key], entry.value);
+            }
+            expect(length.state.options.defaultLengthBars, 4);
+            expect(repository.trackLengthPresetOverrides, isEmpty);
+          } else {
+            expect(store.values, before);
+            expect(find.text('Record length needs recovery'), findsNothing);
+            expect(length.state.options.defaultLengthBars, 4);
+            expect(length.state.options.trackLengthPresetOverrides, {7: 0});
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(const Duration(milliseconds: 100));
+        },
+      );
+    }
+
+    for (final malformed in [false, true]) {
+      testWidgets(
+        'Record timing startup recovery is reachable; malformed=$malformed',
+        (tester) async {
+          final store = _TimingStore()..refuseNextRead = !malformed;
+          store.values.addAll({
+            _tunerSeededKey: true,
+            'looper.quantize': true,
+            'tempo.quantize_div': 3,
+            'track_record_timing.7': malformed ? 7 : 0,
+          });
+          final before = Map<String, Object>.of(store.values);
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final context = tester.element(find.byType(TracksView));
+          final timing = context.read<RecordTimingCubit>();
+          expect(timing.state.recordTimingReady, isFalse);
+          expect(find.text('Record timing needs recovery'), findsOneWidget);
+          await tester.pump(const Duration(seconds: 6));
+          expect(find.text('Record timing needs recovery'), findsOneWidget);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(timing.state.recordTimingReady, isTrue);
+          expect(find.text('Record timing needs recovery'), findsNothing);
+          if (malformed) {
+            // Retry removes only the unreadable key; the rest survive.
+            expect(
+              store.values.containsKey('track_record_timing.7'),
+              isFalse,
+            );
+            before.remove('track_record_timing.7');
+            for (final entry in before.entries) {
+              expect(store.values[entry.key], entry.value);
+            }
+            expect(timing.state.defaultTiming, RecordTiming.quarter);
+            expect(repository.trackRecordTimingOverrides, isEmpty);
+          } else {
+            expect(store.values, before);
+            expect(find.text('Record timing needs recovery'), findsNothing);
+            expect(timing.state.defaultTiming, RecordTiming.quarter);
+            expect(timing.state.trackOverrides, {7: RecordTiming.immediately});
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(const Duration(milliseconds: 100));
+        },
+      );
+    }
+
+    for (final malformed in [false, true]) {
+      testWidgets(
+        'recording-start startup recovery remains actionable; '
+        'malformed=$malformed',
+        (tester) async {
+          final store = _RecordStartStore()..refuseNextRead = !malformed;
+          store.values['tempo.count_in_bars'] = malformed ? 3 : 4;
+          store.values['looper.auto_record'] = false;
+          store.values[_tunerSeededKey] = true;
+          final before = Map<String, Object>.of(store.values);
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final tempo = tester
+              .element(find.byType(TracksView))
+              .read<TempoCubit>();
+          expect(tempo.state.recordStartSnapshot, isNull);
+          expect(find.text('Recording start needs recovery'), findsOneWidget);
+          await tester.pump(const Duration(seconds: 6));
+          expect(find.text('Recording start needs recovery'), findsOneWidget);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          // A transient read reads cleanly on Retry; a pair that stays
+          // unreadable is repaired to (0, false).
+          expect(tempo.state.recordStartReady, isTrue);
+          expect(
+            store.values,
+            malformed
+                ? {
+                    'tempo.count_in_bars': 0,
+                    'looper.auto_record': false,
+                    _tunerSeededKey: true,
+                  }
+                : before,
+          );
+          expect(
+            tempo.state.recordStartSnapshot?.settings.countInBars,
+            malformed ? 0 : 4,
+          );
+          expect(tempo.state.recordStartSnapshot?.settings.soundStart, isFalse);
+          expect(find.text('Recording start needs recovery'), findsNothing);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(const Duration(milliseconds: 100));
+        },
+      );
+    }
+
+    testWidgets('Hear click Retry preserves independent recording recovery', (
+      tester,
+    ) async {
+      final store = FakeKeyValueStore();
+      store.values['tempo.click_mode'] = 4;
+      store.values['tempo.count_in_bars'] = 3;
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      final tempo = tester.element(find.byType(TracksView)).read<TempoCubit>();
+      expect(debugAppToastActive(AppToastId.clickModeSettings), isTrue);
+      expect(debugAppToastActive(AppToastId.recordStartSettings), isTrue);
+
+      store.values['tempo.click_mode'] = 0;
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key(AppToastId.clickModeSettings)),
+          matching: find.text('Retry'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tempo.state.clickModeReady, isTrue);
+      expect(tempo.state.recordStartReady, isFalse);
+      expect(debugAppToastActive(AppToastId.clickModeSettings), isFalse);
+      expect(debugAppToastActive(AppToastId.recordStartSettings), isTrue);
+      expect(find.text('Recording start needs recovery'), findsOneWidget);
+
+      store.values['tempo.count_in_bars'] = 2;
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key(AppToastId.recordStartSettings)),
+          matching: find.text('Retry'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tempo.state.recordStartReady, isTrue);
+      expect(debugAppToastActive(AppToastId.recordStartSettings), isFalse);
+    });
+
+    for (final customName in [false, true]) {
+      testWidgets(
+        'Sound without input identifies its track; named=$customName',
+        (
+          tester,
+        ) async {
+          final store = FakeKeyValueStore();
+          store.values['tempo.count_in_bars'] = 0;
+          store.values['looper.auto_record'] = true;
+          store.values[_tunerSeededKey] = true;
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final context = tester.element(find.byType(TracksView));
+          if (customName) {
+            unawaited(context.read<TracksCubit>().rename(3, 'Harmony'));
+            await tester.pumpAndSettle();
+          }
+          expect(
+            context.read<TempoCubit>().state.confirmedRecordStart?.soundStart,
+            isTrue,
+          );
+          final initialCalls = engine.recordCalls;
+          expect(repository.record(channel: 3), EngineResult.invalid);
+          await tester.pumpAndSettle();
+          expect(
+            debugAppToastActive(AppToastId.recordingInputRequired),
+            isTrue,
+          );
+          final notice = find.byKey(
+            const Key(AppToastId.recordingInputRequired),
+          );
+          expect(
+            find.descendant(
+              of: notice,
+              matching: find.text('Choose recording inputs'),
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(
+              of: notice,
+              matching: find.text(customName ? 'Harmony' : 'TRACK 4'),
+            ),
+            findsOneWidget,
+          );
+          expect(engine.recordCalls, initialCalls);
+          expect(engine.lastRecordImage, isNull);
+          expect(engine.pendingImages, isEmpty);
+          await tester.pump(const Duration(seconds: 6));
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+        },
+      );
+    }
+
+    testWidgets('a Record press on a reversed track says overdub is '
+        'unavailable', (tester) async {
+      engine = _ReversedEngine();
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        tracks: [
+          const le.TrackSnapshot(
+            state: le.TrackState.overdubbing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 48000,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+            reversed: true,
+          ),
+          for (var channel = 1; channel < 8; channel++)
+            const le.TrackSnapshot.empty(),
+        ],
+      );
+      repository = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      );
+      addTearDown(repository.dispose);
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(repository.record(), EngineResult.reversed);
+      await tester.pumpAndSettle();
+      expect(debugAppToastActive(AppToastId.recordRefused), isTrue);
+      expect(
+        find.text('Overdub is unavailable while the track is reversed'),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
+    testWidgets('an Undo or Redo of a length edit that did nothing says so, '
+        'in any mode (#1168)', (tester) async {
+      final ticks = StreamController<void>.broadcast(sync: true);
+      addTearDown(ticks.close);
+      le.EngineSnapshot rig(int refusals) => engine.nextSnapshot.copyWith(
+        tracks: [
+          le.TrackSnapshot(
+            state: le.TrackState.playing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 48000,
+            undoDepth: 1,
+            rms: 0,
+            peak: 0,
+            lengthHistoryRefusals: refusals,
+          ),
+          for (var channel = 1; channel < 8; channel++)
+            const le.TrackSnapshot.empty(),
+        ],
+      );
+      engine.nextSnapshot = rig(0);
+      repository = LooperRepository(engine: engine, ticker: ticks.stream);
+      addTearDown(repository.dispose);
+      await pumpApp(tester, NoopWaveformWindowService());
+      ticks.add(null);
+      await tester.pump();
+      expect(debugAppToastActive(AppToastId.lengthHistoryRefused), isFalse);
+      engine.nextSnapshot = rig(1);
+      ticks.add(null);
+      await tester.pumpAndSettle();
+      expect(debugAppToastActive(AppToastId.lengthHistoryRefused), isTrue);
+      final notice = find.text(
+        'The length change was not undone or redone. If pressing again '
+        'changes nothing, that length no longer fits the other loops.',
+      );
+      expect(notice, findsOneWidget);
+      expect(find.text('TRACK 1'), findsWidgets);
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
+    for (final blockedKey in ['tempo.count_in_bars', 'looper.auto_record']) {
+      testWidgets('power off waits for complete start pair: $blockedKey', (
+        tester,
+      ) async {
+        final store = _RecordStartStore()..blockedKey = blockedKey;
+        settings = SettingsRepository(store: store);
+        var haltCalls = 0;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => haltCalls++,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final tempo = context.read<TempoCubit>();
+        final power = context.read<PowerCubit>();
+        expect(tempo.state.confirmedRecordStart?.countInBars, 1);
+        expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
+        store.pendingWrite = Completer<void>();
+        unawaited(tempo.setSoundStart(enabled: true));
+        await tester.pump();
+        expect(store.writeEntered, isTrue);
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(power.state.phase, PowerPhase.saving);
+        expect(haltCalls, 0);
+        expect(tempo.state.confirmedRecordStart?.countInBars, 1);
+        expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
+        store.pendingWrite!.complete();
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(haltCalls, 1);
+        expect(store.values['tempo.count_in_bars'], 0);
+        expect(store.values['looper.auto_record'], isTrue);
+        expect(
+          context.read<TempoSettings>().recordStartOwner.durable.countInBars,
+          0,
+        );
+        expect(
+          context.read<TempoSettings>().recordStartOwner.durable.soundStart,
+          isTrue,
+        );
+      });
+    }
+
+    for (final retry in [false, true]) {
+      testWidgets('uncertain start pair keeps power on; retry=$retry', (
+        tester,
+      ) async {
+        final store = _RecordStartStore();
+        settings = SettingsRepository(store: store);
+        var haltCalls = 0;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => haltCalls++,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final tempo = context.read<TempoCubit>();
+        final power = context.read<PowerCubit>();
+        store.refuseWrite = true;
+        unawaited(tempo.setSoundStart(enabled: true));
+        await tester.pumpAndSettle();
+        expect(tempo.state.confirmedRecordStart?.countInBars, 1);
+        expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
+        expect(tempo.state.recordStartSnapshot, isNull);
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.saveFailed);
+        expect(haltCalls, 0);
+        expect(debugAppToastActive(AppToastId.recordStartSettings), isFalse);
+        store.refuseWrite = false;
+        await tester.tap(
+          find.byKey(Key(retry ? 'power_retry' : 'power_stay_on')),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(haltCalls, retry ? 1 : 0);
+        if (!retry) {
+          expect(find.text('Recording start needs recovery'), findsOneWidget);
+          expect(tempo.state.recordStartSnapshot, isNull);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(find.text('Recording start needs recovery'), findsNothing);
+        }
+        expect(store.values.containsKey('tempo.count_in_bars'), isFalse);
+        expect(store.values.containsKey('looper.auto_record'), isFalse);
+        expect(
+          context.read<TempoSettings>().recordStartOwner.durable.countInBars,
+          1,
+        );
+        expect(
+          context.read<TempoSettings>().recordStartOwner.durable.soundStart,
+          isFalse,
+        );
+      });
+    }
+
+    testWidgets('compensated start refusal permits normal shutdown', (
+      tester,
+    ) async {
+      final store = FakeKeyValueStore();
+      settings = SettingsRepository(store: store);
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      repository.startEngine(const EngineConfig());
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byType(TracksView));
+      final tempo = context.read<TempoCubit>();
+      final power = context.read<PowerCubit>();
+      engine.recordStartResult = EngineResult.invalid;
+      bool? accepted;
+      unawaited(
+        context
+            .read<TempoSettings>()
+            .recordStartControl
+            .setCountInBars(4)
+            .then((v) => accepted = v.isOk),
+      );
+      await tester.pumpAndSettle();
+      expect(accepted, isFalse);
+      expect(tempo.state.recordStartSnapshot?.settings.countInBars, 1);
+      expect(store.values.containsKey('tempo.count_in_bars'), isFalse);
+      expect(store.values.containsKey('looper.auto_record'), isFalse);
+      expect(repository.recordStartRecoveryRequired, isFalse);
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerPhase.goodbye);
+      await tester.pump(const Duration(seconds: 6));
+      expect(haltCalls, 1);
+    });
+
+    for (final malformed in [false, true]) {
+      testWidgets(
+        'Hear click startup recovery remains actionable; malformed=$malformed',
+        (tester) async {
+          final store = _ClickModeStore()..refuseNextRead = !malformed;
+          store.values['tempo.click_mode'] = malformed ? 4 : 0;
+          store.values[_tunerSeededKey] = true;
+          final before = Map<String, Object>.of(store.values);
+          settings = SettingsRepository(store: store);
+          await pumpApp(tester, NoopWaveformWindowService());
+          final tempo = tester
+              .element(find.byType(TracksView))
+              .read<TempoCubit>();
+          expect(tempo.state.clickModeSnapshot, isNull);
+          expect(find.text('Hear click needs attention'), findsOneWidget);
+          await tester.pump(const Duration(seconds: 6));
+          expect(find.text('Hear click needs attention'), findsOneWidget);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          // A transient read reads cleanly on Retry; malformed data that
+          // stays unreadable is repaired to Off.
+          expect(tempo.state.clickModeReady, isTrue);
+          expect(store.values, before..['tempo.click_mode'] = 0);
+          expect(tempo.state.clickModeSnapshot?.mode, ClickMode.off);
+          expect(find.text('Hear click needs attention'), findsNothing);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(const Duration(milliseconds: 100));
+        },
+      );
+    }
+
+    testWidgets('power off waits for ordinary Hear click persistence', (
+      tester,
+    ) async {
+      final store = _ClickModeStore();
+      settings = SettingsRepository(store: store);
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final tempo = context.read<TempoCubit>();
+      final power = context.read<PowerCubit>();
+      expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
+      store.pendingWrite = Completer<void>();
+      unawaited(tempo.setClickMode(ClickMode.playRec));
+      await tester.pump();
+      expect(store.writeEntered, isTrue);
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(power.state.phase, PowerPhase.saving);
+      expect(haltCalls, 0);
+      expect(tempo.state.clickMode, ClickMode.recFirst);
+      store.pendingWrite!.complete();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 6));
+      expect(haltCalls, 1);
+      expect(store.values['tempo.click_mode'], 3);
+      expect(
+        context.read<TempoSettings>().clickModeOwner.durable,
+        ClickMode.playRec,
+      );
+    });
+
+    for (final retry in [false, true]) {
+      testWidgets('uncertain Hear click keeps power on; retry=$retry', (
+        tester,
+      ) async {
+        final store = _ClickModeStore();
+        settings = SettingsRepository(store: store);
+        var haltCalls = 0;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => haltCalls++,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final tempo = context.read<TempoCubit>();
+        final power = context.read<PowerCubit>();
+        store.refuseWrite = true;
+        unawaited(tempo.setClickMode(ClickMode.playRec));
+        await tester.pumpAndSettle();
+        expect(tempo.state.clickMode, ClickMode.recFirst);
+        expect(tempo.state.clickModeSnapshot, isNull);
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.saveFailed);
+        expect(haltCalls, 0);
+        expect(debugAppToastActive(AppToastId.clickModeSettings), isFalse);
+        store.refuseWrite = false;
+        await tester.tap(
+          find.byKey(Key(retry ? 'power_retry' : 'power_stay_on')),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(haltCalls, retry ? 1 : 0);
+        if (!retry) {
+          expect(find.text('Hear click needs attention'), findsOneWidget);
+          expect(tempo.state.clickModeSnapshot, isNull);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(find.text('Hear click needs attention'), findsNothing);
+        }
+        expect(store.values.containsKey('tempo.click_mode'), isFalse);
+        expect(
+          context.read<TempoSettings>().clickModeOwner.durable,
+          ClickMode.recFirst,
+        );
+      });
+    }
+
+    // Decay, Fade, the backing mix and click pan have no native receipt, and
+    // the instruments apply through their repository (no owed value), so
+    // nothing can owe a value a restart lands.
+    for (final key in OwnedSetting.values.where(
+      (key) => !const {
+        OwnedSetting.decay,
+        OwnedSetting.fade,
+        OwnedSetting.backingMix,
+        OwnedSetting.clickPan,
+        OwnedSetting.instruments,
+      }.contains(key),
+    )) {
+      testWidgets(
+        'a restart that lands the owed value clears its recovery notice; '
+        '${key.name}',
+        (tester) async {
+          settings = SettingsRepository(store: FakeKeyValueStore());
+          await pumpApp(tester, NoopWaveformWindowService());
+          repository.startEngine(const EngineConfig());
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.pumpAndSettle();
+          final tempo = tester
+              .element(find.byType(TracksView))
+              .read<TempoSettings>();
+          final playback = tester
+              .element(find.byType(TracksView))
+              .read<PlaybackSettings>();
+          final record = tester
+              .element(find.byType(TracksView))
+              .read<RecordSettings>();
+          final timing = tester
+              .element(find.byType(TracksView))
+              .read<RecordTimingSettings>();
+          final (toast, owner) = switch (key) {
+            OwnedSetting.clickVolume => (
+              AppToastId.clickSettings,
+              tempo.clickVolumeOwner,
+            ),
+            OwnedSetting.hearClick => (
+              AppToastId.clickModeSettings,
+              tempo.clickModeOwner,
+            ),
+            OwnedSetting.recordStart => (
+              AppToastId.recordStartSettings,
+              tempo.recordStartOwner,
+            ),
+            OwnedSetting.oneShot => (
+              AppToastId.oneShotSettings,
+              playback.oneShotOwner,
+            ),
+            OwnedSetting.recordLength => (
+              AppToastId.recordLengthSettings,
+              record.owner,
+            ),
+            OwnedSetting.recordTiming => (
+              AppToastId.recordTimingSettings,
+              timing.owner,
+            ),
+            OwnedSetting.followTempo => (
+              AppToastId.followTempoSettings,
+              playback.followTempoOwner,
+            ),
+            OwnedSetting.pitchMode => (
+              AppToastId.pitchModeSettings,
+              playback.pitchModeOwner,
+            ),
+            OwnedSetting.decay ||
+            OwnedSetting.fade ||
+            OwnedSetting.backingMix ||
+            OwnedSetting.clickPan ||
+            OwnedSetting.instruments => throw StateError('No receipt'),
+          };
+          engine
+            ..publishClickCommands = key != OwnedSetting.clickVolume
+            ..publishClickModeCommands = key != OwnedSetting.hearClick
+            ..publishRecordStartCommands = key != OwnedSetting.recordStart
+            // The Audio & tempo vectors settle on request results (#1179).
+            ..settingResult =
+                key == OwnedSetting.followTempo || key == OwnedSetting.pitchMode
+                ? EngineResult.invalid
+                : EngineResult.ok
+            ..commandsAreSettled = false;
+          unawaited(switch (key) {
+            OwnedSetting.clickVolume => tempo.clickVolumeOwner.set(1.5),
+            OwnedSetting.hearClick => tempo.clickModeOwner.set(
+              ClickMode.playRec,
+            ),
+            OwnedSetting.recordStart => tempo.recordStartControl.setCountInBars(
+              2,
+            ),
+            OwnedSetting.oneShot => playback.oneShotControl.setTrackOneShot(
+              channel: 2,
+              oneShot: true,
+            ),
+            OwnedSetting.recordLength => record.setDefaultLengthBars(4),
+            OwnedSetting.recordTiming => timing.setTiming(RecordTiming.quarter),
+            OwnedSetting.followTempo => playback.followTempoOwner.update(
+              (live) => live.withValue(const AudioTempoAddress.track(2), false),
+              address: const AudioTempoAddress.track(2),
+            ),
+            OwnedSetting.pitchMode => playback.pitchModeOwner.update(
+              (live) => live.withValue(
+                const AudioTempoAddress.track(2),
+                PitchMode.followsSpeed,
+              ),
+              address: const AudioTempoAddress.track(2),
+            ),
+            OwnedSetting.decay ||
+            OwnedSetting.fade ||
+            OwnedSetting.backingMix ||
+            OwnedSetting.clickPan ||
+            OwnedSetting.instruments => throw StateError('No receipt'),
+          });
+          await tester.pump(const Duration(milliseconds: 600));
+          await tester.pump();
+          expect(debugAppToastActive(toast), isTrue);
+          repository.stopEngine();
+          engine
+            ..publishClickCommands = true
+            ..publishClickModeCommands = true
+            ..publishRecordStartCommands = true
+            ..settingResult = EngineResult.ok
+            ..commandsAreSettled = true;
+          repository.startEngine(const EngineConfig());
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.pumpAndSettle();
+          expect(owner.ready, isTrue);
+          expect(debugAppToastActive(toast), isFalse);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(const Duration(milliseconds: 600));
+        },
+      );
+    }
+
+    testWidgets('compensated Hear click refusal permits normal shutdown', (
+      tester,
+    ) async {
+      final rejectingEngine = _RefusingClickModeEngine();
+      engine = rejectingEngine;
+      repository = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      );
+      final store = FakeKeyValueStore();
+      settings = SettingsRepository(store: store);
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      repository.startEngine(const EngineConfig());
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byType(TracksView));
+      final tempo = context.read<TempoCubit>();
+      final power = context.read<PowerCubit>();
+      rejectingEngine.refuseMode = true;
+      bool? accepted;
+      unawaited(
+        context
+            .read<TempoSettings>()
+            .clickModeOwner
+            .set(ClickMode.rec)
+            .then((v) => accepted = v.isOk),
+      );
+      await tester.pumpAndSettle();
+      expect(accepted, isFalse);
+      expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
+      expect(store.values.containsKey('tempo.click_mode'), isFalse);
+      expect(repository.clickModeRecoveryRequired, isFalse);
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerPhase.goodbye);
+      await tester.pump(const Duration(seconds: 6));
+      expect(haltCalls, 1);
+    });
+
+    for (final releasedBeforeShutdown in [false, true]) {
+      testWidgets(
+        'owed click release blocks power off; prior=$releasedBeforeShutdown',
+        (tester) async {
+          final rejectingEngine = _RefusingClickModeEngine();
+          engine = rejectingEngine;
+          repository = LooperRepository(
+            engine: engine,
+            ticker: const Stream<void>.empty(),
+          );
+          final store = FakeKeyValueStore();
+          settings = SettingsRepository(store: store);
+          final midi = _ShutdownMidi(settings);
+          midiDeviceRepository = midi;
+          addTearDown(() => unawaited(midi.dispose()));
+          var haltCalls = 0;
+          await pumpApp(
+            tester,
+            NoopWaveformWindowService(),
+            powerOff: () async => haltCalls++,
+          );
+          repository.startEngine(const EngineConfig());
+          await tester.pumpAndSettle();
+          final context = tester.element(find.byType(TracksView));
+          final control = context.read<ControlCubit>();
+          final tempo = context.read<TempoCubit>();
+          final power = context.read<PowerCubit>();
+          final editor = Object();
+          control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+          MidiSaveResult? saved;
+          final beforeSave = engine.clickModeRequests.length;
+          unawaited(
+            control
+                .saveMidiMapping(
+                  MidiMapping(
+                    id: 'held-click-mode-shutdown',
+                    source: MidiSource(
+                      device: 'shutdown-test',
+                      kind: ControllerSourceKind.midiCc,
+                      number: 21,
+                    ),
+                    behavior: MidiBehavior.momentary,
+                    controls: [
+                      MidiParameterControl(
+                        key: '{"ctl":"clickMode"}',
+                        low: 0,
+                        high: 1,
+                      ),
+                    ],
+                  ),
+                  owner: editor,
+                  create: true,
+                )
+                .then((result) => saved = result),
+          );
+          await tester.pumpAndSettle();
+          expect(saved?.saved, isTrue);
+          expect(engine.clickModeRequests.length, beforeSave);
+          control.endMidiEdit(editor);
+          midi.push(127);
+          await tester.pumpAndSettle();
+          expect(tempo.state.clickModeSnapshot?.mode, ClickMode.playRec);
+          expect(
+            context.read<TempoSettings>().clickModeOwner.durable,
+            ClickMode.off,
+          );
+          rejectingEngine.refuseMode = true;
+          if (releasedBeforeShutdown) {
+            midi.push(0);
+            await tester.pumpAndSettle();
+            expect(debugAppToastActive(AppToastId.clickModeSettings), isTrue);
+            expect(tempo.state.clickMode, ClickMode.playRec);
+          }
+          final stopCalls = engine.stopCalls;
+          power
+            ..press(_named)
+            ..shutDown(_named, save: () async {});
+          await tester.pumpAndSettle();
+          expect(power.state.phase, PowerPhase.saveFailed);
+          expect(haltCalls, 0);
+          expect(engine.stopCalls, stopCalls);
+          expect(tempo.state.clickMode, ClickMode.playRec);
+          expect(store.values['tempo.click_mode'], 0);
+          expect(debugAppToastActive(AppToastId.clickModeSettings), isFalse);
+          expect(
+            find.byKey(const Key('power_retry')).hitTestable(),
+            findsOneWidget,
+          );
+          final commandsBeforeLateInput = engine.clickModeRequests.length;
+          midi.push(127);
+          await tester.pumpAndSettle();
+          expect(engine.clickModeRequests.length, commandsBeforeLateInput);
+          rejectingEngine.refuseMode = false;
+          await tester.tap(find.byKey(const Key('power_retry')));
+          await tester.pumpAndSettle();
+          expect(tempo.state.clickMode, ClickMode.off);
+          expect(power.state.phase, PowerPhase.goodbye);
+          await tester.pump(const Duration(seconds: 6));
+          expect(haltCalls, 1);
+        },
+      );
+    }
+
+    for (final channel in <int?>[null, 7]) {
+      testWidgets('power off waits for ordinary Record timing at $channel', (
+        tester,
+      ) async {
+        final store = _TimingStore();
+        settings = SettingsRepository(store: store);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final timing = context.read<RecordTimingCubit>();
+        final power = context.read<PowerCubit>();
+        store.pendingWrite = Completer<void>();
+        if (channel == null) {
+          unawaited(timing.setTiming(RecordTiming.half));
+        } else {
+          unawaited(
+            timing.setTrackTiming(
+              channel: channel,
+              timing: RecordTiming.eighth,
+            ),
+          );
+        }
+        await tester.pump();
+        expect(store.writeEntered, isTrue);
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(power.state.phase, PowerPhase.saving);
+        expect(halted, isFalse);
+        store.pendingWrite!.complete();
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 3));
+        expect(halted, isTrue);
+        if (channel == null) {
+          expect(store.values['looper.quantize'], true);
+          expect(store.values['tempo.quantize_div'], 2);
+        } else {
+          expect(store.values['track_record_timing.7'], 5);
+        }
+      });
+    }
+
+    for (final retry in [false, true]) {
+      testWidgets('Record timing failure keeps power on; retry=$retry', (
+        tester,
+      ) async {
+        final store = _TimingStore();
+        settings = SettingsRepository(store: store);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final timing = context.read<RecordTimingCubit>();
+        final power = context.read<PowerCubit>();
+        store.refuseWrite = true;
+        unawaited(timing.setTiming(RecordTiming.half));
+        await tester.pumpAndSettle();
+        expect(timing.state.defaultTiming, RecordTiming.immediately);
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.saveFailed);
+        expect(halted, isFalse);
+        store.refuseWrite = false;
+        await tester.tap(
+          find.byKey(
+            Key(retry ? 'power_retry' : 'power_stay_on'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(halted, retry);
+        if (!retry) {
+          // Staying on reopens input, but cannot prove a failed rollback.
+          expect(find.text('Record timing needs recovery'), findsOneWidget);
+          expect(timing.state.recordTimingReady, isFalse);
+          unawaited(timing.setTiming(RecordTiming.half));
+          await tester.pumpAndSettle();
+          expect(timing.state.defaultTiming, RecordTiming.immediately);
+          expect(timing.state.recordTimingReady, isFalse);
+          // Explicit timing recovery restores the exact absent checkpoint.
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(find.text('Record timing needs recovery'), findsNothing);
+        }
+        expect(store.values.containsKey('looper.quantize'), isFalse);
+        expect(store.values.containsKey('tempo.quantize_div'), isFalse);
+        if (!retry) {
+          unawaited(timing.setTiming(RecordTiming.half));
+          await tester.pumpAndSettle();
+          expect(timing.state.defaultTiming, RecordTiming.half);
+          expect(store.values['tempo.quantize_div'], 2);
+        }
+      });
+    }
+
+    for (final channel in <int?>[null, 7]) {
+      testWidgets('power off waits for ordinary Decay at $channel', (
+        tester,
+      ) async {
+        final store = _DecayStore();
+        settings = SettingsRepository(store: store);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final decay = context.read<PlaybackOptionsCubit>();
+        final power = context.read<PowerCubit>();
+        store.pendingWrite = Completer<void>();
+        if (channel == null) {
+          unawaited(decay.setOverdubDecay(65));
+        } else {
+          unawaited(decay.setTrackOverdubDecay(channel: channel, percent: 65));
+        }
+        await tester.pump();
+        expect(store.writeEntered, isTrue);
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(power.state.phase, PowerPhase.saving);
+        expect(halted, isFalse);
+        store.pendingWrite!.complete();
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 3));
+        expect(halted, isTrue);
+        final key = channel == null
+            ? 'looper.overdub_decay'
+            : 'track_overdub_decay.$channel';
+        expect(store.values[key], 65);
+      });
+    }
+
+    for (final retry in [false, true]) {
+      testWidgets('Decay refusal stays on; recovery choice retry=$retry', (
+        tester,
+      ) async {
+        final store = _DecayStore();
+        settings = SettingsRepository(store: store);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final decay = context.read<PlaybackOptionsCubit>();
+        final power = context.read<PowerCubit>();
+        store.refuseWrite = true;
+        unawaited(decay.setOverdubDecay(80));
+        await tester.pumpAndSettle();
+        expect(decay.state.overdubDecay, 0);
+        expect(debugAppToastActive(AppToastId.decaySettings), isTrue);
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.saveFailed);
+        expect(debugAppToastActive(AppToastId.decaySettings), isFalse);
+        expect(find.text('Segno is staying on'), findsOneWidget);
+        expect(halted, isFalse);
+        store.refuseWrite = false;
+        await tester.tap(
+          find.byKey(Key(retry ? 'power_retry' : 'power_stay_on')),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(halted, retry);
+        if (!retry) {
+          // The owed rollback keeps Decay unavailable until its own Retry.
+          expect(find.text('Decay settings need recovery'), findsOneWidget);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(find.text('Decay settings need recovery'), findsNothing);
+        }
+        expect(store.values.containsKey('looper.overdub_decay'), isFalse);
+        if (!retry) {
+          unawaited(decay.setOverdubDecay(25));
+          await tester.pumpAndSettle();
+          expect(decay.state.overdubDecay, 25);
+          expect(store.values['looper.overdub_decay'], 25);
+        }
+      });
+    }
+
+    for (final decay in [true, false]) {
+      testWidgets('compensated ${decay ? 'Decay' : 'Loop/Once'} refusal '
+          'permits normal shutdown', (tester) async {
+        final decayStore = _DecayStore()..refuseCompensation = false;
+        final onceStore = _OneShotStore()..refuseCompensation = false;
+        settings = SettingsRepository(store: decay ? decayStore : onceStore);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final options = context.read<PlaybackOptionsCubit>();
+        final power = context.read<PowerCubit>();
+        decayStore.refuseWrite = true;
+        onceStore.refuseWrite = true;
+        if (decay) {
+          unawaited(options.setOverdubDecay(80));
+        } else {
+          unawaited(options.setDefaultOneShot(value: true));
+        }
+        await tester.pumpAndSettle();
+        // The write was refused and its rollback landed: nothing is owed.
+        expect(options.state.overdubDecay, 0);
+        expect(options.state.defaultOneShot, isFalse);
+        expect(decayStore.values.containsKey('looper.overdub_decay'), isFalse);
+        expect(
+          onceStore.values.containsKey('looper.default_one_shot'),
+          isFalse,
+        );
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.goodbye);
+        await tester.pump(const Duration(seconds: 6));
+        expect(halted, isTrue);
+      });
+    }
+
+    testWidgets('power off releases held Decay and rejects later MIDI', (
+      tester,
+    ) async {
+      final store = _DecayStore();
+      settings = SettingsRepository(store: store);
+      final midi = _ShutdownMidi(settings);
+      midiDeviceRepository = midi;
+      addTearDown(() => unawaited(midi.dispose()));
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final control = context.read<ControlCubit>();
+      final decay = context.read<PlaybackOptionsCubit>();
+      final power = context.read<PowerCubit>();
+      final editor = Object();
+      control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+      MidiSaveResult? saved;
+      unawaited(
+        control
+            .saveMidiMapping(
+              MidiMapping(
+                id: 'shutdown-decay',
+                source: MidiSource(
+                  device: 'shutdown-test',
+                  kind: ControllerSourceKind.midiCc,
+                  number: 21,
+                ),
+                behavior: MidiBehavior.momentary,
+                controls: [
+                  MidiParameterControl(
+                    key: '{"ctl":"overdubDecay"}',
+                    low: .2,
+                    high: .8,
+                  ),
+                  MidiParameterControl(
+                    key: '{"ctl":"trackOverdubDecay","index":7}',
+                    low: 0,
+                    high: .75,
+                  ),
+                ],
+              ),
+              owner: editor,
+              create: true,
+            )
+            .then((result) => saved = result),
+      );
+      await tester.pumpAndSettle();
+      expect(saved?.saved, isTrue);
+      control.endMidiEdit(editor);
+      midi.push(127);
+      await tester.pumpAndSettle();
+      expect(decay.state.overdubDecay, 80);
+      expect(decay.state.trackOverdubDecayOverrides, {7: 75});
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerPhase.goodbye);
+      expect(decay.state.overdubDecay, 20);
+      expect(decay.state.trackOverdubDecayOverrides, {7: 0});
+      expect(store.values['looper.overdub_decay'], 20);
+      expect(store.values['track_overdub_decay.7'], 0);
+      store.writeEntered = false;
+      midi.push(127);
+      await tester.pump();
+      expect(store.writeEntered, isFalse);
+      expect(decay.state.overdubDecay, 20);
+      expect(decay.state.trackOverdubDecayOverrides, {7: 0});
+      await tester.pump(const Duration(seconds: 2));
+      expect(haltCalls, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
+    for (final channel in <int?>[null, 7]) {
+      testWidgets('power off waits for ordinary OneShot at $channel', (
+        tester,
+      ) async {
+        final store = _OneShotStore();
+        settings = SettingsRepository(store: store);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final once = context.read<PlaybackOptionsCubit>();
+        final power = context.read<PowerCubit>();
+        store.pendingWrite = Completer<void>();
+        if (channel == null) {
+          unawaited(once.setDefaultOneShot(value: true));
+        } else {
+          unawaited(once.setTrackOneShot(channel: channel, oneShot: true));
+        }
+        await tester.pump();
+        expect(store.writeEntered, isTrue);
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(power.state.phase, PowerPhase.saving);
+        expect(halted, isFalse);
+        store.pendingWrite!.complete();
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 3));
+        expect(halted, isTrue);
+        final key = channel == null
+            ? 'looper.default_one_shot'
+            : 'track_one_shot.$channel';
+        expect(store.values[key], true);
+      });
+    }
+
+    for (final retry in [false, true]) {
+      testWidgets('OneShot refusal stays on; recovery choice retry=$retry', (
+        tester,
+      ) async {
+        final store = _OneShotStore();
+        settings = SettingsRepository(store: store);
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final once = context.read<PlaybackOptionsCubit>();
+        final power = context.read<PowerCubit>();
+        store.refuseWrite = true;
+        unawaited(once.setDefaultOneShot(value: true));
+        await tester.pumpAndSettle();
+        expect(once.state.defaultOneShot, isFalse);
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.saveFailed);
+        expect(find.text('Segno is staying on'), findsOneWidget);
+        expect(halted, isFalse);
+        store.refuseWrite = false;
+        await tester.tap(
+          find.byKey(Key(retry ? 'power_retry' : 'power_stay_on')),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(halted, retry);
+        if (!retry) {
+          // The owed rollback keeps Loop/Once unavailable until its Retry.
+          expect(find.text('Playback settings need recovery'), findsOneWidget);
+          await tester.tap(find.text('Retry'));
+          await tester.pumpAndSettle();
+          expect(find.text('Playback settings need recovery'), findsNothing);
+        }
+        expect(store.values.containsKey('looper.default_one_shot'), isFalse);
+        if (!retry) {
+          unawaited(once.setDefaultOneShot(value: true));
+          await tester.pumpAndSettle();
+          expect(once.state.defaultOneShot, isTrue);
+          expect(store.values['looper.default_one_shot'], true);
+        }
+      });
+    }
+
+    testWidgets('power off releases held OneShot and rejects later MIDI', (
+      tester,
+    ) async {
+      final store = _OneShotStore();
+      settings = SettingsRepository(store: store);
+      final midi = _ShutdownMidi(settings);
+      midiDeviceRepository = midi;
+      addTearDown(() => unawaited(midi.dispose()));
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final control = context.read<ControlCubit>();
+      final once = context.read<PlaybackOptionsCubit>();
+      final power = context.read<PowerCubit>();
+      final editor = Object();
+      control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+      MidiSaveResult? saved;
+      unawaited(
+        control
+            .saveMidiMapping(
+              MidiMapping(
+                id: 'shutdown-once',
+                source: MidiSource(
+                  device: 'shutdown-test',
+                  kind: ControllerSourceKind.midiCc,
+                  number: 21,
+                ),
+                behavior: MidiBehavior.momentary,
+                controls: [
+                  MidiParameterControl(
+                    key: '{"ctl":"defaultOneShot"}',
+                    low: 0,
+                    high: 1,
+                  ),
+                  MidiParameterControl(
+                    key: '{"ctl":"trackOneShot","index":7}',
+                    low: 0,
+                    high: 1,
+                  ),
+                ],
+              ),
+              owner: editor,
+              create: true,
+            )
+            .then((result) => saved = result),
+      );
+      await tester.pumpAndSettle();
+      expect(saved?.saved, isTrue);
+      control.endMidiEdit(editor);
+      midi.push(127);
+      await tester.pumpAndSettle();
+      expect(once.state.defaultOneShot, isTrue);
+      expect(once.state.trackOneShotOverrides, {7: true});
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerPhase.goodbye);
+      expect(once.state.defaultOneShot, isFalse);
+      expect(once.state.trackOneShotOverrides, {7: false});
+      expect(store.values['looper.default_one_shot'], false);
+      expect(store.values['track_one_shot.7'], false);
+      store.writeEntered = false;
+      midi.push(127);
+      await tester.pump();
+      expect(store.writeEntered, isFalse);
+      expect(once.state.defaultOneShot, isFalse);
+      expect(once.state.trackOneShotOverrides, {7: false});
+      await tester.pump(const Duration(seconds: 2));
+      expect(haltCalls, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
+    for (final channel in <int?>[null, 7]) {
+      testWidgets('power off waits for ordinary Record length at $channel', (
+        tester,
+      ) async {
+        final store = _LengthStore();
+        settings = SettingsRepository(store: store);
+        store.values['looper.mode'] = LooperMode.free.code;
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final length = context.read<RecordOptionsCubit>();
+        final power = context.read<PowerCubit>();
+        store.pendingWrite = Completer<void>();
+        if (channel == null) {
+          unawaited(length.setDefaultLengthBars(4));
+        } else {
+          unawaited(length.setTrackRecordLength(channel: channel, bars: 4));
+        }
+        await tester.pump();
+        expect(store.writeEntered, isTrue);
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(power.state.phase, PowerPhase.saving);
+        expect(halted, isFalse);
+        store.pendingWrite!.complete();
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 3));
+        expect(halted, isTrue);
+        final key = channel == null
+            ? 'looper.default_length_bars'
+            : 'tempo.length_preset.$channel';
+        expect(store.values[key], 4);
+      });
+    }
+
+    for (final retry in [false, true]) {
+      testWidgets(
+        'Record length refusal stays on; recovery choice retry=$retry',
+        (
+          tester,
+        ) async {
+          final store = _LengthStore();
+          settings = SettingsRepository(store: store);
+          store.values['looper.mode'] = LooperMode.free.code;
+          var halted = false;
+          await pumpApp(
+            tester,
+            NoopWaveformWindowService(),
+            powerOff: () async => halted = true,
+          );
+          final context = tester.element(find.byType(TracksView));
+          final length = context.read<RecordOptionsCubit>();
+          final power = context.read<PowerCubit>();
+          store.refuseWrite = true;
+          unawaited(length.setDefaultLengthBars(4));
+          await tester.pumpAndSettle();
+          expect(length.state.options.defaultLengthBars, 0);
+          power
+            ..press(_named)
+            ..shutDown(_named, save: () async {});
+          await tester.pumpAndSettle();
+          expect(power.state.phase, PowerPhase.saveFailed);
+          expect(find.text('Segno is staying on'), findsOneWidget);
+          expect(halted, isFalse);
+          store.refuseWrite = false;
+          await tester.tap(
+            find.byKey(
+              Key(retry ? 'power_retry' : 'power_stay_on'),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.pump(const Duration(seconds: 6));
+          expect(halted, retry);
+          if (!retry) {
+            // The owed rollback keeps Record length unavailable until Retry.
+            expect(find.text('Record length needs recovery'), findsOneWidget);
+            await tester.tap(find.text('Retry'));
+            await tester.pumpAndSettle();
+            expect(find.text('Record length needs recovery'), findsNothing);
+          }
+          expect(
+            store.values.containsKey('looper.default_length_bars'),
+            isFalse,
+          );
+          if (!retry) {
+            unawaited(length.setDefaultLengthBars(4));
+            await tester.pumpAndSettle();
+            expect(length.state.options.defaultLengthBars, 4);
+            expect(store.values['looper.default_length_bars'], 4);
+          }
+        },
+      );
+    }
+
+    testWidgets('compensated Record length refusal permits normal shutdown', (
+      tester,
+    ) async {
+      final store = _LengthStore()..refuseCompensation = false;
+      settings = SettingsRepository(store: store);
+      var halted = false;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => halted = true,
+      );
+      final context = tester.element(find.byType(TracksView));
+      final length = context.read<RecordOptionsCubit>();
+      final power = context.read<PowerCubit>();
+      store.refuseWrite = true;
+      unawaited(length.setDefaultLengthBars(4));
+      await tester.pumpAndSettle();
+      // The write was refused and its rollback landed: nothing is owed.
+      expect(length.state.options.defaultLengthBars, 0);
+      expect(store.values.containsKey('looper.default_length_bars'), isFalse);
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerPhase.goodbye);
+      await tester.pump(const Duration(seconds: 6));
+      expect(halted, isTrue);
+    });
+
+    testWidgets('compensated timing refusal does not block power off', (
+      tester,
+    ) async {
+      final rejectingEngine = _RefusingTimingEngine();
+      engine = rejectingEngine;
+      repository = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      );
+      final store = FakeKeyValueStore();
+      settings = SettingsRepository(store: store);
+      var haltCalls = 0;
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        powerOff: () async => haltCalls++,
+      );
+      repository.startEngine(const EngineConfig());
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byType(TracksView));
+      final timing = context.read<RecordTimingCubit>();
+      final power = context.read<PowerCubit>();
+      rejectingEngine.refuseTiming = true;
+      bool? accepted;
+      unawaited(
+        context
+            .read<RecordTimingSettings>()
+            .setTiming(RecordTiming.quarter)
+            .then((v) => accepted = v.isOk),
+      );
+      await tester.pumpAndSettle();
+      expect(accepted, isFalse);
+      expect(timing.state.defaultTiming, RecordTiming.immediately);
+      expect(timing.state.recordTimingReady, isTrue);
+      expect(store.values.containsKey('looper.quantize'), isFalse);
+      expect(store.values.containsKey('tempo.quantize_div'), isFalse);
+      expect(repository.recordTimingRecoveryRequired, isFalse);
+      power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
+      await tester.pumpAndSettle();
+      expect(power.state.phase, PowerPhase.goodbye);
+      expect(find.byKey(const Key('power_retry')), findsNothing);
+      // Let both the goodbye and the earlier refusal toast finish.
+      await tester.pump(const Duration(seconds: 6));
+      expect(haltCalls, 1);
+    });
+
+    for (final releasedBeforeShutdown in [false, true]) {
+      testWidgets(
+        'power off waits for an owed timing release; '
+        'releasedBeforeShutdown=$releasedBeforeShutdown',
+        (tester) async {
+          final rejectingEngine = _RefusingTimingEngine();
+          engine = rejectingEngine;
+          repository = LooperRepository(
+            engine: engine,
+            ticker: const Stream<void>.empty(),
+          );
+          final store = FakeKeyValueStore();
+          settings = SettingsRepository(store: store);
+          final midi = _ShutdownMidi(settings);
+          midiDeviceRepository = midi;
+          addTearDown(() => unawaited(midi.dispose()));
+          var haltCalls = 0;
+          await pumpApp(
+            tester,
+            NoopWaveformWindowService(),
+            powerOff: () async => haltCalls++,
+          );
+          repository.startEngine(const EngineConfig());
+          await tester.pumpAndSettle();
+          final context = tester.element(find.byType(TracksView));
+          final control = context.read<ControlCubit>();
+          final timing = context.read<RecordTimingCubit>();
+          final power = context.read<PowerCubit>();
+          final editor = Object();
+          control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+          MidiSaveResult? saved;
+          unawaited(
+            control
+                .saveMidiMapping(
+                  MidiMapping(
+                    id: 'held-timing-shutdown',
+                    source: MidiSource(
+                      device: 'shutdown-test',
+                      kind: ControllerSourceKind.midiCc,
+                      number: 21,
+                    ),
+                    behavior: MidiBehavior.momentary,
+                    controls: [
+                      MidiParameterControl(
+                        key: '{"ctl":"trackRecordTiming","index":0}',
+                        low: 0,
+                        high: 1,
+                      ),
+                    ],
+                  ),
+                  owner: editor,
+                  create: true,
+                )
+                .then((result) => saved = result),
+          );
+          await tester.pumpAndSettle();
+          expect(saved?.saved, isTrue);
+          control.endMidiEdit(editor);
+          midi.push(127);
+          await tester.pumpAndSettle();
+          expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
+          expect(
+            context
+                .read<RecordTimingSettings>()
+                .durableRecordTimingSnapshot
+                .trackOverrides[0],
+            RecordTiming.immediately,
+          );
+          rejectingEngine.refuseTiming = true;
+          if (releasedBeforeShutdown) {
+            midi.push(0);
+            await tester.pumpAndSettle();
+            expect(
+              debugAppToastActive(AppToastId.recordTimingSettings),
+              isTrue,
+            );
+            expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
+          }
+          final stopCalls = engine.stopCalls;
+          power
+            ..press(_named)
+            ..shutDown(_named, save: () async {});
+          await tester.pumpAndSettle();
+          expect(power.state.phase, PowerPhase.saveFailed);
+          expect(find.byKey(const Key('power_retry')), findsOneWidget);
+          expect(haltCalls, 0);
+          expect(engine.stopCalls, stopCalls);
+          expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
+          expect(store.values['track_record_timing.0'], 0);
+          expect(debugAppToastActive(AppToastId.recordTimingSettings), isFalse);
+          expect(
+            find.byKey(const Key('power_retry')).hitTestable(),
+            findsOneWidget,
+          );
+
+          rejectingEngine.refuseTiming = false;
+          await tester.tap(find.byKey(const Key('power_retry')));
+          await tester.pumpAndSettle();
+          expect(timing.state.trackOverrides[0], RecordTiming.immediately);
+          expect(power.state.phase, PowerPhase.goodbye);
+          await tester.pump(const Duration(seconds: 6));
+          expect(haltCalls, 1);
+        },
+      );
+    }
+
+    testWidgets(
+      'Record timing held memory survives capture and safe power key',
+      (tester) async {
+        final ticker = StreamController<void>.broadcast();
+        repository = LooperRepository(engine: engine, ticker: ticker.stream);
+        addTearDown(repository.dispose);
+        addTearDown(() => unawaited(ticker.close()));
+        final store = _TimingStore();
+        store.values['tempo.quantize_div'] = 3;
+        settings = SettingsRepository(store: store);
+        final midi = _ShutdownMidi(settings);
+        midiDeviceRepository = midi;
+        addTearDown(() => unawaited(midi.dispose()));
+        final key = _PowerKey();
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerKeySource: key,
+          powerOff: () async => halted = true,
+        );
+        repository.startEngine(const EngineConfig());
+        ticker.add(null);
+        await tester.pumpAndSettle();
+        final context = tester.element(find.byType(TracksView));
+        final control = context.read<ControlCubit>();
+        final timing = context.read<RecordTimingCubit>();
+        final power = context.read<PowerCubit>();
+        final editor = Object();
+        control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+        MidiSaveResult? saved;
+        unawaited(
+          control
+              .saveMidiMapping(
+                MidiMapping(
+                  id: 'capture-timing',
+                  source: MidiSource(
+                    device: 'shutdown-test',
+                    kind: ControllerSourceKind.midiCc,
+                    number: 21,
+                  ),
+                  behavior: MidiBehavior.momentary,
+                  controls: [
+                    MidiParameterControl(
+                      key: '{"ctl":"defaultRecordTiming"}',
+                      low: 0,
+                      high: 1,
+                    ),
+                  ],
+                ),
+                owner: editor,
+                create: true,
+              )
+              .then((result) => saved = result),
+        );
+        await tester.pumpAndSettle();
+        expect(saved?.saved, isTrue);
+        control.endMidiEdit(editor);
+        midi.push(127);
+        await tester.pumpAndSettle();
+        expect(timing.state.defaultTiming, RecordTiming.sixteenth);
+        expect(
+          context
+              .read<RecordTimingSettings>()
+              .durableRecordTimingSnapshot
+              .defaultTiming,
+          RecordTiming.immediately,
+        );
+        expect(
+          context
+              .read<RecordTimingSettings>()
+              .durableRecordTimingSnapshot
+              .rememberedDivision,
+          GridDivision.quarter,
+        );
+
+        // Only the engine seam is simulated. The live repository, owner,
+        // controller, Bloc, power-key host, gate and dialog are production.
+        engine.nextSnapshot = engine.snapshot().copyWith(
+          looperMode: LooperMode.multi,
+          tracks: [
+            const le.TrackSnapshot(
+              state: le.TrackState.recording,
+              volume: 1,
+              muted: false,
+              lengthFrames: 1000,
+              undoDepth: 0,
+              rms: 0,
+              peak: 0,
+            ),
+            for (var i = 1; i < 8; i++) const le.TrackSnapshot.empty(),
+          ],
+        );
+        ticker.add(null);
+        await tester.pumpAndSettle();
+        expect(timing.state.captureLocked, isTrue);
+        midi.push(0);
+        await tester.pumpAndSettle();
+        expect(timing.state.defaultTiming, RecordTiming.sixteenth);
+        expect(
+          context
+              .read<RecordTimingSettings>()
+              .durableRecordTimingSnapshot
+              .defaultTiming,
+          RecordTiming.immediately,
+        );
+        expect(
+          context
+              .read<RecordTimingSettings>()
+              .durableRecordTimingSnapshot
+              .rememberedDivision,
+          GridDivision.quarter,
+        );
+        final stopCalls = engine.stopCalls;
+        key.press();
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.refuse);
+        expect(find.byKey(const Key('power_keep_playing')), findsOneWidget);
+        expect(halted, isFalse);
+        expect(engine.stopCalls, stopCalls);
+        expect(repository.state.tracks.first.isCapturing, isTrue);
+        await tester.tap(find.byKey(const Key('power_keep_playing')));
+        await tester.pumpAndSettle();
+
+        // The player ends capture; the owed release can now retire safely.
+        engine.nextSnapshot = engine.snapshot().copyWith(
+          tracks: [for (var i = 0; i < 8; i++) const le.TrackSnapshot.empty()],
+        );
+        ticker.add(null);
+        await tester.pumpAndSettle();
+        expect(timing.state.defaultTiming, RecordTiming.immediately);
+        expect(timing.state.rememberedDivision, GridDivision.quarter);
+        expect(engine.stopCalls, stopCalls);
+        key.press();
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.options);
+        expect(find.byKey(const Key('power_shut_down')), findsOneWidget);
+        expect(halted, isFalse);
+        power.shutDown(_named, save: () async {});
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 3));
+        expect(halted, isTrue);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      },
+    );
+
+    testWidgets(
+      'Record length release during capture keeps actual power key safe',
+      (tester) async {
+        final ticker = StreamController<void>.broadcast();
+        repository = LooperRepository(engine: engine, ticker: ticker.stream);
+        addTearDown(repository.dispose);
+        addTearDown(() => unawaited(ticker.close()));
+        final store = _LengthStore();
+        store.values['looper.mode'] = LooperMode.free.code;
+        settings = SettingsRepository(store: store);
+        final midi = _ShutdownMidi(settings);
+        midiDeviceRepository = midi;
+        addTearDown(() => unawaited(midi.dispose()));
+        final key = _PowerKey();
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerKeySource: key,
+          powerOff: () async => halted = true,
+        );
+        repository.startEngine(const EngineConfig());
+        ticker.add(null);
+        await tester.pumpAndSettle();
+        final context = tester.element(find.byType(TracksView));
+        final control = context.read<ControlCubit>();
+        final length = context.read<RecordOptionsCubit>();
+        final power = context.read<PowerCubit>();
+        final editor = Object();
+        control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+        MidiSaveResult? saved;
+        unawaited(
+          control
+              .saveMidiMapping(
+                MidiMapping(
+                  id: 'capture-length',
+                  source: MidiSource(
+                    device: 'shutdown-test',
+                    kind: ControllerSourceKind.midiCc,
+                    number: 21,
+                  ),
+                  behavior: MidiBehavior.momentary,
+                  controls: [
+                    MidiParameterControl(
+                      key: '{"ctl":"defaultRecordLength"}',
+                      low: 0,
+                      high: 4 / 64,
+                    ),
+                  ],
+                ),
+                owner: editor,
+                create: true,
+              )
+              .then((result) => saved = result),
+        );
+        await tester.pumpAndSettle();
+        expect(saved?.saved, isTrue);
+        control.endMidiEdit(editor);
+        midi.push(127);
+        await tester.pumpAndSettle();
+        expect(length.state.options.defaultLengthBars, 4);
+        expect(
+          context
+              .read<RecordSettings>()
+              .durableRecordLengthSnapshot
+              .defaultBars,
+          0,
+        );
+
+        // Only the engine seam is simulated. The live repository, owner,
+        // controller, Bloc, power-key host, gate and dialog are production.
+        engine.nextSnapshot = engine.snapshot().copyWith(
+          looperMode: LooperMode.free,
+          tracks: [
+            const le.TrackSnapshot(
+              state: le.TrackState.recording,
+              volume: 1,
+              muted: false,
+              lengthFrames: 1000,
+              undoDepth: 0,
+              rms: 0,
+              peak: 0,
+              lengthPresetBars: 4,
+            ),
+            for (var i = 1; i < 8; i++) const le.TrackSnapshot.empty(),
+          ],
+        );
+        ticker.add(null);
+        await tester.pumpAndSettle();
+        expect(length.state.options.recordLengthCaptureLocked, isTrue);
+        midi.push(0);
+        await tester.pumpAndSettle();
+        expect(length.state.options.defaultLengthBars, 4);
+        expect(
+          context
+              .read<RecordSettings>()
+              .durableRecordLengthSnapshot
+              .defaultBars,
+          0,
+        );
+        final stopCalls = engine.stopCalls;
+        key.press();
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.refuse);
+        expect(find.byKey(const Key('power_keep_playing')), findsOneWidget);
+        expect(halted, isFalse);
+        expect(engine.stopCalls, stopCalls);
+        expect(repository.state.tracks.first.isCapturing, isTrue);
+        await tester.tap(find.byKey(const Key('power_keep_playing')));
+        await tester.pumpAndSettle();
+
+        // The player ends capture; the owed release can now retire safely.
+        engine.nextSnapshot = engine.snapshot().copyWith(
+          tracks: [for (var i = 0; i < 8; i++) const le.TrackSnapshot.empty()],
+        );
+        ticker.add(null);
+        await tester.pumpAndSettle();
+        expect(length.state.options.defaultLengthBars, 0);
+        expect(engine.stopCalls, stopCalls);
+        key.press();
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.options);
+        expect(find.byKey(const Key('power_shut_down')), findsOneWidget);
+        expect(halted, isFalse);
+        power.shutDown(_named, save: () async {});
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 3));
+        expect(halted, isTrue);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      },
+    );
+
+    testWidgets(
+      'power off releases held Record length and rejects later MIDI',
+      (
+        tester,
+      ) async {
+        final store = _LengthStore();
+        settings = SettingsRepository(store: store);
+        store.values['looper.mode'] = LooperMode.free.code;
+        final midi = _ShutdownMidi(settings);
+        midiDeviceRepository = midi;
+        addTearDown(() => unawaited(midi.dispose()));
+        var haltCalls = 0;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => haltCalls++,
+        );
+        final context = tester.element(find.byType(TracksView));
+        final control = context.read<ControlCubit>();
+        final length = context.read<RecordOptionsCubit>();
+        final power = context.read<PowerCubit>();
+        final editor = Object();
+        control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+        MidiSaveResult? saved;
+        unawaited(
+          control
+              .saveMidiMapping(
+                MidiMapping(
+                  id: 'shutdown-length',
+                  source: MidiSource(
+                    device: 'shutdown-test',
+                    kind: ControllerSourceKind.midiCc,
+                    number: 21,
+                  ),
+                  behavior: MidiBehavior.momentary,
+                  controls: [
+                    MidiParameterControl(
+                      key: '{"ctl":"defaultRecordLength"}',
+                      low: 0,
+                      high: 4 / 64,
+                    ),
+                    MidiParameterControl(
+                      key: '{"ctl":"trackRecordLength","index":7}',
+                      low: 0,
+                      high: 4 / 64,
+                    ),
+                  ],
+                ),
+                owner: editor,
+                create: true,
+              )
+              .then((result) => saved = result),
+        );
+        await tester.pumpAndSettle();
+        expect(saved?.saved, isTrue);
+        control.endMidiEdit(editor);
+        midi.push(127);
+        await tester.pumpAndSettle();
+        expect(length.state.options.defaultLengthBars, 4);
+        expect(length.state.options.trackLengthPresetOverrides, {7: 4});
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.goodbye);
+        expect(length.state.options.defaultLengthBars, 0);
+        expect(length.state.options.trackLengthPresetOverrides, {7: 0});
+        expect(store.values['looper.default_length_bars'], 0);
+        expect(store.values['tempo.length_preset.7'], 0);
+        store.writeEntered = false;
+        midi.push(127);
+        await tester.pump();
+        expect(store.writeEntered, isFalse);
+        expect(length.state.options.defaultLengthBars, 0);
+        expect(length.state.options.trackLengthPresetOverrides, {7: 0});
+        await tester.pump(const Duration(seconds: 2));
+        expect(haltCalls, 1);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      },
+    );
+
+    for (final redo in [false, true]) {
+      testWidgets('explains a refused ${redo ? 'redo' : 'undo'} without '
+          'leaving Tracks', (tester) async {
+        await pumpApp(tester, NoopWaveformWindowService());
+        engine.nextHistoryModeGate = EngineResult.modeMismatch;
+        final result = redo ? repository.redo() : repository.undo();
+        expect(result, EngineResult.modeMismatch);
+        await tester.pumpAndSettle();
+        expect(find.text('Loop does not fit this mode'), findsOneWidget);
+        expect(
+          find.text(
+            'Choose Free in Loop settings, then try '
+            '${redo ? 'Redo' : 'Undo'} again. Your session is unchanged.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.byType(TracksView), findsOneWidget);
+        expect(engine.historyModeGateCalls.last, (channels: 1, redo: redo));
+        // The message can be dismissed; it does not force a mode change.
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const Key(AppToastId.recoveryRefused)),
+            matching: find.byType(IconButton),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Loop does not fit this mode'), findsNothing);
+        expect(repository.settledLooperMode, LooperMode.multi);
+      });
+    }
+
+    testWidgets('a pending edit asks for a retry, not a different mode', (
+      tester,
+    ) async {
+      await pumpApp(tester, NoopWaveformWindowService());
+      engine.nextHistoryModeGate = EngineResult.notReady;
+      expect(repository.redo(), EngineResult.notReady);
+      await tester.pumpAndSettle();
+      expect(find.text('Recovery is not ready yet'), findsOneWidget);
+      expect(
+        find.text(
+          'Let the current change finish, then try again. '
+          'Your session is unchanged.',
+        ),
+        findsOneWidget,
+      );
+      // A different refusal replaces the message instead of stacking it.
+      engine.nextHistoryModeGate = EngineResult.modeMismatch;
+      repository.undo();
+      await tester.pumpAndSettle();
+      expect(find.text('Recovery is not ready yet'), findsNothing);
+      expect(find.text('Loop does not fit this mode'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 11));
+      await tester.pumpAndSettle();
+      expect(find.text('Loop does not fit this mode'), findsNothing);
+    });
 
     testWidgets('shows the startup update toast when a build is available', (
       tester,
@@ -293,7 +3594,7 @@ void main() {
     );
 
     testWidgets(
-      'Update on the toast opens Settings on the Updates tab',
+      'Update on the toast opens the Updates page',
       (
         tester,
       ) async {
@@ -303,16 +3604,11 @@ void main() {
         );
         await tester.tap(find.byKey(const Key('app_update_banner_update')));
         await tester.pumpAndSettle();
-        expect(find.byType(SettingsPage), findsOneWidget);
-        expect(find.byType(UpdatesSettingsSection), findsOneWidget);
-        expect(
-          find.byKey(const Key('settings_tab_updates')),
-          findsOneWidget,
-        );
+        expect(find.byType(UpdatesSettingsPage), findsOneWidget);
         expect(find.byKey(const Key('app_update_banner')), findsNothing);
-        // Pop so the navigator re-entrancy guard (`_settingsOpen`) clears for
-        // later tests in this file that also open Settings.
-        await tester.tap(find.byKey(const Key('settings_close_button')));
+        // Pop so the navigator's open-route guard clears for later tests in
+        // this file that also open Settings.
+        await tester.tap(find.byKey(const Key('loop_settings_back')));
         await tester.pumpAndSettle();
       },
       // Toast, not a widget. These notifications moved to toastification,
@@ -332,18 +3628,16 @@ void main() {
           tester,
           UpdateRepository(backend: backend),
         );
-        // NOT awaited: openSegnoSettings awaits navigator.push, which resolves
-        // only when the route is POPPED. Awaiting it here deadlocks the test on
-        // its own first statement — settings is not closed until the end — and
-        // it does not fail fast: it spins until the harness gives up minutes
-        // later, poisoning the rest of the file.
-        unawaited(openSegnoSettings(section: SettingsSection.updates));
+        // NOT awaited: openUpdateSettings awaits navigator.push, which
+        // resolves only when the route is POPPED. Awaiting it here deadlocks
+        // the test on its own first statement.
+        unawaited(openUpdateSettings());
         await tester.pumpAndSettle();
         backend.complete();
         await tester.pumpAndSettle();
-        expect(find.byType(UpdatesSettingsSection), findsOneWidget);
+        expect(find.byType(UpdatesSettingsPage), findsOneWidget);
         expect(find.byKey(const Key('app_update_banner')), findsNothing);
-        await tester.tap(find.byKey(const Key('settings_close_button')));
+        await tester.tap(find.byKey(const Key('loop_settings_back')));
         await tester.pumpAndSettle();
       },
       // Toast, not a widget. These notifications moved to toastification,
@@ -370,6 +3664,8 @@ void main() {
       tester,
     ) async {
       App buildApp() => App(
+        guards: GuardRegistry(),
+        mixSettings: testMixSettings(repository, settings: settings),
         repository: repository,
         controllerRepository: controllerRepository,
         midiDeviceRepository: midiDeviceRepository,
@@ -377,7 +3673,7 @@ void main() {
         waveformWindow: NoopWaveformWindowService(),
         sessionRepository: sessionRepository,
         performanceRepository: performanceRepository,
-        exportDirectory: () async => '.',
+        backingRepository: testBackingRepository(),
       );
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
@@ -394,50 +3690,56 @@ void main() {
       expect(identical(first, second), isTrue);
     });
 
-    testWidgets('provides pedal events to the Sessions manager', (
-      tester,
-    ) async {
-      final sessionsRoot = Directory.systemTemp.createTempSync(
-        'segno-app-sessions-',
-      );
-      addTearDown(() => sessionsRoot.delete(recursive: true));
-      sessionRepository = SessionRepository(
-        engine: FakeAudioEngine(),
-        sessionsRoot: () async => sessionsRoot.path,
-      );
-      final link = FakePedalLink();
-      final pedal = PedalRepository(link);
-      link.hello();
-      await tester.pumpWidget(
-        App(
-          repository: repository,
-          controllerRepository: controllerRepository,
-          midiDeviceRepository: midiDeviceRepository,
-          settings: settings,
-          waveformWindow: NoopWaveformWindowService(),
-          sessionRepository: sessionRepository,
-          performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
-          pedalRepository: pedal,
-        ),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+    testWidgets(
+      'the stage Library mark opens the Library, and a footswitch returns',
+      (
+        tester,
+      ) async {
+        final sessionsRoot = Directory.systemTemp.createTempSync(
+          'segno-app-sessions-',
+        );
+        addTearDown(() => sessionsRoot.delete(recursive: true));
+        sessionRepository = SessionRepository(
+          guards: GuardRegistry(),
+          engine: FakeAudioEngine(),
+          sessionsRoot: () async => sessionsRoot.path,
+        );
+        final link = FakePedalLink();
+        final pedal = PedalRepository(link);
+        link.hello();
+        await tester.pumpWidget(
+          App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midiDeviceRepository,
+            settings: settings,
+            waveformWindow: NoopWaveformWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
+            pedalRepository: pedal,
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
 
-      await tester.tap(find.byKey(const Key('stage_session_block')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('stage_library')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.byKey(const Key('library_page')), findsOneWidget);
 
-      link.press(PedalButton.clear, down: true);
-      await tester.pump();
-      link.press(PedalButton.clear, down: false);
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.byKey(const Key('sessions_manager')), findsNothing);
-      expect(find.byType(LooperPage), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(pedal.helloTimeout);
-    });
+        link.press(PedalButton.clear, down: true);
+        await tester.pump();
+        link.press(PedalButton.clear, down: false);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('library_page')), findsNothing);
+        expect(find.byType(LooperPage), findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      },
+    );
 
     testWidgets('always lands on the looper — no first-run gate', (
       tester,
@@ -446,6 +3748,8 @@ void main() {
       // directly even with no saved audio config.
       await tester.pumpWidget(
         App(
+          guards: GuardRegistry(),
+          mixSettings: testMixSettings(repository, settings: settings),
           repository: repository,
           controllerRepository: controllerRepository,
           midiDeviceRepository: midiDeviceRepository,
@@ -453,7 +3757,7 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
-          exportDirectory: () async => '.',
+          backingRepository: testBackingRepository(),
         ),
       );
       await tester.pumpAndSettle();
@@ -543,8 +3847,8 @@ void main() {
       expect(windowService.isOpen, isFalse);
     });
 
-    testWidgets('right-click opens settings; disabling the waveform window '
-        'closes it', (tester) async {
+    testWidgets('right-click opens Settings; disabling the waveform window '
+        'on Displays closes it', (tester) async {
       final windowService = _RecordingWindowService();
       await pumpApp(tester, windowService);
       expect(windowService.isOpen, isTrue);
@@ -554,37 +3858,172 @@ void main() {
         buttons: kSecondaryButton,
       );
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(find.byType(SettingsHomePage), findsOneWidget);
 
-      // Disable the secondary waveform window; it closes (Tracks is the
-      // only mode now, so the window follows this enable toggle alone).
-      await tester.tap(
-        find.byKey(const Key('settings_waveformWindow_switch')),
-      );
+      // Disable the secondary waveform window from Displays; it closes
+      // (Tracks is the only mode now, so the window follows this toggle).
+      await tester.tap(find.byKey(const Key('settings_tile_displays')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('displays_waveform_switch')));
       await tester.pumpAndSettle();
 
       expect(windowService.isOpen, isFalse);
 
-      // Close the settings page so the global open-guard resets for the next
-      // test (the toggle no longer navigates away on its own).
-      await tester.tap(find.byKey(const Key('settings_close_button')));
+      // Back to the stage, so the open-route guard resets for the next test.
+      await tester.tap(find.byKey(const Key('loop_settings_stage')));
       await tester.pumpAndSettle();
 
       // The layout never swaps — Tracks is the only mode.
       expect(find.byType(TracksView), findsOneWidget);
     });
 
-    testWidgets('the S key opens the settings page', (tester) async {
+    testWidgets('the drive chosen in Save to going says Save to is Internal '
+        'now (#1177)', (tester) async {
+      final usb = FakeUsbStorageClient(
+        initial: [
+          const RemovableVolumeRecord(
+            generation: 1,
+            kname: 'sda1',
+            fingerprint: 'SanDisk_Ultra_4C530001-1A2B-3C4D',
+            label: 'SEGNO USB',
+            fsType: 'exfat',
+            mountPoint: '/run/media/segno/1-SEGNO_USB',
+            sizeBytes: 32000000000,
+            status: RemovableVolumeRecordStatus.mounted,
+            readOnly: false,
+            writeBytesPerSecond: 16777216,
+          ),
+        ],
+      );
+      final storage = StorageRepository(
+        guards: GuardRegistry(),
+        client: usb,
+        exportsRoot: () async => '/segno-app-test/exports',
+        volumeSpace: (_) => null,
+      );
+      addTearDown(() => unawaited(storage.dispose()));
+      await pumpApp(tester, NoopWaveformWindowService(), storage: storage);
+      final destination = tester
+          .element(find.byType(TracksView))
+          .read<RecordingDestinationCubit>();
+      await tester.runAsync(
+        () => destination.choose(const StorageDestination.removable(1)),
+      );
+      await tester.pump();
+      expect(debugAppToastActive(AppToastId.saveToFellBack), isFalse);
+
+      usb.detach(1);
+      await tester.pumpAndSettle();
+
+      expect(debugAppToastActive(AppToastId.saveToFellBack), isTrue);
+      expect(
+        destination.state.destination,
+        const StorageDestination.internal(),
+      );
+      dismissAppToast(AppToastId.saveToFellBack, animate: false);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('an install that started in Mute starts in Record and is '
+        'told once', (tester) async {
+      final store = FakeKeyValueStore();
+      await store.setString('looper.default_mode', 'mute');
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      final control = tester
+          .element(find.byType(TracksView))
+          .read<ControlCubit>();
+      expect(control.state.mode, InteractionMode.record);
+      expect(debugAppToastActive(AppToastId.bootModeRetired), isTrue);
+
+      // The next start has nothing to say.
+      dismissAppToast(AppToastId.bootModeRetired);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      resetAppToastsForTest();
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
+    });
+
+    testWidgets('a fresh install gets Hold · Tuner on Custom pedal 2 and is '
+        'told once where the Tuner is (#1229)', (tester) async {
+      final store = FakeKeyValueStore();
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      final control = tester
+          .element(find.byType(TracksView))
+          .read<ControlCubit>();
+      expect(
+        control.state.pedalSetup.customFor(PedalButton.track2, bank: 0).hold,
+        const ModeAction(InteractionMode.tuner),
+      );
+      expect(debugAppToastActive(AppToastId.tunerSeeded), isTrue);
+      expect(store.values['pedal.tuner_default_seeded'], isTrue);
+
+      dismissAppToast(AppToastId.tunerSeeded);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      resetAppToastsForTest();
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(debugAppToastActive(AppToastId.tunerSeeded), isFalse);
+    });
+
+    testWidgets('an install that started in Record is not told anything', (
+      tester,
+    ) async {
+      final store = FakeKeyValueStore();
+      await store.setString('looper.default_mode', 'record');
+      settings = SettingsRepository(store: store);
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(debugAppToastActive(AppToastId.bootModeRetired), isFalse);
+    });
+
+    testWidgets('an install with paired Bluetooth devices is told once', (
+      tester,
+    ) async {
+      final facts = FakeConsoleFactsClient(
+        latency: Duration.zero,
+        bluetoothPairings: 2,
+      );
+      await pumpApp(tester, NoopWaveformWindowService(), consoleFacts: facts);
+      expect(debugAppToastActive(AppToastId.bluetoothRetired), isTrue);
+      expect(await settings.loadBluetoothRetiredNoticeShown(), isTrue);
+
+      // The next start has nothing to say, though the pairings are still
+      // there for a fallback to the previous system.
+      dismissAppToast(AppToastId.bluetoothRetired);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      resetAppToastsForTest();
+      await pumpApp(tester, NoopWaveformWindowService(), consoleFacts: facts);
+      expect(debugAppToastActive(AppToastId.bluetoothRetired), isFalse);
+    });
+
+    testWidgets('an install with no Bluetooth pairings is told nothing', (
+      tester,
+    ) async {
+      await pumpApp(
+        tester,
+        NoopWaveformWindowService(),
+        consoleFacts: FakeConsoleFactsClient(latency: Duration.zero),
+      );
+      expect(debugAppToastActive(AppToastId.bluetoothRetired), isFalse);
+      expect(await settings.loadBluetoothRetiredNoticeShown(), isFalse);
+    });
+
+    testWidgets('the S key opens Settings', (tester) async {
       await pumpApp(tester, NoopWaveformWindowService());
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(find.byType(SettingsHomePage), findsOneWidget);
 
-      // Close it so the global open-guard resets for the next test.
-      await tester.tap(find.byKey(const Key('settings_close_button')));
+      // Close it so the open-route guard resets for the next test.
+      await tester.tap(find.byKey(const Key('loop_settings_back')));
       await tester.pumpAndSettle();
-      expect(find.byType(SettingsPage), findsNothing);
+      expect(find.byType(SettingsHomePage), findsNothing);
     });
 
     // The successor to the device-lost BANNER tests the toast rewrite
@@ -626,6 +4065,8 @@ void main() {
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(pinned),
             repository: pinned,
             controllerRepository: controllerRepository,
             midiDeviceRepository: midiDeviceRepository,
@@ -633,7 +4074,7 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
+            backingRepository: testBackingRepository(),
           ),
         );
         await tester.pumpAndSettle();
@@ -674,6 +4115,138 @@ void main() {
         // Let the snack's auto-close and removal animations run out so no
         // timer outlives the test.
         await tester.pump(const Duration(seconds: 10));
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 100));
+      },
+    );
+
+    testWidgets(
+      'a reconnect that dropped a track is one warning toast naming it — '
+      'not the restored snack, and never a bar (#1140)',
+      (tester) async {
+        const deviceBanner = Key('connectivity_banner_device');
+        const materialBanner = Key('connectivity_banner_material');
+        le.EngineSnapshot snapshot({required bool devicePresent}) =>
+            le.EngineSnapshot(
+              isRunning: true,
+              sampleRate: 48000,
+              bufferFrames: 128,
+              framesProcessed: 0,
+              xrunCount: 0,
+              inputRms: 0,
+              inputPeak: 0,
+              outputRms: 0,
+              latencyState: le.LatencyState.idle,
+              measuredLatencyMs: -1,
+              devicePresent: devicePresent,
+              // Every track present, so the startup replays (one-shot, length
+              // presets) can confirm against the fake and the supervisor's
+              // admission predicate holds the engine open for a reopen.
+              tracks: List.generate(8, (_) => const le.TrackSnapshot.empty()),
+            );
+        final ticker = StreamController<void>.broadcast();
+        addTearDown(() => unawaited(ticker.close()));
+        final reconnectTicker = StreamController<void>.broadcast();
+        addTearDown(() => unawaited(reconnectTicker.close()));
+        final pinned = LooperRepository(
+          engine: engine,
+          ticker: ticker.stream,
+          reconnectTicker: reconnectTicker.stream,
+        );
+        addTearDown(pinned.dispose);
+        engine.nextSnapshot = snapshot(devicePresent: true);
+        pinned.startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+
+        await tester.pumpWidget(
+          App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(pinned),
+            repository: pinned,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midiDeviceRepository,
+            settings: settings,
+            waveformWindow: NoopWaveformWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        ticker.add(null);
+        await tester.pump();
+
+        // Unplug: the standing banner.
+        engine.nextSnapshot = snapshot(devicePresent: false);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+        expect(find.byKey(deviceBanner), findsOneWidget);
+
+        // The device reappears and the engine reopens, keeping every loop but
+        // track 3's (an edit on it was still pending at the loss).
+        engine
+          ..devices = const [
+            le.AudioDevice(
+              id: 'out-1',
+              name: 'Scarlett 2i2',
+              isDefault: false,
+              isInput: false,
+            ),
+          ]
+          ..reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.retainedPartial,
+            droppedTracks: 1 << 2,
+          );
+        reconnectTicker.add(null);
+        await tester.pump();
+        expect(engine.reopenCalls, 1);
+        expect(pinned.state.status.reopen?.droppedChannels, [2]);
+        engine.nextSnapshot = snapshot(devicePresent: true);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+
+        final audioSetup = tester
+            .element(find.byType(TracksView))
+            .read<AudioSetupCubit>();
+        expect(
+          audioSetup.state.deviceConnectivity,
+          DeviceConnectivity.restoredPartial,
+        );
+        expect(find.byKey(deviceBanner), findsNothing);
+        expect(find.byKey(materialBanner), findsNothing);
+        expect(debugAppToastActive(AppToastId.deviceRestoredPartial), isTrue);
+        expect(debugAppToastActive(AppToastId.deviceRestored), isFalse);
+        // Retire the warning toast before the next episode (its auto-close
+        // runs on the overlay the harness does not render), so a re-raise
+        // below would register anew.
+        dismissAppToast(AppToastId.deviceRestoredPartial, animate: false);
+        await tester.pump(const Duration(seconds: 12));
+        expect(debugAppToastActive(AppToastId.deviceRestoredPartial), isFalse);
+
+        // A later return the backend produces on its own (present 0 then 1,
+        // no reconnect tick, nothing reopened) is a plain restore: the stale
+        // "tracks dropped" toast must not come back, and no bar appears
+        // (#1167).
+        engine.nextSnapshot = snapshot(devicePresent: false);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+        expect(find.byKey(deviceBanner), findsOneWidget);
+        engine.nextSnapshot = snapshot(devicePresent: true);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+        expect(engine.reopenCalls, 1);
+        expect(find.byKey(deviceBanner), findsNothing);
+        expect(find.byKey(materialBanner), findsNothing);
+        expect(debugAppToastActive(AppToastId.deviceRestoredPartial), isFalse);
+        expect(debugAppToastActive(AppToastId.deviceRestored), isTrue);
+
+        await tester.pump(const Duration(seconds: 12));
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 100));
       },
     );
 
@@ -692,6 +4265,9 @@ void main() {
         when(() => source.activity).thenAnswer(
           (_) => const Stream<RawControllerInput>.empty(),
         );
+        when(() => source.messages).thenAnswer(
+          (_) => const Stream<MidiInputMessage>.empty(),
+        );
         when(() => source.open(any())).thenReturn(0);
         when(source.close).thenReturn(0);
 
@@ -700,7 +4276,6 @@ void main() {
           settings: settings,
           pollInterval: Duration.zero,
         );
-        addTearDown(midi.dispose);
         // Pin the controller present before the app builds, so the shell's
         // MidiSetupCubit subscribes to a healthy connection.
         await midi.select('fcb1010');
@@ -708,6 +4283,8 @@ void main() {
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
             midiDeviceRepository: midi,
@@ -715,7 +4292,7 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
+            backingRepository: testBackingRepository(),
           ),
         );
         await tester.pumpAndSettle();
@@ -745,6 +4322,11 @@ void main() {
 
         // Drain the toast timers so none outlives the test.
         await tester.pump(const Duration(seconds: 10));
+        // Let the page cancel its subscriptions before the borrowed device
+        // repository's teardown waits for its connection stream to close.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        await midi.dispose();
       },
     );
 
@@ -842,6 +4424,8 @@ void main() {
         final windowService = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
             midiDeviceRepository: midiDeviceRepository,
@@ -849,7 +4433,7 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
+            backingRepository: testBackingRepository(),
             displayCount: () => 1,
           ),
         );
@@ -908,17 +4492,19 @@ void main() {
     testWidgets('a shutdown phase change reaches an otherwise idle readout', (
       tester,
     ) async {
+      // Construct the writer under the widget clock so startup completes here.
+      settings = SettingsRepository(store: FakeKeyValueStore());
       final windowService = _RecordingWindowService();
       var haltCalls = 0;
       await pumpApp(tester, windowService, powerOff: () async => haltCalls++);
       await tester.pump(const Duration(milliseconds: 40));
       expect(windowService.readouts.last.goodbye, ReadoutGoodbye.none);
 
-      tester
-          .element(find.byType(LooperPage))
-          .read<PowerOffCubit>()
-          .press(const PowerOffSnapshot());
+      final power = tester.element(find.byType(LooperPage)).read<PowerCubit>()
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await tester.pump(const Duration(milliseconds: 40));
+      expect(power.state.phase, PowerPhase.goodbye);
       expect(windowService.readouts.last.goodbye, ReadoutGoodbye.mark);
       await tester.pump(const Duration(seconds: 2));
       expect(haltCalls, 1);
@@ -1004,9 +4590,17 @@ void main() {
         bool muted = false,
         le.TrackState state = le.TrackState.playing,
         int inputChannel = 0,
+        int lengthFrames = 96000,
+        int sampleRate = 48000,
+        int masterLengthFrames = 96000,
+        int loopBars = 0,
+        double tempoBpm = 0,
+        TempoSource tempoSource = TempoSource.none,
+        int tsNum = 4,
+        List<le.TrackSnapshot>? tracks,
       }) => le.EngineSnapshot(
         isRunning: true,
-        sampleRate: 48000,
+        sampleRate: sampleRate,
         bufferFrames: 128,
         inputChannels: 2,
         outputChannels: 2,
@@ -1018,44 +4612,58 @@ void main() {
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
         devicePresent: true,
-        masterLengthFrames: 96000,
+        masterLengthFrames: masterLengthFrames,
         masterPositionFrames: position,
-        tracks: [
-          le.TrackSnapshot(
-            state: state,
-            volume: 0.8,
-            muted: muted,
-            lengthFrames: 96000,
-            undoDepth: 0,
-            rms: peak / 2,
-            peak: peak,
-            lanes: [
-              le.LaneSnapshot(
-                inputChannel: inputChannel,
-                outputMask: 3,
-                volume: 1,
-                muted: false,
-                lengthFrames: 96000,
-                rms: 0,
-                peak: 0,
+        loopBars: loopBars,
+        tempoBpm: tempoBpm,
+        tempoSource: tempoSource,
+        tsNum: tsNum,
+        tracks:
+            tracks ??
+            [
+              le.TrackSnapshot(
+                state: state,
+                volume: 0.8,
+                muted: muted,
+                lengthFrames: lengthFrames,
+                // The selected track's own playhead is what the second screen
+                // follows; a plain track's equals the master's.
+                positionFrames: position,
+                undoDepth: 0,
+                rms: peak / 2,
+                peak: peak,
+                lanes: [
+                  le.LaneSnapshot(
+                    inputChannel: inputChannel,
+                    outputMask: 3,
+                    volume: 1,
+                    muted: false,
+                    lengthFrames: 96000,
+                    rms: 0,
+                    peak: 0,
+                  ),
+                ],
               ),
             ],
-          ),
-        ],
       );
 
       /// Boots the app on a repository whose poll the test drives by hand.
       Future<({_RecordingWindowService window, StreamController<void> ticker})>
-      pumpPlaying(WidgetTester tester) async {
+      pumpPlaying(
+        WidgetTester tester, {
+        le.EngineSnapshot? snapshot,
+      }) async {
         final ticker = StreamController<void>.broadcast();
         addTearDown(() => unawaited(ticker.close()));
         final driven = LooperRepository(engine: engine, ticker: ticker.stream);
         addTearDown(driven.dispose);
-        engine.nextSnapshot = playing(position: 0, peak: 0.1);
+        engine.nextSnapshot = snapshot ?? playing(position: 0, peak: 0.1);
 
         final window = _RecordingWindowService();
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(driven),
             repository: driven,
             controllerRepository: controllerRepository,
             midiDeviceRepository: midiDeviceRepository,
@@ -1063,7 +4671,7 @@ void main() {
             waveformWindow: window,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
+            backingRepository: testBackingRepository(),
           ),
         );
         await tester.pumpAndSettle();
@@ -1098,11 +4706,157 @@ void main() {
         );
       });
 
+      testWidgets('a growing take composes nothing either', (tester) async {
+        // While a take records, `lengthFrames` is the write head and grows
+        // every poll. The readout draws the state, not the length, so the
+        // gate must not reopen on it.
+        final rig = await pumpPlaying(tester);
+        engine.nextSnapshot = playing(
+          position: 0,
+          peak: 0.1,
+          state: le.TrackState.recording,
+          lengthFrames: 4000,
+        );
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+        final composed = rig.window.readouts.length;
+        expect(rig.window.readouts.last.selected!.state, 'recording');
+
+        for (var i = 2; i <= 20; i++) {
+          engine.nextSnapshot = playing(
+            position: i * 4000,
+            peak: 0.2,
+            state: le.TrackState.recording,
+            lengthFrames: i * 4000,
+          );
+          rig.ticker.add(null);
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+        expect(
+          rig.window.readouts.length,
+          composed,
+          reason: 'the readout was recomposed for a growing take',
+        );
+      });
+
+      testWidgets("the selected track's waveform is copied once per lap, "
+          'not once per poll', (tester) async {
+        // The repository owns the copy (see `readTrackWaveform`): a merely
+        // playing track is re-read at each wrap, not at each frame the
+        // second display is sent.
+        final rig = await pumpPlaying(tester);
+        // Sweep one full lap after the take was first seen at position 0.
+        for (var i = 1; i <= 11; i++) {
+          engine.nextSnapshot = playing(position: i * 8000, peak: 0.2);
+          rig.ticker.add(null);
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+        engine.nextSnapshot = playing(position: 4000, peak: 0.2);
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+
+        final frames = rig.window.pushCalls;
+        final reads = engine.trackVisualReads;
+        for (var i = 1; i <= 10; i++) {
+          engine.nextSnapshot = playing(position: 4000 + i * 8000, peak: 0.2);
+          rig.ticker.add(null);
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+        expect(rig.window.pushCalls, greaterThan(frames));
+        expect(
+          engine.trackVisualReads,
+          reads,
+          reason:
+              'a swept, merely playing track was copied out of the engine '
+              'again mid-lap',
+        );
+
+        // The wrap re-reads: the engine has rewritten the buffer once more.
+        engine.nextSnapshot = playing(position: 2000, peak: 0.2);
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(engine.trackVisualReads, reads + 1);
+      });
+
+      testWidgets('equal-name selection sends each track waveform and its '
+          'own phase; an empty selection sends silence', (tester) async {
+        final waveformEngine = _WaveformAudioEngine();
+        waveformEngine.trackSamples.addAll({
+          0: Float32List.fromList([0.125, 0.5, 0.25]),
+          1: Float32List.fromList([0.75, 0.25, 0.625, 0.125]),
+        });
+        engine = waveformEngine;
+        final rig = await pumpPlaying(
+          tester,
+          snapshot: playing(
+            position: 12000, // Master phase 1/8 differs from both tracks.
+            peak: 0.1,
+            tracks: const [
+              le.TrackSnapshot(
+                state: le.TrackState.playing,
+                volume: 0.8,
+                muted: false,
+                lengthFrames: 96000,
+                positionFrames: 24000,
+                undoDepth: 0,
+                rms: 0.1,
+                peak: 0.2,
+              ),
+              le.TrackSnapshot(
+                state: le.TrackState.playing,
+                volume: 0.8,
+                muted: false,
+                lengthFrames: 192000,
+                positionFrames: 144000,
+                undoDepth: 0,
+                rms: 0.1,
+                peak: 0.2,
+              ),
+              le.TrackSnapshot.empty(),
+            ],
+          ),
+        );
+        expect(rig.window.waveforms.last.samples, [0.125, 0.5, 0.25]);
+        expect(rig.window.waveforms.last.progress, closeTo(0.25, 1e-9));
+        final tracks = tester
+            .element(find.byType(LooperPage))
+            .read<TracksCubit>();
+        await tracks.rename(1, tracks.state.nameOf(0));
+        await tester.pump(const Duration(milliseconds: 100));
+        final frames = rig.window.pushCalls;
+
+        tester
+            .element(find.byType(LooperPage))
+            .read<ControlCubit>()
+            .selectTrack(1);
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(
+          rig.window.pushCalls,
+          greaterThan(frames),
+          reason:
+              'the label matched, so the cursor move never reached the '
+              'second screen',
+        );
+        expect(rig.window.waveforms.last.selectedTrack, tracks.state.nameOf(0));
+        expect(rig.window.waveforms.last.samples, [0.75, 0.25, 0.625, 0.125]);
+        expect(rig.window.waveforms.last.progress, closeTo(0.75, 1e-9));
+
+        tester
+            .element(find.byType(LooperPage))
+            .read<ControlCubit>()
+            .selectTrack(2);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(rig.window.waveforms.last.selectedTrack, tracks.state.nameOf(2));
+        expect(rig.window.waveforms.last.samples, isEmpty);
+        expect(rig.window.waveforms.last.progress, 0);
+      });
+
       testWidgets('a fact the readout DOES draw still gets through', (
         tester,
       ) async {
         final rig = await pumpPlaying(tester);
-        expect(rig.window.readouts.last.tracks.single.muted, isFalse);
+        expect(rig.window.readouts.last.selected!.muted, isFalse);
 
         // Muted rides the readout, so this must survive the narrowing that
         // drops the playhead and the levels.
@@ -1111,15 +4865,98 @@ void main() {
         await tester.pump(const Duration(milliseconds: 40));
 
         expect(
-          rig.window.readouts.last.tracks.single.muted,
+          rig.window.readouts.last.selected!.muted,
           isTrue,
           reason: 'the gate swallowed a fact the second screen draws',
         );
       });
 
-      testWidgets('recording state and input routing reach the readout', (
-        tester,
-      ) async {
+      testWidgets('completed duration and established grid changes refresh '
+          'the selected bar count', (tester) async {
+        final rig = await pumpPlaying(
+          tester,
+          snapshot: playing(position: 0, peak: 0.1, loopBars: 1),
+        );
+        expect(rig.window.readouts.last.selected!.bars, 1);
+
+        // Same state and multiple: only the completed duration changes.
+        engine.nextSnapshot = playing(
+          position: 0,
+          peak: 0.1,
+          loopBars: 1,
+          lengthFrames: 192000,
+        );
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(rig.window.readouts.last.selected!.bars, 2);
+
+        engine.nextSnapshot = playing(
+          position: 0,
+          peak: 0.1,
+          loopBars: 1,
+          masterLengthFrames: 192000,
+          lengthFrames: 192000,
+        );
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(rig.window.readouts.last.selected!.bars, 1);
+
+        engine.nextSnapshot = playing(
+          position: 0,
+          peak: 0.1,
+          loopBars: 3,
+          masterLengthFrames: 192000,
+          lengthFrames: 192000,
+        );
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(rig.window.readouts.last.selected!.bars, 3);
+      });
+
+      testWidgets('without a master loop the selected bars follow tempo, '
+          'signature and sample rate availability', (tester) async {
+        le.EngineSnapshot snapshot({
+          double bpm = 120,
+          int numerator = 4,
+          int sampleRate = 48000,
+          TempoSource source = TempoSource.manual,
+        }) => playing(
+          position: 0,
+          peak: 0.1,
+          masterLengthFrames: 0,
+          tempoBpm: bpm,
+          tempoSource: source,
+          tsNum: numerator,
+          sampleRate: sampleRate,
+        );
+        final rig = await pumpPlaying(tester, snapshot: snapshot());
+        expect(rig.window.readouts.last.selected!.bars, 1);
+
+        Future<void> publish(le.EngineSnapshot next, int bars) async {
+          engine.nextSnapshot = next;
+          rig.ticker.add(null);
+          await tester.pump(const Duration(milliseconds: 40));
+          expect(rig.window.readouts.last.selected!.bars, bars);
+        }
+
+        await publish(snapshot(bpm: 240), 2);
+        await publish(snapshot(bpm: 240, numerator: 2), 4);
+        await publish(snapshot(bpm: 240, numerator: 2, sampleRate: 96000), 2);
+        await publish(
+          snapshot(
+            bpm: 240,
+            numerator: 2,
+            sampleRate: 96000,
+            source: TempoSource.none,
+          ),
+          0,
+        );
+        await publish(snapshot(bpm: 240, numerator: 2, sampleRate: 96000), 2);
+        await publish(snapshot(bpm: 240, numerator: 2, sampleRate: 0), 0);
+        await publish(snapshot(bpm: 240, numerator: 2, sampleRate: 96000), 2);
+      });
+
+      testWidgets('the recording state reaches the readout', (tester) async {
         final rig = await pumpPlaying(tester);
         final before = rig.window.readouts.last;
         engine.nextSnapshot = playing(
@@ -1129,23 +4966,8 @@ void main() {
         );
         rig.ticker.add(null);
         await tester.pump(const Duration(milliseconds: 40));
-        expect(rig.window.readouts.last.tracks.single.state, 'recording');
+        expect(rig.window.readouts.last.selected!.state, 'recording');
         expect(rig.window.readouts.last.mode, before.mode);
-
-        final recording = rig.window.readouts.last;
-        engine.nextSnapshot = playing(
-          position: 0,
-          peak: 0.1,
-          state: le.TrackState.recording,
-          inputChannel: 1,
-        );
-        rig.ticker.add(null);
-        await tester.pump(const Duration(milliseconds: 40));
-        expect(
-          rig.window.readouts.last.tracks.single.inputNames,
-          isNot(recording.tracks.single.inputNames),
-        );
-        expect(rig.window.readouts.last.tracks.single.state, 'recording');
       });
 
       testWidgets('a burst of polls is rate-limited but never DROPPED', (
@@ -1313,175 +5135,6 @@ void main() {
     });
 
     testWidgets(
-      'overlay volume, mute and chain commands apply through the LooperBloc',
-      (tester) async {
-        final windowService = _RecordingWindowService();
-        await pumpApp(tester, windowService);
-
-        // The app registered the sub→main handler on the service — the
-        // channel's first control path in that direction (#698).
-        final onControl = windowService.onControl;
-        expect(onControl, isNotNull);
-
-        onControl!(
-          const ReadoutControl(
-            action: ReadoutControl.trackVolume,
-            index: 0,
-            value: 1.5,
-          ),
-        );
-        await tester.pump();
-        expect(engine.laneVol[(0, 0)], 1.5);
-
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackMuteToggle,
-            index: 1,
-          ),
-        );
-        await tester.pump();
-        expect(engine.laneMute[(1, 0)], isTrue);
-
-        // The regression the review caught: a fast second tap lands inside
-        // the snapshot echo window (the polled LooperState still reads
-        // unmuted — this test's ticker never even ticks). Resolved against
-        // repository intent it must UNMUTE; resolved against the stale poll
-        // it would re-send the same mute and leave the track silent.
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackMuteToggle,
-            index: 1,
-          ),
-        );
-        await tester.pump();
-        expect(engine.laneMute[(1, 0)], isFalse);
-
-        expect(repository.trackChainEnabled(2), isTrue);
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackChainToggle,
-            index: 2,
-          ),
-        );
-        await tester.pump();
-        expect(repository.trackChainEnabled(2), isFalse);
-
-        // A garbled wire value is clamped at application — the channel is
-        // not trusted with the mix ceiling.
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackVolume,
-            index: 0,
-            value: 99,
-          ),
-        );
-        await tester.pump();
-        expect(engine.laneVol[(0, 0)], 2.0);
-
-        // An action from a newer overlay this build does not know is
-        // dropped, never thrown on.
-        onControl(
-          const ReadoutControl(action: 'someFutureAction', index: 0, value: 1),
-        );
-        await tester.pump();
-        expect(tester.takeException(), isNull);
-
-        // Out-of-range indices are dropped BEFORE any repository write: a
-        // garbled map decodes to index -1, and applying it would seed junk
-        // intent (and persist it) before the engine could reject the
-        // channel. Same for an index past the live track roster.
-        engine.laneVol.clear();
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackVolume,
-            index: -1,
-            value: 1,
-          ),
-        );
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackVolume,
-            index: 8,
-            value: 1,
-          ),
-        );
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackChainToggle,
-            index: -1,
-          ),
-        );
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.trackMuteToggle,
-            index: -1,
-          ),
-        );
-        await tester.pump();
-        expect(engine.laneVol, isEmpty);
-        expect(engine.laneMute.containsKey((-1, 0)), isFalse);
-        expect(repository.trackChainEnabled(-1), isTrue);
-        expect(tester.takeException(), isNull);
-      },
-    );
-
-    testWidgets(
-      'input-volume commands drive only CONFIGURED monitors, via the cubit',
-      (tester) async {
-        final windowService = _RecordingWindowService();
-        await pumpApp(tester, windowService);
-        final onControl = windowService.onControl!;
-
-        // No monitor is configured: the command must not materialize one.
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.inputVolume,
-            index: 0,
-            value: 0.5,
-          ),
-        );
-        await tester.pump();
-        expect(
-          tester
-              .element(find.byType(LooperPage))
-              .read<MonitorCubit>()
-              .state
-              .hasInput(0),
-          isFalse,
-        );
-
-        // Configure input 0's monitor the way the main UI would.
-        final monitors = tester
-            .element(find.byType(LooperPage))
-            .read<MonitorCubit>();
-        await monitors.setMode(0, MonitorMode.on);
-        await tester.pump();
-
-        onControl(
-          const ReadoutControl(
-            action: ReadoutControl.inputVolume,
-            index: 0,
-            value: 0.5,
-          ),
-        );
-        await tester.pump();
-        // The engine call itself is gated on a running engine; repository
-        // intent is what a (re)start applies, so that is the contract.
-        expect(repository.monitorVolume(0), 0.5);
-        expect(monitors.state.forInput(0).volume, 0.5);
-
-        // And the configured input now rides the readout snapshot as the
-        // overlay's INPUTS group.
-        await tester.pump(const Duration(milliseconds: 40));
-        final inputs = windowService.readouts.last.inputs;
-        expect(inputs, hasLength(1));
-        expect(inputs.single.index, 0);
-        expect(inputs.single.volume, 0.5);
-        expect(inputs.single.name, isNotEmpty);
-      },
-    );
-
-    testWidgets(
       'shows the audio-recovery banner when booted with the pinned '
       'device absent',
       (tester) async {
@@ -1490,6 +5143,8 @@ void main() {
         // arrival). pump (not pumpAndSettle) — the cubit holds a periodic poll.
         await tester.pumpWidget(
           App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(repository, settings: settings),
             repository: repository,
             controllerRepository: controllerRepository,
             midiDeviceRepository: midiDeviceRepository,
@@ -1497,7 +5152,7 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
-            exportDirectory: () async => '.',
+            backingRepository: testBackingRepository(),
             audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
           ),
         );
@@ -1515,6 +5170,50 @@ void main() {
       // the persistent-surface work — see #453.
       skip: true,
     );
+
+    testWidgets('the audio-recovery toast opens the Device page', (
+      tester,
+    ) async {
+      // The pinned interface is absent, so recovery waits and the toast
+      // stands. Its action is the way to the interface chooser.
+      await tester.pumpWidget(
+        App(
+          guards: GuardRegistry(),
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
+          settings: settings,
+          waveformWindow: NoopWaveformWindowService(),
+          sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
+          backingRepository: testBackingRepository(),
+          audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
+        ),
+      );
+      // pump, not pumpAndSettle: the recovery cubit holds a periodic poll.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 10));
+      expect(debugAppToastActive(AppToastId.audioRecovery), isTrue);
+      // Let the toast animate in before tapping its action.
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key(AppToastId.audioRecovery)),
+          matching: find.byType(TextButton),
+        ),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.byType(DeviceSettingsPage), findsOneWidget);
+
+      // Unmount so the recovery poll stops with the test.
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
 
     testWidgets(
       'macOS PlatformMenuBar survives MaterialApp theme rebuild and '

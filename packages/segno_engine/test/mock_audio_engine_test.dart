@@ -1,11 +1,219 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
 
 void main() {
   group('MockAudioEngine', () {
+    test('the tuner mute follows the native rules', () {
+      final engine = MockAudioEngine(inputChannels: 4);
+      // Disarmed: refused, stored as 0.
+      expect(engine.setTunerMute(inputMask: 0x1), EngineResult.ok);
+      expect(engine.snapshot().tunerMuteMask, 0);
+
+      engine.setTunerInput(input: 2);
+      expect(engine.setTunerMute(inputMask: 0xC), EngineResult.ok);
+      expect(engine.snapshot().tunerMuteMask, 0xC);
+      // Absent inputs are dropped.
+      engine.setTunerMute(inputMask: 0xFF);
+      expect(engine.snapshot().tunerMuteMask, 0xF);
+
+      // Every arm, move or disarm clears it.
+      engine.setTunerInput(input: 3);
+      expect(engine.snapshot().tunerMuteMask, 0);
+      engine
+        ..setTunerMute(inputMask: 0x8)
+        ..setTunerInput(input: -1);
+      expect(engine.snapshot().tunerMuteMask, 0);
+    });
+
     late MockAudioEngine engine;
 
     setUp(() => engine = MockAudioEngine());
+
+    test('history gate stays open because the mock keeps no edit history', () {
+      for (final redo in [false, true]) {
+        expect(
+          engine.historyModeGate(channels: 3, redo: redo),
+          EngineResult.ok,
+        );
+      }
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      final before = engine.snapshot();
+      expect(
+        engine.historyModeGate(channels: 3, redo: true),
+        EngineResult.ok,
+      );
+      expect(engine.snapshot().tracks, before.tracks);
+    });
+
+    test(
+      'speed needs material the mock never holds, so capture stays open',
+      () {
+        expect(
+          engine.setSpeed(SpeedFactor.half).result,
+          EngineResult.notRunning,
+        );
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        final admitted = engine.setSpeed(SpeedFactor.half);
+        expect(admitted.result, EngineResult.invalid);
+        expect(admitted.request, 0);
+        expect(engine.snapshot().speed, SpeedFactor.normal);
+        expect(engine.record(), EngineResult.ok);
+      },
+    );
+
+    test(
+      'transpose needs material the mock lacks; its bypass is a global '
+      'request with a receipt',
+      () {
+        expect(
+          engine.transposeStep(channel: 0, delta: 1).result,
+          EngineResult.notRunning,
+        );
+        expect(
+          engine.setTransposeBypass(bypassed: true).result,
+          EngineResult.notRunning,
+        );
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        expect(
+          engine.transposeStep(channel: 0, delta: 1).result,
+          EngineResult.invalid,
+        );
+        expect(
+          engine.installTranspose(channel: 0, semitones: 3).result,
+          EngineResult.invalid,
+        );
+        final bypass = engine.setTransposeBypass(bypassed: true);
+        expect(bypass.result, EngineResult.ok);
+        expect(bypass.request, isNonZero);
+        expect(engine.readRequestResult(bypass.request), EngineResult.ok);
+        expect(engine.readRequestResult(bypass.request), EngineResult.invalid);
+        expect(engine.snapshot().transposeBypass, isTrue);
+        expect(engine.record(), EngineResult.ok); // nothing is transposed
+        engine.setTransposeBypass(bypassed: false);
+        expect(engine.snapshot().transposeBypass, isFalse);
+        engine.setTransposeBypass(bypassed: true);
+        expect(engine.stop(), EngineResult.ok);
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        // Configure resets it with the material.
+        expect(engine.snapshot().transposeBypass, isFalse);
+      },
+    );
+
+    test(
+      'follow tempo and pitch are settings with receipts that configure '
+      'resets',
+      () {
+        expect(
+          engine.setFollowTempo(follow: true).result,
+          EngineResult.notRunning,
+        );
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        expect(engine.setFollowTempo().result, EngineResult.invalid);
+        expect(engine.setPitchMode().result, EngineResult.invalid);
+        expect(
+          engine.setFollowTempo(channel: 99, follow: true).result,
+          EngineResult.invalid,
+        );
+        final follow = engine.setFollowTempo(follow: true);
+        expect(engine.readRequestResult(follow.request), EngineResult.ok);
+        engine
+          ..setFollowTempo(channel: 2, follow: false)
+          ..setPitchMode(mode: PitchMode.followsSpeed)
+          ..setPitchMode(channel: 1, mode: PitchMode.unchanged);
+        final s = engine.snapshot();
+        expect(s.followTempo, isTrue);
+        expect(s.pitchMode, PitchMode.followsSpeed);
+        expect(s.tracks[2].followTempoOverride, isFalse);
+        expect(s.tracks[1].pitchModeOverride, PitchMode.unchanged);
+        expect(s.tracks[0].followTempoOverride, isNull);
+        expect(s.tempoFollow, TempoFollowState.free); // no material
+        engine.setFollowTempo(channel: 2);
+        expect(engine.snapshot().tracks[2].followTempoOverride, isNull);
+        expect(engine.stop(), EngineResult.ok);
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        final fresh = engine.snapshot();
+        expect(fresh.followTempo, isFalse);
+        expect(fresh.pitchMode, PitchMode.unchanged);
+        expect(fresh.tracks[1].pitchModeOverride, isNull);
+      },
+    );
+
+    test('peel is unavailable because the mock keeps no overdub layers', () {
+      expect(engine.peel(), EngineResult.notRunning);
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      final before = engine.snapshot();
+      expect(engine.peel(channel: 2), EngineResult.invalid);
+      expect(engine.snapshot().tracks, before.tracks);
+      expect(before.tracks.first.peelDepth, 0);
+    });
+
+    test('a length edit is refused: the mock keeps no material', () {
+      expect(
+        engine.editLength(channel: 0, edit: LengthEdit.doubled),
+        (result: EngineResult.notRunning, request: 0),
+      );
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      for (final edit in LengthEdit.values) {
+        expect(
+          engine.editLength(channel: 0, edit: edit),
+          (result: EngineResult.invalid, request: 0),
+        );
+      }
+    });
+
+    test('keeps no history to export; finalize needs a running engine', () {
+      const history = TrackHistory([
+        HistoryEntry(HistoryKind.layer),
+      ], undoCount: 1);
+      expect(engine.exportHistory(0), TrackHistory.none);
+      expect(
+        engine.finalizeHistory(0, history, imageLengths: const [8, 8]),
+        EngineResult.notRunning,
+      );
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      expect(
+        engine.finalizeHistory(0, history, imageLengths: const [8, 8]),
+        EngineResult.ok,
+      );
+      expect(engine.exportHistory(0), TrackHistory.none);
+    });
+
+    test('restores exact internal tempo and clears an unset grid', () {
+      expect(
+        engine.restoreTempo(bpm: 120, source: TempoSource.tapped),
+        EngineResult.notRunning,
+      );
+      engine.start(engine.defaultConfig);
+      for (final source in [
+        TempoSource.manual,
+        TempoSource.tapped,
+        TempoSource.derived,
+      ]) {
+        expect(engine.restoreTempo(bpm: 97.5, source: source), EngineResult.ok);
+        expect(engine.snapshot().tempoBpm, 97.5);
+        expect(engine.snapshot().tempoSource, source);
+      }
+      expect(
+        engine.restoreTempo(bpm: 0, source: TempoSource.none),
+        EngineResult.ok,
+      );
+      expect(engine.snapshot().tempoBpm, 0);
+      expect(engine.snapshot().tempoSource, TempoSource.none);
+      for (final bpm in [double.nan, double.infinity, -1.0, 301.0]) {
+        expect(
+          engine.restoreTempo(bpm: bpm, source: TempoSource.manual),
+          EngineResult.invalid,
+        );
+      }
+      expect(
+        engine.restoreTempo(bpm: 120, source: TempoSource.external),
+        EngineResult.invalid,
+      );
+      expect(engine.snapshot().tempoBpm, 0);
+    });
 
     test('defaults to 18 inputs and 20 outputs', () {
       expect(engine.defaultConfig.inputChannels, 18);
@@ -100,13 +308,15 @@ void main() {
         // A boost above unity is not clamped down to 1.0 — the native engine
         // allows up to LE_MAX_GAIN (+6 dB headroom), and the mock must match.
         expect(engine.setLaneVolume(1.5), EngineResult.ok);
-        expect(engine.snapshot().tracks[0].volume, closeTo(1.5, 1e-6));
+        expect(engine.snapshot().tracks[0].lanes[0].volume, closeTo(1.5, 1e-6));
 
         // Out-of-range values clamp to 0..LE_MAX_GAIN, not 0..1.
         expect(engine.setLaneVolume(2.5), EngineResult.ok);
-        expect(engine.snapshot().tracks[0].volume, closeTo(2, 1e-6));
+        expect(engine.snapshot().tracks[0].lanes[0].volume, closeTo(2, 1e-6));
         expect(engine.setLaneVolume(-1), EngineResult.ok);
-        expect(engine.snapshot().tracks[0].volume, 0);
+        expect(engine.snapshot().tracks[0].lanes[0].volume, 0);
+        // Part gain does not change the independent whole-track fader.
+        expect(engine.snapshot().tracks[0].volume, 1);
 
         // The explicit (channel, lane) addressing path behaves identically.
         expect(engine.setLaneVolume(1.5, channel: 2), EngineResult.ok);
@@ -114,6 +324,7 @@ void main() {
           engine.snapshot().tracks[2].lanes[0].volume,
           closeTo(1.5, 1e-6),
         );
+        expect(engine.snapshot().tracks[2].volume, 1);
       },
     );
 
@@ -225,7 +436,7 @@ void main() {
       });
     });
 
-    group('Track-stage + Master insert chains (FX v3 part 1b)', () {
+    group('Track-stage + output bus chains', () {
       test('ring-backed setters require the engine to be running', () {
         expect(
           engine.setTrackFx(channel: 0, index: 0, type: TrackEffectType.drive),
@@ -240,12 +451,15 @@ void main() {
           EngineResult.notRunning,
         );
         expect(
-          engine.setMasterFx(index: 0, type: TrackEffectType.reverb),
+          engine.setOutputFx(bus: 0, index: 0, type: TrackEffectType.reverb),
           EngineResult.notRunning,
         );
-        expect(engine.setMasterFxCount(count: 1), EngineResult.notRunning);
         expect(
-          engine.setMasterFxParam(index: 0, param: 0, value: 0.5),
+          engine.setOutputFxCount(bus: 0, count: 1),
+          EngineResult.notRunning,
+        );
+        expect(
+          engine.setOutputFxParam(bus: 0, index: 0, param: 0, value: 0.5),
           EngineResult.notRunning,
         );
 
@@ -256,10 +470,10 @@ void main() {
         );
         expect(engine.setTrackFxCount(channel: 0, count: 1), EngineResult.ok);
         expect(
-          engine.setMasterFx(index: 0, type: TrackEffectType.reverb),
+          engine.setOutputFx(bus: 0, index: 0, type: TrackEffectType.reverb),
           EngineResult.ok,
         );
-        expect(engine.setMasterFxCount(count: 1), EngineResult.ok);
+        expect(engine.setOutputFxCount(bus: 0, count: 1), EngineResult.ok);
       });
 
       test('records enable calls, working while stopped', () {
@@ -273,11 +487,11 @@ void main() {
           EngineResult.ok,
         );
         expect(
-          engine.setMasterFxEnabled(index: 3, enabled: false),
+          engine.setOutputFxEnabled(bus: 0, index: 3, enabled: false),
           EngineResult.ok,
         );
         expect(
-          engine.setMasterFxChainEnabled(enabled: true),
+          engine.setOutputFxChainEnabled(bus: 0, enabled: true),
           EngineResult.ok,
         );
 
@@ -287,8 +501,10 @@ void main() {
         expect(engine.trackFxChainEnabledCalls, [
           (channel: 1, enabled: false),
         ]);
-        expect(engine.masterFxEnabledCalls, [(index: 3, enabled: false)]);
-        expect(engine.masterFxChainEnabledCalls, [true]);
+        expect(engine.outputFxEnabledCalls, [
+          (bus: 0, index: 3, enabled: false),
+        ]);
+        expect(engine.outputFxChainEnabledCalls, [(bus: 0, enabled: true)]);
       });
 
       test('rejects out-of-range enable arguments, recording nothing', () {
@@ -305,23 +521,31 @@ void main() {
           EngineResult.invalid,
         );
         expect(
-          engine.setMasterFxEnabled(index: -1, enabled: false),
+          engine.setOutputFxEnabled(bus: 0, index: -1, enabled: false),
           EngineResult.invalid,
         );
         expect(engine.trackFxEnabledCalls, isEmpty);
         expect(engine.trackFxChainEnabledCalls, isEmpty);
-        expect(engine.masterFxEnabledCalls, isEmpty);
+        expect(engine.outputFxEnabledCalls, isEmpty);
       });
     });
 
     group('performance recording capture', () {
       test('requires the engine to be running', () {
-        expect(engine.perfArm('test-capture'), EngineResult.notRunning);
+        expect(
+          engine.perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          ),
+          EngineResult.notRunning,
+        );
       });
 
       test('rejects an empty capture directory', () {
         engine.start(engine.defaultConfig);
-        expect(engine.perfArm(''), EngineResult.invalid);
+        expect(
+          engine.perfArm(PerfTarget(captureDir: '', takeId: Uint8List(16))),
+          EngineResult.invalid,
+        );
         expect(engine.snapshot().isPerfArmed, isFalse);
       });
 
@@ -329,10 +553,17 @@ void main() {
         engine.start(engine.defaultConfig);
         expect(engine.snapshot().isPerfArmed, isFalse);
 
-        expect(engine.perfArm('test-capture'), EngineResult.ok);
+        expect(
+          engine.perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          ),
+          EngineResult.ok,
+        );
         expect(engine.snapshot().isPerfArmed, isTrue);
         expect(
-          engine.perfArm('test-capture'),
+          engine.perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          ),
           EngineResult.ok,
         ); // already armed: no-op
 
@@ -346,7 +577,9 @@ void main() {
         expect(engine.snapshot().perfFrames, 0);
 
         engine
-          ..perfArm('test-capture')
+          ..perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          )
           ..snapshot(); // advances frames by one buffer
         expect(engine.snapshot().perfFrames, greaterThan(0));
 
@@ -359,7 +592,9 @@ void main() {
       test('the mock models no ring capacity: overruns stay 0', () {
         engine
           ..start(engine.defaultConfig)
-          ..perfArm('test-capture');
+          ..perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          );
         for (var i = 0; i < 5; i++) {
           engine.snapshot();
         }
@@ -369,7 +604,9 @@ void main() {
       test('a fresh start disarms and resets frames', () {
         engine
           ..start(engine.defaultConfig)
-          ..perfArm('test-capture')
+          ..perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          )
           ..snapshot()
           ..stop()
           ..start(engine.defaultConfig);
@@ -390,6 +627,265 @@ void main() {
       expect(lane.outputMask, 0x40);
     });
 
+    group('Mixer facts (slice 3)', () {
+      test('ring-backed setters require the engine to be running', () {
+        expect(engine.setLanePan(pan: 0.5), EngineResult.notRunning);
+        expect(
+          engine.setTrackSolo(channel: 0, solo: true),
+          EngineResult.notRunning,
+        );
+        expect(
+          engine.setMonitorInputPan(input: 0, pan: 0.5),
+          EngineResult.notRunning,
+        );
+      });
+
+      test('setLanePan surfaces per lane in the snapshot, clamped', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..setLaneCount(channel: 1, count: 2)
+          ..setLanePan(pan: -0.5, channel: 1)
+          ..setLanePan(pan: 7, channel: 1, lane: 1);
+
+        final lanes = engine.snapshot().tracks[1].lanes;
+        expect(lanes[0].pan, closeTo(-0.5, 1e-9));
+        expect(lanes[1].pan, 1);
+        // Untouched lanes stay centred.
+        expect(engine.snapshot().tracks[0].lanes.first.pan, 0);
+      });
+
+      test('setLanePan rejects an out-of-range channel or lane', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.setLanePan(pan: 0, channel: -1), EngineResult.invalid);
+        expect(engine.setLanePan(pan: 0, channel: 99), EngineResult.invalid);
+        expect(engine.setLanePan(pan: 0, lane: -1), EngineResult.invalid);
+        expect(
+          engine.setLanePan(pan: 0, lane: kMaxLanes),
+          EngineResult.invalid,
+        );
+      });
+
+      test('setTrackSolo surfaces per track, independent of mute', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..setLaneMute(muted: true, channel: 2)
+          ..setTrackSolo(channel: 2, solo: true);
+
+        var tracks = engine.snapshot().tracks;
+        expect(tracks[2].solo, isTrue);
+        expect(tracks[2].muted, isTrue);
+        expect(tracks[0].solo, isFalse);
+
+        engine.setTrackSolo(channel: 2, solo: false);
+        tracks = engine.snapshot().tracks;
+        expect(tracks[2].solo, isFalse);
+        expect(tracks[2].muted, isTrue, reason: 'un-solo leaves mute alone');
+      });
+
+      test('setTrackSolo rejects an out-of-range channel', () {
+        engine.start(engine.defaultConfig);
+        expect(
+          engine.setTrackSolo(channel: -1, solo: true),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setTrackSolo(channel: 99, solo: true),
+          EngineResult.invalid,
+        );
+      });
+
+      test('setInputTrim works while stopped and reads back per input', () {
+        // Direct-store contract: no start() needed. The snapshot carries no
+        // trim, so the mock's read-back seam is the only window onto it.
+        expect(engine.setInputTrim(input: 3, gain: 2), EngineResult.ok);
+        expect(engine.inputTrimOf(input: 3), closeTo(2, 1e-9));
+        expect(engine.inputTrimOf(input: 0), 1, reason: 'default unity');
+
+        // ...and it holds across a start.
+        engine.start(engine.defaultConfig);
+        expect(engine.inputTrimOf(input: 3), closeTo(2, 1e-9));
+      });
+
+      test('setInputTrim clamps to 0..+12 dB and lands NaN on silence', () {
+        engine
+          ..setInputTrim(input: 0, gain: 100)
+          ..setInputTrim(input: 1, gain: -3)
+          ..setInputTrim(input: 2, gain: double.nan);
+        expect(engine.inputTrimOf(input: 0), closeTo(3.98107, 1e-4));
+        expect(engine.inputTrimOf(input: 1), 0);
+        expect(engine.inputTrimOf(input: 2), 0);
+      });
+
+      test('setInputTrim rejects an out-of-range input', () {
+        expect(
+          engine.setInputTrim(input: -1, gain: 1),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setInputTrim(input: kMaxChannels, gain: 1),
+          EngineResult.invalid,
+        );
+        expect(engine.inputTrimOf(input: -1), 1);
+        expect(engine.inputTrimOf(input: kMaxChannels), 1);
+      });
+
+      test('setMonitorInputPan round-trips, clamped, per input', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..setMonitorInputPan(input: 4, pan: 0.25)
+          ..setMonitorInputPan(input: 17, pan: -9);
+        expect(engine.monitorInputPan(input: 4), closeTo(0.25, 1e-9));
+        expect(engine.monitorInputPan(input: 17), -1);
+        expect(engine.monitorInputPan(input: 0), 0);
+      });
+
+      test('setMonitorInputPan rejects an out-of-range input', () {
+        engine.start(engine.defaultConfig);
+        expect(
+          engine.setMonitorInputPan(input: -1, pan: 0),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setMonitorInputPan(input: kMaxMonitoredInputs, pan: 0),
+          EngineResult.invalid,
+        );
+        expect(engine.monitorInputPan(input: -1), 0);
+      });
+
+      test('the mock meters nothing, one entry per negotiated channel', () {
+        expect(engine.snapshot().inputPeaks, isEmpty, reason: 'no device');
+        expect(engine.snapshot().monitorPeaks, isEmpty);
+        expect(engine.snapshot().outputPeaks, isEmpty);
+
+        engine
+          ..start(engine.defaultConfig)
+          ..setTrackSolo(channel: 0, solo: true);
+        final snapshot = engine.snapshot();
+        expect(snapshot.inputPeaks, hasLength(snapshot.inputChannels));
+        expect(snapshot.monitorPeaks, hasLength(snapshot.inputChannels));
+        expect(snapshot.outputPeaks, hasLength(snapshot.outputChannels));
+        expect(snapshot.inputPeaks, everyElement(0));
+        expect(snapshot.monitorPeaks, everyElement(0));
+        expect(snapshot.outputPeaks, everyElement(0));
+        expect(snapshot.tracks[0].peakL, 0);
+        expect(snapshot.tracks[0].peakR, 0);
+      });
+
+      test('the output bus setters are direct stores that clamp, and the '
+          'snapshot publishes one entry per destination (slice 3b)', () {
+        // Direct stores: they answer while stopped. The values themselves do
+        // not survive the start — a (re)start resets every destination, like
+        // the native configure, and the repository is what replays them.
+        expect(engine.setOutputLevel(bus: 1, level: 2), EngineResult.ok);
+        expect(engine.snapshot().outputBusCount, 0, reason: 'no device');
+        expect(engine.snapshot().outputLevels, isEmpty);
+
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().outputLevels[1], 1, reason: 'reset by start');
+
+        engine
+          ..setOutputLevel(bus: 1, level: 2)
+          ..setOutputMute(bus: 0, muted: true)
+          ..setOutputMono(bus: 1, mono: true)
+          ..setOutputBalance(bus: 0, balance: -3)
+          ..setOutputLevel(bus: 0, level: double.nan);
+        final snapshot = engine.snapshot();
+        expect(snapshot.outputBusCount, (snapshot.outputChannels + 1) ~/ 2);
+        expect(snapshot.outputLevels[1], 1, reason: 'clamped from 2');
+        expect(snapshot.outputLevels[0], 0, reason: 'NaN lands on silence');
+        expect(snapshot.outputMuted[0], isTrue);
+        expect(snapshot.outputMono[1], isTrue);
+        expect(snapshot.outputBalances[0], -1, reason: 'clamped from -3');
+      });
+
+      test('the output bus setters reject a bus the engine cannot address', () {
+        expect(
+          engine.setOutputLevel(bus: -1, level: 1),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setOutputMute(bus: kMaxOutputBuses, muted: true),
+          EngineResult.invalid,
+        );
+        expect(engine.setOutputMono(bus: 99, mono: true), EngineResult.invalid);
+        expect(
+          engine.setOutputBalance(bus: -5, balance: 0),
+          EngineResult.invalid,
+        );
+      });
+
+      test('cutSound needs a running engine and advances tailResetRev', () {
+        expect(engine.cutSound(), EngineResult.notRunning);
+        engine.start(engine.defaultConfig);
+        final before = engine.snapshot().tailResetRev;
+        expect(engine.cutSound(), EngineResult.ok);
+        expect(engine.cutSoundCalls, 1);
+        expect(engine.snapshot().tailResetRev, before + 1);
+      });
+
+      test('the snapshot names the destination a capture would read', () {
+        expect(engine.snapshot().perfCaptureBus, -1, reason: 'no device');
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().perfCaptureBus, 0);
+      });
+
+      test('the output chain setters are per destination and reject a bus '
+          'the engine cannot address', () {
+        engine.start(engine.defaultConfig);
+        expect(
+          engine.setOutputFxEnabled(bus: 1, index: 0, enabled: false),
+          EngineResult.ok,
+        );
+        expect(
+          engine.setOutputFxEnabled(
+            bus: kMaxOutputBuses,
+            index: 0,
+            enabled: false,
+          ),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setOutputFxChainEnabled(bus: -1, enabled: false),
+          EngineResult.invalid,
+        );
+        expect(engine.outputFxEnabledCalls, [
+          (bus: 1, index: 0, enabled: false),
+        ]);
+      });
+
+      test('the capture policy is frozen per take: the snapshot reports the '
+          "armed take's policy while armed and the pending one otherwise", () {
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().perfFollowOutput, isFalse);
+        expect(engine.setPerfFollowOutput(follow: true), EngineResult.ok);
+        expect(engine.snapshot().perfFollowOutput, isTrue);
+        expect(
+          engine.perfArm(PerfTarget(captureDir: 'take', takeId: Uint8List(16))),
+          EngineResult.ok,
+        );
+        engine.setPerfFollowOutput(follow: false); // too late for this take
+        expect(engine.snapshot().perfFollowOutput, isTrue);
+        engine.perfDisarm();
+        expect(engine.snapshot().perfFollowOutput, isFalse);
+      });
+
+      test('the capture policy is a preference: it survives a restart, '
+          'unlike the destinations a (re)start resets', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..setPerfFollowOutput(follow: true)
+          ..setOutputLevel(bus: 0, level: 0.5)
+          ..setOutputMute(bus: 0, muted: true);
+        expect(engine.snapshot().outputLevels[0], 0.5);
+        engine
+          ..stop()
+          ..start(engine.defaultConfig);
+        expect(engine.snapshot().perfFollowOutput, isTrue);
+        expect(engine.snapshot().outputLevels[0], 1);
+        expect(engine.snapshot().outputMuted[0], isFalse);
+      });
+    });
+
     group('TempoControl', () {
       test('every setter requires the engine to be running', () {
         expect(engine.setTempo(120), EngineResult.notRunning);
@@ -397,7 +893,12 @@ void main() {
         expect(engine.tapTempo(), EngineResult.notRunning);
         expect(engine.setSyncTempo(on: false), EngineResult.notRunning);
         expect(
-          engine.setQuantizeDiv(GridDivision.bar),
+          engine.setRecordTimingSettings(
+            defaultTiming: RecordTiming.immediately,
+            rememberedDivision: GridDivision.bar,
+            trackOverrides: const {},
+            editMask: 1,
+          ),
           EngineResult.notRunning,
         );
         expect(
@@ -406,7 +907,14 @@ void main() {
         );
         expect(engine.setClickOutput(0x3), EngineResult.notRunning);
         expect(engine.setClickVolume(0.5), EngineResult.notRunning);
-        expect(engine.setCountIn(2), EngineResult.notRunning);
+        expect(
+          engine.setRecordStartSettings(
+            countInBars: 2,
+            soundStart: false,
+            editKind: RecordStartEditKind.countIn,
+          ),
+          EngineResult.notRunning,
+        );
         expect(
           engine.setTrackLengthPreset(channel: 0, bars: 4),
           EngineResult.notRunning,
@@ -508,10 +1016,15 @@ void main() {
         expect(engine.snapshot().syncTempo, isFalse);
       });
 
-      test('setQuantizeDiv surfaces in the snapshot', () {
+      test('record timing memory surfaces in the snapshot', () {
         engine.start(engine.defaultConfig);
         expect(
-          engine.setQuantizeDiv(GridDivision.eighth),
+          engine.setRecordTimingSettings(
+            defaultTiming: RecordTiming.immediately,
+            rememberedDivision: GridDivision.eighth,
+            trackOverrides: const {},
+            editMask: 1,
+          ),
           EngineResult.ok,
         );
         expect(engine.snapshot().quantizeDiv, GridDivision.eighth);
@@ -547,19 +1060,50 @@ void main() {
         },
       );
 
-      test('setCountIn accepts 0..LE_COUNT_IN_MAX_BARS and rejects beyond', () {
-        engine.start(engine.defaultConfig);
-        expect(engine.setCountIn(2), EngineResult.ok);
-        expect(engine.snapshot().countInBars, 2);
+      test(
+        'record-start pair accepts supported bars and rejects other values',
+        () {
+          engine.start(engine.defaultConfig);
+          expect(
+            engine.setRecordStartSettings(
+              countInBars: 2,
+              soundStart: false,
+              editKind: RecordStartEditKind.countIn,
+            ),
+            EngineResult.ok,
+          );
+          expect(engine.snapshot().countInBars, 2);
 
-        expect(engine.setCountIn(0), EngineResult.ok);
-        expect(engine.snapshot().countInBars, 0);
+          expect(
+            engine.setRecordStartSettings(
+              countInBars: 0,
+              soundStart: false,
+              editKind: RecordStartEditKind.countIn,
+            ),
+            EngineResult.ok,
+          );
+          expect(engine.snapshot().countInBars, 0);
 
-        expect(engine.setCountIn(-1), EngineResult.invalid);
-        expect(engine.setCountIn(65), EngineResult.invalid);
-        // A rejected value does not change the published state.
-        expect(engine.snapshot().countInBars, 0);
-      });
+          expect(
+            engine.setRecordStartSettings(
+              countInBars: -1,
+              soundStart: false,
+              editKind: RecordStartEditKind.countIn,
+            ),
+            EngineResult.invalid,
+          );
+          expect(
+            engine.setRecordStartSettings(
+              countInBars: 65,
+              soundStart: false,
+              editKind: RecordStartEditKind.countIn,
+            ),
+            EngineResult.invalid,
+          );
+          // A rejected value does not change the published state.
+          expect(engine.snapshot().countInBars, 0);
+        },
+      );
 
       test(
         'setTrackLengthPreset accepts 0..LE_LENGTH_PRESET_MAX_BARS and '
@@ -591,6 +1135,58 @@ void main() {
         },
       );
 
+      test('setTrackLengthPreset rejects an out-of-range channel', () {
+        engine.start(engine.defaultConfig);
+        final outOfRange = engine.snapshot().tracks.length;
+        expect(
+          engine.setTrackLengthPreset(channel: outOfRange, bars: 4),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setTrackLengthPreset(channel: -1, bars: 4),
+          EngineResult.invalid,
+        );
+      });
+
+      test(
+        'preset vector validates all values before changing tracks or mode',
+        () {
+          engine.start(engine.defaultConfig);
+          final count = engine.snapshot().tracks.length;
+          expect(
+            engine.setTrackLengthPresets(List.filled(count, 4)),
+            EngineResult.ok,
+          );
+          final invalid = List.filled(count, 8)..[count - 1] = 65;
+          expect(
+            engine.setLooperModeWithPresets(LooperMode.free, invalid),
+            EngineResult.invalid,
+          );
+          expect(engine.snapshot().looperMode, LooperMode.multi);
+          expect(
+            engine.snapshot().tracks.every(
+              (track) => track.lengthPresetBars == 4,
+            ),
+            isTrue,
+          );
+          expect(engine.setTrackLengthPresets([8]), EngineResult.invalid);
+          expect(
+            engine.setLooperModeWithPresets(
+              LooperMode.free,
+              List.filled(count, 8),
+            ),
+            EngineResult.ok,
+          );
+          expect(engine.snapshot().looperMode, LooperMode.free);
+          expect(
+            engine.snapshot().tracks.every(
+              (track) => track.lengthPresetBars == 8,
+            ),
+            isTrue,
+          );
+        },
+      );
+
       test('setTrackLengthPreset is per-track', () {
         engine
           ..start(engine.defaultConfig)
@@ -607,7 +1203,11 @@ void main() {
           ..start(engine.defaultConfig)
           ..setTempo(150)
           ..setClickMode(ClickMode.rec)
-          ..setCountIn(2)
+          ..setRecordStartSettings(
+            countInBars: 2,
+            soundStart: false,
+            editKind: RecordStartEditKind.countIn,
+          )
           ..stop()
           ..start(engine.defaultConfig);
         final s = engine.snapshot();
@@ -839,6 +1439,109 @@ void main() {
 
     test('exportTrackLane returns an empty list (mock models no PCM)', () {
       expect(engine.exportTrackLane(0, 0), isEmpty);
+    });
+
+    test(
+      'the audition plays an existing file as one second until stopped',
+      () async {
+        expect(
+          (await engine.auditionStartFile('/absent.wav')).result,
+          EngineResult.notRunning,
+        );
+        engine.start(engine.defaultConfig);
+        expect(
+          (await engine.auditionStartFile('/absent.wav')).result,
+          EngineResult.invalid,
+        );
+        final dir = Directory.systemTemp.createTempSync('mock_audition');
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final file = File('${dir.path}/a.wav')..writeAsBytesSync([0]);
+        final started = await engine.auditionStartFile(file.path, bus: 1);
+        expect(started.result, EngineResult.ok);
+        expect(started.frames, 48000);
+        expect(started.rate, 48000);
+        expect(
+          (await engine.auditionStartFile(
+            file.path,
+            stillWanted: () => false,
+          )).cancelled,
+          isTrue,
+        );
+        expect(engine.auditionState().playing, isTrue);
+        expect(engine.auditionState().bus, 1);
+        expect(engine.auditionStop(), EngineResult.ok);
+        expect(engine.auditionState().playing, isFalse);
+        expect(
+          await engine.filePeaks(file.path, buckets: 4),
+          [0, 0, 0, 0],
+        );
+        expect(
+          await engine.filePeaks('/absent.wav', buckets: 4),
+          isNull,
+        );
+      },
+    );
+
+    test('the audition voice lives as the native one does', () async {
+      engine.start(engine.defaultConfig);
+      final dir = Directory.systemTemp.createTempSync('mock_audition');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final file = File('${dir.path}/a.wav')..writeAsBytesSync([0]);
+      Future<void> play() async => expect(
+        (await engine.auditionStartFile(file.path)).result,
+        EngineResult.ok,
+      );
+
+      // A pair the device has no channels for is refused.
+      expect(
+        (await engine.auditionStartFile(file.path, bus: 64)).result,
+        EngineResult.invalid,
+      );
+
+      // It advances a block per snapshot and ends after its last frame.
+      await play();
+      final frames = engine.auditionState().frames;
+      engine.snapshot();
+      expect(engine.auditionState().position, greaterThan(0));
+      for (var i = 0; i < frames && engine.auditionState().playing; i++) {
+        engine.snapshot();
+      }
+      expect(engine.auditionState().playing, isFalse);
+
+      // A Cut sound ends it.
+      await play();
+      engine.cutSound();
+      expect(engine.auditionState().playing, isFalse);
+
+      // A performance arm ends it, and refuses a start while armed.
+      await play();
+      expect(
+        engine.perfArm(
+          PerfTarget(captureDir: dir.path, takeId: Uint8List(16)),
+        ),
+        EngineResult.ok,
+      );
+      expect(engine.auditionState().playing, isFalse);
+      expect(
+        (await engine.auditionStartFile(file.path)).result,
+        EngineResult.alreadyRunning,
+      );
+      expect(engine.perfDisarm(), EngineResult.ok);
+
+      // A stop and a start (a reconfigure) end it and bump the epoch.
+      await play();
+      final epoch = engine.auditionState().epoch;
+      expect(engine.stop(), EngineResult.ok);
+      expect(engine.auditionState().playing, isFalse);
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      expect(engine.auditionState().epoch, epoch + 1);
+
+      // So does a reopen.
+      await play();
+      expect(engine.stop(), EngineResult.ok);
+      expect(engine.reopen(engine.defaultConfig).result, EngineResult.ok);
+      expect(engine.auditionState().playing, isFalse);
+      expect(engine.auditionState().epoch, epoch + 2);
     });
   });
 }

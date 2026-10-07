@@ -1,0 +1,375 @@
+import 'package:flutter/material.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/control/binding/expression_catalogue.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/theme/theme.dart';
+
+/// Pick a destination.
+///
+/// A whole view rather than a panel over the page, unlike this screen's action
+/// chooser: the list behind it is every chain the rig has, which is as long as
+/// the rig is, and the accepted design gives it the room.
+class ExpressionDestinationPicker extends StatelessWidget {
+  /// Creates an [ExpressionDestinationPicker].
+  const ExpressionDestinationPicker({
+    required this.destinations,
+    required this.kind,
+    required this.onKind,
+    required this.onOpen,
+    this.columns = 2,
+    super.key,
+  });
+
+  /// Every destination the rig offers, in reading order.
+  final List<ExpressionDestination> destinations;
+
+  /// How many columns of rows: two across the whole page, one inside a
+  /// button's editor.
+  final int columns;
+
+  /// Which tab is open.
+  final ExpressionDestinationKind kind;
+
+  /// Opens another tab.
+  final ValueChanged<ExpressionDestinationKind> onKind;
+
+  /// Opens a destination's controls.
+  final ValueChanged<ExpressionDestination> onOpen;
+
+  /// The pen's geometry: rows under a row of tabs.
+  static const double _rowHeight = 96;
+  static const double _columnGap = 24;
+  static const double _rowGap = 18;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final shown = [
+      for (final d in destinations)
+        if (d.kind == kind) d,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              for (final (index, value)
+                  in ExpressionDestinationKind.values.indexed) ...[
+                if (index > 0) const SizedBox(width: 9),
+                LoopChoiceButton(
+                  key: Key('expression_kind_${value.name}'),
+                  label: expressionKindLabel(l10n, value),
+                  selected: value == kind,
+                  onTap: () => onKind(value),
+                  width: switch (value) {
+                    ExpressionDestinationKind.liveInput => 177,
+                    ExpressionDestinationKind.recordedTrack => 237,
+                    ExpressionDestinationKind.output => 147,
+                    ExpressionDestinationKind.loopControls => 207,
+                  },
+                  height: 64,
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 32),
+        Expanded(
+          child: shown.isEmpty
+              ? Align(
+                  alignment: Alignment.topLeft,
+                  child: AppText(
+                    l10n.expressionNoControls,
+                    key: const Key('expression_no_destinations'),
+                    style: TextStyle(
+                      color: surface.textSecondary,
+                      fontSize: 26,
+                      height: 1.3,
+                    ),
+                  ),
+                )
+              : _PickerScroll(
+                  builder: (controller) => GridView.builder(
+                    controller: controller,
+                    padding: const EdgeInsets.all(4),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      crossAxisSpacing: _columnGap,
+                      mainAxisSpacing: _rowGap,
+                      mainAxisExtent: _rowHeight,
+                    ),
+                    itemCount: shown.length,
+                    itemBuilder: (context, index) =>
+                        _row(context, shown[index]),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _row(BuildContext context, ExpressionDestination destination) {
+    final surface = context.surface;
+    return Semantics(
+      button: true,
+      label: destination.label,
+      child: LoopFocusable(
+        onActivate: () => onOpen(destination),
+        radius: 12,
+        child: GestureDetector(
+          onTap: () => onOpen(destination),
+          behavior: HitTestBehavior.opaque,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: surface.card,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: surface.borderSubtle),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 29),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ExcludeSemantics(
+                      child: AppText(
+                        destination.label,
+                        key: Key('expression_destination_${destination.id}'),
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: surface.textPrimary,
+                          fontSize: 29,
+                          height: 1.15,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    LucideIcons.chevronRight,
+                    size: 28,
+                    color: surface.textSecondary,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pick a control on one destination.
+class ExpressionControlPicker extends StatelessWidget {
+  /// Creates an [ExpressionControlPicker].
+  const ExpressionControlPicker({
+    required this.destination,
+    required this.taken,
+    required this.onPick,
+    super.key,
+  });
+
+  /// The destination whose controls these are.
+  final ExpressionDestination destination;
+
+  /// The targets this pedal already sweeps. They are shown and refused rather
+  /// than hidden: one pedal drives each control once, and a control that
+  /// vanished from the list would read as a rig that does not have it.
+  final Set<ControlValueTarget> taken;
+
+  /// Chooses a control.
+  final ValueChanged<ControlValueTarget> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    if (destination.groups.isEmpty) {
+      return Align(
+        alignment: Alignment.topLeft,
+        child: AppText(
+          l10n.expressionNoControls,
+          key: const Key('expression_no_controls'),
+          style: TextStyle(
+            color: surface.textSecondary,
+            fontSize: 26,
+            height: 1.3,
+          ),
+        ),
+      );
+    }
+    return _PickerScroll(
+      builder: (controller) => ListView(
+        controller: controller,
+        padding: const EdgeInsets.all(6),
+        children: [
+          for (final (index, group) in destination.groups.indexed) ...[
+            if (index > 0) const SizedBox(height: 32),
+            SizedBox(
+              height: 31,
+              child: AppText(
+                group.label,
+                maxLines: 1,
+                style: TextStyle(
+                  color: surface.textSecondary,
+                  fontSize: 26,
+                  height: 1.15,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            _grid(context, group),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// The pen's three-across grid of control buttons.
+  Widget _grid(BuildContext context, ExpressionControlGroup group) => Wrap(
+    spacing: _gridGap,
+    runSpacing: _gridGap,
+    children: [for (final control in group.controls) _button(context, control)],
+  );
+
+  Widget _button(BuildContext context, ExpressionControl control) {
+    final surface = context.surface;
+    final already = taken.contains(control.target);
+    final enabled = !already && control.disabledReason == null;
+    return SizedBox(
+      width: _buttonWidth,
+      height: _buttonHeight,
+      child: Semantics(
+        button: true,
+        enabled: enabled,
+        label: control.disabledReason == null
+            ? control.label
+            : '${control.label}, ${control.disabledReason}',
+        child: LoopFocusable(
+          enabled: enabled,
+          onActivate: () => onPick(control.target),
+          radius: 12,
+          child: GestureDetector(
+            onTap: enabled ? () => onPick(control.target) : null,
+            behavior: HitTestBehavior.opaque,
+            child: Opacity(
+              opacity: enabled ? 1 : surface.disabledOpacity,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: surface.card,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: surface.borderSubtle),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 23),
+                  child: Row(
+                    children: [
+                      if (control.art case final asset?) ...[
+                        SizedBox(
+                          width: 42,
+                          height: 54,
+                          child: ExcludeSemantics(
+                            child: Image.asset(
+                              asset,
+                              package: FxCatalogueLoader.package,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, _, _) =>
+                                  const SizedBox.shrink(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 18),
+                      ],
+                      Expanded(
+                        child: ExcludeSemantics(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              AppText(
+                                control.label,
+                                // Keyed by the canonical form itself: it IS the
+                                // target's identity, and colliding hashes
+                                // would give two rows the same key.
+                                key: Key(
+                                  'expression_target_'
+                                  '${control.target.canonicalString()}',
+                                ),
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: surface.textPrimary,
+                                  fontSize: 25,
+                                  height: 1.15,
+                                ),
+                              ),
+                              if (control.disabledReason case final reason?)
+                                AppText(
+                                  reason,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: surface.textSecondary,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (already)
+                        Icon(
+                          LucideIcons.check,
+                          size: 24,
+                          color: surface.textSecondary,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The pen's grid: three buttons across the workspace.
+  static const double _buttonWidth = 560;
+  static const double _buttonHeight = 90;
+  static const double _gridGap = 14;
+}
+
+/// Keeps the track beside the content and visible while lists are scrolled.
+class _PickerScroll extends StatefulWidget {
+  const _PickerScroll({required this.builder});
+
+  final Widget Function(ScrollController) builder;
+
+  @override
+  State<_PickerScroll> createState() => _PickerScrollState();
+}
+
+class _PickerScrollState extends State<_PickerScroll> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scrollbar(
+    controller: _controller,
+    thumbVisibility: true,
+    trackVisibility: true,
+    child: Padding(
+      padding: const EdgeInsets.only(right: 16),
+      child: widget.builder(_controller),
+    ),
+  );
+}

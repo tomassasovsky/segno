@@ -14,6 +14,11 @@ import 'package:segno_engine/segno_engine.dart'
         AudioDevice,
         BuiltInEffect,
         EngineConfig,
+        FxChannelInput,
+        FxChannelOutput,
+        FxChannels,
+        FxPlacement,
+        FxRack,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
@@ -25,11 +30,13 @@ import 'package:segno_engine/segno_engine.dart'
         TrackEffect,
         TrackEffectParam,
         TrackEffectType,
-        encodeTrackEffects;
+        encodeTrackEffects,
+        fxPreCount;
 import 'package:segno_engine/segno_engine.dart'
     as le
     show
         AudioDevice,
+        FxChannelOutput,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
@@ -38,8 +45,119 @@ import 'package:segno_engine/segno_engine.dart'
         PluginParamInfo;
 
 import 'helpers/fake_audio_engine.dart';
+import 'helpers/one_shot_edits.dart';
 
 final EngineSnapshot _playingSnapshot = _playingAt(24000);
+
+const _nativeEmptySlots = <TrackSnapshot>[
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+  TrackSnapshot.empty(),
+];
+
+/// The fake device has eight native slots even when only a few have content.
+/// A shorter raw vector is reserved for the explicit malformed-receipt tests.
+List<TrackSnapshot> _nativeSlots(List<TrackSnapshot> tracks) => [
+  ...tracks,
+  for (var channel = tracks.length; channel < 8; channel++)
+    const TrackSnapshot.empty(),
+];
+
+/// [n] playing takes of one master loop; [emptyRedoOnly] tracks are empty
+/// with one redo step instead, [clearRestore] tracks are empty with a clear
+/// restore point.
+EngineSnapshot _playingTracksSnapshot(
+  int n, {
+  Set<int> emptyRedoOnly = const {},
+  Set<int> clearRestore = const {},
+}) => EngineSnapshot(
+  isRunning: true,
+  sampleRate: 48000,
+  bufferFrames: 128,
+  inputChannels: 2,
+  outputChannels: 4,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: le.LatencyState.idle,
+  measuredLatencyMs: -1,
+  masterLengthFrames: 96000,
+  tracks: _nativeSlots([
+    for (var i = 0; i < n; i++)
+      if (emptyRedoOnly.contains(i))
+        const TrackSnapshot(
+          state: TrackState.empty,
+          volume: 0.8,
+          muted: false,
+          lengthFrames: 0,
+          undoDepth: 0,
+          redoDepth: 1,
+          rms: 0,
+          peak: 0,
+        )
+      else if (clearRestore.contains(i))
+        const TrackSnapshot(
+          state: TrackState.empty,
+          volume: 0.8,
+          muted: false,
+          lengthFrames: 0,
+          undoDepth: 0,
+          clearRestore: true,
+          rms: 0,
+          peak: 0,
+        )
+      else
+        const TrackSnapshot(
+          state: TrackState.playing,
+          volume: 0.8,
+          muted: false,
+          lengthFrames: 96000,
+          undoDepth: 0,
+          rms: 0.3,
+          peak: 0.5,
+        ),
+  ]),
+);
+
+/// One empty track with an arm as the engine publishes it: `pending` and the
+/// trailing `pending_trigger` code beside it.
+EngineSnapshot _pendingSnapshot({
+  required bool pending,
+  required int trigger,
+}) => EngineSnapshot(
+  isRunning: true,
+  sampleRate: 48000,
+  bufferFrames: 128,
+  inputChannels: 2,
+  outputChannels: 4,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: le.LatencyState.idle,
+  measuredLatencyMs: -1,
+  tracks: _nativeSlots([
+    TrackSnapshot(
+      state: TrackState.empty,
+      volume: 0.8,
+      muted: false,
+      lengthFrames: 0,
+      undoDepth: 0,
+      rms: 0,
+      peak: 0,
+      pending: pending,
+      pendingTrigger: trigger,
+    ),
+  ]),
+);
 
 /// One playing track with independently controlled transport and meter values.
 EngineSnapshot _playingAt(int masterPositionFrames, {double peak = 0.5}) =>
@@ -58,7 +176,7 @@ EngineSnapshot _playingAt(int masterPositionFrames, {double peak = 0.5}) =>
       measuredLatencyMs: -1,
       masterLengthFrames: 96000,
       masterPositionFrames: masterPositionFrames,
-      tracks: [
+      tracks: _nativeSlots([
         TrackSnapshot(
           state: TrackState.playing,
           volume: 0.8,
@@ -70,12 +188,12 @@ EngineSnapshot _playingAt(int masterPositionFrames, {double peak = 0.5}) =>
           inputMask: 0x2,
           outputMask: 0x2,
         ),
-      ],
+      ]),
     );
 
 /// One playing track with one real lane — the cache-telemetry gate is a
 /// per-lane concern, and [_playingSnapshot]'s tracks carry no lanes.
-const _laneSnapshot = EngineSnapshot(
+final _laneSnapshot = EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
   bufferFrames: 128,
@@ -89,8 +207,8 @@ const _laneSnapshot = EngineSnapshot(
   latencyState: le.LatencyState.idle,
   measuredLatencyMs: -1,
   masterLengthFrames: 96000,
-  tracks: [
-    TrackSnapshot(
+  tracks: _nativeSlots([
+    const TrackSnapshot(
       state: TrackState.playing,
       volume: 1,
       muted: false,
@@ -110,10 +228,127 @@ const _laneSnapshot = EngineSnapshot(
         ),
       ],
     ),
-  ],
+  ]),
 );
 
+class _RefusingLaneMuteEngine extends FakeAudioEngine {
+  bool refuseMute = false;
+
+  @override
+  EngineResult setLaneMute({
+    required bool muted,
+    int channel = 0,
+    int lane = 0,
+  }) => refuseMute && muted
+      ? EngineResult.invalid
+      : super.setLaneMute(muted: muted, channel: channel, lane: lane);
+}
+
+class _RefusingMonitorMuteEngine extends FakeAudioEngine {
+  bool refuseMute = false;
+  int muteCalls = 0;
+  final monitorSteps = <({bool enabled, bool muted, int output})>[];
+
+  EngineResult _sampleMonitor(int input, EngineResult result) {
+    if (result.isOk) {
+      monitorSteps.add((
+        enabled: monitorInputEnabled[input] ?? false,
+        muted: monitorMute[input] ?? false,
+        output: monitorOutput[input] ?? 3,
+      ));
+    }
+    return result;
+  }
+
+  @override
+  EngineResult setMonitorInputMute({required int input, required bool muted}) {
+    muteCalls++;
+    if (refuseMute) return EngineResult.invalid;
+    return _sampleMonitor(
+      input,
+      super.setMonitorInputMute(input: input, muted: muted),
+    );
+  }
+
+  @override
+  EngineResult setMonitorInputEnabled({
+    required int input,
+    required bool enabled,
+  }) => _sampleMonitor(
+    input,
+    super.setMonitorInputEnabled(input: input, enabled: enabled),
+  );
+
+  @override
+  EngineResult setMonitorInputOutput({required int input, required int mask}) =>
+      _sampleMonitor(
+        input,
+        super.setMonitorInputOutput(input: input, mask: mask),
+      );
+}
+
 void main() {
+  test(
+    'invalid Session Fade amounts refuse before revision or engine mutation',
+    () async {
+      final engine = FakeAudioEngine();
+      final repository = LooperRepository(engine: engine);
+      addTearDown(repository.dispose);
+      expect(repository.startEngine(const EngineConfig()), EngineResult.ok);
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        isRunning: true,
+        devicePresent: true,
+        sampleRate: 48000,
+      );
+      SessionRig rig(double amount) => SessionRig(
+        baseLengthFrames: 4,
+        tracks: [
+          SessionRigTrack(
+            channel: 0,
+            fadeAmount: amount,
+            reversed: false,
+            lanes: [
+              SessionRigLane(
+                lane: 0,
+                layers: [
+                  Float32List.fromList([.5, .5, .5, .5]),
+                ],
+                volume: 1,
+                muted: false,
+                outputMask: 1,
+                inputChannel: 0,
+              ),
+            ],
+          ),
+        ],
+      );
+      final revision = repository.sessionRevision;
+      final before = repository.state.tracks;
+      final calls = [...engine.calls];
+      for (final amount in [double.nan, double.infinity, -.1, 1.1]) {
+        await expectLater(
+          repository.applySession(rig(amount)),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'preflight error',
+              'session mix cannot be restored',
+            ),
+          ),
+        );
+        expect(repository.sessionRevision, revision);
+        expect(repository.state.tracks, before);
+        expect(engine.calls, calls);
+      }
+      // The same live, complete rig passes when only its amount becomes valid.
+      await repository.applySession(rig(.25));
+      expect(repository.sessionRevision, revision + 1);
+      expect(repository.state.tracks[0].state, TrackState.stopped);
+      expect(repository.state.tracks[0].fade.amount, .25);
+      expect(engine.importedTracks[0], everyElement(.5));
+    },
+  );
+
   late FakeAudioEngine engine;
   late StreamController<void> ticker;
 
@@ -126,6 +361,23 @@ void main() {
 
   LooperRepository buildRepo() =>
       LooperRepository(engine: engine, ticker: ticker.stream);
+
+  test('hands every polled snapshot to engineSnapshots, read once', () async {
+    engine.nextSnapshot = _playingSnapshot;
+    final repo = buildRepo();
+    addTearDown(repo.dispose);
+    final seen = <EngineSnapshot>[];
+    final snaps = repo.engineSnapshots.listen(seen.add);
+    addTearDown(snaps.cancel);
+    final sub = repo.looperState.listen((_) {});
+    addTearDown(sub.cancel);
+    await Future<void>.delayed(Duration.zero);
+    final calls = engine.snapshotCalls;
+    ticker.add(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, hasLength(2));
+    expect(engine.snapshotCalls, calls + 1, reason: 'no second engine read');
+  });
 
   group('lastState (the cached projection)', () {
     test("serves the poll's projection without walking the engine", () async {
@@ -377,7 +629,9 @@ void main() {
       expect(state.transport.masterPositionFrames, 24000);
       expect(state.transport.progress, closeTo(0.25, 1e-6));
       expect(state.track.state, TrackState.playing);
-      expect(state.track.volume, closeTo(0.8, 1e-6));
+      // The native snapshot reports effective gain; projection retains the
+      // independent live fader so source balance is not saved twice.
+      expect(state.track.volume, closeTo(1, 1e-6));
       expect(state.track.muted, isFalse);
       expect(state.track.lengthFrames, 96000);
       expect(state.track.peak, closeTo(0.5, 1e-6));
@@ -390,6 +644,820 @@ void main() {
       expect(state.status.inputChannels, 2);
       expect(state.status.outputChannels, 4);
       expect(state.status.isConnected, isTrue);
+    });
+
+    test("a pending arm carries the engine's trigger; none reads null", () {
+      engine.nextSnapshot = _pendingSnapshot(pending: true, trigger: 1);
+      expect(buildRepo().state.track.pendingTrigger, ArmTrigger.sound);
+
+      engine.nextSnapshot = _pendingSnapshot(pending: false, trigger: -1);
+      expect(buildRepo().state.track.pendingTrigger, isNull);
+    });
+
+    group('readTrackWaveform', () {
+      int reads() => engine.calls.where((c) => c == 'readTrackVisual').length;
+
+      /// One playing track of 96000 frames at [position], with the steady
+      /// facts a content change moves.
+      EngineSnapshot at(
+        int position, {
+        TrackState state = TrackState.playing,
+        int undoDepth = 1,
+        int trackLength = 96000,
+        int? trackPosition,
+        int masterLength = 96000,
+        LooperMode mode = LooperMode.multi,
+      }) => EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        inputChannels: 2,
+        outputChannels: 4,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        masterLengthFrames: masterLength,
+        masterPositionFrames: position,
+        looperMode: mode,
+        tracks: [
+          TrackSnapshot(
+            state: state,
+            volume: 0.8,
+            muted: false,
+            lengthFrames: trackLength,
+            positionFrames: trackPosition ?? position,
+            undoDepth: undoDepth,
+            rms: 0.3,
+            peak: 0.5,
+          ),
+        ],
+      );
+
+      test('re-reads every call until the playhead has swept a full lap past '
+          'a content change, then once per lap', () {
+        engine.nextSnapshot = at(24000);
+        final repo = buildRepo();
+        engine.visual = Float32List.fromList([0.5]);
+        expect(repo.readTrackWaveform(0), [0.5]);
+        final first = reads();
+
+        // The engine's tap rewrites the buffer bucket by bucket as the head
+        // moves, so the shape read at the change is the previous pass's.
+        engine.nextSnapshot = at(48000);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = at(72000);
+        repo.readTrackWaveform(0);
+        expect(reads(), first + 2, reason: 'mid-sweep calls must re-read');
+
+        // The wrap, then past the change position: the lap is swept.
+        engine.nextSnapshot = at(8000);
+        repo.readTrackWaveform(0);
+        engine
+          ..nextSnapshot = at(30000)
+          ..visual = Float32List.fromList([0.75]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        final swept = reads();
+
+        engine
+          ..nextSnapshot = at(50000)
+          ..visual = Float32List.fromList([0.125]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        engine.nextSnapshot = at(90000);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(reads(), swept, reason: 'a swept lap is a lookup');
+
+        // The next wrap takes one more copy.
+        engine.nextSnapshot = at(4000);
+        expect(repo.readTrackWaveform(0), [0.125]);
+        expect(reads(), swept + 1);
+      });
+
+      test('a content change starts a new sweep', () {
+        engine.nextSnapshot = at(0);
+        final repo = buildRepo()..readTrackWaveform(0);
+        // Sweep a lap.
+        for (final p in [30000, 60000, 90000, 10000, 20000]) {
+          engine.nextSnapshot = at(p);
+          repo.readTrackWaveform(0);
+        }
+        final swept = reads();
+        engine.nextSnapshot = at(40000);
+        repo.readTrackWaveform(0);
+        expect(reads(), swept);
+
+        // An undo moves the steady facts: re-read now and on every call
+        // until the head passes this position again.
+        engine.nextSnapshot = at(50000, undoDepth: 0);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = at(70000, undoDepth: 0);
+        repo.readTrackWaveform(0);
+        expect(reads(), swept + 2);
+      });
+
+      test('a stopped track keeps its last shape without reading', () {
+        engine.nextSnapshot = at(24000);
+        final repo = buildRepo();
+        engine.visual = Float32List.fromList([0.75]);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = at(24000, state: TrackState.stopped);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        final stopped = reads();
+        engine.visual = Float32List.fromList([0]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(reads(), stopped);
+      });
+
+      test('a capturing track is read on every call', () {
+        engine.nextSnapshot = at(1000, state: TrackState.overdubbing);
+        final repo = buildRepo()..readTrackWaveform(0);
+        engine.nextSnapshot = at(2000, state: TrackState.overdubbing);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = at(3000, state: TrackState.overdubbing);
+        repo.readTrackWaveform(0);
+        expect(reads(), 3);
+      });
+
+      test('an empty track reads nothing and forgets its copy', () {
+        engine.nextSnapshot = at(24000);
+        final repo = buildRepo();
+        engine.visual = Float32List.fromList([0.75]);
+        repo.readTrackWaveform(0);
+        engine.nextSnapshot = const EngineSnapshot.initial();
+        expect(repo.readTrackWaveform(0), isEmpty);
+        expect(repo.readTrackWaveform(3), isEmpty);
+
+        // A take recorded later under the same steady facts is a new shape:
+        // it starts its own sweep instead of inheriting the finished one.
+        final before = reads();
+        engine
+          ..nextSnapshot = at(24000)
+          ..visual = Float32List.fromList([0.25]);
+        expect(repo.readTrackWaveform(0), [0.25]);
+        expect(reads(), before + 1);
+      });
+
+      test('the poll forgets a track that lost its content, so the readers '
+          'never have to ask for an empty one', () async {
+        engine.nextSnapshot = at(24000);
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        engine.visual = Float32List.fromList([0.75]);
+        repo.readTrackWaveform(0);
+        // Sweep a lap so the copy would otherwise be held.
+        for (final p in [60000, 90000, 10000, 30000]) {
+          engine.nextSnapshot = at(p);
+          ticker.add(null);
+          await Future<void>.delayed(Duration.zero);
+          repo.readTrackWaveform(0);
+        }
+        final swept = reads();
+
+        // Cleared, then a take of the same length again: the readers only
+        // ask while there is content, so the poll must do the forgetting.
+        engine.nextSnapshot = const EngineSnapshot.initial();
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        engine
+          ..nextSnapshot = at(40000)
+          ..visual = Float32List.fromList([0.25]);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(repo.readTrackWaveform(0), [0.25]);
+        expect(reads(), swept + 1);
+      });
+
+      test("a multiple's copy sweeps the full track before caching", () {
+        engine.nextSnapshot = at(24000, trackLength: 192000);
+        final repo = buildRepo()..readTrackWaveform(0);
+        for (final p in [60000, 90000, 104000, 126000, 166000, 4000]) {
+          engine.nextSnapshot = at(
+            p % 96000,
+            trackLength: 192000,
+            trackPosition: p,
+          );
+          repo.readTrackWaveform(0);
+        }
+        engine
+          ..nextSnapshot = at(30000, trackLength: 192000, trackPosition: 30000)
+          ..visual = Float32List.fromList([0.75]);
+        expect(repo.readTrackWaveform(0), [0.75], reason: 'full track swept');
+        final swept = reads();
+        engine
+          ..nextSnapshot = at(8000, trackLength: 192000, trackPosition: 104000)
+          ..visual = Float32List.fromList([0.125]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(reads(), swept, reason: 'a master wrap is not a track wrap');
+        engine.nextSnapshot = at(
+          4000,
+          trackLength: 192000,
+          trackPosition: 4000,
+        );
+        expect(repo.readTrackWaveform(0), [0.125]);
+        expect(reads(), swept + 1);
+      });
+
+      test('a divided track refreshes on its own wrap within the master', () {
+        engine.nextSnapshot = at(
+          10000,
+          trackLength: 24000,
+          mode: LooperMode.sync,
+        );
+        final repo = buildRepo()..readTrackWaveform(0);
+        for (final p in [20000, 26000, 36000]) {
+          engine.nextSnapshot = at(
+            p,
+            trackLength: 24000,
+            trackPosition: p % 24000,
+            mode: LooperMode.sync,
+          );
+          repo.readTrackWaveform(0);
+        }
+        final swept = reads();
+        engine
+          ..nextSnapshot = at(
+            44000,
+            trackLength: 24000,
+            trackPosition: 20000,
+            mode: LooperMode.sync,
+          )
+          ..visual = Float32List.fromList([0.125]);
+        repo.readTrackWaveform(0);
+        expect(reads(), swept);
+        engine.nextSnapshot = at(
+          50000,
+          trackLength: 24000,
+          trackPosition: 2000,
+          mode: LooperMode.sync,
+        );
+        expect(repo.readTrackWaveform(0), [0.125]);
+        expect(reads(), swept + 1);
+      });
+
+      test("in Free mode the sweep is the track's own lap", () {
+        // No master loop at all: the transport's progress is 0 throughout,
+        // and the track's own clock is what the tap follows.
+        EngineSnapshot free(int p) =>
+            at(0, masterLength: 0, trackPosition: p, mode: LooperMode.free);
+        engine.nextSnapshot = free(24000);
+        final repo = buildRepo()..readTrackWaveform(0);
+        for (final p in [60000, 90000, 8000]) {
+          engine.nextSnapshot = free(p);
+          repo.readTrackWaveform(0);
+        }
+        engine
+          ..nextSnapshot = free(30000)
+          ..visual = Float32List.fromList([0.75]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        final swept = reads();
+        engine
+          ..nextSnapshot = free(60000)
+          ..visual = Float32List.fromList([0.125]);
+        expect(repo.readTrackWaveform(0), [0.75]);
+        expect(reads(), swept);
+        engine.nextSnapshot = free(2000);
+        expect(repo.readTrackWaveform(0), [0.125]);
+        expect(reads(), swept + 1);
+      });
+    });
+
+    group('looper mode (accepted design, slice 2)', () {
+      test(
+        "the gate is the engine's answer while running, open otherwise",
+        () {
+          final repo = buildRepo();
+          engine.nextLooperModeGate = LooperModeGate.spans;
+          expect(repo.looperModeGate(LooperMode.multi), LooperModeGate.open);
+          engine.nextLooperModeGate = LooperModeGate.open;
+          repo.startEngine(const EngineConfig());
+          engine.nextLooperModeGate = LooperModeGate.spans;
+          expect(repo.looperModeGate(LooperMode.multi), LooperModeGate.spans);
+        },
+      );
+
+      test('a refused change leaves the remembered mode alone', () {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        engine.nextLooperModeGate = LooperModeGate.capturing;
+        expect(repo.setLooperMode(LooperMode.free), EngineResult.invalid);
+        // Re-applied on the next start: still the mode the engine accepted.
+        engine.nextLooperModeGate = LooperModeGate.open;
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.lastLooperMode, LooperMode.multi);
+      });
+
+      test(
+        'a switch identical reports never confirm is dropped in favour of the '
+        'reported mode',
+        () async {
+          final repo = buildRepo()..startEngine(const EngineConfig());
+          addTearDown(repo.dispose);
+          final sub = repo.looperState.listen((_) {});
+          addTearDown(sub.cancel);
+          engine
+            ..commandsAreSettled = false
+            ..publishModeCommands = false;
+          expect(repo.setLooperMode(LooperMode.band), EngineResult.ok);
+          // The fake keeps reporting Multi: after enough polls of the running
+          // engine the request is taken as dropped on the audio thread.
+          engine.nextSnapshot = _playingAt(0);
+          expect(repo.settledLooperMode, isNull);
+          engine.commandsAreSettled = true;
+          for (var i = 1; i <= 12; i++) {
+            ticker.add(null);
+            await Future<void>.delayed(Duration.zero);
+          }
+          expect(repo.settledLooperMode, LooperMode.multi);
+          repo
+            ..stopEngine()
+            ..startEngine(const EngineConfig());
+          expect(engine.lastLooperMode, LooperMode.multi);
+        },
+      );
+
+      test('the restart replay is armed as a request, so the first report '
+          'after a start does not overwrite the remembered mode', () async {
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        expect(repo.setLooperMode(LooperMode.band), EngineResult.ok);
+        engine.commandsAreSettled = false;
+        repo.startEngine(const EngineConfig());
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        // One report of the engine's default before the replay lands.
+        engine.nextSnapshot = _playingAt(100);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.lastLooperMode, LooperMode.band);
+      });
+
+      test('an accepted change is remembered and re-applied', () {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        engine.nextLooperModeGate = LooperModeGate.playing;
+        expect(repo.setLooperMode(LooperMode.band), EngineResult.ok);
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.lastLooperMode, LooperMode.band);
+      });
+    });
+
+    group('clear all as one grouped edit (accepted design, slice 2)', () {
+      int calls(String name) => engine.calls.where((c) => c == name).length;
+
+      Future<void> pollHistory(LooperRepository repo) async {
+        final subscription = repo.looperState.listen((_) {});
+        // Let the async stream subscribe before delivering the normal tick.
+        await Future<void>.delayed(Duration.zero);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        await subscription.cancel();
+      }
+
+      /// Three playing takes; the repository's last state names them.
+      LooperRepository rigOfThree() {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        return buildRepo()..startEngine(const EngineConfig());
+      }
+
+      test('peel hands the engine its answer and touches no cache', () {
+        final repo = rigOfThree();
+        expect(repo.peel(channel: 2), EngineResult.ok);
+        expect(calls('peel'), 1);
+        expect(engine.lastChannel, 2);
+        engine.nextPeelResult = EngineResult.invalid;
+        expect(repo.peel(channel: 1), EngineResult.invalid);
+        engine.nextPeelResult = EngineResult.notReady;
+        expect(repo.peel(), EngineResult.notReady);
+        expect(calls('peel'), 3);
+        expect(calls('undo'), 0);
+        expect(calls('undoRestoresClear'), 0);
+        expect(calls('clearRestorePending'), 0);
+      });
+
+      test('undo on any member restores every member once', () {
+        final repo = rigOfThree();
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        expect(repo.clearAll([0, 1, 2]), EngineResult.ok);
+        expect(calls('clearUndoable'), 3);
+        expect(repo.undo(channel: 2), EngineResult.ok);
+        expect(calls('undo'), 3);
+        // The group is spent: the next undo is the track's own.
+        repo.undo(channel: 1);
+        expect(calls('undo'), 4);
+      });
+
+      test('only takes the clear can give back are members, by the '
+          "engine's own account", () {
+        // Track 1 had nothing to restore: no point filed, none pending.
+        engine
+          ..nextSnapshot = _playingTracksSnapshot(3, emptyRedoOnly: {1})
+          ..undoRestoresClearChannels = {0, 2};
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..clearAll([0, 1, 2]);
+        expect(calls('clearUndoable'), 3); // erased all the same
+        repo.undo();
+        expect(calls('undo'), 2);
+      });
+
+      test('a frozen member is a member from the clear: the grouped undo '
+          'waits for every point before restoring any member', () async {
+        // Track 1 was capturing: its point is filed a block after the clear.
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()
+          ..clearAll([0, 1, 2])
+          ..undo();
+        expect(
+          calls('undo'),
+          0,
+        ); // No partial group before all lengths are known.
+        // The point lands: the next poll takes the waiting tap.
+        engine
+          ..undoRestoresClearChannels = {0, 1, 2}
+          ..clearRestorePendingChannels = {};
+        await pollHistory(repo);
+        expect(calls('undo'), 3);
+        expect(engine.lastChannel, 2);
+      });
+
+      test('a frozen member whose capture held nothing is forgotten by the '
+          'waiting tap before the other members are restored', () async {
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()
+          ..clearAll([0, 1, 2])
+          ..undo();
+        expect(calls('undo'), 0);
+        // Reported void: no point, no longer pending.
+        engine.clearRestorePendingChannels = {};
+        await pollHistory(repo);
+        expect(calls('undo'), 2); // nothing to take
+        // The redo re-clears the two that came back, as one.
+        engine.redoReclearsChannels = {0, 2};
+        expect(repo.redo(channel: 2), EngineResult.ok);
+        expect(calls('redo'), 2);
+      });
+
+      test('redo cancels the entire waiting grouped undo', () async {
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()
+          ..clearAll([0, 1, 2])
+          ..undo();
+        expect(calls('undo'), 0);
+        expect(repo.redo(channel: 2), EngineResult.ok);
+        expect(calls('redo'), 0);
+
+        // Completion after cancellation cannot restore a track by itself.
+        engine
+          ..clearRestorePendingChannels = {}
+          ..undoRestoresClearChannels = {0, 1, 2};
+        await pollHistory(repo);
+        expect(calls('undo'), 0);
+        repo.undo();
+        expect(calls('undo'), 3);
+      });
+
+      test('pending members retain chains and group membership through '
+          'repeated clear, undo, redo, and undo', () {
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree();
+        final effects = [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.delay),
+          BuiltInEffect(type: TrackEffectType.reverb),
+        ];
+        for (var channel = 0; channel < 3; channel++) {
+          repo
+            ..setLaneEffects(
+              channel: channel,
+              lane: 0,
+              effects: [effects[channel]],
+            )
+            ..setLaneChainEnabled(channel: channel, lane: 0, enabled: false)
+            ..setLaneChainMeta(
+              channel: channel,
+              lane: 0,
+              inheritedFrom: [channel],
+            );
+        }
+        final saved = [
+          for (var channel = 0; channel < 3; channel++)
+            List<TrackEffect>.of(repo.laneEffects(channel, 0)),
+        ];
+        repo
+          ..clearAll([0, 1, 2])
+          ..undo();
+        expect(calls('undo'), 0);
+        engine.redoReclearsChannels = {0, 2};
+        repo.redo(channel: 2);
+        expect(calls('redo'), 0);
+        expect(repo.laneEffects(1, 0), isEmpty);
+        engine
+          ..clearRestorePendingChannels = {}
+          ..undoRestoresClearChannels = {0, 1, 2};
+        repo.undo(channel: 1);
+        expect(calls('undo'), 3);
+        void expectChains() {
+          for (var channel = 0; channel < 3; channel++) {
+            expect(repo.laneEffects(channel, 0), saved[channel]);
+            expect(repo.laneChainEnabled(channel, 0), isFalse);
+            expect(repo.laneChainInheritedFrom(channel, 0), [channel]);
+          }
+        }
+
+        expectChains();
+        engine.redoReclearsChannels = {0, 1, 2};
+        repo
+          ..redo()
+          ..undo(channel: 2);
+        expect(calls('redo'), 3);
+        expect(calls('undo'), 6);
+        expectChains();
+      });
+
+      test('an incompatible group leaves every take and chain cleared '
+          'until a compatible retry', () async {
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        final repo = rigOfThree();
+        final notices = <RecoveryRefusal>[];
+        final subscription = repo.recoveryRefusals.listen(notices.add);
+        addTearDown(subscription.cancel);
+        repo
+          ..setLaneEffects(
+            channel: 1,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.delay)],
+          )
+          ..setLaneMute(channel: 1, lane: 0, muted: true)
+          ..clearAll([2, 0, 1]);
+        engine.nextHistoryModeGate = EngineResult.modeMismatch;
+        expect(repo.undo(channel: 2), EngineResult.modeMismatch);
+        await Future<void>.delayed(Duration.zero);
+        expect(calls('undo'), 0);
+        expect(engine.historyModeGateCalls, [(channels: 7, redo: false)]);
+        expect(repo.laneEffects(1, 0), isEmpty);
+        expect(notices.single.action, RecoveryAction.undo);
+        expect(notices.single.result, EngineResult.modeMismatch);
+
+        // A mode change permits the same history operation; it was not spent.
+        engine.nextHistoryModeGate = EngineResult.ok;
+        expect(repo.undo(channel: 1), EngineResult.ok);
+        expect(calls('undo'), 3);
+        expect(engine.lastChannel, 2);
+        expect(repo.laneEffects(1, 0), hasLength(1));
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.laneMute[(1, 0)], isTrue);
+      });
+
+      test(
+        'a frozen group is checked only when its final length lands',
+        () async {
+          engine
+            ..undoRestoresClearChannels = {0, 2}
+            ..clearRestorePendingChannels = {1}
+            ..nextHistoryModeGate = EngineResult.modeMismatch;
+          final repo = rigOfThree()
+            ..clearAll([0, 1, 2])
+            ..undo();
+          expect(engine.historyModeGateCalls, isEmpty);
+          expect(calls('undo'), 0);
+          engine
+            ..clearRestorePendingChannels = {}
+            ..undoRestoresClearChannels = {0, 1, 2};
+          await pollHistory(repo);
+          expect(engine.historyModeGateCalls, [(channels: 7, redo: false)]);
+          expect(calls('undo'), 0);
+          engine.nextHistoryModeGate = EngineResult.ok;
+          expect(repo.undo(), EngineResult.ok);
+          expect(calls('undo'), 3);
+        },
+      );
+
+      test('a refused grouped redo keeps all restored chains and its '
+          'whole-group retry', () {
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        final repo = rigOfThree()
+          ..setLaneEffects(
+            channel: 2,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+          )
+          ..clearAll([0, 1, 2])
+          ..undo();
+        engine
+          ..redoReclearsChannels = {0, 1, 2}
+          ..nextHistoryModeGate = EngineResult.notReady;
+        expect(repo.redo(channel: 1), EngineResult.notReady);
+        expect(calls('redo'), 0);
+        expect(engine.historyModeGateCalls.last, (channels: 7, redo: true));
+        expect(repo.laneEffects(2, 0), hasLength(1));
+        engine.nextHistoryModeGate = EngineResult.ok;
+        expect(repo.redo(channel: 2), EngineResult.ok);
+        expect(calls('redo'), 3);
+        expect(repo.laneEffects(2, 0), isEmpty);
+      });
+
+      test('a frozen member is a member once its point is filed', () {
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()..clearAll([0, 1, 2]);
+        engine
+          ..undoRestoresClearChannels = {0, 1, 2}
+          ..clearRestorePendingChannels = {};
+        repo.undo(channel: 1);
+        expect(calls('undo'), 3);
+      });
+
+      test('an undo tapped at a single frozen clear restores the chains '
+          'the clear emptied', () async {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            channel: 1,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          );
+        engine.clearRestorePendingChannels = {1};
+        repo.clear(channel: 1);
+        expect(repo.laneEffects(1, 0), isEmpty);
+        repo.undo(channel: 1);
+        expect(calls('undo'), 0); // held until the point lands
+        expect(repo.laneEffects(1, 0), isEmpty);
+        engine
+          ..clearRestorePendingChannels = {}
+          ..undoRestoresClearChannels = {1};
+        await pollHistory(repo);
+        expect(calls('undo'), 1);
+        expect(repo.laneEffects(1, 0), hasLength(1));
+      });
+
+      test('a waiting tap on a capture that held nothing restores no chain '
+          'onto the empty track', () async {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            channel: 1,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          );
+        engine.clearRestorePendingChannels = {1};
+        repo
+          ..clear(channel: 1)
+          ..undo(channel: 1);
+        engine.clearRestorePendingChannels = {}; // void: no point filed
+        await pollHistory(repo);
+        expect(calls('undo'), 0);
+        expect(repo.laneEffects(1, 0), isEmpty);
+      });
+
+      test('a frozen capture is remembered audible: its lane mutes do not '
+          'come back with the take', () async {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            channel: 1,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          )
+          ..setLaneMute(channel: 1, lane: 0, muted: true);
+        engine.clearRestorePendingChannels = {1};
+        repo
+          ..clear(channel: 1)
+          ..undo(channel: 1);
+        engine
+          ..clearRestorePendingChannels = {}
+          ..undoRestoresClearChannels = {1};
+        await pollHistory(repo);
+        expect(calls('undo'), 1);
+        engine.laneMute.clear();
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.laneMute[(1, 0)] ?? false, isFalse);
+      });
+
+      test('a frozen member whose capture held nothing leaves the group '
+          'without ending it', () {
+        // Track 1 was a take with nothing captured yet: pending at the
+        // clear, then reported void (no point, no longer pending).
+        engine
+          ..undoRestoresClearChannels = {0, 2}
+          ..clearRestorePendingChannels = {1};
+        final repo = rigOfThree()..clearAll([0, 1, 2]);
+        engine.clearRestorePendingChannels = {};
+        repo.undo(channel: 2);
+        expect(calls('undo'), 2); // tracks 0 and 2, as one
+      });
+
+      test('a polled retired member cannot re-form a cleared group', () async {
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        final repo = rigOfThree();
+        final subscription = repo.looperState.listen((_) {});
+        addTearDown(subscription.cancel);
+        await Future<void>.delayed(Duration.zero);
+        repo.clearAll([0, 1, 2]);
+        engine.undoRestoresClearChannels = {0, 2};
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(calls('undo'), 0);
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        expect(repo.undo(channel: 1), EngineResult.ok);
+        expect(calls('undo'), 1);
+        expect(engine.lastChannel, 1);
+      });
+
+      test('a single clear ends the group', () {
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        final repo = rigOfThree()
+          ..clearAll([0, 1])
+          ..clear(channel: 2);
+        expect(repo.undo(channel: 1), EngineResult.ok);
+        expect(calls('undo'), 1);
+        expect(engine.lastChannel, 1);
+      });
+
+      test('undoClearAll restores the intact group, else each restore '
+          'point on its own', () {
+        engine
+          ..nextSnapshot = _playingTracksSnapshot(3)
+          ..undoRestoresClearChannels = {0, 1, 2};
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..clearAll([0, 1, 2]);
+        expect(repo.undoClearAll(), EngineResult.ok);
+        expect(calls('undo'), 3);
+
+        // A group the engine partly retired: the state reports two restore
+        // points, and both come back on their own.
+        engine
+          ..nextSnapshot = _playingTracksSnapshot(3, clearRestore: {0, 2})
+          ..undoRestoresClearChannels = {0, 2};
+        repo.clearAll([0, 1, 2]);
+        engine.undoRestoresClearChannels = {0}; // 2's point retired
+        expect(repo.undoClearAll(), EngineResult.ok);
+        expect(calls('undo'), 5);
+      });
+
+      test('redo after the grouped undo re-clears the group, doing the '
+          "clear's own bookkeeping", () {
+        engine.undoRestoresClearChannels = {0, 1};
+        final repo = rigOfThree()
+          ..clearAll([0, 1])
+          ..undo();
+        // Every member's next redo is the re-clear: the group re-clears.
+        engine.redoReclearsChannels = {0, 1};
+        expect(repo.redo(channel: 1), EngineResult.ok);
+        expect(calls('redo'), 2);
+        expect(repo.undo(channel: 1), EngineResult.ok);
+        expect(calls('undo'), 4);
+      });
+
+      test('a member whose next redo is a layer stands the group down', () {
+        engine.undoRestoresClearChannels = {0, 1};
+        final repo = rigOfThree()
+          ..clearAll([0, 1])
+          ..undo();
+        engine.redoReclearsChannels = {1}; // track 0 peeled a layer since
+        expect(repo.redo(channel: 1), EngineResult.ok);
+        expect(calls('redo'), 1); // track 1's own redo only
+        expect(repo.undo(channel: 1), EngineResult.ok);
+        expect(calls('undo'), 3); // only track 1 joins the prior two undos
+      });
+
+      test('a fresh clear all replaces the group', () {
+        engine.undoRestoresClearChannels = {0, 1, 2};
+        rigOfThree()
+          ..clearAll([0])
+          ..clearAll([1, 2])
+          ..undo(channel: 1);
+        expect(calls('undo'), 2);
+      });
     });
 
     test('the master playhead moving does not change any track', () {
@@ -516,7 +1584,7 @@ void main() {
       expect(track.lanes, hasLength(2));
       expect(track.lanes[0].inputChannel, 0);
       expect(track.lanes[0].outputMask, 0x1);
-      expect(track.lanes[0].volume, closeTo(0.8, 1e-6));
+      expect(track.lanes[0].volume, closeTo(1, 1e-6));
       expect(track.lanes[0].effects, isEmpty);
       expect(track.lanes[1].inputChannel, 1);
       expect(track.lanes[1].muted, isTrue);
@@ -556,6 +1624,38 @@ void main() {
       expect(track.multiple, 2);
       expect(track.isMultiple, isTrue);
       expect(track.lengthFrames, 96000);
+      expect(track.syncDivisor, 0);
+    });
+
+    test('projects a Sync division from the snapshot (#1168)', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        masterLengthFrames: 48000,
+        tracks: [
+          TrackSnapshot(
+            state: TrackState.playing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 12000,
+            undoDepth: 1,
+            rms: 0,
+            peak: 0,
+            syncDivisor: 4,
+          ),
+        ],
+      );
+      final track = buildRepo().state.tracks.first;
+      expect(track.syncDivisor, 4);
+      expect(track.multiple, 1);
     });
 
     test('initial snapshot projects an empty looper', () {
@@ -712,6 +1812,9 @@ void main() {
         'recordOffsetFrames',
         'fxAddedLatencyFrames',
         'activeBackend',
+        // Set once per reconnect, cleared by the next deliberate start: it
+        // moves at human pace, like a dropout count, never per callback.
+        'reopen',
       };
 
       final actual = _declaredFinalFields(
@@ -928,8 +2031,93 @@ void main() {
     });
   });
 
+  group('recovery refusals', () {
+    test('undo preserves the clear snapshot when the native guard refuses '
+        'after preflight', () async {
+      engine
+        ..nextSnapshot = _playingTracksSnapshot(1)
+        ..undoRestoresClearChannels = {0};
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..clear();
+      final notices = <RecoveryRefusal>[];
+      final sub = repo.recoveryRefusals.listen(notices.add);
+      addTearDown(sub.cancel);
+      engine.nextUndoResult = EngineResult.modeMismatch;
+      expect(repo.undo(), EngineResult.modeMismatch);
+      await Future<void>.delayed(Duration.zero);
+      expect(notices.single.action, RecoveryAction.undo);
+      expect(repo.laneEffects(0, 0), isEmpty);
+      engine.nextUndoResult = EngineResult.ok;
+      expect(repo.undo(), EngineResult.ok);
+      expect(repo.laneEffects(0, 0), hasLength(1));
+    });
+
+    test('redo refusal preserves a mute on an empty track for restart', () {
+      engine.nextSnapshot = _playingTracksSnapshot(1, emptyRedoOnly: {0});
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneMute(channel: 0, lane: 0, muted: true);
+      engine.nextRedoResult = EngineResult.modeMismatch;
+      expect(repo.redo(), EngineResult.modeMismatch);
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.laneMute[(0, 0)], isTrue);
+      engine.nextRedoResult = EngineResult.ok;
+      repo.redo();
+      engine.laneMute.clear();
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.laneMute[(0, 0)] ?? false, isFalse);
+    });
+
+    test(
+      'not-ready redo is reported once and a later retry succeeds',
+      () async {
+        final repo = buildRepo();
+        final notices = <RecoveryRefusal>[];
+        final sub = repo.recoveryRefusals.listen(notices.add);
+        addTearDown(sub.cancel);
+        engine.nextHistoryModeGate = EngineResult.notReady;
+        expect(repo.redo(), EngineResult.notReady);
+        await Future<void>.delayed(Duration.zero);
+        expect(notices.single.action, RecoveryAction.redo);
+        expect(notices.single.result, EngineResult.notReady);
+        expect(engine.calls, isNot(contains('redo')));
+        engine.nextHistoryModeGate = EngineResult.ok;
+        expect(repo.redo(), EngineResult.ok);
+        expect(engine.calls, contains('redo'));
+      },
+    );
+
+    test(
+      'invalid channel masks do not alias other tracks or emit a notice',
+      () async {
+        final repo = buildRepo();
+        final notices = <RecoveryRefusal>[];
+        final sub = repo.recoveryRefusals.listen(notices.add);
+        addTearDown(sub.cancel);
+        for (final channel in [-1, 32, 100]) {
+          expect(repo.undo(channel: channel), EngineResult.invalid);
+          expect(repo.redo(channel: channel), EngineResult.invalid);
+        }
+        await Future<void>.delayed(Duration.zero);
+        expect(engine.historyModeGateCalls, isEmpty);
+        expect(notices, isEmpty);
+      },
+    );
+  });
+
   group('commands forward to the engine', () {
     test('each command calls the matching engine method', () {
+      engine.nextSnapshot = _pendingSnapshot(pending: false, trigger: -1);
       buildRepo()
         ..startEngine(const EngineConfig(sampleRate: 48000))
         ..record()
@@ -963,8 +2151,9 @@ void main() {
         ]),
       );
       expect(engine.lastConfig?.sampleRate, 48000);
-      expect(engine.lastVolume, 0.5);
-      expect(engine.lastMuted, isTrue);
+      // The stopped engine keeps the fader intent for its next start.
+      expect(engine.lastVolume, isNull);
+      expect(engine.lastMuted, isNull);
     });
 
     test('startEngine stores the last successful config', () {
@@ -988,9 +2177,25 @@ void main() {
       expect(repo.lastEngineConfig, isNull);
     });
 
-    test('setQuantize is deferred until running, then applied', () {
+    test('mix recovery blocks every start path before lifecycle changes', () {
+      final repo = buildRepo();
+      final generation = repo.mixGeneration;
+      repo.blockStartForMixRecovery();
+
+      expect(repo.startEngine(const EngineConfig()), EngineResult.notReady);
+      expect(repo.mixGeneration, generation);
+      expect(repo.lastEngineConfig, isNull);
+      expect(engine.calls, isNot(contains('start')));
+
+      repo.clearMixRecoveryStartBlock();
+      expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+      expect(repo.mixGeneration, generation + 1);
+      expect(engine.calls, contains('start'));
+    });
+
+    test('Record timing is deferred until running, then applied', () {
       // Not running yet: the value is remembered but not pushed to the engine.
-      final repo = buildRepo()..setQuantize(enabled: true);
+      final repo = buildRepo()..setRecordTiming(RecordTiming.loopStart);
       expect(engine.lastQuantize, isNull);
 
       // A start re-applies the remembered quantize state.
@@ -998,12 +2203,12 @@ void main() {
       expect(engine.lastQuantize, isTrue);
     });
 
-    test('setQuantize applies immediately while running', () {
+    test('Record timing confirms the callback while running', () {
       final repo = buildRepo()..startEngine(const EngineConfig());
       // The start re-applied the default (off).
       expect(engine.lastQuantize, isFalse);
 
-      repo.setQuantize(enabled: true);
+      repo.setRecordTiming(RecordTiming.loopStart);
       expect(engine.lastQuantize, isTrue);
     });
 
@@ -1036,41 +2241,133 @@ void main() {
       expect(engine.finalizedTakes, [3, 3]);
     });
 
-    test('per-track quantize overrides are deferred then re-applied', () {
+    test('per-track record timing overrides are deferred then re-applied as '
+        'the engine gate and division', () {
       final repo = buildRepo()
-        ..setTrackQuantize(channel: 1, enabled: true)
-        ..setTrackQuantize(channel: 2, enabled: false);
+        ..setTrackRecordTiming(channel: 1, timing: RecordTiming.quarter)
+        ..setTrackRecordTiming(channel: 2, timing: RecordTiming.immediately)
+        ..setTrackRecordTiming(channel: 3, timing: RecordTiming.loopStart);
       expect(engine.trackQuantize, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
       expect(engine.trackQuantize[1], isTrue);
+      expect(engine.trackQuantizeDiv[1], GridDivision.quarter);
       expect(engine.trackQuantize[2], isFalse);
+      expect(engine.trackQuantizeDiv[2], GridDivision.off);
+      expect(engine.trackQuantize[3], isTrue);
+      expect(engine.trackQuantizeDiv[3], GridDivision.off);
     });
 
     test(
-      'clearing a per-track override (null) inherits the global default',
+      'clearing a per-track record timing (null) follows the default again',
       () {
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
-          ..setTrackQuantize(channel: 1, enabled: true);
+          ..setTrackRecordTiming(channel: 1, timing: RecordTiming.bar);
         expect(engine.trackQuantize[1], isTrue);
+        expect(engine.trackQuantizeDiv[1], GridDivision.bar);
 
-        repo.setTrackQuantize(channel: 1, enabled: null);
+        repo.setTrackRecordTiming(channel: 1, timing: null);
         expect(engine.trackQuantize[1], isNull);
+        expect(engine.trackQuantizeDiv[1], isNull);
 
-        // A later restart does not re-apply the cleared override.
+        // A later full restart vector explicitly retains inheritance.
         engine.trackQuantize.clear();
         repo.startEngine(const EngineConfig());
-        expect(engine.trackQuantize.containsKey(1), isFalse);
+        expect(engine.trackQuantize[1], isNull);
+        expect(engine.trackQuantizeDiv[1], isNull);
       },
     );
+
+    test('the default record timing sets the gate and division together, '
+        'division first, and is projected', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      engine.calls.clear();
+      expect(repo.setRecordTiming(RecordTiming.eighth), EngineResult.ok);
+      expect(engine.lastQuantizeDiv, GridDivision.eighth);
+      expect(engine.lastQuantize, isTrue);
+      expect(
+        engine.calls.where((c) => c == 'setRecordTimingSettings'),
+        hasLength(1),
+      );
+      expect(repo.state.transport.quantize, isTrue);
+      expect(repo.state.transport.recordTiming, RecordTiming.eighth);
+
+      repo.setRecordTiming(RecordTiming.immediately);
+      expect(engine.lastQuantize, isFalse);
+      expect(repo.state.transport.recordTiming, RecordTiming.immediately);
+
+      // Re-applied on a restart.
+      repo
+        ..setRecordTiming(RecordTiming.loopStart)
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastQuantize, isTrue);
+      expect(engine.lastQuantizeDiv, GridDivision.off);
+    });
+
+    test('overdub decay reaches the engine as feedback, per track and by '
+        'default, and is re-applied', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
+      final repo = buildRepo()
+        ..setOverdubDecay(25)
+        ..setTrackOverdubDecay(channel: 1, percent: 100)
+        ..setTrackOverdubDecay(channel: 2, percent: 0);
+      expect(engine.lastOverdubFeedback, isNull); // not running yet
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastOverdubFeedback, closeTo(0.75, 1e-9));
+      expect(engine.trackOverdubFeedback[1], closeTo(0, 1e-9));
+      expect(engine.trackOverdubFeedback[2], closeTo(1, 1e-9));
+      expect(repo.state.transport.overdubDecay, 25);
+      expect(repo.state.tracks[1].overdubDecayOverride, 100);
+      expect(repo.state.tracks[0].overdubDecayOverride, isNull);
+
+      repo.setTrackOverdubDecay(channel: 1, percent: null);
+      expect(engine.trackOverdubFeedback[1], isNull);
+      expect(repo.state.tracks[1].overdubDecayOverride, isNull);
+
+      // Out-of-range values clamp.
+      repo.setOverdubDecay(140);
+      expect(engine.lastOverdubFeedback, closeTo(0, 1e-9));
+      expect(repo.state.transport.overdubDecay, 100);
+      expect(LooperRepository.feedbackOfDecay(25), closeTo(0.75, 1e-9));
+    });
+
+    test('count-in and Sound start exclude each other in the remembered '
+        'settings, as they do in the engine', () {
+      final repo = buildRepo()
+        ..setRecordStartSettings(
+          countInBars: 0,
+          soundStart: true,
+          editKind: RecordStartEditKind.sound,
+        )
+        ..setRecordStartSettings(
+          countInBars: 2,
+          soundStart: false,
+          editKind: RecordStartEditKind.countIn,
+        )
+        ..startEngine(const EngineConfig());
+      expect(engine.lastAutoRecord, isFalse); // the count-in won
+      expect(engine.lastCountIn, 2);
+
+      repo
+        ..setRecordStartSettings(
+          countInBars: 0,
+          soundStart: true,
+          editKind: RecordStartEditKind.sound,
+        )
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastAutoRecord, isTrue);
+      expect(engine.lastCountIn, 0); // and Sound start won this time
+    });
 
     test('a per-track override is projected onto the track it names', () async {
       // The engine takes the override and never reports it back, so the
       // repository's own map is the only thing that knows it — and a surface
       // that draws the override has to be told when it changes, including on
       // the session load that writes them with no user gesture at all.
-      engine.nextSnapshot = const EngineSnapshot(
+      engine.nextSnapshot = EngineSnapshot(
         isRunning: true,
         sampleRate: 48000,
         bufferFrames: 128,
@@ -1081,40 +2378,69 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
+        // All eight fixed slots, as the engine publishes them.
         tracks: [
-          TrackSnapshot(
-            state: TrackState.empty,
-            volume: 1,
-            muted: false,
-            lengthFrames: 0,
-            undoDepth: 0,
-            rms: 0,
-            peak: 0,
-          ),
+          for (var i = 0; i < 8; i++)
+            const TrackSnapshot(
+              state: TrackState.empty,
+              volume: 1,
+              muted: false,
+              lengthFrames: 0,
+              undoDepth: 0,
+              rms: 0,
+              peak: 0,
+            ),
         ],
       );
       final repo = buildRepo()..startEngine(const EngineConfig());
-      expect(repo.state.tracks.first.quantizeOverride, isNull);
+      expect(repo.state.tracks.first.recordTimingOverride, isNull);
 
       final emitted = repo.looperState.firstWhere(
-        (state) => state.tracks.first.quantizeOverride != null,
+        (state) => state.tracks.first.recordTimingOverride != null,
       );
-      repo.setTrackQuantize(channel: 0, enabled: false);
+      repo.setTrackRecordTiming(channel: 0, timing: RecordTiming.immediately);
 
-      expect((await emitted).tracks.first.quantizeOverride, isFalse);
+      expect(
+        (await emitted).tracks.first.recordTimingOverride,
+        RecordTiming.immediately,
+      );
       expect(repo.state.tracks.first.quantizeOverride, isFalse);
 
-      repo.setTrackQuantize(channel: 0, enabled: true);
+      repo.setTrackRecordTiming(channel: 0, timing: RecordTiming.half);
+      expect(repo.state.tracks.first.recordTimingOverride, RecordTiming.half);
       expect(repo.state.tracks.first.quantizeOverride, isTrue);
 
-      repo.setTrackQuantize(channel: 0, enabled: null);
-      expect(repo.state.tracks.first.quantizeOverride, isNull);
+      repo.setTrackRecordTiming(channel: 0, timing: null);
+      expect(repo.state.tracks.first.recordTimingOverride, isNull);
+    });
+
+    test('rec/dub is projected, and lands on the next frame', () async {
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final seen = <bool>[];
+      final sub = repo.looperState.listen(
+        (state) => seen.add(state.transport.recDub),
+      );
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, [false]);
+
+      // No tick in between: the setting re-projects on its own.
+      repo.setRecDub(enabled: true);
+      expect(repo.state.transport.recDub, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, [false, true]);
     });
 
     test('rec/dub, auto-record and multiples re-apply on start', () {
       final repo = buildRepo()
         ..setRecDub(enabled: true)
-        ..setAutoRecord(enabled: true)
+        ..setRecordStartSettings(
+          countInBars: 0,
+          soundStart: true,
+          editKind: RecordStartEditKind.sound,
+        )
         ..setDefaultMultiple(multiple: 2)
         ..setTrackMultiple(channel: 1, multiple: 3);
       expect(engine.lastRecDub, isNull); // not running yet
@@ -1247,6 +2573,77 @@ void main() {
       expect(engine.tunerInput, 0);
     });
 
+    test('setTunerMute silences a pair only while armed and rides the arm '
+        'across a restart', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      // Disarmed: refused, nothing sent.
+      expect(repo.setTunerMute({0}), EngineResult.invalid);
+      expect(engine.calls, isNot(contains('setTunerMute')));
+
+      repo.setTunerInput(input: 2);
+      expect(repo.setTunerMute({2, 3}), EngineResult.ok);
+      expect(engine.tunerMuteMask, 0xC);
+      expect(repo.setTunerMute({32}), EngineResult.invalid);
+      expect(repo.setTunerMute({-1}), EngineResult.invalid);
+      expect(engine.tunerMuteMask, 0xC);
+
+      // A restart under the open face re-arms, then re-sends the mute after
+      // it (the arm clears it natively).
+      engine.calls.clear();
+      engine
+        ..tunerInput = -1
+        ..tunerMuteMask = 0;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.tunerInput, 2);
+      expect(engine.tunerMuteMask, 0xC);
+      expect(
+        engine.calls.indexOf('setTunerInput'),
+        lessThan(engine.calls.indexOf('setTunerMute')),
+      );
+
+      // Moving the tuner drops the remembered mute: a restart re-arms the new
+      // input without silencing the old pair.
+      repo.setTunerInput(input: 1);
+      engine
+        ..calls.clear()
+        ..tunerMuteMask = 0;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.tunerInput, 1);
+      expect(engine.calls, isNot(contains('setTunerMute')));
+
+      // An empty set ends the mute.
+      expect(repo.setTunerMute({1}), EngineResult.ok);
+      expect(repo.setTunerMute({}), EngineResult.ok);
+      expect(engine.tunerMuteMask, 0);
+    });
+
+    test(
+      'a mute issued while stopped lands after the arm on the next start',
+      () {
+        final repo = buildRepo()..setTunerInput(input: 1);
+        expect(repo.setTunerMute({1}), EngineResult.ok);
+        expect(engine.tunerMuteMask, 0);
+
+        repo.startEngine(const EngineConfig());
+        expect(engine.tunerInput, 1);
+        expect(engine.tunerMuteMask, 0x2);
+      },
+    );
+
+    test('the tuner reading carries the engine mute mask', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        tunerInput: 2,
+        tunerMuteMask: 0xC,
+      );
+      final next = repo.looperState.firstWhere((s) => s.tuner.input == 2);
+      expect((await next).tuner.muteMask, 0xC);
+    });
+
     test('an arm issued while stopped lands on the next start', () {
       final repo = buildRepo()..setTunerInput(input: 1);
       expect(engine.tunerInput, -1);
@@ -1306,13 +2703,13 @@ void main() {
             ),
           ],
         );
-      expect(engine.laneFx, isEmpty); // not running yet
+      expect(engine.recipes, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
-      // Track-addressed effects map to lane 0.
-      expect(engine.laneFx[(1, 0, 0)]?.code, TrackEffectType.delay.code);
-      expect(engine.laneFxParam[(1, 0, 0, 1)], 0.4);
-      expect(engine.laneFxCount[(1, 0)], 1);
+      final recipe = engine.recipes[(FxOwner.lane, 1, 0)]!;
+      expect(recipe.slots.single.type.code, TrackEffectType.delay.code);
+      expect(recipe.slots.single.params[1], 0.4);
+      expect(recipe.slots, hasLength(1));
     });
 
     test('a live param tweak updates the entry without resetting it', () {
@@ -1333,23 +2730,20 @@ void main() {
         value: 0.9,
       );
       expect(engine.laneFxParam[(0, 0, 0, 0)], 0.9);
-      // No setLaneFx (which would reset DSP) — only the granular param call.
-      expect(engine.calls, isNot(contains('setLaneFx')));
+      // No complete recipe replacement (which would reset DSP).
+      expect(engine.calls, isNot(contains('setFxRecipe')));
       expect(engine.calls, contains('setLaneFxParam'));
 
       // The tweak is remembered and re-applied on restart.
-      engine.laneFxParam.clear();
       repo.startEngine(const EngineConfig());
-      expect(engine.laneFxParam[(0, 0, 0, 0)], 0.9);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]!.slots.single.params[0], 0.9);
     });
 
     test(
-      'a plugin entry loads through the slot ABI, not the built-in FX push',
+      'a plugin entry is one prepared slot inside the admitted lane recipe',
       () {
-        // A plugin slot loads through the dedicated slot ABI (setLanePlugin)
-        // rather than the built-in setLaneFx push: it must not disturb the
-        // built-in entries around it, and the active count still spans the
-        // whole chain (so trailing built-ins keep their indices).
+        // Preparation supplies one handle, while the callback receives all
+        // three slots in one ordered recipe, including the trailing built-in.
         buildRepo()
           ..startEngine(const EngineConfig())
           ..setLaneEffects(
@@ -1365,14 +2759,13 @@ void main() {
             ],
           );
 
-        // Built-in entries pushed at their own indices; the plugin loads via
-        // the slot ABI at index 1 (never setLaneFx).
-        expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.drive.code);
-        expect(engine.laneFx.containsKey((0, 0, 1)), isFalse);
-        expect(engine.lanePlugins[(0, 0, 1)], 'p');
-        expect(engine.laneFx[(0, 0, 2)]?.code, TrackEffectType.reverb.code);
-        // The active count still spans all three entries.
-        expect(engine.laneFxCount[(0, 0)], 3);
+        final slots = engine.recipes[(FxOwner.lane, 0, 0)]!.slots;
+        expect(slots, hasLength(3));
+        expect(slots[0].type.code, TrackEffectType.drive.code);
+        expect(slots[1].plugin, isNotNull);
+        expect(slots[2].type.code, TrackEffectType.reverb.code);
+        expect(engine.calls, contains('preparePlugin'));
+        expect(engine.calls, contains('setFxRecipe'));
       },
     );
 
@@ -1574,23 +2967,30 @@ void main() {
       );
     });
 
-    test('persisted plugin paramValues replay through the RT queue', () {
-      buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setLaneEffects(
-          lane: 0,
-          channel: 0,
-          effects: const [
-            PluginEffect(
-              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
-              paramValues: {100: 0.25},
-            ),
-          ],
+    test(
+      'persisted plugin paramValues are prepared before recipe admission',
+      () {
+        buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            lane: 0,
+            channel: 0,
+            effects: const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+                paramValues: {100: 0.25},
+              ),
+            ],
+          );
+        expect(engine.preparedPluginParams, hasLength(1));
+        expect(engine.preparedPluginParams.single.paramId, 100);
+        expect(engine.preparedPluginParams.single.value, 0.25);
+        expect(
+          engine.recipes[(FxOwner.lane, 0, 0)]?.slots.single.plugin,
+          isNotNull,
         );
-      expect(engine.pluginParamSets, hasLength(1));
-      expect(engine.pluginParamSets.single.paramId, 100);
-      expect(engine.pluginParamSets.single.value, 0.25);
-    });
+      },
+    );
 
     test('setLanePluginParam routes to the loaded slot and remembers it', () {
       final repo = buildRepo()
@@ -1672,7 +3072,10 @@ void main() {
             ),
           ],
         );
-      expect(engine.monitorPlugins[(2, 0)], 'm');
+      expect(
+        engine.recipes[(FxOwner.monitor, 2, 0)]?.slots.single.plugin,
+        isNotNull,
+      );
 
       expect(
         repo.setMonitorPluginParam(
@@ -1692,7 +3095,8 @@ void main() {
     });
 
     test('a plugin param set with no loaded slot is invalid', () {
-      // Engine not started => no slot loaded for the remembered chain.
+      // A recalled unavailable entry is retained dry with no hosted slot.
+      engine.nextSlotHandle = null;
       final repo = buildRepo()
         ..setLaneEffects(
           lane: 0,
@@ -1704,17 +3108,7 @@ void main() {
           ],
         )
         ..startEngine(const EngineConfig());
-      // Simulate a failed load: the next plugin load returns no handle.
-      engine.nextSlotHandle = null;
-      repo.setLaneEffects(
-        lane: 0,
-        channel: 0,
-        effects: const [
-          PluginEffect(
-            ref: PluginRef(format: PluginFormat.clap, id: 'p'),
-          ),
-        ],
-      );
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.slots.single.plugin, isNull);
       expect(
         repo.setLanePluginParam(
           channel: 0,
@@ -1911,19 +3305,16 @@ void main() {
         isTrue,
       );
 
-      // Re-apply the chain: every structural edit, engine restart and session
-      // reload comes back through here.
-      engine.pluginParamSets.clear();
-      repo.setLaneEffects(
-        lane: 0,
-        channel: 0,
-        effects: repo.laneEffects(0, 0),
-      );
+      // A restart prepares a new detached host from the remembered values.
+      engine.preparedPluginParams.clear();
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
 
       // The exact set, not `everyElement` — which is true of an empty list,
       // and an empty list is the failure where the replay is dropped
       // altogether.
-      expect(engine.pluginParamSets.map((s) => s.paramId).toSet(), {101});
+      expect(engine.preparedPluginParams.map((s) => s.paramId).toSet(), {101});
     });
 
     test('what the console will draw is read back at load', () {
@@ -2068,6 +3459,8 @@ void main() {
               PluginEffect(
                 ref: PluginRef(format: PluginFormat.clap, id: 'A'),
                 state: 'AAAA',
+                rack: FxRack(id: 'rack', name: 'My rack'),
+                module: 'Hosted module',
               ),
             ],
           );
@@ -2102,11 +3495,11 @@ void main() {
         // whose relink browses every installed plugin.
         final fx = repo.laneEffects(0, 0).single as PluginEffect;
         expect(fx.paramValues, isEmpty);
-        expect(engine.pluginParamSets, isEmpty);
-        // The blob still travels: a plugin that does not recognise one
-        // rejects it, and the alternative is losing the settings of an entry
-        // whose plugin merely moved.
-        expect(fx.state, 'AAAA');
+        expect(engine.preparedPluginParams, isEmpty);
+        // A different plugin must not receive another plugin's opaque blob.
+        expect(fx.state, isEmpty);
+        expect(fx.rack, const FxRack(id: 'rack', name: 'My rack'));
+        expect(fx.module, 'Hosted module');
       },
     );
 
@@ -2208,7 +3601,7 @@ void main() {
         );
 
       expect(
-        engine.pluginParamSets.map((s) => (s.paramId, s.value)),
+        engine.preparedPluginParams.map((s) => (s.paramId, s.value)),
         contains((42, 0.75)),
       );
     });
@@ -2309,11 +3702,13 @@ void main() {
                 ref: PluginRef(format: PluginFormat.clap, id: 'gone'),
               ),
             ],
+            allowUnavailable: true,
           );
         // Cold-start recovery kicks a scan; let it complete (it finds nothing)]
         // so the entry settles from the transient loading state to the genuine
         // unavailable placeholder.
         await repo.pluginCatalog.scan();
+        await Future<void>.delayed(Duration.zero);
         final fx = repo.laneEffects(0, 0).single as PluginEffect;
         // Preserved as a placeholder, never dropped to `none`.
         expect(fx.unavailable, isTrue);
@@ -2338,8 +3733,10 @@ void main() {
                 name: 'Saved Reverb',
               ),
             ],
+            allowUnavailable: true,
           );
         await repo.pluginCatalog.scan(); // settle recovery -> unavailable
+        await Future<void>.delayed(Duration.zero);
         final fx = repo.laneEffects(0, 0).single as PluginEffect;
         // The persisted name survives the bind + recovery, so the placeholder
         // reads as the plugin's name rather than a cryptic id.
@@ -2380,6 +3777,7 @@ void main() {
                 ref: PluginRef(format: PluginFormat.clap, id: 'p'),
               ),
             ],
+            allowUnavailable: true,
           );
         // First apply against the empty cache fails; recovery flips it to
         // loading (not a premature "unavailable") and its scan is now in
@@ -2392,6 +3790,7 @@ void main() {
         // scan drives the re-apply.
         engine.nextSlotHandle = MockPluginSlotHandle('p');
         await repo.pluginCatalog.scan();
+        await Future<void>.delayed(Duration.zero);
 
         final fx = repo.laneEffects(0, 0).single as PluginEffect;
         expect(fx.loading, isFalse);
@@ -2427,6 +3826,7 @@ void main() {
             ref: PluginRef(format: PluginFormat.clap, id: 'synth'),
           ),
         ],
+        allowUnavailable: true,
       );
 
       final fx = repo.laneEffects(0, 0).single as PluginEffect;
@@ -2461,7 +3861,8 @@ void main() {
 
         // What the browse sheet builds: an identity, no name. On a lane the
         // load resolves it; a bus entry never loads, so nothing else would.
-        repo.setMasterEffects(
+        repo.setOutputEffects(
+          bus: 0,
           effects: const [
             PluginEffect(
               ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
@@ -2469,14 +3870,15 @@ void main() {
           ],
         );
         expect(
-          (repo.masterEffects.single as PluginEffect).name,
+          (repo.outputEffects(0).single as PluginEffect).name,
           'Valhalla Vintage Verb',
         );
 
         // And a relink onto a DIFFERENT plugin re-reads it: the surface keeps
         // the entry's own name across the edit, which would leave the card
         // naming the plugin that was replaced.
-        repo.setMasterEffects(
+        repo.setOutputEffects(
+          bus: 0,
           effects: const [
             PluginEffect(
               ref: PluginRef(format: PluginFormat.vst3, id: 'ddee4455ffff0000'),
@@ -2485,7 +3887,7 @@ void main() {
           ],
         );
         expect(
-          (repo.masterEffects.single as PluginEffect).name,
+          (repo.outputEffects(0).single as PluginEffect).name,
           'TAL Reverb 4',
         );
       },
@@ -2525,14 +3927,15 @@ void main() {
         // The master is restored after it, out of its own field — and after
         // the track's kick has already registered its continuation, so this
         // chain is named only if the master write kicks the recovery too.
-        repo.setMasterEffects(
+        repo.setOutputEffects(
+          bus: 0,
           effects: const [
             PluginEffect(
               ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
             ),
           ],
         );
-        expect((repo.masterEffects.single as PluginEffect).name, isEmpty);
+        expect((repo.outputEffects(0).single as PluginEffect).name, isEmpty);
 
         // On the STREAM, not just the getters: the cards read the projected
         // state, so a recovery that names the cache without emitting leaves
@@ -2542,7 +3945,7 @@ void main() {
           emitsThrough(
             predicate<LooperState>(
               (s) =>
-                  (s.masterEffects.singleOrNull as PluginEffect?)?.name ==
+                  (s.outputEffects(0).singleOrNull as PluginEffect?)?.name ==
                   'Valhalla Vintage Verb',
               'the master chain named',
             ),
@@ -2553,7 +3956,7 @@ void main() {
         await named;
 
         expect(
-          (repo.masterEffects.single as PluginEffect).name,
+          (repo.outputEffects(0).single as PluginEffect).name,
           'Valhalla Vintage Verb',
         );
         expect(
@@ -2581,7 +3984,8 @@ void main() {
       // running when it lands, since the isolate is shared.
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: const [
             PluginEffect(
               ref: PluginRef(
@@ -2608,9 +4012,14 @@ void main() {
             ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
           ),
         ],
+        allowUnavailable: true,
       );
       await repo.pluginCatalog.scan(); // settle the lane's own recovery
-      final pushes = engine.calls.where((c) => c == 'setLanePlugin').length;
+      await Future<void>.delayed(Duration.zero);
+      final revision = engine.recipeRevisions[(FxOwner.lane, 0, 0)];
+      final preparations = engine.calls
+          .where((c) => c == 'preparePlugin')
+          .length;
       expect((repo.laneEffects(0, 0).single as PluginEffect).loading, isFalse);
 
       // A knob on a bus chain, fired at drag rate. The lane recovery must not
@@ -2618,7 +4027,8 @@ void main() {
       // re-applies the chain, so the card would strobe between a spinner and
       // its relink offer for the length of the drag.
       for (var i = 0; i < 3; i++) {
-        repo.setMasterEffects(
+        repo.setOutputEffects(
+          bus: 0,
           effects: [
             BuiltInEffect(type: TrackEffectType.drive, params: [i / 3]),
           ],
@@ -2628,7 +4038,11 @@ void main() {
       final fx = repo.laneEffects(0, 0).single as PluginEffect;
       expect(fx.loading, isFalse);
       expect(fx.unavailable, isTrue);
-      expect(engine.calls.where((c) => c == 'setLanePlugin').length, pushes);
+      expect(engine.recipeRevisions[(FxOwner.lane, 0, 0)], revision);
+      expect(
+        engine.calls.where((c) => c == 'preparePlugin').length,
+        preparations,
+      );
     });
 
     test('a TRACK bus chain alone is named when the scan lands', () async {
@@ -2684,7 +4098,8 @@ void main() {
       addTearDown(repo.dispose);
       await repo.pluginCatalog.scan();
 
-      repo.setMasterEffects(
+      repo.setOutputEffects(
+        bus: 0,
         effects: const [
           PluginEffect(
             ref: PluginRef(format: PluginFormat.vst3, id: ''),
@@ -2692,7 +4107,7 @@ void main() {
         ],
       );
 
-      expect((repo.masterEffects.single as PluginEffect).name, isEmpty);
+      expect((repo.outputEffects(0).single as PluginEffect).name, isEmpty);
     });
 
     test(
@@ -2840,6 +4255,7 @@ void main() {
         total: 1,
       );
       await repo.pluginCatalog.scan(); // joins + drains the in-flight scan
+      await Future<void>.delayed(Duration.zero);
 
       fx = repo.laneEffects(0, 0).single as PluginEffect;
       expect(fx.loading, isFalse);
@@ -2900,44 +4316,48 @@ void main() {
       expect(fx.versionChanged, isFalse);
     });
 
-    test('relinkLanePlugin swaps the ref, keeps state, and reloads', () async {
-      engine.nextSlotHandle = null; // initial load fails -> unavailable
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setLaneEffects(
-          lane: 0,
-          channel: 0,
-          effects: [
-            PluginEffect(
-              ref: const PluginRef(format: PluginFormat.clap, id: 'gone'),
-              state: base64Encode([1, 2, 3]),
-            ),
-          ],
+    test(
+      'relinkLanePlugin swaps the ref without replaying foreign state',
+      () async {
+        engine.nextSlotHandle = null; // initial load fails -> unavailable
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            lane: 0,
+            channel: 0,
+            effects: [
+              PluginEffect(
+                ref: const PluginRef(format: PluginFormat.clap, id: 'gone'),
+                state: base64Encode([1, 2, 3]),
+              ),
+            ],
+            allowUnavailable: true,
+          );
+        await repo.pluginCatalog.scan(); // settle recovery -> unavailable
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          (repo.laneEffects(0, 0).single as PluginEffect).unavailable,
+          isTrue,
         );
-      await repo.pluginCatalog.scan(); // settle recovery -> unavailable
-      expect(
-        (repo.laneEffects(0, 0).single as PluginEffect).unavailable,
-        isTrue,
-      );
 
-      // A working plugin is now available; relink to it.
-      engine.nextSlotHandle = MockPluginSlotHandle('new');
-      expect(
-        repo.relinkLanePlugin(
-          channel: 0,
-          lane: 0,
-          index: 0,
-          ref: const PluginRef(format: PluginFormat.vst3, id: 'new'),
-        ),
-        EngineResult.ok,
-      );
-      final fx = repo.laneEffects(0, 0).single as PluginEffect;
-      expect(fx.ref.id, 'new');
-      expect(fx.unavailable, isFalse);
-      expect(fx.state, base64Encode([1, 2, 3])); // preserved
-      // The reloaded (frozen) instance received the preserved state blob.
-      expect(engine.stateSets.last, [1, 2, 3]);
-    });
+        // A working plugin is now available; relink to it.
+        engine.nextSlotHandle = MockPluginSlotHandle('new');
+        expect(
+          repo.relinkLanePlugin(
+            channel: 0,
+            lane: 0,
+            index: 0,
+            ref: const PluginRef(format: PluginFormat.vst3, id: 'new'),
+          ),
+          EngineResult.ok,
+        );
+        final fx = repo.laneEffects(0, 0).single as PluginEffect;
+        expect(fx.ref.id, 'new');
+        expect(fx.unavailable, isFalse);
+        expect(fx.state, isEmpty);
+        expect(engine.stateSets, isEmpty);
+      },
+    );
 
     test('an empty chain drops the lane and zeroes the count on restart', () {
       final repo = buildRepo()
@@ -2947,14 +4367,16 @@ void main() {
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
-      expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.drive.code);
+      expect(
+        engine.recipes[(FxOwner.lane, 0, 0)]!.slots.single.type.code,
+        TrackEffectType.drive.code,
+      );
 
       repo.setLaneEffects(lane: 0, channel: 0, effects: const []);
-      expect(engine.laneFxCount[(0, 0)], 0);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]!.slots, isEmpty);
 
-      engine.laneFx.clear();
       repo.startEngine(const EngineConfig());
-      expect(engine.laneFx.containsKey((0, 0, 0)), isFalse);
+      expect(engine.recipes.containsKey((FxOwner.lane, 0, 0)), isFalse);
     });
 
     test('a monitor chain is deferred then re-applied on start', () {
@@ -2968,12 +4390,13 @@ void main() {
             ),
           ],
         );
-      expect(engine.monitorFx, isEmpty); // not running yet
+      expect(engine.recipes, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
-      expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.delay.code);
-      expect(engine.monitorFxParam[(0, 0, 1)], 0.4);
-      expect(engine.monitorFxCount[0], 1);
+      final recipe = engine.recipes[(FxOwner.monitor, 0, 0)]!;
+      expect(recipe.slots.single.type.code, TrackEffectType.delay.code);
+      expect(recipe.slots.single.params[1], 0.4);
+      expect(recipe.slots, hasLength(1));
     });
 
     test('a monitor param tweak updates the entry without resetting it', () {
@@ -2987,14 +4410,16 @@ void main() {
 
       repo.setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.9);
       expect(engine.monitorFxParam[(0, 0, 0)], 0.9);
-      // No setMonitorInputFx (which would reset DSP) — only the granular call.
-      expect(engine.calls, isNot(contains('setMonitorInputFx')));
+      // No complete recipe replacement (which would reset DSP).
+      expect(engine.calls, isNot(contains('setFxRecipe')));
       expect(engine.calls, contains('setMonitorInputFxParam'));
 
       // The tweak is remembered and re-applied on restart.
-      engine.monitorFxParam.clear();
       repo.startEngine(const EngineConfig());
-      expect(engine.monitorFxParam[(0, 0, 0)], 0.9);
+      expect(
+        engine.recipes[(FxOwner.monitor, 0, 0)]!.slots.single.params[0],
+        0.9,
+      );
     });
 
     test('setMonitorOutput routes the chain and reapplies on restart', () {
@@ -3026,6 +4451,185 @@ void main() {
       expect(engine.monitorVolume[0], 0.5);
     });
 
+    test(
+      'refused monitor mute does not publish intent; accepted retry does',
+      () async {
+        final refusing = _RefusingMonitorMuteEngine();
+        engine = refusing;
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        final changes = <int>[];
+        final watch = repo.monitorChanges.listen(changes.add);
+        addTearDown(watch.cancel);
+        refusing.refuseMute = true;
+        expect(
+          repo.setMonitorMute(input: 0, muted: true),
+          EngineResult.invalid,
+        );
+        await pumpEventQueue();
+        expect(repo.monitorMuted(0), isFalse);
+        expect(repo.allMonitors(), isEmpty);
+        expect(engine.monitorMute, isEmpty);
+        expect(changes, isEmpty);
+        refusing.refuseMute = false;
+        expect(repo.setMonitorMute(input: 0, muted: true), EngineResult.ok);
+        await pumpEventQueue();
+        expect(repo.monitorMuted(0), isTrue);
+        expect(engine.monitorMute[0], isTrue);
+        expect(changes, [0]);
+      },
+    );
+
+    test(
+      'invalid monitor mute identity never enters native or remembered rig',
+      () {
+        final counting = _RefusingMonitorMuteEngine();
+        engine = counting;
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        for (final input in [-1, kMaxMonitoredInputs]) {
+          expect(
+            repo.setMonitorMute(input: input, muted: true),
+            EngineResult.invalid,
+          );
+        }
+        expect(counting.muteCalls, 0);
+        expect(repo.allMonitors(), isEmpty);
+      },
+    );
+
+    test(
+      'failed startup mute replay stops engine and preserves offline intent',
+      () {
+        final refusing = _RefusingMonitorMuteEngine()..refuseMute = true;
+        engine = refusing;
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        expect(repo.setMonitorMute(input: 0, muted: true), EngineResult.ok);
+        repo.setMonitorInputMode(input: 0, mode: MonitorMode.on);
+        expect(refusing.muteCalls, 0);
+        expect(repo.startEngine(const EngineConfig()), EngineResult.invalid);
+        expect(engine.calls, contains('stop'));
+        expect(engine.monitorInputEnabled, isEmpty);
+        expect(repo.monitorMuted(0), isTrue);
+        refusing.refuseMute = false;
+        expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+        expect(engine.monitorMute[0], isTrue);
+        expect(engine.monitorInputEnabled[0], isTrue);
+      },
+    );
+
+    for (final defined in [false, true]) {
+      test(
+        'session ${defined ? 'application' : 'reset'} reports mute refusal',
+        () async {
+          final refusing = _RefusingMonitorMuteEngine();
+          engine = refusing;
+          final repo = buildRepo()..startEngine(const EngineConfig());
+          addTearDown(repo.dispose);
+          if (!defined) repo.setMonitorMute(input: 0, muted: true);
+          refusing.refuseMute = true;
+          await expectLater(
+            repo.applySession(
+              SessionRig(
+                monitors: [
+                  if (defined)
+                    const SessionRigMonitor(
+                      input: 0,
+                      mode: MonitorMode.on,
+                      outputMask: 3,
+                      volume: 1,
+                      muted: true,
+                      effects: [],
+                    ),
+                ],
+              ),
+              clearPollInterval: Duration.zero,
+            ),
+            throwsStateError,
+          );
+          expect(repo.monitorMuted(0), !defined);
+          if (defined) expect(engine.monitorInputEnabled, isEmpty);
+        },
+      );
+    }
+
+    for (final mode in [MonitorMode.off, MonitorMode.on]) {
+      test(
+        'session ${mode.name} unmutes only after mode and replacement route',
+        () async {
+          final traced = _RefusingMonitorMuteEngine();
+          engine = traced;
+          final repo = buildRepo()
+            ..startEngine(const EngineConfig())
+            ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
+            ..setMonitorOutput(input: 0, mask: 1)
+            ..setMonitorMute(input: 0, muted: true);
+          addTearDown(repo.dispose);
+          traced.monitorSteps.clear();
+          await repo.applySession(
+            SessionRig(
+              monitors: [
+                SessionRigMonitor(
+                  input: 0,
+                  mode: mode,
+                  outputMask: 2,
+                  volume: 1,
+                  muted: false,
+                  effects: const [],
+                ),
+              ],
+            ),
+            clearPollInterval: Duration.zero,
+          );
+          expect(traced.monitorSteps, isNotEmpty);
+          for (final step in traced.monitorSteps) {
+            if (step.enabled && !step.muted) {
+              expect(mode, MonitorMode.on);
+              expect(step.output, 2);
+            }
+          }
+          expect(traced.monitorSteps.last, (
+            enabled: mode == MonitorMode.on,
+            muted: false,
+            output: 2,
+          ));
+          expect(repo.monitorMuted(0), isFalse);
+        },
+      );
+    }
+
+    test('lane mute validates identity before native or remembered intent', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      for (final key in [(-1, 0), (8, 0), (0, -1), (0, kMaxLanes)]) {
+        expect(
+          repo.setLaneMute(channel: key.$1, lane: key.$2, muted: true),
+          EngineResult.invalid,
+        );
+        expect(repo.laneMuted(key.$1, key.$2), isFalse);
+      }
+      expect(engine.laneMute, isEmpty);
+    });
+
+    test('lane mute offline intent retries after refused startup replay', () {
+      final refusing = _RefusingLaneMuteEngine()..refuseMute = true;
+      engine = refusing;
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      expect(
+        repo.setLaneMute(channel: 0, lane: 0, muted: true),
+        EngineResult.ok,
+      );
+      expect(engine.laneMute, isEmpty);
+      expect(repo.startEngine(const EngineConfig()), EngineResult.invalid);
+      expect(repo.laneMuted(0, 0), isTrue);
+      expect(engine.calls, contains('stop'));
+      refusing.refuseMute = false;
+      expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+      expect(engine.laneMute[(0, 0)], isTrue);
+    });
+
     test('setMonitorMute mutes the chain and reapplies on restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -3042,6 +4646,23 @@ void main() {
         ..startEngine(const EngineConfig())
         ..setInputConditioningEnabled(input: 0, enabled: true);
       expect(engine.conditioningEnabled[0], isTrue);
+    });
+
+    test('conditioning refuses instrument sources, which have no stage', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(
+        repo.setInputConditioningEnabled(input: kMaxChannels, enabled: true),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setInputConditioningParam(
+          input: kMaxChannels,
+          param: InputConditioningParam.hpfHz,
+          value: 80,
+        ),
+        EngineResult.invalid,
+      );
+      expect(engine.conditioningEnabled, isNot(contains(kMaxChannels)));
     });
 
     test('setInputConditioningParam forwards the code + real-unit value', () {
@@ -3112,10 +4733,13 @@ void main() {
           input: 0,
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
-      expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.drive.code);
+      expect(
+        engine.recipes[(FxOwner.monitor, 0, 0)]!.slots.single.type.code,
+        TrackEffectType.drive.code,
+      );
 
       repo.setMonitorEffects(input: 0, effects: const []);
-      expect(engine.monitorFxCount[0], 0);
+      expect(engine.recipes[(FxOwner.monitor, 0, 0)]!.slots, isEmpty);
     });
 
     test('setOutputEnabled applies the gate and reapplies on restart', () {
@@ -3168,7 +4792,7 @@ void main() {
     test('setOutputEnabled re-projects so a stopped rig reports it', () async {
       // No user gesture on the face that draws this: a session load gates the
       // output, and without the re-projection nothing on the stream would say
-      // so. Mirrors the setTrackQuantize case.
+      // so. Mirrors the track timing case.
       final repo = buildRepo();
       final states = <LooperState>[];
       final sub = repo.looperState.listen(states.add);
@@ -3194,7 +4818,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -3235,7 +4859,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final changed = <(int, int)>[];
       final repo = buildRepo()
@@ -3271,7 +4895,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final changed = <(int, int)>[];
       final repo = buildRepo()
@@ -3301,7 +4925,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -3331,7 +4955,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final persisted = <(int, int)>[];
       final repo = buildRepo()
@@ -3375,7 +4999,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
@@ -3399,7 +5023,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final persisted = <(int, int)>[];
       final repo = buildRepo()
@@ -3449,7 +5073,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -3472,7 +5096,7 @@ void main() {
 
     test(
       'applySession clears destructively — a loaded session is not undoable',
-      () {
+      () async {
         engine.nextSnapshot = const EngineSnapshot(
           isRunning: true,
           sampleRate: 48000,
@@ -3484,13 +5108,13 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
         );
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
         engine.calls.clear();
 
-        unawaited(repo.applySession(const SessionRig()));
+        await repo.applySession(const SessionRig());
 
         expect(engine.calls, contains('clear'));
         expect(engine.calls, isNot(contains('clearUndoable')));
@@ -3511,7 +5135,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
         );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -3546,7 +5170,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
         );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -3579,7 +5203,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
         );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -3619,7 +5243,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       buildRepo()
         ..startEngine(const EngineConfig())
@@ -3632,18 +5256,15 @@ void main() {
         )
         ..record();
 
-      // The engine's lane FX now mirror the snapshot the repo computed. (The
-      // fake records the engine-package enum, hidden here; compare by name.)
-      expect(engine.laneFx[(0, 0, 0)]?.name, 'delay');
-      expect(engine.laneFx[(0, 0, 1)]?.name, 'reverb');
-      expect(engine.laneFxCount[(0, 0)], 2);
-      // The lane-FX push is enqueued BEFORE the record command, so the chain is
-      // published before the take can ever play back (no audible gap).
-      expect(
-        engine.calls.lastIndexOf('setLaneFxCount') <
-            engine.calls.indexOf('record'),
-        isTrue,
-      );
+      // One arm owns both recipes. A refusal cannot leave a lane chain changed
+      // while the track stays empty, and acceptance publishes at capture start.
+      final image = engine.lastRecordImage!;
+      expect(image.laneFx[0]!.slots.map((s) => s.type.name), [
+        'delay',
+        'reverb',
+      ]);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]!.slots.length, 2);
+      expect(engine.calls, isNot(contains('setLaneFxCount')));
     });
 
     test('record pushes the captured plugin WITH its frozen state to the '
@@ -3661,7 +5282,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
         );
       buildRepo()
         ..startEngine(const EngineConfig())
@@ -3678,7 +5299,10 @@ void main() {
       // The lane plugin was loaded on the engine and seeded with the exact
       // opaque state captured from the monitor slot — the frozen instance, not
       // a stateless placeholder (the C-side clobber the fix removes).
-      expect(engine.lanePlugins[(0, 0, 0)], 'p');
+      expect(
+        engine.lastRecordImage!.laneFx[0]!.slots.single.plugin,
+        same(engine.nextSlotHandle),
+      );
       expect(engine.stateSets, isNotEmpty);
       expect(engine.stateSets.last, Uint8List.fromList([1, 2, 3, 4]));
     });
@@ -3698,7 +5322,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -3777,7 +5401,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
         );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -3797,10 +5421,10 @@ void main() {
       engine.calls.clear();
       repo.record();
 
-      // Cache is emptied AND the engine was pushed the empty chain (count 0) —
+      // Cache is emptied AND the engine was pushed the empty recipe —
       // the staged reverb no longer sounds anywhere.
       expect(repo.laneEffects(0, 0), isEmpty);
-      expect(engine.laneFxCount[(0, 0)], 0);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.slots, isEmpty);
     });
 
     test('a later take captures the CURRENT monitor chain, leaving an earlier '
@@ -3820,7 +5444,7 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+        tracks: _nativeEmptySlots,
       );
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -3964,19 +5588,26 @@ void main() {
     });
 
     test('setInputMask maps the lowest selected input onto lane 0', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
       // 0x6 selects inputs 1 and 2; the lowest (1) records into lane 0.
-      buildRepo().setInputMask(channel: 2, mask: 0x6);
-      expect(engine.calls, contains('setLaneInput'));
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setInputMask(channel: 2, mask: 0x6);
+      expect(engine.calls, contains('setMix'));
       expect(engine.laneInput[(2, 0)], 1);
     });
 
     test('setOutputMask forwards the mask onto lane 0', () {
-      buildRepo().setOutputMask(channel: 1, mask: 0x5);
-      expect(engine.calls, contains('setLaneOutput'));
+      engine.nextSnapshot = _playingTracksSnapshot(3);
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setOutputMask(channel: 1, mask: 0x5);
+      expect(engine.calls, contains('setMix'));
       expect(engine.laneOutput[(1, 0)], 0x5);
     });
 
     test('setLaneCount remembers, defers, and re-applies on start', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
       final repo = buildRepo()..setLaneCount(channel: 2, count: 3);
       // Not running yet: remembered but not pushed to the engine.
       expect(engine.laneCount, isEmpty);
@@ -3985,12 +5616,12 @@ void main() {
       repo.startEngine(const EngineConfig());
       expect(engine.laneCount[2], 3);
 
-      // Count 1 (the default) drops the override and does not re-apply.
+      // The canonical count is explicit, including the default on replay.
       repo.setLaneCount(channel: 2, count: 1);
       expect(repo.laneCount(2), 1);
       engine.laneCount.clear();
       repo.startEngine(const EngineConfig());
-      expect(engine.laneCount.containsKey(2), isFalse);
+      expect(engine.laneCount[2], 1);
     });
 
     test('setMute on a multi-lane track mutes EVERY lane, not just lane 0', () {
@@ -4037,17 +5668,21 @@ void main() {
     );
 
     test(
-      'setVolume on a multi-lane track sets EVERY lane, not just lane 0',
+      'setVolume changes track gain without overwriting part levels',
       () {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
           ..setLaneCount(channel: 2, count: 3);
         addTearDown(repo.dispose);
 
-        repo.setVolume(0.4, channel: 2);
-        expect(engine.laneVol[(2, 0)], 0.4);
-        expect(engine.laneVol[(2, 1)], 0.4);
-        expect(engine.laneVol[(2, 2)], 0.4);
+        repo.setLaneVolume(0.7, channel: 2, lane: 1);
+        expect(repo.setVolume(0.4, channel: 2), EngineResult.ok);
+        expect(engine.trackLevels[2], 0.4);
+        expect(repo.state.tracks[2].volume, 0.4);
+        expect(engine.laneVol[(2, 1)], 0.7);
+        expect(engine.laneVol[(2, 0)] ?? 1, 1);
+        expect(engine.laneVol[(2, 2)] ?? 1, 1);
       },
     );
 
@@ -4110,7 +5745,7 @@ void main() {
       expect(engine.lastTempoBpm, isNull); // not running yet
 
       repo.startEngine(const EngineConfig());
-      expect(engine.lastTempoBpm, 140);
+      expect(engine.tempoRestores, [(bpm: 140.0, source: TempoSource.manual)]);
     });
 
     test('setTempo applies immediately while running', () {
@@ -4141,7 +5776,7 @@ void main() {
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.lastTempoBpm, 128);
+      expect(engine.tempoRestores, [(bpm: 128.0, source: TempoSource.manual)]);
     });
 
     test('setTimeSignature is deferred until running, then re-applied', () {
@@ -4181,13 +5816,21 @@ void main() {
       expect(engine.lastSyncTempo, isFalse);
     });
 
-    test('setQuantizeDiv is deferred until running, then re-applied', () {
-      final repo = buildRepo()..setQuantizeDiv(GridDivision.eighth);
-      expect(engine.lastQuantizeDiv, isNull); // not running yet
+    test(
+      'The full timing tuple is deferred until running, then re-applied',
+      () {
+        final repo = buildRepo()
+          ..setRecordTimingSettings(
+            defaultTiming: RecordTiming.immediately,
+            rememberedDivision: GridDivision.eighth,
+            trackOverrides: {},
+          );
+        expect(engine.lastQuantizeDiv, isNull); // not running yet
 
-      repo.startEngine(const EngineConfig());
-      expect(engine.lastQuantizeDiv, GridDivision.eighth);
-    });
+        repo.startEngine(const EngineConfig());
+        expect(engine.lastQuantizeDiv, GridDivision.eighth);
+      },
+    );
 
     test('setClickMode is deferred until running, then re-applied', () {
       final repo = buildRepo()..setClickMode(ClickMode.playRec);
@@ -4222,19 +5865,32 @@ void main() {
       expect(engine.lastClickVolume, 0.25);
     });
 
-    test('setCountIn is deferred until running, then re-applied', () {
-      final repo = buildRepo()..setCountIn(2);
+    test('record-start count is deferred until running, then re-applied', () {
+      final repo = buildRepo()
+        ..setRecordStartSettings(
+          countInBars: 2,
+          soundStart: false,
+          editKind: RecordStartEditKind.countIn,
+        );
       expect(engine.lastCountIn, isNull); // not running yet
 
       repo.startEngine(const EngineConfig());
       expect(engine.lastCountIn, 2);
     });
 
-    test('setCountIn clamps a negative to zero', () {
-      buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setCountIn(-3);
+    test('record-start count rejects a negative without changing the pair', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(
+        repo.setRecordStartSettings(
+          countInBars: -3,
+          soundStart: false,
+          editKind: RecordStartEditKind.countIn,
+        ),
+        EngineResult.invalid,
+      );
       expect(engine.lastCountIn, 0);
+      expect(engine.lastAutoRecord, isFalse);
+      expect(repo.recordStartSettings, (countInBars: 0, soundStart: false));
     });
 
     test('setLooperMode is deferred until running, then re-applied', () {
@@ -4276,11 +5932,19 @@ void main() {
           ..startEngine(const EngineConfig())
           ..setTimeSignature(3, 4)
           ..setSyncTempo(on: false)
-          ..setQuantizeDiv(GridDivision.bar)
+          ..setRecordTimingSettings(
+            defaultTiming: RecordTiming.immediately,
+            rememberedDivision: GridDivision.bar,
+            trackOverrides: {},
+          )
           ..setClickMode(ClickMode.rec)
           ..setClickOutput(0x1)
           ..setClickVolume(0.7)
-          ..setCountIn(4)
+          ..setRecordStartSettings(
+            countInBars: 4,
+            soundStart: false,
+            editKind: RecordStartEditKind.countIn,
+          )
           ..setLooperMode(LooperMode.free);
 
         engine
@@ -4310,7 +5974,10 @@ void main() {
     test(
       'setTrackLengthPreset is deferred until running, then re-applied',
       () {
-        final repo = buildRepo()..setTrackLengthPreset(channel: 1, bars: 4);
+        engine.nextSnapshot = _playingTracksSnapshot(3);
+        final repo = buildRepo()
+          ..setLooperMode(LooperMode.free)
+          ..setTrackLengthPreset(channel: 1, bars: 4);
         expect(engine.trackLengthPreset, isEmpty); // not running yet
 
         repo.startEngine(const EngineConfig());
@@ -4319,19 +5986,23 @@ void main() {
     );
 
     test('setTrackLengthPreset applies immediately while running', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
       buildRepo()
+        ..setLooperMode(LooperMode.free)
         ..startEngine(const EngineConfig())
         ..setTrackLengthPreset(channel: 2, bars: 8);
       expect(engine.trackLengthPreset[2], 8);
     });
 
-    test('setTrackLengthPreset(0) clears a remembered preset (AUTO)', () {
+    test('null length override resumes the default across restart', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
       final repo = buildRepo()
+        ..setLooperMode(LooperMode.free)
         ..startEngine(const EngineConfig())
         ..setTrackLengthPreset(channel: 1, bars: 4);
       expect(engine.trackLengthPreset[1], 4);
 
-      repo.setTrackLengthPreset(channel: 1, bars: 0);
+      repo.setTrackLengthPreset(channel: 1, bars: null);
       expect(engine.trackLengthPreset[1], 0);
 
       // A restart no longer replays the cleared preset.
@@ -4339,13 +6010,16 @@ void main() {
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.trackLengthPreset, isEmpty);
+      expect(engine.trackLengthPreset[1], 0);
+      expect(repo.trackLengthPresetOverrides, isEmpty);
     });
 
     test(
       'per-track length presets re-apply on every restart (device change)',
       () {
+        engine.nextSnapshot = _playingTracksSnapshot(3);
         final repo = buildRepo()
+          ..setLooperMode(LooperMode.free)
           ..startEngine(const EngineConfig())
           ..setTrackLengthPreset(channel: 1, bars: 3);
         expect(engine.trackLengthPreset[1], 3);
@@ -4374,9 +6048,8 @@ void main() {
     });
 
     test(
-      'the crown re-applies on every restart (device change), like looper '
-      'mode — D18, no un-crown call means the cache never has a "default" '
-      'to fall back to, only a remembered channel',
+      'a crown is pushed once and never re-applied on restart — the engine '
+      'owns it, and a restarted rig is empty, so it has no crown',
       () {
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
@@ -4387,9 +6060,22 @@ void main() {
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.lastCrownedChannel, 4);
+        expect(engine.lastCrownedChannel, isNull);
       },
     );
+
+    test('a crown requested while stopped lands on the next start, once', () {
+      final repo = buildRepo()
+        ..crownPrimary(channel: 3)
+        ..startEngine(const EngineConfig());
+      expect(engine.lastCrownedChannel, 3);
+
+      engine.lastCrownedChannel = null;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastCrownedChannel, isNull);
+    });
 
     test('a never-crowned track does not push crownPrimary on start', () {
       buildRepo().startEngine(const EngineConfig());
@@ -4411,7 +6097,7 @@ void main() {
       expect(engine.trackOneShot[2], isTrue);
     });
 
-    test('setOneShot(false) clears a remembered flag', () {
+    test('setOneShot(false) retains an explicit Loop override', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         ..setOneShot(channel: 1, oneShot: true);
@@ -4420,12 +6106,12 @@ void main() {
       repo.setOneShot(channel: 1, oneShot: false);
       expect(engine.trackOneShot[1], isFalse);
 
-      // A restart no longer replays the cleared flag.
+      // A restart retains the custom Loop choice.
       engine.trackOneShot.clear();
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.trackOneShot, isEmpty);
+      expect(engine.trackOneShot[1], isFalse);
     });
 
     test(
@@ -4445,8 +6131,8 @@ void main() {
     );
 
     test(
-      'TransportState projects every tempo-grid + click + count-in + '
-      'looper-mode field from the snapshot',
+      'TransportState projects snapshot fields while Hear click requires '
+      'an accepted receipt',
       () {
         engine.nextSnapshot = const EngineSnapshot(
           isRunning: true,
@@ -4474,15 +6160,26 @@ void main() {
           countInBeatsLeft: 3,
           looperMode: LooperMode.band,
           primaryTrack: 2,
+          outputPeak: 0.5,
+          // The crown only projects onto a track that holds a completed
+          // take (see `resolvedPrimaryTrack`), so give the designated
+          // channel one.
+          tracks: [
+            TrackSnapshot.empty(),
+            TrackSnapshot.empty(),
+            TrackSnapshot(
+              state: TrackState.playing,
+              volume: 1,
+              muted: false,
+              lengthFrames: 4,
+              undoDepth: 0,
+              rms: 0,
+              peak: 0,
+            ),
+          ],
         );
 
-        // primaryTrack now projects from the repository's own re-apply
-        // cache, not the raw snapshot field (independent review of #295,
-        // D18 stale-crown fix — see `_project`'s doc) — crown through the
-        // real API so the cache agrees with the snapshot fixture above,
-        // matching how a genuinely-crowned engine is reached in practice.
-        final transport =
-            (buildRepo()..crownPrimary(channel: 2)).state.transport;
+        final transport = buildRepo().state.transport;
         expect(transport.tempoBpm, 128);
         expect(transport.tempoSource, TempoSource.manual);
         expect(transport.tsNum, 3);
@@ -4491,16 +6188,85 @@ void main() {
         expect(transport.quantizeDiv, GridDivision.quarter);
         expect(transport.loopBars, 4);
         expect(transport.currentBeat, 2);
-        expect(transport.clickMode, ClickMode.playRec);
+        // Raw callback progress is not an accepted Hear click command. The
+        // repository has not settled any request, so retain its accepted Off.
+        // click_mode_receipt_test covers the pending-to-settled transition.
+        expect(transport.clickMode, ClickMode.off);
         expect(transport.clickMask, 0x3);
         expect(transport.clickVolume, closeTo(0.8, 1e-9));
-        expect(transport.countInBars, 2);
+        // The count-in is the repository's own held value (slice 2b), not
+        // the engine's mirror: nothing was set here, so it reads off even
+        // though the snapshot says 2.
+        expect(transport.countInBars, 0);
         expect(transport.countingIn, isTrue);
         expect(transport.countInBeatsLeft, 3);
         expect(transport.looperMode, LooperMode.band);
         expect(transport.primaryTrack, 2);
+        expect(transport.outputPeak, closeTo(0.5, 1e-9));
       },
     );
+
+    group('resolvedPrimaryTrack', () {
+      const playing = TrackSnapshot(
+        state: TrackState.playing,
+        volume: 1,
+        muted: false,
+        lengthFrames: 4,
+        undoDepth: 0,
+        rms: 0,
+        peak: 0,
+      );
+      const recording = TrackSnapshot(
+        state: TrackState.recording,
+        volume: 1,
+        muted: false,
+        lengthFrames: 2,
+        undoDepth: 0,
+        rms: 0,
+        peak: 0,
+      );
+      const empty = TrackSnapshot.empty();
+
+      test('is the designation when that track holds a completed take', () {
+        expect(resolvedPrimaryTrack(2, [playing, empty, playing]), 2);
+      });
+
+      test(
+        'falls onto the lowest recorded track while the designated one is '
+        'empty (its clear kept the designation, D18)',
+        () {
+          expect(resolvedPrimaryTrack(2, [empty, playing, empty, playing]), 1);
+        },
+      );
+
+      test('is none for an empty session, or one still on its first take', () {
+        expect(resolvedPrimaryTrack(-1, [empty, empty]), -1);
+        expect(resolvedPrimaryTrack(0, [recording, empty]), -1);
+        expect(resolvedPrimaryTrack(-1, const []), -1);
+      });
+
+      test('never trusts an out-of-range designation', () {
+        expect(resolvedPrimaryTrack(7, [empty, playing]), 1);
+      });
+
+      test('projects onto TransportState.primaryTrack', () {
+        engine.nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          primaryTrack: 3,
+          tracks: [empty, playing, empty, empty],
+        );
+        expect(buildRepo().state.transport.primaryTrack, 1);
+      });
+    });
 
     test(
       'TransportState defaults to the tempo-free grid-off values',
@@ -4527,10 +6293,11 @@ void main() {
   });
 
   group('applySession', () {
-    /// A snapshot with [count] settled-empty tracks (the post-clear state), so
+    /// A snapshot with eight settled-empty tracks (the post-clear state), so
     /// the apply's settle wait passes immediately.
-    EngineSnapshot clearedSnapshot(int count) => EngineSnapshot(
+    EngineSnapshot clearedSnapshot() => EngineSnapshot(
       isRunning: true,
+      devicePresent: true,
       sampleRate: 48000,
       bufferFrames: 128,
       framesProcessed: 0,
@@ -4540,7 +6307,7 @@ void main() {
       outputRms: 0,
       latencyState: le.LatencyState.idle,
       measuredLatencyMs: -1,
-      tracks: [for (var i = 0; i < count; i++) const TrackSnapshot.empty()],
+      tracks: List.generate(8, (_) => const TrackSnapshot.empty()),
     );
 
     /// A single-lane (lane 0) rig track holding one live layer of [pcm].
@@ -4551,12 +6318,11 @@ void main() {
       bool muted = false,
       int outputMask = 0x3,
       int inputChannel = 0,
-      int lengthPresetBars = 0,
-      bool oneShot = false,
+      bool reversed = false,
     }) => SessionRigTrack(
+      fadeAmount: 1,
+      reversed: reversed,
       channel: channel,
-      lengthPresetBars: lengthPresetBars,
-      oneShot: oneShot,
       lanes: [
         SessionRigLane(
           lane: 0,
@@ -4569,10 +6335,68 @@ void main() {
       ],
     );
 
+    test('Session import fails when its lane mute is refused', () async {
+      final refusing = _RefusingLaneMuteEngine()..refuseMute = true;
+      engine = refusing..nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      await expectLater(
+        repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1]), muted: true),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        ),
+        throwsStateError,
+      );
+      expect(repo.laneMuted(0, 0), isFalse);
+      expect(engine.laneMute[(0, 0)], isFalse);
+    });
+
+    test('a reversed track recalls reversed, and only after its install '
+        'is confirmed', () async {
+      engine.nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          tracks: [rigTrack(0, pcm, reversed: true), rigTrack(1, pcm)],
+        ),
+        clearPollInterval: Duration.zero,
+      );
+      expect(engine.installedReverses, {0: true});
+      expect(repo.state.tracks[0].reversed, isTrue);
+      expect(repo.state.tracks[1].reversed, isFalse);
+
+      engine.installReverseResult = EngineResult.notReady;
+      await expectLater(
+        repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [rigTrack(0, pcm, reversed: true)],
+          ),
+          clearPollInterval: Duration.zero,
+        ),
+        throwsStateError,
+      );
+      // Only the first load committed: the refused install stopped the second.
+      expect(
+        engine.calls.where((call) => call == 'commitSession'),
+        hasLength(1),
+      );
+      expect(repo.state.tracks[0].state, TrackState.empty);
+      expect(repo.state.tracks[0].reversed, isFalse);
+    });
+
     test(
       'clears every track, imports stems, commits, and applies mix',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -4591,23 +6415,55 @@ void main() {
             'clear',
             'clear',
             'importLayer',
-            'finalizeLayers',
+            'finalizeHistory',
             'commitSession',
-            'setLaneVolume',
             'setLaneMute',
+            'setMix',
           ]),
         );
         expect(engine.importedTracks[0], pcm);
         expect(engine.committedBaseFrames, 4);
+        expect(engine.committedLoopBeats, 0);
         expect(engine.laneVol[(0, 0)], 0.5);
         expect(engine.laneMute[(0, 0)], isTrue);
       },
     );
 
+    test('commits the grid in beats: whole bars times the signature, or '
+        'the saved beats of a sub-bar loop (#1168)', () async {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      for (final (rig, beats) in [
+        (
+          SessionRig(
+            baseLengthFrames: 4,
+            loopBars: 3,
+            tsNum: 7,
+            tsDen: 8,
+            tracks: [rigTrack(0, pcm)],
+          ),
+          21,
+        ),
+        (
+          SessionRig(
+            baseLengthFrames: 4,
+            loopBeats: 2,
+            tracks: [rigTrack(0, pcm)],
+          ),
+          2,
+        ),
+      ]) {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        await repo.applySession(rig, clearPollInterval: Duration.zero);
+        expect(engine.committedLoopBeats, beats);
+        await repo.dispose();
+      }
+    });
+
     test('fires rigReplaced once on a successful apply — the explicit seam '
         '(the cleared window is transient, so the projection alone cannot '
         'announce the replacement)', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
@@ -4655,7 +6511,7 @@ void main() {
     });
 
     test('an empty rig imports nothing and establishes no master', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
@@ -4671,7 +6527,7 @@ void main() {
 
     test('a restart after apply replays the LOADED mix, never the pre-load '
         'caches (F2a/F2b)', () async {
-      engine.nextSnapshot = clearedSnapshot(3);
+      engine.nextSnapshot = clearedSnapshot();
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         // Pre-load rig: remembered volume + mute on track 2.
@@ -4696,7 +6552,9 @@ void main() {
         ..stopEngine()
         ..startEngine(const EngineConfig());
 
-      expect(engine.laneVol, {(0, 0): 0.5});
+      expect(engine.laneVol[(0, 0)], 0.5);
+      expect(engine.laneVol[(2, 0)], 1);
+      expect(engine.laneVol.values.where((gain) => gain != 1), [0.5]);
       expect(engine.laneMute, {(0, 0): false});
     });
 
@@ -4704,10 +6562,11 @@ void main() {
       'resets a stale length preset to AUTO when the loaded session leaves '
       'it undefined (A6)',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
           // A live/prior session left track 0 at a 4-bar preset.
+          ..setLooperMode(LooperMode.free)
           ..setTrackLengthPreset(channel: 0, bars: 4);
         addTearDown(repo.dispose);
         expect(engine.trackLengthPreset[0], 4);
@@ -4732,7 +6591,7 @@ void main() {
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.trackLengthPreset.containsKey(0), isFalse);
+        expect(engine.trackLengthPreset[0], 0);
       },
     );
 
@@ -4740,18 +6599,19 @@ void main() {
       "applies the loaded session's own nonzero length preset per track "
       '(A6)',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
         await repo.applySession(
           SessionRig(
             baseLengthFrames: 4,
+            looperMode: LooperMode.free,
+            trackLengthPresetOverrides: const {0: 8},
             tracks: [
               rigTrack(
                 0,
                 Float32List.fromList([1, 1, 1, 1]),
-                lengthPresetBars: 8,
               ),
             ],
           ),
@@ -4767,7 +6627,7 @@ void main() {
       'undefined (B5c) — mirrors the A6 length-preset reset above, since '
       'a_one_shot survives `clear` by the same "setting, not content" rule',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
           // A live/prior session left track 0 marked One Shot.
@@ -4790,27 +6650,30 @@ void main() {
         expect(engine.trackOneShot[0], isFalse);
         expect(engine.trackOneShot[1], isFalse);
 
-        // A restart replays only the loaded (off) value, not the stale true.
+        // A restart explicitly replays Loop for every physical track, not the
+        // stale Once value from the previous session.
         engine.trackOneShot.clear();
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.trackOneShot.containsKey(0), isFalse);
+        expect(engine.trackOneShot[0], isFalse);
+        expect(engine.trackOneShot[1], isFalse);
       },
     );
 
     test(
       "applies the loaded session's own one-shot flag per track (B5c)",
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
         await repo.applySession(
           SessionRig(
             baseLengthFrames: 4,
+            trackOneShotOverrides: const {0: true},
             tracks: [
-              rigTrack(0, Float32List.fromList([1, 1, 1, 1]), oneShot: true),
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
           ),
           clearPollInterval: Duration.zero,
@@ -4822,11 +6685,11 @@ void main() {
 
     test(
       'restores a One Shot flag pre-armed on a CONTENT-LESS channel via '
-      'rig.oneShotChannels (independent review of #295): channel 1 has no '
+      'the override map: channel 1 has no '
       'SessionRigTrack (no content), so only the session-level set can '
       'restore it — a plain per-track restore would silently drop it',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -4836,54 +6699,62 @@ void main() {
             tracks: [
               rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
-            oneShotChannels: const {1},
+            trackOneShotOverrides: const {1: true},
           ),
           clearPollInterval: Duration.zero,
         );
 
-        expect(engine.trackOneShot[0], isFalse);
-        expect(engine.trackOneShot[1], isTrue);
+        expect(engine.trackOneShot, {
+          for (var channel = 0; channel < 8; channel++) channel: channel == 1,
+        });
 
         // Restored through the remembered cache too, so a restart replays it.
         engine.trackOneShot.clear();
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.trackOneShot[1], isTrue);
+        expect(engine.trackOneShot, {
+          for (var channel = 0; channel < 8; channel++) channel: channel == 1,
+        });
       },
     );
 
     test(
-      'ignores an out-of-range channel in rig.oneShotChannels rather than '
-      'pushing an invalid channel to the engine (a manifest saved on a '
-      'build with more physical tracks than this engine)',
+      'rejects an out-of-range playback override without '
+      'pushing an invalid ninth channel to the engine',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
+        final priorEngineChoices = Map<int, bool>.of(engine.trackOneShot);
+        final priorRememberedChoices = repo.trackOneShotOverrides;
 
-        await repo.applySession(
-          SessionRig(
-            baseLengthFrames: 4,
-            tracks: [
-              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
-            ],
-            oneShotChannels: const {7},
+        await expectLater(
+          repo.applySession(
+            SessionRig(
+              baseLengthFrames: 4,
+              tracks: [
+                rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+              ],
+              trackOneShotOverrides: const {8: true},
+            ),
+            clearPollInterval: Duration.zero,
           ),
-          clearPollInterval: Duration.zero,
+          throwsA(isA<StateError>()),
         );
 
-        expect(engine.trackOneShot.containsKey(7), isFalse);
+        expect(engine.trackOneShot.containsKey(8), isFalse);
+        expect(engine.trackOneShot, priorEngineChoices);
+        expect(repo.trackOneShotOverrides, priorRememberedChoices);
       },
     );
 
     test(
       'ignores an out-of-range rig.primaryTrack rather than pushing an '
       'invalid channel to the engine or poisoning the re-apply cache '
-      '(a manifest saved on a build with more physical tracks than this '
-      'engine)',
+      '(the ninth channel is not in this native rig)',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -4893,7 +6764,7 @@ void main() {
             tracks: [
               rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
-            primaryTrack: 7,
+            primaryTrack: 8,
           ),
           clearPollInterval: Duration.zero,
         );
@@ -4905,7 +6776,7 @@ void main() {
     test(
       "applies the loaded session's looper mode and crown (B5c)",
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -4928,10 +6799,10 @@ void main() {
 
     test(
       'pushes the looper mode BEFORE any content is imported, so a '
-      "content-bearing session's mode is never silently dropped by the D4 "
+      "content-bearing session's mode is never dropped by the content rules "
       'content lock (B5c)',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
         // `startEngine`'s own re-apply cascade (independent review of #295)
@@ -4968,7 +6839,7 @@ void main() {
       'defines no crown, even though the live engine keeps a prior crown '
       '(B5c, D18: no un-crown call exists on the live engine)',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
           // A live/prior session crowned track 1.
@@ -5003,11 +6874,7 @@ void main() {
     );
 
     test(
-      'a session load with no crown reports NO primary track to the UI even '
-      'when the raw engine snapshot still reflects a prior crown '
-      '(independent review of #295, D18 stale-crown leak fix): '
-      'TransportState.primaryTrack must project from the reset-aware cache, '
-      'not the raw snapshot field the engine can never un-set',
+      'a loaded take replaces an ineligible stale crown with its own channel',
       () async {
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
@@ -5015,12 +6882,12 @@ void main() {
           ..crownPrimary(channel: 1);
         addTearDown(repo.dispose);
 
-        // The loaded session defines no crown at all — but, matching D18's
-        // "no un-crown call exists", the RAW engine snapshot keeps reporting
-        // the prior crown for the rest of this test, exactly like the real
-        // native engine would.
+        // Keep a stale raw crown to exercise projection's eligibility check.
+        // Committed content is real: an unassigned imported rig falls back to
+        // its lowest populated track, as the native commit does.
         engine.nextSnapshot = const EngineSnapshot(
           isRunning: true,
+          devicePresent: true,
           sampleRate: 48000,
           bufferFrames: 128,
           framesProcessed: 0,
@@ -5030,7 +6897,7 @@ void main() {
           outputRms: 0,
           latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
-          tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+          tracks: _nativeEmptySlots,
           primaryTrack: 1,
         );
         await repo.applySession(
@@ -5046,13 +6913,14 @@ void main() {
         // The raw snapshot the UI would otherwise read straight off still
         // says 1 — but the projected state must not leak it.
         expect(engine.nextSnapshot.primaryTrack, 1);
-        expect(repo.state.transport.primaryTrack, -1);
+        expect(repo.state.tracks[0].state, TrackState.stopped);
+        expect(repo.state.transport.primaryTrack, 0);
       },
     );
 
     test('resets remembered chains the rig does not define — lane and '
         'monitor (F2c)', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         ..setLaneEffects(
@@ -5071,26 +6939,24 @@ void main() {
         clearPollInterval: Duration.zero,
       );
 
-      // Engine chain lengths were explicitly zeroed (leftovers can't sound).
-      expect(engine.laneFxCount[(0, 0)], 0);
-      expect(engine.monitorFxCount[1], 0);
+      // Complete empty recipes remove both leftover chains atomically.
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.slots, isEmpty);
+      expect(engine.recipes[(FxOwner.monitor, 1, 0)]?.slots, isEmpty);
       expect(repo.laneEffects(0, 0), isEmpty);
       expect(repo.monitorEffects(1), isEmpty);
 
       // And a restart replays nothing stale.
-      engine.laneFx.clear();
-      engine.monitorFx.clear();
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.laneFx, isEmpty);
-      expect(engine.monitorFx, isEmpty);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)], isNull);
+      expect(engine.recipes[(FxOwner.monitor, 1, 0)], isNull);
     });
 
     test('resets remembered TRACK-stage and MASTER chains the rig does not '
         'define, chain flags included (R17, the F2 class extended to the bus '
         'stages)', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       // Session A: FX on two track buses and on the Master insert, with one
       // bus chain-DISABLED and the Master chain-disabled too.
       final repo = buildRepo()
@@ -5100,13 +6966,14 @@ void main() {
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         )
         ..setTrackChainEnabled(channel: 1, enabled: false)
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         )
-        ..setMasterChainEnabled(enabled: false);
+        ..setOutputChainEnabled(bus: 0, enabled: false);
       addTearDown(repo.dispose);
-      expect(engine.trackFxCount[0], 1);
-      expect(engine.masterFxCount, 1);
+      expect(engine.recipes[(FxOwner.track, 0, 0)]?.slots, hasLength(1));
+      expect(engine.recipes[(FxOwner.output, 0, 0)]?.slots, hasLength(1));
 
       // Session B defines neither bus stage.
       await repo.applySession(
@@ -5115,30 +6982,28 @@ void main() {
       );
 
       // Engine chain lengths zeroed and every chain flag back to enabled.
-      expect(engine.trackFxCount[0], 0);
-      expect(engine.masterFxCount, 0);
-      expect(engine.trackFxChainEnabled[1], isTrue);
-      expect(engine.masterFxChainEnabled, isTrue);
+      expect(engine.recipes[(FxOwner.track, 0, 0)]?.slots, isEmpty);
+      expect(engine.recipes[(FxOwner.output, 0, 0)]?.slots, isEmpty);
+      expect(engine.recipes[(FxOwner.track, 1, 0)]?.enabled, isTrue);
+      expect(engine.recipes[(FxOwner.output, 0, 0)]?.enabled, isTrue);
       // Repository caches clean.
       expect(repo.trackEffects(0), isEmpty);
-      expect(repo.masterEffects, isEmpty);
+      expect(repo.outputEffects(0), isEmpty);
       expect(repo.trackChainEnabled(0), isTrue);
       expect(repo.trackChainEnabled(1), isTrue);
-      expect(repo.masterChainEnabled, isTrue);
+      expect(repo.outputChainEnabled(0), isTrue);
       expect(repo.allTrackChains(), isEmpty);
 
       // And a restart replays nothing stale.
-      engine.trackFx.clear();
-      engine.masterFx.clear();
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.trackFx, isEmpty);
-      expect(engine.masterFx, isEmpty);
+      expect(engine.recipes[(FxOwner.track, 0, 0)], isNull);
+      expect(engine.recipes[(FxOwner.output, 0, 0)], isNull);
     });
 
     test('applies the rig BUS stages, chain flags included (R17)', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
@@ -5150,50 +7015,61 @@ void main() {
             ),
             1: const FxChainEnvelope(chainEnabled: false),
           },
-          masterChain: FxChainEnvelope(
-            chainEnabled: false,
-            entries: [BuiltInEffect(type: TrackEffectType.filter)],
-          ),
+          outputChains: {
+            0: FxChainEnvelope(
+              chainEnabled: false,
+              entries: [BuiltInEffect(type: TrackEffectType.filter)],
+            ),
+          },
         ),
         clearPollInterval: Duration.zero,
       );
 
-      expect(engine.trackFx[(0, 0)]?.code, TrackEffectType.delay.code);
-      expect(engine.trackFxCount[0], 1);
-      expect(engine.trackFxChainEnabled[1], isFalse);
-      expect(engine.masterFx[0]?.code, TrackEffectType.filter.code);
-      expect(engine.masterFxChainEnabled, isFalse);
+      expect(
+        engine.recipes[(FxOwner.track, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.delay.code,
+      );
+      expect(engine.recipes[(FxOwner.track, 1, 0)]?.enabled, isFalse);
+      expect(
+        engine.recipes[(FxOwner.output, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.filter.code,
+      );
+      expect(engine.recipes[(FxOwner.output, 0, 0)]?.enabled, isFalse);
       expect(repo.trackChainEnabled(1), isFalse);
-      expect(repo.masterChainEnabled, isFalse);
+      expect(repo.outputChainEnabled(0), isFalse);
 
       // The caches are truthful: a restart reproduces the loaded bus chains.
-      engine.trackFx.clear();
-      engine.masterFx.clear();
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig());
-      expect(engine.trackFx[(0, 0)]?.code, TrackEffectType.delay.code);
-      expect(engine.masterFx[0]?.code, TrackEffectType.filter.code);
+      expect(
+        engine.recipes[(FxOwner.track, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.delay.code,
+      );
+      expect(
+        engine.recipes[(FxOwner.output, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.filter.code,
+      );
     });
 
     test('resets a remembered bus chain on a channel this engine cannot own, '
         'even when the rig "defines" it — the bounded apply cannot push it, so '
         'skipping the reset would strand the leftover', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
       // A chain remembered for a channel beyond this engine's track count —
       // e.g. a cache left by a manifest saved on a build with more tracks.
       repo.setTrackEffects(
-        channel: 5,
+        channel: 8,
         effects: [BuiltInEffect(type: TrackEffectType.drive)],
       );
-      expect(repo.trackEffects(5), isNotEmpty);
+      expect(repo.trackEffects(8), isNotEmpty);
 
       await repo.applySession(
         SessionRig(
           trackChains: {
-            5: FxChainEnvelope(
+            8: FxChainEnvelope(
               entries: [BuiltInEffect(type: TrackEffectType.reverb)],
             ),
           },
@@ -5202,13 +7078,42 @@ void main() {
       );
 
       // Not applied (out of range) and therefore reset, not left behind.
-      expect(repo.trackEffects(5), isEmpty);
+      expect(repo.trackEffects(8), isEmpty);
       expect(repo.allTrackChains(), isEmpty);
     });
 
+    test(
+      'drops an out-of-range remembered lane chain on session load',
+      () async {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        expect(
+          repo.setLaneEffects(
+            channel: 8,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          ),
+          EngineResult.ok,
+        );
+        await repo.applySession(
+          SessionRig(
+            laneChains: {
+              (8, 0): FxChainEnvelope(
+                entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+              ),
+            },
+          ),
+          clearPollInterval: Duration.zero,
+        );
+        expect(repo.laneEffects(8, 0), isEmpty);
+        expect(repo.allLaneChains(), isEmpty);
+      },
+    );
+
     test('restores a lane envelope whole — entries, chain flag, and the '
         'inheritance marker (R13/R15)', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       // A leftover disabled flag + marker on a DIFFERENT lane must not survive.
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -5242,18 +7147,18 @@ void main() {
 
       expect(repo.laneChainEnabled(0, 0), isFalse);
       expect(repo.laneChainInheritedFrom(0, 0), [2, 3]);
-      expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.enabled, isFalse);
       // The undefined lane's leftover flag/marker are gone.
       expect(repo.laneChainEnabled(1, 0), isTrue);
       expect(repo.laneChainInheritedFrom(1, 0), isEmpty);
       // A monitor's chain flag restores from its own envelope too.
       expect(repo.monitorChainEnabled(0), isFalse);
-      expect(engine.monitorFxChainEnabled[0], isFalse);
+      expect(engine.recipes[(FxOwner.monitor, 0, 0)]?.enabled, isFalse);
     });
 
     test('fully resets a leftover monitor the rig does not define — routing '
         'and mix, not just its chain (F2)', () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       // Session A left input 1 enabled with custom routing / mix.
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -5280,7 +7185,7 @@ void main() {
 
     test("resets a leftover track's lane count/routing the rig omits — the "
         "engine must not keep session A's lanes for a record", () async {
-      engine.nextSnapshot = clearedSnapshot(2);
+      engine.nextSnapshot = clearedSnapshot();
       // Session A configured track 0 with two lanes recording inputs 3 and 5.
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -5310,7 +7215,7 @@ void main() {
     test(
       'applies the rig chains and monitors through the cached setters',
       () async {
-        engine.nextSnapshot = clearedSnapshot(2);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -5335,22 +7240,31 @@ void main() {
           clearPollInterval: Duration.zero,
         );
 
-        expect(engine.laneFx[(1, 0, 0)]?.code, TrackEffectType.delay.code);
-        expect(engine.laneFxCount[(1, 0)], 1);
-        expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.reverb.code);
+        expect(
+          engine.recipes[(FxOwner.lane, 1, 0)]?.slots.single.type.code,
+          TrackEffectType.delay.code,
+        );
+        expect(
+          engine.recipes[(FxOwner.monitor, 0, 0)]?.slots.single.type.code,
+          TrackEffectType.reverb.code,
+        );
         expect(engine.monitorInputEnabled[0], isTrue);
         expect(engine.monitorOutput[0], 0x1);
         expect(engine.monitorVolume[0], 0.7);
         expect(engine.monitorMute[0], isFalse);
 
         // The caches are truthful: a restart reproduces the loaded chains.
-        engine.laneFx.clear();
-        engine.monitorFx.clear();
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
-        expect(engine.laneFx[(1, 0, 0)]?.code, TrackEffectType.delay.code);
-        expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.reverb.code);
+        expect(
+          engine.recipes[(FxOwner.lane, 1, 0)]?.slots.single.type.code,
+          TrackEffectType.delay.code,
+        );
+        expect(
+          engine.recipes[(FxOwner.monitor, 0, 0)]?.slots.single.type.code,
+          TrackEffectType.reverb.code,
+        );
       },
     );
 
@@ -5360,7 +7274,7 @@ void main() {
         // The engine rejects the first couple of imports (the posted-clear ack
         // race); applySession retries and the import lands rather than failing.
         engine
-          ..nextSnapshot = clearedSnapshot(1)
+          ..nextSnapshot = clearedSnapshot()
           ..importFailCountdown = 2;
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
@@ -5396,7 +7310,7 @@ void main() {
 
     test('throws when a stem import is rejected', () async {
       engine
-        ..nextSnapshot = clearedSnapshot(1)
+        ..nextSnapshot = clearedSnapshot()
         ..importResult = EngineResult.invalid;
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
@@ -5418,7 +7332,7 @@ void main() {
     test(
       'imports every lane of a multi-lane track and restores per-lane mix',
       () async {
-        engine.nextSnapshot = clearedSnapshot(1);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
@@ -5429,6 +7343,8 @@ void main() {
             baseLengthFrames: 4,
             tracks: [
               SessionRigTrack(
+                fadeAmount: 1,
+                reversed: false,
                 channel: 0,
                 lanes: [
                   SessionRigLane(
@@ -5472,18 +7388,27 @@ void main() {
     test(
       'imports every overdub layer in order and finalizes the undo/redo stacks',
       () async {
-        engine.nextSnapshot = clearedSnapshot(1);
+        engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
 
         final undo0 = Float32List.fromList([1, 1, 1, 1]);
         final live = Float32List.fromList([2, 2, 2, 2]);
         final redo0 = Float32List.fromList([3, 3, 3, 3]);
+        // An overdub beneath the live image; above it a Peel marker (no
+        // image) and then a restoration image (#1164).
+        const history = TrackHistory([
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.peel),
+          HistoryEntry(HistoryKind.processed),
+        ], undoCount: 1);
         await repo.applySession(
           SessionRig(
             baseLengthFrames: 4,
             tracks: [
               SessionRigTrack(
+                fadeAmount: 1,
+                reversed: false,
                 channel: 0,
                 lanes: [
                   SessionRigLane(
@@ -5493,8 +7418,7 @@ void main() {
                     muted: false,
                     outputMask: 0x3,
                     inputChannel: 0,
-                    undoCount: 1,
-                    redoCount: 1,
+                    history: history,
                   ),
                 ],
               ),
@@ -5506,8 +7430,52 @@ void main() {
         expect(engine.importedLayers[(0, 0, 0)], undo0);
         expect(engine.importedLayers[(0, 0, 1)], live);
         expect(engine.importedLayers[(0, 0, 2)], redo0);
-        // The reconstructed stacks are published with the shared depths.
-        expect(engine.finalizedLayers[0], (1, 1));
+        expect(engine.importedLayers.containsKey((0, 0, 3)), isFalse);
+        // The reconstructed stacks are published with their kinds.
+        expect(engine.finalizedHistory[0], history);
+      },
+    );
+
+    test(
+      'finalizes length edits with every image at its own length (#1168)',
+      () async {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        final original = Float32List.fromList([1, 2, 3, 4]);
+        final doubled = Float32List.fromList([1, 2, 3, 4, 1, 2, 3, 4]);
+        const history = TrackHistory([
+          HistoryEntry(HistoryKind.length),
+          HistoryEntry(HistoryKind.length, start: 4),
+        ], undoCount: 1);
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              SessionRigTrack(
+                fadeAmount: 1,
+                reversed: false,
+                channel: 0,
+                lanes: [
+                  SessionRigLane(
+                    lane: 0,
+                    layers: [original, doubled, original],
+                    volume: 1,
+                    muted: false,
+                    outputMask: 0x3,
+                    inputChannel: 0,
+                    history: history,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.finalizedHistory[0], history);
+        expect(engine.finalizedLengths[0], [4, 8, 4]);
       },
     );
   });
@@ -5572,10 +7540,11 @@ void main() {
             effects: [BuiltInEffect(type: TrackEffectType.reverb)],
           )
           ..setTrackChainEnabled(channel: 2, enabled: false)
-          ..setMasterEffects(
+          ..setOutputEffects(
+            bus: 0,
             effects: [BuiltInEffect(type: TrackEffectType.filter)],
           )
-          ..setMasterChainEnabled(enabled: false);
+          ..setOutputChainEnabled(bus: 0, enabled: false);
         addTearDown(repo.dispose);
 
         final tracks = repo.allTrackChains();
@@ -5588,7 +7557,7 @@ void main() {
         expect(tracks[2]!.entries, isEmpty);
         expect(tracks[2]!.chainEnabled, isFalse);
 
-        final master = repo.masterChainEnvelope();
+        final master = repo.outputChainEnvelope(0);
         expect(
           (master.entries.single as BuiltInEffect).type,
           TrackEffectType.filter,
@@ -5602,7 +7571,7 @@ void main() {
       final repo = buildRepo();
       addTearDown(repo.dispose);
 
-      expect(repo.masterChainEnvelope(), const FxChainEnvelope());
+      expect(repo.outputChainEnvelope(0), const FxChainEnvelope());
     });
 
     test('allMonitors captures an enabled DRY monitor (no FX chain)', () {
@@ -5686,20 +7655,26 @@ void main() {
       reconnectTicker: reconnectTicker.stream,
     );
 
-    EngineSnapshot runningSnapshot({required bool devicePresent}) =>
-        EngineSnapshot(
-          isRunning: true,
-          devicePresent: devicePresent,
-          sampleRate: 48000,
-          bufferFrames: 128,
-          framesProcessed: 0,
-          xrunCount: 0,
-          inputRms: 0,
-          inputPeak: 0,
-          outputRms: 0,
-          latencyState: le.LatencyState.idle,
-          measuredLatencyMs: -1,
-        );
+    EngineSnapshot runningSnapshot({
+      required bool devicePresent,
+      int trackCount = 0,
+    }) => EngineSnapshot(
+      isRunning: true,
+      devicePresent: devicePresent,
+      sampleRate: 48000,
+      bufferFrames: 128,
+      framesProcessed: 0,
+      xrunCount: 0,
+      inputRms: 0,
+      inputPeak: 0,
+      outputRms: 0,
+      latencyState: le.LatencyState.idle,
+      measuredLatencyMs: -1,
+      tracks: _nativeSlots([
+        for (var channel = 0; channel < trackCount; channel++)
+          const TrackSnapshot.empty(),
+      ]),
+    );
 
     const pinned = le.AudioDevice(
       id: 'out-1',
@@ -5722,6 +7697,111 @@ void main() {
 
     int startCount() => engine.calls.where((c) => c == 'start').length;
     int stopCount() => engine.calls.where((c) => c == 'stop').length;
+    int reopenCount() => engine.calls.where((c) => c == 'reopen').length;
+
+    for (final modeRequest in [false, true]) {
+      test('reconnect cancels pending settings and replays confirmed rig '
+          'modeRequest=$modeRequest', () async {
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 3,
+        );
+        final repo = buildSupervised()
+          ..setLooperMode(LooperMode.free)
+          ..setLengthSettings(defaultBars: 4, overrides: {0: 8})
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        addTearDown(repo.dispose);
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+        engine
+          ..commandsAreSettled = false
+          ..publishLengthCommands = false
+          ..publishModeCommands = false;
+        expect(
+          modeRequest
+              ? repo.setLooperMode(LooperMode.multi)
+              : repo.setDefaultLengthPreset(12),
+          EngineResult.ok,
+        );
+        final abandoned = repo.settleLengthSettings();
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: false,
+          trackCount: 3,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        engine
+          ..devices = const [pinned]
+          ..publishLengthCommands = true
+          ..publishModeCommands = true;
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(await abandoned, EngineResult.notReady);
+        expect(repo.sessionTransport.isRunning, isTrue);
+        engine.commandsAreSettled = true;
+        expect(await repo.settleLengthSettings(), EngineResult.ok);
+        expect(repo.sessionTransport.looperMode, LooperMode.free);
+        expect(repo.sessionTransport.defaultLengthPresetBars, 4);
+        expect(repo.trackLengthPresetOverrides, {0: 8});
+        expect(engine.publishedLengths, {
+          0: 8,
+          for (var i = 1; i < 8; i++) i: 4,
+        });
+        expect(startCount(), 1);
+        expect(reopenCount(), 1);
+        expect(stopCount(), 1);
+      });
+    }
+
+    test(
+      'same-name reopen publishes a new lifetime for an identical snapshot',
+      () async {
+        engine.nextSnapshot = runningSnapshot(devicePresent: true);
+        final repo = buildSupervised()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        addTearDown(repo.dispose);
+        final states = <LooperState>[];
+        final sub = repo.looperState.listen(states.add);
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+
+        engine.nextSnapshot = runningSnapshot(devicePresent: false);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        final before = repo.state;
+        expect(before.status.isConnected, isTrue);
+        expect(before.mixGeneration, repo.mixGeneration);
+        states.clear();
+
+        // The supervisor does a raw stop/start. Keep exactly the same running
+        // native snapshot: no synthetic disconnected projection drives this.
+        engine.devices = const [pinned];
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(startCount(), 1);
+        expect(reopenCount(), 1);
+        expect(stopCount(), 1);
+        expect(states, isNotEmpty);
+        expect(states.every((state) => state.status.isConnected), isTrue);
+        final after = states.last;
+        // The status is the same device status plus the reconnect's verdict
+        // (the only field a reopen adds): everything else is identical.
+        expect(after.status.reopen?.outcome, ReopenOutcome.retained);
+        expect(
+          after.status.toString().replaceAll(
+            after.status.reopen.toString(),
+            'null',
+          ),
+          before.status.toString(),
+        );
+        expect(after.transport, before.transport);
+        expect(after.tracks, before.tracks);
+        expect(after.mixGeneration, greaterThan(before.mixGeneration));
+        expect(after.mixGeneration, repo.mixGeneration);
+        expect(after, isNot(before));
+      },
+    );
 
     test('reopens a pinned device when it reappears', () async {
       engine.nextSnapshot = runningSnapshot(devicePresent: true);
@@ -5738,26 +7818,30 @@ void main() {
       ticker.add(null);
       await Future<void>.delayed(Duration.zero);
 
-      // Still absent from enumeration → no restart yet.
+      // Still absent from enumeration → no reopen yet.
       engine.devices = const [];
       reconnectTicker.add(null);
       await Future<void>.delayed(Duration.zero);
-      expect(startCount(), 1);
+      expect(reopenCount(), 0);
 
-      // Reappears → stop + restart on the same device.
+      // Reappears → stop + material-preserving reopen on the same device.
       engine.devices = const [pinned];
       reconnectTicker.add(null);
       await Future<void>.delayed(Duration.zero);
 
-      expect(engine.calls, containsAllInOrder(<String>['stop', 'start']));
-      expect(startCount(), 2);
+      expect(engine.calls, containsAllInOrder(<String>['stop', 'reopen']));
+      expect(startCount(), 1);
+      expect(reopenCount(), 1);
       expect(engine.lastConfig?.playbackDeviceId, 'out-1');
     });
 
     test(
       'a reconnect re-applies the remembered rig (lanes + monitors)',
       () async {
-        engine.nextSnapshot = runningSnapshot(devicePresent: true);
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 1,
+        );
         final repo = buildSupervised()
           ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'))
           // Stage some live rig state: a monitor enable + a lane routing.
@@ -5771,28 +7855,32 @@ void main() {
             .where((c) => c == 'setMonitorInputEnabled')
             .length;
         final laneReapplyBefore = engine.calls
-            .where((c) => c == 'setLaneOutput')
+            .where((c) => c == 'setMix')
             .length;
 
         // Device lost, then reappears → reconnect.
-        engine.nextSnapshot = runningSnapshot(devicePresent: false);
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: false,
+          trackCount: 1,
+        );
         ticker.add(null);
         await Future<void>.delayed(Duration.zero);
         engine.devices = const [pinned];
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
 
-        expect(startCount(), 2); // reconnected
-        // The reconnect went through startEngine, so the freshly-started engine
-        // received the remembered rig again — it did not come back at defaults.
+        expect(reopenCount(), 1); // reconnected
+        // The reconnect replayed the remembered rig onto the reopened engine
+        // — it did not come back at defaults.
         expect(
           engine.calls.where((c) => c == 'setMonitorInputEnabled').length,
           greaterThan(monitorReapplyBefore),
         );
         expect(
-          engine.calls.where((c) => c == 'setLaneOutput').length,
+          engine.calls.where((c) => c == 'setMix').length,
           greaterThan(laneReapplyBefore),
         );
+        expect(engine.laneOutput[(0, 0)], 0x2);
       },
     );
 
@@ -5869,7 +7957,7 @@ void main() {
       engine.devices = const [pinned, captureDevice];
       reconnectTicker.add(null);
       await Future<void>.delayed(Duration.zero);
-      expect(startCount(), 2);
+      expect(reopenCount(), 1);
       expect(engine.lastConfig?.captureDeviceId, 'in-1');
     });
 
@@ -5890,28 +7978,265 @@ void main() {
         // Device present, but the engine refuses to open it.
         engine
           ..devices = const [pinned]
-          ..startResult = EngineResult.device;
+          ..reopenResult = (
+            result: EngineResult.device,
+            outcome: ReopenOutcome.retained,
+            droppedTracks: 0,
+          );
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
         final stopsAfterFirst = stopCount();
-        final startsAfterFirst = startCount();
-        expect(startsAfterFirst, 2); // one failed reopen attempt
+        expect(reopenCount(), 1); // one failed reopen attempt
 
         // Same device list → no further thrash.
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
         expect(stopCount(), stopsAfterFirst);
-        expect(startCount(), startsAfterFirst);
+        expect(reopenCount(), 1);
 
         // The list changes (a re-plug) → retry, and this time it succeeds.
         engine
-          ..startResult = EngineResult.ok
+          ..reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.retained,
+            droppedTracks: 0,
+          )
           ..devices = const [pinned, otherDevice];
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
-        expect(startCount(), startsAfterFirst + 1);
+        expect(reopenCount(), 2);
+        expect(startCount(), 1);
       },
     );
+
+    test(
+      'a refused attempt neither reopens nor consumes the device list; the '
+      'next admissible tick reopens on the same list',
+      () async {
+        engine.nextSnapshot = runningSnapshot(devicePresent: true);
+        final repo = buildSupervised()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+
+        engine.nextSnapshot = runningSnapshot(devicePresent: false);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+
+        // The device is back, but a Session boot fence holds the engine: the
+        // attempt is refused outright — no raw stop, no reopen, and the device
+        // list is NOT recorded as tried.
+        repo.blockStartForSessionBoot();
+        engine.devices = const [pinned];
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(reopenCount(), 0);
+        expect(stopCount(), 0);
+        expect(repo.sessionTransport.isRunning, isTrue);
+
+        // The fence lifts. The SAME device list now reopens — the refusal must
+        // not have burned the one attempt this list gets.
+        repo.clearSessionBootStartBlock();
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(engine.calls, containsAllInOrder(<String>['stop', 'reopen']));
+        expect(reopenCount(), 1);
+        expect(stopCount(), 1);
+      },
+    );
+
+    test(
+      'the reconnect verdict rides the status until the next deliberate start',
+      () async {
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 2,
+        );
+        final repo = buildSupervised()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+        expect(repo.state.status.reopen, isNull);
+
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: false,
+          trackCount: 2,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        engine
+          ..devices = const [pinned]
+          ..reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.retainedPartial,
+            droppedTracks: 1 << 1,
+          );
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        final verdict = repo.state.status.reopen;
+        expect(
+          verdict,
+          const EngineReopened(
+            outcome: ReopenOutcome.retainedPartial,
+            droppedTracks: 2,
+            previousSampleRate: 48000,
+            sampleRate: 48000,
+          ),
+        );
+        expect(verdict!.droppedChannels, [1]);
+        expect(verdict.keepsMaterial, isTrue);
+        expect(verdict.retainedAll, isFalse);
+
+        // A deliberate start is not a reconnect: the verdict is gone.
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        expect(repo.state.status.reopen, isNull);
+      },
+    );
+
+    test(
+      'a return the engine produces on its own, after an earlier partial '
+      'reconnect, carries no verdict (the stale-notice repro, #1167)',
+      () async {
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 8,
+        );
+        final repo = buildSupervised()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+
+        // Episode 1: unplug, replug, partial reopen (track 2 dropped).
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: false,
+          trackCount: 8,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        engine
+          ..devices = const [pinned]
+          ..reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.retainedPartial,
+            droppedTracks: 1 << 2,
+          );
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(reopenCount(), 1);
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 8,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(repo.state.status.reopen?.droppedChannels, [2]);
+
+        // Episode 2: the backend flips present 0 then 1 by itself (a reroute,
+        // an interruption ending) and the poll sees the return before any
+        // reconnect tick — nothing reopened for THIS return.
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: false,
+          trackCount: 8,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(repo.state.status.devicePresent, isFalse);
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 8,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(reopenCount(), 1);
+        expect(repo.state.status.devicePresent, isTrue);
+        expect(
+          repo.state.status.reopen,
+          isNull,
+          reason: 'a verdict belongs to the reopen that produced it',
+        );
+      },
+    );
+
+    test(
+      'a reopen whose rig replay rolls back carries its verdict through the '
+      'next deliberate start, and only that one',
+      () async {
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: true,
+          trackCount: 8,
+        );
+        final repo = buildSupervised()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+        engine.nextSnapshot = runningSnapshot(
+          devicePresent: false,
+          trackCount: 8,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        // The device comes back at another rate (every loop cleared) and the
+        // replay's mix step is refused: the start rolls back.
+        engine
+          ..devices = const [pinned]
+          ..reopenResult = (
+            result: EngineResult.ok,
+            outcome: ReopenOutcome.clearedRate,
+            droppedTracks: 0,
+          )
+          ..mixResult = EngineResult.invalid;
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(reopenCount(), 1);
+        expect(repo.sessionTransport.isRunning, isFalse);
+        expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
+
+        // The player re-applies: the start that opens the rig again still
+        // carries what the reopen did to the loops...
+        engine.mixResult = EngineResult.ok;
+        expect(
+          repo.startEngine(const EngineConfig(playbackDeviceId: 'out-1')),
+          EngineResult.ok,
+        );
+        expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
+        // ...and the start after that is an ordinary one.
+        repo.stopEngine();
+        expect(
+          repo.startEngine(const EngineConfig(playbackDeviceId: 'out-1')),
+          EngineResult.ok,
+        );
+        expect(repo.state.status.reopen, isNull);
+      },
+    );
+
+    test('a reopen the engine refuses leaves no verdict', () async {
+      engine.nextSnapshot = runningSnapshot(devicePresent: true);
+      final repo = buildSupervised()
+        ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      engine.nextSnapshot = runningSnapshot(devicePresent: false);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      engine
+        ..devices = const [pinned]
+        ..reopenResult = (
+          result: EngineResult.device,
+          outcome: ReopenOutcome.retained,
+          droppedTracks: 0,
+        );
+      reconnectTicker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(reopenCount(), 1);
+      expect(repo.state.status.reopen, isNull);
+    });
 
     test('devices() forwards to the engine enumeration, mapped to domain', () {
       engine.devices = const [pinned];
@@ -6013,7 +8338,8 @@ void main() {
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.filter)],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         );
 
@@ -6021,7 +8347,7 @@ void main() {
         ...repo.laneEffects(0, 0).map((e) => e.slotId),
         repo.monitorEffects(0).single.slotId,
         repo.trackEffects(0).single.slotId,
-        repo.masterEffects.single.slotId,
+        repo.outputEffects(0).single.slotId,
       ];
       expect(ids.every((id) => id != null), isTrue);
       expect(ids.toSet(), hasLength(ids.length));
@@ -6060,6 +8386,640 @@ void main() {
     });
   });
 
+  group('per-entry channel handling and level (slice 3e)', () {
+    const channels = FxChannels(
+      input: FxChannelInput.monoSum,
+      output: FxChannelOutput.mono,
+      placement: -0.5,
+      level: 0.25,
+    );
+
+    test('rides a chain write to the engine, per entry', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.echo, channels: channels),
+        ],
+      );
+
+      // The complete admitted recipe carries both slots' channel settings.
+      final slots = engine.recipes[(FxOwner.lane, 0, 0)]!.slots;
+      expect(slots[0].channels.level, 1.0);
+      expect(slots[1].channels.level, 0.25);
+      expect(
+        slots[1].channels.output,
+        le.FxChannelOutput.mono,
+      );
+    });
+
+    test('the setter names the instance by slot id, never by index', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.echo),
+        ],
+      );
+      final second = repo.laneEffects(0, 0)[1].slotId!;
+
+      expect(
+        repo.setLaneEffectChannels(
+          channel: 0,
+          lane: 0,
+          slotId: second,
+          channels: channels,
+        ),
+        EngineResult.ok,
+      );
+      expect(repo.laneEffects(0, 0)[1].channels, channels);
+      expect(repo.laneEffects(0, 0)[0].channels, FxChannels.defaults);
+      expect(
+        engine.recipes[(FxOwner.lane, 0, 0)]!.slots[1].channels.level,
+        0.25,
+      );
+
+      // Reordering carries the settings with the entry, and the re-apply puts
+      // them on the slot the entry now occupies.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: repo.laneEffects(0, 0).reversed.toList(),
+      );
+      expect(repo.laneEffects(0, 0)[0].channels, channels);
+      final slots = engine.recipes[(FxOwner.lane, 0, 0)]!.slots;
+      expect(slots[0].channels.level, 0.25);
+      expect(slots[1].channels.level, 1.0);
+    });
+
+    test(
+      'a refused channel tuple changes neither remembered nor native recipe',
+      () {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        expect(
+          repo.setLaneEffects(
+            channel: 0,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          ),
+          EngineResult.ok,
+        );
+        expect(
+          repo.setMonitorEffects(
+            input: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          ),
+          EngineResult.ok,
+        );
+        final laneBefore = repo.laneEffects(0, 0).single;
+        final monitorBefore = repo.monitorEffects(0).single;
+        final nativeLane = engine.recipes[(FxOwner.lane, 0, 0)];
+        final nativeMonitor = engine.recipes[(FxOwner.monitor, 0, 0)];
+        engine.nextRecipeResult = EngineResult.notReady;
+        expect(
+          repo.setLaneEffectChannels(
+            channel: 0,
+            lane: 0,
+            slotId: laneBefore.slotId!,
+            channels: channels,
+          ),
+          EngineResult.notReady,
+        );
+        expect(
+          repo.setMonitorEffectChannels(
+            input: 0,
+            slotId: monitorBefore.slotId!,
+            channels: channels,
+          ),
+          EngineResult.notReady,
+        );
+        expect(repo.laneEffects(0, 0).single.channels, laneBefore.channels);
+        expect(repo.monitorEffects(0).single.channels, monitorBefore.channels);
+        expect(engine.recipes[(FxOwner.lane, 0, 0)], same(nativeLane));
+        expect(engine.recipes[(FxOwner.monitor, 0, 0)], same(nativeMonitor));
+      },
+    );
+
+    test('an unknown slot id is invalid on both stages', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+
+      expect(
+        repo.setLaneEffectChannels(
+          channel: 0,
+          lane: 0,
+          slotId: 'nobody',
+          channels: channels,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMonitorEffectChannels(
+          input: 0,
+          slotId: 'nobody',
+          channels: channels,
+        ),
+        EngineResult.invalid,
+      );
+    });
+
+    test('survives persist and restore through the envelope', () {
+      final restored = decodeFxChain(
+        encodeFxChain(
+          FxChainEnvelope(
+            entries: [
+              BuiltInEffect(type: TrackEffectType.echo, channels: channels),
+            ],
+          ),
+        ),
+      );
+      expect(restored.entries.single.channels, channels);
+    });
+  });
+
+  group('the All tracks recorded-mix chain (slice 3e)', () {
+    test('a chain write pushes types, params, count and every enabled bit', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setAllTracksEffects(
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.reverb,
+            params: const [0.1, 0.2, 0.3, 0.4],
+          ),
+          BuiltInEffect(type: TrackEffectType.drive, enabled: false),
+        ],
+      );
+
+      final recipe = engine.recipes[(FxOwner.allTracks, 0, 0)]!;
+      expect(recipe.slots.map((slot) => slot.type.code), [
+        TrackEffectType.reverb.code,
+        TrackEffectType.drive.code,
+      ]);
+      expect(recipe.slots.first.params[2], 0.3);
+      expect(recipe.slots.last.enabled, isFalse);
+      expect(recipe.preCount, 0);
+    });
+
+    test('is stored wholly post — the stage has no dry original', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setAllTracksEffects(
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.reverb,
+            placement: FxPlacement.pre,
+          ),
+        ],
+      );
+
+      expect(repo.allTracksEffects.single.placement, FxPlacement.post);
+      expect(fxPreCount(repo.allTracksEffects), 0);
+    });
+
+    test('re-applies on restart, chain flag included', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setAllTracksEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.echo)],
+        )
+        ..setAllTracksChainEnabled(enabled: false)
+        ..stopEngine();
+      engine.calls.clear();
+      repo.startEngine(const EngineConfig());
+
+      final recipe = engine.recipes[(FxOwner.allTracks, 0, 0)]!;
+      expect(recipe.slots.single.type.code, TrackEffectType.echo.code);
+      expect(recipe.enabled, isFalse);
+    });
+
+    test(
+      'a session that describes no such chain resets the live one',
+      () async {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        repo.setAllTracksEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.echo)],
+        );
+        await repo.applySession(const SessionRig());
+
+        // R17: a stage the session does not describe is reset on apply, never
+        // left carrying the previous session's chain.
+        expect(repo.allTracksEffects, isEmpty);
+      },
+    );
+  });
+
+  group('per-instance placement (slice 3e)', () {
+    BuiltInEffect at(TrackEffectType type, FxPlacement placement) =>
+        BuiltInEffect(type: type, placement: placement);
+
+    test('a chain write partitions pre entries ahead of post ones', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.delay, FxPlacement.post),
+          at(TrackEffectType.echo, FxPlacement.pre),
+        ],
+      );
+
+      expect(
+        repo.laneEffects(0, 0).map((e) => (e as BuiltInEffect).type),
+        [
+          TrackEffectType.filter,
+          TrackEffectType.echo,
+          TrackEffectType.drive,
+          TrackEffectType.delay,
+        ],
+      );
+      expect(fxPreCount(repo.laneEffects(0, 0)), 2);
+    });
+
+    test('an over-long chain loses trailing post entries, never the '
+        'partition', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // One more entry than capacity, the last of them Pre. Clamping before
+      // the partition would drop that Pre entry; clamping after
+      // it keeps every Pre entry and cuts the Post tail.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          for (var i = 0; i < kTrackEffectMax; i++)
+            at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.reverb, FxPlacement.pre),
+        ],
+      );
+
+      final chain = repo.laneEffects(0, 0);
+      expect(chain, hasLength(kTrackEffectMax));
+      expect(fxPreCount(chain), 1);
+      expect((chain.first as BuiltInEffect).type, TrackEffectType.reverb);
+    });
+
+    test('a placement move keeps the id and lands at the destination '
+        'stage end', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // The moved entry starts AHEAD of the entries it joins, so "the end of
+      // the destination stage" and "wherever it already was" are different
+      // answers: leaving it in place would order filter before delay.
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final moving = repo.laneEffects(0, 0).first.slotId!;
+
+      expect(
+        repo.setLaneEffectPlacement(
+          channel: 0,
+          lane: 0,
+          slotId: moving,
+          placement: FxPlacement.post,
+        ),
+        EngineResult.ok,
+      );
+
+      final chain = repo.laneEffects(0, 0);
+      expect(chain.map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.drive,
+        TrackEffectType.delay,
+        TrackEffectType.filter,
+      ]);
+      expect(chain.last.slotId, moving);
+      expect(chain.last.placement, FxPlacement.post);
+      expect(fxPreCount(chain), 0);
+    });
+
+    test('a move into a stage that already holds entries goes behind '
+        'them', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final moving = repo.laneEffects(0, 0)[1].slotId!;
+
+      repo.setLaneEffectPlacement(
+        channel: 0,
+        lane: 0,
+        slotId: moving,
+        placement: FxPlacement.pre,
+      );
+
+      final chain = repo.laneEffects(0, 0);
+      expect(chain.map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.filter,
+        TrackEffectType.drive,
+        TrackEffectType.delay,
+      ]);
+      expect(chain[1].slotId, moving);
+      expect(fxPreCount(chain), 2);
+    });
+
+    test('a placement move preserves parameters and the enable state', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.delay,
+            params: const [0.11, 0.22, 0.33, 0.44],
+            enabled: false,
+          ),
+        ],
+      );
+      final id = repo.laneEffects(0, 0).single.slotId!;
+
+      repo.setLaneEffectPlacement(
+        channel: 0,
+        lane: 0,
+        slotId: id,
+        placement: FxPlacement.pre,
+      );
+
+      final moved = repo.laneEffects(0, 0).single as BuiltInEffect;
+      expect(moved.slotId, id);
+      expect(moved.params, const [0.11, 0.22, 0.33, 0.44]);
+      expect(moved.enabled, isFalse);
+      expect(moved.placement, FxPlacement.pre);
+    });
+
+    test('a move to the placement an entry already has changes nothing', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final before = repo.laneEffects(0, 0);
+
+      expect(
+        repo.setLaneEffectPlacement(
+          channel: 0,
+          lane: 0,
+          slotId: before.first.slotId!,
+          placement: FxPlacement.post,
+        ),
+        EngineResult.ok,
+      );
+      // Order too: a no-op move must not send the entry to the stage end.
+      expect(repo.laneEffects(0, 0), before);
+    });
+
+    test('an unknown slot id is invalid on every switchable stage', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [at(TrackEffectType.drive, FxPlacement.post)],
+        )
+        ..setMonitorEffects(
+          input: 0,
+          effects: [at(TrackEffectType.drive, FxPlacement.post)],
+        )
+        ..setTrackEffects(
+          channel: 0,
+          effects: [at(TrackEffectType.drive, FxPlacement.post)],
+        );
+
+      expect(
+        repo.setLaneEffectPlacement(
+          channel: 0,
+          lane: 0,
+          slotId: 'nobody',
+          placement: FxPlacement.pre,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMonitorEffectPlacement(
+          input: 0,
+          slotId: 'nobody',
+          placement: FxPlacement.pre,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setTrackEffectPlacement(
+          channel: 0,
+          slotId: 'nobody',
+          placement: FxPlacement.pre,
+        ),
+        EngineResult.invalid,
+      );
+    });
+
+    test('a monitor instance moves the same way a lane one does', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setMonitorEffects(
+        input: 1,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.echo, FxPlacement.pre),
+        ],
+      );
+      final monitorId = repo.monitorEffects(1).first.slotId!;
+
+      repo.setMonitorEffectPlacement(
+        input: 1,
+        slotId: monitorId,
+        placement: FxPlacement.post,
+      );
+
+      expect(repo.monitorEffects(1).last.slotId, monitorId);
+      expect(fxPreCount(repo.monitorEffects(1)), 1);
+    });
+
+    test('a whole track carries the switch, and its split reaches the '
+        'engine', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // A whole track's Pre run is rendered over the combination of its
+      // parts, so unlike an output chain it does carry the switch.
+      repo.setTrackEffects(
+        channel: 2,
+        effects: [
+          at(TrackEffectType.reverb, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+        ],
+      );
+
+      expect(repo.trackEffects(2).map((e) => e.placement), [
+        FxPlacement.pre,
+        FxPlacement.post,
+      ]);
+      expect(fxPreCount(repo.trackEffects(2)), 1);
+      expect(engine.recipes[(FxOwner.track, 2, 0)]?.slots, hasLength(2));
+      expect(engine.recipes[(FxOwner.track, 2, 0)]?.preCount, 1);
+    });
+
+    test('a whole-track instance moves to the end of its new stage, keeping '
+        'its identity', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setTrackEffects(
+        channel: 2,
+        effects: [
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+      final moving = repo.trackEffects(2).first.slotId!;
+
+      expect(
+        repo.setTrackEffectPlacement(
+          channel: 2,
+          slotId: moving,
+          placement: FxPlacement.post,
+        ),
+        EngineResult.ok,
+      );
+
+      final chain = repo.trackEffects(2);
+      expect(chain.map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.drive,
+        TrackEffectType.delay,
+        TrackEffectType.filter,
+      ]);
+      expect(chain.last.slotId, moving);
+      expect(fxPreCount(chain), 0);
+      expect(engine.recipes[(FxOwner.track, 2, 0)]?.preCount, 0);
+    });
+
+    test('an output chain is stored wholly post, whatever it is handed', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // The accepted design omits the control here because the stage is fixed
+      // after the mix, so a chain arriving with Pre entries — pasted, or
+      // restored from a destination that had them — must land Post rather
+      // than name a Pre count the output stage cannot honour.
+      repo.setOutputEffects(
+        bus: 0,
+        effects: [
+          at(TrackEffectType.reverb, FxPlacement.pre),
+          at(TrackEffectType.drive, FxPlacement.post),
+        ],
+      );
+
+      expect(
+        repo.outputEffects(0).map((e) => e.placement),
+        [FxPlacement.post, FxPlacement.post],
+      );
+      expect(fxPreCount(repo.outputEffects(0)), 0);
+      // Order is the order it was handed: nothing moved, only the placement.
+      expect(repo.outputEffects(0).map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.reverb,
+        TrackEffectType.drive,
+      ]);
+    });
+
+    test('the split reaches the engine with the count it belongs to', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          at(TrackEffectType.drive, FxPlacement.post),
+          at(TrackEffectType.filter, FxPlacement.pre),
+          at(TrackEffectType.delay, FxPlacement.post),
+        ],
+      );
+
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.slots, hasLength(3));
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.preCount, 1);
+
+      // Moving the one Pre entry to Post leaves nothing printed.
+      repo.setLaneEffectPlacement(
+        channel: 0,
+        lane: 0,
+        slotId: repo.laneEffects(0, 0).first.slotId!,
+        placement: FxPlacement.post,
+      );
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.slots, hasLength(3));
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.preCount, 0);
+    });
+
+    test('placement survives persist and restore through the envelope', () {
+      final chain = [
+        at(TrackEffectType.filter, FxPlacement.pre),
+        at(TrackEffectType.drive, FxPlacement.post),
+      ];
+      final restored = decodeFxChain(
+        encodeFxChain(FxChainEnvelope(entries: chain)),
+      );
+      expect(restored.entries.map((e) => e.placement), [
+        FxPlacement.pre,
+        FxPlacement.post,
+      ]);
+    });
+  });
+
   group('four-stage chains: track + master setters (FX v3 part 3a)', () {
     test('setTrackEffects updates cache and pushes type/params/enabled/count '
         'to the engine bus stage', () {
@@ -6078,27 +9038,28 @@ void main() {
       );
 
       expect(repo.trackEffects(1), hasLength(2));
-      expect(engine.trackFx[(1, 0)]?.name, 'delay');
-      expect(engine.trackFx[(1, 1)]?.name, 'reverb');
-      expect(engine.trackFxParam[(1, 0, 0)], 0.3);
-      // The per-slot enabled bit is pushed for EVERY slot on every apply.
-      expect(engine.trackFxEnabled[(1, 0)], isTrue);
-      expect(engine.trackFxEnabled[(1, 1)], isFalse);
-      expect(engine.trackFxCount[1], 2);
+      final recipe = engine.recipes[(FxOwner.track, 1, 0)]!;
+      expect(recipe.slots.map((slot) => slot.type.code), [
+        TrackEffectType.delay.code,
+        TrackEffectType.reverb.code,
+      ]);
+      expect(recipe.slots.first.params.first, 0.3);
+      expect(recipe.slots.map((slot) => slot.enabled), [true, false]);
     });
 
     test('setMasterEffects updates cache and pushes the Master insert', () {
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
-      repo.setMasterEffects(
+      repo.setOutputEffects(
+        bus: 0,
         effects: [BuiltInEffect(type: TrackEffectType.echo, enabled: false)],
       );
 
-      expect(repo.masterEffects, hasLength(1));
-      expect(engine.masterFx[0]?.name, 'echo');
-      expect(engine.masterFxEnabled[0], isFalse);
-      expect(engine.masterFxCount, 1);
+      expect(repo.outputEffects(0), hasLength(1));
+      final recipe = engine.recipes[(FxOwner.output, 0, 0)]!;
+      expect(recipe.slots.single.type.code, TrackEffectType.echo.code);
+      expect(recipe.slots.single.enabled, isFalse);
     });
 
     test('a hosted plugin at a bus stage publishes as passthrough (no bus '
@@ -6115,7 +9076,8 @@ void main() {
             ),
           ],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: const [
             PluginEffect(
               ref: PluginRef(format: PluginFormat.vst3, id: 'q'),
@@ -6129,12 +9091,17 @@ void main() {
       expect(trackPlugin.unavailable, isTrue);
       expect(trackPlugin.unsupported, isTrue);
       expect(trackPlugin.ref.id, 'p');
-      final masterPlugin = repo.masterEffects.single as PluginEffect;
+      final masterPlugin = repo.outputEffects(0).single as PluginEffect;
       expect(masterPlugin.unavailable, isTrue);
       expect(masterPlugin.unsupported, isTrue);
-      expect(engine.trackFx[(0, 0)]?.name, 'none');
-      expect(engine.trackFxCount[0], 1);
-      expect(engine.masterFx[0]?.name, 'none');
+      expect(
+        engine.recipes[(FxOwner.track, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.none.code,
+      );
+      expect(
+        engine.recipes[(FxOwner.output, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.none.code,
+      );
     });
 
     test('track/master chains and flags are projected onto LooperState', () {
@@ -6148,16 +9115,17 @@ void main() {
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         )
         ..setTrackChainEnabled(channel: 0, enabled: false)
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         )
-        ..setMasterChainEnabled(enabled: false);
+        ..setOutputChainEnabled(bus: 0, enabled: false);
 
       final state = repo.state;
       expect(state.tracks.first.effects, hasLength(1));
       expect(state.tracks.first.chainEnabled, isFalse);
-      expect(state.masterEffects, hasLength(1));
-      expect(state.masterChainEnabled, isFalse);
+      expect(state.outputEffects(0), hasLength(1));
+      expect(state.outputChainEnabled(0), isFalse);
     });
   });
 
@@ -6181,7 +9149,8 @@ void main() {
           channel: 1,
           effects: [BuiltInEffect(type: TrackEffectType.echo)],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         );
 
@@ -6203,7 +9172,7 @@ void main() {
         EngineResult.ok,
       );
       expect(
-        repo.setMasterEffectEnabled(index: 0, enabled: false),
+        repo.setOutputEffectEnabled(bus: 0, index: 0, enabled: false),
         EngineResult.ok,
       );
 
@@ -6211,12 +9180,12 @@ void main() {
       expect(repo.laneEffects(0, 0).single.enabled, isFalse);
       expect(repo.monitorEffects(2).single.enabled, isFalse);
       expect(repo.trackEffects(1).single.enabled, isFalse);
-      expect(repo.masterEffects.single.enabled, isFalse);
-      // Engine side.
+      expect(repo.outputEffects(0).single.enabled, isFalse);
+      // Granular enable commands act on the already installed recipe.
       expect(engine.laneFxEnabled[(0, 0, 0)], isFalse);
       expect(engine.monitorFxEnabled[(2, 0)], isFalse);
       expect(engine.trackFxEnabled[(1, 0)], isFalse);
-      expect(engine.masterFxEnabled[0], isFalse);
+      expect(engine.outputFxEnabled[(0, 0)], isFalse);
     });
 
     test('per-slot setters reject an out-of-range index', () {
@@ -6233,14 +9202,12 @@ void main() {
         EngineResult.invalid,
       );
       expect(
-        repo.setMasterEffectEnabled(index: 3, enabled: false),
+        repo.setOutputEffectEnabled(bus: 0, index: 3, enabled: false),
         EngineResult.invalid,
       );
     });
 
-    test('enabled setters work while STOPPED on ALL FOUR stages — the flag '
-        'lands on the engine immediately, no ring', () {
-      // Never started: the direct-atomic bindings must still be called.
+    test('enabled setters while stopped are replayed in all four recipes', () {
       final repo = buildRepo();
       addTearDown(repo.dispose);
 
@@ -6258,26 +9225,35 @@ void main() {
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.echo)],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         )
         ..setLaneEffectEnabled(channel: 0, lane: 0, index: 0, enabled: false)
         ..setMonitorEffectEnabled(input: 1, index: 0, enabled: false)
         ..setTrackEffectEnabled(channel: 0, index: 0, enabled: false)
-        ..setMasterEffectEnabled(index: 0, enabled: false)
+        ..setOutputEffectEnabled(bus: 0, index: 0, enabled: false)
         ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false)
         ..setMonitorChainEnabled(input: 1, enabled: false)
         ..setTrackChainEnabled(channel: 0, enabled: false)
-        ..setMasterChainEnabled(enabled: false);
+        ..setOutputChainEnabled(bus: 0, enabled: false);
 
-      expect(engine.laneFxEnabled[(0, 0, 0)], isFalse);
-      expect(engine.monitorFxEnabled[(1, 0)], isFalse);
-      expect(engine.trackFxEnabled[(0, 0)], isFalse);
-      expect(engine.masterFxEnabled[0], isFalse);
-      expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
-      expect(engine.monitorFxChainEnabled[1], isFalse);
-      expect(engine.trackFxChainEnabled[0], isFalse);
-      expect(engine.masterFxChainEnabled, isFalse);
+      expect(repo.laneEffects(0, 0).single.enabled, isFalse);
+      expect(repo.monitorEffects(1).single.enabled, isFalse);
+      expect(repo.trackEffects(0).single.enabled, isFalse);
+      expect(repo.outputEffects(0).single.enabled, isFalse);
+      expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+      for (final owner in [
+        FxOwner.lane,
+        FxOwner.monitor,
+        FxOwner.track,
+        FxOwner.output,
+      ]) {
+        final channel = owner == FxOwner.monitor ? 1 : 0;
+        final recipe = engine.recipes[(owner, channel, 0)]!;
+        expect(recipe.slots.single.enabled, isFalse);
+        expect(recipe.enabled, isFalse);
+      }
     });
 
     test('per-chain setters update the remembered flag + engine on all four '
@@ -6289,16 +9265,16 @@ void main() {
         ..setLaneChainEnabled(channel: 0, lane: 1, enabled: false)
         ..setMonitorChainEnabled(input: 3, enabled: false)
         ..setTrackChainEnabled(channel: 2, enabled: false)
-        ..setMasterChainEnabled(enabled: false);
+        ..setOutputChainEnabled(bus: 0, enabled: false);
 
       expect(repo.laneChainEnabled(0, 1), isFalse);
       expect(repo.monitorChainEnabled(3), isFalse);
       expect(repo.trackChainEnabled(2), isFalse);
-      expect(repo.masterChainEnabled, isFalse);
+      expect(repo.outputChainEnabled(0), isFalse);
       expect(engine.laneFxChainEnabled[(0, 1)], isFalse);
       expect(engine.monitorFxChainEnabled[3], isFalse);
       expect(engine.trackFxChainEnabled[2], isFalse);
-      expect(engine.masterFxChainEnabled, isFalse);
+      expect(engine.outputFxChainEnabled[0], isFalse);
 
       // Flags default to enabled and re-enable restores the default.
       repo.setLaneChainEnabled(channel: 0, lane: 1, enabled: true);
@@ -6314,8 +9290,10 @@ void main() {
       final drive = BuiltInEffect(type: TrackEffectType.drive);
       final delay = BuiltInEffect(type: TrackEffectType.delay, enabled: false);
       repo.setLaneEffects(channel: 0, lane: 0, effects: [drive, delay]);
-      expect(engine.laneFxEnabled[(0, 0, 0)], isTrue);
-      expect(engine.laneFxEnabled[(0, 0, 1)], isFalse);
+      expect(
+        engine.recipes[(FxOwner.lane, 0, 0)]?.slots.map((slot) => slot.enabled),
+        [true, false],
+      );
 
       // Reorder: the disabled DELAY moves to index 0. Every index is
       // re-pushed from the domain chain, so the flags follow the effects.
@@ -6324,8 +9302,10 @@ void main() {
         lane: 0,
         effects: repo.laneEffects(0, 0).reversed.toList(),
       );
-      expect(engine.laneFxEnabled[(0, 0, 0)], isFalse);
-      expect(engine.laneFxEnabled[(0, 0, 1)], isTrue);
+      expect(
+        engine.recipes[(FxOwner.lane, 0, 0)]?.slots.map((slot) => slot.enabled),
+        [false, true],
+      );
     });
   });
 
@@ -6335,7 +9315,7 @@ void main() {
       addTearDown(repo.dispose);
 
       expect(repo.trackFxChainFingerprint(0), FxFingerprint.offset);
-      expect(repo.masterFxChainFingerprint(), FxFingerprint.offset);
+      expect(repo.outputFxChainFingerprint(0), FxFingerprint.offset);
 
       repo.setTrackEffects(
         channel: 0,
@@ -6372,6 +9352,65 @@ void main() {
   });
 
   group('re-apply on restart: four-stage chains + flags', () {
+    test(
+      'raw reconnect announces a folded dry Clear to its settings owner',
+      () {
+        engine.publishRecipes = false;
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+        expect(
+          repo.setLaneEffects(
+            channel: 0,
+            lane: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          ),
+          EngineResult.ok,
+        );
+        expect(repo.clear(), EngineResult.ok);
+        var notices = 0;
+        repo.onLaneChainChanged = (_, _) => notices++;
+        expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+        expect(repo.laneEffects(0, 0), isEmpty);
+        expect(notices, 1);
+      },
+    );
+
+    test(
+      'only a subsequent start announces exact FX replay confirmation',
+      () async {
+        engine.publishRecipes = false;
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+        final confirmed = <({int mixGeneration, int sessionRevision})>[];
+        final sub = repo.fxReplayConfirmed.listen(confirmed.add);
+        addTearDown(sub.cancel);
+        expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+        await Future<void>.delayed(Duration.zero);
+        expect(confirmed, isEmpty, reason: 'cold boot has not loaded settings');
+
+        expect(
+          repo.setTrackEffects(
+            channel: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          ),
+          EngineResult.ok,
+        );
+        expect(repo.stopEngine(), EngineResult.ok);
+        expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(confirmed, isEmpty, reason: 'replay is still queued');
+        engine.publishRecipe((FxOwner.track, 0, 0));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(confirmed, [
+          (
+            mixGeneration: repo.mixGeneration,
+            sessionRevision: repo.sessionRevision,
+          ),
+        ]);
+      },
+    );
+
     test('a restart replays track/master chains and every stage chain '
         'flag', () {
       final repo = buildRepo()..startEngine(const EngineConfig());
@@ -6382,35 +9421,30 @@ void main() {
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.delay)],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         )
         ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false)
         ..setMonitorChainEnabled(input: 1, enabled: false)
         ..setTrackChainEnabled(channel: 0, enabled: false)
-        ..setMasterChainEnabled(enabled: false)
+        ..setOutputChainEnabled(bus: 0, enabled: false)
         ..stopEngine();
 
-      // Wipe the fake's records so only the restart replay repopulates them.
-      engine.trackFx.clear();
-      engine.trackFxCount.clear();
-      engine.masterFx.clear();
-      engine.masterFxCount = null;
-      engine.laneFxChainEnabled.clear();
-      engine.monitorFxChainEnabled.clear();
-      engine.trackFxChainEnabled.clear();
-      engine.masterFxChainEnabled = null;
+      expect(repo.startEngine(const EngineConfig()), EngineResult.ok);
 
-      repo.startEngine(const EngineConfig());
-
-      expect(engine.trackFx[(0, 0)]?.name, 'delay');
-      expect(engine.trackFxCount[0], 1);
-      expect(engine.masterFx[0]?.name, 'reverb');
-      expect(engine.masterFxCount, 1);
-      expect(engine.laneFxChainEnabled[(0, 0)], isFalse);
-      expect(engine.monitorFxChainEnabled[1], isFalse);
-      expect(engine.trackFxChainEnabled[0], isFalse);
-      expect(engine.masterFxChainEnabled, isFalse);
+      expect(
+        engine.recipes[(FxOwner.track, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.delay.code,
+      );
+      expect(
+        engine.recipes[(FxOwner.output, 0, 0)]?.slots.single.type.code,
+        TrackEffectType.reverb.code,
+      );
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.enabled, isFalse);
+      expect(engine.recipes[(FxOwner.monitor, 1, 0)]?.enabled, isFalse);
+      expect(engine.recipes[(FxOwner.track, 0, 0)]?.enabled, isFalse);
+      expect(engine.recipes[(FxOwner.output, 0, 0)]?.enabled, isFalse);
     });
   });
 
@@ -6442,7 +9476,7 @@ void main() {
       // resets a slot's DSP state on every type push — the audible cost this
       // setter exists to avoid.
       expect(engine.calls, contains('setTrackFxParam'));
-      expect(engine.calls, isNot(contains('setTrackFx')));
+      expect(engine.calls, isNot(contains('setFxRecipe')));
       expect(
         (repo.trackEffects(0)[1] as BuiltInEffect).params[0],
         0.75,
@@ -6457,20 +9491,21 @@ void main() {
     test('a master param write behaves the same', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.delay)],
         );
       addTearDown(repo.dispose);
       engine.calls.clear();
 
       expect(
-        repo.setMasterEffectParam(index: 0, param: 0, value: 0.4),
+        repo.setOutputEffectParam(bus: 0, index: 0, param: 0, value: 0.4),
         EngineResult.ok,
       );
 
-      expect(engine.calls, contains('setMasterFxParam'));
-      expect(engine.calls, isNot(contains('setMasterFx')));
-      expect((repo.masterEffects.single as BuiltInEffect).params[0], 0.4);
+      expect(engine.calls, contains('setOutputFxParam'));
+      expect(engine.calls, isNot(contains('setFxRecipe')));
+      expect((repo.outputEffects(0).single as BuiltInEffect).params[0], 0.4);
     });
 
     test('an out-of-range bus param write is rejected', () {
@@ -6482,13 +9517,12 @@ void main() {
         EngineResult.invalid,
       );
       expect(
-        repo.setMasterEffectParam(index: 4, param: 0, value: 1),
+        repo.setOutputEffectParam(bus: 0, index: 4, param: 0, value: 1),
         EngineResult.invalid,
       );
     });
 
-    test('a track PLUGIN param write remembers the value and pushes no '
-        'chain', () {
+    test('a track plugin placeholder refuses a live param write', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         ..setTrackEffects(
@@ -6510,24 +9544,20 @@ void main() {
           paramId: 42,
           value: 0.3,
         ),
-        EngineResult.ok,
+        EngineResult.invalid,
       );
 
-      // No slot type re-push, so the reverb sharing the bus keeps its tail...
-      expect(engine.calls, isNot(contains('setTrackFx')));
-      // ...and a bus plugin has no live slot, so nothing reaches the RT queue.
+      // Bus plugins have no host, so no live value can be accepted or stored.
+      expect(engine.calls, isNot(contains('setFxRecipe')));
       expect(engine.pluginParamSets, isEmpty);
-      // The value is remembered against the day a bus slot ABI lands.
-      expect(
-        (repo.trackEffects(0)[1] as PluginEffect).paramValues[42],
-        0.3,
-      );
+      expect((repo.trackEffects(0)[1] as PluginEffect).paramValues, isEmpty);
     });
 
-    test('a master PLUGIN param write behaves the same', () {
+    test('a master plugin placeholder refuses a live param write', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: const [
             PluginEffect(
               ref: PluginRef(format: PluginFormat.clap, id: 'm'),
@@ -6538,13 +9568,17 @@ void main() {
       engine.calls.clear();
 
       expect(
-        repo.setMasterPluginParam(index: 0, paramId: 7, value: 0.9),
-        EngineResult.ok,
+        repo.setOutputPluginParam(bus: 0, index: 0, paramId: 7, value: 0.9),
+        EngineResult.invalid,
       );
 
-      expect(engine.calls, isNot(contains('setMasterFx')));
+      expect(engine.calls, isNot(contains('setOutputFx')));
+      expect(engine.calls, isNot(contains('setOutputFxParam')));
       expect(engine.pluginParamSets, isEmpty);
-      expect((repo.masterEffects.single as PluginEffect).paramValues[7], 0.9);
+      expect(
+        (repo.outputEffects(0).single as PluginEffect).paramValues,
+        isEmpty,
+      );
     });
 
     test('a bus plugin param write on a built-in entry is rejected', () {
@@ -6554,7 +9588,8 @@ void main() {
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         )
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
       addTearDown(repo.dispose);
@@ -6569,7 +9604,7 @@ void main() {
         EngineResult.invalid,
       );
       expect(
-        repo.setMasterPluginParam(index: 0, paramId: 1, value: 0.5),
+        repo.setOutputPluginParam(bus: 0, index: 0, paramId: 1, value: 0.5),
         EngineResult.invalid,
       );
       // ...and an out-of-range index too.
@@ -6583,7 +9618,7 @@ void main() {
         EngineResult.invalid,
       );
       expect(
-        repo.setMasterPluginParam(index: 9, paramId: 1, value: 0.5),
+        repo.setOutputPluginParam(bus: 0, index: 9, paramId: 1, value: 0.5),
         EngineResult.invalid,
       );
     });
@@ -6601,7 +9636,7 @@ void main() {
       outputRms: 0,
       latencyState: le.LatencyState.idle,
       measuredLatencyMs: -1,
-      tracks: [TrackSnapshot.empty()],
+      tracks: _nativeEmptySlots,
     );
 
     test('re-sync re-copies the routed input chain with a fresh stamp, '
@@ -6735,6 +9770,35 @@ void main() {
         effects: [BuiltInEffect(type: TrackEffectType.reverb)],
       );
       expect(repo.laneEffects(0, 0), take);
+    });
+
+    test("the take inherits each entry's placement, so an input's Pre run "
+        'becomes what the take prints (slice 3e)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [
+            BuiltInEffect(
+              type: TrackEffectType.delay,
+              placement: FxPlacement.pre,
+            ),
+            BuiltInEffect(type: TrackEffectType.reverb),
+          ],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+
+      // The input's Pre entry is what the take records; its Post entry runs
+      // after that take's player. Both ride the same copy.
+      final take = repo.laneEffects(0, 0);
+      expect(take.map((e) => e.placement), [
+        FxPlacement.pre,
+        FxPlacement.post,
+      ]);
+      expect(fxPreCount(take), 1);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]?.preCount, 1);
     });
 
     test('copied entries carry FRESH slot ids — bindings on the input chain '
@@ -7148,12 +10212,9 @@ void main() {
         );
         await Future<void>.delayed(Duration.zero);
 
-        // TWO: the write itself, and the apply behind it rewriting the entry
-        // with what the bind resolved — here the display name. That second one
-        // is the only announce a device reconnect makes, since `_reapplyAll`
-        // rebinds every slot without anyone calling a setter, and a plugin that
-        // comes back fine would otherwise read "loading…" forever.
-        expect(seen, [0, 0]);
+        // The atomic prepared recipe publishes the bound name with its one
+        // accepted chain change; it needs only one monitor notification.
+        expect(seen, [0]);
         expect(
           (repo.monitorEffects(0).single as PluginEffect).name,
           'Catalog Reverb',

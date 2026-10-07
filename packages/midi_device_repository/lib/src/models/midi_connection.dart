@@ -6,14 +6,15 @@ enum MidiConnectionStatus {
   /// No device is selected; the looper runs without MIDI.
   none,
 
-  /// A device was selected and the native port is being opened.
+  /// A device selection is being confirmed, or "None" is being cleared.
   connecting,
 
   /// The selected device is open and delivering input.
   connected,
 
-  /// Opening the selected device failed (e.g. it is in use by another app).
-  /// The selection is retained so a later retry / replug can recover.
+  /// Opening the selected device failed, or input was stopped after a failed
+  /// setting write. [MidiConnection.pinUncertain] distinguishes a durable
+  /// setting failure from a native open failure.
   error,
 
   /// The selected device is not currently present (unplugged, or absent at
@@ -51,12 +52,13 @@ class MidiConnection extends Equatable {
     this.connectivity = MidiConnectivity.none,
     this.connectivityDeviceName = '',
     this.errorDetail,
+    this.pinUncertain = false,
   });
 
   /// The host's enumerated MIDI input devices, for the picker.
   final List<MidiDevice> devices;
 
-  /// The pinned device id, or empty for "None" (no device).
+  /// The current intended device id, or empty for "None".
   final String selectedId;
 
   /// The pinned device name, kept so a "last device not found" status can name
@@ -72,9 +74,14 @@ class MidiConnection extends Equatable {
   /// Name of the device involved in the latest [connectivity] transition.
   final String connectivityDeviceName;
 
-  /// Native result detail (e.g. result code) when [status] is
+  /// Native or storage failure detail when [status] is
   /// [MidiConnectionStatus.error].
   final String? errorDetail;
+
+  /// The latest device choice was not durably confirmed. Live input remains
+  /// stopped until the user retries this choice or selects another one.
+  /// Independent of [status], which describes the live port.
+  final bool pinUncertain;
 
   /// Whether a device (not "None") is pinned.
   bool get hasSelection => selectedId.isNotEmpty;
@@ -93,6 +100,7 @@ class MidiConnection extends Equatable {
     String? connectivityDeviceName,
     String? errorDetail,
     bool clearError = false,
+    bool? pinUncertain,
   }) {
     return MidiConnection(
       devices: devices ?? this.devices,
@@ -105,6 +113,7 @@ class MidiConnection extends Equatable {
       // [clearError] resets the detail on a successful open, since a nullable
       // field cannot otherwise be cleared through `?? this`.
       errorDetail: clearError ? null : (errorDetail ?? this.errorDetail),
+      pinUncertain: pinUncertain ?? this.pinUncertain,
     );
   }
 
@@ -117,5 +126,6 @@ class MidiConnection extends Equatable {
     connectivity,
     connectivityDeviceName,
     errorDetail,
+    pinUncertain,
   ];
 }

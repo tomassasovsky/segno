@@ -1,0 +1,55 @@
+{
+  "candidate": "964e3846dc6d6fb395a6ba46665544b261e76f71d46437cb385bf8b837e6d45a",
+  "artCandidate": "447437f12e2729a08b35f081f8f77c85e1871f838af4d2581433e7155ec60ed4",
+  "application": {
+    "name": "app",
+    "exit": 0,
+    "semanticPass": true,
+    "seconds": 126.0,
+    "coverage_sha256": "7174153a6c99f469bc7eed76b0c372022e397f68c0c9f167c9802af6a0455ee3"
+  },
+  "coverage": {
+    "passed": 2374,
+    "skipped": 6,
+    "linesHit": 20460,
+    "linesFound": 22716,
+    "coveragePercent": 90.069,
+    "minimumPercent": 90,
+    "pass": true
+  },
+  "static": {
+    "format": "pass",
+    "fatalInfoAnalyze": "pass",
+    "blocFiles": 673,
+    "whitespace": "pass",
+    "changedInputs": []
+  },
+  "independentAdversarial": {
+    "groups": 4,
+    "findings": 0,
+    "renderedSensitivity": "pass"
+  },
+  "authorVisual": {
+    "goldens": 9,
+    "nativeReview": "pass",
+    "penSha256": "e61c2ef26dd3cd70f1552ac83584ed139831e2a61e445492b30e3ebe69c6e3e0",
+    "penSection": "BdRcY",
+    "component": "N7AD5"
+  },
+  "reuse": {
+    "baseline": "170167520c0de2d6a480637393b19a2bda6f594c",
+    "ciRun": 36909493676,
+    "scopes": [
+      "packages",
+      "firmware",
+      "hardware/firmware",
+      ".github/workflows",
+      "pubspec.yaml",
+      "pubspec.lock",
+      "analysis_options.yaml"
+    ],
+    "changed": []
+  },
+  "remoteCi": "required on published head",
+  "hardware": "not executed"
+}

@@ -7,6 +7,29 @@ import 'package:segno_engine/segno_engine.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
 void main() {
+  test('lifecycle copy keeps confirmed mix meters and capture arm facts', () {
+    final original = const EngineSnapshot.initial().copyWith(
+      mixRevision: 73,
+      inputPeaks: [.1],
+      monitorPeaks: [.2],
+      outputPeaks: [.3, .4],
+      perfOutputLevel: .6,
+      perfOutputMuted: true,
+      perfCaptureMask: 12,
+      perfOutputEnabledMask: 28,
+    );
+    final copy = original.copyWith(isRunning: true, devicePresent: true);
+    expect(copy.mixRevision, 73);
+    expect(copy.inputPeaks, [.1]);
+    expect(copy.monitorPeaks, [.2]);
+    expect(copy.outputPeaks, [.3, .4]);
+    expect(copy.perfOutputLevel, .6);
+    expect(copy.perfOutputMuted, isTrue);
+    expect(copy.perfCaptureMask, 12);
+    expect(copy.perfOutputEnabledMask, 28);
+    expect(copy.copyWith(isRunning: false, devicePresent: false), original);
+  });
+
   group('LatencyState.fromCode', () {
     test('maps each known code', () {
       expect(LatencyState.fromCode(0), LatencyState.idle);
@@ -51,11 +74,27 @@ void main() {
       expect(snapshot.clickMode, ClickMode.off);
       expect(snapshot.clickMask, 0);
       expect(snapshot.clickVolume, 1);
+      // The per-channel meter lists (slice 3) hold one entry per channel the
+      // device has, so with no device open they are empty.
+      expect(snapshot.inputPeaks, isEmpty);
+      expect(snapshot.monitorPeaks, isEmpty);
+      expect(snapshot.outputPeaks, isEmpty);
       expect(snapshot.countInBars, 0);
       expect(snapshot.countingIn, isFalse);
       expect(snapshot.countInBeatsLeft, 0);
       // Looper mode (B2a) default.
       expect(snapshot.looperMode, LooperMode.multi);
+    });
+  });
+
+  group('channel constants', () {
+    test('kMaxChannels mirrors the native ceiling', () {
+      expect(kMaxChannels, LE_MAX_CHANNELS);
+    });
+
+    test('every openable input and instrument can be monitored', () {
+      expect(kMaxMonitoredInputs, LE_MAX_MONITORED_INPUTS);
+      expect(kMaxMonitoredInputs, kMaxChannels + LE_MAX_INSTRUMENTS);
     });
   });
 
@@ -102,6 +141,41 @@ void main() {
       expect(GridDivision.quarter.code, 3);
       expect(GridDivision.eighth.code, 4);
       expect(GridDivision.sixteenth.code, 5);
+    });
+  });
+
+  group('RecordTiming', () {
+    test('maps the persisted choice to its gate and musical division', () {
+      const choices = [
+        (0, 'immediately', RecordTiming.immediately, false, GridDivision.off),
+        (1, 'loopStart', RecordTiming.loopStart, true, GridDivision.off),
+        (2, 'bar', RecordTiming.bar, true, GridDivision.bar),
+        (3, 'half', RecordTiming.half, true, GridDivision.half),
+        (4, 'quarter', RecordTiming.quarter, true, GridDivision.quarter),
+        (5, 'eighth', RecordTiming.eighth, true, GridDivision.eighth),
+        (6, 'sixteenth', RecordTiming.sixteenth, true, GridDivision.sixteenth),
+      ];
+      for (final (code, name, timing, gate, division) in choices) {
+        expect(RecordTiming.fromCode(code), timing);
+        expect(RecordTiming.fromName(name), timing);
+        expect(timing.code, code);
+        expect(timing.quantize, gate);
+        expect(timing.division, division);
+        expect(RecordTiming.of(quantize: gate, division: division), timing);
+      }
+      expect(
+        RecordTiming.of(quantize: false, division: GridDivision.bar),
+        RecordTiming.immediately,
+      );
+    });
+
+    test('unknown or absent persisted choices have no override', () {
+      for (final code in [null, -1, 7, 999]) {
+        expect(RecordTiming.fromCode(code), isNull);
+      }
+      for (final name in [null, '', 'unknown']) {
+        expect(RecordTiming.fromName(name), isNull);
+      }
     });
   });
 
@@ -161,6 +235,272 @@ void main() {
     });
   });
 
+  group('record settings snapshots', () {
+    test(
+      'track native sentinels differ from explicit false, off, and zero',
+      () {
+        final ptr = calloc<le_track_snapshot>();
+        addTearDown(() => calloc.free(ptr));
+        ptr.ref
+          ..quantize_override = -1
+          ..quantize_div_override = -1
+          ..overdub_feedback_override = -1;
+        final inherited = TrackSnapshot.fromNative(ptr.ref);
+        expect(inherited.quantizeOverride, isNull);
+        expect(inherited.quantizeDivOverride, isNull);
+        expect(inherited.overdubFeedbackOverride, isNull);
+        expect(const TrackSnapshot.empty().quantizeOverride, isNull);
+        expect(const TrackSnapshot.empty().quantizeDivOverride, isNull);
+        expect(const TrackSnapshot.empty().overdubFeedbackOverride, isNull);
+
+        ptr.ref.quantize_override = 0;
+        final gate = TrackSnapshot.fromNative(ptr.ref);
+        expect(gate.quantizeOverride, isFalse);
+        expect(gate, isNot(inherited));
+        ptr.ref.quantize_override = -1;
+        ptr.ref.quantize_div_override = 0;
+        final division = TrackSnapshot.fromNative(ptr.ref);
+        expect(division.quantizeDivOverride, GridDivision.off);
+        expect(division, isNot(inherited));
+        ptr.ref.quantize_div_override = -1;
+        ptr.ref.overdub_feedback_override = 0;
+        final feedback = TrackSnapshot.fromNative(ptr.ref);
+        expect(feedback.overdubFeedbackOverride, 0);
+        expect(feedback, isNot(inherited));
+        expect(feedback, TrackSnapshot.fromNative(ptr.ref));
+        expect(feedback.hashCode, TrackSnapshot.fromNative(ptr.ref).hashCode);
+      },
+    );
+
+    test('peel depth is projected from the native field and compared', () {
+      final ptr = calloc<le_track_snapshot>();
+      addTearDown(() => calloc.free(ptr));
+      ptr.ref
+        ..quantize_override = -1
+        ..quantize_div_override = -1
+        ..overdub_feedback_override = -1
+        ..undo_depth = 3
+        ..peel_depth = 2;
+      final peelable = TrackSnapshot.fromNative(ptr.ref);
+      expect(peelable.undoDepth, 3);
+      expect(peelable.peelDepth, 2);
+      expect(const TrackSnapshot.empty().peelDepth, 0);
+      ptr.ref.peel_depth = 0;
+      final peeled = TrackSnapshot.fromNative(ptr.ref);
+      expect(peeled.peelDepth, 0);
+      expect(peeled, isNot(peelable));
+      expect(peeled.hashCode, isNot(peelable.hashCode));
+    });
+
+    test(
+      'speed and head rate are projected from the native fields (#1179)',
+      () {
+        final snap = calloc<le_snapshot>();
+        final track = calloc<le_track_snapshot>();
+        addTearDown(
+          () => calloc
+            ..free(snap)
+            ..free(track),
+        );
+        expect(const EngineSnapshot.initial().speed, SpeedFactor.normal);
+        expect(const TrackSnapshot.empty().headRate, 1);
+        final unconfigured = EngineSnapshot.fromNative(snap.ref, const []);
+        expect(unconfigured.speed, SpeedFactor.normal); // 0/0 before configure
+        for (final factor in SpeedFactor.values) {
+          snap.ref
+            ..speed_numer = factor.numer
+            ..speed_denom = factor.denom;
+          final projected = EngineSnapshot.fromNative(snap.ref, const []);
+          expect(projected.speed, factor);
+          expect(projected == unconfigured, factor == SpeedFactor.normal);
+          expect(projected.copyWith().speed, factor);
+        }
+        expect(SpeedFactor.fromRatio(0, 0), SpeedFactor.normal);
+        expect(() => SpeedFactor.fromRatio(3, 1), throwsArgumentError);
+        expect(() => SpeedFactor.fromRatio(1, 0), throwsArgumentError);
+        track.ref
+          ..quantize_override = -1
+          ..quantize_div_override = -1
+          ..overdub_feedback_override = -1
+          ..head_rate_milli = 500;
+        final half = TrackSnapshot.fromNative(track.ref);
+        expect(half.headRate, 0.5);
+        track.ref.head_rate_milli = 8000;
+        final eight = TrackSnapshot.fromNative(track.ref);
+        expect(eight.headRate, 8);
+        expect(eight, isNot(half));
+        expect(eight.hashCode, isNot(half.hashCode));
+      },
+    );
+
+    test('transpose and its bypass are projected from the native fields '
+        '(#1179)', () {
+      final snap = calloc<le_snapshot>();
+      final track = calloc<le_track_snapshot>();
+      addTearDown(
+        () => calloc
+          ..free(snap)
+          ..free(track),
+      );
+      expect(const EngineSnapshot.initial().transposeBypass, isFalse);
+      expect(const TrackSnapshot.empty().transpose, (stored: 0, effective: 0));
+      final live = EngineSnapshot.fromNative(snap.ref, const []);
+      snap.ref.transpose_bypass = 1;
+      final bypassed = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(live.transposeBypass, isFalse);
+      expect(bypassed.transposeBypass, isTrue);
+      expect(bypassed, isNot(live));
+      expect(bypassed.hashCode, isNot(live.hashCode));
+      expect(live.copyWith(transposeBypass: true), bypassed);
+      expect(bypassed.copyWith().transposeBypass, isTrue);
+      track.ref
+        ..quantize_override = -1
+        ..quantize_div_override = -1
+        ..overdub_feedback_override = -1
+        ..transpose_st = 7;
+      // Stored but not sounding yet: the render is pending.
+      final pending = TrackSnapshot.fromNative(track.ref);
+      expect(pending.transpose, (stored: 7, effective: 0));
+      track.ref.transpose_effective_st = 7;
+      final landed = TrackSnapshot.fromNative(track.ref);
+      expect(landed.transpose, (stored: 7, effective: 7));
+      expect(landed, isNot(pending));
+      expect(landed.hashCode, isNot(pending.hashCode));
+      track.ref.transpose_st = -12;
+      track.ref.transpose_effective_st = -12;
+      expect(
+        TrackSnapshot.fromNative(track.ref).transpose,
+        (stored: -12, effective: -12),
+      );
+    });
+
+    test('sync divisor is projected from the native field and compared', () {
+      final ptr = calloc<le_track_snapshot>();
+      addTearDown(() => calloc.free(ptr));
+      ptr.ref
+        ..quantize_override = -1
+        ..quantize_div_override = -1
+        ..overdub_feedback_override = -1
+        ..multiple = 1
+        ..sync_divisor = 4;
+      final division = TrackSnapshot.fromNative(ptr.ref);
+      expect(division.syncDivisor, 4);
+      expect(const TrackSnapshot.empty().syncDivisor, 0);
+      ptr.ref.sync_divisor = 0;
+      final whole = TrackSnapshot.fromNative(ptr.ref);
+      expect(whole.syncDivisor, 0);
+      expect(whole, isNot(division));
+      expect(whole.hashCode, isNot(division.hashCode));
+    });
+
+    test('tempo follow and pitch are projected from the native fields '
+        '(#1179)', () {
+      final snap = calloc<le_snapshot>();
+      final track = calloc<le_track_snapshot>();
+      addTearDown(
+        () => calloc
+          ..free(snap)
+          ..free(track),
+      );
+      const initial = EngineSnapshot.initial();
+      expect(initial.followTempo, isFalse);
+      expect(initial.tempoFollow, TempoFollowState.free);
+      expect(initial.pitchMode, PitchMode.unchanged);
+      expect(initial.recordedTempoBpm, 0);
+      final base = EngineSnapshot.fromNative(snap.ref, const []);
+      snap.ref
+        ..recorded_tempo_bpm = 120
+        ..recorded_length_frames = 16000
+        ..follow_tempo = 1
+        ..tempo_follow = 1
+        ..pitch_follows_speed = 1;
+      final set = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(set.recordedTempoBpm, 120);
+      expect(set.recordedLengthFrames, 16000);
+      expect(set.followTempo, isTrue);
+      expect(set.tempoFollow, TempoFollowState.retimes);
+      expect(set.pitchMode, PitchMode.followsSpeed);
+      expect(set, isNot(base));
+      expect(set.hashCode, isNot(base.hashCode));
+      expect(
+        base.copyWith(pitchMode: PitchMode.followsSpeed).pitchMode,
+        PitchMode.followsSpeed,
+      );
+      expect(
+        base.copyWith(recordedLengthFrames: 8000),
+        isNot(base),
+      );
+      for (final (code, state) in [
+        (0, TempoFollowState.free),
+        (2, TempoFollowState.noGrid),
+        (3, TempoFollowState.noFollower),
+        (4, TempoFollowState.busy),
+        (99, TempoFollowState.busy),
+      ]) {
+        expect(TempoFollowState.fromCode(code), state);
+      }
+      track.ref
+        ..quantize_override = -1
+        ..quantize_div_override = -1
+        ..overdub_feedback_override = -1
+        ..follow_override = -1
+        ..pitch_override = -1;
+      final inherit = TrackSnapshot.fromNative(track.ref);
+      expect(inherit.followTempoOverride, isNull);
+      expect(inherit.pitchModeOverride, isNull);
+      track.ref
+        ..follow_override = 0
+        ..pitch_override = 1
+        ..pitch_effective_cents = -498
+        ..span_frames = 21333;
+      final own = TrackSnapshot.fromNative(track.ref);
+      expect(own.spanFrames, 21333);
+      expect(own.followTempoOverride, isFalse);
+      expect(own.pitchModeOverride, PitchMode.followsSpeed);
+      expect(own.pitchEffectiveCents, -498);
+      expect(own, isNot(inherit));
+      expect(own.hashCode, isNot(inherit.hashCode));
+      track.ref
+        ..follow_override = 1
+        ..pitch_override = 0;
+      final other = TrackSnapshot.fromNative(track.ref);
+      expect(other.followTempoOverride, isTrue);
+      expect(other.pitchModeOverride, PitchMode.unchanged);
+    });
+
+    test('global native record settings each participate in equality', () {
+      final ptr = calloc<le_snapshot>();
+      addTearDown(() => calloc.free(ptr));
+      ptr.ref.overdub_feedback = 1;
+      final baseline = EngineSnapshot.fromNative(ptr.ref, const []);
+      expect(baseline.quantize, isFalse);
+      expect(baseline.autoRecord, isFalse);
+      expect(baseline.overdubFeedback, 1);
+      expect(const EngineSnapshot.initial().quantize, isFalse);
+      expect(const EngineSnapshot.initial().autoRecord, isFalse);
+      expect(const EngineSnapshot.initial().overdubFeedback, 1);
+      ptr.ref.quantize = 1;
+      final quantize = EngineSnapshot.fromNative(ptr.ref, const []);
+      expect(quantize.quantize, isTrue);
+      expect(quantize, isNot(baseline));
+      ptr.ref.quantize = 0;
+      ptr.ref.auto_record = 1;
+      final autoRecord = EngineSnapshot.fromNative(ptr.ref, const []);
+      expect(autoRecord.autoRecord, isTrue);
+      expect(autoRecord, isNot(baseline));
+      ptr.ref.auto_record = 0;
+      ptr.ref.overdub_feedback = 0.25;
+      final feedback = EngineSnapshot.fromNative(ptr.ref, const []);
+      expect(feedback.overdubFeedback, 0.25);
+      expect(feedback, isNot(baseline));
+      expect(feedback, EngineSnapshot.fromNative(ptr.ref, const []));
+      expect(
+        feedback.hashCode,
+        EngineSnapshot.fromNative(ptr.ref, const []).hashCode,
+      );
+    });
+  });
+
   group('TrackSnapshot.fromNative', () {
     test('projects every native track field', () {
       final ptr = calloc<le_track_snapshot>();
@@ -179,7 +519,16 @@ void main() {
           ..output_mask = 0x5
           ..length_preset_bars = 8
           ..settled_take_id = 4
-          ..restore_state = 2;
+          ..restore_state = 2
+          ..position_frames = 24000
+          ..pending = 1
+          ..pending_trigger = 2
+          ..quantize_override = 1
+          ..quantize_div_override = 4
+          ..overdub_feedback_override = 0.625
+          ..solo = 1
+          ..peak_l = 0.7
+          ..peak_r = 0.35;
 
         final track = TrackSnapshot.fromNative(ptr.ref);
         expect(track.state, TrackState.playing);
@@ -196,9 +545,31 @@ void main() {
         expect(track.lengthPresetBars, 8);
         expect(track.settledTakeId, 4);
         expect(track.restoreState, TrackRestoreState.running);
+        expect(track.positionFrames, 24000);
+        expect(track.pending, isTrue);
+        expect(track.pendingTrigger, 2);
+        expect(track.quantizeOverride, isTrue);
+        expect(track.quantizeDivOverride, GridDivision.eighth);
+        expect(track.overdubFeedbackOverride, 0.625);
+        // Mixer facts (slice 3) trailing fields.
+        expect(track.solo, isTrue);
+        expect(track.peakL, closeTo(0.7, 1e-6));
+        expect(track.peakR, closeTo(0.35, 1e-6));
         // No lanes supplied => empty list, so the derived count is 0.
         expect(track.lanes, isEmpty);
         expect(track.laneCount, 0);
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('retains the unarmed native trigger sentinel', () {
+      final ptr = calloc<le_track_snapshot>();
+      try {
+        ptr.ref.pending_trigger = -1;
+        final track = TrackSnapshot.fromNative(ptr.ref);
+        expect(track.pending, isFalse);
+        expect(track.pendingTrigger, -1);
       } finally {
         calloc.free(ptr);
       }
@@ -270,27 +641,71 @@ void main() {
   });
 
   group('TrackSnapshot value semantics', () {
-    TrackSnapshot build({int inputMask = 0x1, int outputMask = 0x3}) =>
-        TrackSnapshot(
-          state: TrackState.playing,
-          volume: 0.5,
-          muted: false,
-          lengthFrames: 100,
-          undoDepth: 0,
-          rms: 0.1,
-          peak: 0.2,
-          inputMask: inputMask,
-          outputMask: outputMask,
-        );
+    TrackSnapshot build({
+      int inputMask = 0x1,
+      int outputMask = 0x3,
+      int positionFrames = 0,
+      bool pending = false,
+      int pendingTrigger = -1,
+      bool solo = false,
+      double peakL = 0,
+      double peakR = 0,
+    }) => TrackSnapshot(
+      state: TrackState.playing,
+      volume: 0.5,
+      muted: false,
+      lengthFrames: 100,
+      undoDepth: 0,
+      rms: 0.1,
+      peak: 0.2,
+      inputMask: inputMask,
+      outputMask: outputMask,
+      positionFrames: positionFrames,
+      pending: pending,
+      pendingTrigger: pendingTrigger,
+      solo: solo,
+      peakL: peakL,
+      peakR: peakR,
+    );
 
     test('equal tracks are equal and share a hashCode', () {
       expect(build(), equals(build()));
       expect(build().hashCode, build().hashCode);
     });
 
+    test('empty track is not soloed and sends nothing', () {
+      const track = TrackSnapshot.empty();
+      expect(track.solo, isFalse);
+      expect(track.peakL, 0);
+      expect(track.peakR, 0);
+    });
+
+    test('solo and the post-fader peaks break equality', () {
+      expect(build(), isNot(equals(build(solo: true))));
+      expect(build(), isNot(equals(build(peakL: 0.5))));
+      expect(build(), isNot(equals(build(peakR: 0.5))));
+    });
+
     test('a differing input or output mask breaks equality', () {
       expect(build(), isNot(equals(build(inputMask: 0x2))));
       expect(build(), isNot(equals(build(outputMask: 0x1))));
+    });
+
+    test('a playhead-only change breaks equality', () {
+      final earlier = build(positionFrames: 25);
+      final same = build(positionFrames: 25);
+      expect(earlier, same);
+      expect(earlier.hashCode, same.hashCode);
+      expect(earlier, isNot(build(positionFrames: 75)));
+    });
+
+    test('an arm-trigger-only change breaks equality', () {
+      final grid = build(pending: true, pendingTrigger: 0);
+      final same = build(pending: true, pendingTrigger: 0);
+      expect(grid, same);
+      expect(grid.hashCode, same.hashCode);
+      expect(grid, isNot(build(pending: true, pendingTrigger: 1)));
+      expect(grid, isNot(build(pending: true, pendingTrigger: 2)));
     });
 
     test('a differing length preset breaks equality', () {
@@ -395,7 +810,8 @@ void main() {
           ..length_frames = 48000
           ..rms = 0.3
           ..peak = 0.45
-          ..recoverable = 1;
+          ..recoverable = 1
+          ..pan = -0.25;
 
         final lane = LaneSnapshot.fromNative(ptr.ref);
         expect(lane.inputChannel, 1);
@@ -406,6 +822,7 @@ void main() {
         expect(lane.rms, closeTo(0.3, 1e-6));
         expect(lane.peak, closeTo(0.45, 1e-6));
         expect(lane.recoverable, isTrue);
+        expect(lane.pan, closeTo(-0.25, 1e-6));
       } finally {
         calloc.free(ptr);
       }
@@ -417,6 +834,7 @@ void main() {
       expect(lane.lengthFrames, 0);
       expect(lane.muted, isFalse);
       expect(lane.recoverable, isFalse);
+      expect(lane.pan, 0);
     });
 
     LaneSnapshot build({
@@ -426,6 +844,7 @@ void main() {
       bool muted = false,
       double peak = 0.2,
       bool recoverable = false,
+      double pan = 0,
     }) => LaneSnapshot(
       inputChannel: inputChannel,
       outputMask: outputMask,
@@ -435,6 +854,7 @@ void main() {
       rms: 0.1,
       peak: peak,
       recoverable: recoverable,
+      pan: pan,
     );
 
     test('equal lanes are equal and share a hashCode', () {
@@ -449,6 +869,7 @@ void main() {
       expect(build(), isNot(equals(build(muted: true))));
       expect(build(), isNot(equals(build(peak: 0.9))));
       expect(build(), isNot(equals(build(recoverable: true))));
+      expect(build(), isNot(equals(build(pan: 0.5))));
     });
   });
 
@@ -471,6 +892,7 @@ void main() {
           ..input_rms = 0.25
           ..input_peak = 0.5
           ..output_rms = 0.125
+          ..output_peak = 0.75
           ..latency_state = 2
           ..measured_latency_ms = 7.5
           ..master_length_frames = 96000
@@ -497,7 +919,30 @@ void main() {
           ..count_in_bars = 2
           ..counting_in = 1
           ..count_in_beats_left = 5
-          ..looper_mode = 3;
+          ..looper_mode = 3
+          ..quantize = 1
+          ..auto_record = 1
+          ..overdub_feedback = 0.375;
+        // Per-channel meters (slice 3): one distinct entry each so a swapped
+        // array or a misread index shows up, plus one past the device's
+        // channel count that must NOT be read.
+        ptr.ref.input_peaks[1] = 0.5;
+        ptr.ref.input_peaks[2] = 0.9;
+        ptr.ref.monitor_peaks[0] = 0.25;
+        ptr.ref.output_peaks[3] = 0.75;
+        ptr.ref.output_peaks[4] = 0.9;
+        // Output buses (slice 3b): the C publishes one per stereo pair (two
+        // for four outputs); distinct facts per bus, one past the device
+        // that must NOT be read, and the two scalars.
+        ptr.ref.output_bus_count = 2;
+        ptr.ref.output_level[1] = 0.5;
+        ptr.ref.output_muted[1] = 1;
+        ptr.ref.output_mono[0] = 1;
+        ptr.ref.output_balance[1] = -0.25;
+        ptr.ref.output_level[2] = 0.1;
+        ptr.ref.tail_reset_rev = 7;
+        ptr.ref.perf_follow_output = 1;
+        ptr.ref.perf_capture_bus = 1;
 
         const tracks = [
           TrackSnapshot(
@@ -522,6 +967,7 @@ void main() {
         expect(snapshot.inputClipMask, 0x3);
         expect(snapshot.inputCondMask, 0x5);
         expect(snapshot.framesProcessed, 123456);
+        expect(snapshot.outputPeak, closeTo(0.75, 1e-6));
         expect(snapshot.latencyState, LatencyState.done);
         expect(snapshot.measuredLatencyMs, closeTo(7.5, 1e-9));
         expect(snapshot.masterLengthFrames, 96000);
@@ -557,6 +1003,79 @@ void main() {
         expect(snapshot.countInBeatsLeft, 5);
         // Looper mode (B2a) trailing field.
         expect(snapshot.looperMode, LooperMode.band);
+        expect(snapshot.quantize, isTrue);
+        expect(snapshot.autoRecord, isTrue);
+        expect(snapshot.overdubFeedback, 0.375);
+        // Per-channel meters (slice 3) trailing arrays: one entry per
+        // negotiated channel (2 in / 4 out), read in order; the native
+        // arrays' entries past the device are not projected.
+        expect(snapshot.inputPeaks, hasLength(2));
+        expect(snapshot.inputPeaks[0], 0);
+        expect(snapshot.inputPeaks[1], closeTo(0.5, 1e-6));
+        expect(snapshot.monitorPeaks, hasLength(2));
+        expect(snapshot.monitorPeaks[0], closeTo(0.25, 1e-6));
+        expect(snapshot.outputPeaks, hasLength(4));
+        expect(snapshot.outputPeaks[3], closeTo(0.75, 1e-6));
+        expect(snapshot.outputBusCount, 2);
+        expect(snapshot.outputLevels, hasLength(2));
+        expect(snapshot.outputLevels[0], 0);
+        expect(snapshot.outputLevels[1], closeTo(0.5, 1e-6));
+        expect(snapshot.outputMuted, [false, true]);
+        expect(snapshot.outputMono, [true, false]);
+        expect(snapshot.outputBalances[1], closeTo(-0.25, 1e-6));
+        expect(snapshot.tailResetRev, 7);
+        expect(snapshot.perfFollowOutput, isTrue);
+        expect(snapshot.perfCaptureBus, 1);
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test(
+      'sizes the output bus lists to output_bus_count, clamped to the C',
+      () {
+        final ptr = calloc<le_snapshot>();
+        try {
+          ptr.ref.output_bus_count = LE_MAX_OUTPUT_BUSES + 3;
+          final over = EngineSnapshot.fromNative(ptr.ref, const []);
+          expect(over.outputBusCount, LE_MAX_OUTPUT_BUSES);
+          expect(over.outputLevels, hasLength(LE_MAX_OUTPUT_BUSES));
+          expect(over.outputBalances, hasLength(LE_MAX_OUTPUT_BUSES));
+
+          ptr.ref.output_bus_count = -1;
+          final none = EngineSnapshot.fromNative(ptr.ref, const []);
+          expect(none.outputBusCount, 0);
+          expect(none.outputLevels, isEmpty);
+          expect(none.outputMuted, isEmpty);
+          expect(none.outputMono, isEmpty);
+          expect(none.outputBalances, isEmpty);
+          expect(none.perfFollowOutput, isFalse);
+        } finally {
+          calloc.free(ptr);
+        }
+      },
+    );
+
+    test('sizes the meter lists to the channel counts, clamped to the C', () {
+      final ptr = calloc<le_snapshot>();
+      try {
+        // A count past the native ceiling must not index off the end of the
+        // fixed arrays; a negative one (a garbage struct) must not throw.
+        ptr.ref
+          ..input_channels = LE_MAX_CHANNELS + 7
+          ..output_channels = -1;
+        final over = EngineSnapshot.fromNative(ptr.ref, const []);
+        expect(over.inputPeaks, hasLength(LE_MAX_CHANNELS));
+        expect(over.monitorPeaks, hasLength(LE_MAX_CHANNELS));
+        expect(over.outputPeaks, isEmpty);
+
+        ptr.ref
+          ..input_channels = 0
+          ..output_channels = 0;
+        final none = EngineSnapshot.fromNative(ptr.ref, const []);
+        expect(none.inputPeaks, isEmpty);
+        expect(none.monitorPeaks, isEmpty);
+        expect(none.outputPeaks, isEmpty);
       } finally {
         calloc.free(ptr);
       }
@@ -671,10 +1190,14 @@ void main() {
 
     // Distinct (non-const) instances so the `==` body runs rather than being
     // short-circuited by `identical`, exercising every field comparison.
+    /// The channel count the [build] meter lists are sized to.
+    const channels = 4;
+
     EngineSnapshot build({
       bool devicePresent = true,
       AudioBackend activeBackend = AudioBackend.miniaudio,
       double masterGain = 1,
+      double outputPeak = 0,
       int fxAddedLatencyFrames = 0,
       int outputEnabledMask = 0xFFFFFFFF,
       bool isPerfArmed = false,
@@ -690,6 +1213,8 @@ void main() {
       int loopBars = 0,
       int currentBeat = 0,
       ClickMode clickMode = ClickMode.off,
+      int clickModeRevision = 0,
+      int clickModeResult = 0,
       int clickMask = 0,
       double clickVolume = 1,
       int countInBars = 0,
@@ -698,6 +1223,17 @@ void main() {
       LooperMode looperMode = LooperMode.multi,
       int inputClipMask = 0,
       int inputCondMask = 0,
+      List<double>? inputPeaks,
+      List<double>? monitorPeaks,
+      List<double>? outputPeaks,
+      int outputBusCount = 2,
+      List<double>? outputLevels,
+      List<bool>? outputMuted,
+      List<bool>? outputMono,
+      List<double>? outputBalances,
+      int tailResetRev = 0,
+      bool perfFollowOutput = false,
+      int perfCaptureBus = -1,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -708,6 +1244,7 @@ void main() {
       inputRms: 0,
       inputPeak: 0,
       outputRms: 0,
+      outputPeak: outputPeak,
       latencyState: LatencyState.idle,
       measuredLatencyMs: -1,
       masterGain: masterGain,
@@ -727,6 +1264,8 @@ void main() {
       loopBars: loopBars,
       currentBeat: currentBeat,
       clickMode: clickMode,
+      clickModeRevision: clickModeRevision,
+      clickModeResult: clickModeResult,
       clickMask: clickMask,
       clickVolume: clickVolume,
       countInBars: countInBars,
@@ -735,7 +1274,24 @@ void main() {
       looperMode: looperMode,
       inputClipMask: inputClipMask,
       inputCondMask: inputCondMask,
+      // Fresh (non-const) lists so equality has to compare contents, not
+      // identity.
+      inputPeaks: inputPeaks ?? List<double>.filled(channels, 0),
+      monitorPeaks: monitorPeaks ?? List<double>.filled(channels, 0),
+      outputPeaks: outputPeaks ?? List<double>.filled(channels, 0),
+      outputBusCount: outputBusCount,
+      outputLevels: outputLevels ?? List<double>.filled(2, 1),
+      outputMuted: outputMuted ?? List<bool>.filled(2, false),
+      outputMono: outputMono ?? List<bool>.filled(2, false),
+      outputBalances: outputBalances ?? List<double>.filled(2, 0),
+      tailResetRev: tailResetRev,
+      perfFollowOutput: perfFollowOutput,
+      perfCaptureBus: perfCaptureBus,
     );
+
+    /// [channels] zeros with [value] at [index].
+    List<double> perChannel(int index, double value) =>
+        List<double>.filled(channels, 0)..[index] = value;
 
     test('distinct equal snapshots compare equal and share a hashCode', () {
       expect(build(), equals(build()));
@@ -746,12 +1302,115 @@ void main() {
       expect(build(), isNot(equals(build(devicePresent: false))));
     });
 
+    test('the output bus facts (slice 3b) participate in equality', () {
+      expect(build(), isNot(equals(build(outputBusCount: 1))));
+      expect(build(), isNot(equals(build(outputLevels: [1, 0.5]))));
+      expect(build(), isNot(equals(build(outputMuted: [true, false]))));
+      expect(build(), isNot(equals(build(outputMono: [false, true]))));
+      expect(build(), isNot(equals(build(outputBalances: [0, -1]))));
+      expect(build(), isNot(equals(build(tailResetRev: 1))));
+      expect(build(), isNot(equals(build(perfFollowOutput: true))));
+      expect(build(), isNot(equals(build(perfCaptureBus: 0))));
+    });
+
+    test('copyWith replaces only the named facts and carries every other '
+        'one through', () {
+      final original = build(
+        outputLevels: [1, 0.5],
+        tailResetRev: 4,
+        perfCaptureBus: 1,
+      );
+      final copy = original.copyWith(isRunning: false, sampleRate: 96000);
+      expect(copy.isRunning, isFalse);
+      expect(copy.sampleRate, 96000);
+      expect(copy.outputLevels, [1, 0.5]);
+      expect(copy.tailResetRev, 4);
+      expect(copy.perfCaptureBus, 1);
+      // A named fact that round-trips back to its original value restores
+      // the original snapshot: this catches a MIS-WIRED parameter (one
+      // assigning the wrong field). A MISSING one is caught by the golden
+      // below, which is the guard that matters — this test cannot see it,
+      // because a field neither `build()` nor `copyWith` knows about sits
+      // at its default on both sides.
+      expect(
+        copy.copyWith(isRunning: true, sampleRate: original.sampleRate),
+        original,
+      );
+    });
+
+    test('copyWith names every declared field', () {
+      // The constructor's parameters are almost all optional with a
+      // default, so a field added later WITHOUT a copyWith parameter still
+      // compiles: copyWith would silently pass the default instead of the
+      // instance's value, and every decorator built on it (the pumped test
+      // engine) would report that default to its callers. Nothing else
+      // fails then — not the analyzer, not the field-set golden below,
+      // which asks a different question and is satisfied by adding one
+      // string to a set. So the parameter list is pinned to the field list
+      // at the source level, which is the only place the two can be
+      // compared.
+      final fields = _declaredFinalFields(
+        'lib/src/engine_snapshot.dart',
+        'EngineSnapshot',
+      );
+      final source = _packageFile(
+        'lib/src/engine_snapshot.dart',
+      ).readAsStringSync();
+      final start = source.indexOf('  EngineSnapshot copyWith({');
+      expect(start, isNot(-1), reason: 'copyWith not found');
+      final end = source.indexOf('  }) => EngineSnapshot(', start);
+      expect(end, isNot(-1), reason: 'copyWith has no parameter list end');
+      final body = source.substring(start, end);
+      final named = RegExp(
+        r'^    (?:[^;=\n]+?\s)?(\w+),$',
+        multiLine: true,
+      ).allMatches(body).map((m) => m.group(1)!).toSet();
+      expect(
+        named,
+        fields,
+        reason:
+            'EngineSnapshot.copyWith must name every field. A field it does '
+            'not name is silently replaced by its constructor default '
+            'whenever copyWith runs.',
+      );
+
+      // ...and each parameter must feed its OWN field. The round-trip test
+      // above only exercises two of them, so a cross-wired line
+      // (`outputMono: outputMuted ?? this.outputMuted`) would pass it and
+      // the set comparison alone.
+      final callStart = source.indexOf('  }) => EngineSnapshot(', start);
+      final call = source.substring(
+        callStart,
+        source.indexOf('\n  );', callStart),
+      );
+      final assigned = RegExp(
+        r'^    (\w+): (\w+) \?\? this\.(\w+),$',
+        multiLine: true,
+      ).allMatches(call);
+      expect(assigned, hasLength(fields.length));
+      for (final m in assigned) {
+        expect(
+          [m.group(2), m.group(3)],
+          [m.group(1), m.group(1)],
+          reason: 'copyWith cross-wires ${m.group(1)}',
+        );
+      }
+    });
+
     test('activeBackend participates in equality', () {
       expect(build(), isNot(equals(build(activeBackend: AudioBackend.asio))));
     });
 
     test('masterGain participates in equality', () {
       expect(build(), isNot(equals(build(masterGain: 0.5))));
+    });
+
+    test('an output-peak-only change breaks equality', () {
+      final quiet = build(outputPeak: 0.25);
+      final same = build(outputPeak: 0.25);
+      expect(quiet, same);
+      expect(quiet.hashCode, same.hashCode);
+      expect(quiet, isNot(build(outputPeak: 0.75)));
     });
 
     test('fxAddedLatencyFrames participates in equality', () {
@@ -776,6 +1435,31 @@ void main() {
 
     test('perfZeroFilledFrames participates in equality', () {
       expect(build(), isNot(equals(build(perfZeroFilledFrames: 128))));
+    });
+
+    test('perfRingSeconds participates in equality', () {
+      const base = EngineSnapshot.initial();
+      expect(base, isNot(equals(base.copyWith(perfRingSeconds: 8))));
+    });
+
+    test('perfStopReason and perfOvers participate in equality', () {
+      const base = EngineSnapshot.initial();
+      expect(
+        base,
+        isNot(
+          equals(base.copyWith(perfStopReason: PerfStopReason.slowStorage)),
+        ),
+      );
+      expect(base, isNot(equals(base.copyWith(perfOvers: 2))));
+      expect(base, isNot(equals(base.copyWith(perfCaptureStreams: 2))));
+      expect(base, isNot(equals(base.copyWith(perfCaptureFrameBytes: 16))));
+      expect(base, isNot(equals(base.copyWith(perfFailedCheckpoints: 1))));
+    });
+
+    test('an unknown native stop reason reads as none', () {
+      expect(PerfStopReason.fromNative(4), PerfStopReason.reserveReached);
+      expect(PerfStopReason.fromNative(99), PerfStopReason.none);
+      expect(PerfStopReason.fromNative(-1), PerfStopReason.none);
     });
 
     test('tempoBpm participates in equality', () {
@@ -814,6 +1498,18 @@ void main() {
       expect(build(), isNot(equals(build(clickMode: ClickMode.rec))));
     });
 
+    test('click receipt participates in equality and copyWith', () {
+      final changed = build(clickModeRevision: 3, clickModeResult: -1);
+      expect(build(), isNot(equals(changed)));
+      expect(build(), isNot(equals(build(clickModeRevision: 3))));
+      expect(build(), isNot(equals(build(clickModeResult: -1))));
+      expect(
+        build().copyWith(clickModeRevision: 3, clickModeResult: -1),
+        changed,
+      );
+      expect(changed.copyWith(), changed);
+    });
+
     test('clickMask participates in equality', () {
       expect(build(), isNot(equals(build(clickMask: 0x3))));
     });
@@ -840,6 +1536,29 @@ void main() {
 
     test('inputClipMask participates in equality', () {
       expect(build(), isNot(equals(build(inputClipMask: 0x1))));
+    });
+
+    test('inputPeaks participates in equality by content', () {
+      expect(
+        build(inputPeaks: perChannel(2, 0.5)),
+        equals(build(inputPeaks: perChannel(2, 0.5))),
+      );
+      expect(build(), isNot(equals(build(inputPeaks: perChannel(2, 0.5)))));
+    });
+
+    test('monitorPeaks participates in equality', () {
+      expect(build(), isNot(equals(build(monitorPeaks: perChannel(0, 0.5)))));
+    });
+
+    test('outputPeaks participates in equality', () {
+      expect(build(), isNot(equals(build(outputPeaks: perChannel(1, 0.5)))));
+    });
+
+    test('a meter list of another length is not equal', () {
+      expect(
+        build(),
+        isNot(equals(build(inputPeaks: List<double>.filled(channels + 1, 0)))),
+      );
     });
 
     test('inputCondMask participates in equality', () {
@@ -1097,9 +1816,13 @@ void main() {
         'tunerHz',
         'tunerConfidence',
         'tunerInput',
+        'tunerMuteMask',
         'inputRms',
         'inputPeak',
         'outputRms',
+        // A block peak like outputRms: written once per block, read at render
+        // rate — not a per-callback counter.
+        'outputPeak',
         'latencyState',
         'measuredLatencyMs',
         'masterLengthFrames',
@@ -1114,6 +1837,12 @@ void main() {
         'perfOverruns',
         'perfZeroFilledFrames',
         'perfStopped',
+        'perfRingSeconds',
+        'perfStopReason',
+        'perfOvers',
+        'perfCaptureStreams',
+        'perfCaptureFrameBytes',
+        'perfFailedCheckpoints',
         'tempoBpm',
         'tempoSource',
         'tsNum',
@@ -1121,8 +1850,13 @@ void main() {
         'syncTempo',
         'quantizeDiv',
         'loopBars',
+        'loopBeats',
         'currentBeat',
         'clickMode',
+        'clickModeRevision',
+        'clickModeResult',
+        'recordStartRevision',
+        'recordStartResult',
         'clickMask',
         'clickVolume',
         'countInBars',
@@ -1130,7 +1864,49 @@ void main() {
         'countInBeatsLeft',
         'looperMode',
         'primaryTrack',
+        'speed', // a request outcome, not a callback-rate counter (#1179)
+        'transposeBypass', // likewise a request outcome (#1179)
+        // Audio & tempo follow (#1179): settings, a latched tempo and a state
+        // that moves with content, not per callback.
+        'recordedTempoBpm',
+        'recordedLengthFrames',
+        'followTempo',
+        'tempoFollow',
+        'pitchMode',
+        'quantize',
+        'autoRecord',
+        'overdubFeedback',
+        // Changes on accepted human-paced mix publications, never per block.
+        'mixRevision',
+        // Timing receipts advance only for accepted human-paced commands.
+        'recordTimingRevision',
+        'recordTimingResult',
+        // Per-channel block peaks (slice 3), like outputPeak: written once per
+        // block, read at render rate — not per-callback counters. One entry
+        // per channel the device has; the C's fixed-width `input_trim` array
+        // is deliberately NOT projected (the repository keeps its own dB
+        // intent), so adding it back is a review question, not a golden fix.
+        'inputPeaks',
+        'monitorPeaks',
+        'outputPeaks',
+        'outputBusCount',
+        'outputLevels',
+        'outputMuted',
+        'outputMono',
+        'outputBalances',
+        'tailResetRev',
+        'perfFollowOutput',
+        'perfCaptureBus',
+        'perfOutputLevel',
+        'perfOutputMuted',
+        'perfCaptureMask',
+        'perfOutputEnabledMask',
         'tracks',
+        // #1197: slot patches, voices and peaks change with playing, like the
+        // meters; MIDI input carries only binding edges and losses, never the
+        // per-message totals (a MIDI clock would tick those 48 times a second).
+        'instruments',
+        'midiInput',
       };
 
       final actual = _declaredFinalFields(

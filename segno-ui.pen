@@ -1,5 +1,5 @@
 {
-  "version": "2.17",
+  "version": "2.19",
   "children": [
     {
       "type": "frame",
@@ -298735,266 +298735,5071 @@
       "fontSize": 13,
       "fontWeight": "normal"
     },
-{
-  "type": "frame",
-  "id": "sgt-companion",
-  "name": "COMPANION / Segno Transfer — native Mac",
-  "x": 35024,
-  "y": 0,
-  "width": 1100,
-  "height": 810,
-  "fill": "#ffffff",
-  "layout": "none",
-  "children": [
     {
       "type": "frame",
-      "id": "sgt-head",
-      "name": "Connection bar",
-      "x": 0,
-      "y": 0,
-      "width": 1100,
-      "height": 84,
-      "fill": "#f5f5f5",
-      "layout": "none",
-      "children": []
+      "id": "qaI7U",
+      "x": 34744,
+      "y": -4122,
+      "name": "Native implementation / Pedal setup and indicators / PR 1028–1032",
+      "width": 1920,
+      "height": 1060,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 24,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "kN35j",
+          "name": "Pedal setup implementation heading",
+          "fill": "#F1F2F4",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Pedal setup · native implementation",
+          "fontFamily": "Inter",
+          "fontSize": 40,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "favTg",
+          "name": "Accepted layout and capabilities",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Accepted Layout A keeps the Fusion-shaped hardware map visible, with Press and Hold together. Four track pedals edit as one group; fixed controls stay dimmed and outside focus. Settings and the Control tray both open Pedals. Stage closes the originating tray.\n\nSave confirms storage before activating assignments. Cancel preserves the previous setup. Failed writes restore the prior data; a failed restoration keeps a persistent warning and an available Save. Unreadable explicit assignments stay inactive until a deliberate confirmed replacement. The warning sits in the clear gap between the pedal rows.\n\nMode has separate Press and Hold. Record/Play and track presses remain immediate. Track Hold acts only in Tracks; Record/Play Hold also works in Mute. Arm overdub preserves an existing pending arm or active capture. Bank Hold keeps performance-recording access.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 26,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "xuJAc",
+          "name": "Custom runtime and validation boundary",
+          "fill": "#98A2B3",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Custom setup uses the same map, with per-bank Press and Hold assignments. Fresh Mode is Mute on Press and Custom on Hold. In Custom, Mode returns to Tracks and Bank changes the four visible assignments. A hold fires once without replaying Press. All ten LEDs use the action state or an accepted contact, never assignment presence or editor selection.\n\nThe setup map reads the same published state as the physical board. Selection marks the pedal body. Editing another bank does not change performance: its track indicators stay dark until that bank is active. Fixed controls can show their live state while their editing targets remain disabled. Rejected commands and released contacts do not remain lit.\n\nClear affects Custom assignments only; Restore keeps later Track controls edits. Save warnings remain between pedal rows. Solo shares the Mixer command owner. Configurable hue is independent of activity; fresh indicators are white and black is a deliberate dark choice. LED colors now edits all ten physical switches. Color drafts stay local until Save; changing only hue preserves activity and gesture ownership. Clear and Restore preserve later color edits. UART v8 is required with the ten-pill board; older protocol versions are not accepted. Physical operation and brightness still need appliance validation.\n\nThis repository canvas predates the full accepted working design. Preserve that newer source during final synchronization; this note does not claim the old screens are current.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 24,
+          "fontWeight": "normal"
+        }
+      ]
     },
     {
       "type": "frame",
-      "id": "sgt-side",
-      "name": "Performances sidebar",
-      "x": 0,
-      "y": 85,
-      "width": 340,
-      "height": 525,
-      "fill": "#f1f2f4",
-      "layout": "none",
-      "children": []
+      "id": "a4DSEH",
+      "x": 34744,
+      "y": -3022,
+      "name": "Pedal indicators / selection is separate from live state",
+      "width": 1920,
+      "height": 430,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 30,
+      "padding": 48,
+      "children": [
+        {
+          "type": "text",
+          "id": "Dfzml",
+          "name": "Indicator rule heading",
+          "fill": "#F1F2F4",
+          "content": "Selection edits the pedal. The LED shows its state.",
+          "fontFamily": "Inter",
+          "fontSize": 32,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "HlDKj",
+          "name": "Indicator state examples",
+          "width": "fill_container",
+          "height": 240,
+          "gap": 28,
+          "children": [
+            {
+              "type": "frame",
+              "id": "ngKry",
+              "name": "Selected",
+              "width": 435,
+              "height": 240,
+              "layout": "vertical",
+              "gap": 20,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 6,
+                  "id": "OsFZj",
+                  "name": "Selected indicator",
+                  "fill": "#24272D",
+                  "width": 114,
+                  "height": 12
+                },
+                {
+                  "type": "frame",
+                  "id": "r1zZM",
+                  "name": "Selected cap",
+                  "width": 260,
+                  "height": 90,
+                  "fill": "#29394F",
+                  "cornerRadius": 8,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "n66Wk",
+                      "name": "Selected label",
+                      "fill": "#F1F2F4",
+                      "content": "Selected",
+                      "fontFamily": "Inter",
+                      "fontSize": 23,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "QkKBL",
+                  "name": "Selected explanation",
+                  "fill": "#C7CDD6",
+                  "content": "No active action",
+                  "fontFamily": "Inter",
+                  "fontSize": 23,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "uUc8Y",
+              "name": "While held",
+              "width": 435,
+              "height": 240,
+              "layout": "vertical",
+              "gap": 20,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 6,
+                  "id": "IPgXT",
+                  "name": "While held indicator",
+                  "fill": "#FFFFFF",
+                  "width": 114,
+                  "height": 12
+                },
+                {
+                  "type": "frame",
+                  "id": "IUcbS",
+                  "name": "While held cap",
+                  "width": 260,
+                  "height": 90,
+                  "fill": "#1D222A",
+                  "cornerRadius": 8,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "zq2zv",
+                      "name": "While held label",
+                      "fill": "#F1F2F4",
+                      "content": "While held",
+                      "fontFamily": "Inter",
+                      "fontSize": 23,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "hVg6I",
+                  "name": "While held explanation",
+                  "fill": "#C7CDD6",
+                  "content": "Dark on release",
+                  "fontFamily": "Inter",
+                  "fontSize": 23,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "qKmlb",
+              "name": "Toggle on",
+              "width": 435,
+              "height": 240,
+              "layout": "vertical",
+              "gap": 20,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 6,
+                  "id": "cOnKT",
+                  "name": "Toggle on indicator",
+                  "fill": "#FFFFFF",
+                  "width": 114,
+                  "height": 12
+                },
+                {
+                  "type": "frame",
+                  "id": "emD5t",
+                  "name": "Toggle on cap",
+                  "width": 260,
+                  "height": 90,
+                  "fill": "#1D222A",
+                  "cornerRadius": 8,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "JDsKb",
+                      "name": "Toggle on label",
+                      "fill": "#F1F2F4",
+                      "content": "Toggle on",
+                      "fontFamily": "Inter",
+                      "fontSize": 23,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "fHDa7",
+                  "name": "Toggle on explanation",
+                  "fill": "#C7CDD6",
+                  "content": "Lit until toggled off",
+                  "fontFamily": "Inter",
+                  "fontSize": 23,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "pvCiE",
+              "name": "Command refused",
+              "width": 435,
+              "height": 240,
+              "layout": "vertical",
+              "gap": 20,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "cornerRadius": 6,
+                  "id": "B1NJGX",
+                  "name": "Command refused indicator",
+                  "fill": "#24272D",
+                  "width": 114,
+                  "height": 12
+                },
+                {
+                  "type": "frame",
+                  "id": "PVssS",
+                  "name": "Command refused cap",
+                  "width": 260,
+                  "height": 90,
+                  "fill": "#1D222A",
+                  "cornerRadius": 8,
+                  "layout": "vertical",
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "X5zOF",
+                      "name": "Command refused label",
+                      "fill": "#F1F2F4",
+                      "content": "Command refused",
+                      "fontFamily": "Inter",
+                      "fontSize": 23,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "u3RfmW",
+                  "name": "Command refused explanation",
+                  "fill": "#C7CDD6",
+                  "content": "Stays dark",
+                  "fontFamily": "Inter",
+                  "fontSize": 23,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "type": "frame",
-      "id": "sgt-body",
-      "name": "Selected performance audio",
-      "x": 341,
-      "y": 85,
-      "width": 759,
-      "height": 525,
-      "fill": "#ffffff",
-      "layout": "none",
-      "children": []
+      "id": "ZwFzy",
+      "x": 34744,
+      "y": -2492,
+      "name": "Native implementation / Reusable pedal palette / PR 1032",
+      "width": 1920,
+      "height": 880,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 28,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "Y1mc3",
+          "name": "Palette implementation title",
+          "fill": "#F1F2F4",
+          "content": "LED colors · one physical palette",
+          "fontFamily": "Inter",
+          "fontSize": 40,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "o18RtA",
+          "name": "Palette layout and save contract",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Track controls, Custom controls and LED colors stay together at the upper right, clear of the raised Clear and Bank pedals. LED colors selects every physical switch independently, with no bank paging. Selection marks the body; only published action state lights an indicator.\n\nEight named colors plus reusable Custom entries. Add or edit with Hue, Saturation and Brightness. Preview is local; Save confirms storage before publishing colors. Cancel and failed Save keep the live palette. A hue-only Save preserves held actions, toggle state, pending gestures and FX return.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 26,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "UAIsy",
+          "name": "Default palette colors",
+          "width": "fill_container",
+          "height": 130,
+          "gap": 16,
+          "children": [
+            {
+              "type": "frame",
+              "id": "QKofn",
+              "name": "White swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "T0xTe",
+                  "name": "White color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "NTRnl",
+                  "name": "White name",
+                  "fill": "#F1F2F4",
+                  "content": "White",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "I3oxl",
+              "name": "Amber swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "M4cCU",
+                  "name": "Amber color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#EFBC72",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "t385Lj",
+                  "name": "Amber name",
+                  "fill": "#F1F2F4",
+                  "content": "Amber",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "LY8Hj",
+              "name": "Red swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "OZNEE",
+                  "name": "Red color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#EE6B70",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "NM2Xs",
+                  "name": "Red name",
+                  "fill": "#F1F2F4",
+                  "content": "Red",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "roHwL",
+              "name": "Orange swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ynzXh",
+                  "name": "Orange color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#EF9666",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "e0U9JW",
+                  "name": "Orange name",
+                  "fill": "#F1F2F4",
+                  "content": "Orange",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Uyk84",
+              "name": "Green swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "kZiT8",
+                  "name": "Green color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#7ACB9E",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "DsLKx",
+                  "name": "Green name",
+                  "fill": "#F1F2F4",
+                  "content": "Green",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "l8wybl",
+              "name": "Cyan swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "FxEIq",
+                  "name": "Cyan color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#73CFDF",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "Q7lxap",
+                  "name": "Cyan name",
+                  "fill": "#F1F2F4",
+                  "content": "Cyan",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Z5HFB2",
+              "name": "Blue swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "GwpYt",
+                  "name": "Blue color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#82AAFF",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "CHjl7",
+                  "name": "Blue name",
+                  "fill": "#F1F2F4",
+                  "content": "Blue",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "R8wooF",
+              "name": "Violet swatch",
+              "width": 208,
+              "height": 130,
+              "fill": "#1F2025",
+              "cornerRadius": 10,
+              "layout": "vertical",
+              "gap": 12,
+              "padding": 16,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "VEvRv",
+                  "name": "Violet color",
+                  "width": 52,
+                  "height": 52,
+                  "fill": "#B19AFA",
+                  "cornerRadius": 26
+                },
+                {
+                  "type": "text",
+                  "id": "b6AkZD",
+                  "name": "Violet name",
+                  "fill": "#F1F2F4",
+                  "content": "Violet",
+                  "fontFamily": "Inter",
+                  "fontSize": 22,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "ePxvO",
+          "name": "Reusable colors and validation",
+          "fill": "#98A2B3",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Custom 1 can be shared by Mode and Bank: editing it updates both references without changing either action. Saved hue is bank-independent. Long palettes scroll and retain keyboard/encoder focus. Black is valid; fresh white stays RGB FFFFFF.\n\nUnreadable explicit palettes remain unavailable until deliberately replaced. No old protocol or default-color fallback is restored. The console renderer still applies its physical brightness limits; screen colors are design values, not optical calibration.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 26,
+          "fontWeight": "normal"
+        }
+      ]
     },
     {
       "type": "frame",
-      "id": "sgt-foot",
-      "name": "Download destination and progress",
-      "x": 0,
-      "y": 689,
-      "width": 1100,
-      "height": 119,
-      "fill": "#f7f7f7",
+      "id": "BdRcY",
+      "x": 34744,
+      "y": -1512,
+      "name": "Native implementation / Measured pedal artwork / PR 1034",
+      "width": 1920,
+      "height": 760,
+      "fill": "#13171E",
       "layout": "none",
-      "children": []
+      "children": [
+        {
+          "type": "text",
+          "id": "rCd5H",
+          "x": 48,
+          "y": 36,
+          "name": "Artwork heading",
+          "fill": "#E4E9EF",
+          "content": "PEDAL HARDWARE • NATIVE WIDGET",
+          "fontFamily": "Inter",
+          "fontSize": 34,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "ndS5j",
+          "x": 48,
+          "y": 96,
+          "name": "Artwork explanation",
+          "fill": "#A8B4C5",
+          "textGrowth": "fixed-width",
+          "width": 1800,
+          "content": "Measured Fusion geometry: tapered metal body, side hinges, rolled edges, rubber pad and thirty raised grips. One reusable widget; its enclosing control owns touch and encoder selection.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 25,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "N7AD5",
+          "x": 80,
+          "y": 248,
+          "name": "Hardware / Segno pedal face",
+          "context": "Reusable vector reconstruction from Fusion: tapered metal body, rubber pad, thirty grips and manufacturing label outlines. Instances override label, selected colors and size.",
+          "reusable": true,
+          "width": 252,
+          "height": 342,
+          "layout": "none",
+          "children": [
+            {
+              "type": "path",
+              "id": "TPizG",
+              "x": 0,
+              "y": 0,
+              "name": "Left hinge",
+              "geometry": "M3.8 20.9h-1.1q-2.2 0.2-2.2 3.1v3q0 2.1 2.2 2.3h1.1z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#424a53",
+              "width": 252,
+              "height": 342,
+              "stroke": "#777f88",
+              "strokeWidth": 0.8999787949233475,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "O3S9if",
+              "x": 0,
+              "y": 0,
+              "name": "Right hinge",
+              "geometry": "M80.2 20.9h1.1q2.2 0.2 2.2 3.1v3q0 2.1-2.2 2.3h-1.1z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#424a53",
+              "width": 252,
+              "height": 342,
+              "stroke": "#777f88",
+              "strokeWidth": 0.8999787949233475,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "XeKYa",
+              "x": 0,
+              "y": 0,
+              "name": "Tapered metal body",
+              "geometry": "M3.825 2h76.35l-1.64 109.88h-73.07z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -90,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#2b3035",
+                    "position": 0
+                  },
+                  {
+                    "color": "#737b83",
+                    "position": 0.18
+                  },
+                  {
+                    "color": "#333a42",
+                    "position": 0.85
+                  },
+                  {
+                    "color": "#737b83",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#565f69",
+              "strokeWidth": 1.0499752607439055,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "NftWW",
+              "x": 0,
+              "y": 0,
+              "name": "Left rolled edge",
+              "geometry": "M3.825 2h2.675l1.6 109.88h-2.635z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#343b43",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "iId9f",
+              "x": 0,
+              "y": 0,
+              "name": "Right rolled edge",
+              "geometry": "M77.5 2h2.675l-1.64 109.88h-2.635z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#242a31",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "wyyZL",
+              "x": 0,
+              "y": 0,
+              "name": "Textured rubber pad",
+              "geometry": "M11.73 5.45h60.54q2.03 0 2 2.03l-1.49 99q-0.03 1.97-2.03 1.97h-57.5q-2 0-2.03-1.97l-1.49-99q-0.03-2.03 2-2.03z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#191d21",
+              "width": 252,
+              "height": 342,
+              "stroke": "#13161a",
+              "strokeWidth": 1.1999717265644636,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "Qnl21",
+              "x": 0,
+              "y": 0,
+              "name": "Trapezoid nameplate",
+              "geometry": "M14.8205 10.53h54.359l-0.302 19.9h-53.755z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#20252b",
+              "width": 252,
+              "height": 342,
+              "stroke": "#3b4149",
+              "strokeWidth": 0.6599844496104549,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "FhlFf",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M14.7254 39.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "OKI5P",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M15.6254 39.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "wkvgY",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M26.3627 39.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "WnRFw",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M27.2627 39.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "W6Skw0",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M38 39.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "TyQ7M",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M38.9 39.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "p5i32",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M49.6373 39.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "XyVgX",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M50.5373 39.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "FsME1",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M61.2746 39.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "GZElt",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M62.1746 39.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "qTRTv",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M14.7254 51.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "o5XLXW",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M15.6254 51.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "OTIEM",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M26.3627 51.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "QKfoY",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M27.2627 51.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "e6cC93",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M38 51.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "gDjZN",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M38.9 51.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "MNQNc",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M49.6373 51.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "i6I4U",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M50.5373 51.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "TdTE6",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M61.2746 51.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "i2jUNh",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M62.1746 51.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "B5OWcA",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M14.7254 63.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "ok5Tr",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M15.6254 63.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "VDaLb",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M26.3627 63.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "YxJkI",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M27.2627 63.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "AR3s0",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M38 63.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "sVHVH",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M38.9 63.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "wV2o2",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M49.6373 63.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "PmzHk",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M50.5373 63.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "lzdtF",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M61.2746 63.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "jHlxM",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M62.1746 63.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "GsaFP",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M14.7254 75.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "X8zoHL",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M15.6254 75.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "u3CcsY",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M26.3627 75.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "SzuiL",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M27.2627 75.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "CFLUQ",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M38 75.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "aSfpp",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M38.9 75.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "sdYcY",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M49.6373 75.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "V5v5B",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M50.5373 75.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "Yzsn1",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M61.2746 75.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "ojwfN",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M62.1746 75.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "F88eRp",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M14.7254 87.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "rdyq1",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M15.6254 87.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "p83eq0",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M26.3627 87.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "CK6in",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M27.2627 87.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "haRvP",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M38 87.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "H8b3eO",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M38.9 87.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "Dr3NF",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M49.6373 87.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "bsg9X",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M50.5373 87.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "F3nql",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M61.2746 87.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "FqnFg",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M62.1746 87.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "yPclk",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M14.7254 99.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "qqyMp",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M15.6254 99.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "JcEk6",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M26.3627 99.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "x4sitA",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M27.2627 99.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "e9vsE",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M38 99.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "G3uSNC",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M38.9 99.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "r7PhE",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M49.6373 99.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "itPvN",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M50.5373 99.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "path",
+              "id": "vti6B",
+              "x": 0,
+              "y": 0,
+              "name": "Grip base",
+              "geometry": "M61.2746 99.47a4 4 0 1 0 8 0 4 4 0 1 0-8 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": "#101316",
+              "width": 252,
+              "height": 342
+            },
+            {
+              "type": "path",
+              "id": "Hml6o",
+              "x": 0,
+              "y": 0,
+              "name": "Grip surface",
+              "geometry": "M62.1746 99.29a3.1 3.1 0 1 0 6.2 0 3.1 3.1 0 1 0-6.2 0z",
+              "viewBox": [
+                0,
+                0,
+                84,
+                114
+              ],
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -180,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#30353a",
+                    "position": 0
+                  },
+                  {
+                    "color": "#202428",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 252,
+              "height": 342,
+              "stroke": "#383d43",
+              "strokeWidth": 0.44998939746167377,
+              "strokeLinejoin": "round",
+              "strokeLinecap": "round"
+            },
+            {
+              "type": "text",
+              "id": "K8DDzA",
+              "x": 48,
+              "y": 36,
+              "name": "Dynamic app label",
+              "fill": "#E4E9EF",
+              "textGrowth": "fixed-width-height",
+              "width": 156,
+              "height": 51,
+              "content": "1",
+              "lineHeight": 1,
+              "textAlign": "center",
+              "textAlignVertical": "middle",
+              "fontFamily": "JetBrains Mono",
+              "fontSize": 33,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "id": "ZjRJ1",
+          "type": "ref",
+          "ref": "N7AD5",
+          "name": "Selected pedal",
+          "x": 548,
+          "y": 248,
+          "descendants": {
+            "XeKYa": {
+              "fill": {
+                "type": "gradient",
+                "gradientType": "linear",
+                "enabled": true,
+                "rotation": -90,
+                "size": {
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#52647B",
+                    "position": 0
+                  },
+                  {
+                    "color": "#849AB4",
+                    "position": 0.18
+                  },
+                  {
+                    "color": "#38485E",
+                    "position": 0.85
+                  },
+                  {
+                    "color": "#849AB4",
+                    "position": 1
+                  }
+                ]
+              },
+              "stroke": "#CBD8E9",
+              "strokeWidth": 3
+            },
+            "Qnl21": {
+              "fill": "#273449"
+            },
+            "K8DDzA": {
+              "content": "MODE"
+            }
+          }
+        },
+        {
+          "id": "K8oqVQ",
+          "type": "ref",
+          "ref": "N7AD5",
+          "name": "Unavailable pedal",
+          "x": 1016,
+          "y": 248,
+          "opacity": 0.32,
+          "descendants": {
+            "K8DDzA": {
+              "content": "STOP"
+            }
+          }
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 9,
+          "id": "Swpat",
+          "x": 116,
+          "y": 211,
+          "name": "AVAILABLE indicator",
+          "fill": "#E4E9EF",
+          "width": 180,
+          "height": 18
+        },
+        {
+          "type": "text",
+          "id": "lkGks",
+          "x": 60,
+          "y": 617,
+          "name": "AVAILABLE caption",
+          "fill": "#A8B4C5",
+          "textGrowth": "fixed-width",
+          "width": 292,
+          "content": "AVAILABLE",
+          "textAlign": "center",
+          "fontFamily": "Inter",
+          "fontSize": 23,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 9,
+          "id": "BGP8h",
+          "x": 584,
+          "y": 211,
+          "name": "SELECTED indicator",
+          "fill": "#E4E9EF",
+          "width": 180,
+          "height": 18
+        },
+        {
+          "type": "text",
+          "id": "QxipX",
+          "x": 528,
+          "y": 617,
+          "name": "SELECTED caption",
+          "fill": "#A8B4C5",
+          "textGrowth": "fixed-width",
+          "width": 292,
+          "content": "SELECTED",
+          "textAlign": "center",
+          "fontFamily": "Inter",
+          "fontSize": 23,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "rectangle",
+          "cornerRadius": 9,
+          "id": "TnBQC",
+          "x": 1052,
+          "y": 211,
+          "name": "FIXED ACTION indicator",
+          "fill": "#4C535D",
+          "width": 180,
+          "height": 18
+        },
+        {
+          "type": "text",
+          "id": "IekSt",
+          "x": 996,
+          "y": 617,
+          "name": "FIXED ACTION caption",
+          "fill": "#A8B4C5",
+          "textGrowth": "fixed-width",
+          "width": 292,
+          "content": "FIXED ACTION",
+          "textAlign": "center",
+          "fontFamily": "Inter",
+          "fontSize": 23,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "edPYG",
+          "x": 1380,
+          "y": 260,
+          "name": "Interaction note",
+          "fill": "#A8B4C5",
+          "textGrowth": "fixed-width",
+          "width": 480,
+          "content": "Dynamic labels retain the current bank and translated names.\n\nSelection brightens the metal. LED state is independent.\n\nThe raised upper row and all existing hit areas remain unchanged.",
+          "lineHeight": 1.5,
+          "fontFamily": "Inter",
+          "fontSize": 25,
+          "fontWeight": "normal"
+        }
+      ]
     },
     {
-      "type": "text",
-      "id": "sgt-name",
-      "name": "Segno Transfer",
-      "content": "Segno Transfer",
-      "x": 24,
-      "y": 20,
-      "fontFamily": "SF Pro",
-      "fontSize": 22,
-      "fill": "#252525"
+      "type": "frame",
+      "id": "UbmA9",
+      "x": 36824,
+      "y": -1512,
+      "name": "Native implementation / External pedals / M3.8",
+      "width": 6048,
+      "height": 5136,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "bWkDM",
+          "name": "External pedals native reference heading",
+          "fill": "#F1F2F4",
+          "content": "External pedals · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "SJEO5",
+          "name": "External reference scope",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Single switch, dual switch and expression use one setup. Separate Press and Hold; multiple controls with On / Off or Held / Released; directed heel-to-toe calibration. Native renders at 1920 × 1080. Hardware validation remains separate.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "fZEwa",
+          "name": "External reference row 1",
+          "width": "fill_container",
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "caahf",
+              "name": "Pedals · External entry reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "G6gKV",
+                  "name": "Pedals · External entry caption",
+                  "fill": "#F1F2F4",
+                  "content": "Pedals · External entry",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "o2wRj",
+                  "name": "Pedals · External entry native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/pedal_setup_tracks.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "KFEJv",
+              "name": "Single switch reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "cwt9i",
+                  "name": "Single switch caption",
+                  "fill": "#F1F2F4",
+                  "content": "Single switch",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "yXwcH",
+                  "name": "Single switch native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_single.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "PYX3t",
+              "name": "Dual switch · independent buttons reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "IXMPd",
+                  "name": "Dual switch · independent buttons caption",
+                  "fill": "#F1F2F4",
+                  "content": "Dual switch · independent buttons",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "rj9FP",
+                  "name": "Dual switch · independent buttons native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_dual.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "bWJKl",
+          "name": "External reference row 2",
+          "width": "fill_container",
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "KdeJS",
+              "name": "Latching contact reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "p9iHZE",
+                  "name": "Latching contact caption",
+                  "fill": "#F1F2F4",
+                  "content": "Latching contact",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "ju5Uk",
+                  "name": "Latching contact native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_latching.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "yz0hA",
+              "name": "Button · mapped controls reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "XYkMR",
+                  "name": "Button · mapped controls caption",
+                  "fill": "#F1F2F4",
+                  "content": "Button · mapped controls",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "wGr4u",
+                  "name": "Button · mapped controls native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_controls.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "PhDBO",
+              "name": "Button · parameter values reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "wDh3x",
+                  "name": "Button · parameter values caption",
+                  "fill": "#F1F2F4",
+                  "content": "Button · parameter values",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "DAXn4",
+                  "name": "Button · parameter values native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_controls_parameter.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "I732qO",
+          "name": "External reference row 3",
+          "width": "fill_container",
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "On6w7",
+              "name": "Choose a mapped control reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "zOv5C",
+                  "name": "Choose a mapped control caption",
+                  "fill": "#F1F2F4",
+                  "content": "Choose a mapped control",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "k7r2Q",
+                  "name": "Choose a mapped control native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_controls_pick.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Chgfk",
+              "name": "Expression · calibrated position reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "QiD6p",
+                  "name": "Expression · calibrated position caption",
+                  "fill": "#F1F2F4",
+                  "content": "Expression · calibrated position",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "FgdL3",
+                  "name": "Expression · calibrated position native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_expression.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "pYDWS",
+              "name": "Expression · no mappings reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "HrnOY",
+                  "name": "Expression · no mappings caption",
+                  "fill": "#F1F2F4",
+                  "content": "Expression · no mappings",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "M0yNW",
+                  "name": "Expression · no mappings native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_expression_empty.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "n36ZY",
+          "name": "External reference row 4",
+          "width": "fill_container",
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Ad4ow",
+              "name": "Expression · calibration reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "jTLgT",
+                  "name": "Expression · calibration caption",
+                  "fill": "#F1F2F4",
+                  "content": "Expression · calibration",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "O6BQpg",
+                  "name": "Expression · calibration native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_expression_calibrate.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "inMX9",
+              "name": "Expression · destination reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "q2j40",
+                  "name": "Expression · destination caption",
+                  "fill": "#F1F2F4",
+                  "content": "Expression · destination",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "GTysD",
+                  "name": "Expression · destination native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_expression_destinations.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "O1ilax",
+              "name": "Expression · control picker reference",
+              "width": 1920,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "FAMHP",
+                  "name": "Expression · control picker caption",
+                  "fill": "#F1F2F4",
+                  "content": "Expression · control picker",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "frame",
+                  "id": "EcQHY",
+                  "name": "Expression · control picker native screen",
+                  "clip": true,
+                  "width": 1920,
+                  "height": 1080,
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_expression_controls.png",
+                    "mode": "fit"
+                  },
+                  "layout": "none"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
-      "type": "text",
-      "id": "sgt-sub",
-      "name": "Your performances, on your Mac",
-      "content": "Your performances, on your Mac",
-      "x": 24,
-      "y": 50,
-      "fontFamily": "SF Pro",
-      "fontSize": 12,
-      "fill": "#777777"
+      "type": "frame",
+      "id": "A8w1J",
+      "x": 43032,
+      "y": -1512,
+      "name": "Native implementation / MIDI controls / M3.9",
+      "width": 6048,
+      "height": 5136,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "xFTCE",
+          "name": "MIDI native reference heading",
+          "fill": "#F1F2F4",
+          "content": "MIDI controls · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "POk6G",
+          "name": "MIDI reference scope",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Shared controller setup. Explicit message format before Learn; multiple controls with ranges or Off / On activation; missing-target repair and deliberate reset. Stage exits both entry paths. Native renders at 1920 × 1080. Hardware validation remains separate.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "sOpb8",
+          "name": "MIDI reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Algbq",
+              "name": "Connected mappings reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "HyVXU",
+                  "name": "Connected mappings label",
+                  "fill": "#F1F2F4",
+                  "content": "Connected mappings",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "en2pA",
+                  "name": "Connected mappings native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_connected.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "LC72g",
+              "name": "Continuous ranges reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "sJF9K",
+                  "name": "Continuous ranges label",
+                  "fill": "#F1F2F4",
+                  "content": "Continuous ranges",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "uy5OK",
+                  "name": "Continuous ranges native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_continuous.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "tPFaR",
+              "name": "Button activation and values reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "tee99",
+                  "name": "Button activation and values label",
+                  "fill": "#F1F2F4",
+                  "content": "Button activation and values",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "cuOjO",
+                  "name": "Button activation and values native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_momentary.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "iW2B9",
+          "name": "MIDI reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Y0IQt",
+              "name": "Message format reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "ETi4n",
+                  "name": "Message format label",
+                  "fill": "#F1F2F4",
+                  "content": "Message format",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "R4W5kb",
+                  "name": "Message format native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_formats.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "cz9n1",
+              "name": "Learn listening reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "nMrlN",
+                  "name": "Learn listening label",
+                  "fill": "#F1F2F4",
+                  "content": "Learn listening",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "zXbNO",
+                  "name": "Learn listening native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_listening.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "uvBBi",
+              "name": "Missing target repair reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "grnH5",
+                  "name": "Missing target repair label",
+                  "fill": "#F1F2F4",
+                  "content": "Missing target repair",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "ZjoK6",
+                  "name": "Missing target repair native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_missing.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "e31iP",
+          "name": "MIDI reference row 3",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "EVa2W",
+              "name": "Failed Off recovery reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "G91z4",
+                  "name": "Failed Off recovery label",
+                  "fill": "#F1F2F4",
+                  "content": "Failed Off recovery",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "MnFLD",
+                  "name": "Failed Off recovery native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_paused.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "igWac",
+              "name": "Unreadable configuration reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "iyjh0",
+                  "name": "Unreadable configuration label",
+                  "fill": "#F1F2F4",
+                  "content": "Unreadable configuration",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "s0uez",
+                  "name": "Unreadable configuration native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_unavailable.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "nYq9J",
+              "name": "Disconnected controller reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "w4jfV",
+                  "name": "Disconnected controller label",
+                  "fill": "#F1F2F4",
+                  "content": "Disconnected controller",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "v8wZOX",
+                  "name": "Disconnected controller native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_disconnected.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "THPel",
+          "name": "MIDI reference row 4",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Z0PpJ",
+              "name": "Control tray entry reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "P7cqk1",
+                  "name": "Control tray entry label",
+                  "fill": "#F1F2F4",
+                  "content": "Control tray entry",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "R9LQC",
+                  "name": "Control tray entry native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/control_center_control_midi.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
-      "type": "text",
-      "id": "sgt-connect",
-      "name": "Appliance address     Connect     Settings",
-      "content": "Appliance address     Connect     Settings",
-      "x": 695,
-      "y": 35,
-      "fontFamily": "SF Pro",
-      "fontSize": 15,
-      "fill": "#252525"
+      "type": "frame",
+      "id": "sJfGy",
+      "x": 43032,
+      "y": 3744,
+      "name": "Native implementation / Shared Mixer controls / M3.10",
+      "width": 4000,
+      "height": 2720,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "kP3d9",
+          "name": "Shared Mixer reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared Mixer controls · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "a13AJ",
+          "name": "c/ Shared Mixer values and ownership",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "MIDI, external switches and expression share track, lane and live-input gain; pan, linked-input balance and output controls. Gain endpoints show dB; pan and balance show placement. Save keeps the draft, Escape restores the opening endpoint. Held values remain temporary; saved sessions retain Released intent. Native renders at 1920 × 1080; physical controller validation remains separate.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "h4vFZS",
+          "name": "Shared Mixer reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "fzjv8",
+              "name": "MIDI · track, lane and input gain reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "NaDLg",
+                  "name": "MIDI · track, lane and input gain label",
+                  "fill": "#F1F2F4",
+                  "content": "MIDI · track, lane and input gain",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "Q8pN7T",
+                  "name": "MIDI · track, lane and input gain native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_mixer_gains.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Pa5kG",
+              "name": "MIDI · pan and output controls reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "D6Ntkz",
+                  "name": "MIDI · pan and output controls label",
+                  "fill": "#F1F2F4",
+                  "content": "MIDI · pan and output controls",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "g8n8Ev",
+                  "name": "MIDI · pan and output controls native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_mixer_placement.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "jSg77",
+          "name": "Shared Mixer reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "hYDVS",
+              "name": "External button · Held / Released pan reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "t4aVi",
+                  "name": "External button · Held / Released pan label",
+                  "fill": "#F1F2F4",
+                  "content": "External button · Held / Released pan",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "VB2TD",
+                  "name": "External button · Held / Released pan native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_mixer_pan.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "qVaAe",
+              "name": "Expression · heel and toe gain reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "hent5",
+                  "name": "Expression · heel and toe gain label",
+                  "fill": "#F1F2F4",
+                  "content": "Expression · heel and toe gain",
+                  "fontFamily": "Inter",
+                  "fontSize": 30,
+                  "fontWeight": "500"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "UxjF8",
+                  "name": "Expression · heel and toe gain native screen",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_mixer_expression.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
-      "type": "text",
-      "id": "sgt-list",
-      "name": "PERFORMANCES                       Select",
-      "content": "PERFORMANCES                       Select",
-      "x": 16,
-      "y": 106,
-      "fontFamily": "SF Pro",
-      "fontSize": 12,
-      "fill": "#666666"
+      "type": "frame",
+      "id": "RQYox",
+      "x": 47128,
+      "y": 3744,
+      "name": "Native implementation / Shared Click volume / M3.11",
+      "width": 4000,
+      "height": 2720,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "k2YQv",
+          "name": "Shared Click reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared Click volume · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "clrN3",
+          "name": "c/ Click values and recovery",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "MIDI, external switches and expression share the existing Click volume owner. 100% is unity; 200% is maximum. Held values stay temporary: saved sessions and restarts retain Released intent. Shutdown waits for confirmed settings; failure offers Retry or Keep playing. Native renders at 1920 × 1080; physical controllers and appliance halt still need device validation.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "tPStZ",
+          "name": "Shared Click reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "TGcxu",
+              "name": "MIDI · Click range reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "ad1aQ",
+                  "name": "MIDI · Click range caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Click range",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "dxMp1",
+                  "name": "MIDI · Click range native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_click_range.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "xSYAp",
+              "name": "MIDI · Click destination reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "QszTW",
+                  "name": "MIDI · Click destination caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Click destination",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "YRYYg",
+                  "name": "MIDI · Click destination native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_click_destination.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "W1pJN",
+          "name": "Shared Click reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "xUkCW",
+              "name": "External button · Held / Released reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "o7tA7",
+                  "name": "External button · Held / Released caption",
+                  "fill": "#C7CDD6",
+                  "content": "External button · Held / Released",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "A5fnc",
+                  "name": "External button · Held / Released native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_click_held_released.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "mMwy0",
+              "name": "Shutdown · settings recovery reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "m2adpy",
+                  "name": "Shutdown · settings recovery caption",
+                  "fill": "#C7CDD6",
+                  "content": "Shutdown · settings recovery",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "SuSft",
+                  "name": "Shutdown · settings recovery native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/click_recovery_power_off.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
-      "type": "text",
-      "id": "sgt-search",
-      "name": "Search recordings",
-      "content": "Search recordings",
-      "x": 16,
-      "y": 142,
-      "fontFamily": "SF Pro",
-      "fontSize": 14,
-      "fill": "#666666"
+      "type": "frame",
+      "id": "A3mXW",
+      "x": 51248,
+      "y": 3744,
+      "name": "Native implementation / Shared overdub decay / M3.12",
+      "width": 4000,
+      "height": 2720,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "bMp8u",
+          "name": "Shared Decay reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared overdub decay · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "vZyK0",
+          "name": "c/ Decay values, inheritance and recovery",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Loop defaults and fixed Tracks 1–8 share one verified Decay owner. 0% keeps earlier layers; 100% replaces earlier audio during overdub, including silence. Playback is unchanged. Explicit track 0 remains Custom; Use default removes the override. Held values stay temporary: session Save and device restart retain Released intent. Ordinary edits take priority over older holds. Native renders at 1920 × 1080; physical controls and appliance halt still need device validation.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "DV4xu",
+          "name": "Shared Decay reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "qd69H",
+              "name": "MIDI · Decay ranges reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "i5oUbq",
+                  "name": "MIDI · Decay ranges caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Default and Track 8 endpoints",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "ZV9sU",
+                  "name": "MIDI · Decay ranges native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_decay_ranges.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "XVC0U",
+              "name": "MIDI · Loop defaults destination reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "uIajH",
+                  "name": "MIDI · Loop defaults caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Loop controls destination",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "BS67b",
+                  "name": "MIDI · Loop defaults native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_decay_destination.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "IgQVS",
+          "name": "Shared Decay reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "s0URR",
+              "name": "External button · Decay Held / Released reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "SEYMq",
+                  "name": "External button · Decay Held / Released caption",
+                  "fill": "#C7CDD6",
+                  "content": "External button · Held 75%, Released 0%",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "C92T8",
+                  "name": "External button · Decay Held / Released native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_decay_held_released.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "y7MYm",
+              "name": "Shutdown · settings recovery reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "CLVaG",
+                  "name": "Shutdown · settings recovery caption",
+                  "fill": "#C7CDD6",
+                  "content": "Shutdown · settings recovery",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "kmXLh",
+                  "name": "Shutdown · settings recovery native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/click_recovery_power_off.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
-      "type": "text",
-      "id": "sgt-row",
-      "name": "Selected   Today, 11:47\n8:26 · 13 audio files",
-      "content": "Selected   Today, 11:47\n8:26 · 13 audio files",
-      "x": 16,
-      "y": 188,
-      "fontFamily": "SF Pro",
-      "fontSize": 15,
-      "fill": "#252525"
+      "type": "frame",
+      "id": "B5yE6R",
+      "x": 55408,
+      "y": 3744,
+      "name": "Native implementation / Shared Playback Loop or Once / M3.13",
+      "width": 4000,
+      "height": 2720,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "jFsqf",
+          "name": "Shared Playback reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared Playback · Loop / Once · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "WSZcl",
+          "name": "c/ Playback choices, inheritance and recovery",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Loop defaults and fixed Tracks 1–8 share one verified Playback owner. Loop repeats; Once finishes the current pass and stops that track. Custom Loop stays explicit; Use default restores inheritance. Held values are temporary: session Save and restart retain Released intent. MIDI, external buttons and expression share the same choices. Native renders at 1920 × 1080; physical controls and appliance shutdown still need device validation.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "we5dQ",
+          "name": "Shared Playback reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "ErALI",
+              "name": "MIDI · Playback endpoints reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rEjKj",
+                  "name": "MIDI · Playback endpoints caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Playback endpoints",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "dSP0E",
+                  "name": "MIDI · Playback endpoints native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_playback_range.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "nr7oy",
+              "name": "External button · Held Once, Released Loop reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "YYfql",
+                  "name": "External button · Held Once, Released Loop caption",
+                  "fill": "#C7CDD6",
+                  "content": "External button · Held Once, Released Loop",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "a9YOgc",
+                  "name": "External button · Held Once, Released Loop native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_playback_held_released.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "WFipa",
+          "name": "Shared Playback reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "eysa5",
+              "name": "Loop settings · Custom playback reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "R3rqFT",
+                  "name": "Loop settings · Custom playback caption",
+                  "fill": "#C7CDD6",
+                  "content": "Loop settings · Custom playback",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "ezlsy",
+                  "name": "Loop settings · Custom playback native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/loop_settings_playback_custom.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "ixHg2",
+              "name": "Shutdown · settings recovery reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "IWHco",
+                  "name": "Shutdown · settings recovery caption",
+                  "fill": "#C7CDD6",
+                  "content": "Shutdown · settings recovery",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "rRrIz",
+                  "name": "Shutdown · settings recovery native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/click_recovery_power_off.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
-      "type": "text",
-      "id": "sgt-row2",
-      "name": "Today, 10:55\n5:09 · 8 audio files",
-      "content": "Today, 10:55\n5:09 · 8 audio files",
-      "x": 42,
-      "y": 258,
-      "fontFamily": "SF Pro",
-      "fontSize": 15,
-      "fill": "#252525"
+      "type": "frame",
+      "id": "GNTYj",
+      "x": 59568,
+      "y": 3744,
+      "name": "Native implementation / Shared Record length / M3.14",
+      "width": 4000,
+      "height": 2720,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "j0tODS",
+          "name": "Shared Record length reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared Record length · Auto / Bars · native render references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "eoIrc",
+          "name": "c/ Record length, capture lock and durable settings",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Loop defaults and fixed Tracks 1–8 share confirmed Auto or 1–64 bars. Custom Auto remains explicit; Use default restores inheritance. Multi shares the default, and active recording locks length changes. Held choices stay live while Save and restart retain Released values. MIDI, external buttons and expression use the same owner. Native renders at 1920 × 1080; physical controls and appliance shutdown require device validation.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "oqnS0",
+          "name": "Shared Record length reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "OZA9c",
+              "name": "MIDI · Record length endpoints reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "eypqg",
+                  "name": "MIDI · Record length endpoints caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Record length endpoints",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "TPeHS",
+                  "name": "MIDI · Record length endpoints native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_record_length_range.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "McWo1",
+              "name": "External button · Held bars, Released Auto reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "HOwqp",
+                  "name": "External button · Held bars, Released Auto caption",
+                  "fill": "#C7CDD6",
+                  "content": "External button · Held bars, Released Auto",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "eS2D5",
+                  "name": "External button · Held bars, Released Auto native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_record_length_held_released.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "zY7TX",
+          "name": "Shared Record length reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Y8SbVE",
+              "name": "Loop settings · Custom record length reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "VvVFB",
+                  "name": "Loop settings · Custom record length caption",
+                  "fill": "#C7CDD6",
+                  "content": "Loop settings · Custom record length",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "Xn9Y5",
+                  "name": "Loop settings · Custom record length native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/loop_settings_length_custom.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "Xf7H2",
+              "name": "Shutdown · settings recovery reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "TXEJX",
+                  "name": "Shutdown · settings recovery caption",
+                  "fill": "#C7CDD6",
+                  "content": "Shutdown · settings recovery",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "inpcf",
+                  "name": "Shutdown · settings recovery native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/click_recovery_power_off.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
-      "type": "text",
-      "id": "sgt-title",
-      "name": "Today at 11:47",
-      "content": "Today at 11:47",
-      "x": 367,
-      "y": 110,
-      "fontFamily": "SF Pro",
-      "fontSize": 22,
-      "fill": "#252525"
+      "type": "frame",
+      "id": "dz7Wd",
+      "x": 63728,
+      "y": 3744,
+      "name": "Native implementation / Shared Record timing / M3.15",
+      "width": 4000,
+      "height": 1720,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "Yz1AM",
+          "name": "Shared Record timing reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared Record timing · Immediately / Musical grid · native references",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "q7J7N",
+          "name": "c/ Confirmed timing, inheritance, capture and recovery",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Defaults and fixed Tracks 1–8 share seven choices: Immediately, Loop start, Bar, 1/2, 1/4, 1/8 and 1/16 note. Custom Immediately is explicit; Use default restores inheritance. All loop modes allow timing choices while not capturing. Held choices stay live; Save and restart retain Released values and the remembered division. Waiting starts are retimed or cancelled only for the edited scope. Uncertain storage or native confirmation stays unavailable until Retry; capture is never stopped to clean up a release. Native renders at 1920 × 1080; physical timing still needs device validation.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "MMVp3",
+          "name": "Shared Record timing reference row",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "NvTOL",
+              "name": "MIDI · Record timing endpoints reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "W2aI7K",
+                  "name": "MIDI · Record timing endpoints caption",
+                  "fill": "#C7CDD6",
+                  "content": "MIDI · Immediately to 1/16 note",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "Wi1nm",
+                  "name": "MIDI · Record timing endpoints native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/midi_controls_record_timing_range.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "QqUM7",
+              "name": "External button · Held and Released timing reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "iki0F",
+                  "name": "External button · Held and Released timing caption",
+                  "fill": "#C7CDD6",
+                  "content": "External button · Held 1/4 note, Released Immediately",
+                  "fontFamily": "Inter",
+                  "fontSize": 28,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "fXp9e",
+                  "name": "External button · Held and Released timing native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_record_timing_held_released.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
-      "type": "text",
-      "id": "sgt-meta",
-      "name": "8:26 · Choose the audio you want to keep",
-      "content": "8:26 · Choose the audio you want to keep",
-      "x": 367,
-      "y": 145,
-      "fontFamily": "SF Pro",
-      "fontSize": 14,
-      "fill": "#777777"
+      "type": "frame",
+      "id": "qhTEW",
+      "x": 67888,
+      "y": 3744,
+      "name": "Native implementation / Shared Hear click / M3.16",
+      "width": 4000,
+      "height": 1820,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "ulo7t",
+          "name": "Shared Hear click reference heading",
+          "fill": "#F1F2F4",
+          "content": "Shared Hear click · one confirmed choice across controls",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "600"
+        },
+        {
+          "type": "text",
+          "id": "Tvxr0",
+          "name": "c/ Hear click default, capture, durable release and recovery",
+          "fill": "#C7CDD6",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "Hear click offers Off, First recording, Recording and Play & record in Loop controls. A new setup uses First recording; an explicitly saved Off remains Off. Recording or overdubbing disables changes without stopping audio. Touch, encoder, MIDI and external pedals share the confirmed choice. Held stays live; Session Save and restart retain Released. Uncertain settings stay unavailable until Retry. Adding or saving a mapping alone changes no audio. Native references at 1920 × 1080; physical timing still needs device validation.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "Hlarl",
+          "name": "Shared Hear click reference row",
+          "width": "fill_container",
+          "height": 1240,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "XPZQP",
+              "name": "Tempo & click · confirmed First recording reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "b0zMLx",
+                  "name": "Tempo & click · confirmed First recording caption",
+                  "fill": "#F1F2F4",
+                  "content": "Tempo & click · confirmed First recording",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "zf8IJ",
+                  "name": "Tempo & click · confirmed First recording native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/loop_settings_tempo.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "x45oW",
+              "name": "External button · Held and Released Hear click reference",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "BQUHQ",
+                  "name": "External button · Held and Released Hear click caption",
+                  "fill": "#F1F2F4",
+                  "content": "External button · Held and Released Hear click",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "n1f8R",
+                  "name": "External button · Held and Released Hear click native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "test/screenshots/goldens/external_pedals_hear_click_held_released.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
-      "type": "text",
-      "id": "sgt-choose",
-      "name": "Main recording only      Select all audio",
-      "content": "Main recording only      Select all audio",
-      "x": 367,
-      "y": 183,
-      "fontFamily": "SF Pro",
-      "fontSize": 15,
-      "fill": "#252525"
-    },
-    {
-      "type": "text",
-      "id": "sgt-main",
-      "name": "Selected   Main recording                                       389 MB\nmaster.wav\nSave as    Rehearsal — take 3.wav",
-      "content": "Selected   Main recording                                       389 MB\nmaster.wav\nSave as    Rehearsal — take 3.wav",
-      "x": 367,
-      "y": 232,
-      "fontFamily": "SF Pro",
-      "fontSize": 15,
-      "fill": "#252525"
-    },
-    {
-      "type": "text",
-      "id": "sgt-input",
-      "name": "Live input · live-input-0                                       389 MB\nlive-input-0.wav",
-      "content": "Live input · live-input-0                                       389 MB\nlive-input-0.wav",
-      "x": 392,
-      "y": 335,
-      "fontFamily": "SF Pro",
-      "fontSize": 15,
-      "fill": "#252525"
-    },
-    {
-      "type": "text",
-      "id": "sgt-loop",
-      "name": "Loop · track2-lane0                                               4 MB\nloops/track2-lane0.wav",
-      "content": "Loop · track2-lane0                                               4 MB\nloops/track2-lane0.wav",
-      "x": 392,
-      "y": 407,
-      "fontFamily": "SF Pro",
-      "fontSize": 15,
-      "fill": "#252525"
-    },
-    {
-      "type": "text",
-      "id": "sgt-note",
-      "name": "Names apply to your downloaded copies. Matching names get a numbered suffix.",
-      "content": "Names apply to your downloaded copies. Matching names get a numbered suffix.",
-      "x": 367,
-      "y": 564,
-      "fontFamily": "SF Pro",
-      "fontSize": 12,
-      "fill": "#777777"
-    },
-    {
-      "type": "text",
-      "id": "sgt-folder",
-      "name": "Save to Downloads     Change…\nDownloads",
-      "content": "Save to Downloads     Change…\nDownloads",
-      "x": 24,
-      "y": 719,
-      "fontFamily": "SF Pro",
-      "fontSize": 15,
-      "fill": "#252525"
-    },
-    {
-      "type": "text",
-      "id": "sgt-dl",
-      "name": "Download 1 file\n389 MB",
-      "content": "Download 1 file\n389 MB",
-      "x": 922,
-      "y": 718,
-      "fontFamily": "SF Pro",
-      "fontSize": 15,
-      "fill": "#252525"
-    },
-    {
-      "type": "text",
-      "id": "sgt-preview",
-      "name": "Streaming recording preview",
-      "content": "Pause     Rehearsal — Main recording                                      Close\n0:32                     Playback timeline / seek slider                         8:26\nBuffering… (only while waiting for audio)",
-      "x": 24,
-      "y": 630,
-      "fontFamily": "SF Pro",
-      "fontSize": 15,
-      "fill": "#252525"
+      "type": "frame",
+      "id": "rsAsect",
+      "x": 72080,
+      "y": 3744,
+      "name": "Native implementation / Recording start and Count-in / M3.17A",
+      "width": 4000,
+      "height": 4200,
+      "fill": "#111215",
+      "layout": "vertical",
+      "gap": 32,
+      "padding": 64,
+      "children": [
+        {
+          "type": "text",
+          "id": "rsAhead",
+          "name": "Recording start reference heading",
+          "fill": "#F1F2F4",
+          "content": "Recording start · one confirmed pair",
+          "fontFamily": "Inter",
+          "fontSize": 48,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "text",
+          "id": "rsAnote",
+          "name": "c/ Recording start and Count-in confirmed pair",
+          "fill": "#F1F2F4",
+          "textGrowth": "fixed-width",
+          "width": "fill_container",
+          "content": "A new setup uses one bar and Pedal. A saved Off stays Off. Choosing Sound turns Count-in Off; choosing a positive Count-in returns to Pedal. Changes wait for storage and audio confirmation. While recording or overdubbing, controls retain their confirmed values but cannot be edited. Uncertain settings stay unavailable until Retry. Cancelling an owned count-in must never start a new take. Session save and recall keep the pair together. Native screenshots are author-reviewed references; simultaneous-track starts and mapped Count-in controls belong to the next slices.",
+          "lineHeight": 1.4,
+          "fontFamily": "Inter",
+          "fontSize": 28,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "rsArow0",
+          "name": "Recording start reference row 1",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "rsAcol0",
+              "name": "Recording · Pedal",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rsAcap0",
+                  "name": "Recording · Pedal caption",
+                  "fill": "#F1F2F4",
+                  "content": "Recording · Pedal",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "rsAimg0",
+                  "name": "Recording · Pedal native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "docs/design/native-record-start/recording_pedal_off.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "rsAcol1",
+              "name": "Recording · Sound",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rsAcap1",
+                  "name": "Recording · Sound caption",
+                  "fill": "#F1F2F4",
+                  "content": "Recording · Sound",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "rsAimg1",
+                  "name": "Recording · Sound native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "docs/design/native-record-start/recording_sound_on.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "rsArow1",
+          "name": "Recording start reference row 2",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "rsAcol2",
+              "name": "Tempo & click · Count-in Off",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rsAcap2",
+                  "name": "Tempo & click · Count-in Off caption",
+                  "fill": "#F1F2F4",
+                  "content": "Tempo & click · Count-in Off",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "rsAimg2",
+                  "name": "Tempo & click · Count-in Off native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "docs/design/native-record-start/tempo_count_in_off.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "rsAcol3",
+              "name": "Tempo & click · Count-in 2 bars",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rsAcap3",
+                  "name": "Tempo & click · Count-in 2 bars caption",
+                  "fill": "#F1F2F4",
+                  "content": "Tempo & click · Count-in 2 bars",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "rsAimg3",
+                  "name": "Tempo & click · Count-in 2 bars native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "docs/design/native-record-start/tempo_count_in_2.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "rsArow2",
+          "name": "Recording start reference row 3",
+          "width": "fill_container",
+          "height": 1140,
+          "gap": 32,
+          "children": [
+            {
+              "type": "frame",
+              "id": "rsAcol4",
+              "name": "Recording · unavailable, last confirmed Sound retained",
+              "width": 1920,
+              "height": 1140,
+              "layout": "vertical",
+              "gap": 16,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "rsAcap4",
+                  "name": "Recording · unavailable, last confirmed Sound retained caption",
+                  "fill": "#F1F2F4",
+                  "content": "Recording · unavailable, last confirmed Sound retained",
+                  "fontFamily": "Inter",
+                  "fontSize": 26,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "rectangle",
+                  "id": "rsAimg4",
+                  "name": "Recording · unavailable, last confirmed Sound retained native render",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "docs/design/native-record-start/recording_sound_recovery.png",
+                    "mode": "fit"
+                  },
+                  "width": 1920,
+                  "height": 1080
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
-  ]
-},
-{
-  "type": "text",
-  "id": "sgt-rationale",
-  "name": "c/ Segno Transfer: native Mac companion approved 2026-09-15. Native SwiftUI controls replace appliance touchscreen geometry. Browse performances, select audio files, edit download names, choose a folder, verify and reveal copies. Source recordings stay intact. Existing SSH authentication. Error and cancel states use the footer, with incomplete files never published. Issue #1056. Owner requested streaming preview with seeking: read only the audio sections the native player requests over SSH. Play/pause and seek in the footer; show Buffering while awaiting audio. Close, replacement or quit cancels pending reads. No full preview copy is saved. Download selection stays intact.",
-  "content": "c/ Segno Transfer: native Mac companion approved 2026-09-15. Native SwiftUI controls replace appliance touchscreen geometry. Browse performances, select audio files, edit download names, choose a folder, verify and reveal copies. Source recordings stay intact. Existing SSH authentication. Error and cancel states use the footer, with incomplete files never published. Issue #1056. Owner requested streaming preview with seeking: read only the audio sections the native player requests over SSH. Play/pause and seek in the footer; show Buffering while awaiting audio. Close, replacement or quit cancels pending reads. No full preview copy is saved. Download selection stays intact.",
-  "x": 35024,
-  "y": 860,
-  "fontFamily": "SF Pro",
-  "fontSize": 16,
-  "fill": "#d5ddf5"
-}
-],
+  ],
   "variables": {
     "bg-base": {
       "type": "color",

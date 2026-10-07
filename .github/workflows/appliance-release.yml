@@ -174,12 +174,12 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 1.1.1
           echo "$PWD/bin" >> "$GITHUB_PATH"
 
-      - name: Install the RP2040/RP2350 core + Adafruit NeoPixel
+      - name: Install the RP2040/RP2350 core and LED drivers
         run: |
           set -eu
           arduino-cli core update-index --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
           arduino-cli core install rp2040:rp2040 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-          arduino-cli lib install "Adafruit NeoPixel"
+          arduino-cli lib install "Adafruit NeoPixel@1.15.5" "NeoPixelBus by Makuna@2.8.4"
 
       - name: Compile the firmware and record what it speaks
         run: |
@@ -403,13 +403,15 @@ jobs:
           # segno-update-bundle validates this artifact with Yocto-native RAUC
           # before deploying it; release hosts do not need a second RAUC.
           sha=$(sha256sum "$out/$bundle" | cut -d' ' -f1)
+          # The Updates page shows the download size next to the version.
+          size=$(stat -c %s "$out/$bundle")
           # version is a semver string (e.g. "0.2.0" / "0.2.0-experimental.9")
           # — must be JSON-quoted. The int-era unquoted form is no longer valid.
           version='${{ needs.determine-meta.outputs.version }}'
           channel='${{ needs.determine-meta.outputs.channel }}'
 
           cat > "$out/manifest.json" <<EOF
-          { "version": "$version", "bundle": "$bundle", "sha256": "$sha", "channel": "$channel" }
+          { "version": "$version", "bundle": "$bundle", "sha256": "$sha", "channel": "$channel", "size": $size }
           EOF
           # Pretty-print if jq is on the runner; never fail the release over a
           # log nicety, two hours into the build.

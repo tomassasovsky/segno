@@ -13,6 +13,12 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/invariants.dart';
+import 'package:segno/control/model/foot_fade.dart';
+import 'package:segno/control/model/foot_fx.dart';
+import 'package:segno/control/model/foot_length.dart';
+import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/control/model/foot_peel.dart';
+import 'package:segno/control/model/foot_reverse.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 /// Whether the play transport is PARKED: content exists but none of it is
@@ -61,7 +67,8 @@ Set<int> armedTracks(LooperState looper, ControlState overlay) {
 /// Mute mode: green = armed AND audible (a muted or excluded track reads
 /// off; while parked, the parked-resume members show what Rec/Play brings
 /// back). Record mode: the cursor and any capturing track read red. FX mode:
-/// blue = the track's Track-stage chain is engaged.
+/// blue = the track's Track-stage chain is engaged. Custom mode: blue = the
+/// assigned function is active, based on its current target/contact state.
 ///
 /// The FX-mode reading costs ZERO new wire bytes (R8): the same `trackLeds`
 /// enum-index byte carries a different meaning per mode, so the firmware
@@ -74,6 +81,7 @@ PedalTrackLed projectTrackLed(
   ControlState overlay,
   int channel, {
   Map<int, bool?> boundChains = const {},
+  Map<int, bool> customFunctions = const {},
 }) {
   final track = channel >= 0 && channel < looper.tracks.length
       ? looper.tracks[channel]
@@ -88,6 +96,39 @@ PedalTrackLed projectTrackLed(
       if (channel == overlay.cursor) return PedalTrackLed.red;
       if (track?.isCapturing ?? false) return PedalTrackLed.red;
       return PedalTrackLed.off;
+    case InteractionMode.mixer:
+      return PedalTrackLed.off;
+    case InteractionMode.fade:
+      // Lit while fading or faded out; never a claim about audibility. Only
+      // recorded tracks: Clear publishes EMPTY before its envelope reset.
+      return (track != null && track.hasContent && track.fade.attenuated)
+          ? PedalTrackLed.blue
+          : PedalTrackLed.off;
+    case InteractionMode.reverse:
+      // Lit while the recorded track plays reversed. Clear publishes EMPTY
+      // with the direction reset, so an empty track never reads reversed.
+      return (track != null && track.hasContent && track.reversed)
+          ? PedalTrackLed.blue
+          : PedalTrackLed.off;
+    case InteractionMode.peel:
+      // Lit while a press would remove a layer, so "none remain" and a busy
+      // track are visible by foot.
+      return (track?.canPeel ?? false) ? PedalTrackLed.blue : PedalTrackLed.off;
+    case InteractionMode.tuner:
+      // The track switches pick inputs here, not tracks: their light is the
+      // switch light alone (`tunerStates`).
+      return PedalTrackLed.off;
+    case InteractionMode.multiply:
+    case InteractionMode.divide:
+      // Red on the selected recorded track, the one every edit acts on (the
+      // Record-mode cursor convention); an empty track is never selected.
+      return (channel == overlay.cursor && track != null && track.hasContent)
+          ? PedalTrackLed.red
+          : PedalTrackLed.off;
+    case InteractionMode.custom:
+      return customFunctions[channel] ?? false
+          ? PedalTrackLed.blue
+          : PedalTrackLed.off;
     case InteractionMode.fx:
       // A BOUND switch reports its own target, not this channel's track chain.
       // The two are different flags — a binding can name a chain on any stage
@@ -117,10 +158,21 @@ PedalStateFrame projectFrame(
   bool performanceArmed = false,
   double masterGain = 1.0,
   Map<int, bool?> boundChains = const {},
+  Map<PedalButton, FxSwitchReading> boundSwitches = const {},
+  Map<int, bool> customFunctions = const {},
+  Map<PedalButton, bool> physicalCustomStates = const {},
+  Map<PedalButton, bool> tunerStates = const {},
+  Set<PedalButton> acceptedContacts = const {},
 }) {
   final leds = <PedalTrackLed>[
     for (var channel = 0; channel < PedalStateFrame.trackCount; channel++)
-      projectTrackLed(looper, overlay, channel, boundChains: boundChains),
+      projectTrackLed(
+        looper,
+        overlay,
+        channel,
+        boundChains: boundChains,
+        customFunctions: customFunctions,
+      ),
   ];
   // global_color carries the ring's activity color: red while recording,
   // amber while overdubbing, green while a loop plays, off when idle. (The
@@ -143,6 +195,17 @@ PedalStateFrame projectFrame(
       : anyPlaying
       ? GlobalColor.green
       : GlobalColor.off;
+  final activeButtonMask = _physicalButtonMask(
+    overlay,
+    leds,
+    global: global,
+    performanceArmed: performanceArmed,
+    clearFadeActive: clearFadeActive,
+    physicalCustomStates: physicalCustomStates,
+    tunerStates: tunerStates,
+    boundSwitches: boundSwitches,
+    acceptedContacts: acceptedContacts,
+  );
   final sampleRate = looper.status.sampleRate;
   // The engine keeps the master grid alive after undo-to-empty (redo needs
   // it), but a pedal with no loops anywhere must not keep its ring lit —
@@ -158,15 +221,19 @@ PedalStateFrame projectFrame(
     selectedTrack: overlay.cursor,
     // The wire frame still calls mute mode PLAY: PedalMode is the pedal
     // firmware's protocol enum (its mode LED predates the rename), so the
-    // mapping — not the wire token — carries the new name. FX rides protocol
-    // the wire's mode byte; this projection is transport-AGNOSTIC (B10) — the
-    // codec alone decides how a mode reaches the board, so nothing here
-    // branches
-    // on the negotiated version.
+    // mapping — not the wire token — carries the new name. Each mode has one
+    // current UART value; the codec and board require an exact v6 HELLO.
     mode: switch (overlay.mode) {
       InteractionMode.record => PedalMode.rec,
       InteractionMode.mute => PedalMode.play,
       InteractionMode.fx => PedalMode.fx,
+      InteractionMode.custom ||
+      InteractionMode.mixer ||
+      InteractionMode.fade ||
+      InteractionMode.reverse ||
+      InteractionMode.peel ||
+      InteractionMode.tuner => PedalMode.custom,
+      InteractionMode.multiply || InteractionMode.divide => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
@@ -175,6 +242,8 @@ PedalStateFrame projectFrame(
     clearFadeActive: clearFadeActive,
     performanceArmed: performanceArmed,
     masterGain: masterGain,
+    pedalColors: projectPedalColors(looper, overlay, leds, global),
+    activeButtonMask: activeButtonMask,
   );
   // The control-surface invariant spec runs on every projection in debug
   // builds — the same predicates the sequence fuzzer checks. assert() only:
@@ -186,9 +255,184 @@ PedalStateFrame projectFrame(
         overlay: overlay,
         frame: frame,
         boundChains: boundChains,
+        customFunctions: customFunctions,
+        physicalCustomStates: physicalCustomStates,
       ),
     ),
     'control-surface invariants must hold at projection time',
   );
   return frame;
+}
+
+/// The hue each footswitch lights in.
+///
+/// Only Custom mode takes the performer's palette, and only on the switches
+/// it binds. Everything else lights in the pedal's original LED colours: a
+/// track red while recording or overdubbing, green while playing, blue for an
+/// engaged FX chain; MODE red in Record, green in Mute, blue in FX and yellow
+/// in every other mode; Clear red; Bank B a dim blue. Whether a switch is lit
+/// at all stays with the active mask; this only answers its colour.
+List<PedalColor> projectPedalColors(
+  LooperState looper,
+  ControlState overlay,
+  List<PedalTrackLed> trackLeds,
+  GlobalColor global,
+) {
+  final modeColor = switch (overlay.mode) {
+    InteractionMode.record => ledRed,
+    InteractionMode.mute => ledGreen,
+    InteractionMode.fx => ledBlue,
+    _ => ledYellow,
+  };
+  if (overlay.mode == InteractionMode.custom) {
+    final custom = overlay.pedalSetup.palette.frameColors;
+    return [
+      for (final button in PedalButton.values)
+        switch (button) {
+          PedalButton.mode => modeColor,
+          PedalButton.bank => ledBankB,
+          _ => custom[button.index],
+        },
+    ];
+  }
+  PedalColor trackColor(PedalButton button) {
+    final channel =
+        overlay.bankBaseChannel + button.index - PedalButton.track1.index;
+    if (overlay.mode == InteractionMode.record) {
+      // Record mode lights the selected track as well as any capturing one,
+      // so the colour reports that track's own state rather than the lit
+      // reason.
+      final track = channel < looper.tracks.length
+          ? looper.tracks[channel]
+          : null;
+      return switch (track?.state) {
+        TrackState.recording || TrackState.overdubbing => ledRed,
+        TrackState.playing => ledGreen,
+        _ => ledWhite,
+      };
+    }
+    return switch (trackLeds[channel]) {
+      PedalTrackLed.red => ledRed,
+      PedalTrackLed.green => ledGreen,
+      PedalTrackLed.blue => ledBlue,
+      PedalTrackLed.off => ledWhite,
+    };
+  }
+
+  return [
+    for (final button in PedalButton.values)
+      switch (button) {
+        PedalButton.track1 ||
+        PedalButton.track2 ||
+        PedalButton.track3 ||
+        PedalButton.track4 => trackColor(button),
+        PedalButton.recPlay => switch (global) {
+          // Amber is overdub, or a new take over playing loops: both record.
+          GlobalColor.red || GlobalColor.amber => ledRed,
+          GlobalColor.green => ledGreen,
+          GlobalColor.blue => ledBlue,
+          GlobalColor.off => ledWhite,
+        },
+        PedalButton.mode => modeColor,
+        PedalButton.clear => ledRed,
+        PedalButton.bank => ledBankB,
+        _ => ledWhite,
+      },
+  ];
+}
+
+/// The pedal's original LED colours: pure channels, not the palette's screen
+/// tints, which read washed out on an LED. The console board applies gamma.
+const ledRed = PedalColor(255, 0, 0);
+
+/// Playing, Mute mode.
+const ledGreen = PedalColor(0, 255, 0);
+
+/// An engaged FX chain, FX mode.
+const ledBlue = PedalColor(0, 0, 255);
+
+/// Every other mode on MODE; the ring's overdub yellow, matched on the unit.
+const ledYellow = PedalColor(255, 235, 0);
+
+/// Bank B.
+const ledBankB = PedalColor(0, 0, 80);
+
+/// A lit switch with no state of its own (an accepted Stop or Undo press).
+const PedalColor ledWhite = PedalColor.defaultColor;
+
+/// Whether [button] is a slot-less pedal on a hold-less performance surface
+/// (Fade, Reverse, Peel, Multiply / Divide).
+bool _slotless(InteractionMode mode, PedalButton button) => switch (mode) {
+  InteractionMode.fade => FootFadeProjection.pedalRoles[button]!.slot == null,
+  InteractionMode.reverse =>
+    FootReverseProjection.pedalRoles[button]!.slot == null,
+  InteractionMode.peel => FootPeelProjection.pedalRoles[button]!.slot == null,
+  InteractionMode.multiply || InteractionMode.divide =>
+    FootLengthProjection.rolesFor(mode)[button]!.slot == null,
+  _ => false,
+};
+
+int _physicalButtonMask(
+  ControlState overlay,
+  List<PedalTrackLed> trackLeds, {
+  required GlobalColor global,
+  required bool performanceArmed,
+  required bool clearFadeActive,
+  required Map<PedalButton, bool> physicalCustomStates,
+  required Map<PedalButton, bool> tunerStates,
+  required Map<PedalButton, FxSwitchReading> boundSwitches,
+  required Set<PedalButton> acceptedContacts,
+}) {
+  var mask = 0;
+  for (final button in PedalButton.values) {
+    final lit = switch (button) {
+      // Always lit, in the mode's own colour, as the pedal always was.
+      PedalButton.mode => true,
+      // The Tuner face's own lights: the tuned input, Stop while muted,
+      // Bank past the first page; Undo and Clear while held.
+      _ when overlay.mode == InteractionMode.tuner =>
+        (tunerStates[button] ?? false) || acceptedContacts.contains(button),
+      _ when overlay.mode == InteractionMode.mixer =>
+        FootMixerProjection.pedalRoles[button]!.slot != null
+            ? overlay.footMixer.channel ==
+                  overlay.footMixer.page * 4 +
+                      FootMixerProjection.pedalRoles[button]!.slot!
+            : acceptedContacts.contains(button),
+      PedalButton.bank => overlay.activeBank == 1,
+      // Slot-less pedals on the hold-less performance surfaces light only
+      // for an accepted contact.
+      _ when _slotless(overlay.mode, button) => acceptedContacts.contains(
+        button,
+      ),
+      _ when overlay.mode == InteractionMode.custom =>
+        physicalCustomStates[button] ?? false,
+      // FX mode (#1229): Rec/Play, Stop, Undo and Clear light only for what
+      // their binding drives, as their face does; unbound they are inert and
+      // dark, as pen 10/03 draws them.
+      PedalButton.recPlay ||
+      PedalButton.stop ||
+      PedalButton.undo ||
+      PedalButton.clear when overlay.mode == InteractionMode.fx =>
+        boundSwitches[button]?.lit ?? false,
+      PedalButton.track1 ||
+      PedalButton.track2 ||
+      PedalButton.track3 ||
+      PedalButton.track4 =>
+        trackLeds[overlay.bankBaseChannel +
+                button.index -
+                PedalButton.track1.index] !=
+            PedalTrackLed.off,
+      PedalButton.recPlay =>
+        global == GlobalColor.red ||
+            global == GlobalColor.amber ||
+            global == GlobalColor.green ||
+            performanceArmed ||
+            acceptedContacts.contains(button),
+      PedalButton.undo => acceptedContacts.contains(button),
+      PedalButton.stop => acceptedContacts.contains(button),
+      PedalButton.clear => clearFadeActive || acceptedContacts.contains(button),
+    };
+    if (lit) mask |= 1 << button.index;
+  }
+  return mask;
 }

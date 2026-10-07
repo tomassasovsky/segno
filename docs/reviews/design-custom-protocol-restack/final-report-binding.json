@@ -1,0 +1,14 @@
+{
+  "verdict": "No unresolved actionable findings in complete intended M3.3 delta",
+  "sourceFingerprint": "1969ff20d13e9144b6b3c65196dd425d189f0a80728e94d69cfc37f04a9e024a",
+  "sourcePathCount": 15,
+  "reports": {
+    "vgv-review.md": "429dbe1aac4f20c66bafd8ab30ee6b43098694fb517fa75917a2c464dbeb0fe3",
+    "architecture-review.md": "a70d931e5056d9fd60e982a36e4e4de495f6041e8746f104c7748b233a2dcfc9",
+    "test-quality-review.md": "3c4276afd59b575925680bb07ddc8e3aca7a0821ba2568e9dde12eca7d44b51e",
+    "code-simplicity-review.md": "738f833cc05a7ce4ff9cd67bf5eff3f58bec632573ba81b5c4255f5d0dad8372",
+    "pr-readiness-review.md": "b46660221cae791ffb61e8ae6bf5f383bc04e1630d170ac4ae9a576a672ed49c",
+    "bug-review.md": "73de93cf1c076e23176a6987b679a29c58bc2937e59ff49fe1b01a0a67b48b31"
+  },
+  "publicationHeadBound": false
+}

@@ -1,0 +1,13 @@
+{
+  "section": "RQYox",
+  "name": "Native implementation / Shared Click volume / M3.11",
+  "penSha256": "c3c42bbd7b2fc1cb35813c96fca9edc52d4d6bff147a434cbbea3298604baf64",
+  "layout": "Final MCP bounds inspection: no clipped descendants. First immediate render was before layout settled; final screenshot inspected.",
+  "nativeUI": "Restarted running dev app; one Click destination under Outputs; new External button values both100%; saved Held199%, changed draft to1%, Cancel restored199%. No actual appliance halt or physical controller claim.",
+  "screenshots": {
+    "test/screenshots/goldens/click_recovery_power_off.png": "0d98a565abee2fc9740f9f891b886d00738ec7c8062f02756c9150fa958fe29a",
+    "test/screenshots/goldens/external_pedals_click_held_released.png": "8456c95501383cbab71a763a196a36f8aedbb41672f6fa4891bcbc28726f5781",
+    "test/screenshots/goldens/midi_controls_click_destination.png": "c40ba2d388500529a4307734a227fd6512a39ea8b385adc6bb10dca9014077c0",
+    "test/screenshots/goldens/midi_controls_click_range.png": "c96e834c46043360e182b079ed28653c7fa223aff5970cbcff6667fe533b9ae9"
+  }
+}

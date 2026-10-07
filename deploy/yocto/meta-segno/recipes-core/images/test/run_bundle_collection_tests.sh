@@ -52,6 +52,7 @@ for machine, state in cases:
             assert json.loads((output / "manifest.json").read_text()) == {
                 "version": version, "bundle": name, "channel": "experimental",
                 "sha256": hashlib.sha256(payload).hexdigest(),
+                "size": len(payload),
             }
         else:
             assert result.returncode != 0, (state, "stale bundle accepted")

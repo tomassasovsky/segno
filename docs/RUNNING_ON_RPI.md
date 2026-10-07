@@ -45,20 +45,27 @@ GPIO and not `dtoverlay=gpio-shutdown`. The kernel exposes it as `gpio-keys`
 `KEY_POWER` on the input device named `pwr_button`.
 
 - **Short press.** The appliance app grabs that node (`EVIOCGRAB`) so Weston
-  does not also see `XF86PowerOff`. Empty console: skip confirm, show the
-  Plymouth lockup on every live display, darken the pedal, then
-  `segno-update-ctl poweroff` (`systemctl start poweroff.target` — this image
-  has no logind). Loops in RAM and idle: Save & power off / Power off without
-  saving / Keep playing. A take in flight (record, overdub, count-in,
-  punch-tail, performance capture): Keep playing only — stop the take, then
-  press again. A second press while that UI is up is ignored.
+  does not also see `XF86PowerOff`. Every press opens Power options (the same
+  card as Settings' Power row): "Playback will stop and your session will be
+  saved", the session name, and Cancel / Restart / Shut down. Both actions run
+  one path: stop the transport, flush settings, save the session (Save As
+  first if it has no name), wait for storage leases, then `segno-update-ctl
+  reboot` or `poweroff` (`systemctl start poweroff.target` — this image has no
+  logind), showing "Restarting" or "Safe to switch off" and darkening the
+  pedal. A failed save keeps Segno on ("Segno is staying on": Stay on /
+  Retry); there is no way to halt without saving. With an update staged, the
+  card says it installs during the restart, and Updates' Install and restart
+  goes through the same path. A take or transfer in flight (record, overdub,
+  count-in, punch-tail, performance capture, USB copy or eject): Keep playing
+  only — stop the take, then press again. A second press while that UI is up
+  is ignored.
 - **Long press (~5 s).** The PMIC's uninterceptable force-off. Use it if the
   UI is wedged. It does not flush, save, or show goodbye.
 
 A missing `pwr_button` node (dev image without the DT overlay): the app runs
 and the listener stays idle; long-press still force-offs.
 
-## Control Center (WiFi / Bluetooth / brightness)
+## Control Center (WiFi / brightness)
 
 Swipe down the settings tray on the main touchscreen. On the Yocto appliance
 these tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
@@ -66,7 +73,6 @@ these tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
 | Helper | Role |
 |--------|------|
 | `/usr/bin/segno-wifi-ctl` | scan / join / disconnect / forget (`nmcli` / NetworkManager) |
-| `/usr/bin/segno-bt-ctl` | scan + discoverable / advertise (`bluetoothctl`) |
 | `/usr/bin/segno-brightness-ctl` | DDC/CI brightness via `ddcutil` VCP 0x10 |
 | `/usr/bin/segno-touch-ctl` | touchscreen calibration matrix (`status` / `get` / `set` / `reset`) |
 
@@ -82,15 +88,9 @@ images announced the board name, e.g. `raspberrypi5`).
 # WiFi
 segno-wifi-ctl status
 segno-wifi-ctl scan
-segno-wifi-ctl connect 'YourSSID' 'your-psk'
+printf '%s\n' 'your-psk' | segno-wifi-ctl connect 'YourSSID'   # key on stdin, never argv
 ip -4 addr show wlan0
 segno-wifi-ctl disconnect
-
-# Bluetooth (discoverable from a phone; pairing not implemented yet)
-segno-bt-ctl status
-segno-bt-ctl discoverable on
-segno-bt-ctl advertise on
-segno-bt-ctl scan
 
 # Brightness (needs a DDC/CI-capable HDMI panel)
 segno-brightness-ctl supported
@@ -99,9 +99,9 @@ segno-brightness-ctl set 40
 segno-brightness-ctl set 80
 ```
 
-In the app: open the tray → WiFi (join a network) → Bluetooth (toggle
-discoverable / broadcast, run a scan) → drag brightness and confirm the panel
-dims. If `supported` is false for brightness, the slider still persists but
+In the app: Settings → Network (join a network) → Displays (drag brightness
+and confirm the panel dims). Bluetooth is retired (#1199): the image ships no
+BlueZ. If `supported` is false for brightness, the slider still persists but
 does not change the panel — note that for a gamma follow-up.
 
 ## Touchscreen calibration

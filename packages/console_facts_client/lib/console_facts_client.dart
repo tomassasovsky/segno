@@ -3,12 +3,21 @@
 library;
 
 export 'src/console_facts_client.dart' show ConsoleFactsClient;
-export 'src/console_facts_models.dart' show ConsoleFacts, StorageUsage;
+export 'src/console_facts_models.dart'
+    show ConsoleBoardFlash, ConsoleFacts, StorageUsage;
 export 'src/create_console_facts_client.dart'
     show createConsoleFactsClient, kFakeConsoleFacts;
 export 'src/directory_size.dart' show directorySizeBytes;
 export 'src/fake_console_facts_client.dart' show FakeConsoleFactsClient;
 export 'src/local_console_facts_client.dart'
-    show DiskSpace, LocalConsoleFactsClient, parseDfKP;
+    show
+        DiskSpace,
+        LocalConsoleFactsClient,
+        edidMonitorName,
+        kBuildVersionPath,
+        kConsoleBoardRecordPath,
+        kDrmPath,
+        kRetiredBluetoothState,
+        kSerialNumberPath;
 export 'src/unsupported_console_facts_client.dart'
     show UnsupportedConsoleFactsClient;

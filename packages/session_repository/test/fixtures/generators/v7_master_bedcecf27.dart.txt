@@ -1,0 +1,172 @@
+// Fixture generator for #1196: writes real schema-v7 session bundles with
+// master's own save path (native engine, LooperRepository, chainsFromLooper,
+// SessionRepository.save, PedalBindingSet.encode). Not part of master.
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
+import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/pedal_binding.dart';
+import 'package:segno/control/binding/pedal_binding_set.dart';
+import 'package:segno/session/session_mapping.dart';
+import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
+import 'package:session_repository/session_repository.dart';
+
+void main() {
+  final out = Platform.environment['FIXTURE_OUT']!;
+  late PumpedNativeEngine engine;
+  late LooperRepository looper;
+  late SessionRepository session;
+  Timer? pumpDriver;
+
+  setUp(() {
+    engine = PumpedNativeEngine();
+    looper = LooperRepository(engine: engine)
+      ..startEngine(
+        const EngineConfig(
+          sampleRate: 48000,
+          inputChannels: 2,
+          outputChannels: 2,
+          maxLoopFrames: 48000,
+        ),
+      );
+    session = SessionRepository(engine: engine);
+    pumpDriver = Timer.periodic(
+      const Duration(milliseconds: 1),
+      (_) => engine.pump(frames: 0),
+    );
+  });
+
+  tearDown(() async {
+    pumpDriver?.cancel();
+    await looper.dispose();
+  });
+
+  void take(int channel, int frames, double input) {
+    looper.record(channel: channel);
+    engine.pump(frames: frames, input: input);
+    looper.record(channel: channel);
+    engine.pump(frames: 0);
+  }
+
+  void overdub(int channel, int frames, double input) {
+    looper.record(channel: channel);
+    engine.pump(frames: frames, input: input);
+    looper.record(channel: channel);
+    engine.pump(frames: 2048);
+  }
+
+  test('v7 full session', () async {
+    looper
+      ..setSyncTempo(on: false)
+      ..setTimeSignature(3, 4)
+      ..setLooperMode(LooperMode.sync)
+      ..crownPrimary(channel: 0)
+      // Track 0: two lanes, an overdub (one undo layer).
+      ..setLaneCount(channel: 0, count: 2)
+      ..setLaneInput(channel: 0, lane: 1, inputChannel: 1);
+    engine.pump(frames: 0);
+    take(0, 2400, 0.25);
+    overdub(0, 2400, 0.125);
+    // Track 1: twice the base loop, then muted and turned down.
+    take(1, 4800, 0.5);
+    // Track 2: a take whose last overdub is undone (one redo layer).
+    take(2, 2400, 0.75);
+    overdub(2, 2400, 0.0625);
+    looper.undo(channel: 2);
+    engine.pump(frames: 2048);
+    looper
+      ..setLaneVolume(0.5, channel: 1, lane: 0)
+      ..setLaneMute(muted: true, channel: 1, lane: 0)
+      ..setLaneOutput(channel: 0, lane: 1, mask: 0x1)
+      ..setLaneVolume(1.5, channel: 0, lane: 1)
+      ..setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.delay,
+            params: const [0.3, 0.4, 0.5, 0],
+          ),
+          BuiltInEffect(type: TrackEffectType.reverb),
+        ],
+      )
+      ..setLaneChainEnabled(channel: 0, lane: 1, enabled: false)
+      ..setLaneEffects(
+        channel: 0,
+        lane: 1,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      )
+      ..setTrackEffects(
+        channel: 1,
+        effects: [BuiltInEffect(type: TrackEffectType.tremolo)],
+      )
+      ..setMasterEffects(
+        effects: [BuiltInEffect(type: TrackEffectType.filter)],
+      )
+      ..setMonitorInputMode(input: 0, mode: MonitorMode.auto)
+      ..setMonitorOutput(input: 0, mask: 0x3)
+      ..setMonitorVolume(input: 0, volume: 1.5)
+      ..setMonitorEffects(
+        input: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.echo)],
+      )
+      ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
+      ..setMonitorOutput(input: 1, mask: 0x2)
+      ..setMonitorVolume(input: 1, volume: 0.75)
+      ..setMonitorMute(input: 1, muted: true)
+      ..setTempo(100)
+      ..setTimeSignature(3, 4)
+      ..setQuantizeDiv(GridDivision.bar)
+      ..setClickMode(ClickMode.rec)
+      ..setClickOutput(0x2)
+      ..setClickVolume(0.8)
+      ..setCountIn(2)
+      ..crownPrimary(channel: 0)
+      ..setOneShot(channel: 2, oneShot: true)
+      ..setOneShot(channel: 5, oneShot: true)
+      ..setTrackLengthPreset(channel: 1, bars: 2);
+    engine.pump(frames: 256);
+
+    final bindings = PedalBindingSet([
+      PedalBinding(
+        key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+        target: const FxChainTarget(
+          FxAddress(stage: FxStage.loop, lane: 0),
+        ).canonicalString(),
+      ),
+      PedalBinding(
+        key: const PedalBindingKey(button: PedalButton.track2, bank: 0),
+        target: const FxChainTarget(
+          FxAddress(stage: FxStage.master),
+        ).canonicalString(),
+        behavior: BindingBehavior.momentary,
+      ),
+    ]).encode();
+
+    final dir = '$out/v7_master_full';
+    final saved = await session.save(
+      dir,
+      chains: chainsFromLooper(looper),
+      pedalBindings: bindings,
+    );
+    // ignore: avoid_print
+    print(saved.toJson());
+  });
+
+  test('v7 settings-only session', () async {
+    looper
+      ..setLaneEffects(
+        channel: 3,
+        lane: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.octaver)],
+      )
+      ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
+      ..setOneShot(channel: 4, oneShot: true);
+    engine.pump(frames: 0);
+    final dir = '$out/v7_master_empty';
+    await session.save(dir, chains: chainsFromLooper(looper));
+  });
+}

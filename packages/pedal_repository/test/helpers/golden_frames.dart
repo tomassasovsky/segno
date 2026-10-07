@@ -33,6 +33,24 @@ Map<String, PedalLinkMessage> _enumPins() {
 
 final goldenMessages = <String, PedalLinkMessage>{
   ..._enumPins(),
+  'physical_hues_mask': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      mode: PedalMode.custom,
+      pedalColors: const [
+        PedalColor(0, 128, 255),
+        PedalColor(165, 1, 2),
+        PedalColor(3, 4, 5),
+        PedalColor(6, 7, 8),
+        PedalColor(9, 10, 11),
+        PedalColor(12, 13, 14),
+        PedalColor(15, 16, 17),
+        PedalColor(18, 19, 20),
+        PedalColor(21, 22, 23),
+        PedalColor(254, 253, 252),
+      ],
+      activeButtonMask: 0x201,
+    ),
+  ),
   'blank_goodbye': StateMessage(PedalStateFrame.blank(goodbye: true)),
   'idle_rec': StateMessage(
     PedalStateFrame.blank().copyWith(globalColor: GlobalColor.green),
@@ -119,10 +137,35 @@ final goldenMessages = <String, PedalLinkMessage>{
       looperMode: PedalLooperMode.free,
     ),
   ),
+  'custom_mode_bankb': StateMessage(
+    PedalStateFrame(
+      globalColor: GlobalColor.amber,
+      trackLeds: const [
+        PedalTrackLed.green,
+        PedalTrackLed.red,
+        PedalTrackLed.off,
+        PedalTrackLed.blue,
+        PedalTrackLed.off,
+        PedalTrackLed.blue,
+        PedalTrackLed.off,
+        PedalTrackLed.green,
+      ],
+      activeBank: 1,
+      selectedTrack: 5,
+      mode: PedalMode.custom,
+      loopLengthMicros: 1234567,
+      clearFadeActive: false,
+      masterGain: 128 / 255,
+      looperMode: PedalLooperMode.band,
+      countingIn: true,
+    ),
+  ),
   'button_track3_down': const ButtonMessage(PedalButton.track3, pressed: true),
   'button_bank_up': const ButtonMessage(PedalButton.bank, pressed: false),
   'encoder_plus1': const EncoderMessage(1),
   'encoder_minus3': const EncoderMessage(-3),
+  'encoder_button_down': const EncoderButtonMessage(pressed: true),
+  'encoder_button_up': const EncoderButtonMessage(pressed: false),
   'ctrl1_switch_down': const CtrlMessage(
     jack: PedalCtrlJack.ctrl1,
     kind: PedalCtrlKind.switchPedal,

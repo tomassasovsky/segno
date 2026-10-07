@@ -3,9 +3,43 @@ import 'dart:typed_data';
 import 'package:segno_engine/segno_engine.dart';
 
 /// A controllable in-memory [AudioEngine] for repository tests.
-class FakeAudioEngine implements AudioEngine {
+class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
+  // The audition voice (#1178): inert here.
+  @override
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async => const AuditionStart(result: EngineResult.ok);
+
+  @override
+  EngineResult auditionStop() => EngineResult.ok;
+
+  @override
+  AuditionState auditionState() => const AuditionState();
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async =>
+      null;
+
   /// Snapshot returned by [snapshot] (mutate between ticks in tests).
-  EngineSnapshot nextSnapshot = const EngineSnapshot.initial();
+  EngineSnapshot _nextSnapshot = const EngineSnapshot.initial().copyWith(
+    tracks: List.generate(8, (_) => const TrackSnapshot.empty()),
+  );
+  EngineSnapshot get nextSnapshot => _nextSnapshot;
+  set nextSnapshot(EngineSnapshot value) {
+    _nextSnapshot = value;
+    publishedMode = null;
+  }
+
+  LooperMode? publishedMode;
+  bool commandsAreSettled = true;
+  bool publishClickCommands = true;
+  bool publishClickModeCommands = true;
+  bool publishRecordStartCommands = true;
+  bool publishLengthCommands = true;
+  bool publishModeCommands = true;
+  final Map<int, int> publishedLengths = {};
 
   /// Device name reported by [deviceName].
   String deviceNameValue = 'Fake Device';
@@ -30,6 +64,23 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult start(EngineConfig config) {
     lastConfig = config;
     calls.add('start');
+    if (startResult.isOk) {
+      _nextSnapshot = _nextSnapshot.copyWith(
+        clickModeRevision: 0,
+        clickModeResult: 0,
+        recordStartRevision: 0,
+        recordStartResult: 0,
+      );
+      pendingMix = null;
+      pendingImages.clear();
+      imageRevisions.clear();
+      mixRevision = 0;
+      liveMix.clear();
+      sourceImages.clear();
+      recipes.clear();
+      recipeRevisions.clear();
+      pendingRecipeRevisions.clear();
+    }
     return startResult;
   }
 
@@ -39,14 +90,43 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Result returned by [reopen].
+  ReopenResult reopenResult = (
+    result: EngineResult.ok,
+    outcome: ReopenOutcome.retained,
+    droppedTracks: 0,
+  );
+
+  @override
+  ReopenResult reopen(EngineConfig config) {
+    lastConfig = config;
+    calls.add('reopen');
+    return reopenResult;
+  }
+
   /// How many times [snapshot] was called — the FFI walk a periodic reader
   /// must not pay per tick.
   int snapshotCalls = 0;
 
   @override
+  bool get commandsSettled =>
+      commandsAreSettled && pendingRecipeRevisions.isEmpty;
+
+  /// Runs after every [snapshot] read — lets a test change [nextSnapshot]
+  /// between two consecutive reads (the state moved under a caller).
+  void Function()? afterSnapshot;
+
+  @override
   EngineSnapshot snapshot() {
     snapshotCalls++;
-    return nextSnapshot;
+    final result = _LengthSnapshot(
+      nextSnapshot,
+      publishedLengths,
+      publishedMode,
+      this,
+    );
+    afterSnapshot?.call();
+    return result;
   }
 
   @override
@@ -91,11 +171,256 @@ class FakeAudioEngine implements AudioEngine {
   /// Last channel seen by a channel-scoped command.
   int? lastChannel;
 
+  EngineResult mixResult = EngineResult.ok;
+  EngineResult recordResult = EngineResult.ok;
+  bool publishMixCommands = true;
+  bool publishRecordImages = true;
+  int mixRevision = 0;
+  final Map<(int, int), StereoMix> liveMix = {};
+  final Map<(int, int), StereoMix> sourceImages = {};
+  void composeLane((int, int) key) {
+    final live = liveMix[key] ?? (gain: 1.0, pan: 0.0);
+    final source = sourceImages[key] ?? (gain: 1.0, pan: 0.0);
+    laneVol[key] = live.gain * source.gain;
+    lanePan[key] = (live.pan + source.pan).clamp(-1.0, 1.0);
+  }
+
+  final Map<int, double> trackLevels = {};
+  EngineMixSettings? pendingMix;
+  final Map<int, RecordImage> pendingImages = {};
+  RecordImage? lastRecordImage;
+  final Map<int, int> imageRevisions = {};
+
+  /// What [toggleFade], [toggleReverse] and [editLength] admit (refused by
+  /// default) and the receipt an admitted request answers later.
+  EngineResult editAdmission = EngineResult.invalid;
+  EngineResult editResult = EngineResult.ok;
+
+  /// Every admitted Fade toggle, Reverse toggle and length edit, in order.
+  final List<({String kind, int channel, Object? value})> editCalls = [];
+
+  /// Requests whose receipt the callback has not answered yet: they read as
+  /// unsettled until [answerWithheld] releases them.
+  final Set<int> withheldRequests = {};
+
+  /// Whether new admissions are withheld (see [withheldRequests]).
+  bool withholdReceipts = false;
+
+  /// Answers every withheld request with its queued result.
+  void answerWithheld() => withheldRequests.clear();
+
+  RequestAdmission _admitEdit(String kind, int channel, Object? value) {
+    if (!editAdmission.isOk) return (result: editAdmission, request: 0);
+    editCalls.add((kind: kind, channel: channel, value: value));
+    final request = ++_fadeRequest;
+    _fadeResults[request] = editResult;
+    if (withholdReceipts) withheldRequests.add(request);
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission toggleFade({
+    required int channel,
+    required double seconds,
+  }) => _admitEdit('fade', channel, seconds);
+
+  final Map<int, FadeImage> installedFades = {};
+  final Map<int, EngineResult> _fadeResults = {};
+  int _fadeRequest = 0;
+
+  @override
+  RequestAdmission installFade({
+    required int channel,
+    required FadeImage image,
+  }) {
+    installedFades[channel] = image;
+    final request = ++_fadeRequest;
+    _fadeResults[request] = EngineResult.ok;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission toggleReverse({required int channel}) =>
+      _admitEdit('reverse', channel, null);
+
+  /// Directions accepted by [installReverse], keyed by channel; the next
+  /// [commitSession] publishes them, and a clear drops them with the material.
+  final Map<int, bool> installedReverses = {};
+
+  /// Result [installReverse] admits with; `ok` posts and settles a receipt.
+  EngineResult installReverseResult = EngineResult.ok;
+
+  @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) => _admitEdit('length', channel, edit);
+
+  @override
+  RequestAdmission installReverse({
+    required int channel,
+    required bool reversed,
+  }) {
+    if (!installReverseResult.isOk) {
+      return (result: installReverseResult, request: 0);
+    }
+    installedReverses[channel] = reversed;
+    final request = ++_fadeRequest;
+    _fadeResults[request] = EngineResult.ok;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  /// What [setSpeed] admits and the receipt it answers later (#1179).
+  EngineResult speedAdmission = EngineResult.ok;
+  EngineResult speedResult = EngineResult.ok;
+
+  /// The last factor [setSpeed] admitted.
+  SpeedFactor? lastSpeed;
+
+  @override
+  RequestAdmission setSpeed(SpeedFactor factor) {
+    if (!speedAdmission.isOk) return (result: speedAdmission, request: 0);
+    lastSpeed = factor;
+    final request = ++_fadeRequest;
+    _fadeResults[request] = speedResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  /// What the Transpose requests admit and the receipt they answer later
+  /// (#1179).
+  EngineResult transposeAdmission = EngineResult.ok;
+  EngineResult transposeResult = EngineResult.ok;
+
+  /// The last Transpose step, install and bypass admitted.
+  ({int channel, int delta})? lastTransposeStep;
+  ({int channel, int semitones})? lastTransposeInstall;
+  bool? lastTransposeBypass;
+
+  RequestAdmission _admitTranspose(void Function() record) {
+    if (!transposeAdmission.isOk) {
+      return (result: transposeAdmission, request: 0);
+    }
+    record();
+    final request = ++_fadeRequest;
+    _fadeResults[request] = transposeResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      _admitTranspose(
+        () => lastTransposeStep = (channel: channel, delta: delta),
+      );
+
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => _admitTranspose(
+    () => lastTransposeInstall = (channel: channel, semitones: semitones),
+  );
+
+  /// What the Follow tempo and Pitch settings admit and the receipt each
+  /// answers later (#1179), and every admitted call, in order.
+  EngineResult settingAdmission = EngineResult.ok;
+  EngineResult settingResult = EngineResult.ok;
+  final List<({String kind, int? channel, Object? value})> settingCalls = [];
+
+  RequestAdmission _admitSetting(String kind, int? channel, Object? value) {
+    if (!settingAdmission.isOk) return (result: settingAdmission, request: 0);
+    settingCalls.add((kind: kind, channel: channel, value: value));
+    final request = ++_fadeRequest;
+    _fadeResults[request] = settingResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) =>
+      _admitSetting('follow', channel, follow);
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) =>
+      _admitSetting('pitch', channel, mode);
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) =>
+      _admitTranspose(() => lastTransposeBypass = bypassed);
+
+  @override
+  EngineResult? readRequestResult(int request) =>
+      withheldRequests.contains(request) ? null : _fadeResults.remove(request);
+
+  @override
+  EngineResult setMix(EngineMixSettings settings) {
+    calls.add('setMix');
+    if (!settings.isValid) return EngineResult.invalid;
+    if (!mixResult.isOk) return mixResult;
+    pendingMix = settings;
+    if (publishMixCommands) publishMix();
+    return EngineResult.ok;
+  }
+
+  void publishMix() {
+    final settings = pendingMix;
+    if (settings == null) return;
+    laneInput.addAll(settings.laneInputs);
+    laneOutput.addAll(settings.laneOutputs);
+    laneCount.addAll(settings.laneCounts);
+    liveMix.addAll(settings.lanes);
+    sourceImages.addAll(settings.images);
+    <(int, int)>{
+      ...settings.lanes.keys,
+      ...settings.images.keys,
+    }.forEach(composeLane);
+    for (final e in settings.monitors.entries) {
+      monitorVolume[e.key] = e.value.gain;
+      monitorPan[e.key] = e.value.pan;
+    }
+    inputTrim.addAll(settings.trims);
+    trackSolo.addAll(settings.solos);
+    trackLevels.addAll(settings.trackLevels);
+    for (final e in settings.outputs.entries) {
+      outputLevel[e.key] = e.value.level;
+      outputMuted[e.key] = e.value.muted;
+      outputMono[e.key] = e.value.mono;
+      outputBalance[e.key] = e.value.balance;
+    }
+    mixRevision = settings.revision;
+    pendingMix = null;
+  }
+
+  @override
+  EngineResult recordWithImage(RecordImage image, {int channel = 0}) {
+    lastRecordImage = image;
+    final result = record(channel: channel);
+    if (!result.isOk) return result;
+    pendingImages[channel] = image;
+    if (publishRecordImages) publishImage(channel);
+    return EngineResult.ok;
+  }
+
+  void publishImage(int channel) {
+    final image = pendingImages.remove(channel);
+    if (image == null) return;
+    // The native capture start force-unmutes every lane on the track.
+    for (final key in laneMute.keys.where((key) => key.$1 == channel)) {
+      laneMute[key] = false;
+    }
+    for (final e in image.lanes.entries) {
+      sourceImages[(channel, e.key)] = e.value;
+      composeLane((channel, e.key));
+    }
+    for (final e in image.laneFx.entries) {
+      recipes[(FxOwner.lane, channel, e.key)] = e.value;
+    }
+    imageRevisions[channel] = image.revision;
+  }
+
   @override
   EngineResult record({int channel = 0}) {
     lastChannel = channel;
     calls.add('record');
-    return EngineResult.ok;
+    return recordResult;
   }
 
   @override
@@ -116,6 +441,21 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult clear({int channel = 0}) {
     lastChannel = channel;
     calls.add('clear');
+    installedReverses.remove(channel);
+    if (importedTracks.remove(channel) != null) {
+      importedLanes.removeWhere((key, _) => key.$1 == channel);
+      importedLayers.removeWhere((key, _) => key.$1 == channel);
+      finalizedHistory.remove(channel);
+      finalizedLengths.remove(channel);
+      final tracks = [..._nextSnapshot.tracks];
+      tracks[channel] = const TrackSnapshot.empty();
+      _nextSnapshot = _nextSnapshot.copyWith(
+        tracks: tracks,
+        masterLengthFrames: importedTracks.isEmpty
+            ? 0
+            : _nextSnapshot.masterLengthFrames,
+      );
+    }
     return EngineResult.ok;
   }
 
@@ -123,32 +463,86 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult clearUndoable({int channel = 0}) {
     lastChannel = channel;
     calls.add('clearUndoable');
-    return EngineResult.ok;
+    return nextClearUndoableResult;
   }
+
+  EngineResult nextClearUndoableResult = EngineResult.ok;
 
   /// What the next [undo] would do. Tests set this to stand in for the engine's
   /// restore-point bookkeeping, which the real engine owns.
   bool undoRestoresClearResult = false;
 
+  /// Per-channel override of [undoRestoresClearResult]: when set, only these
+  /// channels restore a clear on their next undo.
+  Set<int>? undoRestoresClearChannels;
+
+  /// The channels whose next redo re-applies a clear.
+  Set<int> redoReclearsChannels = {};
+
+  /// The channels whose frozen restore point is still to be filed.
+  Set<int> clearRestorePendingChannels = {};
+
+  /// Result returned by the history preflight until a test changes it.
+  EngineResult nextHistoryModeGate = EngineResult.ok;
+
+  /// Ordered history preflights, retaining the full group mask and direction.
+  final List<({int channels, bool redo})> historyModeGateCalls = [];
+
+  /// Result returned by [undo] until a test changes it.
+  EngineResult nextUndoResult = EngineResult.ok;
+
+  /// Result returned by [redo] until a test changes it.
+  EngineResult nextRedoResult = EngineResult.ok;
+
+  /// What the next [peel] returns.
+  EngineResult nextPeelResult = EngineResult.ok;
+
+  @override
+  EngineResult historyModeGate({required int channels, required bool redo}) {
+    calls.add('historyModeGate');
+    historyModeGateCalls.add((channels: channels, redo: redo));
+    return nextHistoryModeGate;
+  }
+
+  @override
+  bool clearRestorePending({int channel = 0}) =>
+      clearRestorePendingChannels.contains(channel);
+
+  @override
+  bool redoReclears({int channel = 0}) {
+    calls.add('redoReclears');
+    return redoReclearsChannels.contains(channel);
+  }
+
   @override
   bool undoRestoresClear({int channel = 0}) {
     lastChannel = channel;
     calls.add('undoRestoresClear');
-    return undoRestoresClearResult;
+    final channels = undoRestoresClearChannels;
+    return channels == null
+        ? undoRestoresClearResult
+        : channels.contains(channel);
   }
 
   @override
   EngineResult undo({int channel = 0}) {
     lastChannel = channel;
     calls.add('undo');
-    return EngineResult.ok;
+    return nextUndoResult;
   }
 
   @override
   EngineResult redo({int channel = 0}) {
     lastChannel = channel;
     calls.add('redo');
-    return EngineResult.ok;
+    return nextRedoResult;
+  }
+
+  @override
+  EngineResult peel({int channel = 0}) {
+    lastChannel = channel;
+    calls.add('peel');
+    return nextPeelResult;
   }
 
   /// Per-channel active lane count passed to [setLaneCount].
@@ -186,6 +580,104 @@ class FakeAudioEngine implements AudioEngine {
     lastMuted = muted;
     lastChannel = channel;
     calls.add('setLaneMute');
+    return EngineResult.ok;
+  }
+
+  /// Per-(channel, lane) pan passed to [setLanePan].
+  final Map<(int, int), double> lanePan = {};
+
+  @override
+  EngineResult setLanePan({
+    required double pan,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    lanePan[(channel, lane)] = pan;
+    calls.add('setLanePan');
+    return EngineResult.ok;
+  }
+
+  /// Per-track solo passed to [setTrackSolo].
+  final Map<int, bool> trackSolo = {};
+
+  @override
+  EngineResult setTrackSolo({required int channel, required bool solo}) {
+    trackSolo[channel] = solo;
+    calls.add('setTrackSolo');
+    return EngineResult.ok;
+  }
+
+  /// Per-input capture trim passed to [setInputTrim].
+  final Map<int, double> inputTrim = {};
+
+  @override
+  EngineResult setInputTrim({required int input, required double gain}) {
+    inputTrim[input] = gain;
+    calls.add('setInputTrim');
+    return EngineResult.ok;
+  }
+
+  /// Per-bus facts passed to the output setters (slice 3b).
+  final Map<int, double> outputLevel = {};
+  final Map<int, bool> outputMuted = {};
+  final Map<int, bool> outputMono = {};
+  final Map<int, double> outputBalance = {};
+
+  /// How many times [cutSound] ran.
+  int cutSoundCalls = 0;
+
+  /// The last policy passed to [setPerfFollowOutput].
+  bool? perfFollowOutput;
+
+  @override
+  EngineResult setOutputLevel({required int bus, required double level}) {
+    outputLevel[bus] = level;
+    calls.add('setOutputLevel');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMute({required int bus, required bool muted}) {
+    outputMuted[bus] = muted;
+    calls.add('setOutputMute');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMono({required int bus, required bool mono}) {
+    outputMono[bus] = mono;
+    calls.add('setOutputMono');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputBalance({required int bus, required double balance}) {
+    outputBalance[bus] = balance;
+    calls.add('setOutputBalance');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult cutSound() {
+    cutSoundCalls++;
+    calls.add('cutSound');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setPerfFollowOutput({required bool follow}) {
+    perfFollowOutput = follow;
+    calls.add('setPerfFollowOutput');
+    return EngineResult.ok;
+  }
+
+  /// Per-input monitor pan passed to [setMonitorInputPan].
+  final Map<int, double> monitorPan = {};
+
+  @override
+  EngineResult setMonitorInputPan({required int input, required double pan}) {
+    monitorPan[input] = pan;
+    calls.add('setMonitorInputPan');
     return EngineResult.ok;
   }
 
@@ -230,22 +722,45 @@ class FakeAudioEngine implements AudioEngine {
 
   bool? lastQuantize;
 
+  final Map<int, bool?> trackQuantize = {};
+
+  /// Per-track division overrides passed to [setRecordTimingSettings].
+  final Map<int, GridDivision?> trackQuantizeDiv = {};
+
+  bool publishTimingCommands = true;
+  int recordTimingRevision = 0;
+  int recordTimingResult = 0;
   @override
-  EngineResult setQuantize({required bool enabled}) {
-    lastQuantize = enabled;
-    calls.add('setQuantize');
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
+  }) {
+    calls.add('setRecordTimingSettings');
+    recordTimingRevision = (recordTimingRevision + 2) & 0xffffffff;
+    recordTimingResult = publishTimingCommands ? 0 : -1;
+    if (publishTimingCommands) {
+      lastQuantize = defaultTiming.quantize;
+      lastQuantizeDiv = rememberedDivision;
+      for (var c = 0; c < 8; c++) {
+        trackQuantize[c] = trackOverrides[c]?.quantize;
+        trackQuantizeDiv[c] = trackOverrides[c]?.division;
+      }
+    }
     return EngineResult.ok;
   }
 
-  final Map<int, bool?> trackQuantize = {};
+  /// Per-track feedback overrides passed to [setTrackOverdubFeedback].
+  final Map<int, double?> trackOverdubFeedback = {};
 
   @override
-  EngineResult setTrackQuantize({
+  EngineResult setTrackOverdubFeedback({
     required int channel,
-    required bool? enabled,
+    required double? feedback,
   }) {
-    trackQuantize[channel] = enabled;
-    calls.add('setTrackQuantize');
+    trackOverdubFeedback[channel] = feedback;
+    calls.add('setTrackOverdubFeedback');
     return EngineResult.ok;
   }
 
@@ -283,13 +798,6 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  @override
-  EngineResult setAutoRecord({required bool enabled}) {
-    lastAutoRecord = enabled;
-    calls.add('setAutoRecord');
-    return EngineResult.ok;
-  }
-
   // ---- TempoControl ----
 
   double? lastTempoBpm;
@@ -300,6 +808,19 @@ class FakeAudioEngine implements AudioEngine {
   int? lastClickOutput;
   double? lastClickVolume;
   int? lastCountIn;
+
+  /// Exact session tempo restores in call order.
+  final List<({double bpm, TempoSource source})> tempoRestores = [];
+
+  @override
+  EngineResult restoreTempo({
+    required double bpm,
+    required TempoSource source,
+  }) {
+    tempoRestores.add((bpm: bpm, source: source));
+    calls.add('restoreTempo');
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult setTempo(double bpm) {
@@ -329,16 +850,16 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setQuantizeDiv(GridDivision div) {
-    lastQuantizeDiv = div;
-    calls.add('setQuantizeDiv');
-    return EngineResult.ok;
-  }
-
-  @override
   EngineResult setClickMode(ClickMode mode) {
     lastClickMode = mode;
     calls.add('setClickMode');
+    if (publishClickModeCommands) {
+      _nextSnapshot = _nextSnapshot.copyWith(
+        clickMode: mode,
+        clickModeRevision: (_nextSnapshot.clickModeRevision + 1) & 0xffffffff,
+        clickModeResult: 0,
+      );
+    }
     return EngineResult.ok;
   }
 
@@ -349,17 +870,74 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  // The backing player (#1200) is not this fake's concern: every call is
+  // accepted and nothing is loaded.
+  @override
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item}) =>
+      EngineResult.ok;
+
+  @override
+  EngineResult backingClear() => EngineResult.ok;
+
+  @override
+  EngineResult backingTransport(BackingTransportOp op) => EngineResult.ok;
+
+  @override
+  EngineResult backingSeek(int frame) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingEnd(BackingEnd mode) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingOutput(int mask) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingLevel(double gain) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingPan(double pan) => EngineResult.ok;
+
+  @override
+  EngineResult setClickPan(double pan) => EngineResult.ok;
+
+  @override
+  BackingState backingState() => const BackingState();
+
   @override
   EngineResult setClickVolume(double volume) {
     lastClickVolume = volume;
+    if (publishClickCommands) {
+      nextSnapshot = nextSnapshot.copyWith(clickVolume: volume);
+    }
     calls.add('setClickVolume');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setCountIn(int bars) {
-    lastCountIn = bars;
-    calls.add('setCountIn');
+  EngineResult setRecordStartSettings({
+    required int countInBars,
+    required bool soundStart,
+    required RecordStartEditKind editKind,
+  }) {
+    lastCountIn = countInBars;
+    lastAutoRecord = soundStart;
+    calls.add('setRecordStartSettings');
+    if (publishRecordStartCommands) {
+      nextSnapshot = nextSnapshot.copyWith(
+        countInBars: countInBars,
+        autoRecord: soundStart,
+        recordStartRevision:
+            (_nextSnapshot.recordStartRevision + 1) & 0xffffffff,
+        recordStartResult: 0,
+      );
+    }
     return EngineResult.ok;
   }
 
@@ -369,6 +947,17 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult setTrackLengthPreset({required int channel, required int bars}) {
     trackLengthPreset[channel] = bars;
     calls.add('setTrackLengthPreset');
+    if (publishLengthCommands) publishedLengths[channel] = bars;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackLengthPresets(List<int> bars) {
+    calls.add('setTrackLengthPresets');
+    for (var channel = 0; channel < bars.length; channel++) {
+      trackLengthPreset[channel] = bars[channel];
+      if (publishLengthCommands) publishedLengths[channel] = bars[channel];
+    }
     return EngineResult.ok;
   }
 
@@ -376,11 +965,33 @@ class FakeAudioEngine implements AudioEngine {
 
   LooperMode? lastLooperMode;
 
+  /// What [looperModeGate] answers; tests set it to exercise a refusal.
+  LooperModeGate nextLooperModeGate = LooperModeGate.open;
+
+  @override
+  LooperModeGate looperModeGate(LooperMode mode) {
+    calls.add('looperModeGate');
+    return nextLooperModeGate;
+  }
+
   @override
   EngineResult setLooperMode(LooperMode mode) {
     lastLooperMode = mode;
     calls.add('setLooperMode');
-    return EngineResult.ok;
+    return switch (nextLooperModeGate) {
+      LooperModeGate.capturing ||
+      LooperModeGate.queued ||
+      LooperModeGate.spans => EngineResult.invalid,
+      LooperModeGate.open || LooperModeGate.playing => EngineResult.ok,
+    };
+  }
+
+  @override
+  EngineResult setLooperModeWithPresets(LooperMode mode, List<int> bars) {
+    final result = setLooperMode(mode);
+    if (!result.isOk) return result;
+    if (publishModeCommands) publishedMode = mode;
+    return setTrackLengthPresets(bars);
   }
 
   /// The last channel passed to [crownPrimary].
@@ -409,6 +1020,14 @@ class FakeAudioEngine implements AudioEngine {
   double? lastOverdubFeedback;
 
   @override
+  EngineResult setOneShotMask({required int channels, required bool oneShot}) {
+    for (var channel = 0; channel < 8; channel++) {
+      if ((channels & (1 << channel)) != 0) trackOneShot[channel] = oneShot;
+    }
+    return EngineResult.ok;
+  }
+
+  @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) {
     lastLimiterEnabled = enabled;
     lastLimiterCeiling = ceiling;
@@ -428,6 +1047,9 @@ class FakeAudioEngine implements AudioEngine {
 
   /// Per-(channel, lane) active chain length passed to [setLaneFxCount].
   final Map<(int, int), int> laneFxCount = {};
+
+  /// Per-(channel, lane) leading Pre run passed to [setLaneFxCount].
+  final Map<(int, int), int> laneFxPreCount = {};
 
   /// Per-(channel, lane, index, param) value passed to [setLaneFxParam].
   final Map<(int, int, int, int), double> laneFxParam = {};
@@ -457,6 +1079,7 @@ class FakeAudioEngine implements AudioEngine {
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   }) {
     // D-ENSEED's second half: a slot ENTERING the active window seeds
     // enabled, synchronously, like the engine's le_fx_seed_entering_slots.
@@ -464,6 +1087,11 @@ class FakeAudioEngine implements AudioEngine {
       laneFxEnabled[(channel, lane, s)] = true;
     }
     laneFxCount[(channel, lane)] = count;
+    // Clamped as the native setter clamps it, so a test asserting the pushed
+    // split reads what the engine would actually store.
+    laneFxPreCount[(channel, lane)] = preCount < 0
+        ? 0
+        : (preCount > count ? count : preCount);
     calls.add('setLaneFxCount');
     return EngineResult.ok;
   }
@@ -519,6 +1147,9 @@ class FakeAudioEngine implements AudioEngine {
   /// Per-channel active chain length passed to [setTrackFxCount].
   final Map<int, int> trackFxCount = {};
 
+  /// Per-channel leading Pre run passed to [setTrackFxCount].
+  final Map<int, int> trackFxPreCount = {};
+
   /// Per-(channel, index, param) value passed to [setTrackFxParam].
   final Map<(int, int, int), double> trackFxParam = {};
 
@@ -528,20 +1159,20 @@ class FakeAudioEngine implements AudioEngine {
   /// Per-channel flag passed to [setTrackFxChainEnabled].
   final Map<int, bool> trackFxChainEnabled = {};
 
-  /// Per-index effect type passed to [setMasterFx].
-  final Map<int, TrackEffectType> masterFx = {};
+  /// Per-(bus, index) effect type passed to [setOutputFx].
+  final Map<(int, int), TrackEffectType> outputFx = {};
 
-  /// Active chain length passed to [setMasterFxCount].
-  int? masterFxCount;
+  /// Per-bus active chain length passed to [setOutputFxCount].
+  final Map<int, int> outputFxCount = {};
 
-  /// Per-(index, param) value passed to [setMasterFxParam].
-  final Map<(int, int), double> masterFxParam = {};
+  /// Per-(bus, index, param) value passed to [setOutputFxParam].
+  final Map<(int, int, int), double> outputFxParam = {};
 
-  /// Per-index flag passed to [setMasterFxEnabled].
-  final Map<int, bool> masterFxEnabled = {};
+  /// Per-(bus, index) flag passed to [setOutputFxEnabled].
+  final Map<(int, int), bool> outputFxEnabled = {};
 
-  /// Flag passed to [setMasterFxChainEnabled].
-  bool? masterFxChainEnabled;
+  /// Per-bus flag passed to [setOutputFxChainEnabled].
+  final Map<int, bool> outputFxChainEnabled = {};
 
   @override
   EngineResult setTrackFx({
@@ -559,12 +1190,19 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setTrackFxCount({required int channel, required int count}) {
+  EngineResult setTrackFxCount({
+    required int channel,
+    required int count,
+    int preCount = 0,
+  }) {
     // D-ENSEED entering-slot seed — see [setLaneFxCount].
     for (var s = trackFxCount[channel] ?? 0; s < count; s++) {
       trackFxEnabled[(channel, s)] = true;
     }
     trackFxCount[channel] = count;
+    trackFxPreCount[channel] = preCount < 0
+        ? 0
+        : (preCount > count ? count : preCount);
     calls.add('setTrackFxCount');
     return EngineResult.ok;
   }
@@ -603,54 +1241,181 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setMasterFx({
+  OutputFxSnapshot outputFxSnapshot({required int bus}) =>
+      const OutputFxSnapshot();
+
+  @override
+  EngineResult setOutputFx({
+    required int bus,
     required int index,
     required TrackEffectType type,
   }) {
     // D-ENSEED re-seed on type change — see [setLaneFx].
-    if (masterFx[index] != type) {
-      masterFxEnabled[index] = true;
+    if (outputFx[(bus, index)] != type) {
+      outputFxEnabled[(bus, index)] = true;
     }
-    masterFx[index] = type;
-    calls.add('setMasterFx');
+    outputFx[(bus, index)] = type;
+    calls.add('setOutputFx');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMasterFxCount({required int count}) {
+  EngineResult setOutputFxCount({required int bus, required int count}) {
     // D-ENSEED entering-slot seed — see [setLaneFxCount].
-    for (var s = masterFxCount ?? 0; s < count; s++) {
-      masterFxEnabled[s] = true;
+    for (var s = outputFxCount[bus] ?? 0; s < count; s++) {
+      outputFxEnabled[(bus, s)] = true;
     }
-    masterFxCount = count;
-    calls.add('setMasterFxCount');
+    outputFxCount[bus] = count;
+    calls.add('setOutputFxCount');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMasterFxParam({
+  EngineResult setOutputFxParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   }) {
-    masterFxParam[(index, param)] = value;
-    calls.add('setMasterFxParam');
+    outputFxParam[(bus, index, param)] = value;
+    calls.add('setOutputFxParam');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMasterFxEnabled({required int index, required bool enabled}) {
-    masterFxEnabled[index] = enabled;
-    calls.add('setMasterFxEnabled');
+  EngineResult setOutputFxEnabled({
+    required int bus,
+    required int index,
+    required bool enabled,
+  }) {
+    outputFxEnabled[(bus, index)] = enabled;
+    calls.add('setOutputFxEnabled');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMasterFxChainEnabled({required bool enabled}) {
-    masterFxChainEnabled = enabled;
-    calls.add('setMasterFxChainEnabled');
+  EngineResult setOutputFxChainEnabled({
+    required int bus,
+    required bool enabled,
+  }) {
+    outputFxChainEnabled[bus] = enabled;
+    calls.add('setOutputFxChainEnabled');
     return EngineResult.ok;
   }
+
+  /// Chain entry types passed to [setAllTracksFx], by index.
+  final Map<int, TrackEffectType> allTracksFx = {};
+
+  /// The active chain length passed to [setAllTracksFxCount].
+  int allTracksFxCount = 0;
+
+  /// Params passed to [setAllTracksFxParam], by (index, param).
+  final Map<(int, int), double> allTracksFxParam = {};
+
+  /// Per-entry flags passed to [setAllTracksFxEnabled].
+  final Map<int, bool> allTracksFxEnabled = {};
+
+  /// The flag passed to [setAllTracksFxChainEnabled].
+  bool? allTracksFxChainEnabled;
+
+  @override
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  }) {
+    // D-ENSEED re-seed on type change — see [setLaneFx].
+    if (allTracksFx[index] != type) allTracksFxEnabled[index] = true;
+    allTracksFx[index] = type;
+    calls.add('setAllTracksFx');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxCount({required int count}) {
+    for (var s = allTracksFxCount; s < count; s++) {
+      allTracksFxEnabled[s] = true;
+    }
+    allTracksFxCount = count;
+    calls.add('setAllTracksFxCount');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    allTracksFxParam[(index, param)] = value;
+    calls.add('setAllTracksFxParam');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  }) {
+    allTracksFxEnabled[index] = enabled;
+    calls.add('setAllTracksFxEnabled');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxChainEnabled({required bool enabled}) {
+    allTracksFxChainEnabled = enabled;
+    calls.add('setAllTracksFxChainEnabled');
+    return EngineResult.ok;
+  }
+
+  /// Per-(channel, lane, index) channel handling passed to
+  /// [setLaneFxChannels].
+  final Map<(int, int, int), FxChannels> laneFxChannels = {};
+
+  /// Per-(input, index) channel handling passed to
+  /// [setMonitorInputFxChannels].
+  final Map<(int, int), FxChannels> monitorFxChannels = {};
+
+  @override
+  EngineResult setLaneFxChannels({
+    required int channel,
+    required int lane,
+    required int index,
+    required FxChannels channels,
+  }) {
+    laneFxChannels[(channel, lane, index)] = channels;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMonitorInputFxChannels({
+    required int input,
+    required int index,
+    required FxChannels channels,
+  }) {
+    monitorFxChannels[(input, index)] = channels;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxChannels({
+    required int channel,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setOutputFxChannels({
+    required int bus,
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult setAllTracksFxChannels({
+    required int index,
+    required FxChannels channels,
+  }) => EngineResult.ok;
 
   /// Per-input enabled flag passed to [setMonitorInputEnabled].
   final Map<int, bool> monitorInputEnabled = {};
@@ -658,6 +1423,16 @@ class FakeAudioEngine implements AudioEngine {
   /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a
   /// test can assert that a closed face leaves nothing running.
   int tunerInput = -1;
+
+  /// The last tuner mute mask sent.
+  int tunerMuteMask = 0;
+
+  @override
+  EngineResult setTunerMute({required int inputMask}) {
+    tunerMuteMask = inputMask;
+    calls.add('setTunerMute');
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult setTunerInput({required int input}) {
@@ -882,8 +1657,11 @@ class FakeAudioEngine implements AudioEngine {
   /// `(channel, lane, ordinal)`.
   final Map<(int, int, int), Float32List> importedLayers = {};
 
-  /// `(undoCount, redoCount)` passed to [finalizeLayers], keyed by channel.
-  final Map<int, (int, int)> finalizedLayers = {};
+  /// The history passed to [finalizeHistory], keyed by channel.
+  final Map<int, TrackHistory> finalizedHistory = {};
+
+  /// The image lengths passed to [finalizeHistory], keyed by channel.
+  final Map<int, List<int>> finalizedLengths = {};
 
   /// Result returned by [importLayer] once any [importFailCountdown] is spent.
   EngineResult importResult = EngineResult.ok;
@@ -897,9 +1675,23 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult importTrack(int channel, Float32List pcm) =>
       importTrackLane(channel, 0, pcm);
 
+  /// Spans [importSpan] gave, by channel (#1179 Part 4b); the commit puts
+  /// them on the tracks' snapshots.
+  final Map<int, int> importedSpans = {};
+
+  @override
+  EngineResult importSpan(int channel, int spanFrames) {
+    calls.add('importSpan');
+    importedSpans[channel] = spanFrames;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       importLayer(channel, lane, 0, pcm);
+
+  @override
+  int trackAudioRev(int channel) => 0;
 
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) {
@@ -931,19 +1723,71 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
-    calls.add('finalizeLayers');
-    finalizedLayers[channel] = (undoCount, redoCount);
+  TrackHistory exportHistory(int channel) {
+    calls.add('exportHistory');
+    return TrackHistory.none;
+  }
+
+  @override
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) {
+    calls.add('finalizeHistory');
+    finalizedHistory[channel] = history;
+    finalizedLengths[channel] = imageLengths;
     return EngineResult.ok;
   }
 
   /// Base frames passed to the last [commitSession].
   int? committedBaseFrames;
 
+  /// Grid beats passed to the last [commitSession].
+  int? committedLoopBeats;
+
   @override
-  EngineResult commitSession(int baseFrames) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     calls.add('commitSession');
     committedBaseFrames = baseFrames;
+    committedLoopBeats = loopBeats;
+    final tracks = [..._nextSnapshot.tracks];
+    for (final entry in importedTracks.entries) {
+      final finalized = finalizedHistory[entry.key];
+      if (finalized == null) return EngineResult.invalid;
+      tracks[entry.key] = TrackSnapshot(
+        state: TrackState.stopped,
+        fade: installedFades[entry.key] ?? const FadeImage(),
+        reversed: installedReverses[entry.key] ?? false,
+        volume: 1,
+        muted: false,
+        // The live image's length: a length edit's images differ (#1168).
+        lengthFrames:
+            importedLayers[(entry.key, 0, finalized.undoCount)]?.length ??
+            entry.value.length,
+        undoDepth: finalized.undoCount,
+        redoDepth: finalized.redoCount,
+        rms: 0,
+        peak: 0,
+        spanFrames: importedSpans[entry.key] ?? 0,
+      );
+    }
+    _nextSnapshot = _nextSnapshot.copyWith(
+      tracks: tracks,
+      masterLengthFrames: baseFrames,
+    );
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult stopRecordControl({required int channel}) {
+    calls.add('stopRecordControl');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult cancelCountIn() {
+    calls.add('cancelCountIn');
     return EngineResult.ok;
   }
 
@@ -954,8 +1798,13 @@ class FakeAudioEngine implements AudioEngine {
   /// The `captureDir` passed to the most recent [perfArm] call.
   String? lastPerfCaptureDir;
 
+  /// The target of the most recent perfArm.
+  PerfTarget? lastPerfTarget;
+
   @override
-  EngineResult perfArm(String captureDir) {
+  EngineResult perfArm(PerfTarget target) {
+    final captureDir = target.captureDir;
+    lastPerfTarget = target;
     calls.add('perfArm');
     lastPerfCaptureDir = captureDir;
     return perfArmResult;
@@ -982,6 +1831,71 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult renderCancel() {
     calls.add('renderCancel');
+    return EngineResult.ok;
+  }
+
+  // ---- shared render recipe (#1202): scripted by the tests ----
+
+  /// Answer of [measureRender].
+  RenderMeasurement measureRenderAnswer = (
+    result: EngineResult.ok,
+    plan: const RenderPlan(
+      frames: 48,
+      method: RenderMethod.commonCycle,
+      beatsMilli: 0,
+      tempoSet: false,
+    ),
+  );
+
+  /// Answer of [beginRender].
+  RenderAdmission beginRenderAnswer = (result: EngineResult.ok, job: 1);
+
+  /// Statuses [pollRender] returns in order; the last one repeats. An empty
+  /// list (or `null` in it) reads as an unknown job.
+  List<RenderJobStatus?> renderStatuses = const [
+    RenderJobStatus(state: RenderJobState.done, permille: 1000),
+  ];
+
+  /// Samples [copyRender] returns.
+  Float32List? renderSamples;
+
+  /// Requests passed to [measureRender] and [beginRender], in order.
+  final List<RenderRequest> renderRequests = [];
+
+  /// Jobs passed to [cancelRender], in order.
+  final List<int> cancelledRenders = [];
+
+  int _renderPolls = 0;
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) {
+    renderRequests.add(request);
+    return measureRenderAnswer;
+  }
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) {
+    renderRequests.add(request);
+    _renderPolls = 0;
+    return beginRenderAnswer;
+  }
+
+  @override
+  RenderJobStatus? pollRender(int job) {
+    if (renderStatuses.isEmpty) return null;
+    final i = _renderPolls < renderStatuses.length
+        ? _renderPolls
+        : renderStatuses.length - 1;
+    _renderPolls++;
+    return renderStatuses[i];
+  }
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) => renderSamples;
+
+  @override
+  EngineResult cancelRender(int job) {
+    cancelledRenders.add(job);
     return EngineResult.ok;
   }
 
@@ -1048,6 +1962,72 @@ class FakeAudioEngine implements AudioEngine {
   /// Handle returned by [setLanePlugin] / [setMonitorPlugin]; set to `null` to
   /// simulate a load failure.
   PluginSlotHandle? nextSlotHandle = MockPluginSlotHandle('fake-plugin');
+
+  /// Atomic structural recipes and callback-applied identities.
+  final Map<(FxOwner, int, int), FxRecipe> recipes = {};
+  final Map<(FxOwner, int, int), int> recipeRevisions = {};
+  final Map<(FxOwner, int, int), int> pendingRecipeRevisions = {};
+  EngineResult nextRecipeResult = EngineResult.ok;
+  bool publishRecipes = true;
+
+  @override
+  EngineResult setFxRecipe({
+    required FxOwner owner,
+    required FxRecipe recipe,
+    required int revision,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    calls.add('setFxRecipe');
+    if (!recipe.isValid || revision == 0) return EngineResult.invalid;
+    final result = nextRecipeResult;
+    if (!result.isOk) return result;
+    final key = (owner, channel, lane);
+    if (pendingRecipeRevisions.containsKey(key)) return EngineResult.notReady;
+    recipes[key] = recipe;
+    pendingRecipeRevisions[key] = revision;
+    if (publishRecipes) publishRecipe(key);
+    return result;
+  }
+
+  void publishRecipe((FxOwner, int, int) key) {
+    final revision = pendingRecipeRevisions.remove(key);
+    if (revision != null) recipeRevisions[key] = revision;
+  }
+
+  @override
+  int fxRecipeRevision({
+    required FxOwner owner,
+    int channel = 0,
+    int lane = 0,
+  }) => recipeRevisions[(owner, channel, lane)] ?? 0;
+
+  @override
+  PluginSlotHandle? preparePlugin({required String pluginId}) {
+    calls.add('preparePlugin');
+    return nextSlotHandle;
+  }
+
+  @override
+  EngineResult discardPreparedPlugin(PluginSlotHandle slot) {
+    calls.add('discardPreparedPlugin');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult preparePluginParam(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) {
+    calls.add('preparePluginParam');
+    preparedPluginParams.add((slot: slot, paramId: paramId, value: value));
+    return EngineResult.ok;
+  }
+
+  /// Values applied to detached hosts before their complete recipe is admitted.
+  final List<({PluginSlotHandle slot, int paramId, double value})>
+  preparedPluginParams = [];
 
   /// Plugin ids passed to [setLanePlugin], keyed by `(channel, lane, index)`.
   final Map<(int, int, int), String> lanePlugins = {};
@@ -1205,9 +2185,191 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  int? volumeFreeBytes(String path) => freeBytes;
+  VolumeSpace? volumeSpace(String path) => freeBytes == null
+      ? null
+      : VolumeSpace(totalBytes: totalBytes, freeBytes: freeBytes!);
 
-  /// What [volumeFreeBytes] reports; `null` models a platform that cannot
-  /// answer.
+  /// What [volumeSpace] reports as free; `null` models a platform that
+  /// cannot answer.
   int? freeBytes = 1 << 40;
+
+  /// What [volumeSpace] reports as the volume's size.
+  int totalBytes = 2 << 40;
+}
+
+class _LengthSnapshot extends EngineSnapshot {
+  _LengthSnapshot(
+    EngineSnapshot source,
+    Map<int, int> lengths,
+    LooperMode? mode,
+    FakeAudioEngine engine,
+  ) : super(
+        mixRevision: engine.mixRevision,
+        inputPeaks: source.inputPeaks,
+        monitorPeaks: source.monitorPeaks,
+        outputPeaks: source.outputPeaks,
+        outputBusCount: source.outputBusCount,
+        outputLevels: source.outputLevels,
+        outputMuted: source.outputMuted,
+        outputMono: source.outputMono,
+        outputBalances: source.outputBalances,
+        tailResetRev: source.tailResetRev,
+        perfFollowOutput: source.perfFollowOutput,
+        perfCaptureBus: source.perfCaptureBus,
+        perfOutputLevel: source.perfOutputLevel,
+        perfOutputMuted: source.perfOutputMuted,
+        perfCaptureMask: source.perfCaptureMask,
+        perfOutputEnabledMask: source.perfOutputEnabledMask,
+        isRunning: source.isRunning,
+        sampleRate: source.sampleRate,
+        bufferFrames: source.bufferFrames,
+        framesProcessed: source.framesProcessed,
+        xrunCount: source.xrunCount,
+        inputRms: source.inputRms,
+        inputPeak: source.inputPeak,
+        outputRms: source.outputRms,
+        latencyState: source.latencyState,
+        measuredLatencyMs: source.measuredLatencyMs,
+        outputPeak: source.outputPeak,
+        devicePresent: source.devicePresent,
+        inputChannels: source.inputChannels,
+        outputChannels: source.outputChannels,
+        excludedInputMask: source.excludedInputMask,
+        inputClipMask: source.inputClipMask,
+        inputCondMask: source.inputCondMask,
+        masterLengthFrames: source.masterLengthFrames,
+        masterPositionFrames: source.masterPositionFrames,
+        recordOffsetFrames: source.recordOffsetFrames,
+        fxAddedLatencyFrames: source.fxAddedLatencyFrames,
+        masterGain: source.masterGain,
+        tunerHz: source.tunerHz,
+        tunerConfidence: source.tunerConfidence,
+        tunerInput: source.tunerInput,
+        tunerMuteMask: source.tunerMuteMask,
+        activeBackend: source.activeBackend,
+        outputEnabledMask: source.outputEnabledMask,
+        isPerfArmed: source.isPerfArmed,
+        perfFrames: source.perfFrames,
+        perfOverruns: source.perfOverruns,
+        perfZeroFilledFrames: source.perfZeroFilledFrames,
+        perfStopped: source.perfStopped,
+        perfStopReason: source.perfStopReason,
+        perfOvers: source.perfOvers,
+        perfCaptureStreams: source.perfCaptureStreams,
+        perfCaptureFrameBytes: source.perfCaptureFrameBytes,
+        tempoBpm: source.tempoBpm,
+        tempoSource: source.tempoSource,
+        tsNum: source.tsNum,
+        tsDen: source.tsDen,
+        syncTempo: source.syncTempo,
+        quantizeDiv: engine.lastQuantizeDiv ?? source.quantizeDiv,
+        loopBars: source.loopBars,
+        loopBeats: source.loopBeats,
+        currentBeat: source.currentBeat,
+        clickMode: source.clickMode,
+        clickModeRevision: source.clickModeRevision,
+        clickModeResult: source.clickModeResult,
+        recordStartRevision: source.recordStartRevision,
+        recordStartResult: source.recordStartResult,
+        clickMask: source.clickMask,
+        clickVolume: source.clickVolume,
+        countInBars: source.countInBars,
+        countingIn: source.countingIn,
+        countInBeatsLeft: source.countInBeatsLeft,
+        looperMode: mode ?? source.looperMode,
+        primaryTrack: source.primaryTrack,
+        speed: source.speed,
+        transposeBypass: source.transposeBypass,
+        recordedTempoBpm: source.recordedTempoBpm,
+        recordedLengthFrames: source.recordedLengthFrames,
+        followTempo: source.followTempo,
+        tempoFollow: source.tempoFollow,
+        pitchMode: source.pitchMode,
+        quantize: engine.lastQuantize ?? source.quantize,
+        recordTimingRevision: engine.recordTimingRevision,
+        recordTimingResult: engine.recordTimingResult,
+        autoRecord: source.autoRecord,
+        overdubFeedback: source.overdubFeedback,
+        tracks: [
+          for (var channel = 0; channel < source.tracks.length; channel++)
+            _LengthTrack(
+              source.tracks[channel],
+              lengths[channel],
+              engine,
+              channel,
+            ),
+        ],
+      );
+}
+
+class _LengthTrack extends TrackSnapshot {
+  _LengthTrack(
+    TrackSnapshot source,
+    int? bars,
+    FakeAudioEngine engine,
+    int channel,
+  ) : super(
+        imageRevision: engine.imageRevisions[channel] ?? source.imageRevision,
+        solo: engine.trackSolo[channel] ?? source.solo,
+        peakL: source.peakL,
+        peakR: source.peakR,
+        state: source.state,
+        fade: source.fade,
+        reversed: source.reversed,
+        headRate: source.headRate,
+        transpose: source.transpose,
+        followTempoOverride: source.followTempoOverride,
+        pitchModeOverride: source.pitchModeOverride,
+        pitchEffectiveCents: source.pitchEffectiveCents,
+        spanFrames: source.spanFrames,
+        volume: engine.trackLevels[channel] ?? source.volume,
+        muted: source.muted,
+        lengthFrames: source.lengthFrames,
+        undoDepth: source.undoDepth,
+        rms: source.rms,
+        peak: source.peak,
+        clearRestore: source.clearRestore,
+        redoDepth: source.redoDepth,
+        multiple: source.multiple,
+        syncDivisor: source.syncDivisor,
+        lengthHistoryRefusals: source.lengthHistoryRefusals,
+        inputMask: source.inputMask,
+        outputMask: source.outputMask,
+        layerInFlight: source.layerInFlight,
+        pending: source.pending,
+        pendingLaunch: source.pendingLaunch,
+        countInCancelGrace: source.countInCancelGrace,
+        lengthPresetBars: bars ?? source.lengthPresetBars,
+        oneShot: engine.trackOneShot[channel] ?? source.oneShot,
+        settledTakeId: source.settledTakeId,
+        restoreState: source.restoreState,
+        positionFrames: source.positionFrames,
+        pendingTrigger: source.pendingTrigger,
+        quantizeOverride: engine.lastQuantize == null
+            ? source.quantizeOverride
+            : engine.trackQuantize[channel],
+        quantizeDivOverride: engine.lastQuantize == null
+            ? source.quantizeDivOverride
+            : engine.trackQuantizeDiv[channel],
+        overdubFeedbackOverride: source.overdubFeedbackOverride,
+        lanes: [
+          for (var lane = 0; lane < source.lanes.length; lane++)
+            _MixLane(source.lanes[lane], engine, (channel, lane)),
+        ],
+      );
+}
+
+class _MixLane extends LaneSnapshot {
+  _MixLane(LaneSnapshot source, FakeAudioEngine engine, (int, int) key)
+    : super(
+        inputChannel: source.inputChannel,
+        outputMask: source.outputMask,
+        volume: engine.laneVol[key] ?? source.volume,
+        pan: engine.lanePan[key] ?? source.pan,
+        muted: source.muted,
+        lengthFrames: source.lengthFrames,
+        rms: source.rms,
+        peak: source.peak,
+        recoverable: source.recoverable,
+      );
 }

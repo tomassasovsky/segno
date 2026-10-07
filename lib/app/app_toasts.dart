@@ -10,17 +10,61 @@ import 'package:toastification/toastification.dart';
 /// event that flashes a transient toast ([midiLost]) and leaves no standing
 /// bar. Both hardware returns are *restored* events, each a short snack.
 abstract final class AppToastId {
+  static const clickModeSettings = 'app_clickModeSettings_banner';
+  static const recordStartSettings = 'app_recordStartSettings_banner';
+  static const recordingInputRequired = 'app_recordingInputRequired_toast';
+  static const recordRefused = 'app_recordRefused_toast';
   static const deviceRestored = 'app_deviceRestored_snackbar';
+  static const deviceRestoredPartial = 'app_deviceRestoredPartial_toast';
   static const midiLost = 'app_midiLost_toast';
   static const midiRestored = 'app_midiRestored_snackbar';
+  static const sessionBootRecovery = 'app_sessionBootRecovery_error';
+  static const monitorRestore = 'app_monitorRestore_error';
   static const audioRecovery = 'app_audioRecovery_banner';
   static const update = 'app_update_banner';
   static const updateDismiss = 'app_update_banner_dismiss';
   static const updateAction = 'app_update_banner_update';
   static const waveformFailed = 'app_waveformWindowFailed_banner';
   static const singleDisplay = 'app_singleDisplay_banner';
+  static const bootModeRetired = 'app_bootModeRetired_toast';
+  static const fxStopChanged = 'app_fxStopChanged_toast';
+  static const saveToFellBack = 'app_saveToFellBack_toast';
+  static const bluetoothRetired = 'app_bluetoothRetired_toast';
+  static const recoveryRefused = 'app_recoveryRefused_toast';
   static const undoClearAll = 'app_undoClearAll_snackbar';
   static const undoClearAllAction = 'app_undoClearAll_snackbar_action';
+  static const footMixerFailure = 'app_footMixerFailure_error';
+  static const footFadeFailure = 'app_footFadeFailure_error';
+  static const footReverseFailure = 'app_footReverseFailure_error';
+  static const footPeelRefused = 'app_footPeelRefused_toast';
+  static const assignedActionRefused = 'app_assignedActionRefused_toast';
+  static const footTunerRefused = 'app_footTunerRefused_toast';
+  static const tunerSeeded = 'app_tunerSeeded_toast';
+  static const footFxFailure = 'app_footFxFailure_error';
+  static const footLengthRefused = 'app_footLengthRefused_toast';
+  static const lengthHistoryRefused = 'app_lengthHistoryRefused_toast';
+  static const mixSettings = 'app_mixSettings_error';
+  static const clickSettings = 'app_clickSettings_error';
+  static const decaySettings = 'app_decaySettings_error';
+  static const oneShotSettings = 'app_oneShotSettings_error';
+
+  /// Follow tempo transaction failures (#1179).
+  static const followTempoSettings = 'app_followTempoSettings_error';
+
+  /// Pitch transaction failures (#1179).
+  static const pitchModeSettings = 'app_pitchModeSettings_error';
+  static const recordLengthSettings = 'app_recordLengthSettings_error';
+  static const recordTimingSettings = 'app_recordTimingSettings_error';
+
+  /// Persistent Fade duration storage recovery.
+  static const fadeSettings = 'app_fadeSettings_error';
+
+  /// Persistent backing mix and click pan storage recovery (#1200).
+  static const backingMixSettings = 'app_backingMixSettings_error';
+  static const clickPanSettings = 'app_clickPanSettings_error';
+
+  /// Persistent instrument definitions storage recovery (#1197).
+  static const instrumentsSettings = 'app_instrumentsSettings_error';
 }
 
 final Map<String, ToastificationItem> _active = {};
@@ -49,10 +93,10 @@ void resetAppToastsForTest() => _active.clear();
 @visibleForTesting
 bool debugAppToastActive(String id) => _active.containsKey(id);
 
-void dismissAppToast(String id) {
+void dismissAppToast(String id, {bool animate = true}) {
   final item = _active.remove(id);
   if (item != null) {
-    toastification.dismiss(item);
+    toastification.dismiss(item, showRemoveAnimation: animate);
   }
 }
 
@@ -65,6 +109,7 @@ ToastificationItem showAppToast({
   ToastificationType type = ToastificationType.info,
   List<Widget> actions = const [],
   Duration? autoCloseDuration,
+  bool dismissible = true,
 }) {
   dismissAppToast(id);
   final item = toastification.showCustom(
@@ -133,14 +178,15 @@ ToastificationItem showAppToast({
                   child: action,
                 ),
               ),
-              IconButton(
-                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                onPressed: () {
-                  dismissAppToast(id);
-                  toastification.dismiss(holder);
-                },
-                icon: const Icon(Icons.close_rounded, size: 20),
-              ),
+              if (dismissible)
+                IconButton(
+                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                  onPressed: () {
+                    dismissAppToast(id);
+                    toastification.dismiss(holder);
+                  },
+                  icon: const Icon(Icons.close_rounded, size: 20),
+                ),
             ],
           ),
         ),

@@ -55,6 +55,53 @@ void main() {
       expect(events, const [EncoderDelta(1), EncoderDelta(-2)]);
     });
 
+    test('encoder push-switch messages become timestamped edges', () async {
+      link.hello();
+      await pumpEventQueue();
+      final events = <PedalEvent>[];
+      repo.events.listen(events.add);
+      now = const Duration(milliseconds: 40);
+      link.pressEncoder(down: true);
+      await pumpEventQueue();
+      now = const Duration(milliseconds: 300);
+      link.pressEncoder(down: false);
+      await pumpEventQueue();
+      expect(events, const [
+        EncoderPressed(timestamp: Duration(milliseconds: 40)),
+        EncoderReleased(timestamp: Duration(milliseconds: 300)),
+      ]);
+    });
+
+    test('drops encoder push-switch messages until a hello', () async {
+      final events = <PedalEvent>[];
+      repo.events.listen(events.add);
+      link.pressEncoder(down: true);
+      await pumpEventQueue();
+      expect(events, isEmpty);
+    });
+
+    test('publishes frames without hardware and holds goodbye', () async {
+      final frames = <PedalStateFrame>[];
+      final subscription = repo.frames.listen(frames.add);
+      expect(repo.lastFrame, isNull);
+      final frame = PedalStateFrame.blank().copyWith(activeButtonMask: 256);
+      repo
+        ..pushState(frame)
+        ..pushState(frame.copyWith());
+      await pumpEventQueue();
+      expect(repo.lastFrame, frame);
+      expect(frames, [frame]);
+      expect(link.sent, isEmpty);
+      repo
+        ..goodbye()
+        ..pushState(frame);
+      await pumpEventQueue();
+      expect(frames, hasLength(2));
+      expect(repo.lastFrame!.isGoodbye, isTrue);
+      expect(frames.last, repo.lastFrame);
+      await subscription.cancel();
+    });
+
     test('pushState goes out as a link message', () async {
       link.hello();
       await pumpEventQueue();
@@ -77,6 +124,33 @@ void main() {
         ..pushState(frame.copyWith(globalColor: GlobalColor.green));
       expect(link.sent, hasLength(2));
     });
+
+    test(
+      'hue-only and activity-only changes send; equal snapshots deduplicate',
+      () async {
+        link.hello();
+        await pumpEventQueue();
+        final colors = List<PedalColor>.of(defaultPedalColors);
+        final initial = PedalStateFrame.blank().copyWith(pedalColors: colors);
+        repo.pushState(initial);
+        colors[9] = const PedalColor(128, 165, 255);
+        final hue = initial.copyWith(pedalColors: colors);
+        repo
+          ..pushState(hue)
+          ..pushState(hue.copyWith());
+        final active = hue.copyWith(activeButtonMask: 512);
+        repo
+          ..pushState(active)
+          ..pushState(active.copyWith());
+        expect(link.sent, [
+          StateMessage(initial),
+          StateMessage(hue),
+          StateMessage(active),
+        ]);
+        expect(initial.colorFor(PedalButton.bank), PedalColor.defaultColor);
+        expect(link.lastFrame!.isLit(PedalButton.bank), isTrue);
+      },
+    );
 
     test('goodbye darkens the board and holds the mark', () async {
       final events = <PedalEvent>[];
@@ -118,6 +192,7 @@ void main() {
         await pumpEventQueue();
         expect(repo.status, PedalLinkStatus.connected);
         expect(repo.firmwareVersion, '1.4');
+        expect(repo.protocolVersion, PedalLinkCodec.protocolVersion);
         link.hello(firmwareMinor: 4);
         await pumpEventQueue();
         expect(statuses, [PedalLinkStatus.connected]); // dedups repeats
@@ -174,6 +249,7 @@ void main() {
       await pumpEventQueue();
       expect(logged.status, PedalLinkStatus.incompatible);
       expect(logged.firmwareVersion, '2.0');
+      expect(logged.protocolVersion, PedalLinkCodec.protocolVersion + 1);
       expect(lines.single, contains('incompatible'));
       expect(
         lines.single,
@@ -203,13 +279,16 @@ void main() {
       await pumpEventQueue();
       expect(link.sent.whereType<StateMessage>(), isEmpty); // nothing yet
       repo.pushState(frame);
-      link.sent.clear();
-      link.hello();
+      link
+        ..sent.clear()
+        ..hello();
       await pumpEventQueue();
       expect(link.sent, [StateMessage(frame)]);
     });
 
     for (final protocol in [
+      6,
+      PedalLinkCodec.protocolVersion - 1,
       PedalLinkCodec.protocolVersion,
       PedalLinkCodec.protocolVersion + 1,
     ]) {
@@ -239,9 +318,14 @@ void main() {
                 firmwareMinor: 0,
               ),
             );
-            async
-              ..flushMicrotasks()
-              ..elapse(guarded.helloTimeout);
+            async.flushMicrotasks();
+            expect(
+              guarded.status,
+              protocol == PedalLinkCodec.protocolVersion
+                  ? PedalLinkStatus.connected
+                  : PedalLinkStatus.incompatible,
+            );
+            async.elapse(guarded.helloTimeout);
             expect(guarded.status, PedalLinkStatus.disconnected);
             guardedLink.sent.clear();
 
@@ -292,6 +376,7 @@ void main() {
       await repo.dispose();
       expect(repo.status, PedalLinkStatus.disconnected);
       expect(repo.firmwareVersion, isNull);
+      expect(repo.protocolVersion, isNull);
       expect(statuses, [
         PedalLinkStatus.connected,
         PedalLinkStatus.disconnected,
@@ -316,320 +401,91 @@ void main() {
     });
   });
 
-  group('PedalRepository CTRL calibration', () {
-    CtrlMessage raw(int value, {PedalCtrlJack jack = PedalCtrlJack.ctrl1}) =>
-        CtrlMessage(jack: jack, kind: PedalCtrlKind.expression, value: value);
-
-    test('incompatible firmware cancels pending calibration readings', () {
-      fakeAsync((async) {
-        final link = FakePedalLink();
-        final repo = PedalRepository(link);
-        final seen = <CtrlChanged>[];
-        repo.events.listen((event) => seen.add(event as CtrlChanged));
-        link
-          ..hello()
-          ..emit(raw(24));
-        async
-          ..flushMicrotasks()
-          ..elapse(PedalRepository.settleTime);
-        link.emit(raw(200));
-        async.flushMicrotasks();
-        expect(seen.map((event) => event.value), [24, 200]);
-
-        link.emit(
-          const HelloMessage(
-            protocolVersion: PedalLinkCodec.protocolVersion + 1,
-            firmwareMajor: 2,
-            firmwareMinor: 0,
-          ),
-        );
-        async
-          ..flushMicrotasks()
-          ..elapse(PedalRepository.settleTime);
-        repo.setCtrlCalibration(
-          PedalCtrlJack.ctrl1,
-          const PedalCtrlCalibration(min: 24, max: 200),
-        );
-        async.flushMicrotasks();
-        expect(seen.map((event) => event.value), [24, 200]);
-
-        // The old pending reading and learned ends cannot reappear after
-        // recovery. A new reading still uses the explicit calibration.
-        link.hello();
-        async.flushMicrotasks();
-        expect(seen, hasLength(2));
-        link.emit(raw(200));
-        async.flushMicrotasks();
-        expect(seen.last.value, 255);
-        repo.setCtrlCalibration(PedalCtrlJack.ctrl1, null);
-        async.flushMicrotasks();
-        expect(seen.last.value, 200);
-        unawaited(repo.dispose());
-        async.flushMicrotasks();
-      });
-    });
-
-    test('CTRL inputs wait for a compatible hello after disconnection', () {
-      fakeAsync((async) {
-        final link = FakePedalLink();
-        final repo = PedalRepository(link);
-        final seen = <CtrlChanged>[];
-        repo.events.listen((event) => seen.add(event as CtrlChanged));
-        link.emit(raw(24));
-        async.flushMicrotasks();
-        expect(seen, isEmpty);
-        link.hello();
-        async
-          ..flushMicrotasks()
-          ..elapse(repo.helloTimeout);
-        link.emit(raw(255));
-        async.flushMicrotasks();
-        expect(seen, isEmpty);
-        link
-          ..hello()
-          ..emit(raw(200));
-        async.flushMicrotasks();
-        expect(seen.single.value, 200);
-        unawaited(repo.dispose());
-        async.flushMicrotasks();
-      });
-    });
-
-    test('an explicit calibration maps every reading onto the travel', () {
-      fakeAsync((async) {
-        final link = FakePedalLink();
-        final repo = PedalRepository(link);
-        link.hello();
-        final seen = <CtrlChanged>[];
-        repo.events.listen((e) => seen.add(e as CtrlChanged));
-        repo.setCtrlCalibration(
-          PedalCtrlJack.ctrl1,
-          const PedalCtrlCalibration(min: 24, max: 255),
-        );
-
-        link
-          ..emit(raw(24))
-          ..emit(raw(255));
-        async.flushMicrotasks();
-
-        expect(seen.map((e) => e.value), [0, 255]);
-        expect(seen.map((e) => e.raw), [24, 255]);
-        expect(repo.ctrlCalibration(PedalCtrlJack.ctrl1), isNotNull);
-      });
-    });
-
-    test('with no calibration the ends are learned from readings the pedal '
-        'holds, and the reading is re-reported once they move', () {
-      fakeAsync((async) {
-        final link = FakePedalLink();
-        final repo = PedalRepository(link);
-        link.hello();
-        final seen = <CtrlChanged>[];
-        repo.events.listen((e) => seen.add(e as CtrlChanged));
-
-        // Heel, held: learned. Toe (a pedal whose range knob stops at 200),
-        // held: learned. The span is now trusted, so the toe reading that
-        // was passed through raw is re-reported as a hard 255 — the pedal
-        // did not move, the ends did.
-        link.emit(raw(24));
-        async
-          ..flushMicrotasks()
-          ..elapse(PedalRepository.settleTime);
-        link.emit(raw(200));
-        async
-          ..flushMicrotasks()
-          ..elapse(PedalRepository.settleTime);
-
-        expect(seen.map((e) => e.raw), [24, 200, 200]);
-        expect(seen.map((e) => e.value), [24, 200, 255]);
-
-        // Back to heel: mapped under the learned ends straight away.
-        link.emit(raw(24));
-        async.flushMicrotasks();
-        expect(seen.last.value, 0);
-        expect(seen.last.raw, 24);
-      });
-    });
-
-    test('a reading that does not hold is not learned from', () {
-      fakeAsync((async) {
-        final link = FakePedalLink();
-        final repo = PedalRepository(link);
-        link.hello();
-        final seen = <CtrlChanged>[];
-        repo.events.listen((e) => seen.add(e as CtrlChanged));
-
-        // A plug on its way in: 0 for a moment, then the real heel.
-        link.emit(raw(0));
-        async
-          ..flushMicrotasks()
-          ..elapse(PedalRepository.settleTime ~/ 2);
-        link.emit(raw(24));
-        async
-          ..flushMicrotasks()
-          ..elapse(PedalRepository.settleTime);
-        link.emit(raw(255));
-        async
-          ..flushMicrotasks()
-          ..elapse(PedalRepository.settleTime);
-
-        // Heel is 24, not 0: the transient never became an end.
-        link.emit(raw(24));
-        async.flushMicrotasks();
-        expect(seen.last.value, 0);
-      });
-    });
-
-    test('an explicit calibration is not widened by what the pedal does', () {
-      fakeAsync((async) {
-        final link = FakePedalLink();
-        final repo = PedalRepository(link);
-        link.hello();
-        final seen = <CtrlChanged>[];
-        repo.events.listen((e) => seen.add(e as CtrlChanged));
-        repo.setCtrlCalibration(
-          PedalCtrlJack.ctrl1,
-          const PedalCtrlCalibration(min: 50, max: 200),
-        );
-
-        link.emit(raw(0));
-        async
-          ..flushMicrotasks()
-          ..elapse(PedalRepository.settleTime);
-        link.emit(raw(50));
-        async.flushMicrotasks();
-
-        expect(seen.map((e) => e.value), [0, 0]);
-      });
-    });
-
+  group('PedalRepository raw CTRL readings', () {
     test(
-      'clearing a calibration re-reports the position under learned ends',
+      'delivers exact byte samples without learning or delayed synthesis',
       () {
         fakeAsync((async) {
           final link = FakePedalLink();
           final repo = PedalRepository(link);
-          link.hello();
           final seen = <CtrlChanged>[];
-          repo.events.listen((e) => seen.add(e as CtrlChanged));
-          repo.setCtrlCalibration(
-            PedalCtrlJack.ctrl1,
-            const PedalCtrlCalibration(min: 0, max: 255),
-          );
-          link.emit(raw(128));
+          repo.events.listen((event) => seen.add(event as CtrlChanged));
+          link.hello();
+          for (final value in [24, 200, 201, 255]) {
+            link.emit(
+              CtrlMessage(
+                jack: PedalCtrlJack.ctrl1,
+                kind: PedalCtrlKind.expression,
+                value: value,
+              ),
+            );
+            async
+              ..flushMicrotasks()
+              ..elapse(const Duration(milliseconds: 100));
+          }
+          expect(seen.map((event) => event.raw), [24, 200, 201, 255]);
+          expect(seen.map((event) => event.value), [24, 200, 201, 255]);
+          async.elapse(const Duration(milliseconds: 400));
+          expect(seen, hasLength(4));
+          unawaited(repo.dispose());
           async.flushMicrotasks();
-          expect(seen.last.value, closeTo(128, 3));
-
-          repo.setCtrlCalibration(PedalCtrlJack.ctrl1, null);
-          async.flushMicrotasks();
-          expect(repo.ctrlCalibration(PedalCtrlJack.ctrl1), isNull);
-          // Nothing learned yet: raw passes through.
-          expect(seen.last.raw, 128);
-          expect(seen.last.value, 128);
         });
       },
     );
 
-    test('learned ends are forgotten when the board goes quiet', () {
-      fakeAsync((async) {
+    test(
+      'mismatch drops samples and a fresh hello does not replay them',
+      () async {
         final link = FakePedalLink();
         final repo = PedalRepository(link);
-        link.hello();
         final seen = <CtrlChanged>[];
-        repo.events.listen((e) => seen.add(e as CtrlChanged));
-        link.hello();
-        for (final v in [24, 255]) {
-          link.emit(raw(v));
-          async
-            ..flushMicrotasks()
-            ..elapse(PedalRepository.settleTime);
-        }
-        async.elapse(repo.helloTimeout + const Duration(seconds: 1));
-        expect(repo.status, PedalLinkStatus.disconnected);
-
+        repo.events.listen((event) => seen.add(event as CtrlChanged));
         link
           ..hello()
-          ..emit(raw(100));
-        async.flushMicrotasks();
-        // Whatever comes back may be another pedal: back to raw until it
-        // has been swept again.
-        expect(seen.last.value, 100);
-        async.elapse(repo.helloTimeout + const Duration(seconds: 1));
-      });
-    });
-
-    test('an empty jack forgets the learned ends, keeps a set calibration', () {
-      fakeAsync((async) {
-        final link = FakePedalLink();
-        final repo = PedalRepository(link);
-        link.hello();
-        final seen = <CtrlChanged>[];
-        repo.events.listen((e) => seen.add(e as CtrlChanged));
-        for (final v in [24, 200]) {
-          link.emit(raw(v));
-          async
-            ..flushMicrotasks()
-            ..elapse(PedalRepository.settleTime);
-        }
-        expect(seen.last.value, 255); // learned: 200 is the toe
-
-        link.emit(
-          const CtrlMessage(
-            jack: PedalCtrlJack.ctrl1,
-            kind: PedalCtrlKind.none,
-            value: 0,
-          ),
-        );
-        async.flushMicrotasks();
-        expect(seen.last.kind, PedalCtrlKind.none);
-
-        // The next pedal starts from raw: the old pedal's ends are gone.
-        link.emit(raw(200));
-        async.flushMicrotasks();
-        expect(seen.last.value, 200);
-
-        // ...unless the user calibrated this jack, which survives the plug.
-        repo.setCtrlCalibration(
-          PedalCtrlJack.ctrl1,
-          const PedalCtrlCalibration(min: 24, max: 200),
+          ..emit(
+            const CtrlMessage(
+              jack: PedalCtrlJack.ctrl2,
+              contact: PedalCtrlContact.ring,
+              kind: PedalCtrlKind.switchPedal,
+              value: 255,
+            ),
+          );
+        await pumpEventQueue();
+        expect(
+          seen.single.input,
+          const PedalCtrlInput(PedalCtrlJack.ctrl2, PedalCtrlContact.ring),
         );
         link
           ..emit(
-            const CtrlMessage(
-              jack: PedalCtrlJack.ctrl1,
-              kind: PedalCtrlKind.none,
-              value: 0,
+            const HelloMessage(
+              protocolVersion: PedalLinkCodec.protocolVersion + 1,
+              firmwareMajor: 2,
+              firmwareMinor: 0,
             ),
           )
-          ..emit(raw(200));
-        async.flushMicrotasks();
-        expect(seen.last.value, 255);
-      });
-    });
-
-    test('a switch, on either contact, passes through untouched', () async {
-      final link = FakePedalLink();
-      final repo = PedalRepository(link);
-      link.hello();
-      final seen = <CtrlChanged>[];
-      repo.events.listen((e) => seen.add(e as CtrlChanged));
-      link.emit(
-        const CtrlMessage(
-          jack: PedalCtrlJack.ctrl2,
-          contact: PedalCtrlContact.ring,
-          kind: PedalCtrlKind.switchPedal,
-          value: 255,
-        ),
-      );
-      await pumpEventQueue();
-      expect(seen.single.contact, PedalCtrlContact.ring);
-      expect(seen.single.value, 255);
-      expect(seen.single.raw, 255);
-      expect(
-        seen.single.input,
-        const PedalCtrlInput(PedalCtrlJack.ctrl2, PedalCtrlContact.ring),
-      );
-      await repo.dispose();
-    });
+          ..emit(
+            const CtrlMessage(
+              jack: PedalCtrlJack.ctrl1,
+              kind: PedalCtrlKind.expression,
+              value: 73,
+            ),
+          );
+        await pumpEventQueue();
+        expect(seen, hasLength(1));
+        link.hello();
+        await pumpEventQueue();
+        expect(seen, hasLength(1));
+        link.emit(
+          const CtrlMessage(
+            jack: PedalCtrlJack.ctrl1,
+            kind: PedalCtrlKind.expression,
+            value: 74,
+          ),
+        );
+        await pumpEventQueue();
+        expect(seen.last.raw, 74);
+        await repo.dispose();
+      },
+    );
   });
 }

@@ -1,0 +1,890 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/control/binding/control_action.dart';
+import 'package:segno/control/binding/control_action_labels.dart';
+import 'package:segno/control/binding/pedal_binding.dart';
+import 'package:segno/control/binding/pedal_button_legend.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
+import 'package:segno/control/binding/pedal_setup.dart';
+import 'package:segno/control/cubit/control_cubit.dart';
+import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
+import 'package:segno/control/view/pedal_setup/pedal_color_dialog.dart';
+import 'package:segno/control/view/pedal_setup/pedal_led_editor.dart';
+import 'package:segno/control/view/pedal_setup/pedal_setup_editor.dart';
+import 'package:segno/control/view/pedal_setup/pedal_setup_map.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
+import 'package:segno/theme/theme.dart';
+
+/// Which half of the plate the setup is editing.
+enum PedalSetupContext {
+  /// The fixed plate, and the few gestures configurable on it.
+  tracks,
+
+  /// The free map: eight switches, each with its own Press and Hold.
+  custom,
+
+  /// Colors of the Custom-assignable indicators, independent of bank. Record,
+  /// Mute and FX light in fixed state colours.
+  leds,
+}
+
+/// The accepted Pedals setup (Layout A): the hardware map stays on screen
+/// while the chosen switch's Press and Hold are edited together.
+///
+/// One draft for assignments and colors, one Save. Every edit stays local and
+/// nothing reaches the rig until Save, which is what lets Clear custom
+/// assignments offer Restore and lets Cancel mean something. An unfinished
+/// draft cannot ride out on someone else's save either: it lives here, not in
+/// the cubit.
+class PedalSetupPage extends StatefulWidget {
+  /// Creates a [PedalSetupPage].
+  const PedalSetupPage({this.onStage, super.key});
+
+  /// Closes the calling setup tray before returning to performance.
+  final VoidCallback? onStage;
+
+  @override
+  State<PedalSetupPage> createState() => _PedalSetupPageState();
+}
+
+class _PedalSetupPageState extends State<PedalSetupPage> {
+  late final Future<void> _initialLoad;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialLoad = context.read<ControlCubit>().load();
+  }
+
+  /// The edit in progress, or `null` when nothing has been touched since the
+  /// last Save or Cancel.
+  ///
+  /// Nullable rather than forked at init: the setup is restored from settings
+  /// asynchronously, so a draft forked in `initState` would be the defaults
+  /// on a rig that has a saved setup. While it is null the page reads the
+  /// live one, and the first edit forks from whatever is current then.
+  PedalSetup? _draft;
+
+  /// What Clear custom assignments took away, until the draft is saved or
+  /// cancelled.
+  PedalSetup? _cleared;
+
+  PedalSetupContext _context = PedalSetupContext.tracks;
+
+  /// The switch being edited. MODE in Track controls (the only one there with
+  /// both gestures free) and the first track switch in Custom controls, which
+  /// is where the study opens each of them.
+  PedalButton _selected = PedalButton.mode;
+
+  int _bank = 0;
+
+  bool _saved = false;
+  bool _saving = false;
+  bool _saveFailed = false;
+
+  /// The pen's insets inside the 1920 x 984 main area.
+  static const double _left = 100;
+  static const double _controlsTop = 120;
+  static const double _mapTop = 132;
+  static const double _editorTop = 724;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final control = context.watch<ControlCubit>();
+    final frame = context.select<PedalCubit, PedalStateFrame?>(
+      (cubit) => cubit.state.frame,
+    );
+    return FutureBuilder<void>(
+      future: _initialLoad,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done ||
+            snapshot.hasError) {
+          return Scaffold(
+            body: LoopSettingsFrame(
+              crumb: l10n.pedalSetupCrumb,
+              title: l10n.pedalSetupTitle,
+              titleLeft: _left,
+              onBack: () => Navigator.of(context).maybePop(),
+              onStage: _stage,
+              children: [
+                Positioned.fill(
+                  child: Center(
+                    child: AppText(
+                      snapshot.hasError
+                          ? l10n.pedalSetupLoadFailed
+                          : l10n.pedalSetupLoading,
+                      key: const Key('pedal_setup_loading'),
+                      style: TextStyle(
+                        color: context.surface.textSecondary,
+                        fontSize: 28,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        final setup = _draft ?? control.state.pedalSetup;
+        return PopScope(
+          canPop: !_saving,
+          child: AbsorbPointer(
+            absorbing: _saving,
+            child: ExcludeFocus(
+              excluding: _saving,
+              child: Scaffold(
+                body: LoopSettingsFrame(
+                  key: const Key('pedal_setup_page'),
+                  crumb: l10n.pedalSetupCrumb,
+                  title: l10n.pedalSetupTitle,
+                  titleLeft: _left,
+                  onBack: () => Navigator.of(context).maybePop(),
+                  onStage: _stage,
+                  actions: _actions(context, control, setup),
+                  children: [
+                    Positioned(
+                      left: _left,
+                      top: _controlsTop,
+                      child: _contexts(context),
+                    ),
+                    Positioned(
+                      left: _left,
+                      top: _mapTop,
+                      child: PedalSetupMap(
+                        frame: frame,
+                        // The colour editor previews the performer's
+                        // palette, saved or drafted; every other context
+                        // shows what the pedal lights now.
+                        palette: _context == PedalSetupContext.leds
+                            ? (_draft ?? control.state.pedalSetup).palette
+                            : null,
+                        physicalLabels: _context == PedalSetupContext.leds,
+                        selected: _selectedGroup,
+                        editable: _editable,
+                        onSelect: (button) =>
+                            setState(() => _selected = button),
+                        bank: _mapBank,
+                        bankSelectable: _context == PedalSetupContext.custom,
+                        onToggleBank: () => setState(() => _bank = 1 - _bank),
+                      ),
+                    ),
+                    if (control.state.pedalSetupUnavailable ||
+                        control.state.pedalSetupPersistenceUncertain ||
+                        control.state.pedalSetupRuntimeUnsaved ||
+                        _saveFailed)
+                      Positioned(
+                        left: _left,
+                        top: 388,
+                        width: 1720,
+                        height: 64,
+                        child: Center(
+                          child: AppText(
+                            [
+                              if (control.state.pedalSetupUnavailable)
+                                l10n.pedalSetupUnavailable,
+                              if (control.state.pedalSetupPersistenceUncertain)
+                                l10n.pedalSetupSaveUncertain
+                              else if (_saveFailed ||
+                                  control.state.pedalSetupRuntimeUnsaved)
+                                l10n.pedalSetupSaveFailed,
+                            ].join('\n'),
+                            key: Key(
+                              control.state.pedalSetupUnavailable
+                                  ? 'pedal_setup_unavailable'
+                                  : control.state.pedalSetupPersistenceUncertain
+                                  ? 'pedal_setup_save_uncertain'
+                                  : 'pedal_setup_save_failed',
+                            ),
+                            maxLines: 2,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: context.surface.warning,
+                              fontSize: 24,
+                              height: 1.25,
+                            ),
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      left: _left,
+                      top: _editorTop,
+                      child: _editor(context, setup),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _stage() {
+    widget.onStage?.call();
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Titlebar
+  // ---------------------------------------------------------------------------
+
+  Widget _actions(
+    BuildContext context,
+    ControlCubit control,
+    PedalSetup setup,
+  ) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final dirty = _draft != null;
+    final uncertain = control.state.pedalSetupPersistenceUncertain;
+    final unavailable = control.state.pedalSetupUnavailable;
+    final runtimeUnsaved = control.state.pedalSetupRuntimeUnsaved;
+    final canSave =
+        (dirty || uncertain || unavailable || runtimeUnsaved) && !_saving;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_saved && !dirty && !uncertain && !unavailable && !runtimeUnsaved)
+          Padding(
+            padding: const EdgeInsets.only(right: 24),
+            child: AppText(
+              l10n.pedalSetupSaved,
+              key: const Key('pedal_setup_saved'),
+              style: TextStyle(
+                color: surface.textSecondary,
+                fontSize: 24,
+                height: 1,
+              ),
+            ),
+          ),
+        if (_context == PedalSetupContext.custom) ...[
+          LoopOutlinedButton(
+            key: const Key('pedal_setup_clear_custom'),
+            width: 380,
+            label: l10n.pedalSetupClearCustom,
+            onTap: setup.hasCustomAssignments
+                ? () => unawaited(_confirmClear(setup))
+                : null,
+          ),
+          const SizedBox(width: 16),
+          if (_cleared != null) ...[
+            LoopOutlinedButton(
+              key: const Key('pedal_setup_restore_custom'),
+              width: 300,
+              label: l10n.pedalSetupRestoreCustom,
+              onTap: _restoreCleared,
+            ),
+            const SizedBox(width: 16),
+          ],
+        ],
+        LoopOutlinedButton(
+          key: const Key('pedal_setup_external'),
+          width: 268,
+          label: l10n.externalPedalsTitle,
+          onTap: () => unawaited(openExternalPedals()),
+        ),
+        const SizedBox(width: 24),
+        Opacity(
+          opacity: dirty && !_saving ? 1 : surface.disabledOpacity,
+          child: LoopOutlinedButton(
+            key: const Key('pedal_setup_cancel'),
+            width: 125,
+            label: l10n.pedalSetupCancel,
+            onTap: dirty && !_saving ? _cancel : null,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Opacity(
+          opacity: canSave ? 1 : surface.disabledOpacity,
+          child: LoopOutlinedButton(
+            key: const Key('pedal_setup_save'),
+            width: 125,
+            tone: LoopButtonTone.accent,
+            label: _saving ? l10n.pedalSetupSaving : l10n.pedalSetupSave,
+            onTap: canSave ? () => unawaited(_save(control, setup)) : null,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _cancel() => setState(() {
+    _draft = null;
+    _cleared = null;
+    _saved = false;
+    _saveFailed = false;
+  });
+
+  Future<void> _save(ControlCubit control, PedalSetup setup) async {
+    if (_saving) return;
+    setState(() {
+      _saving = true;
+      _saveFailed = false;
+    });
+    try {
+      // External has its own draft and may have been saved while this page
+      // remained underneath it. Commit only the fields edited here.
+      await control.setPedalSetup(
+        setup.copyWith(external: control.state.pedalSetup.external),
+      );
+      if (!mounted) return;
+      setState(() {
+        _draft = null;
+        _cleared = null;
+        _saved = true;
+      });
+    } on Object {
+      if (mounted) setState(() => _saveFailed = true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _restoreCleared() => setState(() {
+    _draft = (_draft ?? context.read<ControlCubit>().state.pedalSetup).copyWith(
+      custom: _cleared!.custom,
+    );
+    _cleared = null;
+    _saved = false;
+  });
+
+  Future<void> _confirmClear(PedalSetup setup) async {
+    final confirmed = await showPedalClearDialog(context);
+    if (!confirmed || !mounted) return;
+    setState(() {
+      // Restore keeps the Custom draft from before Clear. Later edits to
+      // Track controls remain independent of restoring this map.
+      _cleared = setup;
+      _draft = setup.clearedCustom();
+      _saved = false;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Contexts
+  // ---------------------------------------------------------------------------
+
+  Widget _contexts(BuildContext context) {
+    final l10n = context.l10n;
+    return SizedBox(
+      width: 1720,
+      height: 72,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          LoopChoiceButton(
+            key: const Key('pedal_setup_context_tracks'),
+            label: l10n.pedalSetupContextTracks,
+            selected: _context == PedalSetupContext.tracks,
+            onTap: () => _openContext(PedalSetupContext.tracks),
+            width: 202,
+            height: 64,
+          ),
+          const SizedBox(width: 8),
+          LoopChoiceButton(
+            key: const Key('pedal_setup_context_custom'),
+            label: l10n.pedalSetupContextCustom,
+            selected: _context == PedalSetupContext.custom,
+            onTap: () => _openContext(PedalSetupContext.custom),
+            width: 225,
+            height: 64,
+          ),
+          const SizedBox(width: 8),
+          LoopChoiceButton(
+            key: const Key('pedal_setup_context_leds'),
+            label: l10n.pedalSetupContextLeds,
+            selected: _context == PedalSetupContext.leds,
+            onTap: () => _openContext(PedalSetupContext.leds),
+            width: 225,
+            height: 64,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openContext(PedalSetupContext next) {
+    if (next == _context) return;
+    setState(() {
+      _context = next;
+      // Land on a switch this context can actually edit: keeping the old
+      // selection would open on a dimmed cap with nothing under it.
+      _selected = switch (next) {
+        PedalSetupContext.tracks => PedalButton.mode,
+        PedalSetupContext.custom => PedalButton.track1,
+        PedalSetupContext.leds => PedalButton.track1,
+      };
+    });
+  }
+
+  /// The bank the MAP is showing.
+  ///
+  /// Always A in Track controls: nothing there is per-bank — one hold covers
+  /// all four track switches — so a map reading TRACK 5-8 would name a bank
+  /// that context has no way to leave, since BANK is dimmed there.
+  int get _mapBank => _context == PedalSetupContext.custom ? _bank : 0;
+
+  /// The switches this context can edit.
+  Set<PedalButton> get _editable => switch (_context) {
+    // Colour is the performer's only where the function is: Record, Mute and
+    // FX light in fixed state colours, so only the switches Custom mode can
+    // assign take a colour.
+    PedalSetupContext.leds || PedalSetupContext.custom => {
+      for (final button in PedalButton.values)
+        if (!PedalBindingKey.unbindable.contains(button)) button,
+    },
+    // Stop, Undo, Clear and Bank do one thing here and keep it: the accepted
+    // design dims them rather than offering an assignment it would refuse.
+    PedalSetupContext.tracks => {
+      PedalButton.mode,
+      PedalButton.recPlay,
+      ...kTrackSwitches,
+    },
+  };
+
+  /// The switches drawn as selected.
+  ///
+  /// In Track controls the four track caps light together, because one hold
+  /// setting covers all four and marking only the tapped one would promise a
+  /// per-switch assignment that does not exist.
+  Set<PedalButton> get _selectedGroup =>
+      _context == PedalSetupContext.tracks && kTrackSwitches.contains(_selected)
+      ? kTrackSwitches.toSet()
+      : {_selected};
+
+  // ---------------------------------------------------------------------------
+  // The editor
+  // ---------------------------------------------------------------------------
+
+  Widget _editor(BuildContext context, PedalSetup setup) => switch (_context) {
+    PedalSetupContext.tracks => _tracksEditor(context, setup),
+    PedalSetupContext.custom => _customEditor(context, setup),
+    PedalSetupContext.leds => PedalLedEditor(
+      title: _controlName(context),
+      palette: setup.palette,
+      button: _selected,
+      onChoose: (entry) => setState(() {
+        final latest = _draft ?? context.read<ControlCubit>().state.pedalSetup;
+        _draft = latest.copyWith(
+          palette: latest.palette.withChoice(_selected, entry),
+        );
+        _saved = false;
+      }),
+      onAdd: () => unawaited(_editColor()),
+      onEdit: (entry) => unawaited(_editColor(entry)),
+    ),
+  };
+
+  Future<void> _editColor([CustomPaletteEntry? entry]) async {
+    final control = context.read<ControlCubit>();
+    final liveAtOpen = control.state.pedalSetup;
+    final button = _selected;
+    final palette = (_draft ?? liveAtOpen).palette;
+    final chosen = await showPedalColorDialog(
+      context,
+      initial: entry == null
+          ? const PedalColor(64, 160, 224)
+          : palette.colorOf(entry)!,
+      editing: entry != null,
+    );
+    if (chosen == null || !mounted || control.state.pedalSetup != liveAtOpen) {
+      return;
+    }
+    // Merge into the latest draft, without taking over another selection or
+    // resurrecting a setup replaced while the dialog was open.
+    final latest = _draft ?? control.state.pedalSetup;
+    if (entry != null && !latest.palette.customs.containsKey(entry.number)) {
+      return;
+    }
+    final number = entry?.number ?? latest.palette.nextCustomNumber;
+    var next = latest.palette.withCustom(number, chosen);
+    if (entry == null) {
+      next = next.withChoice(button, CustomPaletteEntry(number));
+    }
+    setState(() {
+      _draft = latest.copyWith(palette: next);
+      _saved = false;
+    });
+  }
+
+  /// Track controls: the fixed plate's three configurable gestures.
+  ///
+  /// Press is shown on every one of them and editable on none but MODE. A
+  /// field that simply disappeared on the fixed switches would leave the
+  /// performer guessing what the press does; the accepted design shows it and
+  /// dims it.
+  Widget _tracksEditor(BuildContext context, PedalSetup setup) {
+    final l10n = context.l10n;
+    final names = context.watch<TracksCubit>().state.names;
+    final (press, hold) = switch (_selected) {
+      PedalButton.mode => (
+        PedalSetupField(
+          key: const Key('pedal_setup_press'),
+          label: l10n.pedalSetupPress,
+          value: controlActionLabel(l10n, names, ModeAction(setup.modePress)),
+          onTap: () => unawaited(_editModePress(setup)),
+        ),
+        PedalSetupField(
+          key: const Key('pedal_setup_hold'),
+          label: l10n.pedalSetupHold,
+          value: setup.modeHold == null
+              ? controlActionNone(l10n)
+              : controlActionLabel(l10n, names, ModeAction(setup.modeHold!)),
+          onTap: () => unawaited(_editModeHold(setup)),
+        ),
+      ),
+      PedalButton.recPlay => (
+        PedalSetupField(
+          key: const Key('pedal_setup_press'),
+          label: l10n.pedalSetupPress,
+          value: controlActionLabel(
+            l10n,
+            names,
+            const CommandAction(ControlCommand.recordPlay),
+          ),
+          onTap: null,
+        ),
+        PedalSetupField(
+          key: const Key('pedal_setup_hold'),
+          label: l10n.pedalSetupHold,
+          value: recordHoldLabel(l10n, setup.recordHold),
+          onTap: () => unawaited(_editRecordHold(setup)),
+        ),
+      ),
+      _ when kTrackSwitches.contains(_selected) => (
+        PedalSetupField(
+          key: const Key('pedal_setup_press'),
+          label: l10n.pedalSetupPress,
+          // The track press is the mode's own track action — select and
+          // advance in Tracks, mute in Mute, stomp the chain in FX — which is
+          // exactly what this catalogue entry names.
+          value: l10n.pedalSetupTrackPress,
+          onTap: null,
+        ),
+        PedalSetupField(
+          key: const Key('pedal_setup_hold'),
+          label: l10n.pedalSetupHold,
+          value: trackHoldLabel(l10n, setup.trackHold),
+          onTap: () => unawaited(_editTrackHold(setup)),
+        ),
+      ),
+      _ => (
+        PedalSetupField(
+          key: const Key('pedal_setup_press'),
+          label: l10n.pedalSetupPress,
+          value: l10n.pedalSetupFixedNote,
+          onTap: null,
+        ),
+        PedalSetupField(
+          key: const Key('pedal_setup_hold'),
+          label: l10n.pedalSetupHold,
+          value: controlActionNone(l10n),
+          onTap: null,
+        ),
+      ),
+    };
+    return PedalSetupEditor(
+      title: _controlName(context),
+      press: press,
+      hold: hold,
+    );
+  }
+
+  /// Custom controls: both gestures, both from the shared catalogue.
+  Widget _customEditor(BuildContext context, PedalSetup setup) {
+    final l10n = context.l10n;
+    final names = context.watch<TracksCubit>().state.names;
+    final pair = setup.customFor(_selected, bank: _bank);
+    String label(ControlAction? action) => action == null
+        ? controlActionNone(l10n)
+        : controlActionLabel(l10n, names, action);
+    return PedalSetupEditor(
+      title: _controlName(context),
+      press: PedalSetupField(
+        key: const Key('pedal_setup_press'),
+        label: l10n.pedalSetupPress,
+        value: label(pair.press),
+        onTap: () => unawaited(_editCustom(setup, hold: false)),
+      ),
+      hold: PedalSetupField(
+        key: const Key('pedal_setup_hold'),
+        label: l10n.pedalSetupHold,
+        value: label(pair.hold),
+        onTap: () => unawaited(_editCustom(setup, hold: true)),
+      ),
+    );
+  }
+
+  String _controlName(BuildContext context) {
+    final l10n = context.l10n;
+    if (_context == PedalSetupContext.tracks &&
+        kTrackSwitches.contains(_selected)) {
+      return l10n.pedalSetupTrackGroup;
+    }
+    return pedalSwitchLabel(l10n, _selected, _mapBank);
+  }
+
+  String _pickerTitle(BuildContext context, {required bool hold}) {
+    final l10n = context.l10n;
+    return l10n.pedalSetupChooser(
+      _controlName(context),
+      hold ? l10n.pedalSetupHold : l10n.pedalSetupPress,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pickers
+  // ---------------------------------------------------------------------------
+
+  Future<void> _editModePress(PedalSetup setup) async {
+    final l10n = context.l10n;
+    final names = context.read<TracksCubit>().state.names;
+    final chosen = await showPedalChoicePicker<InteractionMode>(
+      context,
+      title: _pickerTitle(context, hold: false),
+      current: setup.modePress,
+      groups: [
+        PedalChoiceGroup(
+          label: l10n.actionGroupFunctions,
+          id: 'modes',
+          choices: [
+            for (final mode in PedalSetup.modeChoices)
+              PedalChoice(
+                value: mode,
+                id: 'mode_${ModeAction(mode).token}',
+                label: controlActionLabel(l10n, names, ModeAction(mode)),
+              ),
+          ],
+        ),
+      ],
+    );
+    if (chosen == null || !mounted) return;
+    setState(() => _draft = setup.copyWith(modePress: chosen.value));
+  }
+
+  Future<void> _editModeHold(PedalSetup setup) async {
+    final l10n = context.l10n;
+    final names = context.read<TracksCubit>().state.names;
+    final chosen = await showPedalChoicePicker<InteractionMode?>(
+      context,
+      title: _pickerTitle(context, hold: true),
+      current: setup.modeHold,
+      groups: [
+        PedalChoiceGroup(
+          label: l10n.actionGroupFunctions,
+          id: 'modes',
+          choices: [
+            PedalChoice(value: null, id: 'none', label: l10n.actionNone),
+            for (final mode in PedalSetup.modeChoices)
+              PedalChoice(
+                value: mode,
+                id: 'mode_${ModeAction(mode).token}',
+                label: controlActionLabel(l10n, names, ModeAction(mode)),
+              ),
+          ],
+        ),
+      ],
+    );
+    if (chosen == null || !mounted) return;
+    setState(
+      () => _draft = setup.copyWith(
+        modeHold: chosen.value,
+        clearModeHold: chosen.value == null,
+      ),
+    );
+  }
+
+  Future<void> _editRecordHold(PedalSetup setup) async {
+    final l10n = context.l10n;
+    final chosen = await showPedalChoicePicker<RecordHold>(
+      context,
+      title: _pickerTitle(context, hold: true),
+      current: setup.recordHold,
+      groups: [
+        PedalChoiceGroup(
+          label: l10n.actionGroupFunctions,
+          id: 'record_hold',
+          choices: [
+            for (final hold in RecordHold.values)
+              PedalChoice(
+                value: hold,
+                id: 'record_hold_${hold.name}',
+                label: recordHoldLabel(l10n, hold),
+              ),
+          ],
+        ),
+      ],
+    );
+    if (chosen == null || !mounted) return;
+    setState(() => _draft = setup.copyWith(recordHold: chosen.value));
+  }
+
+  Future<void> _editTrackHold(PedalSetup setup) async {
+    final l10n = context.l10n;
+    final chosen = await showPedalChoicePicker<TrackHold>(
+      context,
+      title: _pickerTitle(context, hold: true),
+      current: setup.trackHold,
+      groups: [
+        PedalChoiceGroup(
+          label: l10n.actionGroupFunctions,
+          id: 'track_hold',
+          choices: [
+            for (final hold in TrackHold.values)
+              PedalChoice(
+                value: hold,
+                id: 'track_hold_${hold.name}',
+                label: trackHoldLabel(l10n, hold),
+              ),
+          ],
+        ),
+      ],
+    );
+    if (chosen == null || !mounted) return;
+    setState(() => _draft = setup.copyWith(trackHold: chosen.value));
+  }
+
+  Future<void> _editCustom(PedalSetup setup, {required bool hold}) async {
+    final l10n = context.l10n;
+    final names = context.read<TracksCubit>().state.names;
+    final pair = setup.customFor(_selected, bank: _bank);
+    final chosen = await showPedalChoicePicker<ControlAction?>(
+      context,
+      title: _pickerTitle(context, hold: hold),
+      current: hold ? pair.hold : pair.press,
+      groups: [
+        for (final group in controlActionGroups())
+          PedalChoiceGroup(
+            label: controlActionGroupLabel(l10n, group),
+            id: group.name,
+            choices: [
+              // None leads the first group rather than getting a tab of its
+              // own: the accepted catalogue lists it among the functions, and
+              // a tab holding one button would be a heading over nothing.
+              if (group == controlActionGroups().first)
+                PedalChoice(value: null, id: 'none', label: l10n.actionNone),
+              for (final action in controlActionsIn(group))
+                PedalChoice(
+                  value: action,
+                  id: action.key,
+                  label: controlActionLabel(l10n, names, action),
+                ),
+            ],
+          ),
+      ],
+    );
+    if (chosen == null || !mounted) return;
+    setState(() {
+      final next = hold
+          ? pair.withHold(chosen.value)
+          : pair.withPress(chosen.value);
+      _draft = setup.withCustom(_selected, bank: _bank, pair: next);
+    });
+  }
+}
+
+/// The accepted Clear custom assignments confirmation: what it covers, what
+/// it keeps, and that it is undoable until Save.
+Future<bool> showPedalClearDialog(BuildContext context) async {
+  final surface = context.surface;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    barrierColor: surface.scrim.withValues(alpha: 0.86),
+    builder: (context) => const _PedalClearDialog(),
+  );
+  return confirmed ?? false;
+}
+
+class _PedalClearDialog extends StatelessWidget {
+  const _PedalClearDialog();
+
+  static const double _panelWidth = 1040;
+  static const double _pad = 40;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final body = TextStyle(
+      color: surface.textSecondary,
+      fontSize: 24,
+      height: 1.35,
+    );
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: SizedBox.fromSize(
+          size: kLoopPenSize,
+          child: Center(
+            child: Material(
+              key: const Key('pedal_setup_clear_dialog'),
+              color: surface.card,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: BorderSide(color: surface.borderStrong),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox(
+                width: _panelWidth,
+                child: Padding(
+                  padding: const EdgeInsets.all(_pad),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AppText(
+                        l10n.pedalSetupClearTitle,
+                        style: TextStyle(
+                          color: surface.textPrimary,
+                          fontSize: 38,
+                          height: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      AppText(l10n.pedalSetupClearScope, style: body),
+                      const SizedBox(height: 16),
+                      AppText(l10n.pedalSetupClearKeeps, style: body),
+                      const SizedBox(height: 16),
+                      AppText(l10n.pedalSetupClearDraft, style: body),
+                      const SizedBox(height: 36),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          LoopOutlinedButton(
+                            key: const Key('pedal_setup_clear_cancel'),
+                            width: 160,
+                            label: l10n.pedalSetupCancel,
+                            onTap: () => Navigator.of(context).pop(false),
+                          ),
+                          const SizedBox(width: 16),
+                          LoopOutlinedButton(
+                            key: const Key('pedal_setup_clear_confirm'),
+                            width: 300,
+                            tone: LoopButtonTone.accent,
+                            label: l10n.pedalSetupClearConfirm,
+                            onTap: () => Navigator.of(context).pop(true),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

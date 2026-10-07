@@ -7,20 +7,38 @@ import 'dart:ffi';
 import 'package:meta/meta.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+import 'package:segno_engine/src/instruments.dart';
 
 /// The maximum number of lanes a single track can hold, mirroring the native
 /// `LE_MAX_LANES`. Referenced (not re-typed) so it can never drift from the C.
 const int kMaxLanes = LE_MAX_LANES;
 
-/// The number of hardware inputs the live-monitor path covers, mirroring the
-/// native `LE_MAX_MONITORED_INPUTS`. Referenced (not re-typed) so it can never
-/// drift from the C.
+/// The number of hardware channels the engine can open per direction,
+/// mirroring the native `LE_MAX_CHANNELS`. Referenced (not re-typed) so it
+/// can never drift from the C. Bounds the hardware channel index the engine
+/// accepts (trim, pairing) and caps the per-channel meter lists on
+/// [EngineSnapshot], which are sized to the open device, not to this.
+const int kMaxChannels = LE_MAX_CHANNELS;
+
+/// The number of looper tracks, mirroring the native `LE_MAX_TRACKS`.
+/// Referenced (not re-typed) so it can never drift from the C.
+const int kMaxTracks = LE_MAX_TRACKS;
+
+/// The number of sources the live-monitor path covers, mirroring the native
+/// `LE_MAX_MONITORED_INPUTS`. Referenced (not re-typed) so it can never drift
+/// from the C.
 ///
-/// Not "the inputs the rig can use": an input past this can still be RECORDED
-/// into a lane, it simply cannot be monitored. The old name for this
-/// (`kMaxInputs`) read as the former, and was misread that way at least once
-/// (#558) — capping what a socket could be NAMED at eight.
+/// Every input the engine can open can be monitored (accepted design, slice
+/// 3), and so can every instrument source (#1197: [kMaxChannels] + slot), so
+/// this is [kMaxChannels] plus the instrument slots. It stays a distinct name
+/// from [kMaxLanes], which bounds a different thing (lanes per track). The old
+/// name for this (`kMaxInputs`) was misread at least once (#558) as a cap on
+/// what a socket could be NAMED.
 const int kMaxMonitoredInputs = LE_MAX_MONITORED_INPUTS;
+
+/// The number of output buses the engine can address (one per stereo pair
+/// of [kMaxChannels] outputs), mirroring the native `LE_MAX_OUTPUT_BUSES`.
+const int kMaxOutputBuses = LE_MAX_OUTPUT_BUSES;
 
 /// Phase of the loopback round-trip latency harness.
 ///
@@ -188,6 +206,97 @@ enum GridDivision {
   };
 }
 
+/// When a record or overdub request over an existing loop takes effect
+/// (accepted design, Length & quantize): the one product setting the
+/// engine's quantize gate and musical division pair map to.
+///
+/// [immediately] is the gate off; every other value is the gate on with the
+/// division that names it: [loopStart] waits for the loop top only, the rest
+/// wait for the next boundary of that note value on the loop-locked grid.
+/// The defining first recording never waits (it has no grid yet); its
+/// count-in or Sound start is a separate Recording setting.
+enum RecordTiming {
+  /// The press acts now.
+  immediately,
+
+  /// The press waits for the next loop top.
+  loopStart,
+
+  /// The next bar boundary.
+  bar,
+
+  /// The next half note.
+  half,
+
+  /// The next quarter note.
+  quarter,
+
+  /// The next eighth note.
+  eighth,
+
+  /// The next sixteenth note.
+  sixteenth;
+
+  /// The timing the engine's gate and division pair mean.
+  static RecordTiming of({
+    required bool quantize,
+    required GridDivision division,
+  }) {
+    if (!quantize) return RecordTiming.immediately;
+    return switch (division) {
+      GridDivision.off => RecordTiming.loopStart,
+      GridDivision.bar => RecordTiming.bar,
+      GridDivision.half => RecordTiming.half,
+      GridDivision.quarter => RecordTiming.quarter,
+      GridDivision.eighth => RecordTiming.eighth,
+      GridDivision.sixteenth => RecordTiming.sixteenth,
+    };
+  }
+
+  /// Whether the press waits at all (the engine's quantize gate).
+  bool get quantize => this != RecordTiming.immediately;
+
+  /// The musical division the press waits for; [GridDivision.off] for the
+  /// loop top only, and for [immediately] (where the gate is off anyway).
+  GridDivision get division => switch (this) {
+    RecordTiming.immediately || RecordTiming.loopStart => GridDivision.off,
+    RecordTiming.bar => GridDivision.bar,
+    RecordTiming.half => GridDivision.half,
+    RecordTiming.quarter => GridDivision.quarter,
+    RecordTiming.eighth => GridDivision.eighth,
+    RecordTiming.sixteenth => GridDivision.sixteenth,
+  };
+
+  /// A stable integer for persistence ([index] order; `0` = [immediately]).
+  int get code => index;
+
+  /// Maps a persisted [code] back; `null` for an unknown or absent value.
+  static RecordTiming? fromCode(int? code) =>
+      code != null && code >= 0 && code < RecordTiming.values.length
+      ? RecordTiming.values[code]
+      : null;
+
+  /// Maps a persisted [name] back; `null` for an unknown or absent value.
+  static RecordTiming? fromName(String? name) {
+    for (final value in RecordTiming.values) {
+      if (value.name == name) return value;
+    }
+    return null;
+  }
+}
+
+/// The ordinary intent whose transient cancellation rules accompany a pair.
+enum RecordStartEditKind {
+  /// Count-in edits cancel countdowns, including a same-value edit.
+  countIn,
+
+  /// Sound-on cancels countdowns; Sound-off cancels waiting signal arms.
+  sound,
+
+  /// Startup/session restoration clears all recording-start transients.
+  restore,
+}
+
 /// Click (metronome) audibility mode — a 4-value mode (Sheeran manual
 /// §5.9.1) that gates WHEN the click voice sounds; WHERE it sounds is the
 /// click output mask (`TempoControl.setClickOutput`, default no outputs).
@@ -284,6 +393,133 @@ enum LooperMode {
   };
 }
 
+/// The global Speed (#1179): every recorded track plays at [numer]/[denom]
+/// of its recorded speed, its pitch following. The song clock, click and
+/// capture are unaffected. Mirrors the native `le_engine_set_speed` factors.
+enum SpeedFactor {
+  /// Half speed, an octave down.
+  half(1, 2),
+
+  /// The recorded speed.
+  normal(1, 1),
+
+  /// Double speed, an octave up.
+  twice(2, 1),
+
+  /// Four times the speed, two octaves up.
+  fourfold(4, 1),
+
+  /// Eight times the speed, three octaves up.
+  eightfold(8, 1);
+
+  const SpeedFactor(this.numer, this.denom);
+
+  /// The factor's numerator.
+  final int numer;
+
+  /// The factor's denominator.
+  final int denom;
+
+  /// The native factor [numer]/[denom]; [normal] for 0/0, what an
+  /// unconfigured engine publishes. Any other pair is a factor this build
+  /// does not know, and is an [ArgumentError] rather than a silent [normal]:
+  /// showing Normal while the engine plays another factor would claim a
+  /// speed that is not sounding.
+  static SpeedFactor fromRatio(int numer, int denom) {
+    if (numer == 0 && denom == 0) return SpeedFactor.normal;
+    for (final factor in values) {
+      if (factor.numer == numer && factor.denom == denom) return factor;
+    }
+    throw ArgumentError('Unknown native speed factor $numer/$denom');
+  }
+}
+
+/// What a song-tempo change does now (#1179 Audio & tempo follow). Mirrors
+/// the native `le_tempo_follow_state`.
+enum TempoFollowState {
+  /// No recorded material: the tempo changes freely.
+  free,
+
+  /// A change retimes the recorded tracks that follow the tempo.
+  retimes,
+
+  /// Locked: the loop has no bar grid to follow.
+  noGrid,
+
+  /// Locked: no track follows the tempo.
+  noFollower,
+
+  /// Locked while a track records, overdubs, is armed or launching, or a
+  /// count-in runs.
+  busy;
+
+  /// Projects a native code; an unknown one reads [busy] (locked) rather
+  /// than claiming a change would retime.
+  static TempoFollowState fromCode(int code) => switch (code) {
+    0 => TempoFollowState.free,
+    1 => TempoFollowState.retimes,
+    2 => TempoFollowState.noGrid,
+    3 => TempoFollowState.noFollower,
+    _ => TempoFollowState.busy,
+  };
+}
+
+/// What happens to a following track's pitch when a tempo change retimes it
+/// (#1179). Mirrors the native Pitch setting's values.
+enum PitchMode {
+  /// The pitch stays: the take is time-stretched to the new span.
+  unchanged(0),
+
+  /// The pitch moves with the tempo ratio: faster raises it.
+  followsSpeed(1);
+
+  const PitchMode(this.code);
+
+  /// The native value.
+  final int code;
+
+  /// Projects a native value; anything but 1 reads [unchanged], the default.
+  static PitchMode fromCode(int code) =>
+      code == 1 ? PitchMode.followsSpeed : PitchMode.unchanged;
+}
+
+/// A track's Transpose (#1179): the pitch the player set (`stored`, -12..12
+/// semitones) and the pitch actually sounding (`effective`). `effective` is 0
+/// while the track's pitch-shifted render is pending or refused, and while
+/// Transpose is bypassed, so a reader never claims a pitch the mix is not
+/// playing.
+typedef TransposePitch = ({int stored, int effective});
+
+/// What a looper-mode change would do right now — the engine's answer to
+/// `LooperModeControl.looperModeGate` (accepted design, slice 2).
+enum LooperModeGate {
+  /// The change applies as posted (also the answer for the current mode).
+  open,
+
+  /// A take or an overdub pass is being captured, or a count-in runs.
+  capturing,
+
+  /// An armed action has neither fired nor been cancelled.
+  queued,
+
+  /// The recorded spans do not fit the target mode: Multi needs equal spans,
+  /// Sync and Band whole multiples or the played divisions of the primary.
+  spans,
+
+  /// Loops are playing: the change stops every playing track first.
+  playing;
+
+  /// Decodes the native `le_mode_gate` code.
+  static LooperModeGate fromCode(int code) => switch (code) {
+    0 => LooperModeGate.open,
+    1 => LooperModeGate.capturing,
+    2 => LooperModeGate.queued,
+    3 => LooperModeGate.spans,
+    4 => LooperModeGate.playing,
+    _ => LooperModeGate.spans,
+  };
+}
+
 /// An immutable per-lane projection of the native `le_lane_snapshot`.
 ///
 /// A lane is a track's fundamental recordable unit: it records one hardware
@@ -301,6 +537,7 @@ class LaneSnapshot {
     required this.rms,
     required this.peak,
     this.recoverable = false,
+    this.pan = 0,
   });
 
   /// An empty lane recording no input.
@@ -312,7 +549,8 @@ class LaneSnapshot {
       lengthFrames = 0,
       rms = 0,
       peak = 0,
-      recoverable = false;
+      recoverable = false,
+      pan = 0;
 
   /// Projects a native `le_lane_snapshot` into a [LaneSnapshot].
   factory LaneSnapshot.fromNative(le_lane_snapshot native) => LaneSnapshot(
@@ -324,6 +562,7 @@ class LaneSnapshot {
     rms: native.rms,
     peak: native.peak,
     recoverable: native.recoverable != 0,
+    pan: native.pan,
   );
 
   /// Hardware input channel this lane records (`-1` = none).
@@ -357,6 +596,10 @@ class LaneSnapshot {
   /// cleared-with-restore take reads `0` while its audio is one undo away.
   final bool recoverable;
 
+  /// The lane's pan, `-1` (left) .. `1` (right), `0` centre — see
+  /// `EngineRouting.setLanePan` for the balance law.
+  final double pan;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -369,7 +612,8 @@ class LaneSnapshot {
           lengthFrames == other.lengthFrames &&
           rms == other.rms &&
           peak == other.peak &&
-          recoverable == other.recoverable;
+          recoverable == other.recoverable &&
+          pan == other.pan;
 
   @override
   int get hashCode => Object.hash(
@@ -381,7 +625,71 @@ class LaneSnapshot {
     rms,
     peak,
     recoverable,
+    pan,
   );
+}
+
+/// The action queued for a track at the shared stopped-launch deadline.
+enum PendingLaunchAction {
+  /// Starts a fresh recording.
+  record,
+
+  /// Resumes existing audio.
+  play,
+
+  /// Starts an overdub over existing audio.
+  overdub;
+
+  /// Decodes native membership; zero means no pending launch.
+  static PendingLaunchAction? fromCode(int code) => switch (code) {
+    1 => record,
+    2 => play,
+    3 => overdub,
+    _ => null,
+  };
+}
+
+/// One coherent native Fade envelope and its material identity.
+@immutable
+class FadeImage {
+  /// Creates one coherent, source-owned envelope image.
+  const FadeImage({
+    this.amount = 1,
+    this.target = 1,
+    this.fullTravelSeconds = 0,
+    this.lifetime = 0,
+    this.generation = 0,
+  });
+
+  /// Current multiplier, independent of saved Mixer gain.
+  final double amount;
+
+  /// Destination multiplier.
+  final double target;
+
+  /// Seconds for a full traversal; zero denotes a stationary image.
+  final double fullTravelSeconds;
+
+  /// Native configuration identity.
+  final int lifetime;
+
+  /// Native recorded-material identity within that configuration.
+  final int generation;
+
+  /// Fading or faded below full level: what Fade feedback reports. Says
+  /// nothing about audibility (a stopped or muted track may be attenuated).
+  bool get attenuated => amount < 1 || amount != target;
+  @override
+  bool operator ==(Object other) =>
+      other is FadeImage &&
+      amount == other.amount &&
+      target == other.target &&
+      fullTravelSeconds == other.fullTravelSeconds &&
+      lifetime == other.lifetime &&
+      generation == other.generation;
+  @override
+  int get hashCode =>
+      Object.hash(amount, target, fullTravelSeconds, lifetime, generation);
 }
 
 /// An immutable per-track projection of the native `le_track_snapshot`.
@@ -401,40 +709,86 @@ class TrackSnapshot {
     required this.undoDepth,
     required this.rms,
     required this.peak,
+    this.fade = const FadeImage(),
+    this.fadeRevision = 0,
     this.clearRestore = false,
     this.redoDepth = 0,
+    this.peelDepth = 0,
     this.multiple = 1,
+    this.syncDivisor = 0,
     this.inputMask = 0x1,
     this.outputMask = 0x3,
     this.layerInFlight = false,
     this.pending = false,
+    this.pendingLaunch,
+    this.countInCancelGrace = false,
     this.lengthPresetBars = 0,
     this.oneShot = false,
     this.settledTakeId = 0,
     this.restoreState = TrackRestoreState.idle,
+    this.positionFrames = 0,
+    this.pendingTrigger = -1,
+    this.quantizeOverride,
+    this.quantizeDivOverride,
+    this.overdubFeedbackOverride,
+    this.solo = false,
+    this.imageRevision = 0,
+    this.peakL = 0,
+    this.peakR = 0,
+    this.reversed = false,
+    this.headRate = 1,
+    this.transpose = (stored: 0, effective: 0),
+    this.lengthHistoryRefusals = 0,
+    this.followTempoOverride,
+    this.pitchModeOverride,
+    this.pitchEffectiveCents = 0,
+    this.spanFrames = 0,
     this.lanes = const <LaneSnapshot>[],
   });
 
   /// An empty track.
   const TrackSnapshot.empty()
-    : state = TrackState.empty,
+    : fade = const FadeImage(),
+      fadeRevision = 0,
+      state = TrackState.empty,
       volume = 1,
       muted = false,
       lengthFrames = 0,
       undoDepth = 0,
       clearRestore = false,
       redoDepth = 0,
+      peelDepth = 0,
       rms = 0,
       peak = 0,
       multiple = 1,
+      syncDivisor = 0,
       inputMask = 0x1,
       outputMask = 0x3,
       layerInFlight = false,
       pending = false,
+      pendingLaunch = null,
+      countInCancelGrace = false,
       lengthPresetBars = 0,
       oneShot = false,
       settledTakeId = 0,
       restoreState = TrackRestoreState.idle,
+      positionFrames = 0,
+      pendingTrigger = -1,
+      quantizeOverride = null,
+      quantizeDivOverride = null,
+      overdubFeedbackOverride = null,
+      solo = false,
+      imageRevision = 0,
+      peakL = 0,
+      peakR = 0,
+      reversed = false,
+      headRate = 1,
+      transpose = (stored: 0, effective: 0),
+      lengthHistoryRefusals = 0,
+      followTempoOverride = null,
+      pitchModeOverride = null,
+      pitchEffectiveCents = 0,
+      spanFrames = 0,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -446,6 +800,14 @@ class TrackSnapshot {
     le_track_snapshot native, [
     List<LaneSnapshot> lanes = const [],
   ]) => TrackSnapshot(
+    fade: FadeImage(
+      amount: native.fade.amount,
+      target: native.fade.target,
+      fullTravelSeconds: native.fade.full_travel_seconds,
+      lifetime: native.fade.lifetime,
+      generation: native.fade.generation,
+    ),
+    fadeRevision: native.fade_revision,
     state: TrackState.fromCode(native.state),
     volume: native.volume,
     muted: native.muted != 0,
@@ -453,19 +815,100 @@ class TrackSnapshot {
     undoDepth: native.undo_depth,
     clearRestore: native.clear_restore != 0,
     redoDepth: native.redo_depth,
+    peelDepth: native.peel_depth,
     rms: native.rms,
     peak: native.peak,
     multiple: native.multiple,
+    syncDivisor: native.sync_divisor,
     inputMask: native.input_mask,
     outputMask: native.output_mask,
     layerInFlight: native.layer_in_flight != 0,
     pending: native.pending != 0,
+    pendingLaunch: PendingLaunchAction.fromCode(native.pending_launch),
+    countInCancelGrace: native.count_in_cancel_grace != 0,
     lengthPresetBars: native.length_preset_bars,
     oneShot: native.one_shot != 0,
     settledTakeId: native.settled_take_id,
     restoreState: TrackRestoreState.fromCode(native.restore_state),
+    positionFrames: native.position_frames,
+    pendingTrigger: native.pending_trigger,
+    quantizeOverride: native.quantize_override < 0
+        ? null
+        : native.quantize_override != 0,
+    quantizeDivOverride: native.quantize_div_override < 0
+        ? null
+        : GridDivision.fromCode(native.quantize_div_override),
+    overdubFeedbackOverride: native.overdub_feedback_override < 0
+        ? null
+        : native.overdub_feedback_override,
+    solo: native.solo != 0,
+    reversed: native.reversed != 0,
+    headRate: native.head_rate_milli / 1000,
+    transpose: (
+      stored: native.transpose_st,
+      effective: native.transpose_effective_st,
+    ),
+    lengthHistoryRefusals: native.length_history_refusals,
+    followTempoOverride: native.follow_override < 0
+        ? null
+        : native.follow_override != 0,
+    pitchModeOverride: native.pitch_override < 0
+        ? null
+        : PitchMode.fromCode(native.pitch_override),
+    pitchEffectiveCents: native.pitch_effective_cents,
+    spanFrames: native.span_frames,
+    imageRevision: native.image_revision,
+    peakL: native.peak_l,
+    peakR: native.peak_r,
     lanes: lanes,
   );
+
+  /// Complete callback-published Fade image.
+  final FadeImage fade;
+
+  /// Whether the track reads its recorded material backward (Reverse,
+  /// #1162). Callback-owned like [fade]: published with every accepted
+  /// `toggleReverse`/`installReverse`, reset to forward with the material.
+  final bool reversed;
+
+  /// The track's effective read rate in source frames per song frame (Speed,
+  /// #1179): 0.5 at 1/2x, 8 at 8x. Its position moves at this rate, and its
+  /// pitch follows it.
+  final double headRate;
+
+  /// The track's Transpose, stored and sounding (#1179). Callback-owned like
+  /// [reversed]: published with every accepted step or install, reset to 0
+  /// with the material.
+  final TransposePitch transpose;
+
+  /// How many Undo or Redo taps on this track's length edits did nothing
+  /// (#1168): the length no longer fit the rig, or a tap queued behind an
+  /// overdub stopped at a length edit. Counted since the engine was created
+  /// and never reset; the host reports each increase.
+  final int lengthHistoryRefusals;
+
+  /// This track's Follow tempo override (#1179): null inherits
+  /// [EngineSnapshot.followTempo], true follows, false keeps its recorded
+  /// speed.
+  final bool? followTempoOverride;
+
+  /// This track's Pitch override (#1179): null inherits
+  /// [EngineSnapshot.pitchMode].
+  final PitchMode? pitchModeOverride;
+
+  /// The pitch a tempo retime puts on what the track sounds now, in cents
+  /// (#1179): 0 at its own tempo or once its time-stretched render plays,
+  /// the tempo ratio's shift while that render is pending or with
+  /// [PitchMode.followsSpeed]. Speed and Transpose are not included.
+  final int pitchEffectiveCents;
+
+  /// The shared-clock length this track's take was laid down against once a
+  /// retime moved the clock (#1179), 0 for the clock in force. A Session
+  /// saves it so a recall reads every take at its own ratio.
+  final int spanFrames;
+
+  /// Sequence of the coherent native tuple publication.
+  final int fadeRevision;
 
   /// State-machine phase.
   final TrackState state;
@@ -482,6 +925,10 @@ class TrackSnapshot {
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
 
+  /// A Sync/Band division of the base loop (`2` or `4`), else `0`; while
+  /// nonzero [multiple] is an inert `1`.
+  final int syncDivisor;
+
   /// Available undo steps (overdub layers).
   final int undoDepth;
 
@@ -496,12 +943,25 @@ class TrackSnapshot {
   /// Available redo steps.
   final int redoDepth;
 
+  /// Overdub layers `peel` can still remove: the layers above the newest
+  /// history entry that is neither an overdub nor a peel. 0 on an empty or
+  /// cleared track, like [undoDepth]. A peel keeps [undoDepth] constant while
+  /// a layer disappears, so the layer count derives from this.
+  final int peelDepth;
+
   /// Whether an overdub undo layer is still being captured or drained (the
   /// punch-tail window). Session capture waits this out before exporting.
   final bool layerInFlight;
 
   /// Whether a quantized/signal-triggered record arm is waiting to fire.
   final bool pending;
+
+  /// This track’s action waiting for the shared Count-in downbeat.
+  final PendingLaunchAction? pendingLaunch;
+
+  /// A just-committed Count-in member can be canceled in the next drain.
+  /// This does not mean the launch is still pending.
+  final bool countInCancelGrace;
 
   /// The DEFINING-recording length preset (A6, D17): `0` = AUTO, `1..64` =
   /// fixed N bars. Inert on a track that already has content; applies to the
@@ -510,8 +970,7 @@ class TrackSnapshot {
 
   /// One Shot (song-mode-spec.md §2, B4/B5c): when `true`, this track plays
   /// once and then stops instead of looping. Settable in any looper mode via
-  /// `LooperModeControl.setOneShot`, but only behaviorally active in
-  /// Free/Song. A per-track SETTING, not content — survives a clear/
+  /// `LooperModeControl.setOneShot`, and active in all five modes. A per-track SETTING, not content — survives a clear/
   /// undo-to-empty and a mode switch, but resets to `false` on a fresh
   /// (re)start of the engine (unlike [lengthPresetBars]'s live behavior,
   /// which persists — see `LooperRepository`'s re-apply cache for the
@@ -533,11 +992,54 @@ class TrackSnapshot {
   /// affordance is [undoDepth]; this only drives an in-progress indicator.
   final TrackRestoreState restoreState;
 
+  /// This track's own playhead in frames within its own [lengthFrames] — the
+  /// engine has already applied the mode's position rule (a multiple's segment,
+  /// a Sync division's folded phase, a Free/Song track's private clock), so
+  /// `positionFrames / lengthFrames` is the track's progress. While recording
+  /// it is the write head instead. `0` for an empty or never-played track.
+  final int positionFrames;
+
+  /// What the arm reported by [pending] waits for: `0` the quantize grid,
+  /// `1` a signal at the recording input (Sound start), `2` a Band section
+  /// toggle at the primary's loop top; `-1` while nothing is pending.
+  final int pendingTrigger;
+
+  /// This track's quantize gate override (slice 2b): `null` inherits the
+  /// global gate, `false` forces the press immediate, `true` forces it to
+  /// wait. Read back from the coherent engine timing snapshot.
+  final bool? quantizeOverride;
+
+  /// This track's musical division override (slice 2b): `null` inherits the
+  /// global division. Read back from the same coherent timing snapshot as
+  /// [quantizeOverride].
+  final GridDivision? quantizeDivOverride;
+
+  /// This track's overdub feedback override in `0..1` (slice 2b): `null`
+  /// inherits the global coefficient. Read back from the engine
+  /// (`LooperTransport.setTrackOverdubFeedback`).
+  final double? overdubFeedbackOverride;
+
   /// RMS level for the most recent block, in `0..1`.
   final double rms;
 
   /// Peak level for the most recent block, in `0..1`.
   final double peak;
+
+  /// Whether this track is soloed (`EngineRouting.setTrackSolo`). While any
+  /// track is soloed only soloed tracks route; independent of [muted].
+  final bool solo;
+
+  /// Generation of the image actually applied at the last capture start.
+  final int imageRevision;
+
+  /// The track's absolute peak on the left side over the most recent block,
+  /// read after volume, pan and track FX, before output folding/master bus.
+  /// Peaks can exceed unity. `0` while no enabled route is audible.
+  /// Unlike [peak] (the dry loop content) this follows the fader.
+  final double peakL;
+
+  /// The right-side counterpart of [peakL].
+  final double peakR;
 
   /// Lane 0's recorded input as a bitmask (`1 << inputChannel`, or `0` when
   /// lane 0 records no input). Mirrors lane 0; per-lane inputs are in [lanes].
@@ -567,41 +1069,112 @@ class TrackSnapshot {
           muted == other.muted &&
           lengthFrames == other.lengthFrames &&
           multiple == other.multiple &&
+          syncDivisor == other.syncDivisor &&
           undoDepth == other.undoDepth &&
           redoDepth == other.redoDepth &&
+          peelDepth == other.peelDepth &&
           rms == other.rms &&
           peak == other.peak &&
           inputMask == other.inputMask &&
           outputMask == other.outputMask &&
           layerInFlight == other.layerInFlight &&
           pending == other.pending &&
+          pendingLaunch == other.pendingLaunch &&
+          countInCancelGrace == other.countInCancelGrace &&
           lengthPresetBars == other.lengthPresetBars &&
           oneShot == other.oneShot &&
           settledTakeId == other.settledTakeId &&
           restoreState == other.restoreState &&
+          positionFrames == other.positionFrames &&
+          pendingTrigger == other.pendingTrigger &&
+          quantizeOverride == other.quantizeOverride &&
+          quantizeDivOverride == other.quantizeDivOverride &&
+          overdubFeedbackOverride == other.overdubFeedbackOverride &&
+          solo == other.solo &&
+          imageRevision == other.imageRevision &&
+          peakL == other.peakL &&
+          peakR == other.peakR &&
+          reversed == other.reversed &&
+          headRate == other.headRate &&
+          transpose == other.transpose &&
+          lengthHistoryRefusals == other.lengthHistoryRefusals &&
+          followTempoOverride == other.followTempoOverride &&
+          pitchModeOverride == other.pitchModeOverride &&
+          pitchEffectiveCents == other.pitchEffectiveCents &&
+          spanFrames == other.spanFrames &&
           _listEquals(lanes, other.lanes);
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     state,
     volume,
     muted,
     lengthFrames,
     multiple,
+    syncDivisor,
     undoDepth,
     redoDepth,
+    peelDepth,
     rms,
     peak,
     inputMask,
     outputMask,
     layerInFlight,
     pending,
+    pendingLaunch,
+    countInCancelGrace,
     lengthPresetBars,
     oneShot,
     settledTakeId,
     restoreState,
+    positionFrames,
+    pendingTrigger,
+    quantizeOverride,
+    quantizeDivOverride,
+    overdubFeedbackOverride,
+    solo,
+    imageRevision,
+    peakL,
+    peakR,
+    reversed,
+    headRate,
+    transpose,
+    lengthHistoryRefusals,
+    followTempoOverride,
+    pitchModeOverride,
+    pitchEffectiveCents,
+    spanFrames,
     Object.hashAll(lanes),
-  );
+  ]);
+}
+
+/// Why a performance take stopped (#1198). Mirrors the native
+/// `le_perf_stop_reason`.
+enum PerfStopReason {
+  /// The take is running, or none has run.
+  none,
+
+  /// Stopped by a disarm.
+  disarm,
+
+  /// The audio device changed while armed.
+  deviceChanged,
+
+  /// A write failed; the sidecar says `disk_full`.
+  writeFailed,
+
+  /// The destination reached its reserve; every stream ends at the last
+  /// whole frame it could hold.
+  reserveReached,
+
+  /// A capture ring overflowed because the storage fell behind; the take ends
+  /// at the first frame it could not keep.
+  slowStorage;
+
+  /// The reason for the native value [value], [none] for one this build
+  /// does not know.
+  static PerfStopReason fromNative(int value) =>
+      value >= 0 && value < values.length ? values[value] : none;
 }
 
 /// A class of real device dropout, as counted by [CallbackWindowStats.xruns].
@@ -888,6 +1461,7 @@ class EngineSnapshot {
     required this.outputRms,
     required this.latencyState,
     required this.measuredLatencyMs,
+    this.outputPeak = 0,
     this.devicePresent = false,
     this.inputChannels = 0,
     this.outputChannels = 0,
@@ -902,6 +1476,7 @@ class EngineSnapshot {
     this.tunerHz = 0,
     this.tunerConfidence = 0,
     this.tunerInput = -1,
+    this.tunerMuteMask = 0,
     this.activeBackend = AudioBackend.miniaudio,
     this.outputEnabledMask = 0xFFFFFFFF,
     this.isPerfArmed = false,
@@ -909,6 +1484,12 @@ class EngineSnapshot {
     this.perfOverruns = 0,
     this.perfZeroFilledFrames = 0,
     this.perfStopped = false,
+    this.perfRingSeconds = 0,
+    this.perfStopReason = PerfStopReason.none,
+    this.perfOvers = 0,
+    this.perfCaptureStreams = 0,
+    this.perfCaptureFrameBytes = 0,
+    this.perfFailedCheckpoints = 0,
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -916,8 +1497,13 @@ class EngineSnapshot {
     this.syncTempo = true,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    this.loopBeats = 0,
     this.currentBeat = 0,
     this.clickMode = ClickMode.off,
+    this.clickModeRevision = 0,
+    this.recordStartRevision = 0,
+    this.clickModeResult = 0,
+    this.recordStartResult = 0,
     this.clickMask = 0,
     this.clickVolume = 1,
     this.countInBars = 0,
@@ -925,7 +1511,37 @@ class EngineSnapshot {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.speed = SpeedFactor.normal,
+    this.transposeBypass = false,
+    this.recordedTempoBpm = 0,
+    this.recordedLengthFrames = 0,
+    this.followTempo = false,
+    this.tempoFollow = TempoFollowState.free,
+    this.pitchMode = PitchMode.unchanged,
+    this.quantize = false,
+    this.recordTimingRevision = 0,
+    this.recordTimingResult = 0,
+    this.autoRecord = false,
+    this.overdubFeedback = 1,
+    this.mixRevision = 0,
+    this.inputPeaks = const [],
+    this.monitorPeaks = const [],
+    this.outputPeaks = const [],
+    this.outputBusCount = 0,
+    this.outputLevels = const [],
+    this.outputMuted = const [],
+    this.outputMono = const [],
+    this.outputBalances = const [],
+    this.tailResetRev = 0,
+    this.perfFollowOutput = false,
+    this.perfCaptureBus = -1,
+    this.perfOutputLevel = 1,
+    this.perfOutputMuted = false,
+    this.perfCaptureMask = 0,
+    this.perfOutputEnabledMask = 0,
     this.tracks = const [],
+    this.instruments = InstrumentsSnapshot.initial,
+    this.midiInput = MidiInputSnapshot.initial,
   });
 
   /// The snapshot of an engine that has never started.
@@ -945,8 +1561,10 @@ class EngineSnapshot {
       tunerHz = 0,
       tunerConfidence = 0,
       tunerInput = -1,
+      tunerMuteMask = 0,
       inputPeak = 0,
       outputRms = 0,
+      outputPeak = 0,
       latencyState = LatencyState.idle,
       measuredLatencyMs = -1,
       masterLengthFrames = 0,
@@ -961,6 +1579,12 @@ class EngineSnapshot {
       perfOverruns = 0,
       perfZeroFilledFrames = 0,
       perfStopped = false,
+      perfRingSeconds = 0,
+      perfStopReason = PerfStopReason.none,
+      perfOvers = 0,
+      perfCaptureStreams = 0,
+      perfCaptureFrameBytes = 0,
+      perfFailedCheckpoints = 0,
       tempoBpm = 0,
       tempoSource = TempoSource.none,
       tsNum = 4,
@@ -968,8 +1592,13 @@ class EngineSnapshot {
       syncTempo = true,
       quantizeDiv = GridDivision.off,
       loopBars = 0,
+      loopBeats = 0,
       currentBeat = 0,
       clickMode = ClickMode.off,
+      clickModeRevision = 0,
+      recordStartRevision = 0,
+      clickModeResult = 0,
+      recordStartResult = 0,
       clickMask = 0,
       clickVolume = 1,
       countInBars = 0,
@@ -977,65 +1606,342 @@ class EngineSnapshot {
       countInBeatsLeft = 0,
       looperMode = LooperMode.multi,
       primaryTrack = -1,
-      tracks = const [];
+      speed = SpeedFactor.normal,
+      transposeBypass = false,
+      recordedTempoBpm = 0,
+      recordedLengthFrames = 0,
+      followTempo = false,
+      tempoFollow = TempoFollowState.free,
+      pitchMode = PitchMode.unchanged,
+      quantize = false,
+      recordTimingRevision = 0,
+      recordTimingResult = 0,
+      autoRecord = false,
+      overdubFeedback = 1,
+      mixRevision = 0,
+      inputPeaks = const [],
+      monitorPeaks = const [],
+      outputPeaks = const [],
+      outputBusCount = 0,
+      outputLevels = const [],
+      outputMuted = const [],
+      outputMono = const [],
+      outputBalances = const [],
+      tailResetRev = 0,
+      perfFollowOutput = false,
+      perfCaptureBus = -1,
+      perfOutputLevel = 1,
+      perfOutputMuted = false,
+      perfCaptureMask = 0,
+      perfOutputEnabledMask = 0,
+      tracks = const [],
+      instruments = InstrumentsSnapshot.initial,
+      midiInput = MidiInputSnapshot.initial;
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
   /// [tracks] into an [EngineSnapshot].
   ///
   /// Tracks are read separately (via `le_engine_get_track`) because this ffi
   /// version cannot index a native struct array.
+  ///
+  /// The per-channel meter lists are sized to the negotiated channel counts
+  /// (clamped to the native `LE_MAX_CHANNELS` arrays), not to the arrays:
+  /// this runs at render rate, and the entries past the device would only
+  /// be zeros that every `==` and `hashCode` then walks.
   factory EngineSnapshot.fromNative(
     le_snapshot native,
     List<TrackSnapshot> tracks,
-  ) => EngineSnapshot(
-    isRunning: native.running != 0,
-    devicePresent: native.device_present != 0,
-    sampleRate: native.sample_rate,
-    bufferFrames: native.buffer_frames,
-    inputChannels: native.input_channels,
-    outputChannels: native.output_channels,
-    excludedInputMask: native.excluded_input_mask,
-    inputClipMask: native.input_clip_mask,
-    inputCondMask: native.input_cond_mask,
-    framesProcessed: native.frames_processed,
-    xrunCount: native.xrun_count,
-    inputRms: native.input_rms,
-    tunerHz: native.tuner_hz,
-    tunerConfidence: native.tuner_confidence,
-    tunerInput: native.tuner_input,
-    inputPeak: native.input_peak,
-    outputRms: native.output_rms,
-    latencyState: LatencyState.fromCode(native.latency_state),
-    measuredLatencyMs: native.measured_latency_ms,
-    masterLengthFrames: native.master_length_frames,
-    masterPositionFrames: native.master_position_frames,
-    recordOffsetFrames: native.record_offset_frames,
-    fxAddedLatencyFrames: native.fx_added_latency_frames,
-    masterGain: native.master_gain,
-    activeBackend: AudioBackend.fromNative(native.active_backend),
-    outputEnabledMask: native.output_enabled_mask,
-    isPerfArmed: native.perf_armed != 0,
-    perfFrames: native.perf_frames,
-    perfOverruns: native.perf_overruns,
-    perfZeroFilledFrames: native.perf_zero_filled_frames,
-    perfStopped: native.perf_stopped != 0,
-    tempoBpm: native.tempo_bpm,
-    tempoSource: TempoSource.fromCode(native.tempo_source),
-    tsNum: native.ts_num,
-    tsDen: native.ts_den,
-    syncTempo: native.sync_tempo != 0,
-    quantizeDiv: GridDivision.fromCode(native.quantize_div),
-    loopBars: native.loop_bars,
-    currentBeat: native.current_beat,
-    clickMode: ClickMode.fromCode(native.click_mode),
-    clickMask: native.click_mask,
-    clickVolume: native.click_volume,
-    countInBars: native.count_in_bars,
-    countingIn: native.counting_in != 0,
-    countInBeatsLeft: native.count_in_beats_left,
-    looperMode: LooperMode.fromCode(native.looper_mode),
-    primaryTrack: native.primary_track,
-    tracks: tracks,
+  ) {
+    final inputs = native.input_channels.clamp(0, LE_MAX_CHANNELS);
+    final outputs = native.output_channels.clamp(0, LE_MAX_CHANNELS);
+    final buses = native.output_bus_count.clamp(0, LE_MAX_OUTPUT_BUSES);
+    return EngineSnapshot(
+      isRunning: native.running != 0,
+      devicePresent: native.device_present != 0,
+      sampleRate: native.sample_rate,
+      bufferFrames: native.buffer_frames,
+      inputChannels: native.input_channels,
+      outputChannels: native.output_channels,
+      excludedInputMask: native.excluded_input_mask,
+      inputClipMask: native.input_clip_mask,
+      inputCondMask: native.input_cond_mask,
+      framesProcessed: native.frames_processed,
+      xrunCount: native.xrun_count,
+      inputRms: native.input_rms,
+      tunerHz: native.tuner_hz,
+      tunerConfidence: native.tuner_confidence,
+      tunerInput: native.tuner_input,
+      tunerMuteMask: native.tuner_mute_mask,
+      inputPeak: native.input_peak,
+      outputRms: native.output_rms,
+      outputPeak: native.output_peak,
+      latencyState: LatencyState.fromCode(native.latency_state),
+      measuredLatencyMs: native.measured_latency_ms,
+      masterLengthFrames: native.master_length_frames,
+      masterPositionFrames: native.master_position_frames,
+      recordOffsetFrames: native.record_offset_frames,
+      fxAddedLatencyFrames: native.fx_added_latency_frames,
+      masterGain: native.master_gain,
+      activeBackend: AudioBackend.fromNative(native.active_backend),
+      outputEnabledMask: native.output_enabled_mask,
+      isPerfArmed: native.perf_armed != 0,
+      perfFrames: native.perf_frames,
+      perfOverruns: native.perf_overruns,
+      perfZeroFilledFrames: native.perf_zero_filled_frames,
+      perfStopped: native.perf_stopped != 0,
+      perfRingSeconds: native.perf_ring_seconds,
+      perfStopReason: PerfStopReason.fromNative(native.perf_stop_reason),
+      perfOvers: native.perf_overs,
+      perfCaptureStreams: native.perf_capture_streams,
+      perfCaptureFrameBytes: native.perf_capture_frame_bytes,
+      perfFailedCheckpoints: native.perf_checkpoint_failures,
+      tempoBpm: native.tempo_bpm,
+      tempoSource: TempoSource.fromCode(native.tempo_source),
+      tsNum: native.ts_num,
+      tsDen: native.ts_den,
+      syncTempo: native.sync_tempo != 0,
+      quantizeDiv: GridDivision.fromCode(native.quantize_div),
+      loopBars: native.loop_bars,
+      loopBeats: native.loop_beats,
+      currentBeat: native.current_beat,
+      clickMode: ClickMode.fromCode(native.click_mode),
+      clickModeRevision: native.click_mode_revision,
+      recordStartRevision: native.record_start_revision,
+      clickModeResult: native.click_mode_result,
+      recordStartResult: native.record_start_result,
+      clickMask: native.click_mask,
+      clickVolume: native.click_volume,
+      countInBars: native.count_in_bars,
+      countingIn: native.counting_in != 0,
+      countInBeatsLeft: native.count_in_beats_left,
+      looperMode: LooperMode.fromCode(native.looper_mode),
+      primaryTrack: native.primary_track,
+      speed: SpeedFactor.fromRatio(native.speed_numer, native.speed_denom),
+      transposeBypass: native.transpose_bypass != 0,
+      recordedTempoBpm: native.recorded_tempo_bpm,
+      recordedLengthFrames: native.recorded_length_frames,
+      followTempo: native.follow_tempo != 0,
+      tempoFollow: TempoFollowState.fromCode(native.tempo_follow),
+      pitchMode: PitchMode.fromCode(native.pitch_follows_speed),
+      quantize: native.quantize != 0,
+      recordTimingRevision: native.record_timing_revision,
+      recordTimingResult: native.record_timing_result,
+      autoRecord: native.auto_record != 0,
+      overdubFeedback: native.overdub_feedback,
+      mixRevision: native.mix_revision,
+      inputPeaks: [for (var i = 0; i < inputs; i++) native.input_peaks[i]],
+      monitorPeaks: [for (var i = 0; i < inputs; i++) native.monitor_peaks[i]],
+      outputPeaks: [for (var i = 0; i < outputs; i++) native.output_peaks[i]],
+      outputBusCount: buses,
+      outputLevels: [for (var k = 0; k < buses; k++) native.output_level[k]],
+      outputMuted: [
+        for (var k = 0; k < buses; k++) native.output_muted[k] != 0,
+      ],
+      outputMono: [for (var k = 0; k < buses; k++) native.output_mono[k] != 0],
+      outputBalances: [
+        for (var k = 0; k < buses; k++) native.output_balance[k],
+      ],
+      tailResetRev: native.tail_reset_rev,
+      perfFollowOutput: native.perf_follow_output != 0,
+      perfCaptureBus: native.perf_capture_bus,
+      perfOutputLevel: native.perf_output_level,
+      perfOutputMuted: native.perf_output_muted != 0,
+      perfCaptureMask: native.perf_capture_mask,
+      perfOutputEnabledMask: native.perf_output_enabled_mask,
+      tracks: tracks,
+      instruments: InstrumentsSnapshot.fromNative(native),
+      midiInput: MidiInputSnapshot.fromNative(native),
+    );
+  }
+
+  /// This snapshot with the named facts replaced. Enumerated from the field
+  /// list, so a decorator (the pumped test engine, which presents a
+  /// configured-but-undriven engine as running) carries every other fact
+  /// through instead of silently dropping the ones it forgot to copy.
+  EngineSnapshot copyWith({
+    bool? isRunning,
+    bool? devicePresent,
+    int? sampleRate,
+    int? bufferFrames,
+    int? inputChannels,
+    int? outputChannels,
+    int? excludedInputMask,
+    int? inputClipMask,
+    int? inputCondMask,
+    int? framesProcessed,
+    int? xrunCount,
+    double? tunerHz,
+    double? tunerConfidence,
+    int? tunerInput,
+    int? tunerMuteMask,
+    double? inputRms,
+    double? inputPeak,
+    double? outputRms,
+    double? outputPeak,
+    LatencyState? latencyState,
+    double? measuredLatencyMs,
+    int? masterLengthFrames,
+    int? masterPositionFrames,
+    int? recordOffsetFrames,
+    int? fxAddedLatencyFrames,
+    double? masterGain,
+    AudioBackend? activeBackend,
+    int? outputEnabledMask,
+    bool? isPerfArmed,
+    int? perfFrames,
+    int? perfOverruns,
+    int? perfZeroFilledFrames,
+    bool? perfStopped,
+    int? perfRingSeconds,
+    PerfStopReason? perfStopReason,
+    int? perfOvers,
+    int? perfCaptureStreams,
+    int? perfCaptureFrameBytes,
+    int? perfFailedCheckpoints,
+    double? tempoBpm,
+    TempoSource? tempoSource,
+    int? tsNum,
+    int? tsDen,
+    bool? syncTempo,
+    GridDivision? quantizeDiv,
+    int? loopBars,
+    int? loopBeats,
+    int? currentBeat,
+    ClickMode? clickMode,
+    int? clickModeRevision,
+    int? recordStartRevision,
+    int? clickModeResult,
+    int? recordStartResult,
+    int? clickMask,
+    double? clickVolume,
+    int? countInBars,
+    bool? countingIn,
+    int? countInBeatsLeft,
+    LooperMode? looperMode,
+    int? primaryTrack,
+    SpeedFactor? speed,
+    bool? transposeBypass,
+    double? recordedTempoBpm,
+    int? recordedLengthFrames,
+    bool? followTempo,
+    TempoFollowState? tempoFollow,
+    PitchMode? pitchMode,
+    bool? quantize,
+    int? recordTimingRevision,
+    int? recordTimingResult,
+    bool? autoRecord,
+    double? overdubFeedback,
+    int? mixRevision,
+    List<double>? inputPeaks,
+    List<double>? monitorPeaks,
+    List<double>? outputPeaks,
+    int? outputBusCount,
+    List<double>? outputLevels,
+    List<bool>? outputMuted,
+    List<bool>? outputMono,
+    List<double>? outputBalances,
+    int? tailResetRev,
+    bool? perfFollowOutput,
+    int? perfCaptureBus,
+    double? perfOutputLevel,
+    bool? perfOutputMuted,
+    int? perfCaptureMask,
+    int? perfOutputEnabledMask,
+    List<TrackSnapshot>? tracks,
+    InstrumentsSnapshot? instruments,
+    MidiInputSnapshot? midiInput,
+  }) => EngineSnapshot(
+    isRunning: isRunning ?? this.isRunning,
+    devicePresent: devicePresent ?? this.devicePresent,
+    sampleRate: sampleRate ?? this.sampleRate,
+    bufferFrames: bufferFrames ?? this.bufferFrames,
+    inputChannels: inputChannels ?? this.inputChannels,
+    outputChannels: outputChannels ?? this.outputChannels,
+    excludedInputMask: excludedInputMask ?? this.excludedInputMask,
+    inputClipMask: inputClipMask ?? this.inputClipMask,
+    inputCondMask: inputCondMask ?? this.inputCondMask,
+    framesProcessed: framesProcessed ?? this.framesProcessed,
+    xrunCount: xrunCount ?? this.xrunCount,
+    tunerHz: tunerHz ?? this.tunerHz,
+    tunerConfidence: tunerConfidence ?? this.tunerConfidence,
+    tunerInput: tunerInput ?? this.tunerInput,
+    tunerMuteMask: tunerMuteMask ?? this.tunerMuteMask,
+    inputRms: inputRms ?? this.inputRms,
+    inputPeak: inputPeak ?? this.inputPeak,
+    outputRms: outputRms ?? this.outputRms,
+    outputPeak: outputPeak ?? this.outputPeak,
+    latencyState: latencyState ?? this.latencyState,
+    measuredLatencyMs: measuredLatencyMs ?? this.measuredLatencyMs,
+    masterLengthFrames: masterLengthFrames ?? this.masterLengthFrames,
+    masterPositionFrames: masterPositionFrames ?? this.masterPositionFrames,
+    recordOffsetFrames: recordOffsetFrames ?? this.recordOffsetFrames,
+    fxAddedLatencyFrames: fxAddedLatencyFrames ?? this.fxAddedLatencyFrames,
+    masterGain: masterGain ?? this.masterGain,
+    activeBackend: activeBackend ?? this.activeBackend,
+    outputEnabledMask: outputEnabledMask ?? this.outputEnabledMask,
+    isPerfArmed: isPerfArmed ?? this.isPerfArmed,
+    perfFrames: perfFrames ?? this.perfFrames,
+    perfOverruns: perfOverruns ?? this.perfOverruns,
+    perfZeroFilledFrames: perfZeroFilledFrames ?? this.perfZeroFilledFrames,
+    perfStopped: perfStopped ?? this.perfStopped,
+    perfRingSeconds: perfRingSeconds ?? this.perfRingSeconds,
+    perfStopReason: perfStopReason ?? this.perfStopReason,
+    perfOvers: perfOvers ?? this.perfOvers,
+    perfCaptureStreams: perfCaptureStreams ?? this.perfCaptureStreams,
+    perfCaptureFrameBytes: perfCaptureFrameBytes ?? this.perfCaptureFrameBytes,
+    perfFailedCheckpoints: perfFailedCheckpoints ?? this.perfFailedCheckpoints,
+    tempoBpm: tempoBpm ?? this.tempoBpm,
+    tempoSource: tempoSource ?? this.tempoSource,
+    tsNum: tsNum ?? this.tsNum,
+    tsDen: tsDen ?? this.tsDen,
+    syncTempo: syncTempo ?? this.syncTempo,
+    quantizeDiv: quantizeDiv ?? this.quantizeDiv,
+    loopBars: loopBars ?? this.loopBars,
+    loopBeats: loopBeats ?? this.loopBeats,
+    currentBeat: currentBeat ?? this.currentBeat,
+    clickMode: clickMode ?? this.clickMode,
+    clickModeRevision: clickModeRevision ?? this.clickModeRevision,
+    recordStartRevision: recordStartRevision ?? this.recordStartRevision,
+    clickModeResult: clickModeResult ?? this.clickModeResult,
+    recordStartResult: recordStartResult ?? this.recordStartResult,
+    clickMask: clickMask ?? this.clickMask,
+    clickVolume: clickVolume ?? this.clickVolume,
+    countInBars: countInBars ?? this.countInBars,
+    countingIn: countingIn ?? this.countingIn,
+    countInBeatsLeft: countInBeatsLeft ?? this.countInBeatsLeft,
+    looperMode: looperMode ?? this.looperMode,
+    primaryTrack: primaryTrack ?? this.primaryTrack,
+    speed: speed ?? this.speed,
+    transposeBypass: transposeBypass ?? this.transposeBypass,
+    recordedTempoBpm: recordedTempoBpm ?? this.recordedTempoBpm,
+    recordedLengthFrames: recordedLengthFrames ?? this.recordedLengthFrames,
+    followTempo: followTempo ?? this.followTempo,
+    tempoFollow: tempoFollow ?? this.tempoFollow,
+    pitchMode: pitchMode ?? this.pitchMode,
+    quantize: quantize ?? this.quantize,
+    recordTimingRevision: recordTimingRevision ?? this.recordTimingRevision,
+    recordTimingResult: recordTimingResult ?? this.recordTimingResult,
+    autoRecord: autoRecord ?? this.autoRecord,
+    overdubFeedback: overdubFeedback ?? this.overdubFeedback,
+    mixRevision: mixRevision ?? this.mixRevision,
+    inputPeaks: inputPeaks ?? this.inputPeaks,
+    monitorPeaks: monitorPeaks ?? this.monitorPeaks,
+    outputPeaks: outputPeaks ?? this.outputPeaks,
+    outputBusCount: outputBusCount ?? this.outputBusCount,
+    outputLevels: outputLevels ?? this.outputLevels,
+    outputMuted: outputMuted ?? this.outputMuted,
+    outputMono: outputMono ?? this.outputMono,
+    outputBalances: outputBalances ?? this.outputBalances,
+    tailResetRev: tailResetRev ?? this.tailResetRev,
+    perfFollowOutput: perfFollowOutput ?? this.perfFollowOutput,
+    perfCaptureBus: perfCaptureBus ?? this.perfCaptureBus,
+    perfOutputLevel: perfOutputLevel ?? this.perfOutputLevel,
+    perfOutputMuted: perfOutputMuted ?? this.perfOutputMuted,
+    perfCaptureMask: perfCaptureMask ?? this.perfCaptureMask,
+    perfOutputEnabledMask: perfOutputEnabledMask ?? this.perfOutputEnabledMask,
+    tracks: tracks ?? this.tracks,
+    instruments: instruments ?? this.instruments,
+    midiInput: midiInput ?? this.midiInput,
   );
 
   /// Whether the audio device is open and the callback is running.
@@ -1101,6 +2007,11 @@ class EngineSnapshot {
   /// words on screen.
   final int tunerInput;
 
+  /// Inputs whose live monitors the tuner is silencing (bit `c` = input `c`),
+  /// `0` whenever [tunerInput] is `-1` (#1229). Separate from, and ORed with,
+  /// each monitor's own persistent mute.
+  final int tunerMuteMask;
+
   /// Input RMS level for the most recent block, in `0..1`.
   final double inputRms;
 
@@ -1109,6 +2020,11 @@ class EngineSnapshot {
 
   /// Output RMS level for the most recent block, in `0..1`.
   final double outputRms;
+
+  /// Master-bus absolute peak for the most recent block, in `0..1`, read after
+  /// the master gain and limiter — what reaches the outputs. A sum can clip
+  /// when no single track does, so the stage footer meters this.
+  final double outputPeak;
 
   /// Phase of the latency harness.
   final LatencyState latencyState;
@@ -1178,13 +2094,39 @@ class EngineSnapshot {
   /// into the capture's glitch flag alongside [perfOverruns] (#710).
   final int perfZeroFilledFrames;
 
-  /// Whether the capture drain thread stopped ITSELF because a write failed —
-  /// disk full, a quota, a read-only remount, an I/O error.
+  /// Whether the capture drain thread stopped the take ITSELF: a write
+  /// failed (disk full, a quota, a read-only remount, an I/O error), the
+  /// destination reached its reserve, or a capture ring dropped a frame
+  /// (#1198). [perfStopReason] says which.
   ///
   /// Distinct from a capture that is simply not armed: this says one WAS armed
-  /// and died. Without it the stop was invisible to the app — the capture
+  /// and ended. Without it the stop was invisible to the app — the capture
   /// stayed armed, its handles stayed open, and finalize never ran (#652).
   final bool perfStopped;
+
+  /// Seconds each capture ring of the most recent take was granted, after
+  /// the engine's ring memory cap (#1198); 0 before any arm.
+  final int perfRingSeconds;
+
+  /// Why the most recent take stopped; [PerfStopReason.none] while it runs.
+  /// Survives the disarm, reset by the next arm.
+  final PerfStopReason perfStopReason;
+
+  /// Samples above full scale (magnitude over 1.0) across every stream of the
+  /// take so far. Kept as recorded, never clipped (#1198).
+  final int perfOvers;
+
+  /// The streams the armed take captures, or the next arm would: the first
+  /// enabled output pair plus every monitored input (#1198). 0 when nothing
+  /// could be captured.
+  final int perfCaptureStreams;
+
+  /// The bytes one frame of every [perfCaptureStreams] stream takes.
+  final int perfCaptureFrameBytes;
+
+  /// Checkpoints of the most recent take that could not be written: each
+  /// leaves the other slot standing and the take running (#1198 D4).
+  final int perfFailedCheckpoints;
 
   // ---- tempo grid (A1) ----
 
@@ -1210,9 +2152,16 @@ class EngineSnapshot {
   final GridDivision quantizeDiv;
 
   /// Whole bars in the master loop, or `0` when no grid relationship exists
-  /// (sync off, no loop, or the loop predates any grid). The loop's audio
-  /// length is never altered by the grid — this is a derived count.
+  /// (sync off, no loop, or the loop predates any grid) or the grid's beats
+  /// do not make whole bars ([loopBeats]). The loop's audio length is never
+  /// altered by the grid — this is a derived count.
   final int loopBars;
+
+  /// Whole beats (denominator notes) in the master loop, the grid's own
+  /// count, or `0` with no grid (#1168). [loopBars] × [tsNum] for a
+  /// whole-bar loop; a Divide of a sole 1- or 3-bar loop keeps the tempo and
+  /// leaves 2 or 6 beats with [loopBars] `0`.
+  final int loopBeats;
 
   /// Beat index (`0..tsNum-1`) within the bar: loop-driven, or driven by the
   /// count-in / free-running click; `0` when idle.
@@ -1222,6 +2171,22 @@ class EngineSnapshot {
 
   /// Click audibility mode (default [ClickMode.off]).
   final ClickMode clickMode;
+
+  /// Callback completion revision; advances even for same-value refusals.
+  ///
+  /// Acquire `commandsSettled` before synchronously sampling this receipt;
+  /// keep the sole mode writer reserved until the snapshot read completes.
+  /// Resets on configure, while [clickMode] preserves its accepted value.
+  final int clickModeRevision;
+
+  /// Native result paired with [clickModeRevision]; prior mode on refusal.
+  final int clickModeResult;
+
+  /// Callback-completed recording-start pair revision; wraps as uint32.
+  final int recordStartRevision;
+
+  /// Native result paired with [recordStartRevision]; prior pair on refusal.
+  final int recordStartResult;
 
   /// Bitmask of hardware output channels the click sounds on (bit c => out
   /// c). Default `0`: no outputs until explicitly routed.
@@ -1259,8 +2224,129 @@ class EngineSnapshot {
   /// in-range channel, never back to `-1`, once first crowned.
   final int primaryTrack;
 
+  /// The global Speed the callback applies to every recorded track (#1179).
+  /// [SpeedFactor.normal] until a request lands.
+  final SpeedFactor speed;
+
+  /// Whether Transpose is bypassed globally (#1179): every track plays dry,
+  /// its stored pitch kept ([TrackSnapshot.transpose]).
+  final bool transposeBypass;
+
+  /// The tempo the takes were recorded at (#1179 Audio & tempo follow), 0
+  /// with no material.
+  final double recordedTempoBpm;
+
+  /// The master length [recordedTempoBpm] measured (#1179), 0 with none. A
+  /// Session saves the pair so a recall commits the takes at the tempo they
+  /// were laid down at and retimes from there.
+  final int recordedLengthFrames;
+
+  /// The Follow tempo default every track inherits (#1179): with it, a
+  /// song-tempo change retimes the recorded tracks.
+  final bool followTempo;
+
+  /// What a song-tempo change does now, and why not when it is locked.
+  final TempoFollowState tempoFollow;
+
+  /// The Pitch default every track inherits (#1179).
+  final PitchMode pitchMode;
+
+  /// The global loop-grid record quantize gate the engine holds (slice 2b):
+  /// what a record press over a master waits for, together with
+  /// [quantizeDiv]. Published so the effective record timing is read from
+  /// the engine rather than from what was last sent.
+  final bool quantize;
+
+  /// Even callback publication sequence, wrapping modulo 32 bits.
+  final int recordTimingRevision;
+
+  /// Native result paired with [recordTimingRevision] and the complete tuple.
+  final int recordTimingResult;
+
+  /// Whether recording is sound-activated (slice 2b). Published because the
+  /// engine clears it when a count-in is set, and clears the count-in when
+  /// it is set: the two exclude each other at the engine boundary (D9).
+  final bool autoRecord;
+
+  /// The global overdub feedback coefficient in `0..1` (slice 2b): what an
+  /// overdub pass keeps of the existing layer at the write head; `1` keeps
+  /// it all (the classic additive overdub). Per-track overrides are on
+  /// [TrackSnapshot.overdubFeedbackOverride].
+  final double overdubFeedback;
+
+  /// Per-input RAW device level over the most recent block, `0..1`, indexed
+  /// by hardware channel: one entry per channel the device has (length
+  /// [inputChannels]; empty while no device is open). Read before
+  /// conditioning and trim, like [inputClipMask], so a hot ADC reads hot
+  /// however the trim is set. A block peak like [outputPeak]: written once
+  /// per block, not a per-callback counter.
+  final List<double> inputPeaks;
+
+  /// Last atomically applied mix edit. Zero after reconfigure.
+  final int mixRevision;
+
+  /// Per-input stereo peak before output folding, after chain, gain and pan.
+  /// Peaks can exceed unity; `0` while
+  /// the monitor is off or muted. Indexed like [inputPeaks].
+  final List<double> monitorPeaks;
+
+  /// Per-output level after the master gain and limiter over the most recent
+  /// block, `0..1`, indexed by hardware output channel: one entry per channel
+  /// the device has (length [outputChannels]; empty while no device is open).
+  final List<double> outputPeaks;
+
+  /// The number of output buses the open device has: one per stereo pair of
+  /// [outputChannels] (an odd count leaves a single-channel last bus); `0`
+  /// while no device is open. The four bus lists below have this length.
+  final int outputBusCount;
+
+  /// Per-bus level (`0..1`), retained behind a mute.
+  final List<double> outputLevels;
+
+  /// Per-bus mute.
+  final List<bool> outputMuted;
+
+  /// Per-bus Mono (the averaged mix on both jacks, balance ignored).
+  final List<bool> outputMono;
+
+  /// Per-bus balance (`-1..1`), retained while Mono.
+  final List<double> outputBalances;
+
+  /// Advances once per Cut all sound the audio thread applied: a change here
+  /// is the only signal that every tail was cleared.
+  final int tailResetRev;
+
+  /// The capture policy of the armed performance take (`true` = Follow
+  /// output volume), or the one the next arm would freeze while disarmed.
+  final bool perfFollowOutput;
+
+  /// The output destination the armed performance take captures (the first
+  /// one with an enabled channel, frozen at arm), or the one the next arm
+  /// would capture; `-1` when no output is enabled. The offline render
+  /// replays this destination's level and mute under [perfFollowOutput].
+  final int perfCaptureBus;
+
+  /// Selected destination level at the actual arm boundary.
+  final double perfOutputLevel;
+
+  /// Selected destination mute at the actual arm boundary.
+  final bool perfOutputMuted;
+
+  /// Physical capture channels frozen at arm.
+  final int perfCaptureMask;
+
+  /// Structural output gate at the actual arm boundary.
+  final int perfOutputEnabledMask;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
+
+  /// The instrument slots: patches, voices, peaks, the voice limit and the
+  /// synth epoch (#1197).
+  final InstrumentsSnapshot instruments;
+
+  /// The MIDI input ports: attached captures and running totals.
+  final MidiInputSnapshot midiInput;
 
   /// The number of tracks.
   int get trackCount => tracks.length;
@@ -1308,9 +2394,11 @@ class EngineSnapshot {
           tunerHz == other.tunerHz &&
           tunerConfidence == other.tunerConfidence &&
           tunerInput == other.tunerInput &&
+          tunerMuteMask == other.tunerMuteMask &&
           inputRms == other.inputRms &&
           inputPeak == other.inputPeak &&
           outputRms == other.outputRms &&
+          outputPeak == other.outputPeak &&
           latencyState == other.latencyState &&
           measuredLatencyMs == other.measuredLatencyMs &&
           masterLengthFrames == other.masterLengthFrames &&
@@ -1325,6 +2413,12 @@ class EngineSnapshot {
           perfOverruns == other.perfOverruns &&
           perfZeroFilledFrames == other.perfZeroFilledFrames &&
           perfStopped == other.perfStopped &&
+          perfRingSeconds == other.perfRingSeconds &&
+          perfStopReason == other.perfStopReason &&
+          perfOvers == other.perfOvers &&
+          perfCaptureStreams == other.perfCaptureStreams &&
+          perfCaptureFrameBytes == other.perfCaptureFrameBytes &&
+          perfFailedCheckpoints == other.perfFailedCheckpoints &&
           tempoBpm == other.tempoBpm &&
           tempoSource == other.tempoSource &&
           tsNum == other.tsNum &&
@@ -1332,8 +2426,13 @@ class EngineSnapshot {
           syncTempo == other.syncTempo &&
           quantizeDiv == other.quantizeDiv &&
           loopBars == other.loopBars &&
+          loopBeats == other.loopBeats &&
           currentBeat == other.currentBeat &&
           clickMode == other.clickMode &&
+          clickModeRevision == other.clickModeRevision &&
+          recordStartRevision == other.recordStartRevision &&
+          clickModeResult == other.clickModeResult &&
+          recordStartResult == other.recordStartResult &&
           clickMask == other.clickMask &&
           clickVolume == other.clickVolume &&
           countInBars == other.countInBars &&
@@ -1341,7 +2440,37 @@ class EngineSnapshot {
           countInBeatsLeft == other.countInBeatsLeft &&
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
-          _listEquals(tracks, other.tracks);
+          speed == other.speed &&
+          transposeBypass == other.transposeBypass &&
+          recordedTempoBpm == other.recordedTempoBpm &&
+          recordedLengthFrames == other.recordedLengthFrames &&
+          followTempo == other.followTempo &&
+          tempoFollow == other.tempoFollow &&
+          pitchMode == other.pitchMode &&
+          quantize == other.quantize &&
+          recordTimingRevision == other.recordTimingRevision &&
+          recordTimingResult == other.recordTimingResult &&
+          autoRecord == other.autoRecord &&
+          overdubFeedback == other.overdubFeedback &&
+          mixRevision == other.mixRevision &&
+          _listEquals(inputPeaks, other.inputPeaks) &&
+          _listEquals(monitorPeaks, other.monitorPeaks) &&
+          _listEquals(outputPeaks, other.outputPeaks) &&
+          outputBusCount == other.outputBusCount &&
+          _listEquals(outputLevels, other.outputLevels) &&
+          _listEquals(outputMuted, other.outputMuted) &&
+          _listEquals(outputMono, other.outputMono) &&
+          _listEquals(outputBalances, other.outputBalances) &&
+          tailResetRev == other.tailResetRev &&
+          perfFollowOutput == other.perfFollowOutput &&
+          perfOutputLevel == other.perfOutputLevel &&
+          perfOutputMuted == other.perfOutputMuted &&
+          perfCaptureMask == other.perfCaptureMask &&
+          perfOutputEnabledMask == other.perfOutputEnabledMask &&
+          perfCaptureBus == other.perfCaptureBus &&
+          _listEquals(tracks, other.tracks) &&
+          instruments == other.instruments &&
+          midiInput == other.midiInput;
 
   @override
   int get hashCode => Object.hashAll([
@@ -1360,8 +2489,10 @@ class EngineSnapshot {
     tunerHz,
     tunerConfidence,
     tunerInput,
+    tunerMuteMask,
     inputPeak,
     outputRms,
+    outputPeak,
     latencyState,
     measuredLatencyMs,
     masterLengthFrames,
@@ -1376,6 +2507,12 @@ class EngineSnapshot {
     perfOverruns,
     perfZeroFilledFrames,
     perfStopped,
+    perfRingSeconds,
+    perfStopReason,
+    perfOvers,
+    perfCaptureStreams,
+    perfCaptureFrameBytes,
+    perfFailedCheckpoints,
     tempoBpm,
     tempoSource,
     tsNum,
@@ -1383,8 +2520,13 @@ class EngineSnapshot {
     syncTempo,
     quantizeDiv,
     loopBars,
+    loopBeats,
     currentBeat,
     clickMode,
+    clickModeRevision,
+    recordStartRevision,
+    clickModeResult,
+    recordStartResult,
     clickMask,
     clickVolume,
     countInBars,
@@ -1392,6 +2534,36 @@ class EngineSnapshot {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
+    speed,
+    transposeBypass,
+    recordedTempoBpm,
+    recordedLengthFrames,
+    followTempo,
+    tempoFollow,
+    pitchMode,
+    quantize,
+    recordTimingRevision,
+    recordTimingResult,
+    autoRecord,
+    overdubFeedback,
+    mixRevision,
+    Object.hashAll(inputPeaks),
+    Object.hashAll(monitorPeaks),
+    Object.hashAll(outputPeaks),
+    outputBusCount,
+    Object.hashAll(outputLevels),
+    Object.hashAll(outputMuted),
+    Object.hashAll(outputMono),
+    Object.hashAll(outputBalances),
+    tailResetRev,
+    perfFollowOutput,
+    perfCaptureBus,
+    perfOutputLevel,
+    perfOutputMuted,
+    perfCaptureMask,
+    perfOutputEnabledMask,
+    instruments,
+    midiInput,
     ...tracks,
   ]);
 

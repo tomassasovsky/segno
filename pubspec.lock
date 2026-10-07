@@ -41,6 +41,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.13.1"
+  backing_repository:
+    dependency: "direct main"
+    description:
+      path: "packages/backing_repository"
+      relative: true
+    source: path
+    version: "0.1.0"
   bloc:
     dependency: "direct main"
     description:
@@ -73,20 +80,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.1.0-dev.24"
-  bluetooth_client:
-    dependency: "direct dev"
-    description:
-      path: "packages/bluetooth_client"
-      relative: true
-    source: path
-    version: "0.1.0"
-  bluetooth_repository:
-    dependency: "direct main"
-    description:
-      path: "packages/bluetooth_repository"
-      relative: true
-    source: path
-    version: "0.1.0"
   boolean_selector:
     dependency: transitive
     description:
@@ -313,6 +306,13 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  fx_catalogue:
+    dependency: "direct main"
+    description:
+      path: "packages/fx_catalogue"
+      relative: true
+    source: path
+    version: "0.1.0"
   glob:
     dependency: transitive
     description:
@@ -353,6 +353,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.2"
+  instrument_repository:
+    dependency: "direct main"
+    description:
+      path: "packages/instrument_repository"
+      relative: true
+    source: path
+    version: "0.1.0"
   integration_test:
     dependency: "direct dev"
     description: flutter
@@ -570,6 +577,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "9.4.1"
+  operation_guards:
+    dependency: "direct main"
+    description:
+      path: "packages/operation_guards"
+      relative: true
+    source: path
+    version: "0.1.0"
   package_config:
     dependency: transitive
     description:
@@ -929,6 +943,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.12.1"
+  storage_repository:
+    dependency: "direct main"
+    description:
+      path: "packages/storage_repository"
+      relative: true
+    source: path
+    version: "0.1.0"
   stream_channel:
     dependency: transitive
     description:
@@ -1072,6 +1093,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.5"
+  usb_storage_client:
+    dependency: "direct main"
+    description:
+      path: "packages/usb_storage_client"
+      relative: true
+    source: path
+    version: "0.1.0"
   uuid:
     dependency: transitive
     description:

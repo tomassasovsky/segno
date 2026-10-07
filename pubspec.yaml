@@ -10,8 +10,8 @@ environment:
 
 dependencies:
   bloc: ^9.2.1
-  bluetooth_repository:
-    path: packages/bluetooth_repository
+  backing_repository:
+    path: packages/backing_repository
   brightness_client:
     path: packages/brightness_client
   # Already resolved (transitive); declared direct so the volume overlay's
@@ -33,12 +33,18 @@ dependencies:
   flutter_bloc: ^9.1.1
   flutter_localizations:
     sdk: flutter
+  fx_catalogue:
+    path: packages/fx_catalogue
+  instrument_repository:
+    path: packages/instrument_repository
   intl: ^0.20.2
   looper_repository:
     path: packages/looper_repository
   lucide_icons_flutter: ^3.1.17
   midi_device_repository:
     path: packages/midi_device_repository
+  operation_guards:
+    path: packages/operation_guards
   path_provider: ^2.1.6
   pedal_repository:
     path: packages/pedal_repository
@@ -54,10 +60,14 @@ dependencies:
     path: packages/session_repository
   settings_repository:
     path: packages/settings_repository
+  storage_repository:
+    path: packages/storage_repository
   toastification: ^3.2.0
   update_repository:
     path: packages/update_repository
   url_launcher: ^6.3.0
+  usb_storage_client:
+    path: packages/usb_storage_client
   wifi_repository:
     path: packages/wifi_repository
   window_manager: ^0.5.2
@@ -69,8 +79,6 @@ dev_dependencies:
   # Data packages used directly by the test suite only (fakes + integration
   # tests import them); production code reaches them transitively via the
   # repositories, so they are dev-only here.
-  bluetooth_client:
-    path: packages/bluetooth_client
   # The control-sequence fuzzer (test/fuzz/) runs under controlled time; the
   # package resolves via flutter_test anyway, declared explicitly for
   # depend_on_referenced_packages.
@@ -93,6 +101,19 @@ flutter:
   uses-material-design: true
   assets:
     - assets/brand/segno-lockup.png
+    # The external pedals the CTRL jacks take, as generated art rather than a
+    # photograph of any product. WebP because they carry alpha and the PNGs
+    # they came from are 2.6 MB against 284 KB here, on an appliance image.
+    - assets/hardware/external_single.webp
+    - assets/hardware/external_dual.webp
+    - assets/hardware/external_expression.webp
+    # The ten Settings tiles' art: the owner's Segno menu set from the design
+    # program (docs/design/settings-art at 56410d148), byte for byte.
+    - assets/settings/
+    # The bundled fonts' licences, which About's notices show.
+    - assets/fonts/LICENSE-Arimo.txt
+    - assets/fonts/OFL-Inter.txt
+    - assets/fonts/OFL-JetBrainsMono.txt
   fonts:
     - family: Inter
       fonts:
@@ -103,6 +124,9 @@ flutter:
           weight: 600
         - asset: assets/fonts/Inter-Bold.ttf
           weight: 700
+    - family: Arimo
+      fonts:
+        - asset: assets/fonts/Arimo-Regular.ttf
     - family: JetBrains Mono
       fonts:
         - asset: assets/fonts/JetBrainsMono-Regular.ttf

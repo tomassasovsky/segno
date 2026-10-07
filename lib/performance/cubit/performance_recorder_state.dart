@@ -3,18 +3,29 @@ part of 'performance_recorder_cubit.dart';
 /// Why a capture stopped before disarm (D-FAIL): reported inside
 /// [PerformanceRecordStoppedEarly].
 enum PerformanceStopReason {
-  /// A write to the export volume could not be completed mid-capture — the
-  /// preventive free-space floor, or `perf_drain.c`'s own self-stop, which
-  /// fires on a full disk, a quota, a read-only remount or an I/O error.
+  /// A write to the export volume failed mid-capture — a full disk, a quota,
+  /// a read-only remount or an I/O error.
   ///
   /// Named for the common case, but the message must not assert it: three of
-  /// the four self-stop causes leave the volume with space on it, and telling
-  /// the operator to free some sends them after the wrong thing.
+  /// the four causes leave the volume with space on it, and telling the
+  /// operator to free some sends them after the wrong thing.
   diskFull,
+
+  /// The export volume reached its reserve: every stream ends at the last
+  /// whole frame it could hold above it (#1198).
+  reserveReached,
+
+  /// The storage fell behind and a capture ring overflowed: the take ends at
+  /// the first frame that could not be kept, with no gap filled (#1198).
+  slowStorage,
 
   /// The audio device changed mid-capture, forcing a reconfigure that can't
   /// keep the capture taps running.
   deviceChanged,
+
+  /// The USB drive the take was recording to went away (pulled, or failed)
+  /// while it recorded (#1177). The loops keep playing.
+  volumeLost,
 }
 
 /// The outcome of a finished capture, carried by
@@ -84,6 +95,10 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   const PerformanceRecorderIdle({
     this.lowDiskBlocked = false,
     this.recovering = false,
+    this.refusedBy,
+    this.driveUnavailable = false,
+    this.refusal = 0,
+    this.notRecovered = 0,
   });
 
   /// An arm was refused because the export volume is already below the
@@ -103,8 +118,37 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// dead control.
   final bool recovering;
 
+  /// The operation in flight that refused the last arm at its commit (a
+  /// session being opened, an audio change, a calibration, a shutdown), or
+  /// null. The guard table is checked when the take would start, not when
+  /// the control was pressed (accepted behaviour 6.12).
+  final GuardKind? refusedBy;
+
+  /// The last arm was refused because the chosen USB drive could not take a
+  /// recording any more (gone, read-only, being ejected) between the choice
+  /// and the press.
+  final bool driveUnavailable;
+
+  /// Which refusal this is: the cubit counts every refused arm, for
+  /// [lowDiskBlocked] and [refusedBy] alike. Without it a second refused
+  /// press would emit a state equal to the first, the cubit would drop it,
+  /// and the operator would see no answer to the second press.
+  final int refusal;
+
+  /// Takes the boot salvage could not recover this boot (a raw take too
+  /// large to convert yet, a damaged sidecar). Each stays where it is with
+  /// every file kept; the player is told once, as the salvage settles.
+  final int notRecovered;
+
   @override
-  List<Object?> get props => [lowDiskBlocked, recovering];
+  List<Object?> get props => [
+    lowDiskBlocked,
+    recovering,
+    refusedBy,
+    driveUnavailable,
+    refusal,
+    notRecovered,
+  ];
 }
 
 /// Armed: the engine's capture taps are running. [elapsed] and [overrun]
@@ -117,6 +161,7 @@ class PerformanceRecorderArmed extends PerformanceRecorderState {
     required this.elapsed,
     required this.overrun,
     this.lowDiskWarning = false,
+    this.volumeLabel,
   });
 
   /// Time elapsed since arm.
@@ -131,8 +176,12 @@ class PerformanceRecorderArmed extends PerformanceRecorderState {
   /// re-checked continuously.
   final bool lowDiskWarning;
 
+  /// The label of the USB drive this take records to (pen 48 `FwjUV`
+  /// "SEGNO USB"), or null on Internal.
+  final String? volumeLabel;
+
   @override
-  List<Object?> get props => [elapsed, overrun, lowDiskWarning];
+  List<Object?> get props => [elapsed, overrun, lowDiskWarning, volumeLabel];
 }
 
 /// Disarmed; converting raw PCM to WAV and assembling the bundle
@@ -172,16 +221,12 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
 /// signal (< 2s captured with zero logged events) — a `BlocListener` reacts
 /// to it to show a notice, matching the plan's "no ephemeral state" rule:
 /// this is a ordinary field on an ordinary transition, not a one-shot state
-/// of its own. [reExportFailed] follows the same "ordinary field" rule
-/// (part 11) — it clears on the very next transition rather than needing an
-/// explicit dismiss.
+/// of its own.
 class PerformanceRecorderCompleted extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderCompleted] with a delivered [result].
   const PerformanceRecorderCompleted(
     this.result, {
     this.tracks = const [],
-    this.isReExporting = false,
-    this.reExportFailed = false,
     this.duration,
     this.hadGlitch = false,
   }) : discarded = false;
@@ -192,8 +237,6 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
     : result = null,
       discarded = true,
       tracks = const [],
-      isReExporting = false,
-      reExportFailed = false,
       duration = null,
       hadGlitch = false;
 
@@ -213,17 +256,6 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
   /// couldn't be read.
   final List<DawTrack> tracks;
 
-  /// Whether [PerformanceRecorderCubit.reExport] is currently running —
-  /// lets the completion sheet disable the re-export button / show a
-  /// spinner instead of allowing overlapping re-export calls.
-  final bool isReExporting;
-
-  /// Whether the most recent [PerformanceRecorderCubit.reExport] call threw
-  /// (a bad manifest fixture, or a file-I/O failure writing `.als`/
-  /// `fx-chains.txt`) — [tracks] is left at its pre-attempt value in that
-  /// case, never partially updated.
-  final bool reExportFailed;
-
   /// How long the capture ran, wall clock, or null when unknown (a recovered
   /// boot capture has no armed-at to measure from). The completion dialog's
   /// subtitle prints it beside the track count, as the pen draws it.
@@ -240,8 +272,6 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
     result,
     discarded,
     tracks,
-    isReExporting,
-    reExportFailed,
     duration,
     hadGlitch,
   ];

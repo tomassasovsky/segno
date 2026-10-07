@@ -1,6 +1,7 @@
 import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/binding_scope.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 
 /// [BindingBehavior] — toggle vs momentary — is re-exported from
@@ -9,6 +10,7 @@ import 'package:segno/control/binding/fx_binding_target.dart';
 /// this library for `PedalBinding` keep getting it from here.
 export 'package:controller_repository/controller_repository.dart'
     show BindingBehavior;
+export 'package:segno/control/binding/binding_scope.dart' show BindingScope;
 
 /// Which control a binding is keyed to.
 ///
@@ -68,6 +70,25 @@ class PedalBindingKey extends Equatable {
     PedalButton.bank,
   };
 
+  /// The controls that can carry a HOLD assignment beside their press
+  /// (accepted design, controls 1 and 3).
+  ///
+  /// The four track footswitches, and only those. Every other switch is
+  /// excluded for a reason the accepted design gives:
+  ///
+  /// - Record/Play and Stop "retain their immediate contact behavior", so
+  ///   neither may wait for a release to learn whether the foot is holding.
+  ///   Delaying a rhythm-sensitive command to accommodate a hold is
+  ///   explicitly not approved.
+  /// - Undo, Stop, MODE and Bank already carry a long-press SYSTEM gesture
+  ///   (redo, restore-all chains, the FX door, performance recording). A
+  ///   remap overrides a button's contextual default, never the system
+  ///   gesture layered above it, so a second hold has nowhere to go.
+  /// - Clear is the one irreversible stomp on the plate and is inert in the
+  ///   mode bindings dispatch in at all.
+  /// - MODE and Bank cannot hold a binding of any kind ([unbindable]).
+  static const Set<PedalButton> holdable = trackButtons;
+
   /// Whether [button] is keyed per bank rather than per button.
   static bool isBankKeyed(PedalButton button) => trackButtons.contains(button);
 
@@ -112,26 +133,118 @@ class PedalBindingKey extends Equatable {
 /// can never outlive its press; see `ControlCubit`'s single release-all point
 /// for the cases where the release never arrives.
 class PedalBinding extends Equatable {
-  /// Creates a binding of [key] to [target].
-  const PedalBinding({
+  /// Creates a binding of [key] to [target], optionally with a [holdTarget]
+  /// on the same switch.
+  factory PedalBinding({
+    required PedalBindingKey key,
+    required String target,
+    BindingBehavior behavior = BindingBehavior.toggle,
+    BindingScope scope = BindingScope.fixed,
+    String? holdTarget,
+    BindingBehavior holdBehavior = BindingBehavior.toggle,
+    BindingScope holdScope = BindingScope.fixed,
+  }) {
+    if (holdTarget != null && (holdTarget.isEmpty || !canHold(key, behavior))) {
+      throw ArgumentError.value(holdTarget, 'holdTarget', 'invalid Hold');
+    }
+    if (holdTarget == null &&
+        (holdBehavior != BindingBehavior.toggle ||
+            holdScope != BindingScope.fixed)) {
+      throw ArgumentError.value(
+        holdTarget,
+        'holdTarget',
+        'missing Hold target',
+      );
+    }
+    return PedalBinding._(
+      key: key,
+      target: target,
+      behavior: behavior,
+      scope: scope,
+      holdTarget: holdTarget,
+      holdBehavior: holdTarget == null ? BindingBehavior.toggle : holdBehavior,
+      holdScope: holdTarget == null ? BindingScope.fixed : holdScope,
+    );
+  }
+
+  const PedalBinding._({
     required this.key,
     required this.target,
-    this.behavior = BindingBehavior.toggle,
+    required this.behavior,
+    required this.scope,
+    required this.holdTarget,
+    required this.holdBehavior,
+    required this.holdScope,
   });
 
   /// Rebuilds a binding from its [toJson] map, or `null` when the map does
   /// not describe one (unusable key, or a missing/empty target).
+  ///
+  /// An invalid Hold rejects the whole record, so loading cannot silently
+  /// turn a saved Press/Hold pair into a different one-action assignment.
   static PedalBinding? fromJson(Map<String, dynamic> json) {
     final key = PedalBindingKey.fromJson(json);
     if (key == null) return null;
     final target = json['target'];
     if (target is! String || target.isEmpty) return null;
+    final rawBehavior = json['behavior'];
+    if (rawBehavior != null && rawBehavior is! String) return null;
+    if (rawBehavior is String &&
+        !BindingBehavior.values.any((value) => value.name == rawBehavior)) {
+      return null;
+    }
+    final rawScope = json['scope'];
+    if (rawScope != null &&
+        (rawScope is! String ||
+            !BindingScope.values.any((value) => value.name == rawScope))) {
+      return null;
+    }
+    final behavior = BindingBehavior.fromName(rawBehavior as String?);
+    final rawHold = json['holdTarget'];
+    if (rawHold == null &&
+        (json.containsKey('holdBehavior') || json.containsKey('holdScope'))) {
+      return null;
+    }
+    if (rawHold != null &&
+        (rawHold is! String || rawHold.isEmpty || !canHold(key, behavior))) {
+      return null;
+    }
+    final hold = rawHold as String?;
+    final rawHoldBehavior = json['holdBehavior'];
+    if (rawHoldBehavior != null &&
+        (rawHoldBehavior is! String ||
+            !BindingBehavior.values.any(
+              (value) => value.name == rawHoldBehavior,
+            ))) {
+      return null;
+    }
+    final rawHoldScope = json['holdScope'];
+    if (rawHoldScope != null &&
+        (rawHoldScope is! String ||
+            !BindingScope.values.any((value) => value.name == rawHoldScope))) {
+      return null;
+    }
     return PedalBinding(
       key: key,
       target: target,
-      behavior: BindingBehavior.fromName(json['behavior'] as String?),
+      behavior: behavior,
+      scope: BindingScope.fromName(rawScope as String?),
+      holdTarget: hold,
+      holdBehavior: BindingBehavior.fromName(rawHoldBehavior as String?),
+      holdScope: BindingScope.fromName(rawHoldScope as String?),
     );
   }
+
+  /// Whether a binding on [key] with press [behavior] may carry a hold.
+  ///
+  /// Two rules, both from the accepted design. The switch has to be one the
+  /// design gives a hold to at all ([PedalBindingKey.holdable]); and the press
+  /// cannot be momentary, because holding IS the momentary gesture — a
+  /// momentary press enables its target for exactly as long as the foot is
+  /// down, so there is no hold left to assign and no press to defer.
+  static bool canHold(PedalBindingKey key, BindingBehavior behavior) =>
+      PedalBindingKey.holdable.contains(key.button) &&
+      behavior != BindingBehavior.momentary;
 
   /// The control this binding is keyed to.
   final PedalBindingKey key;
@@ -146,25 +259,87 @@ class PedalBinding extends Equatable {
   /// Whether the press latches or is held.
   final BindingBehavior behavior;
 
-  /// The decoded target, or `null` when the string no longer parses.
+  /// Which track the press acts on — the one it names, or whatever is
+  /// selected when it fires.
+  final BindingScope scope;
+
+  /// The target a HOLD on this switch acts on, or `null` when the switch
+  /// carries only a press.
+  ///
+  /// A binding with a hold moves its PRESS action to the release: until the
+  /// threshold passes, neither half is known to be the one the foot meant,
+  /// and the accepted design is explicit that holding must not first execute
+  /// the short action. A binding without one keeps its press on contact.
+  final String? holdTarget;
+
+  /// Whether the hold latches or is held. Meaningless when [holdTarget] is
+  /// null.
+  final BindingBehavior holdBehavior;
+
+  /// Which track the hold acts on. Meaningless when [holdTarget] is null.
+  final BindingScope holdScope;
+
+  /// Whether this switch carries a hold as well as a press.
+  bool get hasHold => holdTarget != null;
+
+  /// The decoded press target, or `null` when the string no longer parses.
   FxBindingTarget? decodeTarget() => FxBindingTarget.tryParse(target);
 
+  /// The decoded hold target, or `null` when there is none or it no longer
+  /// parses.
+  FxBindingTarget? decodeHoldTarget() =>
+      holdTarget == null ? null : FxBindingTarget.tryParse(holdTarget!);
+
   /// Returns a copy with the given fields replaced.
-  PedalBinding copyWith({String? target, BindingBehavior? behavior}) =>
-      PedalBinding(
-        key: key,
-        target: target ?? this.target,
-        behavior: behavior ?? this.behavior,
-      );
+  ///
+  /// [clearHold] drops the hold, which `holdTarget: null` cannot express.
+  PedalBinding copyWith({
+    String? target,
+    BindingBehavior? behavior,
+    BindingScope? scope,
+    String? holdTarget,
+    BindingBehavior? holdBehavior,
+    BindingScope? holdScope,
+    bool clearHold = false,
+  }) {
+    final nextBehavior = behavior ?? this.behavior;
+    final nextHold = clearHold ? null : holdTarget ?? this.holdTarget;
+    return PedalBinding(
+      key: key,
+      target: target ?? this.target,
+      behavior: nextBehavior,
+      scope: scope ?? this.scope,
+      holdTarget: nextHold,
+      holdBehavior: clearHold
+          ? BindingBehavior.toggle
+          : holdBehavior ?? this.holdBehavior,
+      holdScope: clearHold ? BindingScope.fixed : holdScope ?? this.holdScope,
+    );
+  }
 
   /// Serializes this binding to a JSON map — the key's own fields, flattened,
-  /// plus the target and behavior.
+  /// plus the press target and behavior, and the hold when there is one.
   Map<String, dynamic> toJson() => {
     ...key.toJson(),
     'target': target,
     'behavior': behavior.name,
+    // The current compact encoding omits the default scope.
+    if (scope != BindingScope.fixed) 'scope': scope.name,
+    if (holdTarget != null) ...{
+      'holdTarget': holdTarget,
+      'holdBehavior': holdBehavior.name,
+      if (holdScope != BindingScope.fixed) 'holdScope': holdScope.name,
+    },
   };
 
   @override
-  List<Object?> get props => [key, target, behavior];
+  List<Object?> get props => [
+    key,
+    target,
+    behavior,
+    scope,
+    holdTarget,
+    holdBehavior,
+    holdScope,
+  ];
 }

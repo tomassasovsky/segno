@@ -41,6 +41,7 @@ class PerformanceRenderProgress {
   const PerformanceRenderProgress({
     required this.done,
     required this.progressPercent,
+    this.failed = false,
   });
 
   /// No render active (or none ever started).
@@ -55,19 +56,25 @@ class PerformanceRenderProgress {
   /// Overall progress, `0..100`, monotonic.
   final int progressPercent;
 
+  /// Whether the finished render could not use its manifest at all (missing,
+  /// short, unparseable or invalid). Distinct from per-track failure: no
+  /// track results exist, and an empty successful render is not a failure.
+  final bool failed;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is PerformanceRenderProgress &&
           runtimeType == other.runtimeType &&
           done == other.done &&
-          progressPercent == other.progressPercent;
+          progressPercent == other.progressPercent &&
+          failed == other.failed;
 
   @override
-  int get hashCode => Object.hash(done, progressPercent);
+  int get hashCode => Object.hash(done, progressPercent, failed);
 
   @override
   String toString() =>
       'PerformanceRenderProgress(done: $done, '
-      'progressPercent: $progressPercent)';
+      'progressPercent: $progressPercent, failed: $failed)';
 }

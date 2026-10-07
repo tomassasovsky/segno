@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
@@ -130,6 +131,43 @@ void main() {
   });
 
   group('projectTrackLed', () {
+    test('Fade mode: lit while fading or faded, dark at full level', () {
+      final looper = _stateWith(
+        _tracksWith(const [
+          Track(state: TrackState.playing, lengthFrames: 48000),
+          Track(
+            channel: 1,
+            state: TrackState.playing,
+            lengthFrames: 48000,
+            fade: FadeImage(amount: 0, target: 0),
+          ),
+          Track(
+            channel: 2,
+            state: TrackState.stopped,
+            lengthFrames: 48000,
+            fade: FadeImage(amount: .5, fullTravelSeconds: 4),
+          ),
+        ]),
+      );
+      const overlay = ControlState(mode: InteractionMode.fade);
+      expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.off);
+      expect(projectTrackLed(looper, overlay, 1), PedalTrackLed.blue);
+      // A stopped track still reports its envelope, never audibility.
+      expect(projectTrackLed(looper, overlay, 2), PedalTrackLed.blue);
+      expect(projectTrackLed(looper, overlay, 3), PedalTrackLed.off);
+    });
+
+    test('Fade mode: an emptied track stays dark before its reset lands', () {
+      // Clear publishes EMPTY before the callback publishes the unity image.
+      final looper = _stateWith(
+        _tracksWith(const [
+          Track(fade: FadeImage(amount: 0, target: 0)),
+        ]),
+      );
+      const overlay = ControlState(mode: InteractionMode.fade);
+      expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.off);
+    });
+
     test('Mute mode: armed and audible reads green, muted reads off', () {
       final looper = _stateWith(
         _tracksWith(const [
@@ -228,7 +266,7 @@ void main() {
       expect(frame.clearFadeActive, isFalse);
     });
 
-    test('the mode indicator distinguishes all three modes on the wire', () {
+    test('the mode indicator distinguishes all four modes on the wire', () {
       final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
       // From the frame alone — its MODE field plus the trackLeds meaning it
       // selects — the live mode is identifiable (SC-1).
@@ -236,6 +274,7 @@ void main() {
         InteractionMode.record: PedalMode.rec,
         InteractionMode.mute: PedalMode.play,
         InteractionMode.fx: PedalMode.fx,
+        InteractionMode.custom: PedalMode.custom,
       };
       for (final entry in modes.entries) {
         expect(
@@ -244,7 +283,249 @@ void main() {
           reason: '${entry.key.name} must project its own wire mode',
         );
       }
-      expect(modes.values.toSet(), hasLength(3)); // no two modes collide
+      expect(modes.values.toSet(), hasLength(4)); // no two modes collide
+    });
+
+    test('physical ten-button state is separate from logical track LEDs', () {
+      final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
+      final frame = projectFrame(
+        looper,
+        const ControlState(),
+        acceptedContacts: const {PedalButton.stop, PedalButton.undo},
+      );
+      expect(frame.trackLeds[0], PedalTrackLed.red);
+      expect(frame.isLit(PedalButton.track1), isTrue);
+      expect(frame.isLit(PedalButton.stop), isTrue);
+      expect(frame.isLit(PedalButton.undo), isTrue);
+      // MODE is always lit, red in Record, as the pedal always was.
+      expect(frame.isLit(PedalButton.mode), isTrue);
+      expect(frame.colorFor(PedalButton.mode), ledRed);
+      expect(frame.isLit(PedalButton.bank), isFalse);
+
+      final fx = projectFrame(
+        looper,
+        const ControlState(mode: InteractionMode.fx),
+        acceptedContacts: const {
+          PedalButton.recPlay,
+          PedalButton.undo,
+          PedalButton.clear,
+        },
+      );
+      expect(fx.isLit(PedalButton.mode), isTrue);
+      expect(fx.isLit(PedalButton.recPlay), isFalse);
+      expect(fx.isLit(PedalButton.undo), isFalse);
+      expect(fx.isLit(PedalButton.clear), isFalse);
+    });
+
+    test('Custom physical transport state and RGB do not recolor activity', () {
+      final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
+      final base = const PedalSetup().withCustom(
+        PedalButton.stop,
+        bank: 0,
+        pair: const ControlGesturePair(
+          press: CommandAction(ControlCommand.recordPerformance),
+        ),
+      );
+      final setup = base.copyWith(
+        palette: base.palette
+            .withCustom(1, const PedalColor(3, 19, 212))
+            .withChoice(PedalButton.stop, const CustomPaletteEntry(1)),
+      );
+      final frame = projectFrame(
+        looper,
+        ControlState(mode: InteractionMode.custom, pedalSetup: setup),
+        physicalCustomStates: const {PedalButton.stop: true},
+      );
+      expect(frame.isLit(PedalButton.stop), isTrue);
+      expect(frame.colorFor(PedalButton.stop), const PedalColor(3, 19, 212));
+      expect(frame.isLit(PedalButton.undo), isFalse);
+      expect(frame.globalColor, GlobalColor.off);
+      expect(frame.trackLeds[0], PedalTrackLed.off);
+      expect(frame.isLit(PedalButton.mode), isTrue); // fixed Exit
+
+      final stopped = frame.copyWith(isGoodbye: true);
+      expect(stopped.isLit(PedalButton.stop), isFalse);
+    });
+
+    test(
+      'Custom palette changes hue without changing physical activity',
+      () {
+        final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
+        const custom = ControlState(mode: InteractionMode.custom);
+        final before = projectFrame(looper, custom);
+        final palette = const PedalPalette().withChoice(
+          PedalButton.stop,
+          const BuiltInPaletteEntry(PedalPaletteColor.violet),
+        );
+        final after = projectFrame(
+          looper,
+          custom.copyWith(
+            pedalSetup: const PedalSetup().copyWith(palette: palette),
+          ),
+        );
+        expect(before.colorFor(PedalButton.stop), PedalColor.defaultColor);
+        expect(
+          after.colorFor(PedalButton.stop),
+          PedalPaletteColor.violet.color,
+        );
+        expect(after.activeButtonMask, before.activeButtonMask);
+        expect(after.isLit(PedalButton.stop), isFalse);
+      },
+    );
+
+    group('fixed modes light in state colours and ignore the palette', () {
+      final palette = PedalPalette.fromMaps(
+        choices: {
+          for (final button in PedalButton.values)
+            button: const BuiltInPaletteEntry(PedalPaletteColor.violet),
+        },
+      );
+      final setup = const PedalSetup().copyWith(palette: palette);
+
+      test('Record mode colours each track by its own state', () {
+        final looper = _stateWith(
+          _tracksWith(const [
+            Track(state: TrackState.recording),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 2, state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 3, state: TrackState.overdubbing, lengthFrames: 1),
+          ]),
+        );
+        final frame = projectFrame(
+          looper,
+          ControlState(pedalSetup: setup, cursor: 1),
+        );
+        expect(frame.colorFor(PedalButton.track1), ledRed);
+        expect(
+          frame.colorFor(PedalButton.track2),
+          ledGreen,
+        );
+        expect(
+          frame.colorFor(PedalButton.track3),
+          PedalPaletteColor.white.color,
+        );
+        expect(frame.colorFor(PedalButton.track4), ledRed);
+        expect(
+          frame.colorFor(PedalButton.recPlay),
+          isNot(
+            palette.colorFor(
+              PedalButton.recPlay,
+            ),
+          ),
+        );
+        expect(
+          frame.colorFor(PedalButton.stop),
+          PedalPaletteColor.white.color,
+        );
+      });
+
+      test('Mute mode lights audible tracks green', () {
+        final looper = _stateWith(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        final frame = projectFrame(
+          looper,
+          ControlState(mode: InteractionMode.mute, pedalSetup: setup),
+        );
+        expect(frame.isLit(PedalButton.track1), isTrue);
+        expect(
+          frame.colorFor(PedalButton.track1),
+          ledGreen,
+        );
+        expect(
+          frame.colorFor(PedalButton.recPlay),
+          ledGreen,
+        );
+      });
+
+      test('FX mode lights an engaged chain blue', () {
+        final looper = _stateWith(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        final frame = projectFrame(
+          looper,
+          ControlState(mode: InteractionMode.fx, pedalSetup: setup),
+        );
+        expect(frame.isLit(PedalButton.track1), isTrue);
+        expect(
+          frame.colorFor(PedalButton.track1),
+          ledBlue,
+        );
+        expect(frame.colorFor(PedalButton.mode), ledBlue);
+      });
+
+      test('recording and overdub both turn Rec/Play red', () {
+        final recording = projectFrame(
+          _stateWith(
+            _tracksWith(const [Track(state: TrackState.recording)]),
+            masterLengthFrames: 0,
+          ),
+          ControlState(pedalSetup: setup),
+        );
+        expect(
+          recording.colorFor(PedalButton.recPlay),
+          ledRed,
+        );
+        final overdub = projectFrame(
+          _stateWith(
+            _tracksWith(const [
+              Track(state: TrackState.overdubbing, lengthFrames: 48000),
+            ]),
+          ),
+          ControlState(pedalSetup: setup),
+        );
+        expect(
+          overdub.colorFor(PedalButton.recPlay),
+          ledRed,
+        );
+      });
+    });
+
+    test('MODE, Clear and Bank keep their original colours', () {
+      final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
+      Map<PedalButton, PedalColor> colours(ControlState overlay) {
+        final frame = projectFrame(looper, overlay);
+        return {
+          for (final b in [
+            PedalButton.mode,
+            PedalButton.clear,
+            PedalButton.bank,
+          ])
+            b: frame.colorFor(b),
+        };
+      }
+
+      expect(colours(const ControlState()), {
+        PedalButton.mode: ledRed,
+        PedalButton.clear: ledRed,
+        PedalButton.bank: ledBankB,
+      });
+      expect(
+        colours(const ControlState(mode: InteractionMode.mute)),
+        containsPair(PedalButton.mode, ledGreen),
+      );
+      expect(
+        colours(const ControlState(mode: InteractionMode.fx)),
+        containsPair(PedalButton.mode, ledBlue),
+      );
+      for (final mode in [
+        InteractionMode.custom,
+        InteractionMode.mixer,
+        InteractionMode.tuner,
+      ]) {
+        expect(
+          colours(ControlState(mode: mode)),
+          allOf(
+            containsPair(PedalButton.mode, ledYellow),
+            containsPair(PedalButton.bank, ledBankB),
+          ),
+          reason: '$mode',
+        );
+      }
     });
 
     test('global color: recording red, overdub amber, playing green', () {

@@ -1,25 +1,34 @@
 @Tags(['screenshots'])
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/cubit/tuner_cubit.dart';
+import 'package:segno/tuner/pitch.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -38,16 +47,31 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 class _MockTransportClockCubit extends MockCubit<TransportClockState>
     implements TransportClockCubit {}
 
+/// A performance repository whose capture status a scene sets, so the
+/// Control owner's armed LED follows the recorder the scene shows.
+class _ScenePerformance extends PerformanceRepository {
+  _ScenePerformance()
+    : super(
+        guards: GuardRegistry(),
+        engine: FakeAudioEngine(),
+        exportsRoot: () async => '.',
+      );
+
+  final status = StreamController<PerformanceCaptureStatus>.broadcast();
+
+  @override
+  Stream<PerformanceCaptureStatus> get captureStatus async* {
+    yield PerformanceCaptureStatus.idle;
+    yield* status.stream;
+  }
+}
+
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
 
-Future<void> _loadFont(String family, List<String> paths) async {
-  final loader = FontLoader(family);
-  for (final p in paths) {
-    loader.addFont(File(p).readAsBytes().then((b) => ByteData.view(b.buffer)));
-  }
-  await loader.load();
-}
+class _MockTunerCubit extends MockCubit<TunerState> implements TunerCubit {}
+
+class _MockInputsCubit extends MockCubit<InputsState> implements InputsCubit {}
 
 /// Manual generator for the console main-window decal (the artwork on the 16"
 /// panel in the Fusion "Segno console (populated)" doc). Renders [TracksView]
@@ -59,6 +83,8 @@ Future<void> _loadFont(String family, List<String> paths) async {
 ///   flutter test --tags screenshots \
 ///     --update-goldens test/screenshots/tracks_screenshots_test.dart
 void main() {
+  late MixSettingsCoordinator mixSettings;
+  late FxChainPersistence fxPersistence;
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
   // Golden generators load the local SDK's Material fonts and compare against
@@ -73,11 +99,11 @@ void main() {
       '$fontDir/Roboto-Medium.ttf',
       '$fontDir/Roboto-Bold.ttf',
     ];
-    await _loadFont('Roboto', robotoTtfs);
+    await loadScreenshotFont('Roboto', robotoTtfs);
     // Material icon glyphs (e.g. the FX entry-run's arrow_right_alt) — the app
     // bundles this font at runtime; the golden harness must load it too, or
     // every `Icon` renders as .notdef tofu.
-    await _loadFont('MaterialIcons', [
+    await loadScreenshotFont('MaterialIcons', [
       '$fontDir/MaterialIcons-Regular.otf',
     ]);
     // TracksView wraps itself in LooperScreenTheme, which renders text in the
@@ -85,18 +111,24 @@ void main() {
     // absent under `flutter test`). Register the loaded Roboto glyphs under
     // those family names so the labels render instead of Ahem tofu.
     for (final family in ['Helvetica', 'Arial', 'sans-serif']) {
-      await _loadFont(family, robotoTtfs);
+      await loadScreenshotFont(family, robotoTtfs);
     }
-    await _loadFont('Inter', [
+    await loadScreenshotFont('Inter', [
       'assets/fonts/Inter-Regular.ttf',
       'assets/fonts/Inter-Medium.ttf',
       'assets/fonts/Inter-SemiBold.ttf',
       'assets/fonts/Inter-Bold.ttf',
     ]);
-    await _loadFont('JetBrains Mono', [
+    await loadScreenshotFont('Arimo', ['assets/fonts/Arimo-Regular.ttf']);
+    await loadScreenshotFont('JetBrains Mono', [
       'assets/fonts/JetBrainsMono-Regular.ttf',
       'assets/fonts/JetBrainsMono-Medium.ttf',
       'assets/fonts/JetBrainsMono-SemiBold.ttf',
+    ]);
+    // The top bar's settings gear is a package font, which the harness does
+    // not bundle: without this load it is a tofu box in every tracks golden.
+    await loadScreenshotFont('packages/lucide_icons_flutter/Lucide', [
+      packageAssetPath('lucide_icons_flutter', 'assets/lucide.ttf'),
     ]);
   });
 
@@ -106,12 +138,20 @@ void main() {
   late LooperRepository repository;
   late SettingsRepository settings;
   late SessionCubit session;
-  late PerformanceRepository performance;
+  late _ScenePerformance performance;
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
   late AudioSetupCubit audioSetup;
+  late FadeSettings fade;
+
+  // The reading the Tuner face draws, and input names for its scenes; reset
+  // for every test in setUp.
+  var tunerReading = const TunerState();
+  Map<int, String>? inputNames;
 
   setUp(() {
+    tunerReading = const TunerState();
+    inputNames = null;
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
     // Nothing lost by default; the device-lost scene below re-stubs audio.
@@ -123,8 +163,38 @@ void main() {
     );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
+    when(
+      () => repository.cancelArm(channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => repository.laneCount(any())).thenAnswer((call) {
+      final channel = call.positionalArguments.first as int;
+      return repository.state.tracks
+              .where((track) => track.channel == channel)
+              .firstOrNull
+              ?.lanes
+              .length ??
+          0;
+    });
+    when(() => repository.fxReplayConfirmed).thenAnswer(
+      (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
+    );
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     when(() => repository.state).thenReturn(const LooperState());
+    when(() => repository.mixGeneration).thenReturn(0);
+    when(
+      () => repository.looperState,
+    ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
+    fade = FadeSettings(
+      repository: repository,
+      settings: settings,
+      blocked: () => false,
+      sessionBlocked: () => false,
+    );
     // The tray's Signal face reads these through `MonitorCubit`. A bare mock
     // returns null for each and the cubit dies in its constructor.
     when(() => repository.monitorChanges).thenAnswer(
@@ -138,17 +208,35 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
     final pedalRepo = PedalRepository(NoopPedalLink());
     addTearDown(pedalRepo.dispose);
-    performance = PerformanceRepository(
-      engine: FakeAudioEngine(),
-      exportsRoot: () async => '.',
-    );
+    performance = _ScenePerformance();
+    addTearDown(performance.status.close);
+    fxPersistence = FxChainPersistence(looper: repository);
+    mixSettings = testMixSettings(repository, settings: settings);
+    addTearDown(() => unawaited(mixSettings.close()));
     control = ControlCubit(
+      fxPersistence: fxPersistence,
       looper: repository,
+      mixSettings: mixSettings,
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
+      fadeSettings: fade,
+      ownedValues: OwnedValuePort(
+        looper: repository,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: FakeRecordStartControl(),
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: fade,
+      ),
     );
     addTearDown(control.close);
     session = _MockSessionCubit();
@@ -176,7 +264,22 @@ void main() {
     whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
   }
 
-  Future<void> pump(WidgetTester tester) async {
+  Future<void> pump(WidgetTester tester, {Locale? locale}) async {
+    final tuner = _MockTunerCubit();
+    whenListen(
+      tuner,
+      const Stream<TunerState>.empty(),
+      initialState: tunerReading,
+    );
+    final names = inputNames;
+    final namedInputs = names == null ? null : _MockInputsCubit();
+    if (namedInputs != null) {
+      whenListen(
+        namedInputs,
+        const Stream<InputsState>.empty(),
+        initialState: InputsState(names: names!),
+      );
+    }
     // 16:9 at the panel's native 1920x1080 so the captured decal matches the
     // 344x194 (16:9) active area 1:1.
     tester.view
@@ -187,6 +290,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
+        locale: locale,
         theme: AppTheme.neon,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
@@ -194,10 +298,10 @@ void main() {
           providers: [
             RepositoryProvider<LooperRepository>.value(value: repository),
             RepositoryProvider<PerformanceRepository>.value(value: performance),
-            // TracksView builds a SettingsTrayCubit that requires a
-            // SettingsRepository; share the fixture the cubits already use so
-            // the tray reads the same store.
+            // Share the fixture the cubits already use so every reader sees
+            // the same store.
             RepositoryProvider<SettingsRepository>.value(value: settings),
+            RepositoryProvider<FadeSettings>.value(value: fade),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -213,13 +317,21 @@ void main() {
               // opens on Signal — whose input cards read both of these. Absent,
               // this whole test throws `ProviderNotFound` before it can draw,
               // which is how it rotted while it was console-gated.
-              BlocProvider<InputsCubit>(
-                create: (_) =>
-                    InputsCubit(settings: settings, repository: repository),
-              ),
+              if (namedInputs != null)
+                BlocProvider<InputsCubit>.value(value: namedInputs)
+              else
+                BlocProvider<InputsCubit>(
+                  create: (_) =>
+                      InputsCubit(settings: settings, repository: repository),
+                ),
+              BlocProvider<TunerCubit>.value(value: tuner),
               BlocProvider<MonitorCubit>(
-                create: (_) =>
-                    MonitorCubit(repository: repository, settings: settings),
+                create: (_) => MonitorCubit(
+                  fxPersistence: fxPersistence,
+                  mixSettings: mixSettings,
+                  repository: repository,
+                  settings: settings,
+                ),
               ),
               // The device-lost banner and the not-running gate read the
               // audio setup cubit (#453).
@@ -234,6 +346,648 @@ void main() {
     // (the record/level meters may run a repeating ticker that never settles).
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+  }
+
+  for (final scene in ['tracks', 'inputs', 'last_inputs', 'auto', 'spanish']) {
+    testWidgets('Foot Mixer $scene accepted scene', (tester) async {
+      seed(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 18,
+            outputChannels: 2,
+          ),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 48000, volume: .8),
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              volume: .65,
+              muted: true,
+            ),
+            Track(
+              channel: 2,
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              volume: 1.1,
+            ),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      when(repository.allMonitors).thenReturn({
+        0: InputMonitor(
+          input: 0,
+          volume: scene == 'spanish' ? .98 : .75,
+          mode: scene == 'auto' ? MonitorMode.auto : MonitorMode.on,
+        ),
+        1: InputMonitor(
+          input: 1,
+          volume: .85,
+          mode: MonitorMode.on,
+          muted: scene == 'spanish',
+        ),
+        for (var input = 2; input < 18; input++)
+          input: InputMonitor(input: input, mode: MonitorMode.on),
+      });
+      control.setMode(InteractionMode.mixer);
+      if (scene != 'tracks') {
+        control.selectFootMixerDomain(FootMixerDomain.inputs);
+      }
+      if (scene == 'last_inputs') {
+        for (var page = 0; page < 4; page++) {
+          control.nextFootMixerPage();
+        }
+      }
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      final context = tester.element(find.byType(TracksView));
+      context.read<MonitorCubit>().projectFromRepository();
+      await context.read<InputsCubit>().rename(0, 'Guitar');
+      await context.read<InputsCubit>().rename(1, 'Vocal');
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      if (scene == 'spanish') {
+        final l10n = context.l10n;
+        for (final hint in [
+          l10n.footMixerLimitReset,
+          l10n.footMixerHoldReset,
+          l10n.footMixerHoldUnmute,
+        ]) {
+          final paragraph = tester.renderObject<RenderParagraph>(
+            find.descendant(
+              of: find.text(hint),
+              matching: find.byType(RichText),
+            ),
+          );
+          expect(paragraph.didExceedMaxLines, isFalse, reason: hint);
+          final boxes = paragraph.getBoxesForSelection(
+            TextSelection(baseOffset: 0, extentOffset: hint.length),
+          );
+          expect(
+            boxes.last.bottom,
+            lessThanOrEqualTo(paragraph.size.height),
+            reason: hint,
+          );
+          expect(paragraph.size.height, lessThanOrEqualTo(56), reason: hint);
+        }
+      }
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_mixer_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
+  // The accepted Fade Pen frames (docs/design/fade-previews/pen): shared
+  // Default, a track override, Bank B, and the Spanish strings.
+  for (final scene in ['default', 'custom', 'bank', 'spanish']) {
+    testWidgets('Foot Fade $scene accepted scene', (tester) async {
+      Track track(int channel, {bool faded = false}) => Track(
+        channel: channel,
+        state: TrackState.playing,
+        lengthFrames: 48000,
+        fade: faded ? const FadeImage(amount: 0, target: 0) : const FadeImage(),
+      );
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            track(0),
+            track(1, faded: true),
+            track(2),
+            const Track(channel: 3),
+            track(4, faded: true),
+            track(5),
+            track(6),
+            const Track(channel: 7),
+          ],
+        ),
+      );
+      await tester.runAsync(() async {
+        await settings.saveFadeDurations(
+          FadeDurations(overrides: const {1: 8000, 4: 2000}),
+        );
+        await fade.load();
+      });
+      control.setMode(InteractionMode.fade);
+      if (scene == 'custom') control.selectFootFadeTrackTime(1);
+      if (scene == 'bank') control.browseBank(1);
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_fade_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
+  // The accepted Reverse Pen frames (segno-ui.pen 13 Performance · Reverse):
+  // playback direction, Bank B, an empty loop, and the Spanish strings.
+  for (final scene in ['default', 'bank', 'empty', 'spanish']) {
+    testWidgets('Foot Reverse $scene accepted scene', (tester) async {
+      Track track(int channel, {bool reversed = false}) => Track(
+        channel: channel,
+        state: TrackState.playing,
+        lengthFrames: 48000,
+        reversed: reversed,
+      );
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: scene == 'empty'
+              ? [
+                  for (var channel = 0; channel < 8; channel++)
+                    Track(channel: channel),
+                ]
+              : [
+                  track(0),
+                  track(1, reversed: true),
+                  track(2),
+                  const Track(channel: 3),
+                  track(4, reversed: true),
+                  track(5),
+                  track(6),
+                  const Track(channel: 7),
+                ],
+        ),
+      );
+      control.setMode(InteractionMode.reverse);
+      if (scene == 'bank') control.browseBank(1);
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_reverse_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
+  // Foot Peel (the pen lists the mode, "Remove an overdub layer", but has no
+  // screen of its own; it follows the Fade and Mixer layout): layer counts
+  // with an overdubbing track, Bank B, an empty loop, and the Spanish
+  // strings.
+  for (final scene in ['default', 'bank', 'empty', 'spanish']) {
+    testWidgets('Foot Peel $scene scene', (tester) async {
+      Track track(
+        int channel, {
+        int layers = 0,
+        TrackState state = TrackState.playing,
+      }) => Track(
+        channel: channel,
+        state: state,
+        lengthFrames: 48000,
+        peelDepth: layers,
+      );
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: scene == 'empty'
+              ? [
+                  for (var channel = 0; channel < 8; channel++)
+                    Track(channel: channel),
+                ]
+              : [
+                  track(0, layers: 3),
+                  track(1),
+                  track(2, layers: 1, state: TrackState.overdubbing),
+                  const Track(channel: 3),
+                  track(4, layers: 2),
+                  track(5),
+                  track(6, layers: 1),
+                  const Track(channel: 7),
+                ],
+        ),
+      );
+      control.setMode(InteractionMode.peel);
+      if (scene == 'bank') control.browseBank(1);
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_peel_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
+  // Foot Custom (pen 10 `uEukr`, and 20/03 `E7kQV` while a performance
+  // records). The build dims only unassigned switches (`MV9wz`); the pen
+  // also dims assigned Record / Play and Undo (write-back W2).
+  for (final scene in ['default', 'recording']) {
+    testWidgets('Foot Custom $scene scene', (tester) async {
+      const selected = SelectedTrackScope();
+      var setup = const PedalSetup()
+          .withCustom(
+            PedalButton.clear,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: TrackOperationAction(
+                operation: TrackOperation.mute,
+                scope: selected,
+              ),
+            ),
+          )
+          .withCustom(
+            PedalButton.recPlay,
+            bank: 0,
+            pair: const ControlGesturePair(
+              hold: TrackOperationAction(
+                operation: TrackOperation.peel,
+                scope: selected,
+              ),
+            ),
+          )
+          .withCustom(
+            PedalButton.undo,
+            bank: 0,
+            pair: const ControlGesturePair(
+              hold: CommandAction(ControlCommand.redo),
+            ),
+          )
+          .withCustom(
+            PedalButton.track1,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: UnavailableAction('instrument:transpose'),
+              hold: TrackOperationAction(
+                operation: TrackOperation.reverse,
+                scope: selected,
+              ),
+            ),
+          )
+          .withCustom(
+            PedalButton.track2,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: ModeAction(InteractionMode.fx),
+              hold: UnavailableAction('tuner'),
+            ),
+          )
+          .withCustom(
+            PedalButton.track3,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: TrackOperationAction(
+                operation: TrackOperation.fade,
+                scope: selected,
+              ),
+              hold: TrackOperationAction(
+                operation: TrackOperation.peel,
+                scope: selected,
+              ),
+            ),
+          )
+          .withCustom(
+            PedalButton.track4,
+            bank: 0,
+            pair: const ControlGesturePair(
+              press: ModeAction(InteractionMode.mixer),
+              hold: UnavailableAction('instrument:speed'),
+            ),
+          );
+      if (scene == 'recording') {
+        setup = setup.withCustom(
+          PedalButton.stop,
+          bank: 0,
+          pair: const ControlGesturePair(
+            press: CommandAction(ControlCommand.recordPerformance),
+          ),
+        );
+        when(() => performanceRecorder.state).thenReturn(
+          const PerformanceRecorderArmed(
+            elapsed: Duration(minutes: 1, seconds: 23),
+            overrun: false,
+          ),
+        );
+      }
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            for (var channel = 0; channel < 8; channel++)
+              Track(
+                channel: channel,
+                state: channel < 3 ? TrackState.playing : TrackState.empty,
+                lengthFrames: channel < 3 ? 48000 : 0,
+              ),
+          ],
+        ),
+      );
+      await tester.runAsync(() => control.setPedalSetup(setup));
+      control.setMode(InteractionMode.custom);
+      if (scene == 'recording') {
+        performance.status.add(PerformanceCaptureStatus.armed);
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      }
+      await pump(tester);
+      expect(tester.takeException(), isNull);
+      if (scene == 'recording') {
+        expect(control.state.customLit[PedalButton.stop], isTrue);
+      }
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile(
+          scene == 'default'
+              ? 'goldens/foot_custom.png'
+              : 'goldens/foot_custom_recording.png',
+        ),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
+  // The foot Tuner (pen 23/1 `o9d3X`, 23/2 `lDOKf`, 23/3 `d9CLS`, 23/4
+  // `sMhKO`, 23/5 `ta3Fj`; #1229) and the Spanish probe.
+  for (final scene in [
+    'tune',
+    'in_tune',
+    'no_signal',
+    'monitoring',
+    '18_inputs',
+    'spanish',
+  ]) {
+    testWidgets('Foot Tuner $scene scene', (tester) async {
+      when(
+        () => repository.setTunerInput(input: any(named: 'input')),
+      ).thenReturn(EngineResult.ok);
+      when(() => repository.setTunerMute(any())).thenReturn(EngineResult.ok);
+      final wide = scene == '18_inputs';
+      seed(
+        LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: wide ? 18 : 4,
+            outputChannels: 2,
+          ),
+          tracks: [
+            for (var channel = 0; channel < 8; channel++)
+              Track(channel: channel),
+          ],
+        ),
+      );
+      inputNames = wide
+          ? const {
+              16: 'Ambient microphone left',
+              17: 'Ambient microphone right',
+            }
+          : const {
+              0: 'Acoustic guitar',
+              1: 'Lead vocal microphone',
+              2: 'Keyboard left',
+              3: 'Keyboard right',
+            };
+      // E2 is 82.41 Hz; 18 cents flat is the pen's −18.0.
+      const flat = 81.5539;
+      const inTune = 82.4069;
+      final hz = switch (scene) {
+        'in_tune' => inTune,
+        'no_signal' || '18_inputs' => 0.0,
+        _ => flat,
+      };
+      tunerReading = TunerState(
+        input: wide ? 16 : 0,
+        hz: hz,
+        pitch: hz > 0 ? pitchFromHz(hz) : null,
+      );
+      control.setMode(InteractionMode.tuner);
+      if (scene == 'monitoring') {
+        control.activateFootTunerPedal(PedalButton.stop);
+      }
+      if (wide) {
+        for (var page = 0; page < 4; page++) {
+          control.activateFootTunerPedal(PedalButton.bank);
+        }
+      }
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_tuner_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
+  // The accepted FX face (segno-ui.pen 10/03 `noDGu`) and the approved FX
+  // held-contact proposal (`ri60q`): four bound track switches, two Toggle
+  // and two Hold, the held one lit while its contact is down (#1229).
+  for (final scene in ['default', 'held', 'spanish']) {
+    testWidgets('Foot FX $scene accepted scene', (tester) async {
+      // The pen's racks: pedal 1's chain spans two racks, so it reads as
+      // its slot (`FX A1`); the others are one rack each.
+      List<TrackEffect> rack(
+        String id,
+        String name,
+        List<TrackEffectType> types,
+      ) => [
+        for (final type in types)
+          BuiltInEffect(
+            type: type,
+            rack: FxRack(id: id, name: name),
+          ),
+      ];
+      final effects = [
+        [
+          ...rack('r0', 'Clean Boost', [TrackEffectType.drive]),
+          ...rack('r1', 'Room', [TrackEffectType.reverb]),
+        ],
+        rack('r2', 'Light FX 1', [TrackEffectType.delay]),
+        rack('r3', 'Funk Wah', [TrackEffectType.filter, TrackEffectType.drive]),
+        rack('r4', 'Ballad', [TrackEffectType.reverb, TrackEffectType.delay]),
+      ];
+      when(repository.allMonitors).thenReturn({
+        for (var input = 0; input < 4; input++)
+          input: InputMonitor(input: input, effects: effects[input]),
+      });
+      for (var input = 0; input < 4; input++) {
+        when(
+          () => repository.monitorEffects(input),
+        ).thenReturn(effects[input]);
+        // Input 1 and 4 are on; the momentary ones rest off.
+        when(
+          () => repository.monitorChainEnabled(input),
+        ).thenReturn(input == 0 || input == 3);
+      }
+      when(
+        () => repository.setMonitorChainEnabled(
+          input: any(named: 'input'),
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenReturn(EngineResult.ok);
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 4,
+            outputChannels: 2,
+          ),
+          tracks: [
+            for (var channel = 0; channel < 8; channel++)
+              Track(channel: channel),
+          ],
+        ),
+      );
+      PedalBinding bind(
+        PedalButton button,
+        int input, {
+        BindingBehavior behavior = BindingBehavior.toggle,
+      }) => PedalBinding(
+        key: PedalBindingKey(button: button, bank: 0),
+        target: FxChainTarget(
+          FxAddress(stage: FxStage.input, index: input),
+        ).canonicalString(),
+        behavior: behavior,
+      );
+      await tester.runAsync(
+        () => control.setGlobalBindings(
+          PedalBindingSet([
+            bind(PedalButton.track1, 0),
+            bind(PedalButton.track2, 1, behavior: BindingBehavior.momentary),
+            bind(PedalButton.track3, 2, behavior: BindingBehavior.momentary),
+            bind(PedalButton.track4, 3),
+          ]),
+        ),
+      );
+      control.setMode(InteractionMode.fx);
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      final contact = Object();
+      if (scene == 'held') {
+        when(
+          () => repository.settleFxRecipes(
+            waitForCallback: any(named: 'waitForCallback'),
+            cancelled: any(named: 'cancelled'),
+          ),
+        ).thenAnswer((_) async => EngineResult.ok);
+        when(() => repository.monitorChainEnabled(1)).thenReturn(true);
+        control.footFxPressed(PedalButton.track2, contact);
+        await tester.pump();
+        await tester.pump();
+      }
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_fx_$scene.png'),
+      );
+      if (scene == 'held') {
+        control.footFxReleased(PedalButton.track2, contact);
+        await tester.pump();
+      }
+    }, skip: !hasScreenshotFonts);
+  }
+
+  // Multiply and Divide (#1168), pen section 16: Multiply 01, Divide 03,
+  // Divide on Bank B (06), an empty bank (07), and the Spanish strings.
+  for (final (scene, mode) in [
+    ('multiply', InteractionMode.multiply),
+    ('divide', InteractionMode.divide),
+    ('divide_bank', InteractionMode.divide),
+    ('divide_empty', InteractionMode.divide),
+    ('spanish', InteractionMode.divide),
+  ]) {
+    testWidgets('Foot Multiply / Divide $scene scene (pen 16)', (tester) async {
+      Track track(
+        int channel, {
+        int length = 48000,
+        int multiple = 1,
+        int syncDivisor = 0,
+      }) => Track(
+        channel: channel,
+        state: TrackState.playing,
+        lengthFrames: length,
+        multiple: multiple,
+        syncDivisor: syncDivisor,
+      );
+      seed(
+        LooperState(
+          transport: const TransportState(
+            isRunning: true,
+            masterLengthFrames: 48000,
+            loopBars: 2,
+          ),
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: scene == 'divide_empty'
+              ? [
+                  for (var channel = 0; channel < 8; channel++)
+                    Track(channel: channel),
+                ]
+              : [
+                  track(0),
+                  track(1, length: 96000, multiple: 2),
+                  track(2, length: 24000, syncDivisor: 2),
+                  const Track(channel: 3),
+                  track(4, length: 192000, multiple: 4),
+                  track(5, length: 12000, syncDivisor: 4),
+                  track(6, length: 30000),
+                  const Track(channel: 7),
+                ],
+        ),
+      );
+      control
+        ..selectTrack(scene == 'divide_bank' ? 4 : 1)
+        ..setMode(mode);
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_length_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
   }
 
   testWidgets(
@@ -288,6 +1042,169 @@ void main() {
   );
 
   testWidgets(
+    'console main window with a reversed track: REV in the meta row gap',
+    (tester) async {
+      const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
+      for (var i = 0; i < names.length; i++) {
+        await tracks.rename(i, names[i]);
+      }
+      seed(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            Track(state: TrackState.playing, peak: 0.9, lengthFrames: 96000),
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              peak: 0.68,
+              lengthFrames: 96000,
+              reversed: true,
+            ),
+            Track(
+              channel: 2,
+              state: TrackState.playing,
+              muted: true,
+              peak: 0.55,
+              lengthFrames: 96000,
+            ),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      await pump(tester);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_reverse_marker.png'),
+      );
+    },
+    skip: !hasScreenshotFonts,
+  );
+
+  // Real fonts: REV sits clear of the layers figure and FX in English and
+  // Spanish, with long counts.
+  for (final locale in const [Locale('en'), Locale('es')]) {
+    for (final bars in [16, 128]) {
+      testWidgets(
+        'REV clears its neighbours (${locale.languageCode}, $bars bars, '
+        '12 layers)',
+        (tester) async {
+          Track track(int channel) => Track(
+            channel: channel,
+            state: TrackState.playing,
+            lengthFrames: 1000 * bars,
+            peelDepth: 11,
+            reversed: channel == 1,
+          );
+          seed(
+            LooperState(
+              status: const EngineStatus(
+                isConnected: true,
+                devicePresent: true,
+                deviceName: 'Segno',
+                sampleRate: 48000,
+                inputChannels: 2,
+                outputChannels: 2,
+              ),
+              transport: const TransportState(
+                masterLengthFrames: 1000,
+                loopBars: 1,
+              ),
+              tracks: [
+                for (var channel = 0; channel < 4; channel++) track(channel),
+              ],
+            ),
+          );
+          await pump(tester, locale: locale);
+          Rect box(String part) =>
+              tester.getRect(find.byKey(Key('tracks_${part}_1')));
+          expect(box('reverse').left, greaterThan(box('layers').right + 4));
+          expect(box('reverse').right, lessThan(box('fx').left));
+          expect(box('layers').left, greaterThan(box('bars').right));
+        },
+        skip: !hasScreenshotFonts,
+      );
+    }
+  }
+
+  testWidgets(
+    'the Mixer view (MAIN VIEWS / Mixer)',
+    (tester) async {
+      const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
+      for (var i = 0; i < names.length; i++) {
+        await tracks.rename(i, names[i]);
+      }
+      seed(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            // Panned left, a touch under unity, both sides metering.
+            Track(
+              state: TrackState.playing,
+              lengthFrames: 96000,
+              volume: 0.8,
+              pan: -0.4,
+              solo: true,
+              peakL: 0.9,
+              peakR: 0.55,
+            ),
+            // Soloed, above unity.
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 96000,
+              volume: 1.4,
+              solo: true,
+              peakL: 0.62,
+              peakR: 0.68,
+            ),
+            // Muted playback keeps its fader level but meters no signal.
+            Track(
+              channel: 2,
+              state: TrackState.playing,
+              lengthFrames: 96000,
+              muted: true,
+            ),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('stage_view_menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('stage_view_mixer')));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_mixer_window.png'),
+      );
+      // The same scene must keep the shared meter scale aligned when the
+      // desktop window is smaller than the appliance panel.
+      tester.view.physicalSize = const Size(800, 600);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_mixer_compact_window.png'),
+      );
+    },
+    skip: !hasScreenshotFonts,
+  );
+
+  testWidgets(
     'console main window with the device-lost banner (STAGE / device-lost)',
     (tester) async {
       // The one standing loss condition: the pinned interface is gone, so the
@@ -328,63 +1245,4 @@ void main() {
   // meters recede to 40%, and each tile re-dresses with a power pill and its
   // chain's entries (or NO CHAIN). Same seed as the nominal decal, in FX mode
   // and with two real chains, so the decal shows the transform end to end.
-  testWidgets(
-    'console main window — FX mode transform (#692)',
-    (tester) async {
-      const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
-      for (var i = 0; i < names.length; i++) {
-        await tracks.rename(i, names[i]);
-      }
-      control.setMode(InteractionMode.fx);
-      seed(
-        LooperState(
-          status: const EngineStatus(
-            isConnected: true,
-            devicePresent: true,
-            deviceName: 'Segno',
-            sampleRate: 48000,
-            inputChannels: 2,
-            outputChannels: 2,
-          ),
-          tracks: [
-            // An engaged two-entry chain.
-            Track(
-              state: TrackState.playing,
-              peak: 0.9,
-              lengthFrames: 96000,
-              effects: [
-                BuiltInEffect(type: TrackEffectType.drive),
-                BuiltInEffect(type: TrackEffectType.reverb),
-              ],
-            ),
-            // A bypassed chain.
-            Track(
-              channel: 1,
-              state: TrackState.playing,
-              peak: 0.68,
-              lengthFrames: 96000,
-              chainEnabled: false,
-              effects: [BuiltInEffect(type: TrackEffectType.filter)],
-            ),
-            // A single-entry engaged chain.
-            Track(
-              channel: 2,
-              state: TrackState.playing,
-              peak: 0.55,
-              lengthFrames: 96000,
-              effects: [BuiltInEffect(type: TrackEffectType.tremolo)],
-            ),
-            // Empty: NO CHAIN.
-            const Track(channel: 3),
-          ],
-        ),
-      );
-      await pump(tester);
-      await expectLater(
-        find.byType(TracksView),
-        matchesGoldenFile('goldens/tracks_fx_window.png'),
-      );
-    },
-    skip: !hasScreenshotFonts,
-  );
 }

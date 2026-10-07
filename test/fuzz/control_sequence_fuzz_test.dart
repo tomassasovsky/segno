@@ -7,9 +7,12 @@ import 'dart:io';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/application/owned_value_port.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -25,7 +28,16 @@ import 'package:segno_engine/segno_engine.dart'
         TrackEffectType;
 import 'package:settings_repository/settings_repository.dart';
 
+import '../helpers/fake_click_mode_control.dart';
+import '../helpers/fake_click_volume_control.dart';
+import '../helpers/fake_decay_control.dart';
 import '../helpers/fake_key_value_store.dart';
+import '../helpers/fake_one_shot_control.dart';
+import '../helpers/fake_record_length_control.dart';
+import '../helpers/fake_record_start_control.dart';
+import '../helpers/fake_record_timing_control.dart';
+import '../helpers/test_fade_settings.dart';
+import '../helpers/test_mix_settings.dart';
 
 /// The control-sequence fuzzer: the REAL native engine (device-free pump) +
 /// the real LooperRepository, LooperBloc, ControlOverlayCubit, ControlIntents
@@ -51,6 +63,109 @@ void main() {
   final skip = lib == null || lib.isEmpty
       ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
       : null;
+
+  group('shared Count-in through real pedal controls', () {
+    void prepare(_Harness h, FakeAsync fa) {
+      expect(h.repo.setTempo(120), EngineResult.ok);
+      h.settle(fa);
+      expect(
+        h.repo.setRecordStartSettings(
+          countInBars: 1,
+          soundStart: false,
+          editKind: RecordStartEditKind.restore,
+        ),
+        EngineResult.ok,
+      );
+      h.settle(fa);
+      expect(h.repo.recordStartSettingsSettled, isTrue);
+    }
+
+    test('last queued capture starts only at the shared downbeat', () {
+      _inHarness((h, fa) {
+        prepare(h, fa);
+        expect(h.repo.record(channel: 6), EngineResult.ok);
+        expect(h.repo.record(channel: 1), EngineResult.ok);
+        h.settle(fa);
+        expect(h.looper.transport.countingIn, isTrue);
+        // 48 kHz, 120 BPM, four beats: literal 96000-frame deadline.
+        h.engine.pump(frames: 95999, input: 0.5);
+        h.settle(fa);
+        expect(h.looper.transport.countingIn, isTrue);
+        expect(h.looper.tracks.every((t) => !t.isCapturing), isTrue);
+        h.engine.pump(frames: 2, input: 0.5);
+        h.settle(fa);
+        expect(h.looper.transport.countingIn, isFalse);
+        expect(h.looper.tracks[1].state, TrackState.recording);
+        expect(h.looper.tracks[6].state, TrackState.empty);
+        expect(h.looper.tracks[6].undoDepth, 0);
+      });
+    }, skip: skip);
+
+    for (final mode in [
+      InteractionMode.fx,
+      InteractionMode.record,
+      InteractionMode.mute,
+    ]) {
+      test(
+        '${mode.name} cancels unpublished count-in without acquiring audio',
+        () {
+          _inHarness((h, fa) {
+            prepare(h, fa);
+            if (mode == InteractionMode.mute) h.control.setMode(mode);
+            expect(h.repo.record(channel: 6), EngineResult.ok);
+            expect(h.repo.record(channel: 1), EngineResult.ok);
+            // No callback or snapshot has published these admitted commands.
+            expect(h.looper.transport.countingIn, isFalse);
+            if (mode == InteractionMode.fx) {
+              h.control.setMode(mode);
+            } else {
+              h.run(const [_Tap(PedalButton.stop)], fa);
+            }
+            h.settle(fa);
+            h.engine.pump(frames: 96001, input: 0.5);
+            h.settle(fa);
+            expect(h.looper.transport.countingIn, isFalse);
+            expect(
+              h.looper.tracks.every((t) => t.state == TrackState.empty),
+              isTrue,
+            );
+            expect(
+              h.looper.tracks.every(
+                (t) => t.lengthFrames == 0 && t.undoDepth == 0,
+              ),
+              isTrue,
+            );
+            expect(h.looper.transport.primaryTrack, -1);
+          });
+        },
+        skip: skip,
+      );
+    }
+
+    test(
+      'Rec Stop after downbeat but before polling never reacquires the take',
+      () {
+        _inHarness((h, fa) {
+          prepare(h, fa);
+          h.control.selectTrack(1);
+          expect(h.repo.record(channel: 1), EngineResult.ok);
+          h.settle(fa);
+          h.engine.pump(frames: 96001, input: 0.5);
+          // UI still sees the countdown; Stop must resolve on callback truth.
+          expect(h.bloc.state.transport.countingIn, isTrue);
+          h
+            ..run(const [_Tap(PedalButton.stop)], fa)
+            ..settle(fa);
+          h.engine.pump(frames: 96001, input: 0.5);
+          h.settle(fa);
+          expect(h.looper.transport.countingIn, isFalse);
+          expect(h.looper.tracks[1].state, TrackState.empty);
+          expect(h.looper.tracks[1].undoDepth, 0);
+        });
+      },
+      skip: skip,
+    );
+  });
 
   group('corpus (found-bug regressions, replayed every run)', () {
     test('redo after undo-to-empty relights the LED (2026-07-04)', () {
@@ -427,13 +542,12 @@ void main() {
           ..settle(fa)
           ..run(const [_Tap(PedalButton.stop)], fa) // parkAll
           ..settle(fa)
-          // Two taps back to rec: the cycle's middle stop is FX, which leaves
-          // a capture alone (nothing is capturing here anyway).
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
+          // The configured MODE Press returns from Mute to Record.
           ..run(const [_Tap(PedalButton.mode)], fa) // -> rec (cursor 0)
           ..settle(fa)
           ..run(const [_Tap(PedalButton.undo)], fa) // t0 -> empty, redo-able
           ..settle(fa);
+        expect(h.control.state.mode, InteractionMode.record);
         expect(h.looper.tracks[0].state, TrackState.empty);
         expect(h.looper.tracks[1].state, TrackState.stopped);
 
@@ -462,11 +576,10 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.recording);
         expect(h.control.state.mode, InteractionMode.mute);
 
-        // It keeps ACCUMULATING through mute mode, and through FX on the way
-        // back round — every stop on the cycle leaves a live take alone.
+        // It keeps accumulating through Mute. A second MODE tap returns to
+        // Record under the configured Press action without ending the take.
         h
           ..run(const [_Pump(100, 0.5)], fa)
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
           ..run(const [_Tap(PedalButton.mode)], fa) // -> rec
           ..settle(fa);
         expect(h.looper.tracks[0].state, TrackState.recording);
@@ -496,7 +609,6 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.overdubbing);
 
         h
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> fx
           ..run(const [_Tap(PedalButton.mode)], fa) // -> rec
           ..run(const [_Tap(PedalButton.recPlay)], fa) // punch out
           ..settle(fa);
@@ -513,6 +625,7 @@ void main() {
           ..run(const [_Tap(PedalButton.recPlay)], fa) // 256 grid, t0 playing
           ..settle(fa)
           ..run(const [_SetQuantize(enabled: true)], fa)
+          ..settle(fa) // confirm timing before acquiring a new recording
           ..run(const [_Bloc('record', 1)], fa) // arms a quantized START
           ..run(const [_Pump(256, 0.5)], fa) // fires: t1 recording
           ..run(const [_Pump(64, 0.5)], fa) // capture something real
@@ -571,7 +684,7 @@ void main() {
     }, skip: skip);
 
     test('FX mode: track stomps carry chain state into the trackLeds, and '
-        'Stop panics every chain dark (part 5b)', () {
+        'Stop is inert (part 5b, #1229)', () {
       _inHarness((h, fa) {
         h
           ..run(const [_Tap(PedalButton.recPlay)], fa)
@@ -603,23 +716,19 @@ void main() {
             channel: 2,
             effects: [BuiltInEffect(type: TrackEffectType.reverb)],
           );
-        // Stop is FX panic: every chain that EXISTS goes off and dark.
+        // Stop is inert in FX mode now (pen 10/03, #1229): the former panic
+        // is the Track FX off command. No chain changes, no LED goes dark.
         h
           ..settle(fa)
           ..run(const [_Tap(PedalButton.stop)], fa)
           ..settle(fa);
-        for (final channel in [1, 2]) {
-          expect(h.repo.trackChainEnabled(channel), isFalse);
-          expect(h.frame.trackLeds[channel], PedalTrackLed.off);
-        }
-        // A chain-less track keeps its (meaningless) enabled flag rather than
-        // acquiring a persisted bypass that would mute the effects the user
-        // adds to it later.
-        for (final channel in [3, 4, 5, 6, 7]) {
+        for (final channel in [1, 2, 3, 4, 5, 6, 7]) {
           expect(h.repo.trackChainEnabled(channel), isTrue);
         }
-        // ...and the loop is untouched: panic bypasses FX, it never stops
-        // the transport.
+        for (final channel in [1, 2]) {
+          expect(h.frame.trackLeds[channel], PedalTrackLed.blue);
+        }
+        // ...and the loop is untouched: Stop never stops the transport here.
         expect(h.looper.tracks[0].state, TrackState.playing);
       });
     }, skip: skip);
@@ -651,6 +760,7 @@ void main() {
           ..run(const [_Tap(PedalButton.recPlay)], fa) // 256-frame loop plays
           ..settle(fa)
           ..run(const [_SetQuantize(enabled: true)], fa)
+          ..settle(fa) // confirm timing before acquiring a new overdub
           ..run(const [_Bloc('record', 0)], fa) // arms for the next loop top
           ..run(const [_MuteTrack(0, muted: true)], fa) // muted while armed
           ..settle(fa);
@@ -720,7 +830,13 @@ class _Harness {
       ),
     );
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    bloc = LooperBloc(repository: repo);
+    final fxPersistence = FxChainPersistence(looper: repo);
+    final mixSettings = testMixSettings(repo);
+    bloc = LooperBloc(
+      fxPersistence: fxPersistence,
+      repository: repo,
+      mixSettings: mixSettings,
+    );
     sim = FakePedalLink();
     pedalRepo = PedalRepository(sim);
     sim.hello();
@@ -729,14 +845,30 @@ class _Harness {
       (_) => sim.hello(),
     );
     performance = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: engine,
       exportsRoot: () async => tempDir.path,
     );
+    final ownedFade = testFadeSettings();
     control = ControlCubit(
+      fxPersistence: fxPersistence,
       looper: repo,
+      mixSettings: mixSettings,
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
+      fadeSettings: ownedFade,
+      ownedValues: OwnedValuePort(
+        looper: repo,
+        clickVolume: FakeClickVolumeControl(),
+        clickMode: FakeClickModeControl(),
+        recordStart: FakeRecordStartControl(),
+        decay: FakeDecayControl(),
+        oneShot: FakeOneShotControl(),
+        recordLength: FakeRecordLengthControl(),
+        recordTiming: FakeRecordTimingControl(),
+        fade: ownedFade,
+      ),
     );
     cubit = PedalCubit(
       pedal: pedalRepo,
@@ -902,7 +1034,9 @@ class _LongPressUndo extends _FuzzAction {
   void apply(_Harness h, FakeAsync fa) {
     h.sim.press(PedalButton.undo, down: true);
     fa
-      ..elapse(const Duration(milliseconds: 600))
+      // Cross the accepted 800 ms default without deriving the oracle from
+      // the production gesture helper.
+      ..elapse(const Duration(milliseconds: 850))
       ..flushMicrotasks();
     h.sim.press(PedalButton.undo, down: false);
   }
@@ -915,7 +1049,8 @@ class _Encoder extends _FuzzAction {
   const _Encoder(this.delta);
   final int delta;
   @override
-  void apply(_Harness h, FakeAsync fa) => h.sim.turn(delta);
+  // A stage turn as EncoderNavigation routes it (#1276).
+  void apply(_Harness h, FakeAsync fa) => h.control.encoderTurned(delta);
   @override
   String describe() => '_Encoder($delta)';
 }
@@ -1029,7 +1164,12 @@ class _SetQuantize extends _FuzzAction {
   const _SetQuantize({required this.enabled});
   final bool enabled;
   @override
-  void apply(_Harness h, FakeAsync fa) => h.repo.setQuantize(enabled: enabled);
+  void apply(_Harness h, FakeAsync fa) => h.repo.setRecordTiming(
+    RecordTiming.of(
+      quantize: enabled,
+      division: h.repo.sessionTransport.quantizeDiv,
+    ),
+  );
   @override
   String describe() => '_SetQuantize(enabled: $enabled)';
 }
@@ -1152,15 +1292,15 @@ List<_FuzzAction> _generate(int seed, int steps) {
       ),
       < 65 => _Select(rng.next(8)),
       < 68 => const _ToggleMode(),
-      // NB: no `_SetMode` in the random alphabet. FX mode is already reachable
-      // here — `_Tap`/`_ToggleMode` walk the three-stop cycle — and giving it
+      // NB: no `_SetMode` in the random alphabet. FX and custom are already
+      // reachable here — `_Tap`/`_ToggleMode` walk the cycle — and giving one
       // its own band would have taken draws from `_Pump` (the only action that
       // feeds audio in, so the only way tracks gain content) and shifted every
       // subsequent draw, replacing the sequences the fixed seeds have explored
       // rather than adding to them. `_SetMode` stays a corpus-only action.
       < 78 => _Pump(const [0, 1, 17, 256, 300][rng.next(5)], 0.5),
       < 82 => const _Tick(),
-      < 85 => _Elapse(const [5, 50, 600][rng.next(3)]),
+      < 85 => _Elapse(const [5, 50, 850][rng.next(3)]),
       // FX actions (the F6 alphabet): set/clear a lane or monitor chain, or the
       // race ordering — monitor-then-record with no drain between. Input is
       // pinned to 0 (not randomized like _SetMonitorChain): a track's lane 0

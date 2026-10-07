@@ -8,6 +8,9 @@ import '../../helpers/helpers.dart';
 
 /// A client that reads fine and refuses every write.
 class _FailingWriteClient implements ConsoleFactsClient {
+  @override
+  Future<int> retiredBluetoothPairings() async => 0;
+
   final _inner = FakeConsoleFactsClient(latency: Duration.zero);
 
   @override
@@ -20,19 +23,15 @@ class _FailingWriteClient implements ConsoleFactsClient {
   Future<ConsoleFacts> facts() => _inner.facts();
 
   @override
-  Future<String> exportDestination() => _inner.exportDestination();
-
-  @override
   Future<int> deleteCapturesOlderThan(int days) async =>
-      throw StateError('read-only');
-
-  @override
-  Future<void> exportEverything(String destination) async =>
       throw StateError('read-only');
 }
 
 /// A client that throws every read.
 class _FailingClient implements ConsoleFactsClient {
+  @override
+  Future<int> retiredBluetoothPairings() async => 0;
+
   @override
   bool get isSupported => true;
 
@@ -44,13 +43,6 @@ class _FailingClient implements ConsoleFactsClient {
 
   @override
   Future<int> deleteCapturesOlderThan(int days) async =>
-      throw StateError('no disk');
-
-  @override
-  Future<String> exportDestination() async => '';
-
-  @override
-  Future<void> exportEverything(String destination) async =>
       throw StateError('no disk');
 }
 
@@ -76,14 +68,13 @@ void main() {
     });
 
     blocTest<ConsoleFactsCubit, ConsoleFactsState>(
-      'load reads the disk, the box and the export destination',
+      'load reads the disk and the box',
       build: build,
       act: (cubit) => cubit.load(),
       verify: (cubit) {
         expect(cubit.state.status, ConsoleFactsStatus.ready);
         expect(cubit.state.hasStorage, isTrue);
         expect(cubit.state.facts.serial, 'VMP-16-0042');
-        expect(cubit.state.exportDestination, isNotEmpty);
       },
     );
 
@@ -127,12 +118,9 @@ void main() {
       expect(cubit.state.actionFailed, isTrue);
       expect(cubit.state.busy, isFalse);
 
-      // An export failure behaves the same way.
+      // The next good read clears it.
       await cubit.load();
       expect(cubit.state.actionFailed, isFalse);
-      await cubit.exportEverything();
-      expect(cubit.state.hasStorage, isTrue);
-      expect(cubit.state.actionFailed, isTrue);
     });
 
     test('a read that throws IS the case where nothing can be drawn', () async {
@@ -153,23 +141,6 @@ void main() {
 
       await cubit.load();
       expect(cubit.state.settled, isTrue);
-    });
-
-    test('exporting with nowhere to export does nothing at all', () async {
-      final cubit = build(
-        client: FakeConsoleFactsClient(
-          latency: Duration.zero,
-          exportVolumeMounted: false,
-        ),
-      );
-      addTearDown(cubit.close);
-      await cubit.load();
-
-      await cubit.exportEverything();
-
-      // Never went busy: the guard is in the cubit, not only on the row.
-      expect(cubit.state.busy, isFalse);
-      expect(cubit.state.status, ConsoleFactsStatus.ready);
     });
 
     test('the given name keys off the serial, and an empty one hands the box '

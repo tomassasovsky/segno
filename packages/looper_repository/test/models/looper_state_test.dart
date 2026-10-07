@@ -26,39 +26,40 @@ void main() {
       expect(a.hashCode, const LooperState().hashCode);
     });
 
-    test('allOneShot is false on an empty rig, not vacuously true', () {
-      // `every` on an empty list is true, which is never what the rig-wide
-      // one-shot question means — a stopped engine reporting no tracks would
-      // otherwise answer "yes, all of them".
-      expect(const LooperState().allOneShot, isFalse);
-    });
-
-    test('allOneShot needs EVERY track, not just one', () {
-      expect(
-        const LooperState(
-          tracks: [Track(oneShot: true), Track(channel: 1)],
-        ).allOneShot,
-        isFalse,
-      );
-      expect(
-        const LooperState(
-          tracks: [Track(oneShot: true), Track(channel: 1, oneShot: true)],
-        ).allOneShot,
-        isTrue,
-      );
-    });
-
-    test('Master insert fields default and participate in equality', () {
+    test('output chain fields default and participate in equality', () {
       const state = LooperState();
-      expect(state.masterEffects, isEmpty);
-      expect(state.masterChainEnabled, isTrue);
+      expect(state.outputEffects(0), isEmpty);
+      expect(state.outputChainEnabled(0), isTrue);
 
-      expect(state, isNot(const LooperState(masterChainEnabled: false)));
+      expect(
+        state,
+        isNot(
+          const LooperState(
+            outputChains: {0: FxChainEnvelope(chainEnabled: false)},
+          ),
+        ),
+      );
       expect(
         state,
         isNot(
           LooperState(
-            masterEffects: [BuiltInEffect(type: TrackEffectType.reverb)],
+            outputChains: {
+              0: FxChainEnvelope(
+                entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+              ),
+            },
+          ),
+        ),
+      );
+      // Keyed by destination: the same chain on another destination is a
+      // different rig, which is the whole reason this is a map.
+      expect(
+        const LooperState(
+          outputChains: {0: FxChainEnvelope(chainEnabled: false)},
+        ),
+        isNot(
+          const LooperState(
+            outputChains: {1: FxChainEnvelope(chainEnabled: false)},
           ),
         ),
       );

@@ -1,7 +1,7 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
-import 'package:segno/control/binding/fx_chain_lookup.dart';
+import 'package:segno/control/binding/owned_value_control.dart';
 
 /// Resolves a typed [ControlValueTarget] against the live rig — the app-side
 /// half of the continuous binding model, and the twin of part 6b's
@@ -10,7 +10,7 @@ import 'package:segno/control/binding/fx_chain_lookup.dart';
 /// This is the ONLY place a continuous mapping meets `looper_repository`, which
 /// is what keeps `controller_repository` free of a looper dependency: it
 /// carries mappings as opaque strings, `ControlCubit` decodes them, and this
-/// resolver turns the decoded target into a parameter / volume / gain write.
+/// resolver reads whether the named control exists and what value it holds.
 ///
 /// ## Unresolvable targets go inert (A9)
 ///
@@ -24,14 +24,14 @@ import 'package:segno/control/binding/fx_chain_lookup.dart';
 extension ControlValueResolver on LooperRepository {
   /// Every value target the live rig can currently offer, in signal order:
   /// each configured chain's built-in effects with one entry per parameter,
-  /// then the track volumes, then master gain.
+  /// then the Mixer controls, then master gain.
   ///
   /// Only slots carrying a stable `slotId` are offered — an entry without one
   /// cannot be re-found after a reorder (A9). Hosted plugins are not offered:
   /// their parameters are addressed by plugin-assigned id rather than position
   /// and have no setter at every stage, so v1 leaves them to the on-screen
   /// controls.
-  List<ControlValueTarget> availableValueTargets() {
+  List<ControlValueTarget> availableValueTargets({OwnedValueReadout? owned}) {
     final targets = <ControlValueTarget>[];
     void add(FxAddress address, List<TrackEffect> entries) {
       for (final fx in entries) {
@@ -64,73 +64,120 @@ extension ControlValueResolver on LooperRepository {
         trackEffects(channel),
       );
     }
-    add(const FxAddress(stage: FxStage.master), masterEffects);
-    for (final track in state.tracks) {
-      targets.add(TrackVolumeTarget(track.channel));
+    add(const FxAddress(stage: FxStage.allTracks), allTracksEffects);
+    // Every destination the OPEN DEVICE has, not only the ones already
+    // carrying a chain: a destination exists because the interface has the
+    // jacks, and a picker that hid the empty ones would have nowhere to point
+    // a binding at the chain the player is about to build there.
+    for (var bus = 0; bus < state.outputBusCount; bus++) {
+      add(FxAddress(stage: FxStage.output, index: bus), outputEffects(bus));
+    }
+    targets.addAll(availableMixValueTargets());
+    if (owned != null) {
+      targets.addAll(ownedValueTargets.where(owned.resolves));
     }
     // The master output always exists, so it is always offerable.
     targets.add(const MasterGainTarget());
     return targets;
   }
 
+  /// Mixer controls alone, in the same signal order as the full catalogue.
+  /// Topology watchers use this without enumerating every FX parameter.
+  List<MixValueTarget> availableMixValueTargets() {
+    final targets = <MixValueTarget>[];
+    final rig = state;
+    final inputs = rig.status.inputChannels;
+    final excluded = rig.status.excludedInputMask;
+    final setup = inputSetup;
+    for (final track in rig.tracks) {
+      targets
+        ..add(TrackVolumeTarget(track.channel))
+        ..add(TrackPanTarget(track.channel));
+      for (var lane = 0; lane < laneCount(track.channel); lane++) {
+        targets.add(LaneVolumeTarget(track.channel, lane));
+      }
+    }
+    for (var input = 0; input < inputs; input++) {
+      if ((excluded & (1 << input)) != 0) continue;
+      targets.add(MonitorVolumeTarget(input));
+      if (setup.pairOf(input) == null) {
+        targets.add(InputPanTarget(input));
+      } else if (input.isEven &&
+          input + 1 < inputs &&
+          (excluded & (1 << (input + 1))) == 0) {
+        targets.add(PairBalanceTarget(input));
+      }
+    }
+    for (var bus = 0; bus < rig.outputBusCount; bus++) {
+      targets
+        ..add(OutputLevelTarget(bus))
+        ..add(OutputBalanceTarget(bus));
+    }
+    return targets;
+  }
+
   /// Whether [target] names something that exists in the live rig.
-  bool valueTargetResolves(ControlValueTarget target) => switch (target) {
+  bool valueTargetResolves(
+    ControlValueTarget target, {
+    OwnedValueReadout? owned,
+  }) => switch (target) {
     FxParamTarget() => _paramSlot(target) != null,
-    TrackVolumeTarget(:final channel) =>
-      channel >= 0 && channel < state.tracks.length,
+    TrackVolumeTarget(:final channel) ||
+    TrackPanTarget(:final channel) => _trackExists(channel),
+    LaneVolumeTarget(:final channel, :final lane) =>
+      _trackExists(channel) && lane >= 0 && lane < laneCount(channel),
+    MonitorVolumeTarget(:final input) => _inputExists(input),
+    InputPanTarget(:final input) =>
+      _inputExists(input) && inputSetup.pairOf(input) == null,
+    PairBalanceTarget(:final input) =>
+      input.isEven &&
+          _inputExists(input) &&
+          _inputExists(input + 1) &&
+          inputSetup.pairs.containsKey(input),
+    OutputLevelTarget(:final bus) ||
+    OutputBalanceTarget(:final bus) => bus >= 0 && bus < state.outputBusCount,
     MasterGainTarget() => true,
+    OwnedValueTarget() => owned?.resolves(target) ?? false,
   };
 
-  /// Writes [value] (normalized `0..1`) to [target]. A no-op returning `false`
-  /// when the target does not resolve, so a caller can skip the work a no-op
-  /// would not need.
-  bool writeValueTarget(ControlValueTarget target, double value) {
-    final clamped = value.clamp(0.0, 1.0);
-    switch (target) {
-      case FxParamTarget(:final address, :final param):
-        final slot = _paramSlot(target);
-        if (slot == null) return false;
-        switch (address.stage) {
-          case FxStage.input:
-            setMonitorEffectParam(
-              input: address.index,
-              index: slot.index,
-              param: param,
-              value: clamped,
-            );
-          case FxStage.loop:
-            setLaneEffectParam(
-              channel: address.index,
-              // Non-null: `_paramSlot` already rejected a lane-less Loop
-              // address, so this branch is unreachable without one.
-              lane: address.lane!,
-              index: slot.index,
-              param: param,
-              value: clamped,
-            );
-          case FxStage.track:
-            setTrackEffectParam(
-              channel: address.index,
-              index: slot.index,
-              param: param,
-              value: clamped,
-            );
-          case FxStage.master:
-            setMasterEffectParam(
-              index: slot.index,
-              param: param,
-              value: clamped,
-            );
-        }
-        return true;
-      case TrackVolumeTarget(:final channel):
-        if (channel < 0 || channel >= state.tracks.length) return false;
-        setVolume(clamped, channel: channel);
-        return true;
-      case MasterGainTarget():
-        setMasterGain(clamped);
-        return true;
-    }
+  /// The value [target] holds now (normalized `0..1`), or `null` when it does
+  /// not resolve.
+  ///
+  /// What a newly added button parameter starts from on BOTH of its values, so
+  /// adding the mapping invents no sound change.
+  double? readValueTarget(
+    ControlValueTarget target, {
+    OwnedValueReadout? owned,
+  }) => switch (target) {
+    FxParamTarget(:final param) => _paramSlot(target)?.effect.params[param],
+    MixValueTarget() => _readMixValue(target),
+    MasterGainTarget() => masterGain,
+    OwnedValueTarget() => owned?.read(target),
+  };
+
+  bool _trackExists(int channel) =>
+      channel >= 0 && state.tracks.any((track) => track.channel == channel);
+
+  bool _inputExists(int input) =>
+      input >= 0 &&
+      input < state.status.inputChannels &&
+      (state.status.excludedInputMask & (1 << input)) == 0;
+
+  double? _readMixValue(MixValueTarget target) {
+    if (!valueTargetResolves(target)) return null;
+    final mix = mixSettingsSnapshot;
+    final value = switch (target) {
+      TrackVolumeTarget(:final channel) => mix.trackLevels[channel] ?? 1,
+      LaneVolumeTarget(:final channel, :final lane) =>
+        mix.laneLevels[(channel, lane)] ?? 1,
+      MonitorVolumeTarget(:final input) => mix.monitorLevels[input] ?? 1,
+      TrackPanTarget(:final channel) => mix.trackPans[channel] ?? 0,
+      InputPanTarget(:final input) => mix.inputSetup.panOf(input),
+      PairBalanceTarget(:final input) => mix.inputSetup.balanceOf(input),
+      OutputLevelTarget(:final bus) => mix.outputSetup.of(bus).level,
+      OutputBalanceTarget(:final bus) => mix.outputSetup.of(bus).balance,
+    };
+    return target.fromDomain(value);
   }
 
   /// The CURRENT position and entry [target] names, or `null` when the chain,

@@ -2,36 +2,19 @@
     "@@locale": "es",
     "appMenuLabel": "Segno",
     "settingsMenuItem": "Ajustes…",
-    "settingsSectionUpdates": "Actualizaciones",
-    "updatesIntro": "Mantén Segno al día. La comprobación es de solo lectura; descargar e instalar una actualización siempre es tu decisión.",
-    "updatesInstalledVersionLabel": "Versión instalada",
-    "updatesChannelLabel": "Canal",
     "updatesVersionValue": "v{version}",
-    "updatesAutoCheckTitle": "Buscar actualizaciones automáticamente",
-    "updatesAutoCheckSubtitle": "Busca una versión más reciente en segundo plano. Nunca descarga ni instala por su cuenta.",
-    "updatesExperimentalChannelTitle": "Canal experimental",
-    "updatesExperimentalChannelSubtitle": "Recibe versiones preliminares. Desactívalo para seguir solo las versiones de producción.",
-    "updatesCheckNowTitle": "Buscar ahora",
-    "updatesCheckNowSubtitle": "Busca una versión más reciente ahora.",
     "updatesCheckingLabel": "Buscando actualizaciones…",
-    "updatesUpToDateTitle": "Estás al día",
     "updatesUpToDateSubtitle": "Esta es la última versión del canal {channel}.",
-    "updatesAvailableTitle": "Actualización disponible: v{version}",
-    "updatesNotesFallback": "Hay una nueva versión disponible.",
-    "updatesDownloadTitle": "Descargar e instalar",
-    "updatesDownloadSubtitle": "Prepara la v{version} en el sistema en espera. Nada se reinicia hasta que tú lo decidas.",
-    "updatesDownloadingLabel": "Descargando… {percent}%",
-    "updatesStagedTitle": "Reiniciar para aplicar",
-    "updatesStagedSubtitle": "La v{version} está instalada y lista. Reinicia cuando no estés en mitad de una sesión.",
-    "updatesRestartBusySubtitle": "Detén la grabación y limpia tu sesión antes de reiniciar.",
-    "updatesErrorTitle": "La comprobación de actualizaciones falló",
-    "updatesSizeMb": "{mb} MB",
+    "updatesRestartBusySubtitle": "La reproducción se detendrá y tu sesión se guardará antes de reiniciar.",
     "updateBannerTitle": "Actualización disponible — v{version}",
     "updateBannerUpdateAction": "Actualizar…",
     "updateBannerDismissAction": "Ahora no",
     "audioDeviceFallbackName": "Dispositivo de audio",
     "deviceLostBanner": "Sin dispositivo de audio — no se oye nada",
     "deviceLostBannerAction": "Abrir configuración",
+    "deviceRestoredClearedBanner": "El dispositivo volvió a {sampleRate} Hz en vez de {previousRate} Hz — los loops se borraron. Vuelve a cargar la sesión para recuperarlos.",
+    "deviceRestoredClearedCapBanner": "El dispositivo volvió con otro límite de duración de loop — los loops se borraron. Vuelve a cargar la sesión para recuperarlos.",
+    "deviceRestoredPartialToastBody": "{count, plural, =1{La pista {tracks} se borró — tenía una edición pendiente cuando el dispositivo se desconectó} other{Las pistas {tracks} se borraron — tenían ediciones pendientes cuando el dispositivo se desconectó}}",
     "midiLostToastTitle": "Controlador MIDI desconectado",
     "midiLostToastBody": "Mapeos inactivos hasta que vuelva — los loops siguen sonando",
     "deviceReconnectedSnackbar": "{deviceName} reconectado",
@@ -40,26 +23,24 @@
     "singleDisplayNotice": "Solo se detectó una pantalla: la pantalla de forma de onda no está disponible.",
     "audioRecoveryWaitingBanner": "Esperando la interfaz de audio: se iniciará automáticamente al reconectarse.",
     "close": "Cerrar",
-    "mixdownExported": "Mezcla exportada",
-    "stemsExported": "Pistas exportadas",
-    "exportMixdown": "Exportar mezcla",
-    "exportStems": "Exportar pistas",
     "sessionMenuTooltip": "Sesión",
     "a11ySessionMenu": "Menú de sesión",
     "sessionSaved": "Sesión guardada",
     "sessionLoaded": "Sesión cargada",
+    "sessionLoadedConverted": "Sesión convertida desde una versión anterior de Segno. El original se conservó junto a ella.",
+    "sessionLoadedConvertedUnsaved": "Sesión convertida por ahora desde una versión anterior de Segno. No se pudo guardar convertida, así que el archivo original no cambió.",
+    "sessionConvertedMasterMoved": "Sus efectos Master, y los pedales asignados a ellos, ahora actúan en Todas las pistas.",
+    "sessionConvertedMonitorLowered": "Una entrada en vivo por encima del 100% se bajó al 100%.",
+    "sessionConvertedTempoFromLoop": "No guardaba tempo, así que su tempo se tomó de la duración del loop.",
     "sessionSave": "Guardar",
-    "sessionManage": "Sesiones…",
     "sessionSaveAs": "Guardar como…",
     "sessionRename": "Renombrar",
     "sessionDelete": "Eliminar",
     "sessionDuplicate": "Duplicar",
     "sessionDuplicateTitle": "Duplicar como…",
     "sessionUnsaved": "Sin guardar",
-    "sessionsManagerTitle": "Sesiones",
     "sessionDateToday": "hoy {time}",
     "sessionDateYesterday": "ayer",
-    "sessionsEmpty": "Aún no hay sesiones guardadas. Usa «Guardar como…» para crear una.",
     "sessionNewTitle": "Guardar como sesión nueva",
     "sessionRenameTitle": "Renombrar sesión",
     "sessionNameHint": "Nombre de la sesión",
@@ -99,6 +80,9 @@
     },
     "sessionErrorSampleRate": "No se pudo cargar la sesión: se grabó a una frecuencia de muestreo distinta a la del dispositivo actual. Vuelve a abrir el dispositivo a la frecuencia de la sesión e inténtalo de nuevo.",
     "sessionErrorUnsupportedVersion": "No se pudo cargar la sesión: se guardó con una versión más reciente de Segno. Actualiza la aplicación e inténtalo de nuevo.",
+    "sessionErrorUnconvertible": "No se pudo cargar la sesión: se guardó con una versión anterior de Segno que esta versión no puede convertir. La sesión quedó sin cambios.",
+    "sessionBootRecoveryTitle": "Hay que recuperar los ajustes de la sesión",
+    "sessionBootRecoveryBody": "La sesión cargada está detenida. Reintenta confirmar sus ajustes antes de continuar.",
     "sessionErrorGeneric": "La acción de sesión falló: {details}",
     "engineStoppedBanner": "Motor de audio detenido — abre la configuración para iniciar.",
     "loopMultipleLabel": "×{multiple}",
@@ -130,7 +114,6 @@
     "a11yPortDedicated": "salida dedicada",
     "a11yPortUnused": "salida sin usar",
     "a11yEffectType": "Tipo de efecto",
-    "a11yWaveform": "Forma de onda del bucle de salida",
     "a11yHideTitleBar": "Ocultar barra de título",
     "a11yShowTitleBar": "Mostrar barra de título",
     "a11yBankSelected": "Banco {bank}",
@@ -141,7 +124,7 @@
     "shortcutGroupTracks": "Pistas",
     "shortcutGroupNavigation": "Navegación",
     "shortcutPlayStopAll": "Reproducir o detener todas las pistas",
-    "shortcutMode": "Cambiar modo grabación / silencio / FX",
+    "shortcutMode": "Cambiar modo pistas / silencio / FX / personalizado",
     "shortcutArm": "Armar o desarmar la grabación de actuación",
     "shortcutSelectTrack": "Seleccionar una pista (silenciarla en modo silencio; en modo FX, alternar la cadena de FX asignada a esa tecla)",
     "shortcutBank": "Cambiar de banco A / B",
@@ -153,10 +136,8 @@
     "shortcutUndoClearAll": "Deshacer borrar todo",
     "shortcutSaveSession": "Guardar la sesión abierta",
     "shortcutFocusTraverse": "Mover el foco entre los controles",
-    "a11yTrackTile": "{name}, {state}, activar para grabar",
+    "a11yTrackTile": "{name}, {state}, activar para seleccionar",
     "a11yTrackTileMute": "{name}, {state}, activar para silenciar o reactivar",
-    "a11yTrackTileFxOn": "{target}, {state}, cadena de FX encendida, activar para apagarla",
-    "a11yTrackTileFxOff": "{target}, {state}, cadena de FX apagada, activar para encenderla",
     "a11yRenameTrack": "Renombrar {name}",
     "renameTrackTitle": "Renombrar {trackName}",
     "cancel": "Cancelar",
@@ -165,42 +146,13 @@
     "save": "Guardar",
     "trackRoutingTitle": "Enrutamiento de {trackName}",
     "trackSettingsTooltip": "Ajustes de pista",
-    "trackSettingsDialogTitle": "Ajustes de {trackName}",
-    "quantizeRecording": "Cuantizar grabación",
-    "loopLength": "Duración del bucle",
     "done": "Listo",
     "defaultWithState": "Predeterminado ({state})",
     "toggleOn": "Sí",
     "toggleOff": "No",
     "auto": "Auto",
-    "settingsSectionView": "Vista",
-    "settingsSectionAudio": "Audio",
-    "settingsSectionTracks": "Pistas",
-    "settingsKicker": "AJUSTES",
-    "settingsTitle": "Segno",
-    "settingsViewIntro": "Cambia diseños, ajusta los valores predeterminados del looper y activa la ventana secundaria de forma de onda de salida.",
-    "viewGroupLabel": "VISTA",
-    "waveformWindowTitle": "Ventana de forma de onda de salida",
-    "waveformWindowSubtitle": "Abre una segunda ventana con la forma de onda de salida del bucle completo",
     "highContrastTitle": "Alto contraste",
-    "highContrastSubtitle": "Fuerza una paleta más brillante y de mayor contraste. En escritorio, el ajuste de contraste del sistema no se aplica automáticamente.",
-    "trackIndicatorsTitle": "Indicadores de pista",
-    "trackIndicatorsSubtitle": "Mostrar una luz de estado en cada pista",
-    "looperGroupLabel": "LOOPER",
-    "defaultModeIntro": "Modo en el que inicia el looper: lo que hace una pulsación de pista, desde el pedal, el teclado o la pantalla. Las teclas numéricas seleccionan pistas; en modo Grabar R/P arman y reproducen la selección, en modo Silenciar silencian / activan sonido. El modo FX (donde las pulsaciones de pista alternan las cadenas de FX) no se ofrece aquí: se entra en él en vivo, nunca al iniciar.",
-    "recordModeLabel": "Grabar",
-    "recordModeSub": "Armar y capturar",
-    "muteModeLabel": "Silenciar",
-    "muteModeSub": "Silenciar / activar sonido",
-    "refreshRateIntro": "Frecuencia de actualización de la interfaz — con qué frecuencia se actualizan formas de onda y medidores. Más alto es más fluido pero usa más CPU.",
     "refreshRateHz": "{hz} Hz",
-    "refreshRateLowCpu": "Bajo CPU",
-    "refreshRateSmoothest": "Más fluido",
-    "defaultLabel": "Predeterminado",
-    "tracksIntro": "Renombra las pistas.",
-    "tracksGroupLabel": "PISTAS",
-    "lengthPresetLabel": "Preajuste de duración",
-    "lengthPresetAuto": "AUTO",
     "lengthPresetBars": "{bars, plural, one{1 compás} other{{bars} compases}}",
     "inputChannelLabel": "Ent {channelNumber}",
     "outputChannelLabel": "Sal {channelNumber}",
@@ -357,15 +309,6 @@
     "signalChainOff": "Cadena apagada",
     "signalCardChainOffRun": "Cadena apagada · {run}",
     "signalChainOn": "Cadena encendida",
-    "stageFxChainOn": "ON",
-    "stageFxChainOff": "OFF",
-    "stageFxNoChain": "SIN CADENA",
-    "stageFxNoChainHint": "crea una en Signal",
-    "stageFxCellLabel": "{target} · {chain}",
-    "stageFxTargetInput": "ENTRADA {number}",
-    "stageFxTargetTrack": "PISTA {number}",
-    "stageFxTargetLane": "LÍNEA {lane}",
-    "stageFxTargetMaster": "MASTER",
     "signalShowAllLanes": "Todos los carriles",
     "signalShowRecordedLanes": "Carriles grabados",
     "signalInherited": "Heredada",
@@ -423,30 +366,8 @@
         }
     },
     "startEngine": "Iniciar motor",
-    "sampleRateGroup": "Frecuencia de muestreo",
-    "bufferSizeGroup": "Tamaño del búfer",
-    "asioDriverGroup": "Controlador ASIO",
-    "asioChannelCounts": "{inputs} ent / {outputs} sal",
-    "@asioChannelCounts": {
-        "placeholders": {
-            "inputs": {
-                "type": "int"
-            },
-            "outputs": {
-                "type": "int"
-            }
-        }
-    },
-    "noAsioDriverTitle": "No se encontró ningún controlador ASIO",
-    "noAsioDriverMessage": "Segno usa ASIO en Windows. Instala el controlador ASIO de tu interfaz, u obtén uno genérico de ASIO4ALL, y vuelve a abrir la configuración.",
-    "downloadAsio4all": "Obtener ASIO4ALL",
-    "sampleRateLabel": "Frecuencia de muestreo",
-    "bufferLabel": "Búfer",
     "roundTripLatencyLabel": "Latencia de ida y vuelta",
-    "recordOffsetLabel": "Desplazamiento de grabación",
-    "applyLabel": "Aplicar",
     "measuringEllipsis": "Midiendo…",
-    "measureRoundTripLatency": "Medir latencia de ida y vuelta",
     "stopEngine": "Detener motor",
     "setupBlurbEngine": "Elige la resolución y el equilibrio entre latencia y estabilidad.",
     "setupBlurbInput": "Elige cómo se monitoriza y enruta tu señal entrante.",
@@ -463,32 +384,16 @@
     "noSignalDetected": "Sin señal detectada",
     "latencyMs": "{milliseconds} ms",
     "bufferFrames": "{frames} fotogramas",
-    "sampleRateHz": "{rate} Hz",
     "loopbackDetectedNote": "Loopback detectado{deviceClause} — la latencia se mide automáticamente al iniciar como estimación de ruta digital. Usa un cable para la cifra analógica real.",
     "loopbackAvailableNote": "Hay un loopback {kind} disponible{deviceClause} pero no se puede enrutar automáticamente; usa un cable loopback físico para medir la latencia.",
     "loopbackKindBackend": "loopback",
     "loopbackKindMonitor": "monitor",
     "loopbackKindVirtualDevice": "virtual",
     "failedToOpenDevice": "Error al abrir el dispositivo: {errorName}",
-    "audioSettingsIntro": "Elige el dispositivo de audio y comprueba la latencia de ida y vuelta medida.",
-    "outputDeviceGroupUpper": "DISPOSITIVO DE SALIDA",
-    "inputDeviceGroupUpper": "DISPOSITIVO DE ENTRADA",
-    "recordingGroupLabel": "GRABACIÓN",
-    "maxLoopLengthIntro": "Duración máxima del bucle por pista. Un límite mayor reserva más memoria por pista. Cambiarlo reabre el dispositivo.",
     "maxLoopDefault30s": "Predeterminado (30 s)",
     "maxLoopMinutes": "{minutes} min",
-    "quantizeRecordingSubtitle": "Ajusta inicio/fin de grabación a la cuadrícula del bucle. El predeterminado para todas las pistas; anúlalo por pista desde su diálogo de enrutamiento.",
-    "overdubOnSecondPressTitle": "Sobregrabar en segunda pulsación",
-    "overdubOnSecondPressSubtitle": "Una segunda pulsación de grabar sigue superponiendo (rec/dub) en lugar de detener y reproducir.",
-    "soundActivatedRecordingTitle": "Grabación activada por sonido",
-    "soundActivatedRecordingSubtitle": "Tras pulsar grabar, la captura comienza cuando la señal de entrada empieza, en lugar de inmediatamente.",
-    "defaultLoopLengthIntro": "Duración predeterminada del bucle para nuevas grabaciones. Auto redondea a bucles base completos; una duración fija graba exactamente esa cantidad. Anúlalo por pista desde su diálogo de enrutamiento.",
-    "statusGroupLabel": "ESTADO",
     "deviceLabel": "Dispositivo",
-    "notRunning": "No en ejecución",
-    "measureLatencySubtitle": "Volver a ejecutar la medición de latencia loopback",
     "systemDefault": "Predeterminado del sistema",
-    "systemDefaultNamed": "Predeterminado del sistema ({deviceName})",
     "effectNone": "Ninguno",
     "effectDrive": "Drive",
     "effectFilter": "Filtro",
@@ -517,7 +422,7 @@
     "pitchOctaves": "{sign}{count} oct",
     "pitchSemitones": "{sign}{count} st",
     "defaultTrackName": "PISTA {trackNumber}",
-    "outputWaveformWindowTitle": "Segno — Salida",
+    "outputWaveformWindowTitle": "Segno — Pista",
     "@deviceReconnectedSnackbar": {
         "placeholders": {
             "deviceName": {
@@ -543,13 +448,6 @@
         "placeholders": {
             "trackName": {
                 "type": "String"
-            }
-        }
-    },
-    "@trackSettingsDialogTitle": {
-        "placeholders": {
-            "trackNumber": {
-                "type": "int"
             }
         }
     },
@@ -616,13 +514,6 @@
             }
         }
     },
-    "@sampleRateHz": {
-        "placeholders": {
-            "rate": {
-                "type": "int"
-            }
-        }
-    },
     "@loopbackDetectedNote": {
         "placeholders": {
             "deviceClause": {
@@ -651,13 +542,6 @@
         "placeholders": {
             "minutes": {
                 "type": "int"
-            }
-        }
-    },
-    "@systemDefaultNamed": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
             }
         }
     },
@@ -757,32 +641,6 @@
     "pedalSimPanelTitle": "Pedal",
     "pedalSimExpandTooltip": "Mostrar el pedal en pantalla",
     "pedalSimCollapseTooltip": "Ocultar el pedal en pantalla",
-    "pedalSimFootswitchSemantics": "Pulsador {control}",
-    "@pedalSimFootswitchSemantics": {
-        "placeholders": {
-            "control": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalSimTrackSemantics": "{trackName}, {state}",
-    "@pedalSimTrackSemantics": {
-        "placeholders": {
-            "trackName": {
-                "type": "String"
-            },
-            "state": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalSimLedOff": "apagado",
-    "pedalSimLedArmed": "armado",
-    "pedalSimLedRecording": "grabando",
-    "pedalSimLedChainEnabled": "cadena de FX activada",
-    "pedalSimLedChainDisabled": "cadena de FX en bypass",
-    "pedalSimHoldHint": "mantén para su segunda acción, o pulsa Mayús+Espacio o Mayús+Intro",
-    "pedalSimStopFxSemantics": "Interruptor STOP, pánico de FX: pulsa para omitir todas las cadenas de FX, mantén para restaurarlas",
     "pedalSimBankSemantics": "Banco {bank}",
     "@pedalSimBankSemantics": {
         "placeholders": {
@@ -799,7 +657,6 @@
             }
         }
     },
-    "pedalSimEncoderSemantics": "Encoder, volumen general",
     "pedalSimNoLoop": "—",
     "perfArm": "Armar grabación de actuación",
     "perfDisarm": "Desarmar grabación de actuación",
@@ -837,6 +694,8 @@
     "perfCaptureGlitch": "Se detectaron cuadros de audio perdidos durante la captura.",
     "perfDiscarded": "La captura era demasiado corta para conservarla — descartada.",
     "perfLowDisk": "Poco espacio en disco — la captura podría quedarse sin espacio.",
+    "operationBusy": "{kind, select, capture{Hay una grabación en curso. Detenla primero.} sessionApply{Se está abriendo una sesión. Inténtalo cuando termine de abrirse.} sessionWrite{Se está guardando una sesión. Inténtalo en un momento.} transfer{Hay una transferencia USB en curso. Inténtalo cuando termine.} eject{Se está expulsando una unidad. Inténtalo cuando termine.} deviceChange{La interfaz de audio está cambiando. Inténtalo en un momento.} calibration{Se está midiendo la latencia. Inténtalo cuando termine.} restart{La consola se está apagando.} other{Hay otra operación en curso. Inténtalo en un momento.}}",
+    "perfArmRefused": "La grabación no empezó. {reason}",
     "perfLowDiskBlocked": "No hay espacio suficiente en disco para iniciar una captura. Libera espacio e inténtalo de nuevo.",
     "perfStoppedLowDisk": "Captura detenida — el disco se estaba quedando sin espacio. Se ha guardado lo grabado.",
     "perfArmDisabledRendering": "No se puede armar mientras se renderiza la captura anterior.",
@@ -876,76 +735,16 @@
     "@perfExportReasonUnrepresented": {
         "description": "Fallback reason shown under a bounced-audio track: its chain includes an effect type this Segno version doesn't recognize as exportable."
     },
-    "perfExportReExport": "Reexportar",
-    "@perfExportReExport": {
-        "description": "Button label: regenerate .als/fx-chains.txt from this already-finalized capture without re-recording."
-    },
-    "perfExportReExportFailed": "No se pudo regenerar la exportación.",
-    "@perfExportReExportFailed": {
-        "description": "Error message shown when re-export fails."
-    },
-    "settingsSectionTempo": "Tempo",
-    "tempoSettingsIntro": "Configura la cuadrícula de tempo, el clic y la cuenta de entrada a la que el looper alinea las grabaciones.",
-    "tempoGroupLabel": "TEMPO",
-    "currentTempoLabel": "{bpm} BPM",
-    "@currentTempoLabel": {
-        "description": "The live effective tempo readout (manual, tapped, or derived from a loop).",
-        "placeholders": {
-            "bpm": {
-                "type": "String"
-            }
-        }
-    },
-    "tempoNotSetLabel": "Sin definir",
-    "@tempoNotSetLabel": {
-        "description": "Shown in place of a BPM readout before any tempo has ever been established."
-    },
-    "bpmFieldLabel": "BPM",
-    "tapTempoButton": "Tap",
-    "tapTempoTooltip": "Toca para marcar el tempo",
-    "timeSignatureLabel": "Compás",
     "timeSignatureNoteValueLabel": "Valor de nota",
-    "timeSignatureQuarterNote": "Negra (/4)",
-    "timeSignatureEighthNote": "Corchea (/8)",
-    "timeSignatureOption": "{num}/{den}",
-    "@timeSignatureOption": {
-        "description": "One selectable time-signature chip, e.g. \"7/8\".",
-        "placeholders": {
-            "num": {
-                "type": "int"
-            },
-            "den": {
-                "type": "int"
-            }
-        }
-    },
-    "syncTempoTitle": "Sincronizar loop con el tempo",
-    "syncTempoSubtitle": "Mantiene la duración del loop enlazada a la cuadrícula de tempo; una grabación definitoria nueva puede derivar el tempo de su duración en su lugar.",
-    "quantizeGroupLabel": "CUANTIZACIÓN",
-    "quantizeDivIntro": "Cuantización musical — alinea el inicio/fin de la grabación al pulso, no solo al inicio del loop.",
-    "quantizeDivOffLabel": "Desactivada",
-    "quantizeDivBarLabel": "1 compás",
-    "quantizeDivHalfLabel": "1/2",
-    "quantizeDivQuarterLabel": "1/4",
-    "quantizeDivEighthLabel": "1/8",
-    "quantizeDivSixteenthLabel": "1/16",
-    "clickGroupLabel": "CLIC",
-    "clickModeIntro": "Cuándo se oye el clic (metrónomo).",
     "clickModeOffLabel": "Desactivado",
     "clickModeRecLabel": "Grabación",
     "clickModeRecFirstLabel": "Primera toma",
     "clickModePlayRecLabel": "Siempre",
-    "clickOutputLabel": "Salida del clic",
     "clickVolumeLabel": "Volumen del clic",
-    "countInGroupLabel": "CUENTA DE ENTRADA",
-    "countInIntro": "Compases contados antes de que comience una grabación definitoria.",
     "countInOffLabel": "Desactivada",
     "countInBarsLabel1": "1 compás",
     "countInBarsLabel2": "2 compases",
     "countInBarsLabel4": "4 compases",
-    "stageTempoBpm": "{bpm} bpm",
-    "stageCountIn": "cuenta de entrada",
-    "a11yStageBank": "Banco {bank}",
     "a11yStageRecordIdle": "Sin grabar",
     "countingInLabel": "Cuenta de entrada {beats}",
     "@countingInLabel": {
@@ -968,13 +767,6 @@
             }
         }
     },
-    "a11yTrackArmed": "Armado, esperando el siguiente límite",
-    "@a11yTrackArmed": {
-        "description": "Accessible label for the small badge shown on a track tile with a pending quantized/signal-triggered record arm."
-    },
-    "settingsSectionMode": "Modo",
-    "looperModeIntro": "Elige cómo se relacionan las pistas del looper entre sí y con la rejilla de tempo.",
-    "looperModeGroupLabel": "MODO",
     "looperModeMultiLabel": "Multi",
     "looperModeMultiSub": "Misma duración",
     "looperModeSyncLabel": "Sync",
@@ -985,246 +777,49 @@
     "looperModeBandSub": "Principal + secciones",
     "looperModeFreeLabel": "Free",
     "looperModeFreeSub": "Pistas sin sincronizar",
-    "modeChangeConfirmTitle": "¿Cambiar de modo?",
-    "modeChangeConfirmBody": "Cambiar de modo borra todas las pistas — no hay forma de conservar los loops actuales. ¿Borrar todo y cambiar?",
-    "modeChangeConfirmConfirm": "Borrar y cambiar",
-    "modeChangeTimedOut": "El cambio de modo tardó demasiado — el borrado aún está terminando. Inténtalo de nuevo en un momento.",
-    "oneShotGroupLabel": "UNA VEZ",
-    "oneShotIntro": "Una pista de una sola vez se reproduce una vez y se detiene en lugar de repetirse (activo en los modos Free y Song).",
-    "trayLoopLabel": "Bucle",
-    "loopTempoTab": "Tempo",
-    "loopClickTab": "Clic",
-    "loopModeTab": "Modo",
-    "loopTempoGroup": "TEMPO",
-    "loopClickGroup": "CLIC",
-    "loopModeGroup": "MODO",
-    "loopDefaultsGroup": "PREDETERMINADOS",
-    "loopTempoRow": "Tempo",
-    "loopTempoHint": "toca o escribe",
-    "loopTempoReadout": "{bpm} bpm",
+    "modeChangeStopTitle": "¿Cambiar a {mode}?",
+    "modeChangeStopBody": "Los loops en reproducción se detendrán. Las grabaciones se conservan.",
+    "modeChangeStopConfirm": "Detener loops y cambiar",
+    "modeChangeBlockedCapturing": "Termina la toma primero.",
+    "modeChangeBlockedQueued": "Una acción en cola debe dispararse o cancelarse primero.",
+    "modeChangeBlockedSpans": "Las duraciones grabadas no encajan en este modo.",
     "loopTempoUnset": "sin definir",
-    "loopLengthHint": "la primera toma lo define",
     "loopLengthAuto": "Auto",
-    "loopLengthMultiple": "x{multiple}",
-    "loopSignatureQuarterGroup": "NEGRA",
-    "loopSignatureEighthGroup": "CORCHEA",
-    "loopQuantiseRow": "Cuantizar",
-    "loopQuantiseHint": "cuándo surte efecto un cambio",
-    "loopCountInRow": "Conteo previo",
-    "loopClickWhenRow": "Cuándo suena",
-    "loopClickOutputRow": "Salida",
-    "loopClickOutputNone": "ninguna",
-    "loopClickOutputAll": "todas las salidas",
-    "loopClickOutputCount": "{count} salidas",
-    "loopClickVolumeLabel": "VOLUMEN DEL CLIC",
     "loopClickVolumeReadout": "{percent}%",
-    "loopModeRow": "Modo del looper",
-    "loopOneShotRow": "Pistas de una sola vez",
-    "loopDefaultModeRow": "Modo predeterminado",
-    "loopDefaultModeRecord": "grabar",
-    "loopDefaultModeMute": "silenciar",
-    "loopTempoSheetUnit": "bpm",
-    "loopTempoSheetSet": "Fijar",
-    "loopTempoSheetBackspace": "Retroceso",
-    "loopTempoSheetDecimal": "Punto decimal",
-    "a11yLoopClickVolume": "Volumen del clic",
-    "a11yLoopTempoSheet": "Teclado de tempo",
     "a11yTrackPrimary": "Pista principal",
     "@a11yTrackPrimary": {
         "description": "Accessible label for the crown badge on the currently-crowned Sync/Band primary track (D18); inert, no tap action."
-    },
-    "a11yCrownTrack": "Nombrar pista principal",
-    "@a11yCrownTrack": {
-        "description": "Accessible label for the tappable crown badge on a non-primary track in Sync/Band mode."
-    },
-    "a11yTrackCrowned": "Nombrada pista principal",
-    "@a11yTrackCrowned": {
-        "description": "Screen-reader announcement after crowning a track the Sync/Band primary."
     },
     "a11yTrayHandle": "Bandeja de ajustes rápidos",
     "@a11yTrayHandle": {
         "description": "Accessible label for the settings tray's always-visible pull-tab handle (tap or drag to open/close)."
     },
-    "trayWifiLabel": "WiFi",
-    "@trayWifiLabel": {
-        "description": "Label for the settings tray's WiFi shortcut button (stub — no real functionality yet)."
-    },
-    "trayBluetoothLabel": "Bluetooth",
-    "@trayBluetoothLabel": {
-        "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
-    },
     "trayBrightnessPercent": "{percent}%",
-    "trayBrightLabel": "Brillo",
-    "@trayBrightLabel": {
-        "description": "Navigation rail entry for screen brightness, pinned below the eight domains as the mockups draw it."
-    },
-    "a11yTrayRail": "Destinos de la bandeja",
-    "@a11yTrayRail": {
-        "description": "Accessible label for the settings tray's vertical navigation rail, which selects which config face fills the open tray."
-    },
-    "readoutTempoLabel": "Tempo Bpm",
-    "@readoutTempoLabel": {
-        "description": "Caption over the tempo figure on the 7-inch performance readout."
-    },
-    "readoutBarsLabel": "Compases",
-    "@readoutBarsLabel": {
-        "description": "Caption over the master loop length in bars on the 7-inch performance readout."
-    },
-    "readoutClockLabel": "Tiempo",
-    "@readoutClockLabel": {
-        "description": "Caption over the elapsed transport clock on the 7-inch console readout."
-    },
-    "readoutRecordLabel": "REC",
-    "@readoutRecordLabel": {
-        "description": "The performance-record light's word on the 7-inch console readout; the armed elapsed time renders beside it."
-    },
-    "readoutCountIn": "cuenta de entrada",
-    "@readoutCountIn": {
-        "description": "Shown beside the beat dots on the 7-inch console readout while a count-in is sounding."
-    },
-    "readoutModeRecord": "REC",
-    "@readoutModeRecord": {
-        "description": "Mode chip on the 7-inch readout: a track press records. Short by design - read from stage distance."
-    },
-    "readoutModeMute": "MUTE",
-    "@readoutModeMute": {
-        "description": "Mode chip on the 7-inch readout: a track press mutes."
-    },
-    "readoutModeFx": "FX",
-    "@readoutModeFx": {
-        "description": "Mode chip on the 7-inch readout: a track press stomps its FX chain."
-    },
-    "readoutMix": "MIX",
-    "@readoutMix": {
-        "description": "The pill in the waveform strip's bottom-right corner on the 7-inch readout — the only touch affordance, opens the volume overlay. MIX is common usage for Spanish-speaking musicians and fits the drawn 180-wide pill; MEZCLA would not."
-    },
-    "readoutVolumesInputs": "ENTRADAS",
-    "@readoutVolumesInputs": {
-        "description": "Pinned header caption over the input rows on the 7-inch volume overlay."
-    },
-    "readoutVolumesTracks": "PISTAS",
-    "@readoutVolumesTracks": {
-        "description": "Caption over the track rows on the 7-inch volume overlay."
-    },
-    "readoutVolumesBackToStage": "VOLVER AL ESCENARIO",
-    "@readoutVolumesBackToStage": {
-        "description": "Chip on the 7-inch volume overlay that dismisses it back to the readout."
-    },
-    "readoutVolumesBack": "VOLVER",
-    "@readoutVolumesBack": {
-        "description": "Chip on a 7-inch volume config panel that returns to the volume list."
-    },
-    "readoutVolumesVolume": "VOLUMEN",
-    "@readoutVolumesVolume": {
-        "description": "Caption over the fader on a 7-inch volume config panel."
-    },
-    "readoutVolumesInputKind": "ENTRADA",
-    "@readoutVolumesInputKind": {
-        "description": "Kind caption on the input config panel, and the caption over a track's read-only input-source pills."
-    },
-    "readoutVolumesTrackKind": "PISTA",
-    "@readoutVolumesTrackKind": {
-        "description": "Kind caption over the title on a track's 7-inch config panel."
-    },
-    "readoutVolumesMute": "MUTE",
-    "@readoutVolumesMute": {
-        "description": "The mute toggle on a track's 7-inch config panel."
-    },
-    "readoutVolumesFxChain": "CADENA FX",
-    "@readoutVolumesFxChain": {
-        "description": "The FX-chain engage toggle on a track's 7-inch config panel."
-    },
-    "readoutVolumesListeningTracks": "PISTAS A LA ESCUCHA",
-    "@readoutVolumesListeningTracks": {
-        "description": "Caption over the read-only pills naming the tracks that record an input, on its 7-inch config panel."
-    },
-    "readoutVolumesConditioning": "ACONDICIONAMIENTO",
-    "@readoutVolumesConditioning": {
-        "description": "Caption over the input-conditioning toggles on the 7-inch input config panel (arrives with #697)."
-    },
-    "readoutVolumesHpf": "HPF",
-    "@readoutVolumesHpf": {
-        "description": "High-pass filter conditioning toggle on the 7-inch input config panel."
-    },
-    "readoutVolumesHum": "HUM",
-    "@readoutVolumesHum": {
-        "description": "Hum-removal conditioning toggle on the 7-inch input config panel."
-    },
-    "readoutVolumesExpander": "EXPANSOR",
-    "@readoutVolumesExpander": {
-        "description": "Expander conditioning toggle on the 7-inch input config panel."
-    },
-    "readoutVolumesRestore": "RESTAURAR",
-    "@readoutVolumesRestore": {
-        "description": "Restoration conditioning toggle on the 7-inch input config panel."
-    },
-    "readoutStateRecording": "REC",
-    "@readoutStateRecording": {
-        "description": "Track cell state on the 7-inch readout: capturing a first pass."
-    },
-    "readoutStateOverdubbing": "DUB",
-    "@readoutStateOverdubbing": {
-        "description": "Track cell state on the 7-inch readout: summing input into an existing loop."
-    },
-    "readoutStatePlaying": "PLAY",
-    "@readoutStatePlaying": {
-        "description": "Track cell state on the 7-inch readout: looping playback."
-    },
-    "readoutStateMuted": "MUDO",
-    "@readoutStateMuted": {
-        "description": "Track cell state on the 7-inch readout: muted."
-    },
-    "readoutStatePending": "ARMADO",
-    "@readoutStatePending": {
-        "description": "Track cell state on the 7-inch readout: a quantized action is armed and waiting for the loop boundary."
-    },
-    "readoutStateStopped": "DETENIDO",
-    "@readoutStateStopped": {
-        "description": "Track cell state on the 7-inch readout: playback halted but the loop buffer is retained. Distinct from empty - the track still holds audio."
-    },
-    "readoutStateEmpty": "VACIO",
-    "@readoutStateEmpty": {
-        "description": "Track cell state on the 7-inch readout: nothing captured yet."
-    },
     "tunerCentsAndHz": "{cents} centésimas · {hz} Hz",
     "@tunerCentsAndHz": {
-      "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
-      "placeholders": {
-        "cents": { "type": "String" },
-        "hz": { "type": "String" }
-      }
+        "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
+        "placeholders": {
+            "cents": {
+                "type": "String"
+            },
+            "hz": {
+                "type": "String"
+            }
+        }
     },
     "tunerListening": "Toca una nota",
     "@tunerListening": {
-      "description": "Shown on the tuner face while it is armed but hearing nothing — distinct from the engine not running at all."
+        "description": "Shown on the tuner face while it is armed but hearing nothing — distinct from the engine not running at all."
     },
     "tunerNoTunableInput": "Sin entrada para afinar",
     "@tunerNoTunableInput": {
-      "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
-    },
-    "tunerNoDevice": "Sin dispositivo de audio",
-    "@tunerNoDevice": {
-      "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
-    },
-    "trayTunerLabel": "Afinador",
-    "@trayTunerLabel": {
-        "description": "Label for the settings tray's Tuner rail entry."
+        "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
     },
     "trayBrightnessLabel": "Brillo",
     "@trayBrightnessLabel": {
         "description": "Label for the settings tray's brightness slider (UI-only this round — not persisted, no real display dimming)."
     },
-    "pedalAssignTitle": "Asignaciones del pedal",
-    "pedalLinkGroup": "PEDAL DE LA CONSOLA",
     "pedalStatusDisconnected": "Placa de la consola no conectada.",
-    "pedalStatusConnected": "Placa de la consola conectada · firmware {firmwareVersion}",
-    "@pedalStatusConnected": {
-        "placeholders": {
-            "firmwareVersion": {
-                "type": "String"
-            }
-        }
-    },
     "pedalStatusIncompatible": "El firmware {firmwareVersion} de la placa de la consola habla otro protocolo de enlace que esta versión. Actualiza el firmware de la placa.",
     "@pedalStatusIncompatible": {
         "placeholders": {
@@ -1233,29 +828,21 @@
             }
         }
     },
-    "pedalAssignIntro": "Elegí un pedal en la placa y después qué controla en modo FX. Los pedales sin asignar conservan su comportamiento normal.",
-    "pedalAssignSelectPrompt": "Seleccioná un pedal para asignarlo.",
-    "pedalAssignUnbindable": "MODE y BANK no se pueden reasignar: son la única salida del modo FX y el único acceso al otro banco.",
-    "pedalAssignBankLabel": "Banco {bank}",
-    "pedalAssignTarget": "Controla",
-    "pedalAssignBehavior": "Comportamiento",
-    "pedalAssignToggle": "Conmutar",
-    "pedalAssignMomentary": "Momentáneo",
-    "pedalAssignToggleHint": "Al pisarlo cambia y queda así.",
-    "pedalAssignMomentaryHint": "Activo mientras lo mantenés; al soltarlo vuelve como estaba.",
-    "pedalAssignRebind": "Reasignar",
-    "pedalAssignClear": "Quitar",
-    "pedalAssignUnassigned": "Sin asignar",
-    "pedalAssignStale": "Destino ausente",
-    "pedalAssignStaleDetail": "La cadena o el efecto al que apuntaba ya no existe. Pisarlo no hace nada hasta que lo reasignes o lo quites.",
     "pedalAssignNoTargets": "Todavía no hay cadenas FX para asignar. Agregá un efecto primero.",
     "pedalAssignChainTarget": "Cadena de {stage}",
     "pedalAssignStageInput": "Entrada {number}",
     "pedalAssignStageLoop": "{trackName} línea {lane}",
     "pedalAssignStageTrack": "{trackName}",
-    "pedalAssignStageMaster": "Master",
-    "a11yPedalAssignRow": "{button}: {target}",
-    "a11yPedalAssignSelected": "{button} seleccionado",
+    "pedalAssignStageAllTracks": "Todas las pistas",
+    "pedalAssignStageOutput": "Salida {number}",
+    "@pedalAssignStageOutput": {
+        "description": "Names one output destination in a binding target label.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
     "fxStompBound": "Pedal",
     "a11yFxStompBound": "Asignado al pedal {button}",
     "a11yFxStompBoundHeld": "Asignado al pedal {button}, mantenido",
@@ -1280,25 +867,9 @@
     "midiLearnBehavior": "Comportamiento",
     "midiLearnStale": "Destino ausente",
     "midiLearnStaleDetail": "Lo que esta asignación apuntaba ya no existe. No hace nada hasta que la apuntes a otra cosa o la quites.",
-    "midiNoControlSource": "No hay nada conectado que escuchar. Conecta un controlador MIDI o un pedal a una entrada CTRL.",
-    "midiCtrlIdle": "Entradas CTRL: todavía no ha llegado nada. Mueve un pedal y su valor aparece aquí.",
-    "midiCtrlPercent": "{percent} %",
-    "midiCtrlTapToCalibrate": "Toca para calibrar",
-    "midiCtrlCalibrated": "cal",
-    "midiCtrlCalibrateHint": "Recorre el pedal del talón a la punta un par de veces y toca Listo. Esos serán sus extremos a partir de ahora.",
-    "midiCtrlCalibrateSeen": "Bruto {raw} % · alcanzó {min} %–{max} %",
-    "midiCtrlCalibrateWaiting": "Esperando a que el pedal se mueva.",
-    "midiCtrlCalibrateSaving": "Guardando…",
-    "midiCtrlCalibrateLoadError": "No se pudo cargar la calibración guardada. Calibra el pedal de nuevo.",
-    "midiCtrlCalibrateSaveError": "No se pudo guardar la calibración. Toca Listo para volver a intentarlo.",
-    "midiCtrlCalibrateResetError": "No se pudo restablecer la calibración. Inténtalo de nuevo.",
-    "midiCtrlCalibrateDone": "Listo",
-    "midiCtrlCalibrateCancel": "Cancelar",
-    "midiCtrlCalibrateReset": "Volver a automático",
+    "midiNoControlSource": "No hay una entrada MIDI conectada. Conecta un controlador MIDI para aprender una asignación.",
     "consoleCtrlRingSwitchControl": "CTRL {jack} · pulsador B",
     "midiLearnDeviceMissing": "No hay entrada MIDI conectada, así que las asignaciones que dependen de MIDI están inactivas. Conecta el controlador o vuelve a aprender una fila con lo que estés usando ahora.",
-    "pedalCtrlSwitchDown": "pulsado",
-    "pedalCtrlSwitchUp": "suelto",
     "consoleCtrlSwitchControl": "CTRL {jack} · pulsador",
     "consoleCtrlExpressionControl": "CTRL {jack} · expresión",
     "midiLearnCcControl": "CC {number} · canal {channel}",
@@ -1310,49 +881,16 @@
     "a11yMidiLearnLo": "Mínimo del rango",
     "a11yMidiLearnHi": "Máximo del rango",
     "a11yMidiLearnThreshold": "Umbral de activación",
-    "wifiRescan": "Reescanear",
-    "wifiUnsupported": "Tu computadora administra el Wi-Fi en esta versión.",
-    "wifiNoNetworks": "No se encontraron redes.",
-    "wifiConnected": "Conectado",
-    "wifiSecured": "Requiere contraseña",
-    "wifiOpen": "Abierta",
-    "wifiForget": "Olvidar",
-    "wifiJoin": "Conectar",
-    "wifiPassword": "Contraseña",
     "signalPluginBypassTooltip": "Omitir plugin",
     "fxEditorChainIn": "ENT",
     "fxEditorChainOut": "SAL",
     "fxEditorEmptySelection": "Selecciona un bloque para editar sus controles.",
     "octaverLatencyHint": "El vocoder de fase añade ~{ms} ms — usa PSOLA para monitoreo en vivo",
-    "trayBackLabel": "Atrás",
-    "@trayBackLabel": {
-        "description": "Back control on an in-tray WiFi/Bluetooth expand panel — returns to the Control Center tiles without dismissing the tray."
-    },
-    "wifiUnsupportedBody": "WiFi solo está disponible en la consola Segno.",
+    "wifiUnsupportedBody": "El Wi-Fi solo está disponible en la consola Segno.",
     "@wifiUnsupportedBody": {
         "description": "Shown on the WiFi page when segno-wifi-ctl is not present (desktop builds)."
     },
-    "wifiStatusLabel": "Estado",
-    "@wifiStatusLabel": {
-        "description": "WiFi status table label."
-    },
-    "wifiStatusConnected": "Conectado",
-    "@wifiStatusConnected": {
-        "description": "WiFi connected status value."
-    },
-    "wifiStatusDisconnected": "Sin conexión",
-    "@wifiStatusDisconnected": {
-        "description": "WiFi disconnected status value."
-    },
-    "wifiStatusDisconnecting": "Desconectando…",
-    "@wifiStatusDisconnecting": {
-        "description": "WiFi status while dropping the current association."
-    },
-    "wifiConnectingLabel": "Conectando…",
-    "@wifiConnectingLabel": {
-        "description": "Shown while joining a WiFi network (status strip and row)."
-    },
-    "wifiConnectFailedPassword": "No se pudo unir — revisá la contraseña e intentá de nuevo.",
+    "wifiConnectFailedPassword": "Contraseña incorrecta. Intentá de nuevo.",
     "@wifiConnectFailedPassword": {
         "description": "Shown when WPA authentication fails while joining a network."
     },
@@ -1368,236 +906,9 @@
     "@wifiConnectFailedBackend": {
         "description": "Shown when a join fails for backend/transient reasons (iwd race, NM no-secrets on a saved network) after automatic retries — explicitly not a credentials problem, so the owner does not forget the network and re-type the password (#829)."
     },
-    "wifiSsidLabel": "Red",
-    "@wifiSsidLabel": {
-        "description": "WiFi SSID table label."
-    },
-    "wifiIpLabel": "Dirección IP",
-    "@wifiIpLabel": {
-        "description": "WiFi IP address table label."
-    },
-    "wifiDisconnectTitle": "Desconectar",
-    "@wifiDisconnectTitle": {
-        "description": "WiFi disconnect action title."
-    },
-    "wifiDisconnectSubtitle": "Cortar la asociación WiFi actual",
-    "@wifiDisconnectSubtitle": {
-        "description": "WiFi disconnect action subtitle."
-    },
-    "wifiForgetTitle": "Olvidar red",
-    "@wifiForgetTitle": {
-        "description": "WiFi forget action title."
-    },
-    "wifiForgetSubtitle": "Eliminar las credenciales guardadas de {ssid}",
-    "@wifiForgetSubtitle": {
-        "description": "WiFi forget action subtitle.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiForgetConfirm": "¿Olvidar “{ssid}” y eliminar su contraseña guardada?",
-    "@wifiForgetConfirm": {
-        "description": "WiFi forget confirmation dialog body.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiScanTitle": "Buscar redes",
-    "@wifiScanTitle": {
-        "description": "WiFi scan action title."
-    },
-    "wifiScanSubtitle": "Actualizar la lista de redes cercanas",
-    "@wifiScanSubtitle": {
-        "description": "WiFi scan action subtitle when idle."
-    },
-    "wifiScanningSubtitle": "Buscando…",
-    "@wifiScanningSubtitle": {
-        "description": "WiFi scan action subtitle while scanning."
-    },
-    "wifiNetworksGroup": "Redes",
-    "@wifiNetworksGroup": {
-        "description": "Group label above the WiFi scan results list."
-    },
-    "wifiEmptyNetworks": "No se encontraron redes. Toca buscar para reintentar.",
-    "@wifiEmptyNetworks": {
-        "description": "Empty state when a WiFi scan returns no SSIDs."
-    },
-    "wifiSavedLabel": "Guardada",
-    "wifiSavedOutOfRange": "Guardada · fuera de alcance",
-    "wifiSecuredLabel": "Protegida",
-    "@wifiSecuredLabel": {
-        "description": "Subtitle fragment for a password-protected WiFi network."
-    },
-    "wifiOpenLabel": "Abierta",
-    "@wifiOpenLabel": {
-        "description": "Subtitle fragment for an open WiFi network."
-    },
-    "wifiPasswordTitle": "Contraseña de {ssid}",
-    "@wifiPasswordTitle": {
-        "description": "WiFi password dialog title.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiPasswordHint": "Contraseña de la red",
-    "@wifiPasswordHint": {
-        "description": "Hint for the WiFi password field."
-    },
-    "wifiJoinAction": "Unirse",
-    "@wifiJoinAction": {
-        "description": "Confirm button on the WiFi password dialog."
-    },
-    "bluetoothUnsupportedBody": "Bluetooth solo está disponible en la consola Segno.",
-    "@bluetoothUnsupportedBody": {
-        "description": "Shown on the Bluetooth page when segno-bt-ctl is not present."
-    },
-    "bluetoothIntro": "Haz que esta consola sea visible para que un teléfono o sidecar la encuentre. El emparejamiento llega después.",
-    "@bluetoothIntro": {
-        "description": "Intro copy on the Bluetooth page (discovery/broadcast only)."
-    },
-    "bluetoothAliasLabel": "Nombre",
-    "@bluetoothAliasLabel": {
-        "description": "Bluetooth adapter alias table label."
-    },
-    "bluetoothPoweredLabel": "Adaptador",
-    "@bluetoothPoweredLabel": {
-        "description": "Bluetooth powered table label."
-    },
-    "bluetoothOn": "Encendido",
-    "@bluetoothOn": {
-        "description": "Bluetooth adapter on value."
-    },
-    "bluetoothOff": "Apagado",
-    "@bluetoothOff": {
-        "description": "Bluetooth adapter off value."
-    },
-    "bluetoothDiscoverableTitle": "Visible",
-    "@bluetoothDiscoverableTitle": {
-        "description": "Toggle title for classic Bluetooth discoverable."
-    },
-    "bluetoothDiscoverableSubtitle": "Otros dispositivos pueden ver esta consola",
-    "@bluetoothDiscoverableSubtitle": {
-        "description": "Toggle subtitle for classic Bluetooth discoverable."
-    },
-    "bluetoothAdvertiseTitle": "Transmitir",
-    "@bluetoothAdvertiseTitle": {
-        "description": "Toggle title for BLE advertising."
-    },
-    "bluetoothAdvertiseSubtitle": "Anunciar como Segno por Bluetooth LE",
-    "@bluetoothAdvertiseSubtitle": {
-        "description": "Toggle subtitle for BLE advertising."
-    },
-    "bluetoothScanTitle": "Buscar dispositivos",
-    "@bluetoothScanTitle": {
-        "description": "Bluetooth scan action title."
-    },
-    "bluetoothScanSubtitle": "Encontrar dispositivos Bluetooth cercanos",
-    "@bluetoothScanSubtitle": {
-        "description": "Bluetooth scan action subtitle when idle."
-    },
-    "bluetoothScanningSubtitle": "Buscando…",
-    "@bluetoothScanningSubtitle": {
-        "description": "Bluetooth scan action subtitle while scanning."
-    },
-    "bluetoothDevicesGroup": "Dispositivos cercanos",
-    "@bluetoothDevicesGroup": {
-        "description": "Group label above Bluetooth scan results."
-    },
-    "bluetoothEmptyDevices": "Aún no hay dispositivos. Toca buscar para explorar.",
-    "@bluetoothEmptyDevices": {
-        "description": "Empty state when a Bluetooth scan returns nothing."
-    },
-    "trayNetworkLabel": "Red",
-    "@trayNetworkLabel": {
-        "description": "Navigation rail entry for the Network domain — WiFi and Bluetooth as two tabs of one destination. One word, like every rail entry."
-    },
-    "networkStateConnected": "conectado",
-    "@networkStateConnected": {
-        "description": "State word at the trailing edge of a Network row: a live association or link. Lower case — it is a machine readout about the row, not a sentence."
-    },
-    "networkStateSaved": "guardada",
-    "@networkStateSaved": {
-        "description": "State word for a WiFi network whose credentials this console already holds."
-    },
-    "networkStateOpen": "abierta",
-    "@networkStateOpen": {
-        "description": "State word for a WiFi network that needs no passphrase."
-    },
-    "networkStatePaired": "emparejado",
-    "@networkStatePaired": {
-        "description": "State word for a Bluetooth device this console holds a pairing for."
-    },
     "consoleKeepIt": "Conservar",
     "@consoleKeepIt": {
         "description": "Dismissive action on a Network forget confirmation — leaves the credential or pairing alone."
-    },
-    "wifiNotInRange": "fuera de alcance",
-    "@wifiNotInRange": {
-        "description": "Row subtitle for a saved network the last scan did not see."
-    },
-    "wifiSecurityWpa2": "WPA2",
-    "@wifiSecurityWpa2": {
-        "description": "Security label for a secured network, shown in the row subtitle and beside the join sheet's title."
-    },
-    "wifiSignalDbm": "{signal} dBm",
-    "@wifiSignalDbm": {
-        "description": "Signal strength in a WiFi row subtitle.",
-        "placeholders": {
-            "signal": {
-                "type": "int"
-            }
-        }
-    },
-    "wifiJoiningShort": "conectando a {ssid}",
-    "@wifiJoiningShort": {
-        "description": "Live-state line beside the WiFi face's title while a join is in flight. Lower case — it continues the title rather than starting a sentence.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiJoinFailedShort": "no se pudo conectar a {ssid}",
-    "@wifiJoinFailedShort": {
-        "description": "Live-state line beside the WiFi face's title after a join failed.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiJoiningBanner": "Conectando a {ssid}…",
-    "@wifiJoiningBanner": {
-        "description": "In-flight banner at the top of the WiFi list while a join is running.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiRetryingBanner": "Error de red — reintentando {ssid}…",
-    "@wifiRetryingBanner": {
-        "description": "In-flight banner while the console automatically re-activates a join after a backend/transient failure (#829). Never worded as a password problem.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiJoinSheetTitle": "Conectar a {ssid}",
-    "@wifiJoinSheetTitle": {
-        "description": "Title of the passphrase sheet.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
     },
     "wifiPassphraseTooShort": "Una contraseña WPA2 tiene al menos {count} caracteres.",
     "@wifiPassphraseTooShort": {
@@ -1625,109 +936,177 @@
     "@wifiForgetConfirmAction": {
         "description": "Destructive action on the forget-network confirmation."
     },
-    "bluetoothNotInRange": "fuera de alcance",
-    "@bluetoothNotInRange": {
-        "description": "Row subtitle for a paired device the last discovery did not see."
+    "networkWifiLabel": "Wi-Fi",
+    "@networkWifiLabel": {
+        "description": "The radio switch in the Network page title row."
     },
-    "bluetoothDiscoverableState": "detectable",
-    "@bluetoothDiscoverableState": {
-        "description": "Row subtitle for a device the scan can see but bluez reports no kind for."
+    "networkUnavailableTitle": "El Wi-Fi no está disponible",
+    "@networkUnavailableTitle": {
+        "description": "Connection card title on a build without the Wi-Fi helper."
     },
-    "bluetoothKindHeadphones": "auriculares",
-    "@bluetoothKindHeadphones": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
+    "networkOffTitle": "El Wi-Fi está apagado",
+    "@networkOffTitle": {
+        "description": "Connection card title while the radio is off (pen 29/07)."
     },
-    "bluetoothKindSpeaker": "altavoz",
-    "@bluetoothKindSpeaker": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
+    "networkOffDetail": "Encendelo para buscar redes cercanas.",
+    "@networkOffDetail": {
+        "description": "Connection card line while the radio is off."
     },
-    "bluetoothKindPhone": "teléfono",
-    "@bluetoothKindPhone": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
+    "networkConnectingTitle": "Conectando…",
+    "@networkConnectingTitle": {
+        "description": "Connection card title while a join is in flight."
     },
-    "bluetoothKindComputer": "ordenador",
-    "@bluetoothKindComputer": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
+    "networkLostTitle": "Conexión perdida",
+    "@networkLostTitle": {
+        "description": "Connection card title when the saved network that was up dropped (pen 29/06)."
     },
-    "bluetoothKindKeyboard": "teclado",
-    "@bluetoothKindKeyboard": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
+    "networkIdleTitle": "Elegí una red",
+    "@networkIdleTitle": {
+        "description": "Connection card title with the radio on and nothing joined."
     },
-    "bluetoothKindMouse": "ratón",
-    "@bluetoothKindMouse": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
+    "networkIdleDetail": "Las redes guardadas se reconectan solas.",
+    "@networkIdleDetail": {
+        "description": "Connection card line with the radio on and nothing joined."
     },
-    "bluetoothKindGamepad": "mando",
-    "@bluetoothKindGamepad": {
-        "description": "Bluetooth device kind, from bluez's Icon field."
+    "networkConnected": "Conectado",
+    "@networkConnected": {
+        "description": "Status line of the connected network."
     },
-    "bluetoothConnectAction": "Conectar",
-    "@bluetoothConnectAction": {
-        "description": "Action inside an opened Bluetooth row: links an already-paired device."
+    "networkConnectedNoInternet": "Conectado · Sin internet",
+    "@networkConnectedNoInternet": {
+        "description": "Status line when Wi-Fi is associated but the internet check got no answer (pen 29/08)."
     },
-    "bluetoothDisconnectAction": "Desconectar",
-    "@bluetoothDisconnectAction": {
-        "description": "Action inside an opened Bluetooth row: drops the link but keeps the pairing."
-    },
-    "bluetoothForgetAction": "Olvidar",
-    "@bluetoothForgetAction": {
-        "description": "Destructive action inside an opened Bluetooth row."
-    },
-    "bluetoothPairingShort": "emparejando con {name}",
-    "@bluetoothPairingShort": {
-        "description": "Live-state line beside the Bluetooth face's title while a pairing is in flight.",
+    "networkIp": "IP {address}",
+    "@networkIp": {
+        "description": "The connection address beside its status line.",
         "placeholders": {
-            "name": {
+            "address": {
                 "type": "String"
             }
         }
     },
-    "bluetoothPairFailedShort": "no se pudo emparejar con {name}",
-    "@bluetoothPairFailedShort": {
-        "description": "Live-state line beside the Bluetooth face's title after a pairing failed.",
+    "networkManage": "Administrar",
+    "@networkManage": {
+        "description": "Opens the connected network details from the connection card."
+    },
+    "networkReconnect": "Reconectar",
+    "@networkReconnect": {
+        "description": "Joins the lost network again from the connection card."
+    },
+    "networkNetworksHeading": "Redes",
+    "@networkNetworksHeading": {
+        "description": "Heading over the list of nearby and saved networks."
+    },
+    "networkScan": "Buscar",
+    "@networkScan": {
+        "description": "Refreshes the network list."
+    },
+    "networkScanning": "Buscando…",
+    "@networkScanning": {
+        "description": "The Scan button while a scan is in flight."
+    },
+    "networkListOff": "No hay redes con el Wi-Fi apagado.",
+    "@networkListOff": {
+        "description": "Network list while the radio is off."
+    },
+    "networkListEmpty": "No se encontraron redes. Buscá de nuevo.",
+    "@networkListEmpty": {
+        "description": "Network list when a scan found nothing."
+    },
+    "networkSaved": "Guardada",
+    "@networkSaved": {
+        "description": "Line under a saved network in the list."
+    },
+    "networkSavedNotInRange": "Guardada · Fuera de alcance",
+    "@networkSavedNotInRange": {
+        "description": "Line under a saved network the last scan did not see."
+    },
+    "networkSecured": "Requiere contraseña",
+    "@networkSecured": {
+        "description": "Accessible note for a secured network row."
+    },
+    "networkSavedNetwork": "Red guardada",
+    "@networkSavedNetwork": {
+        "description": "Network details status for a saved network that is not connected."
+    },
+    "networkPasswordRequired": "Requiere contraseña",
+    "@networkPasswordRequired": {
+        "description": "Network details status for a secured network with no saved key."
+    },
+    "networkOpenNetwork": "Red abierta",
+    "@networkOpenNetwork": {
+        "description": "Network details status for a network with no password."
+    },
+    "networkConnectingTo": "Conectando a {ssid}",
+    "@networkConnectingTo": {
+        "description": "Title of the Connecting dialog (pen 29/03).",
         "placeholders": {
-            "name": {
+            "ssid": {
                 "type": "String"
             }
         }
     },
-    "bluetoothPairingBanner": "Emparejando con {name}… confírmalo en el dispositivo.",
-    "@bluetoothPairingBanner": {
-        "description": "In-flight banner while a pairing waits on a human at the far device.",
+    "networkConnectingFallback": "Si esto falla, Segno vuelve a conectarse a {ssid}.",
+    "@networkConnectingFallback": {
+        "description": "Connecting dialog note when another network was up: one radio cannot keep it during the join, so a failed join brings it back (#1270 D13).",
         "placeholders": {
-            "name": {
+            "ssid": {
                 "type": "String"
             }
         }
     },
-    "bluetoothForgetTitleNamed": "¿Olvidar “{name}”?",
-    "@bluetoothForgetTitleNamed": {
-        "description": "Title of the forget-device confirmation.",
+    "networkConnectingChecking": "Comprobando la conexión.",
+    "@networkConnectingChecking": {
+        "description": "Connecting dialog note when nothing was connected before."
+    },
+    "networkRetrying": "Error de red. Reintentando…",
+    "@networkRetrying": {
+        "description": "Connecting dialog note while the console re-activates after a backend failure (#829). Never worded as a password problem."
+    },
+    "networkPasswordLabel": "Contraseña",
+    "@networkPasswordLabel": {
+        "description": "Label over the password field in the join sheet."
+    },
+    "networkPasswordPlaceholder": "Escribí la contraseña",
+    "@networkPasswordPlaceholder": {
+        "description": "The empty password field."
+    },
+    "networkPasswordShow": "Mostrar",
+    "@networkPasswordShow": {
+        "description": "Reveals the typed password in the join sheet."
+    },
+    "networkPasswordHide": "Ocultar",
+    "@networkPasswordHide": {
+        "description": "Masks the typed password again."
+    },
+    "networkPasswordLength": "Contraseña, {count} caracteres",
+    "@networkPasswordLength": {
+        "description": "Accessible value of the masked password field.",
         "placeholders": {
-            "name": {
-                "type": "String"
+            "count": {
+                "type": "int"
             }
         }
     },
-    "bluetoothForgetBody": "El emparejamiento se elimina de esta consola. El dispositivo tendrá que volver a ponerse en modo de emparejamiento.",
-    "@bluetoothForgetBody": {
-        "description": "Body of the forget-device confirmation — says what is actually destroyed."
+    "networkConnect": "Conectar",
+    "@networkConnect": {
+        "description": "Joins a network."
     },
-    "bluetoothForgetConfirmAction": "Olvidar dispositivo",
-    "@bluetoothForgetConfirmAction": {
-        "description": "Destructive action on the forget-device confirmation."
+    "networkDisconnect": "Desconectar",
+    "@networkDisconnect": {
+        "description": "Drops the current connection. Reversible, so it asks nothing."
     },
-    "trayControlLabel": "Control",
-    "@trayControlLabel": {
-        "description": "Navigation rail entry for the Control domain — the footswitch plate and the MIDI foot controller as two tabs of one destination."
+    "networkDetailsClose": "Cerrar detalles de la red",
+    "@networkDetailsClose": {
+        "description": "Accessible name of the close button on the network details dialog."
     },
-    "controlPedalTab": "Pedal",
-    "@controlPedalTab": {
-        "description": "Tab of the Control domain: the footswitch plate's assignable switches."
+    "networkAutoConnect": "Conectar automáticamente",
+    "@networkAutoConnect": {
+        "description": "Saved network setting: whether the console joins it on its own."
     },
-    "controlControllersTab": "Controladores",
-    "@controlControllersTab": {
-        "description": "Tab of the Control domain: everything plugged in — a MIDI foot controller, and the pedals in the CTRL jacks — and the mappings off them."
+    "networkChangePassword": "Cambiar contraseña",
+    "@networkChangePassword": {
+        "description": "Opens the join sheet to give a saved network a new key."
     },
     "controlTransportGroup": "CONMUTADORES DE TRANSPORTE",
     "@controlTransportGroup": {
@@ -1907,40 +1286,16 @@
             }
         }
     },
-    "trayTracksLabel": "Pistas",
-    "tracksNamesTab": "Nombres",
-    "tracksLengthsTab": "Duraciones",
-    "tracksRoutingTab": "Enrutamiento",
-    "tracksOrdinal": "pista {number}",
-    "tracksNamesFootnote": "Renombra las pistas. El nombre es lo que muestran el escenario, los destinos del pedal y la pantalla de 7 pulgadas.",
-    "tracksLengthsFootnote": "Auto toma su duración de la primera toma; un preajuste graba esa cantidad de compases.",
-    "tracksRoutingFootnote": "Una pista graba cualquier conjunto de entradas — un carril limpio para cada una, compartiendo el bucle — y se envía a cualquier conjunto de salidas. La cuantización sigue el ajuste global salvo que la pista lo anule.",
-    "tracksEmpty": "No hay pistas — el motor no está en marcha.",
-    "tracksLengthAuto": "auto",
-    "tracksNoInputs": "Ninguna (limpio)",
-    "tracksQuantizeOn": "cuantización activada",
-    "tracksQuantizeOff": "cuantización desactivada",
-    "tracksNotRouted": "sin enrutar",
     "tracksRenameSheetTitle": "Renombrar pista",
     "trackLanesGroup": "CARRILES",
     "trackLaneOutputsGroup": "SALIDAS DE ESTE CARRIL",
     "trackLaneOutputsNone": "nada",
     "trackLaneFxNote": "Los efectos de este carril están en Señal.",
     "trackLaneUnrouted": "No hay nada enrutado aquí — este carril no se oirá.",
-    "trackQuantizeGroup": "CUANTIZAR GRABACIÓN",
-    "trackQuantizeFollow": "Seguir el ajuste global",
-    "trackQuantizeAlways": "Cuantizar siempre",
-    "trackQuantizeNever": "No cuantizar nunca",
-    "trackQuantizeGlobalOn": "activada",
-    "trackQuantizeGlobalOff": "desactivada",
     "a11yTrackLaneRecording": "{input}, grabando en su propio carril. Activa para ver a dónde va el carril.",
     "a11yTrackLaneIdle": "{input}, sin grabar. Activa para grabarla.",
     "a11yTrackLaneNoLane": "{input}, sin grabar. Esta pista no tiene ningún carril libre para ella.",
     "a11yTrackLaneStopRecording": "Dejar de grabar esta entrada",
-    "a11yTracksRenameField": "Nombre de la pista",
-    "trayAudioLabel": "Audio",
-    "audioDeviceTab": "Dispositivo",
-    "audioRecordingTab": "Grabación",
     "audioGroupLabel": "AUDIO",
     "audioRateBufferRow": "Frecuencia / búfer",
     "audioRoundTripEstimate": "ida y vuelta {milliseconds} ms",
@@ -1961,8 +1316,6 @@
     "audioOpenAsio4all": "Abrir asio4all.org",
     "audioMaxLoopTitle": "Duración máxima del loop",
     "audioMaxLoopSubtitle": "Un tope mayor reserva más memoria por pista. Cambiarlo reabre el dispositivo.",
-    "audioDefaultLoopLengthTitle": "Duración de loop por defecto",
-    "audioDefaultLoopLengthSubtitle": "Auto redondea a loops base completos; un múltiplo fijo graba esa cantidad.",
     "audioRenameInputTitle": "Renombrar entrada",
     "inputOrdinal": "entrada {number}",
     "a11yInputRenameField": "Nombre de la entrada",
@@ -1970,51 +1323,13 @@
     "audioMeasure": "Medir",
     "audioRecordOffsetSub": "desfase de grabación {frames} frames",
     "audioRefusedConfig": "El dispositivo no pudo abrirse a {asked}. Funcionando a {actual}.",
-    "traySystemLabel": "Sistema",
-    "systemDisplayTab": "Pantalla",
-    "systemUpdatesTab": "Actualizaciones",
-    "systemStorageTab": "Almacenamiento",
-    "systemAboutTab": "Acerca de",
-    "systemPerformanceGroup": "RENDIMIENTO",
-    "systemHelpGroup": "AYUDA",
-    "systemAutomaticGroup": "AUTOMÁTICO",
     "systemThisConsoleGroup": "ESTA CONSOLA",
     "systemHousekeepingGroup": "MANTENIMIENTO",
     "systemHardwareGroup": "HARDWARE",
     "systemLegalGroup": "LEGAL",
     "systemRefreshRateTitle": "Frecuencia de refresco",
-    "systemRefreshRateSubtitle": "Cada cuánto se actualizan las ondas y los medidores. Más alto es más fluido pero usa más CPU.",
     "consoleTryAgain": "Reintentar",
     "updatesUnsupportedBanner": "Las actualizaciones desde la app solo están disponibles en la consola Segno.",
-    "updatesAvailableBanner": "v{version} está disponible.",
-    "@updatesAvailableBanner": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesStagingBanner": "Preparando v{version} en el sistema de reserva — {percent} %",
-    "@updatesStagingBanner": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            },
-            "percent": {
-                "type": "int"
-            }
-        }
-    },
-    "updatesCheckFailedBanner": "Falló la comprobación de actualizaciones — {reason}",
-    "@updatesCheckFailedBanner": {
-        "placeholders": {
-            "reason": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesCheckFailedReason": "no se pudo contactar con el servidor de actualizaciones.",
-    "updatesRestartNow": "Reiniciar ahora",
     "storageSessionsTitle": "Sesiones y tomas",
     "storageCapturesTitle": "Capturas",
     "storageCapturesSubtitle": "exportaciones y pistas",
@@ -2029,7 +1344,6 @@
     },
     "storageSystemTitle": "Sistema y actualizaciones",
     "storageSystemSubtitle": "incluye el sistema de reserva",
-    "storageFreeTitle": "Libre",
     "storageGigabytes": "{value} GB",
     "@storageGigabytes": {
         "placeholders": {
@@ -2061,8 +1375,6 @@
         }
     },
     "storageDeleteCapturesConfirm": "Borrarlas",
-    "storageExportTitle": "Exportar todo a USB",
-    "storageNoUsb": "sin volumen USB",
     "aboutNameRow": "Nombre",
     "aboutRenameTitle": "Renombrar consola",
     "aboutSerialRow": "Número de serie",
@@ -2104,14 +1416,6 @@
         }
     },
     "storageActionFailed": "No se completó. No se modificó nada en el disco.",
-    "updatesDownloadFailedBanner": "Falló la descarga — {reason}",
-    "@updatesDownloadFailedBanner": {
-        "placeholders": {
-            "reason": {
-                "type": "String"
-            }
-        }
-    },
     "licencesReading": "Leyendo el registro de licencias…",
     "licenceCount": "{count, plural, =1{1 licencia} other{{count} licencias}}",
     "@licenceCount": {
@@ -2121,7 +1425,6 @@
             }
         }
     },
-    "traySignalLabel": "Señal",
     "signalStageInput": "entrada",
     "signalStageLoop": "bucle",
     "signalStageTrack": "pista",
@@ -2182,7 +1485,7 @@
     "fxChainOffHere": "La cadena entera está apagada, así que esto todavía no cambia nada de lo que se oye.",
     "fxAddChip": "+ efecto",
     "fxAddScanning": "Buscando plugins…",
-    "fxAddTitle": "Añadir un efecto",
+    "fxAddTitle": "Añadir efectos",
     "fxAddInto": "En “{chain}”, al final de la cadena.",
     "@fxAddInto": {
         "placeholders": {
@@ -2259,15 +1562,1063 @@
     "signalNoLanes": "Aún no hay tomas — graba una y su cadena aparece aquí.",
     "signalNoTracks": "Sin pistas — el motor no está en marcha.",
     "signalNoOutputs": "Sin salidas — el motor no está en marcha.",
-    "powerOffRefuseTitle": "Primero cortá la toma",
-    "powerOffRefuseBody": "Hay una grabación en curso. Cortala y volvé a pulsar el botón de encendido si querés apagar.",
-    "powerOffConfirmTitle": "¿Apagar?",
-    "powerOffConfirmBody": "Los loops en RAM se pierden si apagás sin guardar. Se conserva el último guardado en disco.",
-    "powerOffKeepPlaying": "Seguir tocando",
-    "powerOffSaveAndPowerOff": "Guardar y apagar",
-    "powerOffWithoutSaving": "Apagar sin guardar",
-    "powerOffSaving": "Guardando…",
-    "powerOffSaveFailedTitle": "No se pudo guardar",
-    "powerOffSaveFailedBody": "La sesión no se escribió. No se apagó nada — los loops siguen en RAM.",
-    "a11yPowerOffMark": "Segno"
+    "powerRefuseTitle": "Primero cortá la toma",
+    "powerRefuseBody": "Hay una grabación en curso. Cortala y volvé a pulsar el botón de encendido si querés apagar.",
+    "powerKeepPlaying": "Seguir tocando",
+    "powerOptionsTitle": "Opciones de encendido",
+    "powerOptionsBody": "La reproducción se detendrá y tu sesión se guardará.",
+    "powerSessionUnnamed": "Esta sesión todavía no tiene nombre. Vas a ponérselo antes de guardarla.",
+    "powerStagedUpdate": "Segno {version} se instala durante el reinicio.",
+    "powerCancel": "Cancelar",
+    "powerRestart": "Reiniciar",
+    "powerShutDown": "Apagar",
+    "powerSaving": "Guardando…",
+    "powerSaveFailedTitle": "Segno sigue encendido",
+    "powerSaveFailedBody": "No se pudo guardar tu sesión, así que no se apagó nada. Tus loops siguen acá.",
+    "powerStayOn": "Seguir encendido",
+    "powerSafeToSwitchOff": "Ya podés apagar",
+    "powerRestarting": "Reiniciando",
+    "a11yPowerMark": "Segno",
+    "stageLibrary": "Biblioteca",
+    "libraryListen": "Escuchar",
+    "libraryListenStop": "Detener",
+    "libraryListenProgress": "{played} / {total}",
+    "libraryListenTruncated": "La escucha reproduce los primeros 2:00",
+    "libraryListenFailed": "Esta escucha no se puede reproducir.",
+    "libraryListenNoDevice": "Conecta un dispositivo de audio para escuchar.",
+    "libraryListenRecording": "No mientras se graba una actuación.",
+    "libraryListenBusy": "La escucha anterior todavía se está deteniendo. Vuelve a intentarlo.",
+    "sessionNewLoopNotSaved": "{name} empezó, pero todavía no se pudo guardar. Guárdalo para conservarlo.",
+    "libraryNewLoopStays": "{name} se queda en tu Biblioteca.",
+    "libraryNewLoopStaysUnnamed": "Tu loop actual se queda en tu Biblioteca.",
+    "libraryNewLoopKeeps": "Se mantienen tus efectos, el tempo y la configuración de pedales.",
+    "libraryNewLoopStart": "Empezar nuevo loop",
+    "libraryTakeStillRunning": "La toma está terminando. Vuelve a intentarlo cuando se detenga.",
+    "libraryOpenInterruptTitle": "¿Detener la reproducción y abrir {name}?",
+    "libraryOpenInterruptBody": "Tu loop actual se queda en tu Biblioteca.",
+    "libraryOpenConfirm": "Abrir",
+    "libraryManageSaveOpen": "Guardar {name}",
+    "libraryManageSaveOpenAs": "Guardar {name} como…",
+    "libraryCurrentLoop": "el loop actual",
+    "libraryFolderNotEmpty": "Esa carpeta todavía tiene sesiones. Muévelas antes.",
+    "libraryRenameFolder": "Renombrar carpeta",
+    "libraryDeleteFolder": "Eliminar carpeta",
+    "libraryDeleteFolderTitle": "¿Eliminar «{name}»?",
+    "libraryDeleteFolderBody": "La carpeta está vacía. No se elimina ninguna sesión.",
+    "libraryManage": "Gestionar",
+    "libraryNewFolder": "Nueva carpeta",
+    "libraryMoveToFolder": "Mover a carpeta…",
+    "libraryMoveTitle": "Mover a carpeta",
+    "libraryNewFolderOption": "Nueva carpeta…",
+    "libraryFolderName": "Nombre de la carpeta",
+    "libraryFolderNameTaken": "Ya existe una carpeta o sesión llamada «{name}».",
+    "librarySaveFailed": "No se pudo guardar el loop actual. No se cambió nada.",
+    "libraryDeleteCurrentRefused": "La sesión abierta no se puede eliminar.",
+    "libraryActionFailed": "No funcionó. Inténtalo de nuevo.",
+    "sessionSavedAs": "Guardado como {name}",
+    "libraryUsbUnusable": "Esta unidad USB no se puede usar",
+    "libraryUsbUnsupported": "{fsType} no es compatible. Formatea la unidad como exFAT.",
+    "libraryUsbMountFailed": "No se pudo abrir. Desconéctala y vuelve a conectarla.",
+    "libraryTitle": "Biblioteca",
+    "librarySessions": "Sesiones",
+    "libraryInternal": "Interno",
+    "libraryUsb": "USB",
+    "libraryNewLoop": "Nuevo loop",
+    "librarySearchSessions": "Buscar sesiones",
+    "libraryFolderAll": "Todas",
+    "libraryFolderUnfiled": "Sin carpeta",
+    "libraryCurrentSession": "Sesión actual",
+    "librarySessionMeta": "{date} · {tracks}",
+    "libraryTrackCount": "{count, plural, =0{sin pistas} =1{1 pista} other{{count} pistas}}",
+    "libraryTempo": "{bpm} BPM",
+    "libraryTrackName": "Pista {number}",
+    "librarySecondsUnit": "s",
+    "libraryTrackFx": "FX {count}",
+    "libraryFooterFacts": "{fx} FX · {backing}",
+    "libraryBackingCount": "{count, plural, =1{1 pista de acompañamiento} other{{count} pistas de acompañamiento}}",
+    "libraryReturnToTracks": "Volver a las pistas",
+    "libraryOpenSession": "Abrir sesión",
+    "libraryConnectUsb": "Conecta una unidad USB",
+    "libraryConnectUsbBody": "Tus sesiones internas siguen disponibles.",
+    "libraryNoSessions": "Aún no hay sesiones guardadas.",
+    "libraryNoMatches": "Ninguna sesión coincide.",
+    "libraryNoSelection": "Elige una sesión para verla.",
+    "libraryPreviewUnreadable": "No se pudo leer esta sesión.",
+    "libraryNoTracks": "No hay pistas grabadas.",
+    "stageSettings": "Ajustes",
+    "stageViewMenu": "Vista de actuación",
+    "stageViewTrack": "Pista",
+    "stageViewWave": "Onda",
+    "a11yStageBankButton": "Banco {bank}, pistas {first} a {last}",
+    "stageBarsUnit": "{count, plural, =1{compás} other{compases}}",
+    "stageLayersUnit": "{count, plural, =1{capa} other{capas}}",
+    "stageNoBars": "—",
+    "stageFxMarker": "FX",
+    "a11yStageFxActive": "Efectos de pista activos",
+    "a11yStageFxBypassed": "Efectos de pista en bypass",
+    "a11yStageTrackMeta": "Pista {number}, {bars}, {layers}",
+    "stageBarsFigure": "{count, plural, =1{1 compás} other{{count} compases}}",
+    "stageNoBarsFigure": "sin compases contados",
+    "stageLayersFigure": "{count, plural, =1{1 capa} other{{count} capas}}",
+    "stageBpmUnit": "BPM",
+    "stageDbUnit": "dBFS",
+    "stageOutputLevel": "SALIDA {db} dBFS",
+    "stageOutputClip": "SALIDA SATURA",
+    "a11yStageOutputLevel": "Nivel de salida {db} dBFS",
+    "a11yStageOutputClip": "Salida saturando",
+    "a11yStageElapsed": "Transcurrido desde la primera grabación, {time}",
+    "a11yStageLoopMode": "Modo de loop {mode}",
+    "a11yStageTempo": "{bpm} pulsos por minuto, {signature}",
+    "stageQueueRecord": "Grabar",
+    "stageQueueOverdub": "Overdub",
+    "stageQueueLoopStart": "Inicio del loop",
+    "stageQueueNextBar": "Próximo compás",
+    "stageQueueHalf": "Próxima blanca",
+    "stageQueueQuarter": "Próxima negra",
+    "stageQueueEighth": "Próxima corchea",
+    "stageQueueSixteenth": "Próxima semicorchea",
+    "stageQueueSound": "Sonido",
+    "stageQueuePlay": "Reproducir",
+    "stageQueueStop": "Detener",
+    "a11yTrackQueued": "{action} en cola, {timing}",
+    "readoutStateEmpty": "Vacía",
+    "readoutStateRecording": "Grabando",
+    "readoutStateOverdubbing": "Overdub",
+    "readoutStatePlaying": "Reproduciendo",
+    "readoutStateStopped": "Detenida",
+    "readoutStateMuted": "Silenciada",
+    "readoutFunctionBank": "{function} · Banco {bank}",
+    "readoutFunctionTracks": "Pistas",
+    "readoutFunctionMute": "Silencio",
+    "readoutFunctionFx": "FX",
+    "a11ySelectedTrackWaveform": "Forma de onda de {name}",
+    "a11yReadoutNoTrack": "Ninguna pista seleccionada",
+    "recoveryModeTitle": "El loop no encaja en este modo",
+    "recoveryModeUndoBody": "Elige Free en Ajustes de loop e intenta Deshacer de nuevo. Tu sesión no cambió.",
+    "recoveryModeRedoBody": "Elige Free en Ajustes de loop e intenta Rehacer de nuevo. Tu sesión no cambió.",
+    "recoveryWaitTitle": "La recuperación aún no está lista",
+    "recoveryWaitBody": "Espera a que termine el cambio actual e inténtalo de nuevo. Tu sesión no cambió.",
+    "loopSettingsTitle": "Ajustes de loop",
+    "loopSettingsCrumb": "AJUSTES",
+    "loopSettingsCrumbNested": "AJUSTES / Ajustes de loop",
+    "loopSettingsStage": "Escenario",
+    "loopSettingsBack": "Atrás",
+    "loopHubMode": "Modo de loop",
+    "loopHubRecording": "Grabación",
+    "loopHubTempo": "Tempo y clic",
+    "loopHubLength": "Duración y cuantización",
+    "loopHubPlayback": "Reproducción y overdub",
+    "loopHubAudioTempo": "Audio y tempo",
+    "loopSummaryRecordPlayOverdub": "Grabar · Reproducir · Overdub",
+    "loopSummaryRecordOverdubPlay": "Grabar · Overdub · Reproducir",
+    "loopSummarySound": "Sonido · {rest}",
+    "loopSummaryTempo": "{bpm} BPM · {signature}",
+    "loopSummaryTempoUnset": "Sin tempo · {signature}",
+    "loopSummaryPair": "{first} · {second}",
+    "loopSummaryNoDecay": "Sin decaimiento",
+    "loopSummaryDecay": "{percent}% de decaimiento",
+    "loopTimingImmediately": "De inmediato",
+    "loopTimingLoopStart": "Inicio del loop",
+    "loopTimingBar": "1 compás",
+    "loopTimingHalf": "Blanca",
+    "loopTimingQuarter": "Negra",
+    "loopTimingEighth": "Corchea",
+    "loopTimingSixteenth": "Semicorchea",
+    "loopModeMultiDesc": "Las pistas comparten una duración.",
+    "loopModeSyncDesc": "Duraciones distintas, a tiempo.",
+    "loopModeSongDesc": "Una sección a la vez.",
+    "loopModeBandDesc": "Ritmo bajo secciones que cambian.",
+    "loopModeFreeDesc": "Cada pista hace loop por su cuenta.",
+    "loopModeReasonEqualLengths": "Las pistas necesitan la misma duración.",
+    "loopModeReasonFollowPrimary": "Las duraciones deben seguir a la pista {track}.",
+    "loopRecordingStart": "Iniciar grabación",
+    "loopRecordingStartPedal": "Pedal",
+    "loopRecordingStartSound": "Sonido",
+    "loopRecordingSecondPress": "Segunda pulsación",
+    "loopRecordingSecondPlay": "Reproducir",
+    "loopRecordingSecondOverdub": "Overdub",
+    "loopRecordingNotePedal": "Empieza al pulsar el pedal.",
+    "loopRecordingNoteCountIn": "{bars, plural, one{Empieza tras la cuenta de 1 compás.} other{Empieza tras la cuenta de {bars} compases.}}",
+    "loopRecordingNoteSound": "Espera sonido después de armar la pista.",
+    "loopRecordingLocked": "Termina la grabación para cambiar cómo se graba.",
+    "loopTempoBpmUnit": "BPM",
+    "loopTempoStepWhole": "1 BPM",
+    "loopTempoStepFine": "0,01 BPM",
+    "loopTempoTap": "Marcar tempo",
+    "loopTempoSignature": "Compás",
+    "loopTempoHearClick": "Oír clic",
+    "loopClickOff": "No",
+    "loopClickFirst": "Primera grabación",
+    "loopClickRecording": "Grabando",
+    "loopClickAlways": "Reproducir y grabar",
+    "loopTempoCountIn": "Cuenta",
+    "loopTempoSliderLabel": "Tempo",
+    "loopScopeTracks": "Pistas",
+    "loopScopeDefaults": "Predeterminados",
+    "loopScopeTrack": "Pista {track}",
+    "loopLengthLabel": "Duración del loop",
+    "loopLengthBars": "Compases",
+    "loopLengthUnit": "compases",
+    "loopLengthShorter": "Loop más corto",
+    "loopLengthLonger": "Loop más largo",
+    "loopUseDefault": "Usar predeterminado",
+    "loopOriginDefault": "Predeterminado",
+    "loopOriginCustom": "Personalizado",
+    "loopSharedInMulti": "Compartida en Multi",
+    "loopLengthNoteAuto": "Pulsa el pedal otra vez para fijar la duración.",
+    "loopLengthNotApplied": "No se aplicó. Duración actual: {current}. Prueba otro número de compases.",
+    "loopLengthNoteBars": "{bars, plural, one{Termina tras 1 compás y reproduce.} other{Termina tras {bars} compases y reproduce.}}",
+    "loopDefaultMultipleLabel": "Pistas siguientes",
+    "loopDefaultMultipleNote": "Múltiplos del primer loop. Auto redondea a loops completos.",
+    "loopTimingLabel": "Momento de grabación",
+    "loopTimingNoteImmediately": "Grabar y overdub responden al pulsar.",
+    "loopTimingNoteLoopStart": "Grabar y overdub esperan al próximo inicio del loop. El primer loop sigue a Grabación.",
+    "loopTimingNoteGrid": "Grabar y overdub esperan a la próxima {unit}. El primer loop sigue a Grabación.",
+    "loopLengthLocked": "Termina la grabación para cambiar duración o momento.",
+    "loopPlaybackLabel": "Reproducción",
+    "loopPlaybackLoop": "Loop",
+    "loopPlaybackOnce": "Una vez",
+    "loopPlaybackNoteLoop": "Se repite hasta que la detengas.",
+    "loopPlaybackNoteOnce": "Reproduce hasta el final y se detiene.",
+    "loopDecayLabel": "Decaimiento del overdub",
+    "loopDecayOff": "No",
+    "loopDecayPercent": "{percent}%",
+    "loopDecayKeep": "Mantener capas",
+    "loopDecayReplace": "Reemplazar capas",
+    "loopDecayNoteOff": "Las capas anteriores mantienen su volumen. La reproducción no cambia.",
+    "loopDecayNote": "Conserva el {percent}% del audio anterior en cada pasada. La reproducción no cambia.",
+    "loopDecayNoteReplace": "Cada pasada reemplaza el audio anterior. La reproducción no cambia.",
+    "loopDecaySliderLabel": "Decaimiento del overdub",
+    "loopAudioFollowLabel": "Seguir tempo",
+    "loopAudioFollowOff": "No",
+    "loopAudioFollowOn": "Sí",
+    "loopAudioPitchLabel": "Tono",
+    "loopAudioPitchUnchanged": "Sin cambios",
+    "loopAudioPitchFollows": "Sigue la velocidad",
+    "loopAudioNoteOff": "Mantiene su velocidad grabada aunque cambie el tempo.",
+    "loopAudioNotePitchUnchanged": "El tono no cambia a la velocidad grabada.",
+    "loopAudioNoteOn": "El audio grabado sigue el tempo de la canción.",
+    "loopAudioNotePitchKept": "Cambia la velocidad sin cambiar las notas.",
+    "loopAudioNotePitchFollows": "Más rápido sube el tono. Más lento lo baja.",
+    "loopSummaryFollowOn": "Seguir tempo",
+    "loopSummaryFollowOff": "Velocidad grabada",
+    "loopSummaryPitchSame": "Mismo tono",
+    "loopSummaryPitchFollows": "El tono sigue la velocidad",
+    "loopSettingsRefused": "No se pudo aplicar el cambio. Prueba una duración menor o detén la grabación y vuelve a intentarlo.",
+    "@loopSettingsRefused": {
+        "description": "Feedback when the engine refuses a Loop settings change."
+    },
+    "routingTitle": "Enrutamiento de audio",
+    "routingTabInputSetup": "Configurar entrada",
+    "routingTabRecordingInputs": "Entradas de grabación",
+    "routingTabOutputRouting": "Enrutamiento de salida",
+    "routingTabOutputSetup": "Configurar salida",
+    "routingRecordAs": "Grabar como",
+    "routingFormatMono": "Mono separado",
+    "routingFormatStereo": "Par estéreo",
+    "routingFormatMonoNote": "Cada entrada se graba por separado.",
+    "routingPairLeft": "I",
+    "routingPairRight": "D",
+    "routingPan": "Paneo",
+    "routingBalance": "Balance",
+    "routingPanLeft": "Izquierda",
+    "routingPanRight": "Derecha",
+    "routingPanCenter": "Centro",
+    "routingPanLeftAmount": "{percent}% a la izquierda",
+    "routingPanRightAmount": "{percent}% a la derecha",
+    "routingTrim": "Ganancia de grabación",
+    "routingTrimDb": "{db} dB",
+    "routingTrimNote": "Solo para nuevas grabaciones. El nivel en vivo queda en el mezclador.",
+    "routingSignal": "Señal de grabación",
+    "routingClipNote": "La entrada satura. Baja el nivel de la fuente.",
+    "routingLockedFormat": "Termina la grabación para cambiar entre mono y estéreo.",
+    "routingRecordFrom": "Grabar desde",
+    "routingLockedInputs": "Termina la grabación para cambiar las entradas.",
+    "routingNoInputs": "No hay entradas seleccionadas para esta pista.",
+    "outputPairLabel": "Salidas {first}–{second}",
+    "outputPairShort": "Sal. {first}–{second}",
+    "outputSingleLabel": "Salida {channelNumber}",
+    "routingKindLive": "Entradas en vivo",
+    "routingKindTracks": "Pistas grabadas",
+    "routingKindPlayers": "Base y claqueta",
+    "routingSourceClick": "Claqueta",
+    "routingSourceBacking": "Pista de acompañamiento",
+    "mixerBackingClick": "Base y claqueta",
+    "mixerBackingChannel": "Acompañamiento",
+    "mixerBackingNothingLoaded": "Nada cargado",
+    "mixerBackingVolume": "Volumen del acompañamiento",
+    "mixerBackingPan": "Paneo del acompañamiento",
+    "mixerClickPan": "Paneo del clic",
+    "a11yMixerBackingClick": "Volumen y paneo del acompañamiento y el clic",
+    "routingInputOrdinal": "Entrada {number}",
+    "fxTitle": "Efectos",
+    "fxChangeNotApplied": "No se aplicó ese cambio de efecto. Inténtalo de nuevo.",
+    "fxPedalAssignments": "Asignaciones de pedal",
+    "fxPedalAssignmentsTitle": "Pedales",
+    "fxPedalAssignmentsCrumb": "EFECTOS / ASIGNACIONES DE PEDAL",
+    "fxKindLiveInputs": "Entradas en vivo",
+    "fxKindRecordedTracks": "Pistas grabadas",
+    "fxKindOutputs": "Salidas",
+    "expressionKindLoopControls": "Controles de loop",
+    "expressionDestinationLoopDefaults": "Predeterminados del loop",
+    "oneShotSettingsRefusedTitle": "No se aplicó el cambio de reproducción",
+    "oneShotSettingsRecoveryTitle": "Hay que recuperar los ajustes de reproducción",
+    "oneShotSettingsRecoveryBody": "Vuelve a intentarlo para recuperar el ajuste de reproducción.",
+    "followTempoSettingsRefusedTitle": "No se aplicó el cambio de Seguir tempo",
+    "followTempoSettingsRecoveryTitle": "Hay que recuperar los ajustes de Seguir tempo",
+    "followTempoSettingsRecoveryBody": "Vuelve a intentarlo para recuperar el ajuste de Seguir tempo.",
+    "pitchModeSettingsRefusedTitle": "No se aplicó el cambio de tono",
+    "pitchModeSettingsRecoveryTitle": "Hay que recuperar los ajustes de tono",
+    "pitchModeSettingsRecoveryBody": "Vuelve a intentarlo para recuperar el ajuste de tono.",
+    "decaySettingsRefusedTitle": "No se aplicó el cambio de decaimiento",
+    "decaySettingsRecoveryTitle": "Hay que recuperar los ajustes de decaimiento",
+    "decaySettingsRecoveryBody": "Vuelve a intentarlo para recuperar el ajuste de decaimiento.",
+    "fxAllTracks": "Todas las pistas",
+    "fxWholeTrack": "Pista completa",
+    "fxEffectsOn": "Efectos en",
+    "fxAllTracksContext": "Efectos sobre el audio combinado del loop",
+    "fxOutputContext": "Todo el audio enrutado · entradas en vivo, pistas, clic y pistas de acompañamiento",
+    "fxReorder": "Reordenar",
+    "fxAddEffects": "Añadir efectos",
+    "fxPlacementPre": "Pre",
+    "fxPlacementPost": "Post",
+    "fxNoEffects": "Todavía no hay efectos aquí",
+    "fxNoTrackPart": "Esta pista aún no tiene nada grabado",
+    "fxRackPositionRange": "{first}–{last} / {total}",
+    "fxPreviousEffects": "Efectos anteriores",
+    "fxNextEffects": "Efectos siguientes",
+    "fxEffectPower": "Encendido de {name}",
+    "fxAddCrumb": "EFECTOS / {destination}",
+    "fxLibrarySingle": "Efecto único",
+    "fxLibraryMyPresets": "Mis presets",
+    "fxPresetCount": "{count, plural, =1{1 preset} other{{count} presets}}",
+    "fxLibraryEmpty": "Esta versión no incluye efectos",
+    "fxNoSavedPresets": "Todavía no has guardado ningún sonido",
+    "fxChainFull": "Esta cadena está llena",
+    "fxRackTooLong": "{name} necesita {needed} espacios y aquí quedan {free}",
+    "fxModulePartial": "Algunos controles todavía no llegan al sonido",
+    "fxModuleUnavailable": "Esta versión todavía no procesa este efecto",
+    "fxEffectOptions": "Opciones del efecto",
+    "fxSavePreset": "Guardar preset",
+    "fxBypassEffect": "Efecto",
+    "fxPlacementCaption": "Colocación",
+    "fxPlacementPreHint": "Grabado en el loop",
+    "fxPlacementPostHint": "Puede sonar tras Stop",
+    "fxEffectInput": "Entrada del efecto",
+    "fxEffectOutput": "Salida del efecto",
+    "fxChannelStereo": "Estéreo",
+    "fxChannelLeft": "Solo izquierda",
+    "fxChannelRight": "Solo derecha",
+    "fxChannelMonoSum": "Suma mono",
+    "fxChannelMono": "Mono",
+    "fxBalance": "Balance",
+    "fxPan": "Panorama",
+    "fxLevel": "Nivel",
+    "fxCentre": "Centro",
+    "fxLeft": "Izquierda",
+    "fxRight": "Derecha",
+    "fxScaleUnverified": "Escala sin verificar",
+    "fxPartOrdinal": "Parte {number}",
+    "fxUnassigned": "Sin asignar",
+    "fxModuleCount": "{count, plural, =1{1 efecto} other{{count} efectos}}",
+    "fxRackOptions": "Opciones del rack",
+    "fxRackRename": "Renombrar",
+    "fxRackRenameField": "Nombre del rack",
+    "fxReorderEffects": "Reordenar efectos",
+    "fxRemoveAnEffect": "Quitar un efecto",
+    "fxRemoveRack": "Quitar rack",
+    "fxRemoveRackTitle": "¿Quitar {name}?",
+    "fxRemoveRackBody": "Los sonidos que guardaste desde él quedan en Mis presets.",
+    "fxRemoveEffect": "Quitar {name}",
+    "fxBypassRack": "Rack",
+    "fxAddEffect": "Agregar efecto",
+    "fxRackInput": "Entrada del rack",
+    "fxRackOutput": "Salida del rack",
+    "fxRackLevel": "Nivel del rack",
+    "fxMoveLeft": "Mover a la izquierda",
+    "fxMoveRight": "Mover a la derecha",
+    "fxOrderPosition": "{name}, posición {position} de {total}",
+    "fxSavePresetTitle": "Guardar preset",
+    "fxPresetNameField": "Nombre del preset",
+    "fxReplacePresetTitle": "¿Reemplazar {name}?",
+    "fxPresetExists": "Ya hay un preset con este nombre en Mis presets.",
+    "fxReplacePreset": "Reemplazar preset",
+    "fxUseAnotherName": "Usar otro nombre",
+    "fxMyPresetsTitle": "Mis presets",
+    "fxPresetRename": "Renombrar",
+    "fxPresetExport": "Exportar",
+    "fxImportPresets": "Importar presets",
+    "fxExportAllPresets": "Exportar todo",
+    "fxPresetDelete": "Eliminar",
+    "fxPresetDeleteTitle": "¿Eliminar {name}?",
+    "fxPresetDeleteBody": "Los efectos ya agregados desde él no se ven afectados.",
+    "fxPresetSaved": "Se guardó {name}",
+    "fxRackRemoved": "Se quitó {name}",
+    "routingHearLive": "Escuchar en vivo",
+    "routingHearOff": "No",
+    "routingHearAuto": "Auto",
+    "routingHearOn": "Sí",
+    "routingHearAutoOff": "En vivo apagado · sigue a las pistas armadas o grabando",
+    "routingHearAutoOn": "En vivo encendido · sigue a las pistas armadas o grabando",
+    "routingHearMuted": "Silenciada en el mezclador · no se escucha nada",
+    "routingSendTo": "Enviar a",
+    "routingNoDestinations": "No hay salidas seleccionadas. Esta fuente no llega a ninguna parte.",
+    "routingNoDestinationsYet": "No hay salidas hasta que se abra una interfaz.",
+    "routingOutputStereo": "Estéreo",
+    "routingOutputMono": "Mono",
+    "routingOutputMonoNote": "La misma mezcla en ambas salidas.",
+    "routingOutputMute": "Silenciar salida",
+    "routingOutputMuted": "Silenciada",
+    "routingOutputLevel": "Nivel",
+    "routingOutputLevelPercent": "{percent}%",
+    "routingOutputDbfs": "{db} dBFS",
+    "routingOutputSilent": "−∞",
+    "routingOutputAppliesNote": "Se aplica a todo lo enviado aquí.",
+    "routingInputNames": "Nombres de entrada",
+    "routingOutputNames": "Nombres de salida",
+    "routingRename": "Renombrar",
+    "routingRenameTitle": "Renombrar",
+    "routingRenameField": "Nombre de {port}",
+    "routingNoPortsYet": "No hay puertos hasta que se abra una interfaz.",
+    "routingRowSubtitle": "Entradas, grabación, destinos y configuración de salida",
+    "routingInputOrdinalSide": "Entrada {number} · {side}",
+    "routingTrimSide": "Ganancia de grabación · {side}",
+    "routingClip": "SATURA",
+    "routingNameSaveFailed": "No se pudo guardar este nombre. Inténtalo de nuevo.",
+    "routingNameChangedDevice": "Cambió el dispositivo de audio. Cierra esta hoja y vuelve a abrir el nombre.",
+    "routingNameRecoveryRequired": "No se pudo restaurar el nombre. Vuelve a cargar este dispositivo antes de editarlo.",
+    "routingDestinationUnavailable": "No disponible en este dispositivo",
+    "routingInputUnavailable": "Entrada no disponible en este dispositivo",
+    "routingTrackFull": "Una pista graba como máximo {count} entradas. Libera una para añadir otra.",
+    "stageViewMixer": "Mezclador",
+    "mixerMute": "Silencio",
+    "mixerSolo": "Solo",
+    "mixerLevel": "Nivel",
+    "mixerReset": "Restablecer mezclador",
+    "mixerResetConfirmBody": "¿Restablecer el nivel y el panorama de las ocho pistas? El silencio, Solo, los efectos y el audio no cambian.",
+    "a11yMixerMute": "Silenciar la pista {number}",
+    "a11yMixerUnmute": "Quitar el silencio de la pista {number}",
+    "a11yMixerSolo": "Solo en la pista {number}",
+    "a11yMixerUnsolo": "Quitar el solo de la pista {number}",
+    "a11yMixerClearSolo": "Quitar todos los solos",
+    "a11yMixerEditFx": "Editar los efectos de la pista {number}",
+    "a11yMixerBypassFx": "Puentear los efectos de la pista {number}",
+    "a11yMixerEnableFx": "Activar los efectos de la pista {number}",
+    "a11yMixerPan": "Panorama de la pista {number}",
+    "a11yMixerLevel": "Nivel de la pista {number}",
+    "a11yMixerReset": "Restablecer todos los niveles a la unidad y los panoramas al centro",
+    "pedalSetupContextLeds": "Colores de Custom",
+    "pedalSetupLedColor": "Color LED",
+    "pedalSetupLedEdit": "Editar color",
+    "pedalSetupLedAdd": "Agregar color personalizado",
+    "pedalColorWhite": "Blanco",
+    "pedalColorAmber": "Ámbar",
+    "pedalColorRed": "Rojo",
+    "pedalColorOrange": "Naranja",
+    "pedalColorGreen": "Verde",
+    "pedalColorCyan": "Cian",
+    "pedalColorBlue": "Azul",
+    "pedalColorViolet": "Violeta",
+    "pedalColorCustom": "Personalizado {number}",
+    "pedalColorAddTitle": "Agregar color",
+    "pedalColorEditTitle": "Editar color",
+    "pedalColorAddConfirm": "Agregar color",
+    "pedalColorEditConfirm": "Guardar color",
+    "pedalColorDialogLabel": "Color LED personalizado",
+    "pedalColorHue": "Tono",
+    "pedalColorSaturation": "Saturación",
+    "pedalColorBrightness": "Brillo",
+    "pedalColorDegrees": "{value}°",
+    "pedalColorPercent": "{value}%",
+    "a11yModeCustom": "Controles personalizados",
+    "a11yTrackTileCustom": "{name}, {state}, activá para seleccionar",
+    "readoutFunctionCustom": "Personalizado",
+    "actionNone": "Ninguna",
+    "actionModeExit": "Salir",
+    "actionModeMute": "Silenciar",
+    "actionModeCustom": "Personalizado",
+    "actionModeFx": "FX",
+    "actionRecordPlay": "Grabar / Reproducir",
+    "actionStop": "Detener",
+    "actionUndo": "Deshacer",
+    "actionRedo": "Rehacer",
+    "actionClearAll": "Borrar todas las pistas",
+    "actionCutSound": "Cortar todo el sonido",
+    "actionRecordPerformance": "Grabar actuación",
+    "actionNextBank": "Siguiente banco",
+    "actionTrackPedal": "Pedal de {name}",
+    "actionSelectTrack": "Seleccionar {name}",
+    "actionScoped": "{target} · {name}",
+    "actionScopeSelected": "Pista seleccionada",
+    "actionScopeAllTracks": "Todas las pistas",
+    "actionOperationMute": "Silenciar",
+    "actionOperationSolo": "Solo",
+    "actionOperationClear": "Borrar",
+    "actionOperationUndo": "Deshacer edición de audio",
+    "actionOperationRedo": "Rehacer edición de audio",
+    "actionUndoRecording": "Deshacer grabación",
+    "actionArmOverdub": "Preparar sobregrabación",
+    "actionClearTrack": "Borrar pista",
+    "actionGroupFunctions": "Modos y funciones",
+    "actionGroupTransport": "Transporte del loop",
+    "actionGroupLoopModes": "Modos de loop",
+    "actionGroupSelected": "Pista seleccionada",
+    "actionGroupFixed": "Pistas fijas",
+    "actionGroupAllTracks": "Todas las pistas",
+    "actionGroupTracks": "Pedales de pista y banco",
+    "actionGroupFx": "Pedales de FX",
+    "actionGroupBacking": "Acompañamiento",
+    "actionGroupSessions": "Sesiones",
+    "pedalSetupTitle": "Pedales",
+    "pedalSetupCrumb": "AJUSTES / Pedales",
+    "pedalSetupContextTracks": "Controles de pista",
+    "pedalSetupContextCustom": "Personalizados",
+    "pedalSetupSave": "Guardar",
+    "pedalSetupCancel": "Cancelar",
+    "pedalSetupSaving": "Guardando",
+    "pedalSetupLoading": "Cargando ajustes de pedales",
+    "pedalSetupLoadFailed": "No se pudieron cargar los ajustes de pedales.",
+    "pedalSetupUnavailable": "No se pueden leer las asignaciones guardadas. Revisá los reemplazos y guardá para activarlos.",
+    "pedalSetupSaveUncertain": "No se pudo confirmar lo guardado. Volvé a guardar para confirmar los ajustes.",
+    "pedalSetupSaveFailed": "No se pudo guardar. Tus cambios siguen acá.",
+    "actionUnavailable": "No disponible · {key}",
+    "pedalSetupSaved": "Guardado",
+    "pedalSetupPress": "Pulsar",
+    "pedalSetupHold": "Mantener",
+    "pedalSetupTrackPress": "Control de pista",
+    "pedalSetupTrackGroup": "Pedales de pista",
+    "pedalSetupClearCustom": "Borrar asignaciones",
+    "pedalSetupRestoreCustom": "Restaurar asignaciones",
+    "pedalSetupClearTitle": "¿Borrar asignaciones personalizadas?",
+    "pedalSetupClearScope": "Bancos A y B · Pulsar y Mantener de cada pedal configurable.",
+    "pedalSetupClearKeeps": "MODE conserva sus modos y BANK sigue cambiando bancos. Los controles de pista no cambian.",
+    "pedalSetupClearDraft": "Esto modifica el borrador. Guardar lo aplica; Restaurar asignaciones recupera el mapa anterior.",
+    "pedalSetupClearConfirm": "Borrar ambos bancos",
+    "pedalSetupChooser": "{control} · {gesture}",
+    "pedalSetupFixedNote": "Este control tiene una acción fija.",
+    "externalPedalsTitle": "Pedales externos",
+    "externalPedalsSub": "Qué conectás a CTRL 1 y CTRL 2, y qué controla",
+    "externalJackCtrl1": "CTRL 1",
+    "externalJackCtrl2": "CTRL 2",
+    "externalTypeExpression": "Expresión",
+    "externalTypeSingle": "Un botón",
+    "externalTypeDual": "Dos botones",
+    "externalButton": "Botón {number}",
+    "externalSwitchType": "Tipo de interruptor",
+    "externalHardwareMomentary": "Momentáneo",
+    "externalHardwareLatching": "Enclavado",
+    "externalOnChange": "Al cambiar",
+    "externalHoldNote": "Mantener ejecuta solo la acción Mantener.",
+    "externalPressNote": "Sin acción Mantener, Pulsar se ejecuta al cerrar el contacto.",
+    "externalChangeNote": "Cada cambio de contacto ejecuta la acción una vez. Este interruptor no informa cuánto tiempo lo mantenés pulsado.",
+    "externalContact": "Contacto",
+    "expressionPosition": "Posición del pedal",
+    "expressionHeel": "Talón",
+    "expressionToe": "Punta",
+    "expressionNoReading": "—",
+    "expressionNotConnected": "Sin conexión",
+    "expressionCalibrationNeeded": "Falta calibrar",
+    "expressionCalibrate": "Calibrar",
+    "expressionCalibrateTitle": "Calibrar",
+    "expressionTeachTravel": "Definí el recorrido del pedal",
+    "expressionHeelDown": "Talón abajo",
+    "expressionToeDown": "Punta abajo",
+    "expressionSetEnd": "Fijar {end}",
+    "expressionSetAgain": "Volver a fijar",
+    "expressionCalibrateHint": "Mové el pedal a cada extremo y fijá su posición.",
+    "expressionCalibrateSpanHint": "Recorré un tramo mayor del pedal.",
+    "expressionUseCalibration": "Usar calibración",
+    "expressionControls": "Controles",
+    "expressionAddControl": "Agregar control",
+    "expressionEmpty": "Elegí qué va a controlar este pedal.",
+    "expressionRange": "Rango del pedal",
+    "expressionUnavailable": "No disponible",
+    "expressionUnavailableNote": "Este control ya no está disponible.",
+    "expressionChangeControl": "Cambiar control",
+    "expressionRemoveControl": "Quitar",
+    "expressionChooseDestination": "Elegí un destino",
+    "expressionChooseControl": "Elegí un control",
+    "expressionControlVolume": "Volumen",
+    "expressionControlGain": "Ganancia",
+    "expressionNoControls": "Todavía no hay controles ajustables acá.",
+    "externalActivationChain": "Todos los efectos",
+    "externalActivationRow": "{name} · Activación",
+    "externalPanelActions": "Acciones",
+    "externalPanelControls": "Controles",
+    "externalControlsEmpty": "Elegí qué controla este botón.",
+    "externalActiveWhen": "Activo cuando",
+    "externalConditionOn": "Encendido",
+    "externalConditionOff": "Apagado",
+    "externalConditionHeld": "Pulsado",
+    "externalConditionReleased": "Suelto",
+    "externalConditionLatchingNote": "Pulsado y Suelto necesitan un interruptor momentáneo.",
+    "externalConditionToggleNote": "Cada pulsación alterna Encendido / Apagado.",
+    "externalConditionHeldNote": "Activo mientras mantenés el pedal pulsado.",
+    "externalConditionReleasedNote": "Activo mientras el pedal está suelto.",
+    "externalButtonValues": "Valores del botón",
+    "externalValueOnOff": "Encendido / Apagado",
+    "externalValueHeldReleased": "Pulsado / Suelto",
+    "controllerConsoleMappingsUnavailable": "Estas asignaciones CTRL ya no están disponibles. Configurá las conexiones en Pedales externos.",
+    "a11yMidiDisableMapping": "Desactivar {name}",
+    "a11yMidiEnableMapping": "Activar {name}",
+    "a11yMidiLastReceived": "Último valor recibido {value}",
+    "a11yMidiRemoveControl": "Quitar {name}",
+    "midiActionsNeedButton": "Las acciones necesitan un botón.",
+    "midiAddMapping": "Añadir asignación",
+    "midiButton": "Botón",
+    "midiButtonBehavior": "Comportamiento del botón",
+    "midiCancelLearn": "Cancelar aprendizaje",
+    "midiChannel": "Canal {channel}",
+    "midiControlBehavior": "Comportamiento del control",
+    "midiControlOff": "Control MIDI desactivado",
+    "midiControlOn": "Control MIDI activado",
+    "midiControlSettingFailed": "No se pudo guardar el ajuste de control MIDI",
+    "midiControllerDisconnected": "Controlador desconectado",
+    "midiControlsCrumb": "AJUSTES / MIDI",
+    "midiControlsEmpty": "Elige qué cambia este control.",
+    "midiControlsEnabled": "Controles MIDI activados",
+    "midiControlsHeading": "Controles",
+    "midiControlsPaused": "Controles MIDI en pausa",
+    "midiControlsTitle": "Controles MIDI",
+    "midiDelete": "Eliminar",
+    "midiDeviceAvailable": "Disponible",
+    "midiDeviceConnected": "Conectado",
+    "midiDeviceConnecting": "Conectando…",
+    "midiDeviceDisconnected": "Desconectado",
+    "midiDeviceOpenFailed": "No se pudo abrir",
+    "midiEditExisting": "Editar la asignación existente",
+    "midiFormatBankProgram": "Banco + programa",
+    "midiFormatBankProgramDetail": "Banco MSB + LSB y luego Program Change",
+    "midiFormatCc14": "CC de 14 bits",
+    "midiFormatCc14Detail": "Pares MSB + LSB recientes",
+    "midiFormatNrpn": "NRPN",
+    "midiFormatNrpnDetail": "Selección de parámetro + Data Entry de 14 bits",
+    "midiFormatRelative": "CC relativo",
+    "midiFormatRelativeDetail": "Complemento a dos · 1 sube, 127 baja",
+    "midiFormatStandard": "CC, nota o programa",
+    "midiFormatStandardDetail": "Mensajes normales de 7 bits",
+    "midiKnobOrFader": "Perilla / fader",
+    "midiLearn": "Aprender",
+    "midiLearnAnother": "Aprender otro control",
+    "midiLearnReconnect": "Reconecta el controlador para continuar.",
+    "midiLearnTimedOut": "No se recibió ningún mensaje. Vuelve a intentar aprender.",
+    "midiMappingRemoved": "Asignación eliminada",
+    "midiMappingTitle": "Asignación",
+    "midiMessageFormat": "Formato del mensaje",
+    "midiMissingControl": "Control ausente",
+    "midiMomentary": "Momentáneo",
+    "midiMoveAControl": "Mueve un control",
+    "midiNoControlSelected": "Ningún control seleccionado",
+    "midiNoDevices": "No se encontró ningún controlador MIDI. Conecta uno para asignarlo.",
+    "midiNoMappings": "Sin asignaciones",
+    "midiOmniAllChannels": "Omni · Todos los canales",
+    "midiOverlaps": "Este control se superpone con una asignación existente del canal.",
+    "midiPerformanceActions": "Acciones de interpretación",
+    "midiPerformanceActionsNeedButton": "Acciones de interpretación · usa un botón",
+    "midiPressed": "Al pulsar",
+    "midiRangeFrom": "Desde",
+    "midiRangeTo": "Hasta",
+    "midiRangeValue": "Valor",
+    "midiReceiveChannel": "Recibir · Canal {channel}",
+    "midiReceiveChannelTitle": "Canal de recepción",
+    "midiReceiveOmni": "Recibir · Omni",
+    "midiReceived": "Recibido {value} / {maximum}",
+    "midiReceivedSteps": "{count, plural, =1{Recibido {delta} paso} other{Recibidos {delta} pasos}}",
+    "midiReconnectController": "Reconecta el controlador",
+    "midiReleased": "Al soltar",
+    "midiRemoveActionsFirst": "Quita las acciones antes de aprender un control de alta resolución o relativo.",
+    "midiRepairControl": "Reparar control",
+    "midiRepairReady": "Reparación lista · Guarda para conservarla",
+    "midiSaveFailed": "No se pudo guardar. Tus cambios siguen aquí.",
+    "midiSourceBankProgram": "Banco {bank} · Programa {number}",
+    "midiSourceCc": "CC {number}",
+    "midiSourceCc14": "CC {number} / {lsb} · 14 bits",
+    "midiSourceNote": "Nota {number}",
+    "midiSourceNrpn": "NRPN {parameter}",
+    "midiSourceOnChannel": "{source} · Can {channel}",
+    "midiSourceOnOmni": "{source} · Omni",
+    "midiSourceProgram": "Programa {number}",
+    "midiSourceRelative": "CC {number} · Relativo",
+    "midiToggle": "Alternar",
+    "midiUnavailableAction": "Acción no disponible",
+    "midiWhen": "Cuándo",
+    "actionTapTempo": "Marcar tempo",
+    "midiRetryOff": "Reintentar apagar",
+    "midiRetryDevice": "Reintentar dispositivo",
+    "midiDeviceSettingFailed": "No se pudo guardar el dispositivo MIDI",
+    "midiResumeOn": "Reanudar",
+    "midiResetConfiguration": "Restablecer asignaciones",
+    "midiConfigurationUnavailable": "No se pudieron leer las asignaciones guardadas. Restablécelas para empezar de nuevo.",
+    "powerRetry": "Reintentar",
+    "displayBrightnessSaveFailed": "No se pudo guardar",
+    "clickSettingsRecoveryTitle": "Hay que recuperar los ajustes del clic",
+    "clickSettingsRefusedTitle": "No se aplicó el cambio del clic",
+    "clickSettingsRecoveryBody": "Reintenta recuperar el ajuste del clic.",
+    "recordLengthSharedInMulti": "En Multi, la longitud de las pistas sigue el valor predeterminado.",
+    "recordLengthCaptureLocked": "Termina de grabar para cambiar la longitud de grabación.",
+    "recordTimingCaptureLocked": "Termina de grabar para cambiar el momento de grabación.",
+    "recordLengthSettingsRecoveryTitle": "Hay que recuperar la longitud de grabación",
+    "recordLengthSettingsRefusedTitle": "No se aplicó el cambio de longitud de grabación",
+    "recordLengthSettingsRecoveryBody": "Reintenta recuperar los ajustes de longitud de grabación.",
+    "recordTimingSettingsRecoveryTitle": "Hay que recuperar el momento de grabación",
+    "recordTimingSettingsRefusedTitle": "No se aplicó el cambio del momento de grabación",
+    "recordTimingSettingsRecoveryBody": "Reintenta recuperar los ajustes del momento de grabación.",
+    "recordTimingUnavailable": "El momento de grabación aún no está listo",
+    "clickModeCaptureLocked": "Termina la grabación para cambiar cuándo suena el clic.",
+    "clickModeUnavailable": "El modo de clic no está disponible.",
+    "clickModeSettingsRecoveryTitle": "El modo de clic necesita atención",
+    "clickModeSettingsRefusedTitle": "No se cambió el modo de clic",
+    "clickModeSettingsRecoveryBody": "Reintenta para confirmar el ajuste de clic guardado.",
+    "recordStartUnavailable": "El inicio de la grabación no está disponible.",
+    "recordStartCaptureLocked": "El inicio de la grabación no se puede cambiar mientras se graba.",
+    "recordStartSettingsRecoveryTitle": "El inicio de la grabación necesita recuperación",
+    "recordStartSettingsRefusedTitle": "No se pudo cambiar el inicio de la grabación",
+    "recordStartSettingsRecoveryBody": "No se pudo confirmar el inicio de la grabación. Reintenta antes de guardar o apagar.",
+    "recordingInputRequiredTitle": "Elige las entradas de grabación",
+    "recordRefusedTitle": "La grabación no comenzó. Pulsa Grabar otra vez.",
+    "monitorRestoreFailedTitle": "La monitorización necesita recuperarse",
+    "monitorRestoreFailedBody": "No se pudo restaurar por completo la monitorización guardada. Reintenta para aplicar los ajustes guardados.",
+    "actionModeMixer": "Mezclador de pie",
+    "footMixerTitle": "Mezclador",
+    "footMixerPlaybackVolume": "Volumen de reproducción",
+    "footMixerLiveVolume": "Volumen en vivo",
+    "footMixerVolumeUp": "Volumen +",
+    "footMixerVolumeDown": "Volumen −",
+    "footMixerHoldReset": "Mantener · Restablecer",
+    "footMixerHoldMute": "Mantener · Silenciar",
+    "footMixerHoldUnmute": "Mantener · Activar sonido",
+    "footMixerHoldInputs": "Mantener · Entradas",
+    "footMixerHoldTracks": "Mantener · Pistas",
+    "footMixerLimitReset": "Límite · Mantener para restablecer",
+    "footMixerAutoOff": "Auto · En vivo apagado",
+    "footMixerHearOff": "Escucha en vivo apagada",
+    "footMixerEmptyTracks": "No hay pistas grabadas",
+    "footMixerEmptyInputs": "No hay entradas disponibles",
+    "footMixerTracksPage": "Pistas {first}–{last}",
+    "footMixerInputsPage": "Entradas {first}–{last}",
+    "footMixerPercent": "{value}%",
+    "footMixerBank": "BANCO",
+    "footMixerMode": "MODO",
+    "footMixerClear": "BORRAR",
+    "footMixerUndo": "DESHACER",
+    "footMixerFailure": "No se pudo completar el cambio del mezclador. Inténtalo de nuevo.",
+    "footMixerMutedLevel": "{value}% · Silenciado",
+    "fxMutedInMixer": "Silenciado en Mezclador",
+    "fadeSettingsRecoveryTitle": "Hay que recuperar la duración de Fade",
+    "fadeSettingsRefusedTitle": "No se guardó el cambio de duración de Fade",
+    "fadeSettingsRecoveryBody": "Reintenta recuperar los ajustes de duración de Fade.",
+    "instrumentsSettingsRecoveryTitle": "Hay que recuperar los instrumentos",
+    "instrumentsSettingsRefusedTitle": "No se guardó el cambio del instrumento",
+    "instrumentsSettingsRecoveryBody": "Reintenta recuperar los instrumentos.",
+    "backingMixSettingsRecoveryTitle": "Hay que recuperar el volumen y las salidas de la pista de acompañamiento",
+    "backingMixSettingsRefusedTitle": "No se guardó el cambio de volumen o salidas de la pista de acompañamiento",
+    "backingMixSettingsRecoveryBody": "Reintenta recuperar el volumen, el paneo, las salidas y Al final de la pista de acompañamiento.",
+    "clickPanSettingsRecoveryTitle": "Hay que recuperar el paneo del clic",
+    "clickPanSettingsRefusedTitle": "No se guardó el cambio de paneo del clic",
+    "clickPanSettingsRecoveryBody": "Reintenta recuperar el paneo del clic.",
+    "actionModeFade": "Fade",
+    "actionOperationFade": "Fade",
+    "footFadeDefaultTime": "Tiempo de Fade predeterminado",
+    "footFadeTrackTime": "Tiempo de Fade de {track}",
+    "footFadeCustom": "Personalizado",
+    "footFadeUsesDefault": "Usa el predeterminado",
+    "footFadeSeconds": "{value} s",
+    "footFadeFullLevel": "Nivel completo",
+    "footFadeFadedOut": "Desvanecida",
+    "footFadeFadingOut": "Desvaneciéndose",
+    "footFadeFadingIn": "Volviendo",
+    "footFadeTimeUp": "Tiempo +",
+    "footFadeTimeDown": "Tiempo −",
+    "footFadeHoldUseDefault": "Mantener · Usar predeterminado",
+    "footFadeBank": "Banco {bank}",
+    "footFadeHoldDefaultTime": "Mantener · Tiempo predeterminado",
+    "footFadeHoldTime": "Mantener · Tiempo",
+    "footFadeFailure": "No se pudo iniciar el Fade. Inténtalo de nuevo.",
+    "actionModePeel": "Peel",
+    "actionModeTuner": "Afinador",
+    "footTunerReference": "Referencia A4",
+    "footTunerHzUnit": "Hz",
+    "footTunerInputMuted": "Entrada silenciada",
+    "footTunerInputAudible": "Entrada audible",
+    "footTunerMuteInput": "Silenciar entrada",
+    "footTunerUnmuteInput": "Activar entrada",
+    "footTunerReferenceDown": "Referencia −",
+    "footTunerReferenceUp": "Referencia +",
+    "footTunerHoldReset": "Mantener · {hz} Hz",
+    "footTunerInputs": "Entradas {first}–{last}",
+    "footTunerInputsOne": "Entrada {number}",
+    "footTunerNextInputs": "Siguientes entradas",
+    "footTunerFlat": "Bajo",
+    "footTunerInTune": "Afinado",
+    "footTunerSharp": "Alto",
+    "footTunerCents": "{cents} centésimas",
+    "footTunerPlayOneNote": "Toca una nota",
+    "footTunerSaveFailed": "No se pudieron guardar los ajustes del afinador. Inténtalo de nuevo.",
+    "footTunerStartFailed": "El afinador no pudo iniciarse. Inténtalo de nuevo.",
+    "footTunerAtLimit": "La referencia A4 está en su límite.",
+    "footTunerSeeded": "El afinador está en Personalizado: mantén MODE y luego mantén el pedal 2.",
+    "actionOperationPeel": "Peel",
+    "footPeelLayers": "Capas",
+    "footPeelOriginalOnly": "Solo la original",
+    "footPeelSwitchBank": "Cambiar banco",
+    "footPeelRefusedEmpty": "La pista está vacía: no hay ninguna capa para quitar.",
+    "footPeelRefusedOriginalOnly": "Solo queda la toma original: no hay ninguna sobregrabación para quitar.",
+    "footPeelRefusedBusy": "Peel no está disponible mientras la pista graba o está por grabar. Inténtalo de nuevo cuando esté sonando.",
+    "footPeelFailure": "No se pudo quitar la capa. Inténtalo de nuevo.",
+    "footCustomHold": "Mantener · {action}",
+    "footCustomStopRecording": "Detener grabación",
+    "footCustomUnavailableAction": "Acción no disponible",
+    "assignedActionUnknownRefused": "La acción de este control no está disponible en esta versión. Reasígnala.",
+    "assignedActionRefused": "{action} no está disponible ahora.",
+    "mixerFading": "En Fade",
+    "mixerFadeLevel": "Fade {value}%",
+    "fadeDurationLabel": "Duración de Fade",
+    "fadeDurationReadout": "{value} s",
+    "actionModeReverse": "Reversa",
+    "actionOperationReverse": "Reversa",
+    "footReversePlaybackDirection": "Sentido de reproducción",
+    "footReverseForward": "Normal",
+    "footReverseReversed": "Reversa",
+    "footReverseSwitchBank": "Cambiar banco",
+    "footReverseFailure": "No se pudo cambiar el sentido de la pista. Inténtalo de nuevo.",
+    "footReverseOverdubRefused": "No se puede sobregrabar mientras la pista suena al revés",
+    "stageReverseMarker": "REV",
+    "a11yStageReversed": "La pista se reproduce al revés",
+    "settingsCrumb": "AJUSTES / {page}",
+    "settingsDeviceTitle": "Dispositivo",
+    "settingsNetworkTitle": "Red",
+    "settingsDisplaysTitle": "Pantallas",
+    "displaysTrackDisplay": "Pantalla de pista",
+    "displaysMainDisplay": "Pantalla principal",
+    "displaysTrackRole": "Pista seleccionada y forma de onda",
+    "displaysMainRole": "Escenario y ajustes",
+    "displaysTrackPanel": "7″",
+    "displaysMainPanel": "15,6″",
+    "displaysConnected": "Conectada",
+    "displaysNotConnected": "No conectada",
+    "displaysCalibrateTouch": "Calibrar táctil",
+    "displaysDimWhileIdle": "Atenuar en reposo",
+    "displaysDimNever": "Nunca",
+    "displaysDimNote": "Reproducir o grabar mantiene ambas pantallas encendidas. Un toque, el encoder, un pedal o MIDI las despierta.",
+    "displaysOptions": "Opciones de pantalla",
+    "displaysTrackWindow": "Ventana de la pantalla de pista",
+    "displaysDimMinutes": "{minutes} min",
+    "settingsStorageTitle": "Almacenamiento",
+    "settingsUpdatesTitle": "Actualizaciones",
+    "settingsAboutTitle": "Acerca de Segno",
+    "aboutThisConsolePanel": "Esta consola",
+    "aboutControllerPanel": "Controlador",
+    "aboutLicensesPanel": "Licencias",
+    "aboutRename": "Renombrar",
+    "aboutDefaultName": "Segno",
+    "aboutSegnoVersionRow": "Versión de Segno",
+    "aboutDisplaysRow": "Pantallas",
+    "aboutConnectionRow": "Conexión",
+    "aboutConnectionConnected": "Conectado",
+    "aboutConnectionDisconnected": "No conectado",
+    "aboutConnectionIncompatible": "Otro protocolo de enlace",
+    "aboutFirmwareRow": "Firmware",
+    "aboutWireProtocolRow": "Protocolo de enlace",
+    "aboutNotReported": "Sin informar",
+    "aboutLastFlashedCaption": "Último grabado por esta consola",
+    "aboutNotReportedCaption": "No se leyó ninguna versión del dispositivo",
+    "aboutControllerFirmwareRow": "Firmware del controlador",
+    "controllerFirmwareTitle": "Firmware del controlador",
+    "controllerFirmwareCrumb": "AJUSTES / Acerca de Segno / Firmware del controlador",
+    "controllerInstalledPanel": "Instalado",
+    "controllerUpdateUnsupported": "No se ha establecido si este hardware admite actualizar el controlador.",
+    "controllerSoftwareUpdates": "Actualizaciones de software",
+    "updatesPageInstalled": "Segno {version} instalado",
+    "updatesPageCheck": "Buscar actualizaciones",
+    "updatesPanelSoftware": "Actualizaciones de software",
+    "updatesPanelAvailable": "Actualización disponible",
+    "updatesPanelDownloading": "Descargando",
+    "updatesPanelReady": "Lista para instalar",
+    "updatesPanelPaused": "Actualización en pausa",
+    "updatesPageVersion": "Segno {version}",
+    "updatesPageVersionSize": "Segno {version} · {megabytes} MB",
+    "updatesPageIdle": "Busca una versión más reciente de Segno.",
+    "updatesPageCheckFailed": "No se pudo contactar con el servidor de actualizaciones. Revisa la red y vuelve a intentarlo.",
+    "updatesPageDownloadFailed": "La descarga no terminó. El software actual no ha cambiado.",
+    "updatesPageInterrupted": "Descarga interrumpida. El software actual no ha cambiado.",
+    "updatesPagePercent": "{percent} %",
+    "updatesPageDownload": "Descargar e instalar",
+    "updatesPageInstallRestart": "Instalar y reiniciar",
+    "updatesPageRetry": "Reintentar",
+    "updatesPageCancel": "Cancelar",
+    "updatesPageRollback": "Segno {attempted} no arrancó, así que la consola volvió a {restored}.",
+    "updatesPageDismiss": "Descartar",
+    "updatesPageAutomaticPanel": "Automático",
+    "updatesPageAutoCheck": "Buscar automáticamente",
+    "updatesPageAutoCheckCaption": "Nunca descarga ni instala por su cuenta.",
+    "updatesPageChannel": "Canal de actualizaciones",
+    "updatesPageChannelProduction": "Producción",
+    "updatesPageChannelExperimental": "Experimental",
+    "updatesPageConsolePanel": "Esta consola",
+    "settingsMidiTitle": "MIDI",
+    "settingsPower": "Apagado",
+    "bootModeRetiredNotice": "Segno ahora siempre inicia en modo Grabar. Pulsa Modo para pasar a Silenciar.",
+    "bluetoothRetiredNotice": "{count, plural, =1{Bluetooth ya no está disponible. El dispositivo emparejado con esta consola no volverá a conectarse.} other{Bluetooth ya no está disponible. Los {count} dispositivos emparejados con esta consola no volverán a conectarse.}}",
+    "libraryAudio": "Audio",
+    "libraryAudioTitle": "Biblioteca de audio",
+    "libraryUsbDrive": "Unidad USB",
+    "librarySearchAudio": "Buscar audio",
+    "libraryAudioPerformances": "Actuaciones",
+    "libraryAudioFolderCount": "{count, plural, =0{Vacía} =1{1 archivo} other{{count} archivos}}",
+    "libraryAudioEmpty": "Todavía no hay nada aquí.",
+    "libraryAudioNoMatches": "Ningún audio coincide.",
+    "libraryAudioNoSelection": "Elige un archivo para escucharlo.",
+    "libraryAudioParentFolder": "Carpeta superior",
+    "libraryAudioWav": "WAV",
+    "libraryAudioParts": "WAV · {count} partes",
+    "libraryAudioRecovered": "Recuperada",
+    "libraryAudioPreview": "Escuchar",
+    "libraryAudioExportUsb": "Exportar a USB",
+    "libraryAudioDawProject": "Proyecto DAW",
+    "libraryAudioDawProjectWritten": "El proyecto DAW está guardado en esta grabación.",
+    "libraryAudioExportStems": "Exportar pistas",
+    "libraryAudioDelete": "Eliminar",
+    "libraryAudioDeleteTitle": "¿Eliminar «{name}»?",
+    "libraryAudioDeleteBody": "La grabación se elimina de esta consola. Las copias en unidades USB no se tocan.",
+    "libraryAudioChooserTitle": "Exportar a USB",
+    "libraryAudioChooseRecording": "Solo la grabación (WAV)",
+    "libraryAudioChooseDaw": "Paquete DAW (WAV, pistas, proyecto de Ableton)",
+    "libraryAudioExporting": "Exportando audio",
+    "libraryAudioExportRoute": "Interna → Unidad USB / {folder}",
+    "libraryAudioExportPlace": "Unidad USB / {folder}",
+    "libraryAudioExported": "Exportado a USB",
+    "libraryAudioRecordingKept": "Tu grabación interna se conserva.",
+    "libraryAudioSessionKept": "Tu sesión interna se conserva.",
+    "libraryAudioDone": "Listo",
+    "libraryAudioConflictTitle": "Ya está en el USB",
+    "libraryAudioKeepBoth": "Conservar ambos",
+    "libraryAudioReplace": "Reemplazar archivo",
+    "libraryAudioConnectBody": "Tu grabación sigue en la memoria interna.",
+    "libraryAudioTryAgain": "Reintentar",
+    "libraryAudioNotEnoughSpace": "No hay espacio suficiente. Libera espacio e inténtalo de nuevo.",
+    "libraryAudioReadOnly": "Esta unidad USB es de solo lectura. No se escribió nada.",
+    "libraryAudioExportFailed": "No se pudo exportar. No quedó nada en la unidad.",
+    "libraryAudioDawProjectFailed": "No se pudo escribir el proyecto DAW.",
+    "libraryAudioDeleteBusy": "No mientras se graba o procesa una actuación.",
+    "libraryAudioDeleteFailed": "No se pudo eliminar la grabación.",
+    "libraryAudioPurpose": "Exportando {name}",
+    "libraryAudioStillRendering": "La grabación todavía se está procesando. Inténtalo de nuevo cuando termine.",
+    "libraryAudioExportBusy": "Otra operación está usando esta grabación. Inténtalo de nuevo en un momento.",
+    "libraryAudioDeleteWaits": "{purpose}. Podrás eliminarla cuando termine.",
+    "libraryBackUp": "Copia en USB",
+    "libraryBackingUp": "Copiando {name}…",
+    "libraryBackupPurpose": "Copiando {name}",
+    "libraryBackedUp": "Copiada en el USB.",
+    "libraryBackupConflictTitle": "Ya hay una copia con este nombre",
+    "libraryBackupReplace": "Reemplazar",
+    "libraryBackupInterrupted": "Copia interrumpida",
+    "libraryBackupDriveLost": "Se desconectó la unidad USB. No se cambió nada.",
+    "libraryBackupFull": "No hay espacio suficiente en la unidad USB. No se cambió nada.",
+    "libraryBackupReadOnly": "Esta unidad USB es de solo lectura. No se cambió nada.",
+    "libraryBackupFailed": "La copia falló. No se cambió nada.",
+    "libraryBackupNoDrive": "Tu sesión sigue en la memoria interna.",
+    "libraryBackupRetry": "Reintentar",
+    "libraryBackupSession": "Sesión",
+    "libraryBackupSaved": "Guardada",
+    "libraryBackupMeta": "{tracks} · {fx} FX",
+    "libraryBackupsEmpty": "No hay sesiones copiadas en esta unidad.",
+    "libraryRestore": "Restaurar en la biblioteca",
+    "libraryRestoreAdds": "Añade una sesión nueva a la biblioteca.",
+    "libraryRestoreFailed": "No se pudo restaurar. No se añadió nada.",
+    "actionTrackFxOff": "FX de pistas apagados",
+    "actionTrackFxOn": "FX de pistas encendidos",
+    "footFxSlot": "FX {bank}{number}",
+    "footFxHold": "Mantener",
+    "footFxHoldAction": "Mantener · {action}",
+    "footFxUnavailable": "El efecto de este pedal ya no está disponible. Vuelve a asignarlo.",
+    "footFxFailure": "No se pudo cambiar el efecto. Inténtalo de nuevo.",
+    "footFxStopChanged": "En el modo FX, Stop ya no apaga los efectos de todas las pistas. Asigna FX de pistas apagados o FX de pistas encendidos a un pedal.",
+    "footFxModeChanged": "MODE ahora sale del modo FX. Su {press} sigue funcionando en los demás modos.",
+    "footFxModeChangedHold": "MODE ahora sale del modo FX. Su {press} y Mantener · {hold} siguen funcionando en los demás modos.",
+    "footFxToggle": "Conmutar",
+    "footFxTargetMissing": "Destino ausente",
+    "perfStoppedReserve": "Se alcanzó la reserva de almacenamiento. Se conserva la parte grabada de esta toma.",
+    "perfStoppedSlowStorage": "La grabación se detuvo porque el almacenamiento no pudo seguir el ritmo. Se conserva la parte grabada de esta toma.",
+    "perfTakesNotRecovered": "{count, plural, =1{No se pudo recuperar esta toma. Se conservan sus archivos.} other{No se pudieron recuperar {count} tomas. Se conservan sus archivos.}}",
+    "storageInternalTitle": "Interno",
+    "storageInternalSubtitle": "Sesiones y audio",
+    "storageOpenLibrary": "Abrir biblioteca",
+    "storageFreeGigabytes": "{value} GB libres",
+    "storageOfGigabytes": "de {value} GB",
+    "storageCapacityUnavailable": "Capacidad no disponible",
+    "storageRecordingRemaining": "Quedan {hours} h {minutes} min de grabación · estimado",
+    "storageNoRecordingSpace": "No hay espacio para grabar",
+    "storageRecordingTimeUnavailable": "Tiempo restante no disponible",
+    "storageRecordingFormat": "{rate} kHz · 24 bits · Estéreo",
+    "storageReserveNote": "Almacenamiento interno · {reserve} GB reservados. Las grabaciones extra y el audio de Deshacer ocupan más espacio.",
+    "storageLowInternal": "El almacenamiento interno está casi lleno.",
+    "storageUsbTitle": "Unidad USB",
+    "storageUsbNotConnected": "Sin conectar",
+    "storageUsbConnectHint": "Conecta una unidad para importar o exportar audio.",
+    "storageUsbUnnamed": "Unidad sin nombre",
+    "storageUsbEjecting": "Expulsando…",
+    "storageUsbSafeToRemove": "Ya puedes retirarla",
+    "storageUsbSafeToRemoveBody": "Tu audio interno sigue disponible.",
+    "storageUsbReadOnly": "{label} · solo lectura",
+    "storageUsbInUse": "{label} · en uso para {purpose}",
+    "storageUsbUnsupported": "{fsType} no es compatible. Formatea la unidad como exFAT.",
+    "storageUsbUnformatted": "Esta unidad no está formateada. Formatéala como exFAT.",
+    "storageUsbMountFailed": "No se pudo abrir esta unidad.",
+    "storageEject": "Expulsar",
+    "storageEjectFailed": "No se pudo expulsar. La unidad sigue conectada. Inténtalo de nuevo.",
+    "storageEjectUnderway": "Ya se está expulsando. Espera a que termine.",
+    "storagePurposeRecording": "grabar",
+    "storagePurposeCopy": "copiar archivos",
+    "storagePurposeExport": "exportar",
+    "storagePurposeBackup": "hacer una copia de seguridad",
+    "powerTransferTitle": "Espera a que termine la transferencia",
+    "powerTransferBody": "Se está copiando audio o expulsando una unidad USB. Espera a que termine y vuelve a pulsar el botón de encendido si quieres apagar.",
+    "storageEjectStuck": "Todavía se está expulsando. Si no termina, desconecta la unidad.",
+    "perfStoppedVolumeLost": "La captura se detuvo antes de tiempo — se desconectó la unidad USB. Tus loops siguieron sonando.",
+    "perfArmDriveUnavailable": "La grabación no empezó. Ahora no se puede grabar en la unidad USB elegida en Guardar en.",
+    "saveTo": "Guardar en",
+    "saveToUnsupported": "{label} · no se puede escribir",
+    "saveToTooSlow": "{label} · demasiado lenta para grabar",
+    "connectUsbTitle": "Conecta una unidad USB",
+    "connectUsbBody": "Tu grabación se queda en Interno.",
+    "connectUsbTryAgain": "Reintentar",
+    "saveToMeasuring": "{label} · revisando la unidad…",
+    "saveToFellBack": "Se quitó {label}. Guardar en ahora es Interno.",
+    "footFadeRefusedEmpty": "{count, plural, =1{La pista está vacía: no hay audio para el Fade.} other{Ninguna pista tiene grabación: no hay audio para el Fade.}}",
+    "footReverseRefusedEmpty": "{count, plural, =1{La pista está vacía: no hay audio para cambiar de sentido.} other{Ninguna pista tiene grabación: no hay audio para cambiar de sentido.}}",
+    "actionModeMultiply": "Multiplicar",
+    "actionModeDivide": "Dividir",
+    "actionOperationMultiply": "Multiplicar",
+    "actionOperationDivideFirstHalf": "Dividir: primera mitad",
+    "actionOperationDivideLastHalf": "Dividir: segunda mitad",
+    "footLengthDouble": "Duplicar duración",
+    "footLengthFirstHalf": "Primera mitad",
+    "footLengthLastHalf": "Segunda mitad",
+    "footLengthOverview": "Duración del bucle",
+    "footLengthSeconds": "{seconds} s",
+    "footLengthIncompatible": "Esa duración no encaja con los otros bucles o dejaría medio tiempo.",
+    "footLengthCapacity": "El bucle duplicado superaría la memoria de bucles.",
+    "footLengthBusy": "La pista está ocupada. Inténtalo de nuevo cuando termine.",
+    "footLengthEmpty": "La pista no tiene grabación para duplicar ni dividir.",
+    "footLengthFailure": "No se pudo cambiar la duración. Inténtalo de nuevo.",
+    "lengthHistoryRefused": "No se deshizo ni se rehízo el cambio de duración. Si al pulsar de nuevo no cambia nada, esa duración ya no encaja con los otros bucles.",
+    "footLengthRepeatTo": "Repetir hasta {length}",
+    "footLengthRepeated": "Repetido hasta {length}",
+    "footLengthFirstKept": "Primera mitad conservada: {length}",
+    "footLengthLastKept": "Segunda mitad conservada: {length}",
+    "footLengthUnchanged": "Velocidad y tono sin cambios",
+    "footLengthNothingToUndo": "Nada para deshacer",
+    "footLengthUndoEdit": "Cambio de duración",
+    "footLengthUndoLast": "Último cambio",
+    "footLengthHoldUndo": "Mantener · Deshacer",
+    "footLengthSelectTrack": "Elige una pista",
+    "footLengthFinishRecording": "Termina de grabar",
+    "footLengthFinishRecordingNote": "Termina de grabar para cambiar la duración",
+    "footLengthBankEmpty": "No hay audio grabado en este banco",
+    "footLengthBar": "Compás {bar}",
+    "footLengthBars": "Compases {first}–{last}",
+    "footLengthBeat": "Tiempo {beat}",
+    "footLengthBeats": "Tiempos {first}–{last}",
+    "stageBeatsFigure": "{count, plural, =1{1 tiempo} other{{count} tiempos}}",
+    "stageBeatsUnit": "{count, plural, =1{tiempo} other{tiempos}}"
 }

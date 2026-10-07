@@ -99,7 +99,13 @@ void le_engine_configure_callback_budget(le_engine* engine,
  * driver reconfigured out from under us recovers via stop -> start rather than
  * going silent. Relaxed atomic; safe off the driver's message thread. Not part
  * of the FFI surface. */
-void le_engine_mark_device_lost(le_engine* engine);
+#ifdef LE_NATIVE_TESTS
+/* Native-test seam: when non-NULL, le_select_backend returns this backend
+ * instead of miniaudio, so le_engine_start / le_engine_reopen can be driven
+ * through a fake device (open/start failures, negotiated rates) with no
+ * hardware. Never compiled into the shipped engine. */
+extern const le_device_backend* le_test_backend_override;
+#endif
 
 /* Allocates the track buffers and sets engine parameters WITHOUT opening a
  * device. Used by le_engine_start and by tests. `input_channels` /
@@ -175,6 +181,16 @@ int le_psola_detect(const float* x, int n, int sr, float* out_period,
 int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
                          float* out_period, float* out_voiced);
 
+/* The read side of the tuner's device-rate refinement ring: copies its
+ * LE_TUNER_RAW samples into `out` oldest-first, which is the contiguous
+ * chronological window the refinement pass walks. The ring is circular (a
+ * shifting FIFO cost 8188 bytes memmoved per frame — see tuner_raw in
+ * engine_private.h), so this is where the wrap is untangled, and exposing it
+ * is what lets a test pin that a wrapped ring reads back exactly what the
+ * shifting version did. Returns 0 and leaves `out` untouched until the ring
+ * has filled once. Defined in engine_process.c. */
+int le_tuner_raw_window(const le_engine* e, float* out);
+
 /* ---- ASIO bridge math (pure, platform-agnostic; defined in engine.c) ---- *
  *
  * ASIO hands the device callback non-interleaved, per-channel blocks in the
@@ -230,6 +246,12 @@ typedef const char* (*le_channel_name_fn)(void* ctx, int channel);
  * a NULL provider yield no bits. Not part of the FFI surface. */
 uint32_t le_excluded_mask_from_names(le_channel_name_fn get_name, void* ctx,
                                      int channel_count);
+
+/* Replaces the MIDI clock follower's time base (le_now_ns) with `fn(ctx)`, so
+ * pulse timestamps and loss timeouts can be driven deterministically. NULL
+ * restores le_now_ns. Not part of the FFI surface. */
+void le_engine_set_now_fn_for_test(le_engine* engine, uint64_t (*fn)(void*),
+                                   void* ctx);
 
 /* Overrides the excluded-input-channel mask without opening a device, so the
  * capture-average / monitoring / SET_INPUT_MASK exclusion paths can be tested
@@ -318,8 +340,10 @@ struct le_perf_drain; /* opaque; full definition in perf_drain.c */
  * up until the corresponding le_perf_drain_stop — that call frees `drain`, so
  * a `drain` pointer retained past it is a use-after-free. Not part of the FFI
  * surface. */
-/* Whether the capture drain thread stopped ITSELF because a write failed
- * (disk full, quota, read-only remount, I/O error).
+/* Whether the capture drain thread stopped the take ITSELF: a write failed
+ * (disk full, quota, read-only remount, I/O error), the destination reached
+ * its reserve, or a capture ring dropped a frame (#1198); the engine's
+ * a_perf_stop_reason says which.
  *
  * No longer test-only: this is published on the engine snapshot as
  * `perf_stopped` so the app can react. Without that the thread stopped
@@ -372,6 +396,33 @@ void le_perf_drain_set_write_budget_for_test(int64_t bytes);
  * surface. */
 void le_perf_drain_set_mid_cycle_hook_for_test(void (*fn)(void*), void* ctx);
 
+/* Replaces the drain's reading of its volume's free bytes (#1198): the next
+ * reading returns `bytes` instead of asking the filesystem. A negative value
+ * restores the real reading (the default), LE_PD_VOLUME_FREE_UNREADABLE makes
+ * the reading fail. The drain reads at arm and every
+ * LE_PD_FREE_SAMPLE_CYCLES cycles after it, so a test sets this before
+ * arming. Process-global; reset it (-1) before the next test runs. Not part
+ * of the FFI surface. */
+#define LE_PD_VOLUME_FREE_UNREADABLE (-2)
+void le_perf_drain_set_volume_free_for_test(int64_t bytes);
+
+/* Re-reads the volume's free bytes every `cycles` drain cycles instead of
+ * LE_PD_FREE_SAMPLE_CYCLES (20, about 5 s); 0 restores that. Process-global;
+ * reset it before the next test runs. Not part of the FFI surface. */
+void le_perf_drain_set_free_sample_cycles_for_test(int cycles);
+
+/* Writes one checkpoint of the armed take now, on the calling thread, from
+ * the progress the drain last published (#1198 D4). Returns 1 when it was
+ * written, 0 when there is no take or a step failed (counted in
+ * perf_checkpoint_failures). Not part of the FFI surface. */
+struct le_engine;
+int le_perf_checkpoint_now_for_test(struct le_engine* engine);
+
+/* The next `count` checkpoint slot writes fail as a refused write would
+ * (perf_checkpoint.c). Process-global; reset with 0. Not part of the FFI
+ * surface. */
+void le_perf_checkpoint_fail_slot_writes_for_test(int count);
+
 /* ---- perf-render test seams (perf_render.c; part 8) ---- */
 
 /* Forces the offline render worker's dry-stem write (only) to fail for a
@@ -382,6 +433,32 @@ void le_perf_drain_set_mid_cycle_hook_for_test(void (*fn)(void*), void* ctx);
  * default; a test must re-disable it (pass -1) before the next test runs.
  * Not part of the FFI surface. */
 void le_perf_render_force_dry_write_failure_for_test(int32_t channel);
+
+/* Structural FX recipe ownership; all except apply are control-thread only. */
+struct le_prepared_fx;
+int le_fx_edit_pending(le_engine* e, int owner, int channel, int lane);
+struct le_prepared_fx* le_fx_prepare_capture(le_engine* e, int channel,
+                                            const le_record_image* image);
+void le_fx_recipe_admitted(le_engine* e, struct le_prepared_fx* edit,
+                           uint32_t image_revision);
+void le_fx_recipe_abandon(struct le_prepared_fx* edit);
+/* Prepares `owner`'s chains on track `channel` (#1202 Bounce): lanes
+ * [0, count) for LE_FX_OWNER_LANE, the track chain for LE_FX_OWNER_TRACK.
+ * recipes[i] (or an empty chain when `recipes` is NULL or i >= recipe_count)
+ * becomes the chain, through the same validation and plugin bookkeeping as a
+ * recipe edit. NULL when a recipe is invalid or an edit is pending there. */
+/* Bounce (#1202): files collected outcomes (each drain), and drops every
+ * bundle when the audio thread is gone for good (configure, destroy). */
+void le_bounce_collect(le_engine* engine);
+void le_bounce_abandon_all(le_engine* engine);
+struct le_prepared_fx* le_fx_prepare_chains(le_engine* e, int owner,
+                                            int channel, int count,
+                                            const le_fx_recipe* recipes,
+                                            int recipe_count);
+void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* edit, uint64_t frame);
+struct le_command;
+void le_plog_push(le_engine* e, uint64_t frame, struct le_command command);
+void le_fx_recipe_collect(le_engine* e, int quiescent);
 
 #ifdef __cplusplus
 }

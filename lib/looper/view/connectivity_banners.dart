@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:looper_repository/looper_repository.dart'
+    show EngineReopened, ReopenOutcome;
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The stage's one standing loss condition: the pinned audio interface is
@@ -27,11 +31,20 @@ import 'package:segno/theme/theme.dart';
 /// standing bar (see `_showMidiConnectivityToast` in `app.dart`).
 ///
 /// The banner carries the one action that ends it: **Open setup** opens the
-/// tray's Audio domain on the Device tab — navigation through
-/// [SettingsTrayCubit], no new routing. The action hugs the message rather
-/// than floating to the far edge, so the sentence and the button read as one
-/// unit. Mounted by `TracksView` on console AND desktop builds: the condition
-/// is exactly as true in a window as on the panel.
+/// Device settings page, whose interface chooser is the way back. The action
+/// hugs the message rather than floating to the far edge, so the sentence and
+/// the button read as one unit. Mounted by `TracksView` on console AND
+/// desktop builds: the condition is exactly as true in a window as on the
+/// panel.
+///
+/// The same strip carries the one other standing notice of the device's
+/// return (#1140): the interface came back at another sample rate and the
+/// engine cleared every loop — material the player must know is gone, with
+/// the one action that brings it back, **Sessions…** (the saved Session
+/// reloads at the session's rate). It stands until that action is taken or
+/// the audio settings are re-applied. A partial retention (one track dropped
+/// for a press that never applied) is low stakes and goes to a toast instead
+/// (`_showDeviceRestoredToast` in `app.dart`), never a bar.
 class ConnectivityBanners extends StatelessWidget {
   /// Creates a [ConnectivityBanners].
   const ConnectivityBanners({super.key});
@@ -44,20 +57,48 @@ class ConnectivityBanners extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final deviceLost = context.select<AudioSetupCubit, bool>(
-      (cubit) => cubit.state.deviceConnectivity == DeviceConnectivity.lost,
-    );
-    if (!deviceLost) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _LostBanner(
+    final (connectivity, reopen) = context
+        .select<AudioSetupCubit, (DeviceConnectivity, EngineReopened?)>(
+          (cubit) => (
+            cubit.state.deviceConnectivity,
+            cubit.state.engineStatus.reopen,
+          ),
+        );
+    final Widget banner;
+    switch (connectivity) {
+      case DeviceConnectivity.lost:
+        banner = _LostBanner(
           key: const Key('connectivity_banner_device'),
           message: l10n.deviceLostBanner,
           actionLabel: l10n.deviceLostBannerAction,
           actionKey: const Key('connectivity_banner_device_action'),
-          onAction: context.read<SettingsTrayCubit>().openAudioDevice,
-        ),
+          onAction: () => unawaited(openDeviceSettings()),
+        );
+      case DeviceConnectivity.restoredCleared:
+        banner = _LostBanner(
+          key: const Key('connectivity_banner_material'),
+          message: reopen?.outcome == ReopenOutcome.clearedCap
+              ? l10n.deviceRestoredClearedCapBanner
+              : l10n.deviceRestoredClearedBanner(
+                  reopen?.sampleRate ?? 0,
+                  reopen?.previousSampleRate ?? 0,
+                ),
+          actionLabel: l10n.stageLibrary,
+          actionKey: const Key('connectivity_banner_material_action'),
+          onAction: () {
+            context.read<AudioSetupCubit>().dismissReopenNotice();
+            unawaited(openLibrary());
+          },
+        );
+      case DeviceConnectivity.none:
+      case DeviceConnectivity.restored:
+      case DeviceConnectivity.restoredPartial:
+        return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        banner,
         const SizedBox(height: _gapBelow),
       ],
     );

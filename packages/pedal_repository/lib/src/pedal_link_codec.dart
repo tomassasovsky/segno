@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:pedal_repository/src/pedal_button.dart';
+import 'package:pedal_repository/src/pedal_color.dart';
 import 'package:pedal_repository/src/pedal_ctrl.dart';
 import 'package:pedal_repository/src/pedal_link_message.dart';
 import 'package:pedal_repository/src/pedal_mode.dart';
@@ -36,6 +37,8 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// | 6..13  | [PedalTrackLed] index for tracks 0..7                      |
 /// | 14..17 | loop length, microseconds, unsigned 32-bit little-endian   |
 /// | 18     | master gain, `round(masterGain * 255)`                     |
+/// | 19..48 | ten RGB triples, in [PedalButton] order                   |
+/// | 49..50 | active-button mask, unsigned 16-bit LE, bits 10–15 zero   |
 ///
 /// Enum indices are the wire values: none of those enums may be reordered.
 abstract final class PedalLinkCodec {
@@ -45,7 +48,12 @@ abstract final class PedalLinkCodec {
   /// The link protocol this codec speaks, reported by the board in
   /// [HelloMessage.protocolVersion].
   ///
-  /// 5: CTRL kind `none` — the board can say a jack is empty instead of
+  /// 9: ENCODER_BUTTON (`0x05`) — the encoder's push switch, press and
+  /// release; the STATE layout is unchanged. 8: ten RGB hues and a ten-bit
+  /// physical activity mask. Version 7 is reserved by the separate
+  /// Song/hardware branch (STATE21); no fallback.
+  /// 6: mode value `3` is Custom, with the same STATE shape. 5: CTRL kind
+  /// `none` — the board can say a jack is empty instead of
   /// reporting an unplugged jack as a pedal at full toe. 4: CTRL (`0x04`)
   /// grew a contact byte and reports an expression pedal's raw position;
   /// calibration moved here, where it can be deliberate and survive a
@@ -53,7 +61,7 @@ abstract final class PedalLinkCodec {
   /// when the ring stopped tracking the loop. The board is flashed over SWD
   /// independently of the app, so the two can drift; this is what makes
   /// that visible rather than silent.
-  static const protocolVersion = 5;
+  static const protocolVersion = 9;
 
   /// Message types, board → segno.
   static const typeButton = 0x01;
@@ -68,11 +76,14 @@ abstract final class PedalLinkCodec {
   /// of the two CTRL jacks reporting the pedal plugged into it.
   static const typeCtrl = 0x04;
 
+  /// See [typeButton]. `[pressed]` — the encoder's push switch.
+  static const typeEncoderButton = 0x05;
+
   /// The one message type segno → board.
   static const typeState = 0x10;
 
   /// The number of payload bytes in a [StateMessage].
-  static const statePayloadLength = 19;
+  static const statePayloadLength = 51;
 
   /// How often the board sends [HelloMessage], in milliseconds
   /// (`PEDAL_LINK_HELLO_MS`). The liveness clocks on both ends derive from
@@ -95,6 +106,7 @@ abstract final class PedalLinkCodec {
     typeEncoder => 1,
     typeHello => helloPayloadLength,
     typeCtrl => 4,
+    typeEncoderButton => 1,
     typeState => statePayloadLength,
     _ => null,
   };
@@ -107,6 +119,10 @@ abstract final class PedalLinkCodec {
         <int>[button.index, if (pressed) 1 else 0],
       ),
       EncoderMessage(:final delta) => (typeEncoder, <int>[delta & 0xFF]),
+      EncoderButtonMessage(:final pressed) => (
+        typeEncoderButton,
+        <int>[if (pressed) 1 else 0],
+      ),
       HelloMessage(
         :final protocolVersion,
         :final firmwareMajor,
@@ -140,7 +156,10 @@ abstract final class PedalLinkCodec {
   /// Decodes one frame's [type] and [payload] into a message, or `null` when
   /// the type is unknown or the payload does not fit it.
   static PedalLinkMessage? decode(int type, List<int> payload) {
-    if (payload.length != payloadLengthFor(type)) return null;
+    if (payload.length != payloadLengthFor(type) ||
+        payload.any((b) => b < 0 || b > 255)) {
+      return null;
+    }
     switch (type) {
       case typeButton:
         final button = PedalButton.values.elementAtOrNull(payload[0]);
@@ -148,6 +167,9 @@ abstract final class PedalLinkCodec {
         return ButtonMessage(button, pressed: payload[1] == 1);
       case typeEncoder:
         return EncoderMessage(payload[0].toSigned(8));
+      case typeEncoderButton:
+        if (payload[0] > 1) return null;
+        return EncoderButtonMessage(pressed: payload[0] == 1);
       case typeHello:
         return HelloMessage(
           protocolVersion: payload[0],
@@ -202,6 +224,14 @@ abstract final class PedalLinkCodec {
     p[16] = (us >> 16) & 0xFF;
     p[17] = (us >> 24) & 0xFF;
     p[18] = (frame.masterGain.clamp(0.0, 1.0) * 255).round();
+    for (var i = 0; i < PedalButton.values.length; i++) {
+      final color = frame.pedalColors[i];
+      p[19 + i * 3] = color.r;
+      p[20 + i * 3] = color.g;
+      p[21 + i * 3] = color.b;
+    }
+    p[49] = frame.activeButtonMask & 0xFF;
+    p[50] = frame.activeButtonMask >> 8;
     return p;
   }
 
@@ -209,7 +239,10 @@ abstract final class PedalLinkCodec {
   /// (wrong length, an out-of-range enum index, a reserved flag bit set).
   /// Mirrors what the firmware does, so the golden fixtures pin both.
   static PedalStateFrame? decodeStatePayload(List<int> p) {
-    if (p.length != statePayloadLength) return null;
+    if (p.length != statePayloadLength || p.any((b) => b < 0 || b > 255)) {
+      return null;
+    }
+    if (p[50] & ~0x03 != 0) return null;
     if (p[0] & ~0x0F != 0) return null;
     if (p[1] >= PedalMode.values.length) return null;
     if (p[2] >= PedalLooperMode.values.length) return null;
@@ -235,6 +268,11 @@ abstract final class PedalLinkCodec {
       masterGain: p[18] / 255.0,
       looperMode: PedalLooperMode.values[p[2]],
       countingIn: p[0] & 0x08 != 0,
+      pedalColors: [
+        for (var i = 0; i < PedalButton.values.length; i++)
+          PedalColor(p[19 + i * 3], p[20 + i * 3], p[21 + i * 3]),
+      ],
+      activeButtonMask: p[49] | (p[50] << 8),
     );
   }
 }

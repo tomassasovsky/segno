@@ -1,9 +1,14 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
+import 'package:looper_repository/src/models/fx_chain_envelope.dart';
+import 'package:looper_repository/src/models/input_setup.dart';
+import 'package:looper_repository/src/models/output_setup.dart';
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
 import 'package:looper_repository/src/models/tuner_reading.dart';
+import 'package:segno_engine/segno_engine.dart'
+    show PitchMode, SpeedFactor, TempoFollowState;
 
 /// The single source of looper truth: transport, the tracks, and engine status,
 /// projected from one engine snapshot.
@@ -13,10 +18,28 @@ class LooperState extends Equatable {
     this.transport = const TransportState(),
     this.tracks = const [],
     this.status = const EngineStatus(),
+    this.mixGeneration = 0,
     this.outputEnabledMask = 0xFFFFFFFF,
-    this.masterEffects = const [],
-    this.masterChainEnabled = true,
+    this.outputChains = const {},
+    this.allTracksChain = const FxChainEnvelope(),
     this.tuner = const TunerReading(),
+    this.inputSetup = const InputSetup.empty(),
+    this.outputSetup = const OutputSetup(),
+    this.outputBusCount = 0,
+    this.tailResetRev = 0,
+    this.inputPeaks = const [],
+    this.monitorPeaks = const [],
+    this.outputPeaks = const [],
+    this.laneInputs = const {},
+    this.laneOutputs = const {},
+    this.laneCounts = const {},
+    this.recordingInputLocks = const {},
+    this.speed = SpeedFactor.normal,
+    this.transposeBypass = false,
+    this.recordedTempoBpm = 0,
+    this.tempoFollow = TempoFollowState.free,
+    this.defaultFollowTempo = false,
+    this.defaultPitchMode = PitchMode.unchanged,
   });
 
   /// Master loop transport.
@@ -28,22 +51,95 @@ class LooperState extends Equatable {
   /// Device + engine health.
   final EngineStatus status;
 
+  /// Repository lifetime identity, including same-device reopen and session
+  /// replacement. Changes even when the native snapshot otherwise matches.
+  final int mixGeneration;
+
   /// Structural output gate: bit c set => hardware output c is enabled (a
   /// routing target). A cleared bit removes that output from the mix while its
   /// stored route masks are preserved (re-enabling restores them). All outputs
   /// are enabled by default; only bits in `[0, status.outputChannels)` matter.
   final int outputEnabledMask;
 
-  /// The Master insert chain on the summed track mix, in processing order
-  /// (FX v3 part 1b). Empty == bit-identical output.
-  final List<TrackEffect> masterEffects;
+  /// Every configured output destination's post-sum chain, keyed by bus
+  /// (slice 3f) — each with its entries and its chain-enabled flag (R15).
+  /// A destination with no entry has no chain: bit-identical output.
+  final Map<int, FxChainEnvelope> outputChains;
 
-  /// Whether the Master insert chain is engaged (R15).
-  final bool masterChainEnabled;
+  /// The recorded-mix chain over the sum of the tracks.
+  final FxChainEnvelope allTracksChain;
 
   /// What the chromatic tuner hears on its armed input. Disarmed by default,
   /// and disarmed costs nothing — the engine gates detection on the arm.
   final TunerReading tuner;
+
+  /// The per-input capture setup (trim, pan, pairs), the repository's own
+  /// remembered intent (accepted design, Audio routing).
+  final InputSetup inputSetup;
+
+  /// The output setup (level, mute, Stereo/Mono, balance per destination),
+  /// the repository's own remembered intent (accepted design, Output setup).
+  final OutputSetup outputSetup;
+
+  /// How many output destinations the open device has (one per stereo pair
+  /// of its outputs; an odd count leaves a single-jack last one); `0` while
+  /// no device is open.
+  final int outputBusCount;
+
+  /// Advances once per Cut all sound the engine applied.
+  final int tailResetRev;
+
+  /// Each hardware input's raw block peak, `0..1`, one entry per channel the
+  /// device has (before conditioning and trim). Live.
+  final List<double> inputPeaks;
+
+  /// What each input's monitor sends to the outputs, per channel the device
+  /// has (`0` while it is off or muted). Live.
+  final List<double> monitorPeaks;
+
+  /// Each hardware output's block peak after the master gain and limiter,
+  /// per channel the device has. Live.
+  final List<double> outputPeaks;
+
+  /// Confirmed future source choices, including inactive slots.
+  final Map<(int, int), int> laneInputs;
+
+  /// Confirmed output routes, including missing destinations and future slots.
+  final Map<(int, int), int> laneOutputs;
+
+  /// Confirmed active lane counts for tracks with or without audio.
+  final Map<int, int> laneCounts;
+
+  /// Tracks fenced by accepted record requests or active capture.
+  final Set<int> recordingInputLocks;
+
+  /// The global Speed every recorded track plays at (#1179), as the engine
+  /// published it. [SpeedFactor.normal] until a request lands.
+  final SpeedFactor speed;
+
+  /// Whether Transpose is bypassed globally (#1179): every track plays dry,
+  /// its stored pitch kept in `Track.transpose`.
+  final bool transposeBypass;
+
+  /// The tempo the takes were recorded at (#1179), 0 with no material.
+  final double recordedTempoBpm;
+
+  /// What a song-tempo change does now, and why not when it is locked.
+  final TempoFollowState tempoFollow;
+
+  /// The Follow tempo default every track inherits (#1179): the
+  /// repository's accepted setting, `Track.followTempoOverride` beside it.
+  final bool defaultFollowTempo;
+
+  /// The Pitch default every track inherits (#1179).
+  final PitchMode defaultPitchMode;
+
+  /// Output destination [bus]'s configured entries.
+  List<TrackEffect> outputEffects(int bus) =>
+      outputChains[bus]?.entries ?? const [];
+
+  /// Whether output destination [bus]'s chain is engaged.
+  bool outputChainEnabled(int bus) => outputChains[bus]?.chainEnabled ?? true;
 
   /// Whether hardware output [output] is currently enabled (a routing target).
   bool isOutputEnabled(int output) =>
@@ -55,22 +151,32 @@ class LooperState extends Equatable {
   /// Whether any track holds recorded audio.
   bool get hasContent => tracks.any((t) => t.hasContent);
 
-  /// Whether EVERY track is one-shot — the rig-wide answer the console's
-  /// one-shot switch shows.
-  ///
-  /// Guarded on non-empty deliberately: `every` on an empty list is vacuously
-  /// true, so a stopped engine reporting no tracks would otherwise answer
-  /// "yes, all of them", which is never what the question means.
-  bool get allOneShot => tracks.isNotEmpty && tracks.every((t) => t.oneShot);
-
   @override
   List<Object?> get props => [
     transport,
     tracks,
     status,
+    mixGeneration,
     outputEnabledMask,
-    masterEffects,
-    masterChainEnabled,
+    outputChains,
+    allTracksChain,
     tuner,
+    inputSetup,
+    outputSetup,
+    outputBusCount,
+    tailResetRev,
+    inputPeaks,
+    monitorPeaks,
+    outputPeaks,
+    laneInputs,
+    laneOutputs,
+    laneCounts,
+    recordingInputLocks,
+    speed,
+    transposeBypass,
+    recordedTempoBpm,
+    tempoFollow,
+    defaultFollowTempo,
+    defaultPitchMode,
   ];
 }

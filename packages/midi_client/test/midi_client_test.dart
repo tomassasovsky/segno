@@ -2,6 +2,7 @@ import 'dart:ffi';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:midi_client/midi_client.dart';
+import 'package:segno_engine/segno_engine.dart' show MidiCaptureHandle;
 import 'package:segno_engine/segno_engine_ffi.dart';
 
 import 'helpers/fake_segno_engine_bindings.dart';
@@ -83,6 +84,15 @@ void main() {
       expect(bindings.calls, ['create', 'close']);
     });
 
+    test('exposes the native handle for an engine to attach', () {
+      final client = MidiClient(bindings: FakeSegnoEngineBindings());
+      addTearDown(client.dispose);
+      expect(
+        client.captureHandle,
+        MidiCaptureHandle(Pointer<le_midi>.fromAddress(0x4D)),
+      );
+    });
+
     test('dispose is idempotent', () {
       final bindings = FakeSegnoEngineBindings();
       MidiClient(bindings: bindings)
@@ -95,6 +105,7 @@ void main() {
       final client = MidiClient(bindings: FakeSegnoEngineBindings())..dispose();
       expect(client.enumerate, throwsA(isA<MidiException>()));
       expect(client.close, throwsA(isA<MidiException>()));
+      expect(() => client.captureHandle, throwsA(isA<MidiException>()));
     });
   });
 

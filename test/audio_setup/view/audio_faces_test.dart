@@ -7,16 +7,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
-import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
-import 'package:segno/audio_setup/view/console/audio_tray_panel.dart';
+import 'package:segno/audio_setup/view/console/device_audio_tab.dart';
 import 'package:segno/common/console_surface.dart';
-import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
-import 'package:segno/looper/view/tray/tray.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -82,31 +81,109 @@ const _open = EngineStatus(
 );
 
 void main() {
+  late TempoSettings tempoOwner;
   late _MockLooperBloc bloc;
   late _MockLooperRepository repository;
   late SettingsRepository settings;
   late AudioSetupCubit audio;
   late InputsCubit inputs;
-  late QuantizeCubit quantize;
-  late RecordOptionsCubit options;
-  late SettingsTrayCubit tray;
+  late RecordTimingCubit quantize;
+  late RecordSettings options;
+  late TempoCubit tempo;
+  late RecordTiming confirmedTiming;
+  late GridDivision rememberedDivision;
+  var confirmedCountIn = 1;
+  var confirmedSoundStart = false;
+  var startRecovering = false;
+  var startCaptureLocked = false;
 
   /// The engine's own state stream, so a test can push a tick and watch the
   /// face react — the negotiation cases need it.
   late StreamController<LooperState> engine;
 
   setUpAll(() {
+    registerFallbackValue(RecordTiming.immediately);
+    registerFallbackValue(GridDivision.off);
+    registerFallbackValue(<int, RecordTiming>{});
     registerFallbackValue(const EngineConfig());
     registerFallbackValue(const LooperRecordPressed(0));
+    registerFallbackValue(RecordStartEditKind.restore);
   });
 
   setUp(() {
+    confirmedCountIn = 1;
+    confirmedSoundStart = false;
+    startRecovering = false;
+    startCaptureLocked = false;
+    confirmedTiming = RecordTiming.immediately;
+    rememberedDivision = GridDivision.off;
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
+    when(() => repository.clickModeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.clickVolumeFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.clickModeCaptureLocked).thenReturn(false);
+    when(() => repository.clickModeSettled).thenReturn(true);
+    when(() => repository.recordStartSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordStartSettingsSettled).thenReturn(true);
+    when(() => repository.recordStartRecoveryRequired).thenAnswer(
+      (_) => startRecovering,
+    );
+    when(() => repository.recordStartCaptureLocked).thenAnswer(
+      (_) => startCaptureLocked,
+    );
+    when(() => repository.recordStartSettings).thenAnswer(
+      (_) => (
+        countInBars: confirmedCountIn,
+        soundStart: confirmedSoundStart,
+      ),
+    );
+    when(() => repository.recordStartRestartIntent).thenAnswer(
+      (_) => (
+        countInBars: confirmedCountIn,
+        soundStart: confirmedSoundStart,
+      ),
+    );
+    when(() => repository.settleRecordStartSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => repository.setRecordStartSettings(
+        countInBars: any(named: 'countInBars'),
+        soundStart: any(named: 'soundStart'),
+        editKind: any(named: 'editKind'),
+        releasedSettings: any(named: 'releasedSettings'),
+      ),
+    ).thenAnswer((call) {
+      confirmedCountIn = call.namedArguments[#countInBars] as int;
+      confirmedSoundStart = call.namedArguments[#soundStart] as bool;
+      return EngineResult.ok;
+    });
     engine = StreamController<LooperState>.broadcast();
     addTearDown(engine.close);
     when(() => repository.looperState).thenAnswer((_) => engine.stream);
+    when(() => repository.lengthSettingsFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
     when(() => repository.state).thenReturn(const LooperState(status: _open));
+    when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.recordLengthCaptureLocked).thenReturn(false);
+    when(() => repository.clickVolumeSettled).thenReturn(true);
+    when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
+    when(() => repository.sessionTransport).thenAnswer(
+      (_) => TransportState(
+        recordTiming: confirmedTiming,
+        quantizeDiv: rememberedDivision,
+        countInBars: confirmedCountIn,
+        autoRecord: confirmedSoundStart,
+      ),
+    );
     when(() => repository.lastEngineConfig).thenReturn(
       const EngineConfig(
         sampleRate: 48000,
@@ -121,34 +198,74 @@ void main() {
     when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
     when(repository.devices).thenReturn(_devices);
     when(repository.asioDrivers).thenReturn(const []);
+    when(() => repository.recordTimingFailures).thenAnswer(
+      (_) => const Stream<EngineResult>.empty(),
+    );
+    when(() => repository.recordTimingSettingsSettled).thenReturn(true);
+    when(() => repository.recordTimingRecoveryRequired).thenReturn(false);
+    when(() => repository.recordTimingCaptureLocked).thenReturn(false);
     when(
-      () => repository.setQuantize(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
+      () => repository.defaultRecordTiming,
+    ).thenAnswer((_) => confirmedTiming);
+    when(() => repository.trackRecordTimingOverrides).thenReturn(const {});
+    when(() => repository.recordTimingRestartIntent).thenAnswer(
+      (_) => (
+        defaultTiming: confirmedTiming,
+        rememberedDivision: rememberedDivision,
+        trackOverrides: const <int, RecordTiming>{},
+      ),
+    );
+    when(() => repository.settleRecordTimingSettings()).thenAnswer(
+      (_) async => EngineResult.ok,
+    );
+    when(
+      () => repository.setRecordTimingSettings(
+        defaultTiming: any(named: 'defaultTiming'),
+        rememberedDivision: any(named: 'rememberedDivision'),
+        trackOverrides: any(named: 'trackOverrides'),
+        released: any(named: 'released'),
+        editMask: any(named: 'editMask'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.namedArguments[#defaultTiming] as RecordTiming;
+      rememberedDivision =
+          call.namedArguments[#rememberedDivision] as GridDivision;
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setRecordTiming(
+        any(),
+        releasedTiming: any(named: 'releasedTiming'),
+      ),
+    ).thenAnswer((call) {
+      confirmedTiming = call.positionalArguments.single as RecordTiming;
+      if (confirmedTiming.quantize) {
+        rememberedDivision = confirmedTiming.division;
+      }
+      return EngineResult.ok;
+    });
     when(
       () => repository.setRecDub(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setAutoRecord(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
       () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
     ).thenReturn(EngineResult.ok);
+    when(() => repository.setClickOutput(any())).thenReturn(EngineResult.ok);
+    when(() => repository.setClickVolume(any())).thenReturn(EngineResult.ok);
   });
 
   AppLocalizations l10nOf(WidgetTester tester) =>
-      AppLocalizations.of(tester.element(find.byType(AudioTrayPanel)));
+      AppLocalizations.of(tester.element(find.byType(DeviceAudioTab)));
 
-  /// Mounts the Audio face with the providers the real tray inherits.
+  /// Mounts the Device body with the providers the app gives its page.
   ///
   /// 1920x1080, deliberately: this face is drawn for that surface, and the
   /// default 800x600 test view pushes the lower rows below the fold where a
   /// tap lands on nothing.
   Future<void> pump(
     WidgetTester tester, {
-    AudioTab tab = AudioTab.device,
     LooperState looper = const LooperState(status: _open),
-    SettingsTrayDestination destination = SettingsTrayDestination.audio,
-    Widget? body,
+    bool loadRecordStart = true,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -172,18 +289,29 @@ void main() {
       deviceRefreshInterval: Duration.zero,
     );
     inputs = InputsCubit(settings: settings, repository: repository);
-    quantize = QuantizeCubit(repository: repository, settings: settings);
-    options = RecordOptionsCubit(repository: repository, settings: settings);
-    tray = SettingsTrayCubit(settings: settings)
-      ..showAudioTab(tab)
-      ..showDestination(destination);
+    final quantizeOwner = RecordTimingSettings(
+      repository: repository,
+      settings: settings,
+    );
+    addTearDown(() => unawaited(quantizeOwner.close()));
+    quantize = RecordTimingCubit(settings: quantizeOwner);
+    await quantizeOwner.load();
+    options = RecordSettings(repository: repository, settings: settings);
+    tempoOwner = TempoSettings(
+      repository: repository,
+      settings: settings,
+    );
+    final closeTempoOwner = tempoOwner.close;
+    addTearDown(() => unawaited(closeTempoOwner()));
+    tempo = TempoCubit(settings: tempoOwner);
+    if (loadRecordStart) await tempoOwner.recordStartOwner.load();
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
     // the binding's stream cancellation (flutter/flutter#139870).
     addTearDown(() => unawaited(audio.close()));
     addTearDown(() => unawaited(inputs.close()));
     addTearDown(() => unawaited(quantize.close()));
     addTearDown(() => unawaited(options.close()));
-    addTearDown(() => unawaited(tray.close()));
+    addTearDown(() => unawaited(tempo.close()));
 
     await tester.pumpWidget(
       MaterialApp(
@@ -203,13 +331,15 @@ void main() {
               BlocProvider.value(value: audio),
               BlocProvider.value(value: inputs),
               BlocProvider.value(value: quantize),
-              BlocProvider.value(value: options),
-              BlocProvider.value(value: tray),
+              BlocProvider(
+                create: (_) => RecordOptionsCubit(settings: options),
+              ),
+              BlocProvider.value(value: tempo),
             ],
-            child: Scaffold(
+            child: const Scaffold(
               body: Padding(
-                padding: const EdgeInsets.all(19),
-                child: body ?? const AudioTrayPanel(),
+                padding: EdgeInsets.all(19),
+                child: DeviceAudioTab(),
               ),
             ),
           ),
@@ -243,6 +373,16 @@ void main() {
       await tester.tap(find.byKey(const Key('audio_rate_row')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('audio_buffer_128')), findsNothing);
+    });
+
+    testWidgets('the click is no longer routed from the Device tab', (
+      tester,
+    ) async {
+      // Where the click goes left with the accepted design (slice 3c): Audio
+      // routing's Output routing task owns every source's destinations, and a
+      // second surface for one of them is a second answer.
+      await pump(tester);
+      expect(find.byKey(const Key('audio_click_card')), findsNothing);
     });
 
     testWidgets('the device list GROWS open rather than appearing', (
@@ -617,15 +757,27 @@ void main() {
         deviceRefreshInterval: Duration.zero,
       );
       inputs = InputsCubit(settings: settings, repository: repository);
-      quantize = QuantizeCubit(repository: repository, settings: settings);
-      options = RecordOptionsCubit(repository: repository, settings: settings);
-      tray = SettingsTrayCubit(settings: settings)
-        ..showDestination(SettingsTrayDestination.audio);
+      final quantizeOwner = RecordTimingSettings(
+        repository: repository,
+        settings: settings,
+      );
+      addTearDown(() => unawaited(quantizeOwner.close()));
+      quantize = RecordTimingCubit(settings: quantizeOwner);
+      await quantizeOwner.load();
+      options = RecordSettings(repository: repository, settings: settings);
+      tempoOwner = TempoSettings(
+        repository: repository,
+        settings: settings,
+      );
+      final closeTempoOwner = tempoOwner.close;
+      addTearDown(() => unawaited(closeTempoOwner()));
+      tempo = TempoCubit(settings: tempoOwner);
+      await tempoOwner.recordStartOwner.load();
       addTearDown(() => unawaited(audio.close()));
       addTearDown(() => unawaited(inputs.close()));
       addTearDown(() => unawaited(quantize.close()));
       addTearDown(() => unawaited(options.close()));
-      addTearDown(() => unawaited(tray.close()));
+      addTearDown(() => unawaited(tempo.close()));
 
       await tester.pumpWidget(
         MaterialApp(
@@ -645,13 +797,15 @@ void main() {
                 BlocProvider.value(value: audio),
                 BlocProvider.value(value: inputs),
                 BlocProvider.value(value: quantize),
-                BlocProvider.value(value: options),
-                BlocProvider.value(value: tray),
+                BlocProvider(
+                  create: (_) => RecordOptionsCubit(settings: options),
+                ),
+                BlocProvider.value(value: tempo),
               ],
               child: const Scaffold(
                 body: Padding(
                   padding: EdgeInsets.all(19),
-                  child: AudioTrayPanel(),
+                  child: DeviceAudioTab(),
                 ),
               ),
             ),
@@ -727,31 +881,20 @@ void main() {
 
   // --------------------------------------------------------------- recording
 
-  group('Audio — Recording', () {
-    testWidgets('the tab rests with every row shut', (tester) async {
-      await pump(tester, tab: AudioTab.recording);
-      expect(find.byKey(const Key('audio_max_loop_0')), findsNothing);
-      expect(find.byKey(const Key('audio_default_length_0')), findsNothing);
-    });
-
-    testWidgets('its two openable rows also open one at a time', (
+  group('Audio — the loop cap', () {
+    testWidgets('lives on Device, and the Device page has no Recording tab', (
       tester,
     ) async {
-      await pump(tester, tab: AudioTab.recording);
-      await tester.tap(find.byKey(const Key('audio_max_loop_row')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_max_loop_5')), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('audio_default_length_row')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_max_loop_5')), findsNothing);
-      expect(find.byKey(const Key('audio_default_length_2')), findsOneWidget);
+      await pump(tester);
+      expect(find.byKey(const Key('audio_max_loop_row')), findsOneWidget);
+      expect(find.byKey(const Key('audio_max_loop_0')), findsNothing);
+      expect(find.byKey(const Key('audio_default_length_row')), findsNothing);
     });
 
     testWidgets('the loop cap chooser GROWS open rather than appearing', (
       tester,
     ) async {
-      await pump(tester, tab: AudioTab.recording);
+      await pump(tester);
       final chooser = find.byKey(const Key('audio_max_loop_chooser'));
       expect(tester.getSize(chooser).height, 0);
 
@@ -766,46 +909,13 @@ void main() {
     });
 
     testWidgets('the loop cap opens in place and writes', (tester) async {
-      await pump(tester, tab: AudioTab.recording);
+      await pump(tester);
       await tester.tap(find.byKey(const Key('audio_max_loop_row')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('audio_max_loop_5')));
       await tester.pumpAndSettle();
       expect(audio.state.maxLoopMinutes, 5);
-    });
-
-    testWidgets('the three switches write through their own cubits', (
-      tester,
-    ) async {
-      await pump(tester, tab: AudioTab.recording);
-
-      await tester.tap(find.byKey(const Key('audio_quantize_switch')));
-      await tester.pumpAndSettle();
-      expect(quantize.state, isTrue);
-
-      await tester.tap(find.byKey(const Key('audio_rec_dub_switch')));
-      await tester.pumpAndSettle();
-      expect(options.state.recDub, isTrue);
-
-      await tester.tap(find.byKey(const Key('audio_auto_record_switch')));
-      await tester.pumpAndSettle();
-      expect(options.state.autoRecord, isTrue);
-    });
-
-    testWidgets('the default length is a chip grid that shuts on a pick', (
-      tester,
-    ) async {
-      await pump(tester, tab: AudioTab.recording);
-      await tester.tap(find.byKey(const Key('audio_default_length_row')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_default_length_2')), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('audio_default_length_2')));
-      await tester.pumpAndSettle();
-      expect(options.state.defaultMultiple, 2);
-      // A pick-one: the question is answered, so the drawer shuts.
-      expect(find.byKey(const Key('audio_default_length_2')), findsNothing);
     });
   });
 
@@ -966,48 +1076,6 @@ void main() {
       expect(audio.state.phase, ConfigPhase.refused);
       expect(audio.state.requestedRate, 96000);
       expect(find.byKey(const Key('audio_refused_banner')), findsOneWidget);
-    });
-  });
-
-  // -------------------------------------------------------------------- rail
-
-  group('the rail', () {
-    testWidgets('reaches the Audio face', (tester) async {
-      await pump(tester, body: const TrayPanel());
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_tray_panel')), findsOneWidget);
-      // And the rail item that gets you there.
-      expect(
-        find.byKey(const Key('settingsTrayRail_audio')),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('the tab strip swaps the body and the choice survives', (
-      tester,
-    ) async {
-      await pump(tester);
-      final l10n = l10nOf(tester);
-
-      // Two tabs, not three — Status was dissolved into Device.
-      expect(find.byType(PillTabs<AudioTab>), findsOneWidget);
-      expect(
-        tester.widget<PillTabs<AudioTab>>(find.byType(PillTabs<AudioTab>)).tabs,
-        hasLength(2),
-      );
-
-      await tester.tap(find.text(l10n.audioRecordingTab));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_recording_tab')), findsOneWidget);
-      expect(find.byKey(const Key('audio_device_tab')), findsNothing);
-      expect(tray.state.audioTab, AudioTab.recording);
-
-      // Leaving the domain and coming back lands where it was left.
-      tray
-        ..showDestination(SettingsTrayDestination.tuner)
-        ..showDestination(SettingsTrayDestination.audio);
-      await tester.pumpAndSettle();
-      expect(tray.state.audioTab, AudioTab.recording);
     });
   });
 }

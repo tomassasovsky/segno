@@ -23,8 +23,5 @@ class UnsupportedConsoleFactsClient implements ConsoleFactsClient {
   Future<int> deleteCapturesOlderThan(int days) async => 0;
 
   @override
-  Future<String> exportDestination() async => '';
-
-  @override
-  Future<void> exportEverything(String destination) async {}
+  Future<int> retiredBluetoothPairings() async => 0;
 }

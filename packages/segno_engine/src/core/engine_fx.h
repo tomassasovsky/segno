@@ -42,6 +42,10 @@ extern "C" {
  * transition, in milliseconds. Short enough to feel instant on a pedal stomp,
  * long enough to be click-free. */
 #define LE_FX_ENABLE_RAMP_MS 5
+/* Bypassed tail-owning slots settle only after a complete delay-ring
+ * horizon below the floor, with this minimum quiet window. */
+#define LE_FX_DRAIN_QUIET_MS 50
+#define LE_FX_DRAIN_FLOOR 1e-4f
 
 /* Applies a lane/monitor chain to one stereo sample in place, in chain order.
  * Stageless: every active entry processes both channels on the lane's own `fx`
@@ -49,16 +53,36 @@ extern "C" {
  * per-buffer snapshot — [enabled] carries one EFFECTIVE bit per slot
  * (chain-enabled && slot-enabled; NULL = all enabled).
  *
- * An enabled transition crossfades dry/wet over ~LE_FX_ENABLE_RAMP_MS per
- * slot. Disable fades the slot's wet output — tail included — to dry, then
- * skips the slot entirely once settled (bit-exact passthrough, NO tail spill
- * on bypass [B7]: the tail never keeps ringing into the dry signal).
- * Re-enable resets a built-in slot's DSP state (le_fx_entry_reset + a
- * ring-content clear) at the edge, then ramps in from dry — stale tails
- * never sound. A hosted plugin slot keeps its own internal state (no flush
- * seam yet); its frozen tail fades back in. Audio thread
+ * An enabled transition ramps over ~LE_FX_ENABLE_RAMP_MS per slot, and how
+ * a disable behaves depends on whether the type carries a tail
+ * (le_fx_type_drains):
+ *  - A draining type (a ring-owning type with no reported latency: delay,
+ *    echo, reverb) has the ramp scale its FEED, so new audio moves to the
+ *    dry path while the tail already in its rings keeps sounding on a silent
+ *    feed. It drains until quiet (LE_FX_DRAIN_FLOOR for
+ *    a complete delay-ring horizon, at least LE_FX_DRAIN_QUIET_MS),
+ *    then is skipped entirely
+ *    (bit-exact passthrough). This is the accepted "bypass sends new audio
+ *    dry and drains old wet tails".
+ *  - Every other type crossfades dry/wet on the full feed and settles with
+ *    no drain: a kernel with no memory has no tail and a scaled feed would
+ *    overshoot both endpoints through its own nonlinearity; a
+ *    latency-bearing type (the octaver) holds a delayed copy of the dry
+ *    signal, which summed onto the direct path would double the audio for
+ *    the latency window; a hosted plugin owns its tail and has no flush
+ *    seam, so its frozen tail fades back in on re-enable.
+ * Re-enable from a SETTLED bypass resets a built-in slot's DSP state
+ * (le_fx_entry_reset + le_fx_entry_clear_rings) at the edge, then ramps in —
+ * stale tails never sound; a re-enable that lands mid-ramp or mid-drain keeps
+ * the state, because the slot never stopped sounding. Audio thread
  * (le_engine_process), the offline render (perf_render), and the FX chain
  * test. */
+/* Applies one whole-track gain between the Pre prefix and Post suffix. */
+void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float* r,
+                    int count, const int32_t* types,
+                    const float params[LE_FX_MAX][LE_FX_PARAMS],
+                    const int32_t* enabled, int gain_at, float gain);
+
 void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
@@ -67,11 +91,25 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
 /* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
  * phase, delay heads, one-pole memory, octaver runtime, reverb lines) so a
  * freshly engaged effect starts clean. Does NOT allocate/free the delay ring or
- * octaver heap buffers (the control thread owns those), and does NOT touch the
- * enable-crossfade runtime (a type change must not disturb an in-flight enable
- * ramp — see le_fx_enable_seed_settled). Runs on the audio thread
- * (SET_*_FX ring handlers) and the control thread (lane/monitor reset). */
+ * octaver heap buffers (the control thread owns those). Of the
+ * enable-crossfade runtime it clears only the DRAIN state: a retyped slot has
+ * no tail to drain, and a stale budget would let the next re-enable edge skip
+ * its clean reset and read the previous type's ring. The ramp itself is left
+ * alone (a type change must not disturb one in flight — see
+ * le_fx_enable_seed_settled). Runs on the audio thread (SET_*_FX ring
+ * handlers) and the control thread (lane/monitor reset). */
 void le_fx_entry_reset(le_fx_state* fx, int slot);
+
+/* Zeroes chain slot [slot]'s delay rings (both channels, [cap] floats each)
+ * when allocated: the audio-thread half of "start clean" that
+ * le_fx_entry_reset deliberately leaves out. One ring is cap floats, so
+ * callers space these (see LE_FX_ENABLE_CLEAR_SPACING). */
+void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap);
+
+/* Whether a bypassed slot of [type] drains its tail (a ring-owning type with
+ * no reported latency: delay, echo, reverb) rather than crossfading out
+ * (memoryless or latency-bearing types, and hosted plugins). */
+int le_fx_type_drains(int32_t type);
 
 /* Seeds chain slot [slot]'s enable-crossfade runtime SETTLED at enabled so a
  * freshly created (zeroed) le_fx_state does not fade in on first use. Call
@@ -84,6 +122,15 @@ void le_fx_enable_seed_settled(le_fx_state* fx, int slot);
  * (per-buffer snapshots, le_engine_stop, the offline render's count/type
  * mirror): guarantees a processing gap never strands a ramp mid-fade, so
  * resumption always re-enters through the settled-edge reset (B7). */
+
+/* Whether slot [slot]'s enable ramp is already parked at bypass, so
+ * [le_fx_enable_force_bypass] would write nothing.
+ *
+ * The per-buffer settle sweep walks every slot up to LE_FX_MAX, and beyond a
+ * chain's active count almost all of them are in exactly this state — zeroed
+ * at reset and left there. Audio-thread-owned plain reads, so the check costs
+ * less than the published bit the sweep would otherwise load. */
+int le_fx_enable_settled_bypassed(const le_fx_state* fx, int slot);
 void le_fx_enable_force_bypass(le_fx_state* fx, int slot);
 
 /* Frees a chain slot's octaver phase-vocoder heap buffers (both channels) and
@@ -118,6 +165,37 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
  * zero for LE_FX_NONE / unknown). Each type owns its defaults behind the vtable.
  * Seeded on a type change so a chain reorder does not wipe the user's tweaks. */
 void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]);
+
+/* --- Resumable YIN pass ------------------------------------------------------
+ *
+ * le_psola_detect_band split at its two pausable points, so a caller that
+ * cannot afford the whole (lags x integration) difference function in one
+ * callback can spread it. See le_yin_pass in engine_private.h for why, and
+ * tuner_slice in engine_process.c for the only sliced caller. All three run on
+ * the audio thread and allocate nothing.
+ *
+ * Sets up a pass over `n` contiguous samples of `x` at `sr` Hz, searching
+ * [min_hz, max_hz]. `dp` is the caller's d'(tau) scratch, `dp_cap` its length
+ * in floats; the pass needs maxlag + 1, where maxlag is min(sr/min_hz,
+ * LE_PSOLA_MAXLAG, n/2). Both `x` and `dp` are borrowed and must stay alive
+ * and unchanged until le_yin_finish. Returns 0 — no pass started, and the
+ * caller should read the frame as unpitched — for a nonsense band, a window
+ * too short for the band, a `dp` too small, or a frame under the silence
+ * floor. */
+int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
+                 int max_hz, float* dp, int dp_cap);
+
+/* Accumulates lags until at least `budget` difference-function inner
+ * iterations have been spent, or the pass completes. A negative budget runs
+ * the pass to completion in one call. One whole lag always runs, so a budget
+ * under one integration length still makes progress. Returns 1 once every lag
+ * is in (and le_yin_finish may be called), else 0. */
+int le_yin_step(le_yin_pass* p, long budget);
+
+/* Peak-picks a COMPLETED pass: writes the parabolic-interpolated period in
+ * samples to *out_period and the voicing confidence in [0,1] to *out_voiced,
+ * and returns 1 when the frame reads as confidently voiced. */
+int le_yin_finish(const le_yin_pass* p, float* out_period, float* out_voiced);
 
 #ifdef __cplusplus
 }

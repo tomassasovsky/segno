@@ -9,10 +9,17 @@ import 'package:flutter_test/flutter_test.dart';
 /// decision, not a way to silence the test — each one needs a reason that
 /// survives being read out loud in review.
 const _allowed = <String, String>{
-  // Gate decision on #499: virtual hardware. The plate's LEDs, silkscreen and
-  // proportions mirror the physical pedal, so restyling it would desync the
-  // simulator from the thing it simulates.
-  'lib/pedal/view/pedal_plate.dart': 'pedal faceplate — hardware replica',
+  // Accepted Layout A reproduces the Fusion pedal's metal body, rubber pad
+  // and nameplate. These are artwork materials; surrounding controls, text,
+  // LEDs and encoder focus continue to use the app's theme tokens.
+  'lib/control/view/pedal_setup/pedal_hardware_face.dart':
+      'Fusion pedal artwork — hardware replica',
+
+  // Performer-selected LED hues are saved hardware RGB values. They must not
+  // change with the screen theme; the palette editor's surfaces and focus
+  // indicators still resolve their colors from theme tokens.
+  'lib/control/binding/pedal_palette.dart':
+      'saved physical LED palette — independent of the screen theme',
 
   // Gate decision on #499: the prototype is a 1920x1080 appliance view with no
   // title bar, so there is no design to adopt here — only one to invent.
@@ -33,7 +40,7 @@ const _allowed = <String, String>{
 
   // Must match the Plymouth splash field (#08080A), not a theme token —
   // the goodbye mark is the same pixel the unit booted with.
-  'lib/appliance/power_off/power_off_goodbye.dart':
+  'lib/appliance/power_off/power_goodbye.dart':
       'Plymouth goodbye field — must match the boot splash hex',
 };
 
@@ -58,12 +65,7 @@ final _harmless = RegExp(r'Colors\.transparent');
 final _stateWash = RegExp(r'\.(accent|rec|success|fx)\.withValues\(\s*alpha:');
 
 /// Files that may still wash a state colour inline, and why.
-const _allowedWash = <String, String>{
-  // Not a fill: it tints the accent as TEXT (a selected option's sub-label),
-  // and the DS has no "accent at reading weight" token to reach for. The
-  // fill tokens would be wrong here — they are backgrounds.
-  'lib/setup/setup_surface.dart': 'accent as dimmed label text, not a fill',
-};
+const _allowedWash = <String, String>{};
 
 void main() {
   test('the view layer resolves colour from the theme, not from literals', () {

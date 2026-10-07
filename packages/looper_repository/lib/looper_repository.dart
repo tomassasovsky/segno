@@ -14,20 +14,45 @@ export 'package:segno_engine/segno_engine.dart'
     show
         ClickMode,
         EngineResult,
+        FadeImage,
         GridDivision,
+        HistoryEntry,
+        HistoryKind,
         InputConditioningParam,
         LaneCacheState,
+        LengthEdit,
         LooperMode,
+        LooperModeGate,
+        PendingLaunchAction,
+        PitchMode,
         PluginScanProgress,
+        RecordStartEditKind,
+        RecordTiming,
+        ReopenOutcome,
+        SpeedFactor,
+        TempoFollowState,
         TempoSource,
+        TrackHistory,
         TrackState,
+        TransposePitch,
+        inputTrimGainOfDb,
+        kInputTrimStepDb,
+        kMaxChannels,
+        kMaxInputTrimDb,
         kMaxLanes,
         kMaxMonitoredInputs,
+        kMaxOutputBuses,
+        kMaxTracks,
+        kMinInputTrimDb,
         kTrackEffectMax,
-        kTrackEffectParams;
+        kTrackEffectParams,
+        // The engine ships vendored native code whose licences Flutter cannot
+        // see; the app registers them once at startup.
+        registerVendoredLicenses;
 
 // Domain audio-config models replace the engine's raw config/device types in
 // the UI. The engine-typed boundary mappers stay package-internal (not shown).
+export 'src/fx_chain_lookup.dart';
 export 'src/looper_repository.dart';
 export 'src/models/audio_config.dart'
     show
@@ -37,6 +62,7 @@ export 'src/models/audio_config.dart'
         LatencyState,
         LoopbackInfo,
         LoopbackKind;
+export 'src/models/engine_reopened.dart';
 export 'src/models/engine_status.dart';
 // The stage-addressed FX model (FX v3 part 3a): the four-stage address + its
 // canonical JSON (R19), the chain wire envelope (R13/R15), and the stable
@@ -49,13 +75,24 @@ export 'src/models/fx_chain_envelope.dart'
         concatenateInheritedChains,
         decodeFxChain,
         encodeFxChain;
+// The accepted chain is a run of RACKS; the engine's is a flat run of entries.
+// This is the one place that turns the second into the first, plus the pure
+// transforms every rack surface (rename, reorder, remove, channels, Pre/Post)
+// applies before handing the chain back to a repository setter.
+export 'src/models/fx_chain_group.dart';
+export 'src/models/fx_module_build.dart';
 export 'src/models/fx_slot_ids.dart'
     show SlotIds, withFreshSlotIds, withMintedSlotIds;
+export 'src/models/fx_user_preset.dart';
 export 'src/models/input_monitor.dart';
+export 'src/models/input_setup.dart';
 export 'src/models/lane.dart';
 export 'src/models/looper_state.dart';
+export 'src/models/mix_settings_snapshot.dart';
+export 'src/models/output_setup.dart';
 export 'src/models/plugin_descriptor.dart'
     show PluginDescriptor, PluginFormat, PluginParamInfo;
+export 'src/models/selected_render.dart';
 export 'src/models/session_rig.dart';
 export 'src/models/track.dart';
 // Domain effect models replace the engine's raw effect types in the UI. The
@@ -66,6 +103,11 @@ export 'src/models/track.dart';
 export 'src/models/track_effect.dart'
     show
         BuiltInEffect,
+        FxChannelInput,
+        FxChannelOutput,
+        FxChannels,
+        FxPlacement,
+        FxRack,
         ParamReadout,
         PluginEffect,
         PluginRef,
@@ -75,6 +117,9 @@ export 'src/models/track_effect.dart'
         decodeTrackEffects,
         encodeTrackEffects,
         fxChainFingerprint,
+        fxChannelsToEngine,
+        fxPreCount,
+        partitionByPlacement,
         trackEffectsToEngine;
 export 'src/models/transport_state.dart';
 export 'src/models/tuner_reading.dart';
@@ -82,6 +127,7 @@ export 'src/models/tuner_reading.dart';
 // is exported above with the other domain models.
 export 'src/plugin_catalog.dart'
     show PluginCacheKey, PluginCatalog, PluginCatalogCache, PluginFileStat;
+export 'src/render_job.dart';
 
 /// The iteration ceiling for the structural output gate's bootstrap reapply
 /// scan.
@@ -89,10 +135,9 @@ export 'src/plugin_catalog.dart'
 /// The output count is device-dependent and unknown at bootstrap, and the gate
 /// is default-on (only explicitly-disabled outputs are persisted), so no exact
 /// bound is needed for correctness. This is only how far the bootstrap reapply
-/// scans the `output_enabled.$out` keys — matching how the monitor reapply
-/// scans `[0, kMaxMonitoredInputs)` — a scan of the same LENGTH, not the same
-/// ceiling: outputs have nothing to do with what the monitor path covers, and
-/// the two numbers merely coincide. A stored off-state for an output beyond
-/// the current device's channel count is ignored by the engine and never
-/// corrupts routing.
+/// scans the `output_enabled.$out` keys. It is its own number: the monitor
+/// reapply scans every hardware input (32, `kMaxChannels`) since slice 3, and
+/// outputs have nothing to do with what the monitor
+/// path covers. A stored off-state for an output beyond the current device's
+/// channel count is ignored by the engine and never corrupts routing.
 const int kMaxOutputs = 8;

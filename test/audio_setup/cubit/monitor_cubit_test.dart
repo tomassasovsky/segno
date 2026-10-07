@@ -3,21 +3,126 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/app/monitor_mute.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno_engine/segno_engine.dart' show FxOwner;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
-/// Counts the string writes the debounce is meant to collapse.
+/// Counts the monitor FX envelope writes the debounce is meant to collapse.
 class _CountingStore extends FakeKeyValueStore {
   int stringWrites = 0;
 
   @override
   Future<void> setString(String key, String value) {
-    stringWrites++;
+    if (key == 'monitor_fx.0') stringWrites++;
     return super.setString(key, value);
+  }
+}
+
+class _DeferredMonitorFxStore extends FakeKeyValueStore {
+  final firstWrite = Completer<void>();
+  final firstWriteStarted = Completer<void>();
+  int fxWrites = 0;
+
+  @override
+  Future<void> setString(String key, String value) async {
+    if (key == 'monitor_fx.0') {
+      fxWrites++;
+      if (fxWrites == 1) {
+        firstWriteStarted.complete();
+        await firstWrite.future;
+      }
+    }
+    await super.setString(key, value);
+  }
+}
+
+class _BlockedMonitorModeStore extends FakeKeyValueStore {
+  final entered = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<void> setString(String key, String value) async {
+    if (key == 'monitor_input_mode.0' && !entered.isCompleted) {
+      entered.complete();
+      await release.future;
+    }
+    await super.setString(key, value);
+  }
+}
+
+class _RefusingMuteEngine extends FakeAudioEngine {
+  bool refuseMute = false;
+  final monitorSteps = <({bool enabled, bool muted, int output})>[];
+
+  EngineResult _sampleMonitor(int input, EngineResult result) {
+    if (result.isOk) {
+      monitorSteps.add((
+        enabled: monitorInputEnabled[input] ?? false,
+        muted: monitorMute[input] ?? false,
+        output: monitorOutput[input] ?? 3,
+      ));
+    }
+    return result;
+  }
+
+  @override
+  EngineResult setMonitorInputMute({required int input, required bool muted}) {
+    if (refuseMute) return EngineResult.invalid;
+    return _sampleMonitor(
+      input,
+      super.setMonitorInputMute(input: input, muted: muted),
+    );
+  }
+
+  @override
+  EngineResult setMonitorInputEnabled({
+    required int input,
+    required bool enabled,
+  }) => _sampleMonitor(
+    input,
+    super.setMonitorInputEnabled(input: input, enabled: enabled),
+  );
+
+  @override
+  EngineResult setMonitorInputOutput({required int input, required int mask}) =>
+      _sampleMonitor(
+        input,
+        super.setMonitorInputOutput(input: input, mask: mask),
+      );
+}
+
+class _FailingMuteStore extends FakeKeyValueStore {
+  bool failMute = false;
+  String? blockedKey;
+  final entered = Completer<void>();
+  final release = Completer<void>();
+
+  Future<void> _waitForRelease(String key) async {
+    if (key != blockedKey || entered.isCompleted) return;
+    entered.complete();
+    await release.future;
+  }
+
+  @override
+  Future<void> setString(String key, String value) async {
+    await _waitForRelease(key);
+    await super.setString(key, value);
+  }
+
+  @override
+  Future<void> setBool(String key, {required bool value}) async {
+    await _waitForRelease(key);
+    if (failMute && key == 'monitor_mute.0') {
+      throw StateError('mute storage failed');
+    }
+    await super.setBool(key, value: value);
   }
 }
 
@@ -25,15 +130,114 @@ void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
   late PluginCatalog catalog;
+  late StreamController<LooperState> looperStates;
 
   setUpAll(() {
     registerFallbackValue(<TrackEffect>[]);
     registerFallbackValue(MonitorMode.off);
+    registerFallbackValue(const InputSetup.empty());
+    registerFallbackValue(MixSettingsSnapshot());
   });
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    looperStates = StreamController<LooperState>.broadcast();
+    when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
+    addTearDown(looperStates.close);
+    final monitorVolumes = <int, double>{};
+    final monitorModes = <int, MonitorMode>{};
+    final monitorOutputs = <int, int>{};
+    final monitorMutes = <int, bool>{};
+    when(() => repository.monitorMuted(any())).thenAnswer(
+      (call) => monitorMutes[call.positionalArguments.first] ?? false,
+    );
+    final monitorChains = <int, List<TrackEffect>>{};
+    final monitorChainFlags = <int, bool>{};
+    when(repository.allMonitors).thenAnswer(
+      (_) => {
+        for (final input in {
+          ...monitorChains.keys,
+          ...monitorChainFlags.keys,
+          ...monitorModes.keys,
+          ...monitorOutputs.keys,
+          ...monitorMutes.keys,
+        })
+          input: InputMonitor(
+            input: input,
+            mode: monitorModes[input] ?? MonitorMode.off,
+            outputMask: monitorOutputs[input] ?? 3,
+            muted: monitorMutes[input] ?? false,
+            effects: monitorChains[input] ?? const [],
+            chainEnabled: monitorChainFlags[input] ?? true,
+          ),
+      },
+    );
+    when(() => repository.monitorEffects(any())).thenAnswer((call) {
+      final input = call.positionalArguments.first as int;
+      return monitorChains[input] ??
+          repository.allMonitors()[input]?.effects ??
+          const [];
+    });
+    when(() => repository.monitorChainEnabled(any())).thenAnswer((call) {
+      final input = call.positionalArguments.first as int;
+      return monitorChainFlags[input] ??
+          repository.allMonitors()[input]?.chainEnabled ??
+          true;
+    });
+    var currentMix = MixSettingsSnapshot();
+    MixSettingsSnapshot? pendingMix;
+    when(() => repository.mixGeneration).thenReturn(0);
+    when(() => repository.fxReplayConfirmed).thenAnswer(
+      (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
+    );
+    when(() => repository.fxRecipesSettled).thenReturn(true);
+    when(
+      () => repository.settleFxRecipes(),
+    ).thenAnswer((_) async => EngineResult.ok);
+    when(
+      () => repository.settleFxRecipes(
+        waitForCallback: true,
+        cancelled: any(named: 'cancelled'),
+      ),
+    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.mixSettingsSettled).thenReturn(true);
+    when(() => repository.mixRecoveryRequired).thenReturn(false);
+    when(
+      () => repository.mixSettingsFailures,
+    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.state).thenReturn(const LooperState());
+    when(() => repository.mixSettingsSnapshot).thenAnswer((_) => currentMix);
+    when(
+      () => repository.validateMixSettings(any()),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.applyMixSettings(any())).thenAnswer((call) {
+      pendingMix = call.positionalArguments.first as MixSettingsSnapshot;
+      return EngineResult.ok;
+    });
+    when(() => repository.sessionRevision).thenReturn(0);
+    when(() => repository.trackPans).thenReturn(const {});
+    when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
+    when(() => repository.monitorVolume(any())).thenAnswer(
+      (call) => monitorVolumes[call.positionalArguments.first] ?? 1,
+    );
+    when(
+      () => repository.setMixSettings(
+        trackPans: any(named: 'trackPans'),
+        inputSetup: any(named: 'inputSetup'),
+        monitorLevels: any(named: 'monitorLevels'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.settleMixSettings(),
+    ).thenAnswer((_) async {
+      if (pendingMix case final accepted?) {
+        currentMix = accepted;
+        monitorVolumes.addAll(accepted.monitorLevels);
+        pendingMix = null;
+      }
+      return EngineResult.ok;
+    });
     // The cubit follows the scan: the repository's answer about whether a
     // plugin loaded changes when one lands.
     catalog = PluginCatalog(
@@ -57,42 +261,101 @@ void main() {
         input: any(named: 'input'),
         mode: any(named: 'mode'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorModes[call.namedArguments[#input] as int] =
+          call.namedArguments[#mode] as MonitorMode;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorOutput(
         input: any(named: 'input'),
         mask: any(named: 'mask'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorOutputs[call.namedArguments[#input] as int] =
+          call.namedArguments[#mask] as int;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorVolume(
         input: any(named: 'input'),
         volume: any(named: 'volume'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorVolumes[call.namedArguments[#input] as int] =
+          call.namedArguments[#volume] as double;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorMute(
         input: any(named: 'input'),
         muted: any(named: 'muted'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorMutes[call.namedArguments[#input] as int] =
+          call.namedArguments[#muted] as bool;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorEffects(
         input: any(named: 'input'),
         effects: any(named: 'effects'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorChains[call.namedArguments[#input] as int] = List.of(
+        call.namedArguments[#effects] as List<TrackEffect>,
+      );
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setMonitorEffects(
+        input: any(named: 'input'),
+        effects: any(named: 'effects'),
+        chainEnabled: any(named: 'chainEnabled'),
+        allowUnavailable: true,
+      ),
+    ).thenAnswer((call) {
+      final input = call.namedArguments[#input] as int;
+      monitorChains[input] = List.of(
+        call.namedArguments[#effects] as List<TrackEffect>,
+      );
+      monitorChainFlags[input] = call.namedArguments[#chainEnabled] as bool;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorChainEnabled(
         input: any(named: 'input'),
         enabled: any(named: 'enabled'),
       ),
-    ).thenReturn(EngineResult.ok);
+    ).thenAnswer((call) {
+      monitorChainFlags[call.namedArguments[#input] as int] =
+          call.namedArguments[#enabled] as bool;
+      return EngineResult.ok;
+    });
     when(
       () => repository.setMonitorEffectParam(
         input: any(named: 'input'),
         index: any(named: 'index'),
         param: any(named: 'param'),
+        value: any(named: 'value'),
+      ),
+    ).thenAnswer((call) {
+      final input = call.namedArguments[#input] as int;
+      final index = call.namedArguments[#index] as int;
+      final parameter = call.namedArguments[#param] as int;
+      final chain = List.of(repository.monitorEffects(input));
+      final effect = chain[index] as BuiltInEffect;
+      final params = List.of(effect.params);
+      params[parameter] = call.namedArguments[#value] as double;
+      chain[index] = effect.copyWith(params: params);
+      monitorChains[input] = chain;
+      return EngineResult.ok;
+    });
+    when(
+      () => repository.setMonitorPluginParam(
+        input: any(named: 'input'),
+        index: any(named: 'index'),
+        paramId: any(named: 'paramId'),
         value: any(named: 'value'),
       ),
     ).thenReturn(EngineResult.ok);
@@ -120,16 +383,485 @@ void main() {
         index: any(named: 'index'),
       ),
     ).thenReturn(true);
-    when(() => repository.monitorEffects(any())).thenReturn(const []);
+  });
+
+  group('real monitor mute admission', () {
+    late _RefusingMuteEngine engine;
+    late _FailingMuteStore store;
+    late LooperRepository live;
+    late SettingsRepository saved;
+    late MixSettingsCoordinator mix;
+    late FxChainPersistence fx;
+
+    setUp(() {
+      engine = _RefusingMuteEngine();
+      store = _FailingMuteStore();
+      live = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      )..startEngine(const EngineConfig());
+      saved = SettingsRepository(store: store);
+      mix = testMixSettings(live, settings: saved);
+      fx = FxChainPersistence(looper: live);
+    });
+
+    tearDown(() async {
+      store.failMute = false;
+      await fx.close();
+      await mix.close();
+      await live.dispose();
+    });
+
+    MonitorCubit buildLive() => MonitorCubit(
+      repository: live,
+      settings: saved,
+      mixSettings: mix,
+      fxPersistence: fx,
+    );
+
+    for (final shared in [false, true]) {
+      final encoded = encodeFxChain(
+        FxChainEnvelope(
+          entries: [
+            BuiltInEffect(
+              type: TrackEffectType.drive,
+              slotId: 'saved-monitor',
+              params: const [.7, .4, .5, 0],
+            ),
+          ],
+          chainEnabled: false,
+        ),
+      );
+      blocTest<MonitorCubit, MonitorState>(
+        'mute after failed restore preserves unrelated monitor settings '
+        '(shared: $shared)',
+        setUp: () async {
+          await saved.saveMonitorInputMode(0, mode: 'on');
+          await saved.saveMonitorOutput(0, 1);
+          await saved.saveMonitorMute(0, muted: true);
+          await saved.saveMonitorEffects(0, encoded);
+          engine.refuseMute = true;
+        },
+        build: buildLive,
+        act: (cubit) async {
+          await cubit.load();
+          expect(cubit.state.inputs, isEmpty);
+          expect(cubit.state.restoreFailed, isTrue);
+          expect(live.monitorMode(0), MonitorMode.off);
+          expect(live.monitorOutput(0), 3);
+          expect(live.monitorEffects(0), isEmpty);
+          engine.refuseMute = false;
+          Future<void> mute({required bool muted}) => shared
+              ? applyMonitorMute(
+                  repository: live,
+                  settings: saved,
+                  persistence: fx,
+                  mixSettings: mix,
+                  input: 0,
+                  muted: muted,
+                )
+              : cubit.setMute(0, muted: muted);
+          await mute(muted: true);
+          await fx.flush();
+          expect(engine.monitorMute[0], isTrue);
+          expect(await saved.loadMonitorMute(0), isTrue);
+          expect(
+            (
+              await saved.loadMonitorInputMode(0),
+              await saved.loadMonitorOutput(0),
+              await saved.loadMonitorEffects(0),
+            ),
+            ('on', 1, encoded),
+          );
+          store.failMute = true;
+          await expectLater(mute(muted: false), throwsStateError);
+          expect(live.monitorMuted(0), isFalse);
+          expect(await saved.loadMonitorMute(0), isTrue);
+          await expectLater(fx.flush(), throwsStateError);
+          store.failMute = false;
+          await fx.flush();
+          expect(await saved.loadMonitorMute(0), isFalse);
+          expect(
+            (
+              await saved.loadMonitorInputMode(0),
+              await saved.loadMonitorOutput(0),
+              await saved.loadMonitorEffects(0),
+            ),
+            ('on', 1, encoded),
+          );
+          if (shared) {
+            // Explicit Retry must reread the now-confirmed false mute, not the
+            // original true value from the failed startup attempt.
+            expect(cubit.state.restoreFailed, isTrue);
+            await cubit.load();
+            expect(cubit.state.restoreFailed, isFalse);
+            final restored = cubit.state.forInput(0);
+            expect(restored, live.allMonitors()[0]);
+            expect(restored.mode, MonitorMode.on);
+            expect(restored.outputMask, 1);
+            expect(restored.muted, isFalse);
+            expect(restored.chainEnabled, isFalse);
+            expect(restored.effects.single.slotId, 'saved-monitor');
+            expect(engine.monitorInputEnabled[0], isTrue);
+            expect(engine.monitorOutput[0], 1);
+            expect(engine.monitorMute[0], isFalse);
+            final recipe = engine.fxRecipes[(FxOwner.monitor, 0, 0)]!;
+            expect(recipe.enabled, isFalse);
+            expect(recipe.slots.single.type.name, 'drive');
+            expect(recipe.slots.single.params, [.7, .4, .5, 0]);
+            expect(await saved.loadMonitorMute(0), isFalse);
+            expect(
+              (
+                await saved.loadMonitorInputMode(0),
+                await saved.loadMonitorOutput(0),
+                await saved.loadMonitorEffects(0),
+              ),
+              ('on', 1, encoded),
+            );
+          }
+        },
+        errors: () => allOf(isNotEmpty, everyElement(isA<StateError>())),
+      );
+    }
+
+    test('monitor mute retains an earlier failed full-envelope save', () async {
+      final effect = BuiltInEffect(
+        type: TrackEffectType.drive,
+        slotId: 'retry-monitor',
+        params: const [.6, .4, .5, 0],
+      );
+      live
+        ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
+        ..setMonitorOutput(input: 0, mask: 2)
+        ..setMonitorEffects(input: 0, effects: [effect], chainEnabled: false);
+      store.failMute = true;
+      await expectLater(
+        saveFxOwner(
+          settings: saved,
+          projection: fx,
+          address: const FxAddress(stage: FxStage.input),
+        ),
+        throwsStateError,
+      );
+      expect(await saved.loadMonitorEffects(0), isNull);
+      store.failMute = false;
+      await applyMonitorMute(
+        repository: live,
+        settings: saved,
+        persistence: fx,
+        mixSettings: mix,
+        input: 0,
+        muted: true,
+      );
+      await fx.flush();
+      expect(await saved.loadMonitorMute(0), isTrue);
+      expect(await saved.loadMonitorInputMode(0), 'on');
+      expect(await saved.loadMonitorOutput(0), 2);
+      final chain = decodeFxChain(await saved.loadMonitorEffects(0));
+      expect(chain.entries, [effect]);
+      expect(chain.chainEnabled, isFalse);
+    });
+
+    for (final fxFirst in [true, false]) {
+      test('monitor FX and mute overlap without loss during close '
+          '(FX first: $fxFirst)', () async {
+        final effect = BuiltInEffect(
+          type: TrackEffectType.drive,
+          slotId: 'live-monitor',
+          params: const [.8, .4, .5, 0],
+        );
+        live
+          ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
+          ..setMonitorOutput(input: 0, mask: 2)
+          ..setMonitorEffects(input: 0, effects: [effect], chainEnabled: false);
+        store.blockedKey = fxFirst ? 'monitor_fx.0' : 'monitor_mute.0';
+        Future<void> saveFx() => saveFxOwner(
+          settings: saved,
+          projection: fx,
+          address: const FxAddress(stage: FxStage.input),
+        );
+        Future<void> mute() => applyMonitorMute(
+          repository: live,
+          settings: saved,
+          persistence: fx,
+          mixSettings: mix,
+          input: 0,
+          muted: true,
+        );
+        final first = fxFirst ? saveFx() : mute();
+        await store.entered.future;
+        final second = fxFirst ? mute() : saveFx();
+        final closing = fx.close();
+        store.release.complete();
+        await Future.wait([first, second, closing]);
+        expect(await saved.loadMonitorMute(0), isTrue);
+        expect(await saved.loadMonitorInputMode(0), 'on');
+        expect(await saved.loadMonitorOutput(0), 2);
+        final chain = decodeFxChain(await saved.loadMonitorEffects(0));
+        expect(chain.entries, [effect]);
+        expect(chain.chainEnabled, isFalse);
+      });
+    }
+
+    blocTest<MonitorCubit, MonitorState>(
+      'refused mute stays absent from view and unrelated saves; retry persists',
+      build: buildLive,
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.setMode(0, MonitorMode.on);
+        await cubit.setMute(0, muted: false);
+        await fx.flush();
+        final announcements = <int>[];
+        final watch = live.monitorChanges.listen(announcements.add);
+        engine.refuseMute = true;
+        await expectLater(cubit.setMute(0, muted: true), throwsStateError);
+        await pumpEventQueue();
+        expect(announcements, isEmpty);
+        expect(engine.monitorMute[0], isFalse);
+        expect(live.monitorMuted(0), isFalse);
+        expect(cubit.state.forInput(0).muted, isFalse);
+        expect(await saved.loadMonitorMute(0), isFalse);
+        await cubit.setOutputMask(0, 1);
+        await fx.flush();
+        expect(await saved.loadMonitorMute(0), isFalse);
+        await watch.cancel();
+        engine.refuseMute = false;
+        await cubit.setMute(0, muted: true);
+        await fx.flush();
+        expect(engine.monitorMute[0], isTrue);
+        expect(live.monitorMuted(0), isTrue);
+        expect(cubit.state.forInput(0).muted, isTrue);
+        expect(await saved.loadMonitorMute(0), isTrue);
+        live.stopEngine();
+        engine.monitorMute.clear();
+        expect(live.startEngine(const EngineConfig()), EngineResult.ok);
+        expect(engine.monitorMute[0], isTrue);
+      },
+      errors: () => [isA<StateError>()],
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'accepted mute control persists while stopped and replays at start',
+      build: buildLive,
+      act: (cubit) async {
+        await cubit.load();
+        live.stopEngine();
+        await cubit.setMute(0, muted: true);
+        await fx.flush();
+        expect(engine.monitorMute[0], isNull);
+        expect(live.monitorMuted(0), isTrue);
+        expect(cubit.state.forInput(0).muted, isTrue);
+        expect(await saved.loadMonitorMute(0), isTrue);
+        expect(live.startEngine(const EngineConfig()), EngineResult.ok);
+        expect(engine.monitorMute[0], isTrue);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'accepted mute survives storage refusal and explicit flush retries',
+      build: buildLive,
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.setMute(0, muted: false);
+        await fx.flush();
+        store.failMute = true;
+        await expectLater(cubit.setMute(0, muted: true), throwsStateError);
+        await pumpEventQueue();
+        expect(engine.monitorMute[0], isTrue);
+        expect(live.monitorMuted(0), isTrue);
+        expect(cubit.state.forInput(0).muted, isTrue);
+        expect(await saved.loadMonitorMute(0), isFalse);
+        await expectLater(fx.flush(), throwsStateError);
+        store.failMute = false;
+        await fx.flush();
+        expect(await saved.loadMonitorMute(0), isTrue);
+      },
+      errors: () => allOf(isNotEmpty, everyElement(isA<StateError>())),
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'restore refuses mute before enabling, routing or applying saved effects',
+      setUp: () async {
+        await saved.saveMonitorInputMode(0, mode: 'on');
+        await saved.saveMonitorOutput(0, 1);
+        await saved.saveMonitorMute(0, muted: true);
+        await saved.saveMonitorEffects(
+          0,
+          encodeFxChain(
+            FxChainEnvelope(
+              entries: [
+                BuiltInEffect(type: TrackEffectType.drive),
+              ],
+            ),
+          ),
+        );
+        engine.refuseMute = true;
+      },
+      build: buildLive,
+      act: (cubit) => cubit.load(),
+      verify: (cubit) {
+        expect(engine.monitorInputEnabled, isEmpty);
+        expect(engine.monitorOutput, isEmpty);
+        expect(live.monitorMode(0), MonitorMode.off);
+        expect(live.monitorOutput(0), 3);
+        expect(cubit.state.inputs, isEmpty);
+        expect(live.monitorMuted(0), isFalse);
+        expect(live.monitorEffects(0), isEmpty);
+      },
+      errors: () => [isA<StateError>()],
+    );
+
+    for (final mode in [MonitorMode.off, MonitorMode.on]) {
+      blocTest<MonitorCubit, MonitorState>(
+        'restore ${mode.name} unmutes only after mode and replacement route',
+        setUp: () async {
+          live
+            ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
+            ..setMonitorOutput(input: 0, mask: 1)
+            ..setMonitorMute(input: 0, muted: true);
+          await saved.saveMonitorInputMode(0, mode: mode.name);
+          await saved.saveMonitorOutput(0, 2);
+          await saved.saveMonitorMute(0, muted: false);
+          engine.monitorSteps.clear();
+        },
+        build: buildLive,
+        act: (cubit) => cubit.load(),
+        verify: (cubit) {
+          expect(engine.monitorSteps, isNotEmpty);
+          for (final step in engine.monitorSteps) {
+            if (step.enabled && !step.muted) {
+              expect(mode, MonitorMode.on);
+              expect(step.output, 2);
+            }
+          }
+          expect(engine.monitorSteps.last, (
+            enabled: mode == MonitorMode.on,
+            muted: false,
+            output: 2,
+          ));
+          expect(cubit.state.forInput(0).muted, isFalse);
+        },
+      );
+    }
+
+    blocTest<MonitorCubit, MonitorState>(
+      'closed monitor cannot submit a new mute',
+      build: buildLive,
+      act: (cubit) async {
+        await cubit.close();
+        await cubit.setMute(0, muted: true);
+        expect(live.monitorMuted(0), isFalse);
+        expect(engine.monitorMute, isEmpty);
+        expect(await saved.loadMonitorMute(0), isNull);
+      },
+    );
   });
 
   /// Writes through with no debounce, so a test's assertion does not have to
   /// outlive a pending write. The debounce itself is covered in its own group.
   MonitorCubit build() => MonitorCubit(
+    fxPersistence: FxChainPersistence(looper: repository),
+    mixSettings: testMixSettings(repository, settings: settings),
     repository: repository,
     settings: settings,
     fxPersistDebounce: Duration.zero,
   );
+
+  test('after a failed restore, envelope edits are refused and saved '
+      'settings stay intact', () async {
+    final store = FakeKeyValueStore();
+    store.values.addAll({
+      'mix_settings': '{"monitorLevels":{"0":0.5,"1":2.5}}',
+      'monitor_input_mode.0': 'on',
+      'monitor_output.0': 3,
+    });
+    settings = SettingsRepository(store: store);
+    final cubit = build();
+    await cubit.load();
+    expect(cubit.state.restoreFailed, isTrue);
+    final saved = Map<String, Object>.of(store.values);
+    await cubit.setMode(0, MonitorMode.off);
+    await cubit.setOutputMask(0, 1);
+    cubit.addEffect(0);
+    await cubit.flushPersistence();
+    expect(store.values, saved);
+    verifyNever(
+      () => repository.setMonitorInputMode(
+        input: any(named: 'input'),
+        mode: any(named: 'mode'),
+      ),
+    );
+    verifyNever(
+      () => repository.setMonitorOutput(
+        input: any(named: 'input'),
+        mask: any(named: 'mask'),
+      ),
+    );
+    await cubit.close();
+  });
+
+  blocTest<MonitorCubit, MonitorState>(
+    'invalid saved gain reports load error before any monitor mutation',
+    setUp: () {
+      final store = FakeKeyValueStore();
+      store.values.addAll({
+        'mix_settings': '{"monitorLevels":{"0":0.5,"1":2.5}}',
+        'monitor_input_mode.0': 'on',
+        'monitor_output.0': 3,
+      });
+      settings = SettingsRepository(store: store);
+    },
+    build: build,
+    act: (cubit) => cubit.load(),
+    expect: () => [const MonitorState(restoreFailed: true)],
+    errors: () => [isA<FormatException>()],
+    verify: (_) {
+      verifyNever(
+        () => repository.setMonitorInputMode(
+          input: any(named: 'input'),
+          mode: any(named: 'mode'),
+        ),
+      );
+      verifyNever(
+        () => repository.setMonitorOutput(
+          input: any(named: 'input'),
+          mask: any(named: 'mask'),
+        ),
+      );
+      verifyNever(
+        () => repository.setMonitorMute(
+          input: any(named: 'input'),
+          muted: any(named: 'muted'),
+        ),
+      );
+      verifyNever(
+        () => repository.setMonitorEffects(
+          input: any(named: 'input'),
+          effects: any(named: 'effects'),
+          chainEnabled: any(named: 'chainEnabled'),
+          allowUnavailable: any(named: 'allowUnavailable'),
+        ),
+      );
+    },
+  );
+
+  test('an input route edit outlives an earlier blocked FX save', () async {
+    final store = _BlockedMonitorModeStore();
+    settings = SettingsRepository(store: store);
+    final cubit = build();
+    addTearDown(cubit.close);
+    cubit.addEffect(0);
+    await store.entered.future;
+    final route = cubit.setOutputMask(0, 4);
+    store.release.complete();
+    await route;
+    await cubit.flushPersistence();
+    expect(await settings.loadMonitorOutput(0), 4);
+    expect(
+      decodeFxChain(await settings.loadMonitorEffects(0)).entries,
+      hasLength(1),
+    );
+  });
 
   group('following the repository', () {
     late StreamController<int> changes;
@@ -156,6 +888,18 @@ void main() {
       when(() => repository.monitorVolume(any())).thenAnswer(
         (call) => volumes[call.positionalArguments.first] ?? 1.0,
       );
+      when(
+        () => repository.setMixSettings(
+          trackPans: any(named: 'trackPans'),
+          inputSetup: any(named: 'inputSetup'),
+          monitorLevels: any(named: 'monitorLevels'),
+        ),
+      ).thenAnswer((call) {
+        volumes.addAll(
+          call.namedArguments[#monitorLevels] as Map<int, double>,
+        );
+        return EngineResult.ok;
+      });
       when(() => repository.monitorMuted(any())).thenAnswer(
         (call) => mutes[call.positionalArguments.first] ?? false,
       );
@@ -265,6 +1009,49 @@ void main() {
       // repository lives, and this cubit outlives nothing.
       expect(changes.hasListener, isFalse);
     });
+
+    test(
+      'a mode announce cannot persist an earlier pending FX recipe',
+      () async {
+        final oldFx = BuiltInEffect(type: TrackEffectType.drive);
+        final newFx = BuiltInEffect(type: TrackEffectType.reverb);
+        await settings.saveMonitorEffects(
+          0,
+          encodeFxChain(FxChainEnvelope(entries: [oldFx])),
+        );
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.load();
+        final applied = Completer<EngineResult>();
+        var settled = false;
+        when(() => repository.fxRecipesSettled).thenAnswer((_) => settled);
+        when(
+          () => repository.settleFxRecipes(
+            waitForCallback: true,
+            cancelled: any(named: 'cancelled'),
+          ),
+        ).thenAnswer((_) => applied.future);
+        when(() => repository.monitorEffects(0)).thenReturn([newFx]);
+
+        changes.add(0); // admitted structural recipe
+        await Future<void>.delayed(Duration.zero);
+        when(() => repository.monitorMode(0)).thenReturn(MonitorMode.on);
+        changes.add(0); // unrelated mode change while FX remains pending
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          decodeFxChain(await settings.loadMonitorEffects(0)).entries,
+          [oldFx],
+        );
+
+        settled = true;
+        applied.complete(EngineResult.ok);
+        await pumpEventQueue();
+        expect(
+          decodeFxChain(await settings.loadMonitorEffects(0)).entries,
+          [newFx],
+        );
+      },
+    );
 
     blocTest<MonitorCubit, MonitorState>(
       'a chain switched off elsewhere reaches the console',
@@ -584,10 +1371,45 @@ void main() {
       },
       verify: (cubit) async {
         expect(cubit.state.forInput(0).volume, 0.5);
-        verify(
-          () => repository.setMonitorVolume(input: 0, volume: 0.5),
-        ).called(1);
+        verify(() => repository.applyMixSettings(any())).called(1);
         expect(await settings.loadMonitorVolume(0), 0.5);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a refused monitor volume leaves state and storage at the prior gain',
+      setUp: () {
+        when(
+          () => repository.applyMixSettings(any()),
+        ).thenReturn(EngineResult.notReady);
+      },
+      build: build,
+      act: (cubit) async {
+        await settings.saveMonitorVolume(0, 0.75);
+        await cubit.setVolume(0, 0.5);
+      },
+      verify: (cubit) async {
+        expect(cubit.state.forInput(0).volume, 1);
+        expect(await settings.loadMonitorVolume(0), 0.75);
+        verifyNever(() => repository.settleMixSettings());
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a failed monitor publication leaves state and storage unchanged',
+      setUp: () {
+        when(
+          () => repository.settleMixSettings(),
+        ).thenAnswer((_) async => EngineResult.invalid);
+      },
+      build: build,
+      act: (cubit) async {
+        await settings.saveMonitorVolume(0, 0.75);
+        await cubit.setVolume(0, 0.5);
+      },
+      verify: (cubit) async {
+        expect(cubit.state.forInput(0).volume, 1);
+        expect(await settings.loadMonitorVolume(0), 0.75);
       },
     );
 
@@ -642,7 +1464,12 @@ void main() {
         expect(monitor.chainEnabled, isFalse);
         expect(monitor.effects, hasLength(1));
         verify(
-          () => repository.setMonitorChainEnabled(input: 0, enabled: false),
+          () => repository.setMonitorEffects(
+            input: 0,
+            effects: any(named: 'effects'),
+            chainEnabled: false,
+            allowUnavailable: true,
+          ),
         ).called(1);
       },
     );
@@ -662,7 +1489,12 @@ void main() {
         expect(cubit.state.inputs, contains(0));
         expect(cubit.state.forInput(0).chainEnabled, isFalse);
         verify(
-          () => repository.setMonitorChainEnabled(input: 0, enabled: false),
+          () => repository.setMonitorEffects(
+            input: 0,
+            effects: any(named: 'effects'),
+            chainEnabled: false,
+            allowUnavailable: true,
+          ),
         ).called(1);
       },
     );
@@ -727,7 +1559,11 @@ void main() {
           () => repository.setMonitorOutput(input: 0, mask: 0x2),
         ).called(1);
         verify(
-          () => repository.setMonitorVolume(input: 0, volume: 0.4),
+          () => repository.setMixSettings(
+            trackPans: const {},
+            inputSetup: const InputSetup.empty(),
+            monitorLevels: const {0: 0.4},
+          ),
         ).called(1);
         verify(
           () => repository.setMonitorMute(input: 0, muted: true),
@@ -736,14 +1572,43 @@ void main() {
           () => repository.setMonitorEffects(
             input: 0,
             effects: any(named: 'effects'),
+            chainEnabled: true,
+            allowUnavailable: true,
           ),
         ).called(greaterThanOrEqualTo(1));
       },
     );
 
-    group('syncFromRepository', () {
+    blocTest<MonitorCubit, MonitorState>(
+      'load restores multiple monitor levels in one confirmed mix request',
+      setUp: () async {
+        await settings.saveMonitorVolume(0, 0.4);
+        await settings.saveMonitorVolume(1, 0.6);
+      },
+      build: build,
+      act: (cubit) => cubit.load(),
+      verify: (cubit) {
+        expect(cubit.state.forInput(0).volume, 0.4);
+        expect(cubit.state.forInput(1).volume, 0.6);
+        verify(
+          () => repository.setMixSettings(
+            trackPans: const {},
+            inputSetup: const InputSetup.empty(),
+            monitorLevels: const {0: 0.4, 1: 0.6},
+          ),
+        ).called(1);
+        verifyNever(
+          () => repository.setMonitorVolume(
+            input: any(named: 'input'),
+            volume: any(named: 'volume'),
+          ),
+        );
+      },
+    );
+
+    group('projectFromRepository', () {
       blocTest<MonitorCubit, MonitorState>(
-        're-projects the repository monitors into state and persists them',
+        're-projects repository monitors without persisting them',
         setUp: () {
           when(repository.allMonitors).thenReturn({
             2: InputMonitor(
@@ -757,7 +1622,7 @@ void main() {
           });
         },
         build: build,
-        act: (cubit) => cubit.syncFromRepository(),
+        act: (cubit) => cubit.projectFromRepository(),
         verify: (cubit) async {
           final monitor = cubit.state.forInput(2);
           expect(monitor.mode, MonitorMode.on);
@@ -768,12 +1633,12 @@ void main() {
             (monitor.effects.single as BuiltInEffect).type,
             TrackEffectType.delay,
           );
-          // All five fields are persisted, so the next boot restores THIS set.
-          expect(await settings.loadMonitorInputMode(2), 'on');
-          expect(await settings.loadMonitorOutput(2), 0x2);
-          expect(await settings.loadMonitorVolume(2), 0.4);
-          expect(await settings.loadMonitorMute(2), isTrue);
-          expect(await settings.loadMonitorEffects(2), isNotNull);
+          // The new session's boot image is a separate application write.
+          expect(await settings.loadMonitorInputMode(2), isNull);
+          expect(await settings.loadMonitorOutput(2), isNull);
+          expect(await settings.loadMonitorVolume(2), isNull);
+          expect(await settings.loadMonitorMute(2), isNull);
+          expect(await settings.loadMonitorEffects(2), isNull);
           // The load already applied to the engine; the re-sync only READS the
           // repository — it must never push back, or it could desync the two.
           verifyNever(
@@ -810,7 +1675,7 @@ void main() {
       );
 
       blocTest<MonitorCubit, MonitorState>(
-        'resets ALL persisted fields for inputs dropped since the last state',
+        'drops absent inputs from presentation without changing stored keys',
         setUp: () async {
           // A prior session left input 5 configured (enabled + non-default
           // routing / volume / mute) in settings AND cubit state.
@@ -822,26 +1687,28 @@ void main() {
             5,
             encodeTrackEffects([BuiltInEffect(type: TrackEffectType.reverb)]),
           );
-          // The freshly loaded session defines no monitors.
-          when(repository.allMonitors).thenReturn(const {});
         },
         build: build,
         // Seed input 5 into state so it counts as "previously present".
-        act: (cubit) async {
-          await cubit.setMode(5, MonitorMode.on);
-          await cubit.syncFromRepository();
+        act: (cubit) {
+          when(repository.allMonitors).thenReturn(const {
+            5: InputMonitor(input: 5, mode: MonitorMode.on),
+          });
+          cubit.projectFromRepository();
+          // The freshly loaded session defines no monitors.
+          when(repository.allMonitors).thenReturn(const {});
+          cubit.projectFromRepository();
         },
         verify: (cubit) async {
           expect(cubit.state.inputs, isEmpty);
-          // Every field is reset to the disabled default — no lingering
-          // outputMask / volume / mute to resurrect the monitor on next boot.
-          expect(await settings.loadMonitorInputMode(5), 'off');
-          expect(await settings.loadMonitorOutput(5), 0x3);
-          expect(await settings.loadMonitorVolume(5), 1.0);
-          expect(await settings.loadMonitorMute(5), isFalse);
+          // A projection cannot clear boot storage; the load owner does that.
+          expect(await settings.loadMonitorInputMode(5), 'on');
+          expect(await settings.loadMonitorOutput(5), 0x2);
+          expect(await settings.loadMonitorVolume(5), 0.3);
+          expect(await settings.loadMonitorMute(5), isTrue);
           expect(
             await settings.loadMonitorEffects(5),
-            encodeFxChain(const FxChainEnvelope()),
+            encodeTrackEffects([BuiltInEffect(type: TrackEffectType.reverb)]),
           );
         },
       );
@@ -1062,6 +1929,30 @@ void main() {
     });
 
     group('monitor effects', () {
+      test('new session monitor edit follows a deferred prior save', () async {
+        final store = _DeferredMonitorFxStore();
+        settings = SettingsRepository(store: store);
+        var sessionRevision = 0;
+        when(
+          () => repository.sessionRevision,
+        ).thenAnswer((_) => sessionRevision);
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit.addEffect(0);
+        await store.firstWriteStarted.future;
+        sessionRevision = 1;
+        cubit.addEffect(0);
+        await pumpEventQueue();
+        expect(store.fxWrites, 1);
+        store.firstWrite.complete();
+        await pumpEventQueue();
+        expect(store.fxWrites, 2);
+        expect(
+          decodeFxChain(await settings.loadMonitorEffects(0)).entries,
+          hasLength(2),
+        );
+      });
+
       blocTest<MonitorCubit, MonitorState>(
         'addEffect appends a default drive, applies, and persists',
         build: build,
@@ -1081,6 +1972,120 @@ void main() {
             ),
           ).called(1);
           expect(await settings.loadMonitorEffects(0), isNotNull);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        "a live input's new instances are Pre",
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0, type: TrackEffectType.filter)
+            ..insertPlugin(
+              0,
+              const PluginRef(format: PluginFormat.vst3, id: 'p'),
+            );
+        },
+        verify: (cubit) {
+          // An input's Pre entries are what a take records; its Post entries
+          // are copied onto the lane and run after that take's player. The
+          // accepted design makes Pre the default here, and the model's own
+          // default is Post — so a surface that forgets to say leaves an
+          // input's effects out of every take it records.
+          final chain = cubit.state.forInput(0).effects;
+          expect(chain.map((e) => e.placement), [
+            FxPlacement.pre,
+            FxPlacement.pre,
+          ]);
+          expect((chain[0] as BuiltInEffect).type, TrackEffectType.filter);
+          expect(chain[1], isA<PluginEffect>());
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'a reorder across the Pre/Post boundary is refused',
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0, type: TrackEffectType.drive)
+            ..addEffect(0, type: TrackEffectType.delay)
+            // Send the delay to Post, then try to drag the drive past it.
+            ..setEffectPlacement(0, 1, FxPlacement.post)
+            ..moveEffect(0, 0, 1);
+        },
+        verify: (cubit) => expect(
+          cubit.state.forInput(0).effects.map((e) => (e as BuiltInEffect).type),
+          [TrackEffectType.drive, TrackEffectType.delay],
+        ),
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'setEffectPlacement moves an instance to the end of its new stage',
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0, type: TrackEffectType.drive)
+            ..addEffect(0, type: TrackEffectType.delay)
+            ..addEffect(0, type: TrackEffectType.reverb)
+            // The first of three Pre entries goes Post; the two behind it
+            // close up, and it lands last.
+            ..setEffectPlacement(0, 0, FxPlacement.post);
+        },
+        verify: (cubit) {
+          final chain = cubit.state.forInput(0).effects;
+          expect(chain.map((e) => (e as BuiltInEffect).type), [
+            TrackEffectType.delay,
+            TrackEffectType.reverb,
+            TrackEffectType.drive,
+          ]);
+          expect(chain.map((e) => e.placement), [
+            FxPlacement.pre,
+            FxPlacement.pre,
+            FxPlacement.post,
+          ]);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'a retype preserves the input slot identity, power, and channels',
+        build: build,
+        seed: () => MonitorState(
+          inputs: {
+            0: InputMonitor(
+              input: 0,
+              effects: [
+                BuiltInEffect(
+                  type: TrackEffectType.drive,
+                  enabled: false,
+                  slotId: 'monitor-slot',
+                  placement: FxPlacement.pre,
+                  channels: const FxChannels(
+                    input: FxChannelInput.left,
+                    output: FxChannelOutput.mono,
+                    placement: .25,
+                    level: .6,
+                  ),
+                ),
+              ],
+            ),
+          },
+        ),
+        act: (cubit) => cubit.setEffectType(0, 0, TrackEffectType.reverb),
+        verify: (cubit) {
+          final fx = cubit.state.forInput(0).effects.single;
+          expect((fx as BuiltInEffect).type, TrackEffectType.reverb);
+          expect(fx.placement, FxPlacement.pre);
+          expect(fx.slotId, 'monitor-slot');
+          expect(fx.enabled, isFalse);
+          expect(
+            fx.channels,
+            const FxChannels(
+              input: FxChannelInput.left,
+              output: FxChannelOutput.mono,
+              placement: .25,
+              level: .6,
+            ),
+          );
         },
       );
 
@@ -1278,6 +2283,8 @@ void main() {
     });
 
     MonitorCubit buildDebounced() => MonitorCubit(
+      fxPersistence: FxChainPersistence(looper: repository),
+      mixSettings: testMixSettings(repository, settings: settings),
       repository: repository,
       settings: settings,
       fxPersistDebounce: debounce,
@@ -1288,6 +2295,7 @@ void main() {
       addTearDown(cubit.close);
       // The structural add persists straight through; only the knob is
       // coalesced, so count from here.
+      await pumpEventQueue();
       final writesBeforeDrag = store.stringWrites;
 
       for (var i = 0; i < 8; i++) {
@@ -1315,6 +2323,7 @@ void main() {
 
     test('closing flushes a drag that ended inside the window', () async {
       final cubit = buildDebounced()..addEffect(0);
+      await pumpEventQueue();
       final writesBeforeDrag = store.stringWrites;
       cubit.setEffectParam(0, 0, 0, 0.42);
       expect(store.stringWrites, writesBeforeDrag);
@@ -1331,11 +2340,12 @@ void main() {
       () async {
         final cubit = buildDebounced()..addEffect(0);
         addTearDown(cubit.close);
+        await pumpEventQueue();
         final writesBeforeDrag = store.stringWrites;
         cubit.setEffectParam(0, 0, 0, 0.42);
         expect(store.stringWrites, writesBeforeDrag);
 
-        cubit.flushPersistence();
+        await cubit.flushPersistence();
         await pumpEventQueue();
 
         final persisted = decodeFxChain(await settings.loadMonitorEffects(0));

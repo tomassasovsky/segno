@@ -8,7 +8,7 @@ import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_binding_set.dart';
 
 const _track5 = FxAddress(stage: FxStage.track, index: 5);
-const _master = FxAddress(stage: FxStage.master);
+const _master = FxAddress(stage: FxStage.output);
 
 String get _chainTarget => const FxChainTarget(_track5).canonicalString();
 String get _slotTarget =>
@@ -113,11 +113,10 @@ void main() {
       );
     });
 
-    test('an unknown behavior falls back to toggle — a momentary that never '
-        'releases is the failure mode worth avoiding', () {
+    test('an unknown explicit behavior refuses the binding', () {
       final json = _binding(PedalButton.stop).toJson()
         ..['behavior'] = 'latching';
-      expect(PedalBinding.fromJson(json)?.behavior, BindingBehavior.toggle);
+      expect(PedalBinding.fromJson(json), isNull);
     });
 
     test('fromJson refuses a missing or empty target', () {

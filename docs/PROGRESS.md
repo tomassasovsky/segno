@@ -10,6 +10,346 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
+## October 2026 Clear history and Fade (#1142)
+
+Clear and grouped Clear now retain the Fade amount applied at the audio boundary;
+Undo restores stationary levels before playback, with ordinary mute and frozen
+history preserved. Performance capture records exact restored material through
+its existing staging and renderer owners. Invalid source transitions fail their
+derived stems while the independently recorded master remains usable.
+
+The [review](code-review/fade-clear-history/review.md) records the native safety
+matrix, six actual-native repository tests, all 187 FFI symbols, package coverage
+and independent source reviews. Production adds 323 lines and removes 108, with
+no additional state owner. General history replay (#1143), whole-render manifest
+errors (#1144), reopen (#1140) and Fade controls remain separate work. Actual
+Claude, published-head CI and human merge gates remain pending independently.
+
+## October 2026 stationary Session Fade (#1139)
+
+Sessions now save recorded tracks' current Fade amounts and restore them as
+stationary levels before publishing stopped playback. Material finalization and
+all Fade confirmations complete first; rejected or retired imports are cleaned up.
+The implementation extends five existing production files without another owner
+or native API. Exact Session schema 11 requires the saved amounts.
+
+The [review](code-review/session-fade-levels/review.md) records 3,166 passing app
+tests, 716 ordinary Looper tests and 116 Session tests, plus 21 actual-native
+focused checks. Coverage floors, analysis, formatting and positive Bloc lint pass.
+Independent review repaired two test issues without production changes. Claude,
+published-head CI and human merge remain separate gates. Full-engine reopen
+retention (#1140), Clear/history and public Fade controls are separate follow-ups.
+
+## October 2026 Fade duration persistence (#1137)
+
+Fade defaults and explicit per-track durations now survive startup and Session
+save/recall through one settings writer. Failed writes restore the previous
+record or require explicit recovery. Incoming Session settings finish before
+the existing boot barrier releases; an active fade keeps its original rate.
+
+The [review](code-review/fade-duration-settings/review.md) records 3,162 passing
+app tests (49 conditional skips), 198 settings tests and 114 Session tests, with
+all applicable coverage floors met. Analysis, formatting and 811-file Bloc lint
+pass. Independent reviews are clean after bounded fixes. Actual Claude,
+published-head CI and human merge approval remain separate gates. Coefficient
+recall/reconnect, Clear/history and Fade controls are still separate follow-ups.
+
+## October 2026 stopped Session recall (#1134)
+
+Session recall now publishes recorded tracks stopped, with timing and crown
+preserved, and keeps ordinary transport edits blocked until saved settings finish
+applying. Explicit Play starts the recalled material. Unavailable audio devices
+are rejected before destructive work; settings-only empty loads still work.
+
+The [review](code-review/stopped-session-recall/review.md) records the local gates:
+3,142 app tests, 715 ordinary Looper tests, 112 Session tests and 356 Engine tests
+pass; coverage meets every affected floor. Native safety configurations, FFI,
+analysis, formatting and positive Bloc lint pass. Independent reviews are clean;
+Claude review, published-head CI and human merge approval remain separate gates.
+This prerequisite does not complete Fade duration or Session persistence.
+
+## October 2026 native track Fade (#1131)
+
+The native Fade capability now has independent per-track envelopes, confirmed
+callback results and matching performance-log rendering. It changes neither
+saved Mixer gain nor recorded PCM. Existing playback remains at full Fade level;
+user-facing control and durable Session/reconnect composition are separate parts.
+
+The [review](code-review/foot-fade-native/review.md) binds the candidate and its
+checks: native standard, sanitizer, telemetry-disabled and C++17 pass, as do all
+187 FFI symbol lookups. App tests pass 3,137 cases at 92.634% coverage; ordinary
+Looper coverage is 95.136%, with four additional actual-native Fade tests.
+Analyzer, formatter and 806-file Bloc lint pass. Independent reviews repaired a
+Session-retirement receipt leak and have no remaining actionable finding.
+Actual Claude review, published-head CI and human merge remain separate gates;
+no appliance validation or deployment is claimed.
+
+## October 2026 recording-start pair (#1026)
+
+Count-in and Sound-start now share one confirmed setting across Recording,
+Tempo, both Audio setup surfaces, startup and Session save/recall. Count-in
+above zero disables Sound; enabling Sound turns Count-in off. Explicit Off
+remains Off, while a new setup defaults to one bar. Capture refuses edits;
+unknown or failed acceptance stays visibly unavailable until recovery.
+
+Storage writes preserve exact prior keys on failure, and native callback
+receipts confirm changes before publication. Fresh recordings wait for a
+confirmed pair; cancellation and finishing remain available. Sound-start
+requires a usable selected input before arming and reports the affected track
+when one is missing. Session save and shutdown wait for settlement.
+
+The [part-one plan](plan/2026-10-03-feat-count-in-part-1-plan.md) defines this
+boundary. Native standard, sanitizer, telemetry-disabled and C++ checks pass.
+Independent tests caught and repaired a countdown-cancellation ordering defect.
+The saved Pen section contains five checked native captures. The full app
+passes 2,789 tests at 91.927% coverage; all five affected package suites meet
+their required gates. Static checks cover 763 Dart files, and independent review
+has no unresolved finding. A bound native desktop build passes the paired
+Count-in/Sound interaction and all 182 FFI symbol lookups. Exact-head CI and
+human merge remain separate. Shared launch countdowns and mapped
+Count-in are the next two parts; they are not implemented by this part.
+
+## October 2026 shared Hear click (#1026)
+
+Touch, encoder, MIDI and External controls now share Off, First recording,
+Recording and Play & record. New setups default to First recording; explicit
+Off is preserved. Native callback receipts confirm changes before publication.
+Recording and overdubbing refuse edits without stopping audio. Session Save and
+restart retain Released values while Held remains audible, and safe shutdown
+waits for owed releases or presents recovery.
+
+`docs/reviews/shared-hear-click/` binds the candidate and independent evidence.
+The app passes 2,611 tests at 91.069% coverage; Looper passes 691 at 95.261%.
+Engine passes 352 against the repaired native library. Native configurations,
+affected package suites and 757-file static checks pass. Independent review
+closed callback publication, command counter width, obsolete initialization,
+recovery readout and compensated-flush defects. Author renders include the
+repaired expression choice layout. The saved Pen section has passed its final
+composite visual check. Native desktop interaction still needs verification
+against a bound build. Published-head CI and human merge remain separate.
+
+Count-in and its Sound-start interlock are next. The future capture journal must
+extend the capture lock before stopped failed-finalization takes ship; no such
+producer is implemented by this slice. M5 full live-Control Session Load and
+physical appliance checks remain open.
+
+## October 2026 shared Record timing (#1026)
+
+Touch, MIDI and External controls share the seven recording-timing choices for
+Loop defaults and fixed Tracks 1–8. Explicit Immediately remains Custom; null
+restores inheritance. Waiting requests can be rescheduled or cancelled without
+changing unrelated arms. Capture refuses edits without stopping audio. One
+native vector and coherent receipt replace the split timing writers; record
+acquisition is fenced before plugin, layer or history preparation.
+
+Held timing stays live while Save/restart retain Released intent and remembered
+division. Exact rollback preserves absent settings. Shutdown refuses unfinished
+release cleanup; Retry and Keep playing retain their distinct recovery behavior.
+The shared owner composes startup, session capture and the existing settings UI.
+
+`docs/reviews/shared-record-timing/` binds the implementation, independent review,
+tests and saved Pen references. Full app: 2,552 passed at 90.989% coverage; Looper:
+675 passed at 95.344%. Native variants, snapshot/preparation negative controls,
+affected independent replay, Engine/Settings/Session/Performance packages and
+748-file static checks pass. Author-only renders and native desktop interaction
+are recorded separately. Published-head CI, human merge, appliance verification
+and M5 full live-Control Session Load remain separate gates. Hear click is the
+next bounded shared-control slice.
+
+## October 2026 shared Record length (#1026)
+
+Touch, MIDI and External controls now share Auto/1–64-bar choices for Loop
+defaults and fixed Tracks 1–8. Explicit Auto stays Custom; Multi retains latent
+track overrides. Capture blocks edits without stopping audio. Held values stay
+live while Save/restart preserve Released choices, and refused cleanup retries
+when safe. Startup and shutdown require confirmed state or explicit recovery.
+
+`docs/reviews/shared-record-length/` binds 88 source/test/render paths and saved
+Pen references. Ordinary app checks pass 2,729 results at 91.0011% coverage;
+Looper repository passes 693 at 95.5842%, Settings 171 at 90.3498%. The 44-case
+independent matrix and receipt-bypass negative control pass their expectations.
+Native configurations, native-backed fuzz and 741-file static checks pass.
+Review repaired startup Retry, raw endpoint cancellation and a clipped lock
+label. Published-head CI, human merge, physical proof and M5 live-Control full
+Session Load remain separate. Shared Record timing is the next bounded slice.
+
+## October 2026 shared Playback Loop or Once (#1026)
+
+Touch, MIDI and External controls now share confirmed Loop/Once choices for
+Loop defaults and fixed Tracks 1–8, including empty tracks and all five modes.
+Explicit false remains Custom. Use default supersedes older held cleanup;
+Save and reconnect preserve authored Released values. Startup validates all
+nine stored choices and verifies the eight native bits. Shutdown drains pending
+changes and offers recovery instead of losing them.
+
+`docs/reviews/shared-playback-choice/` binds source and saved Pen references.
+The final app suite passes 2,666 results at 90.7948% coverage; Looper repository
+passes 686 at 95.7472%. Settings and Controller results are reused only for
+unchanged sources. The independent 50-case matrix covers all native modes, and
+an isolated receipt bypass fails the expected pending assertion. Strict static
+checks cover 733 Dart files. Review caught and fixed startup-validation Retry
+and reconnect-readiness defects. Exact-head CI and human merge approval remain
+separate; hardware proof and M5 live-controller full Session Load remain open.
+
+## October 2026 shared overdub decay (#1026)
+
+MIDI and External button/expression controls now share the Playback owner for
+Loop defaults and fixed Tracks 1–8. Explicit zero remains Custom; Use default
+removes only that field and supersedes older held cleanup. Storage is verified
+before acceptance. Sessions/restarts retain Released intent, and shutdown waits
+for pending changes and refuses on unresolved recovery.
+
+`docs/reviews/shared-overdub-decay/` binds the source, saved Pen references and
+local evidence: 2,617 ordinary app results at 90.7010% coverage, three affected
+package suites, 51 independent probes, a native-sample negative control, eight
+native session cases, standard native suites and clean strict static gates.
+Startup replay and stale-error defects found during review are repaired. CI on
+the published head and human merge approval remain separate. Hardware and the
+inherited complete session-load defect with a live controller owner remain
+explicit follow-up work.
+
+## October 2026 shared Click volume (#1026)
+
+Click volume now shares one confirmed owner across touch, MIDI and External
+buttons/expression. The same linear range appears as 0–200%, with unity at
+100%. Temporary held values do not enter saved sessions or engine restart
+intent. Settings and native acceptance are checked; explicit recovery keeps
+old failures separate from replacement sessions. Shutdown retires controls,
+waits for settings and stays on after a failure with Retry or Keep playing.
+
+The [verification record](reviews/shared-click-volume/verification.md) binds
+83 intended files, 55 independent native-backed probes, ordinary app coverage
+of 90.4296%, affected package gates and strict static checks across 714 Dart
+files. Four native references are saved in Pen. Earlier failures and repairs
+remain documented. No native/FFI or firmware source changed. Published-head
+CI, human merge and physical device validation remain separate. Shared decay
+and the remaining loop targets follow; the M5 live-owner session-load issue
+is still open.
+
+## October 2026 shared Mixer controls (#1026)
+
+MIDI and External assignments now share eight typed Mixer control families,
+actual-unit endpoint readouts and one confirmed durable transaction. Input
+monitor level remains separate from recording trim. Missing targets retain
+their identity; source retirement and topology replacement preserve newer
+accepted changes. Session capture saves Released values while a control is
+held. Four new native references are saved in Pen.
+
+The [verification record](reviews/shared-mixer-controls/verification.md)
+records 2,525 ordinary app tests at 90.0054% coverage, 30 controller tests at
+83.2237%, static checks across 706 files and 52 independent native-backed
+adversarial probes. Failed prior cases and repairs remain documented. No
+native API or firmware changed. Click/loop targets follow next. Broader live
+session-load publication remains tracked for M5; physical controllers,
+published-head CI and human merge are separate gates.
+
+## October 2026 MIDI reconstruction (#1026)
+
+MIDI setup now selects explicit message formats, learns stable sources and
+edits multiple action or value targets through the shared control owner.
+Save/Cancel, source overlap, missing-target repair, pause/retry and session
+replacement preserve confirmed state. Pending effect writes and momentary
+restoration join the session/shutdown persistence barrier. Obsolete MIDI
+bindings and the old editor are removed.
+
+The [verification record](reviews/design-midi-controls-restack/README.md)
+records 2,433 passing application tests, nine package suites, native checks,
+coverage, independent review and adversarial probes. Native renders are saved
+in Pen. The broader shared target catalogue remains the next M3 slice;
+physical MIDI validation, published-head CI and human merge stay separate.
+
+The first MIDI publication passed tests but failed ordinary CI coverage at
+89.07%. A reviewed test-only correction adds 23 editor journeys. The matching
+local run excludes author screenshots and supplies no native library: 2,306
+tests pass at 90.0039% coverage, with static gates clean. All 20 workflow jobs
+and GitGuardian subsequently passed on PR #1047 head
+`06633b2b537efba4c59108e38764e58c0b2c542e` (run 36935129976). The current-head
+review is clean; human merge and physical MIDI validation remain separate.
+
+## October 2026 external pedal reconstruction (#1026)
+
+Single, Dual and Expression now share a confirmed External setup and the
+existing UART CTRL ingress. Multiple actions, FX activation, parameter ranges,
+directed calibration, unavailable-target repair and independent jack profiles
+are implemented. Source retirement and refused release cleanup preserve newer
+accepted controller contributions; the old generic console editor is removed.
+
+The [verification record](reviews/design-external-controls-restack/README.md)
+binds the final source, 2,467 passing app tests, five package suites, coverage,
+firmware and 54 independent adversarial probes. Source and five quality-role
+reviews have no unresolved actionable finding. Native render references are
+saved in Pen. Published-head CI and human merge remain separate gates; physical
+pedal validation is not established by the desktop checks. The MIDI slice above
+builds on this verified dispatch foundation.
+
+## September 2026 design-stack reconstruction (#1058)
+
+The accepted Tracks, selected-track display and crown slice (#1010 / #1011)
+is reconstructed on current master, retaining its UART console and appliance
+lifecycle. Review corrected full-track waveform coordinates, stopped-waveform
+retention, divided/independent bar counts, and compact desktop Wave layout.
+See the [slice ledger](plan/2026-09-09-segno-implementation-ledger.md) and
+[validation record](reviews/design-tracks-restack/validation.md). The remaining
+stack is still pending reconstruction; no appliance deployment is implied.
+
+## October 2026 Loop settings reconstruction (#1012)
+
+The Loop settings slice is reconstructed on the verified recording-timing
+stack. Default and per-track choices retain field-level inheritance, including
+explicit Auto and Loop overrides. Length and mode requests submit one bounded
+engine command and publish or save only the callback-confirmed result. Startup,
+recall, timeout and device reconnect use the same confirmed state boundary.
+Touch and keyboard focus cover edit, commit and Cancel; obsolete Loop and
+coarse timing controls are removed. See the
+[validation record](reviews/design-loop-settings-restack/README.md).
+
+Follow-tempo/pitch processing remains explicitly unavailable until its engine
+slice. Physical encoder routing remains in the controller slice; desktop focus
+checks do not establish UART or appliance behavior. No deployment is implied.
+
+## October 2026 FX surface reconstruction (#1016)
+
+Effects now uses the accepted destination/library/editor flow on the verified
+mix, routing and Pre/Post stack. Adding a single or rack opens its confirmed
+new instance directly. Structural edits retain stable identities, reject full
+destinations and cannot complete against a replacement session. Saved presets
+retain rack identity and create independent instances. The obsolete Signal
+surface and its unused cache controls are removed.
+
+Native, package and app checks plus independent source and visual reviews are
+recorded in the [verification record](reviews/design-fx-surfaces-restack/README.md).
+Exact factory parameter/DSP completion remains M6 work; physical appliance
+validation and the human merge gate remain separate. No deployment is implied.
+
+## October 2026 pedal gesture reconstruction (#1026)
+
+FX assignments now carry separate Press/Hold targets and explicit fixed or
+selected-track scope, using the existing UART control owner. Holds resolve
+selection when they fire and retain that target until release. The accepted
+800 ms default is shared with Settings; normal Record/Play and Stop remain
+immediate. Session changes, take locks and disconnects invalidate pending
+work without applying it to a replacement session.
+
+Refused momentary restoration waits for callback readiness, removed effects
+do not strand a pedal, and LEDs follow the successfully dispatched action in
+the correct bank. The
+[verification record](reviews/design-assignments-restack/README.md) separates
+independent behavioral checks from physical pedal validation. Layout A setup,
+Custom mode and external/MIDI assignment surfaces are the next dependent
+slices. No appliance deployment or human merge approval is implied.
+
+## October 2026 Custom pedal runtime (#1026)
+
+Layout A now edits and runs Custom Press/Hold assignments. Mode exits and Bank
+pages; fresh Mode defaults to Mute/Custom. Gesture lifetime follows accepted
+selection, session and connection rules. Grouped Solo shares the app-wide mix
+coordinator, and Clear/Restore preserves unrelated setup edits. See the
+[verification record](reviews/design-custom-runtime-restack/README.md).
+
+Application and independent behavioral checks pass. Configurable physical LED
+colors and all-ten activity transport are the next slices; no appliance
+installation or human merge approval is implied.
+
 ## September 2026 Mac recording companion
 
 The standalone [Segno Transfer app](../apps/segno_transfer/README.md) implements
@@ -79,11 +419,11 @@ install hook remain unchanged. A failed inspection stops the release build.
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this
-  env (exit 69, machine-output parser vs Flutter 3.44). Hooks block bare
-  `flutter test` / `dart test`. Run via the **absolute path**, which the guard
-  doesn't match: `/Users/Tomas/development/flutter/bin/flutter test`.
-- **Scaffolding:** `flutter create` is hook-blocked in favour of the very_good
-  MCP `create` tool — but that only makes federated method-channel plugins. The
+  env (exit 69, machine-output parser vs Flutter 3.44). Use the working SDK:
+  `/Users/Tomas/development/flutter/bin/flutter test`. Codex does not install
+  the former Claude hook that blocked bare CLI test commands.
+- **Scaffolding:** prefer the Very Good CLI templates for normal packages.
+  The Very Good MCP `create` tool only makes federated method-channel plugins. The
   FFI plugin (`segno_engine`) is **hand-authored** (`ffiPlugin: true` + CMake +
   podspec). Native engine lives **inside** the plugin at
   `packages/segno_engine/src/` (Flutter symlinks plugins at build time, so
@@ -96,6 +436,10 @@ install hook remain unchanged. A failed inspection stops the release build.
   ```sh
   bash packages/segno_engine/src/test/run_native_tests.sh
   ```
+  Concurrent native configurations need separate `TMPDIR` directories: the
+  script uses fixed executable names there, so sharing a directory can make
+  builds overwrite another run's binaries.
+
   The script self-locates (no preceding `cd` needed) and builds/runs the
   engine core test suite and the MIDI test suite on every desktop OS
   (`gcc`/`gnu11` by default, overridable via `CC`), plus macOS-only plugin
@@ -188,30 +532,28 @@ install hook remain unchanged. A failed inspection stops the release build.
 - **macOS app run/build:** flavor schemes required.
   `flutter build macos --debug --flavor development -t lib/main_development.dart`
   Run: `flutter run -d macos --flavor development -t lib/main_development.dart`
-- **Driving the Network domain off the appliance:** both radios are Linux-only
-  helpers (`segno-wifi-ctl`, `segno-bt-ctl`), so on macOS every path past "no
-  WiFi on this build" is unreachable — including the ones with the most
+- **Driving the Network page off the appliance:** Wi-Fi is a Linux-only
+  helper (`segno-wifi-ctl`), so on macOS every path past "no WiFi on this
+  build" is unreachable — including the ones with the most
   behaviour in them. Add `--dart-define=SEGNO_FAKE_RADIOS=true` to swap in
-  in-memory stacks:
+  an in-memory stack:
   ```sh
   flutter run -d macos --flavor development -t lib/main_development.dart \
     --dart-define=SEGNO_FAKE_RADIOS=true
   ```
-  The define is read inside `createWifiClient` / `createBluetoothClient`
-  **before** their platform test, so every entry point picks it up with no app
-  wiring change. The fakes are opinionated rather than empty — they exist to
-  reach the states the mockups draw, with deliberate delays so in-flight
-  spinners and banners are visible. Failure is reachable on purpose:
-  `segno123` is the only passphrase that joins, and one Bluetooth device
-  always refuses to pair. **Off by default**, so a shipped build can never
+  The define is read inside `createWifiClient` **before** its platform test,
+  so every entry point picks it up with no app wiring change. The fake is
+  opinionated rather than empty — it exists to reach the states the mockups
+  draw, with deliberate delays so in-flight spinners and banners are visible.
+  Failure is reachable on purpose: `segno123` is the only passphrase that
+  joins. **Off by default**, so a shipped build can never
   present invented networks as real ones; the factory tests assert the flag
   from both sides, so the branch is covered by the ordinary CI run.
-- **Appliance helper suites** (shell, no device):
-  ```sh
-  bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_ctl_tests.sh
-  ```
-  Pins the ordering inside `segno-bt-ctl`'s device verbs against a stubbed
-  `bluetoothctl`. What bluez does with those commands still needs hardware.
+- **Appliance helper suites** (shell, no device): every
+  `deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_*_tests.sh`,
+  as the `appliance-shell-tests` CI job runs them. Bluetooth was retired (#1199): the
+  image ships no BlueZ, and the pairings an earlier image kept stay on
+  `/data/bluetooth` for a fallback to the previous slot.
 
 ---
 
@@ -331,6 +673,84 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 
 Phases 1–3 of the plan plus several sync refinements. See `git log` for detail.
 
+- **Accepted design, slice 3e (#1016, epic #1009):** the October
+  reconstruction applies complete FX recipes at an audio boundary and persists
+  only their confirmed application. Whole-track Pre combines original parts
+  once while keeping the Mixer gain separate. Capture inheritance, Clear/Undo,
+  restart, plugin ownership and channel refusal have independent sample and
+  persistence checks. All relevant local Dart/native suites, coverage floors,
+  static checks and source reviews pass; publication and current-head CI are
+  separate gates. FX screens follow in 3f; complete offline rendering, exact
+  DSP parity and in-flight cross-session storage ordering retain their later
+  owners. See `docs/reviews/design-fx-placement-restack/README.md`.
+- **Accepted design, slice 3b (#1016, epic #1009):** output destinations
+  have level, mute, Stereo/Mono, retained balance and a post-sum effect chain.
+  October reconstruction joins output setup to the shared atomic mix and durable
+  rollback path. Performance recording freezes the actual destination and its
+  effect chain at callback acknowledgment. Default capture excludes final level
+  and mute; Follow applies their later changes. Both policies exclude hardware
+  Mono/Balance/master gain/limiter. Cut stops current sources and clears old
+  tails and the current click pulse, while preserving monitoring preferences.
+  Failed arm publication retains ownership for Stop; malformed destination
+  metadata is refused. Track-wide routing surfaces are slice 3c. Offline
+  reconstruction still lacks full multi-lane, live-input/click and track-bus
+  replay; these are later integration work, not proof of complete parity.
+  Ledger: `docs/plan/2026-09-09-segno-implementation-ledger.md`.
+- **Accepted design, slice 3a (#1016, epic #1009):** the mix model: per-lane
+  pan with a unity-centre balance law, per-track Solo beside mute, a capture
+  trim per input on the recorded branch only, monitoring for every hardware
+  input, a recorded image fixed per lane from its input's setup (stereo
+  pairs as two lanes with a shared balance), the Mixer's meters (post-fader
+  stereo peaks per track, per-input, per-monitor and per-output peaks) and
+  typed mix targets; persisted in settings and the session manifest. The
+  October reconstruction adds one durable mix coordinator, exact rollback
+  and stopped recovery, capture lifetime fencing and atomic recording/Undo
+  admission. Verified scope and remaining integration boundaries are recorded
+  in `docs/reviews/design-mix-model-restack/README.md`.
+  Ledger: `docs/plan/2026-09-09-segno-implementation-ledger.md`.
+- **Accepted design, slice 2c (#1012, epic #1009):** the Loop settings
+  pages at the pen's size (hub, Loop mode cards with reasons and the stop
+  dialog, Recording, Tempo & click with the signature grid, Length &
+  quantize and Playback & overdub with the Tracks / Defaults / 1-8 selector
+  and field-level inheritance, Audio & tempo as a readout), opened from the
+  tray's Loop entry and the Settings rail; the tray's Loop tabs and Tracks
+  Lengths tab, the desktop Tempo and Mode sections and per-track rows, the
+  boolean quantize cubit and the sync switch are gone; the session manifest
+  carries per-track length and Once overrides; the click output and level
+  sit on the Audio tray's Device tab until the Mixer. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
+- **Accepted design, slice 2b (#1012, epic #1009):** timing ownership: one
+  record timing setting (Immediately, Loop start, bar to 1/16) by default and
+  per track (a per-track division joins the per-track gate in the engine),
+  overdub decay by default and per track with a ramped live change, Once in
+  all five modes (a track's lap ends on the shared clock in Multi/Sync/Band),
+  count-in and Sound start exclusive through native commands, repository and cubits,
+  and the overrides in settings and the session manifest. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
+- **Timing reconstruction (#1061):** explicit per-track inheritance survives
+  empty-track/session recall, Immediate retains the remembered musical grid,
+  and queue refusal leaves Count-in, Sound start and armed tracks unchanged.
+  Native snapshots publish the applied start choice as one coherent state.
+  Current validation and independent review are recorded in
+  `docs/reviews/design-timing-restack/README.md`; hardware proof stays separate.
+- **Accepted design, slice 2a (#1012, epic #1009):** mode changes with
+  recorded audio follow the accepted contract (the engine measures the gate:
+  compatible spans switch on a stopped rig, playing loops are stopped first,
+  captures and queued arms refuse; nothing is cleared or resized); undo during
+  an overdub removes the pass, undo during a take cancels it with an
+  immediate-playback redo, a clear on a capturing track freezes the take
+  restorable, and Clear All is one grouped edit. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
+- **Accepted design, slice 1 (#1010, epic #1009):** the Tracks view is the
+  accepted stage (four columns per bank with name/crown, number · bars ·
+  layers · FX, one dB-linear whole-track meter with a clip cap, queued cue,
+  bottom progress, shared dBFS scales, footer, Library/bank/view/Settings
+  top bar, Wave view) and the 7" follows the selected track. The engine
+  crowns the first completed take and clears the crown of an empty session;
+  the snapshot
+  carries a per-track playhead and the master-bus peak. The volume overlay,
+  status bar and readiness strip are gone. Ledger:
+  `docs/plan/2026-09-09-segno-implementation-ledger.md`.
 - **Phase 1:** monorepo, miniaudio FFI plugin, duplex passthrough, round-trip
   latency harness, "hello duplex" smoke app.
 - **Phase 2:** single-track looper (record → master length → overdub → mix →
@@ -810,3 +1230,68 @@ stacking, contextual dock**, session menu, **performance recorder UI +
 pedal arm/disarm**, **DAW device-chain export**). `flutter analyze` clean;
 macOS app builds end-to-end. `LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`,
 `LE_FX_MAX = 8`, `kMaxOutputs = 8`.
+
+
+## Reversible-edits reconstruction (2026-09-15)
+
+The accepted mode-rules and reversible-edits slice is reconstructed on the
+reviewed Tracks/UART base (`09c8e9c2`), retaining original slice parent
+`6cdfb9fb`. Tracking: #1060, part of #1012 and integration #1058.
+
+The user approved refusing recovery of a completed recording that does not
+fit the current loop mode. Audio, history, effects and transport stay intact;
+the app explains how to select Free and retry. A pending clock or unfinished
+capture asks for a retry instead. No automatic mode change is made. Partial
+takes inside an established Multi cycle still retain the whole loop span,
+with silence outside the recorded fragment.
+
+Frozen-clear ownership/reset, grouped Undo/Redo metadata, confirmed-mode
+persistence and callback mode-fit races are repaired. Final validation passed:
+2,255 app tests, 1,610 package tests, native safety configurations, 150 FFI
+symbols, analysis, Bloc lint and formatting. Five review roles have no
+unresolved findings. The stacked PR still needs remote CI and its human merge
+gate; recording timing and later implementation slices remain in progress.
+Details and validation boundaries are in
+`docs/reviews/design-edits-restack/review.md` and `validation.md`.
+
+## Physical pedal state integration — October 1, 2026
+
+PR #1031 now uses one authoritative ten-pedal activity/color frame through the
+app, setup map and current Pico 2 renderer. UART v8 / STATE51 avoids the separate
+published v6/v7 hardware formats; intermediate #1029/#1030 must not be installed
+alone. Ten eight-pixel indicators and the forty-pixel ring preserve the sourced
+optical/current limits. No legacy protocol fallback or device flash.
+
+Full app: 2,346 passing, six existing skips, 91.126% coverage. Pedal package:
+213 passing, 97.743%. Firmware fixtures, actual sketch tests and Pico 2 compile
+pass. Independent source/five-role review and a separate adversary are clean.
+[Validation and limits](reviews/design-pedal-led-restack/README.md) bind the exact
+candidate. Palette editing is the next slice; hardware acceptance remains open.
+
+## Reusable LED palette — October 1, 2026
+
+PR #1032 adds the accepted LED colors editor to Layout A. All ten physical
+indicators have saved hues, including fixed controls. Reusable custom colors
+keep stable identities; Hue/Saturation/Brightness edit exact RGB. Draft
+preview stays local until durable Save, and Cancel preserves the live setup.
+Color-only saves preserve held actions, pending gestures and delayed native
+receipts. Actual assignment changes still retire those gestures.
+
+The palette is app-owned configuration on the existing protocol 8 frame; no
+firmware, native engine or package changes are introduced. Malformed explicit
+settings are refused through the existing recovery path. Clear and Restore
+retain later palette edits. The saved Pen note and setup images record the
+color context and non-overlapping placement beside the raised pedal row.
+
+Verification and review are recorded in
+[the palette report](reviews/design-led-palette-restack/README.md). Physical
+color appearance and brightness remain appliance checks.
+
+## Pedal artwork reconciliation — October 1, 2026
+
+PR #1034 restores measured geometry in the existing pedal widget, preserving
+its enclosing hit areas, labels and state-driven indicators. The source and
+independent render reviews are clean; the app suite passes 2,374 tests with
+90.069% coverage. See `docs/reviews/design-pedal-art-restack/` for the source
+binding, saved Pen reference, author visuals and separate review evidence.
+Published-head CI and the human merge gate remain required.

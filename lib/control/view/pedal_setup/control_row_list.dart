@@ -1,0 +1,298 @@
+import 'package:flutter/material.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/theme/theme.dart';
+
+/// One row naming a control: where it lives, over what it is, with what it
+/// is doing on the right.
+///
+/// The one row the External pedals screen lists every kind of control with —
+/// an expression pedal's sweeps, a button's effects and parameters, and the
+/// choices offered when adding either — so the three read as one list.
+class ControlRowTile extends StatelessWidget {
+  /// Creates a [ControlRowTile].
+  const ControlRowTile({
+    required this.destination,
+    required this.name,
+    required this.onTap,
+    this.value,
+    this.valueKey,
+    this.art,
+    this.artSize = const Size(68, 68),
+    this.selected = false,
+    this.available = true,
+    this.taken = false,
+    this.enabled = true,
+    super.key,
+  });
+
+  /// Where the control lives.
+  final String destination;
+
+  /// What it is.
+  final String name;
+
+  /// What it is doing, on the right — or nothing.
+  final String? value;
+
+  /// The key of the value text, for a test to read it by.
+  final Key? valueKey;
+
+  /// The pedal or rack picture, as a path in the catalogue package, or `null`
+  /// for a row the pen draws without one.
+  final String? art;
+
+  /// The box the picture is fitted into — 68 square in a button's list, 52 by
+  /// 68 in the expression pedal's.
+  final Size artSize;
+
+  /// Whether this row's rule is open.
+  final bool selected;
+
+  /// Whether the rig still has the control. An unavailable row keeps its
+  /// place and dims its value until the performer repairs its target.
+  final bool available;
+
+  /// Whether this is an offered choice the list already carries: shown with a
+  /// check and refused, not hidden, so a control does not vanish from a rig
+  /// that has it.
+  final bool taken;
+
+  /// Whether an offered choice may be selected under the current owner lock.
+  final bool enabled;
+
+  /// Opens or chooses the row.
+  final VoidCallback onTap;
+
+  /// The pen's row height.
+  static const double height = 96;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final shown = value;
+    return Semantics(
+      button: true,
+      selected: selected,
+      enabled: !taken && enabled,
+      label: '$destination $name${shown == null ? '' : ', $shown'}',
+      child: LoopFocusable(
+        enabled: !taken && enabled,
+        onActivate: onTap,
+        radius: 12,
+        child: GestureDetector(
+          onTap: taken || !enabled ? null : onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Opacity(
+            opacity: taken || !enabled ? surface.disabledOpacity : 1,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: selected ? surface.accentSurface : surface.card,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: selected ? surface.accent : surface.borderSubtle,
+                ),
+              ),
+              child: SizedBox(
+                height: height,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 25),
+                  child: LayoutBuilder(
+                    builder: (context, box) => Row(
+                      children: [
+                        if (art case final asset?) ...[
+                          SizedBox.fromSize(
+                            size: artSize,
+                            child: ExcludeSemantics(
+                              child: Image.asset(
+                                asset,
+                                key: const Key('control_row_art'),
+                                package: FxCatalogueLoader.package,
+                                fit: BoxFit.contain,
+                                // A picture that fails to load leaves its
+                                // space, so every row's names stay in one
+                                // column.
+                                errorBuilder: (_, _, _) =>
+                                    const SizedBox.shrink(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 24),
+                        ],
+                        Expanded(
+                          child: ExcludeSemantics(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                AppText(
+                                  destination,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: surface.textSecondary,
+                                    fontSize: 20,
+                                    height: 1.15,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                AppText(
+                                  name,
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: surface.textPrimary,
+                                    fontSize: 27,
+                                    height: 1.15,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (shown != null) ...[
+                          const SizedBox(width: 24),
+                          // The name column is Expanded, so the value sits at
+                          // the right edge at its own width. A long value is
+                          // capped at half the row, not given a Flexible: a
+                          // Flexible beside an Expanded splits the free space
+                          // and leaves a short value mid-card.
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: box.maxWidth / 2,
+                            ),
+                            child: AppText(
+                              shown,
+                              key: valueKey,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: available
+                                    ? surface.textPrimary
+                                    : surface.textTertiary,
+                                fontSize: 27,
+                                height: 1.15,
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (taken)
+                          Icon(
+                            LucideIcons.check,
+                            size: 24,
+                            color: surface.textSecondary,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A scrolling list of [ControlRowTile]s at the pen's spacing, with the
+/// overflow arrow, keeping the [selectedIndex] row in view.
+///
+/// Keeping it in view is not decoration: the list shrinks when a parameter's
+/// two values open below it, and a selected row left scrolled out of sight
+/// would have its values edited with nothing on screen saying whose they are.
+class ControlRowList extends StatefulWidget {
+  /// Creates a [ControlRowList].
+  const ControlRowList({
+    required this.itemCount,
+    required this.itemBuilder,
+    this.selectedIndex,
+    super.key,
+  });
+
+  /// How many rows.
+  final int itemCount;
+
+  /// Builds one row.
+  final IndexedWidgetBuilder itemBuilder;
+
+  /// The row to keep in view, or `null`.
+  final int? selectedIndex;
+
+  /// The pen's spacing.
+  static const double gap = 12;
+
+  /// The inset around the rows.
+  static const double padding = 4;
+
+  @override
+  State<ControlRowList> createState() => _ControlRowListState();
+}
+
+class _ControlRowListState extends State<ControlRowList> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _revealSelected();
+  }
+
+  @override
+  void didUpdateWidget(ControlRowList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only when WHICH row is selected, or how many there are, changed. A list
+    // that re-revealed on every rebuild would snap back under a performer
+    // scrolling it — and the expression pedal's list rebuilds each time the
+    // pedal reports a position.
+    if (oldWidget.selectedIndex == widget.selectedIndex &&
+        oldWidget.itemCount == widget.itemCount) {
+      return;
+    }
+    _revealSelected();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// Scrolls just far enough to show the selected row, after layout — the
+  /// viewport's height is not known before it.
+  void _revealSelected() {
+    final index = widget.selectedIndex;
+    if (index == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      final position = _controller.position;
+      final top = index * (ControlRowTile.height + ControlRowList.gap);
+      final bottom = top + ControlRowTile.height + ControlRowList.padding * 2;
+      final viewport = position.viewportDimension;
+      final offset = position.pixels;
+      final next = top < offset
+          ? top
+          : bottom > offset + viewport
+          ? bottom - viewport
+          : offset;
+      final clamped = next.clamp(0.0, position.maxScrollExtent);
+      if (clamped != offset) _controller.jumpTo(clamped);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Scrollbar(
+    controller: _controller,
+    thumbVisibility: true,
+    trackVisibility: true,
+    child: Padding(
+      padding: const EdgeInsets.only(right: 16),
+      child: ListView.separated(
+        controller: _controller,
+        padding: const EdgeInsets.all(ControlRowList.padding),
+        itemCount: widget.itemCount,
+        separatorBuilder: (_, _) => const SizedBox(height: ControlRowList.gap),
+        itemBuilder: widget.itemBuilder,
+      ),
+    ),
+  );
+}

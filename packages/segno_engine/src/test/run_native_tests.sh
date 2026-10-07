@@ -42,11 +42,14 @@ EXTRA_CFLAGS="${EXTRA_CFLAGS:-}"
 STD="-std=gnu11 -I src/core -I src/midi -I src/miniaudio \
   -I third_party/rnnoise/include -I third_party/rnnoise/src"
 
+# The C++ runtime joins ENGINE_LIBS for the one C++ engine TU (src/stretch/
+# le_stretch.cpp, the Signalsmith Stretch shim, #1179), compiled separately
+# below with $CXX because the $CC line passes C-only flags.
 case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lm"; MIDI_LIBS="-lwinmm -lm" ;;
-  Darwin) ENGINE_LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lm"
+  MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lstdc++ -lm"; MIDI_LIBS="-lwinmm -lm" ;;
+  Darwin) ENGINE_LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lc++ -lm"
           MIDI_LIBS="-framework CoreMIDI -framework CoreFoundation -lm" ;;
-  *) ENGINE_LIBS="-lpthread -lm -ldl"; MIDI_LIBS="-lasound -lpthread -lm" ;;  # Linux: miniaudio dlopen()s its backends
+  *) ENGINE_LIBS="-lpthread -lstdc++ -lm -ldl"; MIDI_LIBS="-lasound -lpthread -lm" ;;  # Linux: miniaudio dlopen()s its backends
 esac
 # MIDI_LIBS gained -lm above (C1, D15): the midi test binary now also links
 # src/core/tempo_grid.c (le_midi_clock.c's PPQN math depends on
@@ -64,14 +67,17 @@ esac
 # src/midi/le_midi_clock.c (C1, D15), which IS an engine dependency
 # (engine_process.c calls le_midi_clock_advance every block) despite living in
 # midi/ per the plan's file placement; keep it in sync with CMakeLists.txt.
-# src/core/restore_*.c (offline loop-close restoration DSP, #697 S8) sit
+# src/core/restore_*.c (offline loop-close restoration DSP, #697 S8) and
+# src/core/synth_*.c (the instrument voices and patch table, #1197) sit
 # outside the engine*.c glob on purpose (pure DSP TUs, not engine state) and
 # are listed explicitly — keep in sync with CMakeLists.txt.
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
   src/core/restore_declip.c src/core/restore_halfband.c \
-  src/core/audio_ring.c src/core/perf_drain.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
-  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c"
+  src/core/synth_voice.c src/core/synth_patch.c \
+  src/core/audio_ring.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
+  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c \
+  src/midi/le_clock_follow.c"
 
 # Vendored RNNoise (third_party/rnnoise, BSD-3-Clause — offline loop-close
 # denoise, #697). Listed explicitly, NOT globbed: the vendored src/ dir also
@@ -88,6 +94,19 @@ ENGINE_SRC="$ENGINE_SRC \
   third_party/rnnoise/src/rnnoise_data.c \
   third_party/rnnoise/src/rnnoise_tables.c"
 
+# --- The stretch shim object (#1179) ------------------------------------------
+# src/stretch/le_stretch.cpp is the only C++ TU in the portable engine: the C
+# ABI over the vendored Signalsmith Stretch (third_party/signalsmith-stretch,
+# included relatively from the TU, so no new -I). It cannot ride the $CC line
+# (gnu11 is a C-only standard flag), so it is compiled here once and the object
+# is linked into every engine binary below. Mirrors src/CMakeLists.txt's
+# stretch/le_stretch.cpp entry and tool/build_test_lib.sh — keep in sync.
+CXX="${CXX:-c++}"
+STRETCH_OBJ="$OUT/segno_le_stretch.o"
+echo "== building the stretch shim =="
+# shellcheck disable=SC2086
+$CXX -std=c++17 -O2 $EXTRA_CFLAGS -c src/stretch/le_stretch.cpp -o "$STRETCH_OBJ"
+
 # --- Telemetry concurrency (race) tests (#739) ------------------------------
 # Dedicated binary that races the exact thread pairs engine_telemetry.h's
 # WRITER OWNERSHIP note describes (break-raise vs callback loop, xrun tally vs
@@ -103,20 +122,85 @@ $CC $STD $EXTRA_CFLAGS src/test/test_engine_races.c -lpthread -lm \
   -o "$OUT/segno_race_tests.exe"
 "$OUT/segno_race_tests.exe"
 
+echo "== building plugin runtime race tests =="
+# Real installer and DSP, with a minimal fake host: portable and TSAN-covered.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_plugin_runtime_races.c \
+  src/core/engine_plugin.c src/core/engine_fx.c -lpthread -lm \
+  -o "$OUT/segno_plugin_runtime_race_tests.exe"
+"$OUT/segno_plugin_runtime_race_tests.exe"
+
+echo "== building FX recipe ownership tests =="
+# Real engine admission, callback publication and retirement with a deterministic
+# plugin host. Keep this before the races-only exit so TSAN covers its overlap.
+RECIPE_SRC="${ENGINE_SRC/ src\/core\/plugin_disabled.c/}"
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_fx_recipe_plugins.c \
+  $RECIPE_SRC "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_fx_recipe_tests.exe"
+"$OUT/segno_fx_recipe_tests.exe"
+
+echo "== building instrument ring race tests =="
+# A control thread posting note pairs against a hot-looping drain (#1197):
+# a note-off must never apply before its own note-on. Before the races-only
+# exit so the ThreadSanitizer job covers it too.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_instrument_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_instrument_race_tests.exe"
+"$OUT/segno_instrument_race_tests.exe"
+
+echo "== building MIDI sink race tests =="
+# The native MIDI input sink (#1228 Part 1, le_midi_port.h): a producer, an
+# audio thread and the control thread attaching/detaching/destroying, against
+# the real engine. Before the races-only exit so TSAN covers it; it needs no
+# OS MIDI backend (a struct beginning with a le_midi_sink stands in for a
+# capture), so the TSAN job's missing libasound does not matter.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_midi_sink_races.c \
+  $ENGINE_SRC "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_midi_sink_race_tests.exe"
+"$OUT/segno_midi_sink_race_tests.exe"
+
+echo "== building capture drain race tests =="
+# The drain thread rolling parts against a running callback and a snapshot
+# reader (#1198). Production engine, no test hooks: before the races-only exit
+# so the TSAN job covers it.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_perf_drain_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_perf_drain_race_tests.exe"
+"$OUT/segno_perf_drain_race_tests.exe"
+echo "== building backing handoff race tests =="
+# The backing player's buffer handoff (#1200): the audio thread advances End =
+# Next inside blocks while the control thread loads, stages and clears. Before
+# the races-only exit so the TSAN job covers it; ASan covers it in its job.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_backing_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_backing_race_tests.exe"
+"$OUT/segno_backing_race_tests.exe"
+
 if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then
   exit 0
 fi
 
 echo "== building engine tests =="
 # shellcheck disable=SC2086
-$CC $STD $EXTRA_CFLAGS src/test/test_engine_core.c $ENGINE_SRC $ENGINE_LIBS \
+$CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_engine_core.c $ENGINE_SRC "$STRETCH_OBJ" $ENGINE_LIBS \
   -o "$OUT/segno_core_tests.exe"
 "$OUT/segno_core_tests.exe"
+
+echo "== building the decoder fuzz driver =="
+# The app's audio-file decoder over whole-file mutations of every accepted and
+# refused format (#1200): a bounded, fixed-seed run in every configuration, so
+# the ASan job fuzzes it on every push. FUZZ_CFLAGS adds flags for this binary
+# only (the ASan job passes UBSan here); SEGNO_FUZZ_ITERATIONS and
+# SEGNO_FUZZ_SEED widen a local run.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS ${FUZZ_CFLAGS:-} src/test/fuzz_backing_decode.c $ENGINE_SRC "$STRETCH_OBJ" \
+  $ENGINE_LIBS -o "$OUT/segno_fuzz_decode.exe"
+TMPDIR="$OUT" "$OUT/segno_fuzz_decode.exe"
 
 echo "== building midi tests =="
 # shellcheck disable=SC2086
 $CC $STD $EXTRA_CFLAGS src/test/test_midi_core.c src/midi/midi.c src/midi/midi_backend_linux.c \
-  src/midi/midi_backend_apple.c src/midi/le_midi_clock.c \
+  src/midi/midi_backend_apple.c src/midi/le_midi_clock.c src/midi/le_clock_follow.c \
   src/core/tempo_grid.c $MIDI_LIBS \
   -o "$OUT/segno_midi_tests.exe"
 "$OUT/segno_midi_tests.exe"

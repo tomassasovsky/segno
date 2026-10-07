@@ -272,6 +272,9 @@ class _PerformanceCompletionSheetState
         switch (reason) {
           PerformanceStopReason.diskFull => l10n.perfStoppedDiskFull,
           PerformanceStopReason.deviceChanged => l10n.perfStoppedDeviceChange,
+          PerformanceStopReason.volumeLost => l10n.perfStoppedVolumeLost,
+          PerformanceStopReason.reserveReached => l10n.perfStoppedReserve,
+          PerformanceStopReason.slowStorage => l10n.perfStoppedSlowStorage,
         },
         ConsoleBannerTone.failure,
       ),
@@ -312,14 +315,6 @@ class _PerformanceCompletionSheetState
               tone: tone,
             ),
           ],
-          if (state.reExportFailed) ...[
-            const SizedBox(height: 14),
-            ConsoleBanner(
-              key: const Key('perfCompletion_reExportFailed'),
-              message: l10n.perfExportReExportFailed,
-              tone: ConsoleBannerTone.failure,
-            ),
-          ],
           if (state.tracks.isNotEmpty) ...[
             const SizedBox(height: 19),
             ExportDeviceChainSummary(tracks: state.tracks),
@@ -341,15 +336,6 @@ class _PerformanceCompletionSheetState
                 key: const Key('perfCompletion_reveal'),
                 label: _revealLabel(l10n),
                 onPressed: () => unawaited(_reveal(path)),
-              ),
-              ConsoleSmallButton(
-                key: const Key('perfCompletion_reExport'),
-                label: l10n.perfExportReExport,
-                onPressed: state.isReExporting
-                    ? null
-                    : () => unawaited(
-                        context.read<PerformanceRecorderCubit>().reExport(),
-                      ),
               ),
               ConsoleSmallButton(
                 key: const Key('perfCompletion_rename'),

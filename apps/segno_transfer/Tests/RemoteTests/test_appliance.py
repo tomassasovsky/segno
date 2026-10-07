@@ -21,6 +21,17 @@ def wav(payload=b"\0" * 128):
             + b"data" + struct.pack("<I", len(payload)) + payload)
 
 
+def part(payload=b"\0" * 128, stream=0, index=1, sealed=True):
+    """A recorded part as the appliance writes it since #1198: fmt, a 32-byte
+    sgno chunk, then data. An open part still has zero sizes."""
+    sgno = bytes(range(16)) + struct.pack("<HH", stream, index) + b"\0" * 12
+    riff = 4 + 24 + 40 + 8 + len(payload) if sealed else 0
+    return (b"RIFF" + struct.pack("<I", riff) + b"WAVEfmt "
+            + struct.pack("<IHHIIHH", 16, 3, 2, 48000, 384000, 8, 32)
+            + b"sgno" + struct.pack("<I", 32) + sgno
+            + b"data" + struct.pack("<I", len(payload) if sealed else 0) + payload)
+
+
 class ApplianceTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -45,6 +56,35 @@ class ApplianceTests(unittest.TestCase):
         self.assertEqual(recording["duration"], 2)
         self.assertEqual(recording["timestamp"], "20260915144716")
         self.assertEqual([f["path"] for f in recording["files"]], ["master.wav", "live-input-0.wav"])
+
+    def test_lists_a_take_recorded_in_parts(self):
+        take = self.root / "perf-20261006-120000"
+        take.mkdir()
+        (take / "performance.json").write_text(json.dumps({
+            "slug": "perf-20261006-120000", "finalized": True,
+            "sample_rate": 48000, "capture_frames": 96000}))
+        (take / "master-002.wav").write_bytes(part(index=2))
+        (take / "master-001.wav").write_bytes(part())
+        (take / "input-0-001.wav").write_bytes(part(stream=1))
+        result = appliance.catalog(self.root)
+        self.assertEqual(result["unavailable"], 0)
+        recording = next(r for r in result["recordings"] if r["name"] == take.name)
+        self.assertEqual([f["path"] for f in recording["files"]],
+                         ["master-001.wav", "master-002.wav", "input-0-001.wav"])
+
+    def test_an_open_part_is_not_offered(self):
+        take = self.make_take("parts")
+        (take / "master.wav").unlink()
+        (take / "master-001.wav").write_bytes(part())
+        (take / "master-002.wav").write_bytes(part(index=2, sealed=False))
+        recording = next(r for r in appliance.catalog(self.root)["recordings"] if r["name"] == "parts")
+        self.assertEqual([f["path"] for f in recording["files"]], ["master-001.wav"])
+
+    def test_a_take_without_its_first_main_part_is_unavailable(self):
+        take = self.make_take("inputs-only")
+        (take / "master.wav").unlink()
+        (take / "input-0-001.wav").write_bytes(part(stream=1))
+        self.assertEqual(appliance.catalog(self.root)["unavailable"], 1)
 
     def test_unfinished_and_corrupt_captures_are_unavailable(self):
         self.make_take("unfinished", finalized=False)

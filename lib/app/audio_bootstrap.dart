@@ -1,7 +1,11 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/console_audio_devices.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/logging/app_log.dart';
+import 'package:segno/looper/application/audio_tempo_families.dart';
+import 'package:segno/looper/application/settings_families.dart';
+import 'package:segno/looper/application/settings_owner.dart';
 // Settings owns its own AudioBackend; the looper domain backend is the
 // unprefixed one here.
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
@@ -29,9 +33,94 @@ typedef AutoStartResult = ({
 Future<AutoStartResult> tryAutoStartEngine({
   required LooperRepository repository,
   required SettingsRepository settings,
+  required MixSettingsCoordinator mixSettings,
+}) => mixSettings.runExclusive(() async {
+  await _seedFreshInstallHearClick(settings);
+  // Stage the stored owned settings before audio opens. Absent defaults never
+  // materialize stored keys. An unreadable value makes only its family
+  // unavailable: audio starts with the repository's default, and the owner's
+  // Retry repairs the stored key.
+  // Each family is staged through its own typed call: a list typed
+  // SettingsFamily<Object, Object?> would build checkpoint maps the family
+  // rejects at run time.
+  await _stageOrLog(
+    RecordStartFamily(repository: repository, settings: settings),
+  );
+  await _stageOrLog(
+    HearClickFamily(repository: repository, settings: settings),
+  );
+  await _stageOrLog(DecayFamily(repository: repository, settings: settings));
+  await _stageOrLog(OneShotFamily(repository: repository, settings: settings));
+  // Audio & tempo (#1179): Follow tempo restores On when nothing is stored.
+  await _stageOrLog(
+    FollowTempoFamily(repository: repository, settings: settings),
+  );
+  await _stageOrLog(
+    PitchModeFamily(repository: repository, settings: settings),
+  );
+
+  // Mode and every track length form one startup image, staged before audio
+  // opens like the families above.
+  await _stageOrLog(
+    RecordLengthFamily(repository: repository, settings: settings),
+  );
+  await _stageOrLog(
+    RecordTimingFamily(repository: repository, settings: settings),
+  );
+
+  try {
+    return await _tryAutoStartEngine(
+      repository: repository,
+      settings: settings,
+    );
+  } on FormatException catch (error) {
+    AppLog.error('audio auto-start: invalid saved configuration: $error');
+    repository.stopEngine();
+    return (
+      started: false,
+      asioDrivers: const <AudioDevice>[],
+      recoveryConfig: null,
+    );
+  }
+});
+
+/// A fresh install (no saved audio configuration and no Hear click key)
+/// stores Hear click Off before the families stage. An existing install
+/// with no key keeps the absent default it already plays with.
+Future<void> _seedFreshInstallHearClick(SettingsRepository settings) async {
+  try {
+    if (await settings.loadAudioConfig() != null) return;
+    if (await settings.readClickModeCheckpoint() != null) return;
+    await settings.restoreClickModeCheckpoint(ClickMode.off.code);
+  } on Object catch (error) {
+    // The Hear click owner's load and Retry report an unreadable key.
+    AppLog.error(
+      'audio auto-start: fresh-install Hear click not stored: $error',
+    );
+  }
+}
+
+Future<void> _stageOrLog<V extends Object, C>(
+  SettingsFamily<V, C> family,
+) async {
+  try {
+    await stageStored(family);
+  } on Object catch (error) {
+    AppLog.error(
+      'audio auto-start: saved ${family.key.name} unavailable: $error',
+    );
+  }
+}
+
+Future<AutoStartResult> _tryAutoStartEngine({
+  required LooperRepository repository,
+  required SettingsRepository settings,
 }) async {
   const asioDrivers = <AudioDevice>[];
 
+  // Global monitor gain must be valid before either first-run or saved-device
+  // startup opens audio. The selected device's full mix is read after opening.
+  await settings.loadMixSettings('');
   final saved = await settings.loadAudioConfig();
   if (saved == null) {
     AppLog.info('audio auto-start: first run (no saved config)');
@@ -145,6 +234,54 @@ Future<AutoStartResult> tryAutoStartEngine({
       recoveryConfig: attemptedPin ? config : null,
     );
   }
+  // A successful enqueue is not a callback confirmation. Finish the engine's
+  // initial mode/length replay before applying saved choices.
+  // An unconfirmed owned replay is that owner's recovery, not a reason to
+  // stop audio.
+  final startupRecordStart = await repository.settleRecordStartSettings();
+  if (!startupRecordStart.isOk) {
+    AppLog.error(
+      'audio startup: recording start replay unconfirmed '
+      '${startupRecordStart.name}',
+    );
+  }
+  final startupClick = await repository.settleClickMode();
+  if (!startupClick.isOk) {
+    AppLog.error(
+      'audio auto-start: Hear click replay unconfirmed ${startupClick.name}',
+    );
+  }
+  final startupLength = await repository.settleLengthSettings();
+  if (!startupLength.isOk) {
+    AppLog.error(
+      'audio auto-start: length replay unconfirmed ${startupLength.name}',
+    );
+  }
+  final startupOnce = await repository.settleOneShot();
+  if (!startupOnce.isOk) {
+    AppLog.error(
+      'audio auto-start: playback replay unconfirmed ${startupOnce.name}',
+    );
+  }
+  final startupFollow = await repository.settleFollowTempo();
+  if (!startupFollow.isOk) {
+    AppLog.error(
+      'audio auto-start: Follow tempo replay unconfirmed ${startupFollow.name}',
+    );
+  }
+  final startupPitch = await repository.settlePitchMode();
+  if (!startupPitch.isOk) {
+    AppLog.error(
+      'audio auto-start: Pitch replay unconfirmed ${startupPitch.name}',
+    );
+  }
+  final startupTiming = await repository.settleRecordTimingSettings();
+  if (!startupTiming.isOk) {
+    AppLog.error(
+      'audio auto-start: record timing replay unconfirmed '
+      '${startupTiming.name}',
+    );
+  }
   if (consolePinned) {
     await settings.saveAudioConfig(
       StoredAudioConfig(
@@ -171,6 +308,7 @@ Future<AutoStartResult> tryAutoStartEngine({
   // start). A freshly measured offset is persisted the next time the cubit is
   // created (or the next interactive measurement).
   final status = repository.state.status;
+  final savedMix = await settings.loadMixSettings(status.deviceName);
   final savedOffset = await settings.loadLatencyOffsetFrames(
     device: status.deviceName,
     sampleRate: status.sampleRate,
@@ -190,151 +328,221 @@ Future<AutoStartResult> tryAutoStartEngine({
   // auto-round-up and loops record at ×2/×4.
   repository.setDefaultMultiple(multiple: await settings.loadDefaultMultiple());
 
-  // Restore per-track transport overrides and every lane's routing / mix /
-  // effects so saved multi-lane setups are reapplied on launch (mirroring the
-  // latency-offset restore above).
+  // Replay every saved source, destination and mix control in one callback
+  // transaction before loading lane effects that depend on active lane counts.
+  final mixRequest = repository.applyMixSettings(
+    repository.mixSettingsSnapshot.copyWith(
+      trackLevels: savedMix.trackLevels,
+      trackPans: savedMix.trackPans,
+      laneLevels: savedMix.laneLevels,
+      monitorLevels: savedMix.monitorLevels,
+      laneInputs: savedMix.laneInputs,
+      laneOutputs: savedMix.laneOutputs,
+      laneCounts: savedMix.laneCounts,
+      inputSetup: InputSetup(
+        trimDb: savedMix.inputSetup.trimDb,
+        pan: savedMix.inputSetup.pan,
+        pairs: savedMix.inputSetup.pairs,
+      ),
+      outputSetup: OutputSetup.fromMaps(
+        level: savedMix.outputSetup.level,
+        muted: savedMix.outputSetup.muted,
+        mono: savedMix.outputSetup.mono,
+        balance: savedMix.outputSetup.balance,
+      ),
+    ),
+  );
+  final mixResult = mixRequest.isOk
+      ? await repository.settleMixSettings()
+      : mixRequest;
+  if (!mixResult.isOk) {
+    AppLog.error(
+      'audio auto-start: saved mix replay refused '
+      'result=${mixResult.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
+
+  // A start may already have replayed remembered chains. Do not issue a
+  // second recipe for the same target until those revisions reach the callback.
+  final startupFx = await repository.settleFxRecipes();
+  if (!startupFx.isOk) {
+    AppLog.error(
+      'audio auto-start: FX replay refused result=${startupFx.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
+  final mintedChains = <Future<void> Function()>[];
+  bool admitted(EngineResult result) {
+    if (result.isOk) return true;
+    AppLog.error(
+      'audio auto-start: saved setting refused result=${result.name}',
+    );
+    repository.stopEngine();
+    return false;
+  }
+
   for (final track in repository.state.tracks) {
-    final quantize = await settings.loadTrackQuantize(track.channel);
-    if (quantize != null) {
-      repository.setTrackQuantize(channel: track.channel, enabled: quantize);
-    }
     final multiple = await settings.loadTrackMultiple(track.channel);
     if (multiple > 0) {
       repository.setTrackMultiple(channel: track.channel, multiple: multiple);
     }
-    final lengthPreset = await settings.loadTrackLengthPreset(track.channel);
-    if (lengthPreset > 0) {
-      repository.setTrackLengthPreset(
-        channel: track.channel,
-        bars: lengthPreset,
-      );
-    }
-    // Restore the saved lane count first so the engine allocates the added
-    // lanes before they are configured below.
-    final laneCount = await settings.loadLaneCount(track.channel);
-    if (laneCount > 1) {
-      repository.setLaneCount(channel: track.channel, count: laneCount);
-    }
+    final laneCount = savedMix.laneCounts[track.channel] ?? 1;
     for (var lane = 0; lane < laneCount; lane++) {
-      final inputChannel = await settings.loadLaneInput(track.channel, lane);
-      if (inputChannel != null) {
-        repository.setLaneInput(
-          channel: track.channel,
-          lane: lane,
-          inputChannel: inputChannel,
-        );
-      }
-      final outputMask = await settings.loadLaneOutput(track.channel, lane);
-      if (outputMask != null) {
-        repository.setLaneOutput(
-          channel: track.channel,
-          lane: lane,
-          mask: outputMask,
-        );
-      }
-      final volume = await settings.loadLaneVolume(track.channel, lane);
-      if (volume != null) {
-        repository.setLaneVolume(volume, channel: track.channel, lane: lane);
-      }
       final muted = await settings.loadLaneMute(track.channel, lane);
       if (muted != null) {
-        repository.setLaneMute(
-          muted: muted,
-          channel: track.channel,
-          lane: lane,
-        );
+        if (!admitted(
+          repository.setLaneMute(
+            muted: muted,
+            channel: track.channel,
+            lane: lane,
+          ),
+        )) {
+          return (
+            started: false,
+            asioDrivers: asioDrivers,
+            recoveryConfig: null,
+          );
+        }
       }
-      // Restore the saved ordered effect chain in one shot. The key holds the
-      // chain envelope (R15) — the chain-enabled flag and inheritance meta
-      // ride inside it; a legacy bare-array chain decodes as enabled with no
-      // meta.
       final chain = decodeFxChain(
         await settings.loadLaneEffects(track.channel, lane),
       );
-      if (chain.entries.isNotEmpty) {
-        repository
-          ..setLaneEffects(
-            channel: track.channel,
-            lane: lane,
-            effects: chain.entries,
-          )
-          ..setLaneChainMeta(
-            channel: track.channel,
-            lane: lane,
-            inheritedFrom: chain.meta?.inheritedFrom ?? const [],
-          );
-        // Mint-once for legacy payloads (A9): entries that decoded id-less
-        // were just minted stable slot ids at the repository write boundary —
-        // persist the minted envelope back, or every launch would re-mint
-        // DIFFERENT ids and a binding stored against one would dangle after
-        // the next restart.
-        if (chain.entries.any((e) => e.slotId == null)) {
-          await settings.saveLaneEffects(
-            track.channel,
-            lane,
+      if (chain.entries.isEmpty && chain.chainEnabled) continue;
+      if (!admitted(
+        repository.setLaneEffects(
+          channel: track.channel,
+          lane: lane,
+          effects: chain.entries,
+          chainEnabled: chain.chainEnabled,
+          allowUnavailable: true,
+        ),
+      )) {
+        return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+      }
+      repository.setLaneChainMeta(
+        channel: track.channel,
+        lane: lane,
+        inheritedFrom: chain.meta?.inheritedFrom ?? const [],
+      );
+      if (chain.entries.any((e) => e.slotId == null)) {
+        final channel = track.channel;
+        final laneIndex = lane;
+        mintedChains.add(
+          () => settings.saveLaneEffects(
+            channel,
+            laneIndex,
             encodeFxChain(
               FxChainEnvelope(
                 chainEnabled: chain.chainEnabled,
                 meta: chain.meta,
-                entries: repository.laneEffects(track.channel, lane),
+                entries: repository.laneEffects(channel, laneIndex),
               ),
-            ),
-          );
-        }
-      }
-      if (!chain.chainEnabled) {
-        repository.setLaneChainEnabled(
-          channel: track.channel,
-          lane: lane,
-          enabled: false,
-        );
-      }
-    }
-    // Restore the Track-stage (stereo bus) chain envelope (FX v3 part 3a).
-    final trackChain = decodeFxChain(
-      await settings.loadTrackFxChain(track.channel),
-    );
-    if (trackChain.entries.isNotEmpty) {
-      repository.setTrackEffects(
-        channel: track.channel,
-        effects: trackChain.entries,
-      );
-      // Mint-once (A9) — see the lane restore above.
-      if (trackChain.entries.any((e) => e.slotId == null)) {
-        await settings.saveTrackFxChain(
-          track.channel,
-          encodeFxChain(
-            FxChainEnvelope(
-              chainEnabled: trackChain.chainEnabled,
-              entries: repository.trackEffects(track.channel),
             ),
           ),
         );
       }
     }
-    if (!trackChain.chainEnabled) {
-      repository.setTrackChainEnabled(channel: track.channel, enabled: false);
+    final trackChain = decodeFxChain(
+      await settings.loadTrackFxChain(track.channel),
+    );
+    if (trackChain.entries.isNotEmpty || !trackChain.chainEnabled) {
+      if (!admitted(
+        repository.setTrackEffects(
+          channel: track.channel,
+          effects: trackChain.entries,
+          chainEnabled: trackChain.chainEnabled,
+          allowUnavailable: true,
+        ),
+      )) {
+        return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+      }
+      if (trackChain.entries.any((e) => e.slotId == null)) {
+        final channel = track.channel;
+        mintedChains.add(
+          () => settings.saveTrackFxChain(
+            channel,
+            encodeFxChain(
+              FxChainEnvelope(
+                chainEnabled: trackChain.chainEnabled,
+                entries: repository.trackEffects(channel),
+              ),
+            ),
+          ),
+        );
+      }
     }
   }
 
-  // Restore the Master insert chain envelope (FX v3 part 3a).
-  final masterChain = decodeFxChain(await settings.loadMasterFxChain());
-  if (masterChain.entries.isNotEmpty) {
-    repository.setMasterEffects(effects: masterChain.entries);
-    // Mint-once (A9) — see the lane restore above.
-    if (masterChain.entries.any((e) => e.slotId == null)) {
-      await settings.saveMasterFxChain(
-        encodeFxChain(
-          FxChainEnvelope(
-            chainEnabled: masterChain.chainEnabled,
-            entries: repository.masterEffects,
+  // Restore one complete recipe per output destination. A chain's power and
+  // entries must share admission and the minted identities wait for its ack.
+  for (var bus = 0; bus < kMaxOutputBuses; bus++) {
+    final outputChain = decodeFxChain(await settings.loadOutputFxChain(bus));
+    if (outputChain.entries.isNotEmpty || !outputChain.chainEnabled) {
+      if (!admitted(
+        repository.setOutputEffects(
+          bus: bus,
+          effects: outputChain.entries,
+          chainEnabled: outputChain.chainEnabled,
+          allowUnavailable: true,
+        ),
+      )) {
+        return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+      }
+      if (outputChain.entries.any((e) => e.slotId == null)) {
+        final outputBus = bus;
+        mintedChains.add(
+          () => settings.saveOutputFxChain(
+            outputBus,
+            encodeFxChain(
+              FxChainEnvelope(
+                chainEnabled: outputChain.chainEnabled,
+                entries: repository.outputEffects(outputBus),
+              ),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  // Restore the All tracks recorded-mix chain envelope (slice 3e).
+  final allTracksChain = decodeFxChain(await settings.loadAllTracksFxChain());
+  if (allTracksChain.entries.isNotEmpty || !allTracksChain.chainEnabled) {
+    if (!admitted(
+      repository.setAllTracksEffects(
+        effects: allTracksChain.entries,
+        chainEnabled: allTracksChain.chainEnabled,
+        allowUnavailable: true,
+      ),
+    )) {
+      return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+    }
+    if (allTracksChain.entries.any((e) => e.slotId == null)) {
+      mintedChains.add(
+        () => settings.saveAllTracksFxChain(
+          encodeFxChain(
+            FxChainEnvelope(
+              chainEnabled: allTracksChain.chainEnabled,
+              entries: repository.allTracksEffects,
+            ),
           ),
         ),
       );
     }
   }
-  if (!masterChain.chainEnabled) {
-    repository.setMasterChainEnabled(enabled: false);
+  final restoredFx = await repository.settleFxRecipes();
+  if (!restoredFx.isOk) {
+    AppLog.error(
+      'audio auto-start: saved setting refused result=${restoredFx.name}',
+    );
+    repository.stopEngine();
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
+  for (final save in mintedChains) {
+    await save();
   }
 
   // Restore the structural output gate. Only explicitly-disabled outputs were
@@ -401,6 +609,49 @@ Future<bool> _firstRunAutoStart({
   if (!result.isOk) {
     AppLog.error('audio first-run: open failed result=${result.name}');
     return false;
+  }
+  final startupRecordStart = await repository.settleRecordStartSettings();
+  if (!startupRecordStart.isOk) {
+    AppLog.error(
+      'audio first-run: recording start replay unconfirmed '
+      '${startupRecordStart.name}',
+    );
+  }
+  final startupClick = await repository.settleClickMode();
+  if (!startupClick.isOk) {
+    AppLog.error(
+      'audio first-run: Hear click replay unconfirmed ${startupClick.name}',
+    );
+  }
+  final startupLength = await repository.settleLengthSettings();
+  if (!startupLength.isOk) {
+    AppLog.error(
+      'audio first-run: length replay unconfirmed ${startupLength.name}',
+    );
+  }
+  final startupOnce = await repository.settleOneShot();
+  if (!startupOnce.isOk) {
+    AppLog.error(
+      'audio first-run: playback replay unconfirmed ${startupOnce.name}',
+    );
+  }
+  final startupFollow = await repository.settleFollowTempo();
+  if (!startupFollow.isOk) {
+    AppLog.error(
+      'audio first-run: Follow tempo replay unconfirmed ${startupFollow.name}',
+    );
+  }
+  final startupPitch = await repository.settlePitchMode();
+  if (!startupPitch.isOk) {
+    AppLog.error(
+      'audio first-run: Pitch replay unconfirmed ${startupPitch.name}',
+    );
+  }
+  final startupTiming = await repository.settleRecordTimingSettings();
+  if (!startupTiming.isOk) {
+    AppLog.error(
+      'audio first-run: record timing replay unconfirmed ${startupTiming.name}',
+    );
   }
   final status = repository.state.status;
   await settings.saveAudioConfig(

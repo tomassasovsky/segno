@@ -1,6 +1,17 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:local_storage_client/local_storage_client.dart';
 import 'package:pub_semver/pub_semver.dart';
+import 'package:settings_repository/src/display_role.dart';
+import 'package:settings_repository/src/fade_durations.dart';
+
+/// Exact recording timing scalars. Missing tracks inherit; zero does not.
+typedef RecordTimingCheckpoint = ({
+  bool? quantize,
+  int? division,
+  Map<int, int> trackOverrides,
+});
 
 /// The persisted device-backend intent. A settings-layer domain enum (mirroring
 /// the engine's backend) kept here so this repository holds no data-layer
@@ -11,6 +22,55 @@ enum AudioBackend {
 
   /// Windows ASIO.
   asio,
+}
+
+/// A pedal setup Save that did not complete durably.
+final class PedalSetupSaveException implements Exception {
+  /// Keeps the original storage failure and any checkpoint-restore failure.
+  const PedalSetupSaveException({
+    required this.cause,
+    required this.checkpointRestored,
+    this.restoreFailure,
+  });
+
+  /// The failure that interrupted the requested Save.
+  final Object cause;
+
+  /// A second failure while restoring the exact previous stored value.
+  final Object? restoreFailure;
+
+  /// Whether the previous stored value was confirmed after the failed Save.
+  final bool checkpointRestored;
+
+  @override
+  String toString() => restoreFailure == null
+      ? 'Pedal setup Save failed: $cause'
+      : 'Pedal setup Save failed: $cause; checkpoint restoration failed: '
+            '$restoreFailure';
+}
+
+/// A MIDI configuration Save that was not confirmed durable.
+final class MidiSettingsSaveException implements Exception {
+  /// Preserves the original refusal and exact-checkpoint recovery result.
+  const MidiSettingsSaveException({
+    required this.cause,
+    required this.checkpointRestored,
+    this.restoreFailure,
+  });
+
+  /// Original write/readback failure.
+  final Object cause;
+
+  /// Whether rollback was verified byte for byte.
+  final bool checkpointRestored;
+
+  /// Rollback or rollback-verification failure, if any.
+  final Object? restoreFailure;
+
+  @override
+  String toString() =>
+      'MIDI settings Save failed: $cause; '
+      'checkpoint restored: $checkpointRestored; $restoreFailure';
 }
 
 /// A persisted audio device configuration, used to auto-start the engine on
@@ -93,6 +153,43 @@ class StoredAudioConfig {
 
 /// Persists user/device settings via a [KeyValueStore].
 ///
+/// The per-input capture setup as this repository stores it (accepted
+/// design, Audio routing): capture trim per input in dB, pan per mono input,
+/// and every stereo pair's balance keyed by the pair's lower member. A plain
+/// record rather than the looper domain's `InputSetup`, so this repository
+/// holds no domain dependency; the app builds the model from it. Absent
+/// entries are unity, centre and unpaired.
+typedef StoredInputSetup = ({
+  Map<int, double> trimDb,
+  Map<int, double> pan,
+  Map<int, double> pairs,
+});
+
+/// The appliance-wide saved mix and the current device's capture setup.
+typedef StoredMixSettings = ({
+  Map<int, double> trackLevels,
+  Map<int, double> trackPans,
+  Map<(int, int), double> laneLevels,
+  Map<int, double> monitorLevels,
+  Map<(int, int), int> laneInputs,
+  Map<(int, int), int> laneOutputs,
+  Map<int, int> laneCounts,
+  StoredInputSetup inputSetup,
+  StoredOutputSetup outputSetup,
+});
+
+/// The output setup as this repository stores it (accepted design, Output
+/// setup): per destination (bus, one per stereo pair of outputs) its level,
+/// mute, Mono and balance, each map holding only the destinations off that
+/// fact's default (unity, unmuted, Stereo, centre). A plain record like
+/// [StoredInputSetup].
+typedef StoredOutputSetup = ({
+  Map<int, double> level,
+  Map<int, bool> muted,
+  Map<int, bool> mono,
+  Map<int, double> balance,
+});
+
 /// Stores the per-device record-offset latency calibration, the last-used audio
 /// device configuration (so the engine can auto-start on launch), per-track
 /// display names, and big-picture view preferences.
@@ -103,11 +200,97 @@ class SettingsRepository {
   /// or `null` where that knob is not engaged (any non-Linux platform, or
   /// Linux without `SEGNO_ALSA_PERIODS` set). Derive it with
   /// [alsaPeriodsFromEnvironment]; the composition root passes it in.
-  const SettingsRepository({required KeyValueStore store, int? alsaPeriods})
+  SettingsRepository({required KeyValueStore store, int? alsaPeriods})
     : _store = store,
       _alsaPeriods = alsaPeriods;
 
   final KeyValueStore _store;
+  Future<void> _serializedWrite = Future<void>.value();
+
+  Future<void> _writeIntScalar(String key, int? value, String failure) async {
+    if (value == null) {
+      await _store.remove(key);
+    } else {
+      await _store.setInt(key, value);
+    }
+    if (await _store.getInt(key) != value) throw StateError(failure);
+  }
+
+  Future<void> _writeBoolScalar(String key, bool? value, String failure) async {
+    if (value == null) {
+      await _store.remove(key);
+    } else {
+      await _store.setBool(key, value: value);
+    }
+    if (await _store.getBool(key) != value) throw StateError(failure);
+  }
+
+  Future<void> _writeDoubleScalar(
+    String key,
+    double? value,
+    String failure,
+  ) async {
+    if (value == null) {
+      await _store.remove(key);
+    } else {
+      await _store.setDouble(key, value);
+    }
+    if (await _store.getDouble(key) != value) throw StateError(failure);
+  }
+
+  static const _fadeDurationsKey = 'looper.fade_durations';
+
+  /// Exact stored bytes/absence, ordered after preceding settings writes.
+  Future<String?> readFadeDurationsCheckpoint() =>
+      _serialize(() => _store.getString(_fadeDurationsKey));
+
+  /// Writes the complete vector and verifies its exact encoded record.
+  Future<void> saveFadeDurations(FadeDurations value) =>
+      restoreFadeDurationsCheckpoint(jsonEncode(value.toJson()));
+
+  /// Restores exact bytes/absence and verifies even noncanonical valid JSON.
+  Future<void> restoreFadeDurationsCheckpoint(String? record) =>
+      _serialize(() async {
+        if (record == null) {
+          await _store.remove(_fadeDurationsKey);
+        } else {
+          await _store.setString(_fadeDurationsKey, record);
+        }
+        if (await _store.getString(_fadeDurationsKey) != record) {
+          throw StateError('Fade duration persistence was not confirmed');
+        }
+      });
+
+  static const _instrumentsKey = 'instruments.working_copy';
+
+  /// The instruments family's stored record (#1197): exact bytes or
+  /// absence, ordered after preceding settings writes. The record's shape is
+  /// the instrument repository's; this store keeps it verbatim.
+  Future<String?> readInstrumentsCheckpoint() =>
+      _serialize(() => _store.getString(_instrumentsKey));
+
+  /// Restores the instruments record's exact bytes or absence and verifies
+  /// the write.
+  Future<void> restoreInstrumentsCheckpoint(String? record) =>
+      _serialize(() async {
+        if (record == null) {
+          await _store.remove(_instrumentsKey);
+        } else {
+          await _store.setString(_instrumentsKey, record);
+        }
+        if (await _store.getString(_instrumentsKey) != record) {
+          throw StateError('Instruments persistence was not confirmed');
+        }
+      });
+
+  Future<T> _serialize<T>(Future<T> Function() write) {
+    final operation = _serializedWrite.then((_) => write());
+    _serializedWrite = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace stackTrace) {},
+    );
+    return operation;
+  }
 
   /// The effective ALSA period count, part of the latency-calibration key.
   ///
@@ -324,19 +507,30 @@ class SettingsRepository {
     await _store.setString(_audioAsioDriverKey, config.asioDriver);
   }
 
-  static const String _midiInputDeviceIdKey = 'midi.input_device_id';
-  static const String _midiInputDeviceNameKey = 'midi.input_device_name';
+  static const String _midiInputDeviceKey = 'midi.input_device';
 
   /// Loads the pinned MIDI input device as `(id, name)`, or `null` when none
   /// has been selected (a fresh install, or after picking "None"). The `id` is
   /// the per-OS stable token used to re-open the device on launch; `name` is
   /// the human-readable label kept so a "last device not found" status can name
-  /// it even while the device is absent. Additive flat keys, like `audio.*`.
+  /// it even while the device is absent. The pair is one durable record.
   Future<({String id, String name})?> loadMidiDevice() async {
-    final id = await _store.getString(_midiInputDeviceIdKey);
-    if (id == null || id.isEmpty) return null;
-    final name = await _store.getString(_midiInputDeviceNameKey) ?? '';
-    return (id: id, name: name);
+    final raw = await _store.getString(_midiInputDeviceKey);
+    if (raw == null) return null;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      throw const FormatException('Invalid saved MIDI input device');
+    }
+    if (decoded is! Map<String, dynamic> ||
+        decoded.length != 2 ||
+        decoded['id'] is! String ||
+        (decoded['id'] as String).isEmpty ||
+        decoded['name'] is! String) {
+      throw const FormatException('Invalid saved MIDI input device');
+    }
+    return (id: decoded['id'] as String, name: decoded['name'] as String);
   }
 
   /// Pins the MIDI input device [id]/[name] so it auto-reconnects next launch.
@@ -344,68 +538,199 @@ class SettingsRepository {
     required String id,
     required String name,
   }) async {
-    await _store.setString(_midiInputDeviceIdKey, id);
-    await _store.setString(_midiInputDeviceNameKey, name);
+    if (id.isEmpty) throw ArgumentError.value(id, 'id', 'Must not be empty');
+    final raw = jsonEncode({'id': id, 'name': name});
+    await _store.setString(_midiInputDeviceKey, raw);
+    if (await _store.getString(_midiInputDeviceKey) != raw) {
+      throw StateError('Saved MIDI input device was not confirmed');
+    }
   }
 
   /// Clears the pinned MIDI input device (the "None" selection), so the looper
   /// relaunches with no MIDI device attached.
   Future<void> clearMidiDevice() async {
-    await _store.remove(_midiInputDeviceIdKey);
-    await _store.remove(_midiInputDeviceNameKey);
+    await _store.remove(_midiInputDeviceKey);
+    if (await _store.getString(_midiInputDeviceKey) != null) {
+      throw StateError('Cleared MIDI input device was not confirmed');
+    }
   }
+
+  static const String _midiConfigurationKey = 'midi.configuration';
+
+  /// One atomic opaque envelope for Remote enable and all mappings.
+  Future<String?> loadMidiConfiguration() async {
+    await _serializedWrite;
+    return _store.getString(_midiConfigurationKey);
+  }
+
+  /// Confirms exact saved bytes; on refusal restores and verifies the
+  /// checkpoint.
+  Future<void> saveMidiConfiguration(String encoded) => _serialize(() async {
+    final String? checkpoint;
+    try {
+      checkpoint = await _store.getString(_midiConfigurationKey);
+    } on Object catch (error, trace) {
+      Error.throwWithStackTrace(
+        MidiSettingsSaveException(
+          cause: error,
+          checkpointRestored: false,
+        ),
+        trace,
+      );
+    }
+    try {
+      await _store.setString(_midiConfigurationKey, encoded);
+      if (await _store.getString(_midiConfigurationKey) != encoded) {
+        throw StateError('MIDI configuration write was not retained');
+      }
+    } on Object catch (error, trace) {
+      try {
+        if (checkpoint == null) {
+          await _store.remove(_midiConfigurationKey);
+        } else {
+          await _store.setString(_midiConfigurationKey, checkpoint);
+        }
+        if (await _store.getString(_midiConfigurationKey) != checkpoint) {
+          throw StateError('MIDI configuration checkpoint was not restored');
+        }
+      } on Object catch (restoreError, restoreTrace) {
+        Error.throwWithStackTrace(
+          MidiSettingsSaveException(
+            cause: error,
+            checkpointRestored: false,
+            restoreFailure: restoreError,
+          ),
+          restoreTrace,
+        );
+      }
+      Error.throwWithStackTrace(
+        MidiSettingsSaveException(
+          cause: error,
+          checkpointRestored: true,
+        ),
+        trace,
+      );
+    }
+  });
 
   static const String _pedalLongPressMsKey = 'pedal.long_press_ms';
 
   /// Loads the pedal long-press threshold in milliseconds (Undo long-press =
-  /// redo). Defaults to `500` when unset.
+  /// redo). Defaults to the accepted `800` ms baseline when unset.
   Future<int> loadPedalLongPressMs() async =>
-      await _store.getInt(_pedalLongPressMsKey) ?? 500;
+      await _store.getInt(_pedalLongPressMsKey) ?? 800;
 
   /// Saves the pedal long-press threshold in milliseconds.
   Future<void> savePedalLongPressMs(int ms) =>
       _store.setInt(_pedalLongPressMsKey, ms);
 
-  static const String _modeSwitchStyleKey = 'pedal.mode_switch_style';
+  static const String _tunerDefaultSeededKey = 'pedal.tuner_default_seeded';
 
-  /// Loads the persisted MODE-footswitch style token (an opaque token, e.g.
-  /// `'cycleThree'` / `'holdFx'`), or `null` if unset. The presentation layer
-  /// maps the token to its style enum; unset (and unknown) tokens resolve to
-  /// the original three-mode tap cycle, so existing rigs see no change.
-  Future<String?> loadModeSwitchStyle() =>
-      _store.getString(_modeSwitchStyleKey);
+  /// Whether the one-shot `Hold · Tuner` default was already attempted on
+  /// Custom pedal 2 (#1229). Written at the first attempt, whatever its
+  /// outcome, so a player who removes it never gets it back.
+  Future<bool> loadTunerDefaultSeeded() async =>
+      await _store.getBool(_tunerDefaultSeededKey) ?? false;
 
-  /// Saves the MODE-footswitch [style] token.
-  Future<void> saveModeSwitchStyle(String style) =>
-      _store.setString(_modeSwitchStyleKey, style);
+  /// Marks the `Hold · Tuner` default as attempted.
+  Future<void> saveTunerDefaultSeeded() =>
+      _store.setBool(_tunerDefaultSeededKey, value: true);
 
-  static String _ctrlCalibrationKey(int jack) => 'pedal.ctrl_calibration.$jack';
+  static const String _tunerReferenceHzKey = 'tuner.reference_hz';
+  static const String _tunerInputKey = 'tuner.input';
 
-  /// Loads the calibrated ends of the expression pedal on CTRL jack [jack]
-  /// (`0` or `1`) as `(min, max)` in the board's raw `0`..`255`, or `null`
-  /// when the jack has never been calibrated and its ends are learned from
-  /// the pedal instead.
-  Future<(int, int)?> loadCtrlCalibration(int jack) async {
-    final stored = await _store.getString(_ctrlCalibrationKey(jack));
-    if (stored == null) return null;
-    final parts = stored.split(',');
-    if (parts.length != 2) return null;
-    final min = int.tryParse(parts[0]);
-    final max = int.tryParse(parts[1]);
-    if (min == null || max == null) return null;
-    return (min, max);
+  /// The lowest A4 reference the tuner accepts, in Hz.
+  static const int tunerReferenceMinHz = 420;
+
+  /// The highest A4 reference the tuner accepts, in Hz.
+  static const int tunerReferenceMaxHz = 460;
+
+  /// The A4 reference the tuner starts from and resets to, in Hz.
+  static const int tunerReferenceDefaultHz = 440;
+
+  /// Loads the tuner's A4 reference in Hz: an appliance preference, not
+  /// Session state (#1229). Defaults to 440, and a stored value outside
+  /// 420–460 reads clamped into it.
+  Future<int> loadTunerReferenceHz() async =>
+      (await _store.getInt(_tunerReferenceHzKey) ?? tunerReferenceDefaultHz)
+          .clamp(tunerReferenceMinHz, tunerReferenceMaxHz);
+
+  /// Saves the tuner's A4 reference, clamped to 420–460 Hz.
+  Future<void> saveTunerReferenceHz(int hz) => _store.setInt(
+    _tunerReferenceHzKey,
+    hz.clamp(tunerReferenceMinHz, tunerReferenceMaxHz),
+  );
+
+  /// Loads the hardware input the tuner listens to, or `-1` for "the first
+  /// one available" (the default). An appliance preference, not Session
+  /// state; a negative stored value reads as `-1`.
+  Future<int> loadTunerInput() async {
+    final input = await _store.getInt(_tunerInputKey) ?? -1;
+    return input < 0 ? -1 : input;
   }
 
-  /// Saves the calibrated ends of the expression pedal on CTRL jack [jack].
-  Future<void> saveCtrlCalibration(
-    int jack, {
-    required int min,
-    required int max,
-  }) => _store.setString(_ctrlCalibrationKey(jack), '$min,$max');
+  /// Saves the tuner's input; any negative value stores `-1`.
+  Future<void> saveTunerInput(int input) =>
+      _store.setInt(_tunerInputKey, input < 0 ? -1 : input);
 
-  /// Forgets the calibration of CTRL jack [jack]: its ends are learned again.
-  Future<void> clearCtrlCalibration(int jack) =>
-      _store.remove(_ctrlCalibrationKey(jack));
+  static const String _pedalSetupKey = 'pedal.setup';
+
+  /// Loads the persisted built-in footswitch setup blob, or `null` if unset.
+  ///
+  /// Opaque here on purpose: the setup names actions in a vocabulary the
+  /// presentation layer owns, and a repository that could read it would be a
+  /// second place able to decide what a footswitch means.
+  Future<String?> loadPedalSetup() async {
+    await _serializedWrite;
+    return _store.getString(_pedalSetupKey);
+  }
+
+  /// Saves the built-in footswitch setup blob, restoring the exact prior value
+  /// if a store reports failure after writing.
+  Future<void> savePedalSetup(String encoded) => _serialize(() async {
+    final String? checkpoint;
+    try {
+      checkpoint = await _store.getString(_pedalSetupKey);
+    } on Object catch (readError, readStackTrace) {
+      Error.throwWithStackTrace(
+        PedalSetupSaveException(
+          cause: readError,
+          checkpointRestored: false,
+        ),
+        readStackTrace,
+      );
+    }
+    try {
+      await _store.setString(_pedalSetupKey, encoded);
+      if (await _store.getString(_pedalSetupKey) != encoded) {
+        throw Exception('pedal setup write was not retained');
+      }
+    } on Object catch (saveError, saveStackTrace) {
+      try {
+        if (checkpoint == null) {
+          await _store.remove(_pedalSetupKey);
+        } else {
+          await _store.setString(_pedalSetupKey, checkpoint);
+        }
+        if (await _store.getString(_pedalSetupKey) != checkpoint) {
+          throw Exception('pedal setup checkpoint was not restored');
+        }
+      } on Object catch (restoreError, restoreStackTrace) {
+        Error.throwWithStackTrace(
+          PedalSetupSaveException(
+            cause: saveError,
+            checkpointRestored: false,
+            restoreFailure: restoreError,
+          ),
+          restoreStackTrace,
+        );
+      }
+      Error.throwWithStackTrace(
+        PedalSetupSaveException(cause: saveError, checkpointRestored: true),
+        saveStackTrace,
+      );
+    }
+  });
 
   static const String _pedalClearFadeMsKey = 'pedal.clear_fade_ms';
 
@@ -429,6 +754,17 @@ class SettingsRepository {
   Future<void> saveShowWaveformWindow({required bool value}) =>
       _store.setBool(_showWaveformWindowKey, value: value);
 
+  static const String _fxStopNoticeKey = 'fx.stop_change_notice_shown';
+
+  /// Whether the one-time notice that FX mode's Stop no longer switches every
+  /// track's effects off has been shown (#1229). Defaults to `false`.
+  Future<bool> loadFxStopChangeNoticeShown() async =>
+      await _store.getBool(_fxStopNoticeKey) ?? false;
+
+  /// Records that the FX Stop change notice has been shown.
+  Future<void> saveFxStopChangeNoticeShown() =>
+      _store.setBool(_fxStopNoticeKey, value: true);
+
   static const String _highContrastKey = 'ui.high_contrast';
 
   /// Whether the manual high-contrast theme override is on. Defaults to
@@ -442,41 +778,88 @@ class SettingsRepository {
   Future<void> saveHighContrast({required bool value}) =>
       _store.setBool(_highContrastKey, value: value);
 
-  static const String _brightnessKey = 'ui.brightness';
+  /// The one brightness the console kept for both panels before each panel
+  /// had its own. Read as each panel's starting value and never written, so
+  /// a downgrade still finds it.
+  static const String _legacyBrightnessKey = 'ui.brightness';
 
-  /// Console display brightness (`0..1`). Defaults to `1.0` when unset —
-  /// the same number as the app's `kDefaultDisplayBrightness`, which this
-  /// package cannot import (it must not depend on the app).
-  Future<double> loadBrightness() async =>
-      (await _store.getDouble(_brightnessKey) ?? 1.0).clamp(0.0, 1.0);
+  static String _displayBrightnessKey(DisplayRole role) =>
+      'ui.brightness.${role.name}';
 
-  /// Saves console display brightness (`0..1`).
-  Future<void> saveBrightness(double value) =>
-      _store.setDouble(_brightnessKey, value.clamp(0.0, 1.0));
+  /// The dimmest a panel can be set to (`0..1`): 20%, the accepted range's
+  /// floor.
+  static const double minDisplayBrightness = 0.2;
 
-  static const String _showTrackIndicatorsKey = 'tracks.indicators';
+  /// A panel's brightness before it was ever set: 80%.
+  static const double defaultDisplayBrightness = 0.8;
 
-  /// Whether per-track status indicators show on the Tracks-view tiles.
-  /// Defaults to `true` when unset.
-  Future<bool> loadShowTrackIndicators({bool defaultValue = true}) async =>
-      await _store.getBool(_showTrackIndicatorsKey) ?? defaultValue;
+  /// [role]'s panel brightness, in
+  /// `[minDisplayBrightness, 1]`.
+  ///
+  /// A panel never set starts from the single brightness older builds kept
+  /// for both, clamped into the range (a 10% setting becomes 20%), and
+  /// otherwise from [defaultDisplayBrightness].
+  Future<double> loadDisplayBrightness(DisplayRole role) async {
+    final value =
+        await _store.getDouble(_displayBrightnessKey(role)) ??
+        await _store.getDouble(_legacyBrightnessKey) ??
+        defaultDisplayBrightness;
+    return value.clamp(minDisplayBrightness, 1.0);
+  }
 
-  /// Saves whether per-track status indicators show on the Tracks-view tiles.
-  Future<void> saveShowTrackIndicators({required bool value}) =>
-      _store.setBool(_showTrackIndicatorsKey, value: value);
+  /// Saves [role]'s panel brightness, clamped into the range.
+  Future<void> saveDisplayBrightness(DisplayRole role, double value) =>
+      _store.setDouble(
+        _displayBrightnessKey(role),
+        value.clamp(minDisplayBrightness, 1.0),
+      );
+
+  static const String _idleDimKey = 'ui.idle_dim_seconds';
+
+  /// How long the console may sit idle before both panels dim, in seconds.
+  static const List<int> idleDimChoices = [0, 120, 300, 600];
+
+  /// The idle period before dimming, one of [idleDimChoices]; `0` (never,
+  /// the default) for an unset or unknown value.
+  Future<int> loadIdleDimSeconds() async {
+    final seconds = await _store.getInt(_idleDimKey) ?? 0;
+    return idleDimChoices.contains(seconds) ? seconds : 0;
+  }
+
+  /// Saves the idle period; a value outside [idleDimChoices] is refused.
+  Future<void> saveIdleDimSeconds(int seconds) {
+    if (!idleDimChoices.contains(seconds)) {
+      throw ArgumentError.value(seconds, 'seconds', 'not an idle-dim choice');
+    }
+    return _store.setInt(_idleDimKey, seconds);
+  }
+
+  static const String _bluetoothRetiredNoticeKey = 'bluetooth.retired_notice';
+
+  /// Whether the app has told this install that its Bluetooth pairings will
+  /// not reconnect. Defaults to `false`.
+  Future<bool> loadBluetoothRetiredNoticeShown() async =>
+      await _store.getBool(_bluetoothRetiredNoticeKey) ?? false;
+
+  /// Records that the Bluetooth retirement notice was shown, so it is shown
+  /// once.
+  Future<void> saveBluetoothRetiredNoticeShown() =>
+      _store.setBool(_bluetoothRetiredNoticeKey, value: true);
 
   static const String _defaultInteractionModeKey = 'looper.default_mode';
 
-  /// Loads the persisted default interaction mode (an opaque token, e.g.
-  /// `'record'` / `'mute'` — or the legacy `'play'` that older builds wrote
-  /// for the mute mode), or `null` if unset. The presentation layer maps the
-  /// token to its mode enum, including the legacy-token shim.
-  Future<String?> loadDefaultInteractionMode() =>
-      _store.getString(_defaultInteractionModeKey);
-
-  /// Saves the default interaction [mode] token.
-  Future<void> saveDefaultInteractionMode(String mode) =>
-      _store.setString(_defaultInteractionModeKey, mode);
+  /// Returns the boot-default interaction mode an earlier build stored (an
+  /// opaque token, e.g. `'record'` or `'mute'`), or `null` when none was, and
+  /// removes it.
+  ///
+  /// The console no longer has a boot-default mode: it always starts in
+  /// Record. This read exists once, so an install that booted into another
+  /// mode can be told; after it the key is gone and the answer is `null`.
+  Future<String?> takeRetiredDefaultInteractionMode() async {
+    final token = await _store.getString(_defaultInteractionModeKey);
+    if (token != null) await _store.remove(_defaultInteractionModeKey);
+    return token;
+  }
 
   static const String _pedalBindingsKey = 'pedal.bindings';
 
@@ -517,26 +900,6 @@ class SettingsRepository {
   Future<void> saveRecentPlugins(String encoded) =>
       _store.setString(recentPluginsKey, encoded);
 
-  static const String _controllerMappingsKey = 'controller.mappings';
-
-  /// Loads the external-MIDI mapping set as its opaque encoded string, or
-  /// `null` when none was ever saved (external control drives nothing).
-  ///
-  /// Opaque here for the same reason the pedal remap is: the binding model
-  /// lives in `controller_repository` and its TARGETS are canonical-JSON
-  /// strings only the app can decode, so this package persists the blob
-  /// without knowing its shape.
-  ///
-  /// GLOBAL-ONLY in v1 (R19), unlike the pedal remap: expression hardware is
-  /// per-rig, not per-song, so no session carries a copy of this key and a
-  /// session stays portable across machines with different controllers.
-  Future<String?> loadControllerMappings() =>
-      _store.getString(_controllerMappingsKey);
-
-  /// Saves the external-MIDI mapping set as its [encoded] string.
-  Future<void> saveControllerMappings(String encoded) =>
-      _store.setString(_controllerMappingsKey, encoded);
-
   static const String _refreshHzKey = 'ui.refresh_hz';
 
   /// Loads the UI snapshot-poll rate in Hz. Defaults to `60` when unset.
@@ -546,15 +909,6 @@ class SettingsRepository {
   Future<void> saveRefreshHz(int hz) => _store.setInt(_refreshHzKey, hz);
 
   static const String _quantizeKey = 'looper.quantize';
-
-  /// Whether recording is quantized to the loop grid. Defaults to `false`
-  /// (the free-running behaviour) when unset.
-  Future<bool> loadQuantize() async =>
-      await _store.getBool(_quantizeKey) ?? false;
-
-  /// Saves whether recording is quantized to the loop grid.
-  Future<void> saveQuantize({required bool value}) =>
-      _store.setBool(_quantizeKey, value: value);
 
   static const String _recDubKey = 'looper.rec_dub';
 
@@ -578,15 +932,6 @@ class SettingsRepository {
 
   static const String _autoRecordKey = 'looper.auto_record';
 
-  /// Whether recording is sound-activated (starts on input). Defaults to
-  /// `false`.
-  Future<bool> loadAutoRecord() async =>
-      await _store.getBool(_autoRecordKey) ?? false;
-
-  /// Saves the sound-activated recording preference.
-  Future<void> saveAutoRecord({required bool value}) =>
-      _store.setBool(_autoRecordKey, value: value);
-
   String _trackMultipleKey(int channel) => 'track_multiple.$channel';
 
   /// Loads track [channel]'s forced loop multiple (`0` = auto; `0` if unset).
@@ -599,9 +944,8 @@ class SettingsRepository {
 
   // ---- tempo grid (A1) + click/count-in (A2) ----
   //
-  // Every key here defaults to the tempo-free/grid-off value, so an unset
-  // install (or one that predates this plan) loads exactly the tempo-free
-  // behaviour — mirroring [loadQuantize]'s off-by-default contract.
+  // Timing checkpoints preserve missing keys; the application decodes their
+  // tempo-free/grid-off defaults.
 
   static const String _tempoBpmKey = 'tempo.bpm';
 
@@ -629,37 +973,33 @@ class SettingsRepository {
     await _store.setInt(_timeSignatureDenKey, den);
   }
 
-  static const String _syncTempoKey = 'tempo.sync';
-
-  /// Whether loop↔grid sync is on. Defaults to `true` when unset.
-  Future<bool> loadSyncTempo() async =>
-      await _store.getBool(_syncTempoKey) ?? true;
-
-  /// Saves whether loop↔grid sync is on.
-  Future<void> saveSyncTempo({required bool value}) =>
-      _store.setBool(_syncTempoKey, value: value);
-
   static const String _quantizeDivKey = 'tempo.quantize_div';
-
-  /// Loads the musical quantization granularity as the native `le_grid_div`
-  /// enum code (see `GridDivision.code` / `GridDivision.fromCode`). Defaults
-  /// to `0` (`GridDivision.off`) when unset.
-  Future<int> loadQuantizeDiv() async =>
-      await _store.getInt(_quantizeDivKey) ?? 0;
-
-  /// Saves the musical quantization granularity as its enum [code].
-  Future<void> saveQuantizeDiv(int code) =>
-      _store.setInt(_quantizeDivKey, code);
 
   static const String _clickModeKey = 'tempo.click_mode';
 
-  /// Loads the click audibility mode as the native `le_click_mode` enum code
-  /// (see `ClickMode.code` / `ClickMode.fromCode`). Defaults to `0`
-  /// (`ClickMode.off`) when unset.
-  Future<int> loadClickMode() async => await _store.getInt(_clickModeKey) ?? 0;
+  /// Reads the exact saved native enum, preserving absence and invalid data.
+  Future<int?> readClickModeCheckpoint() async {
+    await _serializedWrite;
+    final value = await _store.getInt(_clickModeKey);
+    if (value != null && (value < 0 || value > 3)) {
+      throw FormatException('Invalid Hear click setting', value);
+    }
+    return value;
+  }
 
-  /// Saves the click audibility mode as its enum [code].
-  Future<void> saveClickMode(int code) => _store.setInt(_clickModeKey, code);
+  /// Writes and verifies a native mode, or restores the exact absent scalar.
+  Future<void> restoreClickModeCheckpoint(int? code) {
+    if (code != null && (code < 0 || code > 3)) {
+      throw const FormatException('Invalid Hear click setting');
+    }
+    return _serialize(() async {
+      await _writeIntScalar(
+        _clickModeKey,
+        code,
+        'Hear click checkpoint was not restored',
+      );
+    });
+  }
 
   static const String _clickOutputMaskKey = 'tempo.click_output_mask';
 
@@ -674,25 +1014,115 @@ class SettingsRepository {
 
   static const String _clickVolumeKey = 'tempo.click_volume';
 
-  /// Loads the click volume (`0..LE_MAX_GAIN`). Defaults to `1.0` when unset.
-  Future<double> loadClickVolume() async =>
-      await _store.getDouble(_clickVolumeKey) ?? 1.0;
+  /// Reads the exact Click scalar, preserving absence for rollback.
+  Future<double?> readClickVolumeCheckpoint() async {
+    await _serializedWrite;
+    return _store.getDouble(_clickVolumeKey);
+  }
 
-  /// Saves the click volume.
-  Future<void> saveClickVolume(double volume) =>
-      _store.setDouble(_clickVolumeKey, volume);
+  /// Writes and verifies the exact scalar, including an absent preference.
+  Future<void> restoreClickVolumeCheckpoint(double? checkpoint) =>
+      _serialize(() async {
+        await _writeDoubleScalar(
+          _clickVolumeKey,
+          checkpoint,
+          'Click volume checkpoint was not restored',
+        );
+      });
+
+  static const String _clickPanKey = 'tempo.click_pan';
+
+  /// Reads the exact click pan scalar (#1200), preserving absence.
+  Future<double?> readClickPanCheckpoint() async {
+    await _serializedWrite;
+    return _store.getDouble(_clickPanKey);
+  }
+
+  /// Writes and verifies the exact click pan, including an absent one.
+  Future<void> restoreClickPanCheckpoint(double? checkpoint) =>
+      _serialize(() async {
+        await _writeDoubleScalar(
+          _clickPanKey,
+          checkpoint,
+          'Click pan checkpoint was not restored',
+        );
+      });
+
+  static const String _backingMixKey = 'backing.mix';
+
+  /// Exact stored bytes or absence of the backing's level, pan, outputs and
+  /// End (#1200), ordered after preceding settings writes. The application
+  /// owns the record's shape.
+  Future<String?> readBackingMixCheckpoint() =>
+      _serialize(() => _store.getString(_backingMixKey));
+
+  /// Restores exact bytes or absence and verifies them.
+  Future<void> restoreBackingMixCheckpoint(String? record) =>
+      _serialize(() async {
+        if (record == null) {
+          await _store.remove(_backingMixKey);
+        } else {
+          await _store.setString(_backingMixKey, record);
+        }
+        if (await _store.getString(_backingMixKey) != record) {
+          throw StateError('Backing mix persistence was not confirmed');
+        }
+      });
 
   static const String _countInBarsKey = 'tempo.count_in_bars';
 
-  /// Loads the count-in length in measures (`0` = off). Defaults to `0`
-  /// (off) when unset — the wire default per A2, not the UI-suggested
-  /// starting point of one bar.
-  Future<int> loadCountInBars() async =>
-      await _store.getInt(_countInBarsKey) ?? 0;
+  /// Reads both exact scalar memberships under the shared storage barrier.
+  /// Absence is left undecoded; the application owns its default choice.
+  Future<({int? countInBars, bool? soundStart})> readRecordStartCheckpoint() =>
+      _serialize(_readRecordStartCheckpoint);
 
-  /// Saves the count-in length in measures (`0` = off).
-  Future<void> saveCountInBars(int bars) =>
-      _store.setInt(_countInBarsKey, bars);
+  Future<({int? countInBars, bool? soundStart})>
+  _readRecordStartCheckpoint() async {
+    final bars = await _store.getInt(_countInBarsKey);
+    final sound = await _store.getBool(_autoRecordKey);
+    _validateRecordStart(bars, sound);
+    return (countInBars: bars, soundStart: sound);
+  }
+
+  void _validateRecordStart(int? bars, bool? sound) {
+    if (bars != null && !const [0, 1, 2, 4].contains(bars) ||
+        bars != null && bars > 0 && sound == true) {
+      throw const FormatException('Invalid recording-start pair');
+    }
+  }
+
+  /// Saves and verifies the complete ordinary recording-start choice.
+  Future<void> saveRecordStartSettings({
+    required int countInBars,
+    required bool soundStart,
+  }) => restoreRecordStartCheckpoint((
+    countInBars: countInBars,
+    soundStart: soundStart,
+  ));
+
+  /// Restores both scalars, including their exact independent absence.
+  Future<void> restoreRecordStartCheckpoint(
+    ({int? countInBars, bool? soundStart}) checkpoint,
+  ) {
+    _validateRecordStart(checkpoint.countInBars, checkpoint.soundStart);
+    return _serialize(() async {
+      final bars = checkpoint.countInBars;
+      final sound = checkpoint.soundStart;
+      if (bars == null) {
+        await _store.remove(_countInBarsKey);
+      } else {
+        await _store.setInt(_countInBarsKey, bars);
+      }
+      if (sound == null) {
+        await _store.remove(_autoRecordKey);
+      } else {
+        await _store.setBool(_autoRecordKey, value: sound);
+      }
+      if (await _readRecordStartCheckpoint() != checkpoint) {
+        throw StateError('Recording-start checkpoint was not restored');
+      }
+    });
+  }
 
   // ---- looper mode (B2a, D4) ----
 
@@ -701,27 +1131,95 @@ class SettingsRepository {
   /// Loads the five-mode axis as the native `le_looper_mode` enum code (see
   /// `LooperMode.code` / `LooperMode.fromCode`). Defaults to `0`
   /// (`LooperMode.multi`) when unset — the int-code convention matches this
-  /// enum's siblings ([loadQuantizeDiv] / [loadClickMode]), unlike
-  /// `loadDefaultInteractionMode`'s opaque-string-token scheme: that key
-  /// predates this plan and preserves pre-rename legacy tokens (D10), a
-  /// concern this newly-introduced enum has no analog of.
-  Future<int> loadLooperMode() async =>
-      await _store.getInt(_looperModeKey) ?? 0;
+  /// enum's siblings ([readRecordTimingCheckpoint] /
+  /// [readClickModeCheckpoint]).
+  Future<int> loadLooperMode() async => await readLooperModeCheckpoint() ?? 0;
 
   /// Saves the looper mode as its enum [code].
-  Future<void> saveLooperMode(int code) => _store.setInt(_looperModeKey, code);
+  Future<void> saveLooperMode(int code) => restoreLooperModeCheckpoint(code);
 
   // ---- track length presets (A6, D17) ----
 
   String _trackLengthPresetKey(int channel) => 'tempo.length_preset.$channel';
+  static const String _defaultLengthPresetKey = 'looper.default_length_bars';
 
-  /// Loads track [channel]'s length preset (`0` = AUTO; `0` if unset).
-  Future<int> loadTrackLengthPreset(int channel) async =>
-      await _store.getInt(_trackLengthPresetKey(channel)) ?? 0;
+  String _recordLengthKey(int? channel) {
+    if (channel != null && (channel < 0 || channel >= 8)) {
+      throw ArgumentError.value(channel, 'channel');
+    }
+    return channel == null
+        ? _defaultLengthPresetKey
+        : _trackLengthPresetKey(channel);
+  }
 
-  /// Saves track [channel]'s length preset (`0` = AUTO, `1..64` = fixed bars).
-  Future<void> saveTrackLengthPreset(int channel, int bars) =>
-      _store.setInt(_trackLengthPresetKey(channel), bars);
+  /// Reads exact membership and refuses malformed saved bars without repair.
+  Future<int?> readRecordLengthCheckpoint({required int? channel}) async {
+    final key = _recordLengthKey(channel);
+    await _serializedWrite;
+    final value = await _store.getInt(key);
+    if (value != null && (value < 0 || value > 64)) {
+      throw const FormatException('Invalid Record length');
+    }
+    return value;
+  }
+
+  /// Writes and verifies one scalar, preserving absence versus explicit Auto.
+  Future<void> restoreRecordLengthCheckpoint({
+    required int? channel,
+    required int? bars,
+  }) {
+    final key = _recordLengthKey(channel);
+    if (bars != null && (bars < 0 || bars > 64)) {
+      throw ArgumentError.value(bars, 'bars');
+    }
+    return _serialize(() async {
+      await _writeIntScalar(
+        key,
+        bars,
+        'Record length scalar was not confirmed',
+      );
+    });
+  }
+
+  /// Reads the exact saved mode, refusing an unknown enum code.
+  Future<int?> readLooperModeCheckpoint() async {
+    await _serializedWrite;
+    final value = await _store.getInt(_looperModeKey);
+    if (value != null && (value < 0 || value > 4)) {
+      throw const FormatException('Invalid loop mode');
+    }
+    return value;
+  }
+
+  /// Restores and verifies the exact saved mode, including absence.
+  Future<void> restoreLooperModeCheckpoint(int? mode) {
+    if (mode != null && (mode < 0 || mode > 4)) {
+      throw ArgumentError.value(mode, 'mode');
+    }
+    return _serialize(() async {
+      await _writeIntScalar(
+        _looperModeKey,
+        mode,
+        'Loop mode scalar was not confirmed',
+      );
+    });
+  }
+
+  /// Reads a track override; null inherits and zero is explicit Auto.
+  Future<int?> loadTrackLengthPreset(int channel) =>
+      readRecordLengthCheckpoint(channel: channel);
+
+  /// Writes a verified track override or removes it to inherit.
+  Future<void> saveTrackLengthPreset(int channel, int? bars) =>
+      restoreRecordLengthCheckpoint(channel: channel, bars: bars);
+
+  /// Reads the default preset, using Auto only when absent.
+  Future<int> loadDefaultLengthPreset() async =>
+      await readRecordLengthCheckpoint(channel: null) ?? 0;
+
+  /// Writes and verifies the default preset.
+  Future<void> saveDefaultLengthPreset(int bars) =>
+      restoreRecordLengthCheckpoint(channel: null, bars: bars);
 
   // Legacy single-route monitor keys (one route per input). No longer written
   // by the live app; read once by the v2 lane migration and then cleared. The
@@ -736,7 +1234,6 @@ class SettingsRepository {
   // v3 fold). The enable flag is shared with the prior model.
   String _monitorInputModeKey(int input) => 'monitor_input_mode.$input';
   String _monitorOutKey(int input) => 'monitor_out.$input';
-  String _monitorVolKey(int input) => 'monitor_vol.$input';
   String _monitorMuteKey(int input) => 'monitor_mute.$input';
   String _monitorFxKey(int input) => 'monitor_fx.$input';
 
@@ -839,16 +1336,25 @@ class SettingsRepository {
   Future<void> saveMonitorOutput(int input, int mask) =>
       _store.setInt(_monitorOutKey(input), mask);
 
-  /// Loads hardware [input]'s monitor output gain (`0..LE_MAX_GAIN`, 2.0,
-  /// +6.02 dB headroom above unity), or `null` if never saved (the caller
-  /// defaults to unity `1.0`).
-  Future<double?> loadMonitorVolume(int input) =>
-      _store.getDouble(_monitorVolKey(input));
+  /// Loads hardware [input]'s monitor output gain (silence to unity), or `null`
+  /// if never saved (the caller defaults to unity `1.0`).
+  Future<double?> loadMonitorVolume(int input) async {
+    await _serializedWrite;
+    return (await _readMixSettings()).monitorLevels[input];
+  }
 
-  /// Saves hardware [input]'s monitor output gain (`0..LE_MAX_GAIN`, 2.0,
-  /// +6.02 dB headroom above unity).
+  /// Saves hardware [input]'s monitor output gain (silence to unity).
   Future<void> saveMonitorVolume(int input, double volume) =>
-      _store.setDouble(_monitorVolKey(input), volume);
+      _serialize(() async {
+        _validateMonitorLevels({input: volume});
+        final saved = await _readMixSettings();
+        if (volume == 1) {
+          saved.monitorLevels.remove(input);
+        } else {
+          saved.monitorLevels[input] = volume;
+        }
+        await _writeMixSettings(saved);
+      });
 
   /// Loads hardware [input]'s monitor mute flag, or `null` if never saved.
   Future<bool?> loadMonitorMute(int input) =>
@@ -1081,6 +1587,384 @@ class SettingsRepository {
   Future<void> clearConsoleName(String serial) =>
       _store.remove(_consoleNameKey(serial));
 
+  static const String _mixSettingsKey = 'mix_settings';
+
+  /// Reads the exact durable mix value before a coordinated edit.
+  Future<String?> readMixSettingsCheckpoint() async {
+    await _serializedWrite;
+    return _store.getString(_mixSettingsKey);
+  }
+
+  /// Restores an exact previously read durable mix value in one operation.
+  Future<void> restoreMixSettingsCheckpoint(String? checkpoint) => _serialize(
+    () => checkpoint == null
+        ? _store.remove(_mixSettingsKey)
+        : _store.setString(_mixSettingsKey, checkpoint),
+  );
+
+  Future<_SavedMixSettings> _readMixSettings() async {
+    final raw = await _store.getString(_mixSettingsKey);
+    if (raw == null) return _SavedMixSettings();
+    final json = jsonDecode(raw) as Map<String, dynamic>;
+    Map<int, double> values(Object? source) => {
+      for (final entry in (source as Map<String, dynamic>? ?? const {}).entries)
+        int.parse(entry.key): (entry.value as num).toDouble(),
+    };
+    final levels = <(int, int), double>{};
+    for (final entry
+        in (json['levels'] as Map<String, dynamic>? ?? const {}).entries) {
+      final address = entry.key.split('.');
+      if (address.length != 2) throw const FormatException('bad mixer lane');
+      levels[(int.parse(address[0]), int.parse(address[1]))] =
+          (entry.value as num).toDouble();
+    }
+    Map<(int, int), int> laneValues(Object? source) {
+      final result = <(int, int), int>{};
+      for (final entry
+          in (source as Map<String, dynamic>? ?? const {}).entries) {
+        final address = entry.key.split('.');
+        if (address.length != 2 || entry.value is! int) {
+          throw const FormatException('bad routing lane');
+        }
+        result[(int.parse(address[0]), int.parse(address[1]))] =
+            entry.value as int;
+      }
+      return result;
+    }
+
+    final devices = <String, StoredInputSetup>{};
+    for (final entry
+        in (json['inputSetups'] as Map<String, dynamic>? ?? const {}).entries) {
+      final setup = entry.value as Map<String, dynamic>;
+      devices[entry.key] = (
+        trimDb: values(setup['trimDb']),
+        pan: values(setup['pan']),
+        pairs: values(setup['pairs']),
+      );
+    }
+    final outputs = <String, StoredOutputSetup>{};
+    for (final entry
+        in (json['outputSetups'] as Map<String, dynamic>? ?? const {})
+            .entries) {
+      final setup = entry.value as Map<String, dynamic>;
+      Map<int, bool> flags(Object? source) => {
+        for (final e in (source as Map<String, dynamic>? ?? const {}).entries)
+          int.parse(e.key): e.value as bool,
+      };
+      outputs[entry.key] = (
+        level: values(setup['level']),
+        muted: flags(setup['muted']),
+        mono: flags(setup['mono']),
+        balance: values(setup['balance']),
+      );
+    }
+    // Live-input gain was 0–2 before it narrowed to 0–1. A finite stored gain
+    // in (1, 2] reads as unity (owner decision, 2026-10-05) instead of making
+    // the whole mix unreadable; anything else malformed still fails closed.
+    bool legacy(double gain) => gain.isFinite && gain > 1 && gain <= 2;
+    final stored = values(json['monitorLevels']);
+    final legacyMonitorGain = stored.values.any(legacy);
+    final monitors = {
+      for (final entry in stored.entries)
+        entry.key: legacy(entry.value) ? 1.0 : entry.value,
+    };
+    if (!_validMonitorLevels(monitors)) {
+      throw const FormatException('invalid saved monitor levels');
+    }
+    return _SavedMixSettings(
+      legacyMonitorGain: legacyMonitorGain,
+      trackLevels: values(json['trackLevels']),
+      pans: values(json['pans']),
+      levels: levels,
+      monitorLevels: monitors,
+      laneInputs: laneValues(json['laneInputs']),
+      laneOutputs: laneValues(json['laneOutputs']),
+      laneCounts: {
+        for (final entry
+            in (json['laneCounts'] as Map<String, dynamic>? ?? const {})
+                .entries)
+          int.parse(entry.key): entry.value as int,
+      },
+      inputSetups: devices,
+      outputSetups: outputs,
+    );
+  }
+
+  Future<void> _writeMixSettings(_SavedMixSettings saved) {
+    Map<String, double> encoded(Map<int, double> values) => {
+      for (final entry in values.entries) '${entry.key}': entry.value,
+    };
+    final setups = <String, Object>{};
+    for (final entry in saved.inputSetups.entries) {
+      final setup = entry.value;
+      if (setup.trimDb.isEmpty && setup.pan.isEmpty && setup.pairs.isEmpty) {
+        continue;
+      }
+      setups[entry.key] = {
+        'trimDb': encoded(setup.trimDb),
+        'pan': encoded(setup.pan),
+        'pairs': encoded(setup.pairs),
+      };
+    }
+    final outputs = <String, Object>{};
+    for (final entry in saved.outputSetups.entries) {
+      final setup = entry.value;
+      if (setup.level.isEmpty &&
+          setup.muted.isEmpty &&
+          setup.mono.isEmpty &&
+          setup.balance.isEmpty) {
+        continue;
+      }
+      outputs[entry.key] = {
+        'level': encoded(setup.level),
+        'muted': {for (final e in setup.muted.entries) '${e.key}': e.value},
+        'mono': {for (final e in setup.mono.entries) '${e.key}': e.value},
+        'balance': encoded(setup.balance),
+      };
+    }
+    if (saved.trackLevels.isEmpty &&
+        saved.pans.isEmpty &&
+        saved.levels.isEmpty &&
+        saved.monitorLevels.isEmpty &&
+        saved.laneInputs.isEmpty &&
+        saved.laneOutputs.isEmpty &&
+        saved.laneCounts.isEmpty &&
+        setups.isEmpty &&
+        outputs.isEmpty) {
+      return _store.remove(_mixSettingsKey);
+    }
+    return _store.setString(
+      _mixSettingsKey,
+      jsonEncode({
+        'trackLevels': encoded(saved.trackLevels),
+        'pans': encoded(saved.pans),
+        'levels': {
+          for (final entry in saved.levels.entries)
+            '${entry.key.$1}.${entry.key.$2}': entry.value,
+        },
+        'monitorLevels': encoded(saved.monitorLevels),
+        'laneInputs': {
+          for (final e in saved.laneInputs.entries)
+            '${e.key.$1}.${e.key.$2}': e.value,
+        },
+        'laneOutputs': {
+          for (final e in saved.laneOutputs.entries)
+            '${e.key.$1}.${e.key.$2}': e.value,
+        },
+        'laneCounts': {
+          for (final e in saved.laneCounts.entries) '${e.key}': e.value,
+        },
+        'inputSetups': setups,
+        'outputSetups': outputs,
+      }),
+    );
+  }
+
+  /// Reads one consistent mix and the selected device's setup.
+  Future<StoredMixSettings> loadMixSettings(String device) async {
+    await _serializedWrite;
+    final saved = await _readMixSettings();
+    if (saved.legacyMonitorGain) {
+      // Persist the repaired unity gain once, so storage stops carrying it.
+      // Best effort: the repaired value is already what every reader sees,
+      // and a failing store must not abort startup; a later mix write
+      // repairs it.
+      try {
+        await _serialize(
+          () async => _writeMixSettings(await _readMixSettings()),
+        );
+      } on Object {
+        // Retried implicitly by the next mix write.
+      }
+    }
+    return (
+      trackLevels: saved.trackLevels,
+      trackPans: saved.pans,
+      laneLevels: saved.levels,
+      monitorLevels: saved.monitorLevels,
+      laneInputs: saved.laneInputs,
+      laneOutputs: saved.laneOutputs,
+      laneCounts: saved.laneCounts,
+      inputSetup: saved.inputSetups[device] ?? _emptyInputSetup(),
+      outputSetup: saved.outputSetups[device] ?? _emptyOutputSetup(),
+    );
+  }
+
+  /// Replaces all mix controls in one durable write, retaining other devices.
+  Future<void> replaceMixSettings({
+    required String device,
+    required StoredMixSettings mix,
+  }) {
+    final detached = (
+      trackLevels: Map<int, double>.of(mix.trackLevels),
+      trackPans: Map<int, double>.of(mix.trackPans),
+      laneLevels: Map<(int, int), double>.of(mix.laneLevels),
+      monitorLevels: Map<int, double>.of(mix.monitorLevels),
+      laneInputs: Map<(int, int), int>.of(mix.laneInputs),
+      laneOutputs: Map<(int, int), int>.of(mix.laneOutputs),
+      laneCounts: Map<int, int>.of(mix.laneCounts),
+      inputSetup: (
+        trimDb: Map<int, double>.of(mix.inputSetup.trimDb),
+        pan: Map<int, double>.of(mix.inputSetup.pan),
+        pairs: Map<int, double>.of(mix.inputSetup.pairs),
+      ),
+      outputSetup: (
+        level: Map<int, double>.of(mix.outputSetup.level),
+        muted: Map<int, bool>.of(mix.outputSetup.muted),
+        mono: Map<int, bool>.of(mix.outputSetup.mono),
+        balance: Map<int, double>.of(mix.outputSetup.balance),
+      ),
+    );
+    return _serialize(() async {
+      _validateMixerSettings(
+        detached.trackLevels,
+        detached.trackPans,
+        detached.laneLevels,
+      );
+      _validateMonitorLevels(detached.monitorLevels);
+      _validateRouting(
+        detached.laneInputs,
+        detached.laneOutputs,
+        detached.laneCounts,
+      );
+      _validateInputSetup(detached.inputSetup);
+      _validateOutputSetup(detached.outputSetup);
+      final saved = await _readMixSettings();
+      saved.trackLevels
+        ..clear()
+        ..addAll(detached.trackLevels);
+      saved.pans
+        ..clear()
+        ..addAll(detached.trackPans);
+      saved.levels
+        ..clear()
+        ..addAll(detached.laneLevels);
+      saved.monitorLevels
+        ..clear()
+        ..addAll(detached.monitorLevels);
+      saved.laneInputs
+        ..clear()
+        ..addAll(detached.laneInputs);
+      saved.laneOutputs
+        ..clear()
+        ..addAll(detached.laneOutputs);
+      saved.laneCounts
+        ..clear()
+        ..addAll(detached.laneCounts);
+      saved.inputSetups[device] = detached.inputSetup;
+      saved.outputSetups[device] = detached.outputSetup;
+      await _writeMixSettings(saved);
+    });
+  }
+
+  void _validateMixerSettings(
+    Map<int, double> trackLevels,
+    Map<int, double> pans,
+    Map<(int, int), double> levels,
+  ) {
+    if (trackLevels.entries.any(
+          (e) =>
+              e.key < 0 ||
+              e.key >= 8 ||
+              !e.value.isFinite ||
+              e.value < 0 ||
+              e.value > 2,
+        ) ||
+        pans.entries.any(
+          (e) =>
+              e.key < 0 ||
+              e.key >= 8 ||
+              !e.value.isFinite ||
+              e.value < -1 ||
+              e.value > 1,
+        ) ||
+        levels.entries.any(
+          (e) =>
+              e.key.$1 < 0 ||
+              e.key.$1 >= 8 ||
+              e.key.$2 < 0 ||
+              e.key.$2 >= 8 ||
+              !e.value.isFinite ||
+              e.value < 0 ||
+              e.value > 2,
+        )) {
+      throw ArgumentError('invalid mixer settings');
+    }
+  }
+
+  bool _validMonitorLevels(Map<int, double> levels) => levels.entries.every(
+    (e) =>
+        e.key >= 0 &&
+        e.key < 32 &&
+        e.value.isFinite &&
+        e.value >= 0 &&
+        e.value <= 1,
+  );
+
+  void _validateMonitorLevels(Map<int, double> levels) {
+    if (!_validMonitorLevels(levels)) {
+      throw ArgumentError('invalid monitor levels');
+    }
+  }
+
+  void _validateRouting(
+    Map<(int, int), int> inputs,
+    Map<(int, int), int> outputs,
+    Map<int, int> counts,
+  ) {
+    bool lane((int, int) key) =>
+        key.$1 >= 0 && key.$1 < 8 && key.$2 >= 0 && key.$2 < 8;
+    if (inputs.entries.any(
+          (e) => !lane(e.key) || e.value < -1 || e.value >= 32,
+        ) ||
+        outputs.entries.any(
+          (e) => !lane(e.key) || e.value < 0 || e.value > 0xffffffff,
+        ) ||
+        counts.entries.any(
+          (e) => e.key < 0 || e.key >= 8 || e.value < 1 || e.value > 8,
+        )) {
+      throw ArgumentError('invalid routing settings');
+    }
+  }
+
+  void _validateInputSetup(StoredInputSetup setup) {
+    bool inRange(Map<int, double> values, double min, double max) =>
+        values.entries.every(
+          (e) =>
+              e.key >= 0 &&
+              e.key < 32 &&
+              e.value.isFinite &&
+              e.value >= min &&
+              e.value <= max,
+        );
+    if (!inRange(setup.trimDb, -24, 12) ||
+        !inRange(setup.pan, -1, 1) ||
+        !inRange(setup.pairs, -1, 1) ||
+        setup.pairs.keys.any((input) => input.isOdd || input >= 31)) {
+      throw ArgumentError('invalid input setup');
+    }
+  }
+
+  void _validateOutputSetup(StoredOutputSetup setup) {
+    bool inRange(Map<int, double> values, double min, double max) =>
+        values.entries.every(
+          (e) =>
+              e.key >= 0 &&
+              e.key < 16 &&
+              e.value.isFinite &&
+              e.value >= min &&
+              e.value <= max,
+        );
+    bool flags(Map<int, bool> values) =>
+        values.entries.every((e) => e.key >= 0 && e.key < 16 && e.value);
+    if (!inRange(setup.level, 0, 1) ||
+        !inRange(setup.balance, -1, 1) ||
+        !flags(setup.muted) ||
+        !flags(setup.mono)) {
+      throw ArgumentError('invalid output setup');
+    }
+  }
+
   String _trackNameKey(int channel) => 'track_name.$channel';
 
   /// Loads the custom display name for track [channel], or `null` if unset.
@@ -1121,72 +2005,349 @@ class SettingsRepository {
     required int input,
   }) => _store.remove(_inputNameKey(device, input));
 
-  String _trackQuantizeKey(int channel) => 'track_quantize.$channel';
+  // Every control shares the single durable mix value. _serialize keeps rapid
+  // read/modify/write gestures from overwriting one another.
+  StoredInputSetup _emptyInputSetup() => (
+    trimDb: <int, double>{},
+    pan: <int, double>{},
+    pairs: <int, double>{},
+  );
 
-  /// Loads track [channel]'s quantize override: `null` (inherit the global
-  /// default), `false` (force off), or `true` (force on).
-  Future<bool?> loadTrackQuantize(int channel) async {
-    final value = await _store.getInt(_trackQuantizeKey(channel));
-    if (value == null || value < 0) return null;
-    return value > 0;
+  /// Keyed per DEVICE and DESTINATION, the pair-shaped twin of
+  /// [_inputNameKey].
+  ///
+  /// The unit is the destination (bus `k` = hardware outputs `2k` and
+  /// `2k+1`), not the jack, because that is what the player patches and names:
+  /// "monitor" is a pair of sockets, not one of them. The output GATE is per
+  /// jack and keeps its own key; a name and a gate are different facts about
+  /// different units and sharing a key would force one of them to lie.
+  String _outputNameKey(String device, int bus) => 'output_name.$device.$bus';
+
+  /// Loads the given name for destination [bus] on [device], or `null` if it
+  /// has none.
+  Future<String?> loadOutputName({
+    required String device,
+    required int bus,
+  }) => _store.getString(_outputNameKey(device, bus));
+
+  /// Saves the given [name] for destination [bus] on [device].
+  Future<void> saveOutputName({
+    required String device,
+    required int bus,
+    required String name,
+  }) => _store.setString(_outputNameKey(device, bus), name);
+
+  /// Forgets [bus]'s given name on [device], handing the destination back its
+  /// jack numbers.
+  Future<void> clearOutputName({
+    required String device,
+    required int bus,
+  }) => _store.remove(_outputNameKey(device, bus));
+
+  StoredOutputSetup _emptyOutputSetup() => (
+    level: <int, double>{},
+    muted: <int, bool>{},
+    mono: <int, bool>{},
+    balance: <int, double>{},
+  );
+
+  Future<StoredInputSetup> _readInputSetup(String device) async =>
+      (await _readMixSettings()).inputSetups[device] ?? _emptyInputSetup();
+
+  /// Loads the first [inputCount] inputs of [device]. Pair keys must name an
+  /// even lower member whose partner exists in the negotiated device.
+  Future<StoredInputSetup> loadInputSetup({
+    required String device,
+    required int inputCount,
+  }) async {
+    await _serializedWrite;
+    final setup = await _readInputSetup(device);
+    return (
+      trimDb: {
+        for (final e in setup.trimDb.entries)
+          if (e.key >= 0 && e.key < inputCount && e.value != 0) e.key: e.value,
+      },
+      pan: {
+        for (final e in setup.pan.entries)
+          if (e.key >= 0 && e.key < inputCount && e.value != 0)
+            e.key: e.value.clamp(-1.0, 1.0),
+      },
+      pairs: {
+        for (final e in setup.pairs.entries)
+          if (e.key >= 0 && e.key.isEven && e.key + 1 < inputCount)
+            e.key: e.value.clamp(-1.0, 1.0),
+      },
+    );
   }
 
-  /// Saves track [channel]'s quantize override (`null` => inherit).
-  Future<void> saveTrackQuantize(int channel, {required bool? enabled}) =>
-      _store.setInt(
-        _trackQuantizeKey(channel),
-        enabled == null ? -1 : (enabled ? 1 : 0),
+  void _validateRecordTimingCheckpoint(RecordTimingCheckpoint checkpoint) {
+    if ((checkpoint.division != null &&
+            (checkpoint.division! < 0 || checkpoint.division! > 5)) ||
+        checkpoint.trackOverrides.entries.any(
+          (entry) =>
+              entry.key < 0 ||
+              entry.key >= 8 ||
+              entry.value < 0 ||
+              entry.value > 6,
+        )) {
+      throw const FormatException('Invalid Record timing');
+    }
+  }
+
+  /// Stages all ten exact scalars before returning any usable startup intent.
+  Future<RecordTimingCheckpoint> readRecordTimingCheckpoint() async {
+    await _serializedWrite;
+    final quantize = await _store.getBool(_quantizeKey);
+    final division = await _store.getInt(_quantizeDivKey);
+    final overrides = <int, int>{};
+    for (var c = 0; c < 8; c++) {
+      final value = await _store.getInt(_trackRecordTimingKey(c));
+      if (value != null) overrides[c] = value;
+    }
+    final checkpoint = (
+      quantize: quantize,
+      division: division,
+      trackOverrides: Map<int, int>.unmodifiable(overrides),
+    );
+    _validateRecordTimingCheckpoint(checkpoint);
+    return checkpoint;
+  }
+
+  /// Restores the exact tuple, verifying changes and preserving absence.
+  Future<void> restoreRecordTimingCheckpoint(
+    RecordTimingCheckpoint checkpoint,
+  ) {
+    _validateRecordTimingCheckpoint(checkpoint);
+    return _serialize(() async {
+      if (await _store.getBool(_quantizeKey) != checkpoint.quantize) {
+        await _writeBoolScalar(
+          _quantizeKey,
+          checkpoint.quantize,
+          'Record timing gate was not confirmed',
+        );
+      }
+      Future<void> write(String key, int? value) async {
+        if (await _store.getInt(key) == value) return;
+        await _writeIntScalar(
+          key,
+          value,
+          'Record timing scalar was not confirmed',
+        );
+      }
+
+      await write(_quantizeDivKey, checkpoint.division);
+      for (var c = 0; c < 8; c++) {
+        await write(_trackRecordTimingKey(c), checkpoint.trackOverrides[c]);
+      }
+    });
+  }
+
+  String _trackRecordTimingKey(int channel) => 'track_record_timing.$channel';
+
+  /// The stored Record timing gate alone, so one unreadable timing key can
+  /// be repaired without the others.
+  Future<bool?> readRecordTimingGateCheckpoint() async {
+    await _serializedWrite;
+    return _store.getBool(_quantizeKey);
+  }
+
+  /// The stored Record timing division alone; see
+  /// [readRecordTimingGateCheckpoint].
+  Future<int?> readRecordTimingDivisionCheckpoint() async {
+    await _serializedWrite;
+    final division = await _store.getInt(_quantizeDivKey);
+    if (division != null && (division < 0 || division > 5)) {
+      throw FormatException('Invalid Record timing division', division);
+    }
+    return division;
+  }
+
+  /// One track's stored Record timing override alone; see
+  /// [readRecordTimingGateCheckpoint].
+  Future<int?> readRecordTimingOverrideCheckpoint(int channel) async {
+    await _serializedWrite;
+    final timing = await _store.getInt(_trackRecordTimingKey(channel));
+    if (timing != null && (timing < 0 || timing > 6)) {
+      throw FormatException('Invalid Record timing override', timing);
+    }
+    return timing;
+  }
+
+  /// Writes and verifies the gate alone, including absence.
+  Future<void> restoreRecordTimingGateCheckpoint({required bool? quantize}) =>
+      _serialize(
+        () => _writeBoolScalar(
+          _quantizeKey,
+          quantize,
+          'Record timing gate was not confirmed',
+        ),
       );
 
-  String _laneCountKey(int channel) => 'lane_count.$channel';
-  String _laneInputKey(int channel, int lane) => 'lane_input.$channel.$lane';
-  String _laneOutputKey(int channel, int lane) => 'lane_output.$channel.$lane';
-  String _laneVolKey(int channel, int lane) => 'lane_vol.$channel.$lane';
+  /// Writes and verifies the division alone, including absence.
+  Future<void> restoreRecordTimingDivisionCheckpoint(int? division) {
+    if (division != null && (division < 0 || division > 5)) {
+      throw FormatException('Invalid Record timing division', division);
+    }
+    return _serialize(
+      () => _writeIntScalar(
+        _quantizeDivKey,
+        division,
+        'Record timing scalar was not confirmed',
+      ),
+    );
+  }
+
+  /// Writes and verifies one track's override alone, including absence.
+  Future<void> restoreRecordTimingOverrideCheckpoint({
+    required int channel,
+    required int? timing,
+  }) {
+    if (channel < 0 ||
+        channel >= 8 ||
+        (timing != null && (timing < 0 || timing > 6))) {
+      throw FormatException('Invalid Record timing override', timing);
+    }
+    return _serialize(
+      () => _writeIntScalar(
+        _trackRecordTimingKey(channel),
+        timing,
+        'Record timing scalar was not confirmed',
+      ),
+    );
+  }
+
+  static const String _overdubDecayKey = 'looper.overdub_decay';
+  String _trackOverdubDecayKey(int channel) => 'track_overdub_decay.$channel';
+
+  String _decayKey(int? channel) {
+    if (channel != null && (channel < 0 || channel >= 8)) {
+      throw ArgumentError.value(channel, 'channel');
+    }
+    return channel == null ? _overdubDecayKey : _trackOverdubDecayKey(channel);
+  }
+
+  void _validateDecay(int? percent) {
+    if (percent != null && (percent < 0 || percent > 100)) {
+      throw const FormatException(
+        'Decay must be an integer percent from 0 to 100',
+      );
+    }
+  }
+
+  /// Reads an exact nullable decay scalar; malformed values are not repaired.
+  Future<int?> readDecayCheckpoint({required int? channel}) async {
+    final key = _decayKey(channel);
+    await _serializedWrite;
+    final value = await _store.getInt(key);
+    _validateDecay(value);
+    return value;
+  }
+
+  /// Restores an exact scalar checkpoint, including absence and explicit zero.
+  Future<void> restoreDecayCheckpoint({
+    required int? channel,
+    required int? percent,
+  }) {
+    final key = _decayKey(channel);
+    _validateDecay(percent);
+    return _serialize(() async {
+      await _writeIntScalar(key, percent, 'Decay scalar was not confirmed');
+    });
+  }
+
+  static const String _defaultOneShotKey = 'looper.default_one_shot';
+  String _trackOneShotKey(int channel) => 'track_one_shot.$channel';
+
+  String _oneShotKey(int? channel) {
+    if (channel != null && (channel < 0 || channel >= 8)) {
+      throw ArgumentError.value(channel, 'channel');
+    }
+    return channel == null ? _defaultOneShotKey : _trackOneShotKey(channel);
+  }
+
+  /// Reads an exact nullable playback scalar without repairing malformed data.
+  Future<bool?> readOneShotCheckpoint({required int? channel}) async {
+    final key = _oneShotKey(channel);
+    await _serializedWrite;
+    return _store.getBool(key);
+  }
+
+  /// Saves/removes and verifies one exact playback scalar.
+  Future<void> restoreOneShotCheckpoint({
+    required int? channel,
+    required bool? oneShot,
+  }) {
+    final key = _oneShotKey(channel);
+    return _serialize(() async {
+      await _writeBoolScalar(key, oneShot, 'Playback scalar was not confirmed');
+    });
+  }
+
+  /// Follow tempo and Pitch (#1179 Audio & tempo): a default and eight
+  /// track overrides each, one nullable bool per address like Loop/Once.
+  /// Pitch stores whether it follows the speed (absent default: Unchanged).
+  String _audioTempoKey(String name, int? channel) {
+    if (channel != null && (channel < 0 || channel >= 8)) {
+      throw ArgumentError.value(channel, 'channel');
+    }
+    return channel == null ? 'looper.default_$name' : 'track_$name.$channel';
+  }
+
+  /// Reads an exact nullable Follow tempo scalar without repairing it.
+  Future<bool?> readFollowTempoCheckpoint({required int? channel}) async {
+    final key = _audioTempoKey('follow_tempo', channel);
+    await _serializedWrite;
+    return _store.getBool(key);
+  }
+
+  /// Saves/removes and verifies one exact Follow tempo scalar.
+  Future<void> restoreFollowTempoCheckpoint({
+    required int? channel,
+    required bool? follow,
+  }) {
+    final key = _audioTempoKey('follow_tempo', channel);
+    return _serialize(() async {
+      await _writeBoolScalar(key, follow, 'Follow tempo was not confirmed');
+    });
+  }
+
+  /// Reads an exact nullable Pitch scalar (true: follows the speed).
+  Future<bool?> readPitchFollowsSpeedCheckpoint({required int? channel}) async {
+    final key = _audioTempoKey('pitch_follows_speed', channel);
+    await _serializedWrite;
+    return _store.getBool(key);
+  }
+
+  /// Saves/removes and verifies one exact Pitch scalar.
+  Future<void> restorePitchFollowsSpeedCheckpoint({
+    required int? channel,
+    required bool? followsSpeed,
+  }) {
+    final key = _audioTempoKey('pitch_follows_speed', channel);
+    return _serialize(() async {
+      await _writeBoolScalar(key, followsSpeed, 'Pitch was not confirmed');
+    });
+  }
+
   String _laneMuteKey(int channel, int lane) => 'lane_mute.$channel.$lane';
   String _laneEffectsKey(int channel, int lane) =>
       'lane_effects.$channel.$lane';
 
-  /// Loads track [channel]'s saved active lane count, or `1` if unset.
-  Future<int> loadLaneCount(int channel) async =>
-      await _store.getInt(_laneCountKey(channel)) ?? 1;
-
-  /// Saves track [channel]'s active lane [count].
-  Future<void> saveLaneCount(int channel, int count) =>
-      _store.setInt(_laneCountKey(channel), count);
-
-  /// Loads lane [lane] of track [channel]'s recorded input channel (`-1` =
-  /// none), or `null` if unset.
-  Future<int?> loadLaneInput(int channel, int lane) =>
-      _store.getInt(_laneInputKey(channel, lane));
-
-  /// Saves lane [lane] of track [channel]'s recorded [inputChannel].
-  Future<void> saveLaneInput(int channel, int lane, int inputChannel) =>
-      _store.setInt(_laneInputKey(channel, lane), inputChannel);
-
-  /// Loads lane [lane] of track [channel]'s output bitmask, or `null` if unset.
-  Future<int?> loadLaneOutput(int channel, int lane) =>
-      _store.getInt(_laneOutputKey(channel, lane));
-
-  /// Saves lane [lane] of track [channel]'s output [mask].
-  Future<void> saveLaneOutput(int channel, int lane, int mask) =>
-      _store.setInt(_laneOutputKey(channel, lane), mask);
-
-  /// Loads lane [lane] of track [channel]'s playback volume, or `null` if
-  /// unset.
-  Future<double?> loadLaneVolume(int channel, int lane) =>
-      _store.getDouble(_laneVolKey(channel, lane));
-
-  /// Saves lane [lane] of track [channel]'s playback [volume].
-  Future<void> saveLaneVolume(int channel, int lane, double volume) =>
-      _store.setDouble(_laneVolKey(channel, lane), volume);
-
   /// Loads lane [lane] of track [channel]'s mute state, or `null` if unset.
-  Future<bool?> loadLaneMute(int channel, int lane) =>
-      _store.getBool(_laneMuteKey(channel, lane));
+  Future<bool?> loadLaneMute(int channel, int lane) async {
+    await _serializedWrite;
+    return _store.getBool(_laneMuteKey(channel, lane));
+  }
 
   /// Saves lane [lane] of track [channel]'s [muted] state.
   Future<void> saveLaneMute(int channel, int lane, {required bool muted}) =>
-      _store.setBool(_laneMuteKey(channel, lane), value: muted);
+      _serialize(
+        () => _writeBoolScalar(
+          _laneMuteKey(channel, lane),
+          muted,
+          'Lane mute was not confirmed',
+        ),
+      );
 
   /// Loads lane [lane] of track [channel]'s persisted effect chain as an opaque
   /// encoded string (see `encodeTrackEffects`), or `null` if none is saved.
@@ -1209,7 +2370,7 @@ class SettingsRepository {
       _store.remove(_laneEffectsKey(channel, lane));
 
   String _trackFxChainKey(int channel) => 'track_fx_chain.$channel';
-  static const String _masterFxChainKey = 'master_fx_chain';
+  String _outputFxChainKey(int bus) => 'output_fx_chain.$bus';
 
   /// Loads track [channel]'s persisted Track-stage (stereo bus) chain as an
   /// opaque encoded envelope string (see `encodeFxChain`), or `null` if none
@@ -1226,23 +2387,53 @@ class SettingsRepository {
   /// twin of [clearLaneEffects], for a session load that drops a chain the
   /// live rig carried.
   ///
-  /// There is no Master equivalent: the Master envelope always has a value
-  /// (the empty enabled chain when none is configured), so a load overwrites
-  /// it rather than needing it cleared.
   Future<void> clearTrackFxChain(int channel) =>
       _store.remove(_trackFxChainKey(channel));
 
-  /// Loads the persisted Master insert chain as an opaque encoded envelope
-  /// string (see `encodeFxChain`), or `null` if none is saved.
-  Future<String?> loadMasterFxChain() => _store.getString(_masterFxChainKey);
+  /// Loads output destination [bus]'s persisted post-sum chain as an opaque
+  /// encoded envelope string (see `encodeFxChain`), or `null` if none is
+  /// saved.
+  Future<String?> loadOutputFxChain(int bus) =>
+      _store.getString(_outputFxChainKey(bus));
 
-  /// Saves the [encoded] Master insert chain envelope.
-  Future<void> saveMasterFxChain(String encoded) =>
-      _store.setString(_masterFxChainKey, encoded);
+  /// Saves output destination [bus]'s [encoded] chain envelope.
+  Future<void> saveOutputFxChain(int bus, String encoded) =>
+      _store.setString(_outputFxChainKey(bus), encoded);
+
+  /// Clears output destination [bus]'s persisted chain envelope — the output
+  /// twin of [clearTrackFxChain].
+  Future<void> clearOutputFxChain(int bus) =>
+      _store.remove(_outputFxChainKey(bus));
+
+  static const String _allTracksFxChainKey = 'all_tracks_fx_chain';
+
+  /// Loads the persisted All tracks recorded-mix chain as an opaque encoded
+  /// envelope string (see `encodeFxChain`), or `null` if none is saved.
+  Future<String?> loadAllTracksFxChain() =>
+      _store.getString(_allTracksFxChainKey);
+
+  /// Saves the [encoded] All tracks chain envelope.
+  Future<void> saveAllTracksFxChain(String encoded) =>
+      _store.setString(_allTracksFxChainKey, encoded);
+
+  static const String _fxUserPresetsKey = 'fx_user_presets';
+
+  /// Loads the player's saved effect presets as one opaque encoded string, or
+  /// `null` when none has been saved.
+  ///
+  /// One key rather than one per preset. The list is read whole every time it
+  /// is shown and rewritten whole on every change, so a key per preset would
+  /// buy nothing and would need its own index to enumerate.
+  Future<String?> loadFxUserPresets() => _store.getString(_fxUserPresetsKey);
+
+  /// Saves the player's [encoded] effect presets.
+  Future<void> saveFxUserPresets(String encoded) =>
+      _store.setString(_fxUserPresetsKey, encoded);
 
   static const String _updateAutoCheckKey = 'updates.auto_check';
   static const String _updateChannelKey = 'updates.channel';
   static const String _updateDismissedKey = 'updates.dismissed';
+  static const String _updateRollbackKey = 'updates.rollback';
 
   /// Whether the app runs the passive, read-only update check automatically.
   /// Defaults to `true` (checking is read-only; applying stays opt-in).
@@ -1293,6 +2484,71 @@ class SettingsRepository {
         (versions.toList()..sort()).join(','),
       );
 
+  /// Loads the update that rolled back and has not been dismissed: the
+  /// version that did not start and the one the console went back to, or
+  /// `null` when there is none (or the stored pair does not parse).
+  ///
+  /// Stored because the helper reports a rollback once, at the first start
+  /// after it, and the notice has to outlive a restart until it is read.
+  Future<({Version attempted, Version restored})?> loadUpdateRollback() async {
+    final raw = await _store.getString(_updateRollbackKey);
+    final parts = raw?.split(',');
+    if (parts == null || parts.length != 2) return null;
+    try {
+      return (
+        attempted: Version.parse(parts[0].trim()),
+        restored: Version.parse(parts[1].trim()),
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Saves the update that rolled back, as `attempted,restored`.
+  Future<void> saveUpdateRollback({
+    required Version attempted,
+    required Version restored,
+  }) => _store.setString(_updateRollbackKey, '$attempted,$restored');
+
+  /// Forgets the rolled-back update once its notice is dismissed.
+  Future<void> clearUpdateRollback() => _store.remove(_updateRollbackKey);
+
   /// Clears all settings.
   Future<void> clear() => _store.clear();
+}
+
+class _SavedMixSettings {
+  _SavedMixSettings({
+    Map<int, double>? trackLevels,
+    Map<int, double>? pans,
+    Map<(int, int), double>? levels,
+    Map<int, double>? monitorLevels,
+    Map<(int, int), int>? laneInputs,
+    Map<(int, int), int>? laneOutputs,
+    Map<int, int>? laneCounts,
+    Map<String, StoredInputSetup>? inputSetups,
+    Map<String, StoredOutputSetup>? outputSetups,
+    this.legacyMonitorGain = false,
+  }) : trackLevels = trackLevels ?? {},
+       pans = pans ?? {},
+       levels = levels ?? {},
+       monitorLevels = monitorLevels ?? {},
+       laneInputs = laneInputs ?? {},
+       laneOutputs = laneOutputs ?? {},
+       laneCounts = laneCounts ?? {},
+       inputSetups = inputSetups ?? {},
+       outputSetups = outputSetups ?? {};
+
+  final Map<int, double> trackLevels;
+  final Map<int, double> pans;
+  final Map<(int, int), double> levels;
+  final Map<int, double> monitorLevels;
+  final Map<(int, int), int> laneInputs;
+  final Map<(int, int), int> laneOutputs;
+  final Map<int, int> laneCounts;
+  final Map<String, StoredInputSetup> inputSetups;
+  final Map<String, StoredOutputSetup> outputSetups;
+
+  /// A pre-range live-input gain was read as unity and should be written back.
+  final bool legacyMonitorGain;
 }

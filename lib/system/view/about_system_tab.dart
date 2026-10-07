@@ -184,11 +184,11 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
           showDisclosure: false,
           showDivider: !last,
         ),
-      if (facts.facts.panel.isNotEmpty)
+      if (facts.facts.panels.isNotEmpty)
         ({required last}) => ConsoleRow(
           key: const Key('system_about_panel'),
           title: l10n.aboutPanelRow,
-          value: facts.facts.panel,
+          value: facts.facts.panels.join(' · '),
           showDisclosure: false,
           showDivider: !last,
         ),

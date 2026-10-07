@@ -1,24 +1,37 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:segno_engine/src/audio_device.dart';
 import 'package:segno_engine/src/audio_engine.dart';
+import 'package:segno_engine/src/audition.dart';
+import 'package:segno_engine/src/backing.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_fingerprint.dart';
+import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+import 'package:segno_engine/src/history_entry.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
+import 'package:segno_engine/src/mix_settings.dart';
+import 'package:segno_engine/src/output_fx_snapshot.dart';
+import 'package:segno_engine/src/perf_target.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
+import 'package:segno_engine/src/selected_render.dart';
+import 'package:segno_engine/src/simulated_instruments.dart';
 import 'package:segno_engine/src/track_effect.dart';
+import 'package:segno_engine/src/volume_space.dart';
 
 /// In-memory [AudioEngine] that simulates a multichannel interface for UI
 /// development and manual testing without real hardware.
 ///
 /// Reports [inputChannels] × [outputChannels] (default 18 × 20), enumerates a
 /// single duplex device, and reflects lane / monitor routing in [snapshot].
-class MockAudioEngine implements AudioEngine {
+/// Instrument slots follow [SimulatedInstruments]: events are recorded and
+/// voices reported, no audio is made.
+class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   /// Creates a [MockAudioEngine].
   MockAudioEngine({
     int inputChannels = defaultInputChannels,
@@ -28,7 +41,10 @@ class MockAudioEngine implements AudioEngine {
        outputChannels = outputChannels,
        deviceLabel =
            deviceLabel ??
-           'Mock Interface (${inputChannels}i${outputChannels}o)';
+           'Mock Interface (${inputChannels}i${outputChannels}o)' {
+    // Like the native engine: instrument calls need a configured engine.
+    simulatedInstrumentsConfigured = false;
+  }
 
   /// The input the tuner is armed on, or `-1`. Mirrors the native gate.
   int _tunerInput = -1;
@@ -37,9 +53,24 @@ class MockAudioEngine implements AudioEngine {
   /// mock analyses nothing, so a test drives the reading directly.
   double tunerHz = 0;
 
+  /// The inputs the tuner silences; follows the native rules.
+  int _tunerMuteMask = 0;
+
   @override
   EngineResult setTunerInput({required int input}) {
     _tunerInput = input < 0 || input >= inputChannels ? -1 : input;
+    // Every arm, move or disarm drops the temporary mute, as natively.
+    _tunerMuteMask = 0;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTunerMute({required int inputMask}) {
+    // Refused (stored as 0) while disarmed; absent inputs dropped.
+    _tunerMuteMask = _tunerInput < 0
+        ? 0
+        : inputMask &
+              (inputChannels >= 32 ? 0xFFFFFFFF : (1 << inputChannels) - 1);
     return EngineResult.ok;
   }
 
@@ -93,10 +124,29 @@ class MockAudioEngine implements AudioEngine {
   int _tsDen = 4;
   bool _syncTempo = true;
   GridDivision _quantizeDiv = GridDivision.off;
+  RecordTiming _recordTiming = RecordTiming.immediately;
+  int _recordTimingRevision = 0;
   ClickMode _clickMode = ClickMode.off;
+  int _clickModeRevision = 0;
+  int _recordStartRevision = 0;
+  bool _soundStart = false;
   int _clickMask = 0;
   double _clickVolume = 1;
   int _countInBars = 0;
+
+  @override
+  EngineResult setTrackLengthPresets(List<int> bars) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (bars.length != LE_MAX_TRACKS ||
+        bars.any((value) => value < 0 || value > LE_LENGTH_PRESET_MAX_BARS)) {
+      return EngineResult.invalid;
+    }
+    for (var channel = 0; channel < bars.length; channel++) {
+      _tracks[channel].lengthPresetBars = bars[channel];
+    }
+    return EngineResult.ok;
+  }
 
   // ---- looper mode (LooperModeControl, B2a) ----
   //
@@ -141,6 +191,50 @@ class MockAudioEngine implements AudioEngine {
     (_) => _MockTrack(),
   );
 
+  /// Per-input capture trim (`setInputTrim`), linear, default unity. Held
+  /// across start/stop like the lane volumes above (the native engine resets
+  /// it on configure; the mock is a simplified simulation).
+  final List<double> _inputTrim = List<double>.filled(LE_MAX_CHANNELS, 1);
+
+  /// The capture trim the mock holds for [input] (linear), or `1` for an
+  /// out-of-range input. A read-back seam like [monitorInputPan]: the engine
+  /// snapshot carries no trim (the repository keeps its own dB intent), so
+  /// tests read the mock directly.
+  double inputTrimOf({required int input}) =>
+      input < 0 || input >= LE_MAX_CHANNELS ? 1 : _inputTrim[input];
+
+  /// Per-input monitor pan (`setMonitorInputPan`), `-1..1`, default centre.
+  final List<double> _monitorPan = List<double>.filled(LE_MAX_CHANNELS, 0);
+
+  /// Output bus facts (slice 3b), one slot per bus the engine can address;
+  /// the snapshot publishes the first `(outputs + 1) ~/ 2`. Reset to their
+  /// defaults by every (re)start like the native engine.
+  final List<double> _outputLevel = List<double>.filled(LE_MAX_OUTPUT_BUSES, 1);
+  final List<bool> _outputMuted = List<bool>.filled(LE_MAX_OUTPUT_BUSES, false);
+  final List<bool> _outputMono = List<bool>.filled(LE_MAX_OUTPUT_BUSES, false);
+  final List<double> _outputBalance = List<double>.filled(
+    LE_MAX_OUTPUT_BUSES,
+    0,
+  );
+
+  /// How many times [cutSound] ran; published as the snapshot's
+  /// `tailResetRev` like the native counter.
+  int _tailResetRev = 0;
+
+  /// The pending capture policy ([setPerfFollowOutput]) and the one frozen
+  /// by the current arm.
+  bool _perfFollowPending = false;
+  bool _perfFollowArmed = false;
+
+  /// Recorded [cutSound] calls, for test assertions.
+  int cutSoundCalls = 0;
+
+  /// The monitor pan the mock holds for [input] (`-1..1`), or `0` for an
+  /// out-of-range input. A read-back seam: the engine snapshot carries no
+  /// per-monitor pan, so tests read the mock directly.
+  double monitorInputPan({required int input}) =>
+      input < 0 || input >= LE_MAX_CHANNELS ? 0 : _monitorPan[input];
+
   int get _negotiatedInputs {
     final requested = _activeConfig?.inputChannels ?? 0;
     return requested > 0 ? requested : inputChannels;
@@ -158,20 +252,60 @@ class MockAudioEngine implements AudioEngine {
   String get deviceName => _running ? deviceLabel : '';
 
   @override
-  EngineResult start(EngineConfig config) {
+  EngineResult start(EngineConfig config) => _start(config);
+
+  EngineResult _start(EngineConfig config, {bool keepBacking = false}) {
     if (_running) return EngineResult.alreadyRunning;
     _activeConfig = config;
     _running = true;
+    _clickModeRevision = 0;
+    _recordStartRevision = 0;
     _framesProcessed = 0;
     _latencyState = LatencyState.idle;
     _measuredLatencyMs = -1;
     _masterGain = 1; // unity on every fresh start, mirroring the native engine
     _perfArmed = false; // disarmed on every fresh start/reconfigure
+    // The Transpose bypass, Follow tempo and Pitch reset with the material
+    // at configure, as natively; receipts die with them.
+    _transposeBypass = false;
+    _followTempo = false;
+    _pitchMode = PitchMode.unchanged;
+    for (final track in _tracks) {
+      track
+        ..followTempoOverride = null
+        ..pitchModeOverride = null;
+    }
+    _requestResults.clear();
     _perfFrames = 0;
+    // A configure (start or reopen) ends a preview and bumps the epoch, as
+    // the native voice does.
+    _endAudition();
+    _auditionEpoch++;
+    // The output destinations go back to their defaults on a fresh start,
+    // like the native engine's configure. The capture policy deliberately
+    // does NOT: it is a preference, not device state.
+    _outputLevel.fillRange(0, _outputLevel.length, 1);
+    _outputMuted.fillRange(0, _outputMuted.length, false);
+    _outputMono.fillRange(0, _outputMono.length, false);
+    _outputBalance.fillRange(0, _outputBalance.length, 0);
     // The tap-tempo pair state is transient (per-session), unlike the tempo
     // grid/click SETTINGS above it, which persist across start/stop —
     // mirrors engine.c:371-372 (has_tap/last_tap_frame reset on configure).
     _lastTapAt = null;
+    // A fresh start is a configure: the backing buffers were decoded at the
+    // old rate and go; the settings stay; the owner sees a new epoch. A
+    // retained reopen keeps both buffers, stopped at 0, like the native
+    // engine's le_engine_reset_runtime.
+    if (keepBacking) {
+      _backingTransport = BackingTransport.stopped;
+      _backingPosition = 0;
+    } else {
+      _backingRelease();
+    }
+    _backingEpoch++;
+    // Configure re-initialises the synth: slots, voices and routes are gone
+    // and the epoch advances, as on the engine.
+    resetSimulatedInstruments();
     return EngineResult.ok;
   }
 
@@ -179,8 +313,47 @@ class MockAudioEngine implements AudioEngine {
   EngineResult stop() {
     if (!_running) return EngineResult.notRunning;
     _running = false;
+    _endAudition();
+    _lastSampleRate = _activeConfig?.sampleRate ?? 48000;
     _activeConfig = null;
     return EngineResult.ok;
+  }
+
+  /// The sample rate of the most recent session, for [reopen]'s retention
+  /// test; `null` until the first [start].
+  int? _lastSampleRate;
+
+  /// Mirrors the native retention rule on the mock's (contentless) tracks:
+  /// the same sample rate retains, another clears, nothing is ever dropped
+  /// (the mock posts no state commands), and the lifecycle preconditions
+  /// match [start]/[stop]. Tracks, lanes and settings the real engine resets
+  /// are reset exactly as [start] does.
+  @override
+  ReopenResult reopen(EngineConfig config) {
+    if (_running) {
+      return (
+        result: EngineResult.alreadyRunning,
+        outcome: ReopenOutcome.retained,
+        droppedTracks: 0,
+      );
+    }
+    final previous = _lastSampleRate;
+    if (previous == null) {
+      return (
+        result: EngineResult.notRunning,
+        outcome: ReopenOutcome.retained,
+        droppedTracks: 0,
+      );
+    }
+    final requested = config.sampleRate > 0 ? config.sampleRate : 48000;
+    final outcome = requested == previous
+        ? ReopenOutcome.retained
+        : ReopenOutcome.clearedRate;
+    return (
+      result: _start(config, keepBacking: outcome == ReopenOutcome.retained),
+      outcome: outcome,
+      droppedTracks: 0,
+    );
   }
 
   @override
@@ -191,25 +364,40 @@ class MockAudioEngine implements AudioEngine {
   CallbackTelemetry nextCallbackTelemetry = CallbackTelemetry.empty;
 
   @override
+  bool get commandsSettled => true;
+
+  @override
   EngineSnapshot snapshot() {
     if (_running) {
       final buffer = _activeConfig?.bufferFrames ?? 128;
       _framesProcessed += buffer;
       if (_perfArmed) _perfFrames += buffer;
+      // A preview plays a block per snapshot and ends after its last frame.
+      if (_auditionFrames > 0) {
+        _auditionPosition += buffer;
+        if (_auditionPosition >= _auditionFrames) _endAudition();
+      }
     }
+    final inputs = _running ? _negotiatedInputs : 0;
+    final outputs = _running ? _negotiatedOutputs : 0;
     return EngineSnapshot(
+      transposeBypass: _transposeBypass,
+      followTempo: _followTempo,
+      pitchMode: _pitchMode,
+      mixRevision: _mixRevision,
       isRunning: _running,
       devicePresent: _running,
       sampleRate: _activeConfig?.sampleRate ?? 48000,
       bufferFrames: _activeConfig?.bufferFrames ?? 128,
-      inputChannels: _running ? _negotiatedInputs : 0,
-      outputChannels: _running ? _negotiatedOutputs : 0,
+      inputChannels: inputs,
+      outputChannels: outputs,
       framesProcessed: _framesProcessed,
       xrunCount: 0,
       inputRms: 0,
       tunerHz: _tunerInput >= 0 ? tunerHz : 0,
       tunerConfidence: _tunerInput >= 0 && tunerHz > 0 ? 1 : 0,
       tunerInput: _tunerInput,
+      tunerMuteMask: _tunerMuteMask,
       inputPeak: 0,
       outputRms: 0,
       latencyState: _latencyState,
@@ -224,6 +412,16 @@ class MockAudioEngine implements AudioEngine {
           : AudioBackend.miniaudio,
       isPerfArmed: _perfArmed,
       perfFrames: _perfFrames,
+      outputBusCount: (outputs + 1) ~/ 2,
+      outputLevels: _outputLevel.sublist(0, (outputs + 1) ~/ 2),
+      outputMuted: _outputMuted.sublist(0, (outputs + 1) ~/ 2),
+      outputMono: _outputMono.sublist(0, (outputs + 1) ~/ 2),
+      outputBalances: _outputBalance.sublist(0, (outputs + 1) ~/ 2),
+      tailResetRev: _tailResetRev,
+      perfFollowOutput: _perfArmed ? _perfFollowArmed : _perfFollowPending,
+      // The mock models no structural output gate, so the first destination
+      // is always the one a capture would read.
+      perfCaptureBus: outputs > 0 ? 0 : -1,
       // perfOverruns / perfZeroFilledFrames default to 0: the mock models no
       // ring capacity and no drain thread, so nothing ever overflows and no
       // silence is ever substituted.
@@ -233,16 +431,28 @@ class MockAudioEngine implements AudioEngine {
       tsDen: _tsDen,
       syncTempo: _syncTempo,
       quantizeDiv: _quantizeDiv,
+      quantize: _recordTiming.quantize,
+      recordTimingRevision: _recordTimingRevision,
       // loopBars/currentBeat/countingIn/countInBeatsLeft stay at their
       // grid-off/idle defaults (0/false): the mock runs no real transport, so
       // there is no live loop or count-in to derive them from.
       clickMode: _clickMode,
+      clickModeRevision: _clickModeRevision,
       clickMask: _clickMask,
       clickVolume: _clickVolume,
       countInBars: _countInBars,
+      autoRecord: _soundStart,
+      recordStartRevision: _recordStartRevision,
       looperMode: _looperMode,
       primaryTrack: _primaryTrack,
+      // One entry per negotiated channel, like the native projection; all
+      // zero because the mock processes no audio.
+      inputPeaks: List<double>.filled(inputs, 0),
+      monitorPeaks: List<double>.filled(inputs, 0),
+      outputPeaks: List<double>.filled(outputs, 0),
       tracks: [for (final track in _tracks) track.snapshot()],
+      instruments: simulatedInstrumentsSnapshot,
+      midiInput: simulatedMidiInputSnapshot,
     );
   }
 
@@ -340,6 +550,63 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Complete recipes accepted by the in-memory engine.
+  final fxRecipes = <(FxOwner, int, int), FxRecipe>{};
+  final _fxRecipeRevisions = <(FxOwner, int, int), int>{};
+
+  @override
+  EngineResult setFxRecipe({
+    required FxOwner owner,
+    required FxRecipe recipe,
+    required int revision,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    final running = _requireRunning();
+    if (!running.isOk) return running;
+    if (!recipe.isValid ||
+        revision <= 0 ||
+        revision > 0xffffffff ||
+        lane < 0 ||
+        lane >= 8 ||
+        channel < 0 ||
+        (owner == FxOwner.lane || owner == FxOwner.track) && channel >= 8 ||
+        owner == FxOwner.monitor && channel >= 32 ||
+        owner == FxOwner.output && channel >= 16 ||
+        owner == FxOwner.allTracks && channel != 0 ||
+        owner != FxOwner.lane && lane != 0 ||
+        (owner == FxOwner.monitor ||
+                owner == FxOwner.output ||
+                owner == FxOwner.allTracks) &&
+            recipe.preCount != 0) {
+      return EngineResult.invalid;
+    }
+    fxRecipes[(owner, channel, lane)] = recipe;
+    _fxRecipeRevisions[(owner, channel, lane)] = revision;
+    return EngineResult.ok;
+  }
+
+  @override
+  int fxRecipeRevision({
+    required FxOwner owner,
+    int channel = 0,
+    int lane = 0,
+  }) => _fxRecipeRevisions[(owner, channel, lane)] ?? 0;
+
+  @override
+  PluginSlotHandle? preparePlugin({required String pluginId}) => null;
+
+  @override
+  EngineResult discardPreparedPlugin(PluginSlotHandle slot) =>
+      EngineResult.invalid;
+
+  @override
+  EngineResult preparePluginParam(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) => EngineResult.invalid;
+
   @override
   PluginSlotHandle? setLanePlugin({
     required int channel,
@@ -433,6 +700,200 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  int _mixRevision = 0;
+
+  // This silent device mock has no recorded tracks. Fade refuses empty
+  // material, matching its TrackSnapshot.empty projection.
+  @override
+  RequestAdmission toggleFade({
+    required int channel,
+    required double seconds,
+  }) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+  @override
+  RequestAdmission installFade({
+    required int channel,
+    required FadeImage image,
+  }) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+  // Reverse refuses empty material the same way.
+  @override
+  RequestAdmission toggleReverse({required int channel}) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+  // So does a length edit.
+  @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+  @override
+  RequestAdmission installReverse({
+    required int channel,
+    required bool reversed,
+  }) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+  // Speed needs recorded material, which the mock never holds: an empty
+  // loop has no speed (the native engine's rule), so it is refused like
+  // Reverse and the snapshot stays at Normal.
+  @override
+  RequestAdmission setSpeed(SpeedFactor factor) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+
+  // Transpose refuses empty material the same way; its bypass is global,
+  // admitted whenever configured, so the mock models it with a receipt.
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      (
+        result: _running ? EngineResult.invalid : EngineResult.notRunning,
+        request: 0,
+      );
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+  bool _transposeBypass = false;
+  int _nextRequest = 0;
+  final _requestResults = <int, EngineResult>{};
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) {
+    final result = _requireRunning();
+    if (!result.isOk) return (result: result, request: 0);
+    _transposeBypass = bypassed;
+    final request = ++_nextRequest;
+    _requestResults[request] = EngineResult.ok;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  // Follow tempo and Pitch are settings, admitted whenever configured, so the
+  // mock models them with a receipt. It holds no material, so nothing
+  // retimes (its snapshot's tempoFollow stays free).
+  bool _followTempo = false;
+  PitchMode _pitchMode = PitchMode.unchanged;
+
+  RequestAdmission _setting(int? channel, bool hasValue, void Function() set) {
+    final result = _requireRunning();
+    if (!result.isOk) return (result: result, request: 0);
+    if ((channel == null && !hasValue) ||
+        (channel != null && (channel < 0 || channel >= _tracks.length))) {
+      return (result: EngineResult.invalid, request: 0);
+    }
+    set();
+    final request = ++_nextRequest;
+    _requestResults[request] = EngineResult.ok;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) =>
+      _setting(channel, follow != null, () {
+        if (channel == null) {
+          _followTempo = follow!;
+        } else {
+          _tracks[channel].followTempoOverride = follow;
+        }
+      });
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) =>
+      _setting(channel, mode != null, () {
+        if (channel == null) {
+          _pitchMode = mode!;
+        } else {
+          _tracks[channel].pitchModeOverride = mode;
+        }
+      });
+
+  @override
+  EngineResult? readRequestResult(int request) =>
+      _requestResults.remove(request) ?? EngineResult.invalid;
+
+  @override
+  EngineResult setMix(EngineMixSettings settings) {
+    if (!settings.isValid) return EngineResult.invalid;
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    for (final e in settings.laneInputs.entries) {
+      _tracks[e.key.$1].laneAt(e.key.$2).inputChannel = e.value;
+    }
+    for (final e in settings.laneOutputs.entries) {
+      _tracks[e.key.$1].laneAt(e.key.$2).outputMask = e.value;
+    }
+    for (final e in settings.laneCounts.entries) {
+      _tracks[e.key].laneCount = e.value;
+    }
+    for (final e in settings.lanes.entries) {
+      _tracks[e.key.$1].laneAt(e.key.$2)
+        ..liveLevel = e.value.gain
+        ..livePan = e.value.pan
+        ..compose();
+    }
+    for (final e in settings.images.entries) {
+      _tracks[e.key.$1].laneAt(e.key.$2)
+        ..imageGain = e.value.gain
+        ..imagePan = e.value.pan
+        ..compose();
+    }
+    for (final e in settings.monitors.entries) {
+      setMonitorInputVolume(input: e.key, volume: e.value.gain);
+      setMonitorInputPan(input: e.key, pan: e.value.pan);
+    }
+    for (final e in settings.trims.entries) {
+      _inputTrim[e.key] = e.value;
+    }
+    for (final e in settings.trackLevels.entries) {
+      _tracks[e.key].volume = e.value;
+    }
+    for (final e in settings.solos.entries) {
+      _tracks[e.key].solo = e.value;
+    }
+    for (final e in settings.outputs.entries) {
+      setOutputLevel(bus: e.key, level: e.value.level);
+      setOutputMute(bus: e.key, muted: e.value.muted);
+      setOutputMono(bus: e.key, mono: e.value.mono);
+      setOutputBalance(bus: e.key, balance: e.value.balance);
+    }
+    _mixRevision = settings.revision;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult recordWithImage(RecordImage image, {int channel = 0}) {
+    if (!image.isValid || channel < 0 || channel >= LE_MAX_TRACKS) {
+      return EngineResult.invalid;
+    }
+    final result = record(channel: channel);
+    if (!result.isOk) return result;
+    for (final e in image.lanes.entries) {
+      _tracks[channel].laneAt(e.key)
+        ..imageGain = e.value.gain
+        ..imagePan = e.value.pan
+        ..compose();
+    }
+    for (final entry in image.laneFx.entries) {
+      fxRecipes[(FxOwner.lane, channel, entry.key)] = entry.value;
+    }
+    _tracks[channel].imageRevision = image.revision;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult record({int channel = 0}) => _requireRunning();
 
@@ -453,10 +914,28 @@ class MockAudioEngine implements AudioEngine {
   bool undoRestoresClear({int channel = 0}) => false;
 
   @override
+  bool redoReclears({int channel = 0}) => false;
+
+  @override
+  bool clearRestorePending({int channel = 0}) => false;
+
+  /// The mock keeps no history that could conflict with the current mode.
+  @override
+  EngineResult historyModeGate({required int channels, required bool redo}) =>
+      EngineResult.ok;
+
+  @override
   EngineResult undo({int channel = 0}) => _requireRunning();
 
   @override
   EngineResult redo({int channel = 0}) => _requireRunning();
+
+  /// The mock keeps no overdub layers, so there is never one to peel.
+  @override
+  EngineResult peel({int channel = 0}) {
+    final running = _requireRunning();
+    return running.isOk ? EngineResult.invalid : running;
+  }
 
   @override
   EngineResult setLaneCount({required int channel, required int count}) {
@@ -491,6 +970,80 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setLanePan({
+    required double pan,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
+    if (lane < 0 || lane >= kMaxLanes) return EngineResult.invalid;
+    _tracks[channel].laneAt(lane).pan = pan.clamp(-1.0, 1.0);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackSolo({required int channel, required bool solo}) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
+    _tracks[channel].solo = solo;
+    return EngineResult.ok;
+  }
+
+  // ---- Output buses (slice 3b): direct stores, no running gate. ----
+
+  @override
+  EngineResult setOutputLevel({required int bus, required double level}) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
+    _outputLevel[bus] = level.isNaN ? 0 : level.clamp(0.0, 1.0);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMute({required int bus, required bool muted}) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
+    _outputMuted[bus] = muted;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMono({required int bus, required bool mono}) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
+    _outputMono[bus] = mono;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputBalance({required int bus, required double balance}) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
+    _outputBalance[bus] = balance.isNaN ? 0 : balance.clamp(-1.0, 1.0);
+    return EngineResult.ok;
+  }
+
+  /// The mock runs no transport and holds no chain DSP state, so the call
+  /// count and the revision bump are the observables.
+  @override
+  EngineResult cutSound() {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    cutSoundCalls++;
+    _tailResetRev++;
+    _endAudition(); // a preview is sound too
+    return EngineResult.ok;
+  }
+
+  // A direct store like the enable setters: no running gate.
+  @override
+  EngineResult setInputTrim({required int input, required double gain}) {
+    if (input < 0 || input >= LE_MAX_CHANNELS) return EngineResult.invalid;
+    // NaN lands on silence, not on unity, mirroring the native clamp.
+    _inputTrim[input] = gain.isNaN ? 0 : gain.clamp(0.0, LE_MAX_INPUT_TRIM);
+    return EngineResult.ok;
+  }
+
+  @override
   EngineResult setLaneInput({
     required int channel,
     required int lane,
@@ -521,16 +1074,43 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setQuantize({required bool enabled}) => _requireRunning();
+  EngineResult setRecordTimingSettings({
+    required RecordTiming defaultTiming,
+    required GridDivision rememberedDivision,
+    required Map<int, RecordTiming> trackOverrides,
+    required int editMask,
+  }) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (trackOverrides.keys.any((c) => c < 0 || c >= 8) ||
+        (editMask & ~0x1ff) != 0 ||
+        (defaultTiming.quantize &&
+            defaultTiming.division != rememberedDivision)) {
+      return EngineResult.invalid;
+    }
+    _recordTiming = defaultTiming;
+    _quantizeDiv = rememberedDivision;
+    for (var channel = 0; channel < _tracks.length; channel++) {
+      _tracks[channel].recordTiming = trackOverrides[channel];
+    }
+    _recordTimingRevision = (_recordTimingRevision + 2) & 0xffffffff;
+    return EngineResult.ok;
+  }
 
   @override
-  EngineResult setTrackQuantize({
+  EngineResult setTrackOverdubFeedback({
     required int channel,
-    required bool? enabled,
+    required double? feedback,
   }) => _requireRunning();
 
   @override
   EngineResult cancelArm({required int channel}) => _requireRunning();
+
+  @override
+  EngineResult stopRecordControl({required int channel}) => _requireRunning();
+
+  @override
+  EngineResult cancelCountIn() => _requireRunning();
 
   @override
   EngineResult finalizeTake({required int channel}) => _requireRunning();
@@ -559,6 +1139,70 @@ class MockAudioEngine implements AudioEngine {
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       _requireRunning();
 
+  /// The preview the mock is "playing": its length in frames, 0 when none.
+  /// The mock decodes nothing: any existing file plays as one second, a
+  /// block per [snapshot], and ends like the native voice: after its last
+  /// frame, on a performance arm, a Cut sound, a stop, a start or a reopen.
+  int _auditionFrames = 0;
+  int _auditionPosition = 0;
+  int _auditionBus = -1;
+  int _auditionEpoch = 0;
+
+  void _endAudition() {
+    _auditionFrames = 0;
+    _auditionPosition = 0;
+    _auditionBus = -1;
+  }
+
+  @override
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async {
+    final running = _requireRunning();
+    if (!running.isOk) return AuditionStart(result: running);
+    if (!File(path).existsSync() || bus < 0 || 2 * bus >= _negotiatedOutputs) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    // Refused while a take records, as the native voice is.
+    if (_perfArmed) {
+      return const AuditionStart(result: EngineResult.alreadyRunning);
+    }
+    if (stillWanted != null && !stillWanted()) {
+      return const AuditionStart(result: EngineResult.invalid, cancelled: true);
+    }
+    final rate = _activeConfig?.sampleRate ?? 48000;
+    _auditionFrames = rate;
+    _auditionPosition = 0;
+    _auditionBus = bus;
+    return AuditionStart(
+      result: EngineResult.ok,
+      frames: rate,
+      rate: rate,
+      sourceRate: rate,
+    );
+  }
+
+  /// The mock decodes nothing: an existing file reads as silence.
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async =>
+      File(path).existsSync() ? Float32List(buckets) : null;
+
+  @override
+  EngineResult auditionStop() {
+    _endAudition();
+    return EngineResult.ok;
+  }
+
+  @override
+  AuditionState auditionState() => AuditionState(
+    epoch: _auditionEpoch,
+    frames: _auditionFrames,
+    position: _auditionPosition,
+    bus: _auditionBus,
+  );
+
   @override
   EngineResult setOutputEnabled({
     required int output,
@@ -568,9 +1212,6 @@ class MockAudioEngine implements AudioEngine {
   @override
   EngineResult setOverdubFeedback(double feedback) => _requireRunning();
 
-  @override
-  EngineResult setAutoRecord({required bool enabled}) => _requireRunning();
-
   // ---- tempo grid + click/count-in (TempoControl) ----
 
   @override
@@ -579,6 +1220,26 @@ class MockAudioEngine implements AudioEngine {
     if (!result.isOk) return result;
     _tempoBpm = bpm.clamp(_minTempoBpm, _maxTempoBpm);
     _tempoSource = TempoSource.manual;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult restoreTempo({
+    required double bpm,
+    required TempoSource source,
+  }) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (!bpm.isFinite ||
+        source == TempoSource.external ||
+        (source == TempoSource.none
+            ? bpm != 0
+            : bpm < _minTempoBpm || bpm > _maxTempoBpm)) {
+      return EngineResult.invalid;
+    }
+    _tempoBpm = bpm;
+    _tempoSource = source;
+    _lastTapAt = null;
     return EngineResult.ok;
   }
 
@@ -621,18 +1282,13 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setQuantizeDiv(GridDivision div) {
-    final result = _requireRunning();
-    if (!result.isOk) return result;
-    _quantizeDiv = div;
-    return EngineResult.ok;
-  }
-
-  @override
   EngineResult setClickMode(ClickMode mode) {
     final result = _requireRunning();
     if (!result.isOk) return result;
+    // The mock has no capture state or callback; its receipt completes here.
+    // Actual capture refusal and deferred publication use PumpedNativeEngine.
     _clickMode = mode;
+    _clickModeRevision = (_clickModeRevision + 1) & 0xffffffff;
     return EngineResult.ok;
   }
 
@@ -653,11 +1309,20 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setCountIn(int bars) {
+  EngineResult setRecordStartSettings({
+    required int countInBars,
+    required bool soundStart,
+    required RecordStartEditKind editKind,
+  }) {
     final result = _requireRunning();
     if (!result.isOk) return result;
-    if (bars < 0 || bars > LE_COUNT_IN_MAX_BARS) return EngineResult.invalid;
-    _countInBars = bars;
+    if (!const [0, 1, 2, 4].contains(countInBars) ||
+        countInBars > 0 && soundStart) {
+      return EngineResult.invalid;
+    }
+    _countInBars = countInBars;
+    _soundStart = soundStart;
+    _recordStartRevision = (_recordStartRevision + 1) & 0xffffffff;
     return EngineResult.ok;
   }
 
@@ -668,6 +1333,7 @@ class MockAudioEngine implements AudioEngine {
   }) {
     final result = _requireRunning();
     if (!result.isOk) return result;
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
     if (bars < 0 || bars > LE_LENGTH_PRESET_MAX_BARS) {
       return EngineResult.invalid;
     }
@@ -679,11 +1345,23 @@ class MockAudioEngine implements AudioEngine {
 
   // ---- looper mode (LooperModeControl, B2a) ----
 
+  /// The mock keeps no takes, so every change is open.
+  @override
+  LooperModeGate looperModeGate(LooperMode mode) => LooperModeGate.open;
+
   @override
   EngineResult setLooperMode(LooperMode mode) {
     final result = _requireRunning();
     if (!result.isOk) return result;
-    // No D4 content lock here — see _looperMode's doc.
+    // No content rules here — the mock holds no takes to measure.
+    _looperMode = mode;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setLooperModeWithPresets(LooperMode mode, List<int> bars) {
+    final result = setTrackLengthPresets(bars);
+    if (!result.isOk) return result;
     _looperMode = mode;
     return EngineResult.ok;
   }
@@ -707,6 +1385,19 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setOneShotMask({required int channels, required bool oneShot}) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (channels <= 0 || channels >= (1 << LE_MAX_TRACKS)) {
+      return EngineResult.invalid;
+    }
+    for (var channel = 0; channel < LE_MAX_TRACKS; channel++) {
+      if ((channels & (1 << channel)) != 0) _tracks[channel].oneShot = oneShot;
+    }
+    return EngineResult.ok;
+  }
+
+  @override
   EngineResult setLaneFx({
     required int channel,
     required int lane,
@@ -719,6 +1410,7 @@ class MockAudioEngine implements AudioEngine {
     required int channel,
     required int lane,
     required int count,
+    int preCount = 0,
   }) => _requireRunning();
 
   @override
@@ -786,6 +1478,7 @@ class MockAudioEngine implements AudioEngine {
   EngineResult setTrackFxCount({
     required int channel,
     required int count,
+    int preCount = 0,
   }) => _requireRunning();
 
   @override
@@ -826,41 +1519,156 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  // ---- Master insert chain (FX v3 part 1b): same split as the track
+  // ---- Output bus chains (slice 3b): same split as the track
   // family above. ----
 
   @override
-  EngineResult setMasterFx({
+  OutputFxSnapshot outputFxSnapshot({required int bus}) =>
+      const OutputFxSnapshot();
+
+  @override
+  EngineResult setOutputFx({
+    required int bus,
     required int index,
     required TrackEffectType type,
   }) => _requireRunning();
 
   @override
-  EngineResult setMasterFxCount({required int count}) => _requireRunning();
+  EngineResult setOutputFxCount({required int bus, required int count}) =>
+      _requireRunning();
 
   @override
-  EngineResult setMasterFxParam({
+  EngineResult setOutputFxParam({
+    required int bus,
     required int index,
     required int param,
     required double value,
   }) => _requireRunning();
 
-  /// Recorded [setMasterFxEnabled] calls, in order, for test assertions.
-  final masterFxEnabledCalls = <({int index, bool enabled})>[];
+  /// Recorded [setOutputFxEnabled] calls, in order, for test assertions.
+  final outputFxEnabledCalls = <({int bus, int index, bool enabled})>[];
 
-  /// Recorded [setMasterFxChainEnabled] calls, in order, for test assertions.
-  final masterFxChainEnabledCalls = <bool>[];
+  /// Recorded [setOutputFxChainEnabled] calls, in order, for test assertions.
+  final outputFxChainEnabledCalls = <({int bus, bool enabled})>[];
 
   @override
-  EngineResult setMasterFxEnabled({required int index, required bool enabled}) {
+  EngineResult setOutputFxEnabled({
+    required int bus,
+    required int index,
+    required bool enabled,
+  }) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
     if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
-    masterFxEnabledCalls.add((index: index, enabled: enabled));
+    outputFxEnabledCalls.add((bus: bus, index: index, enabled: enabled));
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMasterFxChainEnabled({required bool enabled}) {
-    masterFxChainEnabledCalls.add(enabled);
+  EngineResult setOutputFxChainEnabled({
+    required int bus,
+    required bool enabled,
+  }) {
+    if (bus < 0 || bus >= LE_MAX_OUTPUT_BUSES) return EngineResult.invalid;
+    outputFxChainEnabledCalls.add((bus: bus, enabled: enabled));
+    return EngineResult.ok;
+  }
+
+  /// Recorded [setAllTracksFx] calls, in order, for test assertions.
+  final allTracksFxCalls = <({int index, TrackEffectType type})>[];
+
+  /// Recorded [setAllTracksFxCount] calls, in order.
+  final allTracksFxCountCalls = <int>[];
+
+  @override
+  EngineResult setAllTracksFx({
+    required int index,
+    required TrackEffectType type,
+  }) {
+    if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
+    allTracksFxCalls.add((index: index, type: type));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxCount({required int count}) {
+    allTracksFxCountCalls.add(count);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
+    if (param < 0 || param >= kTrackEffectParams) return EngineResult.invalid;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxEnabled({
+    required int index,
+    required bool enabled,
+  }) {
+    if (index < 0 || index >= kTrackEffectMax) return EngineResult.invalid;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxChainEnabled({required bool enabled}) =>
+      EngineResult.ok;
+
+  /// Recorded channel-handling calls, in order, for test assertions.
+  final fxChannelsCalls = <({String stage, int index, FxChannels channels})>[];
+
+  @override
+  EngineResult setLaneFxChannels({
+    required int channel,
+    required int lane,
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'lane', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMonitorInputFxChannels({
+    required int input,
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'monitor', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxChannels({
+    required int channel,
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'track', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputFxChannels({
+    required int bus,
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'output', index: index, channels: channels));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAllTracksFxChannels({
+    required int index,
+    required FxChannels channels,
+  }) {
+    fxChannelsCalls.add((stage: 'allTracks', index: index, channels: channels));
     return EngineResult.ok;
   }
 
@@ -887,6 +1695,17 @@ class MockAudioEngine implements AudioEngine {
     required int input,
     required bool muted,
   }) => _requireRunning();
+
+  @override
+  EngineResult setMonitorInputPan({required int input, required double pan}) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) {
+      return EngineResult.invalid;
+    }
+    _monitorPan[input] = pan.clamp(-1.0, 1.0);
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult setMonitorInputFx({
@@ -1034,6 +1853,10 @@ class MockAudioEngine implements AudioEngine {
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
 
+  /// The mock holds no audio, so no track's content ever changes.
+  @override
+  int trackAudioRev(int channel) => 0;
+
   @override
   EngineResult importLayer(
     int channel,
@@ -1043,23 +1866,46 @@ class MockAudioEngine implements AudioEngine {
   ) => _requireRunning();
 
   @override
-  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) =>
+  TrackHistory exportHistory(int channel) => TrackHistory.none;
+
+  @override
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) => _requireRunning();
+
+  @override
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) =>
       _requireRunning();
 
   @override
-  EngineResult commitSession(int baseFrames) => _requireRunning();
+  EngineResult importSpan(int channel, int spanFrames) => _requireRunning();
 
-  /// The `captureDir` passed to the most recent [perfArm] call, for test
+  /// The capture directory of the most recent [perfArm] call, for test
   /// assertions. `null` until the first arm.
   String? lastPerfCaptureDir;
 
+  /// The target of the most recent [perfArm] call. `null` until the first.
+  PerfTarget? lastPerfTarget;
+
   @override
-  EngineResult perfArm(String captureDir) {
+  EngineResult perfArm(PerfTarget target) {
+    final captureDir = target.captureDir;
     if (captureDir.isEmpty) return EngineResult.invalid;
+    lastPerfTarget = target;
     final result = _requireRunning();
     if (!result.isOk) return result;
+    if (!_perfArmed) _perfFollowArmed = _perfFollowPending; // frozen per take
     _perfArmed = true; // idempotent: re-arming just keeps it armed
+    _endAudition(); // the take starts with the rig alone sounding
     lastPerfCaptureDir = captureDir;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setPerfFollowOutput({required bool follow}) {
+    _perfFollowPending = follow;
     return EngineResult.ok;
   }
 
@@ -1069,13 +1915,16 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  /// What [volumeFreeBytes] reports. `null` models a platform that cannot
-  /// answer; set a number to model a volume with that much room left.
-  int? volumeFreeBytesValue = 1 << 40; // 1 TiB: plenty, by default
+  /// What [volumeSpace] reports. `null` models a platform that cannot
+  /// answer; set a reading to model a volume of that size with that much room.
+  VolumeSpace? volumeSpaceValue = const VolumeSpace(
+    totalBytes: 2 << 40, // 2 TiB, half of it
+    freeBytes: 1 << 40, // free: plenty, by default
+  );
 
   @override
-  int? volumeFreeBytes(String path) =>
-      path.isEmpty ? null : volumeFreeBytesValue;
+  VolumeSpace? volumeSpace(String path) =>
+      path.isEmpty ? null : volumeSpaceValue;
 
   /// The `captureDir` passed to the most recent [renderBegin] call, for test
   /// assertions. `null` until the first render.
@@ -1110,6 +1959,26 @@ class MockAudioEngine implements AudioEngine {
   List<PerformanceRenderTrackStatus> renderTrackStatuses() =>
       _renderStarted ? mockRenderTrackStatuses : const [];
 
+  // ---- shared render recipe (#1202): the mock models no PCM, so it has
+  // nothing to render and says so rather than inventing audio. ----
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, plan: null);
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, job: 0);
+
+  @override
+  RenderJobStatus? pollRender(int job) => null;
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) => null;
+
+  @override
+  EngineResult cancelRender(int job) => EngineResult.invalid;
+
   @override
   EngineResult renderCancel() {
     _renderStarted = false;
@@ -1120,6 +1989,236 @@ class MockAudioEngine implements AudioEngine {
   void dispose() {
     _running = false;
     _activeConfig = null;
+    _backingRelease();
+  }
+
+  // ---- backing player (#1200) ----
+  //
+  // An in-memory voice with the native transport and End rules, and its
+  // ownership: an accepted DecodedAudio is the engine's until it is replaced,
+  // cleared, advanced past or released, and is freed exactly then. The mock
+  // has no callback; [advanceBacking] plays frames. Declick ramps are not
+  // modelled (the native suite owns sample values).
+
+  DecodedAudio? _backingCur;
+  DecodedAudio? _backingNext;
+  int _backingItem = -1;
+  int _backingNextItem = -1;
+  BackingTransport _backingTransport = BackingTransport.stopped;
+  int _backingPosition = 0;
+  int _backingEndCount = 0;
+  BackingEndEvent _backingLastEnd = BackingEndEvent.none;
+  BackingEnd _backingEnd = BackingEnd.stop;
+  int _backingMask = 0;
+  double _backingLevel = 1;
+  double _backingPan = 0;
+  double _clickPan = 0;
+  int _backingEpoch = 0;
+
+  static const int _backingBudgetBytes = LE_BACKING_BUDGET_BYTES;
+
+  int get _backingOwnedBytes =>
+      (_backingCur?.bytes ?? 0) + (_backingNext?.bytes ?? 0);
+
+  /// The native engine accepts backing calls whenever it is configured, a
+  /// stopped device included; the mock is configured from its first start.
+  EngineResult _requireConfigured() => _running || _lastSampleRate != null
+      ? EngineResult.ok
+      : EngineResult.notRunning;
+
+  /// The rate the engine is configured at, running or not.
+  int get _configuredRate =>
+      _activeConfig?.sampleRate ?? _lastSampleRate ?? 48000;
+
+  EngineResult _backingAdmit(DecodedAudio audio) {
+    final configured = _requireConfigured();
+    if (!configured.isOk) return configured;
+    if (!audio.isOwned ||
+        audio.frames <= 0 ||
+        identical(audio, _backingCur) ||
+        identical(audio, _backingNext) ||
+        audio.sampleRate != _configuredRate) {
+      return EngineResult.invalid;
+    }
+    if (_backingOwnedBytes + audio.bytes > _backingBudgetBytes) {
+      return EngineResult.capacity;
+    }
+    return EngineResult.ok;
+  }
+
+  void _backingFree(DecodedAudio? audio) => audio?.payload.free();
+
+  void _backingRelease() {
+    _backingFree(_backingCur);
+    _backingFree(_backingNext);
+    _backingCur = null;
+    _backingNext = null;
+    _backingItem = -1;
+    _backingNextItem = -1;
+    _backingTransport = BackingTransport.stopped;
+    _backingPosition = 0;
+  }
+
+  @override
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  }) {
+    final admit = _backingAdmit(audio);
+    if (!admit.isOk) return admit;
+    audio.markTransferred();
+    _backingFree(_backingCur);
+    _backingCur = audio;
+    _backingItem = item;
+    _backingPosition = 0;
+    _backingTransport = play
+        ? BackingTransport.playing
+        : BackingTransport.stopped;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item}) {
+    if (audio != null) {
+      final admit = _backingAdmit(audio);
+      if (!admit.isOk) return admit;
+      audio.markTransferred();
+    } else {
+      final configured = _requireConfigured();
+      if (!configured.isOk) return configured;
+    }
+    _backingFree(_backingNext);
+    _backingNext = audio;
+    _backingNextItem = audio == null ? -1 : item;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult backingClear() {
+    final configured = _requireConfigured();
+    if (!configured.isOk) return configured;
+    _backingRelease();
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult backingTransport(BackingTransportOp op) {
+    final configured = _requireConfigured();
+    if (!configured.isOk) return configured;
+    if (_backingCur == null) return EngineResult.ok;
+    switch (op) {
+      case BackingTransportOp.play:
+        _backingTransport = BackingTransport.playing;
+      case BackingTransportOp.pause:
+        if (_backingTransport == BackingTransport.playing) {
+          _backingTransport = BackingTransport.paused;
+        }
+      case BackingTransportOp.stop:
+        _backingTransport = BackingTransport.stopped;
+        _backingPosition = 0;
+    }
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult backingSeek(int frame) {
+    final configured = _requireConfigured();
+    if (!configured.isOk) return configured;
+    final cur = _backingCur;
+    if (cur == null) return EngineResult.ok;
+    _backingPosition = frame.clamp(0, cur.frames - 1);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setBackingEnd(BackingEnd mode) {
+    _backingEnd = mode;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setBackingOutput(int mask) {
+    _backingMask = mask;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setBackingLevel(double gain) {
+    if (gain.isNaN) return EngineResult.invalid;
+    _backingLevel = gain.clamp(0.0, LE_MAX_GAIN);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setBackingPan(double pan) {
+    if (pan.isNaN) return EngineResult.invalid;
+    _backingPan = pan.clamp(-1.0, 1.0);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setClickPan(double pan) {
+    if (pan.isNaN) return EngineResult.invalid;
+    _clickPan = pan.clamp(-1.0, 1.0);
+    return EngineResult.ok;
+  }
+
+  @override
+  BackingState backingState() => BackingState(
+    epoch: _backingEpoch,
+    item: _backingItem,
+    nextItem: _backingNextItem,
+    transport: _backingTransport,
+    position: _backingPosition,
+    frames: _backingCur?.frames ?? 0,
+    endCount: _backingEndCount,
+    lastEnd: _backingLastEnd,
+    endMode: _backingEnd,
+    outputMask: _backingMask,
+    level: _backingLevel,
+    pan: _backingPan,
+    clickPan: _clickPan,
+    owned: (_backingCur == null ? 0 : 1) + (_backingNext == null ? 0 : 1),
+    ownedBytes: _backingOwnedBytes,
+  );
+
+  /// Plays [frames] frames of the backing voice, applying End at each file's
+  /// last frame exactly as the native callback does. A test seam: the mock
+  /// has no audio callback.
+  void advanceBacking(int frames) {
+    var left = frames;
+    while (left > 0) {
+      final cur = _backingCur;
+      if (cur == null || _backingTransport != BackingTransport.playing) return;
+      final step = left < cur.frames - _backingPosition
+          ? left
+          : cur.frames - _backingPosition;
+      _backingPosition += step;
+      left -= step;
+      if (_backingPosition < cur.frames) return;
+      _backingEndCount++;
+      switch (_backingEnd) {
+        case BackingEnd.repeat:
+          _backingPosition = 0;
+          _backingLastEnd = BackingEndEvent.repeated;
+        case BackingEnd.next when _backingNext != null:
+          _backingFree(cur);
+          _backingCur = _backingNext;
+          _backingItem = _backingNextItem;
+          _backingNext = null;
+          _backingNextItem = -1;
+          _backingPosition = 0;
+          _backingLastEnd = BackingEndEvent.advanced;
+        case BackingEnd.next:
+        case BackingEnd.stop:
+          _backingPosition = 0;
+          _backingTransport = BackingTransport.stopped;
+          _backingLastEnd = _backingEnd == BackingEnd.next
+              ? BackingEndEvent.nextMissing
+              : BackingEndEvent.stopped;
+      }
+    }
   }
 
   EngineResult _requireRunning() =>
@@ -1208,10 +2307,20 @@ class MockPluginSlotHandle implements PluginSlotHandle {
 }
 
 class _MockLane {
+  double liveLevel = 1;
+  double livePan = 0;
+  double imageGain = 1;
+  double imagePan = 0;
+  void compose() {
+    volume = liveLevel * imageGain;
+    pan = (livePan + imagePan).clamp(-1.0, 1.0);
+  }
+
   int inputChannel = -1;
   int outputMask = 0x3;
   double volume = 1;
   bool muted = false;
+  double pan = 0;
 
   /// The engine-owned "holds restorable audio" flag (#595). The mock never
   /// records, so it stays `false` — exposed so [TrackSnapshot.lanes] carries
@@ -1221,6 +2330,8 @@ class _MockLane {
 }
 
 class _MockTrack {
+  RecordTiming? recordTiming;
+  double volume = 1;
   int laneCount = 1;
   final List<_MockLane> _lanes = List<_MockLane>.generate(
     kMaxLanes,
@@ -1229,6 +2340,9 @@ class _MockTrack {
 
   /// The DEFINING-recording length preset (A6, D17): `0` = AUTO.
   int lengthPresetBars = 0;
+
+  /// Solo (`setTrackSolo`). Held across start/stop like [oneShot] below.
+  bool solo = false;
 
   /// One Shot (song-mode-spec.md §2, B4/B5c): `true` = play once then stop.
   /// Not reset on stop/start, mirroring [lengthPresetBars]'s existing
@@ -1242,6 +2356,9 @@ class _MockTrack {
   /// audio thread's take lifecycle, so this stays at its default `0` unless a
   /// test sets it directly to exercise the disarm-image take-identity seam.
   int settledTakeId = 0;
+  int imageRevision = 0;
+  bool? followTempoOverride;
+  PitchMode? pitchModeOverride;
 
   _MockLane laneAt(int lane) => _lanes[lane.clamp(0, kMaxLanes - 1)];
 
@@ -1257,13 +2374,14 @@ class _MockTrack {
           rms: 0,
           peak: 0,
           recoverable: _lanes[i].recoverable,
+          pan: _lanes[i].pan,
         ),
     ];
     final lane0 = lanes.isEmpty ? const LaneSnapshot.empty() : lanes.first;
     final inputMask = lane0.inputChannel >= 0 ? 1 << lane0.inputChannel : 0;
     return TrackSnapshot(
       state: TrackState.empty,
-      volume: lane0.volume,
+      volume: volume,
       muted: lane0.muted,
       lengthFrames: 0,
       undoDepth: 0,
@@ -1273,7 +2391,13 @@ class _MockTrack {
       outputMask: lane0.outputMask,
       lengthPresetBars: lengthPresetBars,
       oneShot: oneShot,
+      quantizeOverride: recordTiming?.quantize,
+      quantizeDivOverride: recordTiming?.division,
       settledTakeId: settledTakeId,
+      solo: solo,
+      imageRevision: imageRevision,
+      followTempoOverride: followTempoOverride,
+      pitchModeOverride: pitchModeOverride,
       lanes: lanes,
     );
   }

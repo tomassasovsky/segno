@@ -1,0 +1,56 @@
+{
+  "candidate": "263eb7002dcaf03c6b1f23a24c406a81541e1e5cdb3aea95b7d4d85bcc630582",
+  "application": {
+    "name": "app",
+    "exit": 0,
+    "semanticPass": true,
+    "seconds": 113.9,
+    "coverage_sha256": "4c2045420ebda4976476fc6f2b07bf7019e3ad57bda12cd9cfa4cfcfda60908a"
+  },
+  "coverage": {
+    "app": {
+      "passed": 2371,
+      "skipped": 6,
+      "linesHit": 20397,
+      "linesFound": 22652,
+      "coveragePercent": 90.045,
+      "minimumPercent": 90,
+      "pass": true
+    }
+  },
+  "static": {
+    "fullSource": "freeze-v1",
+    "format": "pass",
+    "fatalInfoAnalyze": "pass",
+    "blocFiles": 672,
+    "whitespace": "pass",
+    "v2TestOnlyRepair": "targeted format/analyze/Bloc one file/whitespace pass"
+  },
+  "independentAdversarial": {
+    "modelAndNativeCases": 9,
+    "widgetCases": 4,
+    "unresolvedFindings": 0
+  },
+  "authorVisual": {
+    "setupGoldens": 9,
+    "nativeSaveAndRestart": "pass",
+    "penSha256": "06468a78f511d713ca6a4709969537ef07c4203d74edcdcf0a945d3b4f672474"
+  },
+  "reusedScopes": {
+    "baseline": "27b13351a7ad43828a4bd83d14305ed5978572b4 / PR1031 / CI36906039500",
+    "scopes": [
+      "packages",
+      "firmware",
+      "hardware/firmware",
+      ".github/workflows",
+      "pubspec.yaml",
+      "pubspec.lock",
+      "analysis_options.yaml"
+    ],
+    "changed": [],
+    "nativeLibrarySha256": "31ebe531d01e3eb85297b1785e0f3cdf05b9f04134f277dd2b5bb97ef2bb80a8",
+    "reuse": "M3.5 native/package/firmware and workflow proof unchanged. Current app palette has fresh focused/aggregate/static/UI/review gates."
+  },
+  "remoteCi": "required after publication",
+  "hardware": "not executed"
+}
