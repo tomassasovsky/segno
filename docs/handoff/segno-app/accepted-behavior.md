@@ -122,8 +122,10 @@ Sources:
    a chosen recording source. No selected source yields a repair reason rather
    than an invented input. Count-in and Sound arming are mutually exclusive.
 4. Keep Tempo, time signature, click behavior and count-in together. Tempo has
-   whole-BPM and 0.01-BPM adjustment. Count-in is Off/1/2/4 bars, shared for a
-   simultaneous launch from stopped, and canceled by Stop. Adding while music
+   whole-BPM and 0.01-BPM adjustment. Count-in is Off/1/2/4 bars, counts in captures
+   only (a stopped Play starts at once, and joins a take's count-in already
+   running), is shared for a simultaneous launch from stopped, and is canceled
+   by Stop. Adding while music
    runs uses the chosen grid. External clock adds no extra local count-in.
    Quantization choices are Immediately, Loop start, bar, half, quarter, eighth
    and sixteenth note, with per-track ownership. A queued action belongs to its
@@ -288,10 +290,13 @@ Sources:
    pending gestures on invalidating navigation, disconnect or configuration.
 4. LEDs represent function state: momentary lights only while active contact is
    held; toggle stays lit until toggled again. Color belongs to the mode
-   (#1274): Record, Mute and FX light in fixed state colours (recording and
-   overdub red, playing green, engaged FX/Fade/Reverse/Peel blue, otherwise
-   pale) and are not editable. Only Custom mode takes the performer's color,
-   chosen per Custom-assignable switch (not MODE or BANK). Custom colors can be
+   (#1274): every mode but Custom lights in the pedal's original LED colours,
+   pure channels rather than the screen palette's tints (recording and overdub
+   red, playing green, engaged FX/Fade/Reverse/Peel blue), and they are not
+   editable. MODE is always lit: red in Record, green in Mute, blue in FX,
+   yellow in every other mode. Clear lights red, Bank B a dim blue. Only Custom
+   mode takes the performer's color, chosen per Custom-assignable switch (not
+   MODE or BANK). Custom colors can be
    added, edited and reused; changing color never resets active state. Selection feedback in setup
    must not masquerade as a saved performance latch.
 5. Performance functions retain the same physical map and a foot Exit. Their

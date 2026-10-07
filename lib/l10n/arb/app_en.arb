@@ -5992,6 +5992,36 @@
     "@footPeelFailure": {
         "description": "Foot Peel performance surface."
     },
+    "footCustomHold": "Hold · {action}",
+    "@footCustomHold": {
+        "description": "Foot Custom performance surface: the line under a switch caption naming the action its Hold runs.",
+        "placeholders": {
+            "action": {
+                "type": "String"
+            }
+        }
+    },
+    "footCustomStopRecording": "Stop recording",
+    "@footCustomStopRecording": {
+        "description": "Foot Custom performance surface: what a switch assigned Record performance reads while a performance recording runs."
+    },
+    "footCustomUnavailableAction": "Unavailable action",
+    "@footCustomUnavailableAction": {
+        "description": "Foot Custom surface: a switch whose saved assignment this build cannot run. Its saved key is never shown."
+    },
+    "assignedActionUnknownRefused": "This control's action isn't available in this version. Reassign it.",
+    "@assignedActionUnknownRefused": {
+        "description": "Notice when a Custom switch, CTRL switch or MIDI control runs an action this build cannot run."
+    },
+    "assignedActionRefused": "{action} is unavailable right now.",
+    "@assignedActionRefused": {
+        "description": "Notice when an assigned action (a Custom switch, a CTRL switch or a MIDI control) is refused. {action} is the action's catalogue name.",
+        "placeholders": {
+            "action": {
+                "type": "String"
+            }
+        }
+    },
     "mixerFading": "Fading",
     "@mixerFading": {
         "description": "Foot Fade performance surface."
