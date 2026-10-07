@@ -167,6 +167,7 @@ void main() {
         await pumpEventQueue();
         expect(repo.status, PedalLinkStatus.connected);
         expect(repo.firmwareVersion, '1.4');
+        expect(repo.protocolVersion, PedalLinkCodec.protocolVersion);
         link.hello(firmwareMinor: 4);
         await pumpEventQueue();
         expect(statuses, [PedalLinkStatus.connected]); // dedups repeats
@@ -223,6 +224,7 @@ void main() {
       await pumpEventQueue();
       expect(logged.status, PedalLinkStatus.incompatible);
       expect(logged.firmwareVersion, '2.0');
+      expect(logged.protocolVersion, PedalLinkCodec.protocolVersion + 1);
       expect(lines.single, contains('incompatible'));
       expect(
         lines.single,
@@ -349,6 +351,7 @@ void main() {
       await repo.dispose();
       expect(repo.status, PedalLinkStatus.disconnected);
       expect(repo.firmwareVersion, isNull);
+      expect(repo.protocolVersion, isNull);
       expect(statuses, [
         PedalLinkStatus.connected,
         PedalLinkStatus.disconnected,

@@ -68,6 +68,10 @@ const String segnoUpdateSettingsRouteName = 'segno/settings/updates';
 /// Route name for the About page, opened from Updates.
 const String segnoAboutSettingsRouteName = 'segno/settings/about';
 
+/// Route name for the Controller firmware page, opened from About.
+const String segnoControllerFirmwareRouteName =
+    'segno/settings/about/controller';
+
 /// The names of the routes [_pushOnce] currently has on the stack.
 final Set<String> _openRoutes = {};
 
@@ -220,6 +224,29 @@ Future<void> openAboutSettings() => _pushOnce(
   () =>
       (_) => const AboutSettingsPage(),
 );
+
+/// Pushes the Controller firmware page.
+Future<void> openControllerFirmware() => _pushOnce(
+  segnoControllerFirmwareRouteName,
+  () =>
+      (_) => const ControllerFirmwarePage(),
+);
+
+/// Shows the Updates page: back down to it when it is already under the
+/// current page (About and Controller firmware are opened from it), pushed
+/// otherwise.
+///
+/// Pushing a second Updates is what [openUpdateSettings] refuses, so a page
+/// above it that leads to it has to go back instead.
+Future<void> showUpdateSettings() async {
+  final navigator = segnoNavigatorKey.currentState;
+  if (navigator == null) return;
+  if (isSegnoUpdatesSettingsOpen) {
+    navigator.popUntil(ModalRoute.withName(segnoUpdateSettingsRouteName));
+    return;
+  }
+  await openUpdateSettings();
+}
 
 /// Resets the open-route guard.
 ///
