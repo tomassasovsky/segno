@@ -4817,9 +4817,9 @@
     "@controlPedalSetupSub": {
         "description": "Subtitle of the row that opens the Pedals setup page."
     },
-    "pedalSetupContextLeds": "LED colors",
+    "pedalSetupContextLeds": "Custom colors",
     "@pedalSetupContextLeds": {
-        "description": "Opens the LED colors context of the Pedals setup, where each footswitch's indicator colour is chosen."
+        "description": "Opens the Custom colors context of the Pedals setup, where each Custom-assignable footswitch's indicator colour is chosen. Record, Mute and FX use fixed state colours."
     },
     "pedalSetupLedColor": "LED color",
     "@pedalSetupLedColor": {

@@ -2076,7 +2076,7 @@
     "a11yMixerPan": "Panorama de la pista {number}",
     "a11yMixerLevel": "Nivel de la pista {number}",
     "a11yMixerReset": "Restablecer todos los niveles a la unidad y los panoramas al centro",
-    "pedalSetupContextLeds": "Colores LED",
+    "pedalSetupContextLeds": "Colores de Custom",
     "pedalSetupLedColor": "Color LED",
     "pedalSetupLedEdit": "Editar color",
     "pedalSetupLedAdd": "Agregar color personalizado",
