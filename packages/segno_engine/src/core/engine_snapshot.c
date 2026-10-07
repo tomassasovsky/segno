@@ -121,6 +121,9 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->sync_divisor = load_i32(&tr->a_sync_divisor);
   out->one_shot = load_i32(&tr->a_one_shot);
   out->reversed = load_i32(&tr->a_reversed); /* #1162 */
+  out->head_rate_milli = load_i32(&tr->a_head_rate_milli); /* #1179 */
+  out->transpose_st = load_i32(&tr->a_transpose_st);
+  out->transpose_effective_st = load_i32(&tr->a_transpose_eff);
   /* Timing fields are filled below from one coherent callback tuple. */
   /* The caller fills timing from one coherent family tuple. */
   out->overdub_feedback_override = load_f32(&tr->a_overdub_fb_bits);
@@ -368,6 +371,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->tuner_hz = load_f32(&engine->a_tuner_hz_bits);
   out->tuner_confidence = load_f32(&engine->a_tuner_conf_bits);
   out->tuner_input = load_i32(&engine->a_tuner_input);
+  out->tuner_mute_mask = atomic_load_explicit(&engine->a_tuner_mute_mask,
+                                              memory_order_relaxed);
   out->input_peak = load_f32(&engine->a_in_peak_bits);
   out->output_rms = load_f32(&engine->a_out_rms_bits);
   out->latency_state = load_i32(&engine->a_latency_state);
@@ -433,6 +438,25 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->primary_track = load_i32(&engine->a_primary_track);
   /* MIDI clock (Phase C, D15; trailing block; default reads 0 = OFF). */
   out->clock_mode = load_i32(&engine->a_clock_mode);
+  /* Native MIDI input sink totals (#1228 Part 1; trailing block). */
+  out->midi_in_events =
+      atomic_load_explicit(&engine->a_midi_in_events, memory_order_relaxed);
+  out->midi_in_stale =
+      atomic_load_explicit(&engine->a_midi_in_stale, memory_order_relaxed);
+  out->midi_in_overflows =
+      atomic_load_explicit(&engine->a_midi_in_overflows, memory_order_relaxed);
+  out->midi_in_lost =
+      atomic_load_explicit(&engine->a_midi_in_lost, memory_order_relaxed);
+  uint32_t attached = 0u;
+  for (int p = 0; p < LE_MAX_MIDI_PORTS; ++p) {
+    if (atomic_load_explicit(&engine->midi_ports[p].a_owner,
+                             memory_order_acquire) != NULL) {
+      attached |= 1u << p;
+    }
+  }
+  out->midi_in_attached_mask = attached;
+  out->midi_in_rebinds =
+      atomic_load_explicit(&engine->a_midi_in_rebinds, memory_order_relaxed);
   /* Input clip + conditioning activity (input clip, S2; trailing block).
    * The clip mask is the audio thread's published verdict; the cond mask is
    * derived here from the published per-input enables intersected with the
@@ -461,6 +485,11 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     out->output_mono[k] = load_i32(&engine->outputs[k].a_mono);
     out->output_balance[k] = load_f32(&engine->outputs[k].a_balance_bits);
   }
+  /* #1179: one load, so the pair is always one factor the callback set. */
+  const int32_t speed = load_i32(&engine->a_speed_ratio);
+  out->speed_numer = le_speed_numer_of(speed);
+  out->speed_denom = le_speed_denom_of(speed);
+  out->transpose_bypass = load_i32(&engine->a_transpose_bypass);
   out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);
   const int perf_armed =

@@ -315,8 +315,19 @@ typedef struct {
   int32_t period;
 } rig;
 
+/* A rig with `chains` set gives every lane a two-entry Pre chain (filter,
+ * drive): off 1x no print engages, so the chains run live on the callback
+ * (#1179 Part 2a review, L-D2). */
+static int rig_create_chains(rig* r, const bench_opts* o, int lanes_per_track,
+                             const float* src, int32_t frames, int chains);
+
 static int rig_create(rig* r, const bench_opts* o, int lanes_per_track,
                       const float* src, int32_t frames) {
+  return rig_create_chains(r, o, lanes_per_track, src, frames, 0);
+}
+
+static int rig_create_chains(rig* r, const bench_opts* o, int lanes_per_track,
+                             const float* src, int32_t frames, int chains) {
   memset(r, 0, sizeof(*r));
   r->period = o->period;
   r->e = le_engine_create();
@@ -327,6 +338,13 @@ static int rig_create(rig* r, const bench_opts* o, int lanes_per_track,
       const int32_t rc = le_engine_import_track_lane(r->e, t, l, src, frames);
       if (rc != LE_OK) {
         fprintf(stderr, "import track %d lane %d failed: %d\n", t, l, rc);
+        return 0;
+      }
+      if (chains &&
+          (le_engine_set_lane_fx(r->e, t, l, 0, LE_FX_FILTER) != LE_OK ||
+           le_engine_set_lane_fx(r->e, t, l, 1, LE_FX_DRIVE) != LE_OK ||
+           le_engine_set_lane_fx_count(r->e, t, l, 2, 2) != LE_OK)) {
+        fprintf(stderr, "chain on track %d lane %d failed\n", t, l);
         return 0;
       }
     }
@@ -364,13 +382,85 @@ static void print_header(void) {
   printf("|------------------------------------|---------|---------|---------|---------|---------|---------|\n");
 }
 
+/* The real mixer path at a Speed (#1179 Part 2a): le_engine_process with
+ * every track read through its head at numer/denom (1/1 is the baseline). */
+static stats scenario_baseline_chains(const bench_opts* o,
+                                      int lanes_per_track, const float* src,
+                                      int32_t frames, int numer, int denom,
+                                      int chains, int semitones);
+
 static stats scenario_baseline(const bench_opts* o, int lanes_per_track,
-                               const float* src, int32_t frames) {
+                               const float* src, int32_t frames, int numer,
+                               int denom) {
+  return scenario_baseline_chains(o, lanes_per_track, src, frames, numer,
+                                  denom, 0, 0);
+}
+
+/* Tracks the transposed scenario saw sounding their pitch when timing began,
+ * the seconds the renders took, and the peak RSS after them. */
+static int g_transposed_engaged;
+static double g_transposed_render_s, g_transposed_rss;
+
+/* Transposes every track to `semitones` and drives the rig (periods plus the
+ * UI's cache poll) until every track sounds it, so the timed loop reads the
+ * renders. The cap is raised to hold all of them: this measures the audio
+ * thread with every print off and every chain live, not the cap policy. */
+static void rig_transpose_all(rig* r, const bench_opts* o, int semitones) {
+  (void)le_engine_set_fx_cache_cap(r->e, 4ll * 1024 * 1024 * 1024);
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    uint64_t request = 0;
+    if (le_engine_install_transpose(r->e, t, semitones, &request) != LE_OK) {
+      fprintf(stderr, "transpose track %d refused\n", t);
+      exit(3);
+    }
+  }
+  const double start = now_us();
+  le_snapshot* snap = (le_snapshot*)calloc(1, sizeof(le_snapshot));
+  int engaged = 0;
+  while (now_us() - start < 600e6) {
+    for (int k = 0; k < 64; ++k) {
+      le_engine_process(r->e, r->out, r->in, (uint32_t)o->period);
+    }
+    le_engine_get_snapshot(r->e, snap); /* drives the cache, as the UI does */
+    engaged = 0;
+    for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+      engaged += snap->tracks[t].transpose_effective_st == semitones;
+    }
+    if (engaged == LE_MAX_TRACKS) break;
+    struct timespec ts = {0, 2000000};
+    nanosleep(&ts, NULL);
+  }
+  free(snap);
+  g_transposed_engaged = engaged;
+  g_transposed_render_s = (now_us() - start) / 1e6;
+  g_transposed_rss = peak_rss_bytes();
+}
+
+static stats scenario_baseline_chains(const bench_opts* o,
+                                      int lanes_per_track, const float* src,
+                                      int32_t frames, int numer, int denom,
+                                      int chains, int semitones) {
   rig r;
-  if (!rig_create(&r, o, lanes_per_track, src, frames)) {
+  if (!rig_create_chains(&r, o, lanes_per_track, src, frames, chains)) {
     fprintf(stderr, "baseline rig failed\n");
     exit(3);
   }
+  if (numer != denom) {
+    uint64_t request = 0;
+    int32_t result = LE_ERR_NOT_READY;
+    if (le_engine_set_speed(r.e, numer, denom, &request) != LE_OK) {
+      fprintf(stderr, "set speed %d/%d refused\n", numer, denom);
+      exit(3);
+    }
+    /* past the turn window, so the timed loop is the steady head path */
+    for (int k = 0; k < 64; ++k) le_engine_process(r.e, r.out, r.in, (uint32_t)o->period);
+    if (le_engine_read_request_result(r.e, request, &result) != LE_OK ||
+        result != LE_OK) {
+      fprintf(stderr, "set speed %d/%d not applied\n", numer, denom);
+      exit(3);
+    }
+  }
+  if (semitones != 0) rig_transpose_all(&r, o, semitones);
   const size_t periods = (size_t)(o->seconds * o->rate / o->period);
   double* t = (double*)malloc(sizeof(double) * periods);
   le_snapshot* snap = (le_snapshot*)calloc(1, sizeof(le_snapshot));
@@ -415,7 +505,7 @@ static stats scenario_head(const bench_opts* o, int total_lanes, double rate,
         const double idx = le_head_index(&heads[t], pos, len);
         for (int l = 0; l < lanes_per_track; ++l) {
           const float* buf = lane_bufs[t * lanes_per_track + l];
-          sum += decimate ? le_head_sample_decimated(buf, len, idx, rate)
+          sum += decimate ? le_head_sample_decimated(buf, len, idx, rate, 0)
                           : le_head_sample(buf, len, idx);
         }
       }
@@ -708,10 +798,40 @@ int main(int argc, char** argv) {
   /* baseline */
   printf("## baseline (le_engine_process, 8 tracks PLAYING)\n\n");
   print_header();
-  const stats base1 = scenario_baseline(&o, 1, src, frames);
+  const stats base1 = scenario_baseline(&o, 1, src, frames, 1, 1);
   print_row("8 tracks x 1 lane", base1);
-  const stats base8 = scenario_baseline(&o, 8, src, frames);
+  const stats base8 = scenario_baseline(&o, 8, src, frames, 1, 1);
   print_row("8 tracks x 8 lanes", base8);
+  /* The same mixer at 1/2x, 4x and 8x (the Part 2a gate on the real mixer
+   * path): every read through the head, decimated at 4x and 8x. */
+  const int factors[3][2] = {{1, 2}, {4, 1}, {8, 1}};
+  stats speed_worst = base1, speed_worst8 = base8;
+  for (int f = 0; f < 3; ++f) {
+    for (int lanes = 1; lanes <= 8; lanes += 7) {
+      const stats s = scenario_baseline(&o, lanes, src, frames, factors[f][0],
+                                        factors[f][1]);
+      char label[64];
+      snprintf(label, sizeof(label), "8 tracks x %d lane%s at %d/%d", lanes,
+               lanes > 1 ? "s" : "", factors[f][0], factors[f][1]);
+      print_row(label, s);
+      stats* worst = lanes == 1 ? &speed_worst : &speed_worst8;
+      if (o.proxy ? s.p50 > worst->p50 : s.p99 > worst->p99) *worst = s;
+    }
+  }
+  /* The appliance rig: 8 x 8 with a Pre chain on every lane at 8x, so no
+   * print engages and every chain runs live. */
+  const stats chained =
+      scenario_baseline_chains(&o, 8, src, frames, 8, 1, 1, 0);
+  print_row("8 x 8 with Pre chains at 8/1", chained);
+  /* ...and every track transposed (#1179 Part 3a review, M3): the reads
+   * come from the renders, prints stay off, every chain runs live. */
+  const stats transposed =
+      scenario_baseline_chains(&o, 8, src, frames, 8, 1, 1, 7);
+  print_row("8 x 8, Pre chains, 8/1, all +7 st", transposed);
+  printf("\n- transposed rig: %d of 8 tracks sounding +7 st when timed; "
+         "renders took %.1f s; peak RSS after them %.0f MiB\n",
+         g_transposed_engaged, g_transposed_render_s,
+         g_transposed_rss / 1048576.0);
   printf("\n");
 
   /* head */
@@ -839,12 +959,28 @@ int main(int argc, char** argv) {
       judge("head added p50 at 8 lanes <= 5% of period", 100.0 * worst_added_p50[0] / g_budget_us, 5.0, 1);
       judge("head added p50 at 64 lanes <= 17% of period", 100.0 * worst_added_p50[1] / g_budget_us, 17.0, 1);
       judge("render cheaper under load >= 40x real time", loaded_cheaper_min, 40.0, 0);
+      judge("mixer at 1/2x, 4x, 8x p50 (8 lanes) <= 25% of period",
+            100.0 * speed_worst.p50 / g_budget_us, 25.0, 1);
+      judge("mixer at 1/2x, 4x, 8x p50 (64 lanes) <= 25% of period",
+            100.0 * speed_worst8.p50 / g_budget_us, 25.0, 1);
+      /* The live-chain row is the appliance's question (plan decision 27):
+       * it prints here and is judged on the Pi only. */
     } else {
       judge("head added p99 at 8 lanes <= 10% of period", 100.0 * worst_added_p99[0] / g_budget_us, 10.0, 1);
       judge("head added p99 at 64 lanes <= 35% of period", 100.0 * worst_added_p99[1] / g_budget_us, 35.0, 1);
       judge("baseline p99 + head added p99 (8 lanes) <= 50% of period",
             100.0 * (base1.p99 + worst_added_p99[0]) / g_budget_us, 50.0, 1);
       judge("render cheaper under load >= 20x real time", loaded_cheaper_min, 20.0, 0);
+      judge("mixer at 1/2x, 4x, 8x p99 (8 lanes) <= 50% of period",
+            100.0 * speed_worst.p99 / g_budget_us, 50.0, 1);
+      judge("mixer at 1/2x, 4x, 8x p99 (64 lanes) <= 50% of period",
+            100.0 * speed_worst8.p99 / g_budget_us, 50.0, 1);
+      judge("8 x 8 with live Pre chains at 8x p99 <= 50% of period",
+            100.0 * chained.p99 / g_budget_us, 50.0, 1);
+      judge("8 x 8, chains, 8x, all transposed p99 <= 50% of period",
+            100.0 * transposed.p99 / g_budget_us, 50.0, 1);
+      judge("transposed rig: every track sounding its pitch",
+            (double)g_transposed_engaged, (double)LE_MAX_TRACKS, 0);
     }
     judge("render worker scratch under 1 MiB", scratch_max / 1048576.0, 1.0, 1);
     judge("stretcher heap per instance (cheaper) <= 4 MiB", per_cheaper / 1048576.0, 4.0, 1);

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/owned_value_port.dart';
@@ -39,6 +40,7 @@ class AppRuntime {
     required PerformanceRepository performance,
     required SessionRepository sessions,
     required Future<void> Function() powerOff,
+    required GuardRegistry guards,
   }) {
     fxPersistence = FxChainPersistence(looper: repository);
     mixPersistence = SettingsMixPersistence(settings);
@@ -118,6 +120,7 @@ class AppRuntime {
       onPedalBindings: (encoded) =>
           control.applySessionBindings(PedalBindingSet.decode(encoded)),
       releaseHeldBindings: control.releaseAllMomentary,
+      guards: guards,
     );
   }
 
@@ -164,7 +167,7 @@ class AppRuntime {
       timing.load(),
       fade.load(),
       control.load(),
-    ]).then((_) {});
+    ]).then((_) => session.recordBaseline());
   }
 
   /// Retires controls, recovers on explicit retry, and confirms durable writes.

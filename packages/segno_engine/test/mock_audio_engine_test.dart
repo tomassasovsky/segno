@@ -3,6 +3,28 @@ import 'package:segno_engine/segno_engine.dart';
 
 void main() {
   group('MockAudioEngine', () {
+    test('the tuner mute follows the native rules', () {
+      final engine = MockAudioEngine(inputChannels: 4);
+      // Disarmed: refused, stored as 0.
+      expect(engine.setTunerMute(inputMask: 0x1), EngineResult.ok);
+      expect(engine.snapshot().tunerMuteMask, 0);
+
+      engine.setTunerInput(input: 2);
+      expect(engine.setTunerMute(inputMask: 0xC), EngineResult.ok);
+      expect(engine.snapshot().tunerMuteMask, 0xC);
+      // Absent inputs are dropped.
+      engine.setTunerMute(inputMask: 0xFF);
+      expect(engine.snapshot().tunerMuteMask, 0xF);
+
+      // Every arm, move or disarm clears it.
+      engine.setTunerInput(input: 3);
+      expect(engine.snapshot().tunerMuteMask, 0);
+      engine
+        ..setTunerMute(inputMask: 0x8)
+        ..setTunerInput(input: -1);
+      expect(engine.snapshot().tunerMuteMask, 0);
+    });
+
     late MockAudioEngine engine;
 
     setUp(() => engine = MockAudioEngine());
@@ -22,6 +44,60 @@ void main() {
       );
       expect(engine.snapshot().tracks, before.tracks);
     });
+
+    test(
+      'speed needs material the mock never holds, so capture stays open',
+      () {
+        expect(
+          engine.setSpeed(SpeedFactor.half).result,
+          EngineResult.notRunning,
+        );
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        final admitted = engine.setSpeed(SpeedFactor.half);
+        expect(admitted.result, EngineResult.invalid);
+        expect(admitted.request, 0);
+        expect(engine.snapshot().speed, SpeedFactor.normal);
+        expect(engine.record(), EngineResult.ok);
+      },
+    );
+
+    test(
+      'transpose needs material the mock lacks; its bypass is a global '
+      'request with a receipt',
+      () {
+        expect(
+          engine.transposeStep(channel: 0, delta: 1).result,
+          EngineResult.notRunning,
+        );
+        expect(
+          engine.setTransposeBypass(bypassed: true).result,
+          EngineResult.notRunning,
+        );
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        expect(
+          engine.transposeStep(channel: 0, delta: 1).result,
+          EngineResult.invalid,
+        );
+        expect(
+          engine.installTranspose(channel: 0, semitones: 3).result,
+          EngineResult.invalid,
+        );
+        final bypass = engine.setTransposeBypass(bypassed: true);
+        expect(bypass.result, EngineResult.ok);
+        expect(bypass.request, isNonZero);
+        expect(engine.readRequestResult(bypass.request), EngineResult.ok);
+        expect(engine.readRequestResult(bypass.request), EngineResult.invalid);
+        expect(engine.snapshot().transposeBypass, isTrue);
+        expect(engine.record(), EngineResult.ok); // nothing is transposed
+        engine.setTransposeBypass(bypassed: false);
+        expect(engine.snapshot().transposeBypass, isFalse);
+        engine.setTransposeBypass(bypassed: true);
+        expect(engine.stop(), EngineResult.ok);
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        // Configure resets it with the material.
+        expect(engine.snapshot().transposeBypass, isFalse);
+      },
+    );
 
     test('peel is unavailable because the mock keeps no overdub layers', () {
       expect(engine.peel(), EngineResult.notRunning);

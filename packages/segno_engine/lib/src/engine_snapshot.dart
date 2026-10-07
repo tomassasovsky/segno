@@ -391,6 +391,54 @@ enum LooperMode {
   };
 }
 
+/// The global Speed (#1179): every recorded track plays at [numer]/[denom]
+/// of its recorded speed, its pitch following. The song clock, click and
+/// capture are unaffected. Mirrors the native `le_engine_set_speed` factors.
+enum SpeedFactor {
+  /// Half speed, an octave down.
+  half(1, 2),
+
+  /// The recorded speed.
+  normal(1, 1),
+
+  /// Double speed, an octave up.
+  twice(2, 1),
+
+  /// Four times the speed, two octaves up.
+  fourfold(4, 1),
+
+  /// Eight times the speed, three octaves up.
+  eightfold(8, 1);
+
+  const SpeedFactor(this.numer, this.denom);
+
+  /// The factor's numerator.
+  final int numer;
+
+  /// The factor's denominator.
+  final int denom;
+
+  /// The native factor [numer]/[denom]; [normal] for 0/0, what an
+  /// unconfigured engine publishes. Any other pair is a factor this build
+  /// does not know, and is an [ArgumentError] rather than a silent [normal]:
+  /// showing Normal while the engine plays another factor would claim a
+  /// speed that is not sounding.
+  static SpeedFactor fromRatio(int numer, int denom) {
+    if (numer == 0 && denom == 0) return SpeedFactor.normal;
+    for (final factor in values) {
+      if (factor.numer == numer && factor.denom == denom) return factor;
+    }
+    throw ArgumentError('Unknown native speed factor $numer/$denom');
+  }
+}
+
+/// A track's Transpose (#1179): the pitch the player set (`stored`, -12..12
+/// semitones) and the pitch actually sounding (`effective`). `effective` is 0
+/// while the track's pitch-shifted render is pending or refused, and while
+/// Transpose is bypassed, so a reader never claims a pitch the mix is not
+/// playing.
+typedef TransposePitch = ({int stored, int effective});
+
 /// What a looper-mode change would do right now — the engine's answer to
 /// `LooperModeControl.looperModeGate` (accepted design, slice 2).
 enum LooperModeGate {
@@ -636,6 +684,8 @@ class TrackSnapshot {
     this.peakL = 0,
     this.peakR = 0,
     this.reversed = false,
+    this.headRate = 1,
+    this.transpose = (stored: 0, effective: 0),
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -674,6 +724,8 @@ class TrackSnapshot {
       peakL = 0,
       peakR = 0,
       reversed = false,
+      headRate = 1,
+      transpose = (stored: 0, effective: 0),
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -727,6 +779,11 @@ class TrackSnapshot {
         : native.overdub_feedback_override,
     solo: native.solo != 0,
     reversed: native.reversed != 0,
+    headRate: native.head_rate_milli / 1000,
+    transpose: (
+      stored: native.transpose_st,
+      effective: native.transpose_effective_st,
+    ),
     imageRevision: native.image_revision,
     peakL: native.peak_l,
     peakR: native.peak_r,
@@ -740,6 +797,16 @@ class TrackSnapshot {
   /// #1162). Callback-owned like [fade]: published with every accepted
   /// `toggleReverse`/`installReverse`, reset to forward with the material.
   final bool reversed;
+
+  /// The track's effective read rate in source frames per song frame (Speed,
+  /// #1179): 0.5 at 1/2x, 8 at 8x. Its position moves at this rate, and its
+  /// pitch follows it.
+  final double headRate;
+
+  /// The track's Transpose, stored and sounding (#1179). Callback-owned like
+  /// [reversed]: published with every accepted step or install, reset to 0
+  /// with the material.
+  final TransposePitch transpose;
 
   /// Sequence of the coherent native tuple publication.
   final int fadeRevision;
@@ -924,6 +991,8 @@ class TrackSnapshot {
           peakL == other.peakL &&
           peakR == other.peakR &&
           reversed == other.reversed &&
+          headRate == other.headRate &&
+          transpose == other.transpose &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -958,6 +1027,8 @@ class TrackSnapshot {
     peakL,
     peakR,
     reversed,
+    headRate,
+    transpose,
     Object.hashAll(lanes),
   ]);
 }
@@ -1261,6 +1332,7 @@ class EngineSnapshot {
     this.tunerHz = 0,
     this.tunerConfidence = 0,
     this.tunerInput = -1,
+    this.tunerMuteMask = 0,
     this.activeBackend = AudioBackend.miniaudio,
     this.outputEnabledMask = 0xFFFFFFFF,
     this.isPerfArmed = false,
@@ -1288,6 +1360,8 @@ class EngineSnapshot {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.speed = SpeedFactor.normal,
+    this.transposeBypass = false,
     this.quantize = false,
     this.recordTimingRevision = 0,
     this.recordTimingResult = 0,
@@ -1329,6 +1403,7 @@ class EngineSnapshot {
       tunerHz = 0,
       tunerConfidence = 0,
       tunerInput = -1,
+      tunerMuteMask = 0,
       inputPeak = 0,
       outputRms = 0,
       outputPeak = 0,
@@ -1366,6 +1441,8 @@ class EngineSnapshot {
       countInBeatsLeft = 0,
       looperMode = LooperMode.multi,
       primaryTrack = -1,
+      speed = SpeedFactor.normal,
+      transposeBypass = false,
       quantize = false,
       recordTimingRevision = 0,
       recordTimingResult = 0,
@@ -1422,6 +1499,7 @@ class EngineSnapshot {
       tunerHz: native.tuner_hz,
       tunerConfidence: native.tuner_confidence,
       tunerInput: native.tuner_input,
+      tunerMuteMask: native.tuner_mute_mask,
       inputPeak: native.input_peak,
       outputRms: native.output_rms,
       outputPeak: native.output_peak,
@@ -1459,6 +1537,8 @@ class EngineSnapshot {
       countInBeatsLeft: native.count_in_beats_left,
       looperMode: LooperMode.fromCode(native.looper_mode),
       primaryTrack: native.primary_track,
+      speed: SpeedFactor.fromRatio(native.speed_numer, native.speed_denom),
+      transposeBypass: native.transpose_bypass != 0,
       quantize: native.quantize != 0,
       recordTimingRevision: native.record_timing_revision,
       recordTimingResult: native.record_timing_result,
@@ -1507,6 +1587,7 @@ class EngineSnapshot {
     double? tunerHz,
     double? tunerConfidence,
     int? tunerInput,
+    int? tunerMuteMask,
     double? inputRms,
     double? inputPeak,
     double? outputRms,
@@ -1545,6 +1626,8 @@ class EngineSnapshot {
     int? countInBeatsLeft,
     LooperMode? looperMode,
     int? primaryTrack,
+    SpeedFactor? speed,
+    bool? transposeBypass,
     bool? quantize,
     int? recordTimingRevision,
     int? recordTimingResult,
@@ -1582,6 +1665,7 @@ class EngineSnapshot {
     tunerHz: tunerHz ?? this.tunerHz,
     tunerConfidence: tunerConfidence ?? this.tunerConfidence,
     tunerInput: tunerInput ?? this.tunerInput,
+    tunerMuteMask: tunerMuteMask ?? this.tunerMuteMask,
     inputRms: inputRms ?? this.inputRms,
     inputPeak: inputPeak ?? this.inputPeak,
     outputRms: outputRms ?? this.outputRms,
@@ -1620,6 +1704,8 @@ class EngineSnapshot {
     countInBeatsLeft: countInBeatsLeft ?? this.countInBeatsLeft,
     looperMode: looperMode ?? this.looperMode,
     primaryTrack: primaryTrack ?? this.primaryTrack,
+    speed: speed ?? this.speed,
+    transposeBypass: transposeBypass ?? this.transposeBypass,
     quantize: quantize ?? this.quantize,
     recordTimingRevision: recordTimingRevision ?? this.recordTimingRevision,
     recordTimingResult: recordTimingResult ?? this.recordTimingResult,
@@ -1706,6 +1792,11 @@ class EngineSnapshot {
   /// from a zero [tunerHz]: armed-and-silent and not-armed need different
   /// words on screen.
   final int tunerInput;
+
+  /// Inputs whose live monitors the tuner is silencing (bit `c` = input `c`),
+  /// `0` whenever [tunerInput] is `-1` (#1229). Separate from, and ORed with,
+  /// each monitor's own persistent mute.
+  final int tunerMuteMask;
 
   /// Input RMS level for the most recent block, in `0..1`.
   final double inputRms;
@@ -1886,6 +1977,14 @@ class EngineSnapshot {
   /// in-range channel, never back to `-1`, once first crowned.
   final int primaryTrack;
 
+  /// The global Speed the callback applies to every recorded track (#1179).
+  /// [SpeedFactor.normal] until a request lands.
+  final SpeedFactor speed;
+
+  /// Whether Transpose is bypassed globally (#1179): every track plays dry,
+  /// its stored pitch kept ([TrackSnapshot.transpose]).
+  final bool transposeBypass;
+
   /// The global loop-grid record quantize gate the engine holds (slice 2b):
   /// what a record press over a master waits for, together with
   /// [quantizeDiv]. Published so the effective record timing is read from
@@ -2022,6 +2121,7 @@ class EngineSnapshot {
           tunerHz == other.tunerHz &&
           tunerConfidence == other.tunerConfidence &&
           tunerInput == other.tunerInput &&
+          tunerMuteMask == other.tunerMuteMask &&
           inputRms == other.inputRms &&
           inputPeak == other.inputPeak &&
           outputRms == other.outputRms &&
@@ -2060,6 +2160,8 @@ class EngineSnapshot {
           countInBeatsLeft == other.countInBeatsLeft &&
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
+          speed == other.speed &&
+          transposeBypass == other.transposeBypass &&
           quantize == other.quantize &&
           recordTimingRevision == other.recordTimingRevision &&
           recordTimingResult == other.recordTimingResult &&
@@ -2100,6 +2202,7 @@ class EngineSnapshot {
     tunerHz,
     tunerConfidence,
     tunerInput,
+    tunerMuteMask,
     inputPeak,
     outputRms,
     outputPeak,
@@ -2137,6 +2240,8 @@ class EngineSnapshot {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
+    speed,
+    transposeBypass,
     quantize,
     recordTimingRevision,
     recordTimingResult,

@@ -53,7 +53,13 @@ enum EngineResult {
 
   /// A punch-in on a reversed track: overdub is unavailable while Reverse is
   /// on (`LE_ERR_REVERSED`). Play, Stop, Mute, Fade and history stay available.
-  reversed;
+  reversed,
+
+  /// A record or punch-in while Speed is not 1x, or a punch-in on a
+  /// transposed track (`LE_ERR_TRANSFORMED`, #1179): capture never writes
+  /// under playback it does not hear. Play, Stop, Mute, Fade and history stay
+  /// available.
+  transformed;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -69,6 +75,7 @@ enum EngineResult {
     -7 => EngineResult.modeMismatch,
     -8 => EngineResult.notReady,
     -9 => EngineResult.reversed,
+    -10 => EngineResult.transformed,
     _ => EngineResult.invalid,
   };
 
@@ -76,7 +83,8 @@ enum EngineResult {
   bool get isOk => this == EngineResult.ok;
 }
 
-/// Queue admission of a checked per-track request (Fade, Reverse), distinct
+/// Queue admission of a checked request (Fade, Reverse, Speed, Transpose),
+/// distinct
 /// from the callback result of this exact request, read back with
 /// [LooperTransport.readRequestResult].
 typedef RequestAdmission = ({EngineResult result, int request});
@@ -227,6 +235,18 @@ abstract interface class EngineMetering {
   /// when the tuner is on screen and disarm it when it leaves.
   EngineResult setTunerInput({required int input});
 
+  /// Silences the live monitors of the inputs in [inputMask] (bit `c` =
+  /// input `c`) for as long as the tuner stays armed (#1229): the foot
+  /// Tuner's temporary mute of the input or pair being tuned.
+  ///
+  /// Owned by the tuner arm, not the monitor's persistent mute: the two are
+  /// ORed and neither changes the other. Arm with [setTunerInput] first — a
+  /// mask sent while disarmed is stored as `0`, and every [setTunerInput]
+  /// clears it. Only monitoring changes: track capture and the detector still
+  /// hear the input, and nothing is perf-logged. Mirrored on the snapshot as
+  /// [EngineSnapshot.tunerMuteMask].
+  EngineResult setTunerMute({required int inputMask});
+
   /// Detects a cable-free loopback capture path (PulseAudio monitor / virtual
   /// driver / backend built-in loopback) for auto-measuring latency. The result
   /// captures the digital round-trip only (see [LoopbackInfo]).
@@ -307,8 +327,38 @@ abstract interface class LooperTransport {
     required bool reversed,
   });
 
-  /// Consumes a completed Fade or Reverse callback result; null means still
-  /// pending.
+  /// Queues the global Speed (#1179): every recorded track reads at
+  /// [factor] through its head, its pitch following; a request equal to the
+  /// factor in force is accepted and changes nothing. [EngineResult.notReady]
+  /// while any track records, overdubs, is armed or launching, or a count-in
+  /// runs. While not [SpeedFactor.normal], [record] refuses a record or
+  /// punch-in with [EngineResult.transformed].
+  RequestAdmission setSpeed(SpeedFactor factor);
+
+  /// Queues a Transpose step of track [channel] by [delta] semitones (+1 or
+  /// -1, #1179): the track plays a pitch-shifted render of its own takes at
+  /// unchanged timing. The render lands after a short settle plus its
+  /// build time; until then the track plays dry and its
+  /// [TrackSnapshot.transpose] reads `effective` 0. At +-12 the receipt is
+  /// [EngineResult.capacity] and nothing changes. Refused like
+  /// [toggleReverse]. While a track's pitch is not 0 and Transpose is not
+  /// bypassed, [record] refuses a punch-in on it with
+  /// [EngineResult.transformed].
+  RequestAdmission transposeStep({required int channel, required int delta});
+
+  /// Installs an explicit pitch, -12..12 semitones (Session recall). Accepts
+  /// an empty track that already holds imported material, before the commit.
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  });
+
+  /// Bypasses every track's Transpose (dry, stored pitches kept) or restores
+  /// it; admitted whenever the engine is configured.
+  RequestAdmission setTransposeBypass({required bool bypassed});
+
+  /// Consumes a completed Fade, Reverse, Speed or Transpose callback result;
+  /// null means still pending.
   EngineResult? readRequestResult(int request);
 
   /// Halts track [channel]'s playback, retaining the loop buffer.
@@ -1286,6 +1336,13 @@ abstract interface class SessionIo {
   /// by the snapshot's `undoDepth`, which reads 0 while a Clear restore is in
   /// flight. [TrackHistory.none] for an out-of-range [channel]. Read-only.
   TrackHistory exportHistory(int channel);
+
+  /// Track [channel]'s content revision: it changes on every write to the
+  /// track's audio (record, overdub, undo, redo, clear, import), on either
+  /// thread, and on nothing else. 0 for an out-of-range [channel]. Cheap and
+  /// copy-free, so the session layer can tell an unchanged rig from a changed
+  /// one without exporting any audio.
+  int trackAudioRev(int channel);
 
   /// Stages [pcm] as track [channel]'s lane [lane] image at [ordinal] into an
   /// EMPTY track (the ordinal is the pool slot). Call once per `(lane,

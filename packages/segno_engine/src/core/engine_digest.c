@@ -16,6 +16,12 @@
  * (sections 4.1.2, 4.2.2, 5.3.3 and 6.2) and is checked against the
  * standard's own test vectors in test_engine_core.c.
  */
+/* Large-file offsets on a 32-bit build: fseeko/fstat take off_t. Before any
+ * system header. */
+#if !defined(_WIN32) && !defined(_FILE_OFFSET_BITS)
+#define _FILE_OFFSET_BITS 64
+#endif
+
 #include "engine_digest.h"
 
 #include <errno.h>
@@ -151,6 +157,30 @@ void le_sha256_final(le_sha256_ctx* ctx, uint8_t out[LE_SHA256_BYTES]) {
 
 /* ---- public, engine-free entry points ---- */
 
+_Static_assert(sizeof(le_sha256_ctx) <= LE_DIGEST_STATE_BYTES,
+               "LE_DIGEST_STATE_BYTES must hold le_sha256_ctx");
+
+int32_t le_digest_begin(void* state, uint64_t state_bytes) {
+  if (state == NULL || state_bytes < LE_DIGEST_STATE_BYTES) {
+    return LE_ERR_INVALID;
+  }
+  le_sha256_init((le_sha256_ctx*)state);
+  return LE_OK;
+}
+
+int32_t le_digest_update(void* state, const void* data, uint64_t length) {
+  if (state == NULL || (data == NULL && length > 0)) return LE_ERR_INVALID;
+  if ((uint64_t)(size_t)length != length) return LE_ERR_INVALID;
+  if (length > 0) le_sha256_update((le_sha256_ctx*)state, data, (size_t)length);
+  return LE_OK;
+}
+
+int32_t le_digest_end(void* state, uint8_t* out) {
+  if (state == NULL || out == NULL) return LE_ERR_INVALID;
+  le_sha256_final((le_sha256_ctx*)state, out);
+  return LE_OK;
+}
+
 int32_t le_digest_bytes(const void* data, uint64_t length, uint8_t* out) {
   if (out == NULL || (data == NULL && length > 0)) return LE_ERR_INVALID;
   if ((uint64_t)(size_t)length != length) return LE_ERR_INVALID;
@@ -182,19 +212,22 @@ int32_t le_digest_file(const char* path, uint64_t offset, uint64_t length,
     return LE_ERR_INVALID;
   }
   f = _wfopen(wide, L"rb");
-  if (f == NULL) return LE_ERR_DEVICE;
+  if (f == NULL) return errno == ENOENT ? LE_ERR_NOT_FOUND : LE_ERR_DEVICE;
   if (_fseeki64(f, 0, SEEK_END) != 0) goto fail;
   const __int64 end = _ftelli64(f);
   if (end < 0) goto fail;
   size = (uint64_t)end;
 #else
   f = fopen(path, "rb");
-  if (f == NULL) return LE_ERR_DEVICE;
+  if (f == NULL) {
+    return errno == ENOENT || errno == ENOTDIR ? LE_ERR_NOT_FOUND
+                                               : LE_ERR_DEVICE;
+  }
   struct stat st;
   if (fstat(fileno(f), &st) != 0 || !S_ISREG(st.st_mode)) goto fail;
   size = (uint64_t)st.st_size;
 #endif
-  if (offset > size) goto fail;
+  if (offset > size) goto truncated;
   /* UINT64_MAX reads to the end; any other length must lie inside the file —
    * a file shorter than the range it is supposed to hold is damaged, and a
    * digest of whatever happens to be there would be a lie about it. */
@@ -202,7 +235,7 @@ int32_t le_digest_file(const char* path, uint64_t offset, uint64_t length,
   if (length == UINT64_MAX) {
     length = available;
   } else if (length > available) {
-    goto fail;
+    goto truncated;
   }
 #if defined(_WIN32)
   if (_fseeki64(f, (__int64)offset, SEEK_SET) != 0) goto fail;
@@ -218,7 +251,11 @@ int32_t le_digest_file(const char* path, uint64_t offset, uint64_t length,
       const size_t want =
           left < (uint64_t)sizeof(buf) ? (size_t)left : sizeof(buf);
       const size_t got = fread(buf, 1, want, f);
-      if (got != want) goto fail; /* shrank underneath us, or a read error */
+      if (got != want) {
+        /* A read error, or the file shrank underneath us. */
+        if (ferror(f)) goto fail;
+        goto truncated;
+      }
       le_sha256_update(&ctx, buf, got);
       left -= got;
     }
@@ -229,6 +266,9 @@ int32_t le_digest_file(const char* path, uint64_t offset, uint64_t length,
 fail:
   fclose(f);
   return LE_ERR_DEVICE;
+truncated:
+  fclose(f);
+  return LE_ERR_TRUNCATED;
 }
 
 int32_t le_fs_sync_dir(const char* path) {

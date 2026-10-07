@@ -17,6 +17,9 @@ class _FakeLane {
 
 class _FakeTrack {
   TrackState state = TrackState.empty;
+
+  /// The content revision; every seed is a write and bumps it.
+  int audioRev = 0;
   int multiple = 1;
   int lengthFrames = 0;
 
@@ -33,6 +36,7 @@ class _FakeTrack {
   /// length is `undoCount + redoDepth`.
   List<HistoryEntry> history = const [];
   bool solo = false;
+  bool reversed = false;
   final List<_FakeLane> lanes = [_FakeLane()];
 
   int get liveIndex => undoCount;
@@ -113,9 +117,11 @@ class FakeSessionEngine implements AudioEngine {
     double volume = 1,
     double trackVolume = 1,
     bool muted = false,
+    bool reversed = false,
   }) {
     final frames = pcm.length ~/ channels;
     final track = _tracks[channel]
+      ..reversed = reversed
       ..volume = trackVolume
       ..state = TrackState.playing
       ..multiple = multiple
@@ -124,6 +130,7 @@ class FakeSessionEngine implements AudioEngine {
       ..redoDepth = 0
       ..publishedUndoDepth = null
       ..history = const [];
+    track.audioRev++;
     track.lanes[0]
       ..layers = [pcm]
       ..volume = volume
@@ -164,6 +171,7 @@ class FakeSessionEngine implements AudioEngine {
             undoDepth + redoDepth,
             const HistoryEntry(HistoryKind.layer),
           );
+    track.audioRev++;
     track.lanes[0]
       ..layers = List.of(layers)
       ..volume = volume
@@ -184,6 +192,7 @@ class FakeSessionEngine implements AudioEngine {
     int? inputChannel,
   }) {
     final track = _tracks[channel];
+    track.audioRev++;
     while (track.lanes.length <= lane) {
       track.lanes.add(_FakeLane());
     }
@@ -194,6 +203,10 @@ class FakeSessionEngine implements AudioEngine {
       ..outputMask = outputMask
       ..inputChannel = inputChannel ?? lane;
   }
+
+  @override
+  int trackAudioRev(int channel) =>
+      channel < 0 || channel >= _tracks.length ? 0 : _tracks[channel].audioRev;
 
   @override
   CallbackTelemetry callbackTelemetry() => CallbackTelemetry.empty;
@@ -245,6 +258,7 @@ class FakeSessionEngine implements AudioEngine {
           overdubFeedbackOverride: overdubFeedbackOverride[i],
           layerInFlight: i == 0 && _consumeInFlightPoll(),
           solo: t.solo,
+          reversed: t.reversed,
           lanes: [
             for (final lane in t.lanes)
               LaneSnapshot(
@@ -279,8 +293,13 @@ class FakeSessionEngine implements AudioEngine {
     return Float32List.fromList(track.liveOf(lane));
   }
 
+  /// How many layers have been exported, so a test can tell a read that
+  /// copies audio from one that does not.
+  int exportedLayers = 0;
+
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) {
+    exportedLayers++;
     final track = _tracks[channel];
     if (lane < 0 || lane >= track.lanes.length) return Float32List(0);
     final layers = track.lanes[lane].layers;
@@ -325,6 +344,11 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult finalizeHistory(int channel, TrackHistory history) =>
       EngineResult.ok;
+
+  /// Puts track [channel] in [state] without touching its audio, as a
+  /// transport press or a punch-in does.
+  void setTrackState(int channel, TrackState state) =>
+      _tracks[channel].state = state;
 
   @override
   EngineResult commitSession(int baseFrames, {required int loopBars}) {
@@ -524,6 +548,24 @@ class FakeSessionEngine implements AudioEngine {
     required int channel,
     required bool reversed,
   }) => (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setSpeed(SpeedFactor factor) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) =>
+      (result: EngineResult.invalid, request: 0);
 
   @override
   EngineResult? readRequestResult(int request) => EngineResult.invalid;
@@ -812,6 +854,15 @@ class FakeSessionEngine implements AudioEngine {
   /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a
   /// test can assert that a closed face leaves nothing running.
   int tunerInput = -1;
+
+  /// The last tuner mute mask sent.
+  int tunerMuteMask = 0;
+
+  @override
+  EngineResult setTunerMute({required int inputMask}) {
+    tunerMuteMask = inputMask;
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult setTunerInput({required int input}) {

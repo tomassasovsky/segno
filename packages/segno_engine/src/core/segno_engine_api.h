@@ -51,6 +51,14 @@ typedef enum le_result {
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
   LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
                               * is unavailable while Reverse is on */
+  LE_ERR_TRANSFORMED = -10,  /* a record or overdub while Speed is not 1x
+                              * (#1179): capture never writes through a
+                              * fractional read head */
+  /* -11 .. -17 are assigned to other work (the numbering ledger). */
+  LE_ERR_NOT_FOUND = -18,    /* the file (or a directory on its path) does not
+                              * exist (#1198) */
+  LE_ERR_TRUNCATED = -19,    /* the file exists but is shorter than the range
+                              * it must hold (#1198) */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -518,6 +526,20 @@ typedef enum le_command_code {
   LE_CMD_RESET_TRANSFORMS = 82, /* internal material-import transform reset
                                  * (Fade and direction); never raw-posted */
   LE_CMD_REVERSE = 83, /* checked internal Reverse request; never raw-posted */
+
+  /* Silence the live monitors of the inputs in the mask while the tuner is
+   * armed (#1229). arg_i = the mask, bit c = input c. Owned by the tuner arm:
+   * refused (stored as 0) while the tuner is disarmed, and cleared by every
+   * LE_CMD_SET_TUNER_INPUT, so it can never outlive or follow a tuning. Not
+   * perf-logged: it changes no recorded material, and a captured monitor stem
+   * already records the silence that was heard. 84-131 belong to other
+   * epics (the numbering ledger); 133-135 stay reserved for #1229. */
+  LE_CMD_SET_TUNER_MUTE = 132,
+  /* 84 is held by Multiply/Divide's LE_CMD_SET_LENGTH (#1168 plan). */
+  LE_CMD_SET_SPEED = 85, /* checked internal Speed request (#1179); never
+                          * raw-posted */
+  LE_CMD_TRANSPOSE = 86,        /* checked internal Transpose request (#1179) */
+  LE_CMD_TRANSPOSE_BYPASS = 87, /* checked internal Transpose bypass */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -945,6 +967,16 @@ typedef struct le_track_snapshot {
    * reads 0 here too. The host derives its layer count from this: PEEL
    * entries keep undo_depth constant while a layer disappears. */
   int32_t peel_depth;
+  /* Trailing (#1179): the track's effective read rate x1000 (source frames
+   * per song frame; 500 at 1/2x Speed, 8000 at 8x), so the host shows the
+   * derived pitch and progress without re-deriving them. position_frames
+   * moves at this rate. */
+  int32_t head_rate_milli;
+  /* Trailing (#1179 Part 3a): the stored Transpose pitch (-12..12) and the
+   * pitch actually sounding — 0 while its render is pending, refused or
+   * bypassed, so a host never claims a pitch the mix is not playing. */
+  int32_t transpose_st;
+  int32_t transpose_effective_st;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1222,6 +1254,10 @@ typedef struct le_snapshot {
    * the UI cannot tell "armed and silent" from "not armed yet", and those two
    * need different words on screen. */
   int32_t tuner_input;
+  /* Inputs whose live monitors the tuner is silencing (bit c = input c); 0
+   * whenever the tuner is disarmed. Persistent monitor mute is separate and
+   * unaffected (le_engine_set_monitor_input_mute). */
+  uint32_t tuner_mute_mask;
 
   /* Tracks. */
   int32_t track_count; /* number of usable tracks (<= LE_MAX_TRACKS) */
@@ -1359,6 +1395,26 @@ typedef struct le_snapshot {
   uint32_t record_timing_revision;
   int32_t record_timing_result;
   int32_t record_timing_overrides[LE_MAX_TRACKS];
+  /* ---- native MIDI input (#1228 Part 1; trailing). Totals across all
+   * LE_MAX_MIDI_PORTS ports since the engine was created: events delivered
+   * from the current binding, events dropped as stale (pushed by a binding
+   * that has since ended), gaps (places where a full ring or an OS overrun
+   * lost messages), ports that went lost, and binding changes (an attach,
+   * detach, rebind or close, counted once per drain that sees the
+   * generation move). midi_in_attached_mask has bit p set while a capture is
+   * attached to p. */
+  uint32_t midi_in_events;
+  uint32_t midi_in_stale;
+  uint32_t midi_in_overflows;
+  uint32_t midi_in_lost;
+  uint32_t midi_in_attached_mask;
+  uint32_t midi_in_rebinds;
+  /* Trailing (#1179): the global Speed the callback applies, as
+   * numer/denom (1/2, 1/1, 2/1, 4/1 or 8/1; 1/1 before any request). */
+  int32_t speed_numer;
+  int32_t speed_denom;
+  /* Trailing (#1179 Part 3a): 1 while Transpose is bypassed globally. */
+  int32_t transpose_bypass;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -2347,6 +2403,24 @@ LE_EXPORT int32_t le_engine_set_master_gain(le_engine* engine, float gain);
  * costs nothing. */
 LE_EXPORT int32_t le_engine_set_tuner_input(le_engine* engine, int32_t input);
 
+/* Silences the live monitors of the inputs in `input_mask` (bit c = input c)
+ * for as long as the tuner stays armed — the foot Tuner's temporary mute of
+ * the input (or stereo pair) being tuned (#1229).
+ *
+ * This is NOT le_engine_set_monitor_input_mute: that mute is the player's
+ * persistent intent, and this one belongs to the tuner arm. The two are
+ * ORed; neither changes the other. Arm the input first: a mask posted while
+ * the tuner is disarmed is stored as 0, and every le_engine_set_tuner_input
+ * (re-arm, move or disarm) clears it, so a tuning can never leave an input
+ * silent behind it. Bits for inputs the device does not have are dropped.
+ *
+ * Only monitoring changes. Track lanes still record the input, the detector
+ * still hears it (it taps before any monitor), and the mask is not
+ * perf-logged; a captured monitor stem holds the silence that was heard.
+ * Results ride the snapshot as `tuner_mute_mask`. */
+LE_EXPORT int32_t le_engine_set_tuner_mute(le_engine* engine,
+                                           uint32_t input_mask);
+
 /* Enables/disables the master peak limiter and sets its ceiling (clamped to
  * (0,1], default 0.99). The limiter is applied post master-gain so the summed
  * output of all tracks, overdub layers, and monitoring cannot exceed the ceiling
@@ -2759,7 +2833,10 @@ LE_EXPORT int32_t le_perf_set_follow_output(le_engine* engine, int32_t follow);
 /* Default wet-cache memory budget in bytes (appliance-tuned: ~5 stereo 30 s
  * entries at 48 kHz). Seeded once in le_engine_create; persists across
  * configure like the tempo/click settings. */
-#define LE_CACHE_DEFAULT_CAP_BYTES (64ll * 1024 * 1024)
+#define LE_CACHE_DEFAULT_CAP_BYTES (192ll * 1024 * 1024) /* the prints'
+     * 64 MiB plus Transpose's source renders (#1179): eight single-lane 30 s
+     * tracks at 96 kHz (11.5 MiB each) and one job in flight; sized against
+     * the appliance's joint memory table (pitch-time findings document) */
 
 /* Per-lane cache telemetry states (le_lane_cache_info.state). */
 typedef enum le_cache_state {
@@ -2777,6 +2854,8 @@ typedef enum le_cache_reason {
                                * would pass it dry, so the lane stays live */
   LE_CACHE_REASON_RENDER_FAILED = 2, /* repeated render failures */
   LE_CACHE_REASON_PART_POST = 3, /* a part Post chain must keep live tails */
+  LE_CACHE_REASON_BUDGET = 4, /* a Transpose source render does not fit the
+                               * cap; the track plays dry (#1179) */
 } le_cache_reason;
 
 /* Snapshot of one lane's cache state (le_engine_get_lane_cache). */
@@ -3044,11 +3123,31 @@ LE_EXPORT int32_t le_digest_bytes(const void* data, uint64_t length,
  * byte `offset`; `length` = UINT64_MAX means through the end of the file.
  * Reads in 64 KiB chunks, so a multi-gigabyte recording costs no memory.
  * Returns LE_OK; LE_ERR_INVALID for a NULL or empty `path` or NULL `out`;
- * LE_ERR_DEVICE when the file cannot be opened, is not a regular file, is
- * shorter than `offset` + `length` (a damaged file never yields a digest of
- * what happens to be left), or a read fails. */
+ * LE_ERR_NOT_FOUND when nothing exists at `path`; LE_ERR_TRUNCATED when the
+ * file is shorter than `offset` + `length` (a damaged file never yields a
+ * digest of what happens to be left); LE_ERR_DEVICE when it cannot be opened
+ * for another reason, is not a regular file, or a read fails. The codes tell
+ * a missing recording from a damaged one without a separate stat that the
+ * file could change under. */
 LE_EXPORT int32_t le_digest_file(const char* path, uint64_t offset,
                                  uint64_t length, uint8_t* out);
+
+/* Incremental SHA-256 over memory the caller feeds in pieces, so a large
+ * buffer in another language's heap is hashed through a small native window
+ * instead of being copied whole. `state` is caller-owned, at least
+ * LE_DIGEST_STATE_BYTES long and 8-byte aligned; begin initialises it,
+ * update adds `length` bytes, end writes the 32-byte digest to `out` (the
+ * state must be begun again before reuse). Each returns LE_OK, or
+ * LE_ERR_INVALID for a NULL state or out, a `state_bytes` below
+ * LE_DIGEST_STATE_BYTES, NULL `data` with a non-zero length, or a length this
+ * platform cannot address. */
+/* Keep this a plain number: ffigen only exports a macro that is a literal,
+ * and the Dart side sizes its state buffer from the generated constant. */
+#define LE_DIGEST_STATE_BYTES 128
+LE_EXPORT int32_t le_digest_begin(void* state, uint64_t state_bytes);
+LE_EXPORT int32_t le_digest_update(void* state, const void* data,
+                                   uint64_t length);
+LE_EXPORT int32_t le_digest_end(void* state, uint8_t* out);
 
 /* Makes the directory entries of `path` durable: open + fsync on POSIX, which
  * is what makes a rename into that directory survive a power cut (fsync on
@@ -3293,7 +3392,57 @@ LE_EXPORT int32_t le_engine_toggle_reverse(le_engine* engine, int32_t channel,
                                           uint64_t* request);
 LE_EXPORT int32_t le_engine_install_reverse(le_engine* engine, int32_t channel,
                                            int32_t reversed, uint64_t* request);
-/* Consumes one completed Fade or Reverse result. Returns NOT_READY before
+/* Speed (#1179): plays every recorded track at numer/denom of its speed —
+ * 1/2, 1/1, 2/1, 4/1 or 8/1 (anything else is LE_ERR_INVALID) — through one
+ * fractional read head per track, click-free (each sounding track mixes its
+ * old head out over ~10 ms); pitch follows the speed. The song clock, click,
+ * quantize and capture are untouched. A request equal to the factor in force
+ * is accepted and changes nothing. Admission returns a nonzero request id
+ * only on LE_OK; the receipt below carries the callback's verdict.
+ * Refusals: LE_ERR_NOT_READY while any track reads RECORDING or OVERDUBBING,
+ * an arm or Count-in launch is pending, a count-in runs, or no receipt slot
+ * is free (the callback refuses the same states with receipt
+ * LE_ERR_NOT_READY, plus a punch-out tail still writing); LE_ERR_NOT_RUNNING
+ * when not configured. While Speed is not 1x le_engine_record refuses a
+ * record or punch-in with LE_ERR_TRANSFORMED. An empty loop has no speed:
+ * a request while no track holds material is refused with LE_ERR_INVALID
+ * (admission, or the receipt when the rig empties before it lands), as
+ * Reverse refuses an empty track, so a host shows the factors unavailable
+ * until a loop exists; and when the last track becomes empty, Speed returns
+ * to 1x (le_snapshot shows it), so the next loop records. */
+LE_EXPORT int32_t le_engine_set_speed(le_engine* engine, int32_t numer,
+                                     int32_t denom, uint64_t* request);
+/* Transpose (#1179 Part 3a): plays track [channel] as a pitch-shifted render
+ * of its own takes at unchanged timing. The render is built off the audio
+ * thread by the cache worker (about 100 ms after the last step, plus the
+ * render); until it lands the track plays its dry take at true pitch and
+ * le_track_snapshot.transpose_effective_st reads 0, then it crossfades to the
+ * render at the same position. Step moves the stored pitch by [delta] (+1 or
+ * -1); at +-12 the receipt is LE_ERR_CAPACITY and nothing changes. Install
+ * sets [semitones] (-12..12; Session recall) and also accepts an EMPTY track
+ * holding imported material. Refusals as Reverse's: LE_ERR_INVALID for a bad
+ * channel or argument or a track that reads EMPTY (step), RECORDING or
+ * OVERDUBBING; LE_ERR_NOT_READY while an arm or Count-in launch is pending or
+ * no receipt slot is free. While a track's pitch is not 0 and Transpose is
+ * not bypassed, le_engine_record refuses a punch-in with LE_ERR_TRANSFORMED. */
+LE_EXPORT int32_t le_engine_transpose_step(le_engine* engine, int32_t channel,
+                                          int32_t delta, uint64_t* request);
+LE_EXPORT int32_t le_engine_install_transpose(le_engine* engine,
+                                             int32_t channel,
+                                             int32_t semitones,
+                                             uint64_t* request);
+/* Bypasses every track's Transpose (dry, stored pitches kept) or restores
+ * it. Admitted whenever configured. */
+LE_EXPORT int32_t le_engine_set_transpose_bypass(le_engine* engine,
+                                                int32_t on,
+                                                uint64_t* request);
+/* Track [channel]'s Transpose source-render telemetry, the track cache
+ * query's twin: `reason` LE_CACHE_REASON_BUDGET when the render does not fit
+ * the cap and the track stays dry. */
+LE_EXPORT int32_t le_engine_get_transpose_cache(le_engine* engine,
+                                               int32_t channel,
+                                               le_lane_cache_info* out);
+/* Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
  * callback publication, INVALID for an absent/consumed/retired id; otherwise
  * OK and fills result. */
 LE_EXPORT int32_t le_engine_read_request_result(le_engine* engine,
@@ -3377,8 +3526,54 @@ LE_EXPORT int32_t le_midi_open(le_midi* m, const char* id,
 
 /* Stops capture and closes the open port. Idempotent (a no-op when nothing is
  * open). After it returns the callback registered by le_midi_open is guaranteed
- * not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle). */
+ * not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle).
+ * A capture attached to an engine port (le_engine_attach_midi_input) is
+ * detached first: the port's generation advances and it reads lost. Because
+ * le_midi_open closes the current port before opening another, re-opening also
+ * detaches; attach again after opening. */
 LE_EXPORT int32_t le_midi_close(le_midi* m);
+
+/* Whether the capture's backend thread runs at real-time priority (#1228):
+ * 1 granted, -1 refused by the OS (no RTPRIO), 0 not applicable (no port
+ * open, or a backend whose OS owns the thread, as CoreMIDI does). */
+LE_EXPORT int32_t le_midi_priority_state(le_midi* m);
+
+/* ---- the native MIDI input sink (#1228 Part 1; shared with #1197) ----
+ *
+ * An open capture can be attached to one of LE_MAX_MIDI_PORTS engine input
+ * ports. Its OS MIDI thread then pushes every note, CC, pitch bend, channel
+ * pressure, Timing Clock, Start, Continue, Stop and Song Position message,
+ * stamped with a CLOCK_MONOTONIC time, into that port's ring, and the audio
+ * thread drains the ring at the start of every block. Nothing in this path
+ * passes through Dart; the Dart callback keeps receiving Note, CC and Program
+ * exactly as before.
+ *
+ * Generations: each attach and detach advances the port's generation; events
+ * pushed under an older one are dropped by the audio thread and counted
+ * (le_snapshot.midi_in_stale). A push into a full ring sets the port's
+ * overflow flag, counted once per block that finds it
+ * (le_snapshot.midi_in_overflows), so a consumer can release whatever the
+ * dropped messages would have released. A capture whose device disappears, or
+ * that is closed while attached, marks its port lost (midi_in_lost counts
+ * each such edge).
+ *
+ * Threading: attach, detach, le_midi_close/destroy and le_engine_destroy run
+ * on one control thread and are not called concurrently. Detach and close
+ * wait until no push is in flight, so when they return the capture can no
+ * longer write the port; le_engine_destroy detaches every port first. */
+#define LE_MAX_MIDI_PORTS 8
+
+/* Attaches capture `m` to engine input port `port` (0..LE_MAX_MIDI_PORTS-1).
+ * A capture already attached elsewhere moves; a capture already on `port` is
+ * detached first. Returns LE_OK, or LE_ERR_INVALID for a null handle or a port
+ * out of range. Valid whether or not the engine is configured or running. */
+LE_EXPORT int32_t le_engine_attach_midi_input(le_engine* engine, le_midi* m,
+                                              int32_t port);
+
+/* Detaches whatever capture is on `port`. Returns LE_OK (also when nothing
+ * was attached) or LE_ERR_INVALID for a null engine or a port out of range. */
+LE_EXPORT int32_t le_engine_detach_midi_input(le_engine* engine,
+                                              int32_t port);
 
 /* ---- native USB MIDI output (foot-pedal LED feedback) ---- *
  *

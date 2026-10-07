@@ -3,10 +3,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_manage.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -54,9 +56,14 @@ class LibraryPreviewCard extends StatelessWidget {
               Expanded(
                 child: switch (library) {
                   LibraryState(:final previewError?) => _PreviewNotice(
-                    previewError == LibraryPreviewError.unsupportedVersion
-                        ? _PreviewNoticeKind.unsupportedVersion
-                        : _PreviewNoticeKind.unreadable,
+                    switch (previewError) {
+                      LibraryPreviewError.unsupportedVersion =>
+                        _PreviewNoticeKind.unsupportedVersion,
+                      LibraryPreviewError.unconvertible =>
+                        _PreviewNoticeKind.unconvertible,
+                      LibraryPreviewError.unreadable =>
+                        _PreviewNoticeKind.unreadable,
+                    },
                   ),
                   LibraryState(:final preview?) => LibraryPreviewBody(
                     preview: preview,
@@ -125,7 +132,12 @@ class LibraryPreviewHeading extends StatelessWidget {
   }
 }
 
-enum _PreviewNoticeKind { nothingSelected, unsupportedVersion, unreadable }
+enum _PreviewNoticeKind {
+  nothingSelected,
+  unsupportedVersion,
+  unconvertible,
+  unreadable,
+}
 
 /// The card's single line when there is nothing to preview.
 class _PreviewNotice extends StatelessWidget {
@@ -142,6 +154,7 @@ class _PreviewNotice extends StatelessWidget {
           _PreviewNoticeKind.nothingSelected => l10n.libraryNoSelection,
           _PreviewNoticeKind.unsupportedVersion =>
             l10n.sessionErrorUnsupportedVersion,
+          _PreviewNoticeKind.unconvertible => l10n.sessionErrorUnconvertible,
           _PreviewNoticeKind.unreadable => l10n.libraryPreviewUnreadable,
         },
         key: Key('library_preview_${kind.name}'),
@@ -235,7 +248,11 @@ class LibraryPreviewTracks extends StatelessWidget {
             SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
             SessionError.unsupportedVersion =>
               l10n.sessionErrorUnsupportedVersion,
-            SessionError.bootPersistence => null,
+            SessionError.unconvertible => l10n.sessionErrorUnconvertible,
+            // Saving the outgoing rig failed: the 19/05 line says so.
+            SessionError.bootPersistence ||
+            SessionError.saveFailed ||
+            SessionError.captureInProgress => null,
             _ => l10n.sessionErrorGeneric(session.errorMessage ?? ''),
           };
     final tracks = preview.tracks;
@@ -516,12 +533,38 @@ class LibraryPreviewFooter extends StatelessWidget {
                     label: l10n.libraryOpenSession,
                     onTap: busy
                         ? null
-                        : () =>
-                              unawaited(context.read<SessionCubit>().open(id)),
+                        : () => unawaited(
+                            openWithConfirm(context, preview.summary),
+                          ),
                   ),
                 ),
         ),
       ],
     );
   }
+}
+
+/// Opens [summary] through [SessionCubit.open], asking first while any track
+/// plays or captures (plan D8): `Stop playback and open <name>?` with
+/// `Cancel` / `Open`. A running device with every track stopped or empty
+/// is not asked; Cancel changes nothing.
+Future<void> openWithConfirm(
+  BuildContext context,
+  SessionSummary summary,
+) async {
+  final session = context.read<SessionCubit>();
+  final l10n = context.l10n;
+  final interrupts = context.read<LooperBloc>().state.tracks.any(
+    (t) => t.state == TrackState.playing || t.isCapturing,
+  );
+  if (interrupts) {
+    final confirmed = await showConsoleConfirmDialog(
+      context,
+      title: l10n.libraryOpenInterruptTitle(summary.name),
+      body: l10n.libraryOpenInterruptBody,
+      confirmLabel: l10n.libraryOpenConfirm,
+    );
+    if (!confirmed) return;
+  }
+  await session.open(summary.id);
 }

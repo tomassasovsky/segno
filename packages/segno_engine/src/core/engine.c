@@ -421,6 +421,12 @@ static void le_engine_quiesce_workers(le_engine* engine) {
  * reopen. Returns 0 when lane 0's live buffer could not be allocated. */
 static int le_engine_reset_material(le_engine* engine,
                                     int32_t max_loop_frames) {
+  /* Speed resets with the material (#1179, plan decision 9). */
+  engine->speed_numer = 1;
+  engine->speed_denom = 1;
+  store_i32(&engine->a_speed_ratio, le_speed_pack(1, 1));
+  engine->transpose_bypass = 0;
+  store_i32(&engine->a_transpose_bypass, 0);
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
     /* Track transport: one lane active by default, empty, one base loop. */
@@ -440,8 +446,14 @@ static int le_engine_reset_material(le_engine* engine,
      * bumped the lifetime; the next snapshot read refreshes the rest. */
     tr->fade_cache = (le_fade_image){1, 1, 0, engine->fade_lifetime, 1};
     tr->fade_cache_revision = 0;
-    tr->reversed = 0; /* direction is material (#1162): a reopen keeps it */
+    /* direction is material (#1162): a reopen keeps it; so is the rate */
+    tr->head = (le_read_head){0, 0.0, 1.0};
     store_i32(&tr->a_reversed, 0);
+    store_i32(&tr->a_head_rate_milli, 1000);
+    tr->transpose_st = 0; /* pitch is material too (#1179) */
+    store_i32(&tr->a_transpose_st, 0);
+    le_track_forget_slot_keys(tr); /* no slot holds a keyed take any more */
+    tr->pass_key = 0;
     store_i32(&tr->a_undo_depth, 0);
     store_i32(&tr->a_clear_restore, 0);
     store_i32(&tr->a_redo_depth, 0);
@@ -511,6 +523,14 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   engine->record_timing_command = 0;
   engine->record_timing_publish_pending = 0;
   engine->record_timing_cache = (le_record_timing_readback){.result = LE_OK};
+  /* Control's in-flight Speed view dies with the ring; the factor is
+   * material (le_engine_reset_material) and survives a retained reopen. */
+  engine->speed_posted = 0;
+  engine->speed_pending_one = engine->speed_numer == engine->speed_denom;
+  atomic_store_explicit(&engine->a_speed_applied, 0, memory_order_relaxed);
+  engine->bypass_posted = 0;
+  engine->bypass_pending = engine->transpose_bypass;
+  atomic_store_explicit(&engine->a_bypass_applied, 0, memory_order_relaxed);
   /* Every Fade admission is bound to the lifetime it read; a new session
    * invalidates them all, so nothing posted against the old device replays. */
   ++engine->fade_lifetime;
@@ -549,14 +569,16 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     store_f32(&tr->a_overdub_fb_bits, -1.0f);    /* slice 2b: inherit */
     tr->fb_cur = 1.0f;
     tr->sounding_frames = 0;
-    tr->playback_offset = 0;
+    tr->head.origin = 0.0;
     /* Reverse runtime (#1162): the turn window and control's in-flight view
-     * die with the ring; the direction itself is material (above). */
+     * die with the ring; the direction and rate are material (above). */
     tr->turn_left = 0;
     tr->turn_frames = 0;
-    tr->turn_reversed = 0;
-    tr->turn_offset = 0;
+    tr->prev_head = tr->head;
     tr->reverse_posted = 0;
+    tr->transpose_posted = 0;
+    tr->transpose_pending = tr->transpose_st;
+    atomic_store_explicit(&tr->a_transpose_applied, 0, memory_order_relaxed);
     tr->reverse_pending = 0;
     atomic_store_explicit(&tr->a_reverse_applied, 0, memory_order_relaxed);
     tr->once_ended = 0;
@@ -797,6 +819,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
    * tuner that silently analyses input 1 on every boot is a CPU cost nobody
    * asked for. */
   atomic_store_explicit(&engine->a_tuner_input, -1, memory_order_relaxed);
+  atomic_store_explicit(&engine->a_tuner_mute_mask, 0u, memory_order_relaxed);
 
   /* Per-input live monitors: all disabled by default (each defaults to full
    * stereo output, empty chain). Inputs are monitored only when explicitly
@@ -1208,6 +1231,11 @@ le_engine* le_engine_create(void) {
 
 void le_engine_destroy(le_engine* engine) {
   if (engine == NULL) return;
+  /* No capture may write a port of a freed engine (#1228, review H2): each
+   * detach waits until its producer has no push in flight. */
+  for (int p = 0; p < LE_MAX_MIDI_PORTS; ++p) {
+    le_midi_port_unbind(&engine->midi_ports[p]);
+  }
   /* Release the device + context through the backend that opened it. NULL until
    * the first successful start; close() is idempotent, so a create→destroy with
    * no start (and a stop→destroy) are both safe. */
@@ -1523,6 +1551,10 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (code == LE_CMD_RESET_TRANSFORMS) return LE_ERR_INVALID;
   if (code == LE_CMD_FADE) return LE_ERR_INVALID;
   if (code == LE_CMD_REVERSE) return LE_ERR_INVALID;
+  if (code == LE_CMD_SET_SPEED) return LE_ERR_INVALID;
+  if (code == LE_CMD_TRANSPOSE || code == LE_CMD_TRANSPOSE_BYPASS) {
+    return LE_ERR_INVALID;
+  }
   if (code == LE_CMD_SET_CLICK_MODE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_RECORD_START) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_LOOPER_MODE) {
@@ -1546,6 +1578,8 @@ void (*le_test_record_timing_hook)(le_engine*, int) = NULL;
 void (*le_test_click_mode_hook)(le_engine*, int) = NULL;
 void (*le_test_record_start_hook)(le_engine*, int) = NULL;
 void (*le_test_peel_hook)(le_engine*, int) = NULL;
+void (*le_test_midi_dispatch_hook)(le_engine*, int, int,
+                                   const le_midi_port_event*) = NULL;
 #endif
 
 int32_t le_push_cmd(le_engine* engine, le_command cmd) {

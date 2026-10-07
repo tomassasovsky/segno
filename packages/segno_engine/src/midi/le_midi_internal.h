@@ -20,15 +20,26 @@ extern "C" {
 
 /* Classification of the supported MIDI channel-voice messages. */
 typedef enum le_midi_kind {
-  LE_MIDI_IGNORE = 0,   /* SysEx, real-time, aftertouch, pitch-bend, etc. */
+  LE_MIDI_IGNORE = 0,   /* SysEx, poly aftertouch, active sensing, etc. */
   LE_MIDI_CC = 1,       /* Control Change */
   LE_MIDI_NOTE_ON = 2,  /* Note On with non-zero velocity */
   LE_MIDI_NOTE_OFF = 3, /* Note Off, or Note On with velocity 0 */
   LE_MIDI_PROGRAM = 4,  /* Program Change (one data byte) */
+  /* The kinds below reach only the engine sink (le_midi_port.h), never the
+   * Dart callback, which keeps receiving exactly the four kinds above. */
+  LE_MIDI_CHANNEL_PRESSURE = 5, /* 0xD0, one data byte */
+  LE_MIDI_PITCH_BEND = 6,       /* 0xE0, 14-bit: data1 LSB, data2 MSB */
+  LE_MIDI_SONG_POSITION = 7,    /* 0xF2, 14-bit sixteenth notes, LSB first */
+  LE_MIDI_CLOCK = 8,            /* 0xF8 Timing Clock, 24 per quarter note */
+  LE_MIDI_START = 9,            /* 0xFA */
+  LE_MIDI_CONTINUE = 10,        /* 0xFB */
+  LE_MIDI_STOP = 11,            /* 0xFC */
 } le_midi_kind;
 
-/* Parsed channel-voice message. `channel` is 0..15; `number` is the CC number
- * or note number; `value` is the CC value or velocity. */
+/* Parsed message. `channel` is 0..15 for channel messages and 0 otherwise.
+ * `number` is the CC or note number, the program, the pressure, or the LSB of
+ * a 14-bit value; `value` is the CC value, the velocity, or the MSB of a
+ * 14-bit value. Real-time messages carry neither. */
 typedef struct le_midi_parsed {
   le_midi_kind kind;
   uint8_t channel;
@@ -60,6 +71,20 @@ void le_midi_set_cb_for_test(le_midi* m, le_midi_event_cb cb);
  * to le_midi_ring_push). Returns 1 if enqueued, 0 if dropped/full. */
 int le_midi_push_for_test(le_midi* m, uint8_t status, uint8_t data1,
                           uint8_t data2, uint64_t ts_us);
+
+/* Whether the Dart callback ring carries `kind` (Note, CC and Program). */
+int le_midi_kind_for_dart(le_midi_kind kind);
+
+/* Whether the engine sink carries `kind`: every kind but Program and IGNORE. */
+int le_midi_kind_for_sink(le_midi_kind kind);
+
+/* Test hook: one message through the full input path a backend uses
+ * (le_midi_input): the engine sink if bound, then the Dart ring. */
+void le_midi_input_for_test(le_midi* m, uint8_t status, uint8_t data1,
+                            uint8_t data2, uint64_t t_ns);
+
+/* The sink at the start of every capture handle (le_midi_port.h). */
+struct le_midi_sink* le_midi_sink_of(le_midi* m);
 
 #ifdef __cplusplus
 }

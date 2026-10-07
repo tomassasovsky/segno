@@ -159,11 +159,17 @@ static int track_select_slot(le_track* t, int undo_count, int redo_count,
     for (int k = 0; k < outstanding_count && !used; ++k) {
       if (t->outstanding_slots[k] == i) used = 1;
     }
-    if (!used) return i;
+    if (!used) {
+      /* Handed out for new PCM: no key names it any more (a_src_key). */
+      atomic_store_explicit(&t->a_slot_key[i], 0u, memory_order_relaxed);
+      return i;
+    }
   }
   for (int e = 0; e < undo_count; ++e) {
     if (t->undo_stack[e].kind == LE_HIST_CLEAR) continue;
     *evict = e;
+    atomic_store_explicit(&t->a_slot_key[t->undo_stack[e].slot], 0u,
+                          memory_order_relaxed);
     return t->undo_stack[e].slot;
   }
   return -1;
@@ -349,7 +355,7 @@ static void le_undo_swap(le_engine* engine, le_track* t) {
      * a restoration swap as PROCESSED rather than as a peelable layer. */
     (void)le_redo_push(t, le_hist_kind_entry(top.kind, live, 0));
   }
-  le_publish_live_image(engine, t, top.slot, id); /* [R1] undo swap */
+  le_publish_live_image(engine, t, top.slot, id, 1); /* [R1] undo swap */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
 }
@@ -375,7 +381,7 @@ static void le_peel_apply(le_engine* engine, le_track* t, int idx,
   }
   t->undo_stack[t->undo_count - 1] =
       le_hist_kind_entry(LE_HIST_PEEL, live, skipped);
-  le_publish_live_image(engine, t, target, id); /* [R1] peel swap */
+  le_publish_live_image(engine, t, target, id, 1); /* [R1] peel swap */
 }
 
 /* #595: drops every lane's recoverable flag once NOTHING on this track can
@@ -510,7 +516,7 @@ int32_t le_restore_commit_layer(le_engine* engine, int32_t channel,
    * motion (invalidating and re-rendering the wet cache). Image 0 (#1143):
    * processed material has no staged copy, so a running capture's stem fails
    * truthfully at this swap (323/0) instead of replaying the raw take. */
-  le_publish_live_image(engine, t, slot, 0);
+  le_publish_live_image(engine, t, slot, 0, 0);
   return LE_OK;
 }
 
@@ -1704,6 +1710,25 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
       !load_i32(&t->a_pending_launch)) {
     return LE_ERR_REVERSED;
   }
+  /* Capture is unavailable while Speed is not 1x (#1179): a record or
+   * punch-in that would start now, or once the posted Speed requests land,
+   * is refused before any preparation. Finishing a capture or cancelling an
+   * arm or launch is not a capture start and passes. */
+  if ((st == LE_TRACK_EMPTY || st == LE_TRACK_PLAYING ||
+       st == LE_TRACK_STOPPED) &&
+      !le_effective_speed_one(engine) &&
+      !(engine->armed[channel] && load_i32(&t->a_pending)) &&
+      !load_i32(&t->a_pending_launch)) {
+    return LE_ERR_TRANSFORMED;
+  }
+  /* ...and a punch-in on a transposed track (#1179 Part 3a), the Reverse
+   * rule: the new layer would be heard at true pitch, then transposed. */
+  if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) &&
+      le_effective_transposed(engine, t) &&
+      !(engine->armed[channel] && load_i32(&t->a_pending)) &&
+      !load_i32(&t->a_pending_launch)) {
+    return LE_ERR_TRANSFORMED;
+  }
   /* The track's length (k * base) — all lanes share it, so lane 0 is canonical.
    * Kept coherent with the effective state: the undo-to-empty / redo-from-empty
    * paths store it control-side when they post. */
@@ -2384,7 +2409,7 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   t->undo_count--;
   /* Cannot fail: one entry off the undo stack for the one added here. */
   (void)le_redo_push(t, e);
-  le_publish_live_image(engine, t, e.slot, image_id); /* [R1] clear-restore */
+  le_publish_live_image(engine, t, e.slot, image_id, 0); /* [R1] clear-restore */
   /* Leftover armed shadows may be sized for a different loop; the audio thread
    * drops them when the command applies (same reclaim rule as redo-from-empty:
    * an EMPTY track has no layer in flight, so no retire event can be
@@ -2606,7 +2631,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
       return LE_ERR_INVALID;
     }
     t->redo_count--;
-    le_publish_live_image(engine, t, next, image_id); /* [R1] redo-from-empty */
+    le_publish_live_image(engine, t, next, image_id, 0); /* [R1] redo-from-empty */
     t->empty_len = 0;
     /* Leftover armed shadows may be sized for a different loop; the audio
      * thread drops them when the command applies. Same no-in-flight argument
@@ -2641,7 +2666,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
   /* The kind rides along: a PROCESSED entry undone and redone stays PROCESSED. */
   t->undo_stack[t->undo_count++] =
       le_hist_kind_entry(top.kind, load_i32(&t->lanes[0].a_live), 0);
-  le_publish_live_image(engine, t, top.slot, image_id); /* [R1] redo swap */
+  le_publish_live_image(engine, t, top.slot, image_id, 1); /* [R1] redo swap */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
   le_plog_push_ctrl(engine,
@@ -2801,6 +2826,98 @@ int32_t le_engine_toggle_reverse(le_engine* e, int32_t channel,
 int32_t le_engine_install_reverse(le_engine* e, int32_t channel,
                                   int32_t reversed, uint64_t* request) {
   return le_reverse_admit(e, channel, 1, reversed, request);
+}
+
+/* Speed admission (#1179): see le_engine_set_speed's contract. Refused while
+ * any track captures, is armed or launching, or a count-in runs, by the
+ * effective state, so a request never races a capture into existence; the
+ * callback rechecks (le_speed_change_safe). */
+int32_t le_engine_set_speed(le_engine* e, int32_t numer, int32_t denom,
+                            uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request) return LE_ERR_INVALID;
+  const int valid = (numer == 1 && denom == 2) ||
+      (denom == 1 && (numer == 1 || numer == 2 || numer == 4 || numer == 8));
+  if (!valid) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  if (load_i32(&e->a_counting_in)) return LE_ERR_NOT_READY;
+  int material = 0;
+  for (int c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    const int32_t st = le_effective_state(t);
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+        load_i32(&t->a_pending) || e->armed[c] ||
+        load_i32(&t->a_pending_launch)) return LE_ERR_NOT_READY;
+    if (st != LE_TRACK_EMPTY) material = 1;
+  }
+  /* An empty loop has no speed (plan decision 26): nothing to play at a
+   * factor, as Reverse and Transpose refuse an empty track. */
+  if (!material) return LE_ERR_INVALID;
+  le_command cmd = {.code = LE_CMD_SET_SPEED, .speed = {0, numer, denom}};
+  const int32_t result = le_request_admit(e, &cmd, &cmd.speed.slot, request);
+  if (result != LE_OK) return result;
+  e->speed_pending_one = numer == denom;
+  e->speed_posted++;
+  return LE_OK;
+}
+
+/* Transpose admission (#1179 Part 3a): Reverse's per-track rules, and the
+ * predicted pitch kept for the Record guard (a step clamps like the
+ * callback, whose receipt reports the limit). */
+static int32_t le_transpose_admit(le_engine* e, int32_t channel, int install,
+                                  int32_t semitones, uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  if (channel < 0 || channel >= e->track_count) return LE_ERR_INVALID;
+  if (install ? semitones < -12 || semitones > 12
+              : semitones != 1 && semitones != -1) return LE_ERR_INVALID;
+  le_track* t = &e->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+      (!install && st == LE_TRACK_EMPTY)) return LE_ERR_INVALID;
+  if (load_i32(&t->a_pending) || e->armed[channel] ||
+      load_i32(&t->a_pending_launch)) return LE_ERR_NOT_READY;
+  const int32_t from =
+      t->transpose_posted >
+              atomic_load_explicit(&t->a_transpose_applied, memory_order_acquire)
+          ? t->transpose_pending
+          : load_i32(&t->a_transpose_st);
+  int32_t predicted = install ? semitones : from + semitones;
+  if (predicted < -12 || predicted > 12) predicted = from;
+  le_command cmd = {.code = LE_CMD_TRANSPOSE,
+                    .transpose = {channel, 0, install, semitones}};
+  const int32_t result =
+      le_request_admit(e, &cmd, &cmd.transpose.slot, request);
+  if (result != LE_OK) return result;
+  t->transpose_pending = predicted;
+  t->transpose_posted++;
+  return LE_OK;
+}
+
+int32_t le_engine_transpose_step(le_engine* e, int32_t channel, int32_t delta,
+                                 uint64_t* request) {
+  return le_transpose_admit(e, channel, 0, delta, request);
+}
+
+int32_t le_engine_install_transpose(le_engine* e, int32_t channel,
+                                    int32_t semitones, uint64_t* request) {
+  return le_transpose_admit(e, channel, 1, semitones, request);
+}
+
+int32_t le_engine_set_transpose_bypass(le_engine* e, int32_t on,
+                                       uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  le_command cmd = {.code = LE_CMD_TRANSPOSE_BYPASS,
+                    .transpose = {-1, 0, 1, on != 0}};
+  const int32_t result =
+      le_request_admit(e, &cmd, &cmd.transpose.slot, request);
+  if (result != LE_OK) return result;
+  e->bypass_pending = on != 0;
+  e->bypass_posted++;
+  return LE_OK;
 }
 
 int32_t le_engine_toggle_fade(le_engine* e, int32_t channel, float seconds,
@@ -3286,6 +3403,27 @@ int32_t le_engine_toggle_section(le_engine* engine, int32_t channel) {
   return rc;
 }
 
+/* ---- the native MIDI input sink (#1228 Part 1; segno_engine_api.h) ----
+ * The capture handle begins with its le_midi_sink (pinned by a static
+ * assertion in midi.c), so the engine binds it without linking midi.c. */
+
+int32_t le_engine_attach_midi_input(le_engine* engine, le_midi* m,
+                                    int32_t port) {
+  if (engine == NULL || m == NULL || port < 0 || port >= LE_MAX_MIDI_PORTS) {
+    return LE_ERR_INVALID;
+  }
+  le_midi_sink_bind((le_midi_sink*)(void*)m, &engine->midi_ports[port]);
+  return LE_OK;
+}
+
+int32_t le_engine_detach_midi_input(le_engine* engine, int32_t port) {
+  if (engine == NULL || port < 0 || port >= LE_MAX_MIDI_PORTS) {
+    return LE_ERR_INVALID;
+  }
+  le_midi_port_unbind(&engine->midi_ports[port]);
+  return LE_OK;
+}
+
 /* ---- MIDI clock (Phase C/E, D15; see segno_engine_api.h's MIDI-clock
  * section) ---- */
 
@@ -3462,6 +3600,14 @@ int32_t le_engine_set_tuner_input(le_engine* engine, int32_t input) {
    * stream; the audio thread validates the channel against what the device
    * actually negotiated and resets the analysis state on every change. */
   return le_push(engine, LE_CMD_SET_TUNER_INPUT, input, 0.0f);
+}
+
+int32_t le_engine_set_tuner_mute(le_engine* engine, uint32_t input_mask) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  /* Through the ring, after any arm already posted, so "arm, then mute"
+   * orders the way the caller wrote it; the audio thread refuses a mask
+   * while disarmed and drops bits for inputs the device lacks. */
+  return le_push(engine, LE_CMD_SET_TUNER_MUTE, (int32_t)input_mask, 0.0f);
 }
 
 int32_t le_engine_set_limiter(le_engine* engine, int32_t enabled,
