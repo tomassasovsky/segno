@@ -988,9 +988,11 @@ void main() {
           final recolored = transport.lastFrame!;
           expect(recolored.isLit(PedalButton.undo), isTrue);
           expect(recolored.activeButtonMask, held.activeButtonMask);
+          // Record mode lights in fixed state colours; the saved hue waits
+          // for Custom mode.
           expect(
             recolored.colorFor(PedalButton.undo),
-            PedalPaletteColor.cyan.color,
+            held.colorFor(PedalButton.undo),
           );
           expect(await settings.loadPedalSetup(), next.encode());
           transport.press(PedalButton.undo, down: false);

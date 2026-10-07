@@ -32,7 +32,8 @@ enum PedalSetupContext {
   /// The free map: eight switches, each with its own Press and Hold.
   custom,
 
-  /// Colors of all ten physical indicators, independent of bank.
+  /// Colors of the Custom-assignable indicators, independent of bank. Record,
+  /// Mute and FX light in fixed state colours.
   leds,
 }
 
@@ -161,7 +162,12 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                       top: _mapTop,
                       child: PedalSetupMap(
                         frame: frame,
-                        palette: _draft?.palette,
+                        // The colour editor previews the performer's
+                        // palette, saved or drafted; every other context
+                        // shows what the pedal lights now.
+                        palette: _context == PedalSetupContext.leds
+                            ? (_draft ?? control.state.pedalSetup).palette
+                            : null,
                         physicalLabels: _context == PedalSetupContext.leds,
                         selected: _selectedGroup,
                         editable: _editable,
@@ -417,7 +423,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
       _selected = switch (next) {
         PedalSetupContext.tracks => PedalButton.mode,
         PedalSetupContext.custom => PedalButton.track1,
-        PedalSetupContext.leds => PedalButton.mode,
+        PedalSetupContext.leds => PedalButton.track1,
       };
     });
   }
@@ -431,20 +437,19 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
 
   /// The switches this context can edit.
   Set<PedalButton> get _editable => switch (_context) {
-    PedalSetupContext.leds => PedalButton.values.toSet(),
+    // Colour is the performer's only where the function is: Record, Mute and
+    // FX light in fixed state colours, so only the switches Custom mode can
+    // assign take a colour.
+    PedalSetupContext.leds || PedalSetupContext.custom => {
+      for (final button in PedalButton.values)
+        if (!PedalBindingKey.unbindable.contains(button)) button,
+    },
     // Stop, Undo, Clear and Bank do one thing here and keep it: the accepted
     // design dims them rather than offering an assignment it would refuse.
     PedalSetupContext.tracks => {
       PedalButton.mode,
       PedalButton.recPlay,
       ...kTrackSwitches,
-    },
-    // Everything the binding model can key, which is every switch but MODE
-    // and BANK — the two that must never stop being the way out and the way
-    // to the other four tracks.
-    PedalSetupContext.custom => {
-      for (final button in PedalButton.values)
-        if (!PedalBindingKey.unbindable.contains(button)) button,
     },
   };
 

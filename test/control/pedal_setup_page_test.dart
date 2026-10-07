@@ -987,19 +987,24 @@ void main() {
 
   group('LED colors', () {
     testWidgets(
-      'all ten physical switches select independently, including Bank',
+      'only the Custom-assignable switches take a colour; MODE and BANK do not',
       (tester) async {
         await pump(tester);
         await openLeds(tester);
         pedal.pushState(PedalStateFrame.blank());
         await tester.pumpAndSettle();
         for (final button in PedalButton.values) {
-          await tester.tap(find.byKey(Key('pedal_setup_cap_${button.name}')));
-          await tester.pumpAndSettle();
-          final cap = tester.widget<PedalSetupCap>(
-            find.byKey(Key('pedal_setup_cap_${button.name}')),
+          final assignable = !PedalBindingKey.unbindable.contains(button);
+          final finder = find.byKey(Key('pedal_setup_cap_${button.name}'));
+          expect(
+            tester.widget<PedalSetupCap>(finder).enabled,
+            assignable,
+            reason: button.name,
           );
-          expect(cap.enabled, isTrue);
+          if (!assignable) continue;
+          await tester.tap(finder);
+          await tester.pumpAndSettle();
+          final cap = tester.widget<PedalSetupCap>(finder);
           expect(cap.selected, isTrue);
           expect(cap.ledActive, isFalse);
         }
@@ -1032,20 +1037,23 @@ void main() {
       'preview changes hue locally while activity stays published until Save',
       (tester) async {
         await pump(tester);
+        control.setMode(InteractionMode.custom);
         await openLeds(tester);
+        await tester.tap(find.byKey(const Key('pedal_setup_cap_stop')));
+        await tester.pumpAndSettle();
         final frame = PedalStateFrame.blank().copyWith(
-          activeButtonMask: 1 << PedalButton.mode.index,
+          activeButtonMask: 1 << PedalButton.stop.index,
         );
         pedal.pushState(frame);
         await tester.pumpAndSettle();
         await swatch(tester, 'blue');
         final cap = tester.widget<PedalSetupCap>(
-          find.byKey(const Key('pedal_setup_cap_mode')),
+          find.byKey(const Key('pedal_setup_cap_stop')),
         );
         expect(cap.ledActive, isTrue);
         expect(cap.ledColor, PedalPaletteColor.blue.color);
         expect(
-          pedal.lastFrame!.colorFor(PedalButton.mode),
+          pedal.lastFrame!.colorFor(PedalButton.stop),
           PedalColor.defaultColor,
         );
         expect(control.state.pedalSetup.palette.isEmpty, isTrue);
@@ -1054,7 +1062,7 @@ void main() {
         expect(
           tester
               .widget<PedalSetupCap>(
-                find.byKey(const Key('pedal_setup_cap_mode')),
+                find.byKey(const Key('pedal_setup_cap_stop')),
               )
               .ledColor,
           PedalColor.defaultColor,
@@ -1063,11 +1071,11 @@ void main() {
         await tester.tap(find.byKey(save));
         await tester.pumpAndSettle();
         expect(
-          control.state.pedalSetup.palette.colorFor(PedalButton.mode),
+          control.state.pedalSetup.palette.colorFor(PedalButton.stop),
           PedalPaletteColor.blue.color,
         );
         expect(
-          pedal.lastFrame!.colorFor(PedalButton.mode),
+          pedal.lastFrame!.colorFor(PedalButton.stop),
           PedalPaletteColor.blue.color,
         );
         final loaded = PedalSetup.decode((await settings.loadPedalSetup())!);
@@ -1079,11 +1087,12 @@ void main() {
       tester,
     ) async {
       await pump(tester);
+      control.setMode(InteractionMode.custom);
       await openLeds(tester);
       await swatch(tester, 'add');
       await tester.tap(find.byKey(const Key('pedal_color_done')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('pedal_setup_cap_bank')));
+      await tester.tap(find.byKey(const Key('pedal_setup_cap_stop')));
       await tester.pumpAndSettle();
       await swatch(tester, 'custom:1');
       await tester.tap(find.byKey(const Key('pedal_setup_led_edit')));
@@ -1101,10 +1110,10 @@ void main() {
       await tester.pumpAndSettle();
       final palette = control.state.pedalSetup.palette;
       expect(palette.customs, {1: const PedalColor(0, 0, 0)});
-      expect(palette.entryFor(PedalButton.mode), const CustomPaletteEntry(1));
-      expect(palette.entryFor(PedalButton.bank), const CustomPaletteEntry(1));
-      expect(pedal.lastFrame!.colorFor(PedalButton.mode).rgb, 0);
-      expect(pedal.lastFrame!.colorFor(PedalButton.bank).rgb, 0);
+      expect(palette.entryFor(PedalButton.track1), const CustomPaletteEntry(1));
+      expect(palette.entryFor(PedalButton.stop), const CustomPaletteEntry(1));
+      expect(pedal.lastFrame!.colorFor(PedalButton.track1).rgb, 0);
+      expect(pedal.lastFrame!.colorFor(PedalButton.stop).rgb, 0);
       expect(tester.takeException(), isNull);
     });
 
@@ -1130,9 +1139,10 @@ void main() {
         await tester.tap(find.byKey(const Key('pedal_color_done')));
         await tester.pumpAndSettle();
         expect(control.state.pedalSetup, replacement);
+        // No draft: the colour editor's map shows the saved palette.
         expect(
           tester.widget<PedalSetupMap>(find.byType(PedalSetupMap)).palette,
-          isNull,
+          replacement.palette,
         );
         expect(
           tester.widget<LoopOutlinedButton>(find.byKey(save)).onTap,
@@ -1145,6 +1155,7 @@ void main() {
       tester,
     ) async {
       await pump(tester);
+      control.setMode(InteractionMode.custom);
       await openLeds(tester);
       await swatch(tester, 'red');
       store.refuse = true;
@@ -1153,22 +1164,67 @@ void main() {
       expect(find.byKey(const Key('pedal_setup_save_failed')), findsOneWidget);
       expect(control.state.pedalSetup.palette.isEmpty, isTrue);
       expect(
-        pedal.lastFrame!.colorFor(PedalButton.mode),
+        pedal.lastFrame!.colorFor(PedalButton.track1),
         PedalColor.defaultColor,
       );
       expect(
         tester
             .widget<PedalSetupMap>(find.byType(PedalSetupMap))
             .palette!
-            .colorFor(PedalButton.mode),
+            .colorFor(PedalButton.track1),
         PedalPaletteColor.red.color,
       );
       store.refuse = false;
       await tester.tap(find.byKey(save));
       await tester.pumpAndSettle();
       expect(
-        pedal.lastFrame!.colorFor(PedalButton.mode),
+        pedal.lastFrame!.colorFor(PedalButton.track1),
         PedalPaletteColor.red.color,
+      );
+    });
+
+    testWidgets('the map previews the saved palette in Custom colors only', (
+      tester,
+    ) async {
+      await pump(tester);
+      PedalSetupCap cap() => tester.widget<PedalSetupCap>(
+        find.byKey(const Key('pedal_setup_cap_track1')),
+      );
+      await openLeds(tester);
+      await swatch(tester, 'violet');
+      await tester.tap(find.byKey(save));
+      await tester.pumpAndSettle();
+      // Saving clears the draft; the map keeps the saved colour.
+      expect(cap().ledColor, PedalPaletteColor.violet.color);
+      // Track controls show what the pedal lights now (Record mode).
+      await tester.tap(find.byKey(const Key('pedal_setup_context_tracks')));
+      await tester.pumpAndSettle();
+      expect(cap().ledColor, isNot(PedalPaletteColor.violet.color));
+      // Back in the colour editor, with no draft, the saved choice shows.
+      await openLeds(tester);
+      expect(cap().ledColor, PedalPaletteColor.violet.color);
+    });
+
+    testWidgets('a saved colour lights only in Custom mode', (tester) async {
+      await pump(tester);
+      await openLeds(tester);
+      await swatch(tester, 'violet');
+      await tester.tap(find.byKey(save));
+      await tester.pumpAndSettle();
+      expect(
+        control.state.pedalSetup.palette.colorFor(PedalButton.track1),
+        PedalPaletteColor.violet.color,
+      );
+      // Record mode is a fixed function: the wire keeps its state colour.
+      expect(
+        pedal.lastFrame!.colorFor(PedalButton.track1),
+        isNot(PedalPaletteColor.violet.color),
+      );
+      control.setMode(InteractionMode.custom);
+      await tester.pumpAndSettle();
+      expect(
+        pedal.lastFrame!.colorFor(PedalButton.track1),
+        PedalPaletteColor.violet.color,
       );
     });
 
@@ -1200,7 +1256,7 @@ void main() {
           tester
               .widget<PedalSetupMap>(find.byType(PedalSetupMap))
               .palette!
-              .entryFor(PedalButton.mode),
+              .entryFor(PedalButton.track1),
           const CustomPaletteEntry(24),
         );
         await swatch(tester, 'add');
