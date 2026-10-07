@@ -29,12 +29,15 @@ class _FakeWifiClient implements WifiClient {
   /// Scripted refusals: each [connect] throws the next entry until the list
   /// is exhausted, then succeeds. Lets a test shape the exact stack wording
   /// (iwd race vs wrong password) and count re-activations.
-  final List<Error> connectErrors = [];
+  final List<Object> connectErrors = [];
   WifiStatus statusValue;
   List<WifiNetwork> networks;
   final connects = <(String, String?)>[];
   int disconnectCalls = 0;
   final forgotten = <String>[];
+
+  /// What [status] reads after a [forget], when set.
+  WifiStatus? statusAfterForget;
   Completer<void>? connectGate;
 
   /// Holds [status] open until completed — completing with an error makes the
@@ -66,7 +69,10 @@ class _FakeWifiClient implements WifiClient {
     connects.add((ssid, psk));
     final gate = connectGate;
     if (gate != null) await gate.future;
-    if (connectErrors.isNotEmpty) throw connectErrors.removeAt(0);
+    if (connectErrors.isNotEmpty) {
+      // An Error or the helper's WifiHelperException, as the test scripts it.
+      Error.throwWithStackTrace(connectErrors.removeAt(0), StackTrace.current);
+    }
     if (connectFails) throw StateError('authentication failed');
     statusValue = WifiStatus(
       supported: true,
@@ -91,11 +97,13 @@ class _FakeWifiClient implements WifiClient {
   @override
   Future<void> forget(String ssid) async {
     forgotten.add(ssid);
+    final after = statusAfterForget;
+    if (after != null) statusValue = after;
     networks = [
       for (final n in networks)
         if (n.ssid != ssid) n,
     ];
-    if (statusValue.ssid == ssid) {
+    if (after == null && statusValue.ssid == ssid) {
       statusValue = const WifiStatus(
         supported: true,
         enabled: true,
@@ -516,6 +524,9 @@ void main() {
       expect(client.connects.length, 1);
       expect(cubit.state.connectingSsid, isNull);
       expect(cubit.state.retrying, isFalse);
+      // No helper was running, so the link was left alone: the network the
+      // helper brought back stays up, and NetworkManager may still rejoin.
+      expect(client.disconnectCalls, 0);
     });
 
     test(
@@ -789,6 +800,47 @@ void main() {
       expect(cubit.state.lostSsid, 'The Studio');
     });
 
+    test(
+      'not for the network that was up before one that was forgotten',
+      () async {
+        final client = _FakeWifiClient(
+          status: const WifiStatus(
+            supported: true,
+            enabled: true,
+            connected: true,
+            ssid: 'Rehearsal',
+            autoConnect: {'The Studio': true, 'Rehearsal': true},
+            lastSsid: 'Rehearsal',
+          ),
+        )..statusAfterForget = studio;
+        final cubit = WifiCubit(repository: _repo(client));
+        addTearDown(cubit.close);
+        await cubit.load();
+
+        await cubit.forget('Rehearsal');
+        expect(cubit.state.status.lastSsid, 'The Studio');
+        expect(cubit.state.lostSsid, isNull);
+      },
+    );
+
+    test('not after a join is cancelled', () async {
+      final client = _FakeWifiClient(status: studio)
+        ..connectErrors.add(StateError('association took too long'));
+      final cubit = WifiCubit(
+        repository: _repo(client),
+        retryDelays: const [backoffWindow],
+      );
+      addTearDown(cubit.close);
+      await cubit.load();
+      client.statusValue = studio;
+
+      final pending = cubit.connect('Rehearsal', psk: 'goodpass');
+      await enterBackoff(cubit);
+      await cubit.cancelConnect();
+      await pending;
+      expect(cubit.state.lostSsid, isNull);
+    });
+
     test('not while the radio switch brings it back on its own', () async {
       final client = _FakeWifiClient(
         status: const WifiStatus(
@@ -806,6 +858,244 @@ void main() {
       await cubit.setEnabled(enabled: true);
       expect(cubit.state.status.enabled, isTrue);
       expect(cubit.state.lostSsid, isNull);
+    });
+  });
+
+  group('cancel leaves the console where it started', () {
+    const onStudio = WifiStatus(
+      supported: true,
+      enabled: true,
+      connected: true,
+      ssid: 'The Studio',
+      autoConnect: {'The Studio': true},
+      lastSsid: 'The Studio',
+    );
+
+    test('a cancel while the helper runs ends its activation', () async {
+      final client = _FakeWifiClient(status: onStudio)
+        ..connectGate = Completer<void>()
+        ..connectErrors.add(
+          const WifiHelperException(
+            'segno-wifi-ctl: connection failed',
+            restored: 'The Studio',
+          ),
+        );
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      final pending = cubit.connect('Rehearsal', psk: 'goodpass');
+      await pumpEventQueue();
+      await cubit.cancelConnect();
+      expect(client.disconnectCalls, 1);
+      client
+        ..statusValue = onStudio
+        ..connectGate!.complete();
+      await pending;
+
+      // The helper brought The Studio back; nothing more is done.
+      expect(client.connects, [('Rehearsal', 'goodpass')]);
+      expect(cubit.state.status.ssid, 'The Studio');
+      expect(cubit.state.errorMessage, isNull);
+    });
+
+    test('a join that went through after Cancel is undone', () async {
+      final client = _FakeWifiClient(status: onStudio)
+        ..connectGate = Completer<void>();
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      final pending = cubit.connect('Rehearsal', psk: 'goodpass');
+      await pumpEventQueue();
+      await cubit.cancelConnect();
+      client.connectGate!.complete();
+      await pending;
+
+      // Saved by this join, so forgotten; and The Studio is back.
+      expect(client.forgotten, ['Rehearsal']);
+      expect(client.connects.last, ('The Studio', null));
+      expect(cubit.state.status.ssid, 'The Studio');
+      expect(cubit.state.connectingSsid, isNull);
+    });
+
+    test(
+      'a saved network joined after Cancel, with nothing up before, is '
+      'disconnected and kept',
+      () async {
+        final client = _FakeWifiClient(
+          status: const WifiStatus(
+            supported: true,
+            enabled: true,
+            connected: false,
+            autoConnect: {'Rehearsal': true},
+          ),
+        )..connectGate = Completer<void>();
+        final cubit = WifiCubit(repository: _repo(client));
+        addTearDown(cubit.close);
+        await cubit.load();
+
+        final pending = cubit.connect('Rehearsal');
+        await pumpEventQueue();
+        await cubit.cancelConnect();
+        client.connectGate!.complete();
+        await pending;
+
+        expect(client.forgotten, isEmpty);
+        expect(client.disconnectCalls, 2);
+        expect(cubit.state.status.connected, isFalse);
+      },
+    );
+
+    test('a previous network the helper could not bring back is', () async {
+      final client = _FakeWifiClient(status: onStudio)
+        ..connectGate = Completer<void>()
+        ..connectErrors.add(
+          const WifiHelperException('segno-wifi-ctl: connection failed'),
+        );
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      final pending = cubit.connect('Rehearsal', psk: 'goodpass');
+      await pumpEventQueue();
+      await cubit.cancelConnect();
+      client.connectGate!.complete();
+      await pending;
+
+      expect(client.connects.last, ('The Studio', null));
+      expect(cubit.state.status.ssid, 'The Studio');
+    });
+
+    test('a join after Cancel waits for the cancelled helper call', () async {
+      final client = _FakeWifiClient(status: onStudio)
+        ..connectGate = Completer<void>()
+        ..connectErrors.add(
+          const WifiHelperException(
+            'segno-wifi-ctl: connection failed',
+            restored: 'The Studio',
+          ),
+        );
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      final first = cubit.connect('Rehearsal', psk: 'goodpass');
+      await pumpEventQueue();
+      await cubit.cancelConnect();
+      client.statusValue = onStudio;
+
+      final second = cubit.connect('Cafe');
+      await pumpEventQueue();
+      // Still one helper call: the second waits rather than racing it.
+      expect(client.connects.length, 1);
+      expect(cubit.state.connectingSsid, 'Cafe');
+
+      final gate = client.connectGate!;
+      client.connectGate = null;
+      gate.complete();
+      await first;
+      await second;
+      expect(client.connects.map((c) => c.$1), ['Rehearsal', 'Cafe']);
+      expect(cubit.state.status.ssid, 'Cafe');
+      expect(cubit.state.connectingSsid, isNull);
+    });
+
+    test(
+      'a cancel while waiting for an earlier join takes nothing down',
+      () async {
+        final client = _FakeWifiClient(status: onStudio)
+          ..connectGate = Completer<void>()
+          ..connectErrors.add(
+            const WifiHelperException(
+              'segno-wifi-ctl: connection failed',
+              restored: 'The Studio',
+            ),
+          );
+        final cubit = WifiCubit(repository: _repo(client));
+        addTearDown(cubit.close);
+        await cubit.load();
+
+        final first = cubit.connect('Rehearsal', psk: 'goodpass');
+        await pumpEventQueue();
+        await cubit.cancelConnect();
+        expect(client.disconnectCalls, 1);
+        client.statusValue = onStudio;
+
+        final second = cubit.connect('Cafe');
+        await pumpEventQueue();
+        await cubit.cancelConnect();
+        client.connectGate!.complete();
+        await first;
+        await second;
+
+        expect(client.disconnectCalls, 1);
+        expect(client.connects.map((c) => c.$1), ['Rehearsal']);
+        expect(cubit.state.status.ssid, 'The Studio');
+      },
+    );
+  });
+
+  group('a failed join that brought the old network back', () {
+    test('is not retried', () async {
+      final client = _FakeWifiClient()
+        ..connectErrors.add(
+          const WifiHelperException(
+            'segno-wifi-ctl: timed out waiting for association',
+            restored: 'The Studio',
+          ),
+        );
+      final cubit = WifiCubit(
+        repository: _repo(client),
+        retryDelays: const [Duration.zero, Duration.zero],
+      );
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      await cubit.connect('Rehearsal');
+      expect(client.connects.length, 1);
+      expect(cubit.state.errorKind, WifiJoinErrorKind.timeout);
+      expect(cubit.state.failedSsid, 'Rehearsal');
+    });
+
+    test('NM wanting secrets right after a typed key is the key', () async {
+      final client = _FakeWifiClient()
+        ..connectErrors.add(
+          const WifiHelperException(
+            'segno-wifi-ctl: timed out waiting for association '
+            '(secrets were required)',
+            restored: 'The Studio',
+          ),
+        );
+      final cubit = WifiCubit(
+        repository: _repo(client),
+        retryDelays: const [Duration.zero, Duration.zero],
+      );
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      await cubit.connect('Rehearsal', psk: 'wrongpass');
+      expect(client.connects.length, 1);
+      expect(cubit.state.errorKind, WifiJoinErrorKind.credentials);
+    });
+
+    test('one that restored nothing is still retried', () async {
+      final client = _FakeWifiClient()
+        ..connectErrors.add(
+          const WifiHelperException(
+            'segno-wifi-ctl: timed out waiting for association',
+          ),
+        );
+      final cubit = WifiCubit(
+        repository: _repo(client),
+        retryDelays: const [Duration.zero, Duration.zero],
+      );
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      await cubit.connect('Rehearsal');
+      expect(client.connects.length, 2);
+      expect(cubit.state.status.connected, isTrue);
     });
   });
 
@@ -850,7 +1140,7 @@ void main() {
       now = now.add(const Duration(seconds: 10));
       await cubit.checkConnectivity();
       await cubit.refresh();
-      now = now.add(const Duration(seconds: 19));
+      now = now.add(const Duration(seconds: 14));
       await cubit.checkConnectivity();
       expect(client.connectivityChecks, 1);
 
@@ -858,6 +1148,28 @@ void main() {
       await cubit.checkConnectivity();
       expect(client.connectivityChecks, 2);
     });
+
+    test(
+      'every tick of the page timer checks, though status reads vary',
+      () async {
+        var now = DateTime(2026, 10, 7, 12);
+        final client = _FakeWifiClient(status: connected);
+        final cubit = WifiCubit(repository: _repo(client), clock: () => now);
+        addTearDown(cubit.close);
+        await cubit.load();
+
+        // The page refreshes once per interval; the check is timed after a
+        // status read, here 2 s on one tick and instant on the next.
+        final tick = DateTime(2026, 10, 7, 12);
+        now = tick.add(const Duration(seconds: 2));
+        await cubit.refresh();
+        now = tick.add(WifiCubit.connectivityInterval);
+        await cubit.refresh();
+        now = tick.add(WifiCubit.connectivityInterval * 2);
+        await cubit.refresh();
+        expect(client.connectivityChecks, 3);
+      },
+    );
 
     test('a new connection is checked at once', () async {
       final now = DateTime(2026, 10, 7, 12);

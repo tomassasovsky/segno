@@ -30,7 +30,13 @@ void main() {
       // drive the failure banner the mockups specify.
       await expectLater(
         client.connect('Studio 5G', psk: 'nope'),
-        throwsA(isA<StateError>()),
+        throwsA(
+          isA<WifiHelperException>().having(
+            (e) => e.restored,
+            'restored',
+            'MyHouseWTF_es',
+          ),
+        ),
       );
       await client.connect(
         'Studio 5G',
@@ -47,7 +53,7 @@ void main() {
 
         await expectLater(
           client.connect(absent.ssid),
-          throwsA(isA<StateError>()),
+          throwsA(isA<WifiHelperException>()),
         );
       },
     );
