@@ -2297,8 +2297,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// An encoder detent turn: accumulates into the master output gain.
   void encoderTurned(int delta) {
     _log('encoder $delta');
-    // A continuous value: it runs behind the power-off dialog, and stops once
-    // the flush suspends input.
+    // A stage turn only: with a page or dialog open (the power-off dialog
+    // included) EncoderNavigation moves focus instead. Stops once the flush
+    // suspends input.
     if (_inputRetired || _inputLocked() || _controlInputSuspended) return;
     if (state.mode == InteractionMode.mixer) {
       for (var step = 0; step < delta.abs(); step++) {
