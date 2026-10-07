@@ -4431,6 +4431,14 @@
                     }
             }
     },
+    "a11yMixerEditFx": "Edit track {number} effects",
+    "@a11yMixerEditFx": {
+            "placeholders": {
+                    "number": {
+                            "type": "int"
+                    }
+            }
+    },
     "a11yMixerEnableFx": "Enable track {number} effects",
     "@a11yMixerEnableFx": {
             "placeholders": {
@@ -5799,6 +5807,15 @@
     "@footFadeFailure": {
         "description": "Foot Fade performance surface."
     },
+    "footFadeRefusedEmpty": "{count, plural, =1{The track is empty: there is nothing to fade.} other{No track has a recording: there is nothing to fade.}}",
+    "@footFadeRefusedEmpty": {
+        "description": "An assigned action aimed only at empty tracks.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
     "actionModePeel": "Peel",
     "@actionModePeel": {
         "description": "Foot Peel performance surface."
@@ -5999,6 +6016,15 @@
     "footReverseFailure": "The track could not be turned around. Try again.",
     "@footReverseFailure": {
         "description": "Foot Reverse: a direction toggle was refused."
+    },
+    "footReverseRefusedEmpty": "{count, plural, =1{The track is empty: there is nothing to turn around.} other{No track has a recording: there is nothing to turn around.}}",
+    "@footReverseRefusedEmpty": {
+        "description": "An assigned action aimed only at empty tracks.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
     },
     "footReverseOverdubRefused": "Overdub is unavailable while the track is reversed",
     "@footReverseOverdubRefused": {
