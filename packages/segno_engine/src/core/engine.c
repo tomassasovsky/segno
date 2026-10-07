@@ -1173,6 +1173,9 @@ le_engine* le_engine_create(void) {
                              engine->perf.layer_staging_storage,
                              LE_LAYER_STAGING_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
+  /* No take has dropped a frame (#1198): 0 would name frame 0. */
+  atomic_store_explicit(&engine->a_perf_first_drop_frame, UINT64_MAX,
+                        memory_order_relaxed);
   /* Tempo-grid SETTINGS: seeded once here (not reset by configure on each
    * start — the 2f0513a persistence pattern). Everything defaults to
    * grid-off values: no tempo (0 = unset, source none), 4/4, sync on,

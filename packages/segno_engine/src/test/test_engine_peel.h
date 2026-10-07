@@ -758,7 +758,7 @@ static void test_peel_perf_fact(void) {
   peel_pass(e, .5f);
   peel_pass(e, .5f);
   const char* dir = render_test_dir("peel-fact");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   process_const(e, 0.0f, LOOP_N, out);
   const int32_t previous = load_i32(&t->lanes[0].a_live);
@@ -806,7 +806,7 @@ static void test_peel_stem_parity(void) {
     history_layer_patterns(a, bb, c);
     const char* dir = render_test_dir(block == 1 ? "peel-parity-1" : "peel-parity-128");
     const char* arm = history_arm_image(e, dir);
-    CHECK(le_perf_arm(e, dir) == LE_OK);
+    CHECK(perf_arm_dir(e, dir) == LE_OK);
     drain(e);
     static float live[4096];
     int at = history_process(e, live, 0, 37, block);

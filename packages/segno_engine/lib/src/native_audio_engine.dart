@@ -17,6 +17,7 @@ import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
 import 'package:segno_engine/src/output_fx_snapshot.dart';
+import 'package:segno_engine/src/perf_target.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
 import 'package:segno_engine/src/track_effect.dart';
@@ -2391,14 +2392,33 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult perfArm(String captureDir) {
+  EngineResult perfArm(PerfTarget target) {
     _checkAlive();
-    final dirPtr = captureDir.toNativeUtf8();
+    final dirPtr = target.captureDir.toNativeUtf8();
+    final sidecar = target.liveSidecarDir;
+    final sidecarPtr = sidecar == null ? nullptr : sidecar.toNativeUtf8();
+    final mirror = target.mirrorDir;
+    final mirrorPtr = mirror == null ? nullptr : mirror.toNativeUtf8();
+    final native = calloc<le_perf_target>();
     try {
-      return EngineResult.fromCode(
-        _bindings.le_perf_arm(_engine, dirPtr.cast()),
-      );
+      native.ref
+        ..capture_dir = dirPtr.cast()
+        ..live_sidecar_dir = sidecarPtr.cast()
+        ..volume_generation = target.volumeGeneration
+        ..part_bytes = target.partBytes
+        ..ring_seconds = target.ringSeconds
+        // UINT64_MAX (all ones) is the native "no budget".
+        ..reserve_bytes = target.reserveBytes ?? -1
+        ..mirror_dir = mirrorPtr.cast()
+        ..checkpoint_ms = target.checkpointMs;
+      for (var i = 0; i < PerfTarget.takeIdBytes; i++) {
+        native.ref.take_id[i] = target.takeId[i];
+      }
+      return EngineResult.fromCode(_bindings.le_perf_arm(_engine, native));
     } finally {
+      calloc.free(native);
+      if (sidecarPtr != nullptr) malloc.free(sidecarPtr);
+      if (mirrorPtr != nullptr) malloc.free(mirrorPtr);
       malloc.free(dirPtr);
     }
   }
@@ -2440,17 +2460,6 @@ class NativeAudioEngine implements AudioEngine {
       calloc
         ..free(freePtr)
         ..free(totalPtr);
-      malloc.free(pathPtr);
-    }
-  }
-
-  @override
-  bool syncDirectory(String path) {
-    if (path.isEmpty) return false;
-    final pathPtr = path.toNativeUtf8();
-    try {
-      return EngineResult.fromCode(_bindings.le_sync_dir(pathPtr.cast())).isOk;
-    } finally {
       malloc.free(pathPtr);
     }
   }

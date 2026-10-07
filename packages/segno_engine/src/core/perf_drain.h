@@ -3,11 +3,12 @@
  * of the DAW-export stack).
  *
  * A dedicated background thread — spawned by le_perf_arm, joined by
- * le_perf_disarm — that drains part 1's capture rings (audio_ring.h) into raw
- * float PCM temp files plus a `performance.json` sidecar, flushing every
- * ~250 ms. WAV headers are written only at finalize (a later part): a crash
- * mid-capture leaves salvageable raw PCM + a parseable sidecar, never a
- * truncated WAV (umbrella D-FMT).
+ * le_perf_disarm — that drains part 1's capture rings (audio_ring.h) into
+ * ordered 32-bit float WAV parts per stream plus a `performance.json`
+ * sidecar, flushing every ~250 ms (#1198; the format is described above
+ * le_perf_target in segno_engine_api.h). A part's header carries zero sizes
+ * until the part is sealed, so a crash mid-capture leaves whole-frame float
+ * payloads after a fixed 84-byte header plus a parseable sidecar.
  *
  * It runs at a below-normal, explicitly non-inherited scheduling priority and
  * its steady-state cycle performs NO heap allocation — not because either was
@@ -27,6 +28,10 @@
 #ifndef SEGNO_PERF_DRAIN_H
 #define SEGNO_PERF_DRAIN_H
 
+#include <stdint.h>
+
+#include "segno_engine_api.h" /* le_perf_target */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -36,29 +41,24 @@ typedef struct le_engine le_engine; /* opaque; full definition in engine_private
 /* Opaque drain-thread handle, one per armed capture session. */
 typedef struct le_perf_drain le_perf_drain;
 
-/* Why a capture session ended, recorded in the sidecar's `stopped_early`
- * field (absent on a normal disarm — only le_perf_arm/disarm's own bookkeeping
- * needs `finalized`, still false in this slice either way). */
-typedef enum le_perf_stop_reason {
-  LE_PERF_STOP_DISARM = 0,         /* a normal, caller-requested disarm */
-  LE_PERF_STOP_DEVICE_CHANGED = 1, /* engine reconfigure while armed */
-} le_perf_stop_reason;
-
 /* Starts the drain thread for `engine`'s just-armed perf capture: creates
- * `capture_dir` if it does not already exist, opens the master + per-monitor
- * PCM files, and begins the drain-flush-sleep loop. `capture_dir` is copied
- * (the caller's buffer need not outlive the call). Returns the handle, or
+ * the target's capture (and live-sidecar) directory if missing, opens the
+ * first part of the master and of every captured input, and begins the
+ * drain-flush-sleep loop. `target` is copied (its strings need not outlive the
+ * call); `ring_seconds` is what the arm granted, reported in the sidecar. Returns the handle, or
  * NULL on failure (directory could not be created, or the thread could not be
  * spawned) — the caller must not proceed to arm without a working drain
  * thread. Call once per capture session, after the ring set is published
  * (i.e. after LE_CMD_PERF_ARM is pushed) so the rings the drain thread reads
  * are already valid. */
-le_perf_drain* le_perf_drain_start(le_engine* engine, const char* capture_dir);
+le_perf_drain* le_perf_drain_start(le_engine* engine,
+                                   const le_perf_target* target,
+                                   int32_t ring_seconds);
 
-/* Signals the drain thread to run one final drain-and-flush pass and stop,
- * then joins it and frees `drain`. `reason` is recorded in the final sidecar
+/* Signals the drain thread to run one final drain-and-flush pass — which
+ * also seals every open part — and stop, then joins it and frees `drain`. `reason` is recorded in the final sidecar
  * flush's `stopped_early` field UNLESS the thread already self-stopped for
- * its own reason (a disk-full write failure) — that reason always wins, since
+ * its own reason (a failed write, the reserve, a dropped frame) — that reason always wins, since
  * the thread reached it first. Safe to call on a thread that already
  * self-stopped early — the join simply reaps it. `drain` must not be used
  * again afterward. No-op on NULL. */

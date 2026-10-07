@@ -73,7 +73,7 @@ esac
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
   src/core/restore_declip.c src/core/restore_halfband.c \
-  src/core/audio_ring.c src/core/perf_drain.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
+  src/core/audio_ring.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c"
 
 # Vendored RNNoise (third_party/rnnoise, BSD-3-Clause — offline loop-close
@@ -146,6 +146,15 @@ echo "== building MIDI sink race tests =="
 $CC $STD $EXTRA_CFLAGS src/test/test_midi_sink_races.c \
   $ENGINE_SRC "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_midi_sink_race_tests.exe"
 "$OUT/segno_midi_sink_race_tests.exe"
+
+echo "== building capture drain race tests =="
+# The drain thread rolling parts against a running callback and a snapshot
+# reader (#1198). Production engine, no test hooks: before the races-only exit
+# so the TSAN job covers it.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_perf_drain_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_perf_drain_race_tests.exe"
+"$OUT/segno_perf_drain_race_tests.exe"
 
 if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then
   exit 0

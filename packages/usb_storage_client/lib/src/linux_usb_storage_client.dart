@@ -244,9 +244,10 @@ class LinuxUsbStorageClient implements UsbStorageClient {
       file.deleteSync();
       return true;
     } on FileSystemException {
-      // Already taken by the helper (it deletes a request before it
-      // unmounts) or never written: nothing to withdraw, and the answer, if
-      // any, is still coming.
+      // Already taken by the helper (it renames a request away before it
+      // reads it, so its take and this delete cannot both succeed) or never
+      // written: nothing to withdraw, and the answer, if any, is still
+      // coming.
       return false;
     }
   }

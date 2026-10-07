@@ -1656,8 +1656,13 @@ class FakeAudioEngine implements AudioEngine {
   /// The `captureDir` passed to the most recent [perfArm] call.
   String? lastPerfCaptureDir;
 
+  /// The target of the most recent perfArm.
+  PerfTarget? lastPerfTarget;
+
   @override
-  EngineResult perfArm(String captureDir) {
+  EngineResult perfArm(PerfTarget target) {
+    final captureDir = target.captureDir;
+    lastPerfTarget = target;
     calls.add('perfArm');
     lastPerfCaptureDir = captureDir;
     return perfArmResult;
@@ -1973,9 +1978,6 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  bool syncDirectory(String path) => path.isNotEmpty;
-
-  @override
   VolumeSpace? volumeSpace(String path) => freeBytes == null
       ? null
       : VolumeSpace(totalBytes: totalBytes, freeBytes: freeBytes!);
@@ -2044,6 +2046,10 @@ class _LengthSnapshot extends EngineSnapshot {
         perfOverruns: source.perfOverruns,
         perfZeroFilledFrames: source.perfZeroFilledFrames,
         perfStopped: source.perfStopped,
+        perfStopReason: source.perfStopReason,
+        perfOvers: source.perfOvers,
+        perfCaptureStreams: source.perfCaptureStreams,
+        perfCaptureFrameBytes: source.perfCaptureFrameBytes,
         tempoBpm: source.tempoBpm,
         tempoSource: source.tempoSource,
         tsNum: source.tsNum,

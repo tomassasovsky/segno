@@ -1415,6 +1415,34 @@ typedef struct le_snapshot {
   int32_t speed_denom;
   /* Trailing (#1179 Part 3a): 1 while Transpose is bypassed globally. */
   int32_t transpose_bypass;
+  /* Seconds each capture ring of the most recent take was granted
+   * (le_perf_target.ring_seconds after the memory cap); 0 before any arm. */
+  int32_t perf_ring_seconds;
+  /* ---- performance take accounting (#1198; trailing) ---- */
+  /* Why the most recent take stopped: an le_perf_stop_reason, NONE while it
+   * runs. Survives disarm; reset by the next arm. */
+  int32_t perf_stop_reason;
+  /* Bytes the drain has written for the take: part headers and samples,
+   * events.log and layer files. */
+  uint64_t perf_bytes_written;
+  /* The first capture frame a ring could not take, or UINT64_MAX. A take
+   * that drops a frame ends there (LE_PERF_STOP_SLOW_STORAGE). Neither this
+   * nor perf_overruns moves once the take has stopped: a full ring after a
+   * stop is not part of the take. */
+  uint64_t perf_first_drop_frame;
+  /* Samples above full scale (|x| > 1.0) across every stream so far. */
+  uint64_t perf_overs;
+  /* The streams the armed take captures (or the next arm would: the first
+   * enabled output pair plus every monitored input the device has), and the
+   * bytes one frame of all of them takes, so the app can tell whether a
+   * volume holds a minimum take of every stream before it arms. 0 when
+   * nothing could be captured. */
+  int32_t perf_capture_streams;
+  uint32_t perf_capture_frame_bytes;
+  /* Checkpoints of the most recent take that could not be written (a failed
+   * sync or slot write); each leaves the other slot standing and the take
+   * running. Reset by the next arm. */
+  uint32_t perf_checkpoint_failures;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -3017,36 +3045,136 @@ LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output
 /* ---- performance recording (RT capture taps + capture-to-disk; parts 1-2 of
  * the DAW-export stack) ---- *
  * While armed, the audio thread copies two kinds of streams into pre-published
- * lock-free rings: the post-limiter master output (stereo from the first
- * enabled output pair; mono when the device has only one), and each hardware
- * input actively monitored AT ARM (post-monitor-FX, pre-route; frozen for the
- * whole arm session — an input enabled later is not retroactively captured).
- * Rings are allocated control-side at arm (>= 2 s of audio at the device rate)
- * and published to the audio thread with LE_CMD_PERF_ARM; on overflow the
- * audio thread drops the frame and increments the overrun atomic — it never
- * blocks or allocates. Status (armed / frames / overruns) is exposed only via
+ * lock-free rings: the master capture (the first enabled output pair, tapped
+ * BEFORE the master gain and limiter; mono when only one channel of it is
+ * enabled), and each hardware input actively monitored AT ARM (post-monitor-
+ * FX, pre-route; frozen for the whole arm session — an input enabled later is
+ * not retroactively captured). Rings are allocated control-side at arm and
+ * published to the audio thread with LE_CMD_PERF_ARM; on overflow the audio
+ * thread drops the frame and increments the overrun atomic — it never blocks
+ * or allocates. Status (armed / frames / overruns) is exposed only via
  * le_snapshot; there is no separate query call.
  *
  * A dedicated background drain thread (perf_drain.h; spawned by le_perf_arm,
- * joined by le_perf_disarm) empties those rings into raw PCM temp files plus a
- * `performance.json` sidecar under the capture directory, flushed every
- * ~250 ms. WAV headers are written only at finalize (a later part): a crash
- * mid-capture leaves salvageable raw PCM + a parseable sidecar, never a
- * truncated WAV. */
+ * joined by le_perf_disarm) writes each stream as ORDERED 32-bit float WAV
+ * PARTS (#1198): `master-001.wav`, `master-002.wav`, … and
+ * `input-<n>-001.wav`, each at most `part_bytes` long, header included. Every
+ * part starts with the same 84-byte header — RIFF/WAVE, a 16-byte `fmt `
+ * chunk (IEEE float, tag 3, 32 bits), a 32-byte `sgno` chunk (the take id,
+ * the stream: 0 master, 1 + n input n, and the part index from 1), then
+ * `data` — written with zero sizes and patched when the part is SEALED (full,
+ * or at the end of the take), at which point its SHA-256 over the payload is
+ * recorded. Samples are written as captured, never clamped; samples whose
+ * magnitude exceeds 1.0 are counted per part (`overs`). A `performance.json`
+ * sidecar listing the parts is rewritten every ~250 ms in `live_sidecar_dir`.
+ * Finalize therefore copies nothing: the parts are the take.
+ *
+ * Every stream ends at the same frame, and a take stops on its own in three
+ * cases (le_snapshot.perf_stop_reason, the sidecar's `stopped_early`):
+ *   - the destination reaches its reserve: the drain re-reads the volume's
+ *     free bytes every ~5 s and, between readings, subtracts every byte it
+ *     writes; it writes the whole frames every stream can still take
+ *     together above `reserve_bytes` plus LE_PERF_ALLOWANCE_BYTES, then stops
+ *     (`reserve_reached`). A volume whose free space cannot be read has no
+ *     budget and stops only on a failed write;
+ *   - the storage falls behind: the first frame the audio thread could not
+ *     queue ends the take there, with no padding and nothing after it
+ *     (`slow_storage`). Frames counted but never tapped (#710) are not a
+ *     storage fault: they are still filled with silence and the take goes on;
+ *   - a write fails (`disk_full`, kept for every bundle already on disk).
+ *
+ * DURABILITY (#727, #1198 D4). A checkpoint thread, started and stopped with
+ * the take, makes the take durable every `checkpoint_ms` without ever making
+ * the drain wait on the device: it copies the progress the drain has
+ * flushed, fdatasyncs every part, events.log and layer file that progress
+ * names, syncs the take directory, then rewrites one of two fixed slot
+ * files, `checkpoint-a.json` and `checkpoint-b.json`, alternately, in place
+ * (truncate, write, fsync; never a rename, which FAT and exFAT do not make
+ * atomic). Each slot names the take, the boot it was written in, its parts
+ * with their frames, and ends with `"checksum"`: the SHA-256 hex of every
+ * byte before that key. With `mirror_dir` the same bytes go to the same slot
+ * there too. A final checkpoint is written when the take stops, on every
+ * path. After a power cut at most the last `checkpoint_ms` is lost. */
+
+/* Where and how one take is written (#1198). */
+typedef struct le_perf_target {
+  /* The take's directory on its destination (created if missing). */
+  const char* capture_dir;
+  /* Where performance.json is rewritten every drain cycle: the capture
+   * directory for an Internal take, an Internal mirror directory for a take
+   * on a removable volume (whose filesystem must not be touched every cycle).
+   * NULL means capture_dir. */
+  const char* live_sidecar_dir;
+  /* The take's identity, written into every part's `sgno` chunk and the
+   * sidecar. */
+  uint8_t take_id[16];
+  /* The removable volume generation the take is armed on, or -1 for Internal;
+   * recorded in the sidecar so recovery can tell whether the volume stayed
+   * mounted for the whole take. */
+  int64_t volume_generation;
+  /* The most one part file may hold, header included; 0 means
+   * LE_PERF_PART_BYTES. Must leave room for at least one stereo frame and fit
+   * the 32-bit RIFF size field. */
+  uint64_t part_bytes;
+  /* Seconds of audio each capture ring holds, 1 to LE_PERF_RING_SECONDS_MAX;
+   * 0 means LE_PERF_RING_SECONDS_DEFAULT. Lowered (never below the default,
+   * nor below the request) so that every ring together stays within
+   * LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 stereo inputs
+   * at 96 kHz take 33 rings of 2^19 samples, 66 MiB. The sidecar's
+   * `ring_seconds` and le_snapshot.perf_ring_seconds report what was
+   * granted. */
+  int32_t ring_seconds;
+  /* Bytes the take must leave free on its destination, on top of
+   * LE_PERF_ALLOWANCE_BYTES: Internal keeps its storage reserve, a removable
+   * volume a small floor. UINT64_MAX means no budget: the take stops only on
+   * a failed write. */
+  uint64_t reserve_bytes;
+  /* An Internal directory that receives a copy of every checkpoint, for a
+   * take on a removable volume (the mirror wins over the stick's own slots);
+   * NULL or empty for none. Created if missing. */
+  const char* mirror_dir;
+  /* How often the checkpoint thread makes the take durable, in ms (5000 for
+   * a real take); 0 checkpoints only when the take stops. */
+  int32_t checkpoint_ms;
+} le_perf_target;
+
+/* 2,000,000,000 bytes: under FAT32's 4 GiB file limit, RIFF's 32-bit size
+ * fields, and 2^31 for readers that keep RIFF sizes in a signed int. */
+#define LE_PERF_PART_BYTES 2000000000ULL
+#define LE_PERF_PART_HEADER_BYTES 84
+#define LE_PERF_RING_SECONDS_DEFAULT 2
+#define LE_PERF_RING_SECONDS_MAX 8
+#define LE_PERF_RING_BYTES_MAX (64u * 1024u * 1024u)
+/* Room kept above `reserve_bytes` for the files rewritten in place while a
+ * take runs (the sidecar), which the budget does not count write by write. */
+#define LE_PERF_ALLOWANCE_BYTES 1048576
+
+/* Why the most recent take stopped (le_snapshot.perf_stop_reason). NONE while
+ * a take runs; the first reason to happen is kept until the next arm. */
+typedef enum le_perf_stop_reason {
+  LE_PERF_STOP_NONE = 0,
+  LE_PERF_STOP_DISARM = 1,          /* le_perf_disarm */
+  LE_PERF_STOP_DEVICE_CHANGED = 2,  /* the engine reconfigured while armed */
+  LE_PERF_STOP_WRITE_FAILED = 3,    /* a write failed; sidecar `disk_full` */
+  LE_PERF_STOP_RESERVE_REACHED = 4, /* the destination reached its reserve */
+  LE_PERF_STOP_SLOW_STORAGE = 5,    /* a capture ring overflowed */
+} le_perf_stop_reason;
 
 /* Arms performance-recording capture: allocates the master + per-monitor
  * rings, freezes the captured input set from whichever inputs are currently
  * monitored, publishes them to the audio thread, and starts the drain thread
- * writing into `capture_dir` (created if it does not already exist).
+ * writing `target` (copied; its strings need not outlive the call).
  * Idempotent (a second call while already armed is a no-op success — the
- * armed session's original `capture_dir` keeps draining; the repeat call's
- * `capture_dir` argument is still required to be non-null/non-empty but is
- * otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING (not configured),
- * LE_ERR_INVALID (null/empty `capture_dir`, no output enabled to capture, or
- * ring allocation failure), or LE_ERR_DEVICE (the drain thread could not be
- * started — e.g. the directory could not be created — or a previous disarm's
- * quiescent wait bailed out and left a stale drain session still live). */
-LE_EXPORT int32_t le_perf_arm(le_engine* engine, const char* capture_dir);
+ * armed session keeps its original target; the repeat call's target must
+ * still be valid but is otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING
+ * (not configured), LE_ERR_INVALID (null target, null/empty `capture_dir`, a
+ * `part_bytes` with no room for a frame or past the RIFF limit, a
+ * `ring_seconds` outside 0 to LE_PERF_RING_SECONDS_MAX, a negative
+ * `checkpoint_ms`, no output enabled to capture, or ring allocation failure),
+ * or LE_ERR_DEVICE (the drain thread could not be started — e.g. a directory
+ * could not be created — or a previous disarm's quiescent wait bailed out and
+ * left a stale drain session still live). */
+LE_EXPORT int32_t le_perf_arm(le_engine* engine, const le_perf_target* target);
 
 /* Disarms performance-recording capture: tells the audio thread to stop
  * writing, waits for a published-quiescent handshake to confirm it has (so
@@ -3090,19 +3218,6 @@ LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
  * otherwise touch, so it is stated here rather than left to be discovered. */
 LE_EXPORT int32_t le_volume_space(const char* path, uint64_t* out_total_bytes,
                                   uint64_t* out_free_bytes);
-
-/* fsync(2) on the directory at `path`, so the entries in it — a file renamed
- * into it, a file created in it — survive a power cut or a pulled drive. A
- * file's own fsync makes its bytes durable but not its name: on ext4 a copy
- * that returned within the commit interval could otherwise come back after a
- * power cut as a part file with no final name (#1177, #1195). Dart has no way
- * to open a directory, so the storage repository asks here.
- *
- * LE_ERR_INVALID on a NULL or empty path; LE_ERR_DEVICE when the path cannot
- * be opened as a directory or the sync fails. LE_OK on Windows without doing
- * anything: NTFS journals its directory entries. Control thread only; it can
- * take as long as the device's flush. */
-LE_EXPORT int32_t le_sync_dir(const char* path);
 
 /* ---- recorded-audio identity and durable publication (#1198) ----
  * Engine-free, like le_volume_space: questions about bytes and paths, safe to
@@ -3158,6 +3273,27 @@ LE_EXPORT int32_t le_digest_end(void* state, uint8_t* out);
  * empty `path`; LE_ERR_DEVICE when the directory cannot be opened or the sync
  * fails. */
 LE_EXPORT int32_t le_fs_sync_dir(const char* path);
+
+/* le_fs_sync_dir, also reporting why it failed: on LE_ERR_DEVICE,
+ * *out_errno (when not NULL) is the OS error (ENOENT for a missing path,
+ * ENOTDIR for a file, EIO from a drive that went away mid-sync), so a caller
+ * can tell a pulled drive from a failing one (#1177). *out_errno is 0 on
+ * LE_OK. */
+LE_EXPORT int32_t le_fs_sync_dir_errno(const char* path, int32_t* out_errno);
+
+/* Renames `from` to `to` (both UTF-8) only if nothing is at `to`, as one
+ * atomic step: renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL)
+ * on macOS, MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows. A copy
+ * publishes its part this way, so a name another writer took meanwhile is
+ * never overwritten and no empty placeholder ever stands at the final name
+ * (#1177, #1195).
+ *
+ * Returns LE_OK with *out_errno = 0; LE_ERR_INVALID for a NULL or empty path
+ * or a NULL `out_errno`; LE_ERR_UNSUPPORTED when this kernel or filesystem
+ * cannot refuse a replacement (the caller then falls back); LE_ERR_DEVICE
+ * with *out_errno set to the OS error otherwise, EEXIST when `to` is taken. */
+LE_EXPORT int32_t le_fs_rename_noreplace(const char* from, const char* to,
+                                         int32_t* out_errno);
 
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's

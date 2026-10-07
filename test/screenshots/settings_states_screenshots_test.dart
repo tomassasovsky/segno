@@ -35,6 +35,7 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/fx/fx_pedal_assignments_page.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/settings/settings.dart';
+import 'package:segno/storage/cubit/storage_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/application/tuner_settings.dart';
@@ -42,7 +43,9 @@ import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 import 'package:update_repository/update_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -522,6 +525,7 @@ void main() {
     HighContrastCubit contrast,
     RefreshRateCubit refresh,
     ConsoleFactsCubit facts,
+    StorageCubit storage,
     PedalCubit pedal,
     UpdateCubit update,
     DisplayBrightnessCubit brightness,
@@ -544,6 +548,45 @@ void main() {
     final pedal = PedalCubit(
       pedal: PedalRepository(NoopPedalLink()),
     );
+    // The pen's own numbers (31 `Storage overview`): Internal 128 GB with
+    // 64.0 GB free, SEGNO USB 32 GB with 24.2 GB free, at 48 kHz.
+    final usb = FakeUsbStorageClient(
+      initial: const [
+        RemovableVolumeRecord(
+          generation: 1,
+          kname: 'sda1',
+          fingerprint: 'SanDisk_Ultra_4C530001-1A2B-3C4D',
+          label: 'SEGNO USB',
+          fsType: 'exfat',
+          mountPoint: '/run/media/segno/1-SEGNO_USB',
+          sizeBytes: 32000000000,
+          status: RemovableVolumeRecordStatus.mounted,
+          readOnly: false,
+          writeBytesPerSecond: 16777216,
+        ),
+      ],
+    );
+    final storageRepository = StorageRepository(
+      guards: GuardRegistry(),
+      client: usb,
+      // Absent on purpose: Internal is measured at the nearest parent, `/`.
+      exportsRoot: () async => '/segno-preview-absent/exports',
+      volumeSpace: (path) => switch (path) {
+        '/' => const VolumeSpace(
+          totalBytes: 128000000000,
+          freeBytes: 64000000000,
+        ),
+        '/run/media/segno/1-SEGNO_USB' => const VolumeSpace(
+          totalBytes: 32000000000,
+          freeBytes: 24200000000,
+        ),
+        _ => null,
+      },
+    );
+    final storage = StorageCubit(
+      repository: storageRepository,
+      sampleRate: () => 48000,
+    );
     final update = _MockUpdateCubit();
     whenListen(
       update,
@@ -554,6 +597,8 @@ void main() {
     addTearDown(() => unawaited(contrast.close()));
     addTearDown(() => unawaited(refresh.close()));
     addTearDown(() => unawaited(facts.close()));
+    addTearDown(() => unawaited(storage.close()));
+    addTearDown(() => unawaited(storageRepository.dispose()));
     addTearDown(() => unawaited(pedal.close()));
     final brightness = DisplayBrightnessCubit(settings: settings);
     addTearDown(() => unawaited(brightness.close()));
@@ -566,6 +611,7 @@ void main() {
       contrast: contrast,
       refresh: refresh,
       facts: facts,
+      storage: storage,
       pedal: pedal,
       update: update,
     );
@@ -580,6 +626,7 @@ void main() {
       HighContrastCubit contrast,
       RefreshRateCubit refresh,
       ConsoleFactsCubit facts,
+      StorageCubit storage,
       PedalCubit pedal,
       UpdateCubit update,
       DisplayBrightnessCubit brightness,
@@ -648,6 +695,7 @@ void main() {
                 BlocProvider.value(value: s.contrast),
                 BlocProvider.value(value: s.refresh),
                 BlocProvider.value(value: s.facts),
+                BlocProvider.value(value: s.storage),
                 BlocProvider.value(value: s.pedal),
                 BlocProvider.value(value: s.update),
                 BlocProvider.value(value: s.brightness),

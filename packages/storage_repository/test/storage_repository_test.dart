@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:storage_repository/storage_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
 
@@ -127,8 +128,8 @@ void main() {
       var idle = false;
       await repo.settled();
 
-      final a = repo.acquire(internal, 'recording');
-      final b = repo.acquire(usb1, 'export');
+      final a = repo.acquire(internal, WritePurpose.recording);
+      final b = repo.acquire(usb1, WritePurpose.export);
       unawaited(repo.settled().then((_) => idle = true));
       a.release();
       await pumpEventQueue();
@@ -144,16 +145,16 @@ void main() {
       repo = h.build(initial: [h.record(1)]);
       await pumpEventQueue();
 
-      final a = repo.acquire(internal, 'recording');
-      final b = repo.acquire(usb1, 'export');
+      final a = repo.acquire(internal, WritePurpose.recording);
+      final b = repo.acquire(usb1, WritePurpose.export);
 
       expect(repo.leases, [a.lease, b.lease]);
       expect(repo.leasesOn(usb1), [
-        const WriteLease(target: usb1, purpose: 'export'),
+        const WriteLease(target: usb1, purpose: WritePurpose.export),
       ]);
       expect(repo.transferInFlight, isTrue);
       expect(b.target, usb1);
-      expect(b.purpose, 'export');
+      expect(b.purpose, WritePurpose.export);
       expect(a.isHeld, isTrue);
 
       a
@@ -198,7 +199,10 @@ void main() {
       await pumpEventQueue();
 
       void refused(int generation, StorageFailure failure) => expect(
-        () => repo.acquire(StorageDestination.removable(generation), 'x'),
+        () => repo.acquire(
+          StorageDestination.removable(generation),
+          WritePurpose.copy,
+        ),
         throwsA(failure),
       );
 
@@ -216,9 +220,9 @@ void main() {
         'leases normally', () async {
       repo = h.build(initial: [h.record(1)]);
       await pumpEventQueue();
-      final recording = repo.acquire(usb1, 'recording');
-      final export = repo.acquire(usb1, 'export');
-      final onInternal = repo.acquire(internal, 'backup');
+      final recording = repo.acquire(usb1, WritePurpose.recording);
+      final export = repo.acquire(usb1, WritePurpose.export);
+      final onInternal = repo.acquire(internal, WritePurpose.backup);
 
       h.client.detach(1);
       await pumpEventQueue();
@@ -229,14 +233,16 @@ void main() {
       expect(onInternal.isLost, isFalse);
       expect(repo.leases, [onInternal.lease]);
       expect(
-        () => repo.acquire(usb1, 'export'),
+        () => repo.acquire(usb1, WritePurpose.export),
         throwsA(const StorageFailure.volumeLost(1)),
       );
 
       h.client.attach(h.record(2));
       await pumpEventQueue();
       expect(
-        repo.acquire(const StorageDestination.removable(2), 'export').isHeld,
+        repo
+            .acquire(const StorageDestination.removable(2), WritePurpose.export)
+            .isHeld,
         isTrue,
       );
     });
@@ -245,7 +251,7 @@ void main() {
         'not only one that vanishes', () async {
       repo = h.build(initial: [h.record(1)]);
       await pumpEventQueue();
-      final export = repo.acquire(usb1, 'export');
+      final export = repo.acquire(usb1, WritePurpose.export);
 
       h.client.update(
         h.record(1, status: RemovableVolumeRecordStatus.ejected),
@@ -256,7 +262,7 @@ void main() {
       expect(export.isHeld, isFalse);
       expect(repo.transferInFlight, isFalse);
       expect(
-        () => repo.acquire(usb1, 'export'),
+        () => repo.acquire(usb1, WritePurpose.export),
         throwsA(const StorageFailure.volumeLost(1)),
       );
     });
@@ -267,20 +273,20 @@ void main() {
       await pumpEventQueue();
 
       final roots = <String>[];
-      final held = <List<String>>[];
+      final held = <List<WritePurpose>>[];
       Future<int> body(String root) async {
         roots.add(root);
         held.add([for (final lease in repo.leases) lease.purpose]);
         return roots.length;
       }
 
-      expect(await repo.withWriteLease(internal, 'backup', body), 1);
-      expect(await repo.withWriteLease(usb1, 'export', body), 2);
+      expect(await repo.withWriteLease(internal, WritePurpose.backup, body), 1);
+      expect(await repo.withWriteLease(usb1, WritePurpose.export, body), 2);
 
       expect(roots, [h.exports, h.mountPoint(1)]);
       expect(held, [
-        ['backup'],
-        ['export'],
+        [WritePurpose.backup],
+        [WritePurpose.export],
       ]);
       expect(repo.leases, isEmpty);
     });
@@ -291,7 +297,11 @@ void main() {
       await pumpEventQueue();
       final never = Completer<void>();
 
-      final result = repo.withWriteLease(usb1, 'export', (_) => never.future);
+      final result = repo.withWriteLease(
+        usb1,
+        WritePurpose.export,
+        (_) => never.future,
+      );
       await pumpEventQueue();
       expect(repo.leasesOn(usb1), hasLength(1));
       h.client.detach(1);
@@ -306,7 +316,7 @@ void main() {
         'files no request', () async {
       repo = h.build(initial: [h.record(1)]);
       await pumpEventQueue();
-      final lease = repo.acquire(usb1, 'recording');
+      final lease = repo.acquire(usb1, WritePurpose.recording);
 
       await expectLater(
         repo.eject(1),
@@ -327,7 +337,7 @@ void main() {
       final phaseSub = repo.ejectPhase.listen(phases.add);
       addTearDown(phaseSub.cancel);
       await pumpEventQueue();
-      repo.acquire(usb1, 'recording').release();
+      repo.acquire(usb1, WritePurpose.recording).release();
 
       final outcome = repo.eject(1);
       await pumpEventQueue();
@@ -337,7 +347,7 @@ void main() {
       expect(repo.current.single.status, RemovableVolumeStatus.ejecting);
       expect(repo.transferInFlight, isTrue);
       expect(
-        () => repo.acquire(usb1, 'export'),
+        () => repo.acquire(usb1, WritePurpose.export),
         throwsA(const StorageFailure.volumeLost(1)),
         reason: 'no new writer may start on a volume being ejected',
       );
@@ -420,10 +430,10 @@ void main() {
       () async {
         repo = h.build(initial: [h.record(1)]);
         await pumpEventQueue();
-        await repo.cancelEject();
+        expect(await repo.cancelEject(), isFalse);
 
         final outcome = repo.eject(1);
-        await repo.cancelEject();
+        expect(await repo.cancelEject(), isTrue);
 
         expect(await outcome, const EjectOutcome.cancelled());
         expect(h.client.pendingRequests, isEmpty);
@@ -447,7 +457,7 @@ void main() {
         expect(repo.current.single.status, RemovableVolumeStatus.ejecting);
         expect(repo.transferInFlight, isTrue);
         expect(
-          () => repo.acquire(usb1, 'export'),
+          () => repo.acquire(usb1, WritePurpose.export),
           throwsA(const StorageFailure.volumeLost(1)),
           reason: 'no writer may start on a drive being unmounted',
         );
@@ -463,8 +473,9 @@ void main() {
       });
     });
 
-    test('a taken request that never gets an answer fails with timeout '
-        'after the longer bound', () {
+    test('a taken request with no answer after the longer bound fails with '
+        'stillEjecting, and the drive stays ejecting: it may still be '
+        'unmounting, so nothing may write to it', () {
       fakeAsync((async) {
         repo = h.build(initial: [h.record(1)]);
         async.flushMicrotasks();
@@ -478,8 +489,61 @@ void main() {
         );
         expect(outcome, isNull);
         async.elapse(const Duration(seconds: 1));
-        expect(outcome, const EjectOutcome.failed('timeout'));
+        expect(
+          outcome,
+          const EjectOutcome.failed(StorageRepository.stillEjecting),
+        );
+        expect(repo.current.single.status, RemovableVolumeStatus.ejecting);
+        expect(repo.transferInFlight, isTrue);
+        expect(
+          () => repo.acquire(usb1, WritePurpose.export),
+          throwsA(const StorageFailure.volumeLost(1)),
+        );
+        EjectOutcome? again;
+        unawaited(repo.eject(1).then((o) => again = o));
+        async.flushMicrotasks();
+        expect(
+          again,
+          const EjectOutcome.failed(StorageRepository.stillEjecting),
+        );
+        expect(h.client.pendingRequests, isEmpty, reason: 'nothing re-filed');
+
+        // The helper answers at last: the drive reads what it says.
+        h.client.settleEject('req-1', ok: true);
+        async.flushMicrotasks();
+        expect(repo.current.single.status, RemovableVolumeStatus.ejected);
         expect(repo.transferInFlight, isFalse);
+
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+        disposed = true;
+      });
+    });
+
+    test('an unanswered eject ends when the helper refuses or the drive is '
+        'pulled', () {
+      fakeAsync((async) {
+        repo = h.build(initial: [h.record(1), h.record(2)]);
+        async.flushMicrotasks();
+        for (final generation in [1, 2]) {
+          unawaited(repo.eject(generation));
+          async.flushMicrotasks();
+          h.client.take('req-$generation');
+          async.elapse(const Duration(minutes: 3));
+        }
+        expect(
+          repo.current.map((v) => v.status),
+          everyElement(RemovableVolumeStatus.ejecting),
+        );
+
+        h.client.settleEject('req-1', ok: false, reason: 'busy');
+        h.client.detach(2);
+        async.flushMicrotasks();
+
+        expect(repo.current.single.generation, 1);
+        expect(repo.current.single.status, RemovableVolumeStatus.mounted);
+        expect(repo.transferInFlight, isFalse);
+        expect(repo.acquire(usb1, WritePurpose.export).isLost, isFalse);
 
         unawaited(repo.dispose());
         async.flushMicrotasks();
@@ -495,7 +559,7 @@ void main() {
       final outcome = repo.eject(1);
       await pumpEventQueue();
       h.client.take('req-1');
-      await repo.cancelEject();
+      expect(await repo.cancelEject(), isFalse, reason: 'not withdrawn');
       await pumpEventQueue();
       expect(repo.current.single.status, RemovableVolumeStatus.ejecting);
 
@@ -685,6 +749,162 @@ void main() {
         freeBytes: StorageRepository.internalReserveBytes,
       );
       expect(await repo.lowInternalSpace(), isFalse);
+    });
+  });
+
+  group('the guard table', () {
+    late GuardRegistry guards;
+
+    StorageRepository buildGuarded({int drives = 1}) {
+      guards = GuardRegistry();
+      return h.build(
+        initial: [for (var g = 1; g <= drives; g++) h.record(g)],
+        guards: guards,
+      );
+    }
+
+    test('leases and the eject in flight are reported; a recording lease is '
+        'not (the take reports itself as capture)', () async {
+      repo = buildGuarded();
+      await pumpEventQueue();
+      final copy = repo.acquire(internal, WritePurpose.copy);
+      final export = repo.acquire(usb1, WritePurpose.export);
+      final recording = repo.acquire(usb1, WritePurpose.recording);
+
+      expect(repo.activeOperations, [
+        const ActiveOperation(
+          kind: GuardKind.transfer,
+          scope: GuardScope.internal(),
+          purpose: 'copy',
+        ),
+        const ActiveOperation(
+          kind: GuardKind.transfer,
+          scope: GuardScope.removable(1),
+          purpose: 'export',
+        ),
+      ]);
+      copy.release();
+      export.release();
+      recording.release();
+
+      final outcome = repo.eject(1);
+      await pumpEventQueue();
+      expect(guards.active, [
+        const ActiveOperation(
+          kind: GuardKind.eject,
+          scope: GuardScope.removable(1),
+          purpose: StorageRepository.ejectPurpose,
+        ),
+      ]);
+      // A take on the drive being ejected is refused at its commit.
+      expect(
+        guards.blockers(GuardKind.capture, const GuardScope.removable(1)),
+        hasLength(1),
+      );
+      h.client.settleEject('req-1', ok: true);
+      await outcome;
+      expect(guards.active, isEmpty);
+    });
+
+    test('a copy is refused at its commit while a take records on that '
+        'volume; a recording lease is not checked', () async {
+      repo = buildGuarded();
+      await pumpEventQueue();
+      final take = guards.enter(
+        GuardKind.capture,
+        const GuardScope.removable(1),
+        purpose: 'recording',
+      );
+
+      expect(
+        () => repo.acquire(usb1, WritePurpose.copy),
+        throwsA(const StorageFailure.busy(GuardKind.capture)),
+      );
+      // A copy says so too, typed, before writing anything.
+      final source = h.source('take.wav', 100);
+      await expectLater(
+        repo.copyFile(
+          source.path,
+          usb1,
+          'take.wav',
+          onConflict: ConflictPolicy.ask,
+        ),
+        throwsA(const StorageFailure.busy(GuardKind.capture)),
+      );
+      expect(repo.leases, isEmpty);
+      // Internal is another volume.
+      repo.acquire(internal, WritePurpose.copy).release();
+      // The take's own lease.
+      repo.acquire(usb1, WritePurpose.recording).release();
+      take.release();
+      repo.acquire(usb1, WritePurpose.copy).release();
+    });
+
+    test('an eject left unanswered on one drive does not hold an eject of '
+        'another', () {
+      fakeAsync((async) {
+        repo = buildGuarded(drives: 2);
+        async.flushMicrotasks();
+        unawaited(repo.eject(1));
+        async.flushMicrotasks();
+        h.client.take('req-1');
+        async.elapse(const Duration(minutes: 3));
+        expect(repo.current.first.status, RemovableVolumeStatus.ejecting);
+
+        EjectOutcome? second;
+        unawaited(repo.eject(2).then((o) => second = o));
+        async.flushMicrotasks();
+        expect(h.client.pendingRequests, {'req-2': 2});
+        h.client.settleEject('req-2', ok: true);
+        async.flushMicrotasks();
+        expect(second, const EjectOutcome.safeToRemove());
+
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+        disposed = true;
+      });
+    });
+
+    test(
+      'the repository registers itself with the table it is given',
+      () async {
+        repo = buildGuarded();
+        await pumpEventQueue();
+        final copy = repo.acquire(usb1, WritePurpose.copy);
+        expect(guards.active, [
+          const ActiveOperation(
+            kind: GuardKind.transfer,
+            scope: GuardScope.removable(1),
+            purpose: 'copy',
+          ),
+        ]);
+        copy.release();
+      },
+    );
+
+    test('an eject is refused at its commit by a take on that volume or a '
+        'shutdown, and files no request', () async {
+      repo = buildGuarded();
+      await pumpEventQueue();
+      for (final (kind, scope) in [
+        (GuardKind.capture, const GuardScope.removable(1)),
+        (GuardKind.restart, const GuardScope.internal()),
+      ]) {
+        final other = guards.enter(kind, scope, purpose: kind.name);
+        await expectLater(
+          repo.eject(1),
+          throwsA(
+            isA<GuardRefused>().having(
+              (e) => e.wants,
+              'wants',
+              GuardKind.eject,
+            ),
+          ),
+        );
+        expect(h.client.pendingRequests, isEmpty);
+        expect(repo.current.single.status, RemovableVolumeStatus.mounted);
+        other.release();
+      }
     });
   });
 }

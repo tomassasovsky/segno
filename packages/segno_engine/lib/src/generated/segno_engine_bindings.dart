@@ -4778,34 +4778,39 @@ class SegnoEngineBindings {
   /// Arms performance-recording capture: allocates the master + per-monitor
   /// rings, freezes the captured input set from whichever inputs are currently
   /// monitored, publishes them to the audio thread, and starts the drain thread
-  /// writing into `capture_dir` (created if it does not already exist).
+  /// writing `target` (copied; its strings need not outlive the call).
   /// Idempotent (a second call while already armed is a no-op success — the
-  /// armed session's original `capture_dir` keeps draining; the repeat call's
-  /// `capture_dir` argument is still required to be non-null/non-empty but is
-  /// otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING (not configured),
-  /// LE_ERR_INVALID (null/empty `capture_dir`, no output enabled to capture, or
-  /// ring allocation failure), or LE_ERR_DEVICE (the drain thread could not be
-  /// started — e.g. the directory could not be created — or a previous disarm's
-  /// quiescent wait bailed out and left a stale drain session still live).
+  /// armed session keeps its original target; the repeat call's target must
+  /// still be valid but is otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING
+  /// (not configured), LE_ERR_INVALID (null target, null/empty `capture_dir`, a
+  /// `part_bytes` with no room for a frame or past the RIFF limit, a
+  /// `ring_seconds` outside 0 to LE_PERF_RING_SECONDS_MAX, a negative
+  /// `checkpoint_ms`, no output enabled to capture, or ring allocation failure),
+  /// or LE_ERR_DEVICE (the drain thread could not be started — e.g. a directory
+  /// could not be created — or a previous disarm's quiescent wait bailed out and
+  /// left a stale drain session still live).
   int le_perf_arm(
     ffi.Pointer<le_engine> engine,
-    ffi.Pointer<ffi.Char> capture_dir,
+    ffi.Pointer<le_perf_target> target,
   ) {
     return _le_perf_arm(
       engine,
-      capture_dir,
+      target,
     );
   }
 
   late final _le_perf_armPtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Char>)
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_perf_target>,
+          )
         >
       >('le_perf_arm');
   late final _le_perf_arm = _le_perf_armPtr
       .asFunction<
-        int Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Char>)
+        int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_perf_target>)
       >();
 
   /// Disarms performance-recording capture: tells the audio thread to stop
@@ -4891,32 +4896,6 @@ class SegnoEngineBindings {
           ffi.Pointer<ffi.Uint64>,
         )
       >();
-
-  /// fsync(2) on the directory at `path`, so the entries in it — a file renamed
-  /// into it, a file created in it — survive a power cut or a pulled drive. A
-  /// file's own fsync makes its bytes durable but not its name: on ext4 a copy
-  /// that returned within the commit interval could otherwise come back after a
-  /// power cut as a part file with no final name (#1177, #1195). Dart has no way
-  /// to open a directory, so the storage repository asks here.
-  ///
-  /// LE_ERR_INVALID on a NULL or empty path; LE_ERR_DEVICE when the path cannot
-  /// be opened as a directory or the sync fails. LE_OK on Windows without doing
-  /// anything: NTFS journals its directory entries. Control thread only; it can
-  /// take as long as the device's flush.
-  int le_sync_dir(
-    ffi.Pointer<ffi.Char> path,
-  ) {
-    return _le_sync_dir(
-      path,
-    );
-  }
-
-  late final _le_sync_dirPtr =
-      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<ffi.Char>)>>(
-        'le_sync_dir',
-      );
-  late final _le_sync_dir = _le_sync_dirPtr
-      .asFunction<int Function(ffi.Pointer<ffi.Char>)>();
 
   /// SHA-256 of `length` bytes at `data` (`data` may be NULL only when `length`
   /// is 0). Returns LE_OK, or LE_ERR_INVALID for a NULL `out`, a NULL `data`
@@ -5077,6 +5056,74 @@ class SegnoEngineBindings {
       );
   late final _le_fs_sync_dir = _le_fs_sync_dirPtr
       .asFunction<int Function(ffi.Pointer<ffi.Char>)>();
+
+  /// le_fs_sync_dir, also reporting why it failed: on LE_ERR_DEVICE,
+  /// *out_errno (when not NULL) is the OS error (ENOENT for a missing path,
+  /// ENOTDIR for a file, EIO from a drive that went away mid-sync), so a caller
+  /// can tell a pulled drive from a failing one (#1177). *out_errno is 0 on
+  /// LE_OK.
+  int le_fs_sync_dir_errno(
+    ffi.Pointer<ffi.Char> path,
+    ffi.Pointer<ffi.Int32> out_errno,
+  ) {
+    return _le_fs_sync_dir_errno(
+      path,
+      out_errno,
+    );
+  }
+
+  late final _le_fs_sync_dir_errnoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Int32>)
+        >
+      >('le_fs_sync_dir_errno');
+  late final _le_fs_sync_dir_errno = _le_fs_sync_dir_errnoPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Int32>)
+      >();
+
+  /// Renames `from` to `to` (both UTF-8) only if nothing is at `to`, as one
+  /// atomic step: renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL)
+  /// on macOS, MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows. A copy
+  /// publishes its part this way, so a name another writer took meanwhile is
+  /// never overwritten and no empty placeholder ever stands at the final name
+  /// (#1177, #1195).
+  ///
+  /// Returns LE_OK with *out_errno = 0; LE_ERR_INVALID for a NULL or empty path
+  /// or a NULL `out_errno`; LE_ERR_UNSUPPORTED when this kernel or filesystem
+  /// cannot refuse a replacement (the caller then falls back); LE_ERR_DEVICE
+  /// with *out_errno set to the OS error otherwise, EEXIST when `to` is taken.
+  int le_fs_rename_noreplace(
+    ffi.Pointer<ffi.Char> from,
+    ffi.Pointer<ffi.Char> to,
+    ffi.Pointer<ffi.Int32> out_errno,
+  ) {
+    return _le_fs_rename_noreplace(
+      from,
+      to,
+      out_errno,
+    );
+  }
+
+  late final _le_fs_rename_noreplacePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_fs_rename_noreplace');
+  late final _le_fs_rename_noreplace = _le_fs_rename_noreplacePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
 
   /// Starts an offline render of the finalized capture at `capture_dir`: spawns
   /// a worker thread that writes `stems/dry/track<channel>.wav` +
@@ -8177,6 +8224,50 @@ final class le_snapshot extends ffi.Struct {
   /// Trailing (#1179 Part 3a): 1 while Transpose is bypassed globally.
   @ffi.Int32()
   external int transpose_bypass;
+
+  /// Seconds each capture ring of the most recent take was granted
+  /// (le_perf_target.ring_seconds after the memory cap); 0 before any arm.
+  @ffi.Int32()
+  external int perf_ring_seconds;
+
+  /// ---- performance take accounting (#1198; trailing) ---- */
+  /// /* Why the most recent take stopped: an le_perf_stop_reason, NONE while it
+  /// runs. Survives disarm; reset by the next arm.
+  @ffi.Int32()
+  external int perf_stop_reason;
+
+  /// Bytes the drain has written for the take: part headers and samples,
+  /// events.log and layer files.
+  @ffi.Uint64()
+  external int perf_bytes_written;
+
+  /// The first capture frame a ring could not take, or UINT64_MAX. A take
+  /// that drops a frame ends there (LE_PERF_STOP_SLOW_STORAGE). Neither this
+  /// nor perf_overruns moves once the take has stopped: a full ring after a
+  /// stop is not part of the take.
+  @ffi.Uint64()
+  external int perf_first_drop_frame;
+
+  /// Samples above full scale (|x| > 1.0) across every stream so far.
+  @ffi.Uint64()
+  external int perf_overs;
+
+  /// The streams the armed take captures (or the next arm would: the first
+  /// enabled output pair plus every monitored input the device has), and the
+  /// bytes one frame of all of them takes, so the app can tell whether a
+  /// volume holds a minimum take of every stream before it arms. 0 when
+  /// nothing could be captured.
+  @ffi.Int32()
+  external int perf_capture_streams;
+
+  @ffi.Uint32()
+  external int perf_capture_frame_bytes;
+
+  /// Checkpoints of the most recent take that could not be written (a failed
+  /// sync or slot write); each leaves the other slot standing and the take
+  /// running. Reset by the next arm.
+  @ffi.Uint32()
+  external int perf_checkpoint_failures;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -8396,6 +8487,96 @@ final class le_lane_cache_info extends ffi.Struct {
   external int audio_rev;
 }
 
+/// Where and how one take is written (#1198).
+final class le_perf_target extends ffi.Struct {
+  /// The take's directory on its destination (created if missing).
+  external ffi.Pointer<ffi.Char> capture_dir;
+
+  /// Where performance.json is rewritten every drain cycle: the capture
+  /// directory for an Internal take, an Internal mirror directory for a take
+  /// on a removable volume (whose filesystem must not be touched every cycle).
+  /// NULL means capture_dir.
+  external ffi.Pointer<ffi.Char> live_sidecar_dir;
+
+  /// The take's identity, written into every part's `sgno` chunk and the
+  /// sidecar.
+  @ffi.Array.multi([16])
+  external ffi.Array<ffi.Uint8> take_id;
+
+  /// The removable volume generation the take is armed on, or -1 for Internal;
+  /// recorded in the sidecar so recovery can tell whether the volume stayed
+  /// mounted for the whole take.
+  @ffi.Int64()
+  external int volume_generation;
+
+  /// The most one part file may hold, header included; 0 means
+  /// LE_PERF_PART_BYTES. Must leave room for at least one stereo frame and fit
+  /// the 32-bit RIFF size field.
+  @ffi.Uint64()
+  external int part_bytes;
+
+  /// Seconds of audio each capture ring holds, 1 to LE_PERF_RING_SECONDS_MAX;
+  /// 0 means LE_PERF_RING_SECONDS_DEFAULT. Lowered (never below the default,
+  /// nor below the request) so that every ring together stays within
+  /// LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 stereo inputs
+  /// at 96 kHz take 33 rings of 2^19 samples, 66 MiB. The sidecar's
+  /// `ring_seconds` and le_snapshot.perf_ring_seconds report what was
+  /// granted.
+  @ffi.Int32()
+  external int ring_seconds;
+
+  /// Bytes the take must leave free on its destination, on top of
+  /// LE_PERF_ALLOWANCE_BYTES: Internal keeps its storage reserve, a removable
+  /// volume a small floor. UINT64_MAX means no budget: the take stops only on
+  /// a failed write.
+  @ffi.Uint64()
+  external int reserve_bytes;
+
+  /// An Internal directory that receives a copy of every checkpoint, for a
+  /// take on a removable volume (the mirror wins over the stick's own slots);
+  /// NULL or empty for none. Created if missing.
+  external ffi.Pointer<ffi.Char> mirror_dir;
+
+  /// How often the checkpoint thread makes the take durable, in ms (5000 for
+  /// a real take); 0 checkpoints only when the take stops.
+  @ffi.Int32()
+  external int checkpoint_ms;
+}
+
+/// Why the most recent take stopped (le_snapshot.perf_stop_reason). NONE while
+/// a take runs; the first reason to happen is kept until the next arm.
+enum le_perf_stop_reason {
+  LE_PERF_STOP_NONE(0),
+
+  /// le_perf_disarm
+  LE_PERF_STOP_DISARM(1),
+
+  /// the engine reconfigured while armed
+  LE_PERF_STOP_DEVICE_CHANGED(2),
+
+  /// a write failed; sidecar `disk_full`
+  LE_PERF_STOP_WRITE_FAILED(3),
+
+  /// the destination reached its reserve
+  LE_PERF_STOP_RESERVE_REACHED(4),
+
+  /// a capture ring overflowed
+  LE_PERF_STOP_SLOW_STORAGE(5);
+
+  final int value;
+  const le_perf_stop_reason(this.value);
+
+  static le_perf_stop_reason fromValue(int value) => switch (value) {
+    0 => LE_PERF_STOP_NONE,
+    1 => LE_PERF_STOP_DISARM,
+    2 => LE_PERF_STOP_DEVICE_CHANGED,
+    3 => LE_PERF_STOP_WRITE_FAILED,
+    4 => LE_PERF_STOP_RESERVE_REACHED,
+    5 => LE_PERF_STOP_SLOW_STORAGE,
+    _ => throw ArgumentError('Unknown value for le_perf_stop_reason: $value'),
+  };
+}
+
 /// A MIDI input port discovered by le_midi_enumerate.
 ///
 /// `id` is a per-OS stable token for re-selecting the same device across replug:
@@ -8475,6 +8656,18 @@ const int LE_CB_BUCKETS = 8;
 const int LE_XRUN_KINDS = 4;
 
 const int LE_CACHE_DEFAULT_CAP_BYTES = 201326592;
+
+const int LE_PERF_PART_BYTES = 2000000000;
+
+const int LE_PERF_PART_HEADER_BYTES = 84;
+
+const int LE_PERF_RING_SECONDS_DEFAULT = 2;
+
+const int LE_PERF_RING_SECONDS_MAX = 8;
+
+const int LE_PERF_RING_BYTES_MAX = 67108864;
+
+const int LE_PERF_ALLOWANCE_BYTES = 1048576;
 
 const int LE_DIGEST_STATE_BYTES = 128;
 

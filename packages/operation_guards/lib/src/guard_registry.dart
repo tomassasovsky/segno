@@ -182,6 +182,15 @@ class GuardRegistry {
   GuardRegistry({Iterable<ActiveOperationSource> sources = const []})
     : _sources = List.of(sources);
 
+  /// Adds [source] to the owners this table consults. An owner built with
+  /// the table registers itself here, so it is consulted however the table
+  /// was made (the entrypoint's, a flavor's, a test's) and no late wiring is
+  /// needed for an owner that both checks the table and reports to it.
+  /// Adding the same source twice adds it once.
+  void addSource(ActiveOperationSource source) {
+    if (!_sources.contains(source)) _sources.add(source);
+  }
+
   final List<ActiveOperationSource> _sources;
   final List<OperationGuard> _held = [];
 
@@ -214,8 +223,11 @@ class GuardRegistry {
     // transfer: not onto a volume being ejected or recorded to, not during
     // shutdown.
     [_v, _a, _a, _a, _v, _a, _a, _r],
-    // eject: not while that volume is recorded to or copied to.
-    [_v, _a, _a, _v, _r, _a, _a, _r],
+    // eject: not while that volume is recorded to, copied to or already
+    // being ejected. Per volume: an eject left unanswered on one drive (it
+    // can last until that drive is pulled) must not hold every other
+    // drive's eject (#1177).
+    [_v, _a, _a, _v, _v, _a, _a, _r],
     // deviceChange: not under a take, an apply, a calibration or shutdown.
     [_r, _r, _a, _a, _a, _r, _r, _r],
     // calibration: same as a device change.

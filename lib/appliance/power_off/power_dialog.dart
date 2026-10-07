@@ -68,10 +68,17 @@ class PowerDialog extends StatelessWidget {
         final Widget body;
         switch (state.phase) {
           case PowerPhase.refuse:
+            // Refused for a transfer and not for a take: the take's words
+            // would send the player looking for a recording that is not
+            // running.
+            final reading = snapshot();
+            final transfer = reading.transferInFlight && !reading.takeInFlight;
             body = _PowerBody(
-              title: l10n.powerRefuseTitle,
+              title: transfer ? l10n.powerTransferTitle : l10n.powerRefuseTitle,
               titleColor: surface.warning,
-              lines: [l10n.powerRefuseBody],
+              lines: [
+                if (transfer) l10n.powerTransferBody else l10n.powerRefuseBody,
+              ],
               actions: [
                 ConsoleDialogButton(
                   key: const Key('power_keep_playing'),

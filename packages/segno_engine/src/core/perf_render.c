@@ -47,6 +47,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "engine_wav.h"      /* le_wav_write_file: the one WAV writer */
 #include "engine_fx.h"       /* fx_apply_chain, le_fx_prepare, le_fx_entry_reset,
                               * le_fx_free_octaver — reused verbatim for the wet
                               * pass, not reimplemented */
@@ -249,44 +250,15 @@ static float* le_pr_read_layer_lane0(const char* path, int32_t frame_count,
   return mono;
 }
 
-/* Encodes `samples` as a 32-bit float mono WAV at `sample_rate`, mirroring
- * wav_codec's own format (this codebase's only WAV writer besides that Dart
- * package — duplicated here so the native renderer needs no Dart round-trip
- * to produce its stems). */
+/* Writes `samples` as a sealed 32-bit float WAV at `sample_rate` through the
+ * engine's one native WAV writer (engine_wav.c), whose output is
+ * byte-identical to wav_codec's encodeFloat32. */
 static int le_pr_write_wav(const char* path, const float* samples,
-                                int32_t frame_count, int32_t sample_rate, uint16_t channels) {
-  FILE* f = fopen(path, "wb");
-  if (f == NULL) return 0;
-  const uint32_t data_bytes = (uint32_t)frame_count * channels * (uint32_t)sizeof(float);
-  unsigned char header[44] = {0};
-  memcpy(header + 0, "RIFF", 4);
-  const uint32_t riff_size = 36 + data_bytes;
-  memcpy(header + 4, &riff_size, 4);
-  memcpy(header + 8, "WAVE", 4);
-  memcpy(header + 12, "fmt ", 4);
-  const uint32_t fmt_size = 16;
-  memcpy(header + 16, &fmt_size, 4);
-  const uint16_t format_code = 3; /* IEEE float */
-  memcpy(header + 20, &format_code, 2);
-  memcpy(header + 22, &channels, 2);
-  const uint32_t sr = (uint32_t)sample_rate;
-  memcpy(header + 24, &sr, 4);
-  const uint32_t byte_rate = sr * channels * (uint32_t)sizeof(float);
-  memcpy(header + 28, &byte_rate, 4);
-  const uint16_t block_align = (uint16_t)(channels * sizeof(float));
-  memcpy(header + 32, &block_align, 2);
-  const uint16_t bits_per_sample = 32;
-  memcpy(header + 34, &bits_per_sample, 2);
-  memcpy(header + 36, "data", 4);
-  memcpy(header + 40, &data_bytes, 4);
-
-  int ok = fwrite(header, 1, sizeof(header), f) == sizeof(header);
-  if (ok && frame_count > 0) {
-    ok = fwrite(samples, sizeof(float), (size_t)frame_count * channels, f) ==
-        (size_t)frame_count * channels;
-  }
-  fclose(f);
-  return ok;
+                           int32_t frame_count, int32_t sample_rate,
+                           uint16_t channels) {
+  return le_wav_write_file(path, samples,
+                           frame_count > 0 ? (uint64_t)frame_count : 0,
+                           sample_rate, channels);
 }
 
 static int le_pr_write_wav_mono(const char* path, const float* samples,

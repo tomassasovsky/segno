@@ -55,6 +55,34 @@ void main() {
     expect(find.text(strings.perfArmedElapsed('01:05')), findsOneWidget);
   });
 
+  testWidgets('names the USB drive a take records to (#1177)', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      const PerformanceRecorderArmed(
+        elapsed: Duration(seconds: 5),
+        overrun: false,
+        volumeLabel: 'SEGNO USB',
+      ),
+    );
+    expect(find.text('· SEGNO USB'), findsOneWidget);
+  });
+
+  testWidgets('names no drive on Internal', (tester) async {
+    await pump(
+      tester,
+      const PerformanceRecorderArmed(
+        elapsed: Duration(seconds: 5),
+        overrun: false,
+      ),
+    );
+    expect(
+      find.byKey(const Key('tracks_armedIndicator_volume')),
+      findsNothing,
+    );
+  });
+
   testWidgets('shows the overrun glitch icon when overrun is true', (
     tester,
   ) async {
