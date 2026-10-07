@@ -312,6 +312,12 @@ void main() {
     test('a record without both fields is no record', () async {
       write(kConsoleBoardRecordPath, 'firmware=1.4\n');
       expect((await build().facts()).lastFlashed, isNull);
+      // An unparseable protocol is no record, and the rest still loads.
+      write(
+        kConsoleBoardRecordPath,
+        'firmware=1.4 protocol=99999999999999999999\n',
+      );
+      expect((await build().facts()).lastFlashed, isNull);
     });
   });
 
