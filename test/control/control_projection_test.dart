@@ -297,7 +297,9 @@ void main() {
       expect(frame.isLit(PedalButton.track1), isTrue);
       expect(frame.isLit(PedalButton.stop), isTrue);
       expect(frame.isLit(PedalButton.undo), isTrue);
-      expect(frame.isLit(PedalButton.mode), isFalse);
+      // MODE is always lit, red in Record, as the pedal always was.
+      expect(frame.isLit(PedalButton.mode), isTrue);
+      expect(frame.colorFor(PedalButton.mode), ledRed);
       expect(frame.isLit(PedalButton.bank), isFalse);
 
       final fx = projectFrame(
@@ -393,16 +395,16 @@ void main() {
           looper,
           ControlState(pedalSetup: setup, cursor: 1),
         );
-        expect(frame.colorFor(PedalButton.track1), PedalPaletteColor.red.color);
+        expect(frame.colorFor(PedalButton.track1), ledRed);
         expect(
           frame.colorFor(PedalButton.track2),
-          PedalPaletteColor.green.color,
+          ledGreen,
         );
         expect(
           frame.colorFor(PedalButton.track3),
           PedalPaletteColor.white.color,
         );
-        expect(frame.colorFor(PedalButton.track4), PedalPaletteColor.red.color);
+        expect(frame.colorFor(PedalButton.track4), ledRed);
         expect(
           frame.colorFor(PedalButton.recPlay),
           isNot(
@@ -430,11 +432,11 @@ void main() {
         expect(frame.isLit(PedalButton.track1), isTrue);
         expect(
           frame.colorFor(PedalButton.track1),
-          PedalPaletteColor.green.color,
+          ledGreen,
         );
         expect(
           frame.colorFor(PedalButton.recPlay),
-          PedalPaletteColor.green.color,
+          ledGreen,
         );
       });
 
@@ -451,12 +453,9 @@ void main() {
         expect(frame.isLit(PedalButton.track1), isTrue);
         expect(
           frame.colorFor(PedalButton.track1),
-          PedalPaletteColor.blue.color,
+          ledBlue,
         );
-        expect(
-          frame.colorFor(PedalButton.mode),
-          PedalPaletteColor.white.color,
-        );
+        expect(frame.colorFor(PedalButton.mode), ledBlue);
       });
 
       test('recording and overdub both turn Rec/Play red', () {
@@ -469,7 +468,7 @@ void main() {
         );
         expect(
           recording.colorFor(PedalButton.recPlay),
-          PedalPaletteColor.red.color,
+          ledRed,
         );
         final overdub = projectFrame(
           _stateWith(
@@ -481,9 +480,52 @@ void main() {
         );
         expect(
           overdub.colorFor(PedalButton.recPlay),
-          PedalPaletteColor.red.color,
+          ledRed,
         );
       });
+    });
+
+    test('MODE, Clear and Bank keep their original colours', () {
+      final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
+      Map<PedalButton, PedalColor> colours(ControlState overlay) {
+        final frame = projectFrame(looper, overlay);
+        return {
+          for (final b in [
+            PedalButton.mode,
+            PedalButton.clear,
+            PedalButton.bank,
+          ])
+            b: frame.colorFor(b),
+        };
+      }
+
+      expect(colours(const ControlState()), {
+        PedalButton.mode: ledRed,
+        PedalButton.clear: ledRed,
+        PedalButton.bank: ledBankB,
+      });
+      expect(
+        colours(const ControlState(mode: InteractionMode.mute)),
+        containsPair(PedalButton.mode, ledGreen),
+      );
+      expect(
+        colours(const ControlState(mode: InteractionMode.fx)),
+        containsPair(PedalButton.mode, ledBlue),
+      );
+      for (final mode in [
+        InteractionMode.custom,
+        InteractionMode.mixer,
+        InteractionMode.tuner,
+      ]) {
+        expect(
+          colours(ControlState(mode: mode)),
+          allOf(
+            containsPair(PedalButton.mode, ledYellow),
+            containsPair(PedalButton.bank, ledBankB),
+          ),
+          reason: '$mode',
+        );
+      }
     });
 
     test('global color: recording red, overdub amber, playing green', () {

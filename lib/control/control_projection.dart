@@ -11,7 +11,6 @@ library;
 
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
-import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/invariants.dart';
 import 'package:segno/control/model/foot_fade.dart';
@@ -255,20 +254,34 @@ PedalStateFrame projectFrame(
 
 /// The hue each footswitch lights in.
 ///
-/// Only Custom mode takes the performer's palette, because only there is a
-/// switch's function the performer's own choice. Every other mode is a fixed
-/// function and lights in the state colours the screen uses: recording and
-/// overdub red, playing green, an engaged FX, Fade, Reverse or Peel function
-/// blue, anything else pale. Whether a switch is lit at all stays with the
-/// active mask; this only answers its colour.
+/// Only Custom mode takes the performer's palette, and only on the switches
+/// it binds. Everything else lights in the pedal's original LED colours: a
+/// track red while recording or overdubbing, green while playing, blue for an
+/// engaged FX chain; MODE red in Record, green in Mute, blue in FX and yellow
+/// in every other mode; Clear red; Bank B a dim blue. Whether a switch is lit
+/// at all stays with the active mask; this only answers its colour.
 List<PedalColor> projectPedalColors(
   LooperState looper,
   ControlState overlay,
   List<PedalTrackLed> trackLeds,
   GlobalColor global,
 ) {
+  final modeColor = switch (overlay.mode) {
+    InteractionMode.record => ledRed,
+    InteractionMode.mute => ledGreen,
+    InteractionMode.fx => ledBlue,
+    _ => ledYellow,
+  };
   if (overlay.mode == InteractionMode.custom) {
-    return overlay.pedalSetup.palette.frameColors;
+    final custom = overlay.pedalSetup.palette.frameColors;
+    return [
+      for (final button in PedalButton.values)
+        switch (button) {
+          PedalButton.mode => modeColor,
+          PedalButton.bank => ledBankB,
+          _ => custom[button.index],
+        },
+    ];
   }
   PedalColor trackColor(PedalButton button) {
     final channel =
@@ -281,16 +294,16 @@ List<PedalColor> projectPedalColors(
           ? looper.tracks[channel]
           : null;
       return switch (track?.state) {
-        TrackState.recording || TrackState.overdubbing => _stateRed,
-        TrackState.playing => _statePlaying,
-        _ => _statePale,
+        TrackState.recording || TrackState.overdubbing => ledRed,
+        TrackState.playing => ledGreen,
+        _ => ledWhite,
       };
     }
     return switch (trackLeds[channel]) {
-      PedalTrackLed.red => _stateRed,
-      PedalTrackLed.green => _statePlaying,
-      PedalTrackLed.blue => _stateEngaged,
-      PedalTrackLed.off => _statePale,
+      PedalTrackLed.red => ledRed,
+      PedalTrackLed.green => ledGreen,
+      PedalTrackLed.blue => ledBlue,
+      PedalTrackLed.off => ledWhite,
     };
   }
 
@@ -302,22 +315,38 @@ List<PedalColor> projectPedalColors(
         PedalButton.track3 ||
         PedalButton.track4 => trackColor(button),
         PedalButton.recPlay => switch (global) {
-          GlobalColor.red => _stateRed,
           // Amber is overdub, or a new take over playing loops: both record.
-          GlobalColor.amber => _stateRed,
-          GlobalColor.green => _statePlaying,
-          GlobalColor.blue => _stateEngaged,
-          GlobalColor.off => _statePale,
+          GlobalColor.red || GlobalColor.amber => ledRed,
+          GlobalColor.green => ledGreen,
+          GlobalColor.blue => ledBlue,
+          GlobalColor.off => ledWhite,
         },
-        _ => _statePale,
+        PedalButton.mode => modeColor,
+        PedalButton.clear => ledRed,
+        PedalButton.bank => ledBankB,
+        _ => ledWhite,
       },
   ];
 }
 
-final PedalColor _stateRed = PedalPaletteColor.red.color;
-final PedalColor _statePlaying = PedalPaletteColor.green.color;
-final PedalColor _stateEngaged = PedalPaletteColor.blue.color;
-final PedalColor _statePale = PedalPaletteColor.white.color;
+/// The pedal's original LED colours: pure channels, not the palette's screen
+/// tints, which read washed out on an LED. The console board applies gamma.
+const ledRed = PedalColor(255, 0, 0);
+
+/// Playing, Mute mode.
+const ledGreen = PedalColor(0, 255, 0);
+
+/// An engaged FX chain, FX mode.
+const ledBlue = PedalColor(0, 0, 255);
+
+/// Every other mode on MODE; the ring's overdub yellow, matched on the unit.
+const ledYellow = PedalColor(255, 235, 0);
+
+/// Bank B.
+const ledBankB = PedalColor(0, 0, 80);
+
+/// A lit switch with no state of its own (an accepted Stop or Undo press).
+const PedalColor ledWhite = PedalColor.defaultColor;
 
 /// Whether [button] is a slot-less pedal on a hold-less performance surface
 /// (Fade, Reverse, Peel).
@@ -342,7 +371,8 @@ int _physicalButtonMask(
   var mask = 0;
   for (final button in PedalButton.values) {
     final lit = switch (button) {
-      PedalButton.mode => overlay.mode != InteractionMode.record,
+      // Always lit, in the mode's own colour, as the pedal always was.
+      PedalButton.mode => true,
       // The Tuner face's own lights: the tuned input, Stop while muted,
       // Bank past the first page; Undo and Clear while held.
       _ when overlay.mode == InteractionMode.tuner =>

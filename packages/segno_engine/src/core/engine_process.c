@@ -485,6 +485,10 @@ static int le_launch_defer(le_engine* e, int32_t ch, int action) {
   if (e->launch_committing) return 0;
   if (le_launch_remove(e, ch)) return 1;
   if (e->count_in_total == 0) {
+    /* Only a capture counts in. Playing back what is already recorded has
+     * nothing to come in on time for, so a stopped Play starts at once; it
+     * still joins a count-in some take already started, and lands with it. */
+    if (action == 2) return 0;
     const int bars = load_i32(&e->a_record_start);
     if (!le_transport_held(e) || bars <= 0 || !le_count_in_begin(e, bars))
       return 0;
