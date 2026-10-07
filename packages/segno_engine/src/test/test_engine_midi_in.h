@@ -268,6 +268,20 @@ static void test_midi_in_bind_during_drain(void) {
   mi_block(e);
   CHECK(strcmp(mi_log, "2E90 2R 2E80") == 0);
   CHECK(mi_snapshot(e).midi_in_stale == 0u);
+
+  /* The device behind b goes away and a capture binds again while the same
+   * drain runs: the loss was read for b's binding and is dispatched before
+   * that binding's end, never after the new binding's events (PR #1246
+   * review DL1). */
+  le_midi_sink_push(&b.sink, 0x90, 61, 100, 2);
+  le_midi_sink_mark_lost(&b.sink);
+  mi_rebind_to = &a;
+  mi_log_reset();
+  mi_block(e);
+  CHECK(strcmp(mi_log, "2E90 2L 2R 2E80") == 0);
+  mi_log_reset();
+  mi_block(e);
+  CHECK(mi_log_len == 0u); /* the new binding is not lost */
   le_test_midi_dispatch_hook = NULL;
   le_engine_destroy(e);
 }

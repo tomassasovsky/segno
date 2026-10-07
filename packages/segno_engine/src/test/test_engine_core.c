@@ -26789,14 +26789,15 @@ test_band_section_toggle_reacts_to_state_at_fire_time_not_arm_time(void) {
   le_engine_destroy(e);
 }
 
-/* ---- MIDI clock send (C1, D15) --------------------------------------------
+/* ---- MIDI clock send (C1, D15; #1228) --------------------------------------
  *
- * Engine-level wiring: the tri-state a_clock_mode field/command, the
- * Multi/Sync/Band-only gate (le_clock_send_gate_open), and real Start timing
- * against a genuine count-in. The pure tick/Start/Stop decision logic itself
- * (jitter bound, 24*beats between Starts, no double-counting) is unit-tested
- * directly against le_midi_clock_advance in test_midi_core.c -- these tests
- * only prove engine_process.c wires that logic to the right engine state.
+ * Engine-level wiring: the send switch (a_clock_send), the Multi/Sync/Band-
+ * only gate (le_clock_send_gate_open) with the Internal-source condition, and
+ * real Start timing against a genuine count-in. The pure tick/Start/Stop
+ * decision logic itself (jitter bound, 24*beats between Starts, no
+ * double-counting) is unit-tested directly against le_midi_clock_advance in
+ * test_midi_core.c -- these tests only prove engine_process.c wires that
+ * logic to the right engine state.
  */
 
 /* Pops up to `max` pending MIDI clock bytes (e->midi_clock_ring, C1) into
@@ -26812,85 +26813,79 @@ static int32_t clock_drain(le_engine* e, uint8_t* out, int32_t max) {
   return n;
 }
 
-static void test_clock_mode_defaults_and_persistence(void) {
-  printf("test_clock_mode_defaults_and_persistence\n");
+static void test_clock_send_defaults_and_persistence(void) {
+  printf("test_clock_send_defaults_and_persistence\n");
   le_engine* e = tg_make_engine(1000);
   le_snapshot s;
 
-  /* Grid-off-style default: OFF (0) on a fresh engine. */
+  /* Off on a fresh engine. */
   le_engine_get_snapshot(e, &s);
-  CHECK(s.clock_mode == LE_CLOCK_OFF);
+  CHECK(s.clock_send == 0);
 
   /* Settings persist across a reconfigure, same pattern as looper_mode /
    * primary_track: seeded once in le_engine_create, never reset by
    * configure. */
-  CHECK(le_engine_set_clock_mode(e, LE_CLOCK_SEND) == LE_OK);
+  CHECK(le_engine_set_clock_send(e, 1) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.clock_mode == LE_CLOCK_SEND);
+  CHECK(s.clock_send == 1);
 
   le_engine_configure(e, 1000, 1, 1, 20000);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.clock_mode == LE_CLOCK_SEND); /* survived the reconfigure */
+  CHECK(s.clock_send == 1); /* survived the reconfigure */
 
   le_engine_destroy(e);
 }
 
-static void test_clock_mode_setter_validates_args(void) {
-  printf("test_clock_mode_setter_validates_args\n");
+static void test_clock_send_setter_validates_args(void) {
+  printf("test_clock_send_setter_validates_args\n");
   le_engine* e = tg_make_engine(1000);
   le_snapshot s;
 
-  /* RECEIVE is a real enum value (Phase E) but explicitly stubbed as
-   * rejected in this part -- and everything outside the enum is rejected
-   * too. Nothing is posted; the published mode stays OFF. */
-  CHECK(le_engine_set_clock_mode(e, LE_CLOCK_RECEIVE) == LE_ERR_INVALID);
-  CHECK(le_engine_set_clock_mode(e, -1) == LE_ERR_INVALID);
-  CHECK(le_engine_set_clock_mode(e, 3) == LE_ERR_INVALID);
-  CHECK(le_engine_set_clock_mode(e, 99) == LE_ERR_INVALID);
-  CHECK(le_engine_set_clock_mode(NULL, LE_CLOCK_SEND) == LE_ERR_INVALID);
+  CHECK(le_engine_set_clock_send(e, 2) == LE_ERR_INVALID);
+  CHECK(le_engine_set_clock_send(e, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_clock_send(e, 99) == LE_ERR_INVALID);
+  CHECK(le_engine_set_clock_send(NULL, 1) == LE_ERR_INVALID);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.clock_mode == LE_CLOCK_OFF);
+  CHECK(s.clock_send == 0);
 
-  /* OFF and SEND both round-trip. */
-  CHECK(le_engine_set_clock_mode(e, LE_CLOCK_SEND) == LE_OK);
+  CHECK(le_engine_set_clock_send(e, 1) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.clock_mode == LE_CLOCK_SEND);
-  CHECK(le_engine_set_clock_mode(e, LE_CLOCK_OFF) == LE_OK);
+  CHECK(s.clock_send == 1);
+  CHECK(le_engine_set_clock_send(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.clock_mode == LE_CLOCK_OFF);
+  CHECK(s.clock_send == 0);
 
   le_engine_destroy(e);
 }
 
-/* A raw LE_CMD_SET_CLOCK_MODE post (bypassing the exported wrapper's
+/* A raw LE_CMD_SET_CLOCK_SEND post (bypassing the exported wrapper's
  * validation entirely) must still be re-validated on the audio thread --
- * mirrors every other setter's "re-validated here" defense (LE_CMD_SET_
- * LOOPER_MODE, LE_CMD_SET_TIME_SIGNATURE, ...). */
-static void test_clock_mode_raw_command_revalidates(void) {
-  printf("test_clock_mode_raw_command_revalidates\n");
+ * mirrors every other setter's "re-validated here" defense. */
+static void test_clock_send_raw_command_revalidates(void) {
+  printf("test_clock_send_raw_command_revalidates\n");
   le_engine* e = tg_make_engine(1000);
   le_snapshot s;
 
-  CHECK(le_push(e, LE_CMD_SET_CLOCK_MODE, LE_CLOCK_RECEIVE, 0.0f) == LE_OK);
+  CHECK(le_push(e, LE_CMD_SET_CLOCK_SEND, 2, 0.0f) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.clock_mode == LE_CLOCK_OFF); /* dropped, not applied */
+  CHECK(s.clock_send == 0); /* dropped, not applied */
 
-  CHECK(le_push(e, LE_CMD_SET_CLOCK_MODE, 99, 0.0f) == LE_OK);
+  CHECK(le_push(e, LE_CMD_SET_CLOCK_SEND, 99, 0.0f) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.clock_mode == LE_CLOCK_OFF);
+  CHECK(s.clock_send == 0);
 
   le_engine_destroy(e);
 }
 
 static void test_clock_off_emits_nothing_even_when_active(void) {
   printf("test_clock_off_emits_nothing_even_when_active\n");
-  /* clock_mode stays at its OFF default throughout: a fully active Multi-
+  /* The send switch stays at its off default throughout: a fully active Multi-
    * mode transport with a tempo set produces zero clock bytes. */
   le_engine* e = tg_make_engine_cap(1000, 100000);
   le_engine_set_tempo(e, 120.0f);
@@ -26908,12 +26903,12 @@ static void test_clock_off_emits_nothing_even_when_active(void) {
 static void test_clock_silent_in_song_and_free_modes(void) {
   printf("test_clock_silent_in_song_and_free_modes\n");
   /* Manual-verified (D15, song-mode-spec.md): send is active ONLY in Multi/
-   * Sync/Band -- Song and Free stay silent no matter what clock_mode says. */
+   * Sync/Band -- Song and Free stay silent whatever the send switch says. */
   const int32_t modes[] = {LE_LOOPER_MODE_SONG, LE_LOOPER_MODE_FREE};
   for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i) {
     le_engine* e = tg_make_engine_cap(1000, 100000);
     CHECK(le_engine_set_looper_mode(e, modes[i]) == LE_OK);
-    CHECK(le_engine_set_clock_mode(e, LE_CLOCK_SEND) == LE_OK);
+    CHECK(le_engine_set_clock_send(e, 1) == LE_OK);
     le_engine_set_tempo(e, 120.0f);
     tg_advance(e, 1);
 
@@ -26937,7 +26932,7 @@ static int32_t clock_record_and_drain(int32_t mode, int32_t len, uint8_t* out,
                                       int32_t cap) {
   le_engine* e = tg_make_engine_cap(1000, 100000);
   CHECK(le_engine_set_looper_mode(e, mode) == LE_OK);
-  CHECK(le_engine_set_clock_mode(e, LE_CLOCK_SEND) == LE_OK);
+  CHECK(le_engine_set_clock_send(e, 1) == LE_OK);
   le_engine_set_tempo(e, 120.0f); /* 500 fpb, 1000 fp-quarter -> 41.67 fp-tick */
   tg_advance(e, 1);
 
@@ -26984,7 +26979,7 @@ static void test_clock_start_not_at_count_in_start(void) {
 
   le_engine_set_tempo(e, 120.0f); /* 500 frames/beat, 2000 frames/bar (4/4) */
   CHECK(record_start_count(e, 1) == LE_OK); /* 1 bar = 2000 frames */
-  CHECK(le_engine_set_clock_mode(e, LE_CLOCK_SEND) == LE_OK);
+  CHECK(le_engine_set_clock_send(e, 1) == LE_OK);
   tg_advance(e, 1);
 
   le_engine_record(e, 0); /* enters the count-in, not RECORDING yet */
@@ -33766,11 +33761,13 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_reverse.h"
 #include "test_engine_peel.h"
 #include "test_engine_midi_in.h"
+#include "test_engine_clock.h"
 
 int main(void) {
   run_reverse_tests();
   if (getenv("SEGNO_REVERSE_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_midi_in_tests();
+  run_engine_clock_tests();
   test_reopen_same_rate_retains_material();
   test_reopen_drops_partial_first_take();
   test_reopen_reverts_partial_overdub_pass();
@@ -34436,9 +34433,9 @@ int main(void) {
   test_band_section_toggle_ignores_subdivision_boundary();
   test_band_section_toggle_reacts_to_state_at_fire_time_not_arm_time();
 
-  test_clock_mode_defaults_and_persistence();
-  test_clock_mode_setter_validates_args();
-  test_clock_mode_raw_command_revalidates();
+  test_clock_send_defaults_and_persistence();
+  test_clock_send_setter_validates_args();
+  test_clock_send_raw_command_revalidates();
   test_clock_off_emits_nothing_even_when_active();
   test_clock_silent_in_song_and_free_modes();
   test_clock_multi_sync_band_emit_start_ticks_stop();
