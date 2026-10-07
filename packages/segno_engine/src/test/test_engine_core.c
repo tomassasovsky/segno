@@ -13791,14 +13791,36 @@ static le_engine* shared_stopped_fixture(void) {
 
 static void test_shared_count_in_play_cancel_and_resume(void) {
   printf("test_shared_count_in_play_cancel_and_resume\n");
-  for (int grace = 0; grace < 2; ++grace) {
+  /* A stopped Play on its own never counts in: it starts at once. */
+  {
     le_engine* e = shared_stopped_fixture();
     le_snapshot s;
     CHECK(le_engine_play(e, 6) == LE_OK);
     le_engine_process(e, NULL, NULL, 0);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.counting_in == 0);
+    CHECK(s.tracks[6].pending_launch == 0);
+    CHECK(s.tracks[6].state == LE_TRACK_PLAYING);
+    float input = 0, output = 0;
+    le_engine_process(e, &output, &input, 1);
+    CHECK(output > .1f);
+    le_engine_destroy(e);
+  }
+  /* A Play during a take's count-in joins it, lands on its downbeat, and a
+   * second press cancels only that member. */
+  for (int grace = 0; grace < 2; ++grace) {
+    le_engine* e = shared_stopped_fixture();
+    le_snapshot s;
+    CHECK(le_engine_record(e, 2) == LE_OK);
+    le_engine_process(e, NULL, NULL, 0);
     tg_advance(e, 6000);
     CHECK(le_engine_play(e, 1) == LE_OK);
+    CHECK(le_engine_play(e, 6) == LE_OK);
     le_engine_process(e, NULL, NULL, 0);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.counting_in == 1);
+    CHECK(s.tracks[1].pending_launch == 2);
+    CHECK(s.tracks[6].pending_launch == 2);
     if (!grace) {
       CHECK(le_engine_play(e, 6) == LE_OK);
       le_engine_process(e, NULL, NULL, 0);
@@ -13808,9 +13830,9 @@ static void test_shared_count_in_play_cancel_and_resume(void) {
     le_engine_process(e, &output, &input, 1);
     CHECK(output == 0); /* last countdown sample is still silent */
     le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[2].state == LE_TRACK_RECORDING);
     CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
     CHECK(s.tracks[1].pending_launch == 0);
-    CHECK(s.tracks[1].count_in_cancel_grace == 1);
     CHECK(s.tracks[4].state == LE_TRACK_PLAYING); /* ordinary resume survives */
     if (grace) {
       CHECK(le_engine_play(e, 6) == LE_OK);
@@ -13819,14 +13841,9 @@ static void test_shared_count_in_play_cancel_and_resume(void) {
     le_engine_get_snapshot(e, &s);
     CHECK(s.tracks[6].state == LE_TRACK_STOPPED);
     CHECK(s.tracks[6].length_frames == 256);
-    CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
     float preserved[256];
     CHECK(le_engine_export_track(e, 6, preserved, 256) == 256);
     for (int i = 0; i < 256; ++i) CHECK(preserved[i] == .2f);
-    le_engine_process(e, &output, &input, 1);
-    CHECK(output > .1f); /* positive actual playback after the downbeat */
-    le_engine_get_snapshot(e, &s);
-    CHECK(s.tracks[1].count_in_cancel_grace == 0);
     le_engine_destroy(e);
   }
 }
@@ -13910,6 +13927,9 @@ static void test_shared_count_in_sections_and_capture_authority(void) {
     le_engine_process(e, NULL, NULL, 0);
     CHECK(le_engine_set_looper_mode(e, modes[m]) == LE_OK);
     le_engine_process(e, NULL, NULL, 0);
+    /* A take's count-in is what makes the two Plays share a downbeat; a
+     * stopped Play alone starts at once. */
+    CHECK(le_engine_record(e, 2) == LE_OK);
     CHECK(le_engine_play(e, 6) == LE_OK);
     CHECK(le_engine_play(e, 1) == LE_OK);
     le_engine_process(e, NULL, NULL, 0);
