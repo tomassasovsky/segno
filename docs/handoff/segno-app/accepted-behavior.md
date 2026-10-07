@@ -86,7 +86,10 @@ Sources:
    consistent horizontal padding and readable full-size geometry.
 8. A slider double tap resets its meaningful default; no redundant Default
    button. Encoder press enters a draft, turn adjusts, press commits and Back
-   cancels. Changing target/editor cancels unfinished edits; unrelated saves do
+   cancels. Outside a draft a turn moves focus to the next or previous control
+   and a press activates it. On the Stage, with nothing open above it, a turn
+   stays master volume (the level in foot Mixer) and a press opens Settings
+   (#1276). Changing target/editor cancels unfinished edits; unrelated saves do
    not commit them. Focus scrolls into view, stays inside unclipped bounds, is
    trapped in the active dialog and returns to the opener. Fixed/readout controls
    never enter focus. Rename/password entry uses a fixed bottom keyboard sheet:

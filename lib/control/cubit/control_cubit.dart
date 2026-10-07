@@ -2296,6 +2296,7 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// An encoder detent turn: accumulates into the master output gain.
   void encoderTurned(int delta) {
+    _log('encoder $delta');
     // A continuous value: it runs behind the power-off dialog, and stops once
     // the flush suspends input.
     if (_inputRetired || _inputLocked() || _controlInputSuspended) return;
@@ -2344,9 +2345,13 @@ class ControlCubit extends Cubit<ControlState> {
         // the held one (if any) whatever else that button's release did.
         _releaseBinding(button);
         _pushProjected();
-      case EncoderDelta(:final delta):
-        _log('encoder $delta');
-        encoderTurned(delta);
+      case EncoderDelta():
+      case EncoderPressed():
+      case EncoderReleased():
+        // The encoder belongs to EncoderNavigation, the one owner of what a
+        // turn or press means: on the stage it calls [encoderTurned]; over a
+        // page it drives focus (#1276). Nothing to do on this path.
+        break;
       case CtrlChanged():
         // The CTRL jacks are assignable controls, not transport: they reach
         // the looper through ControllerRepository's bindings, which

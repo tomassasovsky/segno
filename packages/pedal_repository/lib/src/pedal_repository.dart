@@ -92,7 +92,8 @@ class PedalRepository {
   bool _goodbye = false;
   bool _disposed = false;
 
-  /// Decoded pedal inputs (button presses/releases, encoder detents).
+  /// Decoded pedal inputs (button presses/releases, encoder detents and
+  /// push-switch presses/releases).
   Stream<PedalEvent> get events => _events.stream;
 
   /// Link status transitions. Also fires, with the same status, when a
@@ -158,6 +159,13 @@ class PedalRepository {
       case EncoderMessage(:final delta):
         if (!_connected) return;
         _emit(EncoderDelta(delta));
+      case EncoderButtonMessage(:final pressed):
+        if (!_connected) return;
+        _emit(
+          pressed
+              ? EncoderPressed(timestamp: _clock())
+              : EncoderReleased(timestamp: _clock()),
+        );
       case CtrlMessage(:final jack, :final contact, :final kind, :final value):
         if (!_connected) return;
         _onCtrl(jack, contact, kind, value);
