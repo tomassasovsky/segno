@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
+import 'package:segno/appliance/display_role.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:toastification/toastification.dart';
 
@@ -11,18 +12,22 @@ import 'package:toastification/toastification.dart';
 const String displayBrightnessSaveFailedToast =
     'display_brightness_save_failed';
 
-/// Applies [value] through the app-wide [DisplayBrightnessCubit] for a
-/// brightness control under [context].
+/// Applies [value] to [role]'s panel through the app-wide
+/// [DisplayBrightnessCubit] for a brightness control under [context].
 ///
-/// The dim applies at once; saving it can fail, and that is said in a toast
-/// on the app overlay (so it shows over any page), cleared by the next
+/// The level applies at once; saving it can fail, and that is said in a
+/// toast on the app overlay (so it shows over any page), cleared by the next
 /// change that does save.
-void editDisplayBrightness(BuildContext context, double value) {
+void editDisplayBrightness(
+  BuildContext context,
+  DisplayRole role,
+  double value,
+) {
   final cubit = context.read<DisplayBrightnessCubit>();
   final l10n = context.l10n;
   unawaited(() async {
     try {
-      await cubit.setBrightness(value);
+      await cubit.setBrightness(role, value);
       if (!context.mounted) return;
       dismissAppToast(displayBrightnessSaveFailedToast);
     } on Object {
@@ -31,7 +36,7 @@ void editDisplayBrightness(BuildContext context, double value) {
         id: displayBrightnessSaveFailedToast,
         type: ToastificationType.error,
         icon: const Icon(Icons.error_outline),
-        title: Text(l10n.powerOffSaveFailedTitle),
+        title: Text(l10n.displayBrightnessSaveFailed),
       );
     }
   }());

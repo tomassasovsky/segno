@@ -28,6 +28,9 @@ class _Window implements WaveformWindowService {
   void Function()? onWindowReady;
 
   @override
+  void Function()? onWindowActivity;
+
+  @override
   Future<bool> open({String title = ''}) async {
     opens++;
     return isOpen = await (opening?.future ?? Future.value(true));
@@ -317,6 +320,33 @@ void main() {
         ..elapse(const Duration(milliseconds: 100));
       expect(window.frames, ['Track 1', 'Track 2']);
       expect(window.readouts.last.selected!.channel, 1);
+      unawaited(display.close());
+      clock.flushMicrotasks();
+    });
+  });
+
+  test('the Track display dim reaches the second screen in its readout', () {
+    fakeAsync((clock) {
+      final display = build()..start(enabled: true, title: 'Waveform');
+      clock
+        ..flushMicrotasks()
+        ..elapse(const Duration(milliseconds: 40));
+      expect(window.readouts.last.brightness, 1);
+
+      display.updateContext(
+        const WaveformDisplayContext(
+          cursor: 0,
+          name: 'Track 1',
+          defaultName: true,
+          mode: 'record',
+          bank: 0,
+          deviceLost: false,
+          goodbye: ReadoutGoodbye.none,
+          brightness: 0.3,
+        ),
+      );
+      clock.elapse(const Duration(milliseconds: 40));
+      expect(window.readouts.last.brightness, 0.3);
       unawaited(display.close());
       clock.flushMicrotasks();
     });

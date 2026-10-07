@@ -13,12 +13,10 @@ import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
-import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -508,13 +506,11 @@ void main() {
   late PlaybackOptionsCubit playback;
   late RecordTimingCubit timing;
   late TracksCubit tracks;
-  late SettingsTrayCubit tray;
 
   Future<void> pump(
     WidgetTester tester, {
     LooperState state = _rig,
     LoopSettingsPageId initial = LoopSettingsPageId.hub,
-    bool fromTray = false,
     ClickMode? savedClickMode,
     int? savedCountIn,
     bool loadRecordStart = true,
@@ -599,9 +595,6 @@ void main() {
     timing = RecordTimingCubit(settings: timingOwner);
     await timingOwner.load();
     tracks = TracksCubit(settings: settings);
-    tray = SettingsTrayCubit();
-    if (fromTray) tray.open();
-    addTearDown(tray.close);
     resetSegnoNavigatorForTest();
     final closeRecordOwner = options.close;
     addTearDown(() => unawaited(closeRecordOwner()));
@@ -624,39 +617,13 @@ void main() {
             BlocProvider.value(value: playback),
             BlocProvider.value(value: timing),
             BlocProvider.value(value: tracks),
-            BlocProvider.value(value: tray),
           ],
           child: MaterialApp(
             navigatorKey: segnoNavigatorKey,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
-            theme: fromTray
-                ? AppTheme.neon
-                : ThemeData(extensions: const [SurfaceTheme.dark]),
-            home: fromTray
-                ? Scaffold(
-                    body: Stack(
-                      children: [
-                        const SizedBox.expand(key: Key('test_tracks_stage')),
-                        BlocBuilder<SettingsTrayCubit, SettingsTrayState>(
-                          builder: (context, state) => state.dragProgress == 0
-                              ? const SizedBox.shrink()
-                              : ColoredBox(
-                                  key: const Key('test_tray_cover'),
-                                  color: Colors.black,
-                                  child: SizedBox(
-                                    width: 200,
-                                    height: 800,
-                                    child: TrayNavigationRail(
-                                      onBrightness: () {},
-                                    ),
-                                  ),
-                                ),
-                        ),
-                      ],
-                    ),
-                  )
-                : pageIdentity == null
+            theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+            home: pageIdentity == null
                 ? LoopSettingsPage(initial: initial)
                 : ValueListenableBuilder<Key>(
                     valueListenable: pageIdentity,
@@ -878,28 +845,6 @@ void main() {
   });
 
   group('hub', () {
-    testWidgets('tray Loop entry: Back keeps tray, Stage reveals Tracks', (
-      tester,
-    ) async {
-      await pump(tester, fromTray: true);
-      expect(find.byKey(const Key('test_tray_cover')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('settingsTrayRail_loop')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('loop_settings_page_hub')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('loop_settings_back')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('test_tray_cover')), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('settingsTrayRail_loop')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('loop_settings_stage')));
-      await tester.pumpAndSettle();
-      expect(find.byType(LoopSettingsPage), findsNothing);
-      expect(find.byKey(const Key('test_tray_cover')), findsNothing);
-      expect(find.byKey(const Key('test_tracks_stage')), findsOneWidget);
-      expect(tray.state.dragProgress, 0);
-    });
-
     testWidgets('arrow focus and Enter open the next submenu', (tester) async {
       await pump(tester);
       final first = find.byKey(const Key('loop_hub_mode'));
@@ -1854,6 +1799,54 @@ void main() {
       await tester.tap(find.byKey(const Key('loop_timing_quarter')));
       await tester.pumpAndSettle();
       expect(timing.state.defaultTiming, RecordTiming.immediately);
+      await tester.tap(find.byKey(const Key('loop_default_multiple_2')));
+      await tester.pumpAndSettle();
+      verifyNever(() => repository.setDefaultMultiple(multiple: 2));
+      expect(options.state.defaultMultiple, 0);
+    });
+
+    testWidgets('Defaults sets how long later tracks record; a track scope '
+        'does not offer it', (tester) async {
+      await pump(tester, initial: LoopSettingsPageId.length);
+      expect(find.byKey(const Key('loop_default_multiple')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('loop_default_multiple_2')));
+      await tester.pumpAndSettle();
+      verify(() => repository.setDefaultMultiple(multiple: 2)).called(1);
+      expect(options.state.defaultMultiple, 2);
+      expect(await settings.loadDefaultMultiple(), 2);
+
+      await tester.tap(find.byKey(const Key('loop_default_multiple_0')));
+      await tester.pumpAndSettle();
+      expect(options.state.defaultMultiple, 0);
+      // What ×2 is a multiple of is said beside the choices.
+      expect(
+        find.text(l10nOf(tester).loopDefaultMultipleNote),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('loop_scope_track_0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('loop_default_multiple')), findsNothing);
+    });
+
+    testWidgets('a capture keeps the later-tracks row inside the frame', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        state: const LooperState(
+          tracks: [Track(state: TrackState.recording, lengthFrames: 10)],
+        ),
+        initial: LoopSettingsPageId.length,
+      );
+      expect(find.byKey(const Key('loop_lock_banner')), findsOneWidget);
+      final row = tester.getRect(
+        find.byKey(const Key('loop_default_multiple')),
+      );
+      final note = tester.getRect(find.byKey(const Key('loop_timing_note')));
+      expect(row.bottom, lessThanOrEqualTo(1080));
+      expect(row.top, greaterThan(note.bottom));
     });
   });
 

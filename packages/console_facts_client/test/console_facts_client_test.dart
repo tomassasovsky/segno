@@ -241,14 +241,98 @@ void main() {
       expect(usage.known, isFalse);
     });
 
-    test('the disk is the only thing it answers; the rest stay unknown', () {
+    test('export and retention stay unanswered', () async {
       final client = build();
       expect(client.isSupported, isTrue);
-      expect(() async {
-        expect(await client.facts(), ConsoleFacts.unknown);
-        expect(await client.exportDestination(), isEmpty);
-        expect(await client.deleteCapturesOlderThan(30), 0);
-      }, returnsNormally);
+      expect(await client.exportDestination(), isEmpty);
+      expect(await client.deleteCapturesOlderThan(30), 0);
+    });
+  });
+
+  group('LocalConsoleFactsClient.facts', () {
+    late Directory root;
+
+    setUp(() => root = Directory.systemTemp.createTempSync('console_facts'));
+    tearDown(() => root.deleteSync(recursive: true));
+
+    LocalConsoleFactsClient build() => LocalConsoleFactsClient(
+      sessionsRoot: () async => root.path,
+      capturesRoot: () async => root.path,
+      diskSpace: (_) async => null,
+      factsRoot: root.path,
+    );
+
+    void write(String path, Object content) {
+      final file = File('${root.path}/$path')
+        ..parent.createSync(recursive: true);
+      if (content is String) {
+        file.writeAsStringSync(content);
+      } else {
+        file.writeAsBytesSync(content as List<int>);
+      }
+    }
+
+    test('reads the serial, the image, both panels and the flash record', () {
+      write(kSerialNumberPath, '10000000abcd1234\x00');
+      write(kBuildVersionPath, '1.2.3\n');
+      // Written in reverse connector order, read back in connector order.
+      write('$kDrmPath/card1-HDMI-A-2/edid', edidNamed('Segno 7'));
+      write('$kDrmPath/card1-HDMI-A-1/edid', edidNamed('LG ULTRAFINE'));
+      // A connector with nothing plugged in has an empty EDID.
+      write('$kDrmPath/card1-DSI-1/edid', <int>[]);
+      write('$kDrmPath/card1/dev', '226:1');
+      write(kConsoleBoardRecordPath, 'firmware=1.4 protocol=3\n');
+
+      expect(
+        build().facts(),
+        completion(
+          const ConsoleFacts(
+            serial: '10000000abcd1234',
+            systemImage: '1.2.3',
+            panels: ['LG ULTRAFINE', 'Segno 7'],
+            lastFlashed: ConsoleBoardFlash(firmware: '1.4', protocol: 3),
+          ),
+        ),
+      );
+    });
+
+    test('a missing file leaves its fact out', () async {
+      write(kBuildVersionPath, '1.2.3');
+      final facts = await build().facts();
+      expect(facts.serial, isEmpty);
+      expect(facts.systemImage, '1.2.3');
+      expect(facts.panels, isEmpty);
+      expect(facts.lastFlashed, isNull);
+    });
+
+    test('nothing readable is the unknown console', () {
+      expect(build().facts(), completion(ConsoleFacts.unknown));
+    });
+
+    test('a record without both fields is no record', () async {
+      write(kConsoleBoardRecordPath, 'firmware=1.4\n');
+      expect((await build().facts()).lastFlashed, isNull);
+      // An unparseable protocol is no record, and the rest still loads.
+      write(
+        kConsoleBoardRecordPath,
+        'firmware=1.4 protocol=99999999999999999999\n',
+      );
+      expect((await build().facts()).lastFlashed, isNull);
+    });
+  });
+
+  group('edidMonitorName', () {
+    test('reads the display-name descriptor', () {
+      expect(edidMonitorName(edidNamed('Segno 7')), 'Segno 7');
+    });
+
+    test('a block with no name descriptor names nothing', () {
+      expect(edidMonitorName(edidNamed(null)), isNull);
+    });
+
+    test('bytes that are not an EDID name nothing', () {
+      expect(edidMonitorName(List.filled(128, 0)), isNull);
+      expect(edidMonitorName(const [0, 255, 255]), isNull);
     });
   });
 
@@ -323,4 +407,21 @@ void main() {
       );
     });
   });
+}
+
+/// A 128-byte EDID base block whose third descriptor names [name] (or which
+/// names nothing when [name] is null), the way a panel's firmware writes it.
+List<int> edidNamed(String? name) {
+  final edid = List<int>.filled(128, 0)
+    ..setAll(0, const [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00])
+    // The first descriptor is a detailed timing: a non-zero pixel clock.
+    ..[54] = 0x02
+    ..[55] = 0x3A
+    // A serial-number descriptor (tag 0xFF) that must not be read as a name.
+    ..setAll(72, [0, 0, 0, 0xFF, 0, ...'SN0001\n      '.codeUnits]);
+  if (name != null) {
+    final text = '$name\n'.padRight(13).codeUnits.take(13).toList();
+    edid.setAll(90, [0, 0, 0, 0xFC, 0, ...text]);
+  }
+  return edid;
 }

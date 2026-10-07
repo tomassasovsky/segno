@@ -105,6 +105,7 @@ class PerformanceReadout extends Equatable {
     this.activeBank = 0,
     this.deviceLost = false,
     this.goodbye = ReadoutGoodbye.none,
+    this.brightness = 1,
   });
 
   /// Rebuilds a readout from [map] as pushed across the window channel.
@@ -125,6 +126,7 @@ class PerformanceReadout extends Equatable {
       activeBank: map['activeBank'] as int? ?? 0,
       deviceLost: map['deviceLost'] as bool? ?? false,
       goodbye: _goodbyeOf(map['goodbye']),
+      brightness: (map['brightness'] as num? ?? 1).toDouble(),
     );
   }
 
@@ -163,6 +165,10 @@ class PerformanceReadout extends Equatable {
   /// Committed power-off face. Older senders omit the key → none.
   final ReadoutGoodbye goodbye;
 
+  /// The software dim over the Track display window, `0..1` (`1` = none):
+  /// its panel's brightness and idle dim when the panel cannot dim itself.
+  final double brightness;
+
   /// Channel-encodable form.
   Map<String, Object?> toMap() => {
     'selected': selected?.toMap(),
@@ -174,6 +180,7 @@ class PerformanceReadout extends Equatable {
     'activeBank': activeBank,
     'deviceLost': deviceLost,
     'goodbye': goodbye.name,
+    'brightness': brightness,
   };
 
   @override
@@ -187,6 +194,7 @@ class PerformanceReadout extends Equatable {
     activeBank,
     deviceLost,
     goodbye,
+    brightness,
   ];
 }
 

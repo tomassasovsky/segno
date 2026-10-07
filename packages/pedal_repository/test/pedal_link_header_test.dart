@@ -5,9 +5,9 @@ import 'package:pedal_repository/pedal_repository.dart';
 
 /// The scalar constants `pedal_link.h` and [PedalLinkCodec] must agree on.
 /// The golden fixtures pin the frames; this pins the numbers no frame
-/// carries — the sync byte, the protocol version, the state length and the
-/// hello cadence every liveness clock derives from. The firmware's own
-/// liveness relation (frame timeout vs hello) is the C test's.
+/// carries — the sync byte, the protocol version, the message types, the
+/// state length and the hello cadence every liveness clock derives from. The
+/// firmware's own liveness relation (frame timeout vs hello) is the C test's.
 void main() {
   group('pedal_link.h', () {
     final header = File(
@@ -48,6 +48,18 @@ void main() {
       () =>
           expect(define('PEDAL_LINK_HELLO_MS'), PedalLinkCodec.helloIntervalMs),
     );
+
+    test('message types', () {
+      expect(define('PEDAL_LINK_TYPE_BUTTON'), PedalLinkCodec.typeButton);
+      expect(define('PEDAL_LINK_TYPE_ENCODER'), PedalLinkCodec.typeEncoder);
+      expect(define('PEDAL_LINK_TYPE_HELLO'), PedalLinkCodec.typeHello);
+      expect(define('PEDAL_LINK_TYPE_CTRL'), PedalLinkCodec.typeCtrl);
+      expect(
+        define('PEDAL_LINK_TYPE_ENCODER_BUTTON'),
+        PedalLinkCodec.typeEncoderButton,
+      );
+      expect(define('PEDAL_LINK_TYPE_STATE'), PedalLinkCodec.typeState);
+    });
 
     test('hello is the frozen three-byte message', () {
       // The one frame shape no protocol revision may change: it is how a

@@ -28,6 +28,11 @@ size_t pedal_link_encode_encoder(int8_t delta, uint8_t *out) {
   return pedal_link_encode(PEDAL_LINK_TYPE_ENCODER, p, 1, out);
 }
 
+size_t pedal_link_encode_encoder_button(uint8_t pressed, uint8_t *out) {
+  const uint8_t p[1] = {pressed ? 1u : 0u};
+  return pedal_link_encode(PEDAL_LINK_TYPE_ENCODER_BUTTON, p, 1, out);
+}
+
 size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out) {
   const uint8_t p[3] = {PEDAL_LINK_PROTOCOL_VERSION, fw_major, fw_minor};
   return pedal_link_encode(PEDAL_LINK_TYPE_HELLO, p, 3, out);
@@ -109,6 +114,7 @@ int pedal_link_payload_len(uint8_t type) {
     case PEDAL_LINK_TYPE_ENCODER: return 1;
     case PEDAL_LINK_TYPE_HELLO: return 3;
     case PEDAL_LINK_TYPE_CTRL: return 4;
+    case PEDAL_LINK_TYPE_ENCODER_BUTTON: return 1;
     case PEDAL_LINK_TYPE_STATE: return (int)PEDAL_LINK_STATE_LEN;
     default: return -1;
   }

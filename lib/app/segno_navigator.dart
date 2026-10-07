@@ -10,6 +10,7 @@ import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
+import 'package:segno/looper/view/fx/fx_pedal_assignments_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/settings/settings.dart';
@@ -30,6 +31,9 @@ const String segnoAudioRoutingRouteName = 'segno/audio-routing';
 
 /// Route name for the Effects page.
 const String segnoFxRouteName = 'segno/fx';
+
+/// Route name for the FX page's pedal assignments.
+const String segnoFxPedalAssignmentsRouteName = 'segno/fx/pedal-assignments';
 
 /// Route name for the Pedals setup page.
 const String segnoPedalSetupRouteName = 'segno/pedal-setup';
@@ -67,6 +71,10 @@ const String segnoUpdateSettingsRouteName = 'segno/settings/updates';
 
 /// Route name for the About page, opened from Updates.
 const String segnoAboutSettingsRouteName = 'segno/settings/about';
+
+/// Route name for the Controller firmware page, opened from About.
+const String segnoControllerFirmwareRouteName =
+    'segno/settings/about/controller';
 
 /// The names of the routes [_pushOnce] currently has on the stack.
 final Set<String> _openRoutes = {};
@@ -120,6 +128,14 @@ Future<void> _pushOnce(
     _openRoutes.remove(name);
   }
 }
+
+/// Pushes the FX page's pedal assignments: which effect chain each footswitch
+/// drives in FX mode, per bank.
+Future<void> openFxPedalAssignments() => _pushOnce(
+  segnoFxPedalAssignmentsRouteName,
+  () =>
+      (_) => const FxPedalAssignmentsPage(),
+);
 
 /// Pushes the Audio routing route (the accepted input and output setup
 /// tasks) onto the root navigator, opened on [initial]; guarded against
@@ -220,6 +236,29 @@ Future<void> openAboutSettings() => _pushOnce(
   () =>
       (_) => const AboutSettingsPage(),
 );
+
+/// Pushes the Controller firmware page.
+Future<void> openControllerFirmware() => _pushOnce(
+  segnoControllerFirmwareRouteName,
+  () =>
+      (_) => const ControllerFirmwarePage(),
+);
+
+/// Shows the Updates page: back down to it when it is already under the
+/// current page (About and Controller firmware are opened from it), pushed
+/// otherwise.
+///
+/// Pushing a second Updates is what [openUpdateSettings] refuses, so a page
+/// above it that leads to it has to go back instead.
+Future<void> showUpdateSettings() async {
+  final navigator = segnoNavigatorKey.currentState;
+  if (navigator == null) return;
+  if (isSegnoUpdatesSettingsOpen) {
+    navigator.popUntil(ModalRoute.withName(segnoUpdateSettingsRouteName));
+    return;
+  }
+  await openUpdateSettings();
+}
 
 /// Resets the open-route guard.
 ///

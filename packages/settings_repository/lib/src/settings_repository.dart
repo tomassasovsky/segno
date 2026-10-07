@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:local_storage_client/local_storage_client.dart';
 import 'package:pub_semver/pub_semver.dart';
+import 'package:settings_repository/src/display_role.dart';
 import 'package:settings_repository/src/fade_durations.dart';
 
 /// Exact recording timing scalars. Missing tracks inherit; zero does not.
@@ -601,6 +602,55 @@ class SettingsRepository {
   Future<void> savePedalLongPressMs(int ms) =>
       _store.setInt(_pedalLongPressMsKey, ms);
 
+  static const String _tunerDefaultSeededKey = 'pedal.tuner_default_seeded';
+
+  /// Whether the one-shot `Hold · Tuner` default was already attempted on
+  /// Custom pedal 2 (#1229). Written at the first attempt, whatever its
+  /// outcome, so a player who removes it never gets it back.
+  Future<bool> loadTunerDefaultSeeded() async =>
+      await _store.getBool(_tunerDefaultSeededKey) ?? false;
+
+  /// Marks the `Hold · Tuner` default as attempted.
+  Future<void> saveTunerDefaultSeeded() =>
+      _store.setBool(_tunerDefaultSeededKey, value: true);
+
+  static const String _tunerReferenceHzKey = 'tuner.reference_hz';
+  static const String _tunerInputKey = 'tuner.input';
+
+  /// The lowest A4 reference the tuner accepts, in Hz.
+  static const int tunerReferenceMinHz = 420;
+
+  /// The highest A4 reference the tuner accepts, in Hz.
+  static const int tunerReferenceMaxHz = 460;
+
+  /// The A4 reference the tuner starts from and resets to, in Hz.
+  static const int tunerReferenceDefaultHz = 440;
+
+  /// Loads the tuner's A4 reference in Hz: an appliance preference, not
+  /// Session state (#1229). Defaults to 440, and a stored value outside
+  /// 420–460 reads clamped into it.
+  Future<int> loadTunerReferenceHz() async =>
+      (await _store.getInt(_tunerReferenceHzKey) ?? tunerReferenceDefaultHz)
+          .clamp(tunerReferenceMinHz, tunerReferenceMaxHz);
+
+  /// Saves the tuner's A4 reference, clamped to 420–460 Hz.
+  Future<void> saveTunerReferenceHz(int hz) => _store.setInt(
+    _tunerReferenceHzKey,
+    hz.clamp(tunerReferenceMinHz, tunerReferenceMaxHz),
+  );
+
+  /// Loads the hardware input the tuner listens to, or `-1` for "the first
+  /// one available" (the default). An appliance preference, not Session
+  /// state; a negative stored value reads as `-1`.
+  Future<int> loadTunerInput() async {
+    final input = await _store.getInt(_tunerInputKey) ?? -1;
+    return input < 0 ? -1 : input;
+  }
+
+  /// Saves the tuner's input; any negative value stores `-1`.
+  Future<void> saveTunerInput(int input) =>
+      _store.setInt(_tunerInputKey, input < 0 ? -1 : input);
+
   static const String _pedalSetupKey = 'pedal.setup';
 
   /// Loads the persisted built-in footswitch setup blob, or `null` if unset.
@@ -695,17 +745,61 @@ class SettingsRepository {
   Future<void> saveHighContrast({required bool value}) =>
       _store.setBool(_highContrastKey, value: value);
 
-  static const String _brightnessKey = 'ui.brightness';
+  /// The one brightness the console kept for both panels before each panel
+  /// had its own. Read as each panel's starting value and never written, so
+  /// a downgrade still finds it.
+  static const String _legacyBrightnessKey = 'ui.brightness';
 
-  /// Console display brightness (`0..1`). Defaults to `1.0` when unset —
-  /// the same number as the app's `kDefaultDisplayBrightness`, which this
-  /// package cannot import (it must not depend on the app).
-  Future<double> loadBrightness() async =>
-      (await _store.getDouble(_brightnessKey) ?? 1.0).clamp(0.0, 1.0);
+  static String _displayBrightnessKey(DisplayRole role) =>
+      'ui.brightness.${role.name}';
 
-  /// Saves console display brightness (`0..1`).
-  Future<void> saveBrightness(double value) =>
-      _store.setDouble(_brightnessKey, value.clamp(0.0, 1.0));
+  /// The dimmest a panel can be set to (`0..1`): 20%, the accepted range's
+  /// floor.
+  static const double minDisplayBrightness = 0.2;
+
+  /// A panel's brightness before it was ever set: 80%.
+  static const double defaultDisplayBrightness = 0.8;
+
+  /// [role]'s panel brightness, in
+  /// `[minDisplayBrightness, 1]`.
+  ///
+  /// A panel never set starts from the single brightness older builds kept
+  /// for both, clamped into the range (a 10% setting becomes 20%), and
+  /// otherwise from [defaultDisplayBrightness].
+  Future<double> loadDisplayBrightness(DisplayRole role) async {
+    final value =
+        await _store.getDouble(_displayBrightnessKey(role)) ??
+        await _store.getDouble(_legacyBrightnessKey) ??
+        defaultDisplayBrightness;
+    return value.clamp(minDisplayBrightness, 1.0);
+  }
+
+  /// Saves [role]'s panel brightness, clamped into the range.
+  Future<void> saveDisplayBrightness(DisplayRole role, double value) =>
+      _store.setDouble(
+        _displayBrightnessKey(role),
+        value.clamp(minDisplayBrightness, 1.0),
+      );
+
+  static const String _idleDimKey = 'ui.idle_dim_seconds';
+
+  /// How long the console may sit idle before both panels dim, in seconds.
+  static const List<int> idleDimChoices = [0, 120, 300, 600];
+
+  /// The idle period before dimming, one of [idleDimChoices]; `0` (never,
+  /// the default) for an unset or unknown value.
+  Future<int> loadIdleDimSeconds() async {
+    final seconds = await _store.getInt(_idleDimKey) ?? 0;
+    return idleDimChoices.contains(seconds) ? seconds : 0;
+  }
+
+  /// Saves the idle period; a value outside [idleDimChoices] is refused.
+  Future<void> saveIdleDimSeconds(int seconds) {
+    if (!idleDimChoices.contains(seconds)) {
+      throw ArgumentError.value(seconds, 'seconds', 'not an idle-dim choice');
+    }
+    return _store.setInt(_idleDimKey, seconds);
+  }
 
   static const String _bluetoothRetiredNoticeKey = 'bluetooth.retired_notice';
 
@@ -2221,6 +2315,7 @@ class SettingsRepository {
   static const String _updateAutoCheckKey = 'updates.auto_check';
   static const String _updateChannelKey = 'updates.channel';
   static const String _updateDismissedKey = 'updates.dismissed';
+  static const String _updateRollbackKey = 'updates.rollback';
 
   /// Whether the app runs the passive, read-only update check automatically.
   /// Defaults to `true` (checking is read-only; applying stays opt-in).
@@ -2270,6 +2365,35 @@ class SettingsRepository {
         _updateDismissedKey,
         (versions.toList()..sort()).join(','),
       );
+
+  /// Loads the update that rolled back and has not been dismissed: the
+  /// version that did not start and the one the console went back to, or
+  /// `null` when there is none (or the stored pair does not parse).
+  ///
+  /// Stored because the helper reports a rollback once, at the first start
+  /// after it, and the notice has to outlive a restart until it is read.
+  Future<({Version attempted, Version restored})?> loadUpdateRollback() async {
+    final raw = await _store.getString(_updateRollbackKey);
+    final parts = raw?.split(',');
+    if (parts == null || parts.length != 2) return null;
+    try {
+      return (
+        attempted: Version.parse(parts[0].trim()),
+        restored: Version.parse(parts[1].trim()),
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Saves the update that rolled back, as `attempted,restored`.
+  Future<void> saveUpdateRollback({
+    required Version attempted,
+    required Version restored,
+  }) => _store.setString(_updateRollbackKey, '$attempted,$restored');
+
+  /// Forgets the rolled-back update once its notice is dismissed.
+  Future<void> clearUpdateRollback() => _store.remove(_updateRollbackKey);
 
   /// Clears all settings.
   Future<void> clear() => _store.clear();

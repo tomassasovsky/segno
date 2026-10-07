@@ -86,5 +86,12 @@ void main() {
         ReadoutGoodbye.none,
       );
     });
+
+    test('the Track display dim crosses the channel; a sender without it '
+        'means none', () {
+      const dimmed = PerformanceReadout(brightness: 0.3);
+      expect(PerformanceReadout.fromMap(dimmed.toMap()).brightness, 0.3);
+      expect(PerformanceReadout.fromMap(const {}).brightness, 1);
+    });
   });
 }

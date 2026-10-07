@@ -10,7 +10,7 @@ import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
@@ -21,6 +21,7 @@ import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/session/application/session_settings_coordinator.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -40,6 +41,8 @@ class AppRuntime {
     required PerformanceRepository performance,
     required SessionRepository sessions,
     required Future<void> Function() powerOff,
+    required Future<void> Function() reboot,
+    required Future<void> Function() storageSettled,
     required GuardRegistry guards,
   }) {
     fxPersistence = FxChainPersistence(looper: repository);
@@ -54,6 +57,7 @@ class AppRuntime {
       sessionBlocked: () => fxPersistence.sessionTransitionActive,
     );
     timing = RecordTimingSettings(repository: repository, settings: settings);
+    tuner = TunerSettings(settings: settings);
     owners = SettingsOwners([
       ...tempo.owners,
       ...playback.owners,
@@ -61,10 +65,18 @@ class AppRuntime {
       ...timing.owners,
       ...fade.owners,
     ]);
-    power = PowerOffCubit(
+    power = PowerCubit(
+      stopTransport: () {
+        for (final track in repository.state.tracks) {
+          repository.stopTrack(channel: track.channel);
+        }
+      },
       flush: prepareShutdown,
+      storageSettled: storageSettled,
+      guards: guards,
       pedalGoodbye: pedal.goodbye,
       powerOff: powerOff,
+      reboot: reboot,
     );
     looper = LooperBloc(
       repository: repository,
@@ -90,6 +102,8 @@ class AppRuntime {
         fade: fade,
       ),
       fadeSettings: fade,
+      tunerSettings: tuner,
+      seedTunerDefault: true,
       pedal: pedal,
       performance: performance,
       controller: controllers,
@@ -140,6 +154,10 @@ class AppRuntime {
   late final RecordTimingSettings timing;
   late final FadeSettings fade;
 
+  /// The tuner's appliance preferences, read by the reading and the foot
+  /// Tuner.
+  late final TunerSettings tuner;
+
   /// The owned settings that run on the shared owner, in their fixed order.
   late final SettingsOwners owners;
 
@@ -147,7 +165,7 @@ class AppRuntime {
   late final LooperBloc looper;
   late final ControlCubit control;
   late final SessionCubit session;
-  late final PowerOffCubit power;
+  late final PowerCubit power;
 
   bool _closing = false;
   Future<void>? _startFuture;
@@ -166,6 +184,7 @@ class AppRuntime {
       record.load(),
       timing.load(),
       fade.load(),
+      tuner.load(),
       control.load(),
     ]).then((_) => session.recordBaseline());
   }
@@ -235,6 +254,7 @@ class AppRuntime {
       // and the repository still live. A failure must not skip disposal.
       fxPersistence.flush,
       fade.close,
+      tuner.close,
       timing.close,
       record.close,
       playback.close,

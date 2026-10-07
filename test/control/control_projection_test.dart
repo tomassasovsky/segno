@@ -317,22 +317,22 @@ void main() {
 
     test('Custom physical transport state and RGB do not recolor activity', () {
       final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
-      final setup = const PedalSetup().withCustom(
+      final base = const PedalSetup().withCustom(
         PedalButton.stop,
         bank: 0,
         pair: const ControlGesturePair(
           press: CommandAction(ControlCommand.recordPerformance),
         ),
       );
-      final colors = List<PedalColor>.filled(
-        PedalButton.values.length,
-        PedalColor.defaultColor,
-      )..[PedalButton.stop.index] = const PedalColor(3, 19, 212);
+      final setup = base.copyWith(
+        palette: base.palette
+            .withCustom(1, const PedalColor(3, 19, 212))
+            .withChoice(PedalButton.stop, const CustomPaletteEntry(1)),
+      );
       final frame = projectFrame(
         looper,
         ControlState(mode: InteractionMode.custom, pedalSetup: setup),
         physicalCustomStates: const {PedalButton.stop: true},
-        pedalColors: colors,
       );
       expect(frame.isLit(PedalButton.stop), isTrue);
       expect(frame.colorFor(PedalButton.stop), const PedalColor(3, 19, 212));
@@ -346,26 +346,145 @@ void main() {
     });
 
     test(
-      'confirmed palette changes hue without changing physical activity',
+      'Custom palette changes hue without changing physical activity',
       () {
         final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
-        final before = projectFrame(looper, const ControlState());
+        const custom = ControlState(mode: InteractionMode.custom);
+        final before = projectFrame(looper, custom);
         final palette = const PedalPalette().withChoice(
           PedalButton.stop,
-          const BuiltInPaletteEntry(PedalPaletteColor.red),
+          const BuiltInPaletteEntry(PedalPaletteColor.violet),
         );
         final after = projectFrame(
           looper,
-          ControlState(
+          custom.copyWith(
             pedalSetup: const PedalSetup().copyWith(palette: palette),
           ),
         );
         expect(before.colorFor(PedalButton.stop), PedalColor.defaultColor);
-        expect(after.colorFor(PedalButton.stop), PedalPaletteColor.red.color);
+        expect(
+          after.colorFor(PedalButton.stop),
+          PedalPaletteColor.violet.color,
+        );
         expect(after.activeButtonMask, before.activeButtonMask);
         expect(after.isLit(PedalButton.stop), isFalse);
       },
     );
+
+    group('fixed modes light in state colours and ignore the palette', () {
+      final palette = PedalPalette.fromMaps(
+        choices: {
+          for (final button in PedalButton.values)
+            button: const BuiltInPaletteEntry(PedalPaletteColor.violet),
+        },
+      );
+      final setup = const PedalSetup().copyWith(palette: palette);
+
+      test('Record mode colours each track by its own state', () {
+        final looper = _stateWith(
+          _tracksWith(const [
+            Track(state: TrackState.recording),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 2, state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 3, state: TrackState.overdubbing, lengthFrames: 1),
+          ]),
+        );
+        final frame = projectFrame(
+          looper,
+          ControlState(pedalSetup: setup, cursor: 1),
+        );
+        expect(frame.colorFor(PedalButton.track1), PedalPaletteColor.red.color);
+        expect(
+          frame.colorFor(PedalButton.track2),
+          PedalPaletteColor.green.color,
+        );
+        expect(
+          frame.colorFor(PedalButton.track3),
+          PedalPaletteColor.white.color,
+        );
+        expect(frame.colorFor(PedalButton.track4), PedalPaletteColor.red.color);
+        expect(
+          frame.colorFor(PedalButton.recPlay),
+          isNot(
+            palette.colorFor(
+              PedalButton.recPlay,
+            ),
+          ),
+        );
+        expect(
+          frame.colorFor(PedalButton.stop),
+          PedalPaletteColor.white.color,
+        );
+      });
+
+      test('Mute mode lights audible tracks green', () {
+        final looper = _stateWith(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        final frame = projectFrame(
+          looper,
+          ControlState(mode: InteractionMode.mute, pedalSetup: setup),
+        );
+        expect(frame.isLit(PedalButton.track1), isTrue);
+        expect(
+          frame.colorFor(PedalButton.track1),
+          PedalPaletteColor.green.color,
+        );
+        expect(
+          frame.colorFor(PedalButton.recPlay),
+          PedalPaletteColor.green.color,
+        );
+      });
+
+      test('FX mode lights an engaged chain blue', () {
+        final looper = _stateWith(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        final frame = projectFrame(
+          looper,
+          ControlState(mode: InteractionMode.fx, pedalSetup: setup),
+        );
+        expect(frame.isLit(PedalButton.track1), isTrue);
+        expect(
+          frame.colorFor(PedalButton.track1),
+          PedalPaletteColor.blue.color,
+        );
+        expect(
+          frame.colorFor(PedalButton.mode),
+          PedalPaletteColor.white.color,
+        );
+      });
+
+      test('recording and overdub both turn Rec/Play red', () {
+        final recording = projectFrame(
+          _stateWith(
+            _tracksWith(const [Track(state: TrackState.recording)]),
+            masterLengthFrames: 0,
+          ),
+          ControlState(pedalSetup: setup),
+        );
+        expect(
+          recording.colorFor(PedalButton.recPlay),
+          PedalPaletteColor.red.color,
+        );
+        final overdub = projectFrame(
+          _stateWith(
+            _tracksWith(const [
+              Track(state: TrackState.overdubbing, lengthFrames: 48000),
+            ]),
+          ),
+          ControlState(pedalSetup: setup),
+        );
+        expect(
+          overdub.colorFor(PedalButton.recPlay),
+          PedalPaletteColor.red.color,
+        );
+      });
+    });
 
     test('global color: recording red, overdub amber, playing green', () {
       const overlay = ControlState();

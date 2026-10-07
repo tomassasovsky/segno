@@ -2,22 +2,10 @@
     "@@locale": "es",
     "appMenuLabel": "Segno",
     "settingsMenuItem": "Ajustes…",
-    "updatesInstalledVersionLabel": "Versión instalada",
-    "updatesChannelLabel": "Canal",
     "updatesVersionValue": "v{version}",
-    "updatesAutoCheckTitle": "Buscar actualizaciones automáticamente",
-    "updatesAutoCheckSubtitle": "Busca una versión más reciente en segundo plano. Nunca descarga ni instala por su cuenta.",
-    "updatesExperimentalChannelTitle": "Canal experimental",
-    "updatesExperimentalChannelSubtitle": "Recibe versiones preliminares. Desactívalo para seguir solo las versiones de producción.",
-    "updatesCheckNowTitle": "Buscar ahora",
-    "updatesCheckNowSubtitle": "Busca una versión más reciente ahora.",
     "updatesCheckingLabel": "Buscando actualizaciones…",
-    "updatesUpToDateTitle": "Estás al día",
     "updatesUpToDateSubtitle": "Esta es la última versión del canal {channel}.",
-    "updatesDownloadTitle": "Descargar e instalar",
-    "updatesStagedSubtitle": "La v{version} está instalada y lista. Reinicia cuando no estés en mitad de una sesión.",
-    "updatesRestartBusySubtitle": "Detén la grabación y limpia tu sesión antes de reiniciar.",
-    "updatesErrorTitle": "La comprobación de actualizaciones falló",
+    "updatesRestartBusySubtitle": "La reproducción se detendrá y tu sesión se guardará antes de reiniciar.",
     "updateBannerTitle": "Actualización disponible — v{version}",
     "updateBannerUpdateAction": "Actualizar…",
     "updateBannerDismissAction": "Ahora no",
@@ -148,7 +136,7 @@
     "shortcutUndoClearAll": "Deshacer borrar todo",
     "shortcutSaveSession": "Guardar la sesión abierta",
     "shortcutFocusTraverse": "Mover el foco entre los controles",
-    "a11yTrackTile": "{name}, {state}, activar para grabar",
+    "a11yTrackTile": "{name}, {state}, activar para seleccionar",
     "a11yTrackTileMute": "{name}, {state}, activar para silenciar o reactivar",
     "a11yTrackTileFxOn": "{target}, {state}, cadena de FX encendida, activar para apagarla",
     "a11yTrackTileFxOff": "{target}, {state}, cadena de FX apagada, activar para encenderla",
@@ -165,11 +153,7 @@
     "toggleOn": "Sí",
     "toggleOff": "No",
     "auto": "Auto",
-    "viewGroupLabel": "VISTA",
-    "waveformWindowTitle": "Pantalla de la pista seleccionada",
-    "waveformWindowSubtitle": "Abre una segunda ventana con la pista seleccionada y su forma de onda",
     "highContrastTitle": "Alto contraste",
-    "highContrastSubtitle": "Fuerza una paleta más brillante y de mayor contraste. En escritorio, el ajuste de contraste del sistema no se aplica automáticamente.",
     "refreshRateHz": "{hz} Hz",
     "lengthPresetBars": "{bars, plural, one{1 compás} other{{bars} compases}}",
     "inputChannelLabel": "Ent {channelNumber}",
@@ -418,7 +402,6 @@
     "loopbackKindMonitor": "monitor",
     "loopbackKindVirtualDevice": "virtual",
     "failedToOpenDevice": "Error al abrir el dispositivo: {errorName}",
-    "recordingGroupLabel": "GRABACIÓN",
     "maxLoopDefault30s": "Predeterminado (30 s)",
     "maxLoopMinutes": "{minutes} min",
     "deviceLabel": "Dispositivo",
@@ -820,7 +803,6 @@
     "modeChangeBlockedCapturing": "Termina la toma primero.",
     "modeChangeBlockedQueued": "Una acción en cola debe dispararse o cancelarse primero.",
     "modeChangeBlockedSpans": "Las duraciones grabadas no encajan en este modo.",
-    "trayLoopLabel": "Bucle",
     "loopTempoUnset": "sin definir",
     "loopLengthAuto": "Auto",
     "loopClickVolumeReadout": "{percent}%",
@@ -832,19 +814,7 @@
     "@a11yTrayHandle": {
         "description": "Accessible label for the settings tray's always-visible pull-tab handle (tap or drag to open/close)."
     },
-    "trayWifiLabel": "WiFi",
-    "@trayWifiLabel": {
-        "description": "Label for the settings tray's WiFi shortcut button (stub — no real functionality yet)."
-    },
     "trayBrightnessPercent": "{percent}%",
-    "trayBrightLabel": "Brillo",
-    "@trayBrightLabel": {
-        "description": "Navigation rail entry for screen brightness, pinned below the eight domains as the mockups draw it."
-    },
-    "a11yTrayRail": "Destinos de la bandeja",
-    "@a11yTrayRail": {
-        "description": "Accessible label for the settings tray's vertical navigation rail, which selects which config face fills the open tray."
-    },
     "tunerCentsAndHz": "{cents} centésimas · {hz} Hz",
     "@tunerCentsAndHz": {
         "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
@@ -864,14 +834,6 @@
     "tunerNoTunableInput": "Sin entrada para afinar",
     "@tunerNoTunableInput": {
         "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
-    },
-    "tunerNoDevice": "Sin dispositivo de audio",
-    "@tunerNoDevice": {
-        "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
-    },
-    "trayTunerLabel": "Afinador",
-    "@trayTunerLabel": {
-        "description": "Label for the settings tray's Tuner rail entry."
     },
     "trayBrightnessLabel": "Brillo",
     "@trayBrightnessLabel": {
@@ -939,29 +901,16 @@
     "a11yMidiLearnLo": "Mínimo del rango",
     "a11yMidiLearnHi": "Máximo del rango",
     "a11yMidiLearnThreshold": "Umbral de activación",
-    "wifiRescan": "Reescanear",
-    "wifiUnsupported": "Tu computadora administra el Wi-Fi en esta versión.",
-    "wifiNoNetworks": "No se encontraron redes.",
-    "wifiConnected": "Conectado",
-    "wifiSecured": "Requiere contraseña",
-    "wifiOpen": "Abierta",
-    "wifiForget": "Olvidar",
-    "wifiJoin": "Conectar",
-    "wifiPassword": "Contraseña",
     "signalPluginBypassTooltip": "Omitir plugin",
     "fxEditorChainIn": "ENT",
     "fxEditorChainOut": "SAL",
     "fxEditorEmptySelection": "Selecciona un bloque para editar sus controles.",
     "octaverLatencyHint": "El vocoder de fase añade ~{ms} ms — usa PSOLA para monitoreo en vivo",
-    "wifiUnsupportedBody": "WiFi solo está disponible en la consola Segno.",
+    "wifiUnsupportedBody": "El Wi-Fi solo está disponible en la consola Segno.",
     "@wifiUnsupportedBody": {
         "description": "Shown on the WiFi page when segno-wifi-ctl is not present (desktop builds)."
     },
-    "wifiStatusLabel": "Estado",
-    "@wifiStatusLabel": {
-        "description": "WiFi status table label."
-    },
-    "wifiConnectFailedPassword": "No se pudo unir — revisá la contraseña e intentá de nuevo.",
+    "wifiConnectFailedPassword": "Contraseña incorrecta. Intentá de nuevo.",
     "@wifiConnectFailedPassword": {
         "description": "Shown when WPA authentication fails while joining a network."
     },
@@ -977,144 +926,9 @@
     "@wifiConnectFailedBackend": {
         "description": "Shown when a join fails for backend/transient reasons (iwd race, NM no-secrets on a saved network) after automatic retries — explicitly not a credentials problem, so the owner does not forget the network and re-type the password (#829)."
     },
-    "wifiSsidLabel": "Red",
-    "@wifiSsidLabel": {
-        "description": "WiFi SSID table label."
-    },
-    "wifiIpLabel": "Dirección IP",
-    "@wifiIpLabel": {
-        "description": "WiFi IP address table label."
-    },
-    "wifiDisconnectTitle": "Desconectar",
-    "@wifiDisconnectTitle": {
-        "description": "WiFi disconnect action title."
-    },
-    "wifiDisconnectSubtitle": "Cortar la asociación WiFi actual",
-    "@wifiDisconnectSubtitle": {
-        "description": "WiFi disconnect action subtitle."
-    },
-    "wifiForgetSubtitle": "Eliminar las credenciales guardadas de {ssid}",
-    "@wifiForgetSubtitle": {
-        "description": "WiFi forget action subtitle.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiScanSubtitle": "Actualizar la lista de redes cercanas",
-    "@wifiScanSubtitle": {
-        "description": "WiFi scan action subtitle when idle."
-    },
-    "wifiScanningSubtitle": "Buscando…",
-    "@wifiScanningSubtitle": {
-        "description": "WiFi scan action subtitle while scanning."
-    },
-    "wifiEmptyNetworks": "No se encontraron redes. Toca buscar para reintentar.",
-    "@wifiEmptyNetworks": {
-        "description": "Empty state when a WiFi scan returns no SSIDs."
-    },
-    "wifiJoinAction": "Unirse",
-    "@wifiJoinAction": {
-        "description": "Confirm button on the WiFi password dialog."
-    },
-    "bluetoothIntro": "Haz que esta consola sea visible para que un teléfono o sidecar la encuentre. El emparejamiento llega después.",
-    "@bluetoothIntro": {
-        "description": "Intro copy on the Bluetooth page (discovery/broadcast only)."
-    },
-    "bluetoothAliasLabel": "Nombre",
-    "@bluetoothAliasLabel": {
-        "description": "Bluetooth adapter alias table label."
-    },
-    "bluetoothPoweredLabel": "Adaptador",
-    "@bluetoothPoweredLabel": {
-        "description": "Bluetooth powered table label."
-    },
-    "bluetoothScanSubtitle": "Encontrar dispositivos Bluetooth cercanos",
-    "@bluetoothScanSubtitle": {
-        "description": "Bluetooth scan action subtitle when idle."
-    },
-    "trayNetworkLabel": "Red",
-    "@trayNetworkLabel": {
-        "description": "Navigation rail entry for the Network domain — WiFi and Bluetooth as two tabs of one destination. One word, like every rail entry."
-    },
-    "networkStateConnected": "conectado",
-    "@networkStateConnected": {
-        "description": "State word at the trailing edge of a Network row: a live association or link. Lower case — it is a machine readout about the row, not a sentence."
-    },
-    "networkStateSaved": "guardada",
-    "@networkStateSaved": {
-        "description": "State word for a WiFi network whose credentials this console already holds."
-    },
-    "networkStateOpen": "abierta",
-    "@networkStateOpen": {
-        "description": "State word for a WiFi network that needs no passphrase."
-    },
     "consoleKeepIt": "Conservar",
     "@consoleKeepIt": {
         "description": "Dismissive action on a Network forget confirmation — leaves the credential or pairing alone."
-    },
-    "wifiNotInRange": "fuera de alcance",
-    "@wifiNotInRange": {
-        "description": "Row subtitle for a saved network the last scan did not see."
-    },
-    "wifiSecurityWpa2": "WPA2",
-    "@wifiSecurityWpa2": {
-        "description": "Security label for a secured network, shown in the row subtitle and beside the join sheet's title."
-    },
-    "wifiSignalDbm": "{signal} dBm",
-    "@wifiSignalDbm": {
-        "description": "Signal strength in a WiFi row subtitle.",
-        "placeholders": {
-            "signal": {
-                "type": "int"
-            }
-        }
-    },
-    "wifiJoiningShort": "conectando a {ssid}",
-    "@wifiJoiningShort": {
-        "description": "Live-state line beside the WiFi face's title while a join is in flight. Lower case — it continues the title rather than starting a sentence.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiJoinFailedShort": "no se pudo conectar a {ssid}",
-    "@wifiJoinFailedShort": {
-        "description": "Live-state line beside the WiFi face's title after a join failed.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiJoiningBanner": "Conectando a {ssid}…",
-    "@wifiJoiningBanner": {
-        "description": "In-flight banner at the top of the WiFi list while a join is running.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiRetryingBanner": "Error de red — reintentando {ssid}…",
-    "@wifiRetryingBanner": {
-        "description": "In-flight banner while the console automatically re-activates a join after a backend/transient failure (#829). Never worded as a password problem.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiJoinSheetTitle": "Conectar a {ssid}",
-    "@wifiJoinSheetTitle": {
-        "description": "Title of the passphrase sheet.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
     },
     "wifiPassphraseTooShort": "Una contraseña WPA2 tiene al menos {count} caracteres.",
     "@wifiPassphraseTooShort": {
@@ -1142,17 +956,177 @@
     "@wifiForgetConfirmAction": {
         "description": "Destructive action on the forget-network confirmation."
     },
-    "trayControlLabel": "Control",
-    "@trayControlLabel": {
-        "description": "Navigation rail entry for the Control domain — the footswitch plate and the MIDI foot controller as two tabs of one destination."
+    "networkWifiLabel": "Wi-Fi",
+    "@networkWifiLabel": {
+        "description": "The radio switch in the Network page title row."
     },
-    "controlPedalTab": "Pedal",
-    "@controlPedalTab": {
-        "description": "Tab of the Control domain: the footswitch plate's assignable switches."
+    "networkUnavailableTitle": "El Wi-Fi no está disponible",
+    "@networkUnavailableTitle": {
+        "description": "Connection card title on a build without the Wi-Fi helper."
     },
-    "controlControllersTab": "Controladores",
-    "@controlControllersTab": {
-        "description": "Tab of the Control domain: everything plugged in — a MIDI foot controller, and the pedals in the CTRL jacks — and the mappings off them."
+    "networkOffTitle": "El Wi-Fi está apagado",
+    "@networkOffTitle": {
+        "description": "Connection card title while the radio is off (pen 29/07)."
+    },
+    "networkOffDetail": "Encendelo para buscar redes cercanas.",
+    "@networkOffDetail": {
+        "description": "Connection card line while the radio is off."
+    },
+    "networkConnectingTitle": "Conectando…",
+    "@networkConnectingTitle": {
+        "description": "Connection card title while a join is in flight."
+    },
+    "networkLostTitle": "Conexión perdida",
+    "@networkLostTitle": {
+        "description": "Connection card title when the saved network that was up dropped (pen 29/06)."
+    },
+    "networkIdleTitle": "Elegí una red",
+    "@networkIdleTitle": {
+        "description": "Connection card title with the radio on and nothing joined."
+    },
+    "networkIdleDetail": "Las redes guardadas se reconectan solas.",
+    "@networkIdleDetail": {
+        "description": "Connection card line with the radio on and nothing joined."
+    },
+    "networkConnected": "Conectado",
+    "@networkConnected": {
+        "description": "Status line of the connected network."
+    },
+    "networkConnectedNoInternet": "Conectado · Sin internet",
+    "@networkConnectedNoInternet": {
+        "description": "Status line when Wi-Fi is associated but the internet check got no answer (pen 29/08)."
+    },
+    "networkIp": "IP {address}",
+    "@networkIp": {
+        "description": "The connection address beside its status line.",
+        "placeholders": {
+            "address": {
+                "type": "String"
+            }
+        }
+    },
+    "networkManage": "Administrar",
+    "@networkManage": {
+        "description": "Opens the connected network details from the connection card."
+    },
+    "networkReconnect": "Reconectar",
+    "@networkReconnect": {
+        "description": "Joins the lost network again from the connection card."
+    },
+    "networkNetworksHeading": "Redes",
+    "@networkNetworksHeading": {
+        "description": "Heading over the list of nearby and saved networks."
+    },
+    "networkScan": "Buscar",
+    "@networkScan": {
+        "description": "Refreshes the network list."
+    },
+    "networkScanning": "Buscando…",
+    "@networkScanning": {
+        "description": "The Scan button while a scan is in flight."
+    },
+    "networkListOff": "No hay redes con el Wi-Fi apagado.",
+    "@networkListOff": {
+        "description": "Network list while the radio is off."
+    },
+    "networkListEmpty": "No se encontraron redes. Buscá de nuevo.",
+    "@networkListEmpty": {
+        "description": "Network list when a scan found nothing."
+    },
+    "networkSaved": "Guardada",
+    "@networkSaved": {
+        "description": "Line under a saved network in the list."
+    },
+    "networkSavedNotInRange": "Guardada · Fuera de alcance",
+    "@networkSavedNotInRange": {
+        "description": "Line under a saved network the last scan did not see."
+    },
+    "networkSecured": "Requiere contraseña",
+    "@networkSecured": {
+        "description": "Accessible note for a secured network row."
+    },
+    "networkSavedNetwork": "Red guardada",
+    "@networkSavedNetwork": {
+        "description": "Network details status for a saved network that is not connected."
+    },
+    "networkPasswordRequired": "Requiere contraseña",
+    "@networkPasswordRequired": {
+        "description": "Network details status for a secured network with no saved key."
+    },
+    "networkOpenNetwork": "Red abierta",
+    "@networkOpenNetwork": {
+        "description": "Network details status for a network with no password."
+    },
+    "networkConnectingTo": "Conectando a {ssid}",
+    "@networkConnectingTo": {
+        "description": "Title of the Connecting dialog (pen 29/03).",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "networkConnectingFallback": "Si esto falla, Segno vuelve a conectarse a {ssid}.",
+    "@networkConnectingFallback": {
+        "description": "Connecting dialog note when another network was up: one radio cannot keep it during the join, so a failed join brings it back (#1270 D13).",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "networkConnectingChecking": "Comprobando la conexión.",
+    "@networkConnectingChecking": {
+        "description": "Connecting dialog note when nothing was connected before."
+    },
+    "networkRetrying": "Error de red. Reintentando…",
+    "@networkRetrying": {
+        "description": "Connecting dialog note while the console re-activates after a backend failure (#829). Never worded as a password problem."
+    },
+    "networkPasswordLabel": "Contraseña",
+    "@networkPasswordLabel": {
+        "description": "Label over the password field in the join sheet."
+    },
+    "networkPasswordPlaceholder": "Escribí la contraseña",
+    "@networkPasswordPlaceholder": {
+        "description": "The empty password field."
+    },
+    "networkPasswordShow": "Mostrar",
+    "@networkPasswordShow": {
+        "description": "Reveals the typed password in the join sheet."
+    },
+    "networkPasswordHide": "Ocultar",
+    "@networkPasswordHide": {
+        "description": "Masks the typed password again."
+    },
+    "networkPasswordLength": "Contraseña, {count} caracteres",
+    "@networkPasswordLength": {
+        "description": "Accessible value of the masked password field.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "networkConnect": "Conectar",
+    "@networkConnect": {
+        "description": "Joins a network."
+    },
+    "networkDisconnect": "Desconectar",
+    "@networkDisconnect": {
+        "description": "Drops the current connection. Reversible, so it asks nothing."
+    },
+    "networkDetailsClose": "Cerrar detalles de la red",
+    "@networkDetailsClose": {
+        "description": "Accessible name of the close button on the network details dialog."
+    },
+    "networkAutoConnect": "Conectar automáticamente",
+    "@networkAutoConnect": {
+        "description": "Saved network setting: whether the console joins it on its own."
+    },
+    "networkChangePassword": "Cambiar contraseña",
+    "@networkChangePassword": {
+        "description": "Opens the join sheet to give a saved network a new key."
     },
     "controlTransportGroup": "CONMUTADORES DE TRANSPORTE",
     "@controlTransportGroup": {
@@ -1332,10 +1306,6 @@
             }
         }
     },
-    "trayTracksLabel": "Pistas",
-    "tracksOrdinal": "pista {number}",
-    "tracksNamesFootnote": "Renombra las pistas. El nombre es lo que muestran el escenario, los destinos del pedal y la pantalla de 7 pulgadas.",
-    "tracksEmpty": "No hay pistas — el motor no está en marcha.",
     "tracksRenameSheetTitle": "Renombrar pista",
     "trackLanesGroup": "CARRILES",
     "trackLaneOutputsGroup": "SALIDAS DE ESTE CARRIL",
@@ -1346,10 +1316,6 @@
     "a11yTrackLaneIdle": "{input}, sin grabar. Activa para grabarla.",
     "a11yTrackLaneNoLane": "{input}, sin grabar. Esta pista no tiene ningún carril libre para ella.",
     "a11yTrackLaneStopRecording": "Dejar de grabar esta entrada",
-    "a11yTracksRenameField": "Nombre de la pista",
-    "trayAudioLabel": "Audio",
-    "audioDeviceTab": "Dispositivo",
-    "audioRecordingTab": "Grabación",
     "audioGroupLabel": "AUDIO",
     "audioRateBufferRow": "Frecuencia / búfer",
     "audioRoundTripEstimate": "ida y vuelta {milliseconds} ms",
@@ -1370,8 +1336,6 @@
     "audioOpenAsio4all": "Abrir asio4all.org",
     "audioMaxLoopTitle": "Duración máxima del loop",
     "audioMaxLoopSubtitle": "Un tope mayor reserva más memoria por pista. Cambiarlo reabre el dispositivo.",
-    "audioDefaultLoopLengthTitle": "Duración de loop por defecto",
-    "audioDefaultLoopLengthSubtitle": "Auto redondea a loops base completos; un múltiplo fijo graba esa cantidad.",
     "audioRenameInputTitle": "Renombrar entrada",
     "inputOrdinal": "entrada {number}",
     "a11yInputRenameField": "Nombre de la entrada",
@@ -1379,51 +1343,13 @@
     "audioMeasure": "Medir",
     "audioRecordOffsetSub": "desfase de grabación {frames} frames",
     "audioRefusedConfig": "El dispositivo no pudo abrirse a {asked}. Funcionando a {actual}.",
-    "traySystemLabel": "Sistema",
-    "systemDisplayTab": "Pantalla",
-    "systemUpdatesTab": "Actualizaciones",
-    "systemStorageTab": "Almacenamiento",
-    "systemAboutTab": "Acerca de",
-    "systemPerformanceGroup": "RENDIMIENTO",
-    "systemHelpGroup": "AYUDA",
-    "systemAutomaticGroup": "AUTOMÁTICO",
     "systemThisConsoleGroup": "ESTA CONSOLA",
     "systemHousekeepingGroup": "MANTENIMIENTO",
     "systemHardwareGroup": "HARDWARE",
     "systemLegalGroup": "LEGAL",
     "systemRefreshRateTitle": "Frecuencia de refresco",
-    "systemRefreshRateSubtitle": "Cada cuánto se actualizan las ondas y los medidores. Más alto es más fluido pero usa más CPU.",
     "consoleTryAgain": "Reintentar",
     "updatesUnsupportedBanner": "Las actualizaciones desde la app solo están disponibles en la consola Segno.",
-    "updatesAvailableBanner": "v{version} está disponible.",
-    "@updatesAvailableBanner": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesStagingBanner": "Preparando v{version} en el sistema de reserva — {percent} %",
-    "@updatesStagingBanner": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            },
-            "percent": {
-                "type": "int"
-            }
-        }
-    },
-    "updatesCheckFailedBanner": "Falló la comprobación de actualizaciones — {reason}",
-    "@updatesCheckFailedBanner": {
-        "placeholders": {
-            "reason": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesCheckFailedReason": "no se pudo contactar con el servidor de actualizaciones.",
-    "updatesRestartNow": "Reiniciar ahora",
     "storageSessionsTitle": "Sesiones y tomas",
     "storageCapturesTitle": "Capturas",
     "storageCapturesSubtitle": "exportaciones y pistas",
@@ -1513,14 +1439,6 @@
         }
     },
     "storageActionFailed": "No se completó. No se modificó nada en el disco.",
-    "updatesDownloadFailedBanner": "Falló la descarga — {reason}",
-    "@updatesDownloadFailedBanner": {
-        "placeholders": {
-            "reason": {
-                "type": "String"
-            }
-        }
-    },
     "licencesReading": "Leyendo el registro de licencias…",
     "licenceCount": "{count, plural, =1{1 licencia} other{{count} licencias}}",
     "@licenceCount": {
@@ -1667,17 +1585,23 @@
     "signalNoLanes": "Aún no hay tomas — graba una y su cadena aparece aquí.",
     "signalNoTracks": "Sin pistas — el motor no está en marcha.",
     "signalNoOutputs": "Sin salidas — el motor no está en marcha.",
-    "powerOffRefuseTitle": "Primero cortá la toma",
-    "powerOffRefuseBody": "Hay una grabación en curso. Cortala y volvé a pulsar el botón de encendido si querés apagar.",
-    "powerOffConfirmTitle": "¿Apagar?",
-    "powerOffConfirmBody": "Los loops en RAM se pierden si apagás sin guardar. Se conserva el último guardado en disco.",
-    "powerOffKeepPlaying": "Seguir tocando",
-    "powerOffSaveAndPowerOff": "Guardar y apagar",
-    "powerOffWithoutSaving": "Apagar sin guardar",
-    "powerOffSaving": "Guardando…",
-    "powerOffSaveFailedTitle": "No se pudo guardar",
-    "powerOffSaveFailedBody": "La sesión no se escribió. No se apagó nada — los loops siguen en RAM.",
-    "a11yPowerOffMark": "Segno",
+    "powerRefuseTitle": "Primero cortá la toma",
+    "powerRefuseBody": "Hay una grabación en curso. Cortala y volvé a pulsar el botón de encendido si querés apagar.",
+    "powerKeepPlaying": "Seguir tocando",
+    "powerOptionsTitle": "Opciones de encendido",
+    "powerOptionsBody": "La reproducción se detendrá y tu sesión se guardará.",
+    "powerSessionUnnamed": "Esta sesión todavía no tiene nombre. Vas a ponérselo antes de guardarla.",
+    "powerStagedUpdate": "Segno {version} se instala durante el reinicio.",
+    "powerCancel": "Cancelar",
+    "powerRestart": "Reiniciar",
+    "powerShutDown": "Apagar",
+    "powerSaving": "Guardando…",
+    "powerSaveFailedTitle": "Segno sigue encendido",
+    "powerSaveFailedBody": "No se pudo guardar tu sesión, así que no se apagó nada. Tus loops siguen acá.",
+    "powerStayOn": "Seguir encendido",
+    "powerSafeToSwitchOff": "Ya podés apagar",
+    "powerRestarting": "Reiniciando",
+    "a11yPowerMark": "Segno",
     "stageLibrary": "Biblioteca",
     "sessionNewLoopNotSaved": "{name} empezó, pero todavía no se pudo guardar. Guárdalo para conservarlo.",
     "libraryNewLoopStays": "{name} se queda en tu Biblioteca.",
@@ -1860,6 +1784,8 @@
     "loopLengthNoteAuto": "Pulsa el pedal otra vez para fijar la duración.",
     "loopLengthNotApplied": "No se aplicó. Duración actual: {current}. Prueba otro número de compases.",
     "loopLengthNoteBars": "{bars, plural, one{Termina tras 1 compás y reproduce.} other{Termina tras {bars} compases y reproduce.}}",
+    "loopDefaultMultipleLabel": "Pistas siguientes",
+    "loopDefaultMultipleNote": "Múltiplos del primer loop. Auto redondea a loops completos.",
     "loopTimingLabel": "Momento de grabación",
     "loopTimingNoteImmediately": "Grabar y overdub responden al pulsar.",
     "loopTimingNoteLoopStart": "Grabar y overdub esperan al próximo inicio del loop. El primer loop sigue a Grabación.",
@@ -1930,6 +1856,8 @@
     "fxTitle": "Efectos",
     "fxChangeNotApplied": "No se aplicó ese cambio de efecto. Inténtalo de nuevo.",
     "fxPedalAssignments": "Asignaciones de pedal",
+    "fxPedalAssignmentsTitle": "Pedales",
+    "fxPedalAssignmentsCrumb": "EFECTOS / ASIGNACIONES DE PEDAL",
     "fxKindLiveInputs": "Entradas en vivo",
     "fxKindRecordedTracks": "Pistas grabadas",
     "fxKindOutputs": "Salidas",
@@ -2076,7 +2004,7 @@
     "a11yMixerPan": "Panorama de la pista {number}",
     "a11yMixerLevel": "Nivel de la pista {number}",
     "a11yMixerReset": "Restablecer todos los niveles a la unidad y los panoramas al centro",
-    "pedalSetupContextLeds": "Colores LED",
+    "pedalSetupContextLeds": "Colores de Custom",
     "pedalSetupLedColor": "Color LED",
     "pedalSetupLedEdit": "Editar color",
     "pedalSetupLedAdd": "Agregar color personalizado",
@@ -2165,8 +2093,6 @@
     "pedalSetupClearConfirm": "Borrar ambos bancos",
     "pedalSetupChooser": "{control} · {gesture}",
     "pedalSetupFixedNote": "Este control tiene una acción fija.",
-    "controlPedalSetupRow": "Ajustes de pedales",
-    "controlPedalSetupSub": "Qué hace cada pedal al pulsarlo o mantenerlo",
     "externalPedalsTitle": "Pedales externos",
     "externalPedalsSub": "Qué conectás a CTRL 1 y CTRL 2, y qué controla",
     "externalJackCtrl1": "CTRL 1",
@@ -2313,7 +2239,6 @@
     "midiToggle": "Alternar",
     "midiUnavailableAction": "Acción no disponible",
     "midiWhen": "Cuándo",
-    "midiControlsEntryDetail": "Elige un controlador y asigna sus botones, teclas y perillas.",
     "actionTapTempo": "Marcar tempo",
     "midiRetryOff": "Reintentar apagar",
     "midiRetryDevice": "Reintentar dispositivo",
@@ -2321,11 +2246,8 @@
     "midiResumeOn": "Reanudar",
     "midiResetConfiguration": "Restablecer asignaciones",
     "midiConfigurationUnavailable": "No se pudieron leer las asignaciones guardadas. Restablécelas para empezar de nuevo.",
-    "powerOffSettingsFailedTitle": "No se pudieron confirmar los ajustes",
-    "powerOffSettingsFailedBody": "Segno sigue encendido. Reintenta guardar antes de apagar.",
-    "powerOffRetry": "Reintentar",
-    "powerOffSettingsRetryFailedBody": "Segno no pudo confirmar que tu último cambio se haya guardado. Vuelve a intentarlo o apaga de todos modos.",
-    "powerOffAnyway": "Apagar de todos modos",
+    "powerRetry": "Reintentar",
+    "displayBrightnessSaveFailed": "No se pudo guardar",
     "clickSettingsRecoveryTitle": "Hay que recuperar los ajustes del clic",
     "clickSettingsRefusedTitle": "No se aplicó el cambio del clic",
     "clickSettingsRecoveryBody": "Reintenta recuperar el ajuste del clic.",
@@ -2401,6 +2323,28 @@
     "footFadeHoldTime": "Mantener · Tiempo",
     "footFadeFailure": "No se pudo iniciar el Fade. Inténtalo de nuevo.",
     "actionModePeel": "Peel",
+    "actionModeTuner": "Afinador",
+    "footTunerReference": "Referencia A4",
+    "footTunerHzUnit": "Hz",
+    "footTunerInputMuted": "Entrada silenciada",
+    "footTunerInputAudible": "Entrada audible",
+    "footTunerMuteInput": "Silenciar entrada",
+    "footTunerUnmuteInput": "Activar entrada",
+    "footTunerReferenceDown": "Referencia −",
+    "footTunerReferenceUp": "Referencia +",
+    "footTunerHoldReset": "Mantener · {hz} Hz",
+    "footTunerInputs": "Entradas {first}–{last}",
+    "footTunerInputsOne": "Entrada {number}",
+    "footTunerNextInputs": "Siguientes entradas",
+    "footTunerFlat": "Bajo",
+    "footTunerInTune": "Afinado",
+    "footTunerSharp": "Alto",
+    "footTunerCents": "{cents} centésimas",
+    "footTunerPlayOneNote": "Toca una nota",
+    "footTunerSaveFailed": "No se pudieron guardar los ajustes del afinador. Inténtalo de nuevo.",
+    "footTunerStartFailed": "El afinador no pudo iniciarse. Inténtalo de nuevo.",
+    "footTunerAtLimit": "La referencia A4 está en su límite.",
+    "footTunerSeeded": "El afinador está en Personalizado: mantén MODE y luego mantén el pedal 2.",
     "actionOperationPeel": "Peel",
     "footPeelLayers": "Capas",
     "footPeelOriginalOnly": "Solo la original",
@@ -2432,10 +2376,73 @@
     "settingsDeviceTitle": "Dispositivo",
     "settingsNetworkTitle": "Red",
     "settingsDisplaysTitle": "Pantallas",
+    "displaysTrackDisplay": "Pantalla de pista",
+    "displaysMainDisplay": "Pantalla principal",
+    "displaysTrackRole": "Pista seleccionada y forma de onda",
+    "displaysMainRole": "Escenario y ajustes",
+    "displaysTrackPanel": "7″",
+    "displaysMainPanel": "15,6″",
+    "displaysConnected": "Conectada",
+    "displaysNotConnected": "No conectada",
+    "displaysCalibrateTouch": "Calibrar táctil",
+    "displaysDimWhileIdle": "Atenuar en reposo",
+    "displaysDimNever": "Nunca",
+    "displaysDimNote": "Reproducir o grabar mantiene ambas pantallas encendidas. Un toque, el encoder, un pedal o MIDI las despierta.",
+    "displaysOptions": "Opciones de pantalla",
+    "displaysTrackWindow": "Ventana de la pantalla de pista",
+    "displaysDimMinutes": "{minutes} min",
     "settingsStorageTitle": "Almacenamiento",
     "settingsUpdatesTitle": "Actualizaciones",
     "settingsAboutTitle": "Acerca de Segno",
-    "settingsAboutSubtitle": "Nombre, versión, controlador y licencias",
+    "aboutThisConsolePanel": "Esta consola",
+    "aboutControllerPanel": "Controlador",
+    "aboutLicensesPanel": "Licencias",
+    "aboutRename": "Renombrar",
+    "aboutDefaultName": "Segno",
+    "aboutSegnoVersionRow": "Versión de Segno",
+    "aboutDisplaysRow": "Pantallas",
+    "aboutConnectionRow": "Conexión",
+    "aboutConnectionConnected": "Conectado",
+    "aboutConnectionDisconnected": "No conectado",
+    "aboutConnectionIncompatible": "Otro protocolo de enlace",
+    "aboutFirmwareRow": "Firmware",
+    "aboutWireProtocolRow": "Protocolo de enlace",
+    "aboutNotReported": "Sin informar",
+    "aboutLastFlashedCaption": "Último grabado por esta consola",
+    "aboutNotReportedCaption": "No se leyó ninguna versión del dispositivo",
+    "aboutControllerFirmwareRow": "Firmware del controlador",
+    "controllerFirmwareTitle": "Firmware del controlador",
+    "controllerFirmwareCrumb": "AJUSTES / Acerca de Segno / Firmware del controlador",
+    "controllerInstalledPanel": "Instalado",
+    "controllerUpdateUnsupported": "No se ha establecido si este hardware admite actualizar el controlador.",
+    "controllerSoftwareUpdates": "Actualizaciones de software",
+    "updatesPageInstalled": "Segno {version} instalado",
+    "updatesPageCheck": "Buscar actualizaciones",
+    "updatesPanelSoftware": "Actualizaciones de software",
+    "updatesPanelAvailable": "Actualización disponible",
+    "updatesPanelDownloading": "Descargando",
+    "updatesPanelReady": "Lista para instalar",
+    "updatesPanelPaused": "Actualización en pausa",
+    "updatesPageVersion": "Segno {version}",
+    "updatesPageVersionSize": "Segno {version} · {megabytes} MB",
+    "updatesPageIdle": "Busca una versión más reciente de Segno.",
+    "updatesPageCheckFailed": "No se pudo contactar con el servidor de actualizaciones. Revisa la red y vuelve a intentarlo.",
+    "updatesPageDownloadFailed": "La descarga no terminó. El software actual no ha cambiado.",
+    "updatesPageInterrupted": "Descarga interrumpida. El software actual no ha cambiado.",
+    "updatesPagePercent": "{percent} %",
+    "updatesPageDownload": "Descargar e instalar",
+    "updatesPageInstallRestart": "Instalar y reiniciar",
+    "updatesPageRetry": "Reintentar",
+    "updatesPageCancel": "Cancelar",
+    "updatesPageRollback": "Segno {attempted} no arrancó, así que la consola volvió a {restored}.",
+    "updatesPageDismiss": "Descartar",
+    "updatesPageAutomaticPanel": "Automático",
+    "updatesPageAutoCheck": "Buscar automáticamente",
+    "updatesPageAutoCheckCaption": "Nunca descarga ni instala por su cuenta.",
+    "updatesPageChannel": "Canal de actualizaciones",
+    "updatesPageChannelProduction": "Producción",
+    "updatesPageChannelExperimental": "Experimental",
+    "updatesPageConsolePanel": "Esta consola",
     "settingsMidiTitle": "MIDI",
     "settingsPower": "Apagado",
     "bootModeRetiredNotice": "Segno ahora siempre inicia en modo Grabar. Pulsa Modo para pasar a Silenciar.",

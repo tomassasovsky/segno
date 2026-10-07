@@ -13,8 +13,8 @@ import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/app_runtime.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
-import 'package:segno/appliance/power_off/power_off_gate.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
@@ -79,6 +79,8 @@ class _ReadGateStore extends FakeKeyValueStore {
   }
 }
 
+const _named = PowerSnapshot(currentSessionName: 'set');
+
 void main() {
   late AppRuntime runtime;
   late FakeAudioEngine engine;
@@ -142,6 +144,8 @@ void main() {
       performance: performance,
       sessions: sessions,
       powerOff: () async => halts++,
+      reboot: () async => halts++,
+      storageSettled: () async {},
     );
     addTearDown(() async {
       if (closeFailureExpected) {
@@ -532,7 +536,7 @@ void main() {
   });
 
   test(
-    'close drains session before its controls and cuts encoder ingress',
+    'close drains session before its controls and refuses encoder edits',
     () async {
       await runtime.start();
       final (loading, read) = await holdSessionRead();
@@ -540,7 +544,7 @@ void main() {
       var closed = false;
       final closing = runtime.close().then((_) => closed = true);
       final secondClose = runtime.close();
-      link.turn(-16);
+      runtime.control.encoderTurned(-16);
       await pumpEventQueue();
       final gainWhileDraining = engine.lastMasterGain;
       final closedWhileDraining = closed;
@@ -562,9 +566,11 @@ void main() {
     'close cancels a pending halt before waiting for session storage',
     () async {
       await runtime.start();
-      runtime.power.press(const PowerOffSnapshot());
+      runtime.power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await pumpEventQueue();
-      expect(runtime.power.state.phase, PowerOffPhase.goodbye);
+      expect(runtime.power.state.phase, PowerPhase.goodbye);
       final (loading, read) = await holdSessionRead();
       final closing = runtime.close();
       await Future<void>.delayed(const Duration(milliseconds: 2100));
@@ -583,13 +589,13 @@ void main() {
       runtime.control.encoderTurned(0);
       final (loading, read) = await holdSessionRead();
       final gain = engine.lastMasterGain!;
-      link.turn(-16);
+      runtime.control.encoderTurned(-16);
       await pumpEventQueue();
       final gainWhileLoading = engine.lastMasterGain;
       finishRead(read);
       await loading;
       expect(gainWhileLoading, gain);
-      link.turn(-16);
+      runtime.control.encoderTurned(-16);
       await pumpEventQueue();
       expect(engine.lastMasterGain, lessThan(gain));
     },
@@ -819,11 +825,13 @@ void main() {
       );
       expect(repository.mixRecoveryRequired, isTrue);
       expect(runtime.tempo.clickVolumeOwner.ready, isFalse);
-      runtime.power.press(const PowerOffSnapshot());
+      runtime.power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       for (var i = 0; i < 200 && halts == 0; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
-      expect(runtime.power.state.phase, PowerOffPhase.goodbye);
+      expect(runtime.power.state.phase, PowerPhase.goodbye);
       expect(halts, 1);
       // The next start replays what storage holds.
       expect(store.values['tempo.click_volume'], 1.5);

@@ -11,6 +11,7 @@ import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/audio_bootstrap.dart';
+import 'package:segno/app/font_licenses.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/monitor_migration.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
@@ -57,6 +58,8 @@ Future<void> runSegno(
   // The engine's vendored native code (Signalsmith Stretch, RNNoise,
   // miniaudio, VST3, CLAP) for System > About's open-source notices.
   registerVendoredLicenses();
+  // And the typefaces bundled with the app (Arimo, Inter, JetBrains Mono).
+  registerFontLicenses();
 
   final windowController = await WindowController.fromCurrentEngine();
   if (WaveformWindowArgs.isWaveformWindow(windowController.arguments)) {
@@ -237,6 +240,7 @@ Future<void> runSegno(
       updates: updates,
       wifi: wifi,
       brightness: brightness,
+      displayOutputs: createDisplayOutputs(),
       consoleFacts: consoleFacts,
       guards: registry,
     ),

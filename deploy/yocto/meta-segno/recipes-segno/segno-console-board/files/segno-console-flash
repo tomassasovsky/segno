@@ -27,7 +27,26 @@ LISTEN_SECONDS="${SEGNO_CONSOLE_LISTEN_SECONDS:-3}"
 # SWDIO idles mid-rail without it: the Pi firmware pulls GPIO25 down by default.
 SWDIO_GPIO="${SEGNO_SWDIO_GPIO:-25}"
 
+# What a verified program leaves for the app's About page: the board's firmware
+# is otherwise known only while it talks, and a silent board is exactly the one
+# whose version someone needs to read.
+RECORD="${SEGNO_CONSOLE_RECORD:-/data/segno/console-board/last-flashed}"
+
 log() { echo "segno-console-flash: $*" >&2; }
+
+# Best-effort: a data volume that will not take the record must not turn a
+# good flash into a failed boot. Written beside the target and renamed, so the
+# app never reads half a line.
+record_flash() {
+    if mkdir -p "$(dirname "$RECORD")" 2>/dev/null &&
+        printf 'firmware=%s protocol=%s\n' "$want_firmware" "$want_protocol" >"$RECORD.tmp" 2>/dev/null &&
+        mv -f "$RECORD.tmp" "$RECORD" 2>/dev/null; then
+        log "recorded firmware $want_firmware in $RECORD"
+    else
+        rm -f "$RECORD.tmp" 2>/dev/null || true
+        log "could not record the flash in $RECORD"
+    fi
+}
 
 [ -r "$MARKER" ] || { log "no firmware marker at $MARKER; nothing to enforce"; exit 0; }
 [ -r "$ELF" ] || { log "no firmware image at $ELF; nothing to flash"; exit 0; }
@@ -81,6 +100,7 @@ out=$(mktemp "${TMPDIR:-/tmp}/segno-console-flash.XXXXXX")
 if "$OPENOCD" -f "$CFG" -c "program $ELF verify reset exit" >"$out" 2>&1; then
     sed 's/^/segno-console-flash: openocd: /' "$out" >&2
     log "flashed firmware $want_firmware"
+    record_flash
 else
     sed 's/^/segno-console-flash: openocd: /' "$out" >&2
     # The app still starts: it will report the link as disconnected or

@@ -36,6 +36,8 @@ abstract final class AppToastId {
   static const footReverseFailure = 'app_footReverseFailure_error';
   static const footPeelRefused = 'app_footPeelRefused_toast';
   static const assignedActionRefused = 'app_assignedActionRefused_toast';
+  static const footTunerRefused = 'app_footTunerRefused_toast';
+  static const tunerSeeded = 'app_tunerSeeded_toast';
   static const mixSettings = 'app_mixSettings_error';
   static const clickSettings = 'app_clickSettings_error';
   static const decaySettings = 'app_decaySettings_error';

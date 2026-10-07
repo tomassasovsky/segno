@@ -95,24 +95,25 @@ class WaveTrackRow extends StatelessWidget {
         InteractionMode.mixer ||
         InteractionMode.fade ||
         InteractionMode.reverse ||
-        InteractionMode.peel => l10n.a11yTrackTileCustom(name, stateWord),
+        InteractionMode.peel ||
+        InteractionMode.tuner => l10n.a11yTrackTileCustom(name, stateWord),
       },
       selected: selected,
       borderRadius: 17,
       onTap: () {
         context.read<ControlCubit>().selectTrack(track.channel);
         switch (mode) {
-          case InteractionMode.record:
-            bloc.add(LooperRecordPressed(track.channel));
           case InteractionMode.mute:
             bloc.add(LooperMuteToggled(track.channel));
           case InteractionMode.fx:
             TracksCommands(context).announceFxChainToggle(track.channel);
             bloc.add(LooperTrackChainToggled(track.channel));
+          case InteractionMode.record:
           case InteractionMode.mixer:
           case InteractionMode.fade:
           case InteractionMode.reverse:
           case InteractionMode.peel:
+          case InteractionMode.tuner:
           case InteractionMode.custom:
             // Selection only — see the track column's own arm.
             break;
