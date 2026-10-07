@@ -33,8 +33,4 @@ class UnsupportedPlatformBackend implements PlatformUpdateBackend {
       Stream<double>.error(
         UnsupportedError('in-app updates are not supported on this platform'),
       );
-
-  @override
-  Future<void> applyAndRestart() async =>
-      throw UnsupportedError('in-app updates are unsupported on this platform');
 }

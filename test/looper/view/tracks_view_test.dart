@@ -860,7 +860,7 @@ void main() {
     await tester.tap(find.byKey(const Key('settingsTray_brightness')));
     await tester.pumpAndSettle();
     final context = tester.element(find.byType(SettingsTray));
-    final title = context.l10n.powerOffSaveFailedTitle;
+    final title = context.l10n.displayBrightnessSaveFailed;
     // A SnackBar can exist but be painted and hit-tested behind the opaque
     // SettingsTray sibling. The failure must be reachable above that sibling.
     expect(find.text(title).hitTestable(), findsOneWidget);

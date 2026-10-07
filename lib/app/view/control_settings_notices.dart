@@ -95,7 +95,7 @@ class ControlSettingsNotices {
                   }
                 },
                 child: Builder(
-                  builder: (context) => Text(context.l10n.powerOffRetry),
+                  builder: (context) => Text(context.l10n.powerRetry),
                 ),
               ),
             ],

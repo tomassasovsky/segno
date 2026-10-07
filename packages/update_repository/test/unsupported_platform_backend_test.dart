@@ -26,9 +26,5 @@ void main() {
         );
       },
     );
-
-    test('applyAndRestart throws', () {
-      expect(backend.applyAndRestart(), throwsUnsupportedError);
-    });
   });
 }

@@ -120,6 +120,25 @@ void main() {
   });
 
   group('leases', () {
+    test('settled completes at once when nothing is held, and otherwise '
+        'only when the last lease is released', () async {
+      repo = h.build(initial: [h.record(1)]);
+      await pumpEventQueue();
+      var idle = false;
+      await repo.settled();
+
+      final a = repo.acquire(internal, 'recording');
+      final b = repo.acquire(usb1, 'export');
+      unawaited(repo.settled().then((_) => idle = true));
+      a.release();
+      await pumpEventQueue();
+      expect(idle, isFalse);
+
+      b.release();
+      await pumpEventQueue();
+      expect(idle, isTrue);
+    });
+
     test('Internal and a mounted volume lease; release gives them back, '
         'once', () async {
       repo = h.build(initial: [h.record(1)]);
