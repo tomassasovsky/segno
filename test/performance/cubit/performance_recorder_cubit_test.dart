@@ -10,6 +10,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno_engine/segno_engine.dart'
     show
+        EngineResult,
         EngineSnapshot,
         LaneSnapshot,
         LatencyState,
@@ -1949,6 +1950,57 @@ void main() {
       await performance.disarmAndFinalize();
     });
 
+    test('a take that started on the drive but failed a later arm step '
+        'keeps its lease, names the drive, and ends as volumeLost when the '
+        'drive goes', () async {
+      engine = _SnapshotBlockingEngine();
+      final blocked = PerformanceRepository(
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(blocked.dispose);
+      final cubit = PerformanceRecorderCubit(
+        performance: blocked,
+        armedTickInterval: const Duration(milliseconds: 10),
+        renderPollInterval: const Duration(milliseconds: 10),
+        now: () => clock,
+        freeSpaceBytes: (_) async => null,
+        storage: storage,
+        destination: () => destination,
+      );
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      expect(blocked.armedDirectory, isNotNull, reason: 'the take is live');
+      expect(storage.leasesOn(destination), [
+        WriteLease(target: destination, purpose: WritePurpose.recording),
+      ]);
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderArmed>().having(
+          (s) => s.volumeLabel,
+          'volumeLabel',
+          'SEGNO USB',
+        ),
+      );
+
+      seedLog(blocked.armedDirectory!);
+      client.detach(1);
+      final completed = await completedWithin(cubit);
+      expect(
+        completed.result,
+        isA<PerformanceRecordStoppedEarly>().having(
+          (r) => r.reason,
+          'reason',
+          PerformanceStopReason.volumeLost,
+        ),
+      );
+    });
+
     test('an arm refused at its commit gives the drive back', () async {
       final guards = GuardRegistry();
       final guarded = PerformanceRepository(
@@ -1978,4 +2030,14 @@ void main() {
       expect(storage.leases, isEmpty);
     });
   });
+}
+
+/// Starts the take, then makes the arm snapshot unpublishable: a directory
+/// stands where its pending file must be written.
+class _SnapshotBlockingEngine extends FakeAudioEngine {
+  @override
+  EngineResult perfArm(String captureDir) {
+    Directory('$captureDir/arm-snapshot.json.pending').createSync();
+    return super.perfArm(captureDir);
+  }
 }

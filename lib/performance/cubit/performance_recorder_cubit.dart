@@ -359,6 +359,16 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
             scope: target.scope,
           );
         } on Object {
+          if (_performance.armedDirectory != null) {
+            // The take started and is recording on the drive; only a later
+            // step failed (the arm snapshot could not be published). It keeps
+            // its lease, so the drive cannot be ejected under it and a pull
+            // still ends it as volumeLost; the armed state shows it.
+            if (_lease?.isLost ?? false) {
+              unawaited(_stopEarly(PerformanceStopReason.volumeLost));
+            }
+            return;
+          }
           // The bundle could not be created on the drive (full, read-only
           // on error, gone): give the drive back and say so, rather than
           // leave a lease that blocks eject and shutdown.
