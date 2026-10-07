@@ -4,6 +4,7 @@
 /// `{documents}/exports/<slug>/` bundle.
 library;
 
+export 'src/models/capture_summary.dart';
 export 'src/models/performance_chains.dart';
 export 'src/models/performance_manifest.dart';
 export 'src/models/unfinalized_capture.dart';

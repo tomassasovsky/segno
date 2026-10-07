@@ -7,6 +7,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/performance/application/daw_project_export.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno_engine/segno_engine.dart'
     show
@@ -76,6 +77,44 @@ Future<PerformanceRecorderCompleted> waitForCompleted(
       .then((s) => s as PerformanceRecorderCompleted);
 }
 
+/// One stopped track with one settled lane: a completion over it exports one
+/// DAW track.
+const _settledLaneSnapshot = EngineSnapshot(
+  isRunning: true,
+  sampleRate: 48000,
+  bufferFrames: 128,
+  outputChannels: 2,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: LatencyState.idle,
+  measuredLatencyMs: -1,
+  tracks: [
+    TrackSnapshot(
+      state: TrackState.stopped,
+      volume: 1,
+      muted: false,
+      lengthFrames: 4800,
+      undoDepth: 0,
+      rms: 0,
+      peak: 0,
+      lanes: [
+        LaneSnapshot(
+          inputChannel: 0,
+          outputMask: 0x1,
+          volume: 1,
+          muted: false,
+          lengthFrames: 4800,
+          rms: 0,
+          peak: 0,
+        ),
+      ],
+    ),
+  ],
+);
+
 void main() {
   late Directory tempDir;
   late FakeAudioEngine engine;
@@ -141,8 +180,8 @@ void main() {
 
   /// Arms, disarms, and waits for a full [PerformanceRecorderCompleted] with
   /// a [PerformanceRecordDone] result — the shared "already-finished
-  /// capture" starting point for [renameCompletedCapture] and [reExport]
-  /// tests alike, both of which act on a state past the render pipeline.
+  /// capture" starting point for the [renameCompletedCapture] tests, which
+  /// act on a state past the render pipeline.
   Future<PerformanceRecorderCubit> completedCubit() async {
     engine.renderStatuses = const [
       PerformanceRenderTrackStatus(channel: 0, succeeded: true),
@@ -821,46 +860,11 @@ void main() {
 
   group('export summary (tracks)', () {
     test(
-      'a fresh completion (not re-export) populates tracks from a real '
-      "settled lane, proving _finishRender's own read-and-assign wiring — "
-      'not just reExport()',
+      'a fresh completion populates tracks from a real settled lane, '
+      "proving _finishRender's own read-and-assign wiring",
       () async {
         engine
-          ..nextSnapshot = const EngineSnapshot(
-            isRunning: true,
-            sampleRate: 48000,
-            bufferFrames: 128,
-            outputChannels: 2,
-            framesProcessed: 0,
-            xrunCount: 0,
-            inputRms: 0,
-            inputPeak: 0,
-            outputRms: 0,
-            latencyState: LatencyState.idle,
-            measuredLatencyMs: -1,
-            tracks: [
-              TrackSnapshot(
-                state: TrackState.stopped,
-                volume: 1,
-                muted: false,
-                lengthFrames: 4800,
-                undoDepth: 0,
-                rms: 0,
-                peak: 0,
-                lanes: [
-                  LaneSnapshot(
-                    inputChannel: 0,
-                    outputMask: 0x1,
-                    volume: 1,
-                    muted: false,
-                    lengthFrames: 4800,
-                    rms: 0,
-                    peak: 0,
-                  ),
-                ],
-              ),
-            ],
-          )
+          ..nextSnapshot = _settledLaneSnapshot
           ..laneExports[(0, 0)] = Float32List.fromList([0.1, 0.2, 0.3])
           ..renderStatuses = const [
             PerformanceRenderTrackStatus(channel: 0, succeeded: true),
@@ -910,9 +914,9 @@ void main() {
     test(
       "the capture's own persisted tempo reaches the exported .als "
       '(end-to-end: engine snapshot -> repository manifest -> '
-      '_writeDawExports -> DawManifestReader.read -> DawProject -> '
-      "buildAls), and reExport() re-reads the same manifest — an old take's "
-      'tempo can never drift after the fact',
+      'writeDawProject -> DawManifestReader.read -> DawProject -> '
+      'buildAls), and a later DAW project write re-reads the same manifest — '
+      "an old take's tempo can never drift after the fact",
       () async {
         engine
           ..renderStatuses = const [
@@ -929,11 +933,11 @@ void main() {
         await waitForCompleted(cubit);
         expect(readAls(dir), contains('<Manual Value="96.0"/>'));
 
-        // Re-export long after: whatever the live transport reads now is
-        // irrelevant — the manifest is the only tempo source (#281).
+        // Written again long after (Library > Audio's DAW project):
+        // whatever the live transport reads now is irrelevant — the
+        // manifest is the only tempo source (#281).
         engine.nextSnapshot = snapshotWithTempo(150);
-        await cubit.reExport();
-        await pumpEventQueue();
+        await writeDawProject(dir);
 
         expect(readAls(dir), contains('<Manual Value="96.0"/>'));
       },
@@ -1091,41 +1095,19 @@ void main() {
     );
 
     test('preserves the export summary tracks across a rename', () async {
-      final cubit = await completedCubit();
-      final path =
-          ((cubit.state as PerformanceRecorderCompleted).result!
-                  as PerformanceRecordDone)
-              .path;
-      Directory('$path/stems/wet').createSync(recursive: true);
-      File('$path/stems/wet/track0.wav').writeAsBytesSync([0]);
-      File('$path/performance.json').writeAsStringSync(
-        jsonEncode({
-          'slug': 'perf-x',
-          'sample_rate': 48000,
-          'capture_frames': 4800,
-          'channel_layout': {'master_channels': 2, 'captured_inputs': <int>[]},
-          'overrun_count': 0,
-          'overrun_gaps': <Map<String, dynamic>>[],
-          'layers': <Map<String, dynamic>>[],
-          'finalized': true,
-          'armSnapshot': {
-            'tracks': [
-              {
-                'channel': 0,
-                'lanes': [
-                  {
-                    'lane': 0,
-                    'deferred': false,
-                    'pcmRef': 'stems/wet/track0.wav',
-                  },
-                ],
-              },
-            ],
-          },
-        }),
-      );
-      await cubit.reExport();
-      final before = cubit.state as PerformanceRecorderCompleted;
+      engine
+        ..nextSnapshot = _settledLaneSnapshot
+        ..laneExports[(0, 0)] = Float32List.fromList([0.1, 0.2, 0.3])
+        ..renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
+      await cubit.toggleArm();
+      final before = await waitForCompleted(cubit);
       expect(before.tracks, hasLength(1));
 
       await cubit.renameCompletedCapture('Renamed Take');
@@ -1133,141 +1115,6 @@ void main() {
       final after = cubit.state as PerformanceRecorderCompleted;
       expect(after.tracks, before.tracks);
     });
-  });
-
-  group('reExport', () {
-    test('is a no-op when not currently Completed', () async {
-      final cubit = build();
-      addTearDown(cubit.close);
-      await cubit.reExport();
-      expect(cubit.state, isA<PerformanceRecorderIdle>());
-    });
-
-    test(
-      'regenerates project.als/fx-chains.txt without touching audio files',
-      () async {
-        final cubit = await completedCubit();
-        final path =
-            ((cubit.state as PerformanceRecorderCompleted).result!
-                    as PerformanceRecordDone)
-                .path;
-        final wavFile = File('$path/stems/wet/track0.wav')
-          ..createSync(recursive: true)
-          ..writeAsBytesSync([1, 2, 3, 4]);
-        final beforeBytes = wavFile.readAsBytesSync();
-        final beforeModified = wavFile.lastModifiedSync();
-        // Written by the original finish-render pass — reExport should
-        // still find it (proving it's re-invoking the same generation step,
-        // not something new).
-        expect(File('$path/project.als').existsSync(), isTrue);
-
-        await cubit.reExport();
-
-        expect(wavFile.readAsBytesSync(), beforeBytes);
-        expect(wavFile.lastModifiedSync(), beforeModified);
-        expect(File('$path/project.als').existsSync(), isTrue);
-      },
-    );
-
-    test('emits isReExporting: true, then false, around the call', () async {
-      final cubit = await completedCubit();
-      // expectLater + emitsInOrder (not a manual listen/cancel) so this
-      // waits for both emissions regardless of exactly when the second
-      // one's microtask lands relative to `reExport()`'s own Future
-      // resolving — a manual `listen`-then-`cancel` right after `await
-      // cubit.reExport()` is a real race here, since _writeDawExports does
-      // genuine (non-microtask) file I/O.
-      final expectation = expectLater(
-        cubit.stream,
-        emitsInOrder([
-          isA<PerformanceRecorderCompleted>().having(
-            (s) => s.isReExporting,
-            'isReExporting',
-            isTrue,
-          ),
-          isA<PerformanceRecorderCompleted>().having(
-            (s) => s.isReExporting,
-            'isReExporting',
-            isFalse,
-          ),
-        ]),
-      );
-
-      await cubit.reExport();
-      await expectation;
-    });
-
-    test(
-      're-reads the manifest fresh — a manifest that gained real track data '
-      'since the original export is reflected in tracks',
-      () async {
-        final cubit = await completedCubit();
-        final path =
-            ((cubit.state as PerformanceRecorderCompleted).result!
-                    as PerformanceRecordDone)
-                .path;
-        expect((cubit.state as PerformanceRecorderCompleted).tracks, isEmpty);
-
-        Directory('$path/stems/wet').createSync(recursive: true);
-        File('$path/stems/wet/track0.wav').writeAsBytesSync([0]);
-        File('$path/performance.json').writeAsStringSync(
-          jsonEncode({
-            'slug': 'perf-x',
-            'sample_rate': 48000,
-            'capture_frames': 4800,
-            'channel_layout': {
-              'master_channels': 2,
-              'captured_inputs': <int>[],
-            },
-            'overrun_count': 0,
-            'overrun_gaps': <Map<String, dynamic>>[],
-            'layers': <Map<String, dynamic>>[],
-            'finalized': true,
-            'armSnapshot': {
-              'tracks': [
-                {
-                  'channel': 0,
-                  'lanes': [
-                    {
-                      'lane': 0,
-                      'deferred': false,
-                      'pcmRef': 'stems/wet/track0.wav',
-                    },
-                  ],
-                },
-              ],
-            },
-          }),
-        );
-
-        await cubit.reExport();
-
-        final after = cubit.state as PerformanceRecorderCompleted;
-        expect(after.tracks, hasLength(1));
-      },
-    );
-
-    test(
-      'a write failure sets reExportFailed and leaves tracks unchanged',
-      () async {
-        final cubit = await completedCubit();
-        final before = cubit.state as PerformanceRecorderCompleted;
-        final path = (before.result! as PerformanceRecordDone).path;
-        // Replace the file reExport would overwrite with a directory of the
-        // same name, so the write throws a real FileSystemException instead
-        // of silently succeeding — the simplest reliable way to force an
-        // I/O failure without mocking dart:io.
-        File('$path/project.als').deleteSync();
-        Directory('$path/project.als').createSync();
-
-        await cubit.reExport();
-
-        final after = cubit.state as PerformanceRecorderCompleted;
-        expect(after.reExportFailed, isTrue);
-        expect(after.isReExporting, isFalse);
-        expect(after.tracks, before.tracks);
-      },
-    );
   });
 
   group('free-space floor (#640)', () {

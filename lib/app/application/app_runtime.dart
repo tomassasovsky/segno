@@ -181,6 +181,7 @@ class AppRuntime {
   /// The tuner's appliance preferences, read by the reading and the foot
   /// Tuner.
   late final TunerSettings tuner;
+
   /// The backing mix and click pan owners, and the player's one owner
   /// (#1200), with the cubit that presents it.
   late final BackingSettings backingSettings;

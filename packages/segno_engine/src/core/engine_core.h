@@ -309,6 +309,12 @@ extern int64_t (*le_test_mem_available_hook)(void);
 extern int64_t le_test_decode_budget;
 #endif
 
+/* Library audition voice (#1178, engine_audition.c): frees every
+ * engine-owned audition buffer with the callback stopped and silences the
+ * voice. Control thread, audio thread NOT running (configure, reopen,
+ * destroy). */
+void le_audition_release(le_engine* engine);
+
 /* One bounded timing read. refresh_cache is only true for full snapshots. */
 le_record_timing_readback le_record_timing_read(le_engine* engine,
                                                int refresh_cache);
