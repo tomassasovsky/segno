@@ -33893,6 +33893,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_reverse.h"
 #include "test_engine_peel.h"
 #include "test_engine_backing.h"
+#include "test_engine_audition.h"
 
 int main(void) {
   if (getenv("SEGNO_FADE_STAGING_TESTS_ONLY")) {
@@ -33945,6 +33946,7 @@ int main(void) {
   if (getenv("SEGNO_HISTORY_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_peel_tests();
   run_backing_tests();
+  run_audition_tests();
   if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_record_start_owned_cancel_survives_queued_pair();
   test_record_start_capture_and_no_source_refusal();

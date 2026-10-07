@@ -1791,6 +1791,16 @@ struct le_engine {
   /* Control-thread registry of every buffer the engine owns (in the ring,
    * held by the callback, or returned and not yet freed). */
   struct le_backing_buffer* backing_owned[LE_BACKING_MAX_BUFFERS];
+
+  /* Library audition voice (#1178; contract in segno_engine_api.h,
+   * ownership in engine_audition.c). The same buffer type and the same
+   * hand-back as the backing: the callback stores a buffer it will never
+   * read again in an a_audition_dead slot, the control thread frees it.
+   * PUBLISHED at the end of every block that ran the voice. */
+  struct le_backing_buffer* _Atomic a_audition_dead[LE_AUDITION_MAX_BUFFERS];
+  struct le_backing_buffer* audition_owned[LE_AUDITION_MAX_BUFFERS];
+  _Atomic int32_t a_audition_frames, a_audition_position, a_audition_bus;
+  _Atomic uint32_t a_audition_epoch;
   /* Callback-published exclusive recording-start choice: positive = count-in
    * measures, 0 = neither, -1 = sound start. One load reports a coherent pair. */
   _Atomic int32_t a_record_start;
@@ -2040,6 +2050,11 @@ struct le_engine {
   int32_t backing_item, backing_next_item, backing_state;
   uint32_t backing_end_count;
   int32_t backing_last_end;
+
+  /* Audio-thread-local audition voice (#1178): the playing preview, which
+   * owns its buffer, its read position and its output pair. */
+  struct le_backing_buffer* audition_buf;
+  int32_t audition_pos, audition_bus;
 
   /* One frozen stopped-launch deadline, with bounded insertion order. Actions
    * are 0 none, 1 fresh Record, 2 Play, 3 overdub. Members retain their own
