@@ -34,7 +34,7 @@ class BackingRepository {
        _retryDelay = retryDelay,
        _retries = retries {
     _epoch = _engine.backingState().epoch;
-    _cachedRate = _metering.snapshot().sampleRate;
+    _readDevice();
   }
 
   /// The repository over one engine object that both plays the voice and
@@ -62,6 +62,9 @@ class BackingRepository {
   /// (an epoch change) or while it reads 0 (not running yet), not on every
   /// refresh (review of P4, L3).
   int _cachedRate = 0;
+
+  /// The device block in frames, read with [_cachedRate].
+  int _cachedBlock = 0;
 
   final _states = StreamController<BackingPlayerState>.broadcast(sync: true);
   final _failures = StreamController<BackingFailure>.broadcast(sync: true);
@@ -99,9 +102,28 @@ class BackingRepository {
   /// Changes the performer must be told about.
   Stream<BackingNotice> get notices => _notices.stream;
 
-  int get _rate => _cachedRate > 0
-      ? _cachedRate
-      : (_cachedRate = _metering.snapshot().sampleRate);
+  int get _rate {
+    if (_cachedRate <= 0) _readDevice();
+    return _cachedRate;
+  }
+
+  void _readDevice() {
+    final snapshot = _metering.snapshot();
+    _cachedRate = snapshot.sampleRate;
+    _cachedBlock = snapshot.bufferFrames;
+  }
+
+  /// The wait between NOT_READY retries: the retries together span two and
+  /// a half device blocks, so a large interface block cannot outlast them,
+  /// and never less than the configured delay (review of P4, L5).
+  Duration get _retryWait {
+    if (_cachedRate <= 0 || _cachedBlock <= 0) return _retryDelay;
+    final micros =
+        (_cachedBlock * 2.5 * Duration.microsecondsPerSecond) /
+        (_cachedRate * _retries);
+    final wait = Duration(microseconds: micros.ceil());
+    return wait > _retryDelay ? wait : _retryDelay;
+  }
 
   /// Loads the asset [digest] (verified against its bytes), replacing the
   /// loaded file once it has decoded; the old one keeps playing until then.
@@ -178,14 +200,15 @@ class BackingRepository {
         var result = hand(audio, token);
         // NOT_READY lasts until the callback has applied the previous post
         // and a replaced buffer has finished its fade and come back: up to
-        // two device blocks. Retry a bounded number of times rather than
-        // once after a guess (review of P4, L1).
+        // two device blocks. Retry a bounded number of times, spread over
+        // two and a half blocks, rather than once after a guess (review of
+        // P4, L1 and L5).
         for (
           var retry = 0;
           retry < _retries && result == EngineResult.notReady;
           retry++
         ) {
-          await Future<void>.delayed(_retryDelay);
+          await Future<void>.delayed(_retryWait);
           if (!current() || _disposed) {
             audio.dispose();
             return false;
@@ -201,7 +224,7 @@ class BackingRepository {
         if (result == EngineResult.invalid) {
           // The interface may have changed rate under the decode: read it
           // afresh, and decode again when it did.
-          _cachedRate = _metering.snapshot().sampleRate;
+          _readDevice();
           if (audio.sampleRate != _rate) continue;
         }
         // The file decoded cleanly: a hand-over refusal is about the engine,
@@ -334,7 +357,7 @@ class BackingRepository {
     final s = _engine.backingState();
     if (s.epoch != _epoch) {
       _epoch = s.epoch;
-      _cachedRate = _metering.snapshot().sampleRate;
+      _readDevice();
       if (clearLoading) _emit(_state.copyWith(clearLoading: true));
       _restarted(s);
       return;
