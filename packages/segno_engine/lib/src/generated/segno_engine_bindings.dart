@@ -5078,6 +5078,44 @@ class SegnoEngineBindings {
   late final _le_fs_sync_dir = _le_fs_sync_dirPtr
       .asFunction<int Function(ffi.Pointer<ffi.Char>)>();
 
+  /// Repairs a float WAV part the engine's writer opened but never sealed (a
+  /// power cut or a crash), or cuts one back to a trusted length, for the
+  /// recording recovery (#1198) and anything else that salvages a part: keeps
+  /// the first min(whole frames present, `max_frames`) frames, truncates
+  /// anything after them (a torn last frame included), patches the RIFF and data
+  /// sizes and fsyncs. UINT64_MAX keeps every whole frame. `*kept` (may be NULL)
+  /// receives the frames kept. The file must be 32-bit float in the writer's
+  /// layout (RIFF/WAVE, `fmt `, an optional caller chunk such as `sgno`, then
+  /// `data`, whose size may still be the open file's zero). Returns 1 on
+  /// success, 0 when the file is not in that layout or a read or write fails.
+  /// The one size patcher; implemented by the native WAV writer (engine_wav.c).
+  int le_wav_patch_sizes(
+    ffi.Pointer<ffi.Char> path,
+    int max_frames,
+    ffi.Pointer<ffi.Uint64> kept,
+  ) {
+    return _le_wav_patch_sizes(
+      path,
+      max_frames,
+      kept,
+    );
+  }
+
+  late final _le_wav_patch_sizesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Uint64,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_wav_patch_sizes');
+  late final _le_wav_patch_sizes = _le_wav_patch_sizesPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Char>, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
   /// Starts an offline render of the finalized capture at `capture_dir`: spawns
   /// a worker thread that writes `stems/dry/track<channel>.wav` +
   /// `stems/wet/track<channel>.wav` under `capture_dir` for every non-empty
@@ -6390,6 +6428,255 @@ class SegnoEngineBindings {
       .asFunction<
         int Function(ffi.Pointer<le_midi_out>, ffi.Pointer<ffi.Uint8>, int)
       >();
+
+  /// Admission only: the verdict and the plan, with no job. Returns LE_OK,
+  /// LE_ERR_NO_COMMON_CYCLE, LE_ERR_CAPACITY (over max_frames), LE_ERR_INVALID
+  /// (no sources, an empty source, a chosen length without a tempo, a file
+  /// target without a path), LE_ERR_NOT_READY (a source is recording or
+  /// overdubbing, counting a posted command that will make it so, or has a
+  /// layer in flight) or LE_ERR_NOT_RUNNING.
+  int le_engine_render_measure(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_render_request> request,
+    ffi.Pointer<le_render_plan> plan,
+  ) {
+    return _le_engine_render_measure(
+      engine,
+      request,
+      plan,
+    );
+  }
+
+  late final _le_engine_render_measurePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_render_request>,
+            ffi.Pointer<le_render_plan>,
+          )
+        >
+      >('le_engine_render_measure');
+  late final _le_engine_render_measure = _le_engine_render_measurePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_render_request>,
+          ffi.Pointer<le_render_plan>,
+        )
+      >();
+
+  /// Starts the job: re-measures and posts LE_CMD_RENDER_FREEZE. Returns LE_OK
+  /// with *job set, any measure refusal, LE_ERR_ALREADY_RUNNING while a job
+  /// exists, LE_ERR_CAPACITY when the job's bytes exceed the recipe's own
+  /// budget (it never evicts the wet cache), LE_ERR_UNSUPPORTED without a
+  /// render worker, or a ring refusal.
+  int le_engine_render_begin(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_render_request> request,
+    ffi.Pointer<ffi.Uint32> job,
+  ) {
+    return _le_engine_render_begin(
+      engine,
+      request,
+      job,
+    );
+  }
+
+  late final _le_engine_render_beginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_render_request>,
+            ffi.Pointer<ffi.Uint32>,
+          )
+        >
+      >('le_engine_render_begin');
+  late final _le_engine_render_begin = _le_engine_render_beginPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_render_request>,
+          ffi.Pointer<ffi.Uint32>,
+        )
+      >();
+
+  /// Progress of job `job`: *state (le_render_state), *permille (0..1000, one
+  /// scale over staging, then the render) and,
+  /// once FAILED, *result (LE_ERR_TRACKS_CHANGED, LE_ERR_CAPACITY,
+  /// LE_ERR_INVALID on an effect allocation failure, LE_ERR_DEVICE on a write
+  /// failure or a configure/stop that joined the worker; a file whose
+  /// directory sync alone failed is published and reads DONE). Also the staging
+  /// heartbeat: call it from the control thread until DONE or FAILED. Returns
+  /// LE_OK, or LE_ERR_INVALID for an unknown job.
+  int le_engine_render_poll(
+    ffi.Pointer<le_engine> engine,
+    int job,
+    ffi.Pointer<ffi.Int32> state,
+    ffi.Pointer<ffi.Int32> permille,
+    ffi.Pointer<ffi.Int32> result,
+  ) {
+    return _le_engine_render_poll(
+      engine,
+      job,
+      state,
+      permille,
+      result,
+    );
+  }
+
+  late final _le_engine_render_pollPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_engine_render_poll');
+  late final _le_engine_render_poll = _le_engine_render_pollPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
+
+  /// Copies a DONE memory result (interleaved stereo) into `out`. Returns the
+  /// frames copied (at most max_frames), or LE_ERR_INVALID / LE_ERR_NOT_READY.
+  int le_engine_render_copy(
+    ffi.Pointer<le_engine> engine,
+    int job,
+    ffi.Pointer<ffi.Float> out,
+    int max_frames,
+  ) {
+    return _le_engine_render_copy(
+      engine,
+      job,
+      out,
+      max_frames,
+    );
+  }
+
+  late final _le_engine_render_copyPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_render_copy');
+  late final _le_engine_render_copy = _le_engine_render_copyPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Float>, int)
+      >();
+
+  /// Cancels and releases job `job` (any state). A file target leaves no
+  /// partial file. Returns LE_OK or LE_ERR_INVALID for an unknown job.
+  int le_engine_render_cancel(
+    ffi.Pointer<le_engine> engine,
+    int job,
+  ) {
+    return _le_engine_render_cancel(
+      engine,
+      job,
+    );
+  }
+
+  late final _le_engine_render_cancelPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Uint32)
+        >
+      >('le_engine_render_cancel');
+  late final _le_engine_render_cancel = _le_engine_render_cancelPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Admits a bounce. Returns LE_OK with *request (read the callback outcome
+  /// with le_engine_read_request_result), LE_ERR_NOT_READY (the render is not a
+  /// finished memory job, or the destination is busy: capturing, armed, a
+  /// pending command, a layer in flight, a previous bounce not yet filed, or
+  /// a full undo stack), LE_ERR_TRACKS_CHANGED (a source changed after the
+  /// render froze it), LE_ERR_MODE_MISMATCH (the length does not fit the loop
+  /// mode), LE_ERR_CAPACITY (no slot or buffer), LE_ERR_UNSUPPORTED (Clear
+  /// sources) or LE_ERR_INVALID. The history entry is filed when the outcome is
+  /// collected (the next le_engine_drain_events after the callback applied).
+  int le_engine_bounce(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_bounce_request> request,
+    ffi.Pointer<ffi.Uint64> receipt,
+  ) {
+    return _le_engine_bounce(
+      engine,
+      request,
+      receipt,
+    );
+  }
+
+  late final _le_engine_bouncePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_bounce_request>,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_bounce');
+  late final _le_engine_bounce = _le_engine_bouncePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_bounce_request>,
+          ffi.Pointer<ffi.Uint64>,
+        )
+      >();
+
+  /// Undoes or redoes a whole bounce in one callback drain. Plain le_engine_undo
+  /// and le_engine_redo refuse a BOUNCE entry on top (LE_ERR_INVALID), so no path
+  /// restores part of one. Returns LE_OK with *receipt, LE_ERR_INVALID (no
+  /// bounce on top), LE_ERR_NOT_READY (busy, as le_engine_bounce),
+  /// LE_ERR_MODE_MISMATCH or a ring refusal.
+  int le_engine_bounce_recover(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_bounce_recover_request> request,
+    ffi.Pointer<ffi.Uint64> receipt,
+  ) {
+    return _le_engine_bounce_recover(
+      engine,
+      request,
+      receipt,
+    );
+  }
+
+  late final _le_engine_bounce_recoverPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_bounce_recover_request>,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_bounce_recover');
+  late final _le_engine_bounce_recover = _le_engine_bounce_recoverPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_bounce_recover_request>,
+          ffi.Pointer<ffi.Uint64>,
+        )
+      >();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -6430,6 +6717,15 @@ enum le_result {
   /// fractional read head
   LE_ERR_TRANSFORMED(-10),
 
+  /// render recipe (#1202): the selected tracks'
+  /// lengths share no common cycle within the
+  /// cap; a chosen length is required
+  LE_ERR_NO_COMMON_CYCLE(-16),
+
+  /// render recipe (#1202): a source's material
+  /// changed after the render froze it
+  LE_ERR_TRACKS_CHANGED(-17),
+
   /// the file (or a directory on its path) does not
   /// exist (#1198)
   LE_ERR_NOT_FOUND(-18),
@@ -6453,6 +6749,8 @@ enum le_result {
     -8 => LE_ERR_NOT_READY,
     -9 => LE_ERR_REVERSED,
     -10 => LE_ERR_TRANSFORMED,
+    -16 => LE_ERR_NO_COMMON_CYCLE,
+    -17 => LE_ERR_TRACKS_CHANGED,
     -18 => LE_ERR_NOT_FOUND,
     -19 => LE_ERR_TRUNCATED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
@@ -6916,7 +7214,20 @@ enum le_command_code {
   LE_CMD_TRANSPOSE(86),
 
   /// checked internal Transpose bypass
-  LE_CMD_TRANSPOSE_BYPASS(87);
+  LE_CMD_TRANSPOSE_BYPASS(87),
+
+  /// render recipe (#1202): the callback records
+  /// every source's read law; never raw-posted
+  LE_CMD_RENDER_FREEZE(112),
+
+  /// Bounce (#1202): installs a rendered result on
+  /// the destination in one drain; checked,
+  /// never raw-posted
+  LE_CMD_BOUNCE(113),
+
+  /// Bounce Undo/Redo (#1202): reinstalls the
+  /// other side of a bounce; never raw-posted
+  LE_CMD_BOUNCE_RECOVER(114);
 
   final int value;
   const le_command_code(this.value);
@@ -7008,6 +7319,9 @@ enum le_command_code {
     85 => LE_CMD_SET_SPEED,
     86 => LE_CMD_TRANSPOSE,
     87 => LE_CMD_TRANSPOSE_BYPASS,
+    112 => LE_CMD_RENDER_FREEZE,
+    113 => LE_CMD_BOUNCE,
+    114 => LE_CMD_BOUNCE_RECOVER,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -8439,6 +8753,133 @@ typedef le_midi_event_cb =
 final class le_midi extends ffi.Opaque {}
 
 final class le_midi_out extends ffi.Opaque {}
+
+final class le_render_request extends ffi.Struct {
+  /// bit t = track t
+  @ffi.Uint32()
+  external int source_mask;
+
+  /// 0 = the common cycle
+  @ffi.Int32()
+  external int length_bars;
+
+  /// le_render_tails
+  @ffi.Int32()
+  external int tails;
+
+  /// 1 = include the All tracks chain
+  @ffi.Int32()
+  external int mix_fx;
+
+  /// le_render_target
+  @ffi.Int32()
+  external int target;
+
+  /// file target: the final path ("<path>.part" while
+  /// writing)
+  external ffi.Pointer<ffi.Char> path;
+
+  /// 0 = no cap beyond the cycle cap; Bounce passes the
+  /// destination's capacity
+  @ffi.Int32()
+  external int max_frames;
+}
+
+final class le_render_plan extends ffi.Struct {
+  /// the window, in frames
+  @ffi.Int32()
+  external int frames;
+
+  /// le_render_method
+  @ffi.Int32()
+  external int method;
+
+  /// the window in beats x 1000 (0 without a tempo)
+  @ffi.Int32()
+  external int beats_milli;
+
+  /// 0 = no tempo: lengths read in seconds
+  @ffi.Int32()
+  external int tempo_set;
+
+  /// sources whose chains hold a hosted plugin, which
+  /// renders dry
+  @ffi.Uint32()
+  external int plugin_mask;
+
+  /// sources whose Fade amount is below unity
+  @ffi.Uint32()
+  external int faded_mask;
+
+  /// sources heard through a not-yet-ready transform
+  @ffi.Uint32()
+  external int pending_mask;
+
+  /// Once sources longer than a chosen length: only
+  /// the part of their single pass inside the window
+  /// sounds, none when it starts after the window
+  @ffi.Uint32()
+  external int once_cut_mask;
+}
+
+/// ---- Bounce (#1202, Part 4a: Keep sources) ----
+///
+/// Installs a finished memory render (le_engine_render_begin with
+/// LE_RENDER_TARGET_MEMORY) on one destination track in ONE callback drain:
+/// the image as a stereo pair (lanes 0 and 1, image pans -1/+1, the other
+/// lanes silent), its length and clock, STOPPED, and the destination's
+/// processing reset — unity gain, unity lane levels, centred lane pans, mutes
+/// off, Fade and direction reset, and the chains given here (empty when NULL).
+/// `topology` (optional) is the destination's lane count, routing and mix,
+/// applied first through the ordinary mix path; the reset values then win.
+/// The destination's previous state becomes one LE_HIST_BOUNCE history entry;
+/// le_engine_bounce_recover undoes or redoes it whole.
+final class le_bounce_request extends ffi.Struct {
+  /// a DONE memory render
+  @ffi.Uint32()
+  external int job;
+
+  /// the track that receives the result
+  @ffi.Int32()
+  external int destination;
+
+  /// must be 1 until Clear sources lands (Part 4b)
+  @ffi.Int32()
+  external int keep_sources;
+
+  /// NULL: keep lane count and routing
+  external ffi.Pointer<le_mix_settings> topology;
+
+  /// lane_fx_count recipes; NULL: empty chains
+  external ffi.Pointer<le_fx_recipe> lane_fx;
+
+  @ffi.Int32()
+  external int lane_fx_count;
+
+  /// NULL: an empty track chain
+  external ffi.Pointer<le_fx_recipe> track_fx;
+}
+
+final class le_bounce_recover_request extends ffi.Struct {
+  @ffi.Int32()
+  external int destination;
+
+  /// 0: undo the bounce on top of the undo stack;
+  /// 1: redo the one on top of the redo stack
+  @ffi.Int32()
+  external int redo;
+
+  /// the side being restored
+  external ffi.Pointer<le_mix_settings> topology;
+
+  /// its chains; NULL: empty
+  external ffi.Pointer<le_fx_recipe> lane_fx;
+
+  @ffi.Int32()
+  external int lane_fx_count;
+
+  external ffi.Pointer<le_fx_recipe> track_fx;
+}
 
 const int LE_MAX_CHANNELS = 32;
 

@@ -17,6 +17,7 @@ export 'src/audio_engine.dart'
         EnginePluginHosting,
         EngineResult,
         EngineRouting,
+        EngineSelectedRender,
         InputConditioningControl,
         LooperModeControl,
         LooperTransport,
@@ -84,6 +85,18 @@ export 'src/plugin_descriptor.dart'
         PluginParamInfo,
         PluginScanProgress,
         PluginSlotHandle;
+export 'src/selected_render.dart'
+    show
+        RenderAdmission,
+        RenderJobState,
+        RenderJobStatus,
+        RenderMeasurement,
+        RenderMethod,
+        RenderPlan,
+        RenderRequest,
+        RenderTails,
+        RenderTarget,
+        renderTracksOfMask;
 export 'src/storage_io.dart'
     show
         FileDigest,

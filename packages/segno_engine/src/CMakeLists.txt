@@ -79,6 +79,8 @@ add_library(segno_engine SHARED
   core/engine_commands.c     # control-thread command producers
   core/engine_fx_recipe.c    # prepared FX publication and resource retirement
   core/engine_cache.c        # Loop-stage wet cache (scheduler + render worker)
+  core/engine_render.c       # shared render recipe: Bounce + Save selected audio
+  core/engine_wav.c          # the one native streaming float WAV writer
   core/engine_restore.c      # Offline loop-close restoration worker (#697 S9)
   core/engine_cond.c         # per-input conditioning stage (input conditioning)
   # Offline loop-close restoration DSP (#697 S8) — pure TUs, no engine state;
