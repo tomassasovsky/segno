@@ -28,7 +28,8 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 8: ten RGB hues and a ten-bit physical activity mask (STATE51).
+/* 9: ENCODER_BUTTON (0x05) -- the encoder's push switch, press and release.
+ * 8: ten RGB hues and a ten-bit physical activity mask (STATE51).
  * 7 is the separate Song/hardware branch (STATE21), not this format.
  * 6: mode value 3 is CUSTOM, with the same STATE shape. 5: CTRL kind NONE --
  * the board can now say a jack is EMPTY (a plug pulled
@@ -39,7 +40,7 @@ extern "C" {
  * stopped tracking the loop. The board is flashed over SWD independently of
  * the app, so the two can drift; this is what makes that visible instead of
  * silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 8u
+#define PEDAL_LINK_PROTOCOL_VERSION 9u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -50,6 +51,7 @@ extern "C" {
  * adds a message type, never a hello byte. */
 #define PEDAL_LINK_TYPE_HELLO 0x03u    /* [protocol, fw major, fw minor] */
 #define PEDAL_LINK_TYPE_CTRL 0x04u     /* [jack, contact, kind, value] */
+#define PEDAL_LINK_TYPE_ENCODER_BUTTON 0x05u /* [pressed] */
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
 
@@ -176,6 +178,7 @@ size_t pedal_link_encode(uint8_t type, const uint8_t *payload, uint8_t len, uint
 
 size_t pedal_link_encode_button(uint8_t button, uint8_t pressed, uint8_t *out);
 size_t pedal_link_encode_encoder(int8_t delta, uint8_t *out);
+size_t pedal_link_encode_encoder_button(uint8_t pressed, uint8_t *out);
 size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out);
 size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8_t value,
                               uint8_t *out);

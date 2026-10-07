@@ -65,6 +65,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.menuArtLine,
     required this.menuPowerLine,
     required this.encoderFocus,
+    required this.frameBackground,
+    required this.frameRule,
+    required this.frameControlLine,
+    required this.frameControlFill,
+    required this.frameText,
+    required this.frameCrumb,
+    required this.frameIcon,
     required this.knobFaceTop,
     required this.knobFaceBottom,
     required this.disabledOpacity,
@@ -243,7 +250,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
         InteractionMode.mixer ||
         InteractionMode.fade ||
         InteractionMode.reverse ||
-        InteractionMode.peel => (outline: ledAmber, fill: cardHigh),
+        InteractionMode.peel ||
+        InteractionMode.tuner => (outline: ledAmber, fill: cardHigh),
       };
 
   /// Pedal LED palette — the on-screen pedal faceplate renders the firmware's
@@ -291,6 +299,24 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// control (`#f2bf70`), distinct from the blue of a selection.
   final Color encoderFocus;
 
+  /// The settings frame every Loop settings and Settings page is drawn in,
+  /// as the pen draws it on all of them (`05 Loop setup / 01 Settings` and
+  /// the section 05 to 08 screens).
+  ///
+  /// [frameBackground] is the page, `#111215`; [frameRule] the line under the
+  /// top bar, `#3d3d3d`; [frameControlLine] the line around Back and Stage,
+  /// `#515d6e`; [frameControlFill] Stage's fill, `#202735`; [frameText] the
+  /// title and Stage's label, `#e7edf6`; [frameCrumb] the breadcrumb,
+  /// `#b5b5b5`; [frameIcon] Back's chevron, `#f5f1e9`. Those are the dark
+  /// flavour's; high contrast strengthens them (WCAG 1.4.11).
+  final Color frameBackground;
+  final Color frameRule;
+  final Color frameControlLine;
+  final Color frameControlFill;
+  final Color frameText;
+  final Color frameCrumb;
+  final Color frameIcon;
+
   final Color knobFaceTop;
   final Color knobFaceBottom;
 
@@ -310,6 +336,11 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
 
   /// The UI typeface (DS `font-ui`, bundled under `assets/fonts/`).
   static const String displayFont = 'Inter';
+
+  /// The settings frame's typeface: the pen sets the top bar's breadcrumb and
+  /// Stage, and the page title, in Arimo (bundled under `assets/fonts/`,
+  /// Apache 2.0).
+  static const String frameFont = 'Arimo';
 
   /// Bold Helvetica legend face from the Segno printed overlay — pedal silk
   /// labels and the main looper screen.
@@ -373,6 +404,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? menuArtLine,
     Color? menuPowerLine,
     Color? encoderFocus,
+    Color? frameBackground,
+    Color? frameRule,
+    Color? frameControlLine,
+    Color? frameControlFill,
+    Color? frameText,
+    Color? frameCrumb,
+    Color? frameIcon,
     Color? knobFaceTop,
     Color? knobFaceBottom,
     double? disabledOpacity,
@@ -426,6 +464,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     menuArtLine: menuArtLine ?? this.menuArtLine,
     menuPowerLine: menuPowerLine ?? this.menuPowerLine,
     encoderFocus: encoderFocus ?? this.encoderFocus,
+    frameBackground: frameBackground ?? this.frameBackground,
+    frameRule: frameRule ?? this.frameRule,
+    frameControlLine: frameControlLine ?? this.frameControlLine,
+    frameControlFill: frameControlFill ?? this.frameControlFill,
+    frameText: frameText ?? this.frameText,
+    frameCrumb: frameCrumb ?? this.frameCrumb,
+    frameIcon: frameIcon ?? this.frameIcon,
     knobFaceTop: knobFaceTop ?? this.knobFaceTop,
     knobFaceBottom: knobFaceBottom ?? this.knobFaceBottom,
     disabledOpacity: disabledOpacity ?? this.disabledOpacity,
@@ -487,6 +532,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       menuArtLine: c(menuArtLine, other.menuArtLine),
       menuPowerLine: c(menuPowerLine, other.menuPowerLine),
       encoderFocus: c(encoderFocus, other.encoderFocus),
+      frameBackground: c(frameBackground, other.frameBackground),
+      frameRule: c(frameRule, other.frameRule),
+      frameControlLine: c(frameControlLine, other.frameControlLine),
+      frameControlFill: c(frameControlFill, other.frameControlFill),
+      frameText: c(frameText, other.frameText),
+      frameCrumb: c(frameCrumb, other.frameCrumb),
+      frameIcon: c(frameIcon, other.frameIcon),
       knobFaceTop: c(knobFaceTop, other.knobFaceTop),
       knobFaceBottom: c(knobFaceBottom, other.knobFaceBottom),
       disabledOpacity:
@@ -578,6 +630,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     menuArtLine: Color(0xFF556881),
     menuPowerLine: Color(0xFF5F5F5F),
     encoderFocus: Color(0xFFF2BF70),
+    frameBackground: Color(0xFF111215),
+    frameRule: Color(0xFF3D3D3D),
+    frameControlLine: Color(0xFF515D6E),
+    frameControlFill: Color(0xFF202735),
+    frameText: Color(0xFFE7EDF6),
+    frameCrumb: Color(0xFFB5B5B5),
+    frameIcon: Color(0xFFF5F1E9),
     knobFaceTop: Color(0xFF232325),
     knobFaceBottom: Color(0xFF121214),
     disabledOpacity: 0.4,
@@ -656,6 +715,17 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     menuArtLine: Color(0xFF556881),
     menuPowerLine: Color(0xFF5F5F5F),
     encoderFocus: Color(0xFFF2BF70),
+    // The pen's frame at high contrast: the page goes to this flavour's
+    // black, the rule and the control lines to its `line` and `borderStrong`
+    // (Back has no fill, so its line is its only edge and must clear 3:1),
+    // and the text to its white and `textSecondary`.
+    frameBackground: Color(0xFF000000),
+    frameRule: Color(0xFF6E6E6E),
+    frameControlLine: Color(0xFF8A8A8A),
+    frameControlFill: Color(0xFF202735),
+    frameText: Color(0xFFFFFFFF),
+    frameCrumb: Color(0xFFD8D8D8),
+    frameIcon: Color(0xFFFFFFFF),
     knobFaceTop: Color(0xFF2E2E30),
     knobFaceBottom: Color(0xFF171719),
     // Dim less than [dark]: a disabled control must still clear the contrast

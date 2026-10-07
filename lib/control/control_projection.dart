@@ -113,6 +113,10 @@ PedalTrackLed projectTrackLed(
       // Lit while a press would remove a layer, so "none remain" and a busy
       // track are visible by foot.
       return (track?.canPeel ?? false) ? PedalTrackLed.blue : PedalTrackLed.off;
+    case InteractionMode.tuner:
+      // The track switches pick inputs here, not tracks: their light is the
+      // switch light alone (`tunerStates`).
+      return PedalTrackLed.off;
     case InteractionMode.custom:
       return customFunctions[channel] ?? false
           ? PedalTrackLed.blue
@@ -148,6 +152,7 @@ PedalStateFrame projectFrame(
   Map<int, bool?> boundChains = const {},
   Map<int, bool> customFunctions = const {},
   Map<PedalButton, bool> physicalCustomStates = const {},
+  Map<PedalButton, bool> tunerStates = const {},
   Set<PedalButton> acceptedContacts = const {},
 }) {
   final leds = <PedalTrackLed>[
@@ -188,6 +193,7 @@ PedalStateFrame projectFrame(
     performanceArmed: performanceArmed,
     clearFadeActive: clearFadeActive,
     physicalCustomStates: physicalCustomStates,
+    tunerStates: tunerStates,
     acceptedContacts: acceptedContacts,
   );
   final sampleRate = looper.status.sampleRate;
@@ -215,7 +221,8 @@ PedalStateFrame projectFrame(
       InteractionMode.mixer ||
       InteractionMode.fade ||
       InteractionMode.reverse ||
-      InteractionMode.peel => PedalMode.custom,
+      InteractionMode.peel ||
+      InteractionMode.tuner => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
@@ -329,12 +336,17 @@ int _physicalButtonMask(
   required bool performanceArmed,
   required bool clearFadeActive,
   required Map<PedalButton, bool> physicalCustomStates,
+  required Map<PedalButton, bool> tunerStates,
   required Set<PedalButton> acceptedContacts,
 }) {
   var mask = 0;
   for (final button in PedalButton.values) {
     final lit = switch (button) {
       PedalButton.mode => overlay.mode != InteractionMode.record,
+      // The Tuner face's own lights: the tuned input, Stop while muted,
+      // Bank past the first page; Undo and Clear while held.
+      _ when overlay.mode == InteractionMode.tuner =>
+        (tunerStates[button] ?? false) || acceptedContacts.contains(button),
       _ when overlay.mode == InteractionMode.mixer =>
         FootMixerProjection.pedalRoles[button]!.slot != null
             ? overlay.footMixer.channel ==

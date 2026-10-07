@@ -132,7 +132,9 @@ void main() {
       );
       addTearDown(cubit.close);
       const snapshot = PowerOffSnapshot();
-      cubit.press(snapshot);
+      cubit
+        ..press(snapshot)
+        ..confirmPowerOff(snapshot);
       await tester.pumpApp(
         BlocProvider.value(
           value: cubit,

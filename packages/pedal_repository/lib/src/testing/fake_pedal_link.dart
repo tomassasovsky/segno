@@ -6,7 +6,8 @@ import 'dart:async';
 import 'package:pedal_repository/pedal_repository.dart';
 
 /// A controllable [PedalLink] for driving a real `PedalRepository` in tests:
-/// push board messages with [emit] (or [press] / [turn] / [hello]) and inspect
+/// push board messages with [emit] (or [press] / [turn] / [pressEncoder] /
+/// [hello]) and inspect
 /// what segno sent in [sent].
 class FakePedalLink implements PedalLink {
   final StreamController<PedalLinkMessage> _inbound =
@@ -32,6 +33,10 @@ class FakePedalLink implements PedalLink {
   /// An encoder turn of [delta] detents, clamped to the wire's int8 like the
   /// on-screen pedal.
   void turn(int delta) => emit(EncoderMessage(delta.clamp(-128, 127)));
+
+  /// An encoder push-switch press ([down] true) or release.
+  void pressEncoder({required bool down}) =>
+      emit(EncoderButtonMessage(pressed: down));
 
   /// The board's hello.
   void hello({int firmwareMajor = 1, int firmwareMinor = 0}) => emit(

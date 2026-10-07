@@ -2,7 +2,7 @@
 //
 // A PURE THIN CLIENT, like the pedal it replaces: it holds no looper state. It
 // renders the ring and the indicator pills from the last good STATE frame segno
-// pushes, and sends raw footswitch / encoder events. segno runs the behavior
+// pushes, and sends raw footswitch / encoder / encoder-switch events. segno runs the behavior
 // machine and is the single source of truth.
 //
 // Link: Serial1 = UART0, GP16 TX / GP17 RX -> the Pi's uart3 (GPIO8/9,
@@ -27,7 +27,7 @@
 struct Rgb { uint8_t r, g, b; };
 
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 12;
+static const uint8_t FW_MINOR = 13;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -239,6 +239,27 @@ static void pollEncoder() {
     if (!owed) return;
     uint8_t buf[PEDAL_LINK_MAX_FRAME];
     sendFrame(buf, pedal_link_encode_encoder(owed > 0 ? 1 : -1, buf));
+  }
+}
+
+// The encoder's push switch: a bare contact to GND like a footswitch, and
+// debounced the same way, one ENCODER_BUTTON message per stable edge.
+static bool g_encSwStable = false;
+static bool g_encSwLastRaw = false;
+static unsigned long g_encSwRawSinceMs = 0;
+
+static void pollEncoderButton() {
+  const unsigned long now = millis();
+  const bool raw = digitalRead(PIN_ENC_SW) == LOW;
+  if (raw != g_encSwLastRaw) {
+    g_encSwLastRaw = raw;
+    g_encSwRawSinceMs = now;
+    return;
+  }
+  if (raw != g_encSwStable && now - g_encSwRawSinceMs >= DEBOUNCE_MS) {
+    g_encSwStable = raw;
+    uint8_t buf[PEDAL_LINK_MAX_FRAME];
+    sendFrame(buf, pedal_link_encode_encoder_button(raw ? 1 : 0, buf));
   }
 }
 
@@ -838,6 +859,7 @@ void loop() {
   pollLink();
   pollButtons();
   pollEncoder();
+  pollEncoderButton();
   pollCtrl();
 
   const unsigned long now = millis();
