@@ -199,6 +199,7 @@ class SessionTrack {
     required this.fadeAmount,
     required this.reversed,
     required this.lanes,
+    this.spanFrames = 0,
   });
 
   /// Projects a [SessionTrack] from a current-schema JSON map.
@@ -232,6 +233,10 @@ class SessionTrack {
         );
       }
     }
+    final span = json['spanFrames'];
+    if (span is! int || span < 0) {
+      throw const FormatException('invalid track span');
+    }
     return SessionTrack(
       channel: channel,
       multiple: (json['multiple'] as num).toInt(),
@@ -239,6 +244,7 @@ class SessionTrack {
       fadeAmount: amount.toDouble(),
       reversed: reversed,
       lanes: lanes,
+      spanFrames: span,
     );
   }
 
@@ -261,6 +267,12 @@ class SessionTrack {
   /// The track's lanes, each with its own mix/routing and audio layers.
   final List<SessionLane> lanes;
 
+  /// The master length the take was laid down against when that is not
+  /// [Session.recordedLengthFrames] (#1179, schema 14): a take recorded
+  /// after a retime. 0 for a take on the recorded master. Recalled through
+  /// the engine's import span, so the take reads at its own ratio.
+  final int spanFrames;
+
   /// Serializes this track to a JSON map.
   Map<String, dynamic> toJson() => {
     'channel': channel,
@@ -268,6 +280,7 @@ class SessionTrack {
     'lengthFrames': lengthFrames,
     'fadeAmount': fadeAmount,
     'reversed': reversed,
+    'spanFrames': spanFrames,
     'lanes': [for (final l in lanes) l.toJson()],
   };
 
@@ -281,6 +294,7 @@ class SessionTrack {
           lengthFrames == other.lengthFrames &&
           fadeAmount == other.fadeAmount &&
           reversed == other.reversed &&
+          spanFrames == other.spanFrames &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -290,6 +304,7 @@ class SessionTrack {
     lengthFrames,
     fadeAmount,
     reversed,
+    spanFrames,
     Object.hashAll(lanes),
   );
 }
@@ -756,6 +771,12 @@ class Session {
     this.pedalBindings = '',
     this.inputSetup = const SessionInputSetup(),
     this.outputSetup = const SessionOutputSetup(),
+    this.recordedTempoBpm = 0,
+    this.recordedLengthFrames = 0,
+    this.defaultFollowTempo = true,
+    this.trackFollowTempoOverrides = const {},
+    this.defaultPitchMode = PitchMode.unchanged,
+    this.trackPitchModeOverrides = const {},
   });
 
   /// Projects a [Session] from a decoded JSON map.
@@ -773,6 +794,10 @@ class Session {
         supported: formatVersion,
       );
     }
+    final recorded = _readRecorded(
+      json['recordedTempoBpm'],
+      json['recordedLengthFrames'],
+    );
     return Session(
       name: _readName(json['name']),
       sampleRate: (json['sampleRate'] as num).toInt(),
@@ -855,12 +880,30 @@ class Session {
       outputSetup: SessionOutputSetup.fromJson(
         json['outputSetup'] as Map<String, dynamic>?,
       ),
+      recordedTempoBpm: recorded.tempo,
+      recordedLengthFrames: recorded.length,
+      defaultFollowTempo: json['defaultFollowTempo'] as bool,
+      trackFollowTempoOverrides: _readTrackOverrides(
+        json['trackFollowTempoOverrides'] as Map<String, dynamic>,
+        (value) => value! as bool,
+      ),
+      defaultPitchMode: _readEnum(json['defaultPitchMode'], PitchMode.values),
+      trackPitchModeOverrides: _readTrackOverrides(
+        json['trackPitchModeOverrides'] as Map<String, dynamic>,
+        (value) => _readEnum(value, PitchMode.values),
+      ),
     );
   }
 
   /// The current manifest schema stores per-track settings (including each
-  /// track's playback direction since 13) and all FX stages.
-  static const int formatVersion = 13;
+  /// track's playback direction since 13, and the recorded tempo, each
+  /// take's span and the Audio & tempo settings since 14) and all FX
+  /// stages.
+  ///
+  /// 14 is the next number on this base; it lands as 16, after
+  /// Multiply/Divide (14) and the backing player (15), with its conversion
+  /// step keyed by 15 (#1179 Part 4b).
+  static const int formatVersion = 14;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -1030,6 +1073,29 @@ class Session {
   /// recorded. Omitted from the manifest when it is the default setup.
   final SessionOutputSetup outputSetup;
 
+  /// The tempo the takes were laid down at and the master length it measured
+  /// (#1179, schema 14); both 0 when the takes are at [tempoBpm] on
+  /// [baseLengthFrames] or there is no grid. A recall commits the takes at
+  /// this pair and then retimes to [tempoBpm], which lands on
+  /// [baseLengthFrames].
+  final double recordedTempoBpm;
+
+  /// See [recordedTempoBpm].
+  final int recordedLengthFrames;
+
+  /// The Follow tempo default every track inherits (#1179, schema 14).
+  final bool defaultFollowTempo;
+
+  /// Explicit Follow tempo choices; missing tracks follow
+  /// [defaultFollowTempo].
+  final Map<int, bool> trackFollowTempoOverrides;
+
+  /// The Pitch default every following track inherits (#1179, schema 14).
+  final PitchMode defaultPitchMode;
+
+  /// Explicit Pitch choices; missing tracks follow [defaultPitchMode].
+  final Map<int, PitchMode> trackPitchModeOverrides;
+
   /// Explicit source choices retained for inactive lanes and empty tracks.
   final Map<(int, int), int> laneInputs;
 
@@ -1166,6 +1232,18 @@ class Session {
     'pedalBindings': pedalBindings,
     if (!inputSetup.isEmpty) 'inputSetup': inputSetup.toJson(),
     if (!outputSetup.isEmpty) 'outputSetup': outputSetup.toJson(),
+    'recordedTempoBpm': recordedTempoBpm,
+    'recordedLengthFrames': recordedLengthFrames,
+    'defaultFollowTempo': defaultFollowTempo,
+    'trackFollowTempoOverrides': {
+      for (final entry in trackFollowTempoOverrides.entries)
+        '${entry.key}': entry.value,
+    },
+    'defaultPitchMode': defaultPitchMode.name,
+    'trackPitchModeOverrides': {
+      for (final entry in trackPitchModeOverrides.entries)
+        '${entry.key}': entry.value.name,
+    },
   };
 
   @override
@@ -1228,7 +1306,16 @@ class Session {
           _laneMapEquals(laneOutputs, other.laneOutputs) &&
           _mapEquals(laneCounts, other.laneCounts) &&
           inputSetup == other.inputSetup &&
-          outputSetup == other.outputSetup;
+          outputSetup == other.outputSetup &&
+          recordedTempoBpm == other.recordedTempoBpm &&
+          recordedLengthFrames == other.recordedLengthFrames &&
+          defaultFollowTempo == other.defaultFollowTempo &&
+          _mapEquals(
+            trackFollowTempoOverrides,
+            other.trackFollowTempoOverrides,
+          ) &&
+          defaultPitchMode == other.defaultPitchMode &&
+          _mapEquals(trackPitchModeOverrides, other.trackPitchModeOverrides);
 
   // hashAll, not hash: the field count passed v6's addition of
   // [pedalBindings], and `Object.hash` caps at 20 positional arguments.
@@ -1278,7 +1365,26 @@ class Session {
     _mapHash(laneCounts),
     inputSetup,
     outputSetup,
+    recordedTempoBpm,
+    recordedLengthFrames,
+    defaultFollowTempo,
+    _mapHash(trackFollowTempoOverrides),
+    defaultPitchMode,
+    _mapHash(trackPitchModeOverrides),
   ]);
+}
+
+/// The recorded pair (#1179): both 0, or a tempo the engine accepts with a
+/// positive length.
+({double tempo, int length}) _readRecorded(Object? tempo, Object? length) {
+  if (tempo is! num || length is! int || !tempo.isFinite || length < 0) {
+    throw const FormatException('invalid recorded tempo');
+  }
+  final none = tempo == 0 && length == 0;
+  if (!none && (tempo < 30 || tempo > 300 || length == 0)) {
+    throw const FormatException('invalid recorded tempo');
+  }
+  return (tempo: tempo.toDouble(), length: length);
 }
 
 /// A blank or non-string `name` reads as absent rather than failing the load:

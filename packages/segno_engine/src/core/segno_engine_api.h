@@ -51,9 +51,11 @@ typedef enum le_result {
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
   LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
                               * is unavailable while Reverse is on */
-  LE_ERR_TRANSFORMED = -10,  /* a record or overdub while Speed is not 1x
-                              * (#1179): capture never writes through a
-                              * fractional read head */
+  LE_ERR_TRANSFORMED = -10,  /* a record or overdub while Speed is not 1x,
+                              * or a punch-in on a transposed track or one
+                              * playing at another span than its take's
+                              * (#1179): capture never writes under playback
+                              * it does not hear */
   /* -11 .. -15 are assigned to other work (the numbering ledger). */
   LE_ERR_NO_COMMON_CYCLE = -16, /* render recipe (#1202): the selected tracks'
                                  * lengths share no common cycle within the
@@ -563,6 +565,10 @@ typedef enum le_command_code {
    * vector {source port or -1, follow transport, loss policy} with a receipt
    * sequence. Rechecked by the callback (LE_ERR_SYNC_LOCKED). */
   LE_CMD_SET_CLOCK_SYNC = 124,
+  LE_CMD_SET_FOLLOW_TEMPO = 120, /* checked internal Follow tempo setting
+                                  * (#1179 Part 4a) */
+  LE_CMD_SET_PITCH_MODE = 121, /* checked internal Pitch setting (#1179 Part
+                                * 4a-ii); 122-123 are held for #1179 */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -1000,6 +1006,22 @@ typedef struct le_track_snapshot {
    * bypassed, so a host never claims a pitch the mix is not playing. */
   int32_t transpose_st;
   int32_t transpose_effective_st;
+  /* Trailing (#1179 Part 4a): this track's Follow tempo override (-1
+   * inherits le_snapshot.follow_tempo, 0 keeps its recorded speed, 1 follows
+   * the song tempo). */
+  int32_t follow_override;
+  /* Trailing (#1179 Part 4a-ii): this track's Pitch override (-1 inherits
+   * le_snapshot.pitch_follows_speed, 0 Unchanged, 1 Follows speed), and the
+   * pitch the tempo retime puts on what it sounds now, in cents: 0 at its
+   * own span or once a stretch render plays (within the 0.5 % tolerance,
+   * about 9 cents), the varispeed's shift while that render is pending or
+   * with Follows speed. Speed and Transpose are not included. */
+  int32_t pitch_override;
+  int32_t pitch_effective_cents;
+  /* Trailing (#1179 Part 4b): the shared-clock length this track's take was
+   * laid down against once a retime moved the clock (0: the clock in force).
+   * A Session saves it so a recall reads every take at its own ratio. */
+  int32_t span_frames;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1458,7 +1480,34 @@ typedef struct le_snapshot {
   uint32_t clock_receipt;
   int32_t clock_result;
   uint32_t clock_losses;
+  /* Trailing (#1179 Part 4a): the tempo the takes were recorded at (0 with
+   * no master), the Follow tempo default every track inherits (0 = keep the
+   * recorded speed), and what a song-tempo change does now
+   * (le_tempo_follow_state). */
+  float recorded_tempo_bpm;
+  int32_t follow_tempo;
+  int32_t tempo_follow;
+  /* Trailing (#1179 Part 4a-ii): the Pitch default every track inherits
+   * (0 Unchanged, the default; 1 Follows speed). */
+  int32_t pitch_follows_speed;
+  /* Trailing (#1179 Part 4b): the master length recorded_tempo_bpm
+   * measured (0 with none). A Session saves the pair, so a recall commits
+   * the takes at the tempo they were laid down at and retimes from there. */
+  int32_t recorded_length_frames;
 } le_snapshot;
+
+/* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part
+ * 4a). With no content the tempo is free. With content it retimes the shared
+ * clock only on a bar grid (Multi, Sync or Band with a tempo) with at least
+ * one track following, and never while a track records, overdubs, is armed
+ * or launching, or a count-in runs. */
+typedef enum le_tempo_follow_state {
+  LE_TEMPO_FOLLOW_FREE = 0,        /* no content: the tempo changes freely */
+  LE_TEMPO_FOLLOW_RETIMES = 1,     /* a change retimes the recorded tracks */
+  LE_TEMPO_FOLLOW_NO_GRID = 2,     /* locked: no bar grid to follow */
+  LE_TEMPO_FOLLOW_NO_FOLLOWER = 3, /* locked: no track follows the tempo */
+  LE_TEMPO_FOLLOW_BUSY = 4,        /* locked while capture, arm or count-in */
+} le_tempo_follow_state;
 
 /* ============================ Plugin hosting ==============================
  * Discovery of installed VST3 / CLAP audio-effect plugins. This first slice is
@@ -2131,7 +2180,10 @@ LE_EXPORT int32_t le_engine_finalize_take(le_engine* engine, int32_t channel);
  * (loop_bars > 0 or tempo_source != none), set_tempo / set_time_signature /
  * tap_tempo are accepted but IGNORED by the audio thread (the published state
  * is unchanged). Clearing every track releases the lock; the tempo VALUE and
- * its source survive the clear (a derived tempo outlives its source loop). */
+ * its source survive the clear (a derived tempo outlives its source loop).
+ * Follow tempo (#1179 Part 4a, le_engine_set_follow_tempo) lifts the lock for
+ * set_tempo and tap_tempo when a following track plays on a bar grid: the
+ * change then retimes the recorded tracks (le_snapshot.tempo_follow). */
 
 /* Sets the tempo in denominator-note beats per minute, clamped to 30..300.
  * Sets tempo_source = manual; ignored while the tempo is locked. */
@@ -3432,9 +3484,23 @@ LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
                                            int32_t* kinds, int32_t* skipped,
                                            int32_t max, int32_t* undo_count);
 
+/* Sets the span an imported take was laid down against (#1179 Part 4b):
+ * the shared-clock length it played over at its own speed, as a Session
+ * saved it from le_track_snapshot.span_frames. Track `channel` must be EMPTY
+ * with lane 0 imported (LE_ERR_INVALID otherwise, and for a span outside
+ * 1..max_loop_frames); 0 clears it. le_engine_commit_session then parks the
+ * track at length / span laps and keeps the span, so a take recorded after a
+ * retime reads at its own ratio on the recorded clock and follows the next
+ * retime like the takes around it. Call after the take's lanes are imported
+ * (a lane-0 le_engine_import_track_lane, or le_engine_import_layer of lane 0
+ * ordinal 0, starts a new take and clears it) and before the commit.
+ * Control thread. */
+LE_EXPORT int32_t le_engine_import_span(le_engine* engine, int32_t channel,
+                                        int32_t span_frames);
+
 /* Establishes the master loop at `base_frames` and parks every imported track
  * (EMPTY with a loaded length) STOPPED at its whole-loop multiple
- * (length / base_frames). Restores exactly `loop_bars` musical bars over that
+ * (length / base_frames, or length / its imported span). Restores exactly `loop_bars` musical bars over that
  * span; zero keeps the loop grid-free even when a tempo is known. The caller
  * restores tempo/source/signature before this commit. Does not infer bars
  * from BPM or change audio length. Requires base_frames > 0 and loop_bars in
@@ -3522,6 +3588,36 @@ LE_EXPORT int32_t le_engine_set_transpose_bypass(le_engine* engine,
 LE_EXPORT int32_t le_engine_get_transpose_cache(le_engine* engine,
                                                int32_t channel,
                                                le_lane_cache_info* out);
+/* Follow tempo (#1179 Part 4a). With content on a bar grid, a song-tempo
+ * change (le_engine_set_tempo, a tap pair) retimes the shared clock: the
+ * master length becomes the recorded length scaled by recorded / new tempo
+ * (rounded up to a whole number of the largest active Sync division), the
+ * position keeps its phase, bars and beats keep their count, and every track
+ * that follows reads its take at speed * take length / span, its pitch
+ * following. A track that does not follow keeps its recorded speed, its lap
+ * no longer the song lap, until the tempo returns. A take recorded at the
+ * new tempo plays at its own speed. While a track plays at another span
+ * than its take's, a punch-in on it is refused with LE_ERR_TRANSFORMED.
+ * [channel] -1 sets the default every track inherits ([value] 0 keeps the
+ * recorded speed, 1 follows; 0 until set); a track sets its override (-1
+ * inherits the default). LE_ERR_INVALID for a bad channel or value. */
+LE_EXPORT int32_t le_engine_set_follow_tempo(le_engine* engine,
+                                            int32_t channel, int32_t value,
+                                            uint64_t* request);
+/* Pitch across a retime (#1179 Part 4a-ii). A following track that plays
+ * over another span than its take's either keeps its pitch (0 Unchanged,
+ * the default): the cache worker renders the take time-stretched to the
+ * span (with its Transpose pitch, one render) and the track crossfades to
+ * it at the same position; until it lands the take plays through the
+ * varispeed head, timing exact, its pitch off by the tempo ratio and
+ * reported in le_track_snapshot.pitch_effective_cents. A render within
+ * 0.5 % of the span serves it (the head absorbs the rest), so a small tempo
+ * move does not re-render. Or its pitch follows the ratio (1 Follows
+ * speed), with no render. [channel] -1 sets the default ([value] 0/1); a
+ * track sets its override (-1 inherits). LE_ERR_INVALID for a bad channel
+ * or value. */
+LE_EXPORT int32_t le_engine_set_pitch_mode(le_engine* engine, int32_t channel,
+                                          int32_t value, uint64_t* request);
 /* Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
  * callback publication, INVALID for an absent/consumed/retired id; otherwise
  * OK and fills result. */

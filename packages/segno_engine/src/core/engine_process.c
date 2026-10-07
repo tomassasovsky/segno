@@ -303,6 +303,17 @@ static void le_transpose_log(le_engine* e, le_track* t, uint64_t frame,
                         (uint32_t)q, (uint32_t)(q >> 32)}});
 }
 
+/* The sounding source's length (#1179 Part 4a-ii, LE_PLOG_SOURCE_LEN): 0
+ * for the take itself, else the render's (a stretch keeps the pitch across a
+ * retime). Logged just before the 328 of the same swap, so the renderer
+ * renders the same length. */
+static void le_source_len_log(le_engine* e, le_track* t, uint64_t frame) {
+  const int32_t len = load_i32(&t->lanes[0].a_len);
+  const int32_t out = t->src_ent[0] != NULL ? t->src_ent[0]->out_len : 0;
+  le_plog_push(e, frame, (le_command){.code = LE_PLOG_SOURCE_LEN,
+      .lanei = {(int32_t)(t - e->tracks), 0, out == len ? 0 : out}});
+}
+
 /* A printed Pre render never plays through a non-identity head (reversed or
  * at another rate): disengage every print so the live chains take over
  * through the settled-bypass re-enable path [B7]; a forward 1x track
@@ -327,6 +338,77 @@ static void le_turn_sources(le_track* t, int32_t power) {
   }
 }
 
+/* ---- Audio & tempo follow (#1179 Part 4a) ---- */
+
+static int le_track_follows(const le_engine* e, const le_track* t) {
+  return t->follow_override >= 0 ? t->follow_override : e->follow_tempo;
+}
+
+/* The span a track's take plays over on the song clock: its own length,
+ * unless it follows the tempo on a clock a retime moved since the take was
+ * laid down — then that length scaled by the clock (k laps of a multiple, a
+ * Sync division's slice, exactly: the retime keeps divisions whole). */
+static int32_t le_track_play_len(le_engine* e, le_track* t) {
+  return le_track_play_span(e, t); /* the published rule, shared */
+}
+
+/* The head rate the Speed and the track's span give: speed * len / span. */
+static double le_track_rate(le_engine* e, le_track* t) {
+  return le_head_rate(e->speed_numer, e->speed_denom,
+                      load_i32(&t->lanes[0].a_len), le_track_play_len(e, t));
+}
+
+/* The span fact (LE_PLOG_HEAD_SPAN): the play length the renderer derives
+ * the rate from (0 = the take's own), the turn window and the exact index. */
+static void le_span_log(le_engine* e, le_track* t, uint64_t frame,
+                        int32_t play_len, double index, int32_t turn) {
+  const uint64_t q = le_head_index_q32(index);
+  t->log_play_len = play_len;
+  le_plog_push(e, frame, (le_command){.code = LE_PLOG_HEAD_SPAN,
+      .span_log = {(int16_t)(t - e->tracks), (uint16_t)turn, play_len,
+                   (uint32_t)q, (uint32_t)(q >> 32)}});
+}
+
+static void le_span_set(le_track* t, int32_t span_clock) {
+  t->span_clock = span_clock;
+  store_i32(&t->a_span_clock, span_clock);
+}
+
+/* Re-derives a track's rate from the Speed and its span when the span moved
+ * under a parked or phase-locked head (a retime, a restored take): the origin
+ * stays, so the index keeps its phase on the song clock. Published, prints
+ * disengaged off the identity head, and logged when it changes what the
+ * renderer holds. */
+static void le_head_follow(le_engine* e, le_track* t, uint64_t frame,
+                           int32_t turn) {
+  int32_t len;
+  const int64_t pos = le_track_song_position(e, t, &len);
+  const int32_t play = le_track_play_len(e, t);
+  const int32_t logged = play == len ? 0 : play;
+  const double rate = le_track_rate(e, t);
+  if (rate == t->head.rate && logged == t->log_play_len) return;
+  t->head.rate = rate;
+  store_i32(&t->a_head_rate_milli, (int32_t)(rate * 1000.0));
+  if (!le_head_is_identity(&t->head)) le_track_disengage_prints(t);
+  le_span_log(e, t, frame, logged, le_head_index(&t->head, pos, len), turn);
+}
+
+/* Latches the tempo the shared clock's length measures as the recorded one
+ * (a defined, committed or regridded master), or none without a grid. */
+static void le_tempo_latch(le_engine* e) {
+  const float bpm =
+      e->clock.length > 0 &&
+              load_i32(&e->a_tempo_source) != LE_TEMPO_SOURCE_NONE
+          ? load_f32(&e->a_tempo_bpm_bits)
+          : 0.0f;
+  e->rec_bpm = bpm;
+  e->rec_master_len = bpm > 0.0f ? e->clock.length : 0;
+  store_i32(&e->a_rec_master_len, e->rec_master_len);
+  e->retime_len = 0; /* a new reference: no retime of it yet */
+  store_i32(&e->a_retime_len, 0);
+  store_f32(&e->a_recorded_tempo_bits, bpm);
+}
+
 /* Direction dies with the material (#1162): forward, origin parked, no turn
  * in flight, published and logged. The rate is the global Speed's, which
  * survives a track's Clear (#1179). Printed renders need no clearing here —
@@ -339,12 +421,20 @@ static void le_head_reset(le_engine* e, le_track* t, uint64_t frame) {
   store_i32(&t->a_transpose_st, 0);
   store_i32(&t->a_reversed, 0);
   le_reverse_log(e, t, frame, -1, 0);
+  /* The span dies with the take (#1179 Part 4a): the head reads at the
+   * Speed alone until a take of another span returns. */
+  le_span_set(t, 0);
+  t->head.rate = (double)e->speed_numer / (double)e->speed_denom;
+  store_i32(&t->a_head_rate_milli, (int32_t)(t->head.rate * 1000.0));
+  int32_t len;
+  const int64_t pos = le_track_song_position(e, t, &len);
   /* The re-origined head's exact index at the reset (E3); the material's
    * return re-anchors from its own fact (the 322/323 site below). */
   if (t->head.rate != 1.0) {
-    int32_t len;
-    const int64_t pos = le_track_song_position(e, t, &len);
     le_speed_log(e, t, frame, le_head_index(&t->head, pos, len), 0);
+  }
+  if (t->log_play_len != 0) {
+    le_span_log(e, t, frame, 0, le_head_index(&t->head, pos, len), 0);
   }
 }
 
@@ -636,7 +726,7 @@ static int le_looper_mode_switch_blocked(le_engine* e, int32_t mode) {
  *     per-track clocks going dormant.
  * Every playhead restarts from the top — the rig is stopped, as the gate
  * guarantees. An empty rig only records the new mode. */
-static void le_apply_mode_switch(le_engine* e, int32_t m) {
+static void le_apply_mode_switch(le_engine* e, int32_t m, uint64_t frame) {
   const int32_t prev = load_i32(&e->a_looper_mode);
   if (prev == m) return;
   store_i32(&e->a_looper_mode, m);
@@ -664,6 +754,13 @@ static void le_apply_mode_switch(le_engine* e, int32_t m) {
   }
   const int32_t primary = le_mode_base_channel(e, m);
   if (primary < 0) return; /* nothing recorded: nothing to re-clock */
+  /* A switch re-clocks every take at its own length (#1179 Part 4a): a
+   * retimed rig returns to the tempo it was recorded at. */
+  int retimed = 0;
+  for (int32_t t = 0; t < e->track_count; ++t) {
+    retimed |= e->tracks[t].span_clock > 0;
+    le_span_set(&e->tracks[t], 0);
+  }
   if (!to_free) {
     const int32_t base = load_i32(&e->tracks[primary].lanes[0].a_len);
     le_loop_clock_set_length(&e->clock, base);
@@ -671,9 +768,13 @@ static void le_apply_mode_switch(le_engine* e, int32_t m) {
     store_i32(&e->a_master_len, base);
     store_i32(&e->a_master_pos, 0);
     e->loop_viz_bucket = -1;
+    if (retimed && e->rec_bpm > 0.0f) {
+      store_f32(&e->a_tempo_bpm_bits, e->rec_bpm);
+    }
     /* The shared grid follows the master, as it does at a defining
      * finalize: an existing tempo rounds the bar count, none derives one. */
     sync_grid_to_loop(e, base);
+    le_tempo_latch(e);
   }
   for (int32_t t = 0; t < e->track_count; ++t) {
     le_track* tr = &e->tracks[t];
@@ -697,6 +798,7 @@ static void le_apply_mode_switch(le_engine* e, int32_t m) {
       le_restore_multiple_or_divisor(
           tr, load_i32(&e->tracks[primary].lanes[0].a_len), len);
     }
+    le_head_follow(e, tr, frame, 0);
   }
   le_primary_reconcile(e);
 }
@@ -727,8 +829,11 @@ static int le_clock_send_gate_open(le_engine* e) {
  * first tap never produces an absurd tempo. The lock is checked by the caller
  * (a locked tap is ignored WHOLESALE — not even recorded, so unlocking does
  * not inherit half of a stale tap pair). */
-static void handle_tap(le_engine* e) {
+/* Returns the tapped tempo, or 0 when this tap completes no valid pair;
+ * the caller publishes it (or retimes to it, #1179 Part 4a). */
+static float handle_tap(le_engine* e) {
   const uint64_t now = e->frame_clock;
+  float tapped = 0.0f;
   if (e->has_tap) {
     const uint64_t interval = now - e->last_tap_frame;
     const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
@@ -736,13 +841,13 @@ static void handle_tap(le_engine* e) {
       const double bpm = 60.0 * (double)sr / (double)interval;
       if (bpm >= (double)LE_GRID_TEMPO_MIN &&
           bpm <= (double)LE_GRID_TEMPO_MAX) {
-        store_f32(&e->a_tempo_bpm_bits, (float)bpm);
-        store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_TAPPED);
+        tapped = (float)bpm;
       }
     }
   }
   e->last_tap_frame = now;
   e->has_tap = 1;
+  return tapped;
 }
 
 /* Establishes the loop<->grid relationship for a freshly defined master loop
@@ -1141,6 +1246,7 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
     } else {
       sync_grid_to_loop(e, len);
     }
+    le_tempo_latch(e); /* the tempo this master was recorded at (#1179) */
   }
   t->length_preset_target_frames = 0; /* consumed; the next take re-arms */
   if (end_state == LE_TRACK_OVERDUBBING) le_dub_session_start(e, t);
@@ -1417,7 +1523,8 @@ static void le_restore_track_clock(le_engine* e, le_track* t, int32_t len,
   }
   /* A surviving sibling keeps the grid. Otherwise restore the saved grid,
    * or establish one from a take recorded without a shared master. */
-  if (e->clock.length == 0) {
+  const int established = e->clock.length == 0;
+  if (established) {
     const int32_t base = saved_master_len > 0 ? saved_master_len : len;
     le_plog_push(e, frame, (le_command){.code = LE_PLOG_LOOP_LENGTH_LOCKED,
                                        .arg_i = base});
@@ -1428,7 +1535,26 @@ static void le_restore_track_clock(le_engine* e, le_track* t, int32_t len,
   }
   le_loop_clock_reset(&t->free_clock);
   t->free_iteration = 0;
-  le_restore_multiple_or_divisor(t, e->clock.length, len);
+  /* A take from before a retime (#1179 Part 4a) spans the recorded clock,
+   * not the current one: its span is measured against that, and it reads at
+   * the clock's ratio (the caller's le_head_follow). */
+  const int32_t clock = e->clock.length, rec = e->rec_master_len;
+  const int fits = len % clock == 0 || clock % len == 0;
+  const int was = rec > 0 && (len % rec == 0 || rec % len == 0);
+  const int32_t ref = !fits && was ? rec : clock;
+  le_span_set(t, ref == clock ? 0 : ref);
+  le_restore_multiple_or_divisor(t, ref, len);
+  if (established) {
+    if (ref == rec && rec != clock) {
+      /* The retimed clock is back with a take from before the retime (4a
+       * H1): the recorded tempo is still the one it was laid down at, not
+       * the tempo in force, so publish the kept reference again. */
+      store_i32(&e->a_rec_master_len, rec);
+      store_f32(&e->a_recorded_tempo_bits, e->rec_bpm);
+    } else {
+      le_tempo_latch(e);
+    }
+  }
 }
 
 /* Adversarial-review BUG 4 fix: whether channel [ch] IS the crowned primary
@@ -2100,6 +2226,11 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
   /* ...and into a transposed track (#1179 Part 3a), the Reverse rule. */
   if ((initial == LE_TRACK_STOPPED || initial == LE_TRACK_PLAYING) &&
       e->tracks[ch].transpose_st != 0 && !e->transpose_bypass) return;
+  /* ...and into a take a retime moved off its span (#1179 Part 4a): the
+   * write head lays the clock's frames, the read head plays the take's. */
+  if ((initial == LE_TRACK_STOPPED || initial == LE_TRACK_PLAYING) &&
+      e->tracks[ch].span_clock > 0 &&
+      e->tracks[ch].span_clock != e->clock.length) return;
   if ((initial == LE_TRACK_EMPTY || initial == LE_TRACK_STOPPED ||
        initial == LE_TRACK_PLAYING) &&
       le_launch_defer(e, ch, initial == LE_TRACK_EMPTY ? 1 : 3)) return;
@@ -2588,6 +2719,8 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
     e->has_tap = 0;
     e->last_tap_frame = 0;
     le_speed_reset_if_empty(e, frame); /* an empty loop has no speed (M2) */
+    /* ...and no recorded tempo; the reference stays for a Clear Undo. */
+    store_f32(&e->a_recorded_tempo_bits, 0.0f);
     /* Clear the loop waveform so a re-record starts from silence. */
     e->loop_viz_bucket = -1;
     for (int i = 0; i < LE_VIZ_POINTS; ++i) {
@@ -2896,13 +3029,16 @@ static void le_speed_reset_if_empty(le_engine* e, uint64_t frame) {
   e->speed_numer = 1;
   e->speed_denom = 1;
   for (int c = 0; c < e->track_count; ++c) {
-    le_head_set_rate(e, &e->tracks[c], 1.0, frame);
+    le_head_set_rate(e, &e->tracks[c], le_track_rate(e, &e->tracks[c]), frame);
   }
   store_i32(&e->a_speed_ratio, le_speed_pack(1, 1));
 }
 
-static void le_head_set_rate(le_engine* e, le_track* t, double rate,
-                             uint64_t frame) {
+/* Moves the head to `rate` with the index continuous (the body of
+ * le_head_set_rate); returns the turn window and the index it continues
+ * from. */
+static int32_t le_head_move(le_engine* e, le_track* t, double rate,
+                            double* at_out) {
   int32_t len;
   const int64_t pos = le_track_song_position(e, t, &len);
   const double cur = le_head_index(&t->head, pos, len);
@@ -2924,6 +3060,14 @@ static void le_head_set_rate(le_engine* e, le_track* t, double rate,
   t->head.origin = le_head_origin(&t->head, at, pos, len);
   le_track_disengage_prints(t);
   store_i32(&t->a_head_rate_milli, (int32_t)(rate * 1000.0));
+  *at_out = at;
+  return turn;
+}
+
+static void le_head_set_rate(le_engine* e, le_track* t, double rate,
+                             uint64_t frame) {
+  double at;
+  const int32_t turn = le_head_move(e, t, rate, &at);
   le_speed_log(e, t, frame, at, turn);
 }
 
@@ -2940,6 +3084,139 @@ static void le_head_land(le_engine* e, uint64_t frame) {
       le_head_set_rate(e, t, t->head.rate, frame);
     }
   }
+}
+
+/* A Follow setting change (#1179 Part 4a): a track whose span changes reads
+ * on from the index it was reading, mixed over the turn window like a Speed
+ * step, and the span is logged. A track whose span did not move (no retime
+ * since its take) only takes the setting. */
+static void le_head_refollow(le_engine* e, le_track* t, uint64_t frame) {
+  if (load_i32(&t->a_state) == LE_TRACK_EMPTY) return;
+  const int32_t len = load_i32(&t->lanes[0].a_len);
+  const int32_t play = le_track_play_len(e, t);
+  const int32_t logged = play == len ? 0 : play;
+  const double rate = le_track_rate(e, t);
+  if (rate == t->head.rate && logged == t->log_play_len) return;
+  double at;
+  const int32_t turn = le_head_move(e, t, rate, &at);
+  le_span_log(e, t, frame, logged, at, turn);
+}
+
+/* Whether a song-tempo change retimes the recorded tracks now (#1179 Part
+ * 4a): a shared clock with a bar grid, a track with content that follows,
+ * and nothing capturing, armed, launching or counting in (Speed's rule). */
+static int le_tempo_follow_open(le_engine* e) {
+  if (e->clock.length <= 0 || load_i32(&e->a_loop_bars) <= 0) return 0;
+  int follower = 0;
+  for (int c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    if (load_i32(&t->a_state) != LE_TRACK_EMPTY && le_track_follows(e, t)) {
+      follower = 1;
+    }
+  }
+  return follower && le_speed_change_safe(e);
+}
+
+/* Retimes the shared clock to `bpm` (#1179 Part 4a, plan 4.2). The new
+ * length is the recorded one scaled by recorded / new tempo — exactly the
+ * recorded length again at the recorded tempo — rounded up to a whole number
+ * of the largest active Sync division so every slice stays exact. The
+ * position keeps its phase; laps, bars and beats keep their counts, so the
+ * click lands on the new beats. A following track keeps its origin: its
+ * index stays locked to the clock and reads at speed * len / span. A track
+ * that keeps its recorded speed re-origins so it reads on continuously at
+ * its own lap. A window still mixing keeps mixing, its old head re-origined
+ * at the new position. Returns 0 (nothing changes) when the length would
+ * leave 1..max_loop_frames. */
+static int le_tempo_retime(le_engine* e, float bpm, int32_t source,
+                           uint64_t frame) {
+  const int32_t from = e->clock.length;
+  float ref_bpm = e->rec_bpm;
+  int32_t ref_len = e->rec_master_len;
+  if (ref_len <= 0 || !(ref_bpm > 0.0f)) {
+    ref_bpm = load_f32(&e->a_tempo_bpm_bits);
+    ref_len = from;
+  }
+  /* Plan 4.2 (4a M2): the new length is the bar count at the new tempo,
+   * round(bars x frames_per_bar), so an external clock (#1228) finds the
+   * loop on its bars. Within LE_TEMPO_SNAP_BPM of the recorded tempo (a
+   * rounded display value, a tap pair, a MIDI tempo; 4a M1) the song
+   * returns to the recorded tempo and length exactly, every take on its
+   * span again. */
+  const float off = bpm > ref_bpm ? bpm - ref_bpm : ref_bpm - bpm;
+  int64_t to;
+  if (off < LE_TEMPO_SNAP_BPM) {
+    bpm = ref_bpm;
+    to = ref_len;
+  } else {
+    int32_t num = load_i32(&e->a_ts_num);
+    if (num <= 0) num = 4;
+    const le_tempo_grid g = {bpm, num, load_i32(&e->a_ts_den),
+                             e->sample_rate > 0 ? e->sample_rate : 48000};
+    to = llround((double)load_i32(&e->a_loop_bars) * le_grid_frames_per_bar(&g));
+  }
+  int32_t whole = 1;
+  for (int c = 0; c < e->track_count; ++c) {
+    const int32_t n = load_i32(&e->tracks[c].a_sync_divisor);
+    if (load_i32(&e->tracks[c].a_state) != LE_TRACK_EMPTY && n > whole) {
+      whole = n;
+    }
+  }
+  to = (to + whole - 1) / whole * whole;
+  if (to < 1 || to > e->max_loop_frames) return 0;
+  store_f32(&e->a_tempo_bpm_bits, bpm);
+  store_i32(&e->a_tempo_source, source);
+  if (to == from) return 1;
+  double idx[LE_MAX_TRACKS], prev[LE_MAX_TRACKS];
+  for (int c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    int32_t len;
+    const int64_t pos = le_track_song_position(e, t, &len);
+    idx[c] = le_head_index(&t->head, pos, len);
+    prev[c] = le_head_index(&t->prev_head, pos, len);
+    if (len > 0 && t->span_clock == 0) le_span_set(t, from);
+  }
+  /* The phase carries its fraction from one retime to the next (4a L1). */
+  const double frac = e->retime_len == from ? e->retime_frac : 0.0;
+  const double scaled = ((double)e->clock.position + frac) * (double)to /
+                        (double)from;
+  e->clock.position = (int32_t)scaled;
+  if (e->clock.position >= (int32_t)to) e->clock.position = (int32_t)to - 1;
+  e->retime_frac = scaled - (double)e->clock.position;
+  e->retime_len = (int32_t)to;
+  store_i32(&e->a_retime_len, (int32_t)to);
+  e->clock.length = (int32_t)to;
+  store_i32(&e->a_master_len, (int32_t)to);
+  store_i32(&e->a_master_pos, e->clock.position);
+  for (int c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    int32_t len;
+    const int64_t pos = le_track_song_position(e, t, &len);
+    if (len <= 0 || load_i32(&t->a_state) == LE_TRACK_EMPTY) continue;
+    int32_t turn = 0;
+    if (t->turn_left > 0) {
+      t->prev_head.origin = le_head_origin(&t->prev_head, prev[c], pos, len);
+      turn = t->turn_frames;
+    } else if (le_track_follows(e, t) && le_track_rate(e, t) != t->head.rate) {
+      /* The new rate's locked index sits up to a sample from where the old
+       * head was reading (the position is whole frames): the old head
+       * reads on from its own index through the turn window (4a L1). */
+      turn = le_turn_begin(e, t, len);
+      if (turn > 0) {
+        t->prev_head.origin = le_head_origin(&t->prev_head, idx[c], pos, len);
+      }
+    }
+    if (le_track_follows(e, t)) {
+      le_head_follow(e, t, frame, turn);
+    } else {
+      t->head.origin = le_head_origin(&t->head, idx[c], pos, len);
+      if (!le_head_is_identity(&t->head)) le_track_disengage_prints(t);
+    }
+  }
+  le_plog_push(e, frame, (le_command){.code = LE_PLOG_RETIME,
+      .retime_log = {bpm, (int32_t)to, e->clock.position,
+                     load_i32(&e->a_loop_bars)}});
+  return 1;
 }
 
 static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
@@ -3565,6 +3842,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         le_dub_drop_armed(t);
         le_restore_track_clock(e, t, len, 0, frame);
         le_track_set_len(t, len);
+        le_head_follow(e, t, frame, 0); /* its span's rate (#1179) */
         t->start_iter = 0;
         store_i32(&t->a_state, LE_TRACK_PLAYING);
         le_primary_reconcile(e); /* a redone first take is a first take */
@@ -3594,6 +3872,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         le_dub_drop_armed(t);
         le_restore_track_clock(e, t, len, cmd->restore.master_len, frame);
         le_track_set_len(t, len);
+        le_head_follow(e, t, frame, 0); /* its span's rate (#1179) */
         t->start_iter = 0;
         t->fade = (le_fade){cmd->restore.fade_amount, cmd->restore.fade_amount, 0};
         t->fade_sample = cmd->restore.fade_amount;
@@ -3649,10 +3928,14 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       } else {
         regrid_surviving_master(e);
       }
+      /* A restored tempo is the one the recorded clock measures (#1179 Part
+       * 4a): recall restores before or after its commit, never a retime. */
+      le_tempo_latch(e);
       break;
     }
     case LE_CMD_SET_TEMPO: {
-      if (le_tempo_locked(e)) break; /* D6: rejected (no-op) while locked */
+      /* D6: rejected (no-op) while locked, unless it retimes (below). */
+      if (le_tempo_locked(e) && !le_tempo_follow_open(e)) break;
       if (e->clock_source >= 0) break; /* an external clock owns it (#1228) */
       float bpm = cmd->arg_f;
       /* NaN-rejecting clamp: !(x >= MIN) is true for NaN as well as for low
@@ -3662,6 +3945,13 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         bpm = LE_GRID_TEMPO_MIN;
       } else if (bpm > LE_GRID_TEMPO_MAX) {
         bpm = LE_GRID_TEMPO_MAX;
+      }
+      /* With content and a follower the change retimes the recorded tracks
+       * (#1179 Part 4a); a length that cannot fit leaves everything as it
+       * was, as a locked change does. */
+      if (le_tempo_locked(e)) {
+        (void)le_tempo_retime(e, bpm, LE_TEMPO_SOURCE_MANUAL, frame);
+        break;
       }
       store_f32(&e->a_tempo_bpm_bits, bpm);
       store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_MANUAL);
@@ -3684,11 +3974,57 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       regrid_surviving_master(e);
       break;
     }
-    case LE_CMD_TAP_TEMPO:
-      /* D6: taps ignored wholesale while locked, and while an external
-       * clock owns the tempo (#1228). */
-      if (!le_tempo_locked(e) && e->clock_source < 0) handle_tap(e);
+    case LE_CMD_TAP_TEMPO: {
+      /* D6: taps ignored wholesale while locked, unless a tapped pair
+       * retimes (#1179 Part 4a), and while an external clock owns the
+       * tempo (#1228). */
+      if (e->clock_source >= 0) break;
+      const int locked = le_tempo_locked(e);
+      if (locked && !le_tempo_follow_open(e)) break;
+      const float tapped = handle_tap(e);
+      if (tapped <= 0.0f) break;
+      if (locked) {
+        (void)le_tempo_retime(e, tapped, LE_TEMPO_SOURCE_TAPPED, frame);
+      } else {
+        store_f32(&e->a_tempo_bpm_bits, tapped);
+        store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_TAPPED);
+      }
       break;
+    }
+    case LE_CMD_SET_PITCH_MODE: {
+      /* Pitch across a retime (#1179 Part 4a-ii): the default or one
+       * track's override. The head is unchanged (the rate is the span's);
+       * the next verdict picks the source the mode wants. */
+      const int32_t ch = cmd->follow.channel, v = cmd->follow.value;
+      if (ch < 0) {
+        e->pitch_follows = v;
+        store_i32(&e->a_pitch_follows, v);
+      } else {
+        e->tracks[ch].pitch_override = v;
+        store_i32(&e->tracks[ch].a_pitch_override, v);
+      }
+      atomic_store_explicit(&e->receipts[cmd->follow.slot].result, LE_OK,
+                             memory_order_relaxed);
+      break;
+    }
+    case LE_CMD_SET_FOLLOW_TEMPO: {
+      /* Follow tempo (#1179 Part 4a): the default or one track's override;
+       * a track whose span moves reads on from where it was. */
+      const int32_t ch = cmd->follow.channel, v = cmd->follow.value;
+      if (ch < 0) {
+        e->follow_tempo = v;
+        store_i32(&e->a_follow_tempo, v);
+      } else {
+        e->tracks[ch].follow_override = v;
+        store_i32(&e->tracks[ch].a_follow_override, v);
+      }
+      for (int c = 0; c < e->track_count; ++c) {
+        if (ch < 0 || c == ch) le_head_refollow(e, &e->tracks[c], frame);
+      }
+      atomic_store_explicit(&e->receipts[cmd->follow.slot].result, LE_OK,
+                             memory_order_relaxed);
+      break;
+    }
     case LE_CMD_SET_SYNC_TEMPO:
       /* A settings toggle, deliberately not locked: it only governs FUTURE
        * defining-loop finalizes (sync_grid_to_loop), never a live grid. */
@@ -3842,7 +4178,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         e->speed_numer = numer;
         e->speed_denom = denom;
         for (int c = 0; c < e->track_count; ++c) {
-          le_head_set_rate(e, &e->tracks[c], (double)numer / denom, frame);
+          le_head_set_rate(e, &e->tracks[c], le_track_rate(e, &e->tracks[c]),
+                           frame);
         }
         store_i32(&e->a_speed_ratio, le_speed_pack(numer, denom));
       }
@@ -3918,7 +4255,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
                          (le_command){.code = LE_CMD_STOP, .arg_i = c});
             handle_stop(e, c, frame);
           }
-          le_apply_mode_switch(e, m);
+          le_apply_mode_switch(e, m, frame);
         }
         for (int32_t c = 0; c < count; ++c) {
           store_i32(&e->tracks[c].a_length_preset_bars, cmd->presets.bars[c]);
@@ -4552,7 +4889,18 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         if (tr->head.rate != 1.0) {
           le_speed_log(e, tr, frame, le_track_read_index(e, tr), 0);
         }
-        if (tr->transpose_eff != 0) le_transpose_log(e, tr, frame, 0);
+        if (tr->src_ent[0] != NULL) { /* sounding a render */
+          le_source_len_log(e, tr, frame);
+          le_transpose_log(e, tr, frame, 0);
+        }
+        /* ...and one playing its take over another span (#1179 Part 4a). */
+        int32_t len;
+        (void)le_track_song_position(e, tr, &len);
+        const int32_t play = le_track_play_len(e, tr);
+        tr->log_play_len = 0;
+        if (play != len) {
+          le_span_log(e, tr, frame, play, le_track_read_index(e, tr), 0);
+        }
       }
       break;
     case LE_CMD_PERF_DISARM:
@@ -4615,12 +4963,18 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       /* Restore the actual saved grid, including an explicitly grid-free
        * loop and a bar count whose derived BPM reached the tempo clamp. */
       le_restore_musical_grid(e, bars);
+      le_tempo_latch(e); /* committed takes are at the tempo in force */
       for (int32_t t = 0; t < e->track_count; ++t) {
         le_track* tr = &e->tracks[t];
         if (load_i32(&tr->a_state) != LE_TRACK_EMPTY) continue;
         const int32_t len = load_i32(&tr->lanes[0].a_len);
         if (len <= 0) continue;
-        int32_t k = len / base;
+        /* A take a Session saved with a span (#1179 Part 4b) laps over that
+         * span on the recorded clock and keeps it for the next retime. */
+        const int32_t span = load_i32(&tr->a_import_span);
+        store_i32(&tr->a_import_span, 0);
+        le_span_set(tr, span > 0 && span != base ? span : 0);
+        int32_t k = len / (tr->span_clock > 0 ? tr->span_clock : base);
         if (k < 1) k = 1;
         store_i32(&tr->a_multiple, k);
         /* Session import never encodes a B3 Sync/Band division (out of this
@@ -4633,6 +4987,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         /* Parked at the loop head, so a Play in this same drain starts at
          * the lap start of an installed direction (#1162). */
         le_reset_track_playback(tr);
+        le_head_follow(e, tr, frame, 0); /* its span's rate (#1179 4b) */
         store_i32(&tr->a_state, LE_TRACK_STOPPED);
       }
       /* A session that saved no crown still gets one: its lowest recorded
@@ -5642,12 +5997,15 @@ static inline void snapshot_track_fx(
 }
 
 /* Selects each track's source for this buffer (#1179 Part 3a): its lanes'
- * Transpose renders when the track is transposed, not bypassed, and EVERY
- * active lane holds a render for its current key (content, pitch, length),
- * else the dry takes, so a track never plays two lanes at two pitches. A
- * change of source starts the turn window with the equal-power law at the
- * same index — the old source keeps reading, its render pinned (E4) — and
- * logs what now sounds. A window that has ended releases its pins. */
+ * renders when the track wants one — transposed and not bypassed, or
+ * playing over another span with Pitch Unchanged (Part 4a-ii: a stretch to
+ * the span, within the 0.5 % tolerance) — and EVERY active lane holds a
+ * render for its current key (content, pitch, length), else the dry takes
+ * through the varispeed head, so a track never plays two lanes at two
+ * pitches and its timing is exact either way. A change of source starts the
+ * turn window with the equal-power law at the same index — the old source
+ * keeps reading, its render pinned (E4) — and logs what now sounds. A window
+ * that has ended releases its pins. */
 static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
                                 uint64_t frame) {
   for (int t = 0; t < tc; ++t) {
@@ -5658,18 +6016,19 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
       atomic_store_explicit(&tr->a_turn_src[l], NULL, memory_order_release);
     }
     const int32_t want = e->transpose_bypass ? 0 : tr->transpose_st;
+    const int32_t take = load_i32(&tr->lanes[0].a_len);
+    const int32_t want_out = le_track_want_out(e, tr);
     const le_wet_entry* pick[LE_MAX_LANES] = {NULL};
-    int engaged = want != 0 && lane_n[t] > 0;
+    int engaged = (want != 0 || want_out != take) && lane_n[t] > 0;
     if (engaged) {
       const uint32_t rev =
           atomic_load_explicit(&tr->a_src_key, memory_order_acquire);
-      const int32_t len = load_i32(&tr->lanes[0].a_len);
       for (int l = 0; l < lane_n[t] && engaged; ++l) {
         pick[l] = NULL;
         for (int i = 0; i < LE_SRC_CANDIDATES && pick[l] == NULL; ++i) {
           const le_wet_entry* c = atomic_load_explicit(&tr->lanes[l].a_src[i],
                                                        memory_order_acquire);
-          if (c != NULL && le_src_entry_key_matches(c, rev, len, want)) {
+          if (c != NULL && le_src_entry_fits(c, rev, take, want, want_out)) {
             pick[l] = c;
           }
         }
@@ -5698,6 +6057,8 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
     }
     tr->transpose_eff = engaged ? want : 0;
     store_i32(&tr->a_transpose_eff, tr->transpose_eff);
+    store_i32(&tr->a_src_out, pick[0] != NULL ? pick[0]->out_len : 0);
+    le_source_len_log(e, tr, frame);
     le_transpose_log(e, tr, frame, turn);
   }
 }
@@ -6524,8 +6885,13 @@ static inline void mix_tracks_frame(
     head_idx[t] = -1.0;
     turn_idx[t] = -1.0;
     turn_x[t] = 1.0f;
+    /* A stretch render (#1179 Part 4a-ii) is not the take's length, so its
+     * read always goes through the head, mapped (le_head_read_scaled). */
+    const int stretched = tr->src_ent[0] != NULL || tr->turn_ent[0] != NULL;
     if (trk_len[t] <= 0 ||
-        (le_head_is_identity(&tr->head) && tr->turn_left == 0)) continue;
+        (le_head_is_identity(&tr->head) && tr->turn_left == 0 && !stretched)) {
+      continue;
+    }
     if (st[t] != LE_TRACK_PLAYING && st[t] != LE_TRACK_OVERDUBBING) continue;
     int32_t len;
     const int64_t song = le_track_song_position(e, tr, &len);
@@ -6535,7 +6901,7 @@ static inline void mix_tracks_frame(
     seg_base[t] = whole - whole % trk_len[t];
     trk_pos[t] = whole % trk_len[t];
     src_len[t] = len;
-    if (!le_head_is_integral(&tr->head)) head_idx[t] = index;
+    if (!le_head_is_integral(&tr->head) || stretched) head_idx[t] = index;
     if (tr->turn_left > 0) {
       turn_idx[t] = le_head_index(&tr->prev_head, song, len);
       turn_x[t] = le_head_turn_mix(tr->turn_frames - tr->turn_left,
@@ -6827,18 +7193,23 @@ static inline void mix_tracks_frame(
          * equals pos otherwise. */
         /* The source this buffer selected: the lane's Transpose render, or
          * its dry take (le_transpose_select). Writes stay on lbuf. */
-        const float* rb = tr->src_ent[l] ? tr->src_ent[l]->pcm : lbuf;
-        loopsample = head_idx[t] >= 0.0
-                         ? le_head_read(rb, src_len[t], &tr->head, head_idx[t])
-                         : rb[seg_base[t] + trk_pos[t]];
+        const le_wet_entry* se = tr->src_ent[l];
+        loopsample =
+            head_idx[t] >= 0.0
+                ? le_head_read_scaled(se ? se->pcm : lbuf,
+                                      se ? se->out_len : src_len[t],
+                                      src_len[t], &tr->head, head_idx[t])
+                : lbuf[seg_base[t] + trk_pos[t]];
         /* A turn (Reverse #1162, a Speed step or a source swap #1179): the
          * pre-turn head fades out over the window as the new head fades in,
          * over the source it read when the window started. */
         if (turn_idx[t] >= 0.0) {
-          const float* ob = tr->turn_ent[l] ? tr->turn_ent[l]->pcm : lbuf;
+          const le_wet_entry* oe = tr->turn_ent[l];
           loopsample = loopsample * turn_x[t] +
-                       le_head_read(ob, src_len[t], &tr->prev_head,
-                                    turn_idx[t]) * turn_y[t];
+                       le_head_read_scaled(oe ? oe->pcm : lbuf,
+                                           oe ? oe->out_len : src_len[t],
+                                           src_len[t], &tr->prev_head,
+                                           turn_idx[t]) * turn_y[t];
         }
         if (od_gain > 0.0f) {
           /* Backup-on-write: save the pre-value into the armed shadow first —

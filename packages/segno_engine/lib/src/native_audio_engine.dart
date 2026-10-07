@@ -871,6 +871,36 @@ class NativeAudioEngine implements AudioEngine {
   );
 
   @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) {
+    if (channel == null && follow == null) {
+      return (result: EngineResult.invalid, request: 0);
+    }
+    return _admit(
+      (request) => _bindings.le_engine_set_follow_tempo(
+        _engine,
+        channel ?? -1,
+        follow == null ? -1 : (follow ? 1 : 0),
+        request,
+      ),
+    );
+  }
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) {
+    if (channel == null && mode == null) {
+      return (result: EngineResult.invalid, request: 0);
+    }
+    return _admit(
+      (request) => _bindings.le_engine_set_pitch_mode(
+        _engine,
+        channel ?? -1,
+        mode?.code ?? -1,
+        request,
+      ),
+    );
+  }
+
+  @override
   RequestAdmission setTransposeBypass({required bool bypassed}) => _admit(
     (request) => _bindings.le_engine_set_transpose_bypass(
       _engine,
@@ -1368,6 +1398,14 @@ class NativeAudioEngine implements AudioEngine {
         ..free(kinds)
         ..free(skipped);
     }
+  }
+
+  @override
+  EngineResult importSpan(int channel, int spanFrames) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_import_span(_engine, channel, spanFrames),
+    );
   }
 
   @override

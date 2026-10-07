@@ -34,6 +34,7 @@ import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
@@ -2095,6 +2096,14 @@ void main() {
               AppToastId.recordTimingSettings,
               timing.owner,
             ),
+            OwnedSetting.followTempo => (
+              AppToastId.followTempoSettings,
+              playback.followTempoOwner,
+            ),
+            OwnedSetting.pitchMode => (
+              AppToastId.pitchModeSettings,
+              playback.pitchModeOwner,
+            ),
             OwnedSetting.decay ||
             OwnedSetting.fade => throw StateError('No receipt'),
           };
@@ -2102,6 +2111,11 @@ void main() {
             ..publishClickCommands = key != OwnedSetting.clickVolume
             ..publishClickModeCommands = key != OwnedSetting.hearClick
             ..publishRecordStartCommands = key != OwnedSetting.recordStart
+            // The Audio & tempo vectors settle on request results (#1179).
+            ..settingResult =
+                key == OwnedSetting.followTempo || key == OwnedSetting.pitchMode
+                ? EngineResult.invalid
+                : EngineResult.ok
             ..commandsAreSettled = false;
           unawaited(switch (key) {
             OwnedSetting.clickVolume => tempo.clickVolumeOwner.set(1.5),
@@ -2117,6 +2131,17 @@ void main() {
             ),
             OwnedSetting.recordLength => record.setDefaultLengthBars(4),
             OwnedSetting.recordTiming => timing.setTiming(RecordTiming.quarter),
+            OwnedSetting.followTempo => playback.followTempoOwner.update(
+              (live) => live.withValue(const AudioTempoAddress.track(2), false),
+              address: const AudioTempoAddress.track(2),
+            ),
+            OwnedSetting.pitchMode => playback.pitchModeOwner.update(
+              (live) => live.withValue(
+                const AudioTempoAddress.track(2),
+                PitchMode.followsSpeed,
+              ),
+              address: const AudioTempoAddress.track(2),
+            ),
             OwnedSetting.decay ||
             OwnedSetting.fade => throw StateError('No receipt'),
           });
@@ -2128,6 +2153,7 @@ void main() {
             ..publishClickCommands = true
             ..publishClickModeCommands = true
             ..publishRecordStartCommands = true
+            ..settingResult = EngineResult.ok
             ..commandsAreSettled = true;
           repository.startEngine(const EngineConfig());
           await tester.pump(const Duration(milliseconds: 50));

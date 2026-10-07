@@ -326,6 +326,28 @@ class FakeAudioEngine implements AudioEngine {
     () => lastTransposeInstall = (channel: channel, semitones: semitones),
   );
 
+  /// What the Follow tempo and Pitch settings admit and the receipt each
+  /// answers later (#1179), and every admitted call, in order.
+  EngineResult settingAdmission = EngineResult.ok;
+  EngineResult settingResult = EngineResult.ok;
+  final List<({String kind, int? channel, Object? value})> settingCalls = [];
+
+  RequestAdmission _admitSetting(String kind, int? channel, Object? value) {
+    if (!settingAdmission.isOk) return (result: settingAdmission, request: 0);
+    settingCalls.add((kind: kind, channel: channel, value: value));
+    final request = ++_fadeRequest;
+    _fadeResults[request] = settingResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) =>
+      _admitSetting('follow', channel, follow);
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) =>
+      _admitSetting('pitch', channel, mode);
+
   @override
   RequestAdmission setTransposeBypass({required bool bypassed}) =>
       _admitTranspose(() => lastTransposeBypass = bypassed);
@@ -1483,6 +1505,15 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult importTrack(int channel, Float32List pcm) => EngineResult.ok;
 
+  /// Spans [importSpan] gave, by channel (#1179 Part 4b).
+  final Map<int, int> importedSpans = {};
+
+  @override
+  EngineResult importSpan(int channel, int spanFrames) {
+    importedSpans[channel] = spanFrames;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       EngineResult.ok;
@@ -1923,6 +1954,11 @@ class _LengthSnapshot extends EngineSnapshot {
          primaryTrack: source.primaryTrack,
          speed: source.speed,
          transposeBypass: source.transposeBypass,
+         recordedTempoBpm: source.recordedTempoBpm,
+         recordedLengthFrames: source.recordedLengthFrames,
+         followTempo: source.followTempo,
+         tempoFollow: source.tempoFollow,
+         pitchMode: source.pitchMode,
          quantize: engine.lastQuantize ?? source.quantize,
          recordTimingRevision: engine.recordTimingRevision,
          recordTimingResult: 0,
@@ -1969,6 +2005,10 @@ class _LengthTrack extends TrackSnapshot {
          reversed: source.reversed,
          headRate: source.headRate,
          transpose: source.transpose,
+         followTempoOverride: source.followTempoOverride,
+         pitchModeOverride: source.pitchModeOverride,
+         pitchEffectiveCents: source.pitchEffectiveCents,
+         spanFrames: source.spanFrames,
          volume: source.volume,
          muted: source.muted,
          lengthFrames: source.lengthFrames,

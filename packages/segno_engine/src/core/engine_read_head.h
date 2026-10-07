@@ -74,7 +74,20 @@ static inline double le_head_origin(const le_read_head* h, double index,
   return le_head_wrap(h->reversed ? index + 1.0 + travel : index - travel, len);
 }
 
+/* The rate of a take of `len` source frames that spans `play_len` song frames
+ * at Speed numer/denom (#1179 Part 4a): speed * len / play_len, one integer
+ * quotient so the callback and the offline renderer compute the same double.
+ * A take at its own span (or a missing span) reads at the Speed alone. */
+static inline double le_head_rate(int32_t numer, int32_t denom, int32_t len,
+                                  int32_t play_len) {
+  if (len <= 0 || play_len <= 0 || len == play_len) {
+    return (double)numer / (double)denom;
+  }
+  return (double)((int64_t)numer * len) / (double)((int64_t)denom * play_len);
+}
+
 /* The default head: forward, parked, rate 1 (the mixer's integer path). */
+
 static inline int le_head_is_identity(const le_read_head* h) {
   return h->reversed == 0 && h->origin == 0.0 && h->rate == 1.0;
 }
@@ -140,6 +153,23 @@ static inline float le_head_read(const float* buf, int32_t len,
   return h->rate >= 2.0
              ? le_head_sample_decimated(buf, len, index, h->rate, h->reversed)
              : le_head_sample(buf, len, index);
+}
+
+/* The sample a head over a take of `len` frames reads at `index` from a
+ * source of `src_len` frames standing for that take (#1179 Part 4a-ii: a
+ * stretch render): the index maps by src_len / len and the read runs at the
+ * head's rate in the source's own frames. A source of the take's length is
+ * le_head_read itself. */
+static inline float le_head_read_scaled(const float* buf, int32_t src_len,
+                                        int32_t len, const le_read_head* h,
+                                        double index) {
+  if (src_len == len || len <= 0 || src_len <= 0) {
+    return le_head_read(buf, len, h, index);
+  }
+  const double k = (double)src_len / (double)len;
+  le_read_head s = *h;
+  s.rate = h->rate * k;
+  return le_head_read(buf, src_len, &s, le_head_wrap(index * k, src_len));
 }
 
 /* Weight of the NEW head `i` frames into a window of `F` frames. The old

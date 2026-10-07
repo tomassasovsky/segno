@@ -1,6 +1,7 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
@@ -108,6 +109,8 @@ SessionSettings settingsFromLooper(
   required RecordStartSettings recordStart,
   required DecaySnapshot decay,
   required OneShotSnapshot oneShot,
+  required InheritSnapshot<bool> followTempo,
+  required InheritSnapshot<PitchMode> pitchMode,
   required RecordLengthSnapshot recordLength,
   required RecordTimingSnapshot recordTiming,
   required FadeDurations fade,
@@ -126,6 +129,10 @@ SessionSettings settingsFromLooper(
     recordTiming: recordTiming.defaultTiming,
     overdubDecay: decay.defaultPercent,
     defaultOneShot: oneShot.defaultOneShot,
+    defaultFollowTempo: followTempo.defaultValue,
+    trackFollowTempoOverrides: followTempo.trackOverrides,
+    defaultPitchMode: pitchMode.defaultValue,
+    trackPitchModeOverrides: pitchMode.trackOverrides,
     defaultFadeDurationMs: fade.defaultMs,
     trackFadeDurationOverrides: fade.overrides,
     defaultLengthPresetBars: recordLength.defaultBars,
@@ -307,6 +314,12 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   quantizeDiv: bundle.session.quantizeDiv,
   loopBars: bundle.session.loopBars,
   defaultOneShot: bundle.session.defaultOneShot,
+  recordedTempoBpm: bundle.session.recordedTempoBpm,
+  recordedLengthFrames: bundle.session.recordedLengthFrames,
+  defaultFollowTempo: bundle.session.defaultFollowTempo,
+  trackFollowTempoOverrides: bundle.session.trackFollowTempoOverrides,
+  defaultPitchMode: bundle.session.defaultPitchMode,
+  trackPitchModeOverrides: bundle.session.trackPitchModeOverrides,
   defaultLengthPresetBars: bundle.session.defaultLengthPresetBars,
   trackRecordTimingOverrides: bundle.session.trackRecordTimingOverrides,
   trackOverdubDecayOverrides: bundle.session.trackOverdubDecayOverrides,
@@ -405,6 +418,7 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
           channel: track.channel,
           fadeAmount: track.fadeAmount,
           reversed: track.reversed,
+          spanFrames: track.spanFrames,
           lanes: lanes,
         ),
       );

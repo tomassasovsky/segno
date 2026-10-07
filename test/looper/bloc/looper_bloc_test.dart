@@ -98,6 +98,13 @@ void main() {
     when(
       () => repository.oneShotFailures,
     ).thenAnswer((_) => const Stream<EngineResult>.empty());
+    // Audio & tempo (#1179): owners PlaybackSettings builds beside Loop/Once.
+    when(
+      () => repository.followTempoFailures,
+    ).thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(
+      () => repository.pitchModeFailures,
+    ).thenAnswer((_) => const Stream<EngineResult>.empty());
     when(
       () => repository.settleOneShot(),
     ).thenAnswer((_) async => EngineResult.ok);

@@ -3,6 +3,7 @@ import 'package:segno/app/console_audio_devices.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/logging/app_log.dart';
+import 'package:segno/looper/application/audio_tempo_families.dart';
 import 'package:segno/looper/application/settings_families.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 // Settings owns its own AudioBackend; the looper domain backend is the
@@ -50,6 +51,13 @@ Future<AutoStartResult> tryAutoStartEngine({
   );
   await _stageOrLog(DecayFamily(repository: repository, settings: settings));
   await _stageOrLog(OneShotFamily(repository: repository, settings: settings));
+  // Audio & tempo (#1179): Follow tempo restores On when nothing is stored.
+  await _stageOrLog(
+    FollowTempoFamily(repository: repository, settings: settings),
+  );
+  await _stageOrLog(
+    PitchModeFamily(repository: repository, settings: settings),
+  );
 
   // Mode and every track length form one startup image, staged before audio
   // opens like the families above.
@@ -253,6 +261,18 @@ Future<AutoStartResult> _tryAutoStartEngine({
   if (!startupOnce.isOk) {
     AppLog.error(
       'audio auto-start: playback replay unconfirmed ${startupOnce.name}',
+    );
+  }
+  final startupFollow = await repository.settleFollowTempo();
+  if (!startupFollow.isOk) {
+    AppLog.error(
+      'audio auto-start: Follow tempo replay unconfirmed ${startupFollow.name}',
+    );
+  }
+  final startupPitch = await repository.settlePitchMode();
+  if (!startupPitch.isOk) {
+    AppLog.error(
+      'audio auto-start: Pitch replay unconfirmed ${startupPitch.name}',
     );
   }
   final startupTiming = await repository.settleRecordTimingSettings();
@@ -613,6 +633,18 @@ Future<bool> _firstRunAutoStart({
   if (!startupOnce.isOk) {
     AppLog.error(
       'audio first-run: playback replay unconfirmed ${startupOnce.name}',
+    );
+  }
+  final startupFollow = await repository.settleFollowTempo();
+  if (!startupFollow.isOk) {
+    AppLog.error(
+      'audio first-run: Follow tempo replay unconfirmed ${startupFollow.name}',
+    );
+  }
+  final startupPitch = await repository.settlePitchMode();
+  if (!startupPitch.isOk) {
+    AppLog.error(
+      'audio first-run: Pitch replay unconfirmed ${startupPitch.name}',
     );
   }
   final startupTiming = await repository.settleRecordTimingSettings();

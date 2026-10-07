@@ -1,6 +1,6 @@
 # Pitch and time core: Speed, Transpose, Audio & tempo follow, import Adapt
 
-<!-- cspell:ignore varispeed lerp lbuf wdub Signalsmith signalsmith numer SCHED untransposed sidelobe retiming Retiming retimes retimed retime regrid halfband Neoverse milli fmod crossfades hujm YMPRG Bmpo -->
+<!-- cspell:ignore varispeed lerp lbuf wdub Signalsmith signalsmith numer SCHED untransposed sidelobe retiming Retiming retimes retimed retime reclock regrid halfband Neoverse milli fmod crossfades hujm YMPRG Bmpo -->
 
 Status: approved with required review edits E1-E15, which are applied in this
 text (the review is kept at the owner's evidence store,
@@ -1064,6 +1064,151 @@ NON-GOALS:
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages
 ```
 
+As built in Part 4a (native only so far; numbers from the central ledger:
+command 120, facts 329 and 330, events.log version 11; 10 is Multiply/Divide's):
+
+- **What landed.** The recorded tempo (latched at a defining finalize, a
+  commit and a tempo restore; 0 with no material), the Follow tempo default
+  (0 until Part 4b's page) and per-track override (-1/0/1) through
+  `le_engine_set_follow_tempo` with a receipt, the lock relaxation for
+  `set_tempo` and tap pairs, retiming with divisor rounding and phase
+  scaling, the span model (`le_head_rate`: speed x take length / span), the
+  detached head for a track that keeps its recorded speed, the punch-in
+  guard on a take off its span (control and callback), history fit against
+  the recorded master after a retime (Clear Undo of an old take), a mode
+  switch returning the song to its recorded tempo, the snapshot fields
+  (`recorded_tempo_bpm`, `follow_tempo`, `tempo_follow` with its reason,
+  per-track `follow_override`), the facts and renderer parity.
+- **The span is per take.** A take remembers the clock it was laid down
+  against (`span_clock`, filled at the first retime), so takes recorded at
+  different tempi each read at their own ratio with no per-layer table: a
+  new take at the new tempo reads at rate 1 while the old one stretches,
+  and they swap roles when the tempo returns.
+- **Free and Song have no bar grid,** so they never retime: the snapshot
+  reports "no grid" (the plan's "Free/Song private clocks scale" has
+  nothing to apply to).
+- **Not in this part yet, proposed as its own part.** Pitch Unchanged
+  (the stretch render with `out_len = play_len` on the cache worker, the
+  dry-through-varispeed pending rule, `pitch_effective`, the 0.5 %
+  re-render tolerance, the pitch-mode command 121) and the Dart seam with
+  the settings receipts. Until then a following track's pitch follows the
+  tempo ratio, the "Follows speed" behaviour; Follow tempo stays off by
+  default, so no rig changes behaviour.
+- **The new length (review M2).** It is the plan's
+  `round(bars x frames_per_bar(new))`, so an external clock (#1228) finds
+  the loop on its bars; a master played off its bars (8010 frames for one
+  bar at 120) retimes to the bar (10667 at 90), not to its own length
+  scaled (10680). Rounded up to the largest active Sync division as above.
+- **Back to the recorded tempo (review M1).** A tempo within
+  `LE_TEMPO_SNAP_BPM` (0.05 BPM, the MIDI clock plan's real-change
+  threshold) of the recorded one returns the song to the recorded tempo
+  and length exactly: a display-rounded value, a tap pair or a MIDI tempo
+  brings every take back on its span, and overdub with it. The snapshot's
+  `recorded_tempo_bpm` is what Part 4b's page offers as the way back.
+- **Clear Undo of the last take (review H1).** With no master left after a
+  retime, the history gate fits the restored take against the kept
+  recorded master as well as the saved retimed base; the restore
+  re-establishes the retimed clock, the take at its ratio, and publishes
+  the kept recorded tempo again rather than latching the tempo in force.
+- **No click, no drift (review L1).** A following track that sounds opens
+  the turn window at a retime: the old head reads on from its own index
+  while the new rate's index (locked to the whole-frame clock, up to a
+  sample away) fades in. The clock's position carries its fractional part
+  from one retime to the next, so fifty 90/120 pairs leave the song where
+  it would have been.
+- **Departures from 4.2, labelled (review L2).** A track that keeps its
+  recorded speed re-origins on the shared position at the retime (its
+  index continuous, its lap its own) rather than running a private
+  counter; it re-anchors at its next Stop/Play like any head. A retime
+  whose length leaves `1..max_loop_frames` changes nothing and is not yet
+  reported (review L3): the tempo stays and `tempo_follow` reads RETIMES;
+  Part 4b's page shows the tempo the snapshot holds, so the refusal is
+  visible as the tempo not moving. A fact or reason for it is a follow-up.
+- **Multiply/Divide (#1212) lands second and owns the interaction (review
+  M3).** Its master re-clock (`le_length_apply` with `reclock > 0`) sets
+  the clock to the new take length in take frames; on a retimed rig that
+  drops the retime for the master while every other follower keeps a
+  `span_clock` measured against the old clock, so their ratios go wrong.
+  Whichever of #1212 and this part lands second must either refuse a
+  length edit on a rig or track off its span (`LE_ERR_TRANSFORMED`, the
+  punch-in rule) or scale `len` and `span_clock` together through the
+  edit, and add the test (a 4-bar rig retimed to 90, then a x2 on one
+  track: every follower's `head_rate_milli` unchanged). #1212 also stores
+  `a_live` directly rather than through `le_track_publish_live`, which is
+  safe for the content key (a fresh revision) but not cache-hot.
+- **Mode switch.** A mode switch returns a retimed song to its recorded
+  tempo, resetting a tempo the player chose; Part 4b's page says so.
+
+As built in Part 4a-ii (Pitch across a retime; command 121, fact 331,
+events.log version 12):
+
+- **One render, two jobs.** A source render now has its own length: the
+  take time-stretched to the span it plays over (Pitch Unchanged) and
+  shifted by its Transpose pitch, one render. The shim's
+  `le_stretch_render_loop` takes the output length (ratio out / take, the
+  fold scaled with it). The callback wants a render when the track is
+  transposed and not bypassed, or plays over another span with Pitch
+  Unchanged; bypass keeps the stretch and drops only the pitch.
+- **Reading a render of another length.** The head stays in the take's
+  frames (its rate speed x take / span); a render's read maps the index by
+  out_len / take and runs at the head's rate in the render's frames
+  (`le_head_read_scaled`), in the callback and the renderer alike. A track
+  sounding any render always reads through the head.
+- **Pending rule.** Until the render lands, the dry take plays through the
+  varispeed head: timing exact, the pitch off by the ratio, reported as
+  `pitch_effective_cents` (1200 log2 of the sounding source's length over
+  the span; 0 at its own span or once the render plays).
+- **Tolerance.** A render within 0.5 % of the span serves it (about 9
+  cents, reported); a tempo move past that renders again, dry meanwhile. A
+  span within 0.5 % of the take itself wants no stretch (review M1): a
+  transposed track stays on its plain transpose render and an untransposed
+  one on its dry take, the head absorbing the residual, so a small tempo
+  move (a MIDI clock's 0.05 BPM steps, #1228) neither drops a transposed
+  track to its true pitch nor re-renders every follower.
+- **Memory and CPU for retimes (review M2), an owner-visible gate like
+  3a's.** With Pitch Unchanged the default and Follow On from Part 4b, every
+  tempo change past 0.5 % on a populated rig asks for a stretch render per
+  following lane, and slowing down makes them longer. The joint table gains
+  the retime rows (96 kHz, 30 s takes, 120 to 90 BPM, so 40 s renders of
+  15.4 MiB each):
+
+  | Rig | Stretch renders | Worker time at the 20x Pi floor |
+  |---|---|---|
+  | 8 followers x 1 lane | 123 MiB (fits the 128 MiB beside the prints) | 16 s |
+  | 8 followers x 8 lanes | 983 MiB (most refused, those tracks stay at the varispeed pitch, reported) | 128 s |
+
+  The Pi 5 measurement list (Part 1's `render` scenario, E11) adds the case:
+  eight followers x 8 lanes retimed 120 to 90, renders landed, peak RSS and
+  late periods while the worker runs. On those numbers the owner decides
+  whether Unchanged renders get their own share of the cap or a per-retime
+  priority (sounding tracks first, then by lane count); until then a
+  refused render is reported (`pitch_effective_cents` stays the ratio's)
+  and Part 6b shows it as refused, not pending.
+- **Setting.** The default (0 Unchanged, the plan's) and per-track
+  overrides through `le_engine_set_pitch_mode` with a receipt; a change only
+  re-selects the source (an equal-power swap), the head is untouched.
+
+As built in Part 4a-iii (the Dart seam):
+
+- `AudioEngine.setFollowTempo` / `setPitchMode` (the default with channel
+  null, an override per track, null inherits) through the receipt table;
+  `EngineSnapshot.recordedTempoBpm`, `followTempo`, `tempoFollow`
+  (`TempoFollowState`) and `pitchMode` (`PitchMode`);
+  `TrackSnapshot.followTempoOverride`, `pitchModeOverride` and
+  `pitchEffectiveCents`; the native and mock engines and the four fakes.
+- `LooperRepository.setFollowTempoSettings` / `setPitchModeSettings` are
+  two `SettingsReceipt` families with the inherit grammar, like One Shot:
+  the whole vector (default plus eight slots) is the intent, only the
+  parts the engine does not hold are sent, the vector is accepted once
+  every request's callback result is OK, a failure leaves it owed until
+  Retry, a stopped engine stages it and every start replays it. The
+  restart intents are what Part 4b's Session fields capture.
+- `LooperState.recordedTempoBpm`, `tempoFollow`, `defaultFollowTempo`,
+  `defaultPitchMode`; `Track.followTempoOverride`, `pitchModeOverride`
+  (the accepted settings) and `pitchEffectiveCents` (the engine's).
+- A session load clears an owed vector but keeps the settings; whether a
+  session carries them (and so replaces them) is Part 4b's.
+
 ### Part 4b. Audio & tempo page and Session fields (about 300 production lines)
 
 Section 4.4: the Follow tempo default flips to On together with the page
@@ -1086,6 +1231,67 @@ NON-GOALS:
 - Screen 07/07 (MIDI tempo), new owners, legacy schema decode.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
+
+As built in Part 4b (schema number assigned at landing: 14 on this base, 16
+on the trunk after Multiply/Divide's 14 and the backing player's 15):
+
+- **Owners.** `FollowTempoFamily` and `PitchModeFamily`
+  (`lib/looper/application/audio_tempo_families.dart`) on the shared
+  settings owner, built and projected by `PlaybackSettings` into
+  `PlaybackOptions.followTempo` / `pitchMode` (null while the owner is not
+  ready, so an owed vector is never shown as applied: the 4a-iii review's
+  L1). One stored nullable bool per address, nine addresses each, Pitch
+  stored as "follows speed". Staged before audio opens and settled after
+  start like Loop/Once; refusal and recovery notices like every owned
+  family. **Follow tempo restores On when nothing is stored (E15)**: the
+  engine's own default stays 0, so a bare engine, the renderer and the
+  native suites are unchanged, and the app turns it on with the page that
+  turns it off.
+- **Page.** Screens 07/04 to 07/06: the scope selector, Follow tempo and
+  Pitch with Default/Custom tags and Use default on a track override, the
+  On/Off and Unchanged/Follows speed notes, and a scope that keeps its
+  recorded speed shows Pitch as the readout "Unchanged" with "Pitch stays
+  unchanged at the recorded speed." (06). The "unavailable" line is gone.
+  The hub reads "Follow tempo · Same pitch", "Recorded speed · Same pitch"
+  or "Follow tempo · Pitch follows speed" from the defaults. 07/07 (MIDI
+  clock) waits for #1228's receive. Not drawn, because the pen does not
+  draw them: the mode-switch note (a switch returns a retimed song to its
+  recorded tempo, the 4a review) and a "back to recorded tempo" control
+  (the snapshot exposes `recordedTempoBpm` for it). Adding either is a pen
+  change first. The Pitch readout uses the primary text color; the pen's
+  #c1d4ef has no theme token.
+- **Session.** `recordedTempoBpm` and `recordedLengthFrames` (both or
+  neither), `tracks[].spanFrames`, `defaultFollowTempo`,
+  `trackFollowTempoOverrides`, `defaultPitchMode`,
+  `trackPitchModeOverrides`; strict decode. A rig saves the recorded pair
+  only when its master was retimed or a take sits on another span; a take's
+  span is the engine's `span_frames`, or the master in force for a take
+  laid down after the last retime, and 0 on the recorded master. The
+  conversion from the previous schema fills Follow tempo and Pitch from the
+  live settings (rule 1, schema 8's precedent) and no recorded pair or
+  spans, since nothing could retime before.
+- **Recall of a retimed rig (the coordinator's decision: in 4b).** Native:
+  `le_engine_import_span` gives an imported take its span (kept apart from
+  the live span, which the import's transform reset clears, and cleared by
+  the next lane-0 import), the commit parks the take at length / span laps
+  and keeps the span, and the snapshot carries `recorded_length_frames` and
+  per-track `span_frames`. Repository: Pitch and a temporary all-follow
+  vector before the takes, the tempo restored to the recorded one, the
+  takes committed on the recorded master, then `setTempo` to the session
+  tempo (the retime lands exactly on `baseLengthFrames`, checked), then the
+  session's own Follow vector. The retime needs a follower, and a song
+  retimed and then set to keep its recorded speed has none: hence the
+  temporary vector. After recall the tempo source reads manual (the retime
+  is a `set_tempo`), whatever source the session saved.
+- **Cap policy (coordinator decision, 4a-ii M2).** Stretch renders share the
+  cache cap with the prints; no separate share. A render a track with
+  material uses is never evicted (E7, stopped tracks included per 3a's L2);
+  renders no track wants go first among source renders, after the prints,
+  which the live chain recomputes without an audible change. The Pi 5
+  measurement in 4a-ii's table remains the owner's gate for revisiting it.
+- **Session load keeps storage as it is.** Like Loop/Once, a loaded
+  session's vectors are live and durable for the session; the stored
+  preferences change only by an edit.
 
 ### Part 5. Session for Speed and Transpose, reopen, import Adapt seam (about 300 production lines)
 
