@@ -1186,56 +1186,23 @@ void main() {
     testWidgets('the map previews the saved palette in Custom colors only', (
       tester,
     ) async {
-      await control.setPedalSetup(
-        control.state.pedalSetup.copyWith(
-          palette: const PedalPalette().withChoice(
-            PedalButton.track1,
-            const BuiltInPaletteEntry(PedalPaletteColor.violet),
-          ),
-        ),
-      );
       await pump(tester);
       PedalSetupCap cap() => tester.widget<PedalSetupCap>(
         find.byKey(const Key('pedal_setup_cap_track1')),
       );
-      // Track controls show what the pedal lights now.
-      expect(cap().ledColor, isNot(PedalPaletteColor.violet.color));
       await openLeds(tester);
-      // The colour editor opens on the saved choice, before any draft.
-      expect(cap().ledColor, PedalPaletteColor.violet.color);
-      await swatch(tester, 'cyan');
+      await swatch(tester, 'violet');
       await tester.tap(find.byKey(save));
       await tester.pumpAndSettle();
       // Saving clears the draft; the map keeps the saved colour.
-      expect(cap().ledColor, PedalPaletteColor.cyan.color);
-    });
-
-    testWidgets('the map previews the saved palette in Custom colors only', (
-      tester,
-    ) async {
-      await pump(tester);
-      await control.setPedalSetup(
-        control.state.pedalSetup.copyWith(
-          palette: const PedalPalette().withChoice(
-            PedalButton.track1,
-            const BuiltInPaletteEntry(PedalPaletteColor.violet),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      PedalSetupCap cap() => tester.widget<PedalSetupCap>(
-        find.byKey(const Key('pedal_setup_cap_track1')),
-      );
-      // Track controls show what the pedal lights now.
-      expect(cap().ledColor, isNot(PedalPaletteColor.violet.color));
-      await openLeds(tester);
-      // The colour editor opens on the saved choice, before any draft.
       expect(cap().ledColor, PedalPaletteColor.violet.color);
-      await swatch(tester, 'cyan');
-      await tester.tap(find.byKey(save));
+      // Track controls show what the pedal lights now (Record mode).
+      await tester.tap(find.byKey(const Key('pedal_setup_context_tracks')));
       await tester.pumpAndSettle();
-      // Saving clears the draft; the map keeps the saved colour.
-      expect(cap().ledColor, PedalPaletteColor.cyan.color);
+      expect(cap().ledColor, isNot(PedalPaletteColor.violet.color));
+      // Back in the colour editor, with no draft, the saved choice shows.
+      await openLeds(tester);
+      expect(cap().ledColor, PedalPaletteColor.violet.color);
     });
 
     testWidgets('a saved colour lights only in Custom mode', (tester) async {
