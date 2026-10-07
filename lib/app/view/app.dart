@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:instrument_repository/instrument_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -73,6 +74,7 @@ class App extends StatefulWidget {
     required this.sessionRepository,
     required this.performanceRepository,
     required this.guards,
+    this.instrumentRepository,
     this.pedalRepository,
     this.displayCount,
     this.waveformWindowOpenDelay = Duration.zero,
@@ -189,6 +191,10 @@ class App extends StatefulWidget {
   /// The shared performance-recording repository, sharing the engine.
   final PerformanceRepository performanceRepository;
 
+  /// The instruments' engine side (#1197), sharing the engine; null runs
+  /// the app without instruments (tests that do not need them).
+  final InstrumentRepository? instrumentRepository;
+
   @override
   State<App> createState() => _AppState();
 }
@@ -224,6 +230,7 @@ class _AppState extends State<App> {
       pedal: _pedal,
       performance: widget.performanceRepository,
       sessions: widget.sessionRepository,
+      instruments: widget.instrumentRepository,
       powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
       reboot: widget.reboot ?? const SystemApplianceEnv().reboot,
       storageSettled: widget.storage?.settled ?? () async {},
@@ -376,6 +383,12 @@ class _AppState extends State<App> {
       recovery: (context) => context.l10n.fadeSettingsRecoveryTitle,
       refused: (context) => context.l10n.fadeSettingsRefusedTitle,
       body: (context) => context.l10n.fadeSettingsRecoveryBody,
+    ),
+    OwnedSetting.instruments => (
+      id: AppToastId.instrumentsSettings,
+      recovery: (context) => context.l10n.instrumentsSettingsRecoveryTitle,
+      refused: (context) => context.l10n.instrumentsSettingsRefusedTitle,
+      body: (context) => context.l10n.instrumentsSettingsRecoveryBody,
     ),
   };
 

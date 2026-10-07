@@ -346,6 +346,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.2"
+  instrument_repository:
+    dependency: "direct main"
+    description:
+      path: "packages/instrument_repository"
+      relative: true
+    source: path
+    version: "0.1.0"
   integration_test:
     dependency: "direct dev"
     description: flutter

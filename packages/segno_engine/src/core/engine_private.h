@@ -1419,7 +1419,7 @@ typedef struct le_perf_capture {
    * input_mask (frozen at arm: inputs enabled later are not retroactively
    * captured). */
   le_audio_ring monitor_ring[LE_MAX_MONITORED_INPUTS];
-  uint32_t input_mask;
+  uint64_t input_mask; /* bit s: source s, instruments included (#1197) */
 
   int armed;
 
@@ -1598,6 +1598,30 @@ typedef struct le_tuner_pass {
   float d[2 * LE_TUNER_DECIM + 2];
 } le_tuner_pass;
 
+/* ---- Instruments (#1197) ----
+ * One note event on a control-to-audio instrument ring. `seq` is the
+ * control thread's posting order across both rings, so the callback applies
+ * note-ons and releases in the order they were sent. */
+typedef struct le_inst_event {
+  uint32_t seq;
+  uint32_t origin;
+  uint8_t kind; /* LE_INST_NOTE_ON / _NOTE_OFF / _SET_PATCH (engine_instruments.c) */
+  uint8_t slot;
+  uint8_t note;
+  uint8_t velocity;
+} le_inst_event;
+
+/* A single-producer single-consumer ring of le_inst_event over caller
+ * storage (capacity a power of two; one slot is kept empty). */
+typedef struct le_inst_ring {
+  _Atomic uint32_t head; /* consumer */
+  _Atomic uint32_t tail; /* producer */
+  uint32_t mask;
+  le_inst_event* slots;
+} le_inst_ring;
+
+struct le_synth; /* synth_voice.h, owned by the audio thread after configure */
+
 struct le_engine {
   /* The device backend driving the lifecycle (le_select_backend's choice),
    * remembered so le_engine_stop / le_engine_destroy release the device through
@@ -1723,7 +1747,7 @@ struct le_engine {
    * reallocated at configure; the audio thread only ever reads the pointer
    * (set before the device runs). NULL (allocation failure) simply keeps the
    * raw path — conditioning silently off, never a crash. */
-  le_input_cond cond[LE_MAX_MONITORED_INPUTS];
+  le_input_cond cond[LE_MAX_CHANNELS]; /* device channels only (#1197) */
   float* cond_buf;
   int64_t cond_buf_cap; /* capacity in floats (frames * channels) */
   /* Bumped once per block in which conditioning was WANTED (>= 1 input
@@ -1739,6 +1763,72 @@ struct le_engine {
    * the day a real consumer needs it. */
   _Atomic uint32_t a_cond_fallback_blocks;
 
+  /* ---- Instruments (#1197; engine_instruments.c) ----
+   * `synth` is allocated at create and re-initialised by every configure or
+   * reopen (device closed); afterwards only the audio thread touches it.
+   * `inst_bus` holds LE_MAX_INSTRUMENTS mono buses of LE_COND_SCRATCH_FRAMES,
+   * slot-major, allocated with the engine. */
+  struct le_synth* synth;
+  float* inst_bus;
+  /* audio thread: whether this block's buses hold this block's audio (0 for
+   * a block larger than the scratch, whose instrument sources then read
+   * silence) */
+  int inst_bus_live;
+  /* control thread: the patch last requested per slot (-1: none), the
+   * posting sequence, and the event rings' storage */
+  int32_t inst_patch_requested[LE_MAX_INSTRUMENTS];
+  uint32_t inst_seq;
+  /* the highest posted sequence, published after each push (release): the
+   * callback applies only events at or below it, so both rings give it one
+   * consistent cut (a note-off never applies before its own note-on) */
+  _Atomic uint32_t a_inst_seq_pub;
+  le_inst_ring inst_ring;
+  le_inst_ring inst_release_ring;
+  le_inst_event inst_ring_storage[LE_INST_EVENT_CAPACITY];
+  le_inst_event inst_release_storage[LE_INST_RELEASE_CAPACITY];
+  /* parameters: the control thread stores the bits and the patch they are
+   * for, then bumps the slot's revision; the callback applies a changed
+   * revision once per block, only to that patch */
+  _Atomic uint32_t a_inst_param_bits[LE_MAX_INSTRUMENTS][3];
+  _Atomic int32_t a_inst_param_patch[LE_MAX_INSTRUMENTS]; /* the stamp */
+  _Atomic uint32_t a_inst_param_rev[LE_MAX_INSTRUMENTS];
+  uint32_t inst_param_seen[LE_MAX_INSTRUMENTS]; /* audio thread */
+  /* published by the callback, read by the snapshot */
+  _Atomic int32_t a_inst_patch[LE_MAX_INSTRUMENTS];
+  _Atomic int32_t a_inst_voices[LE_MAX_INSTRUMENTS];
+  _Atomic uint32_t a_inst_peak_bits[LE_MAX_INSTRUMENTS];
+  _Atomic int32_t a_voice_limit;
+  _Atomic uint32_t a_voices_stolen;
+  _Atomic uint32_t a_voices_stolen_hard;
+  _Atomic uint32_t a_synth_epoch;
+  _Atomic uint32_t a_inst_events_refused;
+  _Atomic uint32_t a_inst_fallback_blocks;
+  _Atomic uint32_t a_inst_sustain_refused;
+  /* MIDI routes (#1197 Part 2c): two tables, the control thread writes the
+   * one the callback is not using and flips `a_inst_routes_live`; the
+   * callback acknowledges in `a_inst_routes_seen` at block start. */
+  le_inst_routes inst_routes[2];
+  /* Per table, which channels any remap covers for each port, kind (note,
+   * CC) and number (bit c: MIDI channel c + 1). Built with its table on the
+   * control thread, so a message no remap can match skips the remap scan of
+   * every instrument. */
+  uint16_t inst_remap_index[2][LE_MAX_MIDI_PORTS][2][128];
+  /* and which instruments carry such a remap (bit k: instrument k), and
+   * where in each instrument's list the first one sits, so an admitted
+   * message starts its scan there on those instruments only */
+  uint8_t inst_remap_insts[2][LE_MAX_MIDI_PORTS][2][128];
+  uint8_t inst_remap_first[2][LE_MAX_INSTRUMENTS][LE_MAX_MIDI_PORTS][2][128];
+  _Atomic int32_t a_inst_routes_live;
+  _Atomic int32_t a_inst_routes_seen;
+  /* audio thread: this block's table and remap index, and the port that
+   * last set each instrument's bend, modulation and pressure (-1: none), so
+   * a port that goes away resets only its own */
+  const le_inst_routes* inst_routes_active;
+  const uint16_t (*inst_remap_active)[2][128];
+  const uint8_t (*inst_remap_insts_active)[2][128];
+  const uint8_t (*inst_remap_first_active)[LE_MAX_MIDI_PORTS][2][128];
+  int8_t inst_expr_port[LE_MAX_INSTRUMENTS][3];
+
   /* ---- Input clip ("HOT") detector (input clip, S2) ---- *
    * Always on, no params, RAW path (see the LE_CLIP_* doc in
    * segno_engine_api.h). clip_run / clip_hold_until are AUDIO-THREAD-LOCAL:
@@ -1747,8 +1837,8 @@ struct le_engine {
    * a_input_clip_mask is the published truth le_engine_get_snapshot reads —
    * recomputed and stored once per processed block. All reset at configure
    * (the device is closed there, so the plain fields are race-free). */
-  int32_t clip_run[LE_MAX_MONITORED_INPUTS];
-  uint64_t clip_hold_until[LE_MAX_MONITORED_INPUTS];
+  int32_t clip_run[LE_MAX_CHANNELS]; /* device channels only (#1197) */
+  uint64_t clip_hold_until[LE_MAX_CHANNELS];
   _Atomic uint32_t a_input_clip_mask;
 
   /* Output buses (slice 3b): bus k is the pair (2k, 2k + 1); see

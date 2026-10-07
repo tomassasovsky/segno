@@ -5,6 +5,7 @@ import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/widgets.dart';
+import 'package:instrument_repository/instrument_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -45,6 +46,7 @@ Future<void> runSegno(
   SessionRepository? sessionRepository,
   PerformanceRepository? performanceRepository,
   GuardRegistry? guards,
+  InstrumentRepository? instrumentRepository,
   EngineConfig? startConfig,
 }) async {
   assert(
@@ -97,6 +99,7 @@ Future<void> runSegno(
   // One guard table for the whole app (accepted behaviour 6.12): the
   // repositories and the runtime's owners all check it at their commits.
   final registry = guards ?? GuardRegistry();
+  InstrumentRepository? instruments;
   if (repository == null ||
       sessionRepository == null ||
       performanceRepository == null) {
@@ -112,10 +115,16 @@ Future<void> runSegno(
       exportsRoot: defaultExportDirectory,
       guards: registry,
     );
+    // Instruments read the engine through the looper's poll (#1197).
+    instruments = InstrumentRepository(
+      engine: engine,
+      snapshots: looper.engineSnapshots,
+    );
   } else {
     looper = repository;
     session = sessionRepository;
     performance = performanceRepository;
+    instruments = instrumentRepository;
   }
 
   // The native MIDI source feeds the controller pipeline; it is null when no
@@ -236,6 +245,7 @@ Future<void> runSegno(
       ),
       sessionRepository: session,
       performanceRepository: performance,
+      instrumentRepository: instruments,
       initialAsioDrivers: asioDrivers,
       updates: updates,
       wifi: wifi,

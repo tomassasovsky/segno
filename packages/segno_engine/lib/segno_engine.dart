@@ -18,9 +18,11 @@ export 'src/audio_engine.dart'
         EngineResult,
         EngineRouting,
         InputConditioningControl,
+        InstrumentHost,
         LooperModeControl,
         LooperTransport,
         MasterBusControl,
+        MidiInputSink,
         MonitorControl,
         ReopenOutcome,
         ReopenResult,
@@ -59,6 +61,21 @@ export 'src/fx_fingerprint.dart' show FxFingerprint;
 export 'src/fx_recipe.dart' show FxOwner, FxRecipe, FxRecipeSlot;
 export 'src/history_entry.dart' show HistoryEntry, HistoryKind, TrackHistory;
 export 'src/input_conditioning_param.dart' show InputConditioningParam;
+export 'src/instruments.dart'
+    show
+        InstrumentRemap,
+        InstrumentRoute,
+        InstrumentsSnapshot,
+        MidiCaptureHandle,
+        MidiInputSnapshot,
+        MidiRemapKind,
+        kInstrumentSourceBase,
+        kMaxChordNotes,
+        kMaxInstrumentRemaps,
+        kMaxInstruments,
+        kMaxMidiPorts,
+        kMaxRemapNotes,
+        kMaxVoiceLimit;
 export 'src/lane_cache.dart' show LaneCacheState;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/mix_settings.dart'
@@ -84,6 +101,8 @@ export 'src/plugin_descriptor.dart'
         PluginParamInfo,
         PluginScanProgress,
         PluginSlotHandle;
+export 'src/simulated_instruments.dart'
+    show SimulatedInstruments, SimulatedVoice;
 export 'src/storage_io.dart'
     show
         FileDigest,
@@ -93,6 +112,15 @@ export 'src/storage_io.dart'
         FileUnreadable,
         NativeStorageIo,
         StorageIo;
+export 'src/synth_catalogue.dart'
+    show
+        SynthCatalogue,
+        SynthFamily,
+        SynthParamInfo,
+        SynthParamUnit,
+        SynthPatch,
+        kSynthFamilyParams,
+        kSynthPatches;
 export 'src/track_effect.dart'
     show
         BuiltInEffect,

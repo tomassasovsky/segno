@@ -157,6 +157,26 @@ void main() {
     });
   });
 
+  group('instruments record', () {
+    test('restores exact bytes or absence', () async {
+      expect(await repository.readInstrumentsCheckpoint(), isNull);
+      const record = '{"version":1,"instruments":[]}';
+      await repository.restoreInstrumentsCheckpoint(record);
+      expect(await repository.readInstrumentsCheckpoint(), record);
+      await repository.restoreInstrumentsCheckpoint(null);
+      expect(await repository.readInstrumentsCheckpoint(), isNull);
+    });
+
+    test('reports a lost write', () async {
+      store.discardNextWriteKey = 'instruments.working_copy';
+      await expectLater(
+        repository.restoreInstrumentsCheckpoint('{}'),
+        throwsStateError,
+      );
+      expect(await repository.readInstrumentsCheckpoint(), isNull);
+    });
+  });
+
   group('lane mute scalar', () {
     test(
       'orders a rapid pair of writes and reads behind blocked storage',

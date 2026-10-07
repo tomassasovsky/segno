@@ -54,7 +54,12 @@ typedef enum le_result {
   LE_ERR_TRANSFORMED = -10,  /* a record or overdub while Speed is not 1x
                               * (#1179): capture never writes through a
                               * fractional read head */
-  /* -11 .. -17 are assigned to other work (the numbering ledger). */
+  /* -11 .. -13 and -16 .. -17 are assigned to other work (the numbering
+   * ledger). */
+  LE_ERR_NO_INSTRUMENT = -14, /* a note for an instrument slot with no patch
+                               * (#1197); returned only by the single-event
+                               * API, never by a batch */
+  LE_ERR_UNKNOWN_PATCH = -15, /* a patch index this build does not define */
   LE_ERR_NOT_FOUND = -18,    /* the file (or a directory on its path) does not
                               * exist (#1198) */
   LE_ERR_TRUNCATED = -19,    /* the file exists but is shorter than the range
@@ -540,6 +545,11 @@ typedef enum le_command_code {
                           * raw-posted */
   LE_CMD_TRANSPOSE = 86,        /* checked internal Transpose request (#1179) */
   LE_CMD_TRANSPOSE_BYPASS = 87, /* checked internal Transpose bypass */
+
+  /* Instruments (#1197; the ledger assigns 96-111). Patch changes are not
+   * commands: they ride the ordered note ring (le_engine_set_instrument). */
+  LE_CMD_SET_VOICE_LIMIT = 96, /* arg_i = sounding-voice limit */
+  LE_CMD_INSTRUMENT_RESET = 97, /* arg_i = slot: fade its voices out */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -660,6 +670,16 @@ typedef struct le_config {
 
 /* Maximum number of simultaneous looper tracks (two banks of four). */
 #define LE_MAX_TRACKS 8
+/* Instrument slots (#1197): each a synthesized mono source. */
+#define LE_MAX_INSTRUMENTS 8
+/* The source index space every input-keyed route, monitor and mix entry uses
+ * (#1197): sources [0, LE_MAX_CHANNELS) are device input channels, and
+ * LE_INSTRUMENT_SOURCE_BASE + k is instrument slot k. The index never depends
+ * on the interface's channel count. Physical-only stages (loopback exclusion,
+ * clip detection, conditioning, capture trim, the tuner) cover device
+ * channels only. */
+#define LE_INSTRUMENT_SOURCE_BASE LE_MAX_CHANNELS
+#define LE_MAX_SOURCES (LE_MAX_CHANNELS + LE_MAX_INSTRUMENTS)
 
 /* Default and fixed-track recording choices: 0 immediately, 1 loop start,
  * 2 bar, 3 half, 4 quarter, 5 eighth, 6 sixteenth. Track -1 inherits. */
@@ -679,17 +699,18 @@ typedef struct le_record_timing_settings {
  * worst-case LE_MAX_TRACKS * LE_MAX_LANES does not inflate idle memory. */
 #define LE_MAX_LANES 8
 
-/* Input channels the live-monitor path covers, [0, LE_MAX_MONITORED_INPUTS).
+/* Sources the live-monitor path covers, [0, LE_MAX_MONITORED_INPUTS).
  * Bounds the per-input monitor array (le_engine_set_monitor_input and friends)
  * and the per-input capture rings beside it.
  *
  * Every hardware input the engine can open can be monitored (accepted
  * design, slice 3: an 18-input interface monitors channel 18 exactly as
- * well as channel 1), so this is LE_MAX_CHANNELS. It stays a distinct name
- * from LE_MAX_LANES, which bounds a different thing (lanes per track), and
- * the monitor arrays are sized by it, never by the lane ceiling. Each
- * le_monitor_input is about 3.3 KB, so 32 of them cost ~106 KB. */
-#define LE_MAX_MONITORED_INPUTS LE_MAX_CHANNELS
+ * well as channel 1), and so can every instrument source (#1197), so this
+ * is LE_MAX_SOURCES. It stays a distinct name from LE_MAX_LANES, which
+ * bounds a different thing (lanes per track), and the monitor arrays are
+ * sized by it, never by the lane ceiling. Each le_monitor_input is about
+ * 3.3 KB, so 40 of them cost ~132 KB. */
+#define LE_MAX_MONITORED_INPUTS LE_MAX_SOURCES
 
 /* Output destinations (accepted design, slice 3b): output bus k is the
  * hardware pair (2k, 2k + 1); the last bus of an odd-count device is its one
@@ -737,13 +758,14 @@ typedef struct le_mix_settings {
   uint32_t track_gain_mask;
   float track_gain[LE_MAX_TRACKS]; /* after whole-track Pre, before Post */
   uint64_t lane_mask, image_mask;
-  uint32_t monitor_mask, trim_mask, solo_mask, solo_values;
+  uint64_t monitor_mask; /* bit s: source s (#1197: instruments are 32-39) */
+  uint32_t trim_mask, solo_mask, solo_values; /* trim: device channels only */
   float lane_gain[LE_MAX_TRACKS * LE_MAX_LANES];
   float lane_pan[LE_MAX_TRACKS * LE_MAX_LANES];
   /* Source image is separate from live lane gain and track pan offset. */
   float image_gain[LE_MAX_TRACKS * LE_MAX_LANES];
   float image_pan[LE_MAX_TRACKS * LE_MAX_LANES];
-  float monitor_gain[LE_MAX_CHANNELS], monitor_pan[LE_MAX_CHANNELS];
+  float monitor_gain[LE_MAX_SOURCES], monitor_pan[LE_MAX_SOURCES];
   float input_trim[LE_MAX_CHANNELS];
   uint32_t output_mask, output_muted, output_mono;
   float output_level[LE_MAX_OUTPUT_BUSES], output_balance[LE_MAX_OUTPUT_BUSES];
@@ -1360,12 +1382,14 @@ typedef struct le_snapshot {
    * output folding (0 while off, muted or without an enabled route).
    * output_peaks[c] follows master gain/limiter but EXCLUDES click.
    * input_trim[c] is the capture gain le_engine_set_input_trim holds
-   * (linear, default 1). Indexed by hardware channel; entries past the
-   * device's channel count read 0 (trim 1). */
-  float input_peaks[LE_MAX_CHANNELS];
-  float monitor_peaks[LE_MAX_CHANNELS];
+   * (linear, default 1). Indexed by source; device entries past the
+   * device's channel count read 0 (trim 1). Instrument sources (#1197,
+   * LE_INSTRUMENT_SOURCE_BASE + k) report their bus's block peak as the
+   * input peak and a trim of 1. */
+  float input_peaks[LE_MAX_SOURCES];
+  float monitor_peaks[LE_MAX_SOURCES];
   float output_peaks[LE_MAX_CHANNELS];
-  float input_trim[LE_MAX_CHANNELS];
+  float input_trim[LE_MAX_SOURCES];
   uint32_t mix_revision; /* last wholly applied mix transaction */
   /* ---- output buses (slice 3b; trailing). output_bus_count is how many
    * the device has ((output_channels + 1) / 2); entries past it read the
@@ -1395,6 +1419,29 @@ typedef struct le_snapshot {
   uint32_t record_timing_revision;
   int32_t record_timing_result;
   int32_t record_timing_overrides[LE_MAX_TRACKS];
+  /* ---- Instruments (#1197; trailing) ----
+   * instrument_patch[k]: the patch slot k plays (-1: none), as applied by the
+   * callback. instrument_voices[k]: its sounding voices (held or releasing,
+   * not fading). instrument_peaks[k]: the block peak of its bus.
+   * voice_limit: the sounding-voice limit in force. voices_stolen /
+   * voices_stolen_hard: voices taken for new notes with a fade / without
+   * one (no room). synth_epoch: bumped whenever the synth is re-initialised
+   * (configure, reopen); every voice and latch is gone after a change.
+   * instrument_events_refused: note-ons refused because the event ring was
+   * full. instrument_fallback_blocks: blocks larger than the bus scratch,
+   * which render no instrument audio. */
+  int32_t instrument_patch[LE_MAX_INSTRUMENTS];
+  int32_t instrument_voices[LE_MAX_INSTRUMENTS];
+  float instrument_peaks[LE_MAX_INSTRUMENTS];
+  int32_t voice_limit;
+  uint32_t voices_stolen;
+  uint32_t voices_stolen_hard;
+  uint32_t synth_epoch;
+  uint32_t instrument_events_refused;
+  uint32_t instrument_fallback_blocks;
+  /* sustain contributors refused because an instrument already had
+   * LE_SYNTH_SUSTAIN_MAX (16) (#1197 Part 2c) */
+  uint32_t instrument_sustain_refused;
   /* ---- native MIDI input (#1228 Part 1; trailing). Totals across all
    * LE_MAX_MIDI_PORTS ports since the engine was created: events delivered
    * from the current binding, events dropped as stale (pushed by a binding
@@ -3629,6 +3676,219 @@ LE_EXPORT int32_t le_midi_out_close(le_midi_out* m);
  * len), or LE_ERR_DEVICE (no port open or the OS rejected the send). */
 LE_EXPORT int32_t le_midi_out_send(le_midi_out* m, const uint8_t* data,
                                    int32_t len);
+
+/* ---- Instrument slots and notes (#1197) ----------------------------------- *
+ *
+ * Up to LE_MAX_INSTRUMENTS instruments, each playing one of the
+ * LE_SYNTH_PATCHES patches into its own mono bus, rendered inside the audio
+ * callback after the command drain. Patch changes and notes travel on two
+ * single-producer rings drained at block start in the order they were
+ * posted: note-ons and patch changes (LE_INST_EVENT_CAPACITY) and a reserved
+ * lane for releases (LE_INST_RELEASE_CAPACITY), so a burst of note-ons can
+ * never crowd out a note-off, and a note posted after its instrument was set
+ * always meets that patch. A slot's three parameters are continuous controls
+ * read once per block. All of these are control-thread calls (one producer,
+ * like every command). */
+
+#define LE_INST_EVENT_CAPACITY 256    /* note-on ring slots (one kept empty) */
+#define LE_INST_RELEASE_CAPACITY 1024 /* release ring slots (one kept empty) */
+
+/* Gives instrument `slot` patch `patch` (0..LE_SYNTH_PATCHES-1, or -1 for
+ * none) with `params` (three 0..100 values, or NULL for the patch's
+ * defaults). A changed patch fades the slot's voices out. Returns LE_OK,
+ * LE_ERR_INVALID (bad slot or parameter), LE_ERR_UNKNOWN_PATCH,
+ * LE_ERR_CAPACITY (the note-on ring is full: nothing changed, retry) or
+ * LE_ERR_NOT_RUNNING before configure. */
+LE_EXPORT int32_t le_engine_set_instrument(le_engine* engine, int32_t slot,
+                                           int32_t patch, const float* params);
+
+/* Sets family parameter `param` (0..2) of `slot` to `value` (0..100, clamped),
+ * applied from the next block. Returns LE_OK, LE_ERR_INVALID,
+ * LE_ERR_NO_INSTRUMENT (the slot has no patch) or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_set_instrument_param(le_engine* engine, int32_t slot,
+                                                 int32_t param, float value);
+
+/* The voice pool: the highest voice limit. */
+#define LE_INST_MAX_VOICES 64
+
+/* Limits the sounding voices of all instruments together to `limit`
+ * (1..LE_INST_MAX_VOICES): lowering it fades the excess, the overload
+ * control. The default after configure is 32. Returns LE_OK, LE_ERR_INVALID
+ * or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_set_voice_limit(le_engine* engine, int32_t limit);
+
+/* Fades every voice of `slot` out (its definition was removed). Returns
+ * LE_OK, LE_ERR_INVALID or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_reset_instrument(le_engine* engine, int32_t slot);
+
+/* Starts `note` (0..127) at `velocity` (1..127) on `slot` for `origin` (the
+ * caller's identity for the note; its release names the same origin).
+ * Returns LE_OK, LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (the slot has no
+ * patch), LE_ERR_CAPACITY (the note-on ring is full, keeping its last
+ * LE_MAX_INSTRUMENTS slots for patch changes: the note is not played and is
+ * counted in instrument_events_refused) or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_instrument_note_on(le_engine* engine, int32_t slot,
+                                               uint32_t origin, int32_t note,
+                                               int32_t velocity);
+
+/* One origin, one sounding note: a note-on for an origin whose voice is
+ * still held on that slot replaces it (the repeated-strike rule; a voice
+ * held on only by sustain rings on). A chord with one identity goes through
+ * here instead: `count` (1..LE_INST_CHORD_NOTES) notes started together
+ * for `origin`, released together by its note-off. All or nothing: returns
+ * LE_OK, LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT, LE_ERR_CAPACITY (no room
+ * for every note; nothing is played, one refusal is counted) or
+ * LE_ERR_NOT_RUNNING. */
+#define LE_INST_CHORD_NOTES 8
+LE_EXPORT int32_t le_engine_instrument_chord_on(le_engine* engine,
+                                                int32_t slot, uint32_t origin,
+                                                const int32_t* notes,
+                                                int32_t count,
+                                                int32_t velocity);
+
+/* Releases every voice started for `origin`, on every instrument. Rides the
+ * reserved release lane. Returns LE_OK, LE_ERR_CAPACITY (the release lane is
+ * full: the caller must retry, never drop it) or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_instrument_note_off(le_engine* engine,
+                                                uint32_t origin);
+
+/* Adds (`on` 1) or removes (0) sustain contributor `origin` on `slot`: a
+ * pedal or external switch holding sustain. Released notes ring until every
+ * contributor, these and each port's CC64, lets go. Adding rides the note-on
+ * ring (LE_ERR_CAPACITY like a note-on), removing rides the release lane
+ * (LE_ERR_CAPACITY only when it is full: retry, never drop). Returns LE_OK,
+ * LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (adding on an empty slot) or
+ * LE_ERR_NOT_RUNNING. Control-thread origins share a space of their own:
+ * they never collide with a MIDI port's notes. */
+LE_EXPORT int32_t le_engine_instrument_sustain(le_engine* engine, int32_t slot,
+                                               uint32_t origin, int32_t on);
+
+/* ---- Instrument MIDI routes (#1197 Part 2c) ---------------------------------
+ * Which MIDI each instrument plays, from the ports of the shared input sink
+ * (le_engine_attach_midi_input). Routing runs on the audio thread, in the
+ * sink's drain: a Note Off (or Note On at velocity 0) releases every voice
+ * that note started, on every instrument, before any table is read, so
+ * editing a route never strands a held note; CC64 below 64 likewise removes
+ * that port and channel's sustain everywhere. Otherwise each message goes to
+ * every instrument it matches (layers), and channels and ranges make splits:
+ *   - a remap matching the message's port, channel (0: any) and kind/number
+ *     plays its notes (a chord with one identity) instead of the ordinary
+ *     handling of that message on that instrument (so a remapped CC64 does
+ *     not also sustain);
+ *   - otherwise, with MIDI enabled and the port and channel matching: Note
+ *     On within [low, high] plays the incoming note and velocity; CC64 >= 64
+ *     sustains; CC1 sets modulation; pitch bend (two semitones) and channel
+ *     pressure set expression.
+ * A port whose capture is detached, replaced, lost or overran its ring
+ * releases every voice it started, after the events queued before the loss
+ * have been played; nothing from an old binding replays. */
+
+#define LE_INST_MAX_REMAPS 32
+#define LE_INST_REMAP_NOTES 8
+#define LE_INST_REMAP_NOTE 0
+#define LE_INST_REMAP_CC 1
+
+typedef struct le_inst_remap {
+  int32_t port;    /* 0..LE_MAX_MIDI_PORTS-1 */
+  int32_t channel; /* 0: any, 1..16 */
+  int32_t kind;    /* LE_INST_REMAP_NOTE or LE_INST_REMAP_CC */
+  int32_t number;  /* the note or controller, 0..127 */
+  int32_t count;   /* notes to play, 1..LE_INST_REMAP_NOTES */
+  int32_t notes[LE_INST_REMAP_NOTES];
+} le_inst_remap;
+
+typedef struct le_inst_route {
+  int32_t midi_enabled; /* 0/1: ordinary notes and controllers */
+  int32_t port;         /* 0..LE_MAX_MIDI_PORTS-1 */
+  int32_t channel;      /* 0: any, 1..16 */
+  int32_t low, high;    /* note range, 0 <= low <= high <= 127 */
+  int32_t remap_count;  /* 0..LE_INST_MAX_REMAPS; remaps, like ordinary
+                         * notes, need midi_enabled */
+  le_inst_remap remaps[LE_INST_MAX_REMAPS];
+} le_inst_route;
+
+typedef struct le_inst_routes {
+  le_inst_route inst[LE_MAX_INSTRUMENTS];
+} le_inst_routes;
+
+/* Publishes a complete routing table (copied; the caller keeps its own).
+ * While the audio callback runs, a table is switched in at the next block
+ * and acknowledged there; a second publish before that acknowledgement
+ * returns LE_ERR_NOT_READY (retry on the next snapshot, latest wins). While
+ * the engine is stopped the table switches at once. Returns LE_OK,
+ * LE_ERR_INVALID (a field out of range), LE_ERR_NOT_READY or
+ * LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_set_instrument_routes(le_engine* engine,
+                                                  const le_inst_routes* routes);
+
+/* ---- Instrument synthesis catalogue (#1197) ------------------------------ *
+ *
+ * The nineteen Segno synthesis patches the instrument voices play (synth_voice.h,
+ * synth_patch.c). The engine owns the definitions; the app reads them here and
+ * keeps only presentation (names, art) keyed by the patch id, so a readout can
+ * never drift from what the voice does. Pure reads of static tables: safe from
+ * any thread, no engine handle. */
+
+#define LE_SYNTH_PATCHES 19
+#define LE_SYNTH_FAMILIES 7
+#define LE_SYNTH_FAMILY_PARAMS 3
+#define LE_SYNTH_ID_CHARS 24  /* patch id, NUL-terminated */
+#define LE_SYNTH_KEY_CHARS 16 /* parameter key, NUL-terminated */
+
+/* Instrument families, in catalogue order. */
+typedef enum le_synth_family {
+  LE_SYNTH_KEYS = 0,
+  LE_SYNTH_ORGANS = 1,
+  LE_SYNTH_SYNTHS = 2,
+  LE_SYNTH_BASS = 3,
+  LE_SYNTH_STRINGS = 4,
+  LE_SYNTH_DRUMS = 5,
+  LE_SYNTH_PERCUSSION = 6,
+} le_synth_family;
+
+/* The unit a family parameter's value is shown in. */
+typedef enum le_synth_param_unit {
+  LE_SYNTH_UNIT_PERCENT = 0,
+  LE_SYNTH_UNIT_SECONDS = 1,
+  LE_SYNTH_UNIT_HERTZ = 2,
+} le_synth_param_unit;
+
+/* One patch. `defaults` are the three family parameters on the 0..100 scale
+ * every surface edits. */
+typedef struct le_synth_patch_desc {
+  char id[LE_SYNTH_ID_CHARS];
+  int32_t family; /* le_synth_family */
+  float defaults[LE_SYNTH_FAMILY_PARAMS];
+} le_synth_patch_desc;
+
+/* One family parameter. A setting v in 0..100 means
+ *   at_min + (at_max - at_min) * v / 100            when exponential == 0,
+ *   at_min * (at_max / at_min) ^ (v / 100)          when exponential == 1,
+ * in `unit` (percent parameters map 0..100 to 0..100). The voice uses exactly
+ * this value, with one exception kept from the reference: Drums' decay (d,
+ * 0.08..2.48 s) sets each piece's hit length through the piece's own formula
+ * (kick 0.15 + 0.55 d, snare and clap 0.08 + 0.3 d, hat 0.04 + 0.13 d), so
+ * the readout names the kit's decay setting, not one hit's length. */
+typedef struct le_synth_param_desc {
+  char key[LE_SYNTH_KEY_CHARS];
+  int32_t unit; /* le_synth_param_unit */
+  float at_min;
+  float at_max;
+  int32_t exponential;
+} le_synth_param_desc;
+
+/* Number of patches (LE_SYNTH_PATCHES). */
+LE_EXPORT int32_t le_synth_patch_count(void);
+
+/* Fills *out with patch `index` (0..count-1). Returns LE_OK, or
+ * LE_ERR_INVALID for a NULL `out` or an index out of range. */
+LE_EXPORT int32_t le_synth_patch_info(int32_t index, le_synth_patch_desc* out);
+
+/* Fills *out with parameter `param` (0..2) of `family`. Returns LE_OK, or
+ * LE_ERR_INVALID for a NULL `out`, an unknown family or a parameter out of
+ * range. */
+LE_EXPORT int32_t le_synth_param_info(int32_t family, int32_t param,
+                                      le_synth_param_desc* out);
 
 #ifdef __cplusplus
 }

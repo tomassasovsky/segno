@@ -6390,6 +6390,347 @@ class SegnoEngineBindings {
       .asFunction<
         int Function(ffi.Pointer<le_midi_out>, ffi.Pointer<ffi.Uint8>, int)
       >();
+
+  /// Gives instrument `slot` patch `patch` (0..LE_SYNTH_PATCHES-1, or -1 for
+  /// none) with `params` (three 0..100 values, or NULL for the patch's
+  /// defaults). A changed patch fades the slot's voices out. Returns LE_OK,
+  /// LE_ERR_INVALID (bad slot or parameter), LE_ERR_UNKNOWN_PATCH,
+  /// LE_ERR_CAPACITY (the note-on ring is full: nothing changed, retry) or
+  /// LE_ERR_NOT_RUNNING before configure.
+  int le_engine_set_instrument(
+    ffi.Pointer<le_engine> engine,
+    int slot,
+    int patch,
+    ffi.Pointer<ffi.Float> params,
+  ) {
+    return _le_engine_set_instrument(
+      engine,
+      slot,
+      patch,
+      params,
+    );
+  }
+
+  late final _le_engine_set_instrumentPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Float>,
+          )
+        >
+      >('le_engine_set_instrument');
+  late final _le_engine_set_instrument = _le_engine_set_instrumentPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Float>)
+      >();
+
+  /// Sets family parameter `param` (0..2) of `slot` to `value` (0..100, clamped),
+  /// applied from the next block. Returns LE_OK, LE_ERR_INVALID,
+  /// LE_ERR_NO_INSTRUMENT (the slot has no patch) or LE_ERR_NOT_RUNNING.
+  int le_engine_set_instrument_param(
+    ffi.Pointer<le_engine> engine,
+    int slot,
+    int param,
+    double value,
+  ) {
+    return _le_engine_set_instrument_param(
+      engine,
+      slot,
+      param,
+      value,
+    );
+  }
+
+  late final _le_engine_set_instrument_paramPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_instrument_param');
+  late final _le_engine_set_instrument_param =
+      _le_engine_set_instrument_paramPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
+
+  /// Limits the sounding voices of all instruments together to `limit`
+  /// (1..LE_INST_MAX_VOICES): lowering it fades the excess, the overload
+  /// control. The default after configure is 32. Returns LE_OK, LE_ERR_INVALID
+  /// or LE_ERR_NOT_RUNNING.
+  int le_engine_set_voice_limit(
+    ffi.Pointer<le_engine> engine,
+    int limit,
+  ) {
+    return _le_engine_set_voice_limit(
+      engine,
+      limit,
+    );
+  }
+
+  late final _le_engine_set_voice_limitPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_voice_limit');
+  late final _le_engine_set_voice_limit = _le_engine_set_voice_limitPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Fades every voice of `slot` out (its definition was removed). Returns
+  /// LE_OK, LE_ERR_INVALID or LE_ERR_NOT_RUNNING.
+  int le_engine_reset_instrument(
+    ffi.Pointer<le_engine> engine,
+    int slot,
+  ) {
+    return _le_engine_reset_instrument(
+      engine,
+      slot,
+    );
+  }
+
+  late final _le_engine_reset_instrumentPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_reset_instrument');
+  late final _le_engine_reset_instrument = _le_engine_reset_instrumentPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Starts `note` (0..127) at `velocity` (1..127) on `slot` for `origin` (the
+  /// caller's identity for the note; its release names the same origin).
+  /// Returns LE_OK, LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (the slot has no
+  /// patch), LE_ERR_CAPACITY (the note-on ring is full, keeping its last
+  /// LE_MAX_INSTRUMENTS slots for patch changes: the note is not played and is
+  /// counted in instrument_events_refused) or LE_ERR_NOT_RUNNING.
+  int le_engine_instrument_note_on(
+    ffi.Pointer<le_engine> engine,
+    int slot,
+    int origin,
+    int note,
+    int velocity,
+  ) {
+    return _le_engine_instrument_note_on(
+      engine,
+      slot,
+      origin,
+      note,
+      velocity,
+    );
+  }
+
+  late final _le_engine_instrument_note_onPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Uint32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_instrument_note_on');
+  late final _le_engine_instrument_note_on = _le_engine_instrument_note_onPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int, int)>();
+
+  int le_engine_instrument_chord_on(
+    ffi.Pointer<le_engine> engine,
+    int slot,
+    int origin,
+    ffi.Pointer<ffi.Int32> notes,
+    int count,
+    int velocity,
+  ) {
+    return _le_engine_instrument_chord_on(
+      engine,
+      slot,
+      origin,
+      notes,
+      count,
+      velocity,
+    );
+  }
+
+  late final _le_engine_instrument_chord_onPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_instrument_chord_on');
+  late final _le_engine_instrument_chord_on = _le_engine_instrument_chord_onPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          ffi.Pointer<ffi.Int32>,
+          int,
+          int,
+        )
+      >();
+
+  /// Releases every voice started for `origin`, on every instrument. Rides the
+  /// reserved release lane. Returns LE_OK, LE_ERR_CAPACITY (the release lane is
+  /// full: the caller must retry, never drop it) or LE_ERR_NOT_RUNNING.
+  int le_engine_instrument_note_off(
+    ffi.Pointer<le_engine> engine,
+    int origin,
+  ) {
+    return _le_engine_instrument_note_off(
+      engine,
+      origin,
+    );
+  }
+
+  late final _le_engine_instrument_note_offPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Uint32)
+        >
+      >('le_engine_instrument_note_off');
+  late final _le_engine_instrument_note_off = _le_engine_instrument_note_offPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Adds (`on` 1) or removes (0) sustain contributor `origin` on `slot`: a
+  /// pedal or external switch holding sustain. Released notes ring until every
+  /// contributor, these and each port's CC64, lets go. Adding rides the note-on
+  /// ring (LE_ERR_CAPACITY like a note-on), removing rides the release lane
+  /// (LE_ERR_CAPACITY only when it is full: retry, never drop). Returns LE_OK,
+  /// LE_ERR_INVALID, LE_ERR_NO_INSTRUMENT (adding on an empty slot) or
+  /// LE_ERR_NOT_RUNNING. Control-thread origins share a space of their own:
+  /// they never collide with a MIDI port's notes.
+  int le_engine_instrument_sustain(
+    ffi.Pointer<le_engine> engine,
+    int slot,
+    int origin,
+    int on$,
+  ) {
+    return _le_engine_instrument_sustain(
+      engine,
+      slot,
+      origin,
+      on$,
+    );
+  }
+
+  late final _le_engine_instrument_sustainPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Uint32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_instrument_sustain');
+  late final _le_engine_instrument_sustain = _le_engine_instrument_sustainPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Publishes a complete routing table (copied; the caller keeps its own).
+  /// While the audio callback runs, a table is switched in at the next block
+  /// and acknowledged there; a second publish before that acknowledgement
+  /// returns LE_ERR_NOT_READY (retry on the next snapshot, latest wins). While
+  /// the engine is stopped the table switches at once. Returns LE_OK,
+  /// LE_ERR_INVALID (a field out of range), LE_ERR_NOT_READY or
+  /// LE_ERR_NOT_RUNNING.
+  int le_engine_set_instrument_routes(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_inst_routes> routes,
+  ) {
+    return _le_engine_set_instrument_routes(
+      engine,
+      routes,
+    );
+  }
+
+  late final _le_engine_set_instrument_routesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_inst_routes>,
+          )
+        >
+      >('le_engine_set_instrument_routes');
+  late final _le_engine_set_instrument_routes =
+      _le_engine_set_instrument_routesPtr
+          .asFunction<
+            int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_inst_routes>)
+          >();
+
+  /// Number of patches (LE_SYNTH_PATCHES).
+  int le_synth_patch_count() {
+    return _le_synth_patch_count();
+  }
+
+  late final _le_synth_patch_countPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function()>>('le_synth_patch_count');
+  late final _le_synth_patch_count = _le_synth_patch_countPtr
+      .asFunction<int Function()>();
+
+  /// Fills *out with patch `index` (0..count-1). Returns LE_OK, or
+  /// LE_ERR_INVALID for a NULL `out` or an index out of range.
+  int le_synth_patch_info(
+    int index,
+    ffi.Pointer<le_synth_patch_desc> out,
+  ) {
+    return _le_synth_patch_info(
+      index,
+      out,
+    );
+  }
+
+  late final _le_synth_patch_infoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Int32, ffi.Pointer<le_synth_patch_desc>)
+        >
+      >('le_synth_patch_info');
+  late final _le_synth_patch_info = _le_synth_patch_infoPtr
+      .asFunction<int Function(int, ffi.Pointer<le_synth_patch_desc>)>();
+
+  /// Fills *out with parameter `param` (0..2) of `family`. Returns LE_OK, or
+  /// LE_ERR_INVALID for a NULL `out`, an unknown family or a parameter out of
+  /// range.
+  int le_synth_param_info(
+    int family,
+    int param,
+    ffi.Pointer<le_synth_param_desc> out,
+  ) {
+    return _le_synth_param_info(
+      family,
+      param,
+      out,
+    );
+  }
+
+  late final _le_synth_param_infoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<le_synth_param_desc>,
+          )
+        >
+      >('le_synth_param_info');
+  late final _le_synth_param_info = _le_synth_param_infoPtr
+      .asFunction<int Function(int, int, ffi.Pointer<le_synth_param_desc>)>();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -6430,6 +6771,14 @@ enum le_result {
   /// fractional read head
   LE_ERR_TRANSFORMED(-10),
 
+  /// a note for an instrument slot with no patch
+  /// (#1197); returned only by the single-event
+  /// API, never by a batch
+  LE_ERR_NO_INSTRUMENT(-14),
+
+  /// a patch index this build does not define
+  LE_ERR_UNKNOWN_PATCH(-15),
+
   /// the file (or a directory on its path) does not
   /// exist (#1198)
   LE_ERR_NOT_FOUND(-18),
@@ -6453,6 +6802,8 @@ enum le_result {
     -8 => LE_ERR_NOT_READY,
     -9 => LE_ERR_REVERSED,
     -10 => LE_ERR_TRANSFORMED,
+    -14 => LE_ERR_NO_INSTRUMENT,
+    -15 => LE_ERR_UNKNOWN_PATCH,
     -18 => LE_ERR_NOT_FOUND,
     -19 => LE_ERR_TRUNCATED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
@@ -6916,7 +7267,13 @@ enum le_command_code {
   LE_CMD_TRANSPOSE(86),
 
   /// checked internal Transpose bypass
-  LE_CMD_TRANSPOSE_BYPASS(87);
+  LE_CMD_TRANSPOSE_BYPASS(87),
+
+  /// arg_i = sounding-voice limit
+  LE_CMD_SET_VOICE_LIMIT(96),
+
+  /// arg_i = slot: fade its voices out
+  LE_CMD_INSTRUMENT_RESET(97);
 
   final int value;
   const le_command_code(this.value);
@@ -7008,6 +7365,8 @@ enum le_command_code {
     85 => LE_CMD_SET_SPEED,
     86 => LE_CMD_TRANSPOSE,
     87 => LE_CMD_TRANSPOSE_BYPASS,
+    96 => LE_CMD_SET_VOICE_LIMIT,
+    97 => LE_CMD_INSTRUMENT_RESET,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -7160,9 +7519,11 @@ final class le_mix_settings extends ffi.Struct {
   @ffi.Uint64()
   external int image_mask;
 
-  @ffi.Uint32()
+  /// bit s: source s (#1197: instruments are 32-39)
+  @ffi.Uint64()
   external int monitor_mask;
 
+  /// trim: device channels only
   @ffi.Uint32()
   external int trim_mask;
 
@@ -7185,10 +7546,10 @@ final class le_mix_settings extends ffi.Struct {
   @ffi.Array.multi([64])
   external ffi.Array<ffi.Float> image_pan;
 
-  @ffi.Array.multi([32])
+  @ffi.Array.multi([40])
   external ffi.Array<ffi.Float> monitor_gain;
 
-  @ffi.Array.multi([32])
+  @ffi.Array.multi([40])
   external ffi.Array<ffi.Float> monitor_pan;
 
   @ffi.Array.multi([32])
@@ -8060,18 +8421,20 @@ final class le_snapshot extends ffi.Struct {
   /// output folding (0 while off, muted or without an enabled route).
   /// output_peaks[c] follows master gain/limiter but EXCLUDES click.
   /// input_trim[c] is the capture gain le_engine_set_input_trim holds
-  /// (linear, default 1). Indexed by hardware channel; entries past the
-  /// device's channel count read 0 (trim 1).
-  @ffi.Array.multi([32])
+  /// (linear, default 1). Indexed by source; device entries past the
+  /// device's channel count read 0 (trim 1). Instrument sources (#1197,
+  /// LE_INSTRUMENT_SOURCE_BASE + k) report their bus's block peak as the
+  /// input peak and a trim of 1.
+  @ffi.Array.multi([40])
   external ffi.Array<ffi.Float> input_peaks;
 
-  @ffi.Array.multi([32])
+  @ffi.Array.multi([40])
   external ffi.Array<ffi.Float> monitor_peaks;
 
   @ffi.Array.multi([32])
   external ffi.Array<ffi.Float> output_peaks;
 
-  @ffi.Array.multi([32])
+  @ffi.Array.multi([40])
   external ffi.Array<ffi.Float> input_trim;
 
   /// last wholly applied mix transaction
@@ -8139,6 +8502,49 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Array.multi([8])
   external ffi.Array<ffi.Int32> record_timing_overrides;
+
+  /// ---- Instruments (#1197; trailing) ----
+  /// instrument_patch[k]: the patch slot k plays (-1: none), as applied by the
+  /// callback. instrument_voices[k]: its sounding voices (held or releasing,
+  /// not fading). instrument_peaks[k]: the block peak of its bus.
+  /// voice_limit: the sounding-voice limit in force. voices_stolen /
+  /// voices_stolen_hard: voices taken for new notes with a fade / without
+  /// one (no room). synth_epoch: bumped whenever the synth is re-initialised
+  /// (configure, reopen); every voice and latch is gone after a change.
+  /// instrument_events_refused: note-ons refused because the event ring was
+  /// full. instrument_fallback_blocks: blocks larger than the bus scratch,
+  /// which render no instrument audio.
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> instrument_patch;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> instrument_voices;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Float> instrument_peaks;
+
+  @ffi.Int32()
+  external int voice_limit;
+
+  @ffi.Uint32()
+  external int voices_stolen;
+
+  @ffi.Uint32()
+  external int voices_stolen_hard;
+
+  @ffi.Uint32()
+  external int synth_epoch;
+
+  @ffi.Uint32()
+  external int instrument_events_refused;
+
+  @ffi.Uint32()
+  external int instrument_fallback_blocks;
+
+  /// sustain contributors refused because an instrument already had
+  /// LE_SYNTH_SUSTAIN_MAX (16) (#1197 Part 2c)
+  @ffi.Uint32()
+  external int instrument_sustain_refused;
 
   /// ---- native MIDI input (#1228 Part 1; trailing). Totals across all
   /// LE_MAX_MIDI_PORTS ports since the engine was created: events delivered
@@ -8440,6 +8846,147 @@ final class le_midi extends ffi.Opaque {}
 
 final class le_midi_out extends ffi.Opaque {}
 
+final class le_inst_remap extends ffi.Struct {
+  /// 0..LE_MAX_MIDI_PORTS-1
+  @ffi.Int32()
+  external int port;
+
+  /// 0: any, 1..16
+  @ffi.Int32()
+  external int channel;
+
+  /// LE_INST_REMAP_NOTE or LE_INST_REMAP_CC
+  @ffi.Int32()
+  external int kind;
+
+  /// the note or controller, 0..127
+  @ffi.Int32()
+  external int number;
+
+  /// notes to play, 1..LE_INST_REMAP_NOTES
+  @ffi.Int32()
+  external int count;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> notes;
+}
+
+final class le_inst_route extends ffi.Struct {
+  /// 0/1: ordinary notes and controllers
+  @ffi.Int32()
+  external int midi_enabled;
+
+  /// 0..LE_MAX_MIDI_PORTS-1
+  @ffi.Int32()
+  external int port;
+
+  /// 0: any, 1..16
+  @ffi.Int32()
+  external int channel;
+
+  /// note range, 0 <= low <= high <= 127
+  @ffi.Int32()
+  external int low;
+
+  @ffi.Int32()
+  external int high;
+
+  /// 0..LE_INST_MAX_REMAPS; remaps, like ordinary
+  /// notes, need midi_enabled
+  @ffi.Int32()
+  external int remap_count;
+
+  @ffi.Array.multi([32])
+  external ffi.Array<le_inst_remap> remaps;
+}
+
+final class le_inst_routes extends ffi.Struct {
+  @ffi.Array.multi([8])
+  external ffi.Array<le_inst_route> inst;
+}
+
+/// Instrument families, in catalogue order.
+enum le_synth_family {
+  LE_SYNTH_KEYS(0),
+  LE_SYNTH_ORGANS(1),
+  LE_SYNTH_SYNTHS(2),
+  LE_SYNTH_BASS(3),
+  LE_SYNTH_STRINGS(4),
+  LE_SYNTH_DRUMS(5),
+  LE_SYNTH_PERCUSSION(6);
+
+  final int value;
+  const le_synth_family(this.value);
+
+  static le_synth_family fromValue(int value) => switch (value) {
+    0 => LE_SYNTH_KEYS,
+    1 => LE_SYNTH_ORGANS,
+    2 => LE_SYNTH_SYNTHS,
+    3 => LE_SYNTH_BASS,
+    4 => LE_SYNTH_STRINGS,
+    5 => LE_SYNTH_DRUMS,
+    6 => LE_SYNTH_PERCUSSION,
+    _ => throw ArgumentError('Unknown value for le_synth_family: $value'),
+  };
+}
+
+/// The unit a family parameter's value is shown in.
+enum le_synth_param_unit {
+  LE_SYNTH_UNIT_PERCENT(0),
+  LE_SYNTH_UNIT_SECONDS(1),
+  LE_SYNTH_UNIT_HERTZ(2);
+
+  final int value;
+  const le_synth_param_unit(this.value);
+
+  static le_synth_param_unit fromValue(int value) => switch (value) {
+    0 => LE_SYNTH_UNIT_PERCENT,
+    1 => LE_SYNTH_UNIT_SECONDS,
+    2 => LE_SYNTH_UNIT_HERTZ,
+    _ => throw ArgumentError('Unknown value for le_synth_param_unit: $value'),
+  };
+}
+
+/// One patch. `defaults` are the three family parameters on the 0..100 scale
+/// every surface edits.
+final class le_synth_patch_desc extends ffi.Struct {
+  @ffi.Array.multi([24])
+  external ffi.Array<ffi.Char> id;
+
+  /// le_synth_family
+  @ffi.Int32()
+  external int family;
+
+  @ffi.Array.multi([3])
+  external ffi.Array<ffi.Float> defaults;
+}
+
+/// One family parameter. A setting v in 0..100 means
+/// at_min + (at_max - at_min) * v / 100            when exponential == 0,
+/// at_min * (at_max / at_min) ^ (v / 100)          when exponential == 1,
+/// in `unit` (percent parameters map 0..100 to 0..100). The voice uses exactly
+/// this value, with one exception kept from the reference: Drums' decay (d,
+/// 0.08..2.48 s) sets each piece's hit length through the piece's own formula
+/// (kick 0.15 + 0.55 d, snare and clap 0.08 + 0.3 d, hat 0.04 + 0.13 d), so
+/// the readout names the kit's decay setting, not one hit's length.
+final class le_synth_param_desc extends ffi.Struct {
+  @ffi.Array.multi([16])
+  external ffi.Array<ffi.Char> key;
+
+  /// le_synth_param_unit
+  @ffi.Int32()
+  external int unit;
+
+  @ffi.Float()
+  external double at_min;
+
+  @ffi.Float()
+  external double at_max;
+
+  @ffi.Int32()
+  external int exponential;
+}
+
 const int LE_MAX_CHANNELS = 32;
 
 const int LE_COUNT_IN_MAX_BARS = 4;
@@ -8452,9 +8999,15 @@ const int LE_FX_PARAMS = 4;
 
 const int LE_MAX_TRACKS = 8;
 
+const int LE_MAX_INSTRUMENTS = 8;
+
+const int LE_INSTRUMENT_SOURCE_BASE = 32;
+
+const int LE_MAX_SOURCES = 40;
+
 const int LE_MAX_LANES = 8;
 
-const int LE_MAX_MONITORED_INPUTS = 32;
+const int LE_MAX_MONITORED_INPUTS = 40;
 
 const int LE_MAX_OUTPUT_BUSES = 16;
 
@@ -8479,3 +9032,29 @@ const int LE_CACHE_DEFAULT_CAP_BYTES = 201326592;
 const int LE_DIGEST_STATE_BYTES = 128;
 
 const int LE_MAX_MIDI_PORTS = 8;
+
+const int LE_INST_EVENT_CAPACITY = 256;
+
+const int LE_INST_RELEASE_CAPACITY = 1024;
+
+const int LE_INST_MAX_VOICES = 64;
+
+const int LE_INST_CHORD_NOTES = 8;
+
+const int LE_INST_MAX_REMAPS = 32;
+
+const int LE_INST_REMAP_NOTES = 8;
+
+const int LE_INST_REMAP_NOTE = 0;
+
+const int LE_INST_REMAP_CC = 1;
+
+const int LE_SYNTH_PATCHES = 19;
+
+const int LE_SYNTH_FAMILIES = 7;
+
+const int LE_SYNTH_FAMILY_PARAMS = 3;
+
+const int LE_SYNTH_ID_CHARS = 24;
+
+const int LE_SYNTH_KEY_CHARS = 16;

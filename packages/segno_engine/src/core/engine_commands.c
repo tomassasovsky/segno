@@ -1408,8 +1408,10 @@ int le_mix_valid(const le_engine* e, const le_mix_settings* mix) {
   if ((mix->solo_mask & ~tracks) || (mix->solo_values & ~mix->solo_mask)) return 0;
   for (int i = 0; i < LE_MAX_TRACKS * LE_MAX_LANES; ++i) {
     const uint64_t bit = UINT64_C(1) << i;
+    /* Any source is accepted, an empty instrument slot included (it renders
+     * silence): one entry never refuses the batch (#1197, review H4). */
     if ((mix->routing_input_mask & bit) &&
-        (mix->lane_input[i] < -1 || mix->lane_input[i] >= LE_MAX_CHANNELS)) return 0;
+        (mix->lane_input[i] < -1 || mix->lane_input[i] >= LE_MAX_SOURCES)) return 0;
     if (((mix->lane_mask | mix->image_mask | mix->routing_input_mask |
           mix->routing_output_mask) & bit) &&
         i / LE_MAX_LANES >= e->track_count) return 0;
@@ -1420,10 +1422,13 @@ int le_mix_valid(const le_engine* e, const le_mix_settings* mix) {
         (!le_mix_float(mix->image_gain[i], 0, 1) ||
          !le_mix_float(mix->image_pan[i], -1, 1))) return 0;
   }
-  for (int i = 0; i < LE_MAX_CHANNELS; ++i) {
-    if ((mix->monitor_mask & (1u << i)) &&
+  if (mix->monitor_mask >> LE_MAX_SOURCES) return 0;
+  for (int i = 0; i < LE_MAX_SOURCES; ++i) {
+    if ((mix->monitor_mask & (UINT64_C(1) << i)) &&
         (!le_mix_float(mix->monitor_gain[i], 0, LE_MAX_GAIN) ||
          !le_mix_float(mix->monitor_pan[i], -1, 1))) return 0;
+  }
+  for (int i = 0; i < LE_MAX_CHANNELS; ++i) {
     if ((mix->trim_mask & (1u << i)) &&
         !le_mix_float(mix->input_trim[i], 0, LE_MAX_INPUT_TRIM)) return 0;
   }
@@ -1638,8 +1643,11 @@ static int32_t le_record_preflight(le_engine* e, int channel,
     int source = 0;
     for (int l = 0; l < le_lanes_active(&e->tracks[channel]); ++l) {
       const int input = load_i32(&e->tracks[channel].lanes[l].a_input_channel);
-      if (input >= 0 && input < e->in_channels && input < 32 &&
+      if (input >= 0 && input < e->in_channels && input < LE_MAX_CHANNELS &&
           !(excluded & (1u << input))) source = 1;
+      /* An instrument slot with a patch is a usable source (#1197). */
+      if (input >= LE_INSTRUMENT_SOURCE_BASE && input < LE_MAX_SOURCES &&
+          e->inst_patch_requested[input - LE_INSTRUMENT_SOURCE_BASE] >= 0) source = 1;
     }
     if (!source) return LE_ERR_INVALID;
   }
@@ -3966,14 +3974,14 @@ int32_t le_engine_set_monitor_input_fx_chain_enabled(le_engine* engine,
 int32_t le_engine_set_input_conditioning(le_engine* engine, int32_t input,
                                          int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_CHANNELS) return LE_ERR_INVALID;
   return le_push(engine, LE_CMD_SET_INPUT_COND, input, enabled ? 1.0f : 0.0f);
 }
 
 int32_t le_engine_set_input_conditioning_param(le_engine* engine, int32_t input,
                                                int32_t param, float value) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_CHANNELS) return LE_ERR_INVALID;
   if (param < LE_COND_HPF_HZ || param > LE_COND_EXP_RELEASE_MS) {
     return LE_ERR_INVALID;
   }
@@ -4700,10 +4708,10 @@ int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]) {
 /* Frees every ring allocated by an arm attempt that never reached the audio
  * thread (the command was never pushed, or push failed) — plain control-thread
  * cleanup, not a quiescent teardown, since nothing was published. */
-static void le_perf_free_unpublished(le_engine* e, uint32_t monitors_done) {
+static void le_perf_free_unpublished(le_engine* e, uint64_t monitors_done) {
   le_audio_ring_release(&e->perf.master_ring);
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (monitors_done & (1u << c)) {
+    if (monitors_done & (UINT64_C(1) << c)) {
       le_audio_ring_release(&e->perf.monitor_ring[c]);
     }
   }
@@ -4756,19 +4764,26 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
    * nothing counted the padding; now that a zero-fill raises the capture's
    * glitch flag, it would light the warning on every single capture and drown
    * the real signal. An input that does not exist is not a captured input. */
-  uint32_t input_mask = 0;
+  /* Instrument sources (#1197) are captured like inputs when monitored and
+   * their slot has a patch: the audio thread fills them every block. */
+  uint64_t input_mask = 0;
   const int32_t monitor_ch_limit =
-      (engine->in_channels > 0 && engine->in_channels < LE_MAX_MONITORED_INPUTS)
+      (engine->in_channels > 0 && engine->in_channels < LE_MAX_CHANNELS)
           ? engine->in_channels
-          : LE_MAX_MONITORED_INPUTS;
+          : LE_MAX_CHANNELS;
   const size_t monitor_cap = le_perf_ring_capacity(2, sr);
-  for (int32_t c = 0; c < monitor_ch_limit; ++c) {
+  for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
+    if (c < LE_INSTRUMENT_SOURCE_BASE ? c >= monitor_ch_limit
+                                      : engine->inst_patch_requested
+                                                [c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
+      continue;
+    }
     if (!load_i32(&engine->monitors[c].a_enabled)) continue;
     if (!le_audio_ring_alloc(&engine->perf.monitor_ring[c], monitor_cap)) {
       le_perf_free_unpublished(engine, input_mask);
       return LE_ERR_INVALID;
     }
-    input_mask |= (1u << c);
+    input_mask |= (UINT64_C(1) << c);
   }
   engine->perf.input_mask = input_mask;
 
@@ -4960,7 +4975,7 @@ int32_t le_perf_disarm(le_engine* engine) {
 
   le_audio_ring_release(&engine->perf.master_ring);
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (engine->perf.input_mask & (1u << c)) {
+    if (engine->perf.input_mask & (UINT64_C(1) << c)) {
       le_audio_ring_release(&engine->perf.monitor_ring[c]);
     }
   }
@@ -4993,7 +5008,7 @@ int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
                                             float* out, int32_t max_frames) {
   if (engine == NULL || out == NULL || max_frames <= 0) return 0;
   if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return 0;
-  if (!(engine->perf.input_mask & (1u << input))) return 0;
+  if (!(engine->perf.input_mask & (UINT64_C(1) << input))) return 0;
   const size_t popped = le_audio_ring_pop(&engine->perf.monitor_ring[input],
                                           out, (size_t)max_frames * 2);
   return (int32_t)(popped / 2);

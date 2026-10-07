@@ -67,12 +67,14 @@ esac
 # src/midi/le_midi_clock.c (C1, D15), which IS an engine dependency
 # (engine_process.c calls le_midi_clock_advance every block) despite living in
 # midi/ per the plan's file placement; keep it in sync with CMakeLists.txt.
-# src/core/restore_*.c (offline loop-close restoration DSP, #697 S8) sit
+# src/core/restore_*.c (offline loop-close restoration DSP, #697 S8) and
+# src/core/synth_*.c (the instrument voices and patch table, #1197) sit
 # outside the engine*.c glob on purpose (pure DSP TUs, not engine state) and
 # are listed explicitly — keep in sync with CMakeLists.txt.
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
   src/core/restore_declip.c src/core/restore_halfband.c \
+  src/core/synth_voice.c src/core/synth_patch.c \
   src/core/audio_ring.c src/core/perf_drain.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c"
 
@@ -135,6 +137,15 @@ RECIPE_SRC="${ENGINE_SRC/ src\/core\/plugin_disabled.c/}"
 $CC $STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS src/test/test_fx_recipe_plugins.c \
   $RECIPE_SRC "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_fx_recipe_tests.exe"
 "$OUT/segno_fx_recipe_tests.exe"
+
+echo "== building instrument ring race tests =="
+# A control thread posting note pairs against a hot-looping drain (#1197):
+# a note-off must never apply before its own note-on. Before the races-only
+# exit so the ThreadSanitizer job covers it too.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_instrument_races.c $ENGINE_SRC \
+  "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_instrument_race_tests.exe"
+"$OUT/segno_instrument_race_tests.exe"
 
 echo "== building MIDI sink race tests =="
 # The native MIDI input sink (#1228 Part 1, le_midi_port.h): a producer, an
