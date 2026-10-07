@@ -13,6 +13,10 @@ class SystemBrightnessClient implements BrightnessClient {
   /// Path to the brightness helper.
   final String helperPath;
 
+  /// How long one helper call may take: a DDC transaction is well under a
+  /// second, and a hung bus must not hold the panel's level back for ever.
+  static const timeout = Duration(seconds: 10);
+
   bool get _helperPresent => File(helperPath).existsSync();
 
   @override
@@ -37,7 +41,7 @@ class SystemBrightnessClient implements BrightnessClient {
   }
 
   Future<ProcessResult> _run(List<String> args) async {
-    final result = await Process.run(helperPath, args);
+    final result = await Process.run(helperPath, args).timeout(timeout);
     if (result.exitCode != 0) {
       throw ProcessException(
         helperPath,

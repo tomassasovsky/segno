@@ -1254,12 +1254,14 @@ class _AppViewState extends State<_AppView> {
               buildWhen: (previous, current) => previous != current,
               builder: (context, power) {
                 final face = readoutGoodbyeOf(power.phase);
-                if (face == ReadoutGoodbye.none) return dimmed;
+                // Always the Stack: moving the app in and out of one
+                // would remount it, routes and all, as power-off begins.
                 return Stack(
                   fit: StackFit.expand,
                   children: [
                     dimmed,
-                    PowerGoodbye(face: face, action: power.action),
+                    if (face != ReadoutGoodbye.none)
+                      PowerGoodbye(face: face, action: power.action),
                   ],
                 );
               },

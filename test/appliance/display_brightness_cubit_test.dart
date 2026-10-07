@@ -21,14 +21,26 @@ class _FakeBrightnessClient implements BrightnessClient {
 
   bool failSets = false;
 
+  /// How many of the next sets fail before they start answering.
+  int failNext = 0;
+
+  /// When set, every probe waits for it.
+  Completer<void>? probeGate;
+
   @override
-  Future<bool> isSupported(String connector) async =>
-      supported.contains(connector);
+  Future<bool> isSupported(String connector) async {
+    await probeGate?.future;
+    return supported.contains(connector);
+  }
 
   @override
   Future<void> set(String connector, double value) async {
     sets.add('$connector=${(value * 100).round()}');
     await gate?.future;
+    if (failNext > 0) {
+      failNext--;
+      throw StateError('DDC/CI write dropped');
+    }
     if (failSets) throw StateError('DDC/CI write failed');
   }
 }
@@ -155,13 +167,47 @@ void main() {
         await cubit.load();
         client.failSets = true;
 
+        client.sets.clear();
+
         await cubit.setBrightness(DisplayRole.track, 0.4);
 
         expect(cubit.state.hardware, {DisplayRole.main});
         expect(cubit.state.softwareOf(DisplayRole.track), 0.4);
+        // Tried twice, then asked for full so the filter is the only dim.
+        expect(client.sets, ['HDMI-A-2=40', 'HDMI-A-2=40', 'HDMI-A-2=100']);
         await cubit.close();
       },
     );
+
+    test('one dropped write is retried and the panel stays on DDC', () async {
+      final cubit = build();
+      await cubit.load();
+      client
+        ..sets.clear()
+        ..failNext = 1;
+
+      await cubit.setBrightness(DisplayRole.track, 0.4);
+
+      expect(client.sets, ['HDMI-A-2=40', 'HDMI-A-2=40']);
+      expect(cubit.state.hardware, {DisplayRole.main, DisplayRole.track});
+      await cubit.close();
+    });
+
+    test('the saved levels show before the panels are probed', () async {
+      await settings.saveDisplayBrightness(DisplayRole.main, 0.3);
+      client.probeGate = Completer<void>();
+      final cubit = build();
+      final loading = cubit.load();
+      await pumpEventQueue();
+
+      expect(cubit.state.levelOf(DisplayRole.main), 0.3);
+      expect(cubit.state.hardware, isEmpty);
+
+      client.probeGate!.complete();
+      await loading;
+      expect(cubit.state.hardware, {DisplayRole.main, DisplayRole.track});
+      await cubit.close();
+    });
 
     test('the idle dim is 30% of each setting with a 10% floor, and wakes '
         'back to the setting', () async {

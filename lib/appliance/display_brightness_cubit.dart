@@ -91,6 +91,10 @@ class DisplayBrightnessCubit extends Cubit<DisplayBrightnessState> {
       for (final role in DisplayRole.values)
         role: await _settings.loadDisplayBrightness(role),
     };
+    // The saved levels show at once, in software; probing a panel without
+    // DDC/CI can take seconds.
+    if (isClosed) return;
+    emit(state.copyWith(levels: levels));
     _connectors = displayConnectors(await _outputs.appIdConnectors());
     final hardware = <DisplayRole>{};
     for (final MapEntry(key: role, value: connector) in _connectors.entries) {
@@ -101,7 +105,7 @@ class DisplayBrightnessCubit extends Cubit<DisplayBrightnessState> {
       }
     }
     if (isClosed) return;
-    emit(state.copyWith(levels: levels, hardware: hardware));
+    emit(state.copyWith(hardware: hardware));
     for (final role in hardware) {
       await _applyHardware(role);
     }
@@ -130,6 +134,15 @@ class DisplayBrightnessCubit extends Cubit<DisplayBrightnessState> {
     }
   }
 
+  /// DDC/CI drops the odd transaction; one retry before giving up a panel.
+  Future<void> _setRetrying(String connector, double value) async {
+    try {
+      await _client.set(connector, value);
+    } on Object {
+      await _client.set(connector, value);
+    }
+  }
+
   Future<void> _applyHardware(DisplayRole role) async {
     final connector = _connectors[role];
     if (connector == null || !state.hardware.contains(role)) return;
@@ -140,11 +153,18 @@ class DisplayBrightnessCubit extends Cubit<DisplayBrightnessState> {
       while (_hardwareWanted[role] != sent && !isClosed) {
         final next = _hardwareWanted[role]!;
         sent = next;
-        await _client.set(connector, next);
+        await _setRetrying(connector, next);
       }
     } on Object {
       // The panel stopped answering: dim its window in software instead,
-      // so the setting still shows.
+      // so the setting still shows. Its backlight may be left at whatever
+      // it last took (the idle level, say), under the software filter, so
+      // ask once more for full before handing over.
+      try {
+        await _client.set(connector, 1);
+      } on Object {
+        // Unreachable: the software filter is all that is left.
+      }
       if (!isClosed) {
         emit(state.copyWith(hardware: {...state.hardware}..remove(role)));
       }
