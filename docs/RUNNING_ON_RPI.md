@@ -81,7 +81,7 @@ images announced the board name, e.g. `raspberrypi5`).
 # WiFi
 segno-wifi-ctl status
 segno-wifi-ctl scan
-segno-wifi-ctl connect 'YourSSID' 'your-psk'
+printf '%s\n' 'your-psk' | segno-wifi-ctl connect 'YourSSID'   # key on stdin, never argv
 ip -4 addr show wlan0
 segno-wifi-ctl disconnect
 

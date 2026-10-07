@@ -43,7 +43,10 @@ class _PageWifiClient implements WifiClient {
   bool internet = true;
 
   /// Thrown by the next [connect], once.
-  Error? connectError;
+  Object? connectError;
+
+  /// Every [connect] call, failed ones included.
+  int connectCalls = 0;
 
   /// Holds [connect] open until completed.
   Completer<void>? connectGate;
@@ -72,12 +75,13 @@ class _PageWifiClient implements WifiClient {
 
   @override
   Future<void> connect(String ssid, {String? psk}) async {
+    connectCalls++;
     final gate = connectGate;
     if (gate != null) await gate.future;
     final error = connectError;
     if (error != null) {
       connectError = null;
-      throw error;
+      Error.throwWithStackTrace(error, StackTrace.current);
     }
     joined.add((ssid, psk));
     connectedSsid = ssid;
@@ -293,7 +297,41 @@ void main() {
       expect(find.byKey(const Key('network_connecting_dialog')), findsNothing);
       // Cancel takes the link down, which ends the helper's activation.
       expect(client.disconnects, 1);
+      // The join went through anyway: it is undone, and HomeNet is back.
+      expect(client.forgotten, ['Studio 5G']);
+      expect(client.joined.last, ('HomeNet', null));
+      expect(find.text('HomeNet'), findsWidgets);
     });
+
+    testWidgets(
+      'NM wanting secrets right after a typed key reads as a wrong password, '
+      'and the network that came back is not dropped again',
+      (tester) async {
+        final client = _PageWifiClient()
+          ..connectError = const WifiHelperException(
+            'segno-wifi-ctl: timed out waiting for association '
+            '(secrets were required)',
+            restored: 'HomeNet',
+          );
+        await pumpPage(tester, client: client);
+
+        await tester.tap(row('Studio 5G'));
+        await tester.pumpAndSettle();
+        await type(tester, 'wrongpass');
+        await submitPassword(tester);
+        await tester.pumpAndSettle();
+
+        expect(client.connectCalls, 1);
+        expect(client.disconnects, 0);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('network_password_sheet')),
+            matching: find.text('Incorrect password. Try again.'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('the dialog closes on its own when the join lands', (
       tester,

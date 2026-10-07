@@ -1,4 +1,5 @@
 import 'package:wifi_client/src/wifi_client.dart';
+import 'package:wifi_client/src/wifi_exception.dart';
 import 'package:wifi_client/src/wifi_models.dart';
 
 /// In-memory WiFi stack for driving the Network face off the appliance.
@@ -85,11 +86,20 @@ class FakeWifiClient implements WifiClient {
     await Future<void>.delayed(_joinDelay);
     final network = _networks.where((n) => n.ssid == ssid).firstOrNull;
     if (network == null) throw StateError('No such network.');
+    // A failed join leaves the network that was up where it was, the way the
+    // helper brings it back (#1270 D13).
+    final restored = _enabled && _connected.isNotEmpty ? _connected : null;
     if (!network.inRange) {
-      throw StateError('segno-wifi-ctl: timed out waiting for association');
+      throw WifiHelperException(
+        'segno-wifi-ctl: timed out waiting for association',
+        restored: restored,
+      );
     }
     if (network.secured && !network.saved && psk != workingPassphrase) {
-      throw StateError('segno-wifi-ctl: authentication failed');
+      throw WifiHelperException(
+        'segno-wifi-ctl: authentication failed',
+        restored: restored,
+      );
     }
     _connected = ssid;
     _last = ssid;

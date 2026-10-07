@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:wifi_client/src/fake_wifi_client.dart';
 import 'package:wifi_client/src/unsupported_wifi_client.dart';
 import 'package:wifi_client/src/wifi_client.dart';
+import 'package:wifi_client/src/wifi_exception.dart';
 import 'package:wifi_client/src/wifi_models.dart';
 
 /// Production [WifiClient]: shells out to `/usr/bin/segno-wifi-ctl`.
@@ -38,11 +39,15 @@ class SystemWifiClient implements WifiClient {
     ];
   }
 
+  /// The key goes to the helper on stdin, like [changePassword]'s.
   @override
   Future<void> connect(String ssid, {String? psk}) async {
-    final args = ['connect', ssid];
-    if (psk != null && psk.isNotEmpty) args.add(psk);
-    await _run(args);
+    final key = psk ?? '';
+    await _run(
+      ['connect', ssid],
+      stdin: key.isEmpty ? null : '$key\n',
+      secret: key,
+    );
   }
 
   @override
@@ -64,7 +69,7 @@ class SystemWifiClient implements WifiClient {
   /// every process on the console through `/proc/<pid>/cmdline`.
   @override
   Future<void> changePassword(String ssid, String psk) =>
-      _run(['set-password', ssid], stdin: '$psk\n');
+      _run(['set-password', ssid], stdin: '$psk\n', secret: psk);
 
   @override
   Future<bool> checkConnectivity() async {
@@ -80,24 +85,43 @@ class SystemWifiClient implements WifiClient {
   }
 
   /// Runs the helper with [args], writing [stdin] to it when given, and
-  /// returns its stdout; a non-zero exit throws with its stderr.
-  Future<String> _run(List<String> args, {String? stdin}) async {
+  /// returns its stdout.
+  ///
+  /// A non-zero exit throws a [WifiHelperException] with the helper's stderr
+  /// and, for a failed join, the network it brought back. Never the
+  /// arguments: [secret], when given, is scrubbed from the text as well, so no
+  /// key can reach an error message or a log.
+  Future<String> _run(
+    List<String> args, {
+    String? stdin,
+    String secret = '',
+  }) async {
     final process = await Process.start(helperPath, args);
     final stdout = process.stdout.transform(utf8.decoder).join();
     final stderr = process.stderr.transform(utf8.decoder).join();
     if (stdin != null) process.stdin.write(stdin);
     await process.stdin.close();
     final exitCode = await process.exitCode;
-    final err = (await stderr).trim();
-    if (exitCode != 0) {
-      throw ProcessException(
-        helperPath,
-        args,
-        err.isEmpty ? 'wifi helper failed' : err,
-        exitCode,
-      );
+    if (exitCode == 0) return stdout;
+    var err = (await stderr).trim();
+    if (err.isEmpty) err = 'segno-wifi-ctl failed ($exitCode)';
+    if (secret.isNotEmpty) err = err.replaceAll(secret, '***');
+    throw WifiHelperException(err, restored: _restored(await stdout));
+  }
+
+  /// The network a failed join printed as `{"restored":<ssid>}`, if any.
+  static String? _restored(String stdout) {
+    for (final line in const LineSplitter().convert(stdout)) {
+      try {
+        final json = jsonDecode(line);
+        if (json is Map<String, dynamic> && json['restored'] is String) {
+          return json['restored'] as String;
+        }
+      } on FormatException {
+        continue;
+      }
     }
-    return stdout;
+    return null;
   }
 }
 

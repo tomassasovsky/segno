@@ -1,3 +1,4 @@
+import 'package:wifi_client/src/wifi_exception.dart';
 import 'package:wifi_client/src/wifi_models.dart';
 
 /// I/O boundary for appliance WiFi (`segno-wifi-ctl`). Faked in tests.
@@ -13,8 +14,9 @@ abstract class WifiClient {
 
   /// Join [ssid]; [psk] null/empty for open networks.
   ///
-  /// A failed join throws, and the helper has by then brought back the
-  /// network that was active before it started, when there was one.
+  /// A failed join throws a [WifiHelperException], and the helper has by
+  /// then brought back the network that was active before it started, when
+  /// there was one: [WifiHelperException.restored] names it.
   Future<void> connect(String ssid, {String? psk});
 
   /// Drop the current association.
