@@ -5,7 +5,7 @@ extension _FootLengthControl on ControlCubit {
       !isClosed &&
       !_inputRetired &&
       !_takeLocked() &&
-      state.mode == InteractionMode.length &&
+      state.mode.isLength &&
       !_fxPersistence.sessionTransitionActive;
 
   FootLengthProjection _lengthProjection() => _footLengthActions.project(
@@ -13,14 +13,43 @@ extension _FootLengthControl on ControlCubit {
     cursor: state.cursor,
   );
 
-  /// Every Multiply / Divide role fires on contact; there are no holds.
+  /// The role [button] plays on the current length surface.
+  FootLengthPedal _lengthRole(PedalButton button) =>
+      FootLengthProjection.rolesFor(state.mode)[button]!;
+
+  /// Multiply / Divide pedals (pen 16). Every role fires on contact except
+  /// Divide's First half, which fires on a release before the hold threshold
+  /// and gives way to Undo on a hold. Undo in Multiply is the Tracks Undo
+  /// gesture itself (tap Undo, hold Redo).
   void _onLengthPress(PedalButton button) {
-    final role = FootLengthProjection.pedalRoles[button]!;
+    final role = _lengthRole(button);
     if (role.press == FootLengthAction.exit) {
       _dispatchLengthAction(role.press, role.slot);
       return;
     }
     if (!_lengthEditable) return;
+    if (role.press == FootLengthAction.undo) {
+      _armUndo();
+      _acceptedContacts.add(button);
+      return;
+    }
+    final hold = role.hold;
+    if (hold != null) {
+      // The selected track is latched at contact, as the Tracks Undo does,
+      // so a selection made during the hold cannot redirect it.
+      final channel = state.cursor;
+      _armGesture(
+        _systemGesture(button)!,
+        onTap: () {
+          if (_lengthEditable) _editSelectedLength(role.press, channel);
+        },
+        onHold: () {
+          if (_lengthEditable) _undoLength(channel);
+        },
+      );
+      _acceptedContacts.add(button);
+      return;
+    }
     if (_dispatchLengthAction(role.press, role.slot)) {
       _acceptedContacts.add(button);
     }
@@ -30,6 +59,10 @@ extension _FootLengthControl on ControlCubit {
     switch (action) {
       case FootLengthAction.exit:
         setMode(InteractionMode.record);
+      case FootLengthAction.recordPlay:
+        return _recAdvance(state.cursor);
+      case FootLengthAction.undo:
+        _undoLength(state.cursor);
       case FootLengthAction.stop:
         return _parkAllAccepted();
       case FootLengthAction.nextBank:
@@ -39,14 +72,30 @@ extension _FootLengthControl on ControlCubit {
       case FootLengthAction.doubleTrack:
       case FootLengthAction.firstHalf:
       case FootLengthAction.lastHalf:
-        // An empty selected track has nothing to double or halve: its edit
-        // pedals are dimmed and the stomp is silent.
-        final channel = state.cursor;
-        if (!_lengthProjection().tracks[channel].hasContent) return false;
-        unawaited(
-          _editLengthChannel(channel, FootLengthProjection.editOf(action)!),
-        );
+        return _editSelectedLength(action, state.cursor);
     }
+    return true;
+  }
+
+  /// Undoes [channel]'s latest change, as the Tracks Undo tap does.
+  void _undoLength(int channel) {
+    _log('undo ch=$channel  (length surface)');
+    undo(channel);
+  }
+
+  /// Applies the edit [action] makes to the selected [channel]. An empty
+  /// track has nothing to double or halve: its edit pedals read "Select a
+  /// track" and the stomp is silent.
+  bool _editSelectedLength(FootLengthAction action, int channel) {
+    final track = _lengthProjection().tracks[channel];
+    if (!track.hasContent) return false;
+    unawaited(
+      _editLengthChannel(
+        channel,
+        FootLengthProjection.editOf(action)!,
+        fromFrames: track.lengthFrames,
+      ),
+    );
     return true;
   }
 
@@ -58,15 +107,31 @@ extension _FootLengthControl on ControlCubit {
     return true;
   }
 
-  /// Applies [edit] to the recorded [channel] from the surface. A press that
-  /// changes nothing says why, unless the visit it belonged to ended first.
-  Future<void> _editLengthChannel(int channel, LengthEdit edit) async {
+  /// Applies [edit] to the recorded [channel] from the surface. An accepted
+  /// edit becomes the length panel's outcome; a press that changes nothing
+  /// says why, unless the visit it belonged to ended first.
+  Future<void> _editLengthChannel(
+    int channel,
+    LengthEdit edit, {
+    required int fromFrames,
+  }) async {
     final visit = _surfaceVisit;
     final session = _looper.sessionRevision;
     final refusal = await _footLengthActions.edit(channel, edit);
-    if (refusal == null || refusal == FootLengthRefusal.empty) return;
-    if (!identical(visit, _surfaceVisit) ||
-        state.mode != InteractionMode.length) {
+    if (refusal == FootLengthRefusal.empty) return;
+    if (isClosed || !identical(visit, _surfaceVisit) || !state.mode.isLength) {
+      return;
+    }
+    if (refusal == null) {
+      emit(
+        state.copyWith(
+          footLengthOutcome: FootLengthOutcome(
+            channel: channel,
+            edit: edit,
+            fromFrames: fromFrames,
+          ),
+        ),
+      );
       return;
     }
     _reportLengthRefusal(refusal, session);

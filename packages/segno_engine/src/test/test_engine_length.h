@@ -712,14 +712,15 @@ static void test_length_history_gate(void) {
   CHECK(le_engine_undo(e, 0) == LE_ERR_MODE_MISMATCH);
   peel_expect_unchanged(t, &h);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].length_history_refusals == 1); /* reported (Part 3) */
+  /* Returned to the tap, which reports it: not counted again (M1). */
+  CHECK(s.tracks[0].length_history_refusals == 0);
   CHECK(le_engine_clear(e, 1) == LE_OK);
   drain(e);
   CHECK(le_engine_history_mode_gate(e, 1u, 0) == LE_OK);
   CHECK(le_engine_undo(e, 0) == LE_OK);
   len_settle(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].length_history_refusals == 1); /* accepted: no count */
+  CHECK(s.tracks[0].length_history_refusals == 0); /* accepted: no count */
   CHECK(s.master_length_frames == 8);
   len_expect(e, 0, 8, 1, 0, 0, 1);
   len_expect_image(e, 0, pcm, 8);
@@ -1172,9 +1173,11 @@ static void test_length_refused_history_motion(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].length_history_refusals == 1);
   CHECK(s.tracks[1].length_history_refusals == 0);
+  /* Refused at the tap: the caller sees the result, so no second count
+   * (#1168 review M1: one tap, one notice). */
   CHECK(le_engine_undo(e, 0) == LE_ERR_MODE_MISMATCH);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].length_history_refusals == 2);
+  CHECK(s.tracks[0].length_history_refusals == 1);
   le_engine_destroy(e);
 }
 

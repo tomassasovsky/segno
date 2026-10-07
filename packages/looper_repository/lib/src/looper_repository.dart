@@ -1084,9 +1084,10 @@ class LooperRepository {
   );
 
   /// Reports each track whose engine counter of Undo/Redo taps on a length
-  /// edit that did nothing rose since the last snapshot (#1168): refused at
-  /// the tap, refused by the callback after it was posted, or queued behind an
-  /// overdub and stopped at the edit. The first read is the baseline, and a
+  /// edit that did nothing rose since the last snapshot (#1168): refused by
+  /// the callback after it was posted, or queued behind an overdub and
+  /// stopped at the edit. A refusal returned to the tap is reported on
+  /// [recoveryRefusals] instead, never on both. The first read is the baseline, and a
   /// lower count (a new engine) only resets it.
   void _noticeLengthHistoryRefusals(EngineSnapshot snapshot) {
     for (var ch = 0; ch < snapshot.tracks.length; ch++) {
@@ -7456,10 +7457,10 @@ class LooperRepository {
   Stream<int> get overdubRefusals => _overdubRefusals.stream;
 
   /// Undo or Redo taps on a track's length edit that did nothing (the
-  /// channel), from any surface (#1168): the length no longer fits the rig,
-  /// or taps queued behind an overdub stopped at the edit. Undo and Redo of
-  /// a length edit are posted and may be refused after they returned, so the
-  /// engine counts them and this reports each increase.
+  /// channel), from any surface (#1168), that their own result could not
+  /// report: the callback refused a posted tap because the length no longer
+  /// fits the rig, or taps queued behind an overdub stopped at the edit. A
+  /// tap refused on the spot goes to [recoveryRefusals] only.
   Stream<int> get lengthHistoryRefusals => _lengthHistoryRefusals.stream;
 
   /// Whether a Record press on [channel] the engine refused is still waiting
