@@ -84,6 +84,7 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   const PerformanceRecorderIdle({
     this.lowDiskBlocked = false,
     this.recovering = false,
+    this.notRecovered = 0,
   });
 
   /// An arm was refused because the export volume is already below the
@@ -103,8 +104,13 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// dead control.
   final bool recovering;
 
+  /// Takes the boot salvage could not recover this boot (a raw take too
+  /// large to convert yet, a damaged sidecar). Each stays where it is with
+  /// every file kept; the player is told once, as the salvage settles.
+  final int notRecovered;
+
   @override
-  List<Object?> get props => [lowDiskBlocked, recovering];
+  List<Object?> get props => [lowDiskBlocked, recovering, notRecovered];
 }
 
 /// Armed: the engine's capture taps are running. [elapsed] and [overrun]

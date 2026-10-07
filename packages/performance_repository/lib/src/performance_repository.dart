@@ -115,9 +115,20 @@ class PerformanceRepository {
   static const String recoveredDirName = reservedRecoveredDirName;
 
   /// The largest raw `.pcm` file of a pre-#1198 capture that finalize still
-  /// converts by reading it whole, as it always did. A capture with a larger
-  /// one stays unfinalized, in place, for Part 8's bounded conversion.
-  static const int legacyConvertMaxBytes = 1 << 30;
+  /// converts by reading it whole, as it always did. Reading costs the file
+  /// once and the WAV it becomes once more, so this stays well inside the
+  /// appliance's memory: the 6 GB and 36 GB takes found on one ran it out
+  /// (#1198). A capture with a larger file stays unfinalized, in place, its
+  /// files untouched, for Part 8's streaming conversion, and is reported in
+  /// [unrecoveredTakes].
+  static const int legacyConvertMaxBytes = 512 * 1024 * 1024;
+
+  /// Captures the last [runBootRecovery] tried and could not finalize (a
+  /// raw take too large to convert yet, a damaged sidecar, a failed write).
+  /// Each stays where it is with every file kept; the app tells the player
+  /// it could not be recovered.
+  List<String> get unrecoveredTakes => List.unmodifiable(_unrecovered);
+  final List<String> _unrecovered = [];
 
   /// The provenance stamp inside every recovered bundle: epoch
   /// milliseconds as text, written on the SOURCE bundle immediately before
@@ -666,6 +677,7 @@ class PerformanceRepository {
   /// every capture and again before each move; whatever is skipped waits
   /// for the next boot.
   Future<void> runBootRecovery() async {
+    _unrecovered.clear();
     final String root;
     try {
       root = await _exportsRoot();
@@ -701,6 +713,11 @@ class PerformanceRepository {
       // with its marker gone. Stop; the remainder waits for the next boot.
       if (!renderProgress.done) return;
       await _recoverSilently(root, dir);
+      // Still in place and still unfinalized: this boot could not recover
+      // it. Its files stay; the player is told.
+      if (Directory(dir).existsSync() && !_sidecarFinalized(dir)) {
+        _unrecovered.add(dir);
+      }
     }
   }
 

@@ -1759,13 +1759,62 @@ void main() {
       expect(File('$recovered/master.wav').existsSync(), isTrue);
     });
 
-    test('a pre-#1198 capture too large to read whole stays unfinalized in '
-        'place, raw audio intact, for Part 8', () async {
-      final dir = '${tempDir.path}/exports/perf-huge';
-      Directory(dir).createSync(recursive: true);
-      writeNativeSidecar(dir);
-      // Sparse: the length is past the bound, the disk holds almost nothing.
-      File('$dir/master.pcm').openSync(mode: FileMode.write)
+    test('pre-#1198 captures too large to read whole (6 GB and 36 GB raw, as '
+        'found on an appliance) stay unfinalized in place, every file kept, '
+        'and are reported as not recovered', () async {
+      // Sparse files: the lengths are real, the disk holds almost nothing.
+      void sparse(String path, int length) {
+        File(path).openSync(mode: FileMode.write)
+          ..setPositionSync(length - 4)
+          ..writeFromSync([0, 0, 0, 0])
+          ..closeSync();
+      }
+
+      final sizes = {'perf-big': 6 << 30, 'perf-huge': 36 << 30};
+      for (final MapEntry(key: slug, value: length) in sizes.entries) {
+        final dir = '${tempDir.path}/exports/$slug';
+        Directory(dir).createSync(recursive: true);
+        writeNativeSidecar(dir, capturedInputs: const [0, 1]);
+        File('$dir/arm-snapshot.json').writeAsStringSync('{}');
+        for (final name in ['master', 'input-0', 'input-1']) {
+          sparse('$dir/$name.pcm', length);
+        }
+      }
+
+      await repo.runBootRecovery();
+
+      for (final MapEntry(key: slug, value: length) in sizes.entries) {
+        final dir = '${tempDir.path}/exports/$slug';
+        for (final name in ['master', 'input-0', 'input-1']) {
+          expect(File('$dir/$name.pcm').lengthSync(), length);
+        }
+        expect(File('$dir/master.wav').existsSync(), isFalse);
+        expect(File('$dir/arm-snapshot.json').existsSync(), isTrue);
+        expect(
+          Directory('${tempDir.path}/exports/recovered/$slug').existsSync(),
+          isFalse,
+        );
+      }
+      expect(
+        (await repo.findUnfinalized()).map((c) => c.slug).toSet(),
+        sizes.keys.toSet(),
+      );
+      expect(
+        repo.unrecoveredTakes.toSet(),
+        {for (final slug in sizes.keys) '${tempDir.path}/exports/$slug'},
+      );
+    });
+
+    test('a raw file just past the bound is left for Part 8, just under it '
+        'converts', () async {
+      final under = '${tempDir.path}/exports/perf-under';
+      final over = '${tempDir.path}/exports/perf-over';
+      for (final dir in [under, over]) {
+        Directory(dir).createSync(recursive: true);
+        writeNativeSidecar(dir);
+      }
+      writeRawPcm('$under/master.pcm', Float32List.fromList([0.25, 0.5]));
+      File('$over/master.pcm').openSync(mode: FileMode.write)
         ..setPositionSync(PerformanceRepository.legacyConvertMaxBytes)
         ..writeFromSync([0, 0, 0, 0])
         ..closeSync();
@@ -1773,18 +1822,13 @@ void main() {
       await repo.runBootRecovery();
 
       expect(
-        File('$dir/master.pcm').lengthSync(),
-        PerformanceRepository.legacyConvertMaxBytes + 4,
+        File(
+          '${tempDir.path}/exports/recovered/perf-under/master.wav',
+        ).existsSync(),
+        isTrue,
       );
-      expect(File('$dir/master.wav').existsSync(), isFalse);
-      expect(
-        (await repo.findUnfinalized()).map((c) => c.directory),
-        contains(dir),
-      );
-      expect(
-        Directory('${tempDir.path}/exports/recovered/perf-huge').existsSync(),
-        isFalse,
-      );
+      expect(Directory(over).existsSync(), isTrue);
+      expect(repo.unrecoveredTakes, [over]);
     });
 
     /// A crashed capture: unfinalized sidecar plus an open master part, the

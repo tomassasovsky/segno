@@ -1578,6 +1578,32 @@ void main() {
   });
 
   group('salvage boot (D-SALVAGE, silent since #679)', () {
+    test('a take the salvage could not recover is reported once it settles, '
+        'its files kept (#1198)', () async {
+      final dir = Directory('${tempDir.path}/exports/perf-20260913-003635')
+        ..createSync(recursive: true);
+      writeManifest(dir.path, finalized: false);
+      // A raw take too large to convert yet (sparse: no real disk use).
+      File('${dir.path}/master.pcm').openSync(mode: FileMode.write)
+        ..setPositionSync(PerformanceRepository.legacyConvertMaxBytes)
+        ..writeFromSync([0, 0, 0, 0])
+        ..closeSync();
+
+      final cubit = build();
+      addTearDown(cubit.close);
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
+      await cubit.load();
+      await pumpEventQueue();
+      await sub.cancel();
+
+      expect(states, const [
+        PerformanceRecorderIdle(recovering: true),
+        PerformanceRecorderIdle(notRecovered: 1),
+      ]);
+      expect(File('${dir.path}/master.pcm').existsSync(), isTrue);
+    });
+
     test(
       'a capture dir left unfinalized on disk (performance.json without '
       'finalized: true) is recovered end-to-end at load: finalized, '
@@ -1625,7 +1651,8 @@ void main() {
 
     test(
       'a crashed capture that cannot finalize (corrupt sidecar) is left in '
-      'place — never deleted, no crash, still no state emitted',
+      'place — never deleted, no crash — and reported as not recovered '
+      '(#1198)',
       () async {
         final dir = Directory('${tempDir.path}/exports/perf-20260706-140000')
           ..createSync(recursive: true);
@@ -1637,7 +1664,7 @@ void main() {
 
         expect(dir.existsSync(), isTrue);
         expect(engine.lastRenderCaptureDir, isNull);
-        expect(cubit.state, const PerformanceRecorderIdle());
+        expect(cubit.state, const PerformanceRecorderIdle(notRecovered: 1));
       },
     );
   });
