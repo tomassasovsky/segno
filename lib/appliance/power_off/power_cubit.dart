@@ -56,6 +56,9 @@ class PowerCubit extends Cubit<PowerState> {
   Future<void> Function()? _save;
   OperationGuard? _guard;
 
+  /// How long a halt waits for storage writes and ejects to finish.
+  static const Duration storageSettleLimit = Duration(seconds: 30);
+
   /// A short press of `KEY_POWER`, or Settings' Power row. Opens Power
   /// options, or the refusal while a take or a transfer is in flight.
   /// No-op while any power UI is up.
@@ -154,7 +157,17 @@ class PowerCubit extends Cubit<PowerState> {
       _set(PowerPhase.saveFailed);
       return;
     }
-    await _storageSettled();
+    // Bounded: a lease that is never released must not hold the
+    // non-dismissible Saving face forever. Segno stays on instead.
+    try {
+      await _storageSettled().timeout(storageSettleLimit);
+    } on TimeoutException {
+      AppLog.warn('power: storage still busy after $storageSettleLimit');
+      _guard?.release();
+      _guard = null;
+      if (!isClosed) _set(PowerPhase.saveFailed);
+      return;
+    }
     if (isClosed) return;
     _pedalGoodbye();
     _set(PowerPhase.goodbye);
