@@ -826,10 +826,6 @@
     "@a11yTrayHandle": {
         "description": "Accessible label for the settings tray's always-visible pull-tab handle (tap or drag to open/close)."
     },
-    "trayWifiLabel": "WiFi",
-    "@trayWifiLabel": {
-        "description": "Label for the settings tray's WiFi shortcut button (stub — no real functionality yet)."
-    },
     "trayBrightnessPercent": "{percent}%",
     "tunerCentsAndHz": "{cents} centésimas · {hz} Hz",
     "@tunerCentsAndHz": {
@@ -917,29 +913,16 @@
     "a11yMidiLearnLo": "Mínimo del rango",
     "a11yMidiLearnHi": "Máximo del rango",
     "a11yMidiLearnThreshold": "Umbral de activación",
-    "wifiRescan": "Reescanear",
-    "wifiUnsupported": "Tu computadora administra el Wi-Fi en esta versión.",
-    "wifiNoNetworks": "No se encontraron redes.",
-    "wifiConnected": "Conectado",
-    "wifiSecured": "Requiere contraseña",
-    "wifiOpen": "Abierta",
-    "wifiForget": "Olvidar",
-    "wifiJoin": "Conectar",
-    "wifiPassword": "Contraseña",
     "signalPluginBypassTooltip": "Omitir plugin",
     "fxEditorChainIn": "ENT",
     "fxEditorChainOut": "SAL",
     "fxEditorEmptySelection": "Selecciona un bloque para editar sus controles.",
     "octaverLatencyHint": "El vocoder de fase añade ~{ms} ms — usa PSOLA para monitoreo en vivo",
-    "wifiUnsupportedBody": "WiFi solo está disponible en la consola Segno.",
+    "wifiUnsupportedBody": "El Wi-Fi solo está disponible en la consola Segno.",
     "@wifiUnsupportedBody": {
         "description": "Shown on the WiFi page when segno-wifi-ctl is not present (desktop builds)."
     },
-    "wifiStatusLabel": "Estado",
-    "@wifiStatusLabel": {
-        "description": "WiFi status table label."
-    },
-    "wifiConnectFailedPassword": "No se pudo unir — revisá la contraseña e intentá de nuevo.",
+    "wifiConnectFailedPassword": "Contraseña incorrecta. Intentá de nuevo.",
     "@wifiConnectFailedPassword": {
         "description": "Shown when WPA authentication fails while joining a network."
     },
@@ -955,124 +938,9 @@
     "@wifiConnectFailedBackend": {
         "description": "Shown when a join fails for backend/transient reasons (iwd race, NM no-secrets on a saved network) after automatic retries — explicitly not a credentials problem, so the owner does not forget the network and re-type the password (#829)."
     },
-    "wifiSsidLabel": "Red",
-    "@wifiSsidLabel": {
-        "description": "WiFi SSID table label."
-    },
-    "wifiIpLabel": "Dirección IP",
-    "@wifiIpLabel": {
-        "description": "WiFi IP address table label."
-    },
-    "wifiDisconnectTitle": "Desconectar",
-    "@wifiDisconnectTitle": {
-        "description": "WiFi disconnect action title."
-    },
-    "wifiDisconnectSubtitle": "Cortar la asociación WiFi actual",
-    "@wifiDisconnectSubtitle": {
-        "description": "WiFi disconnect action subtitle."
-    },
-    "wifiForgetSubtitle": "Eliminar las credenciales guardadas de {ssid}",
-    "@wifiForgetSubtitle": {
-        "description": "WiFi forget action subtitle.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiScanSubtitle": "Actualizar la lista de redes cercanas",
-    "@wifiScanSubtitle": {
-        "description": "WiFi scan action subtitle when idle."
-    },
-    "wifiScanningSubtitle": "Buscando…",
-    "@wifiScanningSubtitle": {
-        "description": "WiFi scan action subtitle while scanning."
-    },
-    "wifiEmptyNetworks": "No se encontraron redes. Toca buscar para reintentar.",
-    "@wifiEmptyNetworks": {
-        "description": "Empty state when a WiFi scan returns no SSIDs."
-    },
-    "wifiJoinAction": "Unirse",
-    "@wifiJoinAction": {
-        "description": "Confirm button on the WiFi password dialog."
-    },
-    "networkStateConnected": "conectado",
-    "@networkStateConnected": {
-        "description": "State word at the trailing edge of a Network row: a live association or link. Lower case — it is a machine readout about the row, not a sentence."
-    },
-    "networkStateSaved": "guardada",
-    "@networkStateSaved": {
-        "description": "State word for a WiFi network whose credentials this console already holds."
-    },
-    "networkStateOpen": "abierta",
-    "@networkStateOpen": {
-        "description": "State word for a WiFi network that needs no passphrase."
-    },
     "consoleKeepIt": "Conservar",
     "@consoleKeepIt": {
         "description": "Dismissive action on a Network forget confirmation — leaves the credential or pairing alone."
-    },
-    "wifiNotInRange": "fuera de alcance",
-    "@wifiNotInRange": {
-        "description": "Row subtitle for a saved network the last scan did not see."
-    },
-    "wifiSecurityWpa2": "WPA2",
-    "@wifiSecurityWpa2": {
-        "description": "Security label for a secured network, shown in the row subtitle and beside the join sheet's title."
-    },
-    "wifiSignalDbm": "{signal} dBm",
-    "@wifiSignalDbm": {
-        "description": "Signal strength in a WiFi row subtitle.",
-        "placeholders": {
-            "signal": {
-                "type": "int"
-            }
-        }
-    },
-    "wifiJoiningShort": "conectando a {ssid}",
-    "@wifiJoiningShort": {
-        "description": "Live-state line beside the WiFi face's title while a join is in flight. Lower case — it continues the title rather than starting a sentence.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiJoinFailedShort": "no se pudo conectar a {ssid}",
-    "@wifiJoinFailedShort": {
-        "description": "Live-state line beside the WiFi face's title after a join failed.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiJoiningBanner": "Conectando a {ssid}…",
-    "@wifiJoiningBanner": {
-        "description": "In-flight banner at the top of the WiFi list while a join is running.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiRetryingBanner": "Error de red — reintentando {ssid}…",
-    "@wifiRetryingBanner": {
-        "description": "In-flight banner while the console automatically re-activates a join after a backend/transient failure (#829). Never worded as a password problem.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
-    },
-    "wifiJoinSheetTitle": "Conectar a {ssid}",
-    "@wifiJoinSheetTitle": {
-        "description": "Title of the passphrase sheet.",
-        "placeholders": {
-            "ssid": {
-                "type": "String"
-            }
-        }
     },
     "wifiPassphraseTooShort": "Una contraseña WPA2 tiene al menos {count} caracteres.",
     "@wifiPassphraseTooShort": {
@@ -1099,6 +967,178 @@
     "wifiForgetConfirmAction": "Olvidar red",
     "@wifiForgetConfirmAction": {
         "description": "Destructive action on the forget-network confirmation."
+    },
+    "networkWifiLabel": "Wi-Fi",
+    "@networkWifiLabel": {
+        "description": "The radio switch in the Network page title row."
+    },
+    "networkUnavailableTitle": "El Wi-Fi no está disponible",
+    "@networkUnavailableTitle": {
+        "description": "Connection card title on a build without the Wi-Fi helper."
+    },
+    "networkOffTitle": "El Wi-Fi está apagado",
+    "@networkOffTitle": {
+        "description": "Connection card title while the radio is off (pen 29/07)."
+    },
+    "networkOffDetail": "Encendelo para buscar redes cercanas.",
+    "@networkOffDetail": {
+        "description": "Connection card line while the radio is off."
+    },
+    "networkConnectingTitle": "Conectando…",
+    "@networkConnectingTitle": {
+        "description": "Connection card title while a join is in flight."
+    },
+    "networkLostTitle": "Conexión perdida",
+    "@networkLostTitle": {
+        "description": "Connection card title when the saved network that was up dropped (pen 29/06)."
+    },
+    "networkIdleTitle": "Elegí una red",
+    "@networkIdleTitle": {
+        "description": "Connection card title with the radio on and nothing joined."
+    },
+    "networkIdleDetail": "Las redes guardadas se reconectan solas.",
+    "@networkIdleDetail": {
+        "description": "Connection card line with the radio on and nothing joined."
+    },
+    "networkConnected": "Conectado",
+    "@networkConnected": {
+        "description": "Status line of the connected network."
+    },
+    "networkConnectedNoInternet": "Conectado · Sin internet",
+    "@networkConnectedNoInternet": {
+        "description": "Status line when Wi-Fi is associated but the internet check got no answer (pen 29/08)."
+    },
+    "networkIp": "IP {address}",
+    "@networkIp": {
+        "description": "The connection address beside its status line.",
+        "placeholders": {
+            "address": {
+                "type": "String"
+            }
+        }
+    },
+    "networkManage": "Administrar",
+    "@networkManage": {
+        "description": "Opens the connected network details from the connection card."
+    },
+    "networkReconnect": "Reconectar",
+    "@networkReconnect": {
+        "description": "Joins the lost network again from the connection card."
+    },
+    "networkNetworksHeading": "Redes",
+    "@networkNetworksHeading": {
+        "description": "Heading over the list of nearby and saved networks."
+    },
+    "networkScan": "Buscar",
+    "@networkScan": {
+        "description": "Refreshes the network list."
+    },
+    "networkScanning": "Buscando…",
+    "@networkScanning": {
+        "description": "The Scan button while a scan is in flight."
+    },
+    "networkListOff": "No hay redes con el Wi-Fi apagado.",
+    "@networkListOff": {
+        "description": "Network list while the radio is off."
+    },
+    "networkListEmpty": "No se encontraron redes. Buscá de nuevo.",
+    "@networkListEmpty": {
+        "description": "Network list when a scan found nothing."
+    },
+    "networkSaved": "Guardada",
+    "@networkSaved": {
+        "description": "Line under a saved network in the list."
+    },
+    "networkSavedNotInRange": "Guardada · Fuera de alcance",
+    "@networkSavedNotInRange": {
+        "description": "Line under a saved network the last scan did not see."
+    },
+    "networkSecured": "Requiere contraseña",
+    "@networkSecured": {
+        "description": "Accessible note for a secured network row."
+    },
+    "networkSavedNetwork": "Red guardada",
+    "@networkSavedNetwork": {
+        "description": "Network details status for a saved network that is not connected."
+    },
+    "networkPasswordRequired": "Requiere contraseña",
+    "@networkPasswordRequired": {
+        "description": "Network details status for a secured network with no saved key."
+    },
+    "networkOpenNetwork": "Red abierta",
+    "@networkOpenNetwork": {
+        "description": "Network details status for a network with no password."
+    },
+    "networkConnectingTo": "Conectando a {ssid}",
+    "@networkConnectingTo": {
+        "description": "Title of the Connecting dialog (pen 29/03).",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "networkConnectingFallback": "Si esto falla, Segno vuelve a conectarse a {ssid}.",
+    "@networkConnectingFallback": {
+        "description": "Connecting dialog note when another network was up: one radio cannot keep it during the join, so a failed join brings it back (#1270 D13).",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "networkConnectingChecking": "Comprobando la conexión.",
+    "@networkConnectingChecking": {
+        "description": "Connecting dialog note when nothing was connected before."
+    },
+    "networkRetrying": "Error de red. Reintentando…",
+    "@networkRetrying": {
+        "description": "Connecting dialog note while the console re-activates after a backend failure (#829). Never worded as a password problem."
+    },
+    "networkPasswordLabel": "Contraseña",
+    "@networkPasswordLabel": {
+        "description": "Label over the password field in the join sheet."
+    },
+    "networkPasswordPlaceholder": "Escribí la contraseña",
+    "@networkPasswordPlaceholder": {
+        "description": "The empty password field."
+    },
+    "networkPasswordShow": "Mostrar",
+    "@networkPasswordShow": {
+        "description": "Reveals the typed password in the join sheet."
+    },
+    "networkPasswordHide": "Ocultar",
+    "@networkPasswordHide": {
+        "description": "Masks the typed password again."
+    },
+    "networkPasswordLength": "Contraseña, {count} caracteres",
+    "@networkPasswordLength": {
+        "description": "Accessible value of the masked password field.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "networkConnect": "Conectar",
+    "@networkConnect": {
+        "description": "Joins a network."
+    },
+    "networkDisconnect": "Desconectar",
+    "@networkDisconnect": {
+        "description": "Drops the current connection. Reversible, so it asks nothing."
+    },
+    "networkDetailsClose": "Cerrar detalles de la red",
+    "@networkDetailsClose": {
+        "description": "Accessible name of the close button on the network details dialog."
+    },
+    "networkAutoConnect": "Conectar automáticamente",
+    "@networkAutoConnect": {
+        "description": "Saved network setting: whether the console joins it on its own."
+    },
+    "networkChangePassword": "Cambiar contraseña",
+    "@networkChangePassword": {
+        "description": "Opens the join sheet to give a saved network a new key."
     },
     "controlTransportGroup": "CONMUTADORES DE TRANSPORTE",
     "@controlTransportGroup": {
