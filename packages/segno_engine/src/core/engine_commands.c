@@ -3130,9 +3130,27 @@ int32_t le_engine_finalize_take(le_engine* engine, int32_t channel) {
  * (apply_command), the only side that owns track states — a locked command is
  * accepted by these wrappers and dropped there. */
 
+/* The clock source as the control thread must assume it (#1228): the one the
+ * latest accepted le_engine_set_clock_sync asked for while that call is still
+ * queued, else the one the audio thread applied (a refused call leaves the
+ * applied source in force). The callback rechecks the applied source, so a
+ * tempo setter queued before the source changed cannot slip in either way. */
+static int32_t le_clock_source_effective(le_engine* engine) {
+  if (engine->clock_sync_posted !=
+      atomic_load_explicit(&engine->a_clock_receipt, memory_order_acquire)) {
+    return engine->clock_source_requested;
+  }
+  return load_i32(&engine->a_clock_source);
+}
+
+static int le_clock_external_requested(le_engine* engine) {
+  return engine != NULL && le_clock_source_effective(engine) >= 0;
+}
+
 int32_t le_engine_set_tempo(le_engine* engine, float bpm) {
   /* Clamped to 30..300 by the audio thread on apply (matching the old stack's
    * observable clamp-on-read behaviour). */
+  if (le_clock_external_requested(engine)) return LE_ERR_EXTERNAL_CLOCK;
   return le_push(engine, LE_CMD_SET_TEMPO, 0, bpm);
 }
 
@@ -3142,6 +3160,9 @@ int32_t le_engine_restore_tempo(le_engine* engine, float bpm, int32_t source) {
   }
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
+  }
+  if (source != LE_TEMPO_SOURCE_NONE && le_clock_external_requested(engine)) {
+    return LE_ERR_EXTERNAL_CLOCK;
   }
   if (load_i32(&engine->a_counting_in) ||
       engine->clock_commands_posted !=
@@ -3171,6 +3192,7 @@ int32_t le_engine_set_time_signature(le_engine* engine, int32_t num,
 }
 
 int32_t le_engine_tap_tempo(le_engine* engine) {
+  if (le_clock_external_requested(engine)) return LE_ERR_EXTERNAL_CLOCK;
   return le_push(engine, LE_CMD_TAP_TEMPO, 0, 0.0f);
 }
 
@@ -3464,12 +3486,53 @@ int32_t le_engine_detach_midi_input(le_engine* engine, int32_t port) {
 /* ---- MIDI clock (Phase C/E, D15; see segno_engine_api.h's MIDI-clock
  * section) ---- */
 
-int32_t le_engine_set_clock_mode(le_engine* engine, int32_t mode) {
-  /* RECEIVE is Phase E's clock follower — stub the tri-state field now (so
-   * that part can reuse it without a breaking rename) but reject it here,
-   * same as any value outside the enum. */
-  if (mode != LE_CLOCK_OFF && mode != LE_CLOCK_SEND) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_CLOCK_MODE, mode, 0.0f);
+int32_t le_engine_set_clock_send(le_engine* engine, int32_t enabled) {
+  if (engine == NULL || (enabled != 0 && enabled != 1)) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_CLOCK_SEND, enabled, 0.0f);
+}
+
+/* Whether the rig is in the middle of a take, as far as the control thread
+ * can see: a count-in, a capture, an arm or a queued start (#1228: the clock
+ * source cannot change under a take). */
+static int le_clock_sync_blocked(le_engine* engine) {
+  if (load_i32(&engine->a_counting_in)) return 1;
+  for (int32_t c = 0; c < engine->track_count; ++c) {
+    le_track* t = &engine->tracks[c];
+    const int32_t state = le_effective_state(t);
+    if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING ||
+        engine->armed[c] || load_i32(&t->a_pending)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+int32_t le_engine_set_clock_sync(le_engine* engine, int32_t source_port,
+                                 int32_t follow_transport,
+                                 int32_t loss_policy) {
+  if (engine == NULL || source_port < -1 || source_port >= LE_MAX_MIDI_PORTS ||
+      (follow_transport != 0 && follow_transport != 1) ||
+      (loss_policy != LE_CLOCK_LOSS_KEEP_PLAYING &&
+       loss_policy != LE_CLOCK_LOSS_STOP_LOOPS)) {
+    return LE_ERR_INVALID;
+  }
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (source_port != le_clock_source_effective(engine) &&
+      le_clock_sync_blocked(engine)) {
+    return LE_ERR_SYNC_LOCKED;
+  }
+  le_command cmd = {.code = LE_CMD_SET_CLOCK_SYNC};
+  cmd.clock_sync.port = source_port;
+  cmd.clock_sync.follow_transport = follow_transport;
+  cmd.clock_sync.loss_policy = loss_policy;
+  cmd.clock_sync.sequence = engine->clock_sync_posted + 1u;
+  const int32_t rc = le_push_cmd(engine, cmd);
+  if (rc != LE_OK) return rc;
+  engine->clock_sync_posted++;
+  engine->clock_source_requested = source_port;
+  return LE_OK;
 }
 
 /* ---- click + count-in (A2; see segno_engine_api.h's click section) ---- */

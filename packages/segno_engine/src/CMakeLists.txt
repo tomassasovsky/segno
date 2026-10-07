@@ -128,6 +128,10 @@ add_library(segno_engine SHARED
   # placement) but is a portable ENGINE dependency (engine_process.c calls
   # le_midi_clock_advance every block), not an OS MIDI backend.
   midi/le_midi_clock.c
+  # le_clock_follow.c (#1228) is the pure-value MIDI clock follower the
+  # audio thread drives from the source port's pulses; an engine dependency
+  # like le_midi_clock.c, not an OS MIDI backend.
+  midi/le_clock_follow.c
   # ---- miniaudio/: the vendored backend ----
   miniaudio/miniaudio_impl.c
   # ---- stretch/: the C ABI over the vendored Signalsmith Stretch (#1179) ----

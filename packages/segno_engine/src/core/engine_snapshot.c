@@ -436,8 +436,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->looper_mode = load_i32(&engine->a_looper_mode);
   /* Primary track (B3, D18; trailing block; default reads -1 = none). */
   out->primary_track = load_i32(&engine->a_primary_track);
-  /* MIDI clock (Phase C, D15; trailing block; default reads 0 = OFF). */
-  out->clock_mode = load_i32(&engine->a_clock_mode);
+  /* MIDI clock send (Phase C, D15; trailing block; default reads 0). */
+  out->clock_send = load_i32(&engine->a_clock_send);
   /* Native MIDI input sink totals (#1228 Part 1; trailing block). */
   out->midi_in_events =
       atomic_load_explicit(&engine->a_midi_in_events, memory_order_relaxed);
@@ -457,6 +457,20 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->midi_in_attached_mask = attached;
   out->midi_in_rebinds =
       atomic_load_explicit(&engine->a_midi_in_rebinds, memory_order_relaxed);
+  /* MIDI clock sync (#1228 Part 2; trailing block). */
+  out->clock_state = load_i32(&engine->a_clock_state);
+  out->clock_source_port = load_i32(&engine->a_clock_source);
+  out->clock_follow_transport = load_i32(&engine->a_clock_follow_transport);
+  out->clock_loss_policy = load_i32(&engine->a_clock_loss_policy);
+  out->clock_bpm = load_f32(&engine->a_clock_bpm_bits);
+  out->clock_out_of_range = load_i32(&engine->a_clock_out_of_range);
+  out->clock_pulses =
+      atomic_load_explicit(&engine->a_clock_pulses, memory_order_relaxed);
+  out->clock_receipt =
+      atomic_load_explicit(&engine->a_clock_receipt, memory_order_acquire);
+  out->clock_result = load_i32(&engine->a_clock_result);
+  out->clock_losses =
+      atomic_load_explicit(&engine->a_clock_losses, memory_order_relaxed);
   /* Input clip + conditioning activity (input clip, S2; trailing block).
    * The clip mask is the audio thread's published verdict; the cond mask is
    * derived here from the published per-input enables intersected with the
