@@ -23,6 +23,8 @@ import 'package:segno/session/session.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/fake_key_value_store.dart';
 import '../../helpers/test_mix_settings.dart';
@@ -147,6 +149,12 @@ void main() {
           pedal: pedal,
           performance: performance,
           sessions: sessions,
+          storage: StorageRepository(
+            guards: GuardRegistry(),
+            client: const UnsupportedUsbStorageClient(),
+            exportsRoot: () async => directory.path,
+            volumeSpace: performance.volumeSpace,
+          ),
           powerOff: () async => halts++,
           reboot: () async => halts++,
           storageSettled: () async {},

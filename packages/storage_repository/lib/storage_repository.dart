@@ -24,6 +24,7 @@ export 'src/models/storage_destination.dart'
     show InternalDestination, RemovableDestination, StorageDestination;
 export 'src/models/storage_failure.dart'
     show
+        StorageBusy,
         StorageFailure,
         StorageFull,
         StorageIo,
@@ -32,4 +33,4 @@ export 'src/models/storage_failure.dart'
         StorageVolumeLost;
 export 'src/storage_repository.dart'
     show CopyBytes, SourceReadFailure, StorageRepository;
-export 'src/write_lease.dart' show HeldLease, WriteLease;
+export 'src/write_lease.dart' show HeldLease, WriteLease, WritePurpose;

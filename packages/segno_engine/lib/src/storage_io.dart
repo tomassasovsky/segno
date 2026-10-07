@@ -87,10 +87,32 @@ abstract interface class StorageIo {
   /// Makes the entries of the directory at [path] durable, so a rename into
   /// it survives a power cut.
   ///
-  /// Throws a [FileSystemException] when the directory cannot be opened or
-  /// the sync fails: a caller must not report a publication as durable when
-  /// it is not.
+  /// Throws a [FileSystemException], carrying the OS error, when the
+  /// directory cannot be opened or the sync fails: a caller must not report
+  /// a publication as durable when it is not.
   void syncDirectory(String path);
+
+  /// Renames [from] to [to] only if nothing is at [to], as one atomic step.
+  ///
+  /// A copy publishes its part this way, so a name another writer took
+  /// meanwhile is never overwritten and no placeholder ever stands at the
+  /// final name. [RenameOutcome.nameTaken] means nothing moved;
+  /// [RenameOutcome.unsupported] means the kernel or the filesystem cannot
+  /// refuse a replacement and nothing moved (the caller falls back). Throws a
+  /// [FileSystemException] carrying the OS error for any other failure.
+  RenameOutcome renameWithoutReplacing(String from, String to);
+}
+
+/// What [StorageIo.renameWithoutReplacing] did.
+enum RenameOutcome {
+  /// The file is at its new name.
+  renamed,
+
+  /// Something was already at the new name; nothing moved.
+  nameTaken,
+
+  /// This kernel or filesystem cannot refuse a replacement; nothing moved.
+  unsupported,
 }
 
 /// The [StorageIo] backed by the native engine library.
@@ -178,15 +200,59 @@ class NativeStorageIo implements StorageIo {
   @override
   void syncDirectory(String path) {
     final pathPtr = path.toNativeUtf8();
+    final errorPtr = calloc<Int32>();
     try {
-      final code = _bindings.le_fs_sync_dir(pathPtr.cast());
+      final code = _bindings.le_fs_sync_dir_errno(pathPtr.cast(), errorPtr);
       if (!EngineResult.fromCode(code).isOk) {
-        throw FileSystemException('could not sync the directory', path);
+        final errno = errorPtr.value;
+        throw FileSystemException(
+          'could not sync the directory',
+          path,
+          errno == 0 ? null : OSError('sync failed', errno),
+        );
       }
     } finally {
+      calloc.free(errorPtr);
       malloc.free(pathPtr);
     }
   }
+
+  @override
+  RenameOutcome renameWithoutReplacing(String from, String to) {
+    final fromPtr = from.toNativeUtf8();
+    final toPtr = to.toNativeUtf8();
+    final errorPtr = calloc<Int32>();
+    try {
+      final code = _bindings.le_fs_rename_noreplace(
+        fromPtr.cast(),
+        toPtr.cast(),
+        errorPtr,
+      );
+      switch (EngineResult.fromCode(code)) {
+        case EngineResult.ok:
+          return RenameOutcome.renamed;
+        case EngineResult.unsupported:
+          return RenameOutcome.unsupported;
+        case EngineResult.device when errorPtr.value == _eexist:
+          return RenameOutcome.nameTaken;
+        case EngineResult.device:
+          throw FileSystemException(
+            'could not rename to $to',
+            from,
+            OSError('rename failed', errorPtr.value),
+          );
+        case _:
+          throw FileSystemException('could not rename to $to', from);
+      }
+    } finally {
+      calloc.free(errorPtr);
+      malloc
+        ..free(toPtr)
+        ..free(fromPtr);
+    }
+  }
+
+  static const int _eexist = 17;
 
   static String _hex(Pointer<Uint8> digest) {
     final buffer = StringBuffer();

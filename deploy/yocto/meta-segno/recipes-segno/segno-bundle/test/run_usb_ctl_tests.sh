@@ -394,6 +394,77 @@ check "the dotfile is neither served nor deleted" yes "$(has "$work/run/requests
 check "the volume is untouched" '"status":"mounted"' "$(volume 1 | sed -n 's/.*\("status":"[a-zA-Z]*"\).*/\1/p')"
 teardown
 
+echo "serve-requests: a cancel and the helper never both win"
+# The app cancels by deleting <id>.json. A stub rm plays that cancel at the
+# moment the helper deletes the request it has read, which is where a helper
+# that reads first and deletes after lets both sides win.
+real_rm=$(command -v rm)
+real_mv=$(command -v mv)
+setup
+vfat_props
+run_ctl attach sda1
+: > "$work/calls"
+cat > "$work/bin/rm" <<STUB
+#!/bin/sh
+if [ -e "$work/cancel_on_rm" ]; then
+    $real_rm -f "$work/cancel_on_rm"
+    if $real_rm "$work/run/requests/c1.json" 2>/dev/null; then
+        echo withdrawn > "$work/cancel"
+    else
+        echo too-late > "$work/cancel"
+    fi
+fi
+exec $real_rm "\$@"
+STUB
+chmod +x "$work/bin/rm"
+: > "$work/cancel_on_rm"
+printf '{"generation":1,"request":"c1"}' > "$work/run/requests/c1.json"
+run_ctl serve-requests; rc=$?
+check "exits 0" 0 "$rc"
+check "the cancel came too late: the helper had already taken the request" \
+    too-late "$(cat "$work/cancel" 2>/dev/null)"
+check "and the drive is ejected" '"status":"ejected"' \
+    "$(volume 1 | sed -n 's/.*\("status":"[a-zA-Z]*"\).*/\1/p')"
+check "nothing is left in the queue" "" "$(ls -A "$work/run/requests")"
+teardown
+
+echo "serve-requests: a cancel that lands first is honoured"
+setup
+vfat_props
+run_ctl attach sda1
+: > "$work/calls"
+# The cancel lands between the helper listing the queue and taking the file.
+cat > "$work/bin/mv" <<STUB
+#!/bin/sh
+$real_rm -f "$work/run/requests/c2.json"
+exec $real_mv "\$@"
+STUB
+chmod +x "$work/bin/mv"
+printf '{"generation":1,"request":"c2"}' > "$work/run/requests/c2.json"
+run_ctl serve-requests; rc=$?
+check "exits 0" 0 "$rc"
+check "nothing is synced or unmounted" "" "$(calls)"
+check "the volume is untouched" '"status":"mounted"' \
+    "$(volume 1 | sed -n 's/.*\("status":"[a-zA-Z]*"\).*/\1/p')"
+check "the queue is empty" "" "$(ls -A "$work/run/requests")"
+teardown
+
+echo "serve-requests: a request a killed run had taken is served"
+setup
+vfat_props
+run_ctl attach sda1
+: > "$work/calls"
+printf '{"generation":1,"request":"k1"}' > "$work/run/requests/.taking-k1.json"
+run_ctl serve-requests; rc=$?
+check "exits 0" 0 "$rc"
+check "the drive is synced and unmounted for it" "sync -f $work/media/1-SEGNO_USB
+umount $work/media/1-SEGNO_USB" "$(calls)"
+check "and the app gets its answer" \
+    '"eject":{"request":"k1","ok":true,"reason":null}}' \
+    "$(volume 1 | sed -n 's/.*\("eject":.*\)/\1/p')"
+check "nothing is left in the queue" "" "$(ls -A "$work/run/requests")"
+teardown
+
 echo "attach: concurrent attaches never share a generation"
 # systemd starts one mount unit per partition in parallel. A slow udevadm
 # lines the attaches up on the generation counter; without the lock some of

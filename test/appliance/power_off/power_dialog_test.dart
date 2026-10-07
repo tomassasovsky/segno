@@ -71,6 +71,36 @@ void main() {
       );
     });
 
+    testWidgets('a transfer refuses with its own words and only Keep '
+        'playing; a take wins when both are in flight', (tester) async {
+      final cubit = _cubit();
+      addTearDown(cubit.close);
+      await _pump(
+        tester,
+        cubit,
+        snapshot: const PowerSnapshot(transferInFlight: true),
+      );
+
+      expect(find.text('Wait for the transfer'), findsOneWidget);
+      expect(find.text('Stop the take first'), findsNothing);
+      expect(find.byKey(const Key('power_keep_playing')), findsOneWidget);
+      expect(find.byKey(const Key('power_restart')), findsNothing);
+      expect(find.byKey(const Key('power_shut_down')), findsNothing);
+
+      cubit.dismiss();
+      await tester.pumpAndSettle();
+      await _pump(
+        tester,
+        cubit,
+        snapshot: const PowerSnapshot(
+          takeInFlight: true,
+          transferInFlight: true,
+        ),
+      );
+      expect(find.text('Stop the take first'), findsOneWidget);
+      expect(find.text('Wait for the transfer'), findsNothing);
+    });
+
     testWidgets('Power options: the save promise, the session name, and '
         'Cancel / Restart / Shut down', (tester) async {
       final cubit = _cubit();

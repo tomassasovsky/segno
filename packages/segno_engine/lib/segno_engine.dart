@@ -92,6 +92,7 @@ export 'src/storage_io.dart'
         FileTruncated,
         FileUnreadable,
         NativeStorageIo,
+        RenameOutcome,
         StorageIo;
 export 'src/track_effect.dart'
     show

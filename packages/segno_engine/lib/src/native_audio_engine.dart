@@ -2445,17 +2445,6 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  bool syncDirectory(String path) {
-    if (path.isEmpty) return false;
-    final pathPtr = path.toNativeUtf8();
-    try {
-      return EngineResult.fromCode(_bindings.le_sync_dir(pathPtr.cast())).isOk;
-    } finally {
-      malloc.free(pathPtr);
-    }
-  }
-
-  @override
   EngineResult renderBegin(String captureDir) {
     _checkAlive();
     final dirPtr = captureDir.toNativeUtf8();

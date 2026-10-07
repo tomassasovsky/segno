@@ -11,7 +11,7 @@ const Map<GuardKind, String> _d8 = {
   GuardKind.sessionApply: 'a r r a a r r r',
   GuardKind.sessionWrite: 'a a i a a a a r',
   GuardKind.transfer: 'v a a a v a a r',
-  GuardKind.eject: 'v a a v r a a r',
+  GuardKind.eject: 'v a a v v a a r',
   GuardKind.deviceChange: 'r r a a a r r r',
   GuardKind.calibration: 'r r a a a r r r',
   GuardKind.restart: 'r r r r r r a r',
@@ -133,6 +133,18 @@ void main() {
       registry.enter(GuardKind.deviceChange, internal, purpose: 'x').release();
     });
 
+    test('an eject on one drive does not hold an eject on another; on the '
+        'same drive it does (#1177)', () {
+      final registry = GuardRegistry();
+      final first = registry.enter(GuardKind.eject, usb1, purpose: 'eject');
+      registry.enter(GuardKind.eject, usb2, purpose: 'eject').release();
+      expect(
+        () => registry.enter(GuardKind.eject, usb1, purpose: 'eject'),
+        throwsA(isA<GuardRefused>()),
+      );
+      first.release();
+    });
+
     test('two guards of the same kind are two operations', () {
       final registry = GuardRegistry();
       final a = registry.enter(GuardKind.transfer, usb1, purpose: 'export');
@@ -171,6 +183,25 @@ void main() {
         backup.operation,
       ]);
       expect(registry.blockers(GuardKind.capture, internal), isEmpty);
+    });
+
+    test('an owner can register itself after the table is built, once', () {
+      final registry = GuardRegistry();
+      final storage = _Source();
+      registry
+        ..addSource(storage)
+        ..addSource(storage);
+      const lease = ActiveOperation(
+        kind: GuardKind.transfer,
+        scope: usb1,
+        purpose: 'copy',
+      );
+      storage.ops.add(lease);
+      expect(registry.active, [lease]);
+      expect(
+        () => registry.enter(GuardKind.eject, usb1, purpose: 'eject'),
+        throwsA(isA<GuardRefused>()),
+      );
     });
 
     test('reports operations an owner tracks itself', () {

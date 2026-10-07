@@ -4892,32 +4892,6 @@ class SegnoEngineBindings {
         )
       >();
 
-  /// fsync(2) on the directory at `path`, so the entries in it — a file renamed
-  /// into it, a file created in it — survive a power cut or a pulled drive. A
-  /// file's own fsync makes its bytes durable but not its name: on ext4 a copy
-  /// that returned within the commit interval could otherwise come back after a
-  /// power cut as a part file with no final name (#1177, #1195). Dart has no way
-  /// to open a directory, so the storage repository asks here.
-  ///
-  /// LE_ERR_INVALID on a NULL or empty path; LE_ERR_DEVICE when the path cannot
-  /// be opened as a directory or the sync fails. LE_OK on Windows without doing
-  /// anything: NTFS journals its directory entries. Control thread only; it can
-  /// take as long as the device's flush.
-  int le_sync_dir(
-    ffi.Pointer<ffi.Char> path,
-  ) {
-    return _le_sync_dir(
-      path,
-    );
-  }
-
-  late final _le_sync_dirPtr =
-      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<ffi.Char>)>>(
-        'le_sync_dir',
-      );
-  late final _le_sync_dir = _le_sync_dirPtr
-      .asFunction<int Function(ffi.Pointer<ffi.Char>)>();
-
   /// SHA-256 of `length` bytes at `data` (`data` may be NULL only when `length`
   /// is 0). Returns LE_OK, or LE_ERR_INVALID for a NULL `out`, a NULL `data`
   /// with a non-zero length, or a length this platform cannot address.
@@ -5077,6 +5051,74 @@ class SegnoEngineBindings {
       );
   late final _le_fs_sync_dir = _le_fs_sync_dirPtr
       .asFunction<int Function(ffi.Pointer<ffi.Char>)>();
+
+  /// le_fs_sync_dir, also reporting why it failed: on LE_ERR_DEVICE,
+  /// *out_errno (when not NULL) is the OS error (ENOENT for a missing path,
+  /// ENOTDIR for a file, EIO from a drive that went away mid-sync), so a caller
+  /// can tell a pulled drive from a failing one (#1177). *out_errno is 0 on
+  /// LE_OK.
+  int le_fs_sync_dir_errno(
+    ffi.Pointer<ffi.Char> path,
+    ffi.Pointer<ffi.Int32> out_errno,
+  ) {
+    return _le_fs_sync_dir_errno(
+      path,
+      out_errno,
+    );
+  }
+
+  late final _le_fs_sync_dir_errnoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Int32>)
+        >
+      >('le_fs_sync_dir_errno');
+  late final _le_fs_sync_dir_errno = _le_fs_sync_dir_errnoPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Int32>)
+      >();
+
+  /// Renames `from` to `to` (both UTF-8) only if nothing is at `to`, as one
+  /// atomic step: renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL)
+  /// on macOS, MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows. A copy
+  /// publishes its part this way, so a name another writer took meanwhile is
+  /// never overwritten and no empty placeholder ever stands at the final name
+  /// (#1177, #1195).
+  ///
+  /// Returns LE_OK with *out_errno = 0; LE_ERR_INVALID for a NULL or empty path
+  /// or a NULL `out_errno`; LE_ERR_UNSUPPORTED when this kernel or filesystem
+  /// cannot refuse a replacement (the caller then falls back); LE_ERR_DEVICE
+  /// with *out_errno set to the OS error otherwise, EEXIST when `to` is taken.
+  int le_fs_rename_noreplace(
+    ffi.Pointer<ffi.Char> from,
+    ffi.Pointer<ffi.Char> to,
+    ffi.Pointer<ffi.Int32> out_errno,
+  ) {
+    return _le_fs_rename_noreplace(
+      from,
+      to,
+      out_errno,
+    );
+  }
+
+  late final _le_fs_rename_noreplacePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_fs_rename_noreplace');
+  late final _le_fs_rename_noreplace = _le_fs_rename_noreplacePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
 
   /// Starts an offline render of the finalized capture at `capture_dir`: spawns
   /// a worker thread that writes `stems/dry/track<channel>.wav` +

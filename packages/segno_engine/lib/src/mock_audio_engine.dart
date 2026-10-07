@@ -1749,16 +1749,6 @@ class MockAudioEngine implements AudioEngine {
   VolumeSpace? volumeSpace(String path) =>
       path.isEmpty ? null : volumeSpaceValue;
 
-  /// Every directory [syncDirectory] was asked to sync, in order.
-  final List<String> syncedDirectories = [];
-
-  @override
-  bool syncDirectory(String path) {
-    if (path.isEmpty) return false;
-    syncedDirectories.add(path);
-    return true;
-  }
-
   /// The `captureDir` passed to the most recent [renderBegin] call, for test
   /// assertions. `null` until the first render.
   String? lastRenderCaptureDir;
