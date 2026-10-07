@@ -38,6 +38,14 @@ void main() {
         ControlAction.tryParse('command:tap-tempo'),
         const CommandAction(ControlCommand.tapTempo),
       );
+      expect(
+        ControlAction.tryParse('command:track-fx-off'),
+        const CommandAction(ControlCommand.trackFxOff),
+      );
+      expect(
+        ControlAction.tryParse('command:track-fx-on'),
+        const CommandAction(ControlCommand.trackFxOn),
+      );
       expect(const TrackPedalAction(2).key, 'track:2');
       expect(const SelectTrackAction(2).key, 'select-track:2');
       expect(
@@ -116,7 +124,11 @@ void main() {
       // The headings a later part fills are declared but not offered yet — a
       // picker tab with nothing under it is a promise the rig cannot keep.
       expect(groups, isNot(contains(ControlActionGroup.loopModes)));
-      expect(groups, isNot(contains(ControlActionGroup.fx)));
+      // The FX group holds the former FX-mode Stop sweeps (#1229).
+      expect(controlActionsIn(ControlActionGroup.fx), const [
+        CommandAction(ControlCommand.trackFxOff),
+        CommandAction(ControlCommand.trackFxOn),
+      ]);
       expect(groups, isNot(contains(ControlActionGroup.backing)));
       expect(groups, isNot(contains(ControlActionGroup.sessions)));
     });

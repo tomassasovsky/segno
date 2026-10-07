@@ -84,6 +84,7 @@ class PerformancePedal extends StatefulWidget {
   /// Lines [title] may wrap to before it is cut short, for a caption that
   /// names an assignment (Custom).
   final int titleMaxLines;
+
   /// Whether this pedal's Hold is armed and still pending: draws the pen's
   /// Pending Hold cue (#1229, `PRSrG`), a bar under the face filling over
   /// [holdThreshold] from the moment this turns true, and a brightened

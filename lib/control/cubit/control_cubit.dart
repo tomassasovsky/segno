@@ -35,6 +35,7 @@ import 'package:segno/control/foot_peel_actions.dart';
 import 'package:segno/control/foot_reverse_actions.dart';
 import 'package:segno/control/foot_tuner_actions.dart';
 import 'package:segno/control/model/foot_fade.dart';
+import 'package:segno/control/model/foot_fx.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/control/model/foot_reverse.dart';
@@ -1153,8 +1154,19 @@ class ControlCubit extends Cubit<ControlState> {
   // through setMode updates this latch.
   InteractionMode _fxReturn = InteractionMode.record;
 
-  // The FX-mode Stop long-press (restore every Track chain). The panic half
-  // fires on the press, so this one arms no tap action — only the hold.
+  // Whether this install has been told that FX mode's Stop no longer sweeps
+  // the track chains (#1229). Loaded with the setup; until then a first FX
+  // entry cannot know, and says nothing.
+  bool _fxStopNoticeShown = true;
+
+  // Whether [_fxStopNoticeShown] is already stored. A fresh install decides
+  // it is told in memory at boot and stores that before anything could make
+  // a later boot read it as an upgrade: its first FX entry, pedal setup or
+  // bindings save. Boot itself writes nothing.
+  bool _fxStopNoticeStored = true;
+
+  // Stop's own press/hold gesture on the performance surfaces that give it a
+  // hold.
   final _stopGesture = _HoldGesture();
 
   // The remap (part 6b) lives in ControlState — it is stored user intent, and
@@ -1230,10 +1242,10 @@ class ControlCubit extends Cubit<ControlState> {
 
   Future<void> _restore() async {
     if (_ownsTunerSettings) await _tunerSettings.load();
+    var fxStopNoticeShown = await _settings.loadFxStopChangeNoticeShown();
     _longPress = Duration(milliseconds: await _settings.loadPedalLongPressMs());
-    final storedBindings = PedalBindingSet.decode(
-      await _settings.loadPedalBindings() ?? '',
-    );
+    final encodedBindings = await _settings.loadPedalBindings();
+    final storedBindings = PedalBindingSet.decode(encodedBindings ?? '');
     // Mute was the only mode a stored default ever booted into besides
     // Record: anything else was coerced to Record already, so only a Mute
     // install has a behaviour change to be told about.
@@ -1243,8 +1255,19 @@ class ControlCubit extends Cubit<ControlState> {
         : null;
     var setup = state.pedalSetup;
     var setupUnavailable = false;
+    final encodedSetup = await _settings.loadPedalSetup();
+    // An install with no stored pedal setup, bindings or boot default has
+    // never been set up, so it never had the old FX-mode Stop: nothing to
+    // tell it (#1229 review L1).
+    _fxStopNoticeStored = fxStopNoticeShown;
+    if (!fxStopNoticeShown &&
+        encodedSetup == null &&
+        encodedBindings == null &&
+        retired == null) {
+      fxStopNoticeShown = true;
+    }
+    _fxStopNoticeShown = fxStopNoticeShown;
     try {
-      final encodedSetup = await _settings.loadPedalSetup();
       setup = encodedSetup == null
           ? const PedalSetup()
           : PedalSetup.decode(encodedSetup);
@@ -1449,6 +1472,7 @@ class ControlCubit extends Cubit<ControlState> {
         !state.pedalSetupRuntimeUnsaved) {
       return;
     }
+    _storeFxStopNotice();
     try {
       await _settings.savePedalSetup(setup.encode());
     } on PedalSetupSaveException catch (error) {
@@ -1623,11 +1647,15 @@ class ControlCubit extends Cubit<ControlState> {
             _looper.finalizeTake(channel: track.channel);
           }
         }
+        final notice = !_fxStopNoticeShown;
+        _fxStopNoticeShown = true;
+        _storeFxStopNotice();
         emit(
           state.copyWith(
             mode: InteractionMode.fx,
             excluded: const <int>{},
             parkedResume: const <int>{},
+            fxStopChangeNotice: notice ? true : null,
           ),
         );
     }
@@ -1812,9 +1840,7 @@ class ControlCubit extends Cubit<ControlState> {
   // Stop
   // ---------------------------------------------------------------------------
 
-  /// The Stop action under the current mode (the pedal's Stop TAP; its
-  /// long-press is [restoreAllTrackChains], handled at the press/release
-  /// layer like undo/redo's).
+  /// The Stop action under the current mode (the pedal's Stop TAP).
   void stop() {
     switch (state.mode) {
       case InteractionMode.record:
@@ -1827,9 +1853,10 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.tuner:
         parkAll();
       case InteractionMode.fx:
-        panicTrackChains();
       case InteractionMode.custom:
-        // Inert here: the switch runs its assignment at the press.
+        // Inert here: an FX-mode Stop does only what it is bound to (pen
+        // 10/03; the former panic is the Track FX off command, #1229), and
+        // a Custom switch runs its assignment at the press.
         break;
     }
   }
@@ -1979,18 +2006,12 @@ class ControlCubit extends Cubit<ControlState> {
     _setTrackChain(channel, enabled: !_looper.trackChainEnabled(channel));
   }
 
-  /// FX panic: every Track-stage chain off in one gesture (Stop in FX mode) —
-  /// the eyes-free way out of a chain that has run away mid-song. Restored by
-  /// [restoreAllTrackChains] (Stop long-press).
-  void panicTrackChains() => _sweepTrackChains(enabled: false);
-
-  /// Puts every Track-stage chain back on (Stop LONG-PRESS in FX mode) — the
-  /// undo for [panicTrackChains]. Deliberately "all on" rather than a restore
-  /// of the pre-panic pattern: eyes-free on a dark stage, a known end state
-  /// beats one the performer has to remember.
-  void restoreAllTrackChains() => _sweepTrackChains(enabled: true);
-
-  /// Flips Track-stage chains across every channel, ASYMMETRICALLY on empties.
+  /// Flips Track-stage chains across every channel, ASYMMETRICALLY on empties:
+  /// the [ControlCommand.trackFxOff] and [ControlCommand.trackFxOn] commands
+  /// (the former FX-mode Stop panic and its hold, #1229). "On" is
+  /// deliberately "all on" rather than a restore of an earlier pattern:
+  /// eyes-free on a dark stage, a known end state beats one the performer has
+  /// to remember.
   ///
   /// Disabling skips a track with no chain: its flag says nothing audible
   /// either way, and writing it would persist a bypass the boot restore
@@ -2003,8 +2024,8 @@ class ControlCubit extends Cubit<ControlState> {
   /// ENABLING sweeps everything, empties included. Clearing a bypass is always
   /// safe, and a chain-less track can genuinely be carrying a stale one — the
   /// FX dock can disable a chain and then empty it — which is exactly the
-  /// silent-dry state this restore exists to undo. A "restore all" that could
-  /// not reach it would leave the only pedal-side cure unreachable.
+  /// silent-dry state this command exists to undo. An "all on" that could not
+  /// reach it would leave the only pedal-side cure unreachable.
   bool _sweepTrackChains({required bool enabled}) {
     var accepted = false;
     for (var channel = 0; channel < _channelCount; channel++) {
@@ -2200,6 +2221,65 @@ class ControlCubit extends Cubit<ControlState> {
     final role = FootFadeProjection.pedalRoles[button]!;
     final action = hold ? role.hold : role.press;
     if (action != null) _dispatchFadeAction(action, role.slot);
+  }
+
+  /// Admits a screen contact on the FX face into the shared ledger.
+  void footFxPressed(PedalButton button, Object contact) {
+    if (state.mode != InteractionMode.fx || isClosed) return;
+    _handleEvent(ButtonPressed(button), contact: contact);
+  }
+
+  /// Only the admitted screen contact may complete its FX gesture.
+  void footFxReleased(PedalButton button, Object contact) =>
+      footMixerReleased(button, contact);
+
+  /// Cancels an abandoned FX contact without its short action. A held
+  /// momentary is still restored: a contact that leaves can never strand a
+  /// target on (B1).
+  void footFxCancelled(PedalButton button, Object contact) {
+    if (isClosed ||
+        _inputRetired ||
+        !identical(_pressedButtons[button], contact)) {
+      return;
+    }
+    _systemGesture(button)?.cancel();
+    _bindingGestures[button]?.cancel();
+    _pressedButtons.remove(button);
+    _acceptedContacts.remove(button);
+    _releaseBinding(button);
+    _pushProjected();
+  }
+
+  /// Accessible semantic activation: a whole press-and-release of [button]
+  /// on the FX face, or its Hold when [hold] is set.
+  void activateFootFxPedal(PedalButton button, {bool hold = false}) {
+    if (state.mode != InteractionMode.fx || isClosed || _takeLocked()) return;
+    if (button == PedalButton.mode) {
+      setMode(_fxReturn);
+      return;
+    }
+    if (button == PedalButton.bank) {
+      if (hold) {
+        togglePerformanceRecord();
+      } else {
+        toggleBankWithCursor();
+      }
+      return;
+    }
+    final binding = state.bindings.lookup(button, bank: state.activeBank);
+    if (binding == null) {
+      if (!hold && PedalBindingKey.trackButtons.contains(button)) {
+        toggleTrackChain(state.bankBaseChannel + _trackIndex(button));
+      }
+      return;
+    }
+    if (hold && !binding.hasHold) return;
+    final behavior = hold ? binding.holdBehavior : binding.behavior;
+    // A semantic activation has no contact to hold a momentary down, so it
+    // acts as press-and-release: a momentary is a no-op, as it would be for
+    // a foot that lifts at once.
+    if (behavior == BindingBehavior.momentary) return;
+    _pressBinding(binding, hold: hold);
   }
 
   /// Admits a screen contact on the Reverse surface into the shared ledger.
@@ -2570,20 +2650,19 @@ class ControlCubit extends Cubit<ControlState> {
     // MODE and Bank can never appear here: the binding model refuses to hold
     // one (B12), so their handling below is unreachable from a binding.
     if (fx) {
+      // MODE is the FX face's Exit (pen 10/03), back to the mode FX was
+      // entered from, on contact and with no hold (#1229).
+      if (button == PedalButton.mode) {
+        setMode(_fxReturn);
+        return;
+      }
       final binding = state.bindings.lookup(button, bank: state.activeBank);
       if (binding != null) {
         if (binding.hasHold) {
           _armBoundHold(binding);
         } else {
-          if (_pressBinding(binding) && button == PedalButton.stop) {
-            _acceptedContacts.add(button);
-          }
+          _pressBinding(binding);
         }
-        // Stop keeps its restore-all HOLD even when bound: a remap overrides
-        // contextual defaults but never the long-press system gestures, and
-        // the panic's only undo must stay reachable from the plate whatever
-        // the user mapped onto the tap.
-        if (button == PedalButton.stop) _armStopRestore();
         return;
       }
     }
@@ -2611,12 +2690,9 @@ class ControlCubit extends Cubit<ControlState> {
         if (accepted) _acceptedContacts.add(button);
         _armRecordHold();
       case PedalButton.stop:
-        // FX mode splits Stop into tap = panic / long-press = restore, so the
-        // action waits for the release; the other modes act on the press, as
-        // they always have.
-        if (fx) {
-          if (_armStop()) _acceptedContacts.add(button);
-        } else {
+        // INERT in FX mode when unbound, as pen 10/03 draws it (#1229); the
+        // other modes act on the press, as they always have.
+        if (!fx) {
           final accepted = state.mode == InteractionMode.record
               ? _recStop(state.cursor)
               : _parkAllAccepted();
@@ -2839,6 +2915,10 @@ class ControlCubit extends Cubit<ControlState> {
       case ControlCommand.nextBank:
         toggleBankWithCursor();
         return true;
+      case ControlCommand.trackFxOff:
+        return _sweepTrackChains(enabled: false);
+      case ControlCommand.trackFxOn:
+        return _sweepTrackChains(enabled: true);
     }
   }
 
@@ -2894,11 +2974,7 @@ class ControlCubit extends Cubit<ControlState> {
       cue: binding.key.button,
       onHold: () {
         if (state.mode == InteractionMode.fx) {
-          if (_pressBinding(binding, hold: true) &&
-              binding.key.button == PedalButton.stop) {
-            _acceptedContacts.add(PedalButton.stop);
-            _pushProjected();
-          }
+          _pressBinding(binding, hold: true);
         }
       },
       onTap: () {
@@ -3012,56 +3088,6 @@ class ControlCubit extends Cubit<ControlState> {
       onTap: () {
         _log('undo ch=$channel  (tap)');
         undo(channel);
-      },
-    );
-  }
-
-  /// The FX-mode Stop gesture: the PANIC fires on the press itself, and a
-  /// hold past the threshold follows it with the restore.
-  ///
-  /// Panic-on-press, not on release, for two reasons. A panic is an emergency
-  /// control — a performer stomping it wants the chains out now, not when
-  /// their foot comes up. And a release is not proof of a gesture: the
-  /// on-screen plate injects a synthetic note-off for every held switch when
-  /// it leaves the tree (so it never strands a note), which as a
-  /// release-triggered action would have bypassed and PERSISTED every chain
-  /// for a stomp the user never finished. Acting on the press makes the
-  /// release inert, so a synthetic one can do no harm.
-  ///
-  /// The hold therefore reads as panic-then-restore, which lands on the same
-  /// end state the restore promises on its own: every chain on.
-  bool _armStop() {
-    _log('fx panic (press)');
-    final accepted = _sweepTrackChains(enabled: false);
-    _armStopRestore();
-    return accepted;
-  }
-
-  /// Arms the Stop restore-all hold on its own, without the panic.
-  ///
-  /// Split out because a BOUND Stop runs its binding on the press instead of
-  /// the panic, but still owes the performer the restore gesture (B12): the
-  /// remap overrides the contextual default, never the long-press system
-  /// gesture layered above it.
-  void _armStopRestore() {
-    // No `onTap`: whatever fired on the press already did, so the release is
-    // inert.
-    _armGesture(
-      _stopGesture,
-      cue: PedalButton.stop,
-      onHold: () {
-        // Only while the foot is still in the mode it committed to: cycling
-        // MODE mid-hold leaves the pedal showing cursor/armed LEDs, where a
-        // silent rewrite of every chain would be invisible.
-        if (state.mode != InteractionMode.fx) return;
-        _log('fx chains restored (long-press)');
-        final accepted = _sweepTrackChains(enabled: true);
-        if (accepted && _pressedButtons.containsKey(PedalButton.stop)) {
-          _acceptedContacts.add(PedalButton.stop);
-        } else {
-          _acceptedContacts.remove(PedalButton.stop);
-        }
-        _pushProjected();
       },
     );
   }
@@ -3203,7 +3229,16 @@ class ControlCubit extends Cubit<ControlState> {
     if (next == state.globalBindings) return;
     _invalidateGestures();
     emit(state.copyWith(globalBindings: next));
+    _storeFxStopNotice();
     await _settings.savePedalBindings(next.encode());
+  }
+
+  /// Stores the FX notice decision once it is known to be shown, so a later
+  /// boot cannot mistake this install for one that never heard it.
+  void _storeFxStopNotice() {
+    if (!_fxStopNoticeShown || _fxStopNoticeStored) return;
+    _fxStopNoticeStored = true;
+    unawaited(_settings.saveFxStopChangeNoticeShown());
   }
 
   /// Applies the remap carried by a loaded session (or clears it when the
@@ -3388,12 +3423,16 @@ class ControlCubit extends Cubit<ControlState> {
     final prior = target == null ? null : _looper.bindingEnabled(target);
     if (target == null || prior == null) {
       _log('binding on ${binding.key.button.name} is stale — no-op');
+      _reportFxRefusal(FootFxRefusal.unavailable);
       return false;
     }
     switch (hold ? binding.holdBehavior : binding.behavior) {
       case BindingBehavior.toggle:
         _log('binding toggle ${binding.key.button.name} -> ${!prior}');
-        if (!_looper.setBindingEnabled(target, enabled: !prior)) return false;
+        if (!_looper.setBindingEnabled(target, enabled: !prior)) {
+          _reportFxRefusal(FootFxRefusal.failed);
+          return false;
+        }
         _fxPersistence.ordinaryTarget(target, enabled: !prior);
       case BindingBehavior.momentary:
         if (_heldRestore.containsKey(binding.key)) return false;
@@ -3404,6 +3443,7 @@ class ControlCubit extends Cubit<ControlState> {
         // enabled, and the eventual release would restore `true` and strand
         // the target on: the stuck momentary (B1) with no foot on the switch.
         if (!prior && !_looper.setBindingEnabled(target, enabled: true)) {
+          _reportFxRefusal(FootFxRefusal.failed);
           return false;
         }
         final holder = Object();
@@ -3427,6 +3467,18 @@ class ControlCubit extends Cubit<ControlState> {
     );
     _pushProjected();
     return true;
+  }
+
+  /// Notifies a refused FX-mode stomp once (§3 of the foot surfaces plan): a
+  /// binding the rig can no longer resolve, or a write the rig refused.
+  void _reportFxRefusal(FootFxRefusal refusal) {
+    if (isClosed || state.mode != InteractionMode.fx) return;
+    emit(
+      state.copyWith(
+        footFxFailure: state.footFxFailure + 1,
+        footFxRefusal: refusal,
+      ),
+    );
   }
 
   FxBindingTarget? _scoped(FxBindingTarget? target, BindingScope scope) {
@@ -3466,54 +3518,72 @@ class ControlCubit extends Cubit<ControlState> {
     if (event is ControllerConsoleEvent) _onConsoleEvent(event.input);
   }
 
-  /// What each BOUND track switch's own target currently reads, by channel.
+  /// What each BOUND switch's own target currently reads, keyed by button.
   ///
   /// Only in FX mode, because that is the only mode a binding overrides — the
-  /// other two are transport surfaces a remap must never shadow, and their
-  /// LEDs mean something else entirely.
+  /// other modes are transport surfaces a remap must never shadow, and their
+  /// LEDs mean something else entirely. Every bindable switch is read, not
+  /// only the track switches: Rec/Play, Stop, Undo and Clear can carry a
+  /// binding too, and the FX face draws them active with it (#1229).
   ///
-  /// A present null is a binding that no longer resolves. It stays in the map
-  /// rather than being dropped, so the LED can go dark: R25 says a stale
-  /// binding writes nothing and lights nothing, and dropping it here would
-  /// fall back to this channel's track chain — lighting for a chain the switch
-  /// does not drive.
-  Map<int, bool?> _boundChains() {
+  /// `stale` is a binding that no longer resolves (R25): it writes nothing
+  /// and lights nothing, and stays in the map so neither the LED nor the face
+  /// falls back to what the switch would do unbound.
+  Map<PedalButton, FxSwitchReading> _boundSwitches() {
     if (state.mode != InteractionMode.fx) return const {};
-    final bound = <int, bool?>{};
-    for (final button in const [
-      PedalButton.track1,
-      PedalButton.track2,
-      PedalButton.track3,
-      PedalButton.track4,
-    ]) {
+    final bound = <PedalButton, FxSwitchReading>{};
+    for (final button in PedalButton.values) {
+      if (PedalBindingKey.unbindable.contains(button)) continue;
       final binding = state.bindings.lookup(button, bank: state.activeBank);
       if (binding == null) continue;
-      final ledChannel = state.bankBaseChannel + _trackIndex(button);
-      final display = _displayBoundTargets[button];
-      if (display != null &&
-          display.binding == binding &&
-          (display.scope != BindingScope.selected ||
-              display.cursor == state.cursor ||
-              _pressedButtons.containsKey(button))) {
-        bound[ledChannel] = display.behavior == BindingBehavior.momentary
-            ? _pressedButtons.containsKey(button) &&
-                  _heldRestore.containsKey(binding.key)
-            : _looper.bindingEnabled(display.target);
-        continue;
-      }
-      if (binding.behavior == BindingBehavior.momentary) {
-        bound[ledChannel] =
-            _pressedButtons.containsKey(button) &&
-            _heldRestore.containsKey(binding.key);
-        continue;
-      }
-      final target = _scoped(binding.decodeTarget(), binding.scope);
-      bound[ledChannel] = target == null
-          ? null
-          : _looper.bindingEnabled(target);
+      bound[button] = _boundReading(button, binding);
     }
     return bound;
   }
+
+  FxSwitchReading _boundReading(PedalButton button, PedalBinding binding) {
+    final held =
+        _pressedButtons.containsKey(button) &&
+        _heldRestore.containsKey(binding.key);
+    final display = _displayBoundTargets[button];
+    final FxBindingTarget? target;
+    final BindingBehavior behavior;
+    if (display != null &&
+        display.binding == binding &&
+        (display.scope != BindingScope.selected ||
+            display.cursor == state.cursor ||
+            _pressedButtons.containsKey(button))) {
+      target = display.target;
+      behavior = display.behavior;
+    } else {
+      target = _scoped(binding.decodeTarget(), binding.scope);
+      behavior = binding.behavior;
+    }
+    final enabled = target == null ? null : _looper.bindingEnabled(target);
+    if (enabled == null) return (lit: false, stale: true);
+    return (
+      lit: behavior == BindingBehavior.momentary ? held : enabled,
+      stale: false,
+    );
+  }
+
+  static bool _sameSwitches(
+    Map<PedalButton, FxSwitchReading> a,
+    Map<PedalButton, FxSwitchReading> b,
+  ) =>
+      a.length == b.length &&
+      a.entries.every((entry) => b[entry.key] == entry.value);
+
+  /// The track LEDs' share of [switches]: a bound track switch, by the
+  /// channel its LED shows. A present null is a stale binding, which reads
+  /// dark rather than falling back to the track chain.
+  Map<int, bool?> _boundChains(Map<PedalButton, FxSwitchReading> switches) => {
+    for (final MapEntry(key: button, value: reading) in switches.entries)
+      if (PedalBindingKey.trackButtons.contains(button))
+        state.bankBaseChannel + _trackIndex(button): reading.stale
+            ? null
+            : reading.lit,
+  };
 
   int _trackIndex(PedalButton button) => switch (button) {
     PedalButton.track1 => 0,
@@ -3580,13 +3650,21 @@ class ControlCubit extends Cubit<ControlState> {
     // until some audio activity happened to push a state.
     final looperState = _l;
     final customFunctions = _customFunctionStates(looperState);
+    final switches = _boundSwitches();
+    // The FX face reads the same values the LEDs do, so the screen and the
+    // plate can never disagree (#1229). Published only on change; the frame
+    // below already reflects it.
+    if (!isClosed && !_sameSwitches(state.fxSwitches, switches)) {
+      super.emit(state.copyWith(fxSwitches: switches));
+    }
     final frame = projectFrame(
       looperState,
       state,
       clearFadeActive: _clearHeld,
       performanceArmed: _performanceArmed,
       masterGain: _masterGain,
-      boundChains: _boundChains(),
+      boundChains: _boundChains(switches),
+      boundSwitches: switches,
       customFunctions: customFunctions,
       physicalCustomStates: _physicalCustomStates(looperState, customFunctions),
       tunerStates: _tunerStates(),

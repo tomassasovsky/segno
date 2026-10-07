@@ -32,6 +32,10 @@ class ControlState extends Equatable {
     this.tunerDefaultSeeded = false,
     this.pendingHolds = const <PedalButton>{},
     this.holdThreshold = const Duration(milliseconds: 800),
+    this.footFxFailure = 0,
+    this.footFxRefusal = FootFxRefusal.unavailable,
+    this.fxSwitches = const <PedalButton, FxSwitchReading>{},
+    this.fxStopChangeNotice = false,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -172,6 +176,24 @@ class ControlState extends Equatable {
   /// long-press threshold every gesture uses.
   final Duration holdThreshold;
 
+  /// Each refused FX-mode stomp notifies once; the notice reads
+  /// [footFxRefusal] (#1229).
+  final int footFxFailure;
+
+  /// Why the latest refused FX-mode stomp changed nothing.
+  final FootFxRefusal footFxRefusal;
+
+  /// What each BOUND switch's target reads in FX mode, the same values the
+  /// LEDs project, published so the FX face cannot disagree with the plate
+  /// (#1229). Empty outside FX mode. Derived by the cubit on every
+  /// projection, never edited; it rides here only so a surface can render it.
+  final Map<PedalButton, FxSwitchReading> fxSwitches;
+
+  /// Set once, at the first FX-mode entry on an install that has not been
+  /// told, so the app can say that Stop no longer switches every track's
+  /// effects off in FX mode (#1229). Never cleared.
+  final bool fxStopChangeNotice;
+
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
   /// the looper reducer; reset by clear-all.
@@ -295,6 +317,10 @@ class ControlState extends Equatable {
     bool? tunerDefaultSeeded,
     Set<PedalButton>? pendingHolds,
     Duration? holdThreshold,
+    int? footFxFailure,
+    FootFxRefusal? footFxRefusal,
+    Map<PedalButton, FxSwitchReading>? fxSwitches,
+    bool? fxStopChangeNotice,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -337,6 +363,10 @@ class ControlState extends Equatable {
     tunerDefaultSeeded: tunerDefaultSeeded ?? this.tunerDefaultSeeded,
     pendingHolds: pendingHolds ?? this.pendingHolds,
     holdThreshold: holdThreshold ?? this.holdThreshold,
+    footFxFailure: footFxFailure ?? this.footFxFailure,
+    footFxRefusal: footFxRefusal ?? this.footFxRefusal,
+    fxSwitches: fxSwitches ?? this.fxSwitches,
+    fxStopChangeNotice: fxStopChangeNotice ?? this.fxStopChangeNotice,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -381,6 +411,10 @@ class ControlState extends Equatable {
     tunerDefaultSeeded,
     pendingHolds,
     holdThreshold,
+    footFxFailure,
+    footFxRefusal,
+    fxSwitches,
+    fxStopChangeNotice,
     cursor,
     activeBank,
     excluded,

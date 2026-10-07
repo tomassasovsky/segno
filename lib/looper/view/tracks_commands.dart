@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -301,10 +302,12 @@ class TracksCommands {
     }
 
     // Number keys 1–8 select a track (auto-revealing its bank). In mute mode
-    // they also toggle mute on that track; in FX mode they toggle its
-    // Track-stage chain — the keyboard twin of the pedal's FX-mode track
-    // stomps, dispatched through the bloc so the on-screen path persists the
-    // chain envelope exactly as the FX dock does.
+    // they also toggle mute on that track; in FX mode they are the keyboard
+    // twin of the FX face's track switches: key N is switch ((N-1) % 4) + 1
+    // in bank (N-1) ~/ 4, and runs that switch's FX binding there (#1229
+    // review L2). An unbound switch toggles the track's own chain, dispatched
+    // through the bloc so it persists the chain envelope exactly as the FX
+    // dock does.
     final digit = _digitOf(key);
     if (digit != null) {
       final channel = digit - 1;
@@ -316,6 +319,13 @@ class TracksCommands {
           case InteractionMode.mute:
             bloc.add(LooperMuteToggled(channel));
           case InteractionMode.fx:
+            final button =
+                PedalButton.values[PedalButton.track1.index + channel % 4];
+            final bank = channel ~/ ControlState.tracksPerBank;
+            if (overlay.state.bindings.lookup(button, bank: bank) != null) {
+              overlay.activateFootFxPedal(button);
+              break;
+            }
             // The bloc resolves the flip against the repository's remembered
             // intent — deriving it here from the polled snapshot would read a
             // missing channel as "off" and dispatch enable forever.
