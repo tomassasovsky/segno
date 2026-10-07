@@ -836,6 +836,15 @@ typedef enum {
   LE_HIST_PROCESSED = 3, /* a loop-close restoration commit (#697 S9): the raw
                           * take beneath a conditioned live image. Undo/Redo
                           * swap it like a LAYER; Peel never consumes it. */
+  /* 4 is Multiply/Divide's LENGTH (#1168). */
+  LE_HIST_BOUNCE = 5, /* a Bounce (#1202): the whole track as it was on the
+                       * other side of the bounce — image (slot, -1 for none),
+                       * length, state, mutes, Fade, direction and segment
+                       * origin — filed on the undo stack by the bounce and on
+                       * the redo stack by its undo. Only le_engine_bounce_
+                       * recover moves it (plain Undo/Redo refuse it), Peel
+                       * stops at it, and a saved Session never carries it:
+                       * export cuts the history at it on both sides. */
 } le_hist_kind;
 
 /* One entry on a track's undo/redo history (control-thread-owned). A bare pool
@@ -862,6 +871,16 @@ typedef struct {
                     * peel consumed. Undo re-inserts that LAYER `skipped`
                     * entries below the PEEL's position (clamped to the
                     * bottom), restoring the exact pre-peel stack. */
+  /* BOUNCE (#1202) only, besides len/state/master_len/muted_mask/fade_amount:
+   * the Sync divisor, the read direction, the segment origin, and the
+   * bounce's group (one per bounce; Clear sources joins sources in Part 4b).
+   * master_len is the master to re-establish when installing this side
+   * re-clocks the rig, else 0. */
+  int32_t divisor;
+  int32_t reversed;
+  uint32_t group_id;
+  uint32_t cleared_mask;
+  uint64_t start_iter;
 } le_hist_entry;
 
 /* Positional aggregate init, not the designated initializer the rest of the
@@ -1012,6 +1031,12 @@ typedef struct le_track {
 
   /* ---- control-thread-owned undo bookkeeping ---- */
   int32_t outstanding_slots[4]; /* shadow slots posted, not yet retired */
+  /* A Bounce install in flight (#1202): the bundle, and the two slots it
+   * names that no stack holds yet (the incoming image and the outgoing live
+   * slot), pinned against reuse until its outcome is filed. Every other
+   * history motion on the track waits for it (LE_ERR_NOT_READY). */
+  struct le_bounce_bundle* bounce_inflight;
+  int32_t bounce_pin[2]; /* slot + 1; 0 = none */
   int outstanding_count;
   int queued_undo;   /* undo taps deferred until the in-flight layer retires */
   /* An undo's overdub punch-out has been posted and not yet applied.
@@ -1296,6 +1321,17 @@ typedef struct le_track {
    * so a freshly created engine sees no edge. Never read by control. */
   int32_t proc_prev_state;
 
+  /* A Bounce over a sounding destination (#1202, review M1 of Part 4a): the
+   * callback stops the track as a Stop does and holds the bundle here while
+   * the old chains' tails drain, then installs it once the track's output
+   * has been quiet for a delay ring's length (or after
+   * LE_BOUNCE_TAIL_MAX_SECONDS). Audio-thread owned; cleared with the
+   * bundle by le_bounce_abandon_all when the audio thread is stopped. */
+  struct le_bounce_bundle* bounce_parked;
+  int32_t bounce_park_slot;  /* the receipt slot the outcome goes to */
+  int64_t bounce_park_left;  /* frames before the install is forced */
+  int64_t bounce_park_quiet; /* consecutive quiet output frames */
+
   /* Free/Song mode (B2b + B4, index Architecture §4): this track's OWN loop
    * clock, structurally identical to (and reusing) the master's
    * le_loop_clock — length 0 means "not yet established", exactly like
@@ -1520,6 +1556,59 @@ typedef struct le_record_timing_readback {
   uint32_t revision;
   int32_t result;
 } le_record_timing_readback;
+
+/* LE_CMD_RENDER_FREEZE (#1202): the read law of every selected source at
+ * the drain that applies the command, written by the audio thread into this
+ * control-allocated record and published by a_done (release). base0 is the
+ * source's clock position at the top of the iteration the freeze lands in;
+ * render frame f reads le_head_index({reversed, offset, 1}, base0 + f, len):
+ * the live head's law with Speed removed (plan 4.6). */
+/* What LE_CMD_BOUNCE / LE_CMD_BOUNCE_RECOVER install (#1202, Part 4a): one
+ * control-allocated bundle per request, retained until its callback outcome
+ * is collected (le_engine_drain_events). The callback installs `target` on
+ * `channel` in one drain — topology (lane count, routing, mix), chains, image,
+ * length, clock, state, mutes, Fade, direction — and first records the track
+ * as it was into `prev`, which control files as the history entry. */
+enum { LE_BOUNCE_APPLY = 0, LE_BOUNCE_UNDO = 1, LE_BOUNCE_REDO = 2 };
+
+/* The longest a Bounce waits for a replaced chain's tail to drain, and the
+ * output level below which the tail counts as gone (-80 dBFS). */
+#define LE_BOUNCE_TAIL_MAX_SECONDS 8
+#define LE_BOUNCE_TAIL_QUIET 1.0e-4f
+typedef struct le_bounce_bundle {
+  int32_t channel;
+  int32_t op;         /* LE_BOUNCE_APPLY / _UNDO / _REDO */
+  le_hist_entry target; /* slot -1 with state EMPTY = install an empty track */
+  int32_t reclock_to; /* > 0: the master becomes this length (keeps running) */
+  int32_t has_mix;
+  le_mix_settings mix; /* the destination's topology and mix */
+  struct le_prepared_fx* lane_fx;
+  struct le_prepared_fx* track_fx;
+  le_hist_entry prev; /* callback-written: the track before the install */
+  /* Callback-written when the install waited for a tail: the state the
+   * track had before the Bounce stopped it, which Undo restores. */
+  int32_t parked;
+  int32_t parked_state;
+  _Atomic int32_t a_result; /* 1 while pending, then LE_OK / LE_ERR_NOT_READY */
+} le_bounce_bundle;
+
+typedef struct le_render_freeze_src {
+  int64_t base0;
+  int32_t reversed, offset, len, slot, state;
+  float fade;
+  uint32_t audio_rev;
+} le_render_freeze_src;
+
+typedef struct le_render_freeze {
+  uint64_t i_ref;
+  le_render_freeze_src src[LE_MAX_TRACKS];
+  /* The job this record belongs to: control stores a_id before posting; the
+   * callback fills the record only for a matching id and then publishes
+   * a_done = id. A stale command for an older job therefore never touches a
+   * newer job's record, and the record (engine-owned) outlives every job. */
+  _Atomic uint32_t a_id;
+  _Atomic uint32_t a_done;
+} le_render_freeze;
 
 /* Work the sliced tuner analysis is allowed to do per DEVICE frame, in
  * difference-function inner iterations. A whole pass (coarse + refinement) is
@@ -2006,6 +2095,20 @@ struct le_engine {
    * a control-thread publish of an undo layer (le_restore_commit_layer) plus
    * the per-track a_restore_state telemetry. */
   struct le_restore* restore;
+
+  /* The shared render recipe (#1202, engine_render.c): at most one job.
+   * render_job is control-owned; render_retired holds a cancelled job until
+   * the cache worker is provably out of it. a_render_runnable is the
+   * pointer the worker reads, a_render_worker_busy its in-use flag (both
+   * seq_cst so a retirement can never free a job the worker still holds). */
+  struct le_render_job* render_job;
+  struct le_render_job* render_retired;
+  /* Bounce groups (#1202): one id per bounce, never 0. */
+  uint32_t bounce_next_group;
+  le_render_freeze render_freeze;
+  struct le_render_job* _Atomic a_render_runnable;
+  _Atomic int32_t a_render_worker_busy;
+  uint32_t render_next_id;
 
   /* Command ring + pre-allocated backing storage. */
   le_ring ring;

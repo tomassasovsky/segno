@@ -1650,6 +1650,25 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult renderCancel() => EngineResult.ok;
 
+  // ---- shared render recipe (#1202): not modelled by this fake ----
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, plan: null);
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, job: 0);
+
+  @override
+  RenderJobStatus? pollRender(int job) => null;
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) => null;
+
+  @override
+  EngineResult cancelRender(int job) => EngineResult.invalid;
+
   // --- Plugin hosting (scan: part 2; slots: part 3) ---
 
   @override

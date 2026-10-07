@@ -56,6 +56,7 @@
 #include <string.h>
 
 #include "engine_cache.h"
+#include "engine_render.h" /* the recipe job on this worker */
 #include "engine_core.h"    /* le_lanes_active, le_engine_drain_events */
 #include "engine_fx.h"      /* fx_apply_chain, le_fx_prepare, seed/bypass */
 #include "engine_private.h" /* le_engine, le_wet_entry, load/store helpers */
@@ -201,15 +202,11 @@ typedef struct le_cache_job {
   int32_t len;
   int32_t sample_rate;
   int32_t fx_cap;
-  int32_t fx_count;
-  int32_t fx_type[LE_FX_MAX];
-  float fx_params[LE_FX_MAX][LE_FX_PARAMS];
-  int32_t fx_effective[LE_FX_MAX]; /* chain_on && slot enabled (D-EFFBITS) */
-  /* The entries' channel handling and level (slice 3e), frozen with the rest
-   * of the chain: a printed Pre entry that lost its input choice or its level
-   * would not be what the player heard live. */
-  int32_t chan_any;
-  le_fx_chan chan[LE_FX_MAX];
+  /* The chain, frozen at enqueue — entries, effective bits (D-EFFBITS) and
+   * the entries' channel handling and level (slice 3e): a printed Pre entry
+   * that lost its input choice or its level would not be what the player
+   * heard live. */
+  le_fx_frozen_chain chain;
   int32_t copy_pos; /* frames of dry staged so far (COPYING state only) */
   /* LE_CACHE_KIND_SOURCE (#1179): `lanes` mono takes staged back to back in
    * `dry`, shifted by `semitones` into one buffer per lane in `src`. */
@@ -962,18 +959,10 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   job->len = len;
   job->sample_rate = sr;
   job->fx_cap = e->fx_delay_frames;
-  job->fx_count = count;
-  for (int32_t s = 0; s < count; ++s) {
-    job->fx_type[s] = types[s];
-    job->fx_effective[s] = chain_on && raw_en[s];
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
-      job->fx_params[s][p] = params[s][p];
-    }
-  }
   /* The channel handling the fingerprint above was taken over, not a fresh
    * read: the job must render exactly the chain its key names. */
-  job->chan_any = chan_any;
-  for (int32_t s = 0; s < LE_FX_MAX; ++s) job->chan[s] = chan[s];
+  le_fx_frozen_fill(&job->chain, count, count, chain_on, types, raw_en, params,
+                    chan, chan_any);
   job->copy_pos = 0;
   job->dry = dry;
   job->wet = NULL;
@@ -1181,16 +1170,8 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   job->len = len;
   job->sample_rate = sr;
   job->fx_cap = e->fx_delay_frames;
-  job->fx_count = count;
-  for (int32_t s = 0; s < count; ++s) {
-    job->fx_type[s] = types[s];
-    job->fx_effective[s] = chain_on && raw_en[s];
-    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
-      job->fx_params[s][p] = params[s][p];
-    }
-  }
-  job->chan_any = chan_any;
-  for (int32_t s = 0; s < LE_FX_MAX; ++s) job->chan[s] = chan[s];
+  le_fx_frozen_fill(&job->chain, count, count, chain_on, types, raw_en, params,
+                    chan, chan_any);
   job->copy_pos = 0;
   job->dry = src;
   job->wet = NULL;
@@ -1450,11 +1431,167 @@ static void le_cache_copy_step(le_engine* e, struct le_fx_cache* c) {
   }
 }
 
+/* ---- offline chain rendering (shared with the render recipe) ---- */
+
+void le_fx_frozen_fill(le_fx_frozen_chain* c, int32_t count, int32_t pre,
+                       int32_t chain_on, const int32_t* types,
+                       const int32_t* enabled,
+                       const float params[LE_FX_MAX][LE_FX_PARAMS],
+                       const le_fx_chan* chan, int32_t chan_any) {
+  memset(c, 0, sizeof(*c));
+  if (count < 0) count = 0;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  if (pre < 0) pre = 0;
+  if (pre > count) pre = count;
+  c->count = count;
+  c->pre = pre;
+  for (int32_t s = 0; s < count; ++s) {
+    c->type[s] = types[s];
+    c->effective[s] = chain_on && enabled[s];
+    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) c->params[s][p] = params[s][p];
+  }
+  c->chan_any = chan_any;
+  for (int32_t s = 0; s < LE_FX_MAX; ++s) c->chan[s] = chan[s];
+}
+
+void le_fx_frozen_capture(le_fx_frozen_chain* c, _Atomic int32_t* count,
+                          _Atomic int32_t* pre, _Atomic int32_t* chain_on,
+                          _Atomic int32_t* type, _Atomic int32_t* enabled,
+                          _Atomic uint32_t (*param)[LE_FX_PARAMS],
+                          _Atomic int32_t* chan_in, _Atomic int32_t* chan_out,
+                          _Atomic uint32_t* gl, _Atomic uint32_t* gr,
+                          _Atomic uint32_t* level) {
+  int32_t n = load_i32(count);
+  if (n < 0) n = 0;
+  if (n > LE_FX_MAX) n = LE_FX_MAX;
+  int32_t types[LE_FX_MAX];
+  int32_t en[LE_FX_MAX];
+  float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int32_t s = 0; s < n; ++s) {
+    types[s] = load_i32(&type[s]);
+    en[s] = load_i32(&enabled[s]) ? 1 : 0;
+    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) params[s][p] = load_f32(&param[s][p]);
+  }
+  le_fx_chan chan[LE_FX_MAX];
+  int32_t chan_any = 0;
+  memset(chan, 0, sizeof(chan));
+  le_fx_chan_snapshot(chan, &chan_any, n, chan_in, chan_out, gl, gr, level);
+  le_fx_frozen_fill(c, n, load_i32(pre), load_i32(chain_on), types, en, params,
+                    chan, chan_any);
+}
+
+int le_fx_frozen_has(const le_fx_frozen_chain* c, int32_t from, int32_t to,
+                     int32_t type) {
+  if (to > c->count) to = c->count;
+  for (int32_t s = from < 0 ? 0 : from; s < to; ++s) {
+    if (type == LE_FX_NONE ? c->type[s] != LE_FX_NONE : c->type[s] == type) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+void le_fx_frozen_bits(const le_fx_frozen_chain* c, int32_t from, int32_t to,
+                       int32_t out[LE_FX_MAX]) {
+  for (int32_t s = 0; s < LE_FX_MAX; ++s) {
+    out[s] = s >= from && s < to && s < c->count && c->effective[s];
+  }
+}
+
+int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
+                                int32_t from, int32_t to, int32_t cap) {
+  int32_t bits[LE_FX_MAX];
+  le_fx_frozen_bits(c, from, to, bits);
+  /* Seed the enable-crossfade runtime per EFFECTIVE bit, mirroring the live
+   * chain's settled state exactly: enabled slots settled wet (no fade-in at
+   * frame 0), disabled slots settled bypass (no 5 ms fade-out the live chain
+   * would not have). */
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    if (bits[s]) {
+      le_fx_enable_seed_settled(fx, s);
+    } else {
+      le_fx_enable_force_bypass(fx, s);
+    }
+  }
+  /* The channel cache the live chain reads per buffer, frozen with it. */
+  fx->chan_any = c->chan_any;
+  for (int s = 0; s < LE_FX_MAX; ++s) fx->chan[s] = c->chan[s];
+  int32_t rc = LE_OK;
+  for (int32_t s = 0; s < c->count; ++s) {
+    /* Match the live chain's slot state exactly: the SET_*_FX ring handler
+     * runs le_fx_entry_reset on the audio thread when a type lands, so the
+     * fresh state starts from that same reset (a raw calloc zero differs —
+     * e.g. the octaver's shift smoother seeds at unison 0.5, not 0.0). A
+     * hosted plugin's offline slot stays NULL and renders dry. */
+    le_fx_entry_reset(fx, s);
+    /* Only the entries this state processes own buffers (review L5). */
+    if (s >= from && s < to && c->type[s] != LE_FX_NONE &&
+        c->type[s] != LE_FX_PLUGIN &&
+        le_fx_prepare(fx, s, c->type[s], cap) != LE_OK) {
+      rc = LE_ERR_INVALID; /* OOM on a ring/octaver heap: a real failure, not
+                            * a silent dry-slot degradation */
+    }
+  }
+  return rc;
+}
+
+int32_t le_fx_print(const le_fx_frozen_chain* c, int32_t count,
+                    const float* src, int stereo, float vol, int32_t len,
+                    int32_t sample_rate, int32_t cap, float* out,
+                    int (*abort_fn)(void*), void* arg) {
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  if (fx == NULL) return LE_ERR_INVALID;
+  if (count > c->count) count = c->count;
+  int32_t rc = le_fx_frozen_state_init(fx, c, 0, count, cap);
+  int32_t bits[LE_FX_MAX];
+  le_fx_frozen_bits(c, 0, count, bits);
+  /* RENDER-TWICE-KEEP-SECOND: pass 1 is exactly the chain's first live lap,
+   * so the kept pass matches a live chain that engaged at the previous loop
+   * top, with tails that wrap the loop boundary baked in. */
+  for (int pass = 0; pass < 2 && rc == LE_OK; ++pass) {
+    for (int32_t f = 0; f < len; ++f) {
+      if ((f % LE_CACHE_ABORT_CHECK_FRAMES) == 0 && abort_fn != NULL &&
+          abort_fn(arg)) {
+        rc = LE_ERR_NOT_READY;
+        break;
+      }
+      float l;
+      float r;
+      if (stereo) {
+        l = src[2 * f];
+        r = src[2 * f + 1];
+      } else {
+        l = src[f] * vol;
+        r = l;
+      }
+      fx_apply_chain(fx, sample_rate, cap, &l, &r, count, c->type, c->params,
+                     bits);
+      if (pass == 1) {
+        out[2 * f] = l;
+        out[2 * f + 1] = r;
+      }
+    }
+  }
+  le_fx_state_free_buffers(fx); /* the shared offline-state teardown */
+  free(fx);
+  return rc;
+}
+
+int le_cache_shutting_down(le_engine* engine) {
+  struct le_fx_cache* c = engine->cache;
+  return c != NULL && atomic_load_explicit(&c->a_shutdown, memory_order_acquire);
+}
+
+int le_cache_source_ready(le_engine* engine, int32_t channel) {
+  return le_cache_source_readable(engine, channel);
+}
+
 /* ---- the render worker [B6] ---- */
 
-/* Picks the next queued job, playing lanes first [B6]: a lane currently
- * audible always renders before a stopped one. */
-static le_cache_job* le_cache_pick(le_engine* e, struct le_fx_cache* c) {
+/* Picks the next queued job for a lane currently audible [B6], or NULL with
+ * the first queued stopped-lane job in *out_fallback. */
+static le_cache_job* le_cache_pick(le_engine* e, struct le_fx_cache* c,
+                                   le_cache_job** out_fallback) {
   le_cache_job* fallback = NULL;
   for (int j = 0; j < LE_CACHE_JOB_SLOTS; ++j) {
     le_cache_job* job = &c->jobs[j];
@@ -1466,7 +1603,8 @@ static le_cache_job* le_cache_pick(le_engine* e, struct le_fx_cache* c) {
     if (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING) return job;
     if (fallback == NULL) fallback = job;
   }
-  return fallback;
+  *out_fallback = fallback;
+  return NULL;
 }
 
 /* Renders one job: dry x volume through the engine's own fx_apply_chain on a
@@ -1512,6 +1650,19 @@ static void le_cache_render_source(le_engine* e, struct le_fx_cache* c,
   atomic_store_explicit(&job->a_state, outcome, memory_order_release);
 }
 
+typedef struct le_cache_abort_ctx {
+  struct le_fx_cache* c;
+  le_track* tr;
+  uint32_t audio_rev;
+} le_cache_abort_ctx;
+
+static int le_cache_job_aborted(void* arg) {
+  const le_cache_abort_ctx* a = (const le_cache_abort_ctx*)arg;
+  return atomic_load_explicit(&a->c->a_shutdown, memory_order_acquire) ||
+         atomic_load_explicit(&a->tr->a_audio_rev, memory_order_acquire) !=
+             a->audio_rev;
+}
+
 static void le_cache_render(le_engine* e, struct le_fx_cache* c,
                             le_cache_job* job) {
   atomic_store_explicit(&job->a_state, LE_CACHE_JOB_RUNNING,
@@ -1520,85 +1671,25 @@ static void le_cache_render(le_engine* e, struct le_fx_cache* c,
     le_cache_render_source(e, c, job);
     return;
   }
-  le_track* tr = &e->tracks[job->channel];
-
   float* wet = (float*)malloc(2u * (size_t)job->len * sizeof(float));
-  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
-  if (wet == NULL || fx == NULL) {
-    free(wet);
-    free(fx);
+  if (wet == NULL) {
     atomic_store_explicit(&job->a_state, LE_CACHE_JOB_FAILED,
                           memory_order_release);
     return;
   }
-  /* Seed the enable-crossfade runtime per EFFECTIVE bit, mirroring the live
-   * chain's settled state exactly: enabled slots settled wet (no fade-in at
-   * frame 0), disabled slots settled bypass (no 5 ms fade-out the live chain
-   * would not have). */
-  for (int s = 0; s < LE_FX_MAX; ++s) {
-    if (s < job->fx_count && job->fx_effective[s]) {
-      le_fx_enable_seed_settled(fx, s);
-    } else {
-      le_fx_enable_force_bypass(fx, s);
-    }
-  }
-  /* The channel cache the live chain reads per buffer, frozen at enqueue. */
-  fx->chan_any = job->chan_any;
-  for (int s = 0; s < LE_FX_MAX; ++s) fx->chan[s] = job->chan[s];
-  int failed = 0;
-  for (int32_t s = 0; s < job->fx_count; ++s) {
-    /* Match the live chain's slot state exactly: the SET_*_FX ring handler
-     * runs le_fx_entry_reset on the audio thread when a type lands, so the
-     * render's fresh state must start from that same reset (a raw calloc
-     * zero differs — e.g. the octaver's shift smoother seeds at unison 0.5,
-     * not 0.0). */
-    le_fx_entry_reset(fx, s);
-    if (job->fx_type[s] != LE_FX_NONE &&
-        le_fx_prepare(fx, s, job->fx_type[s], job->fx_cap) != LE_OK) {
-      failed = 1; /* OOM on a ring/octaver heap: a real failure, not a
-                   * silent dry-slot degradation (the perf_render posture) */
-    }
-  }
-
-  int aborted = 0;
-  for (int pass = 0; pass < 2 && !failed && !aborted; ++pass) {
-    for (int32_t f = 0; f < job->len; ++f) {
-      if ((f % LE_CACHE_ABORT_CHECK_FRAMES) == 0) {
-        if (atomic_load_explicit(&c->a_shutdown, memory_order_acquire) ||
-            atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire) !=
-                job->audio_rev) {
-          aborted = 1;
-          break;
-        }
-      }
-      /* A part's job stages its mono recording and bakes its level in front
-       * of the chain (D-VOL); a whole-track job stages the already-combined
-       * stereo pair, with every part's level already inside it. */
-      float l;
-      float r;
-      if (job->kind == LE_CACHE_KIND_TRACK) {
-        l = job->dry[2 * f];
-        r = job->dry[2 * f + 1];
-      } else {
-        const float in = job->dry[f] * job->vol;
-        l = in;
-        r = in;
-      }
-      fx_apply_chain(fx, job->sample_rate, job->fx_cap, &l, &r, job->fx_count,
-                     job->fx_type, job->fx_params, job->fx_effective);
-      if (pass == 1) {
-        wet[2 * f] = l;
-        wet[2 * f + 1] = r;
-      }
-    }
-  }
-
-  le_fx_state_free_buffers(fx); /* the shared offline-state teardown */
-  free(fx);
-  if (failed || aborted) {
+  /* A part's job stages its mono recording and bakes its level in front of
+   * the chain (D-VOL); a whole-track job stages the already-combined stereo
+   * pair, with every part's level already inside it. */
+  le_cache_abort_ctx abort_ctx = {c, &e->tracks[job->channel], job->audio_rev};
+  const int32_t rc = le_fx_print(
+      &job->chain, job->chain.count, job->dry, job->kind == LE_CACHE_KIND_TRACK,
+      job->vol, job->len, job->sample_rate, job->fx_cap, wet,
+      le_cache_job_aborted, &abort_ctx);
+  if (rc != LE_OK) {
     free(wet);
     atomic_store_explicit(
-        &job->a_state, failed ? LE_CACHE_JOB_FAILED : LE_CACHE_JOB_ABORTED,
+        &job->a_state,
+        rc == LE_ERR_NOT_READY ? LE_CACHE_JOB_ABORTED : LE_CACHE_JOB_FAILED,
         memory_order_release);
     return;
   }
@@ -1621,8 +1712,22 @@ static void le_ca_worker_main(void* arg) {
    * the 250 ms settle debounce, and shutdown join latency is bounded by one
    * ceiling sleep. */
   int idle_ms = 1;
+  /* Prints for audible lanes come first; a render recipe (engine_render.c)
+   * takes one slice next, then prints for stopped lanes. Aging: once
+   * LE_RENDER_MAX_YIELDS audible prints have gone ahead of a waiting recipe,
+   * the recipe's next slice goes first, so continuous re-keys cannot starve
+   * it and a slice never holds an audible print back by more than one. */
+  int yields = 0;
   while (!atomic_load_explicit(&c->a_shutdown, memory_order_acquire)) {
-    le_cache_job* job = le_cache_pick(e, c);
+    le_cache_job* fallback = NULL;
+    le_cache_job* job = le_cache_pick(e, c, &fallback);
+    if (le_render_worker_choice(job != NULL, le_render_worker_ready(e),
+                                &yields)) {
+      idle_ms = 1;
+      le_render_worker_step(e);
+      continue;
+    }
+    if (job == NULL) job = fallback;
     if (job == NULL) {
       le_ca_sleep_ms(idle_ms);
       if (idle_ms < 32) idle_ms *= 2;
@@ -1657,6 +1762,9 @@ void le_cache_shutdown(le_engine* engine) {
    * per-block abort check, so a mid-render join is bounded. */
   atomic_store_explicit(&c->a_shutdown, 1, memory_order_release);
   if (c->worker_started) le_ca_thread_join(c->worker);
+  /* A render recipe on this worker cannot finish now: fail it with DEVICE
+   * and drop its byte charge with the books it was charged to. */
+  le_render_on_cache_shutdown(engine);
   /* Every caller guarantees the audio thread is stopped here, so the frees
    * below need no quiescent window — retract everything into the graveyard,
    * then force-sweep it, so a later restart can never observe a dangling
@@ -1736,6 +1844,7 @@ void le_cache_tick(le_engine* engine) {
   c->lru_clock++;
   le_cache_sweep_graveyard(engine, c, 0); /* passive quiescent frees [R2](c) */
   le_cache_copy_step(engine, c);          /* chunked enqueue copies [R2](a) */
+  le_render_tick(engine);                 /* the render recipe's staging */
   le_cache_collect(engine, c, cap);
   if (cap <= 0) {
     /* Caching disabled: free everything; lanes report live. In-flight jobs

@@ -54,7 +54,12 @@ typedef enum le_result {
   LE_ERR_TRANSFORMED = -10,  /* a record or overdub while Speed is not 1x
                               * (#1179): capture never writes through a
                               * fractional read head */
-  /* -11 .. -17 are assigned to other work (the numbering ledger). */
+  /* -11 .. -15 are assigned to other work (the numbering ledger). */
+  LE_ERR_NO_COMMON_CYCLE = -16, /* render recipe (#1202): the selected tracks'
+                                 * lengths share no common cycle within the
+                                 * cap; a chosen length is required */
+  LE_ERR_TRACKS_CHANGED = -17,  /* render recipe (#1202): a source's material
+                                 * changed after the render froze it */
   LE_ERR_NOT_FOUND = -18,    /* the file (or a directory on its path) does not
                               * exist (#1198) */
   LE_ERR_TRUNCATED = -19,    /* the file exists but is shorter than the range
@@ -540,6 +545,13 @@ typedef enum le_command_code {
                           * raw-posted */
   LE_CMD_TRANSPOSE = 86,        /* checked internal Transpose request (#1179) */
   LE_CMD_TRANSPOSE_BYPASS = 87, /* checked internal Transpose bypass */
+  LE_CMD_RENDER_FREEZE = 112, /* render recipe (#1202): the callback records
+                               * every source's read law; never raw-posted */
+  LE_CMD_BOUNCE = 113,         /* Bounce (#1202): installs a rendered result on
+                                * the destination in one drain; checked,
+                                * never raw-posted */
+  LE_CMD_BOUNCE_RECOVER = 114, /* Bounce Undo/Redo (#1202): reinstalls the
+                                * other side of a bounce; never raw-posted */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -3159,6 +3171,20 @@ LE_EXPORT int32_t le_digest_end(void* state, uint8_t* out);
  * fails. */
 LE_EXPORT int32_t le_fs_sync_dir(const char* path);
 
+/* Repairs a float WAV part the engine's writer opened but never sealed (a
+ * power cut or a crash), or cuts one back to a trusted length, for the
+ * recording recovery (#1198) and anything else that salvages a part: keeps
+ * the first min(whole frames present, `max_frames`) frames, truncates
+ * anything after them (a torn last frame included), patches the RIFF and data
+ * sizes and fsyncs. UINT64_MAX keeps every whole frame. `*kept` (may be NULL)
+ * receives the frames kept. The file must be 32-bit float in the writer's
+ * layout (RIFF/WAVE, `fmt `, an optional caller chunk such as `sgno`, then
+ * `data`, whose size may still be the open file's zero). Returns 1 on
+ * success, 0 when the file is not in that layout or a read or write fails.
+ * The one size patcher; implemented by the native WAV writer (engine_wav.c). */
+LE_EXPORT int32_t le_wav_patch_sizes(const char* path, uint64_t max_frames,
+                                     uint64_t* kept);
+
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's
  * `performance.json` + `events.log` + `loops/` + retired-layer PCM), on a
@@ -3629,6 +3655,161 @@ LE_EXPORT int32_t le_midi_out_close(le_midi_out* m);
  * len), or LE_ERR_DEVICE (no port open or the OS rejected the send). */
 LE_EXPORT int32_t le_midi_out_send(le_midi_out* m, const uint8_t* data,
                                    int32_t len);
+
+/* ---- Shared render recipe (#1202): Bounce and Save selected audio ----
+ *
+ * Renders the selected recorded tracks offline, regardless of transport, Mute
+ * and Solo, with their levels, pans, track gain, frozen Fade, direction, Pre
+ * (the take, as printed) and Post processing, optionally the All tracks chain
+ * (Mix FX), and never live inputs, monitors, click, output buses, output FX or
+ * the master. One job per engine, run in slices on the wet cache's worker.
+ * Lengths: the exact common cycle of the sources (at most 1024 beats, or 512
+ * seconds without a tempo) or a chosen whole number of bars. Tails: Wrap
+ * renders the window twice and keeps the second pass; Cut renders it once
+ * from cold Post states. Output is interleaved stereo float. */
+typedef enum le_render_tails {
+  LE_RENDER_WRAP = 0,
+  LE_RENDER_CUT = 1,
+} le_render_tails;
+
+typedef enum le_render_target {
+  LE_RENDER_TARGET_MEMORY = 0, /* kept in the job (Bounce; le_engine_render_copy) */
+  LE_RENDER_TARGET_FILE = 1,   /* a stereo float WAV published at `path` */
+} le_render_target;
+
+typedef enum le_render_method {
+  LE_RENDER_COMMON_CYCLE = 0,
+  LE_RENDER_CHOSEN_LENGTH = 1,
+} le_render_method;
+
+typedef enum le_render_state {
+  LE_RENDER_NONE = 0,
+  LE_RENDER_FREEZING = 1,
+  LE_RENDER_STAGING = 2,
+  LE_RENDER_RENDERING = 3,
+  LE_RENDER_DONE = 4,
+  LE_RENDER_FAILED = 5,
+} le_render_state;
+
+typedef struct le_render_request {
+  uint32_t source_mask; /* bit t = track t */
+  int32_t length_bars;  /* 0 = the common cycle */
+  int32_t tails;        /* le_render_tails */
+  int32_t mix_fx;       /* 1 = include the All tracks chain */
+  int32_t target;       /* le_render_target */
+  const char* path;     /* file target: the final path ("<path>.part" while
+                         * writing) */
+  int32_t max_frames;   /* 0 = no cap beyond the cycle cap; Bounce passes the
+                         * destination's capacity */
+} le_render_request;
+
+typedef struct le_render_plan {
+  int32_t frames;        /* the window, in frames */
+  int32_t method;        /* le_render_method */
+  int32_t beats_milli;   /* the window in beats x 1000 (0 without a tempo) */
+  int32_t tempo_set;     /* 0 = no tempo: lengths read in seconds */
+  uint32_t plugin_mask;  /* sources whose chains hold a hosted plugin, which
+                          * renders dry */
+  uint32_t faded_mask;   /* sources whose Fade amount is below unity */
+  uint32_t pending_mask; /* sources heard through a not-yet-ready transform */
+  uint32_t once_cut_mask; /* Once sources longer than a chosen length: only
+                           * the part of their single pass inside the window
+                           * sounds, none when it starts after the window */
+} le_render_plan;
+
+/* Admission only: the verdict and the plan, with no job. Returns LE_OK,
+ * LE_ERR_NO_COMMON_CYCLE, LE_ERR_CAPACITY (over max_frames), LE_ERR_INVALID
+ * (no sources, an empty source, a chosen length without a tempo, a file
+ * target without a path), LE_ERR_NOT_READY (a source is recording or
+ * overdubbing, counting a posted command that will make it so, or has a
+ * layer in flight) or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_render_measure(le_engine* engine,
+                                           const le_render_request* request,
+                                           le_render_plan* plan);
+
+/* Starts the job: re-measures and posts LE_CMD_RENDER_FREEZE. Returns LE_OK
+ * with *job set, any measure refusal, LE_ERR_ALREADY_RUNNING while a job
+ * exists, LE_ERR_CAPACITY when the job's bytes exceed the recipe's own
+ * budget (it never evicts the wet cache), LE_ERR_UNSUPPORTED without a
+ * render worker, or a ring refusal. */
+LE_EXPORT int32_t le_engine_render_begin(le_engine* engine,
+                                         const le_render_request* request,
+                                         uint32_t* job);
+
+/* Progress of job `job`: *state (le_render_state), *permille (0..1000, one
+ * scale over staging, then the render) and,
+ * once FAILED, *result (LE_ERR_TRACKS_CHANGED, LE_ERR_CAPACITY,
+ * LE_ERR_INVALID on an effect allocation failure, LE_ERR_DEVICE on a write
+ * failure or a configure/stop that joined the worker; a file whose
+ * directory sync alone failed is published and reads DONE). Also the staging
+ * heartbeat: call it from the control thread until DONE or FAILED. Returns
+ * LE_OK, or LE_ERR_INVALID for an unknown job. */
+LE_EXPORT int32_t le_engine_render_poll(le_engine* engine, uint32_t job,
+                                        int32_t* state, int32_t* permille,
+                                        int32_t* result);
+
+/* Copies a DONE memory result (interleaved stereo) into `out`. Returns the
+ * frames copied (at most max_frames), or LE_ERR_INVALID / LE_ERR_NOT_READY. */
+LE_EXPORT int32_t le_engine_render_copy(le_engine* engine, uint32_t job,
+                                        float* out, int32_t max_frames);
+
+/* Cancels and releases job `job` (any state). A file target leaves no
+ * partial file. Returns LE_OK or LE_ERR_INVALID for an unknown job. */
+LE_EXPORT int32_t le_engine_render_cancel(le_engine* engine, uint32_t job);
+
+/* ---- Bounce (#1202, Part 4a: Keep sources) ----
+ *
+ * Installs a finished memory render (le_engine_render_begin with
+ * LE_RENDER_TARGET_MEMORY) on one destination track in ONE callback drain:
+ * the image as a stereo pair (lanes 0 and 1, image pans -1/+1, the other
+ * lanes silent), its length and clock, STOPPED, and the destination's
+ * processing reset — unity gain, unity lane levels, centred lane pans, mutes
+ * off, Fade and direction reset, and the chains given here (empty when NULL).
+ * `topology` (optional) is the destination's lane count, routing and mix,
+ * applied first through the ordinary mix path; the reset values then win.
+ * The destination's previous state becomes one LE_HIST_BOUNCE history entry;
+ * le_engine_bounce_recover undoes or redoes it whole. */
+typedef struct le_bounce_request {
+  uint32_t job;          /* a DONE memory render */
+  int32_t destination;   /* the track that receives the result */
+  int32_t keep_sources;  /* must be 1 until Clear sources lands (Part 4b) */
+  const le_mix_settings* topology; /* NULL: keep lane count and routing */
+  const le_fx_recipe* lane_fx; /* lane_fx_count recipes; NULL: empty chains */
+  int32_t lane_fx_count;
+  const le_fx_recipe* track_fx; /* NULL: an empty track chain */
+} le_bounce_request;
+
+/* Admits a bounce. Returns LE_OK with *request (read the callback outcome
+ * with le_engine_read_request_result), LE_ERR_NOT_READY (the render is not a
+ * finished memory job, or the destination is busy: capturing, armed, a
+ * pending command, a layer in flight, a previous bounce not yet filed, or
+ * a full undo stack), LE_ERR_TRACKS_CHANGED (a source changed after the
+ * render froze it), LE_ERR_MODE_MISMATCH (the length does not fit the loop
+ * mode), LE_ERR_CAPACITY (no slot or buffer), LE_ERR_UNSUPPORTED (Clear
+ * sources) or LE_ERR_INVALID. The history entry is filed when the outcome is
+ * collected (the next le_engine_drain_events after the callback applied). */
+LE_EXPORT int32_t le_engine_bounce(le_engine* engine,
+                                   const le_bounce_request* request,
+                                   uint64_t* receipt);
+
+typedef struct le_bounce_recover_request {
+  int32_t destination;
+  int32_t redo;          /* 0: undo the bounce on top of the undo stack;
+                          * 1: redo the one on top of the redo stack */
+  const le_mix_settings* topology; /* the side being restored */
+  const le_fx_recipe* lane_fx;     /* its chains; NULL: empty */
+  int32_t lane_fx_count;
+  const le_fx_recipe* track_fx;
+} le_bounce_recover_request;
+
+/* Undoes or redoes a whole bounce in one callback drain. Plain le_engine_undo
+ * and le_engine_redo refuse a BOUNCE entry on top (LE_ERR_INVALID), so no path
+ * restores part of one. Returns LE_OK with *receipt, LE_ERR_INVALID (no
+ * bounce on top), LE_ERR_NOT_READY (busy, as le_engine_bounce),
+ * LE_ERR_MODE_MISMATCH or a ring refusal. */
+LE_EXPORT int32_t le_engine_bounce_recover(
+    le_engine* engine, const le_bounce_recover_request* request,
+    uint64_t* receipt);
 
 #ifdef __cplusplus
 }

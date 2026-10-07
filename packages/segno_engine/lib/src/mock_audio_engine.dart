@@ -15,6 +15,7 @@ import 'package:segno_engine/src/mix_settings.dart';
 import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
+import 'package:segno_engine/src/selected_render.dart';
 import 'package:segno_engine/src/track_effect.dart';
 import 'package:segno_engine/src/volume_space.dart';
 
@@ -1791,6 +1792,26 @@ class MockAudioEngine implements AudioEngine {
   @override
   List<PerformanceRenderTrackStatus> renderTrackStatuses() =>
       _renderStarted ? mockRenderTrackStatuses : const [];
+
+  // ---- shared render recipe (#1202): the mock models no PCM, so it has
+  // nothing to render and says so rather than inventing audio. ----
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, plan: null);
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, job: 0);
+
+  @override
+  RenderJobStatus? pollRender(int job) => null;
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) => null;
+
+  @override
+  EngineResult cancelRender(int job) => EngineResult.invalid;
 
   @override
   EngineResult renderCancel() {

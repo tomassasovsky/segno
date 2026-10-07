@@ -135,6 +135,15 @@ typedef struct le_command {
     } speed_log;
     le_mix_settings mix;
     struct le_prepared_fx* recipe;
+    struct { /* LE_CMD_BOUNCE / _RECOVER (#1202): the bundle and its receipt. */
+      struct le_bounce_bundle* bundle;
+      int32_t slot;
+    } bounce;
+    struct { /* LE_CMD_RENDER_FREEZE (#1202): the engine-owned record, the job
+              * id it is for, and the sources to freeze. */
+      struct le_render_freeze* record;
+      uint32_t id, mask;
+    } render_freeze;
     struct {
       int32_t channel;
       uint32_t sequence;
