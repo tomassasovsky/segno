@@ -45,13 +45,20 @@ GPIO and not `dtoverlay=gpio-shutdown`. The kernel exposes it as `gpio-keys`
 `KEY_POWER` on the input device named `pwr_button`.
 
 - **Short press.** The appliance app grabs that node (`EVIOCGRAB`) so Weston
-  does not also see `XF86PowerOff`. Empty console: Power off / Keep playing;
-  Power off re-checks the rig, then shows the Plymouth lockup on every live
-  display, darkens the pedal and runs `segno-update-ctl poweroff` (`systemctl start poweroff.target` — this image
-  has no logind). Loops in RAM and idle: Save & power off / Power off without
-  saving / Keep playing. A take in flight (record, overdub, count-in,
-  punch-tail, performance capture): Keep playing only — stop the take, then
-  press again. A second press while that UI is up is ignored.
+  does not also see `XF86PowerOff`. Every press opens Power options (the same
+  card as Settings' Power row): "Playback will stop and your session will be
+  saved", the session name, and Cancel / Restart / Shut down. Both actions run
+  one path: stop the transport, flush settings, save the session (Save As
+  first if it has no name), wait for storage leases, then `segno-update-ctl
+  reboot` or `poweroff` (`systemctl start poweroff.target` — this image has no
+  logind), showing "Restarting" or "Safe to switch off" and darkening the
+  pedal. A failed save keeps Segno on ("Segno is staying on": Stay on /
+  Retry); there is no way to halt without saving. With an update staged, the
+  card says it installs during the restart, and Updates' Install and restart
+  goes through the same path. A take or transfer in flight (record, overdub,
+  count-in, punch-tail, performance capture, USB copy or eject): Keep playing
+  only — stop the take, then press again. A second press while that UI is up
+  is ignored.
 - **Long press (~5 s).** The PMIC's uninterceptable force-off. Use it if the
   UI is wedged. It does not flush, save, or show goodbye.
 

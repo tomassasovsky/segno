@@ -31,7 +31,7 @@ void editDisplayBrightness(BuildContext context, double value) {
         id: displayBrightnessSaveFailedToast,
         type: ToastificationType.error,
         icon: const Icon(Icons.error_outline),
-        title: Text(l10n.powerOffSaveFailedTitle),
+        title: Text(l10n.displayBrightnessSaveFailed),
       );
     }
   }());

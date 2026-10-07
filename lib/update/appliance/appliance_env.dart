@@ -36,8 +36,8 @@ abstract interface class ApplianceEnv {
   /// emitting progress in `[0, 1]`. Throws if the helper fails.
   Stream<double> stage(String version);
 
-  /// Runs the privileged helper to reboot into the staged slot. Throws on
-  /// failure.
+  /// Runs the privileged helper to reboot, into the staged slot when one is
+  /// staged. Throws on failure. Only `PowerCubit` calls it, after the save.
   Future<void> reboot();
 
   /// Runs the privileged helper to halt the appliance
