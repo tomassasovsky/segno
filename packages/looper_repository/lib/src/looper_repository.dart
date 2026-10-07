@@ -336,6 +336,8 @@ class LooperRepository {
   bool _retrySuperseded = false;
   final _recordRefusals = StreamController<int>.broadcast();
   final _overdubRefusals = StreamController<int>.broadcast();
+  final _lengthHistoryRefusals = StreamController<int>.broadcast();
+  final _lengthHistoryRefusalCounts = <int, int>{};
 
   /// The desired global master output gain (`0..1`), re-applied to the engine
   /// on every successful (re)start so it survives device changes and
@@ -1081,11 +1083,29 @@ class LooperRepository {
     ),
   );
 
+  /// Reports each track whose engine counter of Undo/Redo taps on a length
+  /// edit that did nothing rose since the last snapshot (#1168): refused by
+  /// the callback after it was posted, or queued behind an overdub and
+  /// stopped at the edit. A refusal returned to the tap is reported on
+  /// [recoveryRefusals] instead, never on both. The first read is the
+  /// baseline, and a lower count (a new engine) only resets it.
+  void _noticeLengthHistoryRefusals(EngineSnapshot snapshot) {
+    for (var ch = 0; ch < snapshot.tracks.length; ch++) {
+      final count = snapshot.tracks[ch].lengthHistoryRefusals;
+      final seen = _lengthHistoryRefusalCounts[ch];
+      _lengthHistoryRefusalCounts[ch] = count;
+      if (seen != null && count > seen && !_lengthHistoryRefusals.isClosed) {
+        _lengthHistoryRefusals.add(ch);
+      }
+    }
+  }
+
   EngineSnapshot _snapshotAndSettleImages() {
     // A settled fence may retire an absent image only from a later snapshot.
     // Reading it afterwards can mistake an in-flight join for a cancellation.
     final commandsSettled = _engine.commandsSettled;
     final snapshot = _engine.snapshot();
+    _noticeLengthHistoryRefusals(snapshot);
     for (final entry in _pendingImages.entries.toList()) {
       final ch = entry.key;
       if (ch >= snapshot.tracks.length) continue;
@@ -7436,6 +7456,13 @@ class LooperRepository {
   /// unavailable while a track plays reversed, from any surface.
   Stream<int> get overdubRefusals => _overdubRefusals.stream;
 
+  /// Undo or Redo taps on a track's length edit that did nothing (the
+  /// channel), from any surface (#1168), that their own result could not
+  /// report: the callback refused a posted tap because the length no longer
+  /// fits the rig, or taps queued behind an overdub stopped at the edit. A
+  /// tap refused on the spot goes to [recoveryRefusals] only.
+  Stream<int> get lengthHistoryRefusals => _lengthHistoryRefusals.stream;
+
   /// Whether a Record press on [channel] the engine refused is still waiting
   /// for its one retry — the press counts as accepted until it resolves.
   bool recordRetryPending(int channel) => _recordRetry?.channel == channel;
@@ -7969,6 +7996,7 @@ class LooperRepository {
     await _recordingInputRequired.close();
     await _recordRefusals.close();
     await _overdubRefusals.close();
+    await _lengthHistoryRefusals.close();
     await _mixSettingsFailures.close();
     await _mix.dispose();
     await _controller.close();

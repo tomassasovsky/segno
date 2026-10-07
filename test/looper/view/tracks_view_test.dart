@@ -90,7 +90,10 @@ Finder _column(int channel) => find.byWidgetPredicate(
 void main() {
   late MixSettingsCoordinator mixSettings;
   late FxChainPersistence fxPersistence;
-  setUpAll(() => registerFallbackValue(const LooperRecordPressed(0)));
+  setUpAll(() {
+    registerFallbackValue(const LooperRecordPressed(0));
+    registerFallbackValue(LengthEdit.doubled);
+  });
 
   late LooperBloc bloc;
   late TracksCubit tracks;
@@ -817,6 +820,74 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(layers('2'), findsOneWidget);
+  });
+
+  group('Multiply / Divide (#1168)', () {
+    testWidgets('a sub-bar loop reads its beats on the stage', (
+      tester,
+    ) async {
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      // A sole 1-bar loop of 4/4 halved: 2 beats, no whole bar.
+      seed(
+        const LooperState(
+          transport: TransportState(
+            isRunning: true,
+            masterLengthFrames: 48000,
+            loopBeats: 2,
+          ),
+          status: EngineStatus(sampleRate: 48000),
+          tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+        ),
+      );
+      await pump(tester);
+      expect(
+        find.bySemanticsLabel(RegExp('Track 1, 2 beats, 1 layer')),
+        findsWidgets,
+      );
+    });
+
+    testWidgets('the surface replaces the columns, and a refused edit shows '
+        'its own notice once', (tester) async {
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ],
+        ),
+      );
+      when(
+        () => repository.editLength(
+          channel: any(named: 'channel'),
+          edit: any(named: 'edit'),
+        ),
+      ).thenAnswer((_) async => EngineResult.modeMismatch);
+      await pump(tester);
+      control.setMode(InteractionMode.divide);
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('foot_length_view')), findsOneWidget);
+      control.activateFootLengthPedal(PedalButton.clear); // Last half
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'That length does not fit the other loops, or would leave half a '
+          'beat.',
+        ),
+        findsOneWidget,
+      );
+      expect(control.state.footLengthFailure, 1);
+      dismissAppToast(AppToastId.footLengthRefused);
+      await tester.pump(const Duration(seconds: 10));
+    });
   });
 
   testWidgets('renders a tile per track', (tester) async {
@@ -3238,10 +3309,18 @@ void main() {
         rate: 48000,
         bars: '—',
       ),
+      // A bar and a half reads in its whole beats (#1168): 6 of 24000.
+      (
+        name: 'whole beats, fractional bars',
+        transport: barTempo,
+        length: 144000,
+        rate: 48000,
+        bars: '6',
+      ),
       (
         name: 'fractional duration',
         transport: barTempo,
-        length: 144000,
+        length: 150000,
         rate: 48000,
         bars: '—',
       ),

@@ -243,7 +243,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
         InteractionMode.mixer ||
         InteractionMode.fade ||
         InteractionMode.reverse ||
-        InteractionMode.peel => (outline: ledAmber, fill: cardHigh),
+        InteractionMode.peel ||
+        InteractionMode.multiply ||
+        InteractionMode.divide => (outline: ledAmber, fill: cardHigh),
       };
 
   /// Pedal LED palette — the on-screen pedal faceplate renders the firmware's

@@ -30,10 +30,12 @@ import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/control/control_projection.dart';
 import 'package:segno/control/foot_fade_actions.dart';
+import 'package:segno/control/foot_length_actions.dart';
 import 'package:segno/control/foot_mixer_actions.dart';
 import 'package:segno/control/foot_peel_actions.dart';
 import 'package:segno/control/foot_reverse_actions.dart';
 import 'package:segno/control/model/foot_fade.dart';
+import 'package:segno/control/model/foot_length.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/control/model/foot_reverse.dart';
@@ -44,6 +46,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 part 'control_foot_fade.dart';
 part 'control_foot_reverse.dart';
+part 'control_foot_length.dart';
 part 'control_foot_mixer.dart';
 part 'control_foot_peel.dart';
 part 'control_midi.dart';
@@ -195,6 +198,7 @@ class ControlCubit extends Cubit<ControlState> {
        _owned = ownedValues,
        _footReverseActions = FootReverseActions(repository: looper),
        _footPeelActions = FootPeelActions(repository: looper),
+       _footLengthActions = FootLengthActions(repository: looper),
        _footFadeActions = FootFadeActions(
          repository: looper,
          settings: fadeSettings,
@@ -1057,6 +1061,7 @@ class ControlCubit extends Cubit<ControlState> {
   final FootFadeActions _footFadeActions;
   final FootReverseActions _footReverseActions;
   final FootPeelActions _footPeelActions;
+  final FootLengthActions _footLengthActions;
   int _footFadeSession = 0;
   late final _footMixerActions = FootMixerActions(
     repository: _looper,
@@ -1321,7 +1326,9 @@ class ControlCubit extends Cubit<ControlState> {
     InteractionMode.mixer ||
     InteractionMode.fade ||
     InteractionMode.reverse ||
-    InteractionMode.peel => InteractionMode.record,
+    InteractionMode.peel ||
+    InteractionMode.multiply ||
+    InteractionMode.divide => InteractionMode.record,
   });
 
   /// Saves the built-in pedal setup before making it live. A storage refusal
@@ -1463,11 +1470,14 @@ class ControlCubit extends Cubit<ControlState> {
         );
       case InteractionMode.reverse:
       case InteractionMode.peel:
+      case InteractionMode.multiply:
+      case InteractionMode.divide:
         emit(
           state.copyWith(
             mode: next,
             excluded: const {},
             parkedResume: const {},
+            footLengthOutcome: FootLengthOutcome.none,
           ),
         );
       case InteractionMode.fade:
@@ -1585,6 +1595,9 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.fade:
       case InteractionMode.reverse:
       case InteractionMode.peel:
+      // Multiply and Divide keep Record / Play on the pedal too (pen 16).
+      case InteractionMode.multiply:
+      case InteractionMode.divide:
         _recAdvance(state.cursor);
       case InteractionMode.mute:
         _muteRecPlay();
@@ -1729,6 +1742,8 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.fade:
       case InteractionMode.reverse:
       case InteractionMode.peel:
+      case InteractionMode.multiply:
+      case InteractionMode.divide:
         parkAll();
       case InteractionMode.fx:
         panicTrackChains();
@@ -1796,6 +1811,8 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.mixer:
       case InteractionMode.fade:
       case InteractionMode.reverse:
+      case InteractionMode.multiply:
+      case InteractionMode.divide:
       case InteractionMode.peel:
         // Inert: the performance surfaces replace the Tracks columns, and
         // their track pedals act through their own roles.
@@ -2175,6 +2192,38 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
+  /// Admits a screen contact on the Multiply / Divide surface into the
+  /// shared ledger.
+  void footLengthPressed(PedalButton button, Object contact) {
+    if (!state.mode.isLength || isClosed) return;
+    _handleEvent(ButtonPressed(button), contact: contact);
+  }
+
+  /// Only the admitted screen contact may complete its Multiply / Divide
+  /// contact.
+  void footLengthReleased(PedalButton button, Object contact) =>
+      footMixerReleased(button, contact);
+
+  /// Cancels an abandoned Multiply / Divide contact.
+  void footLengthCancelled(PedalButton button, Object contact) =>
+      footMixerCancelled(button, contact);
+
+  /// Accessible semantic activation uses the same Multiply / Divide role as
+  /// contacts.
+  void activateFootLengthPedal(PedalButton button) {
+    final role = _lengthRole(button);
+    if (role.press != FootLengthAction.exit && !_lengthEditable) return;
+    _dispatchLengthAction(role.press, role.slot);
+  }
+
+  /// Accessible semantic hold: the role's hold action (Divide's Undo), or
+  /// nothing for a role without one.
+  void holdFootLengthPedal(PedalButton button) {
+    final hold = _lengthRole(button).hold;
+    if (hold == null || !_lengthEditable) return;
+    _dispatchLengthAction(hold, null);
+  }
+
   /// Fades the recorded track in visible [slot] of the current bank.
   Future<void> toggleFootFadeTrack(int slot) async {
     final fade = _footFadeActions;
@@ -2390,6 +2439,10 @@ class ControlCubit extends Cubit<ControlState> {
       _onPeelPress(button);
       return;
     }
+    if (state.mode.isLength) {
+      _onLengthPress(button);
+      return;
+    }
     if (state.mode == InteractionMode.custom) {
       // These two physical exits cannot be assigned. They act on contact,
       // without a second action waiting on the release.
@@ -2443,7 +2496,9 @@ class ControlCubit extends Cubit<ControlState> {
           InteractionMode.mixer ||
           InteractionMode.fade ||
           InteractionMode.reverse ||
-          InteractionMode.peel => false,
+          InteractionMode.peel ||
+          InteractionMode.multiply ||
+          InteractionMode.divide => false,
         };
         if (accepted) _acceptedContacts.add(button);
         _armRecordHold();
@@ -2714,6 +2769,10 @@ class ControlCubit extends Cubit<ControlState> {
         final refusal = _footPeelActions.peel(channel);
         if (refusal != null) _reportPeelRefusal(refusal);
         return refusal == null;
+      case TrackOperation.multiply:
+      case TrackOperation.divideFirstHalf:
+      case TrackOperation.divideLastHalf:
+        return _runAssignedLength(channel, _lengthEditOf(operation)!);
     }
   }
 
@@ -3332,6 +3391,7 @@ class ControlCubit extends Cubit<ControlState> {
     // `_l` falls back to the repository's state before the first event.
     final wasParked = isParked(_l);
     _looperState = looperState;
+    _bindLengthOutcome(looperState);
     _retryExternalReleases();
     _checkMidiSessionAndCleanup();
     _reduce(looperState, wasParked: wasParked);

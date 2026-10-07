@@ -593,7 +593,7 @@ Notes (Part 1 build, on the trunk with Reverse and Peel merged):
     `commitSession(base, loopBeats:)`; `SessionRig.loopBeats` (null when the
     source carries only bars) and `TransportState.loopBeats` carry it, and
     `Track.wholeBeats` counts a sub-bar loop. A surviving sub-bar grid that a
-    tempo or signature change regrids counts the nearest whole beats.
+    tempo or signature change rebuilds counts the nearest whole beats.
   - Threaded later: Part 2 saves `loopBeats` in the Session; Part 3 shows
     "N beats" where no whole bar exists. The count-in needs no change (it
     counts bars of the tempo before a stopped launch, and the launch starts at
@@ -765,6 +765,99 @@ NON-GOALS:
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos lib test packages && bloc lint lib test packages
 ```
 
+Part 3 build notes (branch `claude/multiply-divide-1168-p3`, stacked on Part 2):
+
+- **Notice policy, shared with Fade, Reverse and Peel (Peel Part 3, #1233).**
+  - On the surface an EMPTY track is dimmed and silent: its track pedal cannot
+    select it, and while the selected track is empty the three edit pedals
+    rest. Nothing is posted and nothing is said.
+  - A press on a RECORDED track that changes nothing raises
+    `ControlState.footLengthFailure`/`footLengthRefusal`, and Tracks shows one
+    toast with the reason: busy (capturing, a layer landing, an arm or a
+    Count-in launch; refused before the engine), incompatible
+    (`modeMismatch`), capacity, or failed (an error toast; the rest warn).
+    A refusal that lands after its visit or Session ended is dropped, as on
+    Reverse.
+  - An ASSIGNED Multiply or Divide (Custom, CTRL, MIDI) that changes nothing
+    always shows its toast, in any mode, the empty track included.
+  - §3 said an unavailable track is refused "without a notice"; the policy
+    keeps that only for the empty track on the surface.
+- **Undo flashes (Part 1 review L2 and L3; Part 3 review M1).** The engine
+  counts the Undo or Redo taps on a LENGTH entry that did nothing where the
+  tap's own result could not say so: refused by the callback after it was
+  posted as LE_OK, or queued behind an overdub and stopped at the edit. A
+  refusal returned to the tap itself is not counted, because the repository
+  already reports that result as a `RecoveryRefusal`; one tap raises one
+  notice. The count is published as
+  `le_track_snapshot.length_history_refusals`; the repository reports each
+  rise on `lengthHistoryRefusals`, and the app shows one toast naming the
+  track, in every mode and from every surface. Its text no longer says "Try
+  again" unconditionally (review L2): "If pressing again changes nothing, that
+  length no longer fits the other loops." A tap that finds the command ring
+  full is refused up front as `LE_ERR_NOT_READY`, as the edit itself is, so
+  it is reported as "wait" rather than lost as the push's `LE_ERR_INVALID`
+  (delta review L1). This adds one snapshot field (no command or fact
+  number).
+- **M2.** The owner's beat decision lands in Part 1 (`le_reclock_whole_beats`,
+  the one place the rule lives): a sole 1-bar loop halves to 2 beats and a
+  3-bar loop to 6; only a half-beat is refused, with the incompatible-length
+  notice. Part 3 displays it: the stage meta row and its spoken form read
+  "2 beats" where no whole bar exists (`loopCountWords`, threaded as `beats`
+  beside `bars` through the Tracks chrome, the track column, the wave row and
+  the mixer strip), and the overview does the same.
+- **Two surfaces, pen section 16 (owner decision after the Part 3 review,
+  H1).** `InteractionMode.length` is replaced by `multiply` and `divide`, each
+  its own mode, title and `ModeAction` (`mode:multiply`, `mode:divide`).
+  - Both: Rec/Play is Record / Play on the selected track (the keyboard
+    Rec/Play does the same), Stop is Stop, Bank pages, Mode exits, and the
+    track pedals select a recorded track.
+  - Multiply (pen 16 screens 01-02): Clear is "Double length", captioned
+    "Repeat to 4 bars"; Undo stays the Tracks Undo (tap Undo, hold Redo),
+    captioned "Nothing to undo", "Length edit" or "Last change"; a screen
+    reader's hold redoes, as the footswitch hold does.
+  - Divide (screens 03-08): Undo is "First half" and fires on release, a hold
+    is Undo instead ("Hold · Undo" while there is something to undo); Clear is
+    "Last half". Captions name the bars or beats each half keeps: "Bar 1",
+    "Beats 1–2", "Beats 7–12".
+- **Selection.** The track pedals select on contact (the shared cursor), and
+  Bank pages without moving the cursor. The LED is red on the selected
+  recorded track. `trackPressed` is inert in these modes, as on the other
+  performance surfaces.
+- **Selected track length panel (pen 16).** The track name and its length
+  (whole bars, else whole beats, else seconds), one cell per bar with a tick
+  per beat (Divide: the two halves), and an outcome line: "Speed and pitch
+  unchanged", then "Repeated to 4 bars", "First 1 bar kept" or "Last 1 bar
+  kept" while the latest accepted surface edit still describes the track
+  (`ControlState.footLengthOutcome`, reset on entering either surface). The
+  outcome records the length and undo depth before the edit and binds the
+  result once both have moved (in either order of publication); it describes
+  the track only while both still equal that result, so an Undo of the edit,
+  a second edit or an overdub on top ends it (delta review M1). With
+  no recorded track selected the panel reads "Loop length" and "Select a
+  track", or "No recorded audio in this bank" (screen 07); while the selected
+  track records, "Finish recording to change length" and both edit pedals
+  read "Finish recording" (screen 08).
+- **Journey.** The accepted Record → overdub → Divide → Peel → Undo/Redo
+  journey runs against the actual engine
+  (`length_journey_native_test.dart`): a Divide bakes the passes into the
+  kept half, so Peel has nothing to remove until Undo restores the length and
+  its layers. No fake-engine copy: the fake cannot say what Peel does after a
+  Divide.
+- **Pen.** The surfaces follow pen section 16 (`fmAqg`, 8 screens), which
+  the first build missed because worktrees cannot see the untracked design
+  files. Departures to write back into the pen (a `c/` note on section 16):
+  the Rec/Play caption names the selected track (screen 06 shows "Track 1"
+  while Track 5 is selected); Multiply's Undo reads "Last change" when its
+  top entry is not a length edit made here; the "Select a track" panel line
+  when the bank has recordings but none is selected; the busy copy covers an
+  arm or Count-in as well as recording; the four refusal notices, the
+  assigned-edit notice and the length Undo notice; and the beat display
+  ("2 beats", "6 beats") on the stage.
+- **Outstanding:** the appliance hardware evidence (the last success
+  criterion), and the pen write-back of the beat display. The M2 product
+  question the Part 1 review was checking against pen section 16 is settled
+  by the owner's beat decision.
+
 ## 6. Decisions taken under the standing rules
 
 1. The edit, and Undo/Redo of it, apply on the audio thread through
@@ -798,9 +891,12 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
     once rather than worked around in Dart (rule 4).
 11. The §1143 fact carries slot, length and a staged image id in the Clear
     restoration's identity namespace; no renderer change here. Rule 4.
-12. The surface uses the shared cursor as "one selected track", Rec/Play as Double,
-    Undo and Clear as the halves, no holds, cursor LED red; three assignable
-    operations plus the mode; all-tracks excluded. Rules 3 and 4.
+12. The surfaces use the shared cursor as "one selected track". Superseded by
+    the owner's pen 16 decision: separate Multiply and Divide modes, Rec/Play
+    stays Record / Play, Multiply doubles on Clear and keeps Undo, Divide keeps
+    the first half on Undo (hold for Undo) and the last half on Clear. Cursor
+    LED red; three assignable operations plus the two modes; all-tracks
+    excluded. Rules 3 and 4.
 13. Refusal notices are distinct for incompatible, capacity and busy. Rule 3.
 14. Not an owned setting family (#1159); only the `TrackOperation` switch arms.
     Rule 4.
@@ -808,8 +904,8 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart 
 Genuine product-direction questions, flagged separately (defaults above stand
 until the owner says otherwise):
 
-- Pedal assignment inside the mode: Rec/Play as Double (planned) versus keeping
-  Rec/Play as transport and placing Double on a hold of Undo or Clear.
+- Pedal assignment inside the mode: settled by the owner (pen section 16, see
+  the Part 3 build notes).
 - Should a sole track's halving re-clock the rig (bars halve at the same tempo,
   planned) or be refused like a track with siblings?
 - Should a crowned Sync/Band primary with dependents be allowed to Double by

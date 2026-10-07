@@ -8,6 +8,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/loop_count_words.dart';
 import 'package:segno/looper/view/track_column.dart'
     show PrimaryCrown, ShrinkToWidth;
 import 'package:segno/looper/view/track_meters.dart';
@@ -32,6 +33,7 @@ class WaveTrackRow extends StatelessWidget {
     required this.mode,
     this.isPrimary = false,
     this.bars,
+    this.beats,
     super.key,
   });
 
@@ -53,6 +55,10 @@ class WaveTrackRow extends StatelessWidget {
   /// The track's length in bars, or `null` when nothing counts them.
   final int? bars;
 
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -70,6 +76,7 @@ class WaveTrackRow extends StatelessWidget {
     };
     final layers = track.layers;
     final barsCount = bars;
+    final count = loopCountWords(l10n, bars: bars, beats: beats);
     final meta = TextStyle(
       fontFamily: SurfaceTheme.displayFont,
       color: surface.textPrimary,
@@ -95,7 +102,9 @@ class WaveTrackRow extends StatelessWidget {
         InteractionMode.mixer ||
         InteractionMode.fade ||
         InteractionMode.reverse ||
-        InteractionMode.peel => l10n.a11yTrackTileCustom(name, stateWord),
+        InteractionMode.peel ||
+        InteractionMode.multiply ||
+        InteractionMode.divide => l10n.a11yTrackTileCustom(name, stateWord),
       },
       selected: selected,
       borderRadius: 17,
@@ -113,6 +122,8 @@ class WaveTrackRow extends StatelessWidget {
           case InteractionMode.fade:
           case InteractionMode.reverse:
           case InteractionMode.peel:
+          case InteractionMode.multiply:
+          case InteractionMode.divide:
           case InteractionMode.custom:
             // Selection only — see the track column's own arm.
             break;
@@ -202,9 +213,7 @@ class WaveTrackRow extends StatelessWidget {
                                 Semantics(
                                   label: l10n.a11yStageTrackMeta(
                                     track.channel + 1,
-                                    barsCount == null
-                                        ? l10n.stageNoBarsFigure
-                                        : l10n.stageBarsFigure(barsCount),
+                                    count.spoken,
                                     l10n.stageLayersFigure(layers),
                                   ),
                                   child: ExcludeSemantics(
@@ -217,14 +226,12 @@ class WaveTrackRow extends StatelessWidget {
                                         textBaseline: TextBaseline.alphabetic,
                                         children: [
                                           AppText(
-                                            barsCount == null
-                                                ? l10n.stageNoBars
-                                                : '$barsCount',
+                                            count.figure,
                                             style: meta,
                                           ),
                                           const SizedBox(width: 5),
                                           AppText(
-                                            l10n.stageBarsUnit(barsCount ?? 0),
+                                            count.unit,
                                             style: unit,
                                           ),
                                           const SizedBox(width: 24),

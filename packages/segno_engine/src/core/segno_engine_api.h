@@ -952,6 +952,15 @@ typedef struct le_track_snapshot {
    * reads 0 here too. The host derives its layer count from this: PEEL
    * entries keep undo_depth constant while a layer disappears. */
   int32_t peel_depth;
+  /* Trailing (#1168): how many Undo or Redo taps on this track's length edits
+   * did nothing where the tap's own result could not say so, counted since
+   * the engine was created and never reset: a tap posted as LE_OK that the
+   * callback then refused (the rig changed in between), or taps queued behind
+   * an overdub that stopped at a length edit, which only an explicit tap
+   * undoes. A refusal returned to the tap itself is not counted: its caller
+   * reports that result, so one tap raises one notice. The host reports each
+   * increase, so a tap that did nothing is never silent. */
+  uint32_t length_history_refusals;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================

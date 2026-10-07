@@ -554,6 +554,75 @@ void main() {
     }, skip: !hasScreenshotFonts);
   }
 
+  // Multiply and Divide (#1168), pen section 16: Multiply 01, Divide 03,
+  // Divide on Bank B (06), an empty bank (07), and the Spanish strings.
+  for (final (scene, mode) in [
+    ('multiply', InteractionMode.multiply),
+    ('divide', InteractionMode.divide),
+    ('divide_bank', InteractionMode.divide),
+    ('divide_empty', InteractionMode.divide),
+    ('spanish', InteractionMode.divide),
+  ]) {
+    testWidgets('Foot Multiply / Divide $scene scene (pen 16)', (tester) async {
+      Track track(
+        int channel, {
+        int length = 48000,
+        int multiple = 1,
+        int syncDivisor = 0,
+      }) => Track(
+        channel: channel,
+        state: TrackState.playing,
+        lengthFrames: length,
+        multiple: multiple,
+        syncDivisor: syncDivisor,
+      );
+      seed(
+        LooperState(
+          transport: const TransportState(
+            isRunning: true,
+            masterLengthFrames: 48000,
+            loopBars: 2,
+          ),
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: scene == 'divide_empty'
+              ? [
+                  for (var channel = 0; channel < 8; channel++)
+                    Track(channel: channel),
+                ]
+              : [
+                  track(0),
+                  track(1, length: 96000, multiple: 2),
+                  track(2, length: 24000, syncDivisor: 2),
+                  const Track(channel: 3),
+                  track(4, length: 192000, multiple: 4),
+                  track(5, length: 12000, syncDivisor: 4),
+                  track(6, length: 30000),
+                  const Track(channel: 7),
+                ],
+        ),
+      );
+      control
+        ..selectTrack(scene == 'divide_bank' ? 4 : 1)
+        ..setMode(mode);
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_length_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
   testWidgets(
     'console main window (16" panel decal)',
     (tester) async {

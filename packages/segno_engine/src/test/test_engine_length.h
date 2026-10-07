@@ -615,10 +615,14 @@ static void test_length_refusals_while_busy(void) {
   CHECK(le_engine_undo(e, 0) == LE_OK); /* queued behind the drain */
   CHECK(le_engine_undo(e, 0) == LE_OK); /* would reach the LENGTH entry */
   CHECK(t->queued_undo == 2);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 0);
   settle_layers(e);
   le_engine_get_snapshot(e, &s);
   CHECK(t->queued_undo == 0);
   CHECK(t->undo_count == 2 && t->undo_stack[1].kind == LE_HIST_LENGTH);
+  /* The tap that stopped at the edit is reported once (#1168 Part 3). */
+  CHECK(s.tracks[0].length_history_refusals == 1);
   CHECK(t->length_pending == 0);
   CHECK(s.tracks[0].length_frames == 2 * LOOP_N);
   le_engine_destroy(e);
@@ -707,12 +711,16 @@ static void test_length_history_gate(void) {
   CHECK(le_engine_history_mode_gate(e, 1u, 0) == LE_ERR_MODE_MISMATCH);
   CHECK(le_engine_undo(e, 0) == LE_ERR_MODE_MISMATCH);
   peel_expect_unchanged(t, &h);
+  le_engine_get_snapshot(e, &s);
+  /* Returned to the tap, which reports it: not counted again (M1). */
+  CHECK(s.tracks[0].length_history_refusals == 0);
   CHECK(le_engine_clear(e, 1) == LE_OK);
   drain(e);
   CHECK(le_engine_history_mode_gate(e, 1u, 0) == LE_OK);
   CHECK(le_engine_undo(e, 0) == LE_OK);
   len_settle(e);
   le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 0); /* accepted: no count */
   CHECK(s.master_length_frames == 8);
   len_expect(e, 0, 8, 1, 0, 0, 1);
   len_expect_image(e, 0, pcm, 8);
@@ -1160,7 +1168,49 @@ static void test_length_refused_history_motion(void) {
   CHECK(t->length_pending == 0);
   peel_expect_unchanged(t, &h);
   len_expect(e, 0, 16, 1, 0, 1, 0);
+  /* Posted as OK, refused after: the host is told (#1168 Part 3). */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 1);
+  CHECK(s.tracks[1].length_history_refusals == 0);
+  /* Refused at the tap: the caller sees the result, so no second count
+   * (#1168 review M1: one tap, one notice). */
   CHECK(le_engine_undo(e, 0) == LE_ERR_MODE_MISMATCH);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 1);
+  le_engine_destroy(e);
+}
+
+/* #1168 delta review: an Undo or Redo of a LENGTH entry with the command
+ * ring full is refused up front as LE_ERR_NOT_READY (the edit's own rule),
+ * changing nothing and counting nothing, rather than failing the push as
+ * LE_ERR_INVALID after the checks. */
+static void test_length_history_full_ring(void) {
+  printf("test_length_history_full_ring\n");
+  le_engine* e = len_engine();
+  le_track* t = &e->tracks[0];
+  float pcm[8];
+  for (int i = 0; i < 8; ++i) pcm[i] = (float)(i + 1);
+  len_take(e, 0, pcm, 8);
+  CHECK(len_edit(e, 0, LE_LENGTH_DOUBLE) == LE_OK);
+  len_expect(e, 0, 16, 1, 0, 1, 0);
+  peel_history_image h = peel_history_snapshot(t);
+  int pushed = 0;
+  while (le_engine_set_master_gain(e, 1.0f) == LE_OK) ++pushed;
+  CHECK(pushed > 0);
+  CHECK(le_engine_undo(e, 0) == LE_ERR_NOT_READY);
+  CHECK(t->length_pending == 0);
+  peel_expect_unchanged(t, &h);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 0);
+  /* Once the callback drains the ring, the same tap undoes the Double. */
+  drain(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  len_settle(e);
+  len_expect(e, 0, 8, 1, 0, 0, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 0);
   le_engine_destroy(e);
 }
 
@@ -1421,6 +1471,7 @@ static void run_length_tests(void) {
   test_length_reclock_keeps_tempo();
   test_length_pending_reclock_master();
   test_length_refused_history_motion();
+  test_length_history_full_ring();
   test_length_session_round_trip();
   test_length_finalize_lineage();
   test_length_division_recall();

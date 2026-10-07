@@ -9,6 +9,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
+import 'package:segno/looper/view/loop_count_words.dart';
 import 'package:segno/looper/view/rename_track_dialog.dart';
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
@@ -124,6 +125,7 @@ class TrackColumn extends StatelessWidget {
     required this.mode,
     this.isPrimary = false,
     this.bars,
+    this.beats,
     this.quantizeDiv = GridDivision.off,
     this.recDub = false,
     this.fxTarget,
@@ -190,6 +192,10 @@ class TrackColumn extends StatelessWidget {
   /// The track's length in bars, or `null` when nothing counts them (an empty
   /// track, or a session without a tempo grid).
   final int? bars;
+
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
 
   /// The live quantize grid: with a grid arm pending, the queued cue names
   /// the boundary it resolves to (the engine re-evaluates a pending arm on a
@@ -344,6 +350,7 @@ class TrackColumn extends StatelessWidget {
               name: name,
               isPrimary: isPrimary,
               bars: bars,
+              beats: beats,
               layers: layers,
               fxMarker: fxMarker,
               reversed: track.hasContent && track.reversed,
@@ -373,7 +380,9 @@ class TrackColumn extends StatelessWidget {
                 InteractionMode.mixer ||
                 InteractionMode.fade ||
                 InteractionMode.reverse ||
-                InteractionMode.peel => l10n.a11yTrackTileCustom(
+                InteractionMode.peel ||
+                InteractionMode.multiply ||
+                InteractionMode.divide => l10n.a11yTrackTileCustom(
                   name,
                   stateWord,
                 ),
@@ -400,6 +409,8 @@ class TrackColumn extends StatelessWidget {
                   case InteractionMode.fade:
                   case InteractionMode.reverse:
                   case InteractionMode.peel:
+                  case InteractionMode.multiply:
+                  case InteractionMode.divide:
                   case InteractionMode.custom:
                     // Selection only. What a control does in Custom controls
                     // is assigned per FOOTSWITCH, and a tile is not one —
@@ -520,6 +531,7 @@ class _TrackInfo extends StatelessWidget {
     required this.name,
     required this.isPrimary,
     required this.bars,
+    required this.beats,
     required this.layers,
     required this.fxMarker,
     required this.reversed,
@@ -529,6 +541,10 @@ class _TrackInfo extends StatelessWidget {
   final String name;
   final bool isPrimary;
   final int? bars;
+
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
   final int layers;
   final _FxMarker fxMarker;
   final bool reversed;
@@ -586,6 +602,7 @@ class _TrackInfo extends StatelessWidget {
         _TrackMeta(
           channel: channel,
           bars: bars,
+          beats: beats,
           layers: layers,
           fxMarker: fxMarker,
           reversed: reversed,
@@ -604,6 +621,7 @@ class _TrackMeta extends StatelessWidget {
   const _TrackMeta({
     required this.channel,
     required this.bars,
+    required this.beats,
     required this.layers,
     required this.fxMarker,
     required this.reversed,
@@ -611,6 +629,10 @@ class _TrackMeta extends StatelessWidget {
 
   final int channel;
   final int? bars;
+
+  /// The track's length in whole beats when its bars are not whole (a Divide
+  /// of a sole loop, #1168), else null.
+  final int? beats;
   final int layers;
   final _FxMarker fxMarker;
   final bool reversed;
@@ -631,10 +653,8 @@ class _TrackMeta extends StatelessWidget {
       fontSize: 17,
       height: 1,
     );
-    final barsCount = bars;
-    final barsFigure = barsCount == null
-        ? l10n.stageNoBarsFigure
-        : l10n.stageBarsFigure(barsCount);
+    final count = loopCountWords(l10n, bars: bars, beats: beats);
+    final barsFigure = count.spoken;
     final meta = l10n.a11yStageTrackMeta(
       channel + 1,
       barsFigure,
@@ -671,8 +691,8 @@ class _TrackMeta extends StatelessWidget {
               ),
               _Figure(
                 key: Key('tracks_bars_$channel'),
-                figure: barsCount == null ? l10n.stageNoBars : '$barsCount',
-                unit: l10n.stageBarsUnit(barsCount ?? 0),
+                figure: count.figure,
+                unit: count.unit,
                 figureStyle: figure,
                 unitStyle: unit,
               ),

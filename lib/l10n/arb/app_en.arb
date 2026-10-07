@@ -6020,5 +6020,210 @@
                 "type": "int"
             }
         }
+    },
+    "actionModeMultiply": "Multiply",
+    "@actionModeMultiply": {
+        "description": "Foot Multiply surface (#1168, pen 16 screens 01-02)."
+    },
+    "actionModeDivide": "Divide",
+    "@actionModeDivide": {
+        "description": "Foot Divide surface (#1168, pen 16 screens 03-08)."
+    },
+    "actionOperationMultiply": "Multiply",
+    "@actionOperationMultiply": {
+        "description": "Assignable action: double the track (#1168)."
+    },
+    "actionOperationDivideFirstHalf": "Divide: first half",
+    "@actionOperationDivideFirstHalf": {
+        "description": "Assignable action: keep the first half of the track (#1168)."
+    },
+    "actionOperationDivideLastHalf": "Divide: last half",
+    "@actionOperationDivideLastHalf": {
+        "description": "Assignable action: keep the last half of the track (#1168)."
+    },
+    "footLengthDouble": "Double length",
+    "@footLengthDouble": {
+        "description": "Foot Multiply: the Clear pedal doubles the selected track."
+    },
+    "footLengthFirstHalf": "First half",
+    "@footLengthFirstHalf": {
+        "description": "Foot Divide: the Undo pedal keeps the first half."
+    },
+    "footLengthLastHalf": "Last half",
+    "@footLengthLastHalf": {
+        "description": "Foot Divide: the Clear pedal keeps the last half."
+    },
+    "footLengthOverview": "Loop length",
+    "@footLengthOverview": {
+        "description": "Foot Multiply / Divide: heading of the length panel when no recorded track is selected."
+    },
+    "footLengthSeconds": "{seconds} s",
+    "@footLengthSeconds": {
+        "description": "Foot Multiply / Divide: a track length without whole bars, in seconds.",
+        "placeholders": {
+            "seconds": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "footLengthIncompatible": "That length does not fit the other loops, or would leave half a beat.",
+    "@footLengthIncompatible": {
+        "description": "Foot Multiply / Divide: the engine refused the length as incompatible with the rig."
+    },
+    "footLengthCapacity": "The doubled loop would be longer than the loop memory.",
+    "@footLengthCapacity": {
+        "description": "Foot Multiply / Divide: Double refused for capacity."
+    },
+    "footLengthBusy": "The track is busy. Try again when it finishes.",
+    "@footLengthBusy": {
+        "description": "Foot Multiply / Divide: the track is capturing or waiting."
+    },
+    "footLengthEmpty": "The track has no recording to double or halve.",
+    "@footLengthEmpty": {
+        "description": "Foot Multiply / Divide: an assigned edit reached an empty track."
+    },
+    "footLengthFailure": "The length could not be changed. Try again.",
+    "@footLengthFailure": {
+        "description": "Foot Multiply / Divide: another refusal."
+    },
+    "lengthHistoryRefused": "The length change was not undone or redone. If pressing again changes nothing, that length no longer fits the other loops.",
+    "@lengthHistoryRefused": {
+        "description": "Undo or Redo of a length edit did nothing (#1168)."
+    },
+    "footLengthRepeatTo": "Repeat to {length}",
+    "@footLengthRepeatTo": {
+        "description": "Foot Multiply: what Double length makes of the selected track, e.g. \"Repeat to 4 bars\".",
+        "placeholders": {
+            "length": {
+                "type": "String"
+            }
+        }
+    },
+    "footLengthRepeated": "Repeated to {length}",
+    "@footLengthRepeated": {
+        "description": "Foot Multiply: outcome line after a Double, e.g. \"Repeated to 4 bars\".",
+        "placeholders": {
+            "length": {
+                "type": "String"
+            }
+        }
+    },
+    "footLengthFirstKept": "First {length} kept",
+    "@footLengthFirstKept": {
+        "description": "Foot Divide: outcome line after First half, e.g. \"First 1 bar kept\".",
+        "placeholders": {
+            "length": {
+                "type": "String"
+            }
+        }
+    },
+    "footLengthLastKept": "Last {length} kept",
+    "@footLengthLastKept": {
+        "description": "Foot Divide: outcome line after Last half, e.g. \"Last 1 bar kept\".",
+        "placeholders": {
+            "length": {
+                "type": "String"
+            }
+        }
+    },
+    "footLengthUnchanged": "Speed and pitch unchanged",
+    "@footLengthUnchanged": {
+        "description": "Foot Multiply / Divide: outcome line before an edit; length edits never change speed or pitch."
+    },
+    "footLengthNothingToUndo": "Nothing to undo",
+    "@footLengthNothingToUndo": {
+        "description": "Foot Multiply: the Undo pedal has nothing to undo on the selected track."
+    },
+    "footLengthUndoEdit": "Length edit",
+    "@footLengthUndoEdit": {
+        "description": "Foot Multiply: the Undo pedal would undo the length edit just made."
+    },
+    "footLengthUndoLast": "Last change",
+    "@footLengthUndoLast": {
+        "description": "Foot Multiply: the Undo pedal would undo the selected track's latest change, not a length edit made here."
+    },
+    "footLengthHoldUndo": "Hold · Undo",
+    "@footLengthHoldUndo": {
+        "description": "Foot Divide: holding the First half pedal undoes."
+    },
+    "footLengthSelectTrack": "Select a track",
+    "@footLengthSelectTrack": {
+        "description": "Foot Multiply / Divide: an edit pedal while no recorded track is selected."
+    },
+    "footLengthFinishRecording": "Finish recording",
+    "@footLengthFinishRecording": {
+        "description": "Foot Multiply / Divide: an edit pedal while the selected track records or is about to."
+    },
+    "footLengthFinishRecordingNote": "Finish recording to change length",
+    "@footLengthFinishRecordingNote": {
+        "description": "Foot Multiply / Divide: length panel line while the selected track records or is about to."
+    },
+    "footLengthBankEmpty": "No recorded audio in this bank",
+    "@footLengthBankEmpty": {
+        "description": "Foot Multiply / Divide: length panel line when the visible bank holds no recording."
+    },
+    "footLengthBar": "Bar {bar}",
+    "@footLengthBar": {
+        "description": "Foot Divide: the half is one bar, e.g. \"Bar 2\".",
+        "placeholders": {
+            "bar": {
+                "type": "int"
+            }
+        }
+    },
+    "footLengthBars": "Bars {first}–{last}",
+    "@footLengthBars": {
+        "description": "Foot Divide: the half spans bars, e.g. \"Bars 3–4\".",
+        "placeholders": {
+            "first": {
+                "type": "int"
+            },
+            "last": {
+                "type": "int"
+            }
+        }
+    },
+    "footLengthBeat": "Beat {beat}",
+    "@footLengthBeat": {
+        "description": "Foot Divide: the half is one beat, e.g. \"Beat 2\".",
+        "placeholders": {
+            "beat": {
+                "type": "int"
+            }
+        }
+    },
+    "footLengthBeats": "Beats {first}–{last}",
+    "@footLengthBeats": {
+        "description": "Foot Divide: the half spans beats, e.g. \"Beats 7–12\".",
+        "placeholders": {
+            "first": {
+                "type": "int"
+            },
+            "last": {
+                "type": "int"
+            }
+        }
+    },
+    "stageBeatsFigure": "{count, plural, =1{1 beat} other{{count} beats}}",
+    "@stageBeatsFigure": {
+        "description": "A loop length in whole beats, when its bars are not whole (#1168).",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "stageBeatsUnit": "{count, plural, =1{beat} other{beats}}",
+    "@stageBeatsUnit": {
+        "description": "A loop length in whole beats, when its bars are not whole (#1168).",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
     }
 }

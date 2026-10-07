@@ -51,9 +51,22 @@ enum InteractionMode {
 
   /// Foot-controlled Peel: each track pedal removes its track's newest
   /// overdub layer, recoverable through Undo.
-  peel;
+  peel,
+
+  /// Foot-controlled Multiply (#1168, pen 16 screens 01-02): the track
+  /// pedals select a recorded track, Clear doubles it and Undo stays Undo;
+  /// Rec/Play keeps recording.
+  multiply,
+
+  /// Foot-controlled Divide (#1168, pen 16 screens 03-08): the track pedals
+  /// select a recorded track, Undo keeps its first half (hold for Undo) and
+  /// Clear its last half; Rec/Play keeps recording.
+  divide;
 
   /// The persisted token for this mode. Derived from the member name, so a
   /// member rename changes the current stored identity.
   String get token => name;
+
+  /// Whether this is one of the two length surfaces, Multiply or Divide.
+  bool get isLength => this == multiply || this == divide;
 }
