@@ -554,11 +554,16 @@ void main() {
     }, skip: !hasScreenshotFonts);
   }
 
-  // Multiply / Divide (#1168). segno-ui.pen has no frame for it yet; the
-  // surface follows the Fade and Reverse layout: loop lengths, Bank B, an
-  // empty rig, and the Spanish strings.
-  for (final scene in ['default', 'bank', 'empty', 'spanish']) {
-    testWidgets('Foot Multiply / Divide $scene scene', (tester) async {
+  // Multiply and Divide (#1168), pen section 16: Multiply 01, Divide 03,
+  // Divide on Bank B (06), an empty bank (07), and the Spanish strings.
+  for (final (scene, mode) in [
+    ('multiply', InteractionMode.multiply),
+    ('divide', InteractionMode.divide),
+    ('divide_bank', InteractionMode.divide),
+    ('divide_empty', InteractionMode.divide),
+    ('spanish', InteractionMode.divide),
+  ]) {
+    testWidgets('Foot Multiply / Divide $scene scene (pen 16)', (tester) async {
       Track track(
         int channel, {
         int length = 48000,
@@ -586,7 +591,7 @@ void main() {
             inputChannels: 2,
             outputChannels: 2,
           ),
-          tracks: scene == 'empty'
+          tracks: scene == 'divide_empty'
               ? [
                   for (var channel = 0; channel < 8; channel++)
                     Track(channel: channel),
@@ -604,8 +609,8 @@ void main() {
         ),
       );
       control
-        ..selectTrack(scene == 'bank' ? 4 : 1)
-        ..setMode(InteractionMode.length);
+        ..selectTrack(scene == 'divide_bank' ? 4 : 1)
+        ..setMode(mode);
       await pump(
         tester,
         locale: scene == 'spanish' ? const Locale('es') : null,

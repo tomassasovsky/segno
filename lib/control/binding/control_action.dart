@@ -374,7 +374,8 @@ final class ModeAction extends ControlAction {
     InteractionMode.fade => 'fade',
     InteractionMode.reverse => 'reverse',
     InteractionMode.peel => 'peel',
-    InteractionMode.length => 'length',
+    InteractionMode.multiply => 'multiply',
+    InteractionMode.divide => 'divide',
   };
 
   @override

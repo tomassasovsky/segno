@@ -23,7 +23,56 @@ LooperState _state(List<Track> overrides) => LooperState(
 );
 
 void main() {
-  const overlay = ControlState(mode: InteractionMode.length, cursor: 1);
+  const overlay = ControlState(mode: InteractionMode.multiply, cursor: 1);
+
+  test('the two role tables follow pen 16', () {
+    final multiply = FootLengthProjection.rolesFor(InteractionMode.multiply);
+    final divide = FootLengthProjection.rolesFor(InteractionMode.divide);
+    expect(multiply[PedalButton.recPlay]!.press, FootLengthAction.recordPlay);
+    expect(multiply[PedalButton.undo]!.press, FootLengthAction.undo);
+    expect(multiply[PedalButton.undo]!.hold, isNull);
+    expect(multiply[PedalButton.clear]!.press, FootLengthAction.doubleTrack);
+    expect(divide[PedalButton.recPlay]!.press, FootLengthAction.recordPlay);
+    expect(divide[PedalButton.undo]!.press, FootLengthAction.firstHalf);
+    expect(divide[PedalButton.undo]!.hold, FootLengthAction.undo);
+    expect(divide[PedalButton.clear]!.press, FootLengthAction.lastHalf);
+    for (final roles in [multiply, divide]) {
+      expect(roles.keys, unorderedEquals(PedalButton.values));
+      expect(roles[PedalButton.stop]!.press, FootLengthAction.stop);
+      expect(roles[PedalButton.mode]!.press, FootLengthAction.exit);
+      expect(roles[PedalButton.bank]!.press, FootLengthAction.nextBank);
+      expect(roles[PedalButton.track3]!.slot, 2);
+    }
+  });
+
+  test('Divide halves count bars when each half is whole bars, else beats', () {
+    FootLengthTrack track({int? bars, int? totalBeats}) => FootLengthTrack(
+      channel: 0,
+      hasContent: true,
+      busy: false,
+      lengthFrames: 1,
+      multiple: 1,
+      syncDivisor: 0,
+      bars: bars,
+      totalBeats: totalBeats,
+    );
+    // Pen 16: 2 bars -> Bar 1 / Bar 2; 1 bar of 4/4 -> Beats 1-2 / 3-4;
+    // 3 bars -> Beats 1-6 / 7-12.
+    expect(
+      track(bars: 2, totalBeats: 8).halves,
+      const FootLengthHalves(inBars: true, half: 1),
+    );
+    expect(
+      track(bars: 1, totalBeats: 4).halves,
+      const FootLengthHalves(inBars: false, half: 2),
+    );
+    expect(
+      track(bars: 3, totalBeats: 12).halves,
+      const FootLengthHalves(inBars: false, half: 6),
+    );
+    expect(track(totalBeats: 3).halves, isNull, reason: 'half a beat');
+    expect(track().halves, isNull, reason: 'no grid');
+  });
 
   test('a track LED is red only on the selected recorded track', () {
     final looper = _state(const [
@@ -44,6 +93,13 @@ void main() {
     final looper = _state(const [
       Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
     ]);
+    expect(
+      projectFrame(
+        looper,
+        overlay.copyWith(mode: InteractionMode.divide),
+      ).mode,
+      PedalMode.custom,
+    );
     final frame = projectFrame(looper, overlay);
     expect(frame.mode, PedalMode.custom);
     final mask = frame.activeButtonMask;

@@ -1327,7 +1327,8 @@ class ControlCubit extends Cubit<ControlState> {
     InteractionMode.fade ||
     InteractionMode.reverse ||
     InteractionMode.peel ||
-    InteractionMode.length => InteractionMode.record,
+    InteractionMode.multiply ||
+    InteractionMode.divide => InteractionMode.record,
   });
 
   /// Saves the built-in pedal setup before making it live. A storage refusal
@@ -1469,12 +1470,14 @@ class ControlCubit extends Cubit<ControlState> {
         );
       case InteractionMode.reverse:
       case InteractionMode.peel:
-      case InteractionMode.length:
+      case InteractionMode.multiply:
+      case InteractionMode.divide:
         emit(
           state.copyWith(
             mode: next,
             excluded: const {},
             parkedResume: const {},
+            footLengthOutcome: FootLengthOutcome.none,
           ),
         );
       case InteractionMode.fade:
@@ -1592,9 +1595,9 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.fade:
       case InteractionMode.reverse:
       case InteractionMode.peel:
-      // In Multiply / Divide the Rec/Play PEDAL doubles, through the
-      // surface's role table; this keyboard call keeps its record meaning.
-      case InteractionMode.length:
+      // Multiply and Divide keep Record / Play on the pedal too (pen 16).
+      case InteractionMode.multiply:
+      case InteractionMode.divide:
         _recAdvance(state.cursor);
       case InteractionMode.mute:
         _muteRecPlay();
@@ -1739,7 +1742,8 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.fade:
       case InteractionMode.reverse:
       case InteractionMode.peel:
-      case InteractionMode.length:
+      case InteractionMode.multiply:
+      case InteractionMode.divide:
         parkAll();
       case InteractionMode.fx:
         panicTrackChains();
@@ -1807,7 +1811,8 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.mixer:
       case InteractionMode.fade:
       case InteractionMode.reverse:
-      case InteractionMode.length:
+      case InteractionMode.multiply:
+      case InteractionMode.divide:
       case InteractionMode.peel:
         // Inert: the performance surfaces replace the Tracks columns, and
         // their track pedals act through their own roles.
@@ -2190,7 +2195,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// Admits a screen contact on the Multiply / Divide surface into the
   /// shared ledger.
   void footLengthPressed(PedalButton button, Object contact) {
-    if (state.mode != InteractionMode.length || isClosed) return;
+    if (!state.mode.isLength || isClosed) return;
     _handleEvent(ButtonPressed(button), contact: contact);
   }
 
@@ -2206,9 +2211,17 @@ class ControlCubit extends Cubit<ControlState> {
   /// Accessible semantic activation uses the same Multiply / Divide role as
   /// contacts.
   void activateFootLengthPedal(PedalButton button) {
-    final role = FootLengthProjection.pedalRoles[button]!;
+    final role = _lengthRole(button);
     if (role.press != FootLengthAction.exit && !_lengthEditable) return;
     _dispatchLengthAction(role.press, role.slot);
+  }
+
+  /// Accessible semantic hold: the role's hold action (Divide's Undo), or
+  /// nothing for a role without one.
+  void holdFootLengthPedal(PedalButton button) {
+    final hold = _lengthRole(button).hold;
+    if (hold == null || !_lengthEditable) return;
+    _dispatchLengthAction(hold, null);
   }
 
   /// Applies [edit] to the selected track from the Multiply / Divide
@@ -2217,8 +2230,9 @@ class ControlCubit extends Cubit<ControlState> {
   Future<void> editFootLengthTrack(LengthEdit edit) async {
     if (!_lengthEditable) return;
     final channel = state.cursor;
-    if (!_lengthProjection().tracks[channel].hasContent) return;
-    await _editLengthChannel(channel, edit);
+    final track = _lengthProjection().tracks[channel];
+    if (!track.hasContent) return;
+    await _editLengthChannel(channel, edit, fromFrames: track.lengthFrames);
   }
 
   /// Fades the recorded track in visible [slot] of the current bank.
@@ -2436,7 +2450,7 @@ class ControlCubit extends Cubit<ControlState> {
       _onPeelPress(button);
       return;
     }
-    if (state.mode == InteractionMode.length) {
+    if (state.mode.isLength) {
       _onLengthPress(button);
       return;
     }
@@ -2494,7 +2508,8 @@ class ControlCubit extends Cubit<ControlState> {
           InteractionMode.fade ||
           InteractionMode.reverse ||
           InteractionMode.peel ||
-          InteractionMode.length => false,
+          InteractionMode.multiply ||
+          InteractionMode.divide => false,
         };
         if (accepted) _acceptedContacts.add(button);
         _armRecordHold();

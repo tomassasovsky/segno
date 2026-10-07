@@ -78,7 +78,8 @@ String _modeLabel(AppLocalizations l10n, InteractionMode mode) =>
       InteractionMode.fade => l10n.actionModeFade,
       InteractionMode.reverse => l10n.actionModeReverse,
       InteractionMode.peel => l10n.actionModePeel,
-      InteractionMode.length => l10n.actionModeLength,
+      InteractionMode.multiply => l10n.actionModeMultiply,
+      InteractionMode.divide => l10n.actionModeDivide,
     };
 
 String _commandLabel(AppLocalizations l10n, ControlCommand command) =>

@@ -113,7 +113,8 @@ PedalTrackLed projectTrackLed(
       // Lit while a press would remove a layer, so "none remain" and a busy
       // track are visible by foot.
       return (track?.canPeel ?? false) ? PedalTrackLed.blue : PedalTrackLed.off;
-    case InteractionMode.length:
+    case InteractionMode.multiply:
+    case InteractionMode.divide:
       // Red on the selected recorded track, the one every edit acts on (the
       // Record-mode cursor convention); an empty track is never selected.
       return (channel == overlay.cursor && track != null && track.hasContent)
@@ -223,7 +224,8 @@ PedalStateFrame projectFrame(
       InteractionMode.fade ||
       InteractionMode.reverse ||
       InteractionMode.peel ||
-      InteractionMode.length => PedalMode.custom,
+      InteractionMode.multiply ||
+      InteractionMode.divide => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
@@ -261,8 +263,8 @@ bool _slotless(InteractionMode mode, PedalButton button) => switch (mode) {
   InteractionMode.reverse =>
     FootReverseProjection.pedalRoles[button]!.slot == null,
   InteractionMode.peel => FootPeelProjection.pedalRoles[button]!.slot == null,
-  InteractionMode.length =>
-    FootLengthProjection.pedalRoles[button]!.slot == null,
+  InteractionMode.multiply || InteractionMode.divide =>
+    FootLengthProjection.rolesFor(mode)[button]!.slot == null,
   _ => false,
 };
 

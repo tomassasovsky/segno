@@ -125,7 +125,8 @@ class TracksCommands {
       InteractionMode.fade => l10n.actionModeFade,
       InteractionMode.reverse => l10n.actionModeReverse,
       InteractionMode.peel => l10n.actionModePeel,
-      InteractionMode.length => l10n.actionModeLength,
+      InteractionMode.multiply => l10n.actionModeMultiply,
+      InteractionMode.divide => l10n.actionModeDivide,
     });
   }
 
@@ -232,7 +233,7 @@ class TracksCommands {
         mode == InteractionMode.fade ||
         mode == InteractionMode.reverse ||
         mode == InteractionMode.peel ||
-        mode == InteractionMode.length) {
+        mode.isLength) {
       if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.keyM) {
         overlay.setMode(InteractionMode.record);
         return KeyEventResult.handled;
@@ -325,7 +326,8 @@ class TracksCommands {
           case InteractionMode.fade:
           case InteractionMode.reverse:
           case InteractionMode.peel:
-          case InteractionMode.length:
+          case InteractionMode.multiply:
+          case InteractionMode.divide:
             break;
           case InteractionMode.custom:
             // Selection only: what a control does in Custom controls is

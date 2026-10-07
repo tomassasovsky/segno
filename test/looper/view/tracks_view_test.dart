@@ -871,14 +871,17 @@ void main() {
         ),
       ).thenAnswer((_) async => EngineResult.modeMismatch);
       await pump(tester);
-      control.setMode(InteractionMode.length);
+      control.setMode(InteractionMode.divide);
       await tester.pump();
       await tester.pump();
       expect(find.byKey(const Key('foot_length_view')), findsOneWidget);
       await control.editFootLengthTrack(LengthEdit.lastHalf);
       await tester.pumpAndSettle();
       expect(
-        find.text('That length does not fit the other loops or the bars.'),
+        find.text(
+          'That length does not fit the other loops, or would leave half a '
+          'beat.',
+        ),
         findsOneWidget,
       );
       expect(control.state.footLengthFailure, 1);

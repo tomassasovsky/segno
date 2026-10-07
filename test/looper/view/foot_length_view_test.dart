@@ -11,6 +11,7 @@ import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/foot_length_view.dart';
+import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -47,6 +48,13 @@ const _rig = LooperState(
     Track(channel: 4, state: TrackState.stopped, lengthFrames: 36000),
     Track(channel: 5, state: TrackState.stopped, lengthFrames: 37000),
   ],
+);
+
+/// [_rig] with its tracks replaced.
+LooperState _withTracks(List<Track> tracks) => LooperState(
+  transport: _rig.transport,
+  status: _rig.status,
+  tracks: tracks,
 );
 
 void main() {
@@ -105,8 +113,12 @@ void main() {
   Finder pedal(PedalButton button) =>
       find.byKey(Key('foot_length_pedal_${button.name}'));
 
-  Finder overview(int channel) =>
-      find.byKey(Key('foot_length_overview_$channel'));
+  Finder inPedal(PedalButton button, String text) =>
+      find.descendant(of: pedal(button), matching: find.text(text));
+
+  String? note(WidgetTester tester) => tester
+      .widget<AppText>(find.byKey(const Key('foot_length_panel_note')))
+      .data;
 
   Semantics pedalSemantics(WidgetTester tester, PedalButton button) => find
       .ancestor(of: pedal(button), matching: find.byType(Semantics))
@@ -114,65 +126,201 @@ void main() {
       .map((element) => element.widget as Semantics)
       .firstWhere((semantics) => semantics.properties.button ?? false);
 
-  testWidgets('the overview reads every length; the edit pedals name the '
-      'selected track', (tester) async {
-    given(const ControlState(mode: InteractionMode.length, cursor: 1));
+  testWidgets('Multiply (pen 16 01): Clear doubles, Rec/Play and Undo keep '
+      'their Tracks roles, the panel reads the selected track', (
+    tester,
+  ) async {
+    given(const ControlState(mode: InteractionMode.multiply));
     await pump(tester);
     expect(find.byType(PedalHardwareFace), findsNWidgets(10));
-    expect(find.text('Loop length'), findsOneWidget);
-    for (final (channel, word) in [
-      (0, '2 bars'),
-      (1, '4 bars · ×2'),
-      (2, '1 bar · 1/2'),
-      (3, 'Empty'),
-      // One and a half bars of 4/4: 6 whole beats (#1168).
-      (4, '6 beats'),
-      (5, '0.8 s'),
-      (7, 'Empty'),
+    expect(find.byKey(const Key('foot_length_title')), findsOneWidget);
+    expect(find.text('Multiply'), findsOneWidget);
+    expect(inPedal(PedalButton.clear, 'Double length'), findsOneWidget);
+    expect(inPedal(PedalButton.clear, 'Repeat to 4 bars'), findsOneWidget);
+    expect(inPedal(PedalButton.recPlay, 'Record / Play'), findsOneWidget);
+    expect(inPedal(PedalButton.recPlay, 'TRACK 1'), findsOneWidget);
+    expect(inPedal(PedalButton.undo, 'Undo'), findsOneWidget);
+    expect(inPedal(PedalButton.undo, 'Nothing to undo'), findsOneWidget);
+    expect(pedalSemantics(tester, PedalButton.undo).properties.enabled, false);
+    expect(inPedal(PedalButton.stop, 'All tracks'), findsOneWidget);
+    expect(inPedal(PedalButton.bank, 'Bank A'), findsOneWidget);
+    expect(inPedal(PedalButton.bank, 'Tracks 1–4'), findsOneWidget);
+    expect(inPedal(PedalButton.mode, 'Exit'), findsOneWidget);
+    expect(pedalSemantics(tester, PedalButton.mode).properties.selected, true);
+    for (final (button, word) in [
+      (PedalButton.track1, '2 bars'),
+      (PedalButton.track2, '4 bars'),
+      (PedalButton.track3, '1 bar'),
+      (PedalButton.track4, 'Empty'),
     ]) {
-      expect(
-        find.descendant(of: overview(channel), matching: find.text(word)),
-        findsOneWidget,
-        reason: 'track ${channel + 1}',
-      );
+      expect(inPedal(button, word), findsOneWidget, reason: button.name);
     }
-    for (final (button, caption) in [
-      (PedalButton.recPlay, 'Double'),
-      (PedalButton.undo, 'First half'),
-      (PedalButton.clear, 'Last half'),
-    ]) {
-      expect(
-        find.descendant(of: pedal(button), matching: find.text(caption)),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: pedal(button), matching: find.text('TRACK 2')),
-        findsOneWidget,
-      );
-      expect(pedalSemantics(tester, button).properties.enabled, isTrue);
-    }
-    // The selection bar mirrors the LED: lit on the selected track only.
     expect(
-      pedalSemantics(tester, PedalButton.track2).properties.selected,
+      pedalSemantics(tester, PedalButton.track1).properties.selected,
       isTrue,
     );
     expect(
-      pedalSemantics(tester, PedalButton.track1).properties.selected,
+      pedalSemantics(tester, PedalButton.track2).properties.selected,
       isFalse,
     );
-    final bar = tester.widget<Container>(
-      find.byKey(const Key('foot_length_overview_bar_1')),
+    // The panel: the selected track, its length, one cell per bar, and
+    // the outcome line.
+    final panel = find.byKey(const Key('foot_length_panel'));
+    expect(
+      find.descendant(of: panel, matching: find.text('TRACK 1')),
+      findsOneWidget,
     );
-    expect(bar.color, isNot(Colors.transparent));
+    expect(
+      find.descendant(of: panel, matching: find.text('2 bars')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('foot_length_cell_1')), findsOneWidget);
+    expect(find.byKey(const Key('foot_length_cell_2')), findsNothing);
+    expect(note(tester), 'Speed and pitch unchanged');
   });
 
-  testWidgets('an empty track is dimmed and silent: its pedal and, while it '
-      'is selected, the edit pedals admit no contact', (tester) async {
-    given(const ControlState(mode: InteractionMode.length, cursor: 3));
+  testWidgets('Multiply (pen 16 02): after a Double the outcome reads '
+      '"Repeated to", Undo names the length edit', (tester) async {
+    whenListen(
+      looper,
+      const Stream<LooperState>.empty(),
+      initialState: _withTracks(
+        [
+          const Track(
+            state: TrackState.playing,
+            lengthFrames: 96000,
+            multiple: 2,
+            undoDepth: 1,
+          ),
+          ..._rig.tracks.skip(1),
+        ],
+      ),
+    );
+    given(
+      const ControlState(
+        mode: InteractionMode.multiply,
+        footLengthOutcome: FootLengthOutcome(
+          channel: 0,
+          edit: LengthEdit.doubled,
+          fromFrames: 48000,
+        ),
+      ),
+    );
     await pump(tester);
+    expect(note(tester), 'Repeated to 4 bars');
+    expect(inPedal(PedalButton.clear, 'Repeat to 8 bars'), findsOneWidget);
+    expect(inPedal(PedalButton.undo, 'Length edit'), findsOneWidget);
+    expect(pedalSemantics(tester, PedalButton.undo).properties.enabled, true);
+    expect(find.byKey(const Key('foot_length_cell_3')), findsOneWidget);
+  });
+
+  testWidgets('Divide (pen 16 03-05): halves on Undo and Clear, captioned in '
+      'bars or beats; Hold · Undo once there is something to undo', (
+    tester,
+  ) async {
+    given(const ControlState(mode: InteractionMode.divide));
+    await pump(tester);
+    expect(find.text('Divide'), findsOneWidget);
+    expect(inPedal(PedalButton.undo, 'First half'), findsOneWidget);
+    expect(inPedal(PedalButton.undo, 'Bar 1'), findsOneWidget);
+    expect(inPedal(PedalButton.undo, 'Hold · Undo'), findsNothing);
+    expect(inPedal(PedalButton.clear, 'Last half'), findsOneWidget);
+    expect(inPedal(PedalButton.clear, 'Bar 2'), findsOneWidget);
+    expect(inPedal(PedalButton.recPlay, 'Record / Play'), findsOneWidget);
+    final panel = find.byKey(const Key('foot_length_panel'));
+    expect(
+      find.descendant(of: panel, matching: find.text('First half')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: panel, matching: find.text('Last half')),
+      findsOneWidget,
+    );
+    expect(note(tester), 'Speed and pitch unchanged');
+    // Accessible hold: Undo.
+    final semantics = pedalSemantics(tester, PedalButton.undo);
+    semantics.properties.onLongPress!();
+    verify(() => control.holdFootLengthPedal(PedalButton.undo)).called(1);
+  });
+
+  testWidgets('Divide (pen 16 04): the first bar kept reads in beats', (
+    tester,
+  ) async {
+    whenListen(
+      looper,
+      const Stream<LooperState>.empty(),
+      initialState: _withTracks(
+        [
+          const Track(
+            state: TrackState.playing,
+            lengthFrames: 24000,
+            undoDepth: 1,
+          ),
+          ..._rig.tracks.skip(1),
+        ],
+      ),
+    );
+    given(
+      const ControlState(
+        mode: InteractionMode.divide,
+        footLengthOutcome: FootLengthOutcome(
+          channel: 0,
+          edit: LengthEdit.firstHalf,
+          fromFrames: 48000,
+        ),
+      ),
+    );
+    await pump(tester);
+    expect(note(tester), 'First 1 bar kept');
+    expect(inPedal(PedalButton.undo, 'Beats 1–2'), findsOneWidget);
+    expect(inPedal(PedalButton.undo, 'Hold · Undo'), findsOneWidget);
+    expect(inPedal(PedalButton.clear, 'Beats 3–4'), findsOneWidget);
+  });
+
+  testWidgets('Divide (pen 16 06): pedals and panel follow the shared bank', (
+    tester,
+  ) async {
+    given(
+      const ControlState(
+        mode: InteractionMode.divide,
+        activeBank: 1,
+        cursor: 4,
+      ),
+    );
+    await pump(tester);
+    expect(inPedal(PedalButton.bank, 'Bank B'), findsOneWidget);
+    expect(inPedal(PedalButton.bank, 'Tracks 5–8'), findsOneWidget);
+    expect(
+      pedalSemantics(tester, PedalButton.bank).properties.selected,
+      isTrue,
+    );
+    expect(inPedal(PedalButton.track1, 'TRACK 5'), findsOneWidget);
+    expect(inPedal(PedalButton.track1, '6 beats'), findsOneWidget);
+    expect(
+      pedalSemantics(tester, PedalButton.track1).properties.selected,
+      isTrue,
+    );
+    // Six beats: halves of three beats.
+    expect(inPedal(PedalButton.undo, 'Beats 1–3'), findsOneWidget);
+    expect(inPedal(PedalButton.clear, 'Beats 4–6'), findsOneWidget);
+  });
+
+  testWidgets('Divide (pen 16 07): with no recording selected the edit '
+      'pedals read "Select a track" and admit no contact', (tester) async {
+    whenListen(
+      looper,
+      const Stream<LooperState>.empty(),
+      initialState: _withTracks(
+        [for (var i = 0; i < 4; i++) Track(channel: i)],
+      ),
+    );
+    given(const ControlState(mode: InteractionMode.divide));
+    await pump(tester);
+    expect(find.byKey(const Key('foot_length_panel_empty')), findsOneWidget);
+    expect(find.text('Loop length'), findsOneWidget);
+    expect(note(tester), 'No recorded audio in this bank');
     for (final button in [
-      PedalButton.track4,
-      PedalButton.recPlay,
+      PedalButton.track1,
       PedalButton.undo,
       PedalButton.clear,
     ]) {
@@ -181,15 +329,10 @@ void main() {
       await tester.pump();
       verifyNever(() => control.footLengthPressed(button, any()));
     }
-    expect(
-      find.descendant(
-        of: pedal(PedalButton.recPlay),
-        matching: find.text('Empty'),
-      ),
-      findsOneWidget,
-    );
-    // Stop, Bank and Exit still work.
+    expect(inPedal(PedalButton.undo, 'Select a track'), findsOneWidget);
+    expect(inPedal(PedalButton.clear, 'Select a track'), findsOneWidget);
     for (final button in [
+      PedalButton.recPlay,
       PedalButton.stop,
       PedalButton.bank,
       PedalButton.mode,
@@ -198,71 +341,49 @@ void main() {
     }
   });
 
-  testWidgets('a busy recorded track keeps its length, dimmed, and still '
-      'takes the stomp', (tester) async {
+  testWidgets('an empty track selected while the bank has recordings asks '
+      'for a track', (tester) async {
+    given(const ControlState(mode: InteractionMode.multiply, cursor: 3));
+    await pump(tester);
+    expect(note(tester), 'Select a track');
+    expect(inPedal(PedalButton.clear, 'Select a track'), findsOneWidget);
+  });
+
+  testWidgets('Divide (pen 16 08): a recording track keeps its length and '
+      'asks to finish recording, still taking the stomp', (tester) async {
     whenListen(
       looper,
       const Stream<LooperState>.empty(),
-      initialState: const LooperState(
-        status: EngineStatus(sampleRate: 48000),
-        tracks: [
-          Track(state: TrackState.overdubbing, lengthFrames: 48000),
-          Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+      initialState: _withTracks(
+        [
+          const Track(state: TrackState.overdubbing, lengthFrames: 48000),
+          ..._rig.tracks.skip(1),
         ],
       ),
     );
-    given(const ControlState(mode: InteractionMode.length));
+    given(const ControlState(mode: InteractionMode.divide));
     await pump(tester);
-    double opacityOf(int channel) =>
-        tester.widget<Opacity>(overview(channel)).opacity;
-    expect(opacityOf(0), lessThan(1));
-    expect(opacityOf(1), 1);
+    expect(note(tester), 'Finish recording to change length');
+    expect(inPedal(PedalButton.undo, 'Finish recording'), findsOneWidget);
+    expect(inPedal(PedalButton.clear, 'Finish recording'), findsOneWidget);
+    expect(inPedal(PedalButton.track1, '2 bars'), findsOneWidget);
+    // Numbered bars while recording, not the halves.
+    final panel = find.byKey(const Key('foot_length_panel'));
     expect(
-      find.descendant(of: overview(0), matching: find.text('Empty')),
+      find.descendant(of: panel, matching: find.text('First half')),
       findsNothing,
     );
-    expect(
-      pedalSemantics(tester, PedalButton.recPlay).properties.enabled,
-      isTrue,
-    );
-    await tester.tap(pedal(PedalButton.recPlay));
+    await tester.tap(pedal(PedalButton.clear));
     await tester.pump();
     verify(
-      () => control.footLengthPressed(PedalButton.recPlay, any()),
+      () => control.footLengthPressed(PedalButton.clear, any()),
     ).called(1);
-  });
-
-  testWidgets('pedals follow the shared bank', (tester) async {
-    given(
-      const ControlState(
-        mode: InteractionMode.length,
-        activeBank: 1,
-        cursor: 4,
-      ),
-    );
-    await pump(tester);
-    expect(find.text('Bank B'), findsOneWidget);
-    expect(
-      pedalSemantics(tester, PedalButton.bank).properties.selected,
-      isTrue,
-    );
-    expect(
-      find.descendant(
-        of: pedal(PedalButton.track1),
-        matching: find.text('TRACK 5'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      pedalSemantics(tester, PedalButton.track1).properties.selected,
-      isTrue,
-    );
   });
 
   testWidgets('a contact is admitted, then completed by its own token', (
     tester,
   ) async {
-    given(const ControlState(mode: InteractionMode.length));
+    given(const ControlState(mode: InteractionMode.divide));
     await pump(tester);
     final gesture = await tester.startGesture(
       tester.getCenter(pedal(PedalButton.undo)),
@@ -280,7 +401,7 @@ void main() {
   });
 
   testWidgets('the header Exit returns to Tracks', (tester) async {
-    given(const ControlState(mode: InteractionMode.length));
+    given(const ControlState(mode: InteractionMode.multiply));
     await pump(tester);
     await tester.tap(find.byKey(const Key('foot_length_exit')));
     verify(() => control.setMode(InteractionMode.record)).called(1);
@@ -303,7 +424,7 @@ void main() {
     expect(texts, hasLength(FootLengthRefusal.values.length));
     expect(
       footLengthRefusalText(l10n, FootLengthRefusal.incompatible),
-      l10n.footLengthIncompatible,
+      'That length does not fit the other loops, or would leave half a beat.',
     );
   });
 }

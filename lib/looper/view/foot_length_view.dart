@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_length.dart';
@@ -11,10 +12,12 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/performance_pedal.dart';
 import 'package:segno/theme/theme.dart';
 
-/// The accepted ten-pedal Multiply / Divide surface (#1168), driven by the
-/// shared Control owner. The track pedals select a recorded track; Rec/Play
-/// doubles it, Undo keeps its first half and Clear its last half. The
-/// overview shows all eight lengths.
+/// The accepted ten-pedal Multiply and Divide surfaces (#1168, pen section
+/// 16), driven by the shared Control owner. The track pedals select a
+/// recorded track and Rec/Play, Stop keep their Tracks meaning. Multiply
+/// doubles on Clear and keeps Undo; Divide keeps the first half on Undo
+/// (hold for Undo) and the last half on Clear. The panel reads the selected
+/// track's length and the outcome of the latest edit.
 class FootLengthView extends StatelessWidget {
   /// Creates the performance surface within the real Tracks hierarchy.
   const FootLengthView({super.key});
@@ -22,9 +25,15 @@ class FootLengthView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final control = context.read<ControlCubit>();
-    final (bank, cursor) = context.select<ControlCubit, (int, int)>(
-      (cubit) => (cubit.state.activeBank, cubit.state.cursor),
-    );
+    final (mode, bank, cursor, outcome) = context
+        .select<ControlCubit, (InteractionMode, int, int, FootLengthOutcome)>(
+          (cubit) => (
+            cubit.state.mode,
+            cubit.state.activeBank,
+            cubit.state.cursor,
+            cubit.state.footLengthOutcome,
+          ),
+        );
     final projection = context.select<LooperBloc, FootLengthProjection>(
       (bloc) => projectFootLength(bloc.state, bank: bank, cursor: cursor),
     );
@@ -33,6 +42,7 @@ class FootLengthView extends StatelessWidget {
     );
     final l10n = context.l10n;
     final surface = context.surface;
+    final divide = mode == InteractionMode.divide;
 
     const front = [
       PedalButton.recPlay,
@@ -46,7 +56,9 @@ class FootLengthView extends StatelessWidget {
     ];
     Widget pedal(PedalButton button) => _FootLengthPedal(
       button: button,
+      mode: mode,
       projection: projection,
+      outcome: outcome,
       sampleRate: sampleRate,
     );
     return DefaultTextStyle.merge(
@@ -110,7 +122,10 @@ class FootLengthView extends StatelessWidget {
                         start: 40,
                         top: 16,
                         child: AppText(
-                          l10n.actionModeLength,
+                          divide
+                              ? l10n.actionModeDivide
+                              : l10n.actionModeMultiply,
+                          key: const Key('foot_length_title'),
                           style: const TextStyle(fontSize: 40),
                         ),
                       ),
@@ -128,10 +143,12 @@ class FootLengthView extends StatelessWidget {
                       ),
                       PositionedDirectional(
                         start: 940,
-                        top: 150,
+                        top: 112,
                         width: 820,
-                        child: _LengthOverview(
+                        child: _LengthPanel(
+                          divide: divide,
                           projection: projection,
+                          outcome: outcome,
                           sampleRate: sampleRate,
                         ),
                       ),
@@ -160,11 +177,21 @@ class FootLengthView extends StatelessWidget {
   }
 }
 
-/// The all-eight overview: a heading over two rows of four tracks.
-class _LengthOverview extends StatelessWidget {
-  const _LengthOverview({required this.projection, required this.sampleRate});
+/// The selected track's length (pen 16 "Selected track length"): its name
+/// and length, one cell per bar (Divide: the two halves), and an outcome
+/// line. With no recorded track selected it reads "Loop length" and says
+/// what to do.
+class _LengthPanel extends StatelessWidget {
+  const _LengthPanel({
+    required this.divide,
+    required this.projection,
+    required this.outcome,
+    required this.sampleRate,
+  });
 
+  final bool divide;
   final FootLengthProjection projection;
+  final FootLengthOutcome outcome;
   final int sampleRate;
 
   @override
@@ -172,97 +199,157 @@ class _LengthOverview extends StatelessWidget {
     final tracks = context.watch<TracksCubit>().state;
     final l10n = context.l10n;
     final surface = context.surface;
+    final track = projection.selected;
+    final secondary = TextStyle(fontSize: 26, color: surface.textSecondary);
+    if (!track.hasContent) {
+      return Column(
+        key: const Key('foot_length_panel_empty'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppText(l10n.footLengthOverview, style: secondary),
+          const SizedBox(height: 14),
+          AppText(
+            projection.bankHasContent
+                ? l10n.footLengthSelectTrack
+                : l10n.footLengthBankEmpty,
+            key: const Key('foot_length_panel_note'),
+            style: TextStyle(fontSize: 22, color: surface.textSecondary),
+          ),
+        ],
+      );
+    }
+    final cells = _cells(l10n, track, divide: divide);
     return Column(
+      key: const Key('foot_length_panel'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AppText(
-          l10n.footLengthOverview,
-          style: TextStyle(fontSize: 26, color: surface.textSecondary),
-        ),
-        const SizedBox(height: 22),
-        for (final row in [0, 4])
-          Padding(
-            padding: const EdgeInsetsDirectional.only(bottom: 24),
-            child: Row(
-              children: [
-                for (var i = 0; i < 4; i++) ...[
-                  if (i > 0) const SizedBox(width: 18),
-                  Expanded(
-                    child: _LengthOverviewCell(
-                      track: projection.tracks[row + i],
-                      selected:
-                          projection.cursor == row + i &&
-                          projection.tracks[row + i].hasContent,
-                      sampleRate: sampleRate,
-                      name: l10n.displayTrackName(
-                        tracks.nameOf(row + i),
-                        row + i,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: AppText(
+                l10n.displayTrackName(
+                  tracks.nameOf(track.channel),
+                  track.channel,
+                ),
+                key: const Key('foot_length_panel_track'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: secondary,
+              ),
             ),
+            AppText(
+              _lengthWord(l10n, track, sampleRate),
+              key: const Key('foot_length_panel_length'),
+              style: TextStyle(fontSize: 46, color: surface.textPrimary),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        SizedBox(
+          height: 92,
+          child: Row(
+            children: [
+              for (var i = 0; i < cells.length; i++) ...[
+                if (i > 0) const SizedBox(width: 4),
+                Expanded(
+                  child: _LengthCell(
+                    key: Key('foot_length_cell_$i'),
+                    cell: cells[i],
+                  ),
+                ),
+              ],
+            ],
           ),
+        ),
+        const SizedBox(height: 26),
+        AppText(
+          _outcomeWord(l10n, track, outcome, sampleRate),
+          key: const Key('foot_length_panel_note'),
+          style: TextStyle(fontSize: 22, color: surface.textSecondary),
+        ),
       ],
     );
   }
 }
 
-/// One track in the overview: its name, its length, and how it relates to
-/// the base loop. The selected track carries the selection bar.
-class _LengthOverviewCell extends StatelessWidget {
-  const _LengthOverviewCell({
-    required this.track,
-    required this.selected,
-    required this.sampleRate,
-    required this.name,
-  });
+/// One cell of the length panel: its label and one tick per beat.
+typedef _Cell = ({String label, int ticks});
 
-  final FootLengthTrack track;
-  final bool selected;
-  final int sampleRate;
-  final String name;
+/// The panel's cells: Divide's two halves, else one per bar (or beat), at
+/// most 16; a length with neither reads as one unlabelled cell.
+List<_Cell> _cells(
+  AppLocalizations l10n,
+  FootLengthTrack track, {
+  required bool divide,
+}) {
+  final bars = track.bars;
+  final beats = track.totalBeats;
+  final perBar = bars != null && bars > 0 && beats != null ? beats ~/ bars : 1;
+  final halves = track.halves;
+  if (divide && !track.busy && halves != null) {
+    final ticks = halves.inBars ? halves.half * perBar : halves.half;
+    return [
+      (label: l10n.footLengthFirstHalf, ticks: ticks),
+      (label: l10n.footLengthLastHalf, ticks: ticks),
+    ];
+  }
+  final units = bars ?? beats;
+  if (units == null || units <= 0) return [(label: '', ticks: 0)];
+  final count = units.clamp(1, 16);
+  return [
+    for (var i = 0; i < count; i++)
+      (label: '${i + 1}', ticks: bars != null ? perBar : 1),
+  ];
+}
+
+class _LengthCell extends StatelessWidget {
+  const _LengthCell({required this.cell, super.key});
+
+  final _Cell cell;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final l10n = context.l10n;
-    final color = !track.hasContent
-        ? surface.textMuted
-        : selected
-        ? surface.textPrimary
-        : surface.textSecondary;
-    final style = TextStyle(fontSize: 22, color: color);
-    final ratio = _ratioWord(l10n, track);
-    // A busy recorded track keeps its real length, dimmed: it cannot change
-    // until the pass or arm resolves.
-    return Opacity(
-      key: Key('foot_length_overview_${track.channel}'),
-      opacity: track.busy ? surface.disabledOpacity : 1,
+    return Container(
+      padding: const EdgeInsetsDirectional.fromSTEB(7, 6, 7, 8),
+      decoration: BoxDecoration(
+        color: surface.cardHigh,
+        borderRadius: BorderRadius.circular(4),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            key: Key('foot_length_overview_bar_${track.channel}'),
-            height: 4,
-            width: 56,
-            color: selected ? surface.accent : Colors.transparent,
-          ),
-          const SizedBox(height: 8),
           AppText(
-            name,
+            cell.label,
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: style,
+            overflow: TextOverflow.clip,
+            style: TextStyle(fontSize: 17, color: surface.textSecondary),
           ),
-          const SizedBox(height: 10),
-          AppText(
-            [
-              _lengthWord(l10n, track, sampleRate),
-              ?ratio,
-            ].join(' · '),
-            style: style,
+          const Spacer(),
+          // One tick per beat, rising through each bar, as the pen draws
+          // the recorded beat order. Ticks that would not fit are left out.
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final fit = ((constraints.maxWidth + 4) / 16).floor();
+              final ticks = cell.ticks.clamp(0, fit < 0 ? 0 : fit);
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (var i = 0; i < ticks; i++) ...[
+                    if (i > 0) const SizedBox(width: 4),
+                    Container(
+                      width: 12,
+                      height: 14.0 + 8 * (i % 4),
+                      decoration: BoxDecoration(
+                        color: surface.textTertiary,
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                    ),
+                  ],
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -298,24 +385,73 @@ String _lengthWord(
   return l10n.footLengthSeconds(track.lengthFrames / sampleRate);
 }
 
-/// How the track relates to the base loop: `×2`, `×4`, `1/2`, `1/4`, or
-/// null for one base loop or an empty track.
-String? _ratioWord(AppLocalizations l10n, FootLengthTrack track) {
-  if (!track.hasContent) return null;
-  if (track.syncDivisor > 1) return l10n.footLengthDivision(track.syncDivisor);
-  if (track.multiple > 1) return l10n.loopMultipleLabel(track.multiple);
-  return null;
+/// What Double length would make of [track]: twice its bars, beats or
+/// seconds.
+String _doubledWord(
+  AppLocalizations l10n,
+  FootLengthTrack track,
+  int sampleRate,
+) {
+  final bars = track.bars;
+  if (bars != null) return l10n.stageBarsFigure(bars * 2);
+  final beats = track.beats;
+  if (beats != null) return l10n.stageBeatsFigure(beats * 2);
+  if (sampleRate <= 0) return l10n.stageNoBarsFigure;
+  return l10n.footLengthSeconds(2 * track.lengthFrames / sampleRate);
+}
+
+/// The bars or beats one half of [track] covers: "Bar 1", "Beats 3–4".
+/// Empty when the halves are not whole beats.
+String _halfWord(
+  AppLocalizations l10n,
+  FootLengthTrack track, {
+  required bool first,
+}) {
+  final halves = track.halves;
+  if (halves == null) return '';
+  final from = first ? 1 : halves.half + 1;
+  final to = first ? halves.half : 2 * halves.half;
+  if (halves.inBars) {
+    return from == to
+        ? l10n.footLengthBar(from)
+        : l10n.footLengthBars(from, to);
+  }
+  return from == to
+      ? l10n.footLengthBeat(from)
+      : l10n.footLengthBeats(from, to);
+}
+
+/// The panel's outcome line: what the latest edit on the selected track did
+/// while it still describes it, else that speed and pitch are unchanged.
+String _outcomeWord(
+  AppLocalizations l10n,
+  FootLengthTrack track,
+  FootLengthOutcome outcome,
+  int sampleRate,
+) {
+  if (track.busy) return l10n.footLengthFinishRecordingNote;
+  if (!outcome.describes(track)) return l10n.footLengthUnchanged;
+  final length = _lengthWord(l10n, track, sampleRate);
+  return switch (outcome.edit) {
+    LengthEdit.doubled => l10n.footLengthRepeated(length),
+    LengthEdit.firstHalf => l10n.footLengthFirstKept(length),
+    LengthEdit.lastHalf => l10n.footLengthLastKept(length),
+  };
 }
 
 class _FootLengthPedal extends StatelessWidget {
   const _FootLengthPedal({
     required this.button,
+    required this.mode,
     required this.projection,
+    required this.outcome,
     required this.sampleRate,
   });
 
   final PedalButton button;
+  final InteractionMode mode;
   final FootLengthProjection projection;
+  final FootLengthOutcome outcome;
   final int sampleRate;
 
   @override
@@ -323,11 +459,17 @@ class _FootLengthPedal extends StatelessWidget {
     final control = context.read<ControlCubit>();
     final tracks = context.watch<TracksCubit>().state;
     final l10n = context.l10n;
-    final role = FootLengthProjection.pedalRoles[button]!;
+    final role = FootLengthProjection.rolesFor(mode)[button]!;
     final track = role.slot == null ? null : projection.trackAt(role.slot!);
-    final selectedTrack = projection.selected;
+    final selected = projection.selected;
     final edits = FootLengthProjection.editOf(role.press) != null;
+    String selectedName() => l10n.displayTrackName(
+      tracks.nameOf(selected.channel),
+      selected.channel,
+    );
     final title = switch (role.press) {
+      FootLengthAction.recordPlay => l10n.actionRecordPlay,
+      FootLengthAction.undo => l10n.actionUndo,
       FootLengthAction.doubleTrack => l10n.footLengthDouble,
       FootLengthAction.firstHalf => l10n.footLengthFirstHalf,
       FootLengthAction.lastHalf => l10n.footLengthLastHalf,
@@ -343,18 +485,29 @@ class _FootLengthPedal extends StatelessWidget {
     };
     final detail = switch (role.press) {
       FootLengthAction.selectTrack => _lengthWord(l10n, track!, sampleRate),
-      // The edit pedals name the track they act on.
-      _ when edits =>
-        selectedTrack.hasContent
-            ? l10n.displayTrackName(
-                tracks.nameOf(selectedTrack.channel),
-                selectedTrack.channel,
-              )
-            : l10n.readoutStateEmpty,
+      FootLengthAction.recordPlay => selectedName(),
+      FootLengthAction.undo =>
+        !selected.canUndo
+            ? l10n.footLengthNothingToUndo
+            : outcome.describes(selected)
+            ? l10n.footLengthUndoEdit
+            : l10n.footLengthUndoLast,
+      // The edit pedals say what they would do, or why they cannot.
+      _ when edits && !selected.hasContent => l10n.footLengthSelectTrack,
+      _ when edits && selected.busy => l10n.footLengthFinishRecording,
+      FootLengthAction.doubleTrack => l10n.footLengthRepeatTo(
+        _doubledWord(l10n, selected, sampleRate),
+      ),
+      FootLengthAction.firstHalf => _halfWord(l10n, selected, first: true),
+      FootLengthAction.lastHalf => _halfWord(l10n, selected, first: false),
       FootLengthAction.stop => l10n.actionScopeAllTracks,
-      FootLengthAction.nextBank => l10n.footReverseSwitchBank,
-      _ => '',
+      FootLengthAction.nextBank => l10n.footMixerTracksPage(
+        projection.bank * 4 + 1,
+        projection.bank * 4 + 4,
+      ),
+      FootLengthAction.exit => '',
     };
+    final hold = role.hold;
     final selectedSlot =
         track != null && track.hasContent && track.channel == projection.cursor;
     return PerformancePedal(
@@ -372,14 +525,20 @@ class _FootLengthPedal extends StatelessWidget {
       title: title,
       detail: detail,
       detailHighlighted: selectedSlot,
-      hint: '',
+      // Divide's First half gives way to Undo on a hold, while there is
+      // something to undo.
+      hint: hold == FootLengthAction.undo && selected.canUndo
+          ? l10n.footLengthHoldUndo
+          : '',
       // An empty track is dimmed and silent: its pedal cannot be selected,
-      // and the edit pedals rest while the selected track is empty. A busy
+      // and the edit pedals rest while no recorded track is selected. A busy
       // recorded track still admits the stomp, which is refused with a
-      // notice.
+      // notice. Undo rests while there is nothing to undo.
       enabled: track != null
           ? track.hasContent
-          : !edits || selectedTrack.hasContent,
+          : role.press == FootLengthAction.undo
+          ? selected.canUndo
+          : !edits || selected.hasContent || (hold != null && selected.canUndo),
       // The selection bar mirrors the physical LED: the selected recorded
       // track, Bank on bank B, and Exit, the way back to Tracks.
       selected:
@@ -390,6 +549,7 @@ class _FootLengthPedal extends StatelessWidget {
       onReleased: control.footLengthReleased,
       onCancelled: control.footLengthCancelled,
       onActivate: () => control.activateFootLengthPedal(button),
+      onHold: hold == null ? null : () => control.holdFootLengthPedal(button),
     );
   }
 }

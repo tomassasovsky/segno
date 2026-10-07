@@ -1794,7 +1794,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(debugAppToastActive(AppToastId.lengthHistoryRefused), isTrue);
       final notice = find.text(
-        'The length change was not undone or redone. Try again.',
+        'The length change was not undone or redone. If pressing again '
+        'changes nothing, that length no longer fits the other loops.',
       );
       expect(notice, findsOneWidget);
       expect(find.text('TRACK 1'), findsWidgets);

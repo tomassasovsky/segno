@@ -3074,17 +3074,19 @@ static int32_t le_length_history_post(le_engine* e, int32_t ch, int redo) {
       atomic_load_explicit(&t->a_audio_rev, memory_order_acquire), NULL);
 }
 
-/* Counts an Undo or Redo tap on a length edit that did nothing, for the host
- * to report (le_track_snapshot.length_history_refusals). */
+/* Counts an Undo or Redo tap on a length edit that did nothing where its
+ * caller could not see it, for the host to report
+ * (le_track_snapshot.length_history_refusals): a tap posted as LE_OK that the
+ * callback then refused, or queued taps that stopped at the edit. A refusal
+ * returned to the tap itself is NOT counted: the caller already reports that
+ * result, and one tap must raise one notice (#1168 review M1). */
 static void le_length_history_refused(le_track* t) {
   atomic_fetch_add_explicit(&t->a_length_history_refusals, 1u,
                             memory_order_relaxed);
 }
 
 static int32_t le_length_history(le_engine* e, int32_t ch, int redo) {
-  const int32_t rc = le_length_history_post(e, ch, redo);
-  if (rc != LE_OK) le_length_history_refused(&e->tracks[ch]);
-  return rc;
+  return le_length_history_post(e, ch, redo);
 }
 
 /* Files a length motion once the callback acknowledged it (control thread,

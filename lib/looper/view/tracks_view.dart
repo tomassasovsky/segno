@@ -267,7 +267,7 @@ class _TracksViewState extends State<TracksView> {
                             ? const FootReverseView()
                             : mode == InteractionMode.peel
                             ? const FootPeelView()
-                            : mode == InteractionMode.length
+                            : mode.isLength
                             ? const FootLengthView()
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
