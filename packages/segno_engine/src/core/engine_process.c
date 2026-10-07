@@ -2803,22 +2803,26 @@ static int le_apply_mix(le_engine* e, const le_mix_settings* mix,
  * whole (LE_ERR_NOT_READY, nothing written) when the track is capturing or a
  * routing change would be blocked; control's admission makes that
  * unreachable, and the refusal is the fail-safe. */
+/* Whether the callback must refuse a Bounce install on [t] right now. */
+static int le_bounce_blocked(le_engine* e, le_track* t) {
+  const int32_t st = load_i32(&t->a_state);
+  return st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+         t->pending_record || t->seam_capture || t->xfade_capture ||
+         t->od_gain != 0.0f || load_i32(&t->a_layer_in_flight) ||
+         e->launch_action[t - e->tracks] != 0;
+}
+
 static int32_t le_bounce_install(le_engine* e, le_bounce_bundle* b,
                                  uint64_t frame) {
   const int32_t ch = b->channel;
   if (!valid_channel(e, ch)) return LE_ERR_INVALID;
   le_track* t = &e->tracks[ch];
   const int32_t st = load_i32(&t->a_state);
-  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
-      t->pending_record || t->seam_capture || t->xfade_capture ||
-      t->od_gain != 0.0f || load_i32(&t->a_layer_in_flight) ||
-      e->launch_action[ch] != 0) {
-    return LE_ERR_NOT_READY;
-  }
+  if (le_bounce_blocked(e, t)) return LE_ERR_NOT_READY;
   /* The other side, recorded before anything moves. */
   le_hist_entry prev = {LE_HIST_BOUNCE, load_i32(&t->lanes[0].a_live)};
   prev.len = st == LE_TRACK_EMPTY ? 0 : load_i32(&t->lanes[0].a_len);
-  prev.state = st;
+  prev.state = b->parked ? b->parked_state : st;
   prev.multiple = load_i32(&t->a_multiple);
   prev.divisor = load_i32(&t->a_sync_divisor);
   prev.reversed = t->reversed;
@@ -2867,11 +2871,17 @@ static int32_t le_bounce_install(le_engine* e, le_bounce_bundle* b,
       /* Frames since the top of the iteration the target's segment 0
        * starts at: the render's frame 0 for a bounce. */
       int64_t elapsed = 0;
-      if (e->clock.length > 0) {
+      if (e->clock.length > 0 && b->op == LE_BOUNCE_APPLY) {
         elapsed = ((int64_t)e->loop_iteration - (int64_t)g->start_iter) *
                       e->clock.length +
                   e->clock.position;
         if (elapsed < 0) elapsed = e->clock.position;
+      } else if (e->clock.length > 0) {
+        /* Undo or Redo across a re-clock: the iterations since the entry
+         * was filed were counted at another master length, so they do not
+         * convert. The position in the current loop does: the restored
+         * master carries on from it (review L1 of Part 4a). */
+        elapsed = e->clock.position;
       }
       le_plog_push(e, frame, (le_command){.code = LE_PLOG_LOOP_LENGTH_LOCKED,
                                          .arg_i = master});
@@ -2921,6 +2931,79 @@ static int32_t le_bounce_install(le_engine* e, le_bounce_bundle* b,
   e->trk_play_pos[ch] = le_track_read_index(e, t);
   le_primary_reconcile(e);
   return LE_OK;
+}
+
+/* Installs [b] and publishes its outcome to receipt [slot]. */
+static void le_bounce_finish(le_engine* e, le_bounce_bundle* b, int32_t slot,
+                             uint64_t frame) {
+  const int32_t result = le_bounce_install(e, b, frame);
+  atomic_store_explicit(&e->receipts[slot].result, result,
+                        memory_order_release);
+  if (valid_channel(e, b->channel)) {
+    atomic_fetch_add_explicit(&e->tracks[b->channel].a_state_acks, 1,
+                              memory_order_release);
+  }
+  /* Last: control frees the bundle once it reads this. */
+  atomic_store_explicit(&b->a_result, result, memory_order_release);
+}
+
+/* Whether any chain on [t] can still be sounding a tail. */
+static int le_track_has_chain(le_track* t) {
+  if (load_i32(&t->bus.a_fx_count) > 0) return 1;
+  for (int32_t l = 0; l < le_lanes_active(t); ++l) {
+    if (load_i32(&t->lanes[l].a_fx_count) > 0) return 1;
+  }
+  return 0;
+}
+
+/* A Bounce over a sounding destination with chains (review M1 of Part 4a):
+ * replacing the chains in the same block would cut their Post tails dead,
+ * which a Stop of the same track does not do. The callback stops the track
+ * the way a Stop does instead — the dry ends, the tails drain on the old
+ * chains — and holds the bundle until le_bounce_park_tick installs it.
+ * Returns 1 when [b] was parked. */
+static int le_bounce_park(le_engine* e, le_bounce_bundle* b, int32_t slot,
+                          uint64_t frame) {
+  if (!valid_channel(e, b->channel)) return 0;
+  le_track* t = &e->tracks[b->channel];
+  const int32_t st = load_i32(&t->a_state);
+  if (st != LE_TRACK_PLAYING || le_bounce_blocked(e, t) ||
+      t->bounce_parked != NULL || !le_track_has_chain(t)) {
+    return 0;
+  }
+  b->parked = 1;
+  b->parked_state = st;
+  le_plog_push(e, frame,
+               (le_command){.code = LE_CMD_STOP, .arg_i = b->channel});
+  handle_stop(e, b->channel, frame);
+  t->bounce_parked = b;
+  t->bounce_park_slot = slot;
+  t->bounce_park_left = (int64_t)LE_BOUNCE_TAIL_MAX_SECONDS * e->sample_rate;
+  t->bounce_park_quiet = 0;
+  return 1;
+}
+
+/* Block end, for a track holding a parked Bounce: installs it once the
+ * track's output (its chains' tails) has been below LE_BOUNCE_TAIL_QUIET for
+ * a whole delay ring — nothing a ring holds can sound after that — or the
+ * wait reaches its bound, or the track left STOPPED (a rig-wide Play). */
+static void le_bounce_park_tick(le_engine* e, le_track* t, float peak_l,
+                                float peak_r, uint32_t frames,
+                                uint64_t frame) {
+  t->bounce_park_left -= frames;
+  if (peak_l < LE_BOUNCE_TAIL_QUIET && peak_r < LE_BOUNCE_TAIL_QUIET) {
+    t->bounce_park_quiet += frames;
+  } else {
+    t->bounce_park_quiet = 0;
+  }
+  if (t->bounce_park_quiet < (int64_t)e->fx_delay_frames &&
+      t->bounce_park_left > 0 &&
+      load_i32(&t->a_state) == LE_TRACK_STOPPED) {
+    return;
+  }
+  le_bounce_bundle* b = t->bounce_parked;
+  t->bounce_parked = NULL;
+  le_bounce_finish(e, b, t->bounce_park_slot, frame);
 }
 
 static void apply_command_image(le_engine* e, const le_command* cmd,
@@ -3415,15 +3498,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
     case LE_CMD_BOUNCE:
     case LE_CMD_BOUNCE_RECOVER: {
       le_bounce_bundle* b = cmd->bounce.bundle;
-      const int32_t result = le_bounce_install(e, b, frame);
-      atomic_store_explicit(&e->receipts[cmd->bounce.slot].result, result,
-                            memory_order_release);
-      if (valid_channel(e, b->channel)) {
-        atomic_fetch_add_explicit(&e->tracks[b->channel].a_state_acks, 1,
-                                  memory_order_release);
-      }
-      /* Last: control frees the bundle once it reads this. */
-      atomic_store_explicit(&b->a_result, result, memory_order_release);
+      if (le_bounce_park(e, b, cmd->bounce.slot, frame)) break;
+      le_bounce_finish(e, b, cmd->bounce.slot, frame);
       break;
     }
     case LE_CMD_RENDER_FREEZE:
@@ -7204,6 +7280,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
               tstate == LE_TRACK_EMPTY ? 0
               : recording              ? rp
                                        : e->trk_play_pos[t]);
+    if (e->tracks[t].bounce_parked != NULL) {
+      le_bounce_park_tick(e, &e->tracks[t], trk_lpeak[t], trk_rpeak[t],
+                          frames, perf_frame_base + frames);
+    }
   }
   store_i32(&e->a_master_pos, e->clock.position);
   atomic_fetch_add_explicit(&e->a_frames, (uint64_t)frames,
