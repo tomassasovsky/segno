@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:storage_repository/storage_repository.dart';
 
 /// Every pair in [values] is equal exactly when the indices are, and equal
@@ -94,6 +95,14 @@ void main() {
       'the destination is not supported',
     );
     expect('${const StorageFailure.io('EIO')}', 'storage I/O failed: EIO');
+    expect(
+      '${const StorageFailure.busy(GuardKind.restart)}',
+      'busy: restart is in flight',
+    );
+    expect(
+      const StorageFailure.busy(GuardKind.capture),
+      isNot(const StorageFailure.busy(GuardKind.restart)),
+    );
     expect(
       '${const StorageFailure.io('EIO', writtenTo: '/media/1/take.wav')}',
       'copied to /media/1/take.wav, but the drive did not confirm it: EIO',
