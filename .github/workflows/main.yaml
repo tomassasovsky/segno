@@ -499,6 +499,12 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_retry_tests.sh
       - name: Run wifi network-management tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_manage_tests.sh
+      # Twice: the appliance's /bin/sh is busybox ash, so the helper must hold
+      # under a strict POSIX shell (dash) as well as bash.
+      - name: Run brightness-ctl tests (bash)
+        run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_brightness_tests.sh
+      - name: Run brightness-ctl tests (dash)
+        run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_brightness_tests.sh
       - name: Run mark-good tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
       - name: Run update-ctl reboot tryboot tests

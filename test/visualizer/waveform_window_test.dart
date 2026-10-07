@@ -383,6 +383,38 @@ void main() {
       expect(find.byKey(const Key('power_mark')), findsOneWidget);
     });
 
+    testWidgets('PerformanceReadout.brightness dims the panel in software', (
+      tester,
+    ) async {
+      final frame = ValueNotifier<WaveformFrame>(
+        (samples: Float32List(0), progress: 0, selectedTrack: ''),
+      );
+      final readout = ValueNotifier<PerformanceReadout>(
+        const PerformanceReadout(),
+      );
+      addTearDown(frame.dispose);
+      addTearDown(readout.dispose);
+      await tester.pumpWidget(
+        WaveformWindowApp(
+          frame: frame,
+          readout: readout,
+          title: 'Segno — Output',
+        ),
+      );
+      addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
+      expect(find.byType(ColorFiltered), findsNothing);
+
+      readout.value = const PerformanceReadout(brightness: 0.3);
+      await tester.pump();
+      expect(
+        find.ancestor(
+          of: find.byType(ConsoleReadoutView),
+          matching: find.byType(ColorFiltered),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('gives the readout a Material ancestor on both faces', (
       tester,
     ) async {
