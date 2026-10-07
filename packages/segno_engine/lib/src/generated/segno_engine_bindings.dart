@@ -2641,28 +2641,65 @@ class SegnoEngineBindings {
   late final _le_engine_set_one_shot_mask = _le_engine_set_one_shot_maskPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// Sets the MIDI clock mode (le_clock_mode: 0 off, 1 send). RECEIVE (2) and
-  /// any value outside the enum return LE_ERR_INVALID without posting — receive
-  /// is Phase E's clock follower, not yet implemented; this setter stubs the
-  /// tri-state field now so that part can reuse it without a breaking rename.
-  int le_engine_set_clock_mode(
+  /// Turns clock send on (1) or off (0). Returns LE_ERR_INVALID for any other
+  /// value or a null engine. The setting persists across configure.
+  int le_engine_set_clock_send(
     ffi.Pointer<le_engine> engine,
-    int mode,
+    int enabled,
   ) {
-    return _le_engine_set_clock_mode(
+    return _le_engine_set_clock_send(
       engine,
-      mode,
+      enabled,
     );
   }
 
-  late final _le_engine_set_clock_modePtr =
+  late final _le_engine_set_clock_sendPtr =
       _lookup<
         ffi.NativeFunction<
           ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
         >
-      >('le_engine_set_clock_mode');
-  late final _le_engine_set_clock_mode = _le_engine_set_clock_modePtr
+      >('le_engine_set_clock_send');
+  late final _le_engine_set_clock_send = _le_engine_set_clock_sendPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Selects the tempo source: `source_port` -1 for Internal, or an input port
+  /// 0..LE_MAX_MIDI_PORTS-1 whose capture is (or will be) attached.
+  /// `follow_transport` (0/1) and `loss_policy` (le_clock_loss_policy) are
+  /// stored with it; Follow Play/Stop and the loss policy act from #1228 Parts
+  /// 4 and 5. Each accepted call is one complete vector: the n-th accepted call
+  /// carries receipt sequence n, published in le_snapshot.clock_receipt with
+  /// clock_result once the audio thread has applied or refused it. Returns
+  /// LE_OK, LE_ERR_INVALID (bad argument), LE_ERR_NOT_RUNNING (unconfigured),
+  /// or LE_ERR_SYNC_LOCKED when changing the source while a track records,
+  /// overdubs, is armed or counting in (re-selecting the same source with other
+  /// settings is allowed).
+  int le_engine_set_clock_sync(
+    ffi.Pointer<le_engine> engine,
+    int source_port,
+    int follow_transport,
+    int loss_policy,
+  ) {
+    return _le_engine_set_clock_sync(
+      engine,
+      source_port,
+      follow_transport,
+      loss_policy,
+    );
+  }
+
+  late final _le_engine_set_clock_syncPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_clock_sync');
+  late final _le_engine_set_clock_sync = _le_engine_set_clock_syncPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
   /// Enqueues one callback-confirmed click mode; capturing refuses, arms do not.
   /// One request at a time. Confirm via commands_settled then snapshot receipt.
@@ -6732,7 +6769,15 @@ enum le_result {
 
   /// the file exists but is shorter than the range
   /// it must hold (#1198)
-  LE_ERR_TRUNCATED(-19);
+  LE_ERR_TRUNCATED(-19),
+
+  /// tempo is owned by an external MIDI clock
+  /// source (#1228); select Internal first
+  LE_ERR_EXTERNAL_CLOCK(-20),
+
+  /// the clock source cannot change while a track
+  /// records, overdubs, is armed or counting in
+  LE_ERR_SYNC_LOCKED(-21);
 
   final int value;
   const le_result(this.value);
@@ -6753,6 +6798,8 @@ enum le_result {
     -17 => LE_ERR_TRACKS_CHANGED,
     -18 => LE_ERR_NOT_FOUND,
     -19 => LE_ERR_TRUNCATED,
+    -20 => LE_ERR_EXTERNAL_CLOCK,
+    -21 => LE_ERR_SYNC_LOCKED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
   };
 }
@@ -7052,9 +7099,8 @@ enum le_command_code {
   /// arg_i = channel, arg_f = 0/1
   LE_CMD_SET_ONE_SHOT(47),
 
-  /// arg_i = le_clock_mode. RECEIVE (2) is
-  /// rejected — see le_engine_set_clock_mode.
-  LE_CMD_SET_CLOCK_MODE(48),
+  /// arg_i = 0/1
+  LE_CMD_SET_CLOCK_SEND(48),
 
   /// set a track's Track-stage chain entry type (and
   /// reset its DSP state). fx arm: channel, index,
@@ -7227,7 +7273,12 @@ enum le_command_code {
 
   /// Bounce Undo/Redo (#1202): reinstalls the
   /// other side of a bounce; never raw-posted
-  LE_CMD_BOUNCE_RECOVER(114);
+  LE_CMD_BOUNCE_RECOVER(114),
+
+  /// MIDI clock sync (#1228; codes 124-131 are this epic's): one complete
+  /// vector {source port or -1, follow transport, loss policy} with a receipt
+  /// sequence. Rechecked by the callback (LE_ERR_SYNC_LOCKED).
+  LE_CMD_SET_CLOCK_SYNC(124);
 
   final int value;
   const le_command_code(this.value);
@@ -7280,7 +7331,7 @@ enum le_command_code {
     45 => LE_CMD_SET_LOOPER_MODE,
     46 => LE_CMD_CROWN_PRIMARY,
     47 => LE_CMD_SET_ONE_SHOT,
-    48 => LE_CMD_SET_CLOCK_MODE,
+    48 => LE_CMD_SET_CLOCK_SEND,
     49 => LE_CMD_SET_TRACK_FX,
     50 => LE_CMD_SET_TRACK_FX_COUNT,
     53 => LE_CMD_SET_TUNER_INPUT,
@@ -7322,6 +7373,7 @@ enum le_command_code {
     112 => LE_CMD_RENDER_FREEZE,
     113 => LE_CMD_BOUNCE,
     114 => LE_CMD_BOUNCE_RECOVER,
+    124 => LE_CMD_SET_CLOCK_SYNC,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -8321,11 +8373,11 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int primary_track;
 
-  /// ---- MIDI clock (Phase C, D15; trailing for the same offset-stability
-  /// reason as the blocks above). le_clock_mode; default 0 = OFF, so an
-  /// untouched engine emits no clock bytes. See le_engine_set_clock_mode.
+  /// ---- MIDI clock send (Phase C, D15; trailing for the same
+  /// offset-stability reason as the blocks above). 0/1; default 0, so an
+  /// untouched engine emits no clock bytes. See le_engine_set_clock_send.
   @ffi.Int32()
-  external int clock_mode;
+  external int clock_send;
 
   /// ---- input clip detector + conditioning activity (input clip, S2;
   /// trailing for the same offset-stability reason as the blocks above).
@@ -8491,6 +8543,46 @@ final class le_snapshot extends ffi.Struct {
   /// Trailing (#1179 Part 3a): 1 while Transpose is bypassed globally.
   @ffi.Int32()
   external int transpose_bypass;
+
+  /// ---- MIDI clock sync (#1228 Part 2; trailing). clock_state is an
+  /// le_clock_state; clock_source_port is -1 for Internal. clock_bpm is the
+  /// external tempo for display (0.1 BPM steps with hysteresis, Segno's
+  /// denominator-note unit; the last value is kept while LOST, 0 before the
+  /// first acquisition). clock_out_of_range is 1 while a steady clock lies
+  /// outside 30..300 BPM in the current signature. clock_pulses counts every
+  /// pulse received or recognised as missed since the source was selected
+  /// (low 32 bits). clock_receipt is the sequence of the last applied
+  /// le_engine_set_clock_sync, clock_result its outcome (LE_OK or
+  /// LE_ERR_SYNC_LOCKED). clock_losses counts Synced -> Lost transitions.
+  @ffi.Int32()
+  external int clock_state;
+
+  @ffi.Int32()
+  external int clock_source_port;
+
+  @ffi.Int32()
+  external int clock_follow_transport;
+
+  @ffi.Int32()
+  external int clock_loss_policy;
+
+  @ffi.Float()
+  external double clock_bpm;
+
+  @ffi.Int32()
+  external int clock_out_of_range;
+
+  @ffi.Uint32()
+  external int clock_pulses;
+
+  @ffi.Uint32()
+  external int clock_receipt;
+
+  @ffi.Int32()
+  external int clock_result;
+
+  @ffi.Uint32()
+  external int clock_losses;
 }
 
 /// The plugin format a descriptor was discovered in.

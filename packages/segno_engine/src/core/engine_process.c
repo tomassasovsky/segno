@@ -27,6 +27,7 @@
 #include "engine_internal.h" /* le_engine_process prototype */
 #include "engine_private.h"  /* le_engine + the published atomics */
 #include "le_midi_clock.h"   /* le_midi_clock_advance (C1 24-PPQN clock-send) */
+#include "le_clock_follow.h" /* the MIDI clock follower (#1228 Part 2) */
 #include "lockfree_ring.h"   /* le_command, le_ring_pop, le_ring_push */
 #include "loop_clock.h"      /* le_loop_clock_* */
 #include "segno_engine_api.h"
@@ -700,16 +701,20 @@ static void le_apply_mode_switch(le_engine* e, int32_t m) {
   le_primary_reconcile(e);
 }
 
+static void le_clock_sync_apply(le_engine* e, const le_command* cmd);
+
 /* MIDI clock send gate (C1, D15): whether le_midi_clock_advance may emit
  * ANYTHING this block. Manual-verified (docs/plan/2026-07-22-song-mode-
  * spec.md, "MIDI clock" section): send is active only in Multi/Sync/Band —
- * Song and Free stay completely silent regardless of clock_mode. Unlike
+ * Song and Free stay completely silent whatever the send switch says. An
+ * external clock source closes it too (#1228): received clock is relayed,
+ * never regenerated from Segno's own transport. Unlike
  * le_looper_mode_switch_blocked above (gating whether a MODE SWITCH
  * may land), this reads the CURRENT mode every block to gate whether
  * clock OUTPUT fires — the two are deliberately different predicates over
  * the same a_looper_mode field. */
 static int le_clock_send_gate_open(le_engine* e) {
-  if (load_i32(&e->a_clock_mode) != LE_CLOCK_SEND) return 0;
+  if (!load_i32(&e->a_clock_send) || e->clock_source >= 0) return 0;
   const int32_t mode = load_i32(&e->a_looper_mode);
   return mode == LE_LOOPER_MODE_MULTI || mode == LE_LOOPER_MODE_SYNC ||
         mode == LE_LOOPER_MODE_BAND;
@@ -3632,6 +3637,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
     case LE_CMD_RESTORE_TEMPO: {
       if (!le_restored_tempo_valid(cmd->arg_f, cmd->arg_i) ||
           le_transport_edit_blocked(e)) break;
+      /* An external clock owns the tempo (#1228): only clearing it to NONE
+       * is accepted. */
+      if (e->clock_source >= 0 && cmd->arg_i != LE_TEMPO_SOURCE_NONE) break;
       store_f32(&e->a_tempo_bpm_bits, cmd->arg_f);
       store_i32(&e->a_tempo_source, cmd->arg_i);
       e->has_tap = 0;
@@ -3645,6 +3653,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
     }
     case LE_CMD_SET_TEMPO: {
       if (le_tempo_locked(e)) break; /* D6: rejected (no-op) while locked */
+      if (e->clock_source >= 0) break; /* an external clock owns it (#1228) */
       float bpm = cmd->arg_f;
       /* NaN-rejecting clamp: !(x >= MIN) is true for NaN as well as for low
        * values, so a non-finite bpm can never reach the grid math (a NaN
@@ -3676,7 +3685,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       break;
     }
     case LE_CMD_TAP_TEMPO:
-      if (!le_tempo_locked(e)) handle_tap(e); /* D6: taps ignored wholesale */
+      /* D6: taps ignored wholesale while locked, and while an external
+       * clock owns the tempo (#1228). */
+      if (!le_tempo_locked(e) && e->clock_source < 0) handle_tap(e);
       break;
     case LE_CMD_SET_SYNC_TEMPO:
       /* A settings toggle, deliberately not locked: it only governs FUTURE
@@ -3951,18 +3962,16 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       break;
     }
-    /* ---- MIDI clock (Phase C/E, D15; see LE_CMD_SET_CLOCK_MODE's doc,
-     * segno_engine_api.h). Not perf-logged, for the same reason as
-     * LE_CMD_SET_LOOPER_MODE above. */
-    case LE_CMD_SET_CLOCK_MODE: {
-      const int32_t m = cmd->arg_i;
-      /* Re-validated here (the exported wrapper already rejects RECEIVE and
-       * anything else) so a raw le_engine_post_command can never publish an
-       * unimplemented/out-of-range clock mode. */
-      if (m != LE_CLOCK_OFF && m != LE_CLOCK_SEND) break;
-      store_i32(&e->a_clock_mode, m);
+    /* ---- MIDI clock (Phase C, D15; #1228; see segno_engine_api.h). Not
+     * perf-logged, for the same reason as LE_CMD_SET_LOOPER_MODE above. */
+    case LE_CMD_SET_CLOCK_SEND:
+      /* Re-validated here so a raw le_engine_post_command can never publish
+       * an out-of-range value. */
+      if (cmd->arg_i == 0 || cmd->arg_i == 1) store_i32(&e->a_clock_send, cmd->arg_i);
       break;
-    }
+    case LE_CMD_SET_CLOCK_SYNC:
+      le_clock_sync_apply(e, cmd);
+      break;
     /* ---- click + count-in (A2; see the helper block above finalize_master).
      * Not perf-logged: the click never reaches the performance capture (it
      * sums after the perf tap by design), so its configuration is invisible
@@ -7153,9 +7162,144 @@ void le_engine_master_bus_frame_for_test(le_engine* e, float* out, uint32_t f,
 
 /* ---- the real-time DSP core ---- */
 
-/* Running totals of one drain (published once, after every port). */
+/* ---- MIDI clock sync (#1228 Part 2) ----------------------------------- */
+
+/* The follower's time base: le_now_ns, or the test clock. */
+static uint64_t le_clock_now(le_engine* e) {
+  return e->now_fn != NULL ? e->now_fn(e->now_ctx) : le_now_ns();
+}
+
+/* A take is in progress, armed or counting in: the source cannot change. */
+static int le_clock_sync_capture_blocked(le_engine* e) {
+  if (e->count_in_total > 0) return 1;
+  for (int32_t t = 0; t < e->track_count; ++t) {
+    le_track* tr = &e->tracks[t];
+    const int32_t st = load_i32(&tr->a_state);
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+        tr->pending_record) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void le_clock_publish(le_engine* e) {
+  const le_clock_follow* f = &e->clock_follow;
+  store_i32(&e->a_clock_state, e->clock_source < 0 ? LE_CLOCK_STATE_INTERNAL
+                                                   : f->state);
+  store_f32(&e->a_clock_bpm_bits, e->clock_source < 0 ? 0.0f : f->display_bpm);
+  store_i32(&e->a_clock_out_of_range,
+            e->clock_source >= 0 && f->state != LE_CLOCK_FOLLOW_SYNCED &&
+                f->out_of_range);
+  atomic_store_explicit(&e->a_clock_pulses,
+                        e->clock_source < 0 ? 0u : (uint32_t)f->pulses,
+                        memory_order_relaxed);
+}
+
+/* Applies one complete sync vector, or refuses a source change under a
+ * take, and publishes the receipt either way. */
+static void le_clock_sync_apply(le_engine* e, const le_command* cmd) {
+  const int32_t port = cmd->clock_sync.port;
+  const int32_t follow = cmd->clock_sync.follow_transport;
+  const int32_t loss = cmd->clock_sync.loss_policy;
+  int32_t result = LE_OK;
+  if (port < -1 || port >= LE_MAX_MIDI_PORTS || (follow != 0 && follow != 1) ||
+      (loss != LE_CLOCK_LOSS_KEEP_PLAYING && loss != LE_CLOCK_LOSS_STOP_LOOPS)) {
+    result = LE_ERR_INVALID;
+  } else if (port != e->clock_source && le_clock_sync_capture_blocked(e)) {
+    result = LE_ERR_SYNC_LOCKED;
+  } else {
+    if (port != e->clock_source) {
+      if (port < 0) {
+        /* Use internal tempo: the last external tempo stays, as MANUAL. */
+        if (load_i32(&e->a_tempo_source) == LE_TEMPO_SOURCE_EXTERNAL) {
+          store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_MANUAL);
+        }
+      } else {
+        le_clock_follow_reset(&e->clock_follow, load_i32(&e->a_ts_den));
+        e->clock_tempo_pulses = 0;
+      }
+      e->clock_source = port;
+    }
+    e->clock_follow_transport = follow;
+    e->clock_loss_policy = loss;
+    store_i32(&e->a_clock_source, e->clock_source);
+    store_i32(&e->a_clock_follow_transport, follow);
+    store_i32(&e->a_clock_loss_policy, loss);
+    le_clock_publish(e);
+  }
+  store_i32(&e->a_clock_result, result);
+  atomic_store_explicit(&e->a_clock_receipt, cmd->clock_sync.sequence,
+                        memory_order_release);
+}
+
+/* Writes the follower's tempo as the session tempo while it is free to change
+ * (no content locks it, D6). Once per beat, from a beat after an acquisition
+ * or re-fit (le_clock_follow_tempo_ready): the seed itself is never written,
+ * so a rig never runs a beat at a tempo the next beat corrects (PR #1259
+ * review M1). */
+static void le_clock_write_tempo(le_engine* e) {
+  const le_clock_follow* f = &e->clock_follow;
+  if (f->state != LE_CLOCK_FOLLOW_SYNCED || le_tempo_locked(e)) return;
+  double bpm = le_clock_follow_engine_bpm(f);
+  if (bpm < (double)LE_GRID_TEMPO_MIN) bpm = LE_GRID_TEMPO_MIN;
+  if (bpm > (double)LE_GRID_TEMPO_MAX) bpm = LE_GRID_TEMPO_MAX;
+  store_f32(&e->a_tempo_bpm_bits, (float)bpm);
+  store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_EXTERNAL);
+  regrid_surviving_master(e);
+  e->clock_tempo_pulses = f->pulses;
+}
+
+/* How old a queued clock message may be and still be fed to the follower:
+ * its loss floor. While the device is stopped nothing drains the rings, so
+ * the first block after a start can hold old pulses, and old Start, Continue
+ * and Stop bytes, which must not set the transport state now either (PR #1246
+ * review note; PR #1259 review L4). */
+#define LE_CLOCK_BACKLOG_NS 250000000ull
+
+/* Feeds one current event of the source port to the follower. */
+static uint32_t le_clock_dispatch(le_engine* e, const le_midi_port_event* ev,
+                                  uint64_t now_ns) {
+  const int old =
+      now_ns > LE_CLOCK_BACKLOG_NS && ev->t_ns < now_ns - LE_CLOCK_BACKLOG_NS;
+  switch (ev->status) {
+    case 0xF8u:
+      return old ? 0u : le_clock_follow_pulse(&e->clock_follow, ev->t_ns);
+    case 0xFAu:
+    case 0xFBu:
+    case 0xFCu:
+      if (!old) le_clock_follow_transport(&e->clock_follow, ev->status);
+      return 0u;
+    default:
+      return 0u;
+  }
+}
+
+/* After the drain: loss by silence, the per-beat tempo write, publication. */
+static void le_clock_step(le_engine* e, uint32_t events, uint64_t now_ns) {
+  if (e->clock_source < 0) return;
+  le_clock_follow* f = &e->clock_follow;
+  le_clock_follow_set_den(f, load_i32(&e->a_ts_den));
+  events |= le_clock_follow_check(f, now_ns);
+  if (events & LE_CLOCK_EVENT_LOST) {
+    atomic_fetch_add_explicit(&e->a_clock_losses, 1u, memory_order_relaxed);
+  }
+  if (events & (LE_CLOCK_EVENT_SYNCED | LE_CLOCK_EVENT_REACQUIRED)) {
+    e->clock_tempo_pulses = f->pulses; /* the first write is a beat on */
+  }
+  if (le_clock_follow_tempo_ready(f) &&
+      f->pulses - e->clock_tempo_pulses >= (uint64_t)LE_CLOCK_FOLLOW_PPQN) {
+    le_clock_write_tempo(e);
+  }
+  le_clock_publish(e);
+}
+
+/* Running totals of one drain (published once, after every port), and the
+ * clock follower's events and time for this drain. */
 typedef struct le_midi_drain_counts {
   uint32_t events, stale, gaps, lost, rebinds;
+  uint32_t clock;
+  uint64_t now_ns;
 } le_midi_drain_counts;
 
 /* The one place the drain hands something to its consumers. Part 1 only
@@ -7164,11 +7308,29 @@ typedef struct le_midi_drain_counts {
 static void le_midi_port_dispatch(le_engine* e, int port, int kind,
                                   const le_midi_port_event* ev,
                                   le_midi_drain_counts* n) {
+  /* The MIDI clock follower (#1228 Part 2) reads the selected source port. */
+  const int source = port == e->clock_source;
   switch (kind) {
-    case LE_MIDI_DISPATCH_EVENT: n->events++; break;
-    case LE_MIDI_DISPATCH_GAP: n->gaps++; break;
-    case LE_MIDI_DISPATCH_LOST: n->lost++; break;
-    case LE_MIDI_DISPATCH_REBOUND: n->rebinds++; break;
+    case LE_MIDI_DISPATCH_EVENT:
+      n->events++;
+      if (source) n->clock |= le_clock_dispatch(e, ev, n->now_ns);
+      break;
+    case LE_MIDI_DISPATCH_GAP:
+      n->gaps++;
+      if (source) le_clock_follow_gap(&e->clock_follow);
+      break;
+    case LE_MIDI_DISPATCH_LOST:
+      n->lost++;
+      if (source) n->clock |= le_clock_follow_lost(&e->clock_follow);
+      break;
+    case LE_MIDI_DISPATCH_REBOUND:
+      n->rebinds++;
+      /* The binding that fed the source port ended: a Synced follower has
+       * lost its clock (counted, LOST, tempo and readout kept), a Lost one
+       * stays Lost, and no acquisition line spans the two bindings (PR #1259
+       * review M2). */
+      if (source) n->clock |= le_clock_follow_lost(&e->clock_follow);
+      break;
     default: break;
   }
 #ifdef LE_NATIVE_TESTS
@@ -7196,20 +7358,39 @@ static void le_midi_port_dispatch(le_engine* e, int port, int kind,
  *      generation.
  *   3. LOST after the events: the lost flag is read (acquire) before the
  *      pops, and the producer marks it after pushing everything it read
- *      before the device went away, so those events come first.
+ *      before the device went away, so those events come first. When the
+ *      binding changes in the same drain, that loss belongs to the binding
+ *      that ended and is dispatched just before its REBOUND, never after the
+ *      new binding's events.
  * Instruments release a port's voices on GAP, LOST and REBOUND (review H3);
- * the clock follower counts pulses across a GAP and goes Lost on LOST.
+ * the clock follower counts pulses across a GAP and goes Lost on LOST and
+ * on REBOUND.
  * Bounded: at most LE_MIDI_PORT_RING_CAP events per port per block, no
  * allocation, no lock. */
+/* Dispatches a port's loss before the binding change that follows it, once
+ * per drain: the lost flag read at the start of the drain belongs to the
+ * binding that ended (PR #1246 review DL1). */
+static void le_midi_port_lost_before_rebind(le_engine* e, int p,
+                                            int32_t is_lost, int* lost_done,
+                                            le_midi_drain_counts* n) {
+  if (is_lost && !e->midi_port_lost_seen[p] && !*lost_done) {
+    le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_LOST, NULL, n);
+    *lost_done = 1;
+  }
+}
+
 static void le_midi_ports_drain(le_engine* e) {
-  le_midi_drain_counts n = {0u, 0u, 0u, 0u, 0u};
+  le_midi_drain_counts n = {0u, 0u, 0u, 0u, 0u, 0u, 0u};
+  if (e->clock_source >= 0) n.now_ns = le_clock_now(e);
   for (int p = 0; p < LE_MAX_MIDI_PORTS; ++p) {
     le_midi_port* port = &e->midi_ports[p];
     const int32_t is_lost =
         atomic_load_explicit(&port->a_lost, memory_order_acquire);
     uint32_t gen = atomic_load_explicit(&port->a_gen, memory_order_acquire);
+    int lost_done = 0;
     if (gen != e->midi_port_gen_seen[p]) {
       e->midi_port_gen_seen[p] = gen;
+      le_midi_port_lost_before_rebind(e, p, is_lost, &lost_done, &n);
       le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_REBOUND, NULL, &n);
     }
     /* Read before popping: every event queued below the gap index precedes
@@ -7235,6 +7416,7 @@ static void le_midi_ports_drain(le_engine* e) {
         }
         gen = now_gen;
         e->midi_port_gen_seen[p] = gen;
+        le_midi_port_lost_before_rebind(e, p, is_lost, &lost_done, &n);
         le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_REBOUND, NULL, &n);
       }
       le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_EVENT, &ev, &n);
@@ -7246,11 +7428,12 @@ static void le_midi_ports_drain(le_engine* e) {
       }
       le_midi_port_clear_gap(port, gap);
     }
-    if (is_lost && !e->midi_port_lost_seen[p]) {
+    if (is_lost && !e->midi_port_lost_seen[p] && !lost_done) {
       le_midi_port_dispatch(e, p, LE_MIDI_DISPATCH_LOST, NULL, &n);
     }
     e->midi_port_lost_seen[p] = is_lost;
   }
+  le_clock_step(e, n.clock, n.now_ns);
   if (n.events) {
     atomic_fetch_add_explicit(&e->a_midi_in_events, n.events, memory_order_relaxed);
   }

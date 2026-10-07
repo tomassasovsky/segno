@@ -94,6 +94,7 @@ typedef enum le_midi_dispatch_kind {
   LE_MIDI_DISPATCH_REBOUND = 3, /* the binding ended or changed: everything
                                  * earlier from this port is over */
 } le_midi_dispatch_kind;
+#include "le_clock_follow.h"   /* le_clock_follow (the MIDI clock follower, #1228) */
 #include "engine_telemetry.h"  /* le_cb_timing (audio-callback telemetry, #722) */
 #include "engine_read_head.h"
 #include "engine_fade.h"
@@ -1998,13 +1999,13 @@ struct le_engine {
    * Meaningful only in Sync/Band; see le_sync_quantize_active below. */
   _Atomic int32_t a_primary_track;
 
-  /* MIDI clock mode (Phase C/E, D15, published — see le_snapshot's trailing
-   * clock block). A SETTING, seeded once in le_engine_create and persisting
-   * across configure exactly like a_looper_mode/a_primary_track above.
-   * Default OFF (0) so an untouched engine emits no clock bytes. Gates
-   * le_midi_clock_advance (called at the end of le_engine_process) alongside
-   * the looper mode — see le_clock_send_gate_open, engine_process.c. */
-  _Atomic int32_t a_clock_mode;
+  /* MIDI clock send (Phase C, D15, published as le_snapshot.clock_send). A
+   * SETTING, seeded once in le_engine_create and persisting across configure
+   * exactly like a_looper_mode/a_primary_track above. Default 0 so an
+   * untouched engine emits no clock bytes. Gates le_midi_clock_advance
+   * (called at the end of le_engine_process) alongside the looper mode and
+   * the Internal source — see le_clock_send_gate_open, engine_process.c. */
+  _Atomic int32_t a_clock_send;
 
   _Atomic int32_t a_record_offset; /* latency compensation in frames */
 
@@ -2211,8 +2212,40 @@ struct le_engine {
    * BLOCK granularity like the tap-tempo frame clock above, not per-sample).
    * Reset per session (le_engine_configure) via le_midi_clock_reset, exactly
    * like the click/count-in running state above — its SETTING twin
-   * (a_clock_mode) is seeded once in le_engine_create and persists. */
+   * (a_clock_send) is seeded once in le_engine_create and persists. */
   le_midi_clock_gen midi_clock;
+
+  /* MIDI clock sync (#1228 Part 2). The source is a SETTING like the send
+   * switch: applied by LE_CMD_SET_CLOCK_SYNC, persisting across configure.
+   * Audio-thread owned: the follower, the applied vector, and the pulse
+   * count at the last tempo write. The end of the source port's binding
+   * reaches the follower as the drain's REBOUND, a loss while Synced. */
+  le_clock_follow clock_follow;
+  int32_t clock_source;          /* -1 = Internal, else an input port */
+  int32_t clock_follow_transport;
+  int32_t clock_loss_policy;
+  uint64_t clock_tempo_pulses;
+  /* The time base the follower measures pulses against: le_now_ns, or a
+   * test clock (le_engine_set_now_fn_for_test). Read only while an external
+   * source is selected. */
+  uint64_t (*now_fn)(void* ctx);
+  void* now_ctx;
+  /* Published (le_snapshot.clock_*). */
+  _Atomic int32_t a_clock_state;
+  _Atomic int32_t a_clock_source;
+  _Atomic int32_t a_clock_follow_transport;
+  _Atomic int32_t a_clock_loss_policy;
+  _Atomic uint32_t a_clock_bpm_bits;
+  _Atomic int32_t a_clock_out_of_range;
+  _Atomic uint32_t a_clock_pulses;
+  _Atomic uint32_t a_clock_receipt;
+  _Atomic int32_t a_clock_result;
+  _Atomic uint32_t a_clock_losses;
+  /* Control thread: accepted le_engine_set_clock_sync calls, and the source
+   * the latest one asked for (the tempo setters refuse against it before the
+   * callback has applied it). */
+  uint32_t clock_sync_posted;
+  int32_t clock_source_requested;
 
   /* The native MIDI input sink (#1228 Part 1; le_midi_port.h). Each port is
    * fed by the capture attached to it (le_engine_attach_midi_input) and
