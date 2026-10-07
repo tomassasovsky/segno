@@ -82,16 +82,23 @@ class _HoldGesture {
   bool Function()? _stillValid;
   bool _active = false;
 
+  void Function()? _onSettled;
+
+  /// [onSettled] runs exactly once when the pending hold stops being
+  /// pending: just before [onHold] fires, on the [release] that runs the
+  /// tap, or on [cancel] — the edges the Pending Hold cue follows (#1229).
   void press({
     required Duration threshold,
     required void Function() onHold,
     required bool Function() stillValid,
     void Function()? onTap,
+    void Function()? onSettled,
   }) {
     if (_active) return;
     _active = true;
     _onTap = onTap;
     _stillValid = stillValid;
+    _onSettled = onSettled;
     _timer?.cancel();
     _timer = Timer(threshold, () {
       if (!_active || !stillValid()) {
@@ -100,6 +107,7 @@ class _HoldGesture {
       }
       _timer = null;
       _onTap = null; // handled as a hold: the release stays silent
+      _settle();
       onHold();
     });
   }
@@ -113,6 +121,7 @@ class _HoldGesture {
     final onTap = _onTap;
     _onTap = null;
     _stillValid = null;
+    _settle();
     if (valid) onTap?.call();
   }
 
@@ -123,6 +132,13 @@ class _HoldGesture {
     _timer = null;
     _onTap = null;
     _stillValid = null;
+    _settle();
+  }
+
+  void _settle() {
+    final settled = _onSettled;
+    _onSettled = null;
+    settled?.call();
   }
 }
 
@@ -483,6 +499,7 @@ class ControlCubit extends Cubit<ControlState> {
       } else {
         _armGesture(
           _externalGestures.putIfAbsent(input, _HoldGesture.new),
+          cue: null,
           onHold: () {
             final live = state.pedalSetup.external.switchFor(input);
             if (live != null) {
@@ -1240,6 +1257,7 @@ class ControlCubit extends Cubit<ControlState> {
     emit(
       state.copyWith(
         retiredBootMode: retiredBootMode,
+        holdThreshold: _longPress,
         pedalSetup: setup,
         pedalSetupUnavailable: setupUnavailable,
         globalBindings: storedBindings,
@@ -2633,6 +2651,7 @@ class ControlCubit extends Cubit<ControlState> {
     }
     _armGesture(
       _bindingGestures.putIfAbsent(button, _HoldGesture.new),
+      cue: button,
       onHold: () => _fireCustomAction(button, hold: true),
       onTap: () => _fireCustomAction(button, hold: false),
     );
@@ -2872,6 +2891,7 @@ class ControlCubit extends Cubit<ControlState> {
   void _armBoundHold(PedalBinding binding) {
     _armGesture(
       _bindingGestures.putIfAbsent(binding.key.button, _HoldGesture.new),
+      cue: binding.key.button,
       onHold: () {
         if (state.mode == InteractionMode.fx) {
           if (_pressBinding(binding, hold: true) &&
@@ -2887,18 +2907,62 @@ class ControlCubit extends Cubit<ControlState> {
     );
   }
 
+  /// Arms [gesture]. [cue] is the pedal a face draws the Pending Hold cue
+  /// on while the hold is pending; null for a control no surface draws (the
+  /// CTRL jacks).
   void _armGesture(
     _HoldGesture gesture, {
+    required PedalButton? cue,
     required void Function() onHold,
     void Function()? onTap,
   }) {
     final session = _looper.sessionRevision;
+    final armed = gesture._active;
     gesture.press(
       threshold: _longPress,
       stillValid: () =>
           !isClosed && !_takeLocked() && _looper.sessionRevision == session,
       onHold: onHold,
       onTap: onTap,
+      onSettled: cue == null ? null : () => _setHoldPending(cue, false),
+    );
+    if (cue != null &&
+        !armed &&
+        gesture._active &&
+        _cueModes.contains(state.mode)) {
+      _setHoldPending(cue, true);
+    }
+  }
+
+  /// The modes whose surfaces draw pedals, and so the Pending Hold cue. Tracks
+  /// and Mute draw none (owner decision O1), so a hold armed there publishes
+  /// nothing: each stomp would otherwise rebuild the Tracks screen for a cue
+  /// it never shows.
+  static const Set<InteractionMode> _cueModes = {
+    InteractionMode.mixer,
+    InteractionMode.fade,
+    InteractionMode.reverse,
+    InteractionMode.fx,
+    InteractionMode.custom,
+  };
+
+  /// Publishes whether [button]'s hold is pending. Clearing always runs, so a
+  /// hold armed on a face and settled after the mode changed still leaves the
+  /// set empty.
+  ///
+  /// The closing guard is a defense, not a path the cubit takes today: `close`
+  /// retires input first, which settles every gesture while the cubit is
+  /// still open. It keeps a later caller from emitting into a closed cubit.
+  void _setHoldPending(PedalButton button, bool pending) {
+    if (_closing || isClosed) return;
+    final holds = state.pendingHolds;
+    if (holds.contains(button) == pending) return;
+    emit(
+      state.copyWith(
+        pendingHolds: Set<PedalButton>.unmodifiable(
+          pending ? {...holds, button} : ({...holds}..remove(button)),
+        ),
+      ),
     );
   }
 
@@ -2937,6 +3001,7 @@ class ControlCubit extends Cubit<ControlState> {
     final channel = state.cursor; // latched at press by both closures
     _armGesture(
       _undoGesture,
+      cue: PedalButton.undo,
       onHold: () {
         _log('redo ch=$channel  (long-press)');
         if (!_looper.redo(channel: channel).isOk) {
@@ -2983,6 +3048,7 @@ class ControlCubit extends Cubit<ControlState> {
     // inert.
     _armGesture(
       _stopGesture,
+      cue: PedalButton.stop,
       onHold: () {
         // Only while the foot is still in the mode it committed to: cycling
         // MODE mid-hold leaves the pedal showing cursor/armed LEDs, where a
@@ -3043,6 +3109,7 @@ class ControlCubit extends Cubit<ControlState> {
     }
     _armGesture(
       _modeGesture,
+      cue: PedalButton.mode,
       onHold: () => _enterPedalMode(hold),
       onTap: () => _enterPedalMode(setup.modePress),
     );
@@ -3061,6 +3128,7 @@ class ControlCubit extends Cubit<ControlState> {
   void _armBank() {
     _armGesture(
       _bankGesture,
+      cue: PedalButton.bank,
       onHold: togglePerformanceRecord,
       onTap: toggleBankWithCursor,
     );
@@ -3076,6 +3144,7 @@ class ControlCubit extends Cubit<ControlState> {
     }
     _armGesture(
       _recordHoldGesture,
+      cue: PedalButton.recPlay,
       onHold: () => undo(state.cursor),
     );
   }
@@ -3090,6 +3159,7 @@ class ControlCubit extends Cubit<ControlState> {
     if (hold == TrackHold.none) return;
     _armGesture(
       _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
+      cue: button,
       onHold: () {
         final channel = state.bankBaseChannel + _trackIndex(button);
         switch (hold) {
