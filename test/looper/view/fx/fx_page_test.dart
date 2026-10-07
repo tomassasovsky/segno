@@ -9,6 +9,7 @@ import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
@@ -223,6 +224,10 @@ void main() {
 
   setUp(() {
     resetSegnoNavigatorForTest();
+    // A clean toast slate: under the optimized runner a toast left by
+    // another file would swallow this file's refusal toasts (#875).
+    resetToastificationForTest();
+    resetAppToastsForTest();
     catalog = PluginCatalog(
       engine: FakeAudioEngine(),
       appVersion: 'test',
