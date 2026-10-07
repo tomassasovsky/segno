@@ -2081,6 +2081,9 @@ class ControlCubit extends Cubit<ControlState> {
     // for and the looper outlives this cubit — but the overlay state and the
     // LED frame belong to a console that is no longer there.
     if (isClosed) return cleared.isNotEmpty && muteAccepted;
+    // Clear-all lands home without [setMode], so it leaves the Tuner itself:
+    // otherwise the detector stays armed and the tuned input muted.
+    if (state.mode == InteractionMode.tuner) _leaveTuner();
     emit(
       state.copyWith(
         mode: InteractionMode.record,
