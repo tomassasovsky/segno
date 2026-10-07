@@ -18,6 +18,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/app/view/control_settings_notices.dart';
+import 'package:segno/app/view/encoder_navigation.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/power_off/power_off_cubit.dart';
@@ -1174,8 +1175,10 @@ class _AppViewState extends State<_AppView> {
         // appliance is dead — including this branch's own Wi-Fi password
         // field. Inside the brightness wrapper so the keys dim with
         // everything else.
-        final typed = OnScreenKeyboardHost(
-          child: AppTextDefaults(child: child ?? const SizedBox.shrink()),
+        final typed = EncoderNavigation(
+          child: OnScreenKeyboardHost(
+            child: AppTextDefaults(child: child ?? const SizedBox.shrink()),
+          ),
         );
         return BlocBuilder<DisplayBrightnessCubit, double>(
           buildWhen: (previous, current) => previous != current,
