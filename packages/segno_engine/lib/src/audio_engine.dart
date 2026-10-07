@@ -1288,6 +1288,13 @@ abstract interface class SessionIo {
   /// flight. [TrackHistory.none] for an out-of-range [channel]. Read-only.
   TrackHistory exportHistory(int channel);
 
+  /// Track [channel]'s content revision: it changes on every write to the
+  /// track's audio (record, overdub, undo, redo, clear, import), on either
+  /// thread, and on nothing else. 0 for an out-of-range [channel]. Cheap and
+  /// copy-free, so the session layer can tell an unchanged rig from a changed
+  /// one without exporting any audio.
+  int trackAudioRev(int channel);
+
   /// Stages [pcm] as track [channel]'s lane [lane] image at [ordinal] into an
   /// EMPTY track (the ordinal is the pool slot). Call once per `(lane,
   /// ordinal)` with ordinals contiguous from 0, then [finalizeHistory], then
@@ -1543,7 +1550,17 @@ abstract interface class EngineAudition {
   /// into output pair [bus] at the next block, replacing a preview already
   /// playing. Retries once, a block later, when the voice is still handing
   /// back the preview before last ([EngineResult.notReady]).
-  Future<AuditionStart> auditionStartFile(String path, {int bus = 0});
+  ///
+  /// [stillWanted] is asked once the decode is done and before each start:
+  /// when it answers false the decoded preview is dropped, nothing reaches
+  /// the voice, and the answer is [AuditionStart.cancelled]. A caller whose
+  /// request was superseded while the file decoded so never replaces the
+  /// preview that superseded it.
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  });
 
   /// Silences the preview at the next block; a no-op when none plays.
   EngineResult auditionStop();
@@ -1551,6 +1568,12 @@ abstract interface class EngineAudition {
   /// The voice as of the last processed block. Also the point where the
   /// engine frees the previews the audio thread has finished with.
   AuditionState auditionState();
+
+  /// [buckets] absolute peaks (the louder side of each bucket) over the whole
+  /// audio file at [path], streamed through the same decoder off the calling
+  /// isolate with no PCM kept (`le_backing_probe_file`); null when the file
+  /// does not decode. For the Library's preview lanes.
+  Future<Float32List?> filePeaks(String path, {required int buckets});
 }
 
 /// The data-layer boundary over the native audio engine, composed from the

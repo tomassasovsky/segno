@@ -79,8 +79,10 @@ before #1177 lands.
   which calls `PerformanceRecorderCubit.reExport` (`performance_recorder_cubit.dart:592-635`)
   to write `project.als` and `fx-chains.txt` into the finished capture bundle
   through `daw_export` (`:637-656`), where the user cannot reach them. The
-  capture bundle already holds `master.wav` (the mixdown) and the
-  `live-input-N.wav` stems (`performance_repository.dart:979-1000`).
+  capture bundle already holds the main output and one stream per captured
+  input (`performance_repository.dart:979-1000`); #1198 (plan D3, PR #1205)
+  writes them as ordered 32-bit float WAV parts that the sidecar's `parts`
+  list names, and this plan reads them only through that list.
   `DawManifestReader` reads `performance.json`
   (`packages/daw_export/lib/src/manifest_reader.dart:28`), so `.als` is
   capture-only; a session bundle has no DAW project.
@@ -218,6 +220,158 @@ a design change; this plan does not edit the pen):
      as `New loop N` and the toast says so ("Saved as New loop 2"), so
      nothing is left to prompt for; naming is Rename in Manage. The
      power-off flow's own Save-as prompt is outside this plan and stays.
+
+7. Part 4 as built:
+   - `Open session` while a track plays, records or overdubs asks with the
+     console's confirm dialog: "Stop playback and open <name>?", "Your
+     current loop stays in your Library.", `Cancel` / `Open`. The pen draws
+     no such dialog; the body line is ours.
+   - Opening the session that is already open does nothing. The Library
+     never offers it (its footer reads `Return to tracks`), and reloading it
+     would discard its unsaved edits.
+   - The D7 fingerprint is `SessionRepository.fingerprint`: the manifest a
+     save would write, from the same capture, with each lane's layers
+     replaced by `AudioEngine.trackAudioRev` (a new `SessionIo` read over
+     `le_engine_track_audio_rev`; the snapshot is unchanged). A save records
+     the fingerprint taken just before its own capture, so an edit landing
+     in between costs one more save later, never a skipped one.
+   - The reference is recorded after every save and open, and as a boot
+     baseline once the app's settings have loaded
+     (`SessionCubit.recordBaseline`, from `AppRuntime.start`). When the two
+     cannot be compared (no baseline, or a capture that cannot run while a
+     setting awaits recovery), the outgoing rig is saved only when it holds
+     recorded audio: the part nothing else brings back is kept, an untouched
+     rig is not saved, and an Open that resolves a recovery notice still
+     works.
+   - An unnamed rig preserved as `New loop N` becomes current at once, so a
+     target refused after the save leaves the saved rig open under its new
+     name.
+   - A failed preservation shows the 19/05 line, not a refusal on the
+     target's preview card.
+   - Stopping an audition on Open belongs to Part 6, which builds Listen.
+   - Review fixes (PR #1215): the fingerprint keys each track on its audio
+     revision and on whether it is capturing, never on playing or stopped,
+     so a session that was only played is not saved again. An Open first
+     ends every take in progress with the record control's Stop (at its
+     Record timing) and waits until none captures, so the take is saved
+     with the outgoing session as the dialog promises; a take still
+     capturing after 20 s refuses the Open with its own line ("The take has
+     not finished yet. Nothing was changed; try again when it has."), and
+     nothing is saved, opened or cleared. During a settings recovery the
+     capture cannot run, so a rig holding audio cannot be preserved and the
+     Open is refused as a failed save: the safe side.
+   - A real-engine test drives a real `SessionCubit` with the real
+     fingerprint (`test/session/open_preserves_engine_test.dart`): the
+     round trip of the plan's criterion, a played-and-stopped session not
+     saved again, a recording take and an overdub kept.
+8. Part 5 as built:
+   - `SessionCubit.newLoop()` is the one method a foot binding (E6-9) will
+     call. Inside `runExclusive` it preserves the outgoing rig (D7),
+     releases a held momentary (its values belong to the outgoing rig, not
+     to the chains the new loop keeps), captures the live settings and
+     chains, mints the next `New loop N` id, applies the empty rig through
+     the apply path Open uses (`_applyRig`, the former body of `_open`), and
+     then saves that empty rig under the new id, which becomes current.
+   - The empty rig is `rigForNewLoop(SessionRepository.liveSession(...))`:
+     `liveSession` is the manifest a save would build, without tracks, and
+     `Session.forNewLoop()` names every field it keeps, so Open and New loop
+     map settings through the same `rigFromBundle`. The field-table test
+     builds a `Session` with every manifest key away from its default and
+     pins the exact key list, so a new field fails it until its New loop
+     fate is written into `forNewLoop`. `name` is dropped too: the new loop
+     takes its own.
+   - The transforms reset inside the apply, with the clear: lane mutes go
+     with the tracks, Fade returns to unity and Reverse to forward with the
+     material (`LE_CMD_RESET_TRANSFORMS`, pushed on import). The real-engine
+     test checks all three. **Speed and Transpose are not built yet: their
+     resets attach to this same apply path (the engine's transform reset or
+     `applySession`) when E6-4 and E6-5 land**, not to a Library-side list.
+   - A failed preservation applies nothing and mints no id. A refusal before
+     the apply gives the minted id back. If the empty rig cannot be written
+     after the apply, the new loop stays started and current under its new
+     name, the Library shows its generic failure line, and the first Save
+     writes the bundle.
+   - The sheet (19/02) always asks. The current session's name is drawn
+     brighter, as the pen does; a loop with no name yet reads "Your current
+     loop stays in your Library." (our copy; the pen always has a name).
+     The before strip fills the tracks holding audio, the after strip is
+     empty. A started new loop returns to the stage (19/06), whose header
+     names it; an Open still stays in the Library.
+   - Pen departures: the sheet uses the theme's card, strong border and
+     accent tokens rather than the pen's `#202735`, `#6d6d6d` and muted
+     `#89a2c5` strip fill; the encoder-focus ring the pen draws on `Cancel`
+     is not drawn (the Library has no encoder focus yet).
+   - Review fixes (PR #1216): New loop ends a take in progress first and
+     saves it with the outgoing session, as Open does (Part 4's fix), and a
+     played session is not saved again. When the empty rig cannot be
+     written, the failure is its own (`SessionError.newLoopNotSaved`): the
+     Library returns to the stage, which says "New loop N started, but it
+     could not be saved yet. Save it to keep it." The real-engine cubit test
+     covers New loop from a played session and with a take recording.
+9. Part 6a as built (`claude/library-1178-p6a`, based on the backing
+   player's Part 2, #1200 PR #1223, which must land first):
+   - The engine has one audio-file decoder, the backing player's
+     (`engine_decode.c`: WAV and MP3; FLAC is compiled out until the
+     vendored miniaudio carries the fix for CVE-2024-41147; band-limited
+     rate conversion). A preview is its bounded read:
+     `le_backing_decode_file(path, rate, 0, LE_AUDITION_MAX_SECONDS * rate)`
+     keeps the first 120 s and sets `info.truncated`. **A preview at another
+     rate is converted, not refused**, so the plan's rate-mismatch refusal
+     is gone, and the app has no Dart decode path: `wav_codec` writes files
+     and models headers and parts only.
+   - The voice uses the backing player's buffer type (`le_backing_buffer`)
+     and its hand-back: the callback returns a buffer it will never read
+     again through an `a_audition_dead` slot and the control thread frees it
+     in `le_engine_audition_state` (the collect point), before every start,
+     at configure, reopen and destroy. Its registry is its own
+     (`LE_AUDITION_MAX_BUFFERS` 2), so a preview never takes a backing
+     slot or budget; a start replacing a preview while the one before is not
+     yet handed back reads `LE_ERR_NOT_READY`. This replaces the plan's
+     `a_audition_ack` generation.
+   - The mix point is the plan's: after the output-bus loop (whose pre-level
+     tap is the performance capture), before `master_bus_frame`; a disabled
+     jack is never written. Commands 136 (`AUDITION_START`) and 137
+     (`AUDITION_STOP`), this part's range in the numbering ledger; raw posts are
+     refused. A performance arm and Cut sound end the preview on the audio
+     thread; a start while armed reads `LE_ERR_ALREADY_RUNNING`. State is a
+     dedicated `le_engine_audition_state` (like the backing's), not snapshot
+     fields. Stop with the callback stopped does not free at once: the
+     buffer is freed at the next configure or reopen, as the backing's are.
+   - Dart: the `EngineAudition` role (`auditionStartFile`, `auditionStop`,
+     `auditionState`). The decode runs in `Isolate.run`, which opens the
+     library itself (`openSegnoEngineLibrary`); the buffer comes back as an
+     address. One retry after `auditionRetryWait` on `notReady`.
+10. Part 6b as built:
+   - `SessionRepository.startAudition(id)` plays the bundle's `mixdown.wav`
+     on output pair 0 (no mixdown: refused before the engine);
+     `stopAudition`, `auditionState`; `readPeaks(id, track)` reads the lane-0
+     live layer's peaks with the decoder's streaming probe
+     (`le_backing_probe_file`, no PCM kept) through a new
+     `EngineAudition.filePeaks`, in `Isolate.run`.
+   - `LibraryCubit.listen()` toggles; it polls `auditionState` every 100 ms.
+     Listen ends on a new selection, a footswitch press and when the page
+     closes (cubit); before Open and New loop and when a track starts
+     recording (page); on a performance arm and a device reopen the engine
+     ends it and the poll reads it gone. A start that has not landed yet is
+     given five polls.
+   - Pen departures: 19/01 draws `Listen` only. `Stop`, the `0:12 / 2:00`
+     readout beside it, the `Preview plays the first 2:00` line and the
+     refusal banners (no preview, no device, a performance armed, still
+     stopping) are ours. The waveform is one filled bar per peak in the
+     accent token, where the pen draws a smooth path in `#9eb9dc`.
+   - Review fixes (#1264): the clock counts at the engine's rate, which the
+     start now reports (`AuditionStart.rate`), not the session's saved
+     rate. Each press is one request: `startAudition` hands the engine a
+     `stillWanted` check that it asks after the decode and before each
+     start, so a start the player withdrew, or that a later selection
+     superseded, never reaches the voice; the button reads `Stop` while the
+     preview decodes, and a second press withdraws it. A start never seen
+     playing is withdrawn from the engine when the cubit gives up on it.
+     Dropping the selection ends Listen. Any track entering recording ends
+     it, not only the first. A session without a mixdown (an empty or
+     all-muted mix) shows no `Listen` (`SessionPreview.hasMixdown`). The
+     button carries a leading play glyph (`Stop` a square), standing for
+     the pen's 28-point icon, whose path the pen MCP does not expose.
 
 ## 3. Decisions
 
@@ -358,9 +512,10 @@ the `.als` all remain reachable.
   or the live chains). The apply path
   already forgets lane mutes with the clear and resets Fade with the material
   (`looper_repository.dart:3884-3885`, `LE_CMD_RESET_FADE` applied at `engine_process.c:3159`,
-  `segno_engine_api.h:516`). Reverse, Transpose and Speed do not exist yet;
-  when E6-1/E6-4/E6-5 land their reset belongs in this same apply path, not in
-  a Library-side list. The new identity is created at once by saving the
+  `segno_engine_api.h:516`). Reverse (E6-1) has landed and resets with the
+  material too (`LE_CMD_RESET_TRANSFORMS`). Transpose and Speed do not exist
+  yet; when E6-4/E6-5 land their reset belongs in this same apply path, not
+  in a Library-side list. The new identity is created at once by saving the
   empty rig (manifest only, no audio), so the stage header reads `New loop 2`
   (19/06) and the Library lists it as `Current session`.
 - **D10 Listen is a native audition voice fed from `mixdown.wav`.** The
@@ -373,19 +528,23 @@ the `.als` all remain reachable.
   only the master gain and limiter shape it (`engine_process.c:6580-6589`).
   **The voice is bounded**: `kAuditionMaxSeconds = 120`, so the buffer is at
   most 120 s x rate x channels floats (46 MB at 48 kHz stereo, 23 MB for a
-  mono mixdown); the file is decoded in `Isolate.run`, reading at most that
-  many frames from disk (`WavCodec.decodeFloat32` gains a `maxFrames` bound
-  and the repository reads only the header plus that payload), and the panel
-  says `Preview plays the first 2:00` when the file is longer. A `mixdown.wav`
-  is an LCM period and a performance `master.wav` can be a 2 GB part; neither
+  mono mixdown). **The engine's decoder is the app's one audio reader**
+  (rule 4): `le_backing_decode_file` decodes every file the Library plays or
+  draws, in `Isolate.run`, reading at most that many frames from disk and
+  setting `info.truncated`, and its streaming probe `le_backing_probe_file`
+  gives the peaks without keeping PCM. `wav_codec` is only the writer and
+  the header and part model; it decodes nothing for the Library. The panel
+  says `Preview plays the first 2:00` when the file is longer. A
+  `mixdown.wav` is an LCM period and a recording part can be 2 GB; neither
   may be read whole on the UI isolate. A streamed ring (the perf ring's shape
   reversed) is the upgrade if a longer audition is ever wanted; not this plan.
-  No resampling: a file at another rate is refused and the panel says so (the
-  same honesty as `SessionSampleRateMismatch`). Audition ends on navigation,
+  A file at another rate is converted by the decoder, not refused (Part 6a,
+  as built). Audition ends on navigation,
   on `Open`, `New loop`, performance arm, any track entering recording, and a
   device reopen or reconfigure (#1158: configure frees the buffer, so the
   cubit ends Listen when `audition_frames` reads 0 before the progress reached
-  the end). For a performance recording the same voice plays its `master.wav`.
+  the end). For a performance recording the same voice plays the first
+  main-output part of the take's `parts` list (#1198).
 - **D11 The waveform is real or absent.** Preview lanes draw peaks decoded
   from the lane-0 live layer WAV (`track{c}_lane0_L{undoCount}.wav`) in an
   isolate; until Part 6 lands, lane rows draw length only (the clip's width
@@ -409,8 +568,10 @@ the `.als` all remain reachable.
   are removed; the `.als` and `fx-chains.txt` writer becomes a shared
   app-layer function the capture pipeline and the Library > Audio `DAW
   project` action both call, and `Export to USB` on a recording offers the
-  DAW package (the whole bundle: `master.wav`, the `live-input-N.wav` stems,
-  `project.als`, `fx-chains.txt`) or the single WAV. `.als` stays
+  DAW package (the take's parts in the order its `parts` list gives them,
+  the rendered `stems/dry` and `stems/wet` files the Live Set points at,
+  `project.als`, `fx-chains.txt`) or the recording alone (its main-output
+  parts, a multi-part take as consecutive files). `.als` stays
   capture-only. The live-rig `SessionRepository.exportMixdown`/`exportStems`
   (`session_repository.dart:593-628`) are not deleted but re-based on a saved
   bundle: `exportMixdown(id, destination)` copies the bundle's `mixdown.wav`,
@@ -825,7 +986,7 @@ SUCCESS CRITERIA:
 - On the real engine, after New loop every track is EMPTY with no mute and Fade at unity, the master length is 0 and the tempo and mode are unchanged; the outgoing session reloads byte-exact. | verify: /Users/Tomas/development/flutter/bin/flutter test test/session
 - The stage header reads the automatic name and the Library lists it as the current session. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library test/looper/view
 NON-GOALS:
-- The foot binding (E6-9), Reverse/Transpose/Speed resets (land with E6-1/4/5 in the apply path), backing.
+- The foot binding (E6-9), Transpose/Speed resets (land with E6-4/5 in the apply path; Reverse already resets there), backing.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
@@ -884,13 +1045,14 @@ VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh &&
 
 ### Part 6b: Listen, bounded decode and the preview waveform (about 320 lines)
 
-Files: `packages/wav_codec/lib/src/wav.dart` (`decodeFloat32(bytes,
-{maxFrames})` and a header-only reader giving channels, rate and frame
-count), `session_repository.dart` (`startAudition(path)`: header read, then
-`Isolate.run` decoding at most `kAuditionMaxSeconds` of frames from the file
-(`RandomAccessFile`, header plus payload bound), then `auditionStart`;
-`stopAudition()`; `auditionProgress()`; `readPeaks(id, channel, buckets)` in
-`Isolate.run` over the lane-0 live layer), `library_cubit.dart` (Listen
+Files: `session_repository.dart` (`startAudition(id)`: the bundle's
+`mixdown.wav` through `EngineAudition.auditionStartFile`, which decodes at
+most `kAuditionMaxSeconds` of it with the engine's one decoder,
+`le_backing_decode_file`, in `Isolate.run`; `stopAudition()`;
+`auditionState()`; `readPeaks(id, track, buckets)` over the lane-0 live layer
+through `EngineAudition.filePeaks`, the decoder's streaming probe, in
+`Isolate.run`). `wav_codec` is unchanged: it writes files and models headers
+and parts, and never decodes for the Library. `library_cubit.dart` (Listen
 state, a 100 ms progress timer while playing, the truncated flag, stop on
 navigation, Open, New loop, pedal press, capture arm, any track recording via
 `LooperBloc` state, and a device reopen or reconfigure observed as
@@ -898,12 +1060,13 @@ navigation, Open, New loop, pedal press, capture arm, any track recording via
 (`Listen`/`Stop` 160 x 64 with progress, `Preview plays the first 2:00` when
 truncated; lane peaks), l10n.
 
-Tests: `packages/wav_codec/test` (`maxFrames` returns exactly that many
-frames and the header reader reports the full count), `session_repository_test.dart`
-(`startAudition` of a bundle's `mixdown.wav` hands the decoded frames at the
-bundle rate; a file longer than the cap hands exactly the cap and reports
-truncation; a 44.1 kHz file on a 48 kHz engine is refused with a typed error;
-`readPeaks` of a known ramp), `library_cubit_test.dart` (Listen ends on each
+Tests: the engine's decoder tests (a file longer than the cap decodes
+exactly the cap and reports truncation; another rate is converted),
+`session_repository` tests (`startAudition` hands the bundle's `mixdown.wav`
+to the engine and refuses a bundle without one before it; `readPeaks` reads
+the lane-0 live layer through the engine), a real-engine test (a saved
+session's preview plays on the audition voice and its lane reads back as
+peaks), `library_cubit_test.dart` (Listen ends on each
 of the seven triggers), `library_page_test.dart` (the button, progress and
 truncation line; lanes draw peaks when present and length-only when the read
 fails).
@@ -911,12 +1074,12 @@ fails).
 ```success-criteria
 GOAL: Listen plays a session's saved preview through the native voice within the bound, decoded off the UI isolate, and the preview lanes draw real peaks or nothing.
 SUCCESS CRITERIA:
-- A preview longer than 120 s plays exactly its first 120 s and says so; the UI isolate never decodes a WAV (the decode runs in `Isolate.run`, asserted through an injected decoder hook). | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/wav_codec && /Users/Tomas/development/flutter/bin/flutter test)
-- Audition ends on navigation, Open, New loop, a footswitch press, performance arm, a track entering recording and a device reopen; a rate-mismatched file is refused with the reason shown. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library
-- Appliance: Listen is audible on the main outputs, a performance recording armed during Listen contains none of it, and a loop recorded during Listen contains none of it. | verify: manual on the console: 1. Listen, hear the preview. 2. Arm Record performance; master.wav is silent where the preview was. 3. Record a take during Listen; the take holds only the input. [HARDWARE]
+- A preview longer than 120 s plays exactly its first 120 s and says so; the UI isolate never decodes a WAV (the engine's decoder runs in `Isolate.run`) and nothing in the app decodes audio with `wav_codec`. | verify: (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && bash packages/segno_engine/src/test/run_native_tests.sh
+- Audition ends on navigation, Open, New loop, a footswitch press, performance arm, a track entering recording and a device reopen; a file at another rate plays converted. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library
+- Appliance: Listen is audible on the main outputs, a performance recording armed during Listen contains none of it, and a loop recorded during Listen contains none of it. | verify: manual on the console: 1. Listen, hear the preview. 2. Arm Record performance; the take's main-output parts are silent where the preview was. 3. Record a take during Listen; the take holds only the input. [HARDWARE]
 NON-GOALS:
 - Resampling, looping the preview, audition of arbitrary files, streaming past the cap.
-VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && (cd packages/wav_codec && /Users/Tomas/development/flutter/bin/flutter test) && dart analyze --fatal-infos && bloc lint lib test packages
+VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && (cd packages/session_repository && /Users/Tomas/development/flutter/bin/flutter test) && bash packages/segno_engine/src/test/run_native_tests.sh && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 
 ### Part 7: Library > Audio with Performances and Sessions groups, Export to USB and the re-homed DAW export (about 560 lines)
@@ -924,8 +1087,9 @@ VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && (cd p
 Files: `packages/performance_repository/lib/src/performance_repository.dart`
 (`listCaptures()` -> `CaptureSummary(path, slug, name, startedAt, durationFrames,
 sampleRate, hasDawProject)` from `performance.json`, skipping unfinalized and
-`recovered/` bundles; `dawPackageFiles(path)` listing `master.wav`, every
-`live-input-N.wav`, `project.als` and `fx-chains.txt` that exist), new
+`recovered/` bundles; `dawPackageFiles(path)` listing the take's parts in
+the order its `parts` list gives them, `project.als` and `fx-chains.txt`
+that exist), new
 `lib/performance/application/daw_project_export.dart` (the writer moved from
 `performance_recorder_cubit.dart:637-656`, called by `_finishRender`
 `:528-560` and by the Library), `performance_recorder_cubit.dart` and

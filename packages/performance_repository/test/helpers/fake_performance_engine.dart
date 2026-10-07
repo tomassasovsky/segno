@@ -29,14 +29,21 @@ class FakePerformanceEngine implements AudioEngine {
 
   // The audition voice (#1178): inert here.
   @override
-  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async =>
-      const AuditionStart(result: EngineResult.ok);
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async => const AuditionStart(result: EngineResult.ok);
 
   @override
   EngineResult auditionStop() => EngineResult.ok;
 
   @override
   AuditionState auditionState() => const AuditionState();
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async =>
+      null;
 
   final int sampleRate;
 
@@ -212,6 +219,9 @@ class FakePerformanceEngine implements AudioEngine {
 
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
+
+  @override
+  int trackAudioRev(int channel) => 0;
 
   @override
   EngineResult importLayer(

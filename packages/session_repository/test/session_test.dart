@@ -1200,4 +1200,28 @@ void main() {
       });
     });
   });
+
+  group('forNewLoop', () {
+    test('drops the tracks, the grid, the crown and the name, and keeps '
+        'every other field', () {
+      final source = Session.fromJson({
+        ...session.toJson(),
+        'name': 'Evening loop',
+        'loopBars': 4,
+        'primaryTrack': 0,
+        'tempoBpm': 96,
+        'tempoSource': 'manual',
+        'countInBars': 2,
+        'pedalBindings': 'remap',
+      });
+
+      final json = source.toJson()
+        ..remove('name')
+        ..['tracks'] = <Object?>[]
+        ..['baseLengthFrames'] = 0
+        ..['loopBars'] = 0
+        ..['primaryTrack'] = -1;
+      expect(jsonEncode(source.forNewLoop().toJson()), jsonEncode(json));
+    });
+  });
 }

@@ -6,14 +6,21 @@ import 'package:segno_engine/segno_engine.dart';
 class FakeAudioEngine implements AudioEngine {
   // The audition voice (#1178): inert here.
   @override
-  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async =>
-      const AuditionStart(result: EngineResult.ok);
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async => const AuditionStart(result: EngineResult.ok);
 
   @override
   EngineResult auditionStop() => EngineResult.ok;
 
   @override
   AuditionState auditionState() => const AuditionState();
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async =>
+      null;
 
   /// Snapshot returned by [snapshot] (mutate between ticks in tests).
   EngineSnapshot _nextSnapshot = const EngineSnapshot.initial().copyWith(
@@ -1507,6 +1514,9 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       importLayer(channel, lane, 0, pcm);
+
+  @override
+  int trackAudioRev(int channel) => 0;
 
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) {

@@ -338,6 +338,17 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   outputSetup: outputSetupFromSession(bundle.session.outputSetup),
 );
 
+/// The rig `New loop` applies (plan D9): [live]'s settings and chains with
+/// no tracks, no grid and no crown ([Session.forNewLoop]), mapped by the same
+/// [rigFromBundle] an Open uses, so the two cannot disagree about a setting.
+///
+/// The transforms reset with the clear inside the apply: lane mutes go with
+/// the tracks, and Fade and Reverse reset with the material
+/// (`LE_CMD_RESET_TRANSFORMS`). Speed and Transpose resets belong in that same
+/// apply path when they land, not here.
+SessionRig rigForNewLoop(Session live) =>
+    rigFromBundle((session: live.forNewLoop(), laneStems: const {}));
+
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage
 /// model. The monitor carries routing/mix of its own, so the envelope is
 /// flattened onto it rather than nested (see [SessionRig]'s doc).

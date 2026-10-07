@@ -119,7 +119,53 @@ void main() {
     expect(started.result, EngineResult.ok);
     expect(started.sourceRate, 8000);
     expect(started.frames, 8000);
+    // The frames count at the engine's rate, which the start reports.
+    expect(started.rate, 16000);
   }, skip: skip);
+
+  test('a start its caller withdrew while it decoded never reaches the '
+      'voice', () async {
+    start();
+    await engine.auditionStartFile(wav('playing.wav', 4000));
+    engine.pump(frames: 64);
+
+    final withdrawn = await engine.auditionStartFile(
+      wav('stale.wav', 2000),
+      stillWanted: () => false,
+    );
+
+    expect(withdrawn.cancelled, isTrue);
+    expect(withdrawn.result, EngineResult.invalid);
+    engine.pump(frames: 64);
+    // The preview that was playing is still the one playing.
+    expect(engine.auditionState().frames, 4000);
+    expect(engine.auditionState().position, 128);
+  }, skip: skip);
+
+  test(
+    'a start withdrawn while it waits for its retry is dropped too',
+    () async {
+      start();
+      var wanted = true;
+      engine.auditionRetryWait = () async {
+        wanted = false;
+        engine.pump(frames: 64);
+      };
+      await engine.auditionStartFile(wav('a.wav', 4000));
+      engine.pump(frames: 64);
+      await engine.auditionStartFile(wav('b.wav', 4000));
+
+      final third = await engine.auditionStartFile(
+        wav('c.wav', 2000),
+        stillWanted: () => wanted,
+      );
+
+      expect(third.cancelled, isTrue);
+      engine.pump(frames: 64);
+      expect(engine.auditionState().frames, 4000);
+    },
+    skip: skip,
+  );
 
   test(
     'a file over two minutes plays its first two minutes and says so',
@@ -134,6 +180,26 @@ void main() {
     },
     skip: skip,
   );
+
+  test('reads a file as peaks at its own rate, or nothing', () async {
+    start();
+    final peaks = await engine.filePeaks(
+      wav('p.wav', 4000),
+      buckets: 8,
+    );
+    expect(peaks, hasLength(8));
+    // The ramp tops out at 99 * 100 / 32768 in every bucket.
+    for (final peak in peaks!) {
+      expect(peak, closeTo(9900 / 32768, 1e-6));
+    }
+    expect(
+      await engine.filePeaks(
+        '${dir.path}/absent.wav',
+        buckets: 8,
+      ),
+      isNull,
+    );
+  }, skip: skip);
 
   test('an unreadable file is refused', () async {
     start();

@@ -1039,6 +1039,65 @@ class Session {
   /// Active lane counts, including tracks without recorded audio.
   final Map<int, int> laneCounts;
 
+  /// The session `New loop` starts from this one (plan D9): every recorded
+  /// thing goes and every setting stays.
+  ///
+  /// No [tracks], so no lane mix or history; [baseLengthFrames] and
+  /// [loopBars] 0, because an empty rig that kept a grid would lock the next
+  /// take's length; [primaryTrack] -1, because the crown goes with the
+  /// content; no [name], because the new loop takes its own. Every other
+  /// field is copied as it is: tempo, signature, mode, defaults and their
+  /// per-track overrides, click, count-in, Fade durations, levels, pans,
+  /// lane routing, input and output setup, all four chain stages and the
+  /// pedal remap.
+  ///
+  /// Each field is named here on purpose, with no copy helper: a field added
+  /// to [Session] later reads its default until its New loop fate is written
+  /// into this constructor call, and the field-table test fails until it is.
+  Session forNewLoop() => Session(
+    sampleRate: sampleRate,
+    channels: channels,
+    baseLengthFrames: 0,
+    tracks: const [],
+    laneChains: laneChains,
+    monitors: monitors,
+    trackChains: trackChains,
+    outputChains: outputChains,
+    allTracksChain: allTracksChain,
+    tempoBpm: tempoBpm,
+    tempoSource: tempoSource,
+    tsNum: tsNum,
+    tsDen: tsDen,
+    quantizeDiv: quantizeDiv,
+    recordTiming: recordTiming,
+    overdubDecay: overdubDecay,
+    clickMode: clickMode,
+    clickOutputMask: clickOutputMask,
+    clickVolume: clickVolume,
+    countInBars: countInBars,
+    looperMode: looperMode,
+    defaultOneShot: defaultOneShot,
+    defaultLengthPresetBars: defaultLengthPresetBars,
+    defaultFadeDurationMs: defaultFadeDurationMs,
+    trackFadeDurationOverrides: trackFadeDurationOverrides,
+    trackRecordTimingOverrides: trackRecordTimingOverrides,
+    trackOverdubDecayOverrides: trackOverdubDecayOverrides,
+    trackOneShotOverrides: trackOneShotOverrides,
+    trackLengthPresetOverrides: trackLengthPresetOverrides,
+    trackLevels: trackLevels,
+    trackPans: trackPans,
+    laneInputs: laneInputs,
+    laneOutputs: laneOutputs,
+    laneCounts: laneCounts,
+    syncTempo: syncTempo,
+    recDub: recDub,
+    autoRecord: autoRecord,
+    defaultMultiple: defaultMultiple,
+    pedalBindings: pedalBindings,
+    inputSetup: inputSetup,
+    outputSetup: outputSetup,
+  );
+
   /// Serializes this session manifest to a JSON map. Always writes the
   /// current [formatVersion].
   Map<String, dynamic> toJson() => {

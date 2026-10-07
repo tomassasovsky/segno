@@ -1006,7 +1006,11 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
-  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async {
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async {
     final running = _requireRunning();
     if (!running.isOk) return AuditionStart(result: running);
     if (!File(path).existsSync() || bus < 0 || 2 * bus >= _negotiatedOutputs) {
@@ -1016,6 +1020,9 @@ class MockAudioEngine implements AudioEngine {
     if (_perfArmed) {
       return const AuditionStart(result: EngineResult.alreadyRunning);
     }
+    if (stillWanted != null && !stillWanted()) {
+      return const AuditionStart(result: EngineResult.invalid, cancelled: true);
+    }
     final rate = _activeConfig?.sampleRate ?? 48000;
     _auditionFrames = rate;
     _auditionPosition = 0;
@@ -1023,9 +1030,15 @@ class MockAudioEngine implements AudioEngine {
     return AuditionStart(
       result: EngineResult.ok,
       frames: rate,
+      rate: rate,
       sourceRate: rate,
     );
   }
+
+  /// The mock decodes nothing: an existing file reads as silence.
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async =>
+      File(path).existsSync() ? Float32List(buckets) : null;
 
   @override
   EngineResult auditionStop() {
@@ -1690,6 +1703,10 @@ class MockAudioEngine implements AudioEngine {
 
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
+
+  /// The mock holds no audio, so no track's content ever changes.
+  @override
+  int trackAudioRev(int channel) => 0;
 
   @override
   EngineResult importLayer(

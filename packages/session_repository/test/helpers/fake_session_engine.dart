@@ -17,6 +17,9 @@ class _FakeLane {
 
 class _FakeTrack {
   TrackState state = TrackState.empty;
+
+  /// The content revision; every seed is a write and bumps it.
+  int audioRev = 0;
   int multiple = 1;
   int lengthFrames = 0;
 
@@ -51,16 +54,58 @@ class _FakeTrack {
 class FakeSessionEngine implements AudioEngine {
   FakeSessionEngine({this.channels = 1, this.sampleRate = 48000});
 
-  // The audition voice (#1178): inert here.
-  @override
-  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async =>
-      const AuditionStart(result: EngineResult.ok);
+  // The audition voice (#1178): records what it was asked to play.
+
+  /// The files [auditionStartFile] was handed, in order.
+  final List<({String path, int bus})> auditioned = [];
+
+  /// What [auditionStartFile] answers.
+  AuditionStart auditionAnswer = const AuditionStart(
+    result: EngineResult.ok,
+    frames: 48000,
+    sourceRate: 48000,
+  );
+
+  /// What [auditionState] reports.
+  AuditionState auditionNow = const AuditionState();
+
+  /// How many times [auditionStop] was called.
+  int auditionStops = 0;
+
+  /// The files [filePeaks] was asked for.
+  final List<({String path, int buckets})> peakReads = [];
+
+  /// What [filePeaks] answers.
+  Float32List? peaksAnswer;
 
   @override
-  EngineResult auditionStop() => EngineResult.ok;
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async {
+    auditioned.add((path: path, bus: bus));
+    stillWantedChecks.add(stillWanted);
+    return auditionAnswer;
+  }
+
+  /// The `stillWanted` check each start was given.
+  final List<bool Function()?> stillWantedChecks = [];
 
   @override
-  AuditionState auditionState() => const AuditionState();
+  EngineResult auditionStop() {
+    auditionStops++;
+    return EngineResult.ok;
+  }
+
+  @override
+  AuditionState auditionState() => auditionNow;
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async {
+    peakReads.add((path: path, buckets: buckets));
+    return peaksAnswer;
+  }
 
   @override
   OutputFxSnapshot outputFxSnapshot({required int bus}) =>
@@ -138,6 +183,7 @@ class FakeSessionEngine implements AudioEngine {
       ..redoDepth = 0
       ..publishedUndoDepth = null
       ..history = const [];
+    track.audioRev++;
     track.lanes[0]
       ..layers = [pcm]
       ..volume = volume
@@ -178,6 +224,7 @@ class FakeSessionEngine implements AudioEngine {
             undoDepth + redoDepth,
             const HistoryEntry(HistoryKind.layer),
           );
+    track.audioRev++;
     track.lanes[0]
       ..layers = List.of(layers)
       ..volume = volume
@@ -198,6 +245,7 @@ class FakeSessionEngine implements AudioEngine {
     int? inputChannel,
   }) {
     final track = _tracks[channel];
+    track.audioRev++;
     while (track.lanes.length <= lane) {
       track.lanes.add(_FakeLane());
     }
@@ -208,6 +256,10 @@ class FakeSessionEngine implements AudioEngine {
       ..outputMask = outputMask
       ..inputChannel = inputChannel ?? lane;
   }
+
+  @override
+  int trackAudioRev(int channel) =>
+      channel < 0 || channel >= _tracks.length ? 0 : _tracks[channel].audioRev;
 
   @override
   CallbackTelemetry callbackTelemetry() => CallbackTelemetry.empty;
@@ -294,8 +346,13 @@ class FakeSessionEngine implements AudioEngine {
     return Float32List.fromList(track.liveOf(lane));
   }
 
+  /// How many layers have been exported, so a test can tell a read that
+  /// copies audio from one that does not.
+  int exportedLayers = 0;
+
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) {
+    exportedLayers++;
     final track = _tracks[channel];
     if (lane < 0 || lane >= track.lanes.length) return Float32List(0);
     final layers = track.lanes[lane].layers;
@@ -340,6 +397,11 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult finalizeHistory(int channel, TrackHistory history) =>
       EngineResult.ok;
+
+  /// Puts track [channel] in [state] without touching its audio, as a
+  /// transport press or a punch-in does.
+  void setTrackState(int channel, TrackState state) =>
+      _tracks[channel].state = state;
 
   @override
   EngineResult commitSession(int baseFrames, {required int loopBars}) {

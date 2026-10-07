@@ -677,7 +677,60 @@ class SessionRepository {
       tracks: tracks,
       fxCount: summary.fxCount,
       sampleRate: session.sampleRate,
+      hasMixdown: File('$path/$mixdownName').existsSync(),
     );
+  }
+
+  /// Starts the Library's preview of the saved session [id] (plan D10): its
+  /// `mixdown.wav` through the engine's audition voice on the main outputs,
+  /// decoded off the UI isolate by the engine's one decoder, at most
+  /// [kAuditionMaxSeconds] of it ([AuditionStart.truncated] says when the
+  /// file is longer). A session with no mixdown is refused with
+  /// [EngineResult.invalid] and nothing reaches the engine. Never loads the
+  /// session. [stillWanted] is handed to the engine: a start the caller
+  /// withdrew while it decoded never reaches the voice
+  /// ([AuditionStart.cancelled]).
+  Future<AuditionStart> startAudition(
+    SessionId id, {
+    bool Function()? stillWanted,
+  }) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    final mixdown = '$path/$mixdownName';
+    if (!File(mixdown).existsSync()) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    return _engine.auditionStartFile(mixdown, stillWanted: stillWanted);
+  }
+
+  /// Silences the Library's preview at the next block.
+  EngineResult stopAudition() => _engine.auditionStop();
+
+  /// The preview as the engine last reported it; a length of 0 means none
+  /// plays (it ended, was stopped, or a device reopen or a performance arm
+  /// ended it).
+  AuditionState auditionState() => _engine.auditionState();
+
+  /// [buckets] absolute peaks over [track]'s lane-0 live layer in the saved
+  /// session [id], streamed off the UI isolate through the app's one decoder,
+  /// or null when the layer cannot be read (plan D11: the lane then draws its
+  /// length only).
+  Future<Float32List?> readPeaks(
+    SessionId id,
+    SessionPreviewTrack track, {
+    int buckets = 256,
+  }) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null || !_layerFilePattern.hasMatch(track.liveLayerFile)) {
+      return null;
+    }
+    final layer = '$path/${track.liveLayerFile}';
+    if (!File(layer).existsSync()) return null;
+    return _engine.filePeaks(layer, buckets: buckets);
   }
 
   /// Whole bars at the saved tempo and signature, or 0 without a tempo.
@@ -1404,6 +1457,98 @@ class SessionRepository {
       }
     }
   }
+
+  /// A fingerprint of everything [save] would write for the live rig, with
+  /// no audio exported and no file touched (plan D7).
+  ///
+  /// It is the manifest [save] would build from [settings], [chains] and
+  /// [pedalBindings], except that each lane's layer list is replaced by its
+  /// track's content revision ([AudioEngine.trackAudioRev]), which changes
+  /// on every write to that track's audio. Two equal fingerprints mean a
+  /// save would write the same session; any edit to audio, effects, the
+  /// mix, routing, settings or the pedal remap changes it. Only ever
+  /// compared with another fingerprint from this method, never with a
+  /// manifest.
+  String fingerprint({
+    required SessionSettings settings,
+    SessionChains chains = const SessionChains(),
+    String pedalBindings = '',
+  }) {
+    final snapshot = _engine.snapshot();
+    final tracks = <SessionTrack>[];
+    for (var i = 0; i < snapshot.tracks.length; i++) {
+      final track = snapshot.tracks[i];
+      if (track.state == TrackState.empty) continue;
+      // A take in progress is content the next save may hold, so a
+      // capturing track reads as changed. Playing and stopped are transport,
+      // which a save does not write: a rig that was only played is
+      // unchanged.
+      final capturing =
+          track.state == TrackState.recording ||
+          track.state == TrackState.overdubbing;
+      final content =
+          'rev${_engine.trackAudioRev(i)}${capturing ? ':capturing' : ''}';
+      final history = _engine.exportHistory(i);
+      tracks.add(
+        SessionTrack(
+          channel: i,
+          multiple: track.multiple,
+          lengthFrames: track.lengthFrames,
+          fadeAmount: track.fade.amount,
+          reversed: track.reversed,
+          lanes: [
+            for (var l = 0; l < track.lanes.length; l++)
+              SessionLane(
+                lane: l,
+                volume:
+                    settings.laneMix[(i, l)]?.level ?? track.lanes[l].volume,
+                muted: track.lanes[l].muted,
+                outputMask: track.lanes[l].outputMask,
+                inputChannel: track.lanes[l].inputChannel,
+                layers: [SessionLayer(file: content)],
+                pan: settings.laneMix[(i, l)]?.imagePan ?? 0,
+                balance: settings.laneMix[(i, l)]?.balance ?? 1,
+                history: history,
+              ),
+          ],
+        ),
+      );
+    }
+    final session = _sessionFrom(
+      _Capture(
+        snapshot: snapshot,
+        laneStems: const {},
+        tracks: tracks,
+        trackLevels: const {},
+      ),
+      chains,
+      SessionSettings._detached(settings),
+      pedalBindings,
+      null,
+    );
+    return jsonEncode(session.toJson());
+  }
+
+  /// The manifest [save] would build from [settings], [chains] and
+  /// [pedalBindings], without its tracks, audio or name, and with no file
+  /// touched: the settings half of the live rig, for `New loop` to start
+  /// from (plan D9, through [Session.forNewLoop]).
+  Session liveSession({
+    required SessionSettings settings,
+    SessionChains chains = const SessionChains(),
+    String pedalBindings = '',
+  }) => _sessionFrom(
+    _Capture(
+      snapshot: _engine.snapshot(),
+      laneStems: const {},
+      tracks: const [],
+      trackLevels: const {},
+    ),
+    chains,
+    SessionSettings._detached(settings),
+    pedalBindings,
+    null,
+  );
 
   /// The pattern of a bundle's per-layer WAV filenames
   /// (`track{c}_lane{l}_L{n}.wav`).

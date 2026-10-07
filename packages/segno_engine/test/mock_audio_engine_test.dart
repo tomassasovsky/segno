@@ -1299,10 +1299,26 @@ void main() {
         final started = await engine.auditionStartFile(file.path, bus: 1);
         expect(started.result, EngineResult.ok);
         expect(started.frames, 48000);
+        expect(started.rate, 48000);
+        expect(
+          (await engine.auditionStartFile(
+            file.path,
+            stillWanted: () => false,
+          )).cancelled,
+          isTrue,
+        );
         expect(engine.auditionState().playing, isTrue);
         expect(engine.auditionState().bus, 1);
         expect(engine.auditionStop(), EngineResult.ok);
         expect(engine.auditionState().playing, isFalse);
+        expect(
+          await engine.filePeaks(file.path, buckets: 4),
+          [0, 0, 0, 0],
+        );
+        expect(
+          await engine.filePeaks('/absent.wav', buckets: 4),
+          isNull,
+        );
       },
     );
 

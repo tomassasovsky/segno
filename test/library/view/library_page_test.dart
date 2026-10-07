@@ -1,17 +1,22 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_page.dart';
+import 'package:segno/library/view/library_preview_card.dart';
 import 'package:segno/library/view/library_sessions_tab.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -25,6 +30,9 @@ class _MockSessionCubit extends MockCubit<SessionState>
 class _MockSessionRepository extends Mock implements SessionRepository {}
 
 class _MockPedalRepository extends Mock implements PedalRepository {}
+
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
 
 final _saved = DateTime(2026, 9, 7, 10);
 
@@ -71,12 +79,14 @@ SessionPreview _previewOf(String id) => switch (id) {
     ],
     fxCount: 15,
     sampleRate: 48000,
+    hasMixdown: true,
   ),
   's-gig' => SessionPreview(
     summary: _catalog[1],
     tracks: [_track(4, 72000)],
     fxCount: 2,
     sampleRate: 48000,
+    hasMixdown: true,
   ),
   _ => SessionPreview(
     summary: _catalog[2],
@@ -95,6 +105,7 @@ void main() {
 
   setUpAll(() async {
     l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    registerFallbackValue(_track(0, 1));
   });
 
   setUp(() {
@@ -105,6 +116,28 @@ void main() {
     when(() => repository.readPreview(any())).thenAnswer(
       (call) async => _previewOf(call.positionalArguments.first as String),
     );
+    when(
+      () => repository.startAudition(
+        any(),
+        stillWanted: any(named: 'stillWanted'),
+      ),
+    ).thenAnswer(
+      (_) async => const AuditionStart(
+        result: EngineResult.ok,
+        frames: 480000,
+        rate: 48000,
+      ),
+    );
+    when(() => repository.stopAudition()).thenReturn(EngineResult.ok);
+    when(() => repository.auditionState()).thenReturn(
+      const AuditionState(frames: 480000, position: 96000, bus: 0),
+    );
+    when(
+      () => repository.readPeaks(
+        any(),
+        any(),
+      ),
+    ).thenAnswer((_) async => null);
     pedalEvents = StreamController<PedalEvent>.broadcast();
     pedal = _MockPedalRepository();
     when(() => pedal.events).thenAnswer((_) => pedalEvents.stream);
@@ -119,7 +152,11 @@ void main() {
     SessionState? state,
     Stream<SessionState> states = const Stream.empty(),
     RemovableVolumes volumes = const InternalOnlyVolumes(),
+    LooperState looperState = const LooperState(),
+    Stream<LooperState> looperStates = const Stream.empty(),
   }) async {
+    final looper = _MockLooperBloc();
+    whenListen(looper, looperStates, initialState: looperState);
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -146,8 +183,11 @@ void main() {
             value: volumes,
           ),
         ],
-        child: BlocProvider<SessionCubit>.value(
-          value: session,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<SessionCubit>.value(value: session),
+            BlocProvider<LooperBloc>.value(value: looper),
+          ],
           child: Navigator(
             onGenerateRoute: (_) => MaterialPageRoute<void>(
               builder: (context) => Scaffold(
@@ -194,8 +234,8 @@ void main() {
   }
 
   group('the shell', () {
-    testWidgets('draws the title, the Sessions tab, the locations and a '
-        'disabled New loop', (tester) async {
+    testWidgets('draws the title, the Sessions tab, the locations and New '
+        'loop', (tester) async {
       await openLibrary(tester);
 
       expect(find.byKey(const Key('library_page')), findsOneWidget);
@@ -206,7 +246,29 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(const Key('library_location_usb')), findsOneWidget);
-      // Drawn for the row's geometry, inert until New loop is built.
+      expect(
+        tester
+            .widget<LoopOutlinedButton>(
+              find.byKey(const Key('library_new_loop')),
+            )
+            .onTap,
+        isNotNull,
+      );
+    });
+
+    testWidgets('New loop is inert while a session action runs', (
+      tester,
+    ) async {
+      await openLibrary(
+        tester,
+        state: SessionState(
+          status: SessionStatus.working,
+          currentSessionId: 's-cur',
+          currentSessionName: 'Evening loop',
+          sessions: _catalog,
+        ),
+      );
+
       expect(
         tester
             .widget<LoopOutlinedButton>(
@@ -1244,6 +1306,17 @@ void main() {
       );
     });
 
+    testWidgets('an Open stopped by an unfinished take says so on the line, '
+        'not on the target', (tester) async {
+      await failWith(
+        tester,
+        SessionError.captureInProgress,
+        failedSessionId: 's-gig',
+      );
+      expect(find.text(l10n.libraryTakeStillRunning), findsOneWidget);
+      expect(find.byKey(const Key('library_open_refused')), findsNothing);
+    });
+
     testWidgets('a refused delete has its own words', (tester) async {
       await failWith(tester, SessionError.currentSessionProtected);
       expect(find.text(l10n.libraryDeleteCurrentRefused), findsOneWidget);
@@ -1309,6 +1382,479 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text(l10n.librarySaveFailed), findsOneWidget);
+    });
+  });
+
+  group('Open asks before it stops playback (D8)', () {
+    LooperState withTrack(TrackState state) => LooperState(
+      transport: const TransportState(isRunning: true),
+      tracks: [
+        Track(state: state, lengthFrames: 48000),
+        for (var c = 1; c < 8; c++) Track(channel: c),
+      ],
+    );
+
+    Future<void> tapOpen(WidgetTester tester, LooperState looperState) async {
+      await openLibrary(tester, looperState: looperState);
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('library_open_session')));
+      await tester.pumpAndSettle();
+    }
+
+    for (final state in [TrackState.playing, TrackState.recording]) {
+      testWidgets('a ${state.name} track is asked about first', (
+        tester,
+      ) async {
+        await tapOpen(tester, withTrack(state));
+
+        expect(
+          find.text(l10n.libraryOpenInterruptTitle('Night set')),
+          findsOneWidget,
+        );
+        verifyNever(() => session.open(any()));
+
+        await tester.tap(find.byKey(const Key('console_confirm_confirm')));
+        await tester.pumpAndSettle();
+        verify(() => session.open('s-gig')).called(1);
+      });
+    }
+
+    testWidgets('Cancel changes nothing', (tester) async {
+      await tapOpen(tester, withTrack(TrackState.playing));
+      await tester.tap(find.byKey(const Key('console_confirm_cancel')));
+      await tester.pumpAndSettle();
+      verifyNever(() => session.open(any()));
+    });
+
+    testWidgets('stopped tracks on a running device are not asked about', (
+      tester,
+    ) async {
+      await tapOpen(tester, withTrack(TrackState.stopped));
+
+      expect(
+        find.text(l10n.libraryOpenInterruptTitle('Night set')),
+        findsNothing,
+      );
+      verify(() => session.open('s-gig')).called(1);
+    });
+  });
+
+  group('a failed preservation', () {
+    testWidgets('shows the 19/05 line, not a refusal on the target', (
+      tester,
+    ) async {
+      final states = StreamController<SessionState>.broadcast();
+      addTearDown(states.close);
+      await openLibrary(tester, states: states.stream);
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+
+      states.add(
+        SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.saveFailed,
+          failedSessionId: 's-gig',
+          currentSessionId: 's-cur',
+          sessions: _catalog,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text(l10n.librarySaveFailed), findsOneWidget);
+      expect(find.byKey(const Key('library_open_refused')), findsNothing);
+    });
+  });
+
+  group('New loop (19/02)', () {
+    Future<void> tapNewLoop(
+      WidgetTester tester, {
+      SessionState? state,
+      Stream<SessionState> states = const Stream.empty(),
+      LooperState looperState = const LooperState(),
+    }) async {
+      when(session.newLoop).thenAnswer((_) async {});
+      await openLibrary(
+        tester,
+        state: state,
+        states: states,
+        looperState: looperState,
+      );
+      await tester.tap(find.byKey(const Key('library_new_loop')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('always asks, naming the session that stays and drawing its '
+        'tracks giving way to empty ones', (tester) async {
+      await tapNewLoop(
+        tester,
+        looperState: LooperState(
+          tracks: [
+            const Track(state: TrackState.stopped, lengthFrames: 48000),
+            for (var c = 1; c < 8; c++)
+              Track(
+                channel: c,
+                state: c == 2 ? TrackState.stopped : TrackState.empty,
+                lengthFrames: c == 2 ? 48000 : 0,
+              ),
+          ],
+        ),
+      );
+
+      expect(find.byKey(const Key('new_loop_sheet')), findsOneWidget);
+      expect(
+        find.text(
+          l10n.libraryNewLoopStays('Evening loop'),
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      expect(find.text(l10n.libraryNewLoopKeeps), findsOneWidget);
+      Finder slot(String strip, int channel, String fill) => find.descendant(
+        of: find.byKey(Key(strip)),
+        matching: find.byKey(Key('library_strip_${channel}_$fill')),
+      );
+      expect(slot('new_loop_before', 0, 'filled'), findsOneWidget);
+      expect(slot('new_loop_before', 1, 'empty'), findsOneWidget);
+      expect(slot('new_loop_before', 2, 'filled'), findsOneWidget);
+      for (var c = 0; c < 8; c++) {
+        expect(slot('new_loop_after', c, 'empty'), findsOneWidget);
+      }
+      verifyNever(session.newLoop);
+    });
+
+    testWidgets('a loop with no name yet is the current loop', (tester) async {
+      await tapNewLoop(
+        tester,
+        state: SessionState(sessions: _catalog),
+      );
+
+      expect(find.text(l10n.libraryNewLoopStaysUnnamed), findsOneWidget);
+    });
+
+    testWidgets('Cancel changes nothing', (tester) async {
+      await tapNewLoop(tester);
+
+      await tester.tap(find.byKey(const Key('new_loop_cancel')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('new_loop_sheet')), findsNothing);
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
+      verifyNever(session.newLoop);
+    });
+
+    testWidgets('Start new loop starts it', (tester) async {
+      await tapNewLoop(tester);
+
+      await tester.tap(find.byKey(const Key('new_loop_start')));
+      await tester.pumpAndSettle();
+
+      verify(session.newLoop).called(1);
+    });
+
+    testWidgets('a started new loop is played on the stage (19/06)', (
+      tester,
+    ) async {
+      final states = StreamController<SessionState>.broadcast();
+      addTearDown(states.close);
+      await tapNewLoop(tester, states: states.stream);
+      await tester.tap(find.byKey(const Key('new_loop_start')));
+      await tester.pumpAndSettle();
+
+      states
+        ..add(
+          SessionState(
+            status: SessionStatus.working,
+            currentSessionId: 's-cur',
+            currentSessionName: 'Evening loop',
+            sessions: _catalog,
+          ),
+        )
+        ..add(
+          SessionState(
+            status: SessionStatus.success,
+            outcome: SessionOutcome.newLoop,
+            currentSessionId: 's-new',
+            currentSessionName: 'New loop 2',
+            sessions: _catalog,
+          ),
+        );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('library_page')), findsNothing);
+      expect(find.text('stage'), findsOneWidget);
+    });
+
+    testWidgets('a new loop that could not be saved yet is on the stage too, '
+        'which says so', (tester) async {
+      final states = StreamController<SessionState>.broadcast();
+      addTearDown(states.close);
+      await tapNewLoop(tester, states: states.stream);
+      await tester.tap(find.byKey(const Key('new_loop_start')));
+      await tester.pumpAndSettle();
+
+      states.add(
+        SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.newLoopNotSaved,
+          currentSessionId: 's-new',
+          currentSessionName: 'New loop 2',
+          sessions: _catalog,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('library_page')), findsNothing);
+    });
+
+    testWidgets('an Open stays in the Library', (tester) async {
+      final states = StreamController<SessionState>.broadcast();
+      addTearDown(states.close);
+      await openLibrary(tester, states: states.stream);
+
+      states
+        ..add(
+          SessionState(
+            status: SessionStatus.working,
+            currentSessionId: 's-cur',
+            sessions: _catalog,
+          ),
+        )
+        ..add(
+          SessionState(
+            status: SessionStatus.success,
+            outcome: SessionOutcome.loaded,
+            currentSessionId: 's-gig',
+            currentSessionName: 'Night set',
+            sessions: _catalog,
+          ),
+        );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('library_page')), findsOneWidget);
+    });
+  });
+
+  group('Listen (plan D10)', () {
+    Finder listenButton() => find.byKey(const Key('library_listen'));
+
+    String labelOf(WidgetTester tester) =>
+        tester.widget<LoopOutlinedButton>(listenButton()).label!;
+
+    Future<void> listen(WidgetTester tester) async {
+      await tester.tap(listenButton());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+    }
+
+    testWidgets('plays the selected preview, shows Stop and its progress', (
+      tester,
+    ) async {
+      await openLibrary(tester);
+      expect(labelOf(tester), l10n.libraryListen);
+
+      await listen(tester);
+
+      verify(
+        () => repository.startAudition(
+          's-cur',
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).called(1);
+      expect(labelOf(tester), l10n.libraryListenStop);
+      expect(find.text(l10n.libraryListenProgress('0:02', '0:10')), findsOne);
+      expect(find.byKey(const Key('library_listen_truncated')), findsNothing);
+
+      await tester.tap(listenButton());
+      await tester.pump();
+      verify(() => repository.stopAudition()).called(1);
+      expect(labelOf(tester), l10n.libraryListen);
+    });
+
+    testWidgets('a preview longer than two minutes says it plays the first '
+        'two', (tester) async {
+      when(
+        () => repository.startAudition(
+          any(),
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).thenAnswer(
+        (_) async => const AuditionStart(
+          result: EngineResult.ok,
+          frames: 5760000,
+          rate: 48000,
+          truncated: true,
+        ),
+      );
+      await openLibrary(tester);
+      await listen(tester);
+
+      expect(find.text(l10n.libraryListenTruncated), findsOneWidget);
+    });
+
+    testWidgets('a refusal says why', (tester) async {
+      when(
+        () => repository.startAudition(
+          any(),
+          stillWanted: any(named: 'stillWanted'),
+        ),
+      ).thenAnswer(
+        (_) async => const AuditionStart(result: EngineResult.notRunning),
+      );
+      await openLibrary(tester);
+      await listen(tester);
+
+      expect(find.text(l10n.libraryListenNoDevice), findsOneWidget);
+      expect(labelOf(tester), l10n.libraryListen);
+    });
+
+    testWidgets('Open stops it first', (tester) async {
+      await openLibrary(tester);
+      await tester.tap(row('s-gig'));
+      await tester.pumpAndSettle();
+      await listen(tester);
+
+      await tester.tap(find.byKey(const Key('library_open_session')));
+      await tester.pump();
+
+      verifyInOrder([
+        () => repository.stopAudition(),
+        () => session.open('s-gig'),
+      ]);
+    });
+
+    testWidgets('New loop stops it', (tester) async {
+      when(session.newLoop).thenAnswer((_) async {});
+      await openLibrary(tester);
+      await listen(tester);
+
+      await tester.tap(find.byKey(const Key('library_new_loop')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('new_loop_start')));
+      await tester.pump();
+
+      verifyInOrder([() => repository.stopAudition(), session.newLoop]);
+    });
+
+    testWidgets('a track that starts recording stops it', (tester) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      await openLibrary(tester, looperStates: states.stream);
+      await listen(tester);
+
+      states.add(
+        LooperState(
+          tracks: [
+            const Track(state: TrackState.recording),
+            for (var c = 1; c < 8; c++) Track(channel: c),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      verify(() => repository.stopAudition()).called(1);
+      expect(labelOf(tester), l10n.libraryListen);
+    });
+
+    testWidgets('a second track entering recording stops it too', (
+      tester,
+    ) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      LooperState rig({required bool second}) => LooperState(
+        tracks: [
+          const Track(state: TrackState.recording),
+          Track(
+            channel: 1,
+            state: second ? TrackState.recording : TrackState.empty,
+          ),
+          for (var c = 2; c < 8; c++) Track(channel: c),
+        ],
+      );
+      await openLibrary(
+        tester,
+        looperState: rig(second: false),
+        looperStates: states.stream,
+      );
+      await listen(tester);
+
+      states.add(rig(second: true));
+      await tester.pump();
+      await tester.pump();
+
+      verify(() => repository.stopAudition()).called(1);
+    });
+
+    testWidgets("Listen carries the pen's glyph, and a session without a "
+        'mixdown offers none', (tester) async {
+      await openLibrary(tester);
+      expect(
+        find.descendant(
+          of: listenButton(),
+          matching: find.byIcon(LucideIcons.play),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('library_row_s-new')));
+      await tester.pumpAndSettle();
+      expect(listenButton(), findsNothing);
+    });
+  });
+
+  group('trackStartedCapturing', () {
+    test('fires for any track that starts capturing, and only then', () {
+      LooperState rig(List<TrackState> states) => LooperState(
+        tracks: [
+          for (final (c, s) in states.indexed) Track(channel: c, state: s),
+        ],
+      );
+      const rec = TrackState.recording;
+      const empty = TrackState.empty;
+      expect(trackStartedCapturing(rig([empty]), rig([rec])), isTrue);
+      expect(trackStartedCapturing(rig([rec, empty]), rig([rec, rec])), isTrue);
+      expect(trackStartedCapturing(rig([rec]), rig([rec])), isFalse);
+      expect(trackStartedCapturing(rig([rec]), rig([empty])), isFalse);
+      expect(trackStartedCapturing(rig([]), rig([rec])), isTrue);
+    });
+  });
+
+  group('lane peaks (plan D11)', () {
+    testWidgets('a lane draws its peaks when they were read', (tester) async {
+      when(
+        () => repository.readPeaks(
+          any(),
+          any(),
+        ),
+      ).thenAnswer((call) async {
+        final track = call.positionalArguments[1] as SessionPreviewTrack;
+        return track.channel == 1 ? Float32List.fromList([0.25, 1]) : null;
+      });
+      await openLibrary(tester);
+
+      final peaks = find.byKey(const Key('library_track_peaks'));
+      expect(peaks, findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('library_track_1')),
+          matching: peaks,
+        ),
+        findsOneWidget,
+      );
+      final painter =
+          tester.widget<CustomPaint>(peaks).painter! as LibraryPeaksPainter;
+      expect(painter.peaks, [0.25, 1]);
+    });
+
+    testWidgets('a lane whose read failed draws its length only', (
+      tester,
+    ) async {
+      await openLibrary(tester);
+
+      expect(find.byKey(const Key('library_track_clip')), findsNWidgets(3));
+      expect(find.byKey(const Key('library_track_peaks')), findsNothing);
     });
   });
 

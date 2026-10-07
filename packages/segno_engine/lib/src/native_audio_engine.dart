@@ -1168,6 +1168,12 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  int trackAudioRev(int channel) {
+    _checkAlive();
+    return _bindings.le_engine_track_audio_rev(_engine, channel);
+  }
+
+  @override
   Float32List exportLayer(int channel, int lane, int ordinal) {
     _checkAlive();
     // Every layer of a lane shares the loop length; get_lane reports it.
@@ -2473,7 +2479,11 @@ class NativeAudioEngine implements AudioEngine {
   OffIsolateRunner offIsolate = Isolate.run;
 
   @override
-  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async {
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async {
     _checkAlive();
     final rate = snapshot().sampleRate;
     if (rate <= 0) return const AuditionStart(result: EngineResult.notRunning);
@@ -2496,11 +2506,23 @@ class NativeAudioEngine implements AudioEngine {
       _bindings.le_backing_buffer_free(buffer);
       return const AuditionStart(result: EngineResult.invalid);
     }
+    bool withdrawn() => stillWanted != null && !stillWanted();
+    if (withdrawn()) {
+      _bindings.le_backing_buffer_free(buffer);
+      return const AuditionStart(result: EngineResult.invalid, cancelled: true);
+    }
     var result = EngineResult.fromCode(
       _bindings.le_engine_audition_start(_engine, buffer, bus),
     );
     if (result == EngineResult.notReady) {
       await auditionRetryWait();
+      if (!_disposed && withdrawn()) {
+        _bindings.le_backing_buffer_free(buffer);
+        return const AuditionStart(
+          result: EngineResult.invalid,
+          cancelled: true,
+        );
+      }
       result = _disposed
           ? EngineResult.invalid
           : EngineResult.fromCode(
@@ -2515,9 +2537,16 @@ class NativeAudioEngine implements AudioEngine {
     return AuditionStart(
       result: result,
       frames: decoded.frames,
+      rate: rate,
       sourceRate: decoded.sourceRate,
       truncated: decoded.truncated,
     );
+  }
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async {
+    if (buckets <= 0) return null;
+    return Isolate.run(() => _filePeaks(path, buckets));
   }
 
   @override
@@ -2789,6 +2818,28 @@ _decodeAudition(String path, int rate, int maxFrames) {
     calloc
       ..free(out)
       ..free(info);
+    malloc.free(cPath);
+  }
+}
+
+/// Streams the file at [path] through the decoder (`le_backing_probe_file`)
+/// and reads [buckets] peaks, keeping no PCM. Runs inside `Isolate.run`;
+/// null when the file does not decode.
+Float32List? _filePeaks(String path, int buckets) {
+  final bindings = SegnoEngineBindings(openSegnoEngineLibrary());
+  final info = calloc<le_backing_decode_info>();
+  final peaks = calloc<Float>(buckets);
+  final cPath = path.toNativeUtf8();
+  try {
+    if (bindings.le_backing_probe_file(cPath.cast(), info, peaks, buckets) !=
+        0) {
+      return null;
+    }
+    return Float32List.fromList(peaks.asTypedList(buckets));
+  } finally {
+    calloc
+      ..free(info)
+      ..free(peaks);
     malloc.free(cPath);
   }
 }

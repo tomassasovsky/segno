@@ -2668,6 +2668,97 @@
     "@stageLibrary": {
         "description": "Accessible name of the top-bar Library icon."
     },
+    "libraryListen": "Listen",
+    "@libraryListen": {
+        "description": "Plays the selected session's saved preview (19/01 session:listen)."
+    },
+    "libraryListenStop": "Stop",
+    "@libraryListenStop": {
+        "description": "Stops the preview that is playing."
+    },
+    "libraryListenProgress": "{played} / {total}",
+    "@libraryListenProgress": {
+        "description": "How far the preview has played, as m:ss of m:ss.",
+        "placeholders": {
+            "played": {
+                "type": "String"
+            },
+            "total": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryListenTruncated": "Preview plays the first 2:00",
+    "@libraryListenTruncated": {
+        "description": "Under Listen when the saved preview is longer than two minutes."
+    },
+    "libraryListenFailed": "This preview cannot be played.",
+    "@libraryListenFailed": {
+        "description": "Listen refused: no preview file, or one that does not decode."
+    },
+    "libraryListenNoDevice": "Connect an audio device to listen.",
+    "@libraryListenNoDevice": {
+        "description": "Listen refused: the audio device is not running."
+    },
+    "libraryListenRecording": "Not while a performance is recording.",
+    "@libraryListenRecording": {
+        "description": "Listen refused: a performance capture is armed."
+    },
+    "libraryListenBusy": "The last preview is still stopping. Try again.",
+    "@libraryListenBusy": {
+        "description": "Listen refused: the previous preview has not been released yet."
+    },
+    "sessionNewLoopNotSaved": "{name} started, but it could not be saved yet. Save it to keep it.",
+    "@sessionNewLoopNotSaved": {
+        "description": "A New loop cleared the tracks and took its name, but its empty bundle could not be written; the first Save writes it.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryNewLoopStays": "{name} stays in your Library.",
+    "@libraryNewLoopStays": {
+        "description": "The New loop sheet (19/02): the outgoing session, by name, is kept. The name is drawn brighter than the rest of the line.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryNewLoopStaysUnnamed": "Your current loop stays in your Library.",
+    "@libraryNewLoopStaysUnnamed": {
+        "description": "The New loop sheet when the current loop has no name yet: it is saved under the next automatic name if it changed."
+    },
+    "libraryNewLoopKeeps": "Keep your effects, tempo and pedal setup.",
+    "@libraryNewLoopKeeps": {
+        "description": "The New loop sheet: what a new loop keeps from the current one."
+    },
+    "libraryNewLoopStart": "Start new loop",
+    "@libraryNewLoopStart": {
+        "description": "Confirms New loop."
+    },
+    "libraryTakeStillRunning": "The take has not finished yet. Nothing was changed; try again when it has.",
+    "@libraryTakeStillRunning": {
+        "description": "An Open or New loop ended a take in progress and it did not finish in time; nothing was saved, opened or cleared."
+    },
+    "libraryOpenInterruptTitle": "Stop playback and open {name}?",
+    "@libraryOpenInterruptTitle": {
+        "description": "Asked before Open while a track plays or records (plan D8).",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "libraryOpenInterruptBody": "Your current loop stays in your Library.",
+    "@libraryOpenInterruptBody": {
+        "description": "Under the Open confirmation: the outgoing loop is kept."
+    },
+    "libraryOpenConfirm": "Open",
+    "@libraryOpenConfirm": {
+        "description": "Confirms an Open that stops playback."
+    },
     "libraryManageSaveOpen": "Save {name}",
     "@libraryManageSaveOpen": {
         "description": "Manage row on another session: saves the open session (or the current loop) named here.",

@@ -341,7 +341,9 @@ class LibrarySessionRows extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final library = context.watch<LibraryCubit>().state;
+    final library = context.select<LibraryCubit, LibraryState>(
+      (c) => c.state.withoutListen,
+    );
     final session = context.watch<SessionCubit>().state;
     final rows = library.filter(session.sessions);
     if (rows.isEmpty) {
@@ -479,14 +481,45 @@ class LibrarySessionRow extends StatelessWidget {
   }
 }
 
-/// The row's eight-slot track strip: one slot per track, filled where the
+/// Where a [LibraryTrackStrip] is drawn, which sets its size.
+enum LibraryTrackStripSize {
+  /// A session row's strip (19/01): 340 x 13.
+  row(width: 340, height: 13, slotWidth: 37),
+
+  /// The New loop sheet's before and after strips (19/02): 346 x 36.
+  sheet(width: 346, height: 36, slotWidth: 38);
+
+  const LibraryTrackStripSize({
+    required this.width,
+    required this.height,
+    required this.slotWidth,
+  });
+
+  /// The strip's width.
+  final double width;
+
+  /// The strip's and each slot's height.
+  final double height;
+
+  /// Each slot's width.
+  final double slotWidth;
+}
+
+/// The eight-slot track strip: one slot per track, filled where the
 /// session holds recorded audio.
 class LibraryTrackStrip extends StatelessWidget {
   /// Creates a track strip for the populated [channels].
-  const LibraryTrackStrip({required this.channels, super.key});
+  const LibraryTrackStrip({
+    required this.channels,
+    this.size = LibraryTrackStripSize.row,
+    super.key,
+  });
 
   /// The channels (0-based) holding audio.
   final List<int> channels;
+
+  /// Where the strip is drawn.
+  final LibraryTrackStripSize size;
 
   static const int _slots = kMaxTracks;
 
@@ -495,8 +528,8 @@ class LibraryTrackStrip extends StatelessWidget {
     final surface = context.surface;
     return ExcludeSemantics(
       child: SizedBox(
-        width: 340,
-        height: 13,
+        width: size.width,
+        height: size.height,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -517,7 +550,7 @@ class LibraryTrackStrip extends StatelessWidget {
                         : surface.borderStrong,
                   ),
                 ),
-                child: const SizedBox(width: 37, height: 13),
+                child: SizedBox(width: size.slotWidth, height: size.height),
               ),
           ],
         ),
