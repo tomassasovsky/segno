@@ -142,6 +142,30 @@ void main() {
     expect(decoder.mock.live, 1);
   });
 
+  test('the NOT_READY retries span two and a half device blocks', () async {
+    // 4096 frames at 48 kHz: two blocks are 171 ms, far past eight 1 ms
+    // retries (review of P4, L5).
+    inner
+      ..stop()
+      ..start(
+        const EngineConfig(
+          sampleRate: 48000,
+          outputChannels: 2,
+          bufferFrames: 4096,
+        ),
+      );
+    repo.refresh();
+    final a = await asset('a.wav');
+    engine.notReadyCount = 8;
+    final clock = Stopwatch()..start();
+    expect(await repo.load(a.digest), isTrue);
+    expect(engine.handoffs, 9);
+    expect(
+      clock.elapsed,
+      greaterThanOrEqualTo(const Duration(microseconds: 213333)),
+    );
+  });
+
   test('an engine refusal is reported and frees the decode', () async {
     final a = await asset('a.wav');
     engine.refuseWith = EngineResult.capacity;
