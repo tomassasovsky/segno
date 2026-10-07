@@ -40,6 +40,13 @@
 #define LE_CF_FIT_SE_BPM 0.15
 #define LE_CF_FIT_MIN_INTERVALS LE_CLOCK_FOLLOW_PPQN
 #define LE_CF_FIT_MAX_INTERVALS (4 * LE_CLOCK_FOLLOW_PPQN)
+/* A pulse within this fraction of a period of the previous one is a late
+ * delivery (a burst after a stall of the reader or the bus): counted, but
+ * its time says nothing about the clock. */
+#define LE_CF_BURST 0.25
+/* A re-fit counts pulses its line finds whole periods late only once the
+ * line's period is known to this fraction (its standard error). */
+#define LE_CF_REFIT_RELIABLE 0.01
 /* Hidden pulses an unmarked drop may have taken, at most. */
 #define LE_CF_MAX_HIDDEN 3
 #define LE_CF_LOSS_FLOOR_NS 250e6 /* 250 ms */
@@ -166,6 +173,7 @@ static void le_cf_clear_runs(le_clock_follow* f) {
 /* Forgets the pulse run and any fit in progress (not the tempo). */
 static void le_cf_drop_run(le_clock_follow* f) {
   f->have_last = 0;
+  f->deferred = 0;
   f->gap = 0;
   f->refit = 0;
   f->n_oor = 0;
@@ -177,7 +185,16 @@ static void le_cf_drop_run(le_clock_follow* f) {
 static void le_cf_take_fit(le_clock_follow* f, double slope, double intercept) {
   f->period = slope;
   f->pred = le_cf_fit_at(&f->fit, slope, intercept, (double)f->fit.k + 1.0);
-  f->var = 0.0;
+  /* The fit's residual spread is the source's jitter: from the first pulse
+   * the late-pulse hold (review DH1) and the outlier bar sit above it, so
+   * ordinary block-edge lateness is never held or dropped as late. */
+  const double n = (double)f->fit.n;
+  const double sxx = f->fit.skk - f->fit.sk * f->fit.sk / n;
+  const double sxy = f->fit.skt - f->fit.sk * f->fit.st / n;
+  const double syy = f->fit.stt - f->fit.st * f->fit.st / n;
+  const double resid =
+      n > 2.0 && sxx > 0.0 ? (syy - (sxy / sxx) * sxy) / (n - 2.0) : 0.0;
+  f->var = resid > 0.0 ? resid : 0.0;
   f->e_prev = 0.0;
   f->since = 0;
   f->refit = 0;
@@ -290,7 +307,18 @@ static double le_cf_loss_limit(const le_clock_follow* f) {
 }
 
 /* Not Synced: extend the acquisition line, or start it again. */
-static uint32_t le_cf_acquire(le_clock_follow* f, double iv, uint64_t t) {
+static uint32_t le_cf_defer(le_clock_follow* f, uint64_t t, double iv,
+                            uint64_t prev) {
+  f->deferred = 1;
+  f->def_t = t;
+  f->def_iv = iv;
+  f->def_prev = prev;
+  return 0u;
+}
+
+static uint32_t le_cf_acquire(le_clock_follow* f, double iv, uint64_t t,
+                              uint64_t prev, int allow_defer) {
+  f->pulses++;
   if (f->gap) { /* no acquisition line spans a loss */
     f->gap = 0;
     le_cf_fit_start(&f->fit, t);
@@ -323,6 +351,8 @@ static uint32_t le_cf_acquire(le_clock_follow* f, double iv, uint64_t t) {
      * to judge. */
     const double off = (double)t - le_cf_fit_at(&f->fit, slope, intercept, k);
     if (off > 0.5 * slope) {
+      /* Held one pulse first: a burst right behind it makes it late. */
+      if (allow_defer) return le_cf_defer(f, t, iv, prev);
       const double hidden = floor(off / slope + 0.5);
       k += (int32_t)hidden;
       f->pulses += (uint64_t)hidden;
@@ -340,14 +370,24 @@ static uint32_t le_cf_acquire(le_clock_follow* f, double iv, uint64_t t) {
 }
 
 /* Synced, re-fitting after a tempo step: the line's slope is the period. */
-static uint32_t le_cf_refit_pulse(le_clock_follow* f, uint64_t t) {
+static uint32_t le_cf_refit_pulse(le_clock_follow* f, uint64_t t, double iv,
+                                  uint64_t prev, int allow_defer) {
   double slope = f->period, intercept = 0.0, se = 0.0;
   int32_t k = f->fit.k + 1;
-  if (le_cf_fit_solve(&f->fit, &slope, &intercept, &se)) {
+  if (le_cf_fit_solve(&f->fit, &slope, &intercept, &se) && slope > 0.0 &&
+      f->fit.n - 1 >= LE_CF_FIT_MIN_INTERVALS / 4 &&
+      se < LE_CF_REFIT_RELIABLE * slope) {
+    /* Pulses missed while re-fitting are counted only from a line that
+     * knows its period (never from the first few points of a step), and a
+     * late pulse is held one pulse in case a burst follows it (review
+     * DH1). */
     const double off = (double)t - le_cf_fit_at(&f->fit, slope, intercept, k);
-    const double hidden = floor(off / slope + 0.5);
-    if (hidden >= 1.0) {
-      /* Pulses were missed while re-fitting: count them. */
+    if (off > 0.5 * slope) {
+      if (allow_defer) {
+        f->pulses++;
+        return le_cf_defer(f, t, iv, prev);
+      }
+      const double hidden = floor(off / slope + 0.5);
       k += (int32_t)hidden;
       f->pulses += (uint64_t)hidden;
     }
@@ -397,23 +437,32 @@ static int le_cf_classify_run(le_clock_follow* f, int32_t* hidden) {
   const double se = fmax(sqrt(resid / vxx), sigma / sqrt(vxx));
   const double z = fabs(p - p_old) / fmax(se, 1.0);
   /* The hidden pulses fell before run member j (the run can open with a
-   * pulse that was merely late before the drop). */
+   * pulse that was merely late before the drop). With d_i the run's offset
+   * from the old line, the squared residual for (h, j) is
+   *   S - 2 h p D_j + (m - j) h^2 p^2,  D_j = sum of d_i for i >= j,
+   * so every split costs O(1) from suffix sums: O(m) per pulse (review
+   * DL3), not O(m^2). */
+  double total = 0.0;
+  for (int32_t i = 0; i < m; ++i) {
+    const double d = (double)f->out_t[i] - t0 - (double)(i + 1) * p_old;
+    total += d * d;
+  }
   int32_t best_h = 0;
   double best_a = INFINITY;
-  for (int32_t h = 1; h <= LE_CF_MAX_HIDDEN; ++h) {
-    for (int32_t j = 0; j < m; ++j) {
-      double sum = 0.0;
-      for (int32_t i = 0; i < m; ++i) {
-        const double idx = (double)(i + 1 + (i >= j ? h : 0));
-        const double r = (double)f->out_t[i] - t0 - idx * p_old;
-        sum += r * r;
-      }
+  double suffix = 0.0;
+  for (int32_t j = m - 1; j >= 0; --j) {
+    suffix += (double)f->out_t[j] - t0 - (double)(j + 1) * p_old;
+    const double tail = (double)(m - j);
+    for (int32_t h = 1; h <= LE_CF_MAX_HIDDEN; ++h) {
+      const double hp = (double)h * p_old;
+      const double sum = total - 2.0 * hp * suffix + tail * hp * hp;
       if (sum < best_a) {
         best_a = sum;
         best_h = h;
       }
     }
   }
+  if (best_a < 0.0) best_a = 0.0;
   /* A drop also needs the run to sit on the old line h periods on: its
    * residual no larger than a quarter period. */
   const int on_line = sqrt(best_a / n) < 0.25 * p_old;
@@ -449,62 +498,23 @@ static uint32_t le_cf_resolve_run(le_clock_follow* f, int verdict,
   return LE_CLOCK_EVENT_REACQUIRED;
 }
 
-uint32_t le_clock_follow_pulse(le_clock_follow* f, uint64_t t_ns) {
-  if (f == NULL) return 0u;
-  if (!f->have_last) {
-    f->have_last = 1;
-    f->gap = 0;
-    f->last_t = t_ns;
-    f->pulses++;
-    if (f->state != LE_CLOCK_FOLLOW_SYNCED) le_cf_fit_start(&f->fit, t_ns);
-    return 0u;
-  }
-  if (t_ns < f->last_t) return 0u; /* out of order: ignored */
-  if (t_ns == f->last_t) {
-    /* Two pulses with one time (one packet, one read): still a pulse. But
-     * if the interval just before counted pulses as missed, this is one of
-     * them, delivered late with the next: already counted. */
-    if (f->state == LE_CLOCK_FOLLOW_SYNCED && !f->refit &&
-        f->multi_extra > 0 && f->since_multi == 0) {
-      f->multi_extra--;
-      f->multi_prev = f->multi_prev > 2 ? f->multi_prev - 1 : 0;
-      return 0u;
-    }
-    f->pulses++;
-    if (f->state != LE_CLOCK_FOLLOW_SYNCED) {
-      if (f->fit.n > 0) le_cf_fit_add(&f->fit, f->fit.k + 1, t_ns);
-    } else if (f->refit) {
-      le_cf_fit_add(&f->fit, f->fit.k + 1, t_ns);
-    } else {
-      f->pred += f->period;
-    }
-    return 0u;
-  }
-  const uint64_t prev = f->last_t;
-  const double iv = (double)(t_ns - prev);
-  uint32_t events = 0u;
-  if (f->state == LE_CLOCK_FOLLOW_SYNCED && iv >= le_cf_loss_limit(f)) {
-    /* The deadline passed before this pulse: the same loss the check would
-     * have found a block earlier (review L1). This pulse starts again. */
-    events = le_cf_silence(f);
-    f->have_last = 1;
-    f->last_t = t_ns;
-    f->pulses++;
-    le_cf_fit_start(&f->fit, t_ns);
-    return events;
-  }
-  f->last_t = t_ns;
-
-  if (f->state != LE_CLOCK_FOLLOW_SYNCED) {
-    f->pulses++;
-    return le_cf_acquire(f, iv, t_ns);
-  }
-  if (f->refit) return le_cf_refit_pulse(f, t_ns);
-
+/* Synced tracking of one pulse that is not part of a burst. */
+static uint32_t le_cf_track(le_clock_follow* f, uint64_t t_ns, double iv,
+                            uint64_t prev, int allow_defer) {
   const double period = f->period;
   const double sigma = sqrt(f->var);
   const double threshold = fmax(LE_CF_OUTLIER_FLOOR_NS,
                                 LE_CF_OUTLIER_SIGMAS * sigma);
+  /* A pulse late past the outlier bar is held one pulse: if the next one is
+   * on its heels it was a late delivery (the pulses behind it come in a
+   * burst after a stall), and its time is evidence of nothing. A whole
+   * multiple, a drop or a step shows on the next pulse just the same, and
+   * a whole multiple is always held (it is a period or more late), so a
+   * burst never follows a counted miss. */
+  if (allow_defer && !f->gap && (double)t_ns - f->pred > threshold) {
+    f->pulses++;
+    return le_cf_defer(f, t_ns, iv, prev);
+  }
   const double ratio = iv / period;
   const double whole = floor(ratio + 0.5);
   double count = 1.0;
@@ -544,7 +554,6 @@ uint32_t le_clock_follow_pulse(le_clock_follow* f, uint64_t t_ns) {
   const double e = (double)t_ns - f->pred;
   f->e_prev = e;
   const int settled = f->since >= LE_CF_SETTLE_PULSES;
-  const int outlier = fabs(e) > threshold && settled;
   /* Run membership is looser than the outlier bar: one sigma of the same
    * sign. The run is resolved once its last six errors average beyond the
    * bar, so a sawtooth of block-edge jitter riding on a dropped pulse's
@@ -613,6 +622,126 @@ uint32_t le_clock_follow_pulse(le_clock_follow* f, uint64_t t_ns) {
   }
   le_cf_update_display(f);
   return 0u;
+}
+
+/* One pulse that is not part of a burst, in the follower's current state. */
+static uint32_t le_cf_step(le_clock_follow* f, uint64_t t, double iv,
+                           uint64_t prev, int allow_defer) {
+  if (f->state != LE_CLOCK_FOLLOW_SYNCED) {
+    return le_cf_acquire(f, iv, t, prev, allow_defer);
+  }
+  if (f->refit) return le_cf_refit_pulse(f, t, iv, prev, allow_defer);
+  return le_cf_track(f, t, iv, prev, allow_defer);
+}
+
+/* The pulse held by a deferral was not followed by a burst: process it now,
+ * as real evidence. */
+static uint32_t le_cf_replay(le_clock_follow* f) {
+  f->deferred = 0;
+  f->pulses--; /* counted when held; counted again by the step */
+  return le_cf_step(f, f->def_t, f->def_iv, f->def_prev, 0);
+}
+
+/* Whether the held pulse was merely late (a stall that held one pulse):
+ * the pulse after it is less than half as late as the held one. After a
+ * step the error grows, and after a drop the next pulse is as late as the
+ * held one; on a source as coarse as block edges at 174 BPM a drop can
+ * still pass for lateness here, and the run that follows counts it. */
+static int le_cf_back_on_line(const le_clock_follow* f, uint64_t t) {
+  double next = 0.0, held = 0.0, period = 0.0;
+  if (f->state == LE_CLOCK_FOLLOW_SYNCED && !f->refit) {
+    held = f->pred;
+    period = f->period;
+  } else {
+    double intercept = 0.0, se = 0.0;
+    if (!le_cf_fit_solve(&f->fit, &period, &intercept, &se) ||
+        !(period > 0.0)) {
+      return 0;
+    }
+    held = le_cf_fit_at(&f->fit, period, intercept, (double)f->fit.k + 1.0);
+  }
+  next = held + period;
+  const double late_held = (double)f->def_t - held;
+  const double late_next = (double)t - next;
+  return late_next < 0.5 * late_held;
+}
+
+/* The period a burst is measured against, or 0 while there is none. */
+static double le_cf_burst_period(const le_clock_follow* f) {
+  if (f->state == LE_CLOCK_FOLLOW_SYNCED) return f->period;
+  double slope = 0.0, intercept = 0.0, se = 0.0;
+  if (le_cf_fit_solve(&f->fit, &slope, &intercept, &se) && slope > 0.0) {
+    return slope;
+  }
+  return 0.0;
+}
+
+/* Advances the line by one index without a point: a pulse whose time is a
+ * delivery time, not the clock's. */
+static void le_cf_skip_index(le_clock_follow* f) {
+  if (f->state == LE_CLOCK_FOLLOW_SYNCED && !f->refit) {
+    f->pred += f->period;
+  } else if (f->fit.n > 0) {
+    f->fit.k++;
+  }
+}
+
+/* A pulse on the heels of the previous one (review DH1): the pulses a stall
+ * held back, delivered together, or two pulses read in one packet. Each is
+ * counted once; none of their times reaches the loop, a run or a fit. A
+ * pulse held for being late was the first of the burst: it is let go the
+ * same way. */
+static uint32_t le_cf_burst(le_clock_follow* f, uint64_t t_ns) {
+  f->last_t = t_ns;
+  if (f->deferred) {
+    f->deferred = 0;
+    le_cf_skip_index(f); /* the held pulse, counted when it was held */
+  }
+  f->pulses++;
+  le_cf_skip_index(f);
+  return 0u;
+}
+
+uint32_t le_clock_follow_pulse(le_clock_follow* f, uint64_t t_ns) {
+  if (f == NULL) return 0u;
+  if (!f->have_last) {
+    f->have_last = 1;
+    f->gap = 0;
+    f->last_t = t_ns;
+    f->pulses++;
+    if (f->state != LE_CLOCK_FOLLOW_SYNCED) le_cf_fit_start(&f->fit, t_ns);
+    return 0u;
+  }
+  if (t_ns < f->last_t) return 0u; /* out of order: ignored */
+  const uint64_t prev = f->last_t;
+  const double iv = (double)(t_ns - prev);
+  if (f->state == LE_CLOCK_FOLLOW_SYNCED && iv >= le_cf_loss_limit(f)) {
+    /* The deadline passed before this pulse: the same loss the check would
+     * have found a block earlier (review L1). This pulse starts again. */
+    const uint32_t events = le_cf_silence(f);
+    f->have_last = 1;
+    f->last_t = t_ns;
+    f->pulses++;
+    le_cf_fit_start(&f->fit, t_ns);
+    return events;
+  }
+  if (iv == 0.0 || iv < LE_CF_BURST * le_cf_burst_period(f)) {
+    return le_cf_burst(f, t_ns);
+  }
+  f->last_t = t_ns;
+  uint32_t events = 0u;
+  if (f->deferred) {
+    if (le_cf_back_on_line(f, t_ns)) {
+      /* Late, alone: counted when held, its time dropped. This pulse is
+       * measured from the line, as if the held one had been on time. */
+      f->deferred = 0;
+      le_cf_skip_index(f);
+      if (f->state == LE_CLOCK_FOLLOW_SYNCED && !f->refit) f->multi_prev = 0;
+      return le_cf_step(f, t_ns, iv, prev, 1);
+    }
+    events |= le_cf_replay(f);
+  }
+  return events | le_cf_step(f, t_ns, iv, prev, 1);
 }
 
 void le_clock_follow_transport(le_clock_follow* f, uint8_t status) {

@@ -358,6 +358,41 @@ static void test_clock_sync_drops_backlog(void) {
   le_engine_destroy(e);
 }
 
+/* No tempo write while the period is being re-fitted after a step (the
+ * follower's tempo-ready check, not just Synced): on a block-edge source
+ * the re-fit runs past a beat, and its slope a beat in can be 1.1 BPM off
+ * (this start phase, measured). Every session tempo written after a
+ * 100 -> 120 step is the old 100 or within 0.3 BPM of 120. */
+static void test_clock_sync_no_tempo_write_during_refit(void) {
+  printf("test_clock_sync_no_tempo_write_during_refit\n");
+  mi_fake_capture c;
+  le_engine* e = ec_engine(&c, 7);
+  CHECK(le_engine_set_clock_sync(e, 7, 0, 0) == LE_OK);
+  mi_block(e);
+  const double blk = 512.0 / 44100.0;
+  const uint64_t t0 = ec_now_ns;
+  double tt = 43 * 0.00037;
+  int written_wrong = 0;
+  int steps_seen = 0;
+  for (int k = 1; k <= 24 * 40; ++k) {
+    tt += 60.0 / ((k <= 24 * 20 ? 100.0 : 120.0) * 24.0);
+    ec_now_ns = t0 + (uint64_t)llround(ceil(tt / blk) * blk * 1e9);
+    CHECK(le_midi_sink_push(&c.sink, 0xF8, 0, 0, ec_now_ns) == 1);
+    mi_block(e);
+    const le_snapshot s = mi_snapshot(e);
+    if (k > 24 * 20) {
+      if (fabsf(s.tempo_bpm - 100.0f) > 0.1f &&
+          fabsf(s.tempo_bpm - 120.0f) > 0.3f) {
+        written_wrong++;
+      }
+      if (fabsf(s.tempo_bpm - 120.0f) <= 0.3f) steps_seen++;
+    }
+  }
+  CHECK(written_wrong == 0);
+  CHECK(steps_seen > 0); /* the new tempo was written */
+  le_engine_destroy(e);
+}
+
 static void test_clock_send_closed_under_external_source(void) {
   printf("test_clock_send_closed_under_external_source\n");
   le_engine* e = tg_make_engine_cap(1000, 100000);
@@ -381,5 +416,6 @@ static void run_engine_clock_tests(void) {
   test_clock_sync_never_retimes_content();
   test_clock_sync_rebind_and_gap();
   test_clock_sync_drops_backlog();
+  test_clock_sync_no_tempo_write_during_refit();
   test_clock_send_closed_under_external_source();
 }
