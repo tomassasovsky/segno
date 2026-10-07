@@ -191,11 +191,38 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   RecordImage? lastRecordImage;
   final Map<int, int> imageRevisions = {};
 
+  /// What [toggleFade], [toggleReverse] and [editLength] admit (refused by
+  /// default) and the receipt an admitted request answers later.
+  EngineResult editAdmission = EngineResult.invalid;
+  EngineResult editResult = EngineResult.ok;
+
+  /// Every admitted Fade toggle, Reverse toggle and length edit, in order.
+  final List<({String kind, int channel, Object? value})> editCalls = [];
+
+  /// Requests whose receipt the callback has not answered yet: they read as
+  /// unsettled until [answerWithheld] releases them.
+  final Set<int> withheldRequests = {};
+
+  /// Whether new admissions are withheld (see [withheldRequests]).
+  bool withholdReceipts = false;
+
+  /// Answers every withheld request with its queued result.
+  void answerWithheld() => withheldRequests.clear();
+
+  RequestAdmission _admitEdit(String kind, int channel, Object? value) {
+    if (!editAdmission.isOk) return (result: editAdmission, request: 0);
+    editCalls.add((kind: kind, channel: channel, value: value));
+    final request = ++_fadeRequest;
+    _fadeResults[request] = editResult;
+    if (withholdReceipts) withheldRequests.add(request);
+    return (result: EngineResult.ok, request: request);
+  }
+
   @override
   RequestAdmission toggleFade({
     required int channel,
     required double seconds,
-  }) => (result: EngineResult.invalid, request: 0);
+  }) => _admitEdit('fade', channel, seconds);
 
   final Map<int, FadeImage> installedFades = {};
   final Map<int, EngineResult> _fadeResults = {};
@@ -214,7 +241,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
 
   @override
   RequestAdmission toggleReverse({required int channel}) =>
-      (result: EngineResult.invalid, request: 0);
+      _admitEdit('reverse', channel, null);
 
   /// Directions accepted by [installReverse], keyed by channel; the next
   /// [commitSession] publishes them, and a clear drops them with the material.
@@ -227,7 +254,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   RequestAdmission editLength({
     required int channel,
     required LengthEdit edit,
-  }) => (result: EngineResult.invalid, request: 0);
+  }) => _admitEdit('length', channel, edit);
 
   @override
   RequestAdmission installReverse({
@@ -320,7 +347,8 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
       _admitTranspose(() => lastTransposeBypass = bypassed);
 
   @override
-  EngineResult? readRequestResult(int request) => _fadeResults.remove(request);
+  EngineResult? readRequestResult(int request) =>
+      withheldRequests.contains(request) ? null : _fadeResults.remove(request);
 
   @override
   EngineResult setMix(EngineMixSettings settings) {

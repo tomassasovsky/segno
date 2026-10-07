@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno_engine/segno_engine.dart'
+    show LaneSnapshot, TrackSnapshot;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -126,6 +128,69 @@ void main() {
     expect(repository.recordStartRecoveryRequired, isFalse);
     expect(repository.sessionTransport.isRunning, isTrue);
     expect(repository.recordStartSettings, (countInBars: 0, soundStart: false));
+  });
+
+  check('Sound start refuses an empty track with no usable input', (
+    clock,
+    engine,
+    repository,
+  ) {
+    final required = <int>[];
+    final sub = repository.recordingInputRequired.listen(required.add);
+    expect(
+      repository.setRecordStartSettings(
+        countInBars: 0,
+        soundStart: true,
+        editKind: RecordStartEditKind.sound,
+      ),
+      EngineResult.ok,
+    );
+    unawaited(repository.settleRecordStartSettings());
+    clock.flushMicrotasks();
+    expect(repository.recordStartSettings, (countInBars: 0, soundStart: true));
+    // Track 0's lane records input 0, but the device opened no input
+    // channels: Sound start could never trigger.
+    engine.nextSnapshot = engine.nextSnapshot.copyWith(
+      inputChannels: 0,
+      tracks: [
+        const TrackSnapshot(
+          state: TrackState.empty,
+          volume: 1,
+          muted: false,
+          lengthFrames: 0,
+          undoDepth: 0,
+          rms: 0,
+          peak: 0,
+          lanes: [
+            LaneSnapshot(
+              inputChannel: 0,
+              outputMask: 0x3,
+              volume: 1,
+              muted: false,
+              lengthFrames: 0,
+              rms: 0,
+              peak: 0,
+            ),
+          ],
+        ),
+        ...engine.nextSnapshot.tracks.skip(1),
+      ],
+    );
+    expect(repository.record(), EngineResult.invalid);
+    clock.flushMicrotasks();
+    expect(required, [0]);
+    // Every input the lane could use is excluded: still refused.
+    engine.nextSnapshot = engine.nextSnapshot.copyWith(
+      inputChannels: 2,
+      excludedInputMask: 0x3,
+    );
+    expect(repository.record(), EngineResult.invalid);
+    clock.flushMicrotasks();
+    expect(required, [0, 0]);
+    // A usable input admits the arm.
+    engine.nextSnapshot = engine.nextSnapshot.copyWith(excludedInputMask: 0);
+    expect(repository.record(), EngineResult.ok);
+    unawaited(sub.cancel());
   });
 
   check('accepted stopped pair and restart keep the exact Sound choice', (
