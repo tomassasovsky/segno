@@ -80,6 +80,9 @@ class _LoopMenuState<T> extends State<LoopMenu<T>> {
     return MenuAnchor(
       controller: _controller,
       childFocusNode: widget.childFocusNode,
+      // An outside tap only closes the menu, as the modal menus it replaces
+      // did; it must not also land on the stage or page underneath.
+      consumeOutsideTap: true,
       alignmentOffset: const Offset(0, 8),
       // Rebuilds the anchor so it can draw itself open or closed.
       onOpen: () => setState(() {}),
@@ -203,9 +206,12 @@ class _LoopSelectState<T> extends State<LoopSelect<T>> {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final label = widget.items
-        .firstWhere((item) => item.value == widget.value)
-        .label;
+    final label =
+        widget.items
+            .where((item) => item.value == widget.value)
+            .firstOrNull
+            ?.label ??
+        '';
     return LoopMenu<T>(
       value: widget.value,
       items: widget.items,

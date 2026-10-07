@@ -103,6 +103,47 @@ void main() {
       expect(find.byKey(const Key('row_a')), findsNothing);
     });
 
+    testWidgets('an outside tap closes the menu and reaches nothing under it', (
+      tester,
+    ) async {
+      var underneath = 0;
+      await tester.pumpApp(
+        Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                key: const Key('underneath'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () => underneath++,
+              ),
+            ),
+            Center(
+              child: LoopSelect<String>(
+                key: const Key('select'),
+                value: 'b',
+                onSelected: chosen.add,
+                items: [
+                  for (final v in ['a', 'b'])
+                    LoopSelectItem(
+                      key: Key('row_$v'),
+                      value: v,
+                      label: 'Item $v',
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+      await open(tester);
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('row_a')), findsNothing);
+      expect(underneath, 0);
+      expect(chosen, isEmpty);
+    });
+
     testWidgets('a disabled select does not open', (tester) async {
       await pump(tester, enabled: false);
       await open(tester);
