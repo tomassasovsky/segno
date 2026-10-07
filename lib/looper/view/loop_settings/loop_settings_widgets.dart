@@ -192,6 +192,116 @@ class LoopChoiceButton extends StatelessWidget {
   }
 }
 
+/// The pen's on/off switch: an 86 x 46 pill whose knob sits right and lights
+/// when on, optionally led by its [label]. Label and pill are one control and
+/// one focus stop, so a tap on either and the encoder press all toggle it.
+class LoopSwitch extends StatelessWidget {
+  /// Creates a [LoopSwitch].
+  const LoopSwitch({
+    required this.value,
+    required this.onChanged,
+    required this.semanticLabel,
+    this.label,
+    this.autofocus = false,
+    super.key,
+  });
+
+  /// Whether the switch is on.
+  final bool value;
+
+  /// Called with the new value; null disables the switch.
+  final ValueChanged<bool>? onChanged;
+
+  /// The accessible name.
+  final String semanticLabel;
+
+  /// Text drawn before the pill (the Network page's "Wi-Fi").
+  final String? label;
+
+  /// Whether this stop takes focus when its page opens.
+  final bool autofocus;
+
+  /// The pill's size.
+  static const Size trackSize = Size(86, 46);
+
+  /// The knob's diameter.
+  static const double knobSize = 30;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final changed = onChanged;
+    final label = this.label;
+    void toggle() => changed?.call(!value);
+    final pill = AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      width: trackSize.width,
+      height: trackSize.height,
+      padding: const EdgeInsets.all(6),
+      alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+      decoration: BoxDecoration(
+        color: value ? surface.accentSurface : surface.control,
+        borderRadius: BorderRadius.circular(trackSize.height / 2),
+        border: Border.all(
+          color: value ? surface.accent : surface.borderStrong,
+          width: 2,
+        ),
+      ),
+      child: Container(
+        width: knobSize - 4,
+        height: knobSize - 4,
+        decoration: BoxDecoration(
+          color: value ? surface.textPrimary : surface.textTertiary,
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+    return Semantics(
+      toggled: value,
+      enabled: changed != null,
+      label: semanticLabel,
+      excludeSemantics: true,
+      child: Opacity(
+        opacity: changed == null ? surface.disabledOpacity : 1,
+        child: LoopFocusable(
+          enabled: changed != null,
+          autofocus: autofocus,
+          onActivate: toggle,
+          child: InkWell(
+            canRequestFocus: false,
+            borderRadius: BorderRadius.circular(8),
+            onTap: changed == null ? null : toggle,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 64),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (label != null) ...[
+                      AppText(
+                        label,
+                        style: TextStyle(
+                          color: surface.textPrimary,
+                          fontSize: 26,
+                          height: 1,
+                        ),
+                      ),
+                      const SizedBox(width: 26),
+                    ],
+                    pill,
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A row of equal [LoopChoiceButton]s sharing [width] with [gap] between.
 class LoopChoiceRow<T> extends StatelessWidget {
   /// Creates a [LoopChoiceRow].

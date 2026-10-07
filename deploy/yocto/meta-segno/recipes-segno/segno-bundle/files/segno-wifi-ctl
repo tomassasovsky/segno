@@ -2,12 +2,22 @@
 # segno-wifi-ctl — privileged WiFi helper the Flutter app drives.
 #
 # Verbs (stdout = compact JSON; detail on stderr):
-#   status                 {supported,enabled,connected,ssid,ip,signal}
+#   status                 {supported,enabled,connected,ssid,ip,signal,
+#                           saved:[{ssid,autoconnect}],last}
 #   scan                   [{ssid,signal,secured}, ...]
-#   connect <ssid> [psk]   {} on success (waits for activation)
+#   connect <ssid>         {} on success (waits for activation); the key, if
+#                          any, is read from stdin, never from argv. On failure
+#                          exits non-zero, and when another network was active
+#                          before, reactivates it and prints {"restored":<ssid>}
 #   disconnect             {}
 #   forget <ssid>          {}
-#   radio on|off           {}  (Control Center tap toggle)
+#   radio on|off           {}
+#   autoconnect <ssid> on|off
+#                          {}  (connection.autoconnect of the saved profile)
+#   set-password <ssid>    {}  stores a new key on the saved profile; the key
+#                          is read from stdin, never from argv
+#   connectivity           {"internet":true|false}: one HEAD request to the
+#                          update host, 3 s limit
 #
 # NetworkManager owns the radio, and nothing else may. There is deliberately no
 # second backend: see reclaim_wifi below for what having one cost us (#468).
@@ -23,6 +33,12 @@ NM_CONNECT_WAIT_SECS="${SEGNO_WIFI_NM_CONNECT_TIMEOUT:-45}"
 # network, so the one the user just picked is the one that comes back after a
 # reboot (#463).
 WIFI_AUTOCONNECT_PRIORITY="${SEGNO_WIFI_AUTOCONNECT_PRIORITY:-100}"
+# Reaching the host the update check already contacts is the internet test, so
+# the console talks to nobody new (#1270 D14). Same default as segno-update-ctl.
+CONNECTIVITY_URL="${SEGNO_UPDATE_BASE:-https://segno.aquiles.dev/updates/appliance}"
+CONNECTIVITY_TIMEOUT_SECS="${SEGNO_WIFI_CONNECTIVITY_TIMEOUT:-3}"
+# How long a failed join waits to bring the previous network back.
+RESTORE_WAIT_SECS="${SEGNO_WIFI_RESTORE_TIMEOUT:-30}"
 
 log() { echo "segno-wifi-ctl: $*" >&2; }
 
@@ -78,13 +94,29 @@ iface_enabled() {
     ip -o link show "$IFACE" 2>/dev/null | grep -Eq '[,<]UP[,>]'
 }
 
+# UUID of every saved wifi profile, one per line. Listed by UUID and TYPE,
+# which carry no colons, so nmcli's \:-escaping of names never reaches awk and
+# a network whose name has a colon in it is still found.
+wifi_profile_uuids() {
+    nmcli -t -f UUID,TYPE connection show 2>/dev/null \
+        | awk -F: '$2 ~ /wireless|wifi/ { print $1 }'
+}
+
+# One field of one profile, exactly as stored: -e no keeps nmcli from
+# escaping colons and backslashes in it.
+profile_field() {
+    nmcli -e no -g "$2" connection show uuid "$1" 2>/dev/null || true
+}
+
 # Every saved wifi profile, one SSID per line. The UI needs these separately
 # from a scan: a network you saved is not the same as one that happens to be
 # in range, and until now the two were indistinguishable — you could not
 # forget a saved network unless you were connected to it (#471).
 saved_ssids() {
-    nmcli -t -g NAME,TYPE connection show 2>/dev/null \
-        | awk -F: '$2 ~ /wireless/ { print $1 }'
+    wifi_profile_uuids | while IFS= read -r uuid; do
+        [ -n "$uuid" ] || continue
+        profile_field "$uuid" 802-11-wireless.ssid
+    done
 }
 
 # One above the highest saved network, so the network the user just chose wins
@@ -92,11 +124,10 @@ saved_ssids() {
 # NetworkManager breaking the tie by timestamp — so a failing network the user
 # had moved on from kept being reselected (#463).
 next_autoconnect_priority() {
-    highest=$(nmcli -t -g NAME,TYPE,802-11-wireless.ssid connection show 2>/dev/null \
-        | awk -F: '$2 ~ /wireless/ { print $1 }' \
-        | while IFS= read -r name; do
-              [ -n "$name" ] || continue
-              nmcli -g connection.autoconnect-priority connection show "$name" 2>/dev/null
+    highest=$(wifi_profile_uuids \
+        | while IFS= read -r uuid; do
+              [ -n "$uuid" ] || continue
+              profile_field "$uuid" connection.autoconnect-priority
           done \
         | awk 'BEGIN { m = 0 } /^-?[0-9]+$/ { if ($1 > m) m = $1 } END { print m }')
     [ -n "$highest" ] || highest=0
@@ -159,16 +190,53 @@ map_connect_error() {
     # headless console there is no secret agent, so ANY activation failure ends
     # as `no-secrets` — it said exactly that while holding a key that was
     # provably correct, and cost a night of debugging (#466, #459).
+    #
+    # Its `no-secrets` still says which dead end this was, so it is passed on
+    # beside the timeout: the app, which knows whether a key was typed moments
+    # ago, is the one place that can tell a fresh wrong key from a race (#829).
     if printf '%s' "$lower" | grep -qE 'wrong[^[:space:]]*password|invalid passphrase'
     then
         log "authentication failed (wrong password?)"
-    elif printf '%s' "$lower" | grep -qE \
-        'secrets were required|no secrets|802\.1x|took too long|timeout'
+    elif printf '%s' "$lower" | grep -qE 'secrets were required|no secrets'
+    then
+        log "timed out waiting for association (secrets were required)"
+    elif printf '%s' "$lower" | grep -qE '802\.1x|took too long|timeout'
     then
         log "timed out waiting for association"
     else
         log "connection failed: $err"
     fi
+}
+
+# Every saved wifi profile as `"saved":[{ssid,autoconnect}],"last":<ssid>`,
+# the tail of the status object. `last` is the profile NetworkManager activated
+# most recently, which is the network a dropped console was on: the app shows
+# "Connection lost" for it while the radio is on and nothing is associated.
+#
+# Listed by UUID and TIMESTAMP, which carry no colons, so nmcli's \:-escaping
+# of names never reaches awk (the same reading as segno-wifi-retry). The SSID
+# comes from each profile itself rather than from its name.
+saved_status_json() {
+    listing=$(nmcli -t -f UUID,TYPE,AUTOCONNECT,TIMESTAMP connection show 2>/dev/null \
+        | awk -F: '$2 ~ /wireless/ { print $4 "\t" $1 "\t" $3 }' | sort -rn)
+    first=1
+    last=
+    printf '"saved":['
+    while IFS="$(printf '\t')" read -r stamp uuid auto; do
+        [ -n "$uuid" ] || continue
+        ssid=$(profile_field "$uuid" 802-11-wireless.ssid)
+        [ -n "$ssid" ] || continue
+        if [ -z "$last" ] && [ "${stamp:-0}" -gt 0 ] 2>/dev/null; then
+            last=$ssid
+        fi
+        autoconnect=true
+        case "$auto" in no|false) autoconnect=false ;; esac
+        if [ "$first" -eq 1 ]; then first=0; else printf ','; fi
+        printf '{"ssid":"%s","autoconnect":%s}' "$(json_escape "$ssid")" "$autoconnect"
+    done <<EOF
+$listing
+EOF
+    printf '],"last":"%s"' "$(json_escape "$last")"
 }
 
 do_status_nm() {
@@ -177,7 +245,8 @@ do_status_nm() {
     case "$wifi_radio" in enabled|on) enabled=true ;; esac
 
     if [ "$enabled" != true ]; then
-        echo '{"supported":true,"enabled":false,"connected":false,"ssid":"","ip":"","signal":0}'
+        printf '{"supported":true,"enabled":false,"connected":false,"ssid":"","ip":"","signal":0,%s}\n' \
+            "$(saved_status_json)"
         return 0
     fi
 
@@ -195,13 +264,14 @@ do_status_nm() {
 
     signal=0
     if [ "$connected" = true ] && [ -n "$ssid" ]; then
-        signal=$(nmcli -t -f IN-USE,SSID,SIGNAL device wifi list ifname "$IFACE" 2>/dev/null \
-            | awk -F: -v s="$ssid" '$1=="*" && $2==s {print $3; exit}')
+        signal=$(nmcli -t -f IN-USE,SIGNAL device wifi list ifname "$IFACE" 2>/dev/null \
+            | awk -F: '$1=="*" {print $2; exit}')
         [ -n "$signal" ] || signal=0
     fi
 
-    printf '{"supported":true,"enabled":true,"connected":%s,"ssid":"%s","ip":"%s","signal":%s}\n' \
-        "$connected" "$(json_escape "${ssid:-}")" "$(json_escape "${ip:-}")" "$signal"
+    printf '{"supported":true,"enabled":true,"connected":%s,"ssid":"%s","ip":"%s","signal":%s,%s}\n' \
+        "$connected" "$(json_escape "${ssid:-}")" "$(json_escape "${ip:-}")" "$signal" \
+        "$(saved_status_json)"
 }
 
 do_radio_nm() {
@@ -225,7 +295,9 @@ do_scan_nm() {
         security=${line##*:}
         rest=${line%:*}
         signal=${rest##*:}
-        ssid=${rest%:*}
+        # Terse output escapes ':' and '\\' in the name; the rest are numbers
+        # and words, so the name is everything before them, unescaped.
+        ssid=$(printf '%s' "${rest%:*}" | sed 's/\\\(.\)/\1/g')
         [ -n "$ssid" ] || continue
         case "$ssid" in --*) continue ;; esac
         secured=true
@@ -279,60 +351,130 @@ do_scan_nm() {
     rm -f "$raw" "$ranked" "$saved"
 }
 
-do_forget_nm() {
+# UUIDs of every saved wifi profile for this SSID, matched by connection name
+# or 802-11-wireless.ssid. Both are read one profile at a time, unescaped, so
+# a name with a colon in it matches.
+profile_uuids_for_ssid() {
     ssid=$1
-    nmcli -t -f UUID,NAME,TYPE connection show 2>/dev/null \
-        | awk -F: '$3 ~ /wireless|wifi/ {print $1"\t"$2}' \
-        | while IFS="$(printf '\t')" read -r uuid name; do
-            [ -n "$uuid" ] || continue
-            profile_ssid=$(nmcli -t -f 802-11-wireless.ssid connection show "$uuid" 2>/dev/null \
-                | sed -n 's/^802-11-wireless.ssid://p')
-            if [ "$name" = "$ssid" ] || [ "$profile_ssid" = "$ssid" ]; then
-                nmcli connection delete uuid "$uuid" >/dev/null 2>&1 || true
-            fi
-        done
+    wifi_profile_uuids | while IFS= read -r uuid; do
+        [ -n "$uuid" ] || continue
+        if [ "$(profile_field "$uuid" connection.id)" = "$ssid" ] \
+            || [ "$(profile_field "$uuid" 802-11-wireless.ssid)" = "$ssid" ]
+        then
+            printf '%s\n' "$uuid"
+        fi
+    done
+}
+
+profile_uuid_for_ssid() { profile_uuids_for_ssid "$1" | head -n1; }
+
+do_forget_nm() {
+    profile_uuids_for_ssid "$1" | while IFS= read -r uuid; do
+        nmcli connection delete uuid "$uuid" >/dev/null 2>&1 || true
+    done
     echo '{}'
 }
 
-# UUID of a saved wifi profile for this SSID, or empty. Same match as forget:
-# connection name or 802-11-wireless.ssid.
-profile_uuid_for_ssid() {
-    ssid=$1
-    nmcli -t -f UUID,NAME,TYPE connection show 2>/dev/null \
-        | awk -F: '$3 ~ /wireless|wifi/ {print $1"\t"$2}' \
-        | while IFS="$(printf '\t')" read -r uuid name; do
-            [ -n "$uuid" ] || continue
-            profile_ssid=$(nmcli -t -f 802-11-wireless.ssid connection show "$uuid" 2>/dev/null \
-                | sed -n 's/^802-11-wireless.ssid://p')
-            if [ "$name" = "$ssid" ] || [ "$profile_ssid" = "$ssid" ]; then
-                printf '%s\n' "$uuid"
-                break
-            fi
-        done
+# A UUID for a profile this helper creates, so it is activated and, on
+# failure, deleted by that UUID — never by a name another profile may share.
+new_uuid() {
+    { cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen; } \
+        | tr '[:upper:]' '[:lower:]'
 }
 
-# After a successful passwd-file up: write the PSK into the keyfile and only
-# then allow NM to auto-activate. Shared by new-join and reuse-with-password
-# so the two cannot drift on when autoconnect turns on (#963).
+# The key as one passwd-file line. nmcli reads that file with backslash
+# escapes and strips unescaped spaces at either end, so every backslash and
+# space is escaped and the key arrives byte for byte. Builtins and stdin only:
+# the key is never in any argv.
+write_passwd_file() {
+    printf '802-11-wireless-security.psk:' >"$1"
+    printf '%s' "$2" | sed 's/\\/\\\\/g; s/ /\\ /g' >>"$1"
+    printf '\n' >>"$1"
+}
+
+# Stores the key on a saved profile through nmcli's editor, fed on stdin: an
+# argument would be readable by every process on the console through
+# /proc/<pid>/cmdline. The editor strips spaces at either end of a value, so a
+# key that starts or ends with one cannot be stored this way and is refused.
+store_psk() {
+    case "$2" in
+        ' '*|*' ')
+            log "a password that starts or ends with a space can only be set by joining"
+            return 2
+            ;;
+    esac
+    printf 'set 802-11-wireless-security.psk %s\nset 802-11-wireless-security.psk-flags 0\nsave persistent\nquit\n' \
+        "$2" | nmcli connection edit uuid "$1" >/dev/null 2>&1
+}
+
+# After a successful passwd-file up: make sure the PSK is in the keyfile and
+# only then allow NM to auto-activate. Shared by new-join and
+# reuse-with-password so the two cannot drift on when autoconnect turns on
+# (#963). NetworkManager saves a system-owned key an agent (nmcli, reading the
+# passwd-file) hands it, byte for byte; it is written again only when the
+# stored one is not the key that just worked. Never in any argv.
 persist_psk_and_enable() {
-    psk_val=$1
-    shift
-    nmcli connection modify "$@" \
-        wifi-sec.psk "$psk_val" wifi-sec.psk-flags 0 \
+    uuid=$1
+    psk_val=$2
+    if [ "$(nmcli -s -e no -g 802-11-wireless-security.psk connection show uuid "$uuid" 2>/dev/null || true)" != "$psk_val" ]; then
+        store_psk "$uuid" "$psk_val" || log "could not store the password"
+    fi
+    nmcli connection modify uuid "$uuid" \
+        wifi-sec.psk-flags 0 \
         connection.autoconnect yes \
         >/dev/null 2>&1 || true
 }
 
+# UUID of the wifi connection active on $IFACE right now, or empty. UUIDs carry
+# no colons, so the terse listing splits cleanly.
+active_wifi_uuid() {
+    nmcli -t -f UUID,TYPE,DEVICE connection show --active 2>/dev/null \
+        | awk -F: -v dev="$IFACE" '$2 ~ /wireless/ && $3 == dev { print $1; exit }'
+}
+
+# One radio cannot hold the old link while it joins a new one: activating a
+# second profile on wlan0 drops the first. So a join that fails brings back
+# whatever was active before it started, and says so (#1270 D13). Best effort:
+# if the old network is gone too, there is nothing better to fall back to.
+restore_previous() {
+    prev=$1
+    [ -n "$prev" ] || return 0
+    [ "$prev" != "$(active_wifi_uuid)" ] || return 0
+    if nmcli --wait "$RESTORE_WAIT_SECS" connection up uuid "$prev" >/dev/null 2>&1; then
+        name=$(profile_field "$prev" 802-11-wireless.ssid)
+        log "join failed; reconnected to ${name:-$prev}"
+        printf '{"restored":"%s"}\n' "$(json_escape "${name:-}")"
+    else
+        log "join failed; the previous network did not come back"
+    fi
+}
+
 do_connect_nm() {
     ssid=$1
-    psk=${2:-}
+    # The key comes on stdin: an argument would be readable by every process
+    # on the console through /proc/<pid>/cmdline. Empty for an open network
+    # or a saved one joined on its stored key.
+    psk=
+    if [ ! -t 0 ]; then
+        IFS= read -r psk || true
+    fi
     nmcli radio wifi on >/dev/null 2>&1 || true
     disable_powersave
 
+    # Rejoining the network that is up (a new password for it) falls back to
+    # that same network: its old key stays stored until the new one works.
+    previous=$(active_wifi_uuid)
     existing=$(profile_uuid_for_ssid "$ssid")
+    prior_autoconnect=yes
+    if [ -n "$existing" ]; then
+        case "$(nmcli -g connection.autoconnect connection show uuid "$existing" 2>/dev/null)" in
+            no) prior_autoconnect=no ;;
+        esac
+    fi
     join_priority=$(next_autoconnect_priority)
     errf=$(mktemp)
     passf=
+    created=
     set +e
     if [ -n "$existing" ]; then
         # Reuse the saved profile. Deleting it to "reconnect" is how Join on a
@@ -355,12 +497,12 @@ do_connect_nm() {
         if [ "$rc" -eq 0 ] && [ -n "$psk" ]; then
             passf=$(mktemp)
             chmod 600 "$passf"
-            printf '802-11-wireless-security.psk:%s\n' "$psk" >"$passf"
+            write_passwd_file "$passf" "$psk"
             nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up uuid "$existing" \
                 passwd-file "$passf" >"$errf" 2>&1
             rc=$?
             if [ "$rc" -eq 0 ]; then
-                persist_psk_and_enable "$psk" uuid "$existing"
+                persist_psk_and_enable "$existing" "$psk"
             fi
         elif [ "$rc" -eq 0 ]; then
             nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up uuid "$existing" \
@@ -374,7 +516,9 @@ do_connect_nm() {
         # Create the profile without embedding the PSK in argv, then activate
         # via passwd-file. On this image `connection up` after `wifi-sec.psk=…`
         # often fails immediately with "Secrets were required".
+        created=$(new_uuid)
         nmcli connection add type wifi ifname "$IFACE" con-name "$ssid" \
+            connection.uuid "$created" \
             ssid "$ssid" \
             wifi-sec.key-mgmt wpa-psk \
             wifi-sec.auth-alg open \
@@ -386,22 +530,24 @@ do_connect_nm() {
         if [ "$rc" -eq 0 ]; then
             passf=$(mktemp)
             chmod 600 "$passf"
-            printf '802-11-wireless-security.psk:%s\n' "$psk" >"$passf"
-            nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up "$ssid" \
+            write_passwd_file "$passf" "$psk"
+            nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up uuid "$created" \
                 passwd-file "$passf" >"$errf" 2>&1
             rc=$?
             if [ "$rc" -eq 0 ]; then
-                persist_psk_and_enable "$psk" "$ssid"
+                persist_psk_and_enable "$created" "$psk"
             fi
         fi
     else
+        created=$(new_uuid)
         nmcli connection add type wifi ifname "$IFACE" con-name "$ssid" \
+            connection.uuid "$created" \
             ssid "$ssid" \
             connection.autoconnect yes \
             connection.autoconnect-priority "$join_priority" \
             802-11-wireless.powersave 2 \
             >"$errf" 2>&1 \
-            && nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up "$ssid" \
+            && nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up uuid "$created" \
                 >"$errf" 2>&1
         rc=$?
     fi
@@ -410,6 +556,16 @@ do_connect_nm() {
     if [ "$rc" -ne 0 ]; then
         map_connect_error "$(cat "$errf")"
         rm -f "$errf"
+        # A failed attempt leaves nothing behind: a profile made for it is
+        # removed, so the list never shows the network as saved with a key
+        # that did not work, and a saved one keeps its own autoconnect.
+        if [ -n "$created" ]; then
+            nmcli connection delete uuid "$created" >/dev/null 2>&1 || true
+        elif [ -n "$existing" ] && [ -n "$psk" ]; then
+            nmcli connection modify uuid "$existing" \
+                connection.autoconnect "$prior_autoconnect" >/dev/null 2>&1 || true
+        fi
+        restore_previous "$previous"
         return 1
     fi
     rm -f "$errf"
@@ -419,6 +575,64 @@ do_connect_nm() {
 do_disconnect_nm() {
     nmcli device disconnect "$IFACE" >/dev/null 2>&1 || true
     echo '{}'
+}
+
+do_autoconnect_nm() {
+    ssid=$1
+    case "$2" in
+        on) value=yes ;;
+        off) value=no ;;
+        *) log "autoconnect needs on|off"; return 2 ;;
+    esac
+    uuid=$(profile_uuid_for_ssid "$ssid")
+    if [ -z "$uuid" ]; then
+        log "no saved network named $ssid"
+        return 1
+    fi
+    nmcli connection modify uuid "$uuid" connection.autoconnect "$value" >/dev/null
+    echo '{}'
+}
+
+# The key arrives on stdin and reaches NetworkManager on nmcli's stdin, through
+# its interactive editor (store_psk). Stored only; the network is not
+# activated, so changing the key of a network that is out of range works.
+do_set_password_nm() {
+    ssid=$1
+    psk=
+    IFS= read -r psk || [ -n "$psk" ] || true
+    if [ -z "$psk" ]; then
+        log "set-password needs the key on stdin"
+        return 2
+    fi
+    uuid=$(profile_uuid_for_ssid "$ssid")
+    if [ -z "$uuid" ]; then
+        log "no saved network named $ssid"
+        return 1
+    fi
+    store_psk "$uuid" "$psk" || {
+        rc=$?
+        [ "$rc" -eq 2 ] && return 2
+        log "could not store the new password"
+        return 1
+    }
+    echo '{}'
+}
+
+# Whether the internet is reachable, asked only while the Network page is open
+# (#1270 D14): one HEAD request to the update host, over Wi-Fi itself so a
+# wired link cannot answer for it. Any HTTP answer, error statuses included,
+# proves the path; only no answer at all means no internet.
+do_connectivity() {
+    if ! command -v curl >/dev/null 2>&1; then
+        log "curl is not installed"
+        return 1
+    fi
+    code=$(curl -sS -I -o /dev/null -w '%{http_code}' \
+        --interface "$IFACE" --max-time "$CONNECTIVITY_TIMEOUT_SECS" "$CONNECTIVITY_URL" 2>/dev/null) || true
+    case "$code" in
+        ''|000) echo '{"internet":false}' ;;
+        *) echo '{"internet":true}' ;;
+    esac
 }
 
 # Every verb repairs the ownership state first: it is idempotent, costs one
@@ -445,9 +659,11 @@ do_scan() { require_nm || { echo '[]'; return 1; }; do_scan_nm; }
 do_connect() { require_nm && do_connect_nm "$@"; }
 do_disconnect() { require_nm && do_disconnect_nm; }
 do_forget() { require_nm && do_forget_nm "$@"; }
+do_autoconnect() { require_nm && do_autoconnect_nm "$@"; }
+do_set_password() { require_nm && do_set_password_nm "$@"; }
 
 usage() {
-    log "usage: $0 status|scan|connect <ssid> [psk]|disconnect|forget <ssid>|radio on|off"
+    log "usage: $0 status|scan|connect <ssid>|disconnect|forget <ssid>|radio on|off|autoconnect <ssid> on|off|set-password <ssid>|connectivity"
     exit 2
 }
 
@@ -459,7 +675,9 @@ case "$verb" in
     status) do_status ;;
     scan) do_scan ;;
     connect)
-        [ $# -ge 1 ] || usage
+        # Exactly the SSID: a key in argv would be readable by every process
+        # on the console, so one is refused rather than ignored.
+        [ $# -eq 1 ] || usage
         do_connect "$@"
         ;;
     disconnect) do_disconnect ;;
@@ -471,5 +689,14 @@ case "$verb" in
         [ $# -ge 1 ] || usage
         do_radio "$1"
         ;;
+    autoconnect)
+        [ $# -ge 2 ] || usage
+        do_autoconnect "$1" "$2"
+        ;;
+    set-password)
+        [ $# -ge 1 ] || usage
+        do_set_password "$1"
+        ;;
+    connectivity) do_connectivity ;;
     *) usage ;;
 esac
