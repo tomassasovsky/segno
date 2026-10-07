@@ -86,8 +86,16 @@ void main() {
                 await repository.settleRecordStartSettings(),
                 EngineResult.ok,
               );
+              // A stopped Play counts in only by joining a take's count-in:
+              // a take on an empty track starts it, the Play joins, and the
+              // take withdraws, leaving the Play the count-in's one member.
+              expect(engine.record(channel: 2), EngineResult.ok);
+              engine.pump(frames: 0);
               expect(repository.play(channel: 6), EngineResult.ok);
               engine.pump(frames: 0);
+              expect(engine.record(channel: 2), EngineResult.ok);
+              engine.pump(frames: 0);
+              expect(engine.snapshot().tracks[2].pendingLaunch, isNull);
               expect(
                 engine.snapshot().tracks[6].pendingLaunch,
                 PendingLaunchAction.play,
