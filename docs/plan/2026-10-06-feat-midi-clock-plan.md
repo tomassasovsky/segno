@@ -384,11 +384,13 @@ review's `p2acq` / `p2drop` / `p2edge` probes as oracles). Over 60 s at 90,
 | clean | 0 | 1 beat (25 pulses) | 0 | 0.000 BPM | 0 | exact |
 | pulses at 512-frame / 44.1 kHz block edges | 0 | 1.7 beats (90) to 4 beats (174), 0.9-1.4 s | ≤ 0.15 BPM (was up to 41.3) | 0.047 BPM | 0 | exact |
 | block edges plus 0.5 ms noise | 0 | as above | — | 0.056 BPM | 0 | exact |
-| step 120 → 100 (each model) | 1 | — | — | settles in 0.20-0.43 s; 0.057 BPM after 4 s | 0 | exact (block edges: was one short) |
+| step 120 → 100 (each model) | 1 | — | — | settles in 0.20-0.43 s; 0.057 BPM after 4 s | 0 | exact |
 | step 120 → 60, 150 → 50, 174 → 87, 60 → 120 (each model) | 1 | — | — | settles in 0.12-2.25 s; 0.054 BPM after 4 s | 0 | exact |
+| step 90 → 174, 100 phases (each model) | 1 | — | — | 0.056 BPM 4 s after | — | exact (block edges: was wrong in 21-29) |
 | one unmarked dropped pulse, 200 positions, block edges at 90 / 120 / 174 | 0 | — | — | 0.53 BPM in the 20 beats after | — | exact at every position (was wrong in 43 / 82 / 200) |
 | a 4 ms bus stall over four pulses | 0 | — | — | under 0.03 BPM | 0 | exact |
-| a DAW accelerando 120 → 130 over 8 s | 0-2 | — | — | trails by about 1.4-1.5 BPM during it; within 0.1 BPM 1.4 s after it ends | — | exact |
+| a reader stall of 10, 25, 45, 70, 100 or 200 ms delivering its pulses together, 100 phases (each model) | 0 | — | — | 0.073 BPM 4 s after (was up to 5.2) | — | exact (was wrong in up to 56 of 100, all 100 at 200 ms) |
+| a DAW accelerando 120 → 130 over 8 s, 100 phases | 0-6 (uniform), 1-2 (USB), 0 (block edges) | — | — | trails by 1.5-1.6 BPM during it; within 0.1 BPM 1.45-1.75 s after it ends | — | exact |
 
 - **Units (review H2).** MIDI clock is 24 pulses per quarter note; the
   engine's tempo is denominator notes per minute (`tempo_grid.h:11-13`). The
@@ -432,6 +434,27 @@ review's `p2acq` / `p2drop` / `p2edge` probes as oracles). Over 60 s at 90,
   acquisition, counting by index). Between the two the run keeps
   collecting, since a longer run has a smaller error. The hidden pulses may fall anywhere in the run
   (a run can open with a pulse that was merely late before the drop).
+- **Late delivery (PR #1259 delta review DH1, plan delta PDH1).** A stall
+  of the reader or the bus (the normal-priority kworkers D1 names) holds
+  the pulses that fall in it and delivers them together at its end,
+  microseconds apart. Their times say when they were read, not when the
+  master sent them, and Parts 3a, 3b and 4 place anchors, phase and Song
+  Position from the count, so these rules keep a burst out of everything
+  but the count:
+  - A pulse within a quarter period of the previous one is part of a burst
+    (two pulses in one packet included): counted once, and its time never
+    reaches the loop, a run or a fit; the line advances one index.
+  - A pulse later than the outlier bar (in a re-fit or acquisition, half a
+    period off a line that knows its period) is held for one pulse,
+    counted. If a burst follows it, or the next pulse is less than half as
+    late, it was late delivery: its time is dropped and the next pulse is
+    measured from the line. Otherwise it is processed as what it is, a
+    whole-multiple miss, a drop or the start of a step, one pulse late.
+  - A re-fit counts pulses its line finds whole periods late only once
+    the line's period is known to 1 % (its standard error), never from the
+    first points of a step.
+  Measured: stalls of 10 to 200 ms at 120 BPM, 100 phases on every model,
+  count exact and within 0.073 BPM 4 s after (the D3 table).
 - **Missed pulses (review M2) and integer divisions (delta review DH1).**
   Once Synced, an isolated interval counts `k ≥ 2` pulses when it is within
   0.25 P of a whole multiple, the previous pulse was not an outlier and
@@ -444,10 +467,9 @@ review's `p2acq` / `p2drop` / `p2edge` probes as oracles). Over 60 s at 90,
   step's first). Where `σ ≥ P/6` (block-edge sources) a drop is left to the
   run rule above. A ring or OS loss is known exactly from the port's gap mark
   (D1) and counts what it hid. Two pulses with one timestamp (one packet,
-  one read) are two pulses (PR #1259 review L2); the second of them, right
-  after an interval counted as a missed pulse, is that pulse delivered late
-  and is not counted again. The pulse count therefore stays exact for
-  anchors, Song Position and the beat pulse.
+  one read) are two pulses (PR #1259 review L2), under the burst rule
+  above. The pulse count therefore stays exact for anchors, Song Position
+  and the beat pulse.
 - **Tempo writes.** With an empty rig the follower writes its tempo as the
   session tempo once per beat, starting one beat after Synced or after a
   step's re-fit hands back to the loop, never the seed itself (PR #1259
@@ -827,7 +849,12 @@ count since the downbeat when Follow On (review L9).
   change replays the sync vector, every input attachment and every output
   attachment from the repository's remembered state, in `_replayRig`
   beside the tempo replay (`looper_repository.dart:2493-2556`, the
-  `_intendRunning` precedent). The page never reads "Synced via USB" while
+  `_intendRunning` precedent). A new engine has no bindings, so its replay
+  attaches everything. Within one engine lifetime the replay leaves an
+  unchanged source binding alone: re-attaching the same capture to the
+  source port bumps the port's generation, and a REBOUND of a Synced
+  source is Clock lost (D1), which from Part 5 ends takes. Only a changed
+  capture is re-attached (PR #1259 delta review note). The page never reads "Synced via USB" while
   the engine is on Internal.
 - `LE_ERR_EXTERNAL_CLOCK` (-20): `set_tempo`, `tap_tempo` and
   `restore_tempo` with a non-NONE source are refused while the source is
@@ -879,10 +906,11 @@ code 48.
 - `segno_engine`: a `ClockSync` role interface on `AudioEngine`
   (`setClockSync`, `setClockOutputs`, `attachMidiOutput`/`detach`), snapshot
   projection `ClockSyncSnapshot`, the mock. Attaching and detaching the
-  clock source's capture uses the `MidiInputSink` role that instruments
-  Part 3a adds to `AudioEngine` (`attachMidiInput(MidiCaptureHandle,
-  port:)`, `detachMidiInput(port)`; `claude/instruments-1197-p3a`), not a
-  second pair on `ClockSync` (rule 4: one Dart seam for the one native sink).
+  clock source's capture uses `MidiInputSink`, the role interface that
+  instruments Part 3a adds beside `AudioEngine` and `NativeAudioEngine`
+  implements (`attachMidiInput(MidiCaptureHandle, {port})`,
+  `detachMidiInput(port)`; `claude/instruments-1197-p3a`), not a second
+  pair on `ClockSync` (rule 4: one Dart seam for the one native sink).
 - `MidiDeviceRepository` (the instruments Part 4 registry): the clock source
   becomes a capture consumer next to the control device and instrument
   devices; outputs with Clock on, and DIN Out while Thru is on, are opened as
@@ -984,6 +1012,12 @@ the four guards the review found untested (the callback restore and tap
 refusals, the armed and pending part of -21, no tempo write over a rig with
 content).
 
+Built after the PR #1259 delta review (DH1, DL1-DL3): the burst rule, the
+one-pulse hold for late pulses, re-fit counting only from a line that
+knows its period, the run classifier in O(run length), and a test that no
+tempo is written while a re-fit runs (it kills the review's surviving
+mutation).
+
 `le_clock_follow.{h,c}` (D3: units, acquisition, the DLL, jitter
 estimate, step rule, missed pulses, display, loss), the time-source hook
 (D2), dispatch from `le_midi_ports_drain`, `LE_CMD_SET_CLOCK_SYNC` (124) with
@@ -1021,7 +1055,15 @@ close after a device loss stays LOST with one loss; an old Stop in the
 backlog leaves a later silence Lost; raw RESTORE_TEMPO and two raw taps
 change nothing under external; an arm or a pending start returns -21; a
 rig with a loop at 120 under a 126 clock keeps 120 and shows 126; LOST
-before REBOUND in a same-drain rebind.
+before REBOUND in a same-drain rebind. Added for the delta review: stalls of 10, 25,
+45, 70, 100 and 200 ms delivering their pulses together, 100 phases on
+every model, count exact, no re-fit, within 0.2 BPM 2 s after; a 100 ms
+stall traced pulse by pulse (held, burst counted once each, the next pulse
+on the line); a stall during acquisition and during a re-fit; a drop that
+looks like a late pulse at 174 BPM still counted; 90 → 174 on block edges
+among the count-keeping steps; not tempo-ready while re-fitting; in the
+engine, no session tempo written from a re-fit a beat into a 100 → 120 step
+on block edges.
 
 ```success-criteria
 GOAL: Selecting an external MIDI source makes it own the session tempo, in Segno's denominator-note unit, through a filtered estimate that is stable on real-world sources, with visible Waiting, Synced and Clock lost states, and local tempo and Tap refused while it does.
@@ -1078,9 +1120,13 @@ D4's real-change rule: the 0.05 BPM for one beat threshold, the request to
 state once 4a exists, the `clock_detaches` count for the detach notice.
 
 **Ramps keep following (plan delta review note).** During a DAW accelerando
-the estimate trails the master: at 1.25 BPM/s (120 → 130 over 8 s) by about
-1.4 BPM, settling within 0.1 BPM 1.4 s after the ramp ends (Part 2's
-measurement, D3 table). The threshold therefore fires during a ramp, and
+the estimate trails the master: at 1.25 BPM/s (120 → 130 over 8 s) by
+1.5-1.6 BPM, settling within 0.1 BPM 1.45-1.75 s after the ramp ends
+(Part 2's measurement, D3 table). On fine-grained sources the follower also
+re-fits its period during the ramp, up to six times (PDL3): a re-fit is a
+beat or more in which `le_clock_follow_tempo_ready` is false, so 3b skips
+the bars a re-fit covers and retimes at the next bar once it is ready,
+to the re-fitted estimate. The threshold therefore fires during a ramp, and
 3b keeps following instead of making one retime at the end: a loop held at
 120 for eight seconds while the master reaches 130 would drift half a beat
 out. Retimes are limited to one per bar, each to the current estimate, and
@@ -1088,9 +1134,13 @@ each re-places the shared position from the anchor's pulse count under the
 turn crossfade, unclamped, so the phase error the lag builds (about 1.2 %
 of the tempo, some 20 ms per bar at 120) is removed at every retime instead
 of being worked off by 2 ms slips. The last retime lands when the estimate
-settles after the ramp. Oracle: the 8 s accelerando with content gives one
-retime per bar during it and one after it, and the bar-line error after the
-ramp is under 2 ms.
+settles after the ramp. Oracle: the 8 s accelerando with content gives at
+most one retime per bar during it (none in a bar a re-fit covers) and one
+after it, and the bar-line error after the ramp is under 2 ms. A re-place
+of 20 ms under the 10 ms turn crossfade may be audible, so the hardware
+listening test below includes the ramp (PDL4); if it is heard, each
+re-place is clamped to the crossfade length and the rest is left to the
+next bar.
 
 Tests: content at 120, master steps to 124: one retime after one beat; slips
 continue at the new tempo; with an overdub running the retime waits and
@@ -1106,7 +1156,7 @@ per track.
 GOAL: A real tempo change on the master retimes the loops through the single retime owner, never during a capture.
 SUCCESS CRITERIA:
 - The step, capture-wait and threshold oracles pass, and the Follow-Off, re-attach and global-Off oracles of the owner decision. | verify: bash packages/segno_engine/src/test/run_native_tests.sh
-- HARDWARE: a DAW tempo change from 120 to 100 while loops play; the loops follow within two beats. | verify: manual, appliance + DAW.
+- HARDWARE: a DAW tempo change from 120 to 100 while loops play; the loops follow within two beats. Then a DAW accelerando 120 → 130 over 8 s with a sustained pad and a drum loop: listen at each bar for a click or a skip at the re-place (PDL4); clamp each re-place to the crossfade if one is heard. | verify: manual, appliance + DAW; record what was heard per bar.
 NON-GOALS:
 - Anything 3a covers.
 VERIFICATION COMMAND: bash packages/segno_engine/src/test/run_native_tests.sh && EXTRA_CFLAGS='-fsanitize=address -g' bash packages/segno_engine/src/test/run_native_tests.sh
@@ -1550,3 +1600,16 @@ PR #1259 review (Part 2) and the second plan delta review:
 | PDL2 detach notice | D4 detach notice, section 2 `clock_detaches`, Parts 3b and 9c |
 | Ramp lag note | Part 3b: keeps following, one retime per bar, phase re-placed at each |
 | Coordinator note: one Dart input seam | Section 3 and Part 8 use instruments Part 3a's `MidiInputSink` |
+
+PR #1259 delta review (`8040d3c95`) and the third plan delta review:
+
+| Finding | Where it is met |
+|---|---|
+| P2 DH1 / PDH1 burst delivery after a stall | D3 late delivery; built with the stall, trace and while-fitting oracles |
+| P2 DL1 90 → 174 on block edges | D3 table row; built (re-fit counting from a reliable line), in the step oracles |
+| P2 DL2 / PDL3 re-fits during a ramp | D3 table row corrected (0-6); Part 3b says how a re-fit pauses retimes |
+| P2 DL3 classifier cost | O(run length) with suffix sums; D3 runs |
+| Surviving tempo-ready mutation | Part 2 engine test: no write during a re-fit |
+| PDL4 unclamped re-place | Part 3b hardware listening test with a ramp, and the clamp fallback |
+| Nit: `MidiInputSink` is its own role | Section 3 |
+| Note: replay must not re-attach an unchanged source | D11 engine lifetimes |
