@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_palette.dart';
 
 void main() {
@@ -16,14 +17,14 @@ void main() {
     final first = const PedalPalette()
         .withCustom(1, const PedalColor(0, 0, 0))
         .withChoice(PedalButton.track1, const CustomPaletteEntry(1))
-        .withChoice(PedalButton.bank, const CustomPaletteEntry(1));
+        .withChoice(PedalButton.stop, const CustomPaletteEntry(1));
     expect(first.colorFor(PedalButton.track1).rgb, 0);
     final edited = first.withCustom(1, const PedalColor(17, 34, 51));
     expect(edited.entryFor(PedalButton.track1), const CustomPaletteEntry(1));
-    expect(edited.entryFor(PedalButton.bank), const CustomPaletteEntry(1));
+    expect(edited.entryFor(PedalButton.stop), const CustomPaletteEntry(1));
     expect(edited.colorFor(PedalButton.track1).rgb, 0x112233);
-    expect(edited.colorFor(PedalButton.bank).rgb, 0x112233);
-    expect(first.colorFor(PedalButton.bank).rgb, 0);
+    expect(edited.colorFor(PedalButton.stop).rgb, 0x112233);
+    expect(first.colorFor(PedalButton.stop).rgb, 0);
   });
 
   test(
@@ -61,7 +62,7 @@ void main() {
   test('constructors reject dangling references and nonpositive IDs', () {
     expect(
       () => const PedalPalette().withChoice(
-        PedalButton.mode,
+        PedalButton.undo,
         const CustomPaletteEntry(1),
       ),
       throwsFormatException,
@@ -72,7 +73,7 @@ void main() {
     );
     final withReference = const PedalPalette()
         .withCustom(1, PedalColor.defaultColor)
-        .withChoice(PedalButton.mode, const CustomPaletteEntry(1));
+        .withChoice(PedalButton.undo, const CustomPaletteEntry(1));
     expect(() => withReference.copyWith(customs: {}), throwsFormatException);
   });
 
@@ -134,13 +135,38 @@ void main() {
     }
   });
 
-  test('black and all physical switches survive JSON round-trip', () {
+  test('black and every assignable switch survive JSON round-trip', () {
     var palette = const PedalPalette().withCustom(1, const PedalColor(0, 0, 0));
     for (final button in PedalButton.values) {
       palette = palette.withChoice(button, const CustomPaletteEntry(1));
     }
     final decoded = PedalPalette.fromJson(palette.toJson());
     expect(decoded, palette);
-    expect(decoded.frameColors, everyElement(const PedalColor(0, 0, 0)));
+    for (final button in PedalButton.values) {
+      expect(
+        decoded.colorFor(button),
+        PedalBindingKey.unbindable.contains(button)
+            ? PedalColor.defaultColor
+            : const PedalColor(0, 0, 0),
+        reason: button.name,
+      );
+    }
+  });
+
+  test('MODE and BANK never keep a colour (#1274)', () {
+    final stored = PedalPalette.fromJson({
+      'leds': {'mode': 'red', 'bank': 'violet', 'stop': 'cyan'},
+    });
+    expect(stored.choices.keys, [PedalButton.stop]);
+    expect(stored.colorFor(PedalButton.mode), PedalColor.defaultColor);
+    expect(
+      const PedalPalette()
+          .withChoice(
+            PedalButton.bank,
+            const BuiltInPaletteEntry(PedalPaletteColor.red),
+          )
+          .isEmpty,
+      isTrue,
+    );
   });
 }

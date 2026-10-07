@@ -162,7 +162,12 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                       top: _mapTop,
                       child: PedalSetupMap(
                         frame: frame,
-                        palette: _draft?.palette,
+                        // The colour editor previews the performer's
+                        // palette, saved or drafted; every other context
+                        // shows what the pedal lights now.
+                        palette: _context == PedalSetupContext.leds
+                            ? (_draft ?? control.state.pedalSetup).palette
+                            : null,
                         physicalLabels: _context == PedalSetupContext.leds,
                         selected: _selectedGroup,
                         editable: _editable,

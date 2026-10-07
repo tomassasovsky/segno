@@ -459,7 +459,7 @@ void main() {
         );
       });
 
-      test('recording turns Rec/Play red, overdub orange', () {
+      test('recording and overdub both turn Rec/Play red', () {
         final recording = projectFrame(
           _stateWith(
             _tracksWith(const [Track(state: TrackState.recording)]),
@@ -481,7 +481,7 @@ void main() {
         );
         expect(
           overdub.colorFor(PedalButton.recPlay),
-          PedalPaletteColor.orange.color,
+          PedalPaletteColor.red.color,
         );
       });
     });
