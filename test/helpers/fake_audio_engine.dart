@@ -63,6 +63,9 @@ class FakeAudioEngine implements AudioEngine {
   /// without rebuilding the whole snapshot.
   bool perfStopped = false;
 
+  /// Why the take stopped, overlaid onto [nextSnapshot] when set (#1198).
+  PerfStopReason? perfStopReason;
+
   /// The device name reported while running.
   String runningDeviceName = 'Fake Device';
 
@@ -159,6 +162,7 @@ class FakeAudioEngine implements AudioEngine {
     publishedMode,
     publishedMixRevision,
     perfStopped: perfStopped,
+    perfStopReason: perfStopReason,
     perfArmed: publishPerfCommands ? _publishedPerfArmed : null,
     perfFollowOutput: _frozenPerfFollowOutput,
     perfCaptureBus: _frozenPerfCaptureBus,
@@ -1836,6 +1840,7 @@ class _LengthSnapshot extends EngineSnapshot {
     LooperMode? mode,
     int mixRevision, {
     required bool perfStopped,
+    required PerfStopReason? perfStopReason,
     required bool? perfArmed,
     required bool? perfFollowOutput,
     required int? perfCaptureBus,
@@ -1877,6 +1882,10 @@ class _LengthSnapshot extends EngineSnapshot {
          perfOverruns: source.perfOverruns,
          perfZeroFilledFrames: source.perfZeroFilledFrames,
          perfStopped: perfStopped || source.perfStopped,
+         perfStopReason: perfStopReason ?? source.perfStopReason,
+         perfOvers: source.perfOvers,
+         perfCaptureStreams: source.perfCaptureStreams,
+         perfCaptureFrameBytes: source.perfCaptureFrameBytes,
          perfFollowOutput: perfFollowOutput ?? source.perfFollowOutput,
          perfCaptureBus: perfCaptureBus ?? source.perfCaptureBus,
          perfCaptureMask: perfCaptureMask ?? source.perfCaptureMask,

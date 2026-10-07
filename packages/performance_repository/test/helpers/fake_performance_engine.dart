@@ -63,6 +63,9 @@ class FakePerformanceEngine implements AudioEngine {
   /// Whether the drain thread reports it self-stopped on a failed write.
   bool perfStopped = false;
 
+  /// Why the take stopped, as the snapshot reports it (#1198).
+  PerfStopReason perfStopReason = PerfStopReason.none;
+
   /// Seeds track [channel] lane [lane] with settled [pcm] (state defaults to
   /// [TrackState.playing] — a settled, exportable lane).
   void seedLane(
@@ -142,6 +145,7 @@ class FakePerformanceEngine implements AudioEngine {
     perfOverruns: perfOverruns,
     perfZeroFilledFrames: perfZeroFilledFrames,
     perfStopped: perfStopped,
+    perfStopReason: perfStopReason,
     perfFollowOutput: perfArmed
         ? armedFollowOutput
         : (perfFollowOutput ?? false),

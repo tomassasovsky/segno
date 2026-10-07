@@ -2397,6 +2397,8 @@ class NativeAudioEngine implements AudioEngine {
     final dirPtr = target.captureDir.toNativeUtf8();
     final sidecar = target.liveSidecarDir;
     final sidecarPtr = sidecar == null ? nullptr : sidecar.toNativeUtf8();
+    final mirror = target.mirrorDir;
+    final mirrorPtr = mirror == null ? nullptr : mirror.toNativeUtf8();
     final native = calloc<le_perf_target>();
     try {
       native.ref
@@ -2404,7 +2406,11 @@ class NativeAudioEngine implements AudioEngine {
         ..live_sidecar_dir = sidecarPtr.cast()
         ..volume_generation = target.volumeGeneration
         ..part_bytes = target.partBytes
-        ..ring_seconds = target.ringSeconds;
+        ..ring_seconds = target.ringSeconds
+        // UINT64_MAX (all ones) is the native "no budget".
+        ..reserve_bytes = target.reserveBytes ?? -1
+        ..mirror_dir = mirrorPtr.cast()
+        ..checkpoint_ms = target.checkpointMs;
       for (var i = 0; i < PerfTarget.takeIdBytes; i++) {
         native.ref.take_id[i] = target.takeId[i];
       }
@@ -2412,6 +2418,7 @@ class NativeAudioEngine implements AudioEngine {
     } finally {
       calloc.free(native);
       if (sidecarPtr != nullptr) malloc.free(sidecarPtr);
+      if (mirrorPtr != nullptr) malloc.free(mirrorPtr);
       malloc.free(dirPtr);
     }
   }

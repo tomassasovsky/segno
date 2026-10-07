@@ -1146,6 +1146,14 @@
     "connectUsbTitle": "Connect a USB drive",
     "connectUsbBody": "Your recording stays in Internal.",
     "connectUsbTryAgain": "Try again",
+    "perfStoppedReserve": "Storage reserve reached. The recorded part of this take is kept.",
+    "@perfStoppedReserve": {
+        "description": "Completion banner when a capture stopped at the storage reserve (pen yzmtU copy)."
+    },
+    "perfStoppedSlowStorage": "Recording stopped because the storage could not keep up. The recorded part of this take is kept.",
+    "@perfStoppedSlowStorage": {
+        "description": "Completion banner when a capture stopped because the storage fell behind and a capture buffer overflowed."
+    },
     "perfCaptureGlitch": "Dropped audio frames detected during capture.",
     "perfDiscarded": "Capture was too short to keep — discarded.",
     "perfLowDisk": "Low disk space — the capture may run out of room.",

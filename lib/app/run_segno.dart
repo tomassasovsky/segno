@@ -113,6 +113,7 @@ Future<void> runSegno(
       engine: engine,
       exportsRoot: defaultExportDirectory,
       guards: registry,
+      reserveBytes: StorageRepository.internalReserveBytes,
     );
   } else {
     looper = repository;

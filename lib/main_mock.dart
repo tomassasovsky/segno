@@ -4,6 +4,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/run_segno.dart';
 import 'package:segno/session_directory.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 /// The mock flavor: a hardware-free engine that boots straight into the looper
 /// with a deterministic default config, for UI work without an audio device.
@@ -27,6 +28,7 @@ Future<void> main(List<String> args) async {
       engine: mock.engine,
       exportsRoot: defaultExportDirectory,
       guards: guards,
+      reserveBytes: StorageRepository.internalReserveBytes,
     ),
     guards: guards,
     startConfig: mock.startConfig,

@@ -273,6 +273,8 @@ class _PerformanceCompletionSheetState
           PerformanceStopReason.diskFull => l10n.perfStoppedDiskFull,
           PerformanceStopReason.deviceChanged => l10n.perfStoppedDeviceChange,
           PerformanceStopReason.volumeLost => l10n.perfStoppedVolumeLost,
+          PerformanceStopReason.reserveReached => l10n.perfStoppedReserve,
+          PerformanceStopReason.slowStorage => l10n.perfStoppedSlowStorage,
         },
         ConsoleBannerTone.failure,
       ),

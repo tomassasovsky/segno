@@ -1348,6 +1348,26 @@ void main() {
       expect(base, isNot(equals(base.copyWith(perfRingSeconds: 8))));
     });
 
+    test('perfStopReason and perfOvers participate in equality', () {
+      const base = EngineSnapshot.initial();
+      expect(
+        base,
+        isNot(
+          equals(base.copyWith(perfStopReason: PerfStopReason.slowStorage)),
+        ),
+      );
+      expect(base, isNot(equals(base.copyWith(perfOvers: 2))));
+      expect(base, isNot(equals(base.copyWith(perfCaptureStreams: 2))));
+      expect(base, isNot(equals(base.copyWith(perfCaptureFrameBytes: 16))));
+      expect(base, isNot(equals(base.copyWith(perfFailedCheckpoints: 1))));
+    });
+
+    test('an unknown native stop reason reads as none', () {
+      expect(PerfStopReason.fromNative(4), PerfStopReason.reserveReached);
+      expect(PerfStopReason.fromNative(99), PerfStopReason.none);
+      expect(PerfStopReason.fromNative(-1), PerfStopReason.none);
+    });
+
     test('tempoBpm participates in equality', () {
       expect(build(), isNot(equals(build(tempoBpm: 120))));
     });
@@ -1724,6 +1744,11 @@ void main() {
         'perfZeroFilledFrames',
         'perfStopped',
         'perfRingSeconds',
+        'perfStopReason',
+        'perfOvers',
+        'perfCaptureStreams',
+        'perfCaptureFrameBytes',
+        'perfFailedCheckpoints',
         'tempoBpm',
         'tempoSource',
         'tsNum',
