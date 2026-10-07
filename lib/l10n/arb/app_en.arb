@@ -6092,6 +6092,94 @@
     "@settingsAboutSubtitle": {
         "description": "Subtitle of the About row on the Updates page."
     },
+    "aboutThisConsolePanel": "This console",
+    "@aboutThisConsolePanel": {
+        "description": "Heading of the About page's panel of facts about the console itself."
+    },
+    "aboutControllerPanel": "Controller",
+    "@aboutControllerPanel": {
+        "description": "Heading of the About page's panel about the console board (the controller)."
+    },
+    "aboutLicensesPanel": "Licenses",
+    "@aboutLicensesPanel": {
+        "description": "Heading of the About page's panel that opens the open-source notices."
+    },
+    "aboutRename": "Rename",
+    "@aboutRename": {
+        "description": "Button on the About page's Name row that renames the console."
+    },
+    "aboutDefaultName": "Segno",
+    "@aboutDefaultName": {
+        "description": "What the About page's Name row shows before the console has been renamed."
+    },
+    "aboutSegnoVersionRow": "Segno version",
+    "@aboutSegnoVersionRow": {
+        "description": "About page row: the installed Segno software version."
+    },
+    "aboutDisplaysRow": "Displays",
+    "@aboutDisplaysRow": {
+        "description": "About page row: the attached panels, by the names their EDID reports."
+    },
+    "aboutConnectionRow": "Connection",
+    "@aboutConnectionRow": {
+        "description": "About page row: whether the console board is talking to the app."
+    },
+    "aboutConnectionConnected": "Connected",
+    "@aboutConnectionConnected": {
+        "description": "Connection row value: the console board is talking."
+    },
+    "aboutConnectionDisconnected": "Not connected",
+    "@aboutConnectionDisconnected": {
+        "description": "Connection row value: the console board is silent."
+    },
+    "aboutConnectionIncompatible": "Different link protocol",
+    "@aboutConnectionIncompatible": {
+        "description": "Connection row value: the board talks, on a link protocol this build does not speak."
+    },
+    "aboutFirmwareRow": "Firmware",
+    "@aboutFirmwareRow": {
+        "description": "Row naming the console board's firmware version."
+    },
+    "aboutWireProtocolRow": "Wire protocol",
+    "@aboutWireProtocolRow": {
+        "description": "Row naming the link protocol the console board speaks."
+    },
+    "aboutNotReported": "Not reported",
+    "@aboutNotReported": {
+        "description": "Value of the controller's firmware and wire protocol rows when no version was read."
+    },
+    "aboutLastFlashedCaption": "Last flashed by this console",
+    "@aboutLastFlashedCaption": {
+        "description": "Caption under the controller firmware when it comes from this console's flash record, not from the board."
+    },
+    "aboutNotReportedCaption": "No device version was read",
+    "@aboutNotReportedCaption": {
+        "description": "Caption under the controller firmware when neither the board nor a flash record named a version."
+    },
+    "aboutControllerFirmwareRow": "Controller firmware",
+    "@aboutControllerFirmwareRow": {
+        "description": "About page row that opens the Controller firmware page."
+    },
+    "controllerFirmwareTitle": "Controller firmware",
+    "@controllerFirmwareTitle": {
+        "description": "Title of the Controller firmware page."
+    },
+    "controllerFirmwareCrumb": "SETTINGS / About Segno / Controller firmware",
+    "@controllerFirmwareCrumb": {
+        "description": "Breadcrumb over the Controller firmware page."
+    },
+    "controllerInstalledPanel": "Installed",
+    "@controllerInstalledPanel": {
+        "description": "Heading of the Controller firmware page's panel of what the board runs."
+    },
+    "controllerUpdateUnsupported": "Controller update support has not been established for this hardware.",
+    "@controllerUpdateUnsupported": {
+        "description": "Controller firmware page: the console cannot update the board's firmware itself."
+    },
+    "controllerSoftwareUpdates": "Software updates",
+    "@controllerSoftwareUpdates": {
+        "description": "Controller firmware page button that opens the Updates page."
+    },
     "settingsMidiTitle": "MIDI",
     "@settingsMidiTitle": {
         "description": "The MIDI tile on the Settings page."

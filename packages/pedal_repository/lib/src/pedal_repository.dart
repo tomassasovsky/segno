@@ -37,7 +37,8 @@ enum PedalLinkStatus {
 /// sees traffic while segno runs. A frame identical to the last one is not
 /// sent again, so callers push freely.
 ///
-/// [status] and [firmwareVersion] are read off the last hello heard: there is
+/// [status], [firmwareVersion] and [protocolVersion] are read off the last
+/// hello heard: there is
 /// no separate status to keep in step with it.
 class PedalRepository {
   /// Creates a [PedalRepository] over [link].
@@ -112,6 +113,11 @@ class PedalRepository {
   /// The firmware version the board announced (`major.minor`) while it is
   /// talking, or `null` while it is not.
   String? get firmwareVersion => _hello?.firmwareVersion;
+
+  /// The link protocol the board's hello names while it is talking, or
+  /// `null` while it is not. Reported even when it is not this build's
+  /// ([PedalLinkStatus.incompatible]): that is when it is worth reading.
+  int? get protocolVersion => _hello?.protocolVersion;
 
   /// Traffic is trusted only after a live, compatible hello. A stale or
   /// unknown button table could map a stomp onto Clear.

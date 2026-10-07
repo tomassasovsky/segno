@@ -780,7 +780,7 @@ void main() {
       expect(find.text('VAMP 16'), findsOneWidget);
       expect(find.text('VMP-16-0042'), findsOneWidget);
       expect(find.text('Yocto scarthgap · kernel 6.12-rt'), findsOneWidget);
-      expect(find.text('16″ 1920×1080 · touch'), findsOneWidget);
+      expect(find.text('Segno 15.6 · Segno 7'), findsOneWidget);
     });
 
     testWidgets('a build that is not a console omits the identity rows, and '
