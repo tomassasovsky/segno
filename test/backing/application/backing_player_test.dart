@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:backing_repository/backing_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/backing/application/backing_player.dart';
@@ -274,6 +276,26 @@ void main() {
       expect(f.repository.state.playing, isTrue);
       expect(player.state.loaded?.digest, a.digest);
       expect(f.decoder.mock.decoded, 2);
+    });
+
+    test('a Pause pressed while the reload decodes wins over the Play '
+        'waiting on it', () async {
+      await loadedStopped();
+      configureAt(44100);
+      final gate = Completer<void>();
+      f.decoder.beforeDecode = () => gate.future;
+      final played = player.play(); // waits on the reload
+      await pumpQueue();
+      player.pause(); // the last press
+      gate.complete();
+      await played;
+      await pumpQueue();
+      f.repository.refresh(); // read the engine's voice as it is now
+      expect(f.repository.state.loaded, isNotNull);
+      expect(f.repository.state.playing, isFalse);
+      // A Play after that plays.
+      await player.play();
+      expect(f.repository.state.playing, isTrue);
     });
 
     test('the player follows the file the repository holds', () async {
