@@ -9,14 +9,12 @@ class _FakeEnv implements ApplianceEnv {
     this.body,
     this.stageProgress = const [0.5, 1.0],
     this.stageError,
-    this.rebootError,
   }) : files = Map.of(files);
 
   final Map<String, String> files;
   final String? body;
   final List<double> stageProgress;
   final Object? stageError;
-  final Exception? rebootError;
 
   Uri? fetchedUrl;
   String? stagedVersionArg;
@@ -49,7 +47,6 @@ class _FakeEnv implements ApplianceEnv {
   @override
   Future<void> reboot() async {
     rebootCalls++;
-    if (rebootError != null) throw rebootError!;
   }
 
   int powerOffCalls = 0;
@@ -228,15 +225,15 @@ void main() {
       );
     });
 
-    test('applyAndRestart calls reboot', () async {
-      final env = _FakeEnv();
-      await backend(env).applyAndRestart();
-      expect(env.rebootCalls, 1);
-    });
-
-    test('applyAndRestart surfaces a reboot failure', () {
-      final env = _FakeEnv(rebootError: Exception('reboot denied'));
-      expect(backend(env).applyAndRestart(), throwsA(isA<Exception>()));
+    test('staging never reboots; the power flow owns the restart', () async {
+      final env = _FakeEnv(stageProgress: const [1.0]);
+      await backend(env)
+          .downloadAndStage(
+            UpdateManifest(version: Version.parse('0.7.0'), bundle: 'b.raucb'),
+          )
+          .drain<void>();
+      await backend(env).stagedVersion();
+      expect(env.rebootCalls, 0);
     });
   });
 }

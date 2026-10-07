@@ -3,28 +3,15 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/session/cubit/session_cubit.dart';
 
-/// What a short press of the rear power button should do.
-enum PowerOffDisposition {
-  /// A take or a transfer is in flight — only Keep playing.
-  refuse,
-
-  /// Loops in RAM would vanish — Save / discard / Keep playing.
-  confirm,
-
-  /// Nothing that would vanish — a plain Power off / Keep playing confirm.
-  confirmEmpty,
-}
-
-/// A point-in-time reading of the work that would vanish on halt.
+/// A point-in-time reading of what a restart or shutdown has to respect.
 ///
 /// Built by the host from live cubit/bloc state; the gate itself is a pure
 /// function of this snapshot so tests own the predicate without a widget tree.
-class PowerOffSnapshot extends Equatable {
-  /// Creates a [PowerOffSnapshot].
-  const PowerOffSnapshot({
+class PowerSnapshot extends Equatable {
+  /// Creates a [PowerSnapshot].
+  const PowerSnapshot({
     this.takeInFlight = false,
     this.transferInFlight = false,
-    this.anyHasContent = false,
     this.currentSessionName,
   });
 
@@ -37,32 +24,28 @@ class PowerOffSnapshot extends Equatable {
   /// for (accepted behaviour §7.8, "Transfers/eject guard it").
   final bool transferInFlight;
 
-  /// Any track holds recorded audio.
-  final bool anyHasContent;
-
-  /// Open named session, or null when Save would become Save As.
+  /// Open named session, or null when the save becomes Save As.
   final String? currentSessionName;
 
   @override
   List<Object?> get props => [
     takeInFlight,
     transferInFlight,
-    anyHasContent,
     currentSessionName,
   ];
 }
 
-/// Projects live feature state onto a [PowerOffSnapshot].
+/// Projects live feature state onto a [PowerSnapshot].
 ///
 /// Count-in is the looper transport's own flag, not TransportClockState
 /// running — that flag is also true while loops play, which is not in-flight.
-PowerOffSnapshot powerOffSnapshotOf({
+PowerSnapshot powerSnapshotOf({
   required LooperState looper,
   required PerformanceRecorderState recorder,
   required SessionState session,
   bool transferInFlight = false,
 }) {
-  return PowerOffSnapshot(
+  return PowerSnapshot(
     takeInFlight:
         looper.tracks.any(
           (track) => track.isCapturing || track.pending || track.layerInFlight,
@@ -73,17 +56,11 @@ PowerOffSnapshot powerOffSnapshotOf({
         recorder is PerformanceRecorderRendering ||
         (recorder is PerformanceRecorderIdle && recorder.recovering),
     transferInFlight: transferInFlight,
-    anyHasContent: looper.tracks.any((track) => track.hasContent),
     currentSessionName: session.currentSessionName,
   );
 }
 
-/// Pure gate: in-flight take or transfer → refuse; idle with content →
-/// confirm; else the plain confirm. Every power-off is confirmed.
-PowerOffDisposition powerOffGate(PowerOffSnapshot snapshot) {
-  if (snapshot.takeInFlight || snapshot.transferInFlight) {
-    return PowerOffDisposition.refuse;
-  }
-  if (snapshot.anyHasContent) return PowerOffDisposition.confirm;
-  return PowerOffDisposition.confirmEmpty;
-}
+/// Pure gate: a take or a transfer in flight refuses a restart or shutdown.
+/// Everything else may proceed, and always saves first.
+bool powerRefused(PowerSnapshot snapshot) =>
+    snapshot.takeInFlight || snapshot.transferInFlight;

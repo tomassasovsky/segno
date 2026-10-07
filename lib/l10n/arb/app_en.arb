@@ -37,7 +37,7 @@
             }
         }
     },
-    "updatesRestartBusySubtitle": "Stop recording and clear your session before restarting.",
+    "updatesRestartBusySubtitle": "Playback will stop and your session will be saved before restarting.",
     "updatesErrorTitle": "Update check failed",
     "updateBannerTitle": "Update available — v{version}",
     "@updateBannerTitle": {
@@ -2531,57 +2531,74 @@
     "@signalNoOutputs": {
         "description": "Master tab with no hardware outputs to list."
     },
-    "powerOffRefuseTitle": "Stop the take first",
-    "@powerOffRefuseTitle": {
-        "description": "Power-off dialog title while a take is in flight. The only action is Keep playing."
+    "powerRefuseTitle": "Stop the take first",
+    "@powerRefuseTitle": {
+        "description": "Power dialog title while a take or transfer is in flight. The only action is Keep playing."
     },
-    "powerOffRefuseBody": "Recording is in progress. Stop it, then press the power button again if you want to power off.",
-    "@powerOffRefuseBody": {
-        "description": "Power-off refuse body. Accidental bump mid-take must not offer discard."
+    "powerRefuseBody": "Recording is in progress. Stop it, then press the power button again if you want to power off.",
+    "@powerRefuseBody": {
+        "description": "Power refuse body. Accidental bump mid-take must not offer discard."
     },
-    "powerOffConfirmTitle": "Power off?",
-    "@powerOffConfirmTitle": {
-        "description": "Power-off three-choice dialog title when loops in RAM would vanish."
+    "powerKeepPlaying": "Keep playing",
+    "@powerKeepPlaying": {
+        "description": "Dismisses the power refusal and leaves the set running."
     },
-    "powerOffConfirmBody": "Loops in RAM vanish if you power off without saving. The last on-disk save is kept.",
-    "@powerOffConfirmBody": {
-        "description": "Power-off three-choice body. There is no dirty flag; a named session still asks."
+    "powerOptionsTitle": "Power options",
+    "@powerOptionsTitle": {
+        "description": "Title of the card opened by the power button or Settings' Power row (pen 32)."
     },
-    "powerOffConfirmEmptyBody": "Nothing is recorded, so nothing will be lost.",
-    "@powerOffConfirmEmptyBody": {
-        "description": "Body of the power-off confirmation when no track holds audio"
+    "powerOptionsBody": "Playback will stop and your session will be saved.",
+    "@powerOptionsBody": {
+        "description": "Power options body: both Restart and Shut down save first."
     },
-    "powerOffConfirmAction": "Power off",
-    "@powerOffConfirmAction": {
-        "description": "Confirms powering off when nothing would be lost"
+    "powerSessionUnnamed": "This session has no name yet. You'll name it before it saves.",
+    "@powerSessionUnnamed": {
+        "description": "Power options line in place of the session name when the open session is unnamed."
     },
-    "powerOffKeepPlaying": "Keep playing",
-    "@powerOffKeepPlaying": {
-        "description": "Dismisses the power-off dialog and leaves the set running."
+    "powerStagedUpdate": "Segno {version} installs during the restart.",
+    "@powerStagedUpdate": {
+        "description": "Power options line when an update is staged; the restart boots it.",
+        "placeholders": {"version": {"type": "String"}}
     },
-    "powerOffSaveAndPowerOff": "Save & power off",
-    "@powerOffSaveAndPowerOff": {
-        "description": "Writes the session (Save As if unnamed) then the goodbye halt."
+    "powerCancel": "Cancel",
+    "@powerCancel": {
+        "description": "Closes Power options and leaves the set running."
     },
-    "powerOffWithoutSaving": "Power off without saving",
-    "@powerOffWithoutSaving": {
-        "description": "Destructive halt that drops loops in RAM. Last on-disk save is kept."
+    "powerRestart": "Restart",
+    "@powerRestart": {
+        "description": "Saves the session, then restarts the console."
     },
-    "powerOffSaving": "Saving…",
-    "@powerOffSaving": {
-        "description": "Goodbye face while the session bundle is writing. No spinner."
+    "powerShutDown": "Shut down",
+    "@powerShutDown": {
+        "description": "Saves the session, then shuts the console down."
     },
-    "powerOffSaveFailedTitle": "Couldn't save",
-    "@powerOffSaveFailedTitle": {
-        "description": "Power-off surface after a save I/O failure. The unit does not halt."
+    "powerSaving": "Saving…",
+    "@powerSaving": {
+        "description": "Full-screen face while the session and settings are writing. No spinner."
     },
-    "powerOffSaveFailedBody": "The session didn't write. Nothing was powered off — your loops are still in RAM.",
-    "@powerOffSaveFailedBody": {
-        "description": "Save-failure body on the power-off dialog. Keep playing stays available."
+    "powerSaveFailedTitle": "Segno is staying on",
+    "@powerSaveFailedTitle": {
+        "description": "Title when the save before a restart or shutdown failed. The console does not halt."
     },
-    "a11yPowerOffMark": "Segno",
-    "@a11yPowerOffMark": {
-        "description": "Announced name of the Plymouth lockup on the goodbye mark."
+    "powerSaveFailedBody": "Your session could not be saved, so nothing was switched off. Your loops are still here.",
+    "@powerSaveFailedBody": {
+        "description": "Body when the save before a restart or shutdown failed. Stay on and Retry are offered."
+    },
+    "powerStayOn": "Stay on",
+    "@powerStayOn": {
+        "description": "Closes the save-failed card; the audio and the loops stay."
+    },
+    "powerSafeToSwitchOff": "Safe to switch off",
+    "@powerSafeToSwitchOff": {
+        "description": "Terminal face after a shutdown has saved."
+    },
+    "powerRestarting": "Restarting",
+    "@powerRestarting": {
+        "description": "Terminal face after a restart has saved. No ellipsis."
+    },
+    "a11yPowerMark": "Segno",
+    "@a11yPowerMark": {
+        "description": "Announced name of the Plymouth lockup on the Track display's goodbye mark."
     },
     "stageLibrary": "Library",
     "@stageLibrary": {
@@ -5562,16 +5579,10 @@
     "midiResumeOn": "Resume On",
     "midiResetConfiguration": "Reset mappings",
     "midiConfigurationUnavailable": "Saved mappings could not be read. Reset them to start again.",
-    "powerOffSettingsFailedTitle": "Settings could not be confirmed",
-    "@powerOffSettingsFailedTitle": {"description": "Click settings and safe shutdown recovery message."},
-    "powerOffSettingsFailedBody": "Segno is still on. Retry to finish saving before powering off.",
-    "@powerOffSettingsFailedBody": {"description": "Click settings and safe shutdown recovery message."},
-    "powerOffRetry": "Retry",
-    "@powerOffRetry": {"description": "Click settings and safe shutdown recovery message."},
-    "powerOffSettingsRetryFailedBody": "Segno could not confirm your last change was saved. Retry again, or power off anyway.",
-    "@powerOffSettingsRetryFailedBody": {"description": "Shown after a Retry of the power-off settings flush also failed."},
-    "powerOffAnyway": "Power off anyway",
-    "@powerOffAnyway": {"description": "Powers off without confirming the last settings change, after a failed Retry."},
+    "powerRetry": "Retry",
+    "@powerRetry": {"description": "Retries a failed save before a restart or shutdown; also the click settings recovery action."},
+    "displayBrightnessSaveFailed": "Couldn't save",
+    "@displayBrightnessSaveFailed": {"description": "Toast when a brightness change could not be saved."},
     "clickSettingsRecoveryTitle": "Click settings need recovery",
     "@clickSettingsRecoveryTitle": {"description": "Click settings and safe shutdown recovery message."},
     "clickSettingsRefusedTitle": "Click change was not applied",

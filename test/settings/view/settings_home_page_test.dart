@@ -9,8 +9,8 @@ import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/segno_navigator.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
-import 'package:segno/appliance/power_off/power_off_gate.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/performance/performance.dart';
@@ -21,8 +21,7 @@ import 'package:storage_repository/storage_repository.dart';
 
 import 'destination_harness.dart';
 
-class _MockPowerOffCubit extends MockCubit<PowerOffState>
-    implements PowerOffCubit {}
+class _MockPowerCubit extends MockCubit<PowerState> implements PowerCubit {}
 
 class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
@@ -51,7 +50,7 @@ class _DroppingObserver extends NavigatorObserver {
 void main() {
   setUpAll(() {
     registerFallbackValue(
-      powerOffSnapshotOf(
+      powerSnapshotOf(
         looper: const LooperState(),
         recorder: const PerformanceRecorderIdle(),
         session: const SessionState(),
@@ -349,15 +348,15 @@ void main() {
       expect(find.byKey(const Key('settings_power')), findsNothing);
     });
 
-    Future<_MockPowerOffCubit> pumpWithPower(
+    Future<_MockPowerCubit> pumpWithPower(
       WidgetTester tester, {
       StorageRepository? storage,
     }) async {
-      final power = _MockPowerOffCubit();
+      final power = _MockPowerCubit();
       whenListen(
         power,
-        const Stream<PowerOffState>.empty(),
-        initialState: const PowerOffState(),
+        const Stream<PowerState>.empty(),
+        initialState: const PowerState(),
       );
       final looper = MockLooperBloc();
       whenListen(
@@ -383,7 +382,7 @@ void main() {
         wrap: (app) {
           final blocs = MultiBlocProvider(
             providers: [
-              BlocProvider<PowerOffCubit>.value(value: power),
+              BlocProvider<PowerCubit>.value(value: power),
               BlocProvider<LooperBloc>.value(value: looper),
               BlocProvider<SessionCubit>.value(value: session),
               BlocProvider<PerformanceRecorderCubit>.value(value: recorder),
@@ -411,7 +410,7 @@ void main() {
       await tester.tap(button);
       await tester.pump();
 
-      final expected = powerOffSnapshotOf(
+      final expected = powerSnapshotOf(
         looper: const LooperState(),
         recorder: const PerformanceRecorderIdle(),
         session: const SessionState(currentSessionName: 'Evening loop'),
@@ -429,10 +428,10 @@ void main() {
       await tester.pump();
 
       final pressed =
-          verify(() => power.press(captureAny())).captured.single
-              as PowerOffSnapshot;
+          verify(() => power.press(captureAny<PowerSnapshot>())).captured.single
+              as PowerSnapshot;
       expect(pressed.transferInFlight, isTrue);
-      expect(powerOffGate(pressed), PowerOffDisposition.refuse);
+      expect(powerRefused(pressed), isTrue);
     });
   });
 }
