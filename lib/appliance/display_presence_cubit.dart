@@ -13,14 +13,15 @@ class DisplayPresenceCubit extends Cubit<Set<DisplayRole>> {
   /// Creates a [DisplayPresenceCubit] that re-reads every [interval].
   DisplayPresenceCubit({
     required DisplayOutputs outputs,
-    this.interval = const Duration(seconds: 2),
+    Duration interval = const Duration(seconds: 2),
   }) : _outputs = outputs,
+       _interval = interval,
        super(const {});
 
   final DisplayOutputs _outputs;
 
   /// How often presence is re-read while watching.
-  final Duration interval;
+  final Duration _interval;
 
   Timer? _timer;
 
@@ -28,7 +29,7 @@ class DisplayPresenceCubit extends Cubit<Set<DisplayRole>> {
   void watch() {
     _timer?.cancel();
     unawaited(refresh());
-    _timer = Timer.periodic(interval, (_) => unawaited(refresh()));
+    _timer = Timer.periodic(_interval, (_) => unawaited(refresh()));
   }
 
   /// Reads which panels are unplugged.
