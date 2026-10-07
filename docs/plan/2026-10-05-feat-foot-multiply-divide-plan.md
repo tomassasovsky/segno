@@ -793,8 +793,11 @@ Part 3 build notes (branch `claude/multiply-divide-1168-p3`, stacked on Part 2):
   rise on `lengthHistoryRefusals`, and the app shows one toast naming the
   track, in every mode and from every surface. Its text no longer says "Try
   again" unconditionally (review L2): "If pressing again changes nothing, that
-  length no longer fits the other loops." This adds one snapshot field (no
-  command or fact number).
+  length no longer fits the other loops." A tap that finds the command ring
+  full is refused up front as `LE_ERR_NOT_READY`, as the edit itself is, so
+  it is reported as "wait" rather than lost as the push's `LE_ERR_INVALID`
+  (delta review L1). This adds one snapshot field (no command or fact
+  number).
 - **M2.** The owner's beat decision lands in Part 1 (`le_reclock_whole_beats`,
   the one place the rule lives): a sole 1-bar loop halves to 2 beats and a
   3-bar loop to 6; only a half-beat is refused, with the incompatible-length
@@ -810,7 +813,8 @@ Part 3 build notes (branch `claude/multiply-divide-1168-p3`, stacked on Part 2):
     track pedals select a recorded track.
   - Multiply (pen 16 screens 01-02): Clear is "Double length", captioned
     "Repeat to 4 bars"; Undo stays the Tracks Undo (tap Undo, hold Redo),
-    captioned "Nothing to undo", "Length edit" or "Last change".
+    captioned "Nothing to undo", "Length edit" or "Last change"; a screen
+    reader's hold redoes, as the footswitch hold does.
   - Divide (screens 03-08): Undo is "First half" and fires on release, a hold
     is Undo instead ("Hold · Undo" while there is something to undo); Clear is
     "Last half". Captions name the bars or beats each half keeps: "Bar 1",
@@ -824,7 +828,11 @@ Part 3 build notes (branch `claude/multiply-divide-1168-p3`, stacked on Part 2):
   per beat (Divide: the two halves), and an outcome line: "Speed and pitch
   unchanged", then "Repeated to 4 bars", "First 1 bar kept" or "Last 1 bar
   kept" while the latest accepted surface edit still describes the track
-  (`ControlState.footLengthOutcome`, reset on entering either surface). With
+  (`ControlState.footLengthOutcome`, reset on entering either surface). The
+  outcome records the length and undo depth before the edit and binds the
+  result once both have moved (in either order of publication); it describes
+  the track only while both still equal that result, so an Undo of the edit,
+  a second edit or an overdub on top ends it (delta review M1). With
   no recorded track selected the panel reads "Loop length" and "Select a
   track", or "No recorded audio in this bank" (screen 07); while the selected
   track records, "Finish recording to change length" and both edit pedals

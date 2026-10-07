@@ -3056,10 +3056,18 @@ int32_t le_engine_edit_length(le_engine* e, int32_t channel, int32_t edit,
 
 /* Undo (redo == 0) or Redo of the LENGTH entry on top of that stack: the same
  * command, re-applying the entry's image, length and playhead map. The
- * synchronous result is the post (as Undo to empty and Clear restore). */
-static int32_t le_length_history_post(le_engine* e, int32_t ch, int redo) {
+ * synchronous result is the post (as Undo to empty and Clear restore), and
+ * the caller reports it: a refusal here is never counted in
+ * length_history_refusals (#1168 review M1). A full command ring is refused
+ * up front as LE_ERR_NOT_READY, as the edit itself is, so the tap is reported
+ * as "wait" rather than as the push's LE_ERR_INVALID, which no caller
+ * reports. */
+static int32_t le_length_history(le_engine* e, int32_t ch, int redo) {
   le_track* t = &e->tracks[ch];
   if (le_length_busy(e, ch)) return LE_ERR_NOT_READY;
+  const size_t tail = atomic_load_explicit(&e->ring.tail, memory_order_relaxed);
+  const size_t head = atomic_load_explicit(&e->ring.head, memory_order_acquire);
+  if (tail - head >= e->ring.capacity - 1) return LE_ERR_NOT_READY;
   const le_hist_entry top = redo ? t->redo_stack[t->redo_count - 1]
                                  : t->undo_stack[t->undo_count - 1];
   le_length_fit fit;
@@ -3083,10 +3091,6 @@ static int32_t le_length_history_post(le_engine* e, int32_t ch, int redo) {
 static void le_length_history_refused(le_track* t) {
   atomic_fetch_add_explicit(&t->a_length_history_refusals, 1u,
                             memory_order_relaxed);
-}
-
-static int32_t le_length_history(le_engine* e, int32_t ch, int redo) {
-  return le_length_history_post(e, ch, redo);
 }
 
 /* Files a length motion once the callback acknowledged it (control thread,

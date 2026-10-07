@@ -1087,8 +1087,8 @@ class LooperRepository {
   /// edit that did nothing rose since the last snapshot (#1168): refused by
   /// the callback after it was posted, or queued behind an overdub and
   /// stopped at the edit. A refusal returned to the tap is reported on
-  /// [recoveryRefusals] instead, never on both. The first read is the baseline, and a
-  /// lower count (a new engine) only resets it.
+  /// [recoveryRefusals] instead, never on both. The first read is the
+  /// baseline, and a lower count (a new engine) only resets it.
   void _noticeLengthHistoryRefusals(EngineSnapshot snapshot) {
     for (var ch = 0; ch < snapshot.tracks.length; ch++) {
       final count = snapshot.tracks[ch].lengthHistoryRefusals;

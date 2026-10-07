@@ -31,6 +31,17 @@ class _Engine extends FakeAudioEngine {
   final Set<int> recorded;
   final lengths = <int, int>{};
 
+  /// Published undo steps per track: an accepted edit files one.
+  final depths = <int, int>{};
+
+  /// Puts [channel] at [frames] with [depth] undo steps, as an Undo or an
+  /// overdub would, and publishes it.
+  void rewind(int channel, {required int frames, required int depth}) {
+    lengths[channel] = frames;
+    depths[channel] = depth;
+    publish();
+  }
+
   /// Recorded tracks writing an overdub pass.
   final overdubbing = <int>{};
   final edits = <(int, LengthEdit)>[];
@@ -54,7 +65,7 @@ class _Engine extends FakeAudioEngine {
             multiple: (lengths[channel] ?? 48000) ~/ 48000 < 1
                 ? 1
                 : (lengths[channel] ?? 48000) ~/ 48000,
-            undoDepth: 0,
+            undoDepth: depths[channel] ?? 0,
             rms: 0,
             peak: 0,
           )
@@ -73,6 +84,7 @@ class _Engine extends FakeAudioEngine {
     if (verdict != EngineResult.ok) return (result: verdict, request: 0);
     final length = lengths[channel] ?? 48000;
     lengths[channel] = edit == LengthEdit.doubled ? length * 2 : length ~/ 2;
+    depths[channel] = (depths[channel] ?? 0) + 1;
     publish();
     final request = ++_request;
     _results[request] = EngineResult.ok;
@@ -121,9 +133,13 @@ class _Midi extends MidiDeviceRepository {
 }
 
 class _Rig {
-  _Rig({Set<int> recorded = const {0, 1, 4}, ExternalJackSetup? jack})
-    : engine = _Engine(recorded) {
+  _Rig({
+    Set<int> recorded = const {0, 1, 4},
+    ExternalJackSetup? jack,
+    int? longPressMs,
+  }) : engine = _Engine(recorded) {
     engine.publish();
+    if (longPressMs != null) store.values['pedal.long_press_ms'] = longPressMs;
     if (jack != null) {
       store.values['pedal.setup'] = const PedalSetup()
           .copyWith(
@@ -234,8 +250,10 @@ void main() {
     Set<int> recorded = const {0, 1, 4},
     int cursor = 0,
     InteractionMode mode = InteractionMode.multiply,
+    int? longPressMs,
   }) async {
-    final rig = _Rig(recorded: recorded);
+    final rig = _Rig(recorded: recorded, longPressMs: longPressMs);
+    if (longPressMs != null) await rig.control.load();
     await rig.poll();
     rig.control
       ..selectTrack(cursor)
@@ -320,6 +338,148 @@ void main() {
     }
   });
 
+  /// Whether the outcome still describes [channel] as the panel reads it.
+  bool describes(_Rig rig, int channel) => rig.control.state.footLengthOutcome
+      .describes(readFootLengthTrack(rig.looper.state, channel));
+
+  test('the outcome ends when the edit is undone, even past its starting '
+      'length (Double twice, Undo twice)', () async {
+    final rig = await enter();
+    try {
+      await tap(rig, PedalButton.clear);
+      await rig.poll();
+      await tap(rig, PedalButton.clear);
+      await rig.poll();
+      expect(rig.looper.state.tracks[0].lengthFrames, 192000);
+      expect(describes(rig, 0), isTrue);
+      expect(rig.control.state.footLengthOutcome.toUndoDepth, 2);
+      rig.engine.rewind(0, frames: 96000, depth: 1);
+      await rig.poll();
+      expect(describes(rig, 0), isFalse);
+      // Back below the second Double's starting length: still not it.
+      rig.engine.rewind(0, frames: 48000, depth: 0);
+      await rig.poll();
+      expect(describes(rig, 0), isFalse);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('an overdub on top of the edit ends the outcome', () async {
+    final rig = await enter();
+    try {
+      await tap(rig, PedalButton.clear);
+      await rig.poll();
+      expect(describes(rig, 0), isTrue);
+      rig.engine.rewind(0, frames: 96000, depth: 2); // the overdub's layer
+      await rig.poll();
+      expect(describes(rig, 0), isFalse);
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test('Divide: a gesture that outlives its surface or its editable state '
+      'does nothing (MODE exit, a Session load)', () async {
+    final rig = await enter(mode: InteractionMode.divide);
+    try {
+      // Released before the threshold, after leaving: no First half.
+      rig.press(PedalButton.undo);
+      await _pump(const Duration(milliseconds: 20));
+      await tap(rig, PedalButton.mode);
+      expect(rig.control.state.mode, InteractionMode.record);
+      rig.release(PedalButton.undo);
+      await _pump(const Duration(milliseconds: 30));
+      expect(rig.engine.edits, isEmpty);
+      // Held past the threshold after leaving: no Undo from the surface.
+      rig.control.setMode(InteractionMode.divide);
+      await _pump();
+      rig.press(PedalButton.undo);
+      await _pump(const Duration(milliseconds: 20));
+      await tap(rig, PedalButton.mode);
+      await _pump(const Duration(milliseconds: 900));
+      rig.release(PedalButton.undo);
+      await _pump();
+      expect(rig.engine.undoCalls, 0);
+      expect(rig.engine.edits, isEmpty);
+      // Leaving through MODE retires the gesture outright. A Session load
+      // that starts during the press does not: the gesture still completes
+      // and its own check is what keeps the edit and the Undo back.
+      rig.control.setMode(InteractionMode.divide);
+      await _pump();
+      rig.press(PedalButton.undo);
+      await _pump(const Duration(milliseconds: 20));
+      rig.persistence.reserveSessionLoad();
+      rig.release(PedalButton.undo);
+      await _pump(const Duration(milliseconds: 30));
+      expect(rig.engine.edits, isEmpty, reason: 'no First half');
+      rig.persistence.cancelSessionLoad();
+      rig.press(PedalButton.undo);
+      await _pump(const Duration(milliseconds: 20));
+      rig.persistence.reserveSessionLoad();
+      await _pump(const Duration(milliseconds: 900));
+      rig.release(PedalButton.undo);
+      await _pump();
+      expect(rig.engine.undoCalls, 0, reason: 'no Undo');
+      rig.persistence.cancelSessionLoad();
+    } finally {
+      await rig.close();
+    }
+  });
+
+  test(
+    'semantic activation and hold run the same roles on the real cubit',
+    () async {
+      final rig = await enter();
+      try {
+        // Multiply: activate Undo undoes, hold Undo redoes.
+        rig.control.activateFootLengthPedal(PedalButton.undo);
+        expect(rig.engine.undoCalls, 1);
+        rig.control.holdFootLengthPedal(PedalButton.undo);
+        expect(rig.engine.redoCalls, 1);
+        // A role without a hold ignores one.
+        rig.control.holdFootLengthPedal(PedalButton.clear);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.engine.edits, isEmpty);
+        // Divide: activate Undo keeps the first half, hold Undo undoes.
+        rig.control.setMode(InteractionMode.divide);
+        rig.control.activateFootLengthPedal(PedalButton.undo);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.engine.edits, [(0, LengthEdit.firstHalf)]);
+        rig.control.holdFootLengthPedal(PedalButton.undo);
+        expect(rig.engine.undoCalls, 2);
+        expect(rig.engine.redoCalls, 1);
+      } finally {
+        await rig.close();
+      }
+    },
+  );
+
+  test('the Divide hold follows the configured long-press time', () async {
+    final rig = await enter(mode: InteractionMode.divide, longPressMs: 300);
+    try {
+      rig.press(PedalButton.undo);
+      await _pump(const Duration(milliseconds: 400));
+      rig.release(PedalButton.undo);
+      await _pump();
+      expect(rig.engine.undoCalls, 1, reason: '400 ms is a hold at 300');
+      expect(rig.engine.edits, isEmpty);
+    } finally {
+      await rig.close();
+    }
+    final slow = await enter(mode: InteractionMode.divide, longPressMs: 1500);
+    try {
+      slow.press(PedalButton.undo);
+      await _pump(const Duration(milliseconds: 900));
+      slow.release(PedalButton.undo);
+      await _pump(const Duration(milliseconds: 30));
+      expect(slow.engine.undoCalls, 0, reason: '900 ms is a tap at 1500');
+      expect(slow.engine.edits, [(0, LengthEdit.firstHalf)]);
+    } finally {
+      await slow.close();
+    }
+  });
+
   test('the keyboard Rec/Play and the footswitch do the same thing on both '
       'surfaces', () async {
     for (final mode in [InteractionMode.multiply, InteractionMode.divide]) {
@@ -350,6 +510,8 @@ void main() {
           channel: 0,
           edit: LengthEdit.doubled,
           fromFrames: 48000,
+          toFrames: 96000,
+          toUndoDepth: 1,
         ),
       );
       // A refused edit leaves it.
@@ -395,7 +557,7 @@ void main() {
       rig.release(PedalButton.clear);
       await _pump();
       await tap(rig, PedalButton.clear);
-      await rig.control.editFootLengthTrack(LengthEdit.doubled);
+      rig.control.activateFootLengthPedal(PedalButton.clear);
       rig.control.setMode(InteractionMode.divide);
       await tap(rig, PedalButton.undo);
       await tap(rig, PedalButton.clear);
@@ -460,29 +622,36 @@ void main() {
   test('a refusal is not reported after its visit or Session ended', () async {
     final rig = await enter();
     try {
+      // Each edit is fired from the pedal role and the flow changes before
+      // its verdict lands.
       rig.engine.verdicts.add(EngineResult.modeMismatch);
-      final pending = rig.control.editFootLengthTrack(LengthEdit.firstHalf);
-      rig.control.setMode(InteractionMode.record);
-      await pending;
+      rig.control
+        ..activateFootLengthPedal(PedalButton.clear)
+        ..setMode(InteractionMode.record);
+      await _pump(const Duration(milliseconds: 30));
+      expect(rig.engine.edits, hasLength(1));
       expect(rig.control.state.footLengthFailure, 0);
       // Even when the player is back by the time it lands.
       rig.control.setMode(InteractionMode.multiply);
       await _pump();
       rig.engine.verdicts.add(EngineResult.modeMismatch);
-      final revisit = rig.control.editFootLengthTrack(LengthEdit.firstHalf);
       rig.control
+        ..activateFootLengthPedal(PedalButton.clear)
         ..setMode(InteractionMode.record)
         ..setMode(InteractionMode.multiply);
-      await revisit;
+      await _pump(const Duration(milliseconds: 30));
+      expect(rig.engine.edits, hasLength(2));
       expect(rig.control.state.footLengthFailure, 0);
       // A Session load that began meanwhile retires the report too.
       rig.engine.verdicts.add(EngineResult.modeMismatch);
-      final reloaded = rig.control.editFootLengthTrack(LengthEdit.firstHalf);
+      rig.control.activateFootLengthPedal(PedalButton.clear);
       rig.looper.revision = rig.looper.sessionRevision + 1;
-      await reloaded;
+      await _pump(const Duration(milliseconds: 30));
+      expect(rig.engine.edits, hasLength(3));
       expect(rig.control.state.footLengthFailure, 0);
       rig.engine.verdicts.add(EngineResult.modeMismatch);
-      await rig.control.editFootLengthTrack(LengthEdit.firstHalf);
+      rig.control.activateFootLengthPedal(PedalButton.clear);
+      await _pump(const Duration(milliseconds: 30));
       expect(rig.control.state.footLengthFailure, 1);
     } finally {
       await rig.close();
@@ -496,7 +665,6 @@ void main() {
       rig.persistence.reserveSessionLoad();
       await tap(rig, PedalButton.clear);
       await tap(rig, PedalButton.track2);
-      await rig.control.editFootLengthTrack(LengthEdit.doubled);
       rig.control.activateFootLengthPedal(PedalButton.clear);
       await _pump(const Duration(milliseconds: 30));
       expect(rig.engine.edits, isEmpty);
@@ -508,7 +676,7 @@ void main() {
       rig.control.setMode(InteractionMode.multiply);
       await _pump();
       rig.powerOffUp = true;
-      await rig.control.editFootLengthTrack(LengthEdit.doubled);
+      await tap(rig, PedalButton.clear);
       rig.control.activateFootLengthPedal(PedalButton.clear);
       await _pump(const Duration(milliseconds: 30));
       expect(rig.engine.edits, isEmpty);

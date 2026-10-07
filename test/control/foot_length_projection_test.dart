@@ -30,7 +30,7 @@ void main() {
     final divide = FootLengthProjection.rolesFor(InteractionMode.divide);
     expect(multiply[PedalButton.recPlay]!.press, FootLengthAction.recordPlay);
     expect(multiply[PedalButton.undo]!.press, FootLengthAction.undo);
-    expect(multiply[PedalButton.undo]!.hold, isNull);
+    expect(multiply[PedalButton.undo]!.hold, FootLengthAction.redo);
     expect(multiply[PedalButton.clear]!.press, FootLengthAction.doubleTrack);
     expect(divide[PedalButton.recPlay]!.press, FootLengthAction.recordPlay);
     expect(divide[PedalButton.undo]!.press, FootLengthAction.firstHalf);
@@ -43,6 +43,52 @@ void main() {
       expect(roles[PedalButton.bank]!.press, FootLengthAction.nextBank);
       expect(roles[PedalButton.track3]!.slot, 2);
     }
+  });
+
+  test('an outcome binds once both length and undo depth moved, and '
+      'describes only that exact state', () {
+    FootLengthTrack track(int frames, int depth) => FootLengthTrack(
+      channel: 0,
+      hasContent: true,
+      busy: false,
+      lengthFrames: frames,
+      multiple: 1,
+      syncDivisor: 0,
+      undoDepth: depth,
+    );
+    const pending = FootLengthOutcome(
+      channel: 0,
+      edit: LengthEdit.doubled,
+      fromFrames: 96000,
+      fromUndoDepth: 1,
+    );
+    // Either half published alone does not bind it.
+    expect(pending.bindTo(track(192000, 1)).bound, isFalse);
+    expect(pending.bindTo(track(96000, 2)).bound, isFalse);
+    expect(pending.describes(track(192000, 2)), isFalse);
+    final bound = pending.bindTo(track(192000, 2));
+    expect(bound.bound, isTrue);
+    expect(bound.describes(track(192000, 2)), isTrue);
+    // Undone once, then again past its start: never "Repeated to 1 bar".
+    expect(bound.describes(track(96000, 1)), isFalse);
+    expect(bound.describes(track(48000, 0)), isFalse);
+    // An overdub on top keeps the length but not the depth.
+    expect(bound.describes(track(192000, 3)), isFalse);
+    // Another track never.
+    expect(
+      bound.describes(
+        const FootLengthTrack(
+          channel: 1,
+          hasContent: true,
+          busy: false,
+          lengthFrames: 192000,
+          multiple: 1,
+          syncDivisor: 0,
+          undoDepth: 2,
+        ),
+      ),
+      isFalse,
+    );
   });
 
   test('Divide halves count bars when each half is whole bars, else beats', () {

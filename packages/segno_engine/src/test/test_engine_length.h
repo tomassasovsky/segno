@@ -1181,6 +1181,39 @@ static void test_length_refused_history_motion(void) {
   le_engine_destroy(e);
 }
 
+/* #1168 delta review: an Undo or Redo of a LENGTH entry with the command
+ * ring full is refused up front as LE_ERR_NOT_READY (the edit's own rule),
+ * changing nothing and counting nothing, rather than failing the push as
+ * LE_ERR_INVALID after the checks. */
+static void test_length_history_full_ring(void) {
+  printf("test_length_history_full_ring\n");
+  le_engine* e = len_engine();
+  le_track* t = &e->tracks[0];
+  float pcm[8];
+  for (int i = 0; i < 8; ++i) pcm[i] = (float)(i + 1);
+  len_take(e, 0, pcm, 8);
+  CHECK(len_edit(e, 0, LE_LENGTH_DOUBLE) == LE_OK);
+  len_expect(e, 0, 16, 1, 0, 1, 0);
+  peel_history_image h = peel_history_snapshot(t);
+  int pushed = 0;
+  while (le_engine_set_master_gain(e, 1.0f) == LE_OK) ++pushed;
+  CHECK(pushed > 0);
+  CHECK(le_engine_undo(e, 0) == LE_ERR_NOT_READY);
+  CHECK(t->length_pending == 0);
+  peel_expect_unchanged(t, &h);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 0);
+  /* Once the callback drains the ring, the same tap undoes the Double. */
+  drain(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  len_settle(e);
+  len_expect(e, 0, 8, 1, 0, 0, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_history_refusals == 0);
+  le_engine_destroy(e);
+}
+
 /* #1168 Part 2: the history a Session saves, lengths and playhead maps
  * included. Exports every entry and image of track 1 the way the Session
  * capture does: export_history for the kinds, skipped counts and maps, then
@@ -1438,6 +1471,7 @@ static void run_length_tests(void) {
   test_length_reclock_keeps_tempo();
   test_length_pending_reclock_master();
   test_length_refused_history_motion();
+  test_length_history_full_ring();
   test_length_session_round_trip();
   test_length_finalize_lineage();
   test_length_division_recall();
