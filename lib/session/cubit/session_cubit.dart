@@ -481,13 +481,17 @@ class SessionCubit extends Cubit<SessionState> {
     () async {
       try {
         return await _captureSettings.runExclusive(() async {
-          await _endCaptures();
-          await _preserveOutgoing();
+          // The target is read and validated first (read-only: a refusal
+          // leaves every bundle as it was), so an Open the target refuses
+          // never withdraws the player's arms or Count-in, nor stops a take
+          // (#1178 Part 4 lows review, 1).
           final path = await _repository.bundlePathOf(id);
           final (:bundle, :conversion) = await _repository.open(
             path,
             liveSettings: _captureSettings.current,
           );
+          await _endCaptures();
+          await _preserveOutgoing();
           // The header shows the manifest's name; a bundle saved before names
           // were metadata shows its directory name, as the catalog does.
           final loadedName = bundle.session.name ?? id;

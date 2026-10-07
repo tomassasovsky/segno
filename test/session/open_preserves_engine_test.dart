@@ -221,6 +221,44 @@ void main() {
       expect(saved.laneStems[(1, 0)]!.last, isNotEmpty);
     });
 
+    test('a track armed for the loop top is withdrawn before the outgoing '
+        'rig is saved: no take starts, and the bundle holds only what was '
+        'there (#1178 Part 4 lows review, 2)', () async {
+      await session.saveAs('Target');
+      await session.saveAs('Armed');
+      // Commands still apply, but time stands still: the loop top the arm
+      // waits for never comes unless the Open fails to withdraw it.
+      pump.cancel();
+      pump = Timer.periodic(
+        const Duration(milliseconds: 1),
+        (_) => engine.pump(frames: 0),
+      );
+      expect(
+        looper.setTrackRecordTiming(
+          channel: 1,
+          timing: RecordTiming.loopStart,
+        ),
+        EngineResult.ok,
+      );
+      engine.pump(frames: 64);
+      // Let the timing edit settle before the press, as a player's would.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(looper.record(channel: 1), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().tracks[1].pending, isTrue);
+
+      await session.open(await idOf('Target'));
+
+      expect(session.state.status, SessionStatus.success);
+      final armed = engine.snapshot().tracks[1];
+      expect(armed.pending, isFalse);
+      expect(armed.state, isNot(TrackState.recording));
+      final saved = await sessions.read(
+        await sessions.bundlePathOf(await idOf('Armed')),
+      );
+      expect(saved.session.tracks.map((t) => t.channel), [0]);
+    });
+
     test(
       'an overdub in progress is punched out and saved, not refused',
       () async {
