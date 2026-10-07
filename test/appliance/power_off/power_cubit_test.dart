@@ -320,6 +320,28 @@ void main() {
       },
     );
 
+    test('a lease that never releases keeps Segno on, guard released', () {
+      fakeAsync((async) {
+        final cubit = build(
+          storageSettled: () {
+            log.add('storage');
+            return Completer<void>().future;
+          },
+        )..restart(named, save: save);
+        async
+          ..flushMicrotasks()
+          ..elapse(PowerCubit.storageSettleLimit)
+          ..flushMicrotasks();
+        expect(cubit.state.phase, PowerPhase.saveFailed);
+        expect(log, isNot(contains('reboot')));
+        expect(
+          guards.blockers(GuardKind.capture, const GuardScope.internal()),
+          isEmpty,
+        );
+        unawaited(cubit.close());
+      });
+    });
+
     test('holds the restart guard after the save, so no capture can '
         'start', () async {
       final cubit = build()..restart(named, save: save);

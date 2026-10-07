@@ -218,7 +218,13 @@ class _PowerHostState extends State<PowerHost> {
         cubit.commitSaveAs(
           _snapshot(),
           save: () async {
-            await session.saveAs(raw);
+            // A Retry after the Save As already landed saves that session
+            // again instead of claiming the same name twice.
+            if (session.state.currentSessionName == slug) {
+              await session.save();
+            } else {
+              await session.saveAs(raw);
+            }
             if (session.state.status == SessionStatus.failure) {
               throw Exception(session.state.errorMessage ?? 'save failed');
             }
