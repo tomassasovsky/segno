@@ -13,17 +13,38 @@ import 'package:segno/looper/view/performance_pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/theme/theme.dart';
 
-/// The notice for a refused assigned [action]. An action this build cannot
-/// run is named by its saved key, so the notice does not say "unavailable"
-/// twice.
+/// The notice for a refused assigned [action]: the recorder's low-disk words
+/// when that was the cause ([lowDisk]), a plain sentence for an action this
+/// build cannot run (its saved key is never shown), else the catalogue name.
 String assignedActionRefusedText(
   AppLocalizations l10n,
   List<String> trackNames,
+  ControlAction action, {
+  bool lowDisk = false,
+}) => lowDisk
+    ? l10n.perfLowDiskBlocked
+    : switch (action) {
+        UnavailableAction() => l10n.assignedActionUnknownRefused,
+        _ => l10n.assignedActionRefused(
+          controlActionLabel(l10n, trackNames, action),
+        ),
+      };
+
+/// A caption for a pedal: an action this build cannot run reads as such,
+/// never as its saved key, and a wrapped catalogue label keeps its separator
+/// at the end of the first line (`Selected track ·` / `Mute`).
+String footCustomActionLabel(
+  AppLocalizations l10n,
+  List<String> trackNames,
   ControlAction action,
-) => l10n.assignedActionRefused(switch (action) {
-  UnavailableAction(:final key) => key,
-  _ => controlActionLabel(l10n, trackNames, action),
-});
+) => switch (action) {
+  UnavailableAction() => l10n.footCustomUnavailableAction,
+  _ => controlActionLabel(
+    l10n,
+    trackNames,
+    action,
+  ).replaceAll(' · ', '\u00a0· '),
+};
 
 /// The Custom performance surface: each switch names what the performer
 /// assigned to it for the bank in view, and lights exactly what the switch
@@ -233,7 +254,7 @@ class _FootCustomPedal extends StatelessWidget {
     String label(ControlAction action) =>
         armed && action == const CommandAction(ControlCommand.recordPerformance)
         ? l10n.footCustomStopRecording
-        : controlActionLabel(l10n, names, action);
+        : footCustomActionLabel(l10n, names, action);
     final slot = switch (button) {
       PedalButton.track1 => 0,
       PedalButton.track2 => 1,

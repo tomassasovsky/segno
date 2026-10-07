@@ -194,6 +194,7 @@ class _TracksViewState extends State<TracksView> {
                   context.l10n,
                   context.read<TracksCubit>().state.names,
                   state.assignedActionRefusal!,
+                  lowDisk: state.assignedActionLowDisk,
                 ),
               ),
               autoCloseDuration: const Duration(seconds: 5),
