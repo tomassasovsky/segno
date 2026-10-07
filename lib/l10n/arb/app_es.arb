@@ -1804,6 +1804,7 @@
     "loopLengthNotApplied": "No se aplicó. Duración actual: {current}. Prueba otro número de compases.",
     "loopLengthNoteBars": "{bars, plural, one{Termina tras 1 compás y reproduce.} other{Termina tras {bars} compases y reproduce.}}",
     "loopDefaultMultipleLabel": "Pistas siguientes",
+    "loopDefaultMultipleNote": "Múltiplos del primer loop. Auto redondea a loops completos.",
     "loopTimingLabel": "Momento de grabación",
     "loopTimingNoteImmediately": "Grabar y overdub responden al pulsar.",
     "loopTimingNoteLoopStart": "Grabar y overdub esperan al próximo inicio del loop. El primer loop sigue a Grabación.",

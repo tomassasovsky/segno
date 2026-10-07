@@ -60,6 +60,10 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
   /// there is room, and closer while a capture's banner pushes the page down.
   static double _multipleTop({required bool locked}) => locked ? 480 : 528;
 
+  /// The later-tracks choices' width: four tokens, leaving the rest of the
+  /// row to the note that says what they are multiples of.
+  static const double _multipleWidth = 592;
+
   /// The later-tracks row's height. Shorter than the pen's 96 so the locked
   /// layout (section top 441) ends at 981, inside the 984 high frame.
   static const double _multipleHeight = 60;
@@ -364,8 +368,21 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
                       multiple,
                     ),
                   ),
-                  width: 968,
+                  width: _multipleWidth,
                   height: _multipleHeight,
+                ),
+              ),
+              Positioned(
+                left: 100 + 328 + _multipleWidth + 32,
+                top: top + _multipleTop(locked: locked),
+                right: 100,
+                height: _multipleHeight,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: LoopNote(
+                    l10n.loopDefaultMultipleNote,
+                    key: const Key('loop_default_multiple_note'),
+                  ),
                 ),
               ),
             ],
