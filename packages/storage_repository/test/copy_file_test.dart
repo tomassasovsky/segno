@@ -293,11 +293,7 @@ void main() {
         throwsA(const StorageFailure.volumeLost(2)),
       );
       for (final bad in ['', '/etc/passwd', '../take.wav', 'a//b', 'a/./b']) {
-        expect(
-          () => copyTo(internal, bad),
-          throwsArgumentError,
-          reason: bad,
-        );
+        expect(() => copyTo(internal, bad), throwsArgumentError, reason: bad);
       }
       expect(h.filesUnder(h.root.path), ['take.wav']);
       expect(repo.leases, isEmpty);
@@ -514,9 +510,8 @@ void main() {
       repo = h.build();
       File('${h.exports}/take.wav.part').writeAsStringSync('mine');
       File('${h.exports}/.notes.part').writeAsStringSync('mine too');
-      File(
-        '${h.exports}/.take.wav.0123456789abcdef.part',
-      ).writeAsStringSync('left by a crash');
+      File('${h.exports}/.take.wav.0123456789abcdef.part')
+          .writeAsStringSync('left by a crash');
 
       await repo.copyFile(
         source.path,
@@ -642,6 +637,11 @@ void main() {
   });
 
   group('the real copy step', () {
+    // These call the static copy step and need no repository, but the shared
+    // tearDown disposes one: build it, or a randomized order that runs this
+    // group first meets an unassigned late variable.
+    setUp(() => repo = h.build());
+
     test('writes every byte, then fsyncs the part once, after the last '
         'write and before it is closed', () async {
       final source = h.source('take.wav', 10000);
