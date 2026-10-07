@@ -49,6 +49,38 @@ final class ButtonReleased extends PedalEvent {
   String toString() => 'ButtonReleased(${button.name}, $timestamp)';
 }
 
+/// The encoder's push switch went down.
+final class EncoderPressed extends PedalEvent {
+  /// Creates an [EncoderPressed] event.
+  const EncoderPressed({this.timestamp = Duration.zero});
+
+  /// When the press was observed, relative to an arbitrary epoch.
+  ///
+  /// Stamped by the repository's clock when the message arrived.
+  final Duration timestamp;
+
+  @override
+  List<Object?> get props => [timestamp];
+
+  @override
+  String toString() => 'EncoderPressed($timestamp)';
+}
+
+/// The encoder's push switch came up.
+final class EncoderReleased extends PedalEvent {
+  /// Creates an [EncoderReleased] event.
+  const EncoderReleased({this.timestamp = Duration.zero});
+
+  /// When the release was observed, relative to an arbitrary epoch.
+  final Duration timestamp;
+
+  @override
+  List<Object?> get props => [timestamp];
+
+  @override
+  String toString() => 'EncoderReleased($timestamp)';
+}
+
 /// A CTRL jack moved: a footswitch edge, or an expression pedal's travel.
 ///
 /// The board says which kind of pedal it decided is plugged in; the app binds
