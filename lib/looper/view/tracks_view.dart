@@ -8,6 +8,7 @@ import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_fx.dart';
 import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/control/model/foot_tuner.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -17,6 +18,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/foot_custom_view.dart';
 import 'package:segno/looper/view/foot_fade_view.dart';
+import 'package:segno/looper/view/foot_fx_view.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
 import 'package:segno/looper/view/foot_peel_view.dart';
 import 'package:segno/looper/view/foot_reverse_view.dart';
@@ -62,6 +64,7 @@ class _TracksViewState extends State<TracksView> {
     dismissAppToast(AppToastId.footPeelRefused);
     dismissAppToast(AppToastId.assignedActionRefused);
     dismissAppToast(AppToastId.footTunerRefused);
+    dismissAppToast(AppToastId.footFxFailure);
     super.dispose();
   }
 
@@ -150,6 +153,22 @@ class _TracksViewState extends State<TracksView> {
               id: AppToastId.footFadeFailure,
               type: ToastificationType.error,
               title: Text(context.l10n.footFadeFailure),
+              autoCloseDuration: const Duration(seconds: 5),
+            ),
+          ),
+          BlocListener<ControlCubit, ControlState>(
+            // A refused FX-mode stomp says why: the bound effect is gone, or
+            // the rig refused the write (#1229).
+            listenWhen: (before, after) =>
+                before.footFxFailure != after.footFxFailure &&
+                after.mode == InteractionMode.fx,
+            listener: (context, state) => showAppToast(
+              id: AppToastId.footFxFailure,
+              type: ToastificationType.error,
+              title: Text(switch (state.footFxRefusal) {
+                FootFxRefusal.unavailable => context.l10n.footFxUnavailable,
+                FootFxRefusal.failed => context.l10n.footFxFailure,
+              }),
               autoCloseDuration: const Duration(seconds: 5),
             ),
           ),
@@ -262,13 +281,6 @@ class _TracksViewState extends State<TracksView> {
               behavior: HitTestBehavior.translucent,
               onSecondaryTapUp: (_) => unawaited(openSegnoSettings()),
               child: Scaffold(
-                // #692: FX is a performance MODE, so the whole stage
-                // takes the FX surface — the mode reads from the
-                // gutters and chrome around the tiles, not from one
-                // pill. Other modes keep the default stage black.
-                backgroundColor: mode == InteractionMode.fx
-                    ? context.surface.fxSurface
-                    : null,
                 body: SafeArea(
                   child: mode == InteractionMode.mixer
                       ? const FootMixerView()
@@ -280,6 +292,8 @@ class _TracksViewState extends State<TracksView> {
                       ? const FootPeelView()
                       : mode == InteractionMode.tuner
                       ? const FootTunerView()
+                      : mode == InteractionMode.fx
+                      ? const FootFxView()
                       : mode == InteractionMode.custom
                       ? const FootCustomView()
                       : Column(

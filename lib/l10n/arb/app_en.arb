@@ -354,30 +354,6 @@
             }
         }
     },
-    "a11yTrackTileFxOn": "{target}, {state}, FX chain on, activate to switch it off",
-    "@a11yTrackTileFxOn": {
-        "description": "Accessibility label for a stage cell in FX mode while its bound FX chain is engaged. Leads with the chain-first target identity (the FX stage the bound chain sits on, e.g. 'MASTER · REVERB'), NOT the column's track name — the cell drives an FX chain, not the track (#692). Carries the transport state word like the record and mute labels (the meter shows it in colour only, WCAG 1.4.1) plus the chain state, which nothing else on the tile reports.",
-        "placeholders": {
-            "target": {
-                "type": "String"
-            },
-            "state": {
-                "type": "String"
-            }
-        }
-    },
-    "a11yTrackTileFxOff": "{target}, {state}, FX chain off, activate to switch it on",
-    "@a11yTrackTileFxOff": {
-        "description": "Accessibility label for a stage cell in FX mode while its bound FX chain is bypassed. Leads with the chain-first target identity, never the column's track name (#692).",
-        "placeholders": {
-            "target": {
-                "type": "String"
-            },
-            "state": {
-                "type": "String"
-            }
-        }
-    },
     "a11yRenameTrack": "Rename {name}",
     "@a11yRenameTrack": {
         "placeholders": {
@@ -675,79 +651,6 @@
     "signalChainOn": "Chain on",
     "@signalChainOn": {
         "description": "The Signal panel's chain-power pill while the chain is running."
-    },
-    "stageFxChainOn": "ON",
-    "@stageFxChainOn": {
-        "description": "The dominant power pill on an FX-mode stage tile while the track's FX chain is engaged. Short and upper-case for reading at stage distance; distinct from the Signal panel's 'Chain on' (a different surface)."
-    },
-    "stageFxChainOff": "OFF",
-    "@stageFxChainOff": {
-        "description": "The dominant power pill on an FX-mode stage tile while the track's FX chain is bypassed."
-    },
-    "stageFxNoChain": "NO CHAIN",
-    "@stageFxNoChain": {
-        "description": "The FX-mode stage tile title for a track that has no effects loaded at all — there is nothing to power on or off."
-    },
-    "stageFxNoChainHint": "build one in Signal",
-    "@stageFxNoChainHint": {
-        "description": "The hint under NO CHAIN on an empty FX-mode stage tile, pointing the player at the Signal tab where a chain is assembled."
-    },
-    "stageFxCellLabel": "{target} · {chain}",
-    "@stageFxCellLabel": {
-        "description": "The chain-first identity of an FX-mode stage cell: the FX stage the footswitch's bound chain attaches to, a middle dot, then the chain's own name. Names the FX control the cell drives — never the track in that column, which the cell no longer claims (#692).",
-        "placeholders": {
-            "target": {
-                "type": "String",
-                "example": "MASTER"
-            },
-            "chain": {
-                "type": "String",
-                "example": "REVERB"
-            }
-        }
-    },
-    "stageFxTargetInput": "INPUT {number}",
-    "@stageFxTargetInput": {
-        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a hardware input's monitor chain, when that input has no user-assigned name. 1-based, upper-case for stage distance. Carries no track name (the bound chain need not belong to the column's track).",
-        "placeholders": {
-            "number": {
-                "type": "int",
-                "example": "1"
-            }
-        }
-    },
-    "stageFxTargetTrack": "TRACK {number}",
-    "@stageFxTargetTrack": {
-        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a track's bus chain. 1-based. Always shown chain-first (never the track's name), even when the bound chain targets the column's own track (#692).",
-        "placeholders": {
-            "number": {
-                "type": "int",
-                "example": "3"
-            }
-        }
-    },
-    "stageFxTargetLane": "LANE {lane}",
-    "@stageFxTargetLane": {
-        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a loop lane's record-route chain.",
-        "placeholders": {
-            "lane": {
-                "type": "int",
-                "example": "2"
-            }
-        }
-    },
-    "stageFxTargetOutput": "OUT {number}",
-    "@stageFxTargetOutput": {
-        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on one output destination.",
-        "placeholders": {
-            "number": {
-                "type": "int"
-            }
-        }
-    },
-    "stageFxTargetAllTracks": "ALL TRACKS",
-    "@stageFxTargetAllTracks": {
-        "description": "The FX-stage prefix of an FX-mode cell whose bound chain is the All tracks recorded-mix chain."
     },
     "signalShowAllLanes": "All lanes",
     "signalShowRecordedLanes": "Recorded lanes",
@@ -6302,5 +6205,73 @@
                 "type": "int"
             }
         }
+    },
+    "actionTrackFxOff": "Track FX off",
+    "@actionTrackFxOff": {
+        "description": "Assignable FX command: turns off every track chain that has effects (the former FX-mode Stop panic)."
+    },
+    "actionTrackFxOn": "Track FX on",
+    "@actionTrackFxOn": {
+        "description": "Assignable FX command: turns every track chain on, chain-less tracks included; it does not restore an earlier pattern."
+    },
+    "footFxSlot": "FX {bank}{number}",
+    "@footFxSlot": {
+        "description": "FX face: an unbound track switch whose track chain is empty, named by bank and position (pen 10/03).",
+        "placeholders": {
+            "bank": {"type": "String"},
+            "number": {"type": "int"}
+        }
+    },
+    "footFxHold": "Hold",
+    "@footFxHold": {
+        "description": "FX face: the line under a switch whose binding is momentary (on only while held)."
+    },
+    "footFxHoldAction": "Hold · {action}",
+    "@footFxHoldAction": {
+        "description": "FX face: what a bound switch's Hold drives.",
+        "placeholders": {
+            "action": {"type": "String"}
+        }
+    },
+    "footFxUnavailable": "This pedal's effect is no longer available. Reassign it.",
+    "@footFxUnavailable": {
+        "description": "FX face: a stomp on a binding whose chain or effect is gone."
+    },
+    "footFxFailure": "The effect could not be switched. Try again.",
+    "@footFxFailure": {
+        "description": "FX face: the rig refused a bound switch's write."
+    },
+    "footFxStopChanged": "Stop no longer switches every track's effects off in FX mode. Assign Track FX off or Track FX on to a pedal instead.",
+    "@footFxStopChanged": {
+        "description": "One-time notice on the first FX-mode entry after the FX Stop panic was removed (#1229)."
+    },
+    "footFxModeChanged": "MODE now leaves FX mode. Its {press} still works in the other modes.",
+    "@footFxModeChanged": {
+        "description": "Second line of the one-time FX notice: MODE in FX mode now exits instead of running the player's MODE assignment (#1229, D13). {press} is the mode MODE switches to.",
+        "placeholders": {
+            "press": {
+                "type": "String"
+            }
+        }
+    },
+    "footFxModeChangedHold": "MODE now leaves FX mode. Its {press} and Hold · {hold} still work in the other modes.",
+    "@footFxModeChangedHold": {
+        "description": "As footFxModeChanged, for a MODE switch with a Hold assignment.",
+        "placeholders": {
+            "press": {
+                "type": "String"
+            },
+            "hold": {
+                "type": "String"
+            }
+        }
+    },
+    "footFxToggle": "Toggle",
+    "@footFxToggle": {
+        "description": "FX face: the line under a switch whose binding toggles (stays on until pressed again)."
+    },
+    "footFxTargetMissing": "Target missing",
+    "@footFxTargetMissing": {
+        "description": "FX face: a bound switch whose chain or effect is gone."
     }
 }

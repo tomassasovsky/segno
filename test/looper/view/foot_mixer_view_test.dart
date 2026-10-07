@@ -152,6 +152,43 @@ void main() {
     },
   );
 
+  testWidgets('a pending hold draws the cue on its own pedal only', (
+    tester,
+  ) async {
+    whenListen(
+      control,
+      const Stream<ControlState>.empty(),
+      initialState: const ControlState(
+        mode: InteractionMode.mixer,
+        footMixer: FootMixerSelection(channel: 0),
+        pendingHolds: {PedalButton.undo},
+        holdThreshold: Duration(milliseconds: 600),
+      ),
+    );
+    await pump(tester);
+    double opacity(PedalButton button) => tester
+        .widget<Opacity>(
+          find.descendant(
+            of: find.byKey(Key('foot_mixer_pedal_${button.name}_hold')),
+            matching: find.byType(Opacity),
+          ),
+        )
+        .opacity;
+    double fill(PedalButton button) => tester
+        .widget<FractionallySizedBox>(
+          find.descendant(
+            of: find.byKey(Key('foot_mixer_pedal_${button.name}_hold')),
+            matching: find.byType(FractionallySizedBox),
+          ),
+        )
+        .widthFactor!;
+    expect(opacity(PedalButton.undo), 1);
+    expect(opacity(PedalButton.clear), 0);
+    expect(opacity(PedalButton.track1), 0);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(fill(PedalButton.undo), closeTo(0.5, 1e-9));
+  });
+
   testWidgets('touch forwards both contact edges; cancel never releases', (
     tester,
   ) async {
