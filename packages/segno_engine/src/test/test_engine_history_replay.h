@@ -150,7 +150,7 @@ static void test_history_undo_redo_literal_parity(void) {
     history_layer_patterns(a, bb, c);
     CHECK(le_engine_clear_undoable(e, 0) == LE_OK); drain(e);
     const char* dir = render_test_dir(block == 1 ? "history-parity-1" : "history-parity-128");
-    CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+    CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
     static float live[4096];
     int at = 0;
     uint64_t swaps[5];
@@ -218,7 +218,7 @@ static void test_history_redo_from_empty_parity(void) {
   uint64_t id = fade_install_at(e, .5f, .5f, 0); drain(e); fade_result(e, id, LE_OK);
   const char* dir = render_test_dir("history-redo-empty");
   const char* arm = history_arm_image(e, dir);
-  CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+  CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
   static float live[2048];
   int at = history_process(e, live, at = 0, 41, 1);
   CHECK(le_engine_undo(e, 0) == LE_OK); /* layer Undo keeps Fade */
@@ -269,7 +269,7 @@ static void test_history_batch_before_callback(void) {
   le_engine* e = history_fixture();
   const char* dir = render_test_dir("history-batch");
   const char* arm = history_arm_image(e, dir);
-  CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+  CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
   static float live[64];
   int at = history_process(e, live, 0, 5, 1);
   CHECK(le_engine_undo(e, 0) == LE_OK); /* id 1: A+B */
@@ -310,7 +310,7 @@ static void test_history_arm_window_swap(void) {
   history_layer_patterns(a, b, c);
   const char* dir = render_test_dir("history-arm-window");
   const char* arm = history_arm_image(e, dir);
-  CHECK(le_perf_arm(e, dir) == LE_OK); /* ARM queued, not yet applied */
+  CHECK(perf_arm_dir(e, dir) == LE_OK); /* ARM queued, not yet applied */
   CHECK(le_engine_undo(e, 0) == LE_OK); /* id 1: A+B, published before ARM applies */
   static float live[64];
   const int at = history_process(e, live, 0, 8, 8);
@@ -347,7 +347,7 @@ static void test_history_mid_block_swap_frame(void) {
   history_layer_patterns(a, b, c);
   const char* dir = render_test_dir("history-mid-block");
   const char* arm = history_arm_image(e, dir);
-  CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+  CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
   static float live[512];
   int at = history_process(e, live, 0, 128, 128); /* one block, no swap */
   const int f = 37;
@@ -380,7 +380,7 @@ static void test_history_restore_then_empty_same_block(void) {
   le_engine* e = fade_fixture(48000);
   CHECK(le_engine_clear_undoable(e, 0) == LE_OK); drain(e);
   const char* dir = render_test_dir("history-restore-empty");
-  CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+  CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
   CHECK(le_engine_undo(e, 0) == LE_OK); /* Clear Undo: image 1, never mixed */
   CHECK(le_engine_undo(e, 0) == LE_OK); /* undo-to-empty in the same block */
   float live[8];
@@ -409,7 +409,7 @@ static void test_history_stopped_swap_then_play(void) {
   le_engine_process(e, out, zero, 23);
   CHECK(le_engine_stop_track(e, 0) == LE_OK); drain(e);
   const char* dir = render_test_dir("history-stopped-swap");
-  CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+  CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
   static float live[256];
   int at = history_process(e, live, 0, 11, 1);
   CHECK(le_engine_undo(e, 0) == LE_OK);
@@ -451,7 +451,7 @@ static void test_history_staging_refusal_fails_stem_keeps_undo(void) {
     const char* dir = render_test_dir(snapshot ? "history-refusal-snapshot" : "history-refusal-image");
     const char* arm = snapshot ? history_arm_image(e, dir) : HISTORY_ARM_EMPTY;
     if (snapshot) le_perf_drain_set_mid_cycle_hook_for_test(fade_hold_drain, &gate);
-    CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+    CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
     float input = 0, output[8] = {0};
     int frames = 0;
     if (!snapshot) {
@@ -494,9 +494,9 @@ static void test_history_staging_refusal_fails_stem_keeps_undo(void) {
       CHECK(lost->cmd.restore_log.image_id == 0 && lost->cmd.restore_log.state == LE_TRACK_EMPTY);
     }
     CHECK(history_manifest_count(dir, "\"layer_overruns\": 1") == 1);
-    char path[700]; snprintf(path, sizeof(path), "%s/master.pcm", dir);
+    char path[700]; snprintf(path, sizeof(path), "%s/master-001.wav", dir);
     float recorded[8] = {0};
-    CHECK(read_binary_file_for_test(path, (unsigned char*)recorded,
+    CHECK(read_payload_file_for_test(path, (unsigned char*)recorded,
         sizeof(float) * frames) == sizeof(float) * frames);
     for (int i = 0; i < frames; ++i) CHECK(recorded[i] == output[i]);
     fade_finalize_manifest(dir, arm);
@@ -515,7 +515,7 @@ static void test_history_missing_image_and_manifest_full(void) {
     if (manifest_full) le_perf_drain_set_mid_cycle_hook_for_test(fade_hold_drain, &gate);
     const char* dir = render_test_dir(manifest_full ? "history-manifest-full" : "history-missing-image");
     const char* arm = history_arm_image(e, dir);
-    CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+    CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
     if (manifest_full) {
       for (int i = 0; i < 5000 && !atomic_load(&gate.entered); ++i) test_sleep_ms(1);
       CHECK(atomic_load(&gate.entered));
@@ -552,9 +552,9 @@ static void test_history_missing_image_and_manifest_full(void) {
       CHECK(remove(path) == 0);
       fade_render_status(e, dir, 0);
     }
-    char path[700]; snprintf(path, sizeof(path), "%s/master.pcm", dir);
+    char path[700]; snprintf(path, sizeof(path), "%s/master-001.wav", dir);
     float recorded[64] = {0};
-    CHECK(read_binary_file_for_test(path, (unsigned char*)recorded,
+    CHECK(read_payload_file_for_test(path, (unsigned char*)recorded,
         sizeof(float) * at) == sizeof(float) * at);
     for (int i = 0; i < at; ++i) CHECK(recorded[i] == live[i]);
     le_engine_destroy(e);
@@ -576,7 +576,7 @@ static void test_history_capture_namespace(void) {
     char name[32]; snprintf(name, sizeof(name), "history-namespace-%d", capture);
     dirs[capture] = strdup(render_test_dir(name));
     arms[capture] = history_arm_image(e, dirs[capture]);
-    CHECK(le_perf_arm(e, dirs[capture]) == LE_OK); drain(e);
+    CHECK(perf_arm_dir(e, dirs[capture]) == LE_OK); drain(e);
     int at = history_process(e, live[capture], 0, 5, 1);
     CHECK((capture ? le_engine_redo(e, 0) : le_engine_undo(e, 0)) == LE_OK);
     at = history_process(e, live[capture], at, 5, 1);
@@ -612,7 +612,7 @@ static void test_history_loop_close_restore_fails_truthfully(void) {
   le_engine* e = history_fixture();
   const char* dir = render_test_dir("history-loop-close");
   const char* arm = history_arm_image(e, dir);
-  CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+  CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
   static float live[64];
   int at = history_process(e, live, 0, 4, 1);
   static float restored_pcm[HR_LEN];
@@ -642,7 +642,7 @@ static void test_history_import_during_capture_fails_truthfully(void) {
     le_engine* e = history_fixture();
     const char* dir = render_test_dir(layered ? "history-import-layered" : "history-import");
     const char* arm = history_arm_image(e, dir);
-    CHECK(le_perf_arm(e, dir) == LE_OK); drain(e);
+    CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
     static float live[64];
     int at = history_process(e, live, 0, 3, 1);
     CHECK(le_engine_undo(e, 0) == LE_OK); /* layer Undo: image 1 in slot X */

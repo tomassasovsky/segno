@@ -397,6 +397,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
    * flag describes a live capture that died, not the absence of one. */
   out->perf_stopped =
       engine->perf.drain ? le_perf_drain_self_stopped(engine->perf.drain) : 0;
+  out->perf_ring_seconds = atomic_load_explicit(&engine->a_perf_ring_seconds,
+                                                memory_order_relaxed);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_fill_track_snapshot(engine, t, t < engine->track_count,

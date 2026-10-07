@@ -487,6 +487,12 @@ void onPerformanceRecorderState(
     _showPerformanceArmRefused(context, refusedBy);
     return;
   }
+  // A take the boot salvage could not recover must not just vanish from
+  // view: say so; its files are kept (#1198).
+  if (state is PerformanceRecorderIdle && state.notRecovered > 0) {
+    _showPerformanceNotRecovered(context, state.notRecovered);
+    return;
+  }
   // Entering Rendering opens the dialog on its rendering face; entering
   // Completed opens it for a capture the operator hid (or one whose render
   // was instant). While it is already up it morphs in place — the show
@@ -516,6 +522,20 @@ void _showPerformanceArmRefused(BuildContext context, GuardKind refusedBy) {
           child: AppText(
             l10n.perfArmRefused(l10n.operationBusy(refusedBy.name)),
           ),
+        ),
+      ),
+    );
+}
+
+void _showPerformanceNotRecovered(BuildContext context, int count) {
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(
+        key: const Key('tracks_perfNotRecovered_snackbar'),
+        content: Semantics(
+          liveRegion: true,
+          child: AppText(context.l10n.perfTakesNotRecovered(count)),
         ),
       ),
     );

@@ -472,7 +472,7 @@ static void test_reverse_rapid_double_toggles(void) {
   const int len = 1000, F = 480;
   le_engine* e = reverse_fixture(48000, len, len);
   const char* dir = render_test_dir("reverse-double");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   static float live[2048], replay[2048];
   uint64_t id, other;
@@ -564,7 +564,7 @@ static void test_reverse_render_segment_overflow(void) {
   const int len = 1000, toggles = 4200;
   le_engine* e = reverse_fixture(48000, len, len);
   const char* dir = render_test_dir("reverse-overflow");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   float out[8];
   for (int i = 0; i < toggles; ++i) {
@@ -590,7 +590,7 @@ static void test_reverse_material_resets(void) {
   const int len = 1000;
   le_engine* e = reverse_fixture(48000, len, len);
   const char* dir = render_test_dir("reverse-resets");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   float out[64], pcm[1000];
   for (int i = 0; i < len; ++i) pcm[i] = (float)i;
@@ -681,7 +681,7 @@ static void test_reverse_actual_arm_render(void) {
   const int len = 1000;
   le_engine* e = reverse_fixture(48000, len, len);
   const char* dir = render_test_dir("reverse-arm");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   static float live[2048], replay[2048];
   float pcm[1000];
@@ -723,7 +723,7 @@ static void test_reverse_restored_image_tracks_phase(void) {
   const int len = 1000;
   le_engine* e = reverse_fixture(48000, len, len);
   const char* dir = render_test_dir("reverse-restored");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   static float live[2048], replay[2048];
   float pcm[1000];
@@ -791,7 +791,7 @@ static void test_reverse_render_armed_reversed(void) {
   CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK);
   rev_process(e, live, 600, 512); /* the turn is over before the arm */
   const char* dir = render_test_dir("reverse-armed");
-  CHECK(le_perf_arm(e, dir) == LE_OK);
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
   drain(e);
   rev_process(e, live, 512, 512);
   CHECK(le_perf_disarm(e) == LE_OK);

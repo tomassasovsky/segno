@@ -12,8 +12,8 @@ importing engine or Dart code — every field is plain JSON.
 
 `performance.json` sits at the root of a capture's bundle directory
 (`{documents}/exports/perf-YYYYMMDD-HHMMSS/`, D-NAME) alongside `events.log`
-(`docs/design/performance-event-log-format.md`), the raw/finalized master and
-input PCM, and `loops/`. Unlike `events.log`, it is **atomically replaced**,
+(`docs/design/performance-event-log-format.md`), the master and input audio
+parts (see "Audio parts" below), and `loops/`. Unlike `events.log`, it is **atomically replaced**,
 not appended to: `perf_drain.c` rewrites it in full every ~250ms while armed,
 and `performance_repository` (`packages/performance_repository`) rewrites it
 once more at finalize (normal disarm, or crash recovery) to fold in the
@@ -23,7 +23,7 @@ fields below `finalized: true`.
 
 | Phase | Author | Fields written |
 |---|---|---|
-| While armed (~250ms cadence) | `perf_drain.c` (native) | `slug`, `sample_rate`, `channel_layout`, `capture_frames`, `overrun_count`, `overrun_gaps`, `layers`, `stopped_early?`, `finalized: false` (always) |
+| While armed (~250ms cadence) | `perf_drain.c` (native) | `slug`, `sample_rate`, `channel_layout`, `capture_frames`, `overrun_count`, `overrun_gaps`, `layers`, `take_id`, `encoding`, `volume_generation`, `ring_seconds`, `overs`, `parts`, `stopped_early?`, `finalized: false` (always) |
 | At finalize (disarm, or crash recovery) | `performance_repository` (Dart) | `armSnapshot`, `disarmSnapshot?`, `finalized: true` — every native field above is preserved verbatim, never re-derived |
 
 A reader only ever needs to parse the file **once it is finalized**
@@ -38,13 +38,13 @@ sibling files beside `performance.json` at different points of a bundle's
 life. They exist because `finalized` alone cannot carry the whole salvage
 story: a finished take the user kept and a salvage output stranded mid-move
 are **byte-identical by sidecar**, and filesystem mtimes are too fragile to
-hang provenance or retention on (copies and moves rewrite them; an RTC-less
+hang provenance on (copies and moves rewrite them; an RTC-less
 console boots near the epoch until its first NTP sync).
 
 | File | Format | Written by | Removed by |
 |---|---|---|---|
 | `.boot-recovery` | empty file (its presence is the datum) | `PerformanceRepository.runBootRecovery`, immediately before a bundle's salvage begins | the move into `recovered/` completing — its deletion is what declares the salvage done |
-| `.recovered-at` | epoch milliseconds, UTF-8 text, nothing else | the same move, stamped on the **source** bundle strictly before the rename, so the rename carries it atomically | never — it stays with the bundle as its retention clock for as long as it lives under `recovered/` |
+| `.recovered-at` | epoch milliseconds, UTF-8 text, nothing else | the same move, stamped on the **source** bundle strictly before the rename, so the rename carries it atomically | never — it stays with the bundle as the record of when it arrived under `recovered/` |
 
 What a standalone tool should conclude from each combination:
 
@@ -53,8 +53,8 @@ What a standalone tool should conclude from each combination:
 | `finalized` `false`/absent (exports root) | still armed, or crashed while armed — the salvage candidate `findUnfinalized` flags; `.boot-recovery` may also be present from an earlier attempt that could not finalize |
 | `finalized: true` + `.boot-recovery` (exports root) | **stranded salvage output**: finalize completed but the move to `recovered/` did not (a crash in that window, or a stem-render timeout); the next boot re-attempts the render and finishes the move |
 | `finalized: true`, no `.boot-recovery` (exports root) | a normal finished take — never touched by salvage or pruning |
-| `.recovered-at` present (under `recovered/`) | landed there via salvage at the stamped instant; pruned once `PerformanceRepository.recoveredRetention` (30 days) has elapsed **from that stamp** |
-| under `recovered/` without `.recovered-at` | not placed there by the salvage (e.g. dragged in by hand) — never pruned, no matter its age |
+| `.recovered-at` present (under `recovered/`) | landed there via salvage at the stamped instant. Never deleted automatically: recovered audio stays until the user removes it (#1198; the 30-day prune of #679 is gone) |
+| under `recovered/` without `.recovered-at` | not placed there by the salvage (e.g. dragged in by hand) |
 
 ## Top-level fields
 
@@ -67,6 +67,12 @@ What a standalone tool should conclude from each combination:
   "overrun_count": 0,
   "overrun_gaps": [ { "frame": 12000, "duration_frames": 64 } ],
   "layers": [ /* see below */ ],
+  "take_id": "9f2c41d07a5e4b3c8e61f0a2b7d93c54",
+  "encoding": "f32",
+  "volume_generation": -1,
+  "ring_seconds": 2,
+  "overs": 2,
+  "parts": [ /* see below */ ],
   "stopped_early": "disk_full",
   "armSnapshot": { /* see below */ },
   "disarmSnapshot": { /* see below */ },
@@ -78,17 +84,53 @@ What a standalone tool should conclude from each combination:
 |---|---|---|
 | `slug` | string | The bundle directory's own name (D-NAME); redundant with the path but kept so the file is self-describing if moved. |
 | `sample_rate` | int | Negotiated device sample rate at arm time. Every PCM file in the bundle shares this rate (D-RATE — no resampling). |
-| `channel_layout.master_channels` | int | Channel count of `master.pcm`/`master.wav` (D-MASTER: stereo, or mono on a mono device). |
-| `channel_layout.captured_inputs` | int[] | Hardware input indices monitored at arm time (frozen for the session, D-INPUT); each has an `input-<n>.pcm` / `live-input-<n>.wav`. |
+| `channel_layout.master_channels` | int | Channel count of the master parts (D-MASTER: stereo, or mono on a mono device). |
+| `channel_layout.captured_inputs` | int[] | Hardware input indices monitored at arm time (frozen for the session, D-INPUT); each has its own `input-<n>-NNN.wav` parts, stereo. |
 | `capture_frames` | int | Total frames elapsed since arm, regardless of any ring drop. In a MID-CAPTURE sidecar this is elapsed *as of that cycle's start*, not as of the moment the file was written (the cycle samples the frame count before it drains a single ring — see #710 — so audio produced while the cycle was writing is counted next cycle instead). The final sidecar is unaffected, since no audio is produced after it; only a crash-recovered bundle, whose newest sidecar is a mid-capture one, ever sees the difference. |
 | `overrun_count` | int | Capture-ring overruns (frames the audio thread could not enqueue) since arm. Not the whole story — see `zero_filled_frames`. |
 | `zero_filled_frames` | int | Frames of digital silence the drain actually wrote into the capture files since arm, summed over every file it writes. A superset of `overrun_count`'s consequences: every dropped frame is silence-filled, but a file can also fall behind for reasons no overrun explains, which is how #710's takes carried audible silence while `overrun_count` read `0`. Counts bytes that reached disk, so a pad the disk refused (a `disk_full` stop mid-pad) is excluded even though `overrun_gaps` may still name the span. Absent from any sidecar written before #710. |
 | `overrun_gaps` | array | Up to 128 individually-logged `{frame, duration_frames}` gaps — where a file fell behind and by how much it was *asked* to pad. Beyond 128, frames are still silence-filled, just not itemized here; `zero_filled_frames` stays exact regardless. |
 | `layers` | array | Every retired overdub layer's raw PCM, persisted before pool eviction/clear/redo could destroy it (part 5, D-LAYER) — see below. |
+| `take_id` | string | The take's 16-byte identity as 32 lowercase hex digits, minted by the repository before arm and written into every part's `sgno` chunk (#1198). |
+| `encoding` | string | `"f32"`: every part holds 32-bit float samples exactly as captured. |
+| `volume_generation` | int | The removable volume generation the take was armed on, or `-1` for Internal. |
+| `ring_seconds` | int | Seconds each capture ring was granted at arm, after the 64 MiB total cap. |
+| `overs` | int | Samples with a magnitude above 1.0 across every part, sealed and open. Kept as written, never clipped. |
+| `parts` | array | The take's audio parts in playback order — see "Audio parts" below. |
 | `stopped_early` | string? | `"disk_full"` or `"device_changed"` when capture stopped abnormally; absent for a normal disarm. |
 | `armSnapshot` | object? | See below. `null`/absent only if the app crashed before arm's own crash-survival file (`arm-snapshot.json`, deleted at finalize) could even be written. |
 | `disarmSnapshot` | object? | See below. Absent for a capture recovered from a crash — there is no live engine left for a second pass. |
-| `finalized` | bool | `true` once finalize completed. The salvage *trigger* (D-SALVAGE): `false`/absent is what routes a bundle to crash recovery — but since the silent boot salvage (#679) it is no longer the sole salvage marker; the `.boot-recovery` / `.recovered-at` sibling files carry the move-and-retention half of the story (see "Salvage sibling files" above). |
+| `finalized` | bool | `true` once finalize completed. The salvage *trigger* (D-SALVAGE): `false`/absent is what routes a bundle to crash recovery — but since the silent boot salvage (#679) it is no longer the sole salvage marker; the `.boot-recovery` / `.recovered-at` sibling files carry the move half of the story (see "Salvage sibling files" above). |
+
+## Audio parts (#1198)
+
+The drain writes each captured stream straight into ordered 32-bit float WAV
+parts: `master-NNN.wav` (stream 0) and `input-<n>-NNN.wav` (stream `1 + n`),
+`NNN` counting from `001`. A part holds at most 2,000,000,000 bytes including
+its header; the next part continues the stream with no gap. Nothing converts
+them at finalize: a sealed part is the delivered audio.
+
+Each part starts with the same 84-byte header: `RIFF`, the RIFF size, `WAVE`,
+a 16-byte `fmt ` chunk (format tag 3, IEEE float, 32 bits), a 32-byte `sgno`
+chunk (the 16 take-id bytes, the stream as u16, the part index as u16, 12
+zero bytes), then `data` and its size. All integers are little-endian. The
+sizes are written as 0 when a part opens and patched when it is sealed; a
+part still open when the process died keeps 0 there, and finalize patches it
+from the file's length, floored to whole frames.
+
+```jsonc
+{ "stream": 0, "index": 1, "file": "master-001.wav", "frames": 249999989, "bytes": 1999999996, "overs": 0, "sha256": "…" }
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `stream` | int | 0 for master, `1 + n` for captured input `n`. |
+| `index` | int | The part's position in its stream, from 1. |
+| `file` | string | The part's file name in the bundle directory. |
+| `frames` | int | Frames in the part, as of this sidecar. |
+| `bytes` | int | Header plus `frames` whole frames. |
+| `overs` | int | Samples in this part with a magnitude above 1.0. |
+| `sha256` | string? | SHA-256 of the part's data payload, 64 lowercase hex digits. Present once the part is sealed; absent on the open part. |
 
 ### `layers[]` entries (part 5, unchanged by part 6)
 

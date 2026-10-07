@@ -91,6 +91,7 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
     this.refusedBy,
     this.driveUnavailable = false,
     this.refusal = 0,
+    this.notRecovered = 0,
   });
 
   /// An arm was refused because the export volume is already below the
@@ -127,6 +128,11 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// and the operator would see no answer to the second press.
   final int refusal;
 
+  /// Takes the boot salvage could not recover this boot (a raw take too
+  /// large to convert yet, a damaged sidecar). Each stays where it is with
+  /// every file kept; the player is told once, as the salvage settles.
+  final int notRecovered;
+
   @override
   List<Object?> get props => [
     lowDiskBlocked,
@@ -134,6 +140,7 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
     refusedBy,
     driveUnavailable,
     refusal,
+    notRecovered,
   ];
 }
 

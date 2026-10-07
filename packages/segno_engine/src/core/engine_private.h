@@ -168,9 +168,6 @@ extern "C" {
  * completes in ~44 callbacks (~0.5 s at typical buffer sizes). */
 #define LE_DRAIN_CHUNK 32768
 
-/* Minimum performance-recording capture ring size, in seconds of audio at the
- * device rate (le_perf_arm sizes the master + per-monitor rings from this). */
-#define LE_PERF_CAPTURE_SECONDS 2
 
 /* One looper track.
  *
@@ -1977,6 +1974,8 @@ struct le_engine {
    * unpersisted instead of queued for the drain thread. Same rationale as
    * the two atomics above: not surfaced via le_snapshot yet. */
   _Atomic uint32_t a_perf_layer_overruns;
+  /* Ring seconds the most recent arm granted (#1198), for the snapshot. */
+  _Atomic int32_t a_perf_ring_seconds;
   le_perf_capture perf;
 
   /* Tracks. */

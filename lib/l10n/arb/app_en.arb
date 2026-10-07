@@ -1150,6 +1150,15 @@
     "perfDiscarded": "Capture was too short to keep — discarded.",
     "perfLowDisk": "Low disk space — the capture may run out of room.",
     "perfLowDiskBlocked": "Not enough disk space to start a capture. Free some space and try again.",
+    "perfTakesNotRecovered": "{count, plural, =1{This take could not be recovered. Its files are kept.} other{{count} takes could not be recovered. Their files are kept.}}",
+    "@perfTakesNotRecovered": {
+        "description": "Shown once at startup when the boot salvage could not recover one or more crashed captures; their files stay where they are.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
     "@perfLowDiskBlocked": {
         "description": "Snackbar shown when arming a performance capture is refused because the export volume is already below the free-space floor."
     },

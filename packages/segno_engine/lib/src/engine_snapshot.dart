@@ -1340,6 +1340,7 @@ class EngineSnapshot {
     this.perfOverruns = 0,
     this.perfZeroFilledFrames = 0,
     this.perfStopped = false,
+    this.perfRingSeconds = 0,
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -1421,6 +1422,7 @@ class EngineSnapshot {
       perfOverruns = 0,
       perfZeroFilledFrames = 0,
       perfStopped = false,
+      perfRingSeconds = 0,
       tempoBpm = 0,
       tempoSource = TempoSource.none,
       tsNum = 4,
@@ -1517,6 +1519,7 @@ class EngineSnapshot {
       perfOverruns: native.perf_overruns,
       perfZeroFilledFrames: native.perf_zero_filled_frames,
       perfStopped: native.perf_stopped != 0,
+      perfRingSeconds: native.perf_ring_seconds,
       tempoBpm: native.tempo_bpm,
       tempoSource: TempoSource.fromCode(native.tempo_source),
       tsNum: native.ts_num,
@@ -1606,6 +1609,7 @@ class EngineSnapshot {
     int? perfOverruns,
     int? perfZeroFilledFrames,
     bool? perfStopped,
+    int? perfRingSeconds,
     double? tempoBpm,
     TempoSource? tempoSource,
     int? tsNum,
@@ -1684,6 +1688,7 @@ class EngineSnapshot {
     perfOverruns: perfOverruns ?? this.perfOverruns,
     perfZeroFilledFrames: perfZeroFilledFrames ?? this.perfZeroFilledFrames,
     perfStopped: perfStopped ?? this.perfStopped,
+    perfRingSeconds: perfRingSeconds ?? this.perfRingSeconds,
     tempoBpm: tempoBpm ?? this.tempoBpm,
     tempoSource: tempoSource ?? this.tempoSource,
     tsNum: tsNum ?? this.tsNum,
@@ -1887,6 +1892,10 @@ class EngineSnapshot {
   /// and died. Without it the stop was invisible to the app — the capture
   /// stayed armed, its handles stayed open, and finalize never ran (#652).
   final bool perfStopped;
+
+  /// Seconds each capture ring of the most recent take was granted, after
+  /// the engine's ring memory cap (#1198); 0 before any arm.
+  final int perfRingSeconds;
 
   // ---- tempo grid (A1) ----
 
@@ -2140,6 +2149,7 @@ class EngineSnapshot {
           perfOverruns == other.perfOverruns &&
           perfZeroFilledFrames == other.perfZeroFilledFrames &&
           perfStopped == other.perfStopped &&
+          perfRingSeconds == other.perfRingSeconds &&
           tempoBpm == other.tempoBpm &&
           tempoSource == other.tempoSource &&
           tsNum == other.tsNum &&
@@ -2220,6 +2230,7 @@ class EngineSnapshot {
     perfOverruns,
     perfZeroFilledFrames,
     perfStopped,
+    perfRingSeconds,
     tempoBpm,
     tempoSource,
     tsNum,
