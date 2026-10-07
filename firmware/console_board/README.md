@@ -11,7 +11,7 @@ the state frames segno pushes back. segno runs the behavior machine.
 | Link TX / RX | GP16 / GP17 | UART0 → Pi uart3 (GPIO8/9, `/dev/ttyAMA3`), 115200 8N1 |
 | Footswitches | GP2–GP11 | REC/PLAY, STOP, UNDO, MODE, TRACK1–4, CLEAR, BANK. Internal pull-up, active low, 8 ms stable-edge debounce |
 | Ring data | GP12 | **v2 only**: via 74AHCT125 → J6 pin 5, one continuous 40-pixel GRB strip. On v3 (#987) the ring board clocks its own LEDs and GP12 is on the expansion header |
-| Encoder A / B / SW | GP13 / GP14 / GP15 | **v2 only**: internal pull-ups plus the board's 10 k to the Pi's 3V3; one message per detent, decoded from pin-change interrupts |
+| Encoder A / B / SW | GP13 / GP14 / GP15 | **v2 only**: internal pull-ups plus the board's 10 k to the Pi's 3V3; one message per detent, decoded from pin-change interrupts. The push switch (SW) is active low and debounced like a footswitch (8 ms stable edge), one `ENCODER_BUTTON` message per press and per release |
 | Ring link | GP13 / GP14 | **v3** (#987): full-duplex UART to the ring board's XIAO RP2350 — GP13 drives, GP14 listens, 115200, PIO UART (neither pin is on a free hardware UART). The console board's 10 k pull-ups hold both lines. **Not implemented in this firmware yet**: it still drives GP12 and reads GP13–15 as an encoder, which is the v2 board |
 | Indicator data | GP18 | via 74AHCT125 → J7 pin 2, **80** GRB WS2812 pixels, eight per pill, sent with PIO/DMA |
 | CTRL1 / CTRL2 tip | GP26 / GP27 | ADC0 / ADC1: a footswitch at the rails, an expression pedal's wiper between them. The first press on a jack the board has not yet classified is held 200 ms (a plug sliding in drags the tip low the same way); once the jack is known to hold a footswitch, edges are debounced at 8 ms and sent at once |
@@ -22,7 +22,8 @@ the state frames segno pushes back. segno runs the behavior machine.
 
 ## Physical rendering and source boundary
 
-Firmware 1.12 uses public UART protocol 8. The physical renderer is reconciled
+Firmware 1.13 uses public UART protocol 9 (protocol 8 plus `ENCODER_BUTTON`;
+the STATE layout is unchanged). The physical renderer is reconciled
 from PR #1079 (`ecea3af76fdb0708ca04632e260de5aa3fde09cd`), whose old-v2
 firmware 1.11 used protocol 7 with a different 21-byte Song queue payload.
 PR #1082 also uses public protocol 7 (and historical 6 for PD telemetry), with
@@ -80,9 +81,10 @@ compete with the ten-button mask for physical output.
 | `0x02 ENCODER` | board → segno | `int8 detents` (positive = clockwise) |
 | `0x03 HELLO` | board → segno | `protocol, fw major, fw minor` — at boot and once a second; segno counts the board as connected while these keep coming |
 | `0x04 CTRL` | board → segno | `jack, contact, kind, value` (unchanged four bytes) |
+| `0x05 ENCODER_BUTTON` | board → segno | `pressed (0/1)` — the encoder's push switch, one message per debounced edge (protocol 9) |
 | `0x10 STATE` | segno → board | 51 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain, ten RGB triples, active mask (LE16) — see `pedal_link.h` |
 
-segno answers every compatible protocol-8 `HELLO` with its current `STATE`, so a board that just
+segno answers every compatible protocol-9 `HELLO` with its current `STATE`, so a board that just
 (re)connected is current within a second; the board goes dark if no `STATE`
 arrives for `PEDAL_LINK_FRAME_TIMEOUT_MS` (5 s) and on the goodbye flag, and
 segno reads the board as disconnected after three silent hello intervals. Both
@@ -147,7 +149,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 08 01 0c 05 (HELLO, protocol 8, fw 1.12), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 09 01 0d 05 (HELLO, protocol 9, fw 1.13), once a second
 ```
 
 ## Bring-up record

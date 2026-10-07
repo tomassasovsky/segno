@@ -10,9 +10,11 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
+import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/fx_presets_cubit.dart';
@@ -22,6 +24,7 @@ import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
 import 'package:segno/looper/view/fx/fx_effect_editor.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
+import 'package:segno/looper/view/fx/fx_pedal_assignments_page.dart';
 import 'package:segno/looper/view/fx/fx_rack_editor.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -34,6 +37,9 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
+
+class _MockControlCubit extends MockCubit<ControlState>
+    implements ControlCubit {}
 
 BuiltInEffect _fx(
   String slot,
@@ -216,6 +222,7 @@ void main() {
   late List<TrackEffect> monitorEntries;
 
   setUp(() {
+    resetSegnoNavigatorForTest();
     catalog = PluginCatalog(
       engine: FakeAudioEngine(),
       appVersion: 'test',
@@ -564,39 +571,45 @@ void main() {
     await outputs.rename(0, 'Main output');
     await outputs.rename(1, 'Monitor output');
     await tracks.rename(0, 'drums');
+    final control = _MockControlCubit();
+    when(() => control.state).thenReturn(const ControlState());
 
     await tester.pumpWidget(
       // Saving a preset confirms with a toast, which needs the app's own
       // overlay wrapper to land in.
       ToastificationWrapper(
-        child: MaterialApp(
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          theme: ThemeData(
-            fontFamily: SurfaceTheme.displayFont,
-            extensions: [
-              SurfaceTheme.dark,
-              routingGraphThemeFromSurface(SurfaceTheme.dark),
-            ],
-          ),
-          home: MultiRepositoryProvider(
+        // Above the navigator, as the app mounts them, so a route the page
+        // pushes (the pedal assignments) reads the same providers.
+        child: MultiRepositoryProvider(
+          providers: [
+            RepositoryProvider<LooperRepository>.value(value: repository),
+            RepositoryProvider<SettingsRepository>.value(value: settings),
+            RepositoryProvider<FxChainPersistence>.value(
+              value: fxPersistence,
+            ),
+          ],
+          child: MultiBlocProvider(
             providers: [
-              RepositoryProvider<LooperRepository>.value(value: repository),
-              RepositoryProvider<SettingsRepository>.value(value: settings),
-              RepositoryProvider<FxChainPersistence>.value(
-                value: fxPersistence,
-              ),
+              BlocProvider<LooperBloc>.value(value: bloc),
+              BlocProvider.value(value: inputs),
+              BlocProvider.value(value: outputs),
+              BlocProvider.value(value: monitors),
+              BlocProvider.value(value: tracks),
+              BlocProvider.value(value: presets),
+              BlocProvider<ControlCubit>.value(value: control),
             ],
-            child: MultiBlocProvider(
-              providers: [
-                BlocProvider<LooperBloc>.value(value: bloc),
-                BlocProvider.value(value: inputs),
-                BlocProvider.value(value: outputs),
-                BlocProvider.value(value: monitors),
-                BlocProvider.value(value: tracks),
-                BlocProvider.value(value: presets),
-              ],
-              child: FxPage(
+            child: MaterialApp(
+              navigatorKey: segnoNavigatorKey,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              theme: ThemeData(
+                fontFamily: SurfaceTheme.displayFont,
+                extensions: [
+                  SurfaceTheme.dark,
+                  routingGraphThemeFromSurface(SurfaceTheme.dark),
+                ],
+              ),
+              home: FxPage(
                 initial: destination,
                 catalogue: catalogue ?? _catalogue,
               ),
@@ -631,6 +644,22 @@ void main() {
             ),
           ).captured.last
           as List<TrackEffect>;
+
+  testWidgets('Pedal assignments opens the pedal assignments page', (
+    tester,
+  ) async {
+    await pump(tester, destination: const FxDestination.recordedTrack(0));
+    await tapKey(tester, 'fx_pedal_assignments');
+
+    final page = find.byType(FxPedalAssignmentsPage);
+    expect(page, findsOneWidget);
+    expect(
+      ModalRoute.of(tester.element(page))!.settings.name,
+      segnoFxPedalAssignmentsRouteName,
+    );
+    expect(find.text(l10nOf(tester).fxPedalAssignmentsCrumb), findsOneWidget);
+    expect(find.byKey(const Key('fx_pedal_assignments_body')), findsOneWidget);
+  });
 
   group('the Sound type row', () {
     testWidgets('live input explains Mixer mute without changing Hear live', (
@@ -1323,6 +1352,17 @@ void main() {
         expect(written.first.channels.placement, -0.5);
         expect(written.first.channels.level, 0.8);
         expect(written.first.slotId, 't1');
+      });
+
+      testWidgets('the input menu writes the chosen input', (tester) async {
+        await pump(tester, destination: const FxDestination.recordedTrack(0));
+        await tapKey(tester, 'fx_card_t1');
+        await tapKey(tester, 'fx_input_choice');
+        await tapKey(tester, 'fx_input_left');
+
+        final written = lastTrackWrite();
+        expect(written.first.channels.input, FxChannelInput.left);
+        expect(written.first.channels.placement, -0.5);
       });
 
       testWidgets('the balance reads Centre at rest rather than a number', (

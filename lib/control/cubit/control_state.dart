@@ -25,6 +25,11 @@ class ControlState extends Equatable {
     this.footReverseFailure = 0,
     this.footPeelFailure = 0,
     this.footPeelRefusal = FootPeelRefusal.failed,
+    this.footTuner = const FootTunerSelection(),
+    this.tunerPreferences = const TunerPreferences(),
+    this.footTunerFailure = 0,
+    this.footTunerRefusal = FootTunerRefusal.armFailed,
+    this.tunerDefaultSeeded = false,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -133,6 +138,26 @@ class ControlState extends Equatable {
 
   /// Why the latest refused Peel press removed nothing.
   final FootPeelRefusal footPeelRefusal;
+
+  /// The foot Tuner's transient page and mute while the mode is up (#1229).
+  /// Reset on every Tuner entry; never stored.
+  final FootTunerSelection footTuner;
+
+  /// The stored tuner preferences (A4 reference, input), mirrored from
+  /// `TunerSettings` so the Tuner face projects from one state. Derived,
+  /// never edited here.
+  final TunerPreferences tunerPreferences;
+
+  /// Each refused foot Tuner press notifies once; the notice reads
+  /// [footTunerRefusal].
+  final int footTunerFailure;
+
+  /// Why the latest refused foot Tuner press changed nothing.
+  final FootTunerRefusal footTunerRefusal;
+
+  /// Set once when this boot added `Hold · Tuner` to Custom pedal 2 (#1229,
+  /// D11), so the app can say where the Tuner is.
+  final bool tunerDefaultSeeded;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -250,6 +275,11 @@ class ControlState extends Equatable {
     int? footReverseFailure,
     int? footPeelFailure,
     FootPeelRefusal? footPeelRefusal,
+    FootTunerSelection? footTuner,
+    TunerPreferences? tunerPreferences,
+    int? footTunerFailure,
+    FootTunerRefusal? footTunerRefusal,
+    bool? tunerDefaultSeeded,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -285,6 +315,11 @@ class ControlState extends Equatable {
     footReverseFailure: footReverseFailure ?? this.footReverseFailure,
     footPeelFailure: footPeelFailure ?? this.footPeelFailure,
     footPeelRefusal: footPeelRefusal ?? this.footPeelRefusal,
+    footTuner: footTuner ?? this.footTuner,
+    tunerPreferences: tunerPreferences ?? this.tunerPreferences,
+    footTunerFailure: footTunerFailure ?? this.footTunerFailure,
+    footTunerRefusal: footTunerRefusal ?? this.footTunerRefusal,
+    tunerDefaultSeeded: tunerDefaultSeeded ?? this.tunerDefaultSeeded,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -322,6 +357,11 @@ class ControlState extends Equatable {
     footReverseFailure,
     footPeelFailure,
     footPeelRefusal,
+    footTuner,
+    tunerPreferences,
+    footTunerFailure,
+    footTunerRefusal,
+    tunerDefaultSeeded,
     cursor,
     activeBank,
     excluded,

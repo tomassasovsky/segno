@@ -15,12 +15,13 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/high_contrast_cubit.dart';
 import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
-import 'package:segno/system/system_tab.dart';
-import 'package:segno/system/view/system_tray_panel.dart';
+import 'package:segno/system/view/about_system_tab.dart';
+import 'package:segno/system/view/display_system_tab.dart';
+import 'package:segno/system/view/storage_system_tab.dart';
+import 'package:segno/system/view/updates_system_tab.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
@@ -157,10 +158,17 @@ final _running = UpdateState(
   currentVersion: Version.parse('0.1.0'),
 );
 
+/// The four bodies the Displays, Updates, Storage and About pages show.
+enum _SystemBody {
+  display,
+  updates,
+  storage,
+  about,
+}
+
 void main() {
   late _MockLooperRepository repository;
   late SettingsRepository settings;
-  late SettingsTrayCubit tray;
   late WaveformWindowCubit waveform;
   late HighContrastCubit contrast;
   late TracksCubit tracks;
@@ -201,16 +209,16 @@ void main() {
   });
 
   AppLocalizations l10nOf(WidgetTester tester) =>
-      AppLocalizations.of(tester.element(find.byType(SystemTrayPanel)));
+      AppLocalizations.of(tester.element(find.byType(Scaffold)));
 
-  /// Mounts the System face with the providers the real tray inherits.
+  /// Mounts one System body with the providers the app gives its page.
   ///
   /// 1920x1080, deliberately: these faces are drawn for that surface, and the
   /// default 800x600 view pushes the lower rows below the fold where a tap
   /// lands on nothing.
   Future<void> pump(
     WidgetTester tester, {
-    SystemTab tab = SystemTab.display,
+    _SystemBody tab = _SystemBody.display,
     ConsoleFactsClient? client,
     UpdateState? updateState,
   }) async {
@@ -221,9 +229,6 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     settings = SettingsRepository(store: FakeKeyValueStore());
-    tray = SettingsTrayCubit()
-      ..showSystemTab(tab)
-      ..showDestination(SettingsTrayDestination.system);
     waveform = WaveformWindowCubit(settings: settings);
     contrast = HighContrastCubit(settings: settings);
     tracks = TracksCubit(settings: settings);
@@ -260,7 +265,6 @@ void main() {
 
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
     // the binding's stream cancellation (flutter/flutter#139870).
-    addTearDown(() => unawaited(tray.close()));
     addTearDown(() => unawaited(waveform.close()));
     addTearDown(() => unawaited(contrast.close()));
     addTearDown(() => unawaited(tracks.close()));
@@ -283,7 +287,6 @@ void main() {
           value: repository,
           child: MultiBlocProvider(
             providers: [
-              BlocProvider.value(value: tray),
               BlocProvider.value(value: waveform),
               BlocProvider.value(value: contrast),
               BlocProvider.value(value: tracks),
@@ -293,10 +296,15 @@ void main() {
               BlocProvider.value(value: facts),
               BlocProvider<UpdateCubit>.value(value: update),
             ],
-            child: const Scaffold(
+            child: Scaffold(
               body: Padding(
-                padding: EdgeInsets.all(19),
-                child: SystemTrayPanel(),
+                padding: const EdgeInsets.all(19),
+                child: switch (tab) {
+                  _SystemBody.display => const DisplaySystemTab(),
+                  _SystemBody.updates => const UpdatesSystemTab(),
+                  _SystemBody.storage => const StorageSystemTab(),
+                  _SystemBody.about => const AboutSystemTab(),
+                },
               ),
             ),
           ),
@@ -421,7 +429,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        tab: SystemTab.updates,
+        tab: _SystemBody.updates,
         updateState: _running.copyWith(
           phase: UpdatePhase.available,
           available: UpdateManifest(
@@ -447,7 +455,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        tab: SystemTab.updates,
+        tab: _SystemBody.updates,
         updateState: _running.copyWith(
           phase: UpdatePhase.downloading,
           progress: 0.42,
@@ -471,7 +479,7 @@ void main() {
         'download — not the check', (tester) async {
       await pump(
         tester,
-        tab: SystemTab.updates,
+        tab: _SystemBody.updates,
         updateState: _running.copyWith(
           phase: UpdatePhase.error,
           failure: UpdateFailure.download,
@@ -506,7 +514,7 @@ void main() {
     testWidgets('a failed check is red and offers a retry', (tester) async {
       await pump(
         tester,
-        tab: SystemTab.updates,
+        tab: _SystemBody.updates,
         updateState: _running.copyWith(
           phase: UpdatePhase.error,
           failure: UpdateFailure.check,
@@ -532,7 +540,7 @@ void main() {
     testWidgets('idle and up-to-date are restful, and never a dead end', (
       tester,
     ) async {
-      await pump(tester, tab: SystemTab.updates);
+      await pump(tester, tab: _SystemBody.updates);
       final l10n = l10nOf(tester);
 
       var banner = tester.widget<ConsoleBanner>(
@@ -559,7 +567,7 @@ void main() {
         'action on this console that throws away the take', (tester) async {
       await pump(
         tester,
-        tab: SystemTab.updates,
+        tab: _SystemBody.updates,
         updateState: _running.copyWith(
           phase: UpdatePhase.staged,
           available: UpdateManifest(
@@ -594,7 +602,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        tab: SystemTab.updates,
+        tab: _SystemBody.updates,
         updateState: _running.copyWith(phase: UpdatePhase.checking),
       );
       final l10n = l10nOf(tester);
@@ -612,7 +620,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        tab: SystemTab.updates,
+        tab: _SystemBody.updates,
         updateState: const UpdateState(),
       );
       final l10n = l10nOf(tester);
@@ -625,7 +633,7 @@ void main() {
   group('SYSTEM / storage', () {
     testWidgets('deleting captures asks first, and the figures afterwards '
         'come from a re-read', (tester) async {
-      await pump(tester, tab: SystemTab.storage);
+      await pump(tester, tab: _SystemBody.storage);
       final l10n = l10nOf(tester);
 
       expect(find.text(l10n.storageGigabytes(6.2)), findsOneWidget);
@@ -658,7 +666,7 @@ void main() {
         'so and is not tappable', (tester) async {
       await pump(
         tester,
-        tab: SystemTab.storage,
+        tab: _SystemBody.storage,
         client: FakeConsoleFactsClient(
           latency: Duration.zero,
           exportVolumeMounted: false,
@@ -677,7 +685,7 @@ void main() {
       tester,
     ) async {
       final client = _RecordingFactsClient();
-      await pump(tester, tab: SystemTab.storage, client: client);
+      await pump(tester, tab: _SystemBody.storage, client: client);
 
       await tester.tap(find.byKey(const Key('system_storage_export')));
       await tester.pumpAndSettle();
@@ -689,7 +697,7 @@ void main() {
     testWidgets('an export that throws says so WHERE THE ACTION IS, and does '
         'not take the disk figures down with it', (tester) async {
       final client = _RecordingFactsClient(failExport: true);
-      await pump(tester, tab: SystemTab.storage, client: client);
+      await pump(tester, tab: _SystemBody.storage, client: client);
       final l10n = l10nOf(tester);
 
       await tester.tap(find.byKey(const Key('system_storage_export')));
@@ -714,7 +722,7 @@ void main() {
       tester,
     ) async {
       final client = _SlowFactsClient();
-      await pump(tester, tab: SystemTab.storage, client: client);
+      await pump(tester, tab: _SystemBody.storage, client: client);
       final l10n = l10nOf(tester);
 
       // Mid-read: an answer that has not arrived is not an answer of no.
@@ -728,7 +736,7 @@ void main() {
 
     testWidgets('every readout of the breakdown is drawn, not just the two '
         'the golden happens to frame', (tester) async {
-      await pump(tester, tab: SystemTab.storage);
+      await pump(tester, tab: _SystemBody.storage);
       final l10n = l10nOf(tester);
 
       for (final (key, figure) in const [
@@ -752,7 +760,7 @@ void main() {
         'rows — zeroes as facts would be worse', (tester) async {
       await pump(
         tester,
-        tab: SystemTab.storage,
+        tab: _SystemBody.storage,
         client: _FailingFactsClient(),
       );
       final l10n = l10nOf(tester);
@@ -767,7 +775,7 @@ void main() {
     testWidgets('a console names itself, its serial and its image', (
       tester,
     ) async {
-      await pump(tester, tab: SystemTab.about);
+      await pump(tester, tab: _SystemBody.about);
 
       expect(find.text('VAMP 16'), findsOneWidget);
       expect(find.text('VMP-16-0042'), findsOneWidget);
@@ -779,7 +787,7 @@ void main() {
         'keeps the ones it does know', (tester) async {
       await pump(
         tester,
-        tab: SystemTab.about,
+        tab: _SystemBody.about,
         client: const UnsupportedConsoleFactsClient(),
       );
 
@@ -801,7 +809,7 @@ void main() {
       (tester) async {
         await pump(
           tester,
-          tab: SystemTab.about,
+          tab: _SystemBody.about,
           client: const UnsupportedConsoleFactsClient(),
         );
 
@@ -814,7 +822,7 @@ void main() {
 
     testWidgets('with them, the image row takes that job and the app row '
         'hands its hairline back', (tester) async {
-      await pump(tester, tab: SystemTab.about);
+      await pump(tester, tab: _SystemBody.about);
 
       final app = tester.widget<ConsoleRow>(
         find.byKey(const Key('system_about_app')),
@@ -829,7 +837,7 @@ void main() {
     testWidgets('the pedal row is drawn even with no pedal to report', (
       tester,
     ) async {
-      await pump(tester, tab: SystemTab.about);
+      await pump(tester, tab: _SystemBody.about);
       final l10n = l10nOf(tester);
 
       // Drawn with no board talking, where it used to be dropped: this row is
@@ -848,7 +856,7 @@ void main() {
         Key('system_about_notices'),
         Key('system_about_licence'),
       ]) {
-        await pump(tester, tab: SystemTab.about);
+        await pump(tester, tab: _SystemBody.about);
 
         await tester.tap(find.byKey(row));
         await tester.pumpAndSettle();
@@ -878,7 +886,7 @@ void main() {
           const LicenseEntryWithLineBreaks(['beta_pkg'], 'BETA TERMS'),
         ]),
       );
-      await pump(tester, tab: SystemTab.about);
+      await pump(tester, tab: _SystemBody.about);
       await tester.tap(find.byKey(const Key('system_about_notices')));
       await tester.pumpAndSettle();
 
@@ -912,7 +920,7 @@ void main() {
             ),
         ]),
       );
-      await pump(tester, tab: SystemTab.about);
+      await pump(tester, tab: _SystemBody.about);
       await tester.tap(find.byKey(const Key('system_about_notices')));
       await tester.pumpAndSettle();
 
@@ -955,7 +963,7 @@ void main() {
           const LicenseEntryWithLineBreaks(['solo_pkg'], 'SOLO TERMS'),
         ]),
       );
-      await pump(tester, tab: SystemTab.about);
+      await pump(tester, tab: _SystemBody.about);
       await tester.tap(find.byKey(const Key('system_about_notices')));
       await tester.pumpAndSettle();
 
@@ -975,7 +983,7 @@ void main() {
           const LicenseEntryWithLineBreaks(['gamma_pkg'], 'GAMMA TERMS'),
         ]),
       );
-      await pump(tester, tab: SystemTab.about);
+      await pump(tester, tab: _SystemBody.about);
       await tester.tap(find.byKey(const Key('system_about_notices')));
       await tester.pumpAndSettle();
 
@@ -997,7 +1005,7 @@ void main() {
     });
 
     testWidgets('the name row opens the console rename sheet', (tester) async {
-      await pump(tester, tab: SystemTab.about);
+      await pump(tester, tab: _SystemBody.about);
       final l10n = l10nOf(tester);
 
       await tester.tap(find.byKey(const Key('system_about_name')));
@@ -1007,7 +1015,7 @@ void main() {
     });
 
     testWidgets('renaming the console keys off the serial', (tester) async {
-      await pump(tester, tab: SystemTab.about);
+      await pump(tester, tab: _SystemBody.about);
 
       await facts.rename('Stage left');
       await tester.pumpAndSettle();
@@ -1019,36 +1027,14 @@ void main() {
     });
   });
 
-  group('the strip', () {
-    testWidgets('every tab opens onto a face', (tester) async {
-      for (final tab in SystemTab.values) {
-        await pump(tester, tab: tab);
-        expect(
-          find.byKey(Key('system_${tab.name}_tab')),
-          findsOneWidget,
-          reason: '${tab.name} opened onto nothing',
-        );
-      }
-    });
-
-    testWidgets('tapping a pill moves the face, and the move is remembered '
-        'across leaving the domain', (tester) async {
-      await pump(tester);
-      final l10n = l10nOf(tester);
-
-      for (final (tab, label) in [
-        (SystemTab.updates, l10n.systemUpdatesTab),
-        (SystemTab.storage, l10n.systemStorageTab),
-        (SystemTab.about, l10n.systemAboutTab),
-        (SystemTab.display, l10n.systemDisplayTab),
-      ]) {
-        await tester.tap(find.text(label));
-        await tester.pumpAndSettle();
-        expect(find.byKey(Key('system_${tab.name}_tab')), findsOneWidget);
-        // Held on the tray cubit, not in the panel's own State, so the domain
-        // lands where it was left.
-        expect(tray.state.systemTab, tab);
-      }
-    });
+  testWidgets('every body opens onto its face', (tester) async {
+    for (final tab in _SystemBody.values) {
+      await pump(tester, tab: tab);
+      expect(
+        find.byKey(Key('system_${tab.name}_tab')),
+        findsOneWidget,
+        reason: '${tab.name} opened onto nothing',
+      );
+    }
   });
 }

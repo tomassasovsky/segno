@@ -7,19 +7,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
-import 'package:segno/audio_setup/audio_tab.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
-import 'package:segno/audio_setup/view/console/audio_tray_panel.dart';
+import 'package:segno/audio_setup/view/console/device_audio_tab.dart';
 import 'package:segno/common/console_surface.dart';
-import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
-import 'package:segno/looper/view/tray/tray.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -94,7 +90,6 @@ void main() {
   late RecordTimingCubit quantize;
   late RecordSettings options;
   late TempoCubit tempo;
-  late SettingsTrayCubit tray;
   late RecordTiming confirmedTiming;
   late GridDivision rememberedDivision;
   var confirmedCountIn = 1;
@@ -260,19 +255,16 @@ void main() {
   });
 
   AppLocalizations l10nOf(WidgetTester tester) =>
-      AppLocalizations.of(tester.element(find.byType(AudioTrayPanel)));
+      AppLocalizations.of(tester.element(find.byType(DeviceAudioTab)));
 
-  /// Mounts the Audio face with the providers the real tray inherits.
+  /// Mounts the Device body with the providers the app gives its page.
   ///
   /// 1920x1080, deliberately: this face is drawn for that surface, and the
   /// default 800x600 test view pushes the lower rows below the fold where a
   /// tap lands on nothing.
   Future<void> pump(
     WidgetTester tester, {
-    AudioTab tab = AudioTab.device,
     LooperState looper = const LooperState(status: _open),
-    SettingsTrayDestination destination = SettingsTrayDestination.audio,
-    Widget? body,
     bool loadRecordStart = true,
   }) async {
     tester.view
@@ -313,9 +305,6 @@ void main() {
     addTearDown(() => unawaited(closeTempoOwner()));
     tempo = TempoCubit(settings: tempoOwner);
     if (loadRecordStart) await tempoOwner.recordStartOwner.load();
-    tray = SettingsTrayCubit()
-      ..showAudioTab(tab)
-      ..showDestination(destination);
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
     // the binding's stream cancellation (flutter/flutter#139870).
     addTearDown(() => unawaited(audio.close()));
@@ -323,7 +312,6 @@ void main() {
     addTearDown(() => unawaited(quantize.close()));
     addTearDown(() => unawaited(options.close()));
     addTearDown(() => unawaited(tempo.close()));
-    addTearDown(() => unawaited(tray.close()));
 
     await tester.pumpWidget(
       MaterialApp(
@@ -347,12 +335,11 @@ void main() {
                 create: (_) => RecordOptionsCubit(settings: options),
               ),
               BlocProvider.value(value: tempo),
-              BlocProvider.value(value: tray),
             ],
-            child: Scaffold(
+            child: const Scaffold(
               body: Padding(
-                padding: const EdgeInsets.all(19),
-                child: body ?? const AudioTrayPanel(),
+                padding: EdgeInsets.all(19),
+                child: DeviceAudioTab(),
               ),
             ),
           ),
@@ -786,14 +773,11 @@ void main() {
       addTearDown(() => unawaited(closeTempoOwner()));
       tempo = TempoCubit(settings: tempoOwner);
       await tempoOwner.recordStartOwner.load();
-      tray = SettingsTrayCubit()
-        ..showDestination(SettingsTrayDestination.audio);
       addTearDown(() => unawaited(audio.close()));
       addTearDown(() => unawaited(inputs.close()));
       addTearDown(() => unawaited(quantize.close()));
       addTearDown(() => unawaited(options.close()));
       addTearDown(() => unawaited(tempo.close()));
-      addTearDown(() => unawaited(tray.close()));
 
       await tester.pumpWidget(
         MaterialApp(
@@ -817,12 +801,11 @@ void main() {
                   create: (_) => RecordOptionsCubit(settings: options),
                 ),
                 BlocProvider.value(value: tempo),
-                BlocProvider.value(value: tray),
               ],
               child: const Scaffold(
                 body: Padding(
                   padding: EdgeInsets.all(19),
-                  child: AudioTrayPanel(),
+                  child: DeviceAudioTab(),
                 ),
               ),
             ),
@@ -898,22 +881,14 @@ void main() {
 
   // --------------------------------------------------------------- recording
 
-  group('Audio — Recording', () {
-    testWidgets('the tab rests with every row shut', (tester) async {
-      await pump(tester, tab: AudioTab.recording);
-      expect(find.byKey(const Key('audio_max_loop_0')), findsNothing);
-      expect(find.byKey(const Key('audio_default_length_0')), findsNothing);
-    });
-
-    testWidgets('the loop cap lives on Device, not on Recording', (
+  group('Audio — the loop cap', () {
+    testWidgets('lives on Device, and the Device page has no Recording tab', (
       tester,
     ) async {
-      await pump(tester, tab: AudioTab.recording);
-      expect(find.byKey(const Key('audio_max_loop_row')), findsNothing);
-      expect(find.byKey(const Key('audio_default_length_row')), findsOneWidget);
-
       await pump(tester);
       expect(find.byKey(const Key('audio_max_loop_row')), findsOneWidget);
+      expect(find.byKey(const Key('audio_max_loop_0')), findsNothing);
+      expect(find.byKey(const Key('audio_default_length_row')), findsNothing);
     });
 
     testWidgets('the loop cap chooser GROWS open rather than appearing', (
@@ -941,21 +916,6 @@ void main() {
       await tester.tap(find.byKey(const Key('audio_max_loop_5')));
       await tester.pumpAndSettle();
       expect(audio.state.maxLoopMinutes, 5);
-    });
-
-    testWidgets('the default length is a chip grid that shuts on a pick', (
-      tester,
-    ) async {
-      await pump(tester, tab: AudioTab.recording);
-      await tester.tap(find.byKey(const Key('audio_default_length_row')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_default_length_2')), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('audio_default_length_2')));
-      await tester.pumpAndSettle();
-      expect(options.state.defaultMultiple, 2);
-      // A pick-one: the question is answered, so the drawer shuts.
-      expect(find.byKey(const Key('audio_default_length_2')), findsNothing);
     });
   });
 
@@ -1116,48 +1076,6 @@ void main() {
       expect(audio.state.phase, ConfigPhase.refused);
       expect(audio.state.requestedRate, 96000);
       expect(find.byKey(const Key('audio_refused_banner')), findsOneWidget);
-    });
-  });
-
-  // -------------------------------------------------------------------- rail
-
-  group('the rail', () {
-    testWidgets('reaches the Audio face', (tester) async {
-      await pump(tester, body: const TrayPanel());
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_tray_panel')), findsOneWidget);
-      // And the rail item that gets you there.
-      expect(
-        find.byKey(const Key('settingsTrayRail_audio')),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('the tab strip swaps the body and the choice survives', (
-      tester,
-    ) async {
-      await pump(tester);
-      final l10n = l10nOf(tester);
-
-      // Two tabs, not three — Status was dissolved into Device.
-      expect(find.byType(PillTabs<AudioTab>), findsOneWidget);
-      expect(
-        tester.widget<PillTabs<AudioTab>>(find.byType(PillTabs<AudioTab>)).tabs,
-        hasLength(2),
-      );
-
-      await tester.tap(find.text(l10n.audioRecordingTab));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('audio_recording_tab')), findsOneWidget);
-      expect(find.byKey(const Key('audio_device_tab')), findsNothing);
-      expect(tray.state.audioTab, AudioTab.recording);
-
-      // Leaving the domain and coming back lands where it was left.
-      tray
-        ..showDestination(SettingsTrayDestination.tuner)
-        ..showDestination(SettingsTrayDestination.audio);
-      await tester.pumpAndSettle();
-      expect(tray.state.audioTab, AudioTab.recording);
     });
   });
 }
