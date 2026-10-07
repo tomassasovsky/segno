@@ -1489,8 +1489,8 @@ void main() {
         ),
       );
 
-      test('a changed named rig is saved to its identity before the target '
-          'is read and applied', () async {
+      test('the target is read first, then a changed named rig is saved to '
+          'its identity, then the target applied', () async {
         stubOpen();
         final cubit = build();
         addTearDown(cubit.close);
@@ -1504,6 +1504,10 @@ void main() {
         await cubit.open('B');
 
         verifyInOrder([
+          () => repository.open(
+            '/root/B',
+            liveSettings: any(named: 'liveSettings'),
+          ),
           () => repository.save(
             '/root/A',
             chains: any(named: 'chains'),
@@ -1511,10 +1515,6 @@ void main() {
             pedalBindings: any(named: 'pedalBindings'),
             name: 'A',
             captureStillValid: any(named: 'captureStillValid'),
-          ),
-          () => repository.open(
-            '/root/B',
-            liveSettings: any(named: 'liveSettings'),
           ),
           () => looper.applySession(any()),
         ]);
@@ -1619,18 +1619,12 @@ void main() {
           expect(cubit.state.status, SessionStatus.failure);
           expect(cubit.state.error, SessionError.saveFailed);
           expect(cubit.state.currentSessionId, 'A');
-          verifyNever(
-            () => repository.open(
-              any(),
-              liveSettings: any(named: 'liveSettings'),
-            ),
-          );
           verifyNever(() => looper.applySession(any()));
         },
       );
 
-      test('a target refused after preservation keeps the saved outgoing '
-          'rig current under its new name', () async {
+      test('a refused target saves nothing, keeps the current session, and '
+          "keeps the player's arms (#1178 Part 4 lows review, 1)", () async {
         stubOpen();
         when(
           () => repository.open(
@@ -1648,13 +1642,24 @@ void main() {
         await cubit.recordBaseline();
         liveFingerprint = 'edited';
 
+        when(() => looper.state).thenReturn(
+          LooperState(
+            tracks: [
+              const Track(state: TrackState.stopped, lengthFrames: 48000),
+              const Track(channel: 1, pending: true),
+              for (var c = 2; c < 8; c++) Track(channel: c),
+            ],
+          ),
+        );
+
         await cubit.open('B');
 
         expect(cubit.state.status, SessionStatus.failure);
         expect(cubit.state.error, SessionError.sampleRateMismatch);
-        expect(cubit.state.currentSessionId, 'new');
-        expect(cubit.state.currentSessionName, 'New loop 3');
-        verifySavedTo('/root/new', name: 'New loop 3').called(1);
+        expect(cubit.state.currentSessionId, isNull);
+        verifyNoSave();
+        verifyNever(() => looper.cancelArm(channel: any(named: 'channel')));
+        verifyNever(looper.cancelCountIn);
         verifyNever(() => looper.applySession(any()));
       });
 
@@ -1729,8 +1734,8 @@ void main() {
         );
 
         for (final capture in [TrackState.recording, TrackState.overdubbing]) {
-          test('a ${capture.name} take is ended, then saved with the rig, '
-              'before the target is read', () async {
+          test('once the target is read, a ${capture.name} take is ended, '
+              'then saved with the rig', () async {
             stubOpen();
             var live = rig(capture);
             when(() => looper.state).thenAnswer((_) => live);
@@ -1756,6 +1761,10 @@ void main() {
             await cubit.open('B');
 
             verifyInOrder([
+              () => repository.open(
+                '/root/B',
+                liveSettings: any(named: 'liveSettings'),
+              ),
               () => looper.stopRecordControl(channel: 1),
               () => repository.save(
                 '/root/A',
@@ -1764,10 +1773,6 @@ void main() {
                 pedalBindings: any(named: 'pedalBindings'),
                 name: 'A',
                 captureStillValid: any(named: 'captureStillValid'),
-              ),
-              () => repository.open(
-                '/root/B',
-                liveSettings: any(named: 'liveSettings'),
               ),
             ]);
             verifyNever(() => looper.stopRecordControl(channel: 0));
@@ -1900,12 +1905,6 @@ void main() {
           expect(cubit.state.error, SessionError.captureInProgress);
           expect(cubit.state.currentSessionId, 'A');
           verifyNoSave();
-          verifyNever(
-            () => repository.open(
-              any(),
-              liveSettings: any(named: 'liveSettings'),
-            ),
-          );
           verifyNever(() => looper.applySession(any()));
         });
       });
