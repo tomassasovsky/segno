@@ -60,6 +60,8 @@ static void test_backing_buffer_and_refusals(void) {
   float peaks[3];
   CHECK(le_backing_buffer_peaks(b, peaks, 3) == 3);
   CHECK(peaks[0] == .25f && peaks[1] == .5f && peaks[2] == .75f);
+  /* A refused build clears *out, so the buffer above is released first. */
+  le_backing_buffer_free(b);
   CHECK(le_backing_buffer_from_pcm(mono, 0, 1, BK_SR, &b) == LE_ERR_INVALID);
   CHECK(b == NULL);
   CHECK(le_backing_buffer_from_pcm(mono, 3, 3, BK_SR, &b) == LE_ERR_INVALID);

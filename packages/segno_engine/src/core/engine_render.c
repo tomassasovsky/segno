@@ -653,12 +653,14 @@ void le_render_tick(le_engine* engine) {
                            memory_order_seq_cst) == NULL) {
     /* A finished job keeps only what its result needs (review M1): a memory
      * job its output, a file job (already published) and a failed job
-     * nothing. Freed once the worker is provably out of the job. */
+     * nothing. Freed once the worker is provably out of the job. Only a
+     * kept output is detached from the sweep: a file job's slice buffer and
+     * a failed job's output are freed with the rest. */
     float* keep = j->state == LE_RENDER_DONE &&
                           j->req.target == LE_RENDER_TARGET_MEMORY
                       ? j->out
                       : NULL;
-    j->out = NULL;
+    if (keep != NULL) j->out = NULL;
     le_render_free_buffers(j);
     j->out = keep;
     j->bytes = keep != NULL ? 2ll * j->frames * (int64_t)sizeof(float) : 0;
