@@ -855,14 +855,6 @@
     "@tunerNoTunableInput": {
         "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
     },
-    "tunerNoDevice": "Sin dispositivo de audio",
-    "@tunerNoDevice": {
-        "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
-    },
-    "trayTunerLabel": "Afinador",
-    "@trayTunerLabel": {
-        "description": "Label for the settings tray's Tuner rail entry."
-    },
     "trayBrightnessLabel": "Brillo",
     "@trayBrightnessLabel": {
         "description": "Label for the settings tray's brightness slider (UI-only this round — not persisted, no real display dimming)."
@@ -2345,6 +2337,28 @@
     "footFadeHoldTime": "Mantener · Tiempo",
     "footFadeFailure": "No se pudo iniciar el Fade. Inténtalo de nuevo.",
     "actionModePeel": "Peel",
+    "actionModeTuner": "Afinador",
+    "footTunerReference": "Referencia A4",
+    "footTunerHzUnit": "Hz",
+    "footTunerInputMuted": "Entrada silenciada",
+    "footTunerInputAudible": "Entrada audible",
+    "footTunerMuteInput": "Silenciar entrada",
+    "footTunerUnmuteInput": "Activar entrada",
+    "footTunerReferenceDown": "Referencia −",
+    "footTunerReferenceUp": "Referencia +",
+    "footTunerHoldReset": "Mantener · {hz} Hz",
+    "footTunerInputs": "Entradas {first}–{last}",
+    "footTunerInputsOne": "Entrada {number}",
+    "footTunerNextInputs": "Siguientes entradas",
+    "footTunerFlat": "Bajo",
+    "footTunerInTune": "Afinado",
+    "footTunerSharp": "Alto",
+    "footTunerCents": "{cents} centésimas",
+    "footTunerPlayOneNote": "Toca una nota",
+    "footTunerSaveFailed": "No se pudieron guardar los ajustes del afinador. Inténtalo de nuevo.",
+    "footTunerStartFailed": "El afinador no pudo iniciarse. Inténtalo de nuevo.",
+    "footTunerAtLimit": "La referencia A4 está en su límite.",
+    "footTunerSeeded": "El afinador está en Personalizado: mantén MODE y luego mantén el pedal 2.",
     "actionOperationPeel": "Peel",
     "footPeelLayers": "Capas",
     "footPeelOriginalOnly": "Solo la original",
