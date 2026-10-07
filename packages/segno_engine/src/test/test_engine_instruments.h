@@ -841,6 +841,57 @@ static void test_midi_routing_remaps(void) {
   le_engine_destroy(e);
 }
 
+/* A message visits only the instruments it can reach: those listening on its
+ * port and channel and those whose remaps admit it. A MIDI-off instrument's
+ * remap stays silent, a remap reaches an instrument on another channel, a
+ * remapped CC 1 strikes instead of modulating, and a controller nobody acts
+ * on changes nothing. */
+static void test_midi_routing_reaches_only_its_instruments(void) {
+  printf("test_midi_routing_reaches_only_its_instruments\n");
+  le_engine* e = ins_engine(INS_SR);
+  le_synth* s = (le_synth*)e->synth;
+  ins_capture c;
+  ins_attach(e, &c, 1);
+  for (int32_t k = 0; k < 3; ++k) {
+    CHECK(le_engine_set_instrument(e, k, syn_patch("keys"), NULL) == LE_OK);
+  }
+  le_inst_routes r;
+  memset(&r, 0, sizeof(r));
+  ins_route(&r, 0, 1, 0);
+  r.inst[0].midi_enabled = 0; /* MIDI off: its remap admits nothing */
+  r.inst[0].remap_count = 1;
+  r.inst[0].remaps[0] = (le_inst_remap){1, 0, LE_INST_REMAP_CC, 20, 1, {60}};
+  ins_route(&r, 1, 1, 3); /* listens on channel 3 only */
+  r.inst[1].remap_count = 2;
+  r.inst[1].remaps[0] = (le_inst_remap){1, 0, LE_INST_REMAP_CC, 20, 1, {62}};
+  r.inst[1].remaps[1] = (le_inst_remap){1, 0, LE_INST_REMAP_CC, 1, 1, {64}};
+  ins_route(&r, 2, 1, 0); /* omni */
+  CHECK(le_engine_set_instrument_routes(e, &r) == LE_OK);
+  ins_run(e, 64, 64, 0, NULL);
+  ins_send(&c, 0xB0, 20, 127); /* channel 1 */
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 0) == 0 && ins_held(e, 1) == 1 && ins_held(e, 2) == 0);
+  ins_send(&c, 0xB0, 1, 127);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 1) == 2 && s->inst[1].mod == 0.0f && s->inst[2].mod == 1.0f);
+  ins_send(&c, 0xB0, 20, 0);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 1) == 1);
+  ins_send(&c, 0xB0, 1, 0);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(ins_held(e, 1) == 0 && s->inst[2].mod == 0.0f);
+  ins_send(&c, 0xB0, 7, 100); /* nobody acts on CC 7 */
+  ins_send(&c, 0xB0, 64, 127);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(s->inst[0].sustain_n == 0 && s->inst[1].sustain_n == 0 &&
+        s->inst[2].sustain_n == 1);
+  CHECK(ins_held(e, 0) == 0 && ins_held(e, 1) == 0 && ins_held(e, 2) == 0);
+  ins_send(&c, 0xB0, 64, 0);
+  ins_run(e, 64, 64, 0, NULL);
+  CHECK(s->inst[2].sustain_n == 0);
+  le_engine_destroy(e);
+}
+
 /* Released notes ring until every contributor lets go; repeated strikes
  * under sustain stay distinct voices; a 17th contributor is refused. */
 static void test_midi_routing_sustain_contributors(void) {
@@ -1278,6 +1329,7 @@ static void run_instrument_tests(void) {
   test_midi_routing_splits_layers_ranges();
   test_midi_routing_note_off_survives_route_edits();
   test_midi_routing_remaps();
+  test_midi_routing_reaches_only_its_instruments();
   test_midi_routing_sustain_contributors();
   test_midi_routing_expression();
   test_midi_routing_overflow_releases_after_queue();

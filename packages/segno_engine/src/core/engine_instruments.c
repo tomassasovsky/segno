@@ -166,12 +166,14 @@ void le_instruments_reset(le_engine* e, int32_t sample_rate) {
   memset(e->inst_remap_index, 0, sizeof(e->inst_remap_index));
   memset(e->inst_remap_insts, 0, sizeof(e->inst_remap_insts));
   memset(e->inst_remap_first, 0, sizeof(e->inst_remap_first));
+  memset(e->inst_listen, 0, sizeof(e->inst_listen));
   store_i32(&e->a_inst_routes_live, 0);
   store_i32(&e->a_inst_routes_seen, 0);
   e->inst_routes_active = &e->inst_routes[0];
   e->inst_remap_active = e->inst_remap_index[0];
   e->inst_remap_insts_active = e->inst_remap_insts[0];
   e->inst_remap_first_active = e->inst_remap_first[0];
+  e->inst_listen_active = e->inst_listen[0];
   memset(e->inst_expr_port, -1, sizeof(e->inst_expr_port));
   atomic_fetch_add_explicit(&e->a_synth_epoch, 1u, memory_order_release);
 }
@@ -396,9 +398,20 @@ LE_EXPORT int32_t le_engine_set_instrument_routes(le_engine* engine,
   uint16_t(*index)[2][128] = engine->inst_remap_index[next];
   uint8_t(*insts)[2][128] = engine->inst_remap_insts[next];
   uint8_t(*first)[LE_MAX_MIDI_PORTS][2][128] = engine->inst_remap_first[next];
+  uint8_t(*listen)[16] = engine->inst_listen[next];
   memset(index, 0, sizeof(engine->inst_remap_index[next]));
   memset(insts, 0, sizeof(engine->inst_remap_insts[next]));
+  memset(listen, 0, sizeof(engine->inst_listen[next]));
   for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+    const le_inst_route* q = &routes->inst[k];
+    /* the callback never visits an instrument whose MIDI is off: its
+     * remaps admit nothing and it listens nowhere */
+    if (!q->midi_enabled) continue;
+    for (int c = 0; c < 16; ++c) {
+      if (q->channel == 0 || q->channel == c + 1) {
+        listen[q->port][c] |= (uint8_t)(1u << k);
+      }
+    }
     for (int m = routes->inst[k].remap_count - 1; m >= 0; --m) {
       const le_inst_remap* x = &routes->inst[k].remaps[m];
       index[x->port][x->kind][x->number] |=
@@ -477,6 +490,7 @@ void le_instruments_midi_begin(le_engine* e) {
   e->inst_remap_active = e->inst_remap_index[live];
   e->inst_remap_insts_active = e->inst_remap_insts[live];
   e->inst_remap_first_active = e->inst_remap_first[live];
+  e->inst_listen_active = e->inst_listen[live];
   /* Release: every read of the previous table (earlier blocks) happens
    * before the control thread may overwrite it. */
   atomic_store_explicit(&e->a_inst_routes_seen, live, memory_order_release);
@@ -558,23 +572,37 @@ void le_instruments_midi_event(le_engine* e, int32_t port,
       (note_on || cc) && (e->inst_remap_active[port][kind][d1] >> ch) & 1u
           ? e->inst_remap_insts_active[port][kind][d1]
           : 0u;
-  for (int k = 0; k < LE_MAX_INSTRUMENTS; ++k) {
+  /* A controller below 64 strikes no remap (a remap found only stops the
+   * ordinary handling), and the ordinary handling acts on CC 1 at any value
+   * and on CC 64 at 64 and up only: with neither, no instrument can do
+   * anything with it, so none is visited. */
+  if (cc && d1 != 1 && (d2 < 64 || (remapped == 0u && d1 != 64))) return;
+  /* which instruments listen to this port and channel; with `remapped`, the
+   * only instruments the message can reach (both hold MIDI-on ones only), so
+   * the rest are never visited. Ascending k, as a scan of every instrument. */
+  const uint32_t listening = e->inst_listen_active[port][ch];
+  /* No held voice of this origin anywhere: no remapped switch can repeat.
+   * Exact for the whole loop: a remap played on instrument k holds voices on
+   * k only, and the per-instrument check below runs whenever this is set. */
+  const int maybe_repeat = cc && remapped != 0u && le_synth_held(s, -1, origin);
+  const uint32_t visit = remapped | listening;
+  for (int k = 0; (visit >> k) != 0u; ++k) {
+    if (!((visit >> k) & 1u) || s->inst[k].patch < 0) continue;
     const le_inst_route* q = &e->inst_routes_active->inst[k];
-    if (!q->midi_enabled || s->inst[k].patch < 0) continue;
     if ((remapped >> k) & 1u) {
       const le_inst_remap* x = find_remap(
           q, e->inst_remap_first_active[k][port][kind][d1], port, ch, kind, d1);
       if (x != NULL) {
         /* a switch-like controller already held on this instrument does not
          * strike again (review L1: only here, never for the others) */
-        const int repeat = cc && le_synth_held(s, k, origin);
+        const int repeat = maybe_repeat && le_synth_held(s, k, origin);
         if ((note_on || d2 >= 64) && !repeat) {
           play_remap(s, k, x, origin, note_on ? d2 : 100);
         }
         continue; /* a remap replaces the ordinary handling (no CC64 sustain) */
       }
     }
-    if (q->port != port || !channel_matches(q->channel, ch)) continue;
+    if (!((listening >> k) & 1u)) continue;
     if (note_on) {
       if (d1 >= q->low && d1 <= q->high) le_synth_note_on(s, k, origin, d1, d2);
     } else if (cc) {
