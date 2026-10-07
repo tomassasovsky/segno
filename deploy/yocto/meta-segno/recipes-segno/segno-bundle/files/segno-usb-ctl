@@ -372,7 +372,8 @@ do_detach() {
 }
 
 # serve_one REQUEST_FILE
-# The outcome is written by editing the record in place (status and eject
+# REQUEST_FILE is a request this run has already taken (see
+# do_serve_requests); it is deleted once read. The outcome is written by editing the record in place (status and eject
 # only), never by reading every field back and re-encoding it: json_get does
 # not undo \u00XX escapes, so a label with a TAB or CR would not survive that
 # round trip.
@@ -411,11 +412,26 @@ serve_one() {
 
 do_serve_requests() {
     mkdir -p "$REQUESTS" "$VOLUMES"
-    # *.json, the same glob as segno-usb-eject.path's PathExistsGlob= (which
-    # skips the app's .<id>.json.tmp dotfiles).
-    for req in "$REQUESTS"/*.json; do
+    # A request taken by a run that was killed before it answered: this run
+    # holds the lock, so no other run is serving it. Serve it now, or the app
+    # waits for an answer that never comes.
+    for req in "$REQUESTS"/.taking-*.json; do
         [ -f "$req" ] || continue
         serve_one "$req"
+    done
+    # *.json, the same glob as segno-usb-eject.path's PathExistsGlob= (which
+    # skips dotfiles: the app's .<id>.json.tmp and the .taking- names below).
+    for req in "$REQUESTS"/*.json; do
+        [ -f "$req" ] || continue
+        # Take the request with one rename before reading it. The app cancels
+        # by deleting <id>.json, so exactly one side wins: the cancel (this
+        # mv finds nothing and the request is skipped), or the take (the
+        # app's delete finds nothing and it reports the eject as going
+        # ahead). Read first and delete after, and a cancel landing in
+        # between succeeds while the drive is unmounted anyway.
+        taken="$REQUESTS/.taking-${req##*/}"
+        mv "$req" "$taken" 9>&- 2>/dev/null || continue
+        serve_one "$taken"
     done
 }
 

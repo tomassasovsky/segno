@@ -121,6 +121,25 @@ void main() {
       );
     });
 
+    test('carries the storage transfer flag it is given, and none by '
+        'default', () {
+      PowerSnapshot read({bool? transfer}) => transfer == null
+          ? powerSnapshotOf(
+              looper: const LooperState(),
+              recorder: const PerformanceRecorderIdle(),
+              session: const SessionState(),
+            )
+          : powerSnapshotOf(
+              looper: const LooperState(),
+              recorder: const PerformanceRecorderIdle(),
+              session: const SessionState(),
+              transferInFlight: transfer,
+            );
+      expect(read().transferInFlight, isFalse);
+      expect(read(transfer: true).transferInFlight, isTrue);
+      expect(read(transfer: true).takeInFlight, isFalse);
+    });
+
     test('maps currentSessionName', () {
       expect(
         powerSnapshotOf(

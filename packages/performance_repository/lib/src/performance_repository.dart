@@ -215,11 +215,6 @@ class PerformanceRepository {
   /// reads Internal capacity through this same call (#1177).
   VolumeSpace? volumeSpace(String path) => _engine.volumeSpace(path);
 
-  /// The engine's directory sync ([AudioEngine.syncDirectory]), handed on so
-  /// the composition root can give the storage repository a durable rename
-  /// without naming the engine.
-  bool syncDirectory(String path) => _engine.syncDirectory(path);
-
   /// The repository-owned capture phase, replaying the current value to a new
   /// listener before live updates (mirrors `LooperRepository.looperState`).
   Stream<PerformanceCaptureStatus> get captureStatus async* {
@@ -309,8 +304,17 @@ class PerformanceRepository {
   /// directly with no cubit-level gate in front of it. Callers observe
   /// the refusal through [captureStatus] never reporting armed (and
   /// [armedDirectory] staying null), not through the return value.
+  ///
+  /// [root] puts this take's bundle under another directory than the
+  /// constructor's `exportsRoot` (a USB volume's `Segno/Performances`, #1177);
+  /// [armedDirectory] stays the truth of where it went. [scope] is where the
+  /// take's `capture` guard is held, so the guard table can refuse an eject
+  /// or a copy on that volume while it records: a removable [root] must come
+  /// with that volume's scope.
   Future<EngineResult> arm({
     PerformanceChains chains = const PerformanceChains(),
+    String? root,
+    GuardScope scope = const GuardScope.internal(),
   }) async {
     if (_armedDir != null || _armInFlight) return EngineResult.ok;
     if (_finalizesInFlight > 0 || !renderProgress.done) return EngineResult.ok;
@@ -318,7 +322,7 @@ class PerformanceRepository {
     final finished = Completer<void>();
     _armFinished = finished;
     try {
-      return await _armGated(chains);
+      return await _armGated(chains, root: root, scope: scope);
     } finally {
       _armInFlight = false;
       _armFinished = null;
@@ -327,15 +331,19 @@ class PerformanceRepository {
   }
 
   /// The body of [arm] past its entry gate; runs with [_armInFlight] held.
-  Future<EngineResult> _armGated(PerformanceChains chains) async {
-    final root = await _exportsRoot();
+  Future<EngineResult> _armGated(
+    PerformanceChains chains, {
+    required String? root,
+    required GuardScope scope,
+  }) async {
+    final under = root ?? await _exportsRoot();
     final base = performanceSlug(_now());
     var slug = base;
-    var dir = '$root/$slug';
+    var dir = '$under/$slug';
     var suffix = 1;
     while (Directory(dir).existsSync()) {
       slug = '$base-$suffix';
-      dir = '$root/$slug';
+      dir = '$under/$slug';
       suffix++;
     }
     await Directory(dir).create(recursive: true);
@@ -390,7 +398,7 @@ class PerformanceRepository {
     try {
       _captureGuard = _guards.enter(
         GuardKind.capture,
-        const GuardScope.internal(),
+        scope,
         purpose: capturePurpose,
       );
     } on GuardRefused catch (refusal) {
@@ -607,15 +615,23 @@ class PerformanceRepository {
       return result;
     }
     // Nothing is capturing from here on: the finalize below is file work
-    // that _finalizesInFlight fences. Released now, so a finalize that throws
-    // cannot leave a device change or a calibration refused behind it.
-    _releaseCaptureGuard();
-
-    await _finalize(
-      dir,
-      armSnapshot: _armSnapshot,
-      disarmSnapshot: disarmSnapshot,
-    );
+    // that _finalizesInFlight fences. On Internal the guard goes now. A take
+    // on a USB drive keeps it through the finalize, which writes its WAVs to
+    // that drive for as long as the take ran: a restart or an eject let in
+    // meanwhile would cut them (#1177). Either way it is released in a
+    // finally, so a finalize that throws leaves nothing refused behind it.
+    if (_captureGuard?.operation.scope.generation == null) {
+      _releaseCaptureGuard();
+    }
+    try {
+      await _finalize(
+        dir,
+        armSnapshot: _armSnapshot,
+        disarmSnapshot: disarmSnapshot,
+      );
+    } finally {
+      _releaseCaptureGuard();
+    }
 
     _armedDir = null;
     _armSnapshot = null;

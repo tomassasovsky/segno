@@ -428,6 +428,20 @@ void main() {
       expect(engine.lastPerfCaptureDir, repo.armedDirectory);
     });
 
+    test('a root puts this take under it, and the next arm without one '
+        'goes back to the exports root (#1177)', () async {
+      final usb = '${tempDir.path}/media/1-SEGNO_USB/Segno/Performances';
+      expect(await repo.arm(root: usb), EngineResult.ok);
+      expect(repo.armedDirectory, '$usb/perf-20260706-143015');
+      expect(Directory(repo.armedDirectory!).existsSync(), isTrue);
+      expect(engine.lastPerfCaptureDir, repo.armedDirectory);
+      await repo.disarmAndFinalize();
+
+      clock = clock.add(const Duration(minutes: 1));
+      expect(await repo.arm(), EngineResult.ok);
+      expect(repo.armedDirectory, startsWith('${tempDir.path}/exports/'));
+    });
+
     test('setFollowOutput forwards the policy to the engine, and the arm '
         "snapshot records the take's policy and destination 0's facts "
         '(slice 3b)', () async {
@@ -2844,6 +2858,60 @@ void main() {
       ))
         op.kind,
     ];
+
+    test('a take on a volume holds its guard there: an eject of that '
+        'volume is refused, one of another is not', () async {
+      await guarded.arm(
+        root: '${tempDir.path}/usb',
+        scope: const GuardScope.removable(3),
+      );
+      expect(guarded.armedDirectory, isNotNull);
+
+      expect(
+        guards.blockers(GuardKind.eject, const GuardScope.removable(3)),
+        [
+          const ActiveOperation(
+            kind: GuardKind.capture,
+            scope: GuardScope.removable(3),
+            purpose: PerformanceRepository.capturePurpose,
+          ),
+        ],
+      );
+      expect(
+        guards.blockers(GuardKind.eject, const GuardScope.removable(4)),
+        isEmpty,
+      );
+      await guarded.disarmAndFinalize();
+    });
+
+    /// What the table holds while the finalize is under way: read as soon
+    /// as the engine has been disarmed, when the finalize is waiting on its
+    /// first file read.
+    Future<List<GuardKind>> activeWhileFinalizing() async {
+      final disarms = engine.perfDisarmCalls;
+      final done = guarded.disarmAndFinalize();
+      while (engine.perfDisarmCalls == disarms) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final kinds = [for (final op in guards.active) op.kind];
+      await done;
+      expect(guards.active, isEmpty);
+      return kinds;
+    }
+
+    test('a take on a drive holds its guard through the finalize, which '
+        'writes to that drive (#1177)', () async {
+      await guarded.arm(
+        root: '${tempDir.path}/usb',
+        scope: const GuardScope.removable(3),
+      );
+      expect(await activeWhileFinalizing(), [GuardKind.capture]);
+    });
+
+    test('a take on Internal lets its guard go before the finalize', () async {
+      await guarded.arm();
+      expect(await activeWhileFinalizing(), isEmpty);
+    });
 
     test('arm is refused at its commit while a device change is in '
         'flight, and says so', () async {

@@ -26,6 +26,7 @@
 #define _GNU_SOURCE 1
 #endif
 
+#include <errno.h> /* EEXIST, ENOENT (test_fs_rename_noreplace) */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9300,27 +9301,6 @@ static int nth_layer_filename_for_test(const char* json, int n, char* out,
  * `df` subprocess, and fork() on the appliance costs the real-time audio thread
  * milliseconds. This is the replacement — a plain question about a directory,
  * with no engine and no child process. */
-/* #1195: a copy's rename is durable only once its directory is synced. */
-static void test_sync_dir(void) {
-  printf("test_sync_dir\n");
-  CHECK(le_sync_dir(NULL) == LE_ERR_INVALID);
-  CHECK(le_sync_dir("") == LE_ERR_INVALID);
-  CHECK(le_sync_dir(".") == LE_OK);
-#if !defined(_WIN32)
-  CHECK(le_sync_dir("/no/such/directory/for/segno") == LE_ERR_DEVICE);
-  /* A file is not a directory: O_DIRECTORY refuses it rather than syncing
-   * the file and claiming the directory was. */
-  char path[] = "segno_sync_dir_probe_XXXXXX";
-  const int fd = mkstemp(path);
-  CHECK(fd >= 0);
-  if (fd >= 0) {
-    close(fd);
-    CHECK(le_sync_dir(path) == LE_ERR_DEVICE);
-    unlink(path);
-  }
-#endif
-}
-
 static void test_volume_space(void) {
   printf("test_volume_space\n");
   uint64_t total = 12345;
@@ -19521,6 +19501,97 @@ static void test_fs_sync_dir(void) {
   CHECK(le_fs_sync_dir(missing) == LE_ERR_DEVICE);
   CHECK(le_fs_sync_dir(NULL) == LE_ERR_INVALID);
   CHECK(le_fs_sync_dir("") == LE_ERR_INVALID);
+  /* A file is not a directory: it is refused, never synced in the
+   * directory's place and reported as if the directory were (#1195). */
+  char file[600];
+  snprintf(file, sizeof(file), "%s/sync_dir_not_a_directory.bin",
+           perf_test_dir());
+  FILE* f = fopen(file, "wb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    fclose(f);
+    CHECK(le_fs_sync_dir(file) == LE_ERR_DEVICE);
+    int32_t err = -1;
+    CHECK(le_fs_sync_dir_errno(file, &err) == LE_ERR_DEVICE);
+    CHECK(err == ENOTDIR);
+    remove(file);
+  }
+  /* The errno variant says why, so a pulled drive can be told from a
+   * failing one (#1177). */
+  int32_t err = -1;
+  CHECK(le_fs_sync_dir_errno(missing, &err) == LE_ERR_DEVICE);
+  CHECK(err == ENOENT);
+  CHECK(le_fs_sync_dir_errno(perf_test_dir(), &err) == LE_OK);
+  CHECK(err == 0);
+  CHECK(le_fs_sync_dir_errno(perf_test_dir(), NULL) == LE_OK);
+  CHECK(le_fs_sync_dir_errno(NULL, &err) == LE_ERR_INVALID);
+}
+
+static void test_fs_rename_noreplace(void) {
+  printf("test_fs_rename_noreplace\n");
+  test_render_mkdir(perf_test_dir());
+  char from[600], to[600], other[600];
+  snprintf(from, sizeof(from), "%s/noreplace_from.bin", perf_test_dir());
+  snprintf(to, sizeof(to), "%s/noreplace_to.bin", perf_test_dir());
+  snprintf(other, sizeof(other), "%s/noreplace_other.bin", perf_test_dir());
+  remove(from);
+  remove(to);
+  remove(other);
+  int32_t err = -1;
+
+  CHECK(le_fs_rename_noreplace(NULL, to, &err) == LE_ERR_INVALID);
+  CHECK(le_fs_rename_noreplace(from, "", &err) == LE_ERR_INVALID);
+  CHECK(le_fs_rename_noreplace(from, to, NULL) == LE_ERR_INVALID);
+
+  FILE* f = fopen(from, "wb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  fputs("new", f);
+  fclose(f);
+
+  const int32_t first = le_fs_rename_noreplace(from, to, &err);
+  if (first == LE_ERR_UNSUPPORTED) {
+    /* The filesystem the tests run on cannot refuse a replacement; the
+     * storage repository falls back to its own claim there. */
+    printf("  (rename without replacement unsupported here)\n");
+    remove(from);
+    return;
+  }
+  CHECK(first == LE_OK);
+  CHECK(err == 0);
+  FILE* moved = fopen(to, "rb");
+  CHECK(moved != NULL);
+  if (moved != NULL) fclose(moved);
+
+  /* A name that is taken is refused with EEXIST, and both files stay as
+   * they were: the one at the name is not replaced. */
+  f = fopen(other, "wb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    fputs("other", f);
+    fclose(f);
+  }
+  CHECK(le_fs_rename_noreplace(other, to, &err) == LE_ERR_DEVICE);
+  CHECK(err == EEXIST);
+  char got[8] = {0};
+  FILE* kept = fopen(to, "rb");
+  CHECK(kept != NULL);
+  if (kept != NULL) {
+    CHECK(fread(got, 1, sizeof(got) - 1, kept) == 3);
+    fclose(kept);
+  }
+  CHECK(strcmp(got, "new") == 0);
+  FILE* still = fopen(other, "rb");
+  CHECK(still != NULL);
+  if (still != NULL) fclose(still);
+
+  /* A missing source is the OS's own error, passed on. */
+  remove(from);
+  CHECK(le_fs_rename_noreplace(from, other, &err) == LE_ERR_DEVICE);
+  CHECK(err == ENOENT);
+
+  remove(to);
+  remove(other);
 }
 
 static const char* render_test_dir(const char* name) {
@@ -34100,10 +34171,10 @@ int main(void) {
   test_monitor_disable_and_excluded();
   test_monitor_and_playback_sum();
   test_volume_space();
-  test_sync_dir();
   test_sha256_known_answers();
   test_digest_file_ranges();
   test_fs_sync_dir();
+  test_fs_rename_noreplace();
   test_perf_arm_requires_configure();
   test_perf_reconfigure_while_armed_resets_cleanly();
   test_perf_arm_rejects_no_enabled_output();

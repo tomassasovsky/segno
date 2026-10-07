@@ -10,6 +10,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno_engine/segno_engine.dart'
     show
+        EngineResult,
         EngineSnapshot,
         LaneSnapshot,
         LatencyState,
@@ -17,6 +18,9 @@ import 'package:segno_engine/segno_engine.dart'
         PerformanceRenderTrackStatus,
         TrackSnapshot,
         TrackState;
+
+import 'package:storage_repository/storage_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -1749,4 +1753,291 @@ void main() {
       expect(cubit.state, const PerformanceRecorderIdle(recovering: true));
     });
   });
+
+  group('recording to a USB drive (#1177)', () {
+    late FakeUsbStorageClient client;
+    late StorageRepository storage;
+    late String mount;
+    late StorageDestination destination;
+
+    RemovableVolumeRecord usb(int generation) => RemovableVolumeRecord(
+      generation: generation,
+      kname: 'sda1',
+      fingerprint: 'SanDisk_Ultra_4C530001-1A2B-3C4D',
+      label: 'SEGNO USB',
+      fsType: 'exfat',
+      mountPoint: mount,
+      sizeBytes: 32000000000,
+      status: RemovableVolumeRecordStatus.mounted,
+      readOnly: false,
+      writeBytesPerSecond: 16777216,
+    );
+
+    setUp(() async {
+      mount = '${tempDir.path}/media/1-SEGNO_USB';
+      Directory(mount).createSync(recursive: true);
+      destination = const StorageDestination.removable(1);
+      client = FakeUsbStorageClient(initial: [usb(1)]);
+      storage = StorageRepository(
+        guards: GuardRegistry(),
+        client: client,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        volumeSpace: (_) => null,
+      );
+      await pumpEventQueue();
+    });
+
+    tearDown(() async {
+      await storage.dispose();
+      await client.dispose();
+    });
+
+    PerformanceRecorderCubit buildUsb() => PerformanceRecorderCubit(
+      performance: performance,
+      armedTickInterval: const Duration(milliseconds: 10),
+      renderPollInterval: const Duration(milliseconds: 10),
+      now: () => clock,
+      freeSpaceBytes: (_) async => null,
+      storage: storage,
+      destination: () => destination,
+    );
+
+    /// [waitForCompleted] with room for a loaded machine: the finalize and
+    /// render here do real file work.
+    Future<PerformanceRecorderCompleted> completedWithin(
+      PerformanceRecorderCubit cubit,
+    ) async {
+      final state = cubit.state;
+      if (state is PerformanceRecorderCompleted) return state;
+      return cubit.stream
+          .firstWhere((s) => s is PerformanceRecorderCompleted)
+          .timeout(const Duration(seconds: 30))
+          .then((s) => s as PerformanceRecorderCompleted);
+    }
+
+    void seedLog(String dir) {
+      File('$dir/events.log').writeAsBytesSync(
+        (BytesBuilder()
+              ..add(_eventLogHeader())
+              ..add(_eventLogEntry()))
+            .toBytes(),
+      );
+      writeManifest(dir, finalized: false);
+    }
+
+    test('a take arms on the drive under a recording lease, and the armed '
+        'readout names the drive', () async {
+      final cubit = buildUsb();
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      expect(
+        performance.armedDirectory,
+        '$mount/Segno/Performances/perf-20260706-143015',
+      );
+      expect(storage.leasesOn(destination), [
+        WriteLease(target: destination, purpose: WritePurpose.recording),
+      ]);
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderArmed>().having(
+          (s) => s.volumeLabel,
+          'volumeLabel',
+          'SEGNO USB',
+        ),
+      );
+      await performance.disarmAndFinalize();
+    });
+
+    test('pulling the drive ends the take as volumeLost, once, and frees '
+        'the drive; the next take defaults back to Internal', () async {
+      final cubit = buildUsb();
+      addTearDown(cubit.close);
+      final finalizing = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(finalizing.add);
+      addTearDown(sub.cancel);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      seedLog(performance.armedDirectory!);
+
+      client.detach(1);
+      final completed = await completedWithin(cubit);
+
+      expect(
+        completed.result,
+        isA<PerformanceRecordStoppedEarly>().having(
+          (r) => r.reason,
+          'reason',
+          PerformanceStopReason.volumeLost,
+        ),
+      );
+      expect(
+        finalizing.whereType<PerformanceRecorderFinalizing>(),
+        hasLength(1),
+        reason: 'one stop',
+      );
+      expect(storage.leases, isEmpty);
+
+      destination = const StorageDestination.internal();
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      expect(performance.armedDirectory, startsWith('${tempDir.path}/exports'));
+      await performance.disarmAndFinalize();
+    });
+
+    test('a finished take releases the drive', () async {
+      final cubit = buildUsb();
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      seedLog(performance.armedDirectory!);
+      clock = clock.add(const Duration(seconds: 5));
+      await performance.disarmAndFinalize();
+      await completedWithin(cubit);
+
+      expect(storage.leases, isEmpty);
+    });
+
+    test('a chosen drive that is gone at the press refuses the arm and says '
+        'why', () async {
+      final cubit = buildUsb();
+      addTearDown(cubit.close);
+      client.detach(1);
+      await pumpEventQueue();
+
+      await cubit.toggleArm();
+
+      expect(performance.armedDirectory, isNull);
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderIdle>().having(
+          (s) => s.driveUnavailable,
+          'driveUnavailable',
+          isTrue,
+        ),
+      );
+      expect(storage.leases, isEmpty);
+    });
+
+    test('an arm that throws on the drive gives the drive back and says '
+        'why, and a later arm on Internal still works', () async {
+      // A file where the take's directory must go: the bundle cannot be
+      // created, as on a full or read-only-on-error stick.
+      File('$mount/Segno').writeAsStringSync('in the way');
+      final cubit = buildUsb();
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+
+      expect(performance.armedDirectory, isNull);
+      expect(storage.leases, isEmpty);
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderIdle>().having(
+          (s) => s.driveUnavailable,
+          'driveUnavailable',
+          isTrue,
+        ),
+      );
+
+      destination = const StorageDestination.internal();
+      await cubit.toggleArm();
+      expect(performance.armedDirectory, startsWith('${tempDir.path}/exports'));
+      await performance.disarmAndFinalize();
+    });
+
+    test('a take that started on the drive but failed a later arm step '
+        'keeps its lease, names the drive, and ends as volumeLost when the '
+        'drive goes', () async {
+      engine = _SnapshotBlockingEngine();
+      final blocked = PerformanceRepository(
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(blocked.dispose);
+      final cubit = PerformanceRecorderCubit(
+        performance: blocked,
+        armedTickInterval: const Duration(milliseconds: 10),
+        renderPollInterval: const Duration(milliseconds: 10),
+        now: () => clock,
+        freeSpaceBytes: (_) async => null,
+        storage: storage,
+        destination: () => destination,
+      );
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      expect(blocked.armedDirectory, isNotNull, reason: 'the take is live');
+      expect(storage.leasesOn(destination), [
+        WriteLease(target: destination, purpose: WritePurpose.recording),
+      ]);
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderArmed>().having(
+          (s) => s.volumeLabel,
+          'volumeLabel',
+          'SEGNO USB',
+        ),
+      );
+
+      seedLog(blocked.armedDirectory!);
+      client.detach(1);
+      final completed = await completedWithin(cubit);
+      expect(
+        completed.result,
+        isA<PerformanceRecordStoppedEarly>().having(
+          (r) => r.reason,
+          'reason',
+          PerformanceStopReason.volumeLost,
+        ),
+      );
+    });
+
+    test('an arm refused at its commit gives the drive back', () async {
+      final guards = GuardRegistry();
+      final guarded = PerformanceRepository(
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+        guards: guards,
+      );
+      addTearDown(guarded.dispose);
+      final cubit = PerformanceRecorderCubit(
+        performance: guarded,
+        freeSpaceBytes: (_) async => null,
+        storage: storage,
+        destination: () => destination,
+      );
+      addTearDown(cubit.close);
+      final apply = guards.enter(
+        GuardKind.sessionApply,
+        const GuardScope.internal(),
+        purpose: 'opening a session',
+      );
+      addTearDown(apply.release);
+
+      await cubit.toggleArm();
+
+      expect(guarded.armedDirectory, isNull);
+      expect(storage.leases, isEmpty);
+    });
+  });
+}
+
+/// Starts the take, then makes the arm snapshot unpublishable: a directory
+/// stands where its pending file must be written.
+class _SnapshotBlockingEngine extends FakeAudioEngine {
+  @override
+  EngineResult perfArm(String captureDir) {
+    Directory('$captureDir/arm-snapshot.json.pending').createSync();
+    return super.perfArm(captureDir);
+  }
 }

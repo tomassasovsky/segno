@@ -35,9 +35,10 @@ final class EjectSafeToRemove extends EjectOutcome {
 
 /// The eject did not happen. [reason] is the helper's (`busy` when the
 /// kernel refused because something outside the app holds the volume,
-/// `error` for any other unmount failure), `timeout` when the helper did not
-/// answer in time (the request is withdrawn), or `removed` when the drive was
-/// pulled first.
+/// `error` for any other unmount failure), `timeout` when the helper never
+/// took the request (it is withdrawn), `stillEjecting` when the helper took
+/// it and has not answered (the drive stays `ejecting` until it does or is
+/// pulled), or `removed` when the drive was pulled first.
 final class EjectFailed extends EjectOutcome {
   /// Creates an [EjectFailed] with [reason].
   const EjectFailed(this.reason);
@@ -68,5 +69,5 @@ class EjectRefused implements Exception {
 
   @override
   String toString() =>
-      'EjectRefused(${holders.map((lease) => lease.purpose).join(', ')})';
+      'EjectRefused(${holders.map((lease) => lease.purpose.name).join(', ')})';
 }

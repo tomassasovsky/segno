@@ -26,16 +26,6 @@ abstract interface class ConsoleFactsClient {
   /// measured rather than a model of what the delete should have done.
   Future<int> deleteCapturesOlderThan(int days);
 
-  /// The mounted volume everything can be exported to, or an empty string
-  /// when there is nowhere to export.
-  ///
-  /// Nowhere to export is a fact about the rig, not a failure: the row says
-  /// so and stops being tappable, rather than failing under a finger.
-  Future<String> exportDestination();
-
-  /// Copies sessions, takes and captures to [destination].
-  Future<void> exportEverything(String destination);
-
   /// How many devices an earlier build paired over Bluetooth, from the
   /// pairings it kept on the data volume, or 0 when there are none or the
   /// build cannot tell.

@@ -8,6 +8,7 @@ import 'package:daw_export/daw_export.dart';
 import 'package:equatable/equatable.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 part 'performance_recorder_state.dart';
 
@@ -66,6 +67,14 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// Defaults to the empty snapshot (what every call site passed before this
   /// was wired); the composition root (`lib/app/view/app.dart`) supplies
   /// `performanceChainsFromLooper` over the live `LooperRepository`.
+  ///
+  /// [storage] and [destination] are where a take may go (#1177 Part 6):
+  /// [destination] is read at each arm (the recorder's `Save to`), and a take
+  /// on a USB drive holds a `recording` lease on it from the arm until it is
+  /// finalized, so the drive cannot be ejected under it; the lease failing
+  /// (the drive pulled) ends the take as [PerformanceStopReason.volumeLost].
+  /// Without [storage] every take goes to Internal. A pedal arm reaches the
+  /// repository directly and records to Internal.
   PerformanceRecorderCubit({
     required PerformanceRepository performance,
     Duration armedTickInterval = const Duration(milliseconds: 250),
@@ -74,7 +83,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     Future<int?> Function(String path)? freeSpaceBytes,
     PerformanceChains Function() currentChains = _noChains,
     bool Function() takeLocked = _neverLocked,
+    StorageRepository? storage,
+    StorageDestination Function() destination = _internal,
   }) : _performance = performance,
+       _storage = storage,
+       _destination = destination,
        _armedTickInterval = armedTickInterval,
        _renderPollInterval = renderPollInterval,
        _now = now,
@@ -93,6 +106,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   static PerformanceChains _noChains() => const PerformanceChains();
 
   static bool _neverLocked() => false;
+
+  static StorageDestination _internal() => const StorageDestination.internal();
+
+  /// Where a take on a USB drive goes on it, as the Library lays a drive out.
+  static const String usbPerformancesDirectory = 'Segno/Performances';
 
   /// Below this, [PerformanceRecorderArmed.lowDiskWarning] is set (D-FAIL),
   /// and an arm is refused outright rather than started onto a volume that is
@@ -138,6 +156,13 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   final Future<int?> Function(String path) _freeSpaceBytes;
   final PerformanceChains Function() _currentChains;
   final bool Function() _takeLocked;
+  final StorageRepository? _storage;
+  final StorageDestination Function() _destination;
+
+  /// The `recording` lease a take on a USB drive holds, and that drive's
+  /// label for the armed readout.
+  HeldLease? _lease;
+  String? _leaseLabel;
 
   /// How often [PerformanceRecorderArmed.elapsed] refreshes while armed.
   final Duration _armedTickInterval;
@@ -310,19 +335,113 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         break;
       case PerformanceRecorderIdle():
       case PerformanceRecorderCompleted():
-        if (await _volumeTooFullToArm()) {
+        final target = _armTarget();
+        if (target == null) {
+          _emit(
+            PerformanceRecorderIdle(
+              driveUnavailable: true,
+              refusal: ++_refusals,
+            ),
+          );
+          return;
+        }
+        if (await _volumeTooFullToArm(target.root)) {
+          _releaseLease();
           _emit(
             PerformanceRecorderIdle(lowDiskBlocked: true, refusal: ++_refusals),
           );
           return;
         }
-        await _performance.arm(chains: _currentChains());
+        try {
+          await _performance.arm(
+            chains: _currentChains(),
+            root: target.root,
+            scope: target.scope,
+          );
+        } on Object {
+          if (_performance.armedDirectory != null) {
+            // The take started and is recording on the drive; only a later
+            // step failed (the arm snapshot could not be published). It keeps
+            // its lease, so the drive cannot be ejected under it and a pull
+            // still ends it as volumeLost; the armed state shows it.
+            if (_lease?.isLost ?? false) {
+              unawaited(_stopEarly(PerformanceStopReason.volumeLost));
+            }
+            return;
+          }
+          // The bundle could not be created on the drive (full, read-only
+          // on error, gone): give the drive back and say so, rather than
+          // leave a lease that blocks eject and shutdown.
+          _releaseLease();
+          if (target.root == null) rethrow;
+          _emit(
+            PerformanceRecorderIdle(
+              driveUnavailable: true,
+              refusal: ++_refusals,
+            ),
+          );
+          return;
+        }
+        if (_performance.armedDirectory == null) {
+          // Refused (a guard, a render in flight) or failed: no take holds
+          // the drive.
+          _releaseLease();
+        } else if (_lease?.isLost ?? false) {
+          // The drive went during the arm's own awaits.
+          unawaited(_stopEarly(PerformanceStopReason.volumeLost));
+        }
       case PerformanceRecorderArmed():
         await _performance.disarm();
       case PerformanceRecorderFinalizing():
       case PerformanceRecorderRendering():
         break;
     }
+  }
+
+  /// Where this arm records, resolved from [_destination]: Internal, or a
+  /// mounted USB drive under a `recording` lease. Null when the chosen drive
+  /// cannot take a recording now (the lease is refused).
+  ({String? root, GuardScope scope})? _armTarget() {
+    // A lease no take holds any more never outlives the next arm.
+    _releaseLease();
+    final destination = _destination();
+    final storage = _storage;
+    if (storage == null || destination is! RemovableDestination) {
+      return (root: null, scope: const GuardScope.internal());
+    }
+    final generation = destination.generation;
+    final volume = storage.current
+        .where((v) => v.generation == generation)
+        .firstOrNull;
+    final mountPoint = volume?.mountPoint;
+    if (volume == null || mountPoint == null) return null;
+    final HeldLease lease;
+    try {
+      lease = storage.acquire(destination, WritePurpose.recording);
+    } on StorageFailure {
+      return null;
+    }
+    _releaseLease();
+    _lease = lease;
+    _leaseLabel = volume.label;
+    unawaited(lease.lost.then((_) => _onLeaseLost(lease)));
+    return (
+      root: '$mountPoint/$usbPerformancesDirectory',
+      scope: GuardScope.removable(generation),
+    );
+  }
+
+  /// The drive under a take went: end the take at what it has.
+  void _onLeaseLost(HeldLease lease) {
+    if (lease != _lease || isClosed) return;
+    if (_performance.armedDirectory == null) return;
+    unawaited(_stopEarly(PerformanceStopReason.volumeLost));
+  }
+
+  void _releaseLease() {
+    _lease?.release();
+    _lease = null;
+    _leaseLabel = null;
   }
 
   /// An arm the guard table refused at its commit, from this cubit's toggle
@@ -384,6 +503,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         // reads the complete total. Without it a glitch in the closing
         // quarter-second finalized as a clean take (#710).
         if (_performance.captureProgress.overrun) _sawOverrun = true;
+        // The take is finalized: the drive is free to eject.
+        _releaseLease();
         unawaited(_afterFinalized());
     }
   }
@@ -404,7 +525,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     // this was published the thread died silently and the capture stayed
     // "armed" forever with its handles open (#652).
     if (progress.selfStopped) {
-      unawaited(_stopForLowDisk());
+      unawaited(_stopEarly(PerformanceStopReason.diskFull));
       return;
     }
     // Latched, not just displayed: the overrun counter lives on the live
@@ -416,6 +537,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         elapsed: progress.elapsed,
         overrun: progress.overrun,
         lowDiskWarning: _lowDiskAtArm,
+        volumeLabel: _leaseLabel,
       ),
     );
   }
@@ -427,10 +549,14 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// refusal, because it costs a bundle directory and a finalize to end up in
   /// the same place. An unanswerable volume (Windows, or `df` failing) arms as
   /// before — this gate only ever acts on a number it actually has.
-  Future<bool> _volumeTooFullToArm() async {
+  Future<bool> _volumeTooFullToArm(String? target) async {
     final String root;
     try {
-      root = await _performance.exportsRoot();
+      // A USB take's directory may not exist yet: its drive's mount point is
+      // the volume measured.
+      root = target == null
+          ? await _performance.exportsRoot()
+          : _mountOf(target);
     } on Object {
       return false; // cannot resolve the root: not this gate's call to block
     }
@@ -459,7 +585,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     // which contains no symlinks. An unreadable directory sizes to 0, falling
     // back to the headroom alone.
     if (free < stopFloorFor(directorySizeBytes(dir))) {
-      await _stopForLowDisk();
+      await _stopEarly(PerformanceStopReason.diskFull);
       return;
     }
     _lowDiskAtArm = free < lowDiskThresholdBytes;
@@ -479,7 +605,12 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// [PerformanceRepository.disarm]: this is not the operator's toggle
   /// gesture, so it must not be swallowed by the double-press guard that path
   /// applies.
-  Future<void> _stopForLowDisk() async {
+  ///
+  /// A third trigger shares it: the USB drive under the take going away
+  /// ([PerformanceStopReason.volumeLost]). Whichever comes first wins; the
+  /// pulled drive also fails the engine's next write, and that second stop
+  /// is the one this guard swallows.
+  Future<void> _stopEarly(PerformanceStopReason reason) async {
     if (_stoppingForDisk) return; // a slow finalize must not re-enter
     _stoppingForDisk = true;
     _armedTicker?.cancel();
@@ -488,9 +619,13 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     // written by perf_drain.c only when IT self-stops on a failed write. This
     // stop happens before any write fails, so the manifest carries no marker
     // and _readStoppedEarly would report a plain success.
-    _stopReason = PerformanceStopReason.diskFull;
+    _stopReason = reason;
     await _performance.disarmAndFinalize();
   }
+
+  /// The mount point a USB take's root is under.
+  static String _mountOf(String root) =>
+      root.substring(0, root.length - usbPerformancesDirectory.length - 1);
 
   Future<void> _afterFinalized() async {
     final dir = _captureDir;
@@ -713,6 +848,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
 
   @override
   Future<void> close() {
+    _releaseLease();
     _armedTicker?.cancel();
     _renderPoller?.cancel();
     _recoveringPoller?.cancel();
