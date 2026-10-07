@@ -1256,6 +1256,15 @@ void main() {
       expect(find.byKey(const Key('fx_param_1')), findsOneWidget);
     });
 
+    testWidgets("carries the track's Solo too", (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_card_t1');
+
+      await tester.tap(find.byKey(const Key('fx_track_solo')));
+      await tester.pump();
+      verify(() => bloc.add(const LooperTrackSoloToggled(0))).called(1);
+    });
+
     testWidgets('draws one control per parameter the effect actually has', (
       tester,
     ) async {
@@ -1390,6 +1399,48 @@ void main() {
 
       /// The chain the last structural write pushed.
       List<TrackEffect> lastChain() => lastTrackWrite();
+
+      testWidgets("the track's Solo sits in the editor's titlebar and toggles "
+          'the same Solo as the Mixer', (tester) async {
+        await pumpRack(tester);
+        await tapKey(tester, 'fx_card_R1');
+
+        final solo = find.byKey(const Key('fx_track_solo'));
+        expect(solo, findsOneWidget);
+        // The pen's place: the left end of the titlebar's row.
+        expect(tester.getTopLeft(solo), const Offset(926, 52 + 96));
+        expect(tester.getSize(solo), const Size(49, 24));
+        await tester.tap(solo);
+        await tester.pump();
+        verify(() => bloc.add(const LooperTrackSoloToggled(0))).called(1);
+      });
+
+      testWidgets('a soloed track reads its Solo as on', (tester) async {
+        final track = _rackRig.tracks.first;
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: LooperState(
+            tracks: [
+              Track(
+                state: TrackState.playing,
+                solo: true,
+                lanes: track.lanes,
+                effects: track.effects,
+              ),
+            ],
+          ),
+        );
+        await tapKey(tester, 'fx_card_R1');
+
+        expect(
+          tester.getSemantics(find.byKey(const Key('fx_track_solo'))),
+          isSemantics(
+            isSelected: true,
+            label: l10nOf(tester).a11yMixerUnsolo(1),
+          ),
+        );
+      });
 
       testWidgets('is ONE card on the chain, named by the rack and saying how '
           'many pedals it holds', (tester) async {

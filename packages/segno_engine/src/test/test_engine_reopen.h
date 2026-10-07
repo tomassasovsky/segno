@@ -746,7 +746,7 @@ static void test_reopen_keeps_peel_history(void) {
   }
   const int32_t kinds[3] = {LE_HIST_LAYER, LE_HIST_PEEL, LE_HIST_PEEL};
   const int32_t skipped[3] = {0, 0, 1};
-  CHECK(le_engine_finalize_history(e, 1, kinds, skipped, 3, 2) == LE_OK);
+  CHECK(finalize_uniform(e, 1, kinds, skipped, 3, 2, LOOP_N) == LE_OK);
   CHECK(e->tracks[1].undo_count == 2 && e->tracks[1].redo_count == 1 &&
         e->tracks[1].redo_stack[0].slot == -1);
   int32_t mask;
@@ -782,6 +782,92 @@ static void test_reopen_keeps_peel_history(void) {
   CHECK(t1->undo_count == 0 && t1->redo_count == 0);
   CHECK(le_engine_peel(e, 1) == LE_ERR_INVALID);
   CHECK(le_engine_redo(e, 1) == LE_ERR_INVALID);
+  le_engine_destroy(e);
+}
+
+/* #1168 Part 2: length edits are material. A retained track keeps its LENGTH
+ * entries with their lengths and playhead maps (Undo restores the original
+ * length, Redo re-applies the edit); a track whose edit was posted but never
+ * applied at the loss is dropped alone, reported in the mask, and its pinned
+ * slot goes with its material. */
+static void test_reopen_keeps_length_history(void) {
+  printf("test_reopen_keeps_length_history\n");
+  le_engine* e = make_configured_engine();
+  CHECK(le_engine_set_sync_tempo(e, 0) == LE_OK);
+  drain(e);
+  float out[64];
+  const float pcm[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_seq(e, pcm, 8, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  uint64_t id = 0;
+  CHECK(le_engine_edit_length(e, 0, LE_LENGTH_DOUBLE, &id) == LE_OK);
+  drain(e);
+  CHECK(le_engine_edit_length(e, 0, LE_LENGTH_LAST_HALF, &id) == LE_OK);
+  drain(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s); /* files the Undo */
+  const le_track* t = &e->tracks[0];
+  CHECK(t->undo_count == 1 && t->redo_count == 1);
+  const le_hist_entry undo = t->undo_stack[0];
+  const le_hist_entry redo = t->redo_stack[0];
+  CHECK(undo.kind == LE_HIST_LENGTH && undo.len == 8);
+  CHECK(redo.kind == LE_HIST_LENGTH && redo.len == 8 && redo.start == 8);
+  CHECK(reopen_same(e) == LE_REOPEN_RETAINED);
+  CHECK(t->undo_count == 1 && t->redo_count == 1);
+  CHECK(memcmp(&t->undo_stack[0], &undo, sizeof(undo)) == 0);
+  CHECK(memcmp(&t->redo_stack[0], &redo, sizeof(redo)) == 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].length_frames == 16 && s.master_length_frames == 16);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_frames == 8 && s.master_length_frames == 8);
+  reopen_check_track_pcm(e, 0, 0, pcm, 8);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_frames == 8 && s.tracks[0].undo_depth == 0);
+  reopen_check_track_pcm(e, 0, 0, pcm, 8);
+  le_engine_destroy(e);
+
+  /* The edit posted, the device lost before it applied. */
+  e = make_configured_engine();
+  CHECK(le_engine_set_sync_tempo(e, 0) == LE_OK);
+  drain(e);
+  record_base_loop(e, 1.0f);
+  reopen_align_head(e);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 2.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  t = &e->tracks[1];
+  CHECK(le_engine_edit_length(e, 1, LE_LENGTH_DOUBLE, &id) == LE_OK);
+  CHECK(t->length_pending != 0 && t->outstanding_count >= 1);
+  int32_t mask;
+  CHECK(reopen_same_mask(e, &mask) == LE_REOPEN_RETAINED_PARTIAL);
+  CHECK(mask == 0x2);
+  CHECK(t->length_pending == 0 && t->outstanding_count == 0);
+  CHECK(t->undo_count == 0 && t->redo_count == 0);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY && s.tracks[1].length_frames == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  reopen_check_const(e, 0, 1.0f, LOOP_N);
+  /* Nothing on the dropped track waits any more: a new take records. */
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  reopen_align_head(e);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 3.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].length_frames == LOOP_N);
   le_engine_destroy(e);
 }
 

@@ -124,6 +124,8 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->head_rate_milli = load_i32(&tr->a_head_rate_milli); /* #1179 */
   out->transpose_st = load_i32(&tr->a_transpose_st);
   out->transpose_effective_st = load_i32(&tr->a_transpose_eff);
+  out->length_history_refusals = atomic_load_explicit(
+      &tr->a_length_history_refusals, memory_order_relaxed); /* #1168 */
   /* Timing fields are filled below from one coherent callback tuple. */
   /* The caller fills timing from one coherent family tuple. */
   out->overdub_feedback_override = load_f32(&tr->a_overdub_fb_bits);
@@ -459,6 +461,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->quantize_div = timing.remembered_division;
   out->tempo_source = load_i32(&engine->a_tempo_source);
   out->loop_bars = load_i32(&engine->a_loop_bars);
+  out->loop_beats = load_i32(&engine->a_loop_beats); /* #1168 */
   out->current_beat = load_i32(&engine->a_current_beat);
   /* Click + count-in (trailing block; click-off defaults read 0/0/1/0/0/0). */
   /* A command receipt is sampled only after commands_settled acquired the
@@ -601,6 +604,7 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->clear_restore = 0;
     out->redo_depth = 0;
     out->peel_depth = 0;
+    out->length_history_refusals = 0;
     out->rms = 0.0f;
     out->peak = 0.0f;
     out->input_mask = 0x1u;

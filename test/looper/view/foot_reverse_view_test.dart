@@ -220,6 +220,12 @@ void main() {
             pending: true,
           ),
           Track(channel: 2, state: TrackState.playing, lengthFrames: 48000),
+          Track(
+            channel: 3,
+            state: TrackState.playing,
+            lengthFrames: 48000,
+            reversed: true,
+          ),
         ],
       ),
     );
@@ -259,6 +265,17 @@ void main() {
       pedalSemantics(tester, PedalButton.track2).properties.selected,
       isTrue,
     );
+    // Its direction line loses the highlight a settled reversed track has
+    // (#1209 delta review, D1).
+    Color? detailColor(PedalButton button) => tester
+        .widget<Text>(
+          find.descendant(of: pedal(button), matching: find.text('Reverse')),
+        )
+        .style
+        ?.color;
+    final surface = tester.element(pedal(PedalButton.track2)).surface;
+    expect(detailColor(PedalButton.track2), surface.textSecondary);
+    expect(detailColor(PedalButton.track4), surface.textPrimary);
     for (final button in [PedalButton.track1, PedalButton.track2]) {
       expect(pedalSemantics(tester, button).properties.enabled, isTrue);
       await tester.tap(pedal(button));

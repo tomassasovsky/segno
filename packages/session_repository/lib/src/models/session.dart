@@ -41,10 +41,12 @@ class SessionLayer {
 ///
 /// [history] is the track's audio history (schema v12, #1164): the
 /// [undoCount] undo entries oldest first, then the [redoCount] redo entries
-/// newest-adjacent first, each with its kind. [layers] holds the images they
-/// name oldest→newest: one per undo entry, the live buffer at
-/// `layers[liveIndex]` (== [undoCount]), then one per redo entry except a
-/// Peel marker, which holds no image ([TrackHistory.imageCount]).
+/// newest-adjacent first, each with its kind and, for a length edit (schema
+/// v14, #1168), its playhead map. [layers] holds the images they name
+/// oldest→newest: one per undo entry, the live buffer at `layers[liveIndex]`
+/// (== [undoCount]), then one per redo entry except a Peel marker, which
+/// holds no image ([TrackHistory.imageCount]). A length edit's images differ
+/// in length from the live one ([TrackHistory.lengthMalformation]).
 @immutable
 class SessionLane {
   /// Creates a [SessionLane].
@@ -151,7 +153,11 @@ class SessionLane {
     if (balance != 1) 'balance': balance,
     'history': [
       for (final e in history.entries)
-        {'kind': e.kind.name, 'skipped': e.skipped},
+        {
+          'kind': e.kind.name,
+          'skipped': e.skipped,
+          if (e.kind == HistoryKind.length || e.start != 0) 'start': e.start,
+        },
     ],
     'undoCount': undoCount,
     'redoCount': redoCount,
@@ -245,10 +251,12 @@ class SessionTrack {
   /// Track channel index.
   final int channel;
 
-  /// Track length in whole base loops (`>= 1`).
+  /// Track length in whole base loops (`>= 1`); `1` for a Sync division.
   final int multiple;
 
-  /// Captured length in frames (`multiple` × the base length).
+  /// Captured length in frames: [multiple] × the base length, or base/2 or
+  /// base/4 for a Sync division (#1168). Informational: recall takes each
+  /// image's length from its WAV.
   final int lengthFrames;
 
   /// Captured Fade coefficient, recalled as a stationary amount.
@@ -698,7 +706,8 @@ class SessionOutputSetup {
 }
 
 /// A saved Segno session, paired with per-lane, per-layer WAV files in a
-/// `.segno` bundle directory. Only the current schema 12 is accepted.
+/// `.segno` bundle directory. Only the current schema 14 is accepted; older
+/// ones convert first.
 ///
 /// Track settings are session-level maps, independent of audio entries.
 /// Missing entries inherit the session default; explicit values, including
@@ -728,6 +737,7 @@ class Session {
     this.tsDen = 4,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    int? loopBeats,
     this.recordTiming = RecordTiming.immediately,
     this.overdubDecay = 0,
     this.clickMode = ClickMode.off,
@@ -756,7 +766,7 @@ class Session {
     this.pedalBindings = '',
     this.inputSetup = const SessionInputSetup(),
     this.outputSetup = const SessionOutputSetup(),
-  });
+  }) : loopBeats = loopBeats ?? loopBars * tsNum;
 
   /// Projects a [Session] from a decoded JSON map.
   ///
@@ -802,6 +812,7 @@ class Session {
       tsDen: (json['tsDen'] as num).toInt(),
       quantizeDiv: _readEnum(json['quantizeDiv'], GridDivision.values),
       loopBars: (json['loopBars'] as num).toInt(),
+      loopBeats: (json['loopBeats'] as num).toInt(),
       recordTiming: _readEnum(json['recordTiming'], RecordTiming.values),
       overdubDecay: (json['overdubDecay'] as num).toInt(),
       clickMode: _readEnum(json['clickMode'], ClickMode.values),
@@ -859,8 +870,10 @@ class Session {
   }
 
   /// The current manifest schema stores per-track settings (including each
-  /// track's playback direction since 13) and all FX stages.
-  static const int formatVersion = 13;
+  /// track's playback direction since 13), all FX stages, and since 14
+  /// (#1168) length edits in a lane's history with their playhead maps
+  /// (`start`) and the grid in beats (`loopBeats`).
+  static const int formatVersion = 14;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -924,8 +937,16 @@ class Session {
   final GridDivision quantizeDiv;
 
   /// Exact saved relationship between the master loop and the musical grid.
-  /// Zero preserves an intentionally grid-free loop.
+  /// Zero preserves an intentionally grid-free loop, or one whose beats do
+  /// not make whole bars ([loopBeats]).
   final int loopBars;
+
+  /// The same grid in beats (denominator notes), the engine's own count
+  /// (schema 14, #1168): [loopBars] × [tsNum] for a whole-bar loop, or the
+  /// beats a Divide of a sole loop kept (2 for a halved bar of 4/4) with
+  /// [loopBars] zero. Defaults to the bars' beats when constructed without
+  /// it.
+  final int loopBeats;
 
   /// The session's default record timing (accepted design, slice 2b): the
   /// engine's quantize gate and [quantizeDiv] as the one setting they pair
@@ -1118,6 +1139,7 @@ class Session {
     'tsDen': tsDen,
     'quantizeDiv': quantizeDiv.name,
     'loopBars': loopBars,
+    'loopBeats': loopBeats,
     'recordTiming': recordTiming.name,
     'overdubDecay': overdubDecay,
     'clickMode': clickMode.name,
@@ -1183,6 +1205,7 @@ class Session {
           tsDen == other.tsDen &&
           quantizeDiv == other.quantizeDiv &&
           loopBars == other.loopBars &&
+          loopBeats == other.loopBeats &&
           recordTiming == other.recordTiming &&
           overdubDecay == other.overdubDecay &&
           clickMode == other.clickMode &&
@@ -1244,6 +1267,7 @@ class Session {
     tsDen,
     quantizeDiv,
     loopBars,
+    loopBeats,
     recordTiming,
     overdubDecay,
     clickMode,
@@ -1298,12 +1322,24 @@ T _readEnum<T extends Enum>(Object? raw, List<T> values) {
 }
 
 /// Decodes a lane's history entries: each exactly `{kind, skipped}` with a
-/// known kind name and an integer count.
+/// known kind name and an integer count, plus an integer `start` (the
+/// playhead map, #1168) where one is set.
 List<HistoryEntry> _readHistory(Object? raw) {
   if (raw is! List) throw const FormatException('lane history must be a list');
   return [
     for (final entry in raw)
       switch (entry) {
+        {
+          'kind': final String kind,
+          'skipped': final int skipped,
+          'start': final int start,
+        }
+            when entry.length == 3 =>
+          HistoryEntry(
+            _readEnum(kind, HistoryKind.values),
+            skipped: skipped,
+            start: start,
+          ),
         {'kind': final String kind, 'skipped': final int skipped}
             when entry.length == 2 =>
           HistoryEntry(_readEnum(kind, HistoryKind.values), skipped: skipped),

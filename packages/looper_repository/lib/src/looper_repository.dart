@@ -341,6 +341,8 @@ class LooperRepository {
   bool _retrySuperseded = false;
   final _recordRefusals = StreamController<int>.broadcast();
   final _overdubRefusals = StreamController<int>.broadcast();
+  final _lengthHistoryRefusals = StreamController<int>.broadcast();
+  final _lengthHistoryRefusalCounts = <int, int>{};
 
   /// The desired global master output gain (`0..1`), re-applied to the engine
   /// on every successful (re)start so it survives device changes and
@@ -1094,11 +1096,29 @@ class LooperRepository {
     ),
   );
 
+  /// Reports each track whose engine counter of Undo/Redo taps on a length
+  /// edit that did nothing rose since the last snapshot (#1168): refused by
+  /// the callback after it was posted, or queued behind an overdub and
+  /// stopped at the edit. A refusal returned to the tap is reported on
+  /// [recoveryRefusals] instead, never on both. The first read is the
+  /// baseline, and a lower count (a new engine) only resets it.
+  void _noticeLengthHistoryRefusals(EngineSnapshot snapshot) {
+    for (var ch = 0; ch < snapshot.tracks.length; ch++) {
+      final count = snapshot.tracks[ch].lengthHistoryRefusals;
+      final seen = _lengthHistoryRefusalCounts[ch];
+      _lengthHistoryRefusalCounts[ch] = count;
+      if (seen != null && count > seen && !_lengthHistoryRefusals.isClosed) {
+        _lengthHistoryRefusals.add(ch);
+      }
+    }
+  }
+
   EngineSnapshot _snapshotAndSettleImages() {
     // A settled fence may retire an absent image only from a later snapshot.
     // Reading it afterwards can mistake an in-flight join for a cancellation.
     final commandsSettled = _engine.commandsSettled;
     final snapshot = _engine.snapshot();
+    _noticeLengthHistoryRefusals(snapshot);
     for (final entry in _pendingImages.entries.toList()) {
       final ch = entry.key;
       if (ch >= snapshot.tracks.length) continue;
@@ -1456,6 +1476,7 @@ class LooperRepository {
     return TransportState(
       isRunning: _intendRunning,
       loopBars: live?.loopBars ?? 0,
+      loopBeats: live?.loopBeats ?? 0,
       tempoBpm: useLiveTempo ? live.tempoBpm : _tempoBpm,
       tempoSource: useLiveTempo ? live.tempoSource : _tempoSource,
       tsNum: _tsNum,
@@ -2023,6 +2044,22 @@ class LooperRepository {
   Future<EngineResult> toggleReverse({required int channel}) =>
       _requestReceipt(() => _engine.toggleReverse(channel: channel));
 
+  /// Doubles or halves track [channel] as one history entry (#1168).
+  /// Completes with the exact callback outcome; refused before any change
+  /// with [EngineResult.modeMismatch], [EngineResult.capacity],
+  /// [EngineResult.invalid] or [EngineResult.notReady] (also while a
+  /// Session is being applied). [undo] restores the other length; the
+  /// projection's `Track.lengthFrames`, `multiple` and `syncDivisor` follow.
+  Future<EngineResult> editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) {
+    if (_sessionAudioReserved) return Future.value(EngineResult.notReady);
+    return _requestReceipt(
+      () => _engine.editLength(channel: channel, edit: edit),
+    );
+  }
+
   /// Installs an explicit direction (Session recall, before the commit).
   Future<EngineResult> installReverse({
     required int channel,
@@ -2272,6 +2309,7 @@ class LooperRepository {
       syncTempo: s.syncTempo,
       quantizeDiv: s.quantizeDiv,
       loopBars: s.loopBars,
+      loopBeats: s.loopBeats,
       currentBeat: s.currentBeat,
       // Raw mode may change before the callback publishes its command fence.
       // Every repository consumer observes the same receipt-confirmed choice.
@@ -2346,6 +2384,7 @@ class LooperRepository {
               oneShot: _oneShot.live.effective(i),
               oneShotOverride: _oneShot.live.overrides[i],
               multiple: s.tracks[i].multiple,
+              syncDivisor: s.tracks[i].syncDivisor,
               inputMask: s.tracks[i].inputMask,
               outputMask: s.tracks[i].outputMask,
               lanes: [
@@ -3839,7 +3878,10 @@ class LooperRepository {
     }
     final mix = MixSettingsSnapshot.fromRig(rig);
     if (!mix.isValid) throw StateError('session mix cannot be restored');
-    if (rig.loopBars < 0 || rig.loopBars > 0x7fffffff ~/ 15) {
+    if (rig.loopBars < 0 ||
+        rig.loopBars > 0x7fffffff ~/ 15 ||
+        rig.gridBeats < 0 ||
+        rig.gridBeats > 0x7fffffff ~/ 15) {
       throw StateError('session grid cannot be restored');
     }
     if (!rig.tempoBpm.isFinite ||
@@ -4416,11 +4458,13 @@ class LooperRepository {
             }
           }
         }
-        // The history is track-wide (shared across lanes) — take lane 0's.
+        // The history is track-wide (shared across lanes) — take lane 0's,
+        // with its images' lengths, which a length edit makes differ (#1168).
         final primary = track.lanes.first;
         final finalized = _engine.finalizeHistory(
           track.channel,
           primary.history,
+          imageLengths: [for (final pcm in primary.layers) pcm.length],
         );
         if (!finalized.isOk) {
           throw StateError(
@@ -4481,7 +4525,7 @@ class LooperRepository {
       if (rig.tracks.isNotEmpty && rig.baseLengthFrames > 0) {
         final committed = _engine.commitSession(
           rig.baseLengthFrames,
-          loopBars: rig.loopBars,
+          loopBeats: rig.gridBeats,
         );
         if (!committed.isOk) {
           throw StateError('failed to commit the session: ${committed.name}');
@@ -7501,6 +7545,13 @@ class LooperRepository {
   /// unavailable while a track plays reversed, from any surface.
   Stream<int> get overdubRefusals => _overdubRefusals.stream;
 
+  /// Undo or Redo taps on a track's length edit that did nothing (the
+  /// channel), from any surface (#1168), that their own result could not
+  /// report: the callback refused a posted tap because the length no longer
+  /// fits the rig, or taps queued behind an overdub stopped at the edit. A
+  /// tap refused on the spot goes to [recoveryRefusals] only.
+  Stream<int> get lengthHistoryRefusals => _lengthHistoryRefusals.stream;
+
   /// Whether a Record press on [channel] the engine refused is still waiting
   /// for its one retry — the press counts as accepted until it resolves.
   bool recordRetryPending(int channel) => _recordRetry?.channel == channel;
@@ -8028,6 +8079,7 @@ class LooperRepository {
     await _recordingInputRequired.close();
     await _recordRefusals.close();
     await _overdubRefusals.close();
+    await _lengthHistoryRefusals.close();
     await _mixSettingsFailures.close();
     await _mix.dispose();
     await _controller.close();

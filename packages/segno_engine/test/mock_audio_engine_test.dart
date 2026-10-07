@@ -110,14 +110,34 @@ void main() {
       expect(before.tracks.first.peelDepth, 0);
     });
 
+    test('a length edit is refused: the mock keeps no material', () {
+      expect(
+        engine.editLength(channel: 0, edit: LengthEdit.doubled),
+        (result: EngineResult.notRunning, request: 0),
+      );
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      for (final edit in LengthEdit.values) {
+        expect(
+          engine.editLength(channel: 0, edit: edit),
+          (result: EngineResult.invalid, request: 0),
+        );
+      }
+    });
+
     test('keeps no history to export; finalize needs a running engine', () {
       const history = TrackHistory([
         HistoryEntry(HistoryKind.layer),
       ], undoCount: 1);
       expect(engine.exportHistory(0), TrackHistory.none);
-      expect(engine.finalizeHistory(0, history), EngineResult.notRunning);
+      expect(
+        engine.finalizeHistory(0, history, imageLengths: const [8, 8]),
+        EngineResult.notRunning,
+      );
       expect(engine.start(engine.defaultConfig), EngineResult.ok);
-      expect(engine.finalizeHistory(0, history), EngineResult.ok);
+      expect(
+        engine.finalizeHistory(0, history, imageLengths: const [8, 8]),
+        EngineResult.ok,
+      );
       expect(engine.exportHistory(0), TrackHistory.none);
     });
 

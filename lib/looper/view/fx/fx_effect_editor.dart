@@ -69,6 +69,13 @@ class FxEffectEditor extends StatelessWidget {
         onBack: onBack,
         onStage: onStage,
         children: [
+          // The Track Solo chip keeps the rack editor's distance ahead of the
+          // bypass (the pen draws it on the rack editor only).
+          Positioned(
+            left: 1130,
+            top: 52,
+            child: FxTrackSolo(destination: destination),
+          ),
           Positioned(
             // Right-aligned inside the titlebar as the pen draws it. The
             // effect's pedal assignment sits ahead of these three there; it

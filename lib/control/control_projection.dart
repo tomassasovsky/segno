@@ -15,6 +15,7 @@ import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/invariants.dart';
 import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/control/model/foot_fx.dart';
+import 'package:segno/control/model/foot_length.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/control/model/foot_reverse.dart';
@@ -117,6 +118,13 @@ PedalTrackLed projectTrackLed(
       // The track switches pick inputs here, not tracks: their light is the
       // switch light alone (`tunerStates`).
       return PedalTrackLed.off;
+    case InteractionMode.multiply:
+    case InteractionMode.divide:
+      // Red on the selected recorded track, the one every edit acts on (the
+      // Record-mode cursor convention); an empty track is never selected.
+      return (channel == overlay.cursor && track != null && track.hasContent)
+          ? PedalTrackLed.red
+          : PedalTrackLed.off;
     case InteractionMode.custom:
       return customFunctions[channel] ?? false
           ? PedalTrackLed.blue
@@ -225,6 +233,7 @@ PedalStateFrame projectFrame(
       InteractionMode.reverse ||
       InteractionMode.peel ||
       InteractionMode.tuner => PedalMode.custom,
+      InteractionMode.multiply || InteractionMode.divide => PedalMode.custom,
     },
     loopLengthMicros: lengthMicros.clamp(
       0,
@@ -352,12 +361,14 @@ const ledBankB = PedalColor(0, 0, 80);
 const PedalColor ledWhite = PedalColor.defaultColor;
 
 /// Whether [button] is a slot-less pedal on a hold-less performance surface
-/// (Fade, Reverse, Peel).
+/// (Fade, Reverse, Peel, Multiply / Divide).
 bool _slotless(InteractionMode mode, PedalButton button) => switch (mode) {
   InteractionMode.fade => FootFadeProjection.pedalRoles[button]!.slot == null,
   InteractionMode.reverse =>
     FootReverseProjection.pedalRoles[button]!.slot == null,
   InteractionMode.peel => FootPeelProjection.pedalRoles[button]!.slot == null,
+  InteractionMode.multiply || InteractionMode.divide =>
+    FootLengthProjection.rolesFor(mode)[button]!.slot == null,
   _ => false,
 };
 

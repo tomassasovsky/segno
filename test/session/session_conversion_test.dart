@@ -105,6 +105,7 @@ void main() {
     'v11_trunk_5c163d11f',
     'v12_peel_097e1ef68',
     'v13_reverse_576826cfa',
+    'v14_length_1168',
   ]) {
     test('$name maps to a valid rig', () async {
       final opened = await SessionRepository(
@@ -115,7 +116,7 @@ void main() {
       expect(MixSettingsSnapshot.fromRig(rig).isValid, isTrue);
       expect(
         opened.conversion?.fromVersion,
-        name.startsWith('v13') ? isNull : isNotNull,
+        name.startsWith('v14') ? isNull : isNotNull,
       );
     });
   }
