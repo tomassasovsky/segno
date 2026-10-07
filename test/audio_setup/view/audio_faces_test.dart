@@ -887,6 +887,7 @@ void main() {
     ) async {
       await pump(tester);
       expect(find.byKey(const Key('audio_max_loop_row')), findsOneWidget);
+      expect(find.text(l10nOf(tester).maxLoopDefault1m), findsOneWidget);
       expect(find.byKey(const Key('audio_max_loop_0')), findsNothing);
       expect(find.byKey(const Key('audio_default_length_row')), findsNothing);
     });

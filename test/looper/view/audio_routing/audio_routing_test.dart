@@ -384,6 +384,21 @@ void main() {
     expect(cardSelected(tester, 1), isTrue);
     expect(cardSelected(tester, 3), isFalse);
 
+    for (final input in [0, 1]) {
+      final card = find.byKey(Key('routing_record_card_$input'));
+      final badge = find.descendant(
+        of: card,
+        matching: find.byType(RoutingCheck),
+      );
+      final cardRect = tester.getRect(card);
+      final badgeRect = tester.getRect(badge);
+      final scale = cardRect.width / 360;
+      expect(
+        cardRect.right - badgeRect.right,
+        greaterThanOrEqualTo(26 * scale),
+      );
+    }
+
     await tester.tap(find.byKey(const Key('routing_track_1')));
     await tester.pump();
     expect(cardSelected(tester, 3), isTrue);
