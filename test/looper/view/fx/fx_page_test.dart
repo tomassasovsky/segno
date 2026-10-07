@@ -1325,6 +1325,17 @@ void main() {
         expect(written.first.slotId, 't1');
       });
 
+      testWidgets('the input menu writes the chosen input', (tester) async {
+        await pump(tester, destination: const FxDestination.recordedTrack(0));
+        await tapKey(tester, 'fx_card_t1');
+        await tapKey(tester, 'fx_input_choice');
+        await tapKey(tester, 'fx_input_left');
+
+        final written = lastTrackWrite();
+        expect(written.first.channels.input, FxChannelInput.left);
+        expect(written.first.channels.placement, -0.5);
+      });
+
       testWidgets('the balance reads Centre at rest rather than a number', (
         tester,
       ) async {
