@@ -1799,6 +1799,10 @@ void main() {
       await tester.tap(find.byKey(const Key('loop_timing_quarter')));
       await tester.pumpAndSettle();
       expect(timing.state.defaultTiming, RecordTiming.immediately);
+      await tester.tap(find.byKey(const Key('loop_default_multiple_2')));
+      await tester.pumpAndSettle();
+      verifyNever(() => repository.setDefaultMultiple(multiple: 2));
+      expect(options.state.defaultMultiple, 0);
     });
 
     testWidgets('Defaults sets how long later tracks record; a track scope '
@@ -1815,6 +1819,11 @@ void main() {
       await tester.tap(find.byKey(const Key('loop_default_multiple_0')));
       await tester.pumpAndSettle();
       expect(options.state.defaultMultiple, 0);
+      // What ×2 is a multiple of is said beside the choices.
+      expect(
+        find.text(l10nOf(tester).loopDefaultMultipleNote),
+        findsOneWidget,
+      );
 
       await tester.tap(find.byKey(const Key('loop_scope_track_0')));
       await tester.pumpAndSettle();

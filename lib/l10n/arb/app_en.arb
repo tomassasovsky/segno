@@ -3434,6 +3434,10 @@
     "@loopDefaultMultipleLabel": {
         "description": "Length & quantize, Defaults scope: label of the row that sets how long tracks recorded after the first loop are, as a multiple of it (Auto, ×1, ×2, ×3)."
     },
+    "loopDefaultMultipleNote": "Multiples of the first loop. Auto rounds up to whole loops.",
+    "@loopDefaultMultipleNote": {
+        "description": "Length & quantize, Defaults scope: the note beside Later tracks, saying what ×2 is a multiple of and what Auto does."
+    },
     "loopTimingLabel": "Record timing",
     "@loopTimingLabel": {
         "description": "Record timing field label."
