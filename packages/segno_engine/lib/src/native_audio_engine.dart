@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:isolate';
 import 'dart:typed_data';
@@ -2466,6 +2467,11 @@ class NativeAudioEngine implements AudioEngine {
   Future<void> Function() auditionRetryWait = () =>
       Future<void>.delayed(const Duration(milliseconds: 30));
 
+  /// Runs the audition's decode off the calling isolate ([Isolate.run]). A
+  /// test replaces it to see that every decode goes through it.
+  @visibleForTesting
+  OffIsolateRunner offIsolate = Isolate.run;
+
   @override
   Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async {
     _checkAlive();
@@ -2473,8 +2479,11 @@ class NativeAudioEngine implements AudioEngine {
     if (rate <= 0) return const AuditionStart(result: EngineResult.notRunning);
     // The decode reads and converts up to two minutes of audio: never on the
     // calling (UI) isolate. The buffer crosses back as an address.
-    final decoded = await Isolate.run(
-      () => _decodeAudition(path, rate, kAuditionMaxSeconds * rate),
+    final decoded = await _decodeAuditionOffIsolate(
+      offIsolate,
+      path,
+      rate,
+      kAuditionMaxSeconds * rate,
     );
     if (decoded.code != 0) {
       return AuditionStart(
@@ -2733,6 +2742,22 @@ class _NativePluginSlotHandle implements PluginSlotHandle {
   @override
   int get hashCode => pointer.hashCode;
 }
+
+/// How [NativeAudioEngine.offIsolate] runs a computation: [Isolate.run]'s
+/// shape.
+typedef OffIsolateRunner =
+    Future<R> Function<R>(FutureOr<R> Function() computation);
+
+/// Runs [_decodeAudition] through [run]. A top-level function, so the
+/// closure sent to the isolate captures only these values and never the
+/// caller's scope (which may hold objects that cannot cross isolates).
+Future<({int code, int address, int frames, int sourceRate, bool truncated})>
+_decodeAuditionOffIsolate(
+  OffIsolateRunner run,
+  String path,
+  int rate,
+  int maxFrames,
+) => run(() => _decodeAudition(path, rate, maxFrames));
 
 /// Decodes at most [maxFrames] frames of the preview at [path] at [rate],
 /// a bounded read of the app's one decoder (`le_backing_decode_file`). Runs

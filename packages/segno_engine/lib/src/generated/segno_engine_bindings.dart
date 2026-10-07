@@ -3250,11 +3250,13 @@ class SegnoEngineBindings {
   /// Starts [buffer] from frame 0 into output pair [bus] at the next block,
   /// replacing a preview already playing (no fade). LE_ERR_INVALID: NULL, a
   /// buffer the engine already owns, a rate other than the engine's, more than
-  /// LE_AUDITION_MAX_SECONDS of frames, a bus outside 0..LE_MAX_OUTPUT_BUSES-1,
-  /// or the command ring full. LE_ERR_NOT_RUNNING: not configured.
-  /// LE_ERR_ALREADY_RUNNING: a performance capture is armed. LE_ERR_NOT_READY:
-  /// LE_AUDITION_MAX_BUFFERS already owned. On every refusal the caller still
-  /// owns the buffer.
+  /// LE_AUDITION_MAX_SECONDS of frames, a bus outside 0..LE_MAX_OUTPUT_BUSES-1
+  /// or one the open device has no channels for, or the command ring full.
+  /// LE_ERR_NOT_RUNNING: not configured. LE_ERR_ALREADY_RUNNING: a performance
+  /// capture is armed. LE_ERR_NOT_READY: LE_AUDITION_MAX_BUFFERS already owned.
+  /// On every refusal the caller still owns the buffer. A start that reaches
+  /// the callback after a performance arm (posted between the arm and its
+  /// apply) never sounds: the callback hands the buffer back unplayed.
   int le_engine_audition_start(
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_backing_buffer> buffer,

@@ -1,7 +1,9 @@
 @Tags(['fuzz'])
 library;
 
+import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -88,6 +90,20 @@ void main() {
     state = engine.auditionState();
     expect(state.playing, isFalse);
     expect(state.bus, -1);
+  }, skip: skip);
+
+  test('the decode runs off the calling isolate', () async {
+    start();
+    var offloaded = 0;
+    engine.offIsolate = <R>(FutureOr<R> Function() computation) {
+      offloaded++;
+      return Isolate.run(computation);
+    };
+
+    final started = await engine.auditionStartFile(wav('a.wav', 4000));
+
+    expect(started.result, EngineResult.ok);
+    expect(offloaded, 1);
   }, skip: skip);
 
   test('a preview ends after its last frame', () async {

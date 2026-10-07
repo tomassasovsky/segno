@@ -2414,11 +2414,17 @@ static void le_audition_clear(le_engine* e) {
 
 static void le_audition_apply(le_engine* e, const le_command* cmd) {
   le_audition_clear(e);
-  if (cmd->code == LE_CMD_AUDITION_START) {
-    e->audition_buf = cmd->backing.buffer;
-    e->audition_bus = cmd->backing.item;
-    le_audition_publish(e);
+  if (cmd->code != LE_CMD_AUDITION_START) return;
+  /* A start posted after a performance arm but checked before the callback
+   * applied it (the control side reads a_perf_armed, which the arm sets
+   * here) must not sound over the take: hand the buffer back unplayed. */
+  if (e->perf.armed) {
+    le_audition_return(e, cmd->backing.buffer);
+    return;
   }
+  e->audition_buf = cmd->backing.buffer;
+  e->audition_bus = cmd->backing.item;
+  le_audition_publish(e);
 }
 
 static void handle_cut_sound(le_engine* e, uint64_t frame) {

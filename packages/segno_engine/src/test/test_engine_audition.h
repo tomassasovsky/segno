@@ -32,6 +32,8 @@ static void test_audition_refusals(void) {
   CHECK(le_engine_audition_start(e, NULL, 0) == LE_ERR_INVALID);
   CHECK(le_engine_audition_start(e, b, -1) == LE_ERR_INVALID);
   CHECK(le_engine_audition_start(e, b, LE_MAX_OUTPUT_BUSES) == LE_ERR_INVALID);
+  /* A pair the open device has no channels for: it would play silently. */
+  CHECK(le_engine_audition_start(e, b, 1) == LE_ERR_INVALID);
   le_backing_buffer* other = au_mono(64, 44100);
   CHECK(le_engine_audition_start(e, other, 0) == LE_ERR_INVALID); /* rate */
   le_backing_buffer_free(other);
@@ -257,6 +259,26 @@ static void test_audition_and_performance_capture(void) {
   le_engine_destroy(e);
 }
 
+/* A start posted after an arm's post but checked before its apply (the
+ * control side reads a_perf_armed, which the callback sets) is handed back
+ * unplayed: the performer never hears it over the take. */
+static void test_audition_start_racing_an_arm(void) {
+  printf("test_audition_start_racing_an_arm\n");
+  le_engine* e = bk_engine(2);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  /* No drain: the arm is still in the ring, so the start is accepted. */
+  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f), 0) == LE_OK);
+  static float out[256 * 2];
+  bk_run(e, out, 256, 2, 64);
+  CHECK(atomic_load(&e->a_perf_armed) == 1);
+  le_audition_state s = au_state(e);
+  CHECK(s.frames == 0 && s.position == 0);
+  for (int i = 0; i < 256 * 2; ++i) CHECK(out[i] == 0.0f);
+  CHECK(s.owned == 0); /* handed back and freed at the collect */
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_engine_destroy(e);
+}
+
 /* Cut sound silences the preview too. */
 static void test_audition_cut_sound(void) {
   printf("test_audition_cut_sound\n");
@@ -338,6 +360,7 @@ static void run_audition_tests(void) {
   test_audition_sums_with_loop();
   test_audition_not_recorded();
   test_audition_and_performance_capture();
+  test_audition_start_racing_an_arm();
   test_audition_cut_sound();
   test_audition_lifetimes();
   test_audition_bounded_decode();

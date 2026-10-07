@@ -1534,7 +1534,9 @@ abstract interface class EnginePerformanceCapture {
 /// buses and before the master bus, so no destination's chain, level or mute
 /// touches it, no performance capture, stem or loop take contains it, and
 /// only the master gain and the limiter shape it. The file is decoded by the
-/// engine's one decoder (WAV, FLAC, MP3, converted to the engine's rate), at
+/// engine's one decoder (WAV and MP3, converted to the engine's rate; FLAC
+/// is compiled out until the vendored miniaudio carries the fix for
+/// CVE-2024-41147, and reads as [EngineResult.invalid]), at
 /// most [kAuditionMaxSeconds] of it, off the calling isolate.
 abstract interface class EngineAudition {
   /// Decodes the audio file at [path] off the calling isolate and starts it
