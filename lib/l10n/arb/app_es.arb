@@ -148,7 +148,7 @@
     "shortcutUndoClearAll": "Deshacer borrar todo",
     "shortcutSaveSession": "Guardar la sesión abierta",
     "shortcutFocusTraverse": "Mover el foco entre los controles",
-    "a11yTrackTile": "{name}, {state}, activar para grabar",
+    "a11yTrackTile": "{name}, {state}, activar para seleccionar",
     "a11yTrackTileMute": "{name}, {state}, activar para silenciar o reactivar",
     "a11yTrackTileFxOn": "{target}, {state}, cadena de FX encendida, activar para apagarla",
     "a11yTrackTileFxOff": "{target}, {state}, cadena de FX apagada, activar para encenderla",
@@ -418,7 +418,6 @@
     "loopbackKindMonitor": "monitor",
     "loopbackKindVirtualDevice": "virtual",
     "failedToOpenDevice": "Error al abrir el dispositivo: {errorName}",
-    "recordingGroupLabel": "GRABACIÓN",
     "maxLoopDefault30s": "Predeterminado (30 s)",
     "maxLoopMinutes": "{minutes} min",
     "deviceLabel": "Dispositivo",
@@ -820,7 +819,6 @@
     "modeChangeBlockedCapturing": "Termina la toma primero.",
     "modeChangeBlockedQueued": "Una acción en cola debe dispararse o cancelarse primero.",
     "modeChangeBlockedSpans": "Las duraciones grabadas no encajan en este modo.",
-    "trayLoopLabel": "Bucle",
     "loopTempoUnset": "sin definir",
     "loopLengthAuto": "Auto",
     "loopClickVolumeReadout": "{percent}%",
@@ -837,14 +835,6 @@
         "description": "Label for the settings tray's WiFi shortcut button (stub — no real functionality yet)."
     },
     "trayBrightnessPercent": "{percent}%",
-    "trayBrightLabel": "Brillo",
-    "@trayBrightLabel": {
-        "description": "Navigation rail entry for screen brightness, pinned below the eight domains as the mockups draw it."
-    },
-    "a11yTrayRail": "Destinos de la bandeja",
-    "@a11yTrayRail": {
-        "description": "Accessible label for the settings tray's vertical navigation rail, which selects which config face fills the open tray."
-    },
     "tunerCentsAndHz": "{cents} centésimas · {hz} Hz",
     "@tunerCentsAndHz": {
         "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
@@ -864,14 +854,6 @@
     "tunerNoTunableInput": "Sin entrada para afinar",
     "@tunerNoTunableInput": {
         "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
-    },
-    "tunerNoDevice": "Sin dispositivo de audio",
-    "@tunerNoDevice": {
-        "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
-    },
-    "trayTunerLabel": "Afinador",
-    "@trayTunerLabel": {
-        "description": "Label for the settings tray's Tuner rail entry."
     },
     "trayBrightnessLabel": "Brillo",
     "@trayBrightnessLabel": {
@@ -1018,26 +1000,6 @@
     "@wifiJoinAction": {
         "description": "Confirm button on the WiFi password dialog."
     },
-    "bluetoothIntro": "Haz que esta consola sea visible para que un teléfono o sidecar la encuentre. El emparejamiento llega después.",
-    "@bluetoothIntro": {
-        "description": "Intro copy on the Bluetooth page (discovery/broadcast only)."
-    },
-    "bluetoothAliasLabel": "Nombre",
-    "@bluetoothAliasLabel": {
-        "description": "Bluetooth adapter alias table label."
-    },
-    "bluetoothPoweredLabel": "Adaptador",
-    "@bluetoothPoweredLabel": {
-        "description": "Bluetooth powered table label."
-    },
-    "bluetoothScanSubtitle": "Encontrar dispositivos Bluetooth cercanos",
-    "@bluetoothScanSubtitle": {
-        "description": "Bluetooth scan action subtitle when idle."
-    },
-    "trayNetworkLabel": "Red",
-    "@trayNetworkLabel": {
-        "description": "Navigation rail entry for the Network domain — WiFi and Bluetooth as two tabs of one destination. One word, like every rail entry."
-    },
     "networkStateConnected": "conectado",
     "@networkStateConnected": {
         "description": "State word at the trailing edge of a Network row: a live association or link. Lower case — it is a machine readout about the row, not a sentence."
@@ -1141,18 +1103,6 @@
     "wifiForgetConfirmAction": "Olvidar red",
     "@wifiForgetConfirmAction": {
         "description": "Destructive action on the forget-network confirmation."
-    },
-    "trayControlLabel": "Control",
-    "@trayControlLabel": {
-        "description": "Navigation rail entry for the Control domain — the footswitch plate and the MIDI foot controller as two tabs of one destination."
-    },
-    "controlPedalTab": "Pedal",
-    "@controlPedalTab": {
-        "description": "Tab of the Control domain: the footswitch plate's assignable switches."
-    },
-    "controlControllersTab": "Controladores",
-    "@controlControllersTab": {
-        "description": "Tab of the Control domain: everything plugged in — a MIDI foot controller, and the pedals in the CTRL jacks — and the mappings off them."
     },
     "controlTransportGroup": "CONMUTADORES DE TRANSPORTE",
     "@controlTransportGroup": {
@@ -1332,10 +1282,6 @@
             }
         }
     },
-    "trayTracksLabel": "Pistas",
-    "tracksOrdinal": "pista {number}",
-    "tracksNamesFootnote": "Renombra las pistas. El nombre es lo que muestran el escenario, los destinos del pedal y la pantalla de 7 pulgadas.",
-    "tracksEmpty": "No hay pistas — el motor no está en marcha.",
     "tracksRenameSheetTitle": "Renombrar pista",
     "trackLanesGroup": "CARRILES",
     "trackLaneOutputsGroup": "SALIDAS DE ESTE CARRIL",
@@ -1346,10 +1292,6 @@
     "a11yTrackLaneIdle": "{input}, sin grabar. Activa para grabarla.",
     "a11yTrackLaneNoLane": "{input}, sin grabar. Esta pista no tiene ningún carril libre para ella.",
     "a11yTrackLaneStopRecording": "Dejar de grabar esta entrada",
-    "a11yTracksRenameField": "Nombre de la pista",
-    "trayAudioLabel": "Audio",
-    "audioDeviceTab": "Dispositivo",
-    "audioRecordingTab": "Grabación",
     "audioGroupLabel": "AUDIO",
     "audioRateBufferRow": "Frecuencia / búfer",
     "audioRoundTripEstimate": "ida y vuelta {milliseconds} ms",
@@ -1370,8 +1312,6 @@
     "audioOpenAsio4all": "Abrir asio4all.org",
     "audioMaxLoopTitle": "Duración máxima del loop",
     "audioMaxLoopSubtitle": "Un tope mayor reserva más memoria por pista. Cambiarlo reabre el dispositivo.",
-    "audioDefaultLoopLengthTitle": "Duración de loop por defecto",
-    "audioDefaultLoopLengthSubtitle": "Auto redondea a loops base completos; un múltiplo fijo graba esa cantidad.",
     "audioRenameInputTitle": "Renombrar entrada",
     "inputOrdinal": "entrada {number}",
     "a11yInputRenameField": "Nombre de la entrada",
@@ -1379,11 +1319,6 @@
     "audioMeasure": "Medir",
     "audioRecordOffsetSub": "desfase de grabación {frames} frames",
     "audioRefusedConfig": "El dispositivo no pudo abrirse a {asked}. Funcionando a {actual}.",
-    "traySystemLabel": "Sistema",
-    "systemDisplayTab": "Pantalla",
-    "systemUpdatesTab": "Actualizaciones",
-    "systemStorageTab": "Almacenamiento",
-    "systemAboutTab": "Acerca de",
     "systemPerformanceGroup": "RENDIMIENTO",
     "systemHelpGroup": "AYUDA",
     "systemAutomaticGroup": "AUTOMÁTICO",
@@ -1671,6 +1606,8 @@
     "powerOffRefuseBody": "Hay una grabación en curso. Cortala y volvé a pulsar el botón de encendido si querés apagar.",
     "powerOffConfirmTitle": "¿Apagar?",
     "powerOffConfirmBody": "Los loops en RAM se pierden si apagás sin guardar. Se conserva el último guardado en disco.",
+    "powerOffConfirmEmptyBody": "No hay nada grabado, así que no se pierde nada.",
+    "powerOffConfirmAction": "Apagar",
     "powerOffKeepPlaying": "Seguir tocando",
     "powerOffSaveAndPowerOff": "Guardar y apagar",
     "powerOffWithoutSaving": "Apagar sin guardar",
@@ -1860,6 +1797,8 @@
     "loopLengthNoteAuto": "Pulsa el pedal otra vez para fijar la duración.",
     "loopLengthNotApplied": "No se aplicó. Duración actual: {current}. Prueba otro número de compases.",
     "loopLengthNoteBars": "{bars, plural, one{Termina tras 1 compás y reproduce.} other{Termina tras {bars} compases y reproduce.}}",
+    "loopDefaultMultipleLabel": "Pistas siguientes",
+    "loopDefaultMultipleNote": "Múltiplos del primer loop. Auto redondea a loops completos.",
     "loopTimingLabel": "Momento de grabación",
     "loopTimingNoteImmediately": "Grabar y overdub responden al pulsar.",
     "loopTimingNoteLoopStart": "Grabar y overdub esperan al próximo inicio del loop. El primer loop sigue a Grabación.",
@@ -1930,6 +1869,8 @@
     "fxTitle": "Efectos",
     "fxChangeNotApplied": "No se aplicó ese cambio de efecto. Inténtalo de nuevo.",
     "fxPedalAssignments": "Asignaciones de pedal",
+    "fxPedalAssignmentsTitle": "Pedales",
+    "fxPedalAssignmentsCrumb": "EFECTOS / ASIGNACIONES DE PEDAL",
     "fxKindLiveInputs": "Entradas en vivo",
     "fxKindRecordedTracks": "Pistas grabadas",
     "fxKindOutputs": "Salidas",
@@ -2165,8 +2106,6 @@
     "pedalSetupClearConfirm": "Borrar ambos bancos",
     "pedalSetupChooser": "{control} · {gesture}",
     "pedalSetupFixedNote": "Este control tiene una acción fija.",
-    "controlPedalSetupRow": "Ajustes de pedales",
-    "controlPedalSetupSub": "Qué hace cada pedal al pulsarlo o mantenerlo",
     "externalPedalsTitle": "Pedales externos",
     "externalPedalsSub": "Qué conectás a CTRL 1 y CTRL 2, y qué controla",
     "externalJackCtrl1": "CTRL 1",
@@ -2313,7 +2252,6 @@
     "midiToggle": "Alternar",
     "midiUnavailableAction": "Acción no disponible",
     "midiWhen": "Cuándo",
-    "midiControlsEntryDetail": "Elige un controlador y asigna sus botones, teclas y perillas.",
     "actionTapTempo": "Marcar tempo",
     "midiRetryOff": "Reintentar apagar",
     "midiRetryDevice": "Reintentar dispositivo",
@@ -2401,6 +2339,28 @@
     "footFadeHoldTime": "Mantener · Tiempo",
     "footFadeFailure": "No se pudo iniciar el Fade. Inténtalo de nuevo.",
     "actionModePeel": "Peel",
+    "actionModeTuner": "Afinador",
+    "footTunerReference": "Referencia A4",
+    "footTunerHzUnit": "Hz",
+    "footTunerInputMuted": "Entrada silenciada",
+    "footTunerInputAudible": "Entrada audible",
+    "footTunerMuteInput": "Silenciar entrada",
+    "footTunerUnmuteInput": "Activar entrada",
+    "footTunerReferenceDown": "Referencia −",
+    "footTunerReferenceUp": "Referencia +",
+    "footTunerHoldReset": "Mantener · {hz} Hz",
+    "footTunerInputs": "Entradas {first}–{last}",
+    "footTunerInputsOne": "Entrada {number}",
+    "footTunerNextInputs": "Siguientes entradas",
+    "footTunerFlat": "Bajo",
+    "footTunerInTune": "Afinado",
+    "footTunerSharp": "Alto",
+    "footTunerCents": "{cents} centésimas",
+    "footTunerPlayOneNote": "Toca una nota",
+    "footTunerSaveFailed": "No se pudieron guardar los ajustes del afinador. Inténtalo de nuevo.",
+    "footTunerStartFailed": "El afinador no pudo iniciarse. Inténtalo de nuevo.",
+    "footTunerAtLimit": "La referencia A4 está en su límite.",
+    "footTunerSeeded": "El afinador está en Personalizado: mantén MODE y luego mantén el pedal 2.",
     "actionOperationPeel": "Peel",
     "footPeelLayers": "Capas",
     "footPeelOriginalOnly": "Solo la original",

@@ -1053,7 +1053,8 @@ class _Encoder extends _FuzzAction {
   const _Encoder(this.delta);
   final int delta;
   @override
-  void apply(_Harness h, FakeAsync fa) => h.sim.turn(delta);
+  // A stage turn as EncoderNavigation routes it (#1276).
+  void apply(_Harness h, FakeAsync fa) => h.control.encoderTurned(delta);
   @override
   String describe() => '_Encoder($delta)';
 }

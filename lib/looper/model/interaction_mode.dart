@@ -51,7 +51,11 @@ enum InteractionMode {
 
   /// Foot-controlled Peel: each track pedal removes its track's newest
   /// overdub layer, recoverable through Undo.
-  peel;
+  peel,
+
+  /// The foot Tuner: the track pedals pick the input to tune, Stop mutes it,
+  /// Undo and Clear move the A4 reference (#1229). Never a boot mode.
+  tuner;
 
   /// The persisted token for this mode. Derived from the member name, so a
   /// member rename changes the current stored identity.

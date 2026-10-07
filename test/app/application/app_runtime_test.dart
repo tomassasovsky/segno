@@ -532,7 +532,7 @@ void main() {
   });
 
   test(
-    'close drains session before its controls and cuts encoder ingress',
+    'close drains session before its controls and refuses encoder edits',
     () async {
       await runtime.start();
       final (loading, read) = await holdSessionRead();
@@ -540,7 +540,7 @@ void main() {
       var closed = false;
       final closing = runtime.close().then((_) => closed = true);
       final secondClose = runtime.close();
-      link.turn(-16);
+      runtime.control.encoderTurned(-16);
       await pumpEventQueue();
       final gainWhileDraining = engine.lastMasterGain;
       final closedWhileDraining = closed;
@@ -562,7 +562,9 @@ void main() {
     'close cancels a pending halt before waiting for session storage',
     () async {
       await runtime.start();
-      runtime.power.press(const PowerOffSnapshot());
+      runtime.power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await pumpEventQueue();
       expect(runtime.power.state.phase, PowerOffPhase.goodbye);
       final (loading, read) = await holdSessionRead();
@@ -583,13 +585,13 @@ void main() {
       runtime.control.encoderTurned(0);
       final (loading, read) = await holdSessionRead();
       final gain = engine.lastMasterGain!;
-      link.turn(-16);
+      runtime.control.encoderTurned(-16);
       await pumpEventQueue();
       final gainWhileLoading = engine.lastMasterGain;
       finishRead(read);
       await loading;
       expect(gainWhileLoading, gain);
-      link.turn(-16);
+      runtime.control.encoderTurned(-16);
       await pumpEventQueue();
       expect(engine.lastMasterGain, lessThan(gain));
     },
@@ -819,7 +821,9 @@ void main() {
       );
       expect(repository.mixRecoveryRequired, isTrue);
       expect(runtime.tempo.clickVolumeOwner.ready, isFalse);
-      runtime.power.press(const PowerOffSnapshot());
+      runtime.power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       for (var i = 0; i < 200 && halts == 0; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }

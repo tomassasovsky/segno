@@ -4,10 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/network/network_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
+import 'package:segno/wifi/wifi_tray_body.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 /// A WiFi stack with just enough behaviour to drive the face.
@@ -85,14 +84,6 @@ ThemeData _theme() => ThemeData(
 );
 
 void main() {
-  late SettingsTrayCubit tray;
-
-  setUp(() {
-    tray = SettingsTrayCubit()..open();
-  });
-
-  tearDown(() => tray.close());
-
   Future<void> pumpFace(
     WidgetTester tester, {
     _FaceWifiClient? wifi,
@@ -108,25 +99,18 @@ void main() {
         theme: _theme(),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        home: MultiBlocProvider(
-          providers: [
-            BlocProvider.value(value: tray),
-            BlocProvider(
-              create: (_) => WifiCubit(
-                repository: WifiRepository(
-                  client: wifi ?? _FaceWifiClient(),
-                ),
-              ),
-            ),
-          ],
-          child: const Scaffold(body: NetworkTrayPanel()),
+        home: BlocProvider(
+          create: (_) => WifiCubit(
+            repository: WifiRepository(client: wifi ?? _FaceWifiClient()),
+          ),
+          child: const Scaffold(body: WifiTrayBody()),
         ),
       ),
     );
     await tester.pumpAndSettle();
   }
 
-  group('the domain', () {
+  group('the body', () {
     testWidgets('is the Wi-Fi face alone: no tab strip, no chrome bar', (
       tester,
     ) async {
@@ -135,7 +119,7 @@ void main() {
       expect(find.byKey(const Key('network_tabs')), findsNothing);
       expect(find.text('Bluetooth'), findsNothing);
       expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
-      // No back chevron on a domain face — the rail is the only way back.
+      // No back chevron of its own: the Network page's frame has Back.
       expect(find.byIcon(Icons.arrow_back), findsNothing);
       expect(find.byIcon(Icons.chevron_left), findsNothing);
     });

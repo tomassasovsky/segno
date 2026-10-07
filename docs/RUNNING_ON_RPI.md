@@ -45,9 +45,9 @@ GPIO and not `dtoverlay=gpio-shutdown`. The kernel exposes it as `gpio-keys`
 `KEY_POWER` on the input device named `pwr_button`.
 
 - **Short press.** The appliance app grabs that node (`EVIOCGRAB`) so Weston
-  does not also see `XF86PowerOff`. Empty console: skip confirm, show the
-  Plymouth lockup on every live display, darken the pedal, then
-  `segno-update-ctl poweroff` (`systemctl start poweroff.target` — this image
+  does not also see `XF86PowerOff`. Empty console: Power off / Keep playing;
+  Power off re-checks the rig, then shows the Plymouth lockup on every live
+  display, darkens the pedal and runs `segno-update-ctl poweroff` (`systemctl start poweroff.target` — this image
   has no logind). Loops in RAM and idle: Save & power off / Power off without
   saving / Keep playing. A take in flight (record, overdub, count-in,
   punch-tail, performance capture): Keep playing only — stop the take, then

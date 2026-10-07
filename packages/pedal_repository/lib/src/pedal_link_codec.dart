@@ -48,8 +48,10 @@ abstract final class PedalLinkCodec {
   /// The link protocol this codec speaks, reported by the board in
   /// [HelloMessage.protocolVersion].
   ///
-  /// 8: ten RGB hues and a ten-bit physical activity mask. Version 7 is
-  /// reserved by the separate Song/hardware branch (STATE21); no fallback.
+  /// 9: ENCODER_BUTTON (`0x05`) — the encoder's push switch, press and
+  /// release; the STATE layout is unchanged. 8: ten RGB hues and a ten-bit
+  /// physical activity mask. Version 7 is reserved by the separate
+  /// Song/hardware branch (STATE21); no fallback.
   /// 6: mode value `3` is Custom, with the same STATE shape. 5: CTRL kind
   /// `none` — the board can say a jack is empty instead of
   /// reporting an unplugged jack as a pedal at full toe. 4: CTRL (`0x04`)
@@ -59,7 +61,7 @@ abstract final class PedalLinkCodec {
   /// when the ring stopped tracking the loop. The board is flashed over SWD
   /// independently of the app, so the two can drift; this is what makes
   /// that visible rather than silent.
-  static const protocolVersion = 8;
+  static const protocolVersion = 9;
 
   /// Message types, board → segno.
   static const typeButton = 0x01;
@@ -73,6 +75,9 @@ abstract final class PedalLinkCodec {
   /// See [typeButton]. `[jack, contact, kind, value]` — one contact of one
   /// of the two CTRL jacks reporting the pedal plugged into it.
   static const typeCtrl = 0x04;
+
+  /// See [typeButton]. `[pressed]` — the encoder's push switch.
+  static const typeEncoderButton = 0x05;
 
   /// The one message type segno → board.
   static const typeState = 0x10;
@@ -101,6 +106,7 @@ abstract final class PedalLinkCodec {
     typeEncoder => 1,
     typeHello => helloPayloadLength,
     typeCtrl => 4,
+    typeEncoderButton => 1,
     typeState => statePayloadLength,
     _ => null,
   };
@@ -113,6 +119,10 @@ abstract final class PedalLinkCodec {
         <int>[button.index, if (pressed) 1 else 0],
       ),
       EncoderMessage(:final delta) => (typeEncoder, <int>[delta & 0xFF]),
+      EncoderButtonMessage(:final pressed) => (
+        typeEncoderButton,
+        <int>[if (pressed) 1 else 0],
+      ),
       HelloMessage(
         :final protocolVersion,
         :final firmwareMajor,
@@ -157,6 +167,9 @@ abstract final class PedalLinkCodec {
         return ButtonMessage(button, pressed: payload[1] == 1);
       case typeEncoder:
         return EncoderMessage(payload[0].toSigned(8));
+      case typeEncoderButton:
+        if (payload[0] > 1) return null;
+        return EncoderButtonMessage(pressed: payload[0] == 1);
       case typeHello:
         return HelloMessage(
           protocolVersion: payload[0],

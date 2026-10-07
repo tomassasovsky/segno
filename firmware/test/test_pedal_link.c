@@ -161,6 +161,10 @@ static void check_fixture(const char *dir, const char *name) {
       CHECK(len == 1, "%s: bad encoder payload", name);
       m = pedal_link_encode_encoder((int8_t)payload[0], again);
       break;
+    case PEDAL_LINK_TYPE_ENCODER_BUTTON:
+      CHECK(len == 1 && payload[0] <= 1, "%s: bad encoder button payload", name);
+      m = pedal_link_encode_encoder_button(payload[0], again);
+      break;
     case PEDAL_LINK_TYPE_CTRL:
       CHECK(len == 4, "%s: ctrl with %u payload bytes, want 4", name, len);
       CHECK(payload[0] < PEDAL_CTRL_COUNT, "%s: ctrl jack %u out of range", name, payload[0]);
@@ -202,6 +206,10 @@ static void check_fixture(const char *dir, const char *name) {
     CHECK((int8_t)payload[0] == -3, "encoder_minus3: %d", (int8_t)payload[0]);
   } else if (strcmp(name, "encoder_plus1.bin") == 0) {
     CHECK((int8_t)payload[0] == 1, "encoder_plus1: %d", (int8_t)payload[0]);
+  } else if (strcmp(name, "encoder_button_down.bin") == 0) {
+    CHECK(payload[0] == 1, "encoder_button_down: %u", payload[0]);
+  } else if (strcmp(name, "encoder_button_up.bin") == 0) {
+    CHECK(payload[0] == 0, "encoder_button_up: %u", payload[0]);
   } else if (strcmp(name, "playing_bankb.bin") == 0) {
     CHECK(st.active_bank == 1 && st.selected_track == 6 && st.mode == PEDAL_MODE_PLAY &&
               st.global_color == PEDAL_GLOBAL_AMBER && st.looper_mode == PEDAL_LOOPER_SYNC &&
@@ -313,7 +321,7 @@ static void check_physical_state(void) {
     0,128,255,165,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,
     18,19,20,21,22,23,254,253,252,1,2};
   pedal_state state;
-  CHECK(PEDAL_LINK_PROTOCOL_VERSION == 8 && PEDAL_LINK_STATE_LEN == 51,
+  CHECK(PEDAL_LINK_PROTOCOL_VERSION == 9 && PEDAL_LINK_STATE_LEN == 51,
         "wire reservation changed");
   CHECK(pedal_link_decode_state(p,51,&state),"literal RGB state refused");
   CHECK(state.active_button_mask == 0x201 && state.pedal_colors[0].g == 128 &&

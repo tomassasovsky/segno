@@ -10,9 +10,9 @@ import 'package:segno/theme/theme.dart';
 ///
 /// Flutter's own `showLicensePage` is a Material master-detail route: an app
 /// bar, a back chevron, list tiles, and a second page per package. Every one
-/// of those is a thing this console does not have — **the rail is always on
-/// screen, so a back chevron is a second navigation surface**, and a row that
-/// pushes a page loses the list it came from.
+/// of those is a thing this console does not have — **the page's frame already
+/// has Back, so a back chevron is a second navigation surface**, and a row
+/// that pushes a page loses the list it came from.
 ///
 /// So the notices are drawn the way every other list on this console is: rows
 /// that open **in place**, one at a time, inside the same centred panel the

@@ -19,24 +19,24 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
-import 'package:segno/audio_setup/audio_tab.dart';
+import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/control/control.dart';
-import 'package:segno/control/control_tab.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
-import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/fx/fx_pedal_assignments_page.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
+import 'package:segno/settings/settings.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
-import 'package:segno/system/system_tab.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
+import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -142,37 +142,7 @@ ThemeData _theme() => ThemeData(
   ],
 );
 
-/// Home-tray preview: radio on, not associated — proves tile "on" ≠ connected.
-class _PreviewWifiHomeClient implements WifiClient {
-  @override
-  bool get isSupported => true;
-
-  @override
-  Future<WifiStatus> status() async => const WifiStatus(
-    supported: true,
-    enabled: true,
-    connected: false,
-  );
-
-  @override
-  Future<List<WifiNetwork>> scan() async => const [];
-
-  @override
-  Future<void> connect(String ssid, {String? psk}) async {}
-
-  @override
-  Future<void> disconnect() async {}
-
-  @override
-  Future<void> forget(String ssid) async {}
-
-  @override
-  Future<void> setEnabled({required bool enabled}) async {}
-}
-
-/// Drawn to `NETWORK / wifi`: an associated saved network, a saved one out of
-/// range, a secured one to join and an open one — the four row states the
-/// mockups put in the card.
+/// A radio with a saved network in range, one out of range, and two others.
 class _PreviewWifiClient implements WifiClient {
   _PreviewWifiClient({this.enabled = true});
 
@@ -223,7 +193,10 @@ class _PreviewWifiClient implements WifiClient {
   Future<void> setEnabled({required bool enabled}) async {}
 }
 
-/// Home-tray preview: powered on without discoverable/advertise.
+/// The Settings pages and the FX pedal assignments in the states worth
+/// checking by eye (a list open, a refusal, an update in each phase).
+/// Author-machine goldens, like the other suites here;
+/// each page's resting state is in `settings_destinations_screenshots_test`.
 void main() {
   late TempoSettings tempoOwner;
   setUpAll(() {
@@ -264,6 +237,7 @@ void main() {
       'assets/fonts/Inter-SemiBold.ttf',
       'assets/fonts/Inter-Bold.ttf',
     ]);
+    await loadScreenshotFont('Arimo', ['assets/fonts/Arimo-Regular.ttf']);
     // And the rail's own glyphs. A package font is bundled from the package's
     // pubspec at run time but not by the test harness, so every rail icon and
     // the brightness sun rendered as a tofu box in these previews — the same
@@ -285,9 +259,8 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
-  /// The Control face's own providers — the real tray inherits these from
-  /// `App`, so a preview that shows the Control destination has to stand them
-  /// up too.
+  /// The providers the app gives every page from `App`, which a preview has
+  /// to stand up itself.
   ({
     ControlCubit control,
     PedalCubit pedal,
@@ -442,7 +415,7 @@ void main() {
       ),
     );
     final midi = MidiSetupCubit(repository: devices);
-    // The Loop face's own providers. A mock bloc rather than a real one over
+    // The Loop settings providers. A mock bloc rather than a real one over
     // the mock repository: these previews exist to pin a specific transport,
     // and a real bloc would only ever show the repository's defaults.
     final bloc = _MockLooperBloc();
@@ -506,8 +479,8 @@ void main() {
     );
   }
 
-  /// The System face's own providers. The real tray inherits these from
-  /// `App`; a preview showing the System destination has to stand them up too.
+  /// The System pages' own providers. The app provides these from `App`; a
+  /// preview has to stand them up too.
   ///
   /// The facts client is the FAKE at zero latency — that is the whole point of
   /// the seam: Storage and About are drivable, and photographable, from a
@@ -521,6 +494,7 @@ void main() {
     ConsoleFactsCubit facts,
     PedalCubit pedal,
     UpdateCubit update,
+    DisplayBrightnessCubit brightness,
   })
   systemProviders(
     WidgetTester tester, {
@@ -550,7 +524,10 @@ void main() {
     addTearDown(() => unawaited(refresh.close()));
     addTearDown(() => unawaited(facts.close()));
     addTearDown(() => unawaited(pedal.close()));
+    final brightness = DisplayBrightnessCubit(settings: settings);
+    addTearDown(() => unawaited(brightness.close()));
     return (
+      brightness: brightness,
       waveform: waveform,
       contrast: contrast,
       refresh: refresh,
@@ -560,9 +537,9 @@ void main() {
     );
   }
 
-  Future<void> pumpTray(
+  Future<void> pumpPage(
     WidgetTester tester, {
-    required SettingsTrayCubit cubit,
+    required Widget page,
     WifiRepository? wifi,
     ({
       WaveformWindowCubit waveform,
@@ -571,6 +548,7 @@ void main() {
       ConsoleFactsCubit facts,
       PedalCubit pedal,
       UpdateCubit update,
+      DisplayBrightnessCubit brightness,
     })?
     system,
     ({
@@ -590,6 +568,13 @@ void main() {
     control,
   }) {
     final rig = control ?? controlProviders(tester);
+    final tuner = TunerCubit(
+      repository: rig.looper,
+      settings: TunerSettings(
+        settings: SettingsRepository(store: FakeKeyValueStore()),
+      ),
+    );
+    addTearDown(() => unawaited(tuner.close()));
     return tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -606,7 +591,7 @@ void main() {
           ],
           child: MultiBlocProvider(
             providers: [
-              BlocProvider.value(value: cubit),
+              BlocProvider.value(value: tuner),
               BlocProvider.value(value: rig.control),
               if (system == null) BlocProvider.value(value: rig.pedal),
               BlocProvider.value(value: rig.midi),
@@ -627,68 +612,37 @@ void main() {
                 BlocProvider.value(value: s.facts),
                 BlocProvider.value(value: s.pedal),
                 BlocProvider.value(value: s.update),
+                BlocProvider.value(value: s.brightness),
               ],
             ],
-            child: Scaffold(
-              body: Stack(
-                children: [
-                  const ColoredBox(color: Color(0xFF1A1520)),
-                  SettingsTray(wifiRepository: wifi),
-                ],
-              ),
-            ),
+            child: page,
           ),
         ),
       ),
     );
   }
 
-  testWidgets('tray open', (tester) async {
+  testWidgets('Network page, wifi tab', (tester) async {
     await size(tester);
-    final cubit = SettingsTrayCubit()..open();
-    addTearDown(cubit.close);
 
-    await pumpTray(
+    await pumpPage(
       tester,
-      cubit: cubit,
-      wifi: WifiRepository(client: _PreviewWifiHomeClient()),
-    );
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_tray.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('network domain, wifi tab', (tester) async {
-    await size(tester);
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.network);
-    addTearDown(cubit.close);
-
-    await pumpTray(
-      tester,
-      cubit: cubit,
+      page: const NetworkSettingsPage(),
       wifi: WifiRepository(client: _PreviewWifiClient()),
     );
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_network_wifi.png'),
+      matchesGoldenFile('goldens/settings_network_wifi.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('network domain, wifi off', (tester) async {
+  testWidgets('Network page, wifi off', (tester) async {
     await size(tester);
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.network);
-    addTearDown(cubit.close);
 
-    await pumpTray(
+    await pumpPage(
       tester,
-      cubit: cubit,
+      page: const NetworkSettingsPage(),
       wifi: WifiRepository(client: _PreviewWifiClient(enabled: false)),
     );
     await tester.pumpAndSettle();
@@ -696,20 +650,16 @@ void main() {
     // list about a radio that is down.
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_network_wifi_off.png'),
+      matchesGoldenFile('goldens/settings_network_wifi_off.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('network domain, wifi row open', (tester) async {
+  testWidgets('Network page, wifi row open', (tester) async {
     await size(tester);
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.network);
-    addTearDown(cubit.close);
 
-    await pumpTray(
+    await pumpPage(
       tester,
-      cubit: cubit,
+      page: const NetworkSettingsPage(),
       wifi: WifiRepository(client: _PreviewWifiClient()),
     );
     await tester.pumpAndSettle();
@@ -717,20 +667,16 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_network_wifi_expanded.png'),
+      matchesGoldenFile('goldens/settings_network_wifi_expanded.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('network domain, forget confirm', (tester) async {
+  testWidgets('Network page, forget confirm', (tester) async {
     await size(tester);
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.network);
-    addTearDown(cubit.close);
 
-    await pumpTray(
+    await pumpPage(
       tester,
-      cubit: cubit,
+      page: const NetworkSettingsPage(),
       wifi: WifiRepository(client: _PreviewWifiClient()),
     );
     await tester.pumpAndSettle();
@@ -742,20 +688,16 @@ void main() {
     // The confirm rides in the route overlay, above the Scaffold.
     await expectLater(
       find.byType(MaterialApp),
-      matchesGoldenFile('goldens/control_center_network_wifi_forget.png'),
+      matchesGoldenFile('goldens/settings_network_wifi_forget.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('network domain, join sheet', (tester) async {
+  testWidgets('Network page, join sheet', (tester) async {
     await size(tester);
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.network);
-    addTearDown(cubit.close);
 
-    await pumpTray(
+    await pumpPage(
       tester,
-      cubit: cubit,
+      page: const NetworkSettingsPage(),
       wifi: WifiRepository(client: _PreviewWifiClient()),
     );
     await tester.pumpAndSettle();
@@ -765,19 +707,14 @@ void main() {
     expect(find.byKey(const Key('wifi_join_sheet')), findsOneWidget);
     await expectLater(
       find.byType(MaterialApp),
-      matchesGoldenFile('goldens/control_center_network_wifi_join.png'),
+      matchesGoldenFile('goldens/settings_network_wifi_join.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('control domain, pedal tab with a switch selected', (
+  testWidgets('FX pedal assignments with a switch selected', (
     tester,
   ) async {
     await size(tester);
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.control);
-    addTearDown(cubit.close);
-
     final rig = controlProviders(tester);
     await rig.control.setGlobalBindings(
       PedalBindingSet([
@@ -787,14 +724,18 @@ void main() {
         ),
       ]),
     );
-    await pumpTray(tester, cubit: cubit, control: rig);
+    await pumpPage(
+      tester,
+      page: const FxPedalAssignmentsPage(),
+      control: rig,
+    );
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(find.byKey(const Key('pedal_switch_track1')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_control_pedal.png'),
+      matchesGoldenFile('goldens/fx_pedal_assignments.png'),
     );
 
     // And again on bank B, where the same four caps drive tracks 5-8.
@@ -802,109 +743,7 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_control_pedal_bank_b.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('control domain, controllers tab on a live link', (tester) async {
-    await size(tester);
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.control)
-      ..showControlTab(ControlTab.controllers);
-    addTearDown(cubit.close);
-
-    final rig = controlProviders(
-      tester,
-      connection: const MidiConnection(
-        devices: [MidiDevice(id: 'dev-1', name: 'Nektar Pacer')],
-        selectedId: 'dev-1',
-        selectedName: 'Nektar Pacer',
-        status: MidiConnectionStatus.connected,
-      ),
-    );
-    await pumpTray(tester, cubit: cubit, control: rig);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('midi_open_controls')), findsOneWidget);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_control_midi.png'),
-    );
-  }, skip: !hasFonts);
-
-  /// The rig the Tracks previews draw, as `TRACKS / tracks-routing` sets it:
-  /// a track on two inputs, one on one, one sent three ways, and one that
-  /// records nothing and reaches nothing.
-  ///
-  /// A bare `Lane()` already records nothing out of the first output pair, so
-  /// only the departures from that are spelled out.
-  const tracksRig = LooperState(
-    tracks: [
-      Track(
-        lengthPresetBars: 8,
-        lanes: [Lane(inputChannel: 0), Lane(inputChannel: 1)],
-      ),
-      Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
-      Track(channel: 2, lanes: [Lane(inputChannel: 0, outputMask: 0x7)]),
-      Track(channel: 3, lanes: [Lane(outputMask: 0)]),
-    ],
-    status: EngineStatus(
-      sampleRate: 48000,
-      inputChannels: 4,
-      outputChannels: 4,
-    ),
-  );
-
-  Future<void> pumpTracks(WidgetTester tester) async {
-    await size(tester);
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.tracks);
-    addTearDown(cubit.close);
-
-    final providers = controlProviders(tester, looperState: tracksRig);
-    for (final (channel, name) in ['drums', 'bass', 'rhythm', 'lead'].indexed) {
-      await providers.tracks.rename(channel, name);
-    }
-    await pumpTray(tester, cubit: cubit, control: providers);
-    await tester.pumpAndSettle();
-  }
-
-  testWidgets('tracks domain, names tab', (tester) async {
-    await pumpTracks(tester);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_tracks_names.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('tracks domain, a stopped engine has no tracks', (tester) async {
-    await size(tester);
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.tracks);
-    addTearDown(cubit.close);
-    await pumpTray(
-      tester,
-      cubit: cubit,
-      control: controlProviders(tester),
-    );
-    await tester.pumpAndSettle();
-
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_tracks_empty.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('tracks domain, the console rename sheet', (tester) async {
-    await pumpTracks(tester);
-    await tester.tap(find.byKey(const Key('tracks_names_row_2')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('goldens/control_center_track_rename.png'),
+      matchesGoldenFile('goldens/fx_pedal_assignments_bank_b.png'),
     );
   }, skip: !hasFonts);
 
@@ -928,93 +767,78 @@ void main() {
       MonitorCubit monitor,
     })
   >
-  pumpAudio(WidgetTester tester, AudioTab tab) async {
+  pumpAudio(WidgetTester tester) async {
     await size(tester);
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.audio)
-      ..showAudioTab(tab);
-    addTearDown(cubit.close);
-
     final providers = controlProviders(tester, looperState: audioRig);
     // Two of the eighteen sockets have been given names, which is what the
     // Device row's `2 named` counts.
     await providers.inputs.rename(0, 'guitar');
     await providers.inputs.rename(1, 'mic');
-    await pumpTray(tester, cubit: cubit, control: providers);
+    await pumpPage(
+      tester,
+      page: const DeviceSettingsPage(),
+      control: providers,
+    );
     await tester.pumpAndSettle();
     return providers;
   }
 
-  testWidgets('audio domain, device tab with the device list open', (
+  testWidgets('Device page, the device list open', (
     tester,
   ) async {
-    await pumpAudio(tester, AudioTab.device);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_audio_device.png'),
-    );
-
+    await pumpAudio(tester);
     // Opened, because the per-device channel counts are the part worth
     // pinning: they read 0 in / 0 out until the engine started asking.
     await tester.tap(find.byKey(const Key('audio_device_row')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_audio_device_list.png'),
+      matchesGoldenFile('goldens/settings_device_device_list.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('audio domain, the rate and buffer grids', (
+  testWidgets('Device page, the rate and buffer grids', (
     tester,
   ) async {
-    await pumpAudio(tester, AudioTab.device);
+    await pumpAudio(tester);
     await tester.tap(find.byKey(const Key('audio_rate_row')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_audio_rate.png'),
+      matchesGoldenFile('goldens/settings_device_rate.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('audio domain, the named inputs', (tester) async {
-    await pumpAudio(tester, AudioTab.device);
+  testWidgets('Device page, the named inputs', (tester) async {
+    await pumpAudio(tester);
     await tester.tap(find.byKey(const Key('audio_inputs_row')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_audio_inputs.png'),
+      matchesGoldenFile('goldens/settings_device_inputs.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('audio domain, recording tab', (tester) async {
-    await pumpAudio(tester, AudioTab.recording);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_audio_recording.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('audio domain, the loop cap open on the device tab', (
+  testWidgets('Device page, the loop cap open', (
     tester,
   ) async {
-    await pumpAudio(tester, AudioTab.device);
+    await pumpAudio(tester);
     await tester.tap(find.byKey(const Key('audio_max_loop_row')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_audio_max_loop.png'),
+      matchesGoldenFile('goldens/settings_device_max_loop.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('audio domain, a config the device refused', (tester) async {
+  testWidgets('Device page, a config the device refused', (tester) async {
     // The open SUCCEEDS and the device runs 48 anyway — the negotiation this
     // banner is for. (A device that will not open at all is a different state
     // and a different banner: `audio_open_failed_banner`, which names the
     // engine's error rather than a rate nothing asked to change.) The
     // selection has snapped back to what the device gave, so the banner is the
     // only place the request is still named.
-    await pumpAudio(tester, AudioTab.device);
+    await pumpAudio(tester);
     await tester.tap(find.byKey(const Key('audio_rate_row')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('audio_sample_rate_96000')));
@@ -1022,25 +846,19 @@ void main() {
 
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_audio_refused.png'),
+      matchesGoldenFile('goldens/settings_device_refused.png'),
     );
   }, skip: !hasFonts);
 
-  /// Mounts the System face on [tab].
+  /// Mounts [page], one of the pages that show the System bodies.
   Future<ConsoleFactsCubit> pumpSystem(
     WidgetTester tester,
-    SystemTab tab, {
+    Widget page, {
     ConsoleFactsClient? client,
     UpdateState? updateState,
   }) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit()
-      ..open()
-      ..showDestination(SettingsTrayDestination.system)
-      ..showSystemTab(tab);
-    addTearDown(cubit.close);
-
     final rig = controlProviders(tester, looperState: audioRig);
     final system = systemProviders(
       tester,
@@ -1049,21 +867,13 @@ void main() {
       client: client,
       updateState: updateState,
     );
-    await pumpTray(tester, cubit: cubit, control: rig, system: system);
+    await pumpPage(tester, page: page, control: rig, system: system);
     await tester.pumpAndSettle();
     return system.facts;
   }
 
-  testWidgets('system domain, display tab', (tester) async {
-    await pumpSystem(tester, SystemTab.display);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_system_display.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('system domain, the second window did not open', (tester) async {
-    await pumpSystem(tester, SystemTab.display);
+  testWidgets('Displays page, the second window did not open', (tester) async {
+    await pumpSystem(tester, const DisplaysSettingsPage());
     // The failure the app shell reports, at the top of the list the setting
     // lives in — never a toast once this face is open.
     tester
@@ -1073,22 +883,14 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_system_waveform_failed.png'),
+      matchesGoldenFile('goldens/settings_displays_waveform_failed.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('system domain, updates tab', (tester) async {
-    await pumpSystem(tester, SystemTab.updates);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_system_updates.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('system domain, an update on offer', (tester) async {
+  testWidgets('Updates page, an update on offer', (tester) async {
     await pumpSystem(
       tester,
-      SystemTab.updates,
+      const UpdatesSettingsPage(),
       updateState: _consoleBuild.copyWith(
         phase: UpdatePhase.available,
         available: UpdateManifest(
@@ -1100,14 +902,14 @@ void main() {
     );
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_system_update_available.png'),
+      matchesGoldenFile('goldens/settings_updates_available.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('system domain, staging to the standby system', (tester) async {
+  testWidgets('Updates page, staging to the standby system', (tester) async {
     await pumpSystem(
       tester,
-      SystemTab.updates,
+      const UpdatesSettingsPage(),
       updateState: _consoleBuild.copyWith(
         phase: UpdatePhase.downloading,
         progress: 0.42,
@@ -1120,16 +922,16 @@ void main() {
     );
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_system_update_downloading.png'),
+      matchesGoldenFile('goldens/settings_updates_downloading.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('system domain, staged and waiting for a restart', (
+  testWidgets('Updates page, staged and waiting for a restart', (
     tester,
   ) async {
     await pumpSystem(
       tester,
-      SystemTab.updates,
+      const UpdatesSettingsPage(),
       updateState: _consoleBuild.copyWith(
         phase: UpdatePhase.staged,
         available: UpdateManifest(
@@ -1141,14 +943,14 @@ void main() {
     );
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_system_update_staged.png'),
+      matchesGoldenFile('goldens/settings_updates_staged.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('system domain, the check failed', (tester) async {
+  testWidgets('Updates page, the check failed', (tester) async {
     await pumpSystem(
       tester,
-      SystemTab.updates,
+      const UpdatesSettingsPage(),
       updateState: _consoleBuild.copyWith(
         phase: UpdatePhase.error,
         errorMessage: 'could not reach the update server.',
@@ -1156,15 +958,7 @@ void main() {
     );
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_system_update_error.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('system domain, storage tab', (tester) async {
-    await pumpSystem(tester, SystemTab.storage);
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_system_storage.png'),
+      matchesGoldenFile('goldens/settings_updates_error.png'),
     );
   }, skip: !hasFonts);
 
@@ -1195,9 +989,9 @@ void main() {
     );
   }
 
-  testWidgets('system domain, the open-source notices panel', (tester) async {
+  testWidgets('About page, the open-source notices panel', (tester) async {
     seedLicences();
-    await pumpSystem(tester, SystemTab.about);
+    await pumpSystem(tester, const AboutSettingsPage());
     await tester.tap(find.byKey(const Key('system_about_notices')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('console_licence_segno')));
@@ -1207,16 +1001,16 @@ void main() {
       // MaterialApp, not Scaffold: the panel is a route in the navigator's
       // overlay, which sits ABOVE the Scaffold rather than inside it.
       find.byType(MaterialApp),
-      matchesGoldenFile('goldens/control_center_system_licences.png'),
+      matchesGoldenFile('goldens/settings_about_licences.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('system domain, about tab', (tester) async {
+  testWidgets('About page', (tester) async {
     seedLicences();
-    await pumpSystem(tester, SystemTab.about);
+    await pumpSystem(tester, const AboutSettingsPage());
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/control_center_system_about.png'),
+      matchesGoldenFile('goldens/settings_about.png'),
     );
   }, skip: !hasFonts);
 }

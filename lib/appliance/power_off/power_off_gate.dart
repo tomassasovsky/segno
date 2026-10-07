@@ -11,8 +11,8 @@ enum PowerOffDisposition {
   /// Loops in RAM would vanish — Save / discard / Keep playing.
   confirm,
 
-  /// Nothing that would vanish — skip the confirm and go to goodbye.
-  skip,
+  /// Nothing that would vanish — a plain Power off / Keep playing confirm.
+  confirmEmpty,
 }
 
 /// A point-in-time reading of the work that would vanish on halt.
@@ -79,11 +79,11 @@ PowerOffSnapshot powerOffSnapshotOf({
 }
 
 /// Pure gate: in-flight take or transfer → refuse; idle with content →
-/// confirm; else skip.
+/// confirm; else the plain confirm. Every power-off is confirmed.
 PowerOffDisposition powerOffGate(PowerOffSnapshot snapshot) {
   if (snapshot.takeInFlight || snapshot.transferInFlight) {
     return PowerOffDisposition.refuse;
   }
   if (snapshot.anyHasContent) return PowerOffDisposition.confirm;
-  return PowerOffDisposition.skip;
+  return PowerOffDisposition.confirmEmpty;
 }

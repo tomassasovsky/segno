@@ -128,6 +128,7 @@ class _PowerOffHostState extends State<PowerOffHost> {
     switch (state.phase) {
       case PowerOffPhase.refuse:
       case PowerOffPhase.confirm:
+      case PowerOffPhase.confirmEmpty:
       case PowerOffPhase.flushFailed:
         unawaited(_openDialog());
       case PowerOffPhase.saveFailed:
@@ -159,6 +160,7 @@ class _PowerOffHostState extends State<PowerOffHost> {
     switch (cubit.state.phase) {
       case PowerOffPhase.refuse:
       case PowerOffPhase.confirm:
+      case PowerOffPhase.confirmEmpty:
       case PowerOffPhase.saveFailed:
       case PowerOffPhase.flushFailed:
         cubit.keepPlaying();
