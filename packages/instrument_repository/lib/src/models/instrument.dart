@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:segno_engine/segno_engine.dart' show kInstrumentSourceBase;
 
 /// What a remap matches on the instrument's MIDI device.
 enum RemapTrigger {
@@ -255,6 +256,10 @@ class Instrument extends Equatable {
 
   /// The computer keys.
   final ComputerKeys keys;
+
+  /// The engine source this instrument plays into, wherever a source is
+  /// named (lane inputs, monitors, meters).
+  int get source => kInstrumentSourceBase + slot;
 
   /// This instrument with the named fields replaced.
   Instrument copyWith({

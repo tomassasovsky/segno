@@ -1990,8 +1990,13 @@ void main() {
       });
     }
 
+    // Families with a native receipt; Decay, Fade and the instruments
+    // (applied through their repository, no owed value) have none.
     for (final key in OwnedSetting.values.where(
-      (key) => key != OwnedSetting.decay && key != OwnedSetting.fade,
+      (key) =>
+          key != OwnedSetting.decay &&
+          key != OwnedSetting.fade &&
+          key != OwnedSetting.instruments,
     )) {
       testWidgets(
         'a restart that lands the owed value clears its recovery notice; '
@@ -2040,7 +2045,8 @@ void main() {
               timing.owner,
             ),
             OwnedSetting.decay ||
-            OwnedSetting.fade => throw StateError('No receipt'),
+            OwnedSetting.fade ||
+            OwnedSetting.instruments => throw StateError('No receipt'),
           };
           engine
             ..publishClickCommands = key != OwnedSetting.clickVolume
@@ -2062,7 +2068,8 @@ void main() {
             OwnedSetting.recordLength => record.setDefaultLengthBars(4),
             OwnedSetting.recordTiming => timing.setTiming(RecordTiming.quarter),
             OwnedSetting.decay ||
-            OwnedSetting.fade => throw StateError('No receipt'),
+            OwnedSetting.fade ||
+            OwnedSetting.instruments => throw StateError('No receipt'),
           });
           await tester.pump(const Duration(milliseconds: 600));
           await tester.pump();

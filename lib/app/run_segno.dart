@@ -6,6 +6,7 @@ import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/widgets.dart';
+import 'package:instrument_repository/instrument_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -43,6 +44,7 @@ Future<void> runSegno(
   LooperRepository? repository,
   SessionRepository? sessionRepository,
   PerformanceRepository? performanceRepository,
+  InstrumentRepository? instrumentRepository,
   EngineConfig? startConfig,
 }) async {
   assert(
@@ -88,6 +90,7 @@ Future<void> runSegno(
   final LooperRepository looper;
   final SessionRepository session;
   final PerformanceRepository performance;
+  InstrumentRepository? instruments;
   if (repository == null ||
       sessionRepository == null ||
       performanceRepository == null) {
@@ -101,10 +104,16 @@ Future<void> runSegno(
       engine: engine,
       exportsRoot: defaultExportDirectory,
     );
+    // Instruments read the engine through the looper's poll (#1197).
+    instruments = InstrumentRepository(
+      engine: engine,
+      snapshots: looper.engineSnapshots,
+    );
   } else {
     looper = repository;
     session = sessionRepository;
     performance = performanceRepository;
+    instruments = instrumentRepository;
   }
 
   // The native MIDI source feeds the controller pipeline; it is null when no
@@ -226,6 +235,7 @@ Future<void> runSegno(
       ),
       sessionRepository: session,
       performanceRepository: performance,
+      instrumentRepository: instruments,
       initialAsioDrivers: asioDrivers,
       updates: updates,
       wifi: wifi,

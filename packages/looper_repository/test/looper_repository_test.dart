@@ -361,6 +361,23 @@ void main() {
   LooperRepository buildRepo() =>
       LooperRepository(engine: engine, ticker: ticker.stream);
 
+  test('hands every polled snapshot to engineSnapshots, read once', () async {
+    engine.nextSnapshot = _playingSnapshot;
+    final repo = buildRepo();
+    addTearDown(repo.dispose);
+    final seen = <EngineSnapshot>[];
+    final snaps = repo.engineSnapshots.listen(seen.add);
+    addTearDown(snaps.cancel);
+    final sub = repo.looperState.listen((_) {});
+    addTearDown(sub.cancel);
+    await Future<void>.delayed(Duration.zero);
+    final calls = engine.snapshotCalls;
+    ticker.add(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, hasLength(2));
+    expect(engine.snapshotCalls, calls + 1, reason: 'no second engine read');
+  });
+
   group('lastState (the cached projection)', () {
     test("serves the poll's projection without walking the engine", () async {
       engine.nextSnapshot = _playingSnapshot;
