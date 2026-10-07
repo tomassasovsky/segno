@@ -1,0 +1,63 @@
+Model: Claude Fable (subagent), in-session
+
+# Review of PR #1167 — feat(app): reopen the audio device and keep recorded loops (part 2 of #1140)
+
+Branch `claude/engine-reopen-1140-p2` @ 46f80a274, base `claude/engine-reopen-1140` @ 6618fd9a5. Reviewed `git diff origin/claude/engine-reopen-1140...origin/claude/engine-reopen-1140-p2` plus the touched functions read in full at the head, the PR body and the plan's Part 2 section. One probe test was written and run (`probe_stale_verdict_test.dart`, output `probe_stale_verdict_output.log`); not committed. All line references are to the PR head.
+
+## Verification runs (worktree at 46f80a274; `pub get` produced no churn)
+
+- `dart analyze --fatal-infos lib test packages` — No issues found (`analyze.log`).
+- `flutter test test/audio_setup test/looper/view test/app` — 1008 passed, 9 skipped, exit 0 (`app_tests.log`).
+- `tool/build_test_lib.sh` then `(cd packages/looper_repository && SEGNO_ENGINE_LIB=… flutter test)` — 767 passed, exit 0; `reopen_native_test.dart` ran against the real engine rather than self-skipping (`repo_tests.log`, `env.log`).
+- Probe (fake engine, repository level) — fails as intended, reproducing finding 1.
+
+## Verified correct (traced)
+
+Repository: `_reopenEngine` (looper_repository.dart:2628-2673)
+- Order: `_startRefused` → read `previousRate` from the stopped engine (a stopped engine still publishes it: `le_engine_stop` never writes `a_sample_rate`, only configure does, engine.c:767; the snapshot reads it at engine_snapshot.c:356) → `_retireEngineLifetime()` exactly once (`_mixGeneration++` once; pending Fade waiters complete `notReady`; timing/click-mode/record-start/length/click-volume/one-shot/mix waiters cancelled; pending capture images settled, 876-894) → `_engine.reopen` → verdict → fold → `_importTracks` → `_replayRig(replayedPriorEngine: true)` → `_drainHistoryFx` when material was kept. `sessionRevision` is never written on this path; `fxReplayConfirmed` fires once after the replayed recipes confirm (the native test asserts exactly one confirmation under `mixGeneration + 1`).
+- Receipts from the old lifetime cannot land in the new one: the native reopen bumps `fade_lifetime` and zeroes the receipts (Part 1), so a stale request id reads INVALID and a stale image is refused; the Dart side completes and nulls `_pendingFades` first. `_fxPending`, `_fxSlots`, `_laneSlots`, `_monitorSlots` are cleared at the top of `_replayRig` (2687-2690) before any new recipe is posted.
+- Fold agreement with the native verdict, per channel: `retained` folds nothing (native history survived; queued Clear/Undo recipes republish after the replay); `retainedPartial` folds exactly `droppedChannels` through `_foldHistoryFxForChannels` (1038-1066), which applies the same `_foldHistoryFxKey` and forgets the same per-channel bookkeeping (`_restoreFxStaged`, `_pendingClearUndo`, the clear-all group) that `_foldHistoryFxAtQuiescence` (1020-1036) forgets for every channel; `cleared*` runs the full fold a start runs. Native drops that are NOT in the mask (a take still capturing, a seam fold) need no Dart fold: a fresh take has no queued recipe and `le_begin_empty_capture` already dropped that track's history. Resetting `_pendingClearAllUndo` when any member is dropped is consistent: `_intactClearAllGroup()` would read empty with that member gone, so `_settlePendingClearUndos` (3568-3578) could never restore the group anyway.
+- Queued recipes on surviving lanes whose replay target is still pending are not stranded: `_drainHistoryFx` is driven from `_poll()` every tick (2253-2255) and from `settleFxRecipes` (1141, 1151), so they publish once the replayed recipe confirms.
+- The replay clobbers no retained material: `setTrackMultiple` writes only `target_multiple` ("existing content is unchanged", engine_commands.c:2880-2888); lane volume/pan replay recomposes with the retained source image natively (Part 1); `_laneMute` replay is what the native test asserts (`tracks[1].muted` true after reopen); the Fade is never written from Dart (frozen amount 0.75 and `lifetime + 1` asserted); FX chains come from the remembered rig and the history recipes publish on top.
+- `_importTracks`: cleared on any non-`retained` outcome or an all-empty snapshot (2664); a staged import cannot coexist with a reopen anyway, since `_applyingSessionRevision` is in `_startRefused` and the only path that leaves `_importTracks` set after an apply ends in `stopEngine()` (4620), which disarms the supervisor.
+- Verdict lifetime: set in `_reopenEngine`, nulled in `startEngine` (2610) and nowhere else; tests cover set, ride and clear. (See finding 1 for the gap.)
+
+Supervisor (`_attemptReconnect`, 2361-2392)
+- `_startRefused` is checked before enumeration, before the raw stop and before the signature is recorded; the signature is written only on the line before `_reopenEngine` is invoked; `_startReconnectPolling` resets it per loss (2330). A refused window therefore costs one early return per reconnect tick, nothing else, and the same device list reopens on the first admissible tick (test: `a refused attempt neither reopens nor consumes the device list`).
+- No new infinite loop: polling stops on success, on `!_isPinned`/no config, or on `stopEngine`. The refusal sources are owner fences (`blockStartFor*`, all paired with clears in session_cubit / mix_settings_coordinator / tempo_settings) and recovery intents, and every recovery intent is latched by a path that also calls `stopEngine()` (`_failOneShot` 8274-8282 and its siblings), which disarms the supervisor — so "refused forever while polling" cannot arise from a recovery.
+- Not raw-stopping on a refusal does not strand a later deliberate start: the cubit's re-apply stops a `running` engine before `startEngine` (audio_setup_cubit.dart:295-298), and a running-but-lost engine reads `running`.
+- Concurrency: every engine call is synchronous; the only async tail is `_announceFxReplayAfterConfirmation`, keyed on `mixGeneration`/`sessionRevision`/`_intendRunning`. A Session load is fenced by `_startRefused`; a deliberate `startEngine` or `stopEngine` during the replay's tick-observed settles retires the lifetime again, as before this PR.
+- A refused/failed reopen leaves `_intendRunning` true (set by the earlier start) and the engine stopped-with-material, which is the state the next tick expects; a replay refusal rolls back through `stopEngine()` exactly as `startEngine` does.
+
+Notices
+- One `DeviceConnectivity` value per transition (`_detectConnectivity`, audio_setup_cubit.dart:547-569); `_restoredConnectivity` maps retained → `restored`, partial → `restoredPartial`, cleared → `restoredCleared`, so the plain snack is replaced, never doubled. `ConnectivityBanners` renders only `lost` or `restoredCleared` (one bar), the app toast only `restored`/`restoredPartial`, and both switches are exhaustive. `restoredCleared` stands across further present ticks, ends on `dismissReopenNotice` (guarded to that state) or a re-apply (which resets to `none`). The banner's action dismisses synchronously and then opens the manager with a still-mounted context. A later deliberate start nulls the verdict, so the restored snack after it is plain.
+- Layering and lint: `dismissReopenNotice` returns void; `_restoredConnectivity` is a private static helper; views importing `looper_repository` types is the file's established convention (36 view files do).
+
+Tests
+- Widget test pumps twice after each ticker event; stream subscriptions are cancelled through `addTearDown`, never awaited inline. `reopen_native_test.dart` is `fuzz`-tagged like the other FFI suites; `dart_test.yaml` declares the tag without a skip, so it runs in a plain `flutter test` (self-skipping only without `SEGNO_ENGINE_LIB`) and in CI's fuzz job (main.yaml:324-369). Its assertions are byte-exact PCM, undo depth, Fade amount/target/lifetime, mute, `mixGeneration + 1`, unchanged `sessionRevision`, a single confirmation and a pending Fade completing `notReady` — none can pass with a reset rig. The suppression test checks both halves (no reopen/no stop/no consumed list while fenced; the same list reopens after). The `toString().replaceAll(...)` equality in the reconnect test is fragile but currently sound.
+
+## Findings
+
+1. **Medium** — A device return the engine produces on its own re-raises the previous reconnect's verdict.
+   - Where: `LooperRepository._lastReopen` is set only by `_reopenEngine` and cleared only by `startEngine` (looper_repository.dart:2610, 2644-2650); `AudioSetupCubit._detectConnectivity` decides the notice from `status.reopen` at every `devicePresent` 0→1 (audio_setup_cubit.dart:561-578).
+   - Trigger: an earlier reconnect in this run ended partial or cleared (verdict kept on the status after the notice). Later miniaudio flips `a_device_present` 0 then 1 by itself — `notification_callback` on `rerouted`/`interruption_began`/`stopped` then `started`/`interruption_ended` (engine_miniaudio.c:127-139), which the file documents as absorbed internally "without le_engine_start ever running again" (a macOS default-output switch, sleep/wake). The repository's next poll sees the return before the slower reconnect cadence stops and reopens (and on a non-pinned path it never reopens).
+   - Impact: the partial toast names tracks dropped in a past episode, or the standing cleared banner states "the loops were cleared — reload the session" over an intact rig and offers the Sessions action — a prompt toward reloading over the live performance. On a pinned device the supervisor then also stops and reopens on its next tick, so the player sees two notices for one blip: the stale one, then the fresh one.
+   - Reproduced: the probe records a `retainedPartial` reconnect, then a present 0→1 with no reopen; `status.reopen` still reads `retainedPartial` with `droppedChannels == [2]` (`probe_stale_verdict_output.log`).
+   - Smallest fix: start each loss episode with no verdict — `_lastReopen = null` where the loss is observed (`_superviseDevice` when `!devicePresent`, 2311-2314, or `_startReconnectPolling`), so a return without a reopen maps to the plain `restored`; one repository test as in the probe.
+
+2. **Low** — The verdict of a reopen whose rig replay fails is never shown, contrary to the plan.
+   - Where: `_lastReopen` is assigned before `_replayRig` (2650); a refusal inside `_replayRig` rolls back through `stopEngine()`, which drops `devicePresent` and disarms the supervisor; the next deliberate `startEngine` nulls the verdict before any 0→1 transition can be observed.
+   - Trigger: a cleared (rate-changed) reopen followed by a replay refusal (e.g. a mix or timing request refused).
+   - Impact: the player gets an empty rig and, after re-applying, the plain restored snack; the plan's "survives a failed replay (so a reopen that stopped the engine still reports what happened to the loops)" does not hold. Fix: either carry the verdict through the next start when the previous session ended in a replay rollback, or correct the plan and the `_reopenEngine` doc.
+
+3. **Low** — `simulatedDevices` is a public test seam on the production `NativeAudioEngine`, and its own doc misstates where it is honoured.
+   - Where: native_audio_engine.dart:228-243 — the field and the `enumerateDevices` short-circuit live on `NativeAudioEngine`; the comment says "Only `PumpedNativeEngine` honours it".
+   - Impact: a production engine with the field set would stop enumerating real devices; no caller sets it today. Fix: move the field and an `enumerateDevices` override into `PumpedNativeEngine`, beside `simulatedSampleRate`.
+
+4. **Low (coverage)** — The cleared banner's one interaction is untested end to end: `connectivity_banners_test` renders the banner and reads its text/tokens, `audio_setup_cubit_test` exercises `dismissReopenNotice` alone; nothing taps `connectivity_banner_material_action` to show that the notice ends and the Sessions manager opens. A widget test with the session cubits stubbed would pin the action the banner exists for.
+
+5. **Nit** — `connectivity_banners.dart:11` imports `package:segno/session/view/sessions_manager_dialog.dart` directly; the other looper views (`looper_page`, `tracks_view`, `stage_top_bar`, `tracks_commands`) import the `session.dart` barrel, which already exports `showSessionsManager`.
+
+## Verdict
+
+The repository reopen, folds, replay, supervisor fix and notice mapping trace correct and all three suites pass with the real engine; one medium defect — a stale verdict re-raised by an engine-driven device return, including a false "loops were cleared, reload the session" banner — needs its one-line fix and a test before merge; the rest are low. Approve once finding 1 is fixed.
