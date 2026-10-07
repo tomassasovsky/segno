@@ -135,6 +135,7 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
    * lane if it is later un-routed. */
   store_i32(&ln->a_recoverable, 1);
   le_audio_rev_bump(t); /* [R1] session load: imported content replaces all */
+  le_track_forget_slot_keys(t);
   if (lane == 0) (void)le_push(engine, LE_CMD_RESET_TRANSFORMS, channel, 0);
   return LE_OK;
 }
@@ -388,7 +389,7 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
    * Image 0 (#1143): imported PCM has no staged copy in a running capture, so
    * a stem that reaches it fails truthfully (323/0) rather than guessing. */
   le_forget_slot_images(engine, channel);
-  le_publish_live_image(engine, t, live, 0);
+  le_publish_live_image(engine, t, live, 0, 0);
   store_i32(&t->a_undo_depth, undo_count);
   store_i32(&t->a_peel_depth, le_peel_depth(t));
   store_i32(&t->a_redo_depth, redo_count);

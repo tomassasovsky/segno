@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
@@ -116,14 +117,17 @@ void main() {
         device: () => looper.state.status.deviceName,
       );
       sessions = SessionRepository(
+        guards: GuardRegistry(),
         engine: engine,
         sessionsRoot: () async => directory.path,
       );
       performance = PerformanceRepository(
+        guards: GuardRegistry(),
         engine: engine,
         exportsRoot: () async => directory.path,
       );
       session = SessionCubit(
+        guards: GuardRegistry(),
         settings: settings,
         repository: sessions,
         looper: looper,
@@ -290,6 +294,9 @@ void main() {
       () async {
         expect((await tempo.clickModeOwner.set(ClickMode.off)).isOk, isTrue);
         await session.saveAs('No click');
+        // Opening the current session does nothing (plan Part 4), so
+        // recall goes through another current session.
+        await session.saveAs('Elsewhere');
         expect(
           (await tempo.clickModeOwner.set(ClickMode.playRec)).isOk,
           isTrue,
@@ -307,6 +314,9 @@ void main() {
       'recall restores saved Click without rewriting startup gain',
       () async {
         await session.saveAs('Quiet');
+        // Opening the current session does nothing (plan Part 4), so
+        // recall goes through another current session.
+        await session.saveAs('Elsewhere');
         expect((await tempo.clickVolumeOwner.set(1.4)).isOk, isTrue);
         await session.open(await idOf('Quiet'));
         expect(session.state.status, SessionStatus.success);

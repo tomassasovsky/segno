@@ -198,11 +198,80 @@ class FakeAudioEngine implements AudioEngine {
   RequestAdmission toggleReverse({required int channel}) =>
       (result: EngineResult.invalid, request: 0);
 
+  /// Directions accepted by [installReverse], keyed by channel; the next
+  /// [commitSession] publishes them, and a clear drops them with the material.
+  final Map<int, bool> installedReverses = {};
+
+  /// Result [installReverse] admits with; `ok` posts and settles a receipt.
+  EngineResult installReverseResult = EngineResult.ok;
+
   @override
   RequestAdmission installReverse({
     required int channel,
     required bool reversed,
-  }) => (result: EngineResult.invalid, request: 0);
+  }) {
+    if (!installReverseResult.isOk) {
+      return (result: installReverseResult, request: 0);
+    }
+    installedReverses[channel] = reversed;
+    final request = ++_fadeRequest;
+    _fadeResults[request] = EngineResult.ok;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  /// What [setSpeed] admits and the receipt it answers later (#1179).
+  EngineResult speedAdmission = EngineResult.ok;
+  EngineResult speedResult = EngineResult.ok;
+
+  /// The last factor [setSpeed] admitted.
+  SpeedFactor? lastSpeed;
+
+  @override
+  RequestAdmission setSpeed(SpeedFactor factor) {
+    if (!speedAdmission.isOk) return (result: speedAdmission, request: 0);
+    lastSpeed = factor;
+    final request = ++_fadeRequest;
+    _fadeResults[request] = speedResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  /// What the Transpose requests admit and the receipt they answer later
+  /// (#1179).
+  EngineResult transposeAdmission = EngineResult.ok;
+  EngineResult transposeResult = EngineResult.ok;
+
+  /// The last Transpose step, install and bypass admitted.
+  ({int channel, int delta})? lastTransposeStep;
+  ({int channel, int semitones})? lastTransposeInstall;
+  bool? lastTransposeBypass;
+
+  RequestAdmission _admitTranspose(void Function() record) {
+    if (!transposeAdmission.isOk) {
+      return (result: transposeAdmission, request: 0);
+    }
+    record();
+    final request = ++_fadeRequest;
+    _fadeResults[request] = transposeResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      _admitTranspose(
+        () => lastTransposeStep = (channel: channel, delta: delta),
+      );
+
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => _admitTranspose(
+    () => lastTransposeInstall = (channel: channel, semitones: semitones),
+  );
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) =>
+      _admitTranspose(() => lastTransposeBypass = bypassed);
 
   @override
   EngineResult? readRequestResult(int request) => _fadeResults.remove(request);
@@ -298,6 +367,7 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult clear({int channel = 0}) {
     lastChannel = channel;
     calls.add('clear');
+    installedReverses.remove(channel);
     if (importedTracks.remove(channel) != null) {
       importedLanes.removeWhere((key, _) => key.$1 == channel);
       importedLayers.removeWhere((key, _) => key.$1 == channel);
@@ -1239,6 +1309,16 @@ class FakeAudioEngine implements AudioEngine {
   /// test can assert that a closed face leaves nothing running.
   int tunerInput = -1;
 
+  /// The last tuner mute mask sent.
+  int tunerMuteMask = 0;
+
+  @override
+  EngineResult setTunerMute({required int inputMask}) {
+    tunerMuteMask = inputMask;
+    calls.add('setTunerMute');
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setTunerInput({required int input}) {
     tunerInput = input;
@@ -1482,6 +1562,9 @@ class FakeAudioEngine implements AudioEngine {
       importLayer(channel, lane, 0, pcm);
 
   @override
+  int trackAudioRev(int channel) => 0;
+
+  @override
   Float32List exportLayer(int channel, int lane, int ordinal) {
     calls.add('exportLayer');
     return Float32List(0);
@@ -1537,6 +1620,7 @@ class FakeAudioEngine implements AudioEngine {
       tracks[entry.key] = TrackSnapshot(
         state: TrackState.stopped,
         fade: installedFades[entry.key] ?? const FadeImage(),
+        reversed: installedReverses[entry.key] ?? false,
         volume: 1,
         muted: false,
         lengthFrames: entry.value.length,
@@ -1952,6 +2036,7 @@ class _LengthSnapshot extends EngineSnapshot {
         tunerHz: source.tunerHz,
         tunerConfidence: source.tunerConfidence,
         tunerInput: source.tunerInput,
+        tunerMuteMask: source.tunerMuteMask,
         activeBackend: source.activeBackend,
         outputEnabledMask: source.outputEnabledMask,
         isPerfArmed: source.isPerfArmed,
@@ -1979,6 +2064,8 @@ class _LengthSnapshot extends EngineSnapshot {
         countInBeatsLeft: source.countInBeatsLeft,
         looperMode: mode ?? source.looperMode,
         primaryTrack: source.primaryTrack,
+        speed: source.speed,
+        transposeBypass: source.transposeBypass,
         quantize: engine.lastQuantize ?? source.quantize,
         recordTimingRevision: engine.recordTimingRevision,
         recordTimingResult: engine.recordTimingResult,
@@ -2010,6 +2097,8 @@ class _LengthTrack extends TrackSnapshot {
         state: source.state,
         fade: source.fade,
         reversed: source.reversed,
+        headRate: source.headRate,
+        transpose: source.transpose,
         volume: engine.trackLevels[channel] ?? source.volume,
         muted: source.muted,
         lengthFrames: source.lengthFrames,

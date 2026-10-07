@@ -276,6 +276,60 @@ class FakeAudioEngine implements AudioEngine {
     required bool reversed,
   }) => (result: EngineResult.invalid, request: 0);
 
+  /// What [setSpeed] admits and the receipt it answers later (#1179).
+  EngineResult speedAdmission = EngineResult.ok;
+  EngineResult speedResult = EngineResult.ok;
+
+  /// The last factor [setSpeed] admitted.
+  SpeedFactor? lastSpeed;
+
+  @override
+  RequestAdmission setSpeed(SpeedFactor factor) {
+    if (!speedAdmission.isOk) return (result: speedAdmission, request: 0);
+    lastSpeed = factor;
+    final request = ++_fadeRequest;
+    _fadeResults[request] = speedResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  /// What the Transpose requests admit and the receipt they answer later
+  /// (#1179).
+  EngineResult transposeAdmission = EngineResult.ok;
+  EngineResult transposeResult = EngineResult.ok;
+
+  /// The last Transpose step, install and bypass admitted.
+  ({int channel, int delta})? lastTransposeStep;
+  ({int channel, int semitones})? lastTransposeInstall;
+  bool? lastTransposeBypass;
+
+  RequestAdmission _admitTranspose(void Function() record) {
+    if (!transposeAdmission.isOk) {
+      return (result: transposeAdmission, request: 0);
+    }
+    record();
+    final request = ++_fadeRequest;
+    _fadeResults[request] = transposeResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      _admitTranspose(
+        () => lastTransposeStep = (channel: channel, delta: delta),
+      );
+
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => _admitTranspose(
+    () => lastTransposeInstall = (channel: channel, semitones: semitones),
+  );
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) =>
+      _admitTranspose(() => lastTransposeBypass = bypassed);
+
   @override
   EngineResult? readRequestResult(int request) => _fadeResults.remove(request);
 
@@ -1191,6 +1245,15 @@ class FakeAudioEngine implements AudioEngine {
   /// test can assert that a closed face leaves nothing running.
   int tunerInput = -1;
 
+  /// The last tuner mute mask sent.
+  int tunerMuteMask = 0;
+
+  @override
+  EngineResult setTunerMute({required int inputMask}) {
+    tunerMuteMask = inputMask;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setTunerInput({required int input}) {
     tunerInput = input;
@@ -1412,6 +1475,12 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       EngineResult.ok;
+
+  /// Per-track content revisions; a test bumps one to stand for a write.
+  final Map<int, int> audioRevs = {};
+
+  @override
+  int trackAudioRev(int channel) => audioRevs[channel] ?? 0;
 
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) => ordinal == 0
@@ -1787,6 +1856,7 @@ class _LengthSnapshot extends EngineSnapshot {
          tunerHz: source.tunerHz,
          tunerConfidence: source.tunerConfidence,
          tunerInput: source.tunerInput,
+         tunerMuteMask: source.tunerMuteMask,
          activeBackend: source.activeBackend,
          outputEnabledMask: source.outputEnabledMask,
          isPerfArmed: perfArmed ?? source.isPerfArmed,
@@ -1821,6 +1891,8 @@ class _LengthSnapshot extends EngineSnapshot {
          countInBeatsLeft: source.countInBeatsLeft,
          looperMode: mode ?? source.looperMode,
          primaryTrack: source.primaryTrack,
+         speed: source.speed,
+         transposeBypass: source.transposeBypass,
          quantize: engine.lastQuantize ?? source.quantize,
          recordTimingRevision: engine.recordTimingRevision,
          recordTimingResult: 0,
@@ -1865,6 +1937,8 @@ class _LengthTrack extends TrackSnapshot {
          state: source.state,
          fade: source.fade,
          reversed: source.reversed,
+         headRate: source.headRate,
+         transpose: source.transpose,
          volume: source.volume,
          muted: source.muted,
          lengthFrames: source.lengthFrames,
@@ -1873,11 +1947,13 @@ class _LengthTrack extends TrackSnapshot {
          peak: source.peak,
          clearRestore: source.clearRestore,
          redoDepth: source.redoDepth,
+         peelDepth: source.peelDepth,
          multiple: source.multiple,
          inputMask: source.inputMask,
          outputMask: source.outputMask,
          layerInFlight: source.layerInFlight,
          pending: source.pending,
+         pendingLaunch: source.pendingLaunch,
          lengthPresetBars: bars ?? source.lengthPresetBars,
          oneShot: oneShot ?? source.oneShot,
          settledTakeId: source.settledTakeId,

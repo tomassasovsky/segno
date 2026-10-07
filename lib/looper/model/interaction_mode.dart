@@ -47,7 +47,11 @@ enum InteractionMode {
 
   /// Foot-controlled per-track playback direction: each track pedal turns
   /// its track around at the current position.
-  reverse;
+  reverse,
+
+  /// Foot-controlled Peel: each track pedal removes its track's newest
+  /// overdub layer, recoverable through Undo.
+  peel;
 
   /// The persisted token for this mode. Derived from the member name, so a
   /// member rename changes the current stored identity.

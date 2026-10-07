@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
@@ -117,7 +118,7 @@ void main() {
       final live = looper.state.tracks.first.lanes.single;
       expect(live.volume, 1);
       expect(live.balance, closeTo(0.5, 1e-6));
-      final files = SessionRepository(engine: engine);
+      final files = SessionRepository(guards: GuardRegistry(), engine: engine);
       await files.save(
         directory.path,
         chains: chainsFromLooper(
@@ -306,7 +307,10 @@ void main() {
             trackOverrides: looper.trackOneShotOverrides,
           ),
         );
-        final repository = SessionRepository(engine: engine);
+        final repository = SessionRepository(
+          guards: GuardRegistry(),
+          engine: engine,
+        );
         await repository.save(directory.path, settings: settings);
         final rig = rigFromBundle(await repository.read(directory.path));
         expect(rig.tracks, isEmpty);
@@ -808,6 +812,7 @@ void main() {
           tracks: [
             SessionTrack(
               fadeAmount: 1,
+              reversed: false,
               channel: 0,
               multiple: 1,
               lengthFrames: 4,
@@ -944,6 +949,7 @@ void main() {
           tracks: [
             SessionTrack(
               fadeAmount: 1,
+              reversed: false,
               channel: 0,
               multiple: 1,
               lengthFrames: 4,
@@ -1005,6 +1011,7 @@ void main() {
             tracks: [
               SessionTrack(
                 fadeAmount: 1,
+                reversed: false,
                 channel: 0,
                 multiple: 1,
                 lengthFrames: 4,
@@ -1051,6 +1058,7 @@ void main() {
         session: sessionWith([
           SessionTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
@@ -1071,6 +1079,35 @@ void main() {
       expect(rig.tracks.single.lanes, hasLength(2));
       expect(rig.tracks.single.lanes[0].livePcm, l0);
       expect(rig.tracks.single.lanes[1].livePcm, l1);
+    });
+
+    test("carries each track's playback direction to the rig", () {
+      final pcm = Float32List.fromList([1, 2, 3, 4]);
+      final bundle = (
+        session: sessionWith([
+          for (final (channel, reversed) in [(0, true), (1, false)])
+            SessionTrack(
+              fadeAmount: 1,
+              reversed: reversed,
+              channel: channel,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track${channel}_lane0_L0.wav')],
+            ),
+        ]),
+        laneStems: {
+          (0, 0): [pcm],
+          (1, 0): [pcm],
+        },
+      );
+      final rig = rigFromBundle(bundle);
+      expect(
+        [for (final t in rig.tracks) (t.channel, t.reversed)],
+        [
+          (0, true),
+          (1, false),
+        ],
+      );
     });
 
     test('maps a multi-lane track with per-lane overdub history', () {
@@ -1103,6 +1140,7 @@ void main() {
         session: sessionWith([
           SessionTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 1,
@@ -1150,6 +1188,7 @@ void main() {
           tracks: [
             SessionTrack(
               fadeAmount: 1,
+              reversed: false,
               channel: 0,
               multiple: 1,
               lengthFrames: 4,
@@ -1157,6 +1196,7 @@ void main() {
             ),
             SessionTrack(
               fadeAmount: 1,
+              reversed: false,
               channel: 2,
               multiple: 1,
               lengthFrames: 4,
@@ -1189,6 +1229,7 @@ void main() {
         session: sessionWith([
           SessionTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
@@ -1215,6 +1256,7 @@ void main() {
         session: sessionWith([
           SessionTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
@@ -1222,6 +1264,7 @@ void main() {
           ),
           SessionTrack(
             fadeAmount: 1,
+            reversed: false,
             channel: 1,
             multiple: 1,
             lengthFrames: 4,
@@ -1239,6 +1282,218 @@ void main() {
       final rig = rigFromBundle(bundle);
       expect(rig.tracks, hasLength(1));
       expect(rig.tracks.single.channel, 0);
+    });
+  });
+
+  group('New loop (plan D9)', () {
+    String chain(TrackEffectType type) =>
+        encodeFxChain(FxChainEnvelope(entries: [BuiltInEffect(type: type)]));
+
+    // Every field away from its default, every override map included, so a
+    // field New loop forgot to carry reads its default and differs.
+    final full = Session(
+      name: 'Evening loop',
+      sampleRate: 44100,
+      channels: 2,
+      baseLengthFrames: 96000,
+      tracks: const [
+        SessionTrack(
+          channel: 2,
+          multiple: 2,
+          lengthFrames: 96000,
+          fadeAmount: 0.5,
+          reversed: true,
+          lanes: [
+            SessionLane(
+              lane: 0,
+              volume: 0.8,
+              muted: true,
+              outputMask: 0x3,
+              inputChannel: 1,
+              layers: [SessionLayer(file: 'track2_lane0_L0.wav')],
+              history: TrackHistory.none,
+            ),
+          ],
+        ),
+      ],
+      laneChains: [
+        SessionLaneChain(
+          channel: 2,
+          lane: 0,
+          encoded: chain(TrackEffectType.drive),
+        ),
+      ],
+      monitors: [
+        SessionMonitor(
+          input: 1,
+          mode: 'on',
+          outputMask: 0x3,
+          volume: 0.7,
+          muted: true,
+          encoded: chain(TrackEffectType.reverb),
+        ),
+      ],
+      trackChains: [
+        SessionTrackChain(channel: 3, encoded: chain(TrackEffectType.delay)),
+      ],
+      outputChains: [
+        SessionOutputChain(bus: 1, encoded: chain(TrackEffectType.drive)),
+      ],
+      allTracksChain: chain(TrackEffectType.reverb),
+      tempoBpm: 96,
+      tempoSource: TempoSource.tapped,
+      tsNum: 7,
+      tsDen: 8,
+      quantizeDiv: GridDivision.half,
+      loopBars: 4,
+      recordTiming: RecordTiming.bar,
+      overdubDecay: 30,
+      clickMode: ClickMode.rec,
+      clickOutputMask: 0x4,
+      clickVolume: 0.5,
+      countInBars: 2,
+      looperMode: LooperMode.sync,
+      primaryTrack: 2,
+      defaultOneShot: true,
+      defaultLengthPresetBars: 8,
+      defaultFadeDurationMs: 2000,
+      trackFadeDurationOverrides: const {1: 6000},
+      trackRecordTimingOverrides: const {2: RecordTiming.loopStart},
+      trackOverdubDecayOverrides: const {3: 50},
+      trackOneShotOverrides: const {4: true},
+      trackLengthPresetOverrides: const {5: 2},
+      trackLevels: const {0: 0.5},
+      trackPans: const {1: -0.25},
+      laneInputs: const {(1, 0): 2},
+      laneOutputs: const {(1, 0): 1},
+      laneCounts: const {1: 2},
+      syncTempo: false,
+      recDub: true,
+      autoRecord: true,
+      defaultMultiple: 2,
+      pedalBindings: 'remap',
+      inputSetup: const SessionInputSetup(
+        trimDb: {0: 3},
+        pan: {0: 0.5},
+        pairs: {0: 1},
+      ),
+      outputSetup: const SessionOutputSetup(level: {0: 0.5}),
+    );
+
+    test('the source session sets every manifest field away from its '
+        'default', () {
+      // A field added to Session shows up here first: name it in this
+      // list, set it away from its default above, and write its New loop
+      // fate into Session.forNewLoop.
+      final source = full.toJson();
+      expect(source.keys.toSet(), {
+        'version',
+        'name',
+        'sampleRate',
+        'channels',
+        'baseLengthFrames',
+        'tracks',
+        'laneChains',
+        'monitors',
+        'trackChains',
+        'outputChains',
+        'allTracksChain',
+        'tempoBpm',
+        'tempoSource',
+        'tsNum',
+        'tsDen',
+        'quantizeDiv',
+        'loopBars',
+        'recordTiming',
+        'overdubDecay',
+        'clickMode',
+        'clickOutputMask',
+        'clickVolume',
+        'countInBars',
+        'looperMode',
+        'primaryTrack',
+        'defaultOneShot',
+        'defaultLengthPresetBars',
+        'defaultFadeDurationMs',
+        'trackFadeDurationOverrides',
+        'trackRecordTimingOverrides',
+        'trackOverdubDecayOverrides',
+        'trackOneShotOverrides',
+        'trackLengthPresetOverrides',
+        'trackPans',
+        'trackLevels',
+        'laneInputs',
+        'laneOutputs',
+        'laneCounts',
+        'syncTempo',
+        'recDub',
+        'autoRecord',
+        'defaultMultiple',
+        'pedalBindings',
+        'inputSetup',
+        'outputSetup',
+      });
+      final defaults = const Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: [],
+      ).toJson();
+      for (final key in source.keys.where((k) => k != 'version')) {
+        expect(
+          jsonEncode(source[key]),
+          isNot(jsonEncode(defaults[key])),
+          reason: '$key is at its default',
+        );
+      }
+    });
+
+    test('keeps every field and drops exactly the tracks, the grid, the '
+        'crown and the name', () {
+      final source = full.toJson();
+      final expected = {
+        for (final entry in source.entries)
+          if (entry.key != 'name') entry.key: entry.value,
+        'tracks': <Object?>[],
+        'baseLengthFrames': 0,
+        'loopBars': 0,
+        'primaryTrack': -1,
+      };
+
+      expect(
+        jsonEncode(full.forNewLoop().toJson()),
+        jsonEncode(expected),
+      );
+    });
+
+    test('rigForNewLoop is the empty rig with every setting and chain', () {
+      final rig = rigForNewLoop(full);
+
+      expect(rig.tracks, isEmpty);
+      expect(rig.baseLengthFrames, 0);
+      expect(rig.loopBars, 0);
+      expect(rig.primaryTrack, -1);
+      // The rest is what an Open of the same session applies.
+      final opened = rigFromBundle((session: full, laneStems: const {}));
+      expect(rig.tempoBpm, 96);
+      expect(rig.tempoSource, opened.tempoSource);
+      expect((rig.tsNum, rig.tsDen), (7, 8));
+      expect(rig.looperMode, LooperMode.sync);
+      expect(rig.recordTiming, opened.recordTiming);
+      expect(rig.clickMode, ClickMode.rec);
+      expect(rig.countInBars, 2);
+      expect(rig.trackLevels, opened.trackLevels);
+      expect(rig.trackPans, opened.trackPans);
+      expect(rig.laneInputs, opened.laneInputs);
+      expect(rig.laneOutputs, opened.laneOutputs);
+      expect(rig.laneCounts, opened.laneCounts);
+      expect(rig.inputSetup.trimDb, {0: 3});
+      expect(rig.outputSetup, opened.outputSetup);
+      expect(rig.laneChains.keys, [(2, 0)]);
+      expect(rig.monitors.single.input, 1);
+      expect(rig.trackChains.keys, [3]);
+      expect(rig.outputChains.keys, [1]);
+      expect(rig.allTracksChain, opened.allTracksChain);
     });
   });
 }

@@ -815,6 +815,70 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  RequestAdmission setSpeed(SpeedFactor factor) {
+    _checkAlive();
+    final request = calloc<Uint64>();
+    try {
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_set_speed(
+          _engine,
+          factor.numer,
+          factor.denom,
+          request,
+        ),
+      );
+      return (result: result, request: request.value);
+    } finally {
+      calloc.free(request);
+    }
+  }
+
+  /// Posts one checked request through [post], which fills the request id.
+  RequestAdmission _admit(int Function(Pointer<Uint64> request) post) {
+    _checkAlive();
+    final request = calloc<Uint64>();
+    try {
+      final result = EngineResult.fromCode(post(request));
+      return (result: result, request: request.value);
+    } finally {
+      calloc.free(request);
+    }
+  }
+
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      _admit(
+        (request) => _bindings.le_engine_transpose_step(
+          _engine,
+          channel,
+          delta,
+          request,
+        ),
+      );
+
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => _admit(
+    (request) => _bindings.le_engine_install_transpose(
+      _engine,
+      channel,
+      semitones,
+      request,
+    ),
+  );
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) => _admit(
+    (request) => _bindings.le_engine_set_transpose_bypass(
+      _engine,
+      bypassed ? 1 : 0,
+      request,
+    ),
+  );
+
+  @override
   EngineResult? readRequestResult(int request) {
     _checkAlive();
     final result = calloc<Int32>();
@@ -1162,6 +1226,12 @@ class NativeAudioEngine implements AudioEngine {
     } finally {
       calloc.free(buf);
     }
+  }
+
+  @override
+  int trackAudioRev(int channel) {
+    _checkAlive();
+    return _bindings.le_engine_track_audio_rev(_engine, channel);
   }
 
   @override
@@ -2119,6 +2189,14 @@ class NativeAudioEngine implements AudioEngine {
     _checkAlive();
     return EngineResult.fromCode(
       _bindings.le_engine_set_tuner_input(_engine, input),
+    );
+  }
+
+  @override
+  EngineResult setTunerMute({required int inputMask}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_tuner_mute(_engine, inputMask),
     );
   }
 

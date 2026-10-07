@@ -43,10 +43,12 @@ export 'src/engine_snapshot.dart'
         PendingLaunchAction,
         RecordStartEditKind,
         RecordTiming,
+        SpeedFactor,
         TempoSource,
         TrackRestoreState,
         TrackSnapshot,
         TrackState,
+        TransposePitch,
         XrunKind,
         kMaxChannels,
         kMaxLanes,
@@ -82,7 +84,15 @@ export 'src/plugin_descriptor.dart'
         PluginParamInfo,
         PluginScanProgress,
         PluginSlotHandle;
-export 'src/storage_io.dart' show NativeStorageIo, StorageIo;
+export 'src/storage_io.dart'
+    show
+        FileDigest,
+        FileDigested,
+        FileMissing,
+        FileTruncated,
+        FileUnreadable,
+        NativeStorageIo,
+        StorageIo;
 export 'src/track_effect.dart'
     show
         BuiltInEffect,

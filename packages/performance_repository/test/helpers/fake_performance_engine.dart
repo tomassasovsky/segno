@@ -203,6 +203,9 @@ class FakePerformanceEngine implements AudioEngine {
   Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
 
   @override
+  int trackAudioRev(int channel) => 0;
+
+  @override
   EngineResult importLayer(
     int channel,
     int lane,
@@ -412,6 +415,24 @@ class FakePerformanceEngine implements AudioEngine {
     required int channel,
     required bool reversed,
   }) => (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setSpeed(SpeedFactor factor) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) =>
+      (result: EngineResult.invalid, request: 0);
 
   @override
   EngineResult? readRequestResult(int request) => EngineResult.invalid;
@@ -784,6 +805,15 @@ class FakePerformanceEngine implements AudioEngine {
   /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a
   /// test can assert that a closed face leaves nothing running.
   int tunerInput = -1;
+
+  /// The last tuner mute mask sent.
+  int tunerMuteMask = 0;
+
+  @override
+  EngineResult setTunerMute({required int inputMask}) {
+    tunerMuteMask = inputMask;
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult setTunerInput({required int input}) {

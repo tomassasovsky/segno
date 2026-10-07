@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
@@ -69,7 +70,7 @@ void main() {
     expect(looper.record(), EngineResult.notReady);
     engine.pump(frames: 0);
     expect(await looper.settleMixSettings(), EngineResult.ok);
-    session = SessionRepository(engine: engine);
+    session = SessionRepository(guards: GuardRegistry(), engine: engine);
     tempDir = Directory.systemTemp.createTempSync('segno_layers_session');
     pumpDriver = Timer.periodic(poll, (_) => engine.pump(frames: 0));
   });
@@ -276,6 +277,31 @@ void main() {
           );
         }
       }
+    },
+    skip: skip,
+  );
+  test(
+    'the session fingerprint follows every audio write on the real engine',
+    () async {
+      String fingerprint() =>
+          session.fingerprint(settings: const SessionSettings());
+
+      buildTake(base: 0.5, overdubs: 0, undos: 0);
+      settle();
+      final taken = fingerprint();
+      engine.pump(frames: loopFrames);
+      expect(fingerprint(), taken, reason: 'playing back writes nothing');
+
+      expect(looper.record(), EngineResult.ok);
+      engine.pump(frames: loopFrames, input: 0.1);
+      expect(looper.record(), EngineResult.ok);
+      settle();
+      final overdubbed = fingerprint();
+      expect(overdubbed, isNot(taken), reason: 'an overdub is a write');
+
+      looper.undo();
+      engine.pump(frames: 0);
+      expect(fingerprint(), isNot(overdubbed), reason: 'an undo is a write');
     },
     skip: skip,
   );

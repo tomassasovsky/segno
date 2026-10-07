@@ -306,6 +306,7 @@ void main() {
           SessionRigTrack(
             channel: 0,
             fadeAmount: amount,
+            reversed: false,
             lanes: [
               SessionRigLane(
                 lane: 0,
@@ -2521,6 +2522,77 @@ void main() {
         ..stopEngine()
         ..startEngine(const EngineConfig());
       expect(engine.tunerInput, 0);
+    });
+
+    test('setTunerMute silences a pair only while armed and rides the arm '
+        'across a restart', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      // Disarmed: refused, nothing sent.
+      expect(repo.setTunerMute({0}), EngineResult.invalid);
+      expect(engine.calls, isNot(contains('setTunerMute')));
+
+      repo.setTunerInput(input: 2);
+      expect(repo.setTunerMute({2, 3}), EngineResult.ok);
+      expect(engine.tunerMuteMask, 0xC);
+      expect(repo.setTunerMute({32}), EngineResult.invalid);
+      expect(repo.setTunerMute({-1}), EngineResult.invalid);
+      expect(engine.tunerMuteMask, 0xC);
+
+      // A restart under the open face re-arms, then re-sends the mute after
+      // it (the arm clears it natively).
+      engine.calls.clear();
+      engine
+        ..tunerInput = -1
+        ..tunerMuteMask = 0;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.tunerInput, 2);
+      expect(engine.tunerMuteMask, 0xC);
+      expect(
+        engine.calls.indexOf('setTunerInput'),
+        lessThan(engine.calls.indexOf('setTunerMute')),
+      );
+
+      // Moving the tuner drops the remembered mute: a restart re-arms the new
+      // input without silencing the old pair.
+      repo.setTunerInput(input: 1);
+      engine
+        ..calls.clear()
+        ..tunerMuteMask = 0;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.tunerInput, 1);
+      expect(engine.calls, isNot(contains('setTunerMute')));
+
+      // An empty set ends the mute.
+      expect(repo.setTunerMute({1}), EngineResult.ok);
+      expect(repo.setTunerMute({}), EngineResult.ok);
+      expect(engine.tunerMuteMask, 0);
+    });
+
+    test(
+      'a mute issued while stopped lands after the arm on the next start',
+      () {
+        final repo = buildRepo()..setTunerInput(input: 1);
+        expect(repo.setTunerMute({1}), EngineResult.ok);
+        expect(engine.tunerMuteMask, 0);
+
+        repo.startEngine(const EngineConfig());
+        expect(engine.tunerInput, 1);
+        expect(engine.tunerMuteMask, 0x2);
+      },
+    );
+
+    test('the tuner reading carries the engine mute mask', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(
+        tunerInput: 2,
+        tunerMuteMask: 0xC,
+      );
+      final next = repo.looperState.firstWhere((s) => s.tuner.input == 2);
+      expect((await next).tuner.muteMask, 0xC);
     });
 
     test('an arm issued while stopped lands on the next start', () {
@@ -6180,8 +6252,10 @@ void main() {
       bool muted = false,
       int outputMask = 0x3,
       int inputChannel = 0,
+      bool reversed = false,
     }) => SessionRigTrack(
       fadeAmount: 1,
+      reversed: reversed,
       channel: channel,
       lanes: [
         SessionRigLane(
@@ -6214,6 +6288,43 @@ void main() {
       );
       expect(repo.laneMuted(0, 0), isFalse);
       expect(engine.laneMute[(0, 0)], isFalse);
+    });
+
+    test('a reversed track recalls reversed, and only after its install '
+        'is confirmed', () async {
+      engine.nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          tracks: [rigTrack(0, pcm, reversed: true), rigTrack(1, pcm)],
+        ),
+        clearPollInterval: Duration.zero,
+      );
+      expect(engine.installedReverses, {0: true});
+      expect(repo.state.tracks[0].reversed, isTrue);
+      expect(repo.state.tracks[1].reversed, isFalse);
+
+      engine.installReverseResult = EngineResult.notReady;
+      await expectLater(
+        repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [rigTrack(0, pcm, reversed: true)],
+          ),
+          clearPollInterval: Duration.zero,
+        ),
+        throwsStateError,
+      );
+      // Only the first load committed: the refused install stopped the second.
+      expect(
+        engine.calls.where((call) => call == 'commitSession'),
+        hasLength(1),
+      );
+      expect(repo.state.tracks[0].state, TrackState.empty);
+      expect(repo.state.tracks[0].reversed, isFalse);
     });
 
     test(
@@ -7135,6 +7246,7 @@ void main() {
             tracks: [
               SessionRigTrack(
                 fadeAmount: 1,
+                reversed: false,
                 channel: 0,
                 lanes: [
                   SessionRigLane(
@@ -7198,6 +7310,7 @@ void main() {
             tracks: [
               SessionRigTrack(
                 fadeAmount: 1,
+                reversed: false,
                 channel: 0,
                 lanes: [
                   SessionRigLane(

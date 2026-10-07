@@ -12,6 +12,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/owned_value_port.dart';
@@ -180,6 +181,7 @@ void main() {
     final pedalRepo = PedalRepository(NoopPedalLink());
     addTearDown(pedalRepo.dispose);
     performance = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
     );
@@ -492,6 +494,62 @@ void main() {
       await expectLater(
         find.byType(TracksView),
         matchesGoldenFile('goldens/foot_reverse_$scene.png'),
+      );
+    }, skip: !hasScreenshotFonts);
+  }
+
+  // Foot Peel (the pen lists the mode, "Remove an overdub layer", but has no
+  // screen of its own; it follows the Fade and Mixer layout): layer counts
+  // with an overdubbing track, Bank B, an empty loop, and the Spanish
+  // strings.
+  for (final scene in ['default', 'bank', 'empty', 'spanish']) {
+    testWidgets('Foot Peel $scene scene', (tester) async {
+      Track track(
+        int channel, {
+        int layers = 0,
+        TrackState state = TrackState.playing,
+      }) => Track(
+        channel: channel,
+        state: state,
+        lengthFrames: 48000,
+        peelDepth: layers,
+      );
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: scene == 'empty'
+              ? [
+                  for (var channel = 0; channel < 8; channel++)
+                    Track(channel: channel),
+                ]
+              : [
+                  track(0, layers: 3),
+                  track(1),
+                  track(2, layers: 1, state: TrackState.overdubbing),
+                  const Track(channel: 3),
+                  track(4, layers: 2),
+                  track(5),
+                  track(6, layers: 1),
+                  const Track(channel: 7),
+                ],
+        ),
+      );
+      control.setMode(InteractionMode.peel);
+      if (scene == 'bank') control.browseBank(1);
+      await pump(
+        tester,
+        locale: scene == 'spanish' ? const Locale('es') : null,
+      );
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/foot_peel_$scene.png'),
       );
     }, skip: !hasScreenshotFonts);
   }

@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
@@ -125,14 +126,17 @@ void main() {
           device: () => looper.state.status.deviceName,
         );
         sessions = SessionRepository(
+          guards: GuardRegistry(),
           engine: engine,
           sessionsRoot: () async => directory.path,
         );
         performance = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => directory.path,
         );
         session = SessionCubit(
+          guards: GuardRegistry(),
           settings: settings,
           repository: sessions,
           looper: looper,
@@ -254,6 +258,9 @@ void main() {
             isTrue,
           );
           await session.saveAs('Two bars');
+          // Opening the current session does nothing (plan Part 4), so
+          // recall goes through another current session.
+          await session.saveAs('Elsewhere');
           expect(session.state.status, SessionStatus.success);
           expect(
             (await tempo.recordStartControl.setSoundStart(enabled: true)).isOk,
@@ -339,6 +346,9 @@ void main() {
             (_) => engine.pump(frames: 0),
           );
           await session.saveAs('Owed pair');
+          // Opening the current session does nothing (plan Part 4), so
+          // recall goes through another current session.
+          await session.saveAs('Elsewhere');
           expect(session.state.status, SessionStatus.success);
           final bundle = await sessions.read(
             await sessions.bundlePathOf(await idOf('Owed pair')),
@@ -375,6 +385,9 @@ void main() {
           () async {
             await session.saveAs('Bad');
             expect(session.state.status, SessionStatus.success);
+            // Opening the current session does nothing (plan Part 4), so
+            // the refusal is reached from another current session.
+            await session.saveAs('Elsewhere');
             final manifest = File(
               '${await sessions.bundlePathOf(await idOf('Bad'))}/${Session.manifestName}',
             );

@@ -66,6 +66,45 @@ void main() {
       expect(find.text(l10n.librarySaveFailed), findsOneWidget);
     });
 
+    testWidgets('a new loop that could not be saved names itself', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        const SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.newLoopNotSaved,
+          currentSessionName: 'New loop 2',
+        ),
+      );
+      expect(find.text(l10n.sessionNewLoopNotSaved('New loop 2')), findsOne);
+    });
+
+    testWidgets('an unfinished take says so', (tester) async {
+      await show(
+        tester,
+        const SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.captureInProgress,
+        ),
+      );
+      expect(find.text(l10n.libraryTakeStillRunning), findsOneWidget);
+    });
+
+    testWidgets('a new loop raises no toast: the stage header names it', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        const SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.newLoop,
+          currentSessionName: 'New loop 2',
+        ),
+      );
+      expect(find.byKey(const Key('tracks_session_snackbar')), findsNothing);
+    });
+
     testWidgets('the Library catalog outcomes raise no toast behind it', (
       tester,
     ) async {

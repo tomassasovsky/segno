@@ -40,6 +40,7 @@ class Track extends Equatable {
     this.volume = 1,
     this.fade = const FadeImage(),
     this.reversed = false,
+    this.transpose = (stored: 0, effective: 0),
     this.muted = false,
     this.pan = 0,
     this.solo = false,
@@ -88,6 +89,15 @@ class Track extends Equatable {
   /// with the material. A reversed track refuses punch-ins
   /// (`EngineResult.reversed`).
   final bool reversed;
+
+  /// The track's Transpose (#1179): `stored` is the pitch the player set,
+  /// `effective` the pitch sounding — 0 while the render is pending or
+  /// refused and while Transpose is bypassed (`LooperState.transposeBypass`),
+  /// so a face shows the wait instead of claiming a pitch. Stepped by
+  /// `LooperRepository.transposeTrack`; reset to 0 with the material. A track
+  /// with a stored pitch refuses punch-ins (`EngineResult.transformed`) unless
+  /// Transpose is bypassed, its render pending or not.
+  final TransposePitch transpose;
 
   /// Whether the track is muted.
   final bool muted;
@@ -335,6 +345,7 @@ class Track extends Equatable {
     volume,
     fade,
     reversed,
+    transpose,
     muted,
     pan,
     solo,
@@ -383,6 +394,7 @@ class Track extends Equatable {
     volume,
     fade,
     reversed,
+    transpose,
     muted,
     pan,
     solo,

@@ -219,6 +219,94 @@ a design change; this plan does not edit the pen):
      nothing is left to prompt for; naming is Rename in Manage. The
      power-off flow's own Save-as prompt is outside this plan and stays.
 
+7. Part 4 as built:
+   - `Open session` while a track plays, records or overdubs asks with the
+     console's confirm dialog: "Stop playback and open <name>?", "Your
+     current loop stays in your Library.", `Cancel` / `Open`. The pen draws
+     no such dialog; the body line is ours.
+   - Opening the session that is already open does nothing. The Library
+     never offers it (its footer reads `Return to tracks`), and reloading it
+     would discard its unsaved edits.
+   - The D7 fingerprint is `SessionRepository.fingerprint`: the manifest a
+     save would write, from the same capture, with each lane's layers
+     replaced by `AudioEngine.trackAudioRev` (a new `SessionIo` read over
+     `le_engine_track_audio_rev`; the snapshot is unchanged). A save records
+     the fingerprint taken just before its own capture, so an edit landing
+     in between costs one more save later, never a skipped one.
+   - The reference is recorded after every save and open, and as a boot
+     baseline once the app's settings have loaded
+     (`SessionCubit.recordBaseline`, from `AppRuntime.start`). When the two
+     cannot be compared (no baseline, or a capture that cannot run while a
+     setting awaits recovery), the outgoing rig is saved only when it holds
+     recorded audio: the part nothing else brings back is kept, an untouched
+     rig is not saved, and an Open that resolves a recovery notice still
+     works.
+   - An unnamed rig preserved as `New loop N` becomes current at once, so a
+     target refused after the save leaves the saved rig open under its new
+     name.
+   - A failed preservation shows the 19/05 line, not a refusal on the
+     target's preview card.
+   - Stopping an audition on Open belongs to Part 6, which builds Listen.
+   - Review fixes (PR #1215): the fingerprint keys each track on its audio
+     revision and on whether it is capturing, never on playing or stopped,
+     so a session that was only played is not saved again. An Open first
+     ends every take in progress with the record control's Stop (at its
+     Record timing) and waits until none captures, so the take is saved
+     with the outgoing session as the dialog promises; a take still
+     capturing after 20 s refuses the Open with its own line ("The take has
+     not finished yet. Nothing was changed; try again when it has."), and
+     nothing is saved, opened or cleared. During a settings recovery the
+     capture cannot run, so a rig holding audio cannot be preserved and the
+     Open is refused as a failed save: the safe side.
+   - A real-engine test drives a real `SessionCubit` with the real
+     fingerprint (`test/session/open_preserves_engine_test.dart`): the
+     round trip of the plan's criterion, a played-and-stopped session not
+     saved again, a recording take and an overdub kept.
+8. Part 5 as built:
+   - `SessionCubit.newLoop()` is the one method a foot binding (E6-9) will
+     call. Inside `runExclusive` it preserves the outgoing rig (D7),
+     releases a held momentary (its values belong to the outgoing rig, not
+     to the chains the new loop keeps), captures the live settings and
+     chains, mints the next `New loop N` id, applies the empty rig through
+     the apply path Open uses (`_applyRig`, the former body of `_open`), and
+     then saves that empty rig under the new id, which becomes current.
+   - The empty rig is `rigForNewLoop(SessionRepository.liveSession(...))`:
+     `liveSession` is the manifest a save would build, without tracks, and
+     `Session.forNewLoop()` names every field it keeps, so Open and New loop
+     map settings through the same `rigFromBundle`. The field-table test
+     builds a `Session` with every manifest key away from its default and
+     pins the exact key list, so a new field fails it until its New loop
+     fate is written into `forNewLoop`. `name` is dropped too: the new loop
+     takes its own.
+   - The transforms reset inside the apply, with the clear: lane mutes go
+     with the tracks, Fade returns to unity and Reverse to forward with the
+     material (`LE_CMD_RESET_TRANSFORMS`, pushed on import). The real-engine
+     test checks all three. **Speed and Transpose are not built yet: their
+     resets attach to this same apply path (the engine's transform reset or
+     `applySession`) when E6-4 and E6-5 land**, not to a Library-side list.
+   - A failed preservation applies nothing and mints no id. A refusal before
+     the apply gives the minted id back. If the empty rig cannot be written
+     after the apply, the new loop stays started and current under its new
+     name, the Library shows its generic failure line, and the first Save
+     writes the bundle.
+   - The sheet (19/02) always asks. The current session's name is drawn
+     brighter, as the pen does; a loop with no name yet reads "Your current
+     loop stays in your Library." (our copy; the pen always has a name).
+     The before strip fills the tracks holding audio, the after strip is
+     empty. A started new loop returns to the stage (19/06), whose header
+     names it; an Open still stays in the Library.
+   - Pen departures: the sheet uses the theme's card, strong border and
+     accent tokens rather than the pen's `#202735`, `#6d6d6d` and muted
+     `#89a2c5` strip fill; the encoder-focus ring the pen draws on `Cancel`
+     is not drawn (the Library has no encoder focus yet).
+   - Review fixes (PR #1216): New loop ends a take in progress first and
+     saves it with the outgoing session, as Open does (Part 4's fix), and a
+     played session is not saved again. When the empty rig cannot be
+     written, the failure is its own (`SessionError.newLoopNotSaved`): the
+     Library returns to the stage, which says "New loop N started, but it
+     could not be saved yet. Save it to keep it." The real-engine cubit test
+     covers New loop from a played session and with a take recording.
+
 ## 3. Decisions
 
 Owner decisions are repeated inline above. The rest are taken under the
@@ -358,9 +446,10 @@ the `.als` all remain reachable.
   or the live chains). The apply path
   already forgets lane mutes with the clear and resets Fade with the material
   (`looper_repository.dart:3884-3885`, `LE_CMD_RESET_FADE` applied at `engine_process.c:3159`,
-  `segno_engine_api.h:516`). Reverse, Transpose and Speed do not exist yet;
-  when E6-1/E6-4/E6-5 land their reset belongs in this same apply path, not in
-  a Library-side list. The new identity is created at once by saving the
+  `segno_engine_api.h:516`). Reverse (E6-1) has landed and resets with the
+  material too (`LE_CMD_RESET_TRANSFORMS`). Transpose and Speed do not exist
+  yet; when E6-4/E6-5 land their reset belongs in this same apply path, not
+  in a Library-side list. The new identity is created at once by saving the
   empty rig (manifest only, no audio), so the stage header reads `New loop 2`
   (19/06) and the Library lists it as `Current session`.
 - **D10 Listen is a native audition voice fed from `mixdown.wav`.** The
@@ -825,7 +914,7 @@ SUCCESS CRITERIA:
 - On the real engine, after New loop every track is EMPTY with no mute and Fade at unity, the master length is 0 and the tempo and mode are unchanged; the outgoing session reloads byte-exact. | verify: /Users/Tomas/development/flutter/bin/flutter test test/session
 - The stage header reads the automatic name and the Library lists it as the current session. | verify: /Users/Tomas/development/flutter/bin/flutter test test/library test/looper/view
 NON-GOALS:
-- The foot binding (E6-9), Reverse/Transpose/Speed resets (land with E6-1/4/5 in the apply path), backing.
+- The foot binding (E6-9), Transpose/Speed resets (land with E6-4/5 in the apply path; Reverse already resets there), backing.
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test && dart analyze --fatal-infos && bloc lint lib test packages
 ```
 

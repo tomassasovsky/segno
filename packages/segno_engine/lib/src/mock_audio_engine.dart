@@ -42,9 +42,24 @@ class MockAudioEngine implements AudioEngine {
   /// mock analyses nothing, so a test drives the reading directly.
   double tunerHz = 0;
 
+  /// The inputs the tuner silences; follows the native rules.
+  int _tunerMuteMask = 0;
+
   @override
   EngineResult setTunerInput({required int input}) {
     _tunerInput = input < 0 || input >= inputChannels ? -1 : input;
+    // Every arm, move or disarm drops the temporary mute, as natively.
+    _tunerMuteMask = 0;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTunerMute({required int inputMask}) {
+    // Refused (stored as 0) while disarmed; absent inputs dropped.
+    _tunerMuteMask = _tunerInput < 0
+        ? 0
+        : inputMask &
+              (inputChannels >= 32 ? 0xFFFFFFFF : (1 << inputChannels) - 1);
     return EngineResult.ok;
   }
 
@@ -237,6 +252,10 @@ class MockAudioEngine implements AudioEngine {
     _measuredLatencyMs = -1;
     _masterGain = 1; // unity on every fresh start, mirroring the native engine
     _perfArmed = false; // disarmed on every fresh start/reconfigure
+    // The Transpose bypass resets with the material at configure; receipts
+    // die with it.
+    _transposeBypass = false;
+    _requestResults.clear();
     _perfFrames = 0;
     // The output destinations go back to their defaults on a fresh start,
     // like the native engine's configure. The capture policy deliberately
@@ -314,6 +333,7 @@ class MockAudioEngine implements AudioEngine {
     final inputs = _running ? _negotiatedInputs : 0;
     final outputs = _running ? _negotiatedOutputs : 0;
     return EngineSnapshot(
+      transposeBypass: _transposeBypass,
       mixRevision: _mixRevision,
       isRunning: _running,
       devicePresent: _running,
@@ -327,6 +347,7 @@ class MockAudioEngine implements AudioEngine {
       tunerHz: _tunerInput >= 0 ? tunerHz : 0,
       tunerConfidence: _tunerInput >= 0 && tunerHz > 0 ? 1 : 0,
       tunerInput: _tunerInput,
+      tunerMuteMask: _tunerMuteMask,
       inputPeak: 0,
       outputRms: 0,
       latencyState: _latencyState,
@@ -661,8 +682,48 @@ class MockAudioEngine implements AudioEngine {
     result: _running ? EngineResult.invalid : EngineResult.notRunning,
     request: 0,
   );
+  // Speed needs recorded material, which the mock never holds: an empty
+  // loop has no speed (the native engine's rule), so it is refused like
+  // Reverse and the snapshot stays at Normal.
   @override
-  EngineResult? readRequestResult(int request) => EngineResult.invalid;
+  RequestAdmission setSpeed(SpeedFactor factor) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+
+  // Transpose refuses empty material the same way; its bypass is global,
+  // admitted whenever configured, so the mock models it with a receipt.
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      (
+        result: _running ? EngineResult.invalid : EngineResult.notRunning,
+        request: 0,
+      );
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => (
+    result: _running ? EngineResult.invalid : EngineResult.notRunning,
+    request: 0,
+  );
+  bool _transposeBypass = false;
+  int _nextRequest = 0;
+  final _requestResults = <int, EngineResult>{};
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) {
+    final result = _requireRunning();
+    if (!result.isOk) return (result: result, request: 0);
+    _transposeBypass = bypassed;
+    final request = ++_nextRequest;
+    _requestResults[request] = EngineResult.ok;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  EngineResult? readRequestResult(int request) =>
+      _requestResults.remove(request) ?? EngineResult.invalid;
 
   @override
   EngineResult setMix(EngineMixSettings settings) {
@@ -1626,6 +1687,10 @@ class MockAudioEngine implements AudioEngine {
 
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
+
+  /// The mock holds no audio, so no track's content ever changes.
+  @override
+  int trackAudioRev(int channel) => 0;
 
   @override
   EngineResult importLayer(

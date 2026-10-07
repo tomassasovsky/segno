@@ -292,6 +292,88 @@ void main() {
       expect(peeled.hashCode, isNot(peelable.hashCode));
     });
 
+    test(
+      'speed and head rate are projected from the native fields (#1179)',
+      () {
+        final snap = calloc<le_snapshot>();
+        final track = calloc<le_track_snapshot>();
+        addTearDown(
+          () => calloc
+            ..free(snap)
+            ..free(track),
+        );
+        expect(const EngineSnapshot.initial().speed, SpeedFactor.normal);
+        expect(const TrackSnapshot.empty().headRate, 1);
+        final unconfigured = EngineSnapshot.fromNative(snap.ref, const []);
+        expect(unconfigured.speed, SpeedFactor.normal); // 0/0 before configure
+        for (final factor in SpeedFactor.values) {
+          snap.ref
+            ..speed_numer = factor.numer
+            ..speed_denom = factor.denom;
+          final projected = EngineSnapshot.fromNative(snap.ref, const []);
+          expect(projected.speed, factor);
+          expect(projected == unconfigured, factor == SpeedFactor.normal);
+          expect(projected.copyWith().speed, factor);
+        }
+        expect(SpeedFactor.fromRatio(0, 0), SpeedFactor.normal);
+        expect(() => SpeedFactor.fromRatio(3, 1), throwsArgumentError);
+        expect(() => SpeedFactor.fromRatio(1, 0), throwsArgumentError);
+        track.ref
+          ..quantize_override = -1
+          ..quantize_div_override = -1
+          ..overdub_feedback_override = -1
+          ..head_rate_milli = 500;
+        final half = TrackSnapshot.fromNative(track.ref);
+        expect(half.headRate, 0.5);
+        track.ref.head_rate_milli = 8000;
+        final eight = TrackSnapshot.fromNative(track.ref);
+        expect(eight.headRate, 8);
+        expect(eight, isNot(half));
+        expect(eight.hashCode, isNot(half.hashCode));
+      },
+    );
+
+    test('transpose and its bypass are projected from the native fields '
+        '(#1179)', () {
+      final snap = calloc<le_snapshot>();
+      final track = calloc<le_track_snapshot>();
+      addTearDown(
+        () => calloc
+          ..free(snap)
+          ..free(track),
+      );
+      expect(const EngineSnapshot.initial().transposeBypass, isFalse);
+      expect(const TrackSnapshot.empty().transpose, (stored: 0, effective: 0));
+      final live = EngineSnapshot.fromNative(snap.ref, const []);
+      snap.ref.transpose_bypass = 1;
+      final bypassed = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(live.transposeBypass, isFalse);
+      expect(bypassed.transposeBypass, isTrue);
+      expect(bypassed, isNot(live));
+      expect(bypassed.hashCode, isNot(live.hashCode));
+      expect(live.copyWith(transposeBypass: true), bypassed);
+      expect(bypassed.copyWith().transposeBypass, isTrue);
+      track.ref
+        ..quantize_override = -1
+        ..quantize_div_override = -1
+        ..overdub_feedback_override = -1
+        ..transpose_st = 7;
+      // Stored but not sounding yet: the render is pending.
+      final pending = TrackSnapshot.fromNative(track.ref);
+      expect(pending.transpose, (stored: 7, effective: 0));
+      track.ref.transpose_effective_st = 7;
+      final landed = TrackSnapshot.fromNative(track.ref);
+      expect(landed.transpose, (stored: 7, effective: 7));
+      expect(landed, isNot(pending));
+      expect(landed.hashCode, isNot(pending.hashCode));
+      track.ref.transpose_st = -12;
+      track.ref.transpose_effective_st = -12;
+      expect(
+        TrackSnapshot.fromNative(track.ref).transpose,
+        (stored: -12, effective: -12),
+      );
+    });
+
     test('global native record settings each participate in equality', () {
       final ptr = calloc<le_snapshot>();
       addTearDown(() => calloc.free(ptr));
@@ -1615,6 +1697,7 @@ void main() {
         'tunerHz',
         'tunerConfidence',
         'tunerInput',
+        'tunerMuteMask',
         'inputRms',
         'inputPeak',
         'outputRms',
@@ -1655,6 +1738,8 @@ void main() {
         'countInBeatsLeft',
         'looperMode',
         'primaryTrack',
+        'speed', // a request outcome, not a callback-rate counter (#1179)
+        'transposeBypass', // likewise a request outcome (#1179)
         'quantize',
         'autoRecord',
         'overdubFeedback',

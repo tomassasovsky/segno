@@ -276,4 +276,70 @@ int32_t le_stretch_render_offline(const float* const* in, int32_t in_frames,
   }
 }
 
+int32_t le_stretch_render_loop(const float* in, int32_t frames,
+                               int32_t sample_rate, float semitones,
+                               float tonality_limit, int32_t cheaper,
+                               uint32_t seed, int32_t fold,
+                               float* out) noexcept {
+  if (in == nullptr || out == nullptr || frames <= 1 || fold < 0) {
+    return LE_STRETCH_ERR_INVALID;
+  }
+  if (sample_rate <= 0 || sample_rate > LE_STRETCH_MAX_SAMPLE_RATE) {
+    return LE_STRETCH_ERR_INVALID;
+  }
+  try {
+    /* What the run-out can carry past the lap at ratio 1: W - in_lat. */
+    std::unique_ptr<le_stretch> probe(
+        create_or_throw(1, sample_rate, cheaper, seed));
+    const int32_t room = probe->st.blockSamples() + probe->st.intervalSamples() -
+                         probe->st.inputLatency();
+    probe.reset();
+    fold = std::min(fold, std::min(room, frames / 2));
+    std::vector<float> tmp((size_t)frames + (size_t)fold);
+    const float* ins[1] = {in};
+    float* outs[1] = {tmp.data()};
+    const int32_t rc = le_stretch_render_offline(
+        ins, frames, 1, sample_rate, 1.0, semitones, tonality_limit, cheaper,
+        seed, 1, outs, frames + fold);
+    if (rc != LE_STRETCH_OK) return rc;
+    std::copy(tmp.begin(), tmp.begin() + frames, out);
+    /* The head (v, fading in) and the run-out (u, fading out) are renders of
+     * the same input, so they are correlated, and a fixed law swells
+     * (equal-power, in phase) or dips (out of phase) by several dB at the
+     * loop point. The crossfade is linear, a = 1 - b, scaled so its power
+     * is the linear blend of the two signals' own local powers:
+     *   g^2 (a^2 Puu + b^2 Pvv + 2 a b Puv) = a Puu + b Pvv,
+     * from sliding 2.5 ms sums, so the law follows the pair's correlation as
+     * it moves (r = 1 is plain equal-gain, r = 0 equal-power), capped at
+     * +12 dB where they cancel. Deterministic: the offline renderer replays
+     * the same arithmetic. */
+    const int32_t half = std::max(1, sample_rate / 800);
+    std::vector<double> suv((size_t)fold + 1), suu((size_t)fold + 1),
+        svv((size_t)fold + 1);
+    for (int32_t k = 0; k < fold; ++k) {
+      const double u = tmp[(size_t)frames + (size_t)k], v = tmp[(size_t)k];
+      suv[(size_t)k + 1] = suv[(size_t)k] + u * v;
+      suu[(size_t)k + 1] = suu[(size_t)k] + u * u;
+      svv[(size_t)k + 1] = svv[(size_t)k] + v * v;
+    }
+    for (int32_t k = 0; k < fold; ++k) {
+      const size_t lo = (size_t)std::max(0, k - half);
+      const size_t hi = (size_t)std::min(fold, k + half + 1);
+      const double puv = suv[hi] - suv[lo], puu = suu[hi] - suu[lo],
+                   pvv = svv[hi] - svv[lo];
+      const double b = (double)k / (double)fold, a = 1.0 - b;
+      const double mix = a * a * puu + b * b * pvv + 2.0 * a * b * puv;
+      const double want = a * puu + b * pvv;
+      const double g = mix * 16.0 > want && mix > 0.0
+                           ? std::sqrt(want / mix)
+                           : want > 0.0 ? 4.0 : 1.0;
+      out[k] = (float)(g * (tmp[(size_t)k] * b +
+                            tmp[(size_t)frames + (size_t)k] * a));
+    }
+    return LE_STRETCH_OK;
+  } catch (...) {
+    return LE_STRETCH_ERR_ALLOC;
+  }
+}
+
 } /* extern "C" */

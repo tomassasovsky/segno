@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_sessions_tab.dart';
+import 'package:segno/library/view/new_loop_sheet.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
@@ -127,6 +129,17 @@ class _LibraryViewState extends State<LibraryView> {
               current.status == SessionStatus.success,
           listener: _reselect,
         ),
+        // A new loop is played on the stage (19/06), which names it; one
+        // that started but could not be saved yet goes there too, where the
+        // stage says so.
+        BlocListener<SessionCubit, SessionState>(
+          listenWhen: (previous, current) =>
+              previous.status != current.status &&
+              ((current.status == SessionStatus.success &&
+                      current.outcome == SessionOutcome.newLoop) ||
+                  current.error == SessionError.newLoopNotSaved),
+          listener: (_, _) => _toTracks(),
+        ),
       ],
       child: Material(
         type: MaterialType.transparency,
@@ -160,7 +173,10 @@ class _LibraryViewState extends State<LibraryView> {
                 top: 916,
                 width: 1792,
                 height: 33,
-                child: LibraryFailureLine(failure: failure),
+                child: LibraryFailureLine(
+                  failure: failure,
+                  refusedBy: session.refusedBy,
+                ),
               ),
           ],
         ),
@@ -181,8 +197,18 @@ enum LibraryFailure {
   /// A folder that still holds sessions was asked to be deleted.
   folderNotEmpty,
 
+  /// An Open or New loop ended a take that did not finish in time.
+  captureInProgress,
+
+  /// A New loop started but could not be saved yet.
+  newLoopNotSaved,
+
   /// Any other catalog action failed.
   actionFailed,
+
+  /// Refused at its commit because another operation is in flight (the
+  /// guard table, #1198); the line names what to wait for.
+  busy,
 }
 
 /// What the Library says about the last session action's failure, or null
@@ -191,14 +217,24 @@ enum LibraryFailure {
 /// app-wide notice.
 LibraryFailure? libraryFailureOf(SessionState state) {
   if (state.status != SessionStatus.failure) return null;
+  // A save that failed before an Open (plan D7) is still a failed save.
+  if (state.error == SessionError.saveFailed) return LibraryFailure.saveFailed;
+  // The outgoing take, not the target, stopped an Open.
+  if (state.error == SessionError.captureInProgress) {
+    return LibraryFailure.captureInProgress;
+  }
   if (state.failedSessionId != null) return null;
   return switch (state.error) {
     SessionError.bootPersistence => null,
     SessionError.sampleRateMismatch ||
-    SessionError.unsupportedVersion => LibraryFailure.actionFailed,
+    SessionError.unsupportedVersion ||
+    SessionError.unconvertible => LibraryFailure.actionFailed,
     SessionError.saveFailed => LibraryFailure.saveFailed,
     SessionError.currentSessionProtected => LibraryFailure.deleteCurrentRefused,
     SessionError.folderNotEmpty => LibraryFailure.folderNotEmpty,
+    SessionError.busy => LibraryFailure.busy,
+    SessionError.captureInProgress => LibraryFailure.captureInProgress,
+    SessionError.newLoopNotSaved => LibraryFailure.newLoopNotSaved,
     SessionError.nameCollision ||
     SessionError.corruptLayers ||
     SessionError.unknown ||
@@ -211,10 +247,17 @@ LibraryFailure? libraryFailureOf(SessionState state) {
 /// any other failed catalog action.
 class LibraryFailureLine extends StatelessWidget {
   /// Creates the line for [failure].
-  const LibraryFailureLine({required this.failure, super.key});
+  const LibraryFailureLine({
+    required this.failure,
+    this.refusedBy,
+    super.key,
+  });
 
   /// What failed.
   final LibraryFailure failure;
+
+  /// For [LibraryFailure.busy]: the operation that refused the action.
+  final GuardKind? refusedBy;
 
   @override
   Widget build(BuildContext context) {
@@ -223,7 +266,12 @@ class LibraryFailureLine extends StatelessWidget {
       LibraryFailure.saveFailed => l10n.librarySaveFailed,
       LibraryFailure.deleteCurrentRefused => l10n.libraryDeleteCurrentRefused,
       LibraryFailure.folderNotEmpty => l10n.libraryFolderNotEmpty,
+      LibraryFailure.captureInProgress => l10n.libraryTakeStillRunning,
+      LibraryFailure.newLoopNotSaved => l10n.sessionNewLoopNotSaved(
+        context.read<SessionCubit>().state.currentSessionName ?? '',
+      ),
       LibraryFailure.actionFailed => l10n.libraryActionFailed,
+      LibraryFailure.busy => l10n.operationBusy(refusedBy?.name ?? 'other'),
     };
     return Semantics(
       liveRegion: true,
@@ -244,10 +292,8 @@ class LibraryFailureLine extends StatelessWidget {
 }
 
 /// The title row's actions: the `Internal` / `USB` location segment and
-/// `New loop`.
-///
-/// `New loop` is drawn disabled until it is built (plan Part 5): the one
-/// stand-in the plan allows, because the row's geometry needs it.
+/// `New loop`, which asks first (19/02) and is inert while another session
+/// action runs.
 class LibraryActions extends StatelessWidget {
   /// Creates the Library's title-row actions.
   const LibraryActions({super.key});
@@ -257,6 +303,9 @@ class LibraryActions extends StatelessWidget {
     final l10n = context.l10n;
     final location = context.select<LibraryCubit, LibraryLocation>(
       (c) => c.state.location,
+    );
+    final busy = context.select<SessionCubit, bool>(
+      (c) => c.state.status == SessionStatus.working,
     );
     final cubit = context.read<LibraryCubit>();
     return Row(
@@ -281,13 +330,14 @@ class LibraryActions extends StatelessWidget {
         ),
         const SizedBox(width: 40),
         Opacity(
-          opacity: context.surface.disabledOpacity,
+          // Inert while another session action runs, and drawn so.
+          opacity: busy ? context.surface.disabledOpacity : 1,
           child: LoopOutlinedButton(
             key: const Key('library_new_loop'),
             width: 157,
             tone: LoopButtonTone.accent,
             label: l10n.libraryNewLoop,
-            onTap: null,
+            onTap: busy ? null : () => unawaited(startNewLoop(context)),
           ),
         ),
       ],

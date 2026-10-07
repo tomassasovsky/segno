@@ -2960,6 +2960,40 @@ class SegnoEngineBindings {
   late final _le_engine_set_tuner_input = _le_engine_set_tuner_inputPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Silences the live monitors of the inputs in `input_mask` (bit c = input c)
+  /// for as long as the tuner stays armed — the foot Tuner's temporary mute of
+  /// the input (or stereo pair) being tuned (#1229).
+  ///
+  /// This is NOT le_engine_set_monitor_input_mute: that mute is the player's
+  /// persistent intent, and this one belongs to the tuner arm. The two are
+  /// ORed; neither changes the other. Arm the input first: a mask posted while
+  /// the tuner is disarmed is stored as 0, and every le_engine_set_tuner_input
+  /// (re-arm, move or disarm) clears it, so a tuning can never leave an input
+  /// silent behind it. Bits for inputs the device does not have are dropped.
+  ///
+  /// Only monitoring changes. Track lanes still record the input, the detector
+  /// still hears it (it taps before any monitor), and the mask is not
+  /// perf-logged; a captured monitor stem holds the silence that was heard.
+  /// Results ride the snapshot as `tuner_mute_mask`.
+  int le_engine_set_tuner_mute(
+    ffi.Pointer<le_engine> engine,
+    int input_mask,
+  ) {
+    return _le_engine_set_tuner_mute(
+      engine,
+      input_mask,
+    );
+  }
+
+  late final _le_engine_set_tuner_mutePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Uint32)
+        >
+      >('le_engine_set_tuner_mute');
+  late final _le_engine_set_tuner_mute = _le_engine_set_tuner_mutePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Enables/disables the master peak limiter and sets its ceiling (clamped to
   /// (0,1], default 0.99). The limiter is applied post master-gain so the summed
   /// output of all tracks, overdub layers, and monitoring cannot exceed the ceiling
@@ -4918,9 +4952,12 @@ class SegnoEngineBindings {
   /// byte `offset`; `length` = UINT64_MAX means through the end of the file.
   /// Reads in 64 KiB chunks, so a multi-gigabyte recording costs no memory.
   /// Returns LE_OK; LE_ERR_INVALID for a NULL or empty `path` or NULL `out`;
-  /// LE_ERR_DEVICE when the file cannot be opened, is not a regular file, is
-  /// shorter than `offset` + `length` (a damaged file never yields a digest of
-  /// what happens to be left), or a read fails.
+  /// LE_ERR_NOT_FOUND when nothing exists at `path`; LE_ERR_TRUNCATED when the
+  /// file is shorter than `offset` + `length` (a damaged file never yields a
+  /// digest of what happens to be left); LE_ERR_DEVICE when it cannot be opened
+  /// for another reason, is not a regular file, or a read fails. The codes tell
+  /// a missing recording from a damaged one without a separate stat that the
+  /// file could change under.
   int le_digest_file(
     ffi.Pointer<ffi.Char> path,
     int offset,
@@ -4949,6 +4986,73 @@ class SegnoEngineBindings {
   late final _le_digest_file = _le_digest_filePtr
       .asFunction<
         int Function(ffi.Pointer<ffi.Char>, int, int, ffi.Pointer<ffi.Uint8>)
+      >();
+
+  int le_digest_begin(
+    ffi.Pointer<ffi.Void> state,
+    int state_bytes,
+  ) {
+    return _le_digest_begin(
+      state,
+      state_bytes,
+    );
+  }
+
+  late final _le_digest_beginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Uint64)
+        >
+      >('le_digest_begin');
+  late final _le_digest_begin = _le_digest_beginPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, int)>();
+
+  int le_digest_update(
+    ffi.Pointer<ffi.Void> state,
+    ffi.Pointer<ffi.Void> data,
+    int length,
+  ) {
+    return _le_digest_update(
+      state,
+      data,
+      length,
+    );
+  }
+
+  late final _le_digest_updatePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Void>,
+            ffi.Uint64,
+          )
+        >
+      >('le_digest_update');
+  late final _le_digest_update = _le_digest_updatePtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Void>, int)
+      >();
+
+  int le_digest_end(
+    ffi.Pointer<ffi.Void> state,
+    ffi.Pointer<ffi.Uint8> out,
+  ) {
+    return _le_digest_end(
+      state,
+      out,
+    );
+  }
+
+  late final _le_digest_endPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Uint8>)
+        >
+      >('le_digest_end');
+  late final _le_digest_end = _le_digest_endPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Uint8>)
       >();
 
   /// Makes the directory entries of `path` durable: open + fsync on POSIX, which
@@ -5722,7 +5826,192 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
       >();
 
-  /// Consumes one completed Fade or Reverse result. Returns NOT_READY before
+  /// Speed (#1179): plays every recorded track at numer/denom of its speed —
+  /// 1/2, 1/1, 2/1, 4/1 or 8/1 (anything else is LE_ERR_INVALID) — through one
+  /// fractional read head per track, click-free (each sounding track mixes its
+  /// old head out over ~10 ms); pitch follows the speed. The song clock, click,
+  /// quantize and capture are untouched. A request equal to the factor in force
+  /// is accepted and changes nothing. Admission returns a nonzero request id
+  /// only on LE_OK; the receipt below carries the callback's verdict.
+  /// Refusals: LE_ERR_NOT_READY while any track reads RECORDING or OVERDUBBING,
+  /// an arm or Count-in launch is pending, a count-in runs, or no receipt slot
+  /// is free (the callback refuses the same states with receipt
+  /// LE_ERR_NOT_READY, plus a punch-out tail still writing); LE_ERR_NOT_RUNNING
+  /// when not configured. While Speed is not 1x le_engine_record refuses a
+  /// record or punch-in with LE_ERR_TRANSFORMED. An empty loop has no speed:
+  /// a request while no track holds material is refused with LE_ERR_INVALID
+  /// (admission, or the receipt when the rig empties before it lands), as
+  /// Reverse refuses an empty track, so a host shows the factors unavailable
+  /// until a loop exists; and when the last track becomes empty, Speed returns
+  /// to 1x (le_snapshot shows it), so the next loop records.
+  int le_engine_set_speed(
+    ffi.Pointer<le_engine> engine,
+    int numer,
+    int denom,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_set_speed(
+      engine,
+      numer,
+      denom,
+      request,
+    );
+  }
+
+  late final _le_engine_set_speedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_set_speed');
+  late final _le_engine_set_speed = _le_engine_set_speedPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  /// Transpose (#1179 Part 3a): plays track [channel] as a pitch-shifted render
+  /// of its own takes at unchanged timing. The render is built off the audio
+  /// thread by the cache worker (about 100 ms after the last step, plus the
+  /// render); until it lands the track plays its dry take at true pitch and
+  /// le_track_snapshot.transpose_effective_st reads 0, then it crossfades to the
+  /// render at the same position. Step moves the stored pitch by [delta] (+1 or
+  /// -1); at +-12 the receipt is LE_ERR_CAPACITY and nothing changes. Install
+  /// sets [semitones] (-12..12; Session recall) and also accepts an EMPTY track
+  /// holding imported material. Refusals as Reverse's: LE_ERR_INVALID for a bad
+  /// channel or argument or a track that reads EMPTY (step), RECORDING or
+  /// OVERDUBBING; LE_ERR_NOT_READY while an arm or Count-in launch is pending or
+  /// no receipt slot is free. While a track's pitch is not 0 and Transpose is
+  /// not bypassed, le_engine_record refuses a punch-in with LE_ERR_TRANSFORMED.
+  int le_engine_transpose_step(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int delta,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_transpose_step(
+      engine,
+      channel,
+      delta,
+      request,
+    );
+  }
+
+  late final _le_engine_transpose_stepPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_transpose_step');
+  late final _le_engine_transpose_step = _le_engine_transpose_stepPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  int le_engine_install_transpose(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int semitones,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_install_transpose(
+      engine,
+      channel,
+      semitones,
+      request,
+    );
+  }
+
+  late final _le_engine_install_transposePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_install_transpose');
+  late final _le_engine_install_transpose = _le_engine_install_transposePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
+      >();
+
+  /// Bypasses every track's Transpose (dry, stored pitches kept) or restores
+  /// it. Admitted whenever configured.
+  int le_engine_set_transpose_bypass(
+    ffi.Pointer<le_engine> engine,
+    int on$,
+    ffi.Pointer<ffi.Uint64> request,
+  ) {
+    return _le_engine_set_transpose_bypass(
+      engine,
+      on$,
+      request,
+    );
+  }
+
+  late final _le_engine_set_transpose_bypassPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Uint64>,
+          )
+        >
+      >('le_engine_set_transpose_bypass');
+  late final _le_engine_set_transpose_bypass =
+      _le_engine_set_transpose_bypassPtr
+          .asFunction<
+            int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Uint64>)
+          >();
+
+  /// Track [channel]'s Transpose source-render telemetry, the track cache
+  /// query's twin: `reason` LE_CACHE_REASON_BUDGET when the render does not fit
+  /// the cap and the track stays dry.
+  int le_engine_get_transpose_cache(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<le_lane_cache_info> out,
+  ) {
+    return _le_engine_get_transpose_cache(
+      engine,
+      channel,
+      out,
+    );
+  }
+
+  late final _le_engine_get_transpose_cachePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<le_lane_cache_info>,
+          )
+        >
+      >('le_engine_get_transpose_cache');
+  late final _le_engine_get_transpose_cache = _le_engine_get_transpose_cachePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<le_lane_cache_info>,
+        )
+      >();
+
+  /// Consumes one completed Fade, Reverse or Speed result. Returns NOT_READY before
   /// callback publication, INVALID for an absent/consumed/retired id; otherwise
   /// OK and fills result.
   int le_engine_read_request_result(
@@ -5874,6 +6163,10 @@ class SegnoEngineBindings {
   /// Stops capture and closes the open port. Idempotent (a no-op when nothing is
   /// open). After it returns the callback registered by le_midi_open is guaranteed
   /// not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle).
+  /// A capture attached to an engine port (le_engine_attach_midi_input) is
+  /// detached first: the port's generation advances and it reads lost. Because
+  /// le_midi_open closes the current port before opening another, re-opening also
+  /// detaches; attach again after opening.
   int le_midi_close(
     ffi.Pointer<le_midi> m,
   ) {
@@ -5888,6 +6181,76 @@ class SegnoEngineBindings {
       );
   late final _le_midi_close = _le_midi_closePtr
       .asFunction<int Function(ffi.Pointer<le_midi>)>();
+
+  /// Whether the capture's backend thread runs at real-time priority (#1228):
+  /// 1 granted, -1 refused by the OS (no RTPRIO), 0 not applicable (no port
+  /// open, or a backend whose OS owns the thread, as CoreMIDI does).
+  int le_midi_priority_state(
+    ffi.Pointer<le_midi> m,
+  ) {
+    return _le_midi_priority_state(
+      m,
+    );
+  }
+
+  late final _le_midi_priority_statePtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_midi>)>>(
+        'le_midi_priority_state',
+      );
+  late final _le_midi_priority_state = _le_midi_priority_statePtr
+      .asFunction<int Function(ffi.Pointer<le_midi>)>();
+
+  /// Attaches capture `m` to engine input port `port` (0..LE_MAX_MIDI_PORTS-1).
+  /// A capture already attached elsewhere moves; a capture already on `port` is
+  /// detached first. Returns LE_OK, or LE_ERR_INVALID for a null handle or a port
+  /// out of range. Valid whether or not the engine is configured or running.
+  int le_engine_attach_midi_input(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_midi> m,
+    int port,
+  ) {
+    return _le_engine_attach_midi_input(
+      engine,
+      m,
+      port,
+    );
+  }
+
+  late final _le_engine_attach_midi_inputPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_midi>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_attach_midi_input');
+  late final _le_engine_attach_midi_input = _le_engine_attach_midi_inputPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_midi>, int)
+      >();
+
+  /// Detaches whatever capture is on `port`. Returns LE_OK (also when nothing
+  /// was attached) or LE_ERR_INVALID for a null engine or a port out of range.
+  int le_engine_detach_midi_input(
+    ffi.Pointer<le_engine> engine,
+    int port,
+  ) {
+    return _le_engine_detach_midi_input(
+      engine,
+      port,
+    );
+  }
+
+  late final _le_engine_detach_midi_inputPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_detach_midi_input');
+  late final _le_engine_detach_midi_input = _le_engine_detach_midi_inputPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// Allocates a MIDI output handle bound to the compiled-in per-OS backend.
   /// Returns NULL on allocation failure or when no backend is available for the
@@ -6060,7 +6423,20 @@ enum le_result {
 
   /// a punch-in on a reversed track (#1162): overdub
   /// is unavailable while Reverse is on
-  LE_ERR_REVERSED(-9);
+  LE_ERR_REVERSED(-9),
+
+  /// a record or overdub while Speed is not 1x
+  /// (#1179): capture never writes through a
+  /// fractional read head
+  LE_ERR_TRANSFORMED(-10),
+
+  /// the file (or a directory on its path) does not
+  /// exist (#1198)
+  LE_ERR_NOT_FOUND(-18),
+
+  /// the file exists but is shorter than the range
+  /// it must hold (#1198)
+  LE_ERR_TRUNCATED(-19);
 
   final int value;
   const le_result(this.value);
@@ -6076,6 +6452,9 @@ enum le_result {
     -7 => LE_ERR_MODE_MISMATCH,
     -8 => LE_ERR_NOT_READY,
     -9 => LE_ERR_REVERSED,
+    -10 => LE_ERR_TRANSFORMED,
+    -18 => LE_ERR_NOT_FOUND,
+    -19 => LE_ERR_TRUNCATED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
   };
 }
@@ -6518,7 +6897,26 @@ enum le_command_code {
   LE_CMD_RESET_TRANSFORMS(82),
 
   /// checked internal Reverse request; never raw-posted
-  LE_CMD_REVERSE(83);
+  LE_CMD_REVERSE(83),
+
+  /// Silence the live monitors of the inputs in the mask while the tuner is
+  /// armed (#1229). arg_i = the mask, bit c = input c. Owned by the tuner arm:
+  /// refused (stored as 0) while the tuner is disarmed, and cleared by every
+  /// LE_CMD_SET_TUNER_INPUT, so it can never outlive or follow a tuning. Not
+  /// perf-logged: it changes no recorded material, and a captured monitor stem
+  /// already records the silence that was heard. 84-131 belong to other
+  /// epics (the numbering ledger); 133-135 stay reserved for #1229.
+  LE_CMD_SET_TUNER_MUTE(132),
+
+  /// checked internal Speed request (#1179); never
+  /// raw-posted
+  LE_CMD_SET_SPEED(85),
+
+  /// checked internal Transpose request (#1179)
+  LE_CMD_TRANSPOSE(86),
+
+  /// checked internal Transpose bypass
+  LE_CMD_TRANSPOSE_BYPASS(87);
 
   final int value;
   const le_command_code(this.value);
@@ -6606,6 +7004,10 @@ enum le_command_code {
     81 => LE_CMD_FADE,
     82 => LE_CMD_RESET_TRANSFORMS,
     83 => LE_CMD_REVERSE,
+    132 => LE_CMD_SET_TUNER_MUTE,
+    85 => LE_CMD_SET_SPEED,
+    86 => LE_CMD_TRANSPOSE,
+    87 => LE_CMD_TRANSPOSE_BYPASS,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -7168,6 +7570,22 @@ final class le_track_snapshot extends ffi.Struct {
   /// entries keep undo_depth constant while a layer disappears.
   @ffi.Int32()
   external int peel_depth;
+
+  /// Trailing (#1179): the track's effective read rate x1000 (source frames
+  /// per song frame; 500 at 1/2x Speed, 8000 at 8x), so the host shows the
+  /// derived pitch and progress without re-deriving them. position_frames
+  /// moves at this rate.
+  @ffi.Int32()
+  external int head_rate_milli;
+
+  /// Trailing (#1179 Part 3a): the stored Transpose pitch (-12..12) and the
+  /// pitch actually sounding — 0 while its render is pending, refused or
+  /// bypassed, so a host never claims a pitch the mix is not playing.
+  @ffi.Int32()
+  external int transpose_st;
+
+  @ffi.Int32()
+  external int transpose_effective_st;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct
@@ -7481,6 +7899,12 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int tuner_input;
 
+  /// Inputs whose live monitors the tuner is silencing (bit c = input c); 0
+  /// whenever the tuner is disarmed. Persistent monitor mute is separate and
+  /// unaffected (le_engine_set_monitor_input_mute).
+  @ffi.Uint32()
+  external int tuner_mute_mask;
+
   /// number of usable tracks (<= LE_MAX_TRACKS)
   @ffi.Int32()
   external int track_count;
@@ -7715,6 +8139,44 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Array.multi([8])
   external ffi.Array<ffi.Int32> record_timing_overrides;
+
+  /// ---- native MIDI input (#1228 Part 1; trailing). Totals across all
+  /// LE_MAX_MIDI_PORTS ports since the engine was created: events delivered
+  /// from the current binding, events dropped as stale (pushed by a binding
+  /// that has since ended), gaps (places where a full ring or an OS overrun
+  /// lost messages), ports that went lost, and binding changes (an attach,
+  /// detach, rebind or close, counted once per drain that sees the
+  /// generation move). midi_in_attached_mask has bit p set while a capture is
+  /// attached to p.
+  @ffi.Uint32()
+  external int midi_in_events;
+
+  @ffi.Uint32()
+  external int midi_in_stale;
+
+  @ffi.Uint32()
+  external int midi_in_overflows;
+
+  @ffi.Uint32()
+  external int midi_in_lost;
+
+  @ffi.Uint32()
+  external int midi_in_attached_mask;
+
+  @ffi.Uint32()
+  external int midi_in_rebinds;
+
+  /// Trailing (#1179): the global Speed the callback applies, as
+  /// numer/denom (1/2, 1/1, 2/1, 4/1 or 8/1; 1/1 before any request).
+  @ffi.Int32()
+  external int speed_numer;
+
+  @ffi.Int32()
+  external int speed_denom;
+
+  /// Trailing (#1179 Part 3a): 1 while Transpose is bypassed globally.
+  @ffi.Int32()
+  external int transpose_bypass;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -7887,7 +8349,11 @@ enum le_cache_reason {
   LE_CACHE_REASON_RENDER_FAILED(2),
 
   /// a part Post chain must keep live tails
-  LE_CACHE_REASON_PART_POST(3);
+  LE_CACHE_REASON_PART_POST(3),
+
+  /// a Transpose source render does not fit the
+  /// cap; the track plays dry (#1179)
+  LE_CACHE_REASON_BUDGET(4);
 
   final int value;
   const le_cache_reason(this.value);
@@ -7897,6 +8363,7 @@ enum le_cache_reason {
     1 => LE_CACHE_REASON_PLUGIN,
     2 => LE_CACHE_REASON_RENDER_FAILED,
     3 => LE_CACHE_REASON_PART_POST,
+    4 => LE_CACHE_REASON_BUDGET,
     _ => throw ArgumentError('Unknown value for le_cache_reason: $value'),
   };
 }
@@ -8007,4 +8474,8 @@ const int LE_CB_BUCKETS = 8;
 
 const int LE_XRUN_KINDS = 4;
 
-const int LE_CACHE_DEFAULT_CAP_BYTES = 67108864;
+const int LE_CACHE_DEFAULT_CAP_BYTES = 201326592;
+
+const int LE_DIGEST_STATE_BYTES = 128;
+
+const int LE_MAX_MIDI_PORTS = 8;
