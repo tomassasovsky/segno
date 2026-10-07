@@ -178,9 +178,12 @@ class LocalConsoleFactsClient implements ConsoleFactsClient {
   ConsoleBoardFlash? _lastFlashed() {
     final record = _readText(kConsoleBoardRecordPath);
     final firmware = _recordFirmware.firstMatch(record)?.group(1);
-    final protocol = _recordProtocol.firstMatch(record)?.group(1);
+    // A damaged record is no record: it must not fail the whole facts load.
+    final protocol = int.tryParse(
+      _recordProtocol.firstMatch(record)?.group(1) ?? '',
+    );
     if (firmware == null || protocol == null) return null;
-    return ConsoleBoardFlash(firmware: firmware, protocol: int.parse(protocol));
+    return ConsoleBoardFlash(firmware: firmware, protocol: protocol);
   }
 
   /// Capture retention is unimplemented on the appliance side; nothing is
