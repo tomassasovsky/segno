@@ -237,6 +237,38 @@ int le_image_valid(const le_engine* engine, int32_t channel,
                    const le_record_image* image);
 int32_t le_push_cmd(le_engine* engine, le_command cmd);
 
+/* Backing player (#1200, engine_backing.c): frees every engine-owned backing
+ * buffer with the callback stopped, except, when [keep_loaded] is set, the
+ * loaded and staged ones (a retained reopen). Resets the voices to Stopped at
+ * 0 and republishes the state. Control thread, audio thread NOT running. */
+void le_backing_release(le_engine* engine, int keep_loaded);
+
+/* The decoder's offline converter (engine_decode.c, #1200 Part 2): one
+ * channel, strided input and output; out_frames must be
+ * le_resample_frames(in_frames, in_rate, out_rate) = floor(in_frames *
+ * out_rate / in_rate); equal rates copy exactly; out_rate * 2 < in_rate is
+ * refused (halve first). LE_OK, LE_ERR_INVALID (bad arguments, or more than
+ * 8192 rational phases), LE_ERR_CAPACITY. Control or worker thread. */
+int64_t le_resample_frames(int64_t in_frames, int32_t in_rate,
+                           int32_t out_rate);
+int32_t le_resample_offline(const float* in, int32_t in_stride,
+                            int32_t in_frames, int32_t in_rate, float* out,
+                            int32_t out_stride, int32_t out_frames,
+                            int32_t out_rate);
+#ifdef LE_NATIVE_TESTS
+/* Overrides the decoder's MemAvailable reading (bytes; -1 = unknown). */
+extern int64_t (*le_test_mem_available_hook)(void);
+/* Overrides the decoder's I/O work budget (bytes read plus seeks) when
+ * positive, so a test can prove the bound exists. */
+extern int64_t le_test_decode_budget;
+#endif
+
+/* Library audition voice (#1178, engine_audition.c): frees every
+ * engine-owned audition buffer with the callback stopped and silences the
+ * voice. Control thread, audio thread NOT running (configure, reopen,
+ * destroy). */
+void le_audition_release(le_engine* engine);
+
 /* One bounded timing read. refresh_cache is only true for full snapshots. */
 le_record_timing_readback le_record_timing_read(le_engine* engine,
                                                int refresh_cache);

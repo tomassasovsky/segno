@@ -27,6 +27,17 @@ class _FakeTrack {
 class FakePerformanceEngine implements AudioEngine {
   FakePerformanceEngine({this.sampleRate = 48000});
 
+  // The audition voice (#1178): inert here.
+  @override
+  Future<AuditionStart> auditionStartFile(String path, {int bus = 0}) async =>
+      const AuditionStart(result: EngineResult.ok);
+
+  @override
+  EngineResult auditionStop() => EngineResult.ok;
+
+  @override
+  AuditionState auditionState() => const AuditionState();
+
   final int sampleRate;
 
   final List<_FakeTrack> _tracks = List.generate(4, (_) => _FakeTrack());
