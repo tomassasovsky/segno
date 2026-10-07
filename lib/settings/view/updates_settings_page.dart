@@ -303,13 +303,15 @@ class _StatusPanel extends StatelessWidget {
               _meta(l10n, offeredVersion, megabytes),
               null,
               [
-                LoopOutlinedButton(
-                  key: const Key('updates_cancel'),
-                  focusNode: next,
-                  width: 200,
-                  label: l10n.updatesPageCancel,
-                  onTap: () => unawaited(cubit.cancelDownload()),
-                ),
+                // Only while downloading: RAUC's slot write cannot be stopped.
+                if (state.progress < kUpdateInstallStartsAt)
+                  LoopOutlinedButton(
+                    key: const Key('updates_cancel'),
+                    focusNode: next,
+                    width: 200,
+                    label: l10n.updatesPageCancel,
+                    onTap: () => unawaited(cubit.cancelDownload()),
+                  ),
               ],
             ),
             UpdatePhase.staged => (

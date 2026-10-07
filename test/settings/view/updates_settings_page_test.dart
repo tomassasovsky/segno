@@ -213,7 +213,7 @@ void main() {
         _running.copyWith(
           phase: UpdatePhase.downloading,
           available: _offer,
-          progress: 0.42,
+          progress: 0.32,
         ),
       );
       final l10n = l10nOf(tester);
@@ -222,8 +222,8 @@ void main() {
       final bar = tester.widget<FractionallySizedBox>(
         find.byKey(const Key('updates_progress')),
       );
-      expect(bar.widthFactor, closeTo(0.42, 0.001));
-      expect(find.text(l10n.updatesPagePercent(42)), findsOneWidget);
+      expect(bar.widthFactor, closeTo(0.32, 0.001));
+      expect(find.text(l10n.updatesPagePercent(32)), findsOneWidget);
       expect(focused(tester, 'updates_cancel'), isTrue);
       expect(
         tester
@@ -237,6 +237,21 @@ void main() {
       await tester.pumpAndSettle();
       verifyNever(update.check);
       verify(update.cancelDownload).called(1);
+    });
+
+    testWidgets('Installing: no Cancel once RAUC is writing the slot', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        _running.copyWith(
+          phase: UpdatePhase.downloading,
+          available: _offer,
+          progress: 0.6,
+        ),
+      );
+      expect(find.byKey(const Key('updates_progress')), findsOneWidget);
+      expect(find.byKey(const Key('updates_cancel')), findsNothing);
     });
 
     testWidgets('Ready to install: Install and restart goes through the power '

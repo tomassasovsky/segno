@@ -7,6 +7,11 @@ import 'package:update_repository/update_repository.dart';
 
 part 'update_state.dart';
 
+/// Where the helper's progress hands over from the download to RAUC's slot
+/// write (`segno-update-ctl` maps the download to 0-40%). Past it the install
+/// cannot be cancelled.
+const kUpdateInstallStartsAt = 0.4;
+
 /// Drives the opt-in update UX: a passive read-only availability check that
 /// powers the startup notification, plus the user-triggered download/stage and
 /// apply. Nothing downloads or installs without an explicit call to
@@ -53,6 +58,11 @@ class UpdateCubit extends Cubit<UpdateState> {
     final current = await _updates.currentVersion();
     final recovery = await _updates.recover();
     var rollback = await _settings.loadUpdateRollback();
+    if (rollback != null && !(rollback.attempted > current)) {
+      // The build that did not start is running now: the notice is stale.
+      rollback = null;
+      await _settings.clearUpdateRollback();
+    }
     final rolledBack = recovery.rolledBack;
     if (rolledBack != null) {
       // Reported once by the helper, so kept until the notice is dismissed.
@@ -91,8 +101,18 @@ class UpdateCubit extends Cubit<UpdateState> {
   /// Runs a read-only availability check (no download, no install). No-op on an
   /// unsupported platform.
   Future<void> check() async {
-    if (!_updates.isSupported) return;
-    emit(state.copyWith(phase: UpdatePhase.checking, clearError: true));
+    if (!_updates.isSupported || _download != null) return;
+    final wasInterrupted = state.phase == UpdatePhase.interrupted;
+    emit(
+      state.copyWith(
+        phase: UpdatePhase.checking,
+        clearError: true,
+        clearInterrupted: true,
+      ),
+    );
+    // Checking instead of Retry or Discard still settles the cut-off
+    // attempt, or "Update paused" would return on every start.
+    if (wasInterrupted) await _updates.clearInterrupted();
     try {
       final manifest = await _updates.checkForUpdate();
       if (isClosed) return;
@@ -192,7 +212,9 @@ class UpdateCubit extends Cubit<UpdateState> {
   /// attempt record behind for the next start to find; a cancel the player
   /// chose is not an interruption, so that record is cleared here.
   Future<void> cancelDownload() async {
-    if (_download == null) return;
+    // Past the download RAUC is writing the slot, and its daemon cannot be
+    // stopped: killing the helper would only hide an install still running.
+    if (_download == null || state.progress >= kUpdateInstallStartsAt) return;
     await _download?.cancel();
     _endDownload();
     await _updates.clearInterrupted();
@@ -212,9 +234,13 @@ class UpdateCubit extends Cubit<UpdateState> {
   /// build gone or superseded; it then shows what it found instead.
   Future<void> retryInterrupted() async {
     if (state.phase != UpdatePhase.interrupted) return;
+    // Leaves interrupted before the first await, so a second press is a
+    // no-op rather than a second check racing the download.
+    emit(
+      state.copyWith(phase: UpdatePhase.checking, clearInterrupted: true),
+    );
     await _updates.clearInterrupted();
     if (isClosed) return;
-    emit(state.copyWith(clearInterrupted: true));
     await check();
     if (state.phase == UpdatePhase.available) await startDownload();
   }
@@ -258,6 +284,9 @@ class UpdateCubit extends Cubit<UpdateState> {
     if (state.phase == UpdatePhase.downloading) return;
     final channel = value ? 'experimental' : 'production';
     if (channel == state.channel) return;
+    if (state.phase == UpdatePhase.interrupted) {
+      await _updates.clearInterrupted();
+    }
     await _updates.setChannel(channel);
     await _settings.saveUpdateChannel(channel);
     if (isClosed) return;
@@ -267,6 +296,7 @@ class UpdateCubit extends Cubit<UpdateState> {
         phase: UpdatePhase.idle,
         clearAvailable: true,
         clearError: true,
+        clearInterrupted: true,
       ),
     );
     if (_updates.isSupported) await check();
