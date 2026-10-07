@@ -54,9 +54,11 @@ void main() {
         unawaited(open());
         await tester.pumpAndSettle();
         expect(find.byType(page), findsOneWidget);
-        // About and Displays have their accepted pages; the others still
-        // host a tray body on the interim destination panel.
-        if (page != AboutSettingsPage && page != DisplaysSettingsPage) {
+        // About, Network and Displays have their accepted pages; the others
+        // still host a tray body on the interim destination panel.
+        if (page != AboutSettingsPage &&
+            page != NetworkSettingsPage &&
+            page != DisplaysSettingsPage) {
           expect(find.byKey(const Key('settings_destination_panel')), findsOne);
         }
 
@@ -127,9 +129,12 @@ void main() {
       unawaited(openNetworkSettings());
       await tester.pumpAndSettle();
       expect(harness.wifi.statusReads, 1);
-      expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
+      expect(
+        find.byKey(const Key('network_connection_card')),
+        findsOneWidget,
+      );
       final cubit = BlocProvider.of<WifiCubit>(
-        tester.element(find.byKey(const Key('wifi_tray_body'))),
+        tester.element(find.byKey(const Key('network_connection_card'))),
       );
 
       await tester.tap(find.byKey(const Key('loop_settings_back')));

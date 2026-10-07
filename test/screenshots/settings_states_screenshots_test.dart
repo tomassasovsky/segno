@@ -144,46 +144,65 @@ ThemeData _theme() => ThemeData(
   ],
 );
 
-/// A radio with a saved network in range, one out of range, and two others.
+/// The pen 29 study's radio: The Studio up, a saved network out of range, and
+/// four others. Each switch reaches one of the eight accepted screens.
 class _PreviewWifiClient implements WifiClient {
-  _PreviewWifiClient({this.enabled = true});
+  _PreviewWifiClient({
+    this.enabled = true,
+    this.connected = true,
+    this.internet = true,
+    this.holdJoins = false,
+    this.refuseKey = false,
+  });
 
-  bool enabled;
+  final bool enabled;
+  final bool connected;
+  final bool internet;
+
+  /// A join never ends, so the Connecting dialog stays up.
+  final bool holdJoins;
+
+  /// A join is refused as a wrong password.
+  final bool refuseKey;
 
   @override
   bool get isSupported => true;
 
   @override
-  Future<WifiStatus> status() async => WifiStatus(
-    supported: true,
-    enabled: enabled,
-    connected: enabled,
-    ssid: enabled ? 'MyHouseWTF_es' : '',
-    ip: enabled ? '192.168.50.212' : '',
-    signal: -42,
-  );
+  Future<WifiStatus> status() async {
+    final up = enabled && connected;
+    return WifiStatus(
+      supported: true,
+      enabled: enabled,
+      connected: up,
+      ssid: up ? 'The Studio' : '',
+      ip: up ? '192.168.1.42' : '',
+      signal: -42,
+      autoConnect: const {'The Studio': true, 'Venue backstage': false},
+      lastSsid: 'The Studio',
+    );
+  }
 
   @override
   Future<List<WifiNetwork>> scan() async => const [
+    WifiNetwork(ssid: 'The Studio', signal: -42, secured: true, saved: true),
+    WifiNetwork(ssid: 'Rehearsal Room', signal: -50, secured: true),
+    WifiNetwork(ssid: 'Guest Wi-Fi', signal: -64, secured: false),
     WifiNetwork(
-      ssid: 'MyHouseWTF_es',
-      signal: -42,
-      secured: true,
-      saved: true,
-    ),
-    WifiNetwork(
-      ssid: 'MyHouseWTF_es_2.4G',
-      signal: -80,
+      ssid: 'Venue backstage',
+      signal: 0,
       secured: true,
       saved: true,
       inRange: false,
     ),
-    WifiNetwork(ssid: 'Studio 5G', signal: -48, secured: true),
-    WifiNetwork(ssid: 'Cafe Free', signal: -71, secured: false),
+    WifiNetwork(ssid: 'Phone hotspot', signal: -78, secured: true),
   ];
 
   @override
-  Future<void> connect(String ssid, {String? psk}) async {}
+  Future<void> connect(String ssid, {String? psk}) async {
+    if (holdJoins) await Completer<void>().future;
+    if (refuseKey) throw StateError('segno-wifi-ctl: authentication failed');
+  }
 
   @override
   Future<void> disconnect() async {}
@@ -193,6 +212,15 @@ class _PreviewWifiClient implements WifiClient {
 
   @override
   Future<void> setEnabled({required bool enabled}) async {}
+
+  @override
+  Future<void> setAutoConnect(String ssid, {required bool enabled}) async {}
+
+  @override
+  Future<void> changePassword(String ssid, String psk) async {}
+
+  @override
+  Future<bool> checkConnectivity() async => internet;
 }
 
 /// The Settings pages and the FX pedal assignments in the states worth
@@ -633,92 +661,128 @@ void main() {
     );
   }
 
-  testWidgets('Network page, wifi tab', (tester) async {
+  /// Opens the Network page over [client] (pen 29), settled.
+  Future<void> pumpNetwork(
+    WidgetTester tester,
+    _PreviewWifiClient client,
+  ) async {
     await size(tester);
-
     await pumpPage(
       tester,
       page: const NetworkSettingsPage(),
-      wifi: WifiRepository(client: _PreviewWifiClient()),
+      wifi: WifiRepository(client: client),
     );
     await tester.pumpAndSettle();
+  }
+
+  /// Types [text] on the password sheet's keyboard.
+  Future<void> typePassword(WidgetTester tester, String text) async {
+    for (final key in text.split('')) {
+      await tester.tap(find.widgetWithText(InkWell, key).first);
+      await tester.pump();
+    }
+  }
+
+  testWidgets('Network page, 29/01 connected', (tester) async {
+    await pumpNetwork(tester, _PreviewWifiClient());
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/settings_network_wifi.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('Network page, wifi off', (tester) async {
-    await size(tester);
-
-    await pumpPage(
-      tester,
-      page: const NetworkSettingsPage(),
-      wifi: WifiRepository(client: _PreviewWifiClient(enabled: false)),
-    );
+  testWidgets('Network page, 29/02 join a network', (tester) async {
+    await pumpNetwork(tester, _PreviewWifiClient());
+    await tester.tap(find.byKey(const Key('network_row_Rehearsal Room')));
     await tester.pumpAndSettle();
-    // The face is one switch and nothing else — there is nothing truthful to
-    // list about a radio that is down.
+    await typePassword(tester, 'rehearse');
+    expect(find.byKey(const Key('network_password_sheet')), findsOneWidget);
+    // The sheet rides in the route overlay, above the Scaffold.
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/settings_network_wifi_join.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Network page, 29/03 connecting', (tester) async {
+    await pumpNetwork(tester, _PreviewWifiClient(holdJoins: true));
+    await tester.tap(find.byKey(const Key('network_row_Rehearsal Room')));
+    await tester.pumpAndSettle();
+    await typePassword(tester, 'rehearse');
+    await tester.tap(find.widgetWithText(InkWell, 'Connect').last);
+    // The progress bar sweeps for as long as the join runs: no settling.
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.byKey(const Key('network_connecting_dialog')), findsOneWidget);
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/settings_network_wifi_connecting.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Network page, 29/04 incorrect password', (tester) async {
+    await pumpNetwork(tester, _PreviewWifiClient(refuseKey: true));
+    await tester.tap(find.byKey(const Key('network_row_Rehearsal Room')));
+    await tester.pumpAndSettle();
+    await typePassword(tester, 'wrongkey');
+    await tester.tap(find.widgetWithText(InkWell, 'Connect').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('network_password_message')), findsOneWidget);
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/settings_network_wifi_incorrect.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Network page, 29/05 saved network controls', (tester) async {
+    await pumpNetwork(tester, _PreviewWifiClient());
+    await tester.tap(find.byKey(const Key('network_manage')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('network_details_dialog')), findsOneWidget);
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/settings_network_wifi_details.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Network page, 29/06 connection lost', (tester) async {
+    await pumpNetwork(tester, _PreviewWifiClient(connected: false));
+    expect(find.byKey(const Key('network_reconnect')), findsOneWidget);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/settings_network_wifi_lost.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Network page, 29/07 Wi-Fi off', (tester) async {
+    await pumpNetwork(tester, _PreviewWifiClient(enabled: false));
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/settings_network_wifi_off.png'),
     );
   }, skip: !hasFonts);
 
-  testWidgets('Network page, wifi row open', (tester) async {
-    await size(tester);
-
-    await pumpPage(
-      tester,
-      page: const NetworkSettingsPage(),
-      wifi: WifiRepository(client: _PreviewWifiClient()),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('wifi_network_MyHouseWTF_es')));
-    await tester.pumpAndSettle();
+  testWidgets('Network page, 29/08 connected without internet', (
+    tester,
+  ) async {
+    await pumpNetwork(tester, _PreviewWifiClient(internet: false));
     await expectLater(
       find.byType(Scaffold),
-      matchesGoldenFile('goldens/settings_network_wifi_expanded.png'),
+      matchesGoldenFile('goldens/settings_network_wifi_no_internet.png'),
     );
   }, skip: !hasFonts);
 
   testWidgets('Network page, forget confirm', (tester) async {
-    await size(tester);
-
-    await pumpPage(
-      tester,
-      page: const NetworkSettingsPage(),
-      wifi: WifiRepository(client: _PreviewWifiClient()),
-    );
+    await pumpNetwork(tester, _PreviewWifiClient());
+    await tester.tap(find.byKey(const Key('network_manage')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('wifi_network_MyHouseWTF_es')));
+    await tester.tap(find.byKey(const Key('network_forget')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('wifi_forget')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('console_confirm_confirm')), findsOneWidget);
-    // The confirm rides in the route overlay, above the Scaffold.
+    expect(find.byKey(const Key('network_forget_dialog')), findsOneWidget);
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/settings_network_wifi_forget.png'),
-    );
-  }, skip: !hasFonts);
-
-  testWidgets('Network page, join sheet', (tester) async {
-    await size(tester);
-
-    await pumpPage(
-      tester,
-      page: const NetworkSettingsPage(),
-      wifi: WifiRepository(client: _PreviewWifiClient()),
-    );
-    await tester.pumpAndSettle();
-    // A secured network the console has no credential for opens the sheet.
-    await tester.tap(find.byKey(const Key('wifi_network_Studio 5G')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('wifi_join_sheet')), findsOneWidget);
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('goldens/settings_network_wifi_join.png'),
     );
   }, skip: !hasFonts);
 
