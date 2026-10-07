@@ -1305,5 +1305,62 @@ void main() {
         expect(engine.auditionState().playing, isFalse);
       },
     );
+
+    test('the audition voice lives as the native one does', () async {
+      engine.start(engine.defaultConfig);
+      final dir = Directory.systemTemp.createTempSync('mock_audition');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final file = File('${dir.path}/a.wav')..writeAsBytesSync([0]);
+      Future<void> play() async => expect(
+        (await engine.auditionStartFile(file.path)).result,
+        EngineResult.ok,
+      );
+
+      // A pair the device has no channels for is refused.
+      expect(
+        (await engine.auditionStartFile(file.path, bus: 64)).result,
+        EngineResult.invalid,
+      );
+
+      // It advances a block per snapshot and ends after its last frame.
+      await play();
+      final frames = engine.auditionState().frames;
+      engine.snapshot();
+      expect(engine.auditionState().position, greaterThan(0));
+      for (var i = 0; i < frames && engine.auditionState().playing; i++) {
+        engine.snapshot();
+      }
+      expect(engine.auditionState().playing, isFalse);
+
+      // A Cut sound ends it.
+      await play();
+      engine.cutSound();
+      expect(engine.auditionState().playing, isFalse);
+
+      // A performance arm ends it, and refuses a start while armed.
+      await play();
+      expect(engine.perfArm(dir.path), EngineResult.ok);
+      expect(engine.auditionState().playing, isFalse);
+      expect(
+        (await engine.auditionStartFile(file.path)).result,
+        EngineResult.alreadyRunning,
+      );
+      expect(engine.perfDisarm(), EngineResult.ok);
+
+      // A stop and a start (a reconfigure) end it and bump the epoch.
+      await play();
+      final epoch = engine.auditionState().epoch;
+      expect(engine.stop(), EngineResult.ok);
+      expect(engine.auditionState().playing, isFalse);
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      expect(engine.auditionState().epoch, epoch + 1);
+
+      // So does a reopen.
+      await play();
+      expect(engine.stop(), EngineResult.ok);
+      expect(engine.reopen(engine.defaultConfig).result, EngineResult.ok);
+      expect(engine.auditionState().playing, isFalse);
+      expect(engine.auditionState().epoch, epoch + 2);
+    });
   });
 }

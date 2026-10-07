@@ -60,6 +60,7 @@ int32_t le_engine_audition_start(le_engine* engine, le_backing_buffer* buffer,
       (int64_t)buffer->frames >
           (int64_t)LE_AUDITION_MAX_SECONDS * engine->sample_rate ||
       bus < 0 || bus >= LE_MAX_OUTPUT_BUSES ||
+      2 * bus >= load_i32(&engine->a_out_channels) ||
       le_audition_owned_index(engine, buffer) >= 0) {
     return LE_ERR_INVALID;
   }
