@@ -33,19 +33,23 @@ import 'package:segno/control/foot_fade_actions.dart';
 import 'package:segno/control/foot_mixer_actions.dart';
 import 'package:segno/control/foot_peel_actions.dart';
 import 'package:segno/control/foot_reverse_actions.dart';
+import 'package:segno/control/foot_tuner_actions.dart';
 import 'package:segno/control/model/foot_fade.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/control/model/foot_reverse.dart';
+import 'package:segno/control/model/foot_tuner.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'control_foot_fade.dart';
 part 'control_foot_reverse.dart';
 part 'control_foot_mixer.dart';
 part 'control_foot_peel.dart';
+part 'control_foot_tuner.dart';
 part 'control_midi.dart';
 part 'control_state.dart';
 
@@ -179,6 +183,8 @@ class ControlCubit extends Cubit<ControlState> {
     required FxChainPersistence fxPersistence,
     required OwnedValueControl ownedValues,
     required FadeSettings fadeSettings,
+    TunerSettings? tunerSettings,
+    bool seedTunerDefault = false,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
     Duration Function()? midiClock,
@@ -195,6 +201,9 @@ class ControlCubit extends Cubit<ControlState> {
        _owned = ownedValues,
        _footReverseActions = FootReverseActions(repository: looper),
        _footPeelActions = FootPeelActions(repository: looper),
+       _ownsTunerSettings = tunerSettings == null,
+       _seedsTunerDefault = seedTunerDefault,
+       _tunerSettings = tunerSettings ?? TunerSettings(settings: settings),
        _footFadeActions = FootFadeActions(
          repository: looper,
          settings: fadeSettings,
@@ -225,6 +234,10 @@ class ControlCubit extends Cubit<ControlState> {
     _bindingSub = controller?.bindingEvents.listen(_onControllerBindingEvent);
     _midiSub = midiDevices?.connections.listen(_onMidiConnection);
     _midiMessageSub = midiDevices?.messages.listen(_onMidiInput);
+    _tunerSub = _tunerSettings.changes.listen(_onTunerPreferences);
+    if (_tunerSettings.live != state.tunerPreferences) {
+      emit(state.copyWith(tunerPreferences: _tunerSettings.live));
+    }
   }
 
   final MidiDeviceRepository? _midiDevices;
@@ -1057,6 +1070,24 @@ class ControlCubit extends Cubit<ControlState> {
   final FootFadeActions _footFadeActions;
   final FootReverseActions _footReverseActions;
   final FootPeelActions _footPeelActions;
+
+  // The tuner preferences, shared with the reading (`TunerCubit`) when the
+  // app supplies them; a cubit built without them owns a private copy.
+  final TunerSettings _tunerSettings;
+  final bool _ownsTunerSettings;
+
+  // Whether boot adds the one-shot `Hold · Tuner` default (the app does;
+  // a cubit built for a narrower purpose leaves the setup alone).
+  final bool _seedsTunerDefault;
+  late final FootTunerActions _footTunerActions = FootTunerActions(
+    repository: _looper,
+    settings: _tunerSettings,
+  );
+  late final StreamSubscription<TunerPreferences> _tunerSub;
+
+  // What the tuner was last armed with, so a re-projection only re-arms on a
+  // real change. Null while the mode is down.
+  ({int source, Set<int> muted})? _tunerArmed;
   int _footFadeSession = 0;
   late final _footMixerActions = FootMixerActions(
     repository: _looper,
@@ -1181,6 +1212,7 @@ class ControlCubit extends Cubit<ControlState> {
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
+    if (_ownsTunerSettings) await _tunerSettings.load();
     _longPress = Duration(milliseconds: await _settings.loadPedalLongPressMs());
     final storedBindings = PedalBindingSet.decode(
       await _settings.loadPedalBindings() ?? '',
@@ -1216,6 +1248,39 @@ class ControlCubit extends Cubit<ControlState> {
     await _loadMidiConfiguration();
     if (_inputRetired || _closing || isClosed) return;
     setMode(InteractionMode.record);
+    // After the restore completes: the seeding saves through setPedalSetup,
+    // which waits for this load.
+    if (_seedsTunerDefault) unawaited(_seedTunerDefault());
+  }
+
+  /// Gives a default install a way to the Tuner (#1229, D11): `Hold ·
+  /// Tuner` on Custom pedal 2, bank A, where the pedal study and pen 10
+  /// `uEukr` put it. One-shot: the flag is written at the first attempt,
+  /// whatever its outcome, and a Hold already assigned there is kept. A
+  /// malformed or uncertain stored setup is never overwritten; the flag stays
+  /// unset for a later boot.
+  Future<void> _seedTunerDefault() async {
+    try {
+      if (await _settings.loadTunerDefaultSeeded()) return;
+      if (isClosed ||
+          state.pedalSetupUnavailable ||
+          state.pedalSetupPersistenceUncertain) {
+        return;
+      }
+      await _settings.saveTunerDefaultSeeded();
+      final pair = state.pedalSetup.customFor(PedalButton.track2, bank: 0);
+      if (pair.hold != null || isClosed) return;
+      await setPedalSetup(
+        state.pedalSetup.withCustom(
+          PedalButton.track2,
+          bank: 0,
+          pair: pair.withHold(const ModeAction(InteractionMode.tuner)),
+        ),
+      );
+      if (!isClosed) emit(state.copyWith(tunerDefaultSeeded: true));
+    } on Object catch (error, stackTrace) {
+      addError(error, stackTrace);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1321,7 +1386,8 @@ class ControlCubit extends Cubit<ControlState> {
     InteractionMode.mixer ||
     InteractionMode.fade ||
     InteractionMode.reverse ||
-    InteractionMode.peel => InteractionMode.record,
+    InteractionMode.peel ||
+    InteractionMode.tuner => InteractionMode.record,
   });
 
   /// Saves the built-in pedal setup before making it live. A storage refusal
@@ -1437,6 +1503,7 @@ class ControlCubit extends Cubit<ControlState> {
   void setMode(InteractionMode next) {
     if (next == state.mode) return;
     _surfaceVisit = Object();
+    if (state.mode == InteractionMode.tuner) _leaveTuner();
     // Leaving the mode the bindings live in strands any held momentary — the
     // release will arrive with the foot in a mode that no longer dispatches
     // it, or not at all. Restore first (B1), before the emit re-projects.
@@ -1470,6 +1537,15 @@ class ControlCubit extends Cubit<ControlState> {
             parkedResume: const {},
           ),
         );
+      case InteractionMode.tuner:
+        emit(
+          state.copyWith(
+            mode: next,
+            excluded: const {},
+            parkedResume: const {},
+          ),
+        );
+        _enterTuner();
       case InteractionMode.fade:
         _footFadeSession = _looper.sessionRevision;
         emit(
@@ -1585,6 +1661,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.fade:
       case InteractionMode.reverse:
       case InteractionMode.peel:
+      case InteractionMode.tuner:
         _recAdvance(state.cursor);
       case InteractionMode.mute:
         _muteRecPlay();
@@ -1729,6 +1806,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.fade:
       case InteractionMode.reverse:
       case InteractionMode.peel:
+      case InteractionMode.tuner:
         parkAll();
       case InteractionMode.fx:
         panicTrackChains();
@@ -1797,6 +1875,7 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.fade:
       case InteractionMode.reverse:
       case InteractionMode.peel:
+      case InteractionMode.tuner:
         // Inert: the performance surfaces replace the Tracks columns, and
         // their track pedals act through their own roles.
         break;
@@ -2002,6 +2081,9 @@ class ControlCubit extends Cubit<ControlState> {
     // for and the looper outlives this cubit — but the overlay state and the
     // LED frame belong to a console that is no longer there.
     if (isClosed) return cleared.isNotEmpty && muteAccepted;
+    // Clear-all lands home without [setMode], so it leaves the Tuner itself:
+    // otherwise the detector stays armed and the tuned input muted.
+    if (state.mode == InteractionMode.tuner) _leaveTuner();
     emit(
       state.copyWith(
         mode: InteractionMode.record,
@@ -2140,6 +2222,58 @@ class ControlCubit extends Cubit<ControlState> {
     final result = await _footReverseActions.toggle(channel);
     if (!result.isOk) {
       _reportReverseFailure(visit, session);
+    }
+  }
+
+  /// Admits a screen contact on the Tuner face into the shared ledger.
+  void footTunerPressed(PedalButton button, Object contact) {
+    if (state.mode != InteractionMode.tuner || isClosed) return;
+    _handleEvent(ButtonPressed(button), contact: contact);
+  }
+
+  /// Only the admitted screen contact may complete its Tuner gesture.
+  void footTunerReleased(PedalButton button, Object contact) =>
+      footMixerReleased(button, contact);
+
+  /// Cancels an abandoned Tuner contact without its short action.
+  void footTunerCancelled(PedalButton button, Object contact) {
+    if (isClosed ||
+        _inputRetired ||
+        !identical(_pressedButtons[button], contact)) {
+      return;
+    }
+    _systemGesture(button)?.cancel();
+    _trackHoldGestures[button]?.cancel();
+    _pressedButtons.remove(button);
+    _acceptedContacts.remove(button);
+    _pushProjected();
+  }
+
+  /// Accessible semantic activation: [button]'s press, or its Hold (Undo
+  /// and Clear reset the reference) when [hold] is set.
+  void activateFootTunerPedal(PedalButton button, {bool hold = false}) {
+    if (state.mode != InteractionMode.tuner || isClosed) return;
+    final pedal = _tunerProjection()[button];
+    if (pedal.role == FootTunerRole.exit) {
+      setMode(InteractionMode.record);
+      return;
+    }
+    if (!_tunerEditable || !pedal.available) return;
+    switch (pedal.role) {
+      case FootTunerRole.referenceDown || FootTunerRole.referenceUp:
+        unawaited(
+          hold
+              ? _resetTunerReference()
+              : _stepTunerReference(
+                  pedal.role == FootTunerRole.referenceUp ? 1 : -1,
+                ),
+        );
+      case FootTunerRole.input ||
+          FootTunerRole.mute ||
+          FootTunerRole.nextPage ||
+          FootTunerRole.exit ||
+          FootTunerRole.none:
+        if (!hold) _dispatchTunerAction(pedal);
     }
   }
 
@@ -2390,6 +2524,10 @@ class ControlCubit extends Cubit<ControlState> {
       _onPeelPress(button);
       return;
     }
+    if (state.mode == InteractionMode.tuner) {
+      _onTunerPress(button);
+      return;
+    }
     if (state.mode == InteractionMode.custom) {
       // These two physical exits cannot be assigned. They act on contact,
       // without a second action waiting on the release.
@@ -2443,7 +2581,8 @@ class ControlCubit extends Cubit<ControlState> {
           InteractionMode.mixer ||
           InteractionMode.fade ||
           InteractionMode.reverse ||
-          InteractionMode.peel => false,
+          InteractionMode.peel ||
+          InteractionMode.tuner => false,
         };
         if (accepted) _acceptedContacts.add(button);
         _armRecordHold();
@@ -3335,6 +3474,7 @@ class ControlCubit extends Cubit<ControlState> {
     _retryExternalReleases();
     _checkMidiSessionAndCleanup();
     _reduce(looperState, wasParked: wasParked);
+    _syncTuner();
     _pendingRestore.toList().forEach(_tryRestoreBinding);
     _pushProjected();
   }
@@ -3373,6 +3513,7 @@ class ControlCubit extends Cubit<ControlState> {
       boundChains: _boundChains(),
       customFunctions: customFunctions,
       physicalCustomStates: _physicalCustomStates(looperState, customFunctions),
+      tunerStates: _tunerStates(),
       acceptedContacts: _acceptedContacts,
     );
     _pedal.pushState(frame);
@@ -3570,6 +3711,9 @@ class ControlCubit extends Cubit<ControlState> {
   Future<void> close() => _closeFuture ??= _close().then((_) => super.close());
 
   Future<void> _close() async {
+    // Never leave the detector armed, or an input muted, for a mode that is
+    // gone.
+    if (state.mode == InteractionMode.tuner) _leaveTuner();
     retireInput();
     _midiLearnTimer?.cancel();
     _midiLevelTimer?.cancel();
@@ -3595,6 +3739,8 @@ class ControlCubit extends Cubit<ControlState> {
     await _midiWrites;
     await _externalTail;
     await _ownedOrdinarySub.cancel();
+    await _tunerSub.cancel();
+    if (_ownsTunerSettings) await _tunerSettings.close();
     await Future.wait(_bindingDecisions.values.toList());
     await _restoreWait;
     _heldRestore.clear();
