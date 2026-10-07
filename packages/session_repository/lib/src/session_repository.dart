@@ -115,6 +115,8 @@ class SessionSettings {
     this.laneCounts = const {},
     this.inputSetup = const SessionInputSetup(),
     this.outputSetup = const SessionOutputSetup(),
+    this.backing = const SessionBacking(),
+    this.clickPan = 0,
   });
 
   SessionSettings._detached(SessionSettings source)
@@ -168,7 +170,16 @@ class SessionSettings {
         muted: Map.unmodifiable(source.outputSetup.muted),
         mono: Map.unmodifiable(source.outputSetup.mono),
         balance: Map.unmodifiable(source.outputSetup.balance),
-      );
+      ),
+      backing = SessionBacking(
+        prepared: List.unmodifiable(source.backing.prepared),
+        loaded: source.backing.loaded,
+        endMode: source.backing.endMode,
+        level: source.backing.level,
+        pan: source.backing.pan,
+        outputMask: source.backing.outputMask,
+      ),
+      clickPan = source.clickPan;
 
   /// Denominator-note beats per minute; zero means unset.
   final double tempoBpm;
@@ -271,6 +282,12 @@ class SessionSettings {
 
   /// The output setup (slice 3b), persisted session-level.
   final SessionOutputSetup outputSetup;
+
+  /// The backing player's prepared setup and mix (#1200).
+  final SessionBacking backing;
+
+  /// The click's balance, `-1..1` (#1200).
+  final double clickPan;
 }
 
 /// Saves Segno sessions, reads them back, keeps their catalog, and exports a
@@ -1874,6 +1891,8 @@ class SessionRepository {
       // Control-surface configuration (schema v6), opaque here like the
       // chains — handed straight through from the bloc layer.
       pedalBindings: pedalBindings,
+      backing: settings.backing,
+      clickPan: settings.clickPan,
     );
   }
 

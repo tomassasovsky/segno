@@ -1290,6 +1290,13 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
   if (layer_overruns)
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                    "  \"layer_overruns\": %u,\n", layer_overruns);
+  /* The backing player (#1200) was playing and routed to the captured bus:
+   * master.pcm may hold audio the stems never reproduce (the backing is not
+   * perf-logged). A muted bus or a zero level still counts. */
+  if (atomic_load_explicit(&d->engine->a_perf_backing_blocks,
+                           memory_order_relaxed) != 0u)
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                   "  \"backing_in_master\": true,\n");
 
   if (report_disk_full || atomic_load_explicit(&d->disk_full, memory_order_acquire)) {
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,

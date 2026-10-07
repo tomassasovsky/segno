@@ -743,6 +743,7 @@ void main() {
           waveformWindow: windowService,
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
+          backingRepository: testBackingRepository(),
           powerOff: powerOff,
           powerKeySource: powerKeySource,
           waveformWindowOpenDelay: waveformWindowOpenDelay,
@@ -766,6 +767,7 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
+          backingRepository: testBackingRepository(),
           updates: updates,
         ),
       );
@@ -856,6 +858,7 @@ void main() {
               engine: engine,
             ),
             performanceRepository: performance,
+            backingRepository: testBackingRepository(),
           ),
         );
         await tester.pumpAndSettle();
@@ -2046,8 +2049,15 @@ void main() {
       });
     }
 
+    // Decay, Fade, the backing mix and click pan have no native receipt, so
+    // nothing can owe a value a restart lands.
     for (final key in OwnedSetting.values.where(
-      (key) => key != OwnedSetting.decay && key != OwnedSetting.fade,
+      (key) => !const {
+        OwnedSetting.decay,
+        OwnedSetting.fade,
+        OwnedSetting.backingMix,
+        OwnedSetting.clickPan,
+      }.contains(key),
     )) {
       testWidgets(
         'a restart that lands the owed value clears its recovery notice; '
@@ -2096,7 +2106,9 @@ void main() {
               timing.owner,
             ),
             OwnedSetting.decay ||
-            OwnedSetting.fade => throw StateError('No receipt'),
+            OwnedSetting.fade ||
+            OwnedSetting.backingMix ||
+            OwnedSetting.clickPan => throw StateError('No receipt'),
           };
           engine
             ..publishClickCommands = key != OwnedSetting.clickVolume
@@ -2118,7 +2130,9 @@ void main() {
             OwnedSetting.recordLength => record.setDefaultLengthBars(4),
             OwnedSetting.recordTiming => timing.setTiming(RecordTiming.quarter),
             OwnedSetting.decay ||
-            OwnedSetting.fade => throw StateError('No receipt'),
+            OwnedSetting.fade ||
+            OwnedSetting.backingMix ||
+            OwnedSetting.clickPan => throw StateError('No receipt'),
           });
           await tester.pump(const Duration(milliseconds: 600));
           await tester.pump();
@@ -3582,6 +3596,7 @@ void main() {
         waveformWindow: NoopWaveformWindowService(),
         sessionRepository: sessionRepository,
         performanceRepository: performanceRepository,
+        backingRepository: testBackingRepository(),
       );
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
@@ -3626,6 +3641,7 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
             pedalRepository: pedal,
           ),
         );
@@ -3664,6 +3680,7 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
+          backingRepository: testBackingRepository(),
         ),
       );
       await tester.pumpAndSettle();
@@ -3933,6 +3950,7 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
           ),
         );
         await tester.pumpAndSettle();
@@ -4026,6 +4044,7 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
           ),
         );
         await tester.pumpAndSettle();
@@ -4149,6 +4168,7 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
           ),
         );
         await tester.pumpAndSettle();
@@ -4289,6 +4309,7 @@ void main() {
             waveformWindow: windowService,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
             displayCount: () => 1,
           ),
         );
@@ -4526,6 +4547,7 @@ void main() {
             waveformWindow: window,
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
           ),
         );
         await tester.pumpAndSettle();
@@ -5006,6 +5028,7 @@ void main() {
             waveformWindow: NoopWaveformWindowService(),
             sessionRepository: sessionRepository,
             performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
             audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
           ),
         );
@@ -5040,6 +5063,7 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           performanceRepository: performanceRepository,
+          backingRepository: testBackingRepository(),
           audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
         ),
       );

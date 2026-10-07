@@ -1598,6 +1598,23 @@ typedef struct le_tuner_pass {
   float d[2 * LE_TUNER_DECIM + 2];
 } le_tuner_pass;
 
+/* One backing read head (#1200): see le_engine.backing_cur. */
+typedef struct le_backing_voice {
+  struct le_backing_buffer* buf;
+  int32_t pos;      /* next frame to read */
+  int32_t ramp_n;   /* frames of the current ramp already played */
+  int32_t ramp_len; /* 0 = no ramp (steady unity on the loaded voice) */
+  float ramp_from;  /* the fade voice's starting gain */
+  int owns;         /* fade voice only: frees its buffer when it ends */
+} le_backing_voice;
+
+/* The engine-owned backing buffer: interleaved stereo float32. */
+struct le_backing_buffer {
+  float* pcm;
+  int32_t frames;
+  int32_t sample_rate;
+};
+
 struct le_engine {
   /* The device backend driving the lifecycle (le_select_backend's choice),
    * remembered so le_engine_stop / le_engine_destroy release the device through
@@ -1830,6 +1847,37 @@ struct le_engine {
   int click_mode_publish_pending;
   _Atomic uint32_t a_click_mask;        /* output bitmask; default 0 = unrouted */
   _Atomic uint32_t a_click_volume_bits; /* float bits, 0..LE_MAX_GAIN; def. 1 */
+  _Atomic uint32_t a_click_pan_bits;    /* float bits, -1..1; default 0 */
+
+  /* Backing player (#1200; segno_engine_api.h has the contract). SETTINGS:
+   * direct stores, seeded once in le_engine_create and persisting across
+   * configure like the click settings. PUBLISHED: written by the callback at
+   * the end of every block that ran the voice, read by le_engine_backing_state.
+   * a_backing_epoch bumps in le_engine_reset_runtime (configure and reopen). */
+  _Atomic uint32_t a_backing_mask;
+  _Atomic uint32_t a_backing_level_bits; /* 0..LE_MAX_GAIN, default 1 */
+  _Atomic uint32_t a_backing_pan_bits;   /* -1..1, default 0 */
+  _Atomic int32_t a_backing_end_mode;    /* le_backing_end */
+  _Atomic uint32_t a_backing_epoch;
+  _Atomic int32_t a_backing_item, a_backing_next_item, a_backing_transport;
+  _Atomic int32_t a_backing_position, a_backing_frames, a_backing_last_end;
+  _Atomic uint32_t a_backing_end_count;
+  /* Audio -> control return of finished buffers: the callback stores a
+   * buffer it will never read again into an empty slot (release); the control
+   * thread exchanges each slot back to NULL and frees what it finds. Never
+   * full: the engine owns at most LE_BACKING_MAX_BUFFERS buffers in total. */
+  struct le_backing_buffer* _Atomic a_backing_dead[LE_BACKING_MAX_BUFFERS];
+  /* Transit, for the registry's NOT_READY-or-CAPACITY answer: the callback
+   * counts every buffer-carrying load or stage it applied (release, after
+   * handing back what it replaced), and flags while the fade voice owns a
+   * replaced buffer (cleared, with release, after handing it back). The
+   * control thread counts what it posted (backing_posted). */
+  _Atomic uint32_t a_backing_applied;
+  _Atomic int32_t a_backing_fade_owns;
+  uint32_t backing_posted;
+  /* Control-thread registry of every buffer the engine owns (in the ring,
+   * held by the callback, or returned and not yet freed). */
+  struct le_backing_buffer* backing_owned[LE_BACKING_MAX_BUFFERS];
   /* Callback-published exclusive recording-start choice: positive = count-in
    * measures, 0 = neither, -1 = sound start. One load reports a coherent pair. */
   _Atomic int32_t a_record_start;
@@ -1977,6 +2025,9 @@ struct le_engine {
    * unpersisted instead of queued for the drain thread. Same rationale as
    * the two atomics above: not surfaced via le_snapshot yet. */
   _Atomic uint32_t a_perf_layer_overruns;
+  /* Blocks in which the backing (#1200) reached the captured bus while
+   * armed: the master holds backing audio no stem reproduces. Reset at arm. */
+  _Atomic uint32_t a_perf_backing_blocks;
   le_perf_capture perf;
 
   /* Tracks. */
@@ -2084,6 +2135,18 @@ struct le_engine {
   int32_t click_free_frame; /* frames into the current free-run beat */
   int32_t click_free_fpb;   /* frames per beat, refreshed at each beat */
   int32_t click_free_beat;  /* 0..ts_num-1 within the free-run bar */
+
+  /* Audio-thread-local backing voices (#1200). `backing_cur` is the loaded
+   * buffer and owns it; `backing_fade` is an outgoing sound fading out over
+   * the declick ramp, which owns its buffer only when `owns` is set (it may
+   * share the loaded buffer after a Pause, Stop or seek); `backing_next`
+   * is the staged End = Next buffer and owns it. A ramp counts `ramp_n` of
+   * `ramp_len` frames: in on the loaded voice, out on the fade voice. */
+  le_backing_voice backing_cur, backing_fade;
+  struct le_backing_buffer* backing_next;
+  int32_t backing_item, backing_next_item, backing_state;
+  uint32_t backing_end_count;
+  int32_t backing_last_end;
 
   /* One frozen stopped-launch deadline, with bounded insertion order. Actions
    * are 0 none, 1 fresh Record, 2 Play, 3 overdub. Members retain their own

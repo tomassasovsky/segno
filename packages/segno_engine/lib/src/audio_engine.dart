@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:segno_engine/src/audio_device.dart';
+import 'package:segno_engine/src/backing.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
@@ -59,7 +60,10 @@ enum EngineResult {
   /// transposed track (`LE_ERR_TRANSFORMED`, #1179): capture never writes
   /// under playback it does not hear. Play, Stop, Mute, Fade and history stay
   /// available.
-  transformed;
+  transformed,
+
+  /// An audio file over the 15-minute backing cap (`LE_ERR_TOO_LONG`, #1200).
+  tooLong;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -76,6 +80,7 @@ enum EngineResult {
     -8 => EngineResult.notReady,
     -9 => EngineResult.reversed,
     -10 => EngineResult.transformed,
+    -12 => EngineResult.tooLong,
     _ => EngineResult.invalid,
   };
 
@@ -1584,6 +1589,59 @@ abstract interface class EnginePerformanceCapture {
   EngineResult renderCancel();
 }
 
+/// The backing player's voice (#1200): one engine-owned stereo file played
+/// from RAM, routed like the click (before the output buses), never part of
+/// stems or loop takes. Files come from an `AudioDecoder`; a successful
+/// [backingLoad] or [backingStageNext] transfers the samples to the engine
+/// (`DecodedAudio.ownership` reads `transferred`), any refusal leaves them
+/// the caller's. See `segno_engine_api.h` for the native contract.
+abstract interface class BackingControl {
+  /// Replaces the loaded file at the next block, fading out a sounding one.
+  /// [item] is the caller's token, reported back in [backingState]; [play]
+  /// starts it at frame 0. [EngineResult.invalid] for audio that is not the
+  /// caller's, decoded for another rate, or a full command ring;
+  /// [EngineResult.notReady] while a replaced buffer is still on its way back
+  /// (retry after one block); [EngineResult.capacity] past the backing
+  /// memory budget; [EngineResult.notRunning] when not configured.
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  });
+
+  /// Stages the file End = Next continues into; null clears the stage. Same
+  /// ownership and refusals as [backingLoad].
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item});
+
+  /// Unloads the loaded and staged files (fading out a sounding one).
+  EngineResult backingClear();
+
+  /// Play, pause or stop the loaded file; nothing loaded is a no-op.
+  EngineResult backingTransport(BackingTransportOp op);
+
+  /// Moves the loaded file to [frame], clamped; playing or paused is kept.
+  EngineResult backingSeek(int frame);
+
+  /// The End setting (persists across configure).
+  EngineResult setBackingEnd(BackingEnd mode);
+
+  /// The backing output channel mask (persists across configure).
+  EngineResult setBackingOutput(int mask);
+
+  /// The backing gain, clamped to 0..2 (persists across configure).
+  EngineResult setBackingLevel(double gain);
+
+  /// The backing balance, clamped to -1..1 (persists across configure).
+  EngineResult setBackingPan(double pan);
+
+  /// The click pan, clamped to -1..1 (persists across configure).
+  EngineResult setClickPan(double pan);
+
+  /// The voice as of the last processed block; also frees the buffers the
+  /// audio thread has finished with.
+  BackingState backingState();
+}
+
 /// The data-layer boundary over the native audio engine, composed from the
 /// role interfaces above (interface-segregation: a consumer can depend on the
 /// slice it needs — [SessionIo], [EngineMetering], … — instead of the whole
@@ -1606,4 +1664,5 @@ abstract interface class AudioEngine
         InputConditioningControl,
         EnginePluginHosting,
         EnginePerformanceCapture,
-        SessionIo {}
+        SessionIo,
+        BackingControl {}

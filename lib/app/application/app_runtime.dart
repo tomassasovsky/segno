@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
@@ -11,7 +12,12 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/backing/application/backing_player.dart';
+import 'package:segno/backing/application/session_backing.dart';
+import 'package:segno/backing/cubit/backing_cubit.dart';
+import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/looper/application/backing_settings.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
@@ -40,6 +46,7 @@ class AppRuntime {
     required PedalRepository pedal,
     required PerformanceRepository performance,
     required SessionRepository sessions,
+    required BackingRepository backing,
     required Future<void> Function() powerOff,
     required Future<void> Function() reboot,
     required Future<void> Function() storageSettled,
@@ -58,12 +65,22 @@ class AppRuntime {
     );
     timing = RecordTimingSettings(repository: repository, settings: settings);
     tuner = TunerSettings(settings: settings);
+    backingSettings = BackingSettings(
+      repository: repository,
+      settings: settings,
+      backing: backing,
+    );
+    backingPlayer = BackingPlayer(
+      repository: backing,
+      settings: backingSettings,
+    );
     owners = SettingsOwners([
       ...tempo.owners,
       ...playback.owners,
       ...record.owners,
       ...timing.owners,
       ...fade.owners,
+      ...backingSettings.owners,
     ]);
     power = PowerCubit(
       stopTransport: () {
@@ -100,6 +117,7 @@ class AppRuntime {
         recordLength: record,
         recordTiming: timing,
         fade: fade,
+        backing: backingSettings,
       ),
       fadeSettings: fade,
       tunerSettings: tuner,
@@ -129,6 +147,10 @@ class AppRuntime {
         record: record,
         timing: timing,
         fade: fade,
+        backing: SessionBackingPort(
+          player: backingPlayer,
+          settings: backingSettings,
+        ),
       ),
       currentPedalBindings: () => control.state.bindings.encode(),
       onPedalBindings: (encoded) =>
@@ -136,6 +158,8 @@ class AppRuntime {
       releaseHeldBindings: control.releaseAllMomentary,
       guards: guards,
     );
+    backingView = BackingCubit(player: backingPlayer);
+    backingMixView = BackingMixCubit(settings: backingSettings);
   }
 
   /// Shared durable mix owner supplied by bootstrap.
@@ -157,6 +181,12 @@ class AppRuntime {
   /// The tuner's appliance preferences, read by the reading and the foot
   /// Tuner.
   late final TunerSettings tuner;
+  /// The backing mix and click pan owners, and the player's one owner
+  /// (#1200), with the cubit that presents it.
+  late final BackingSettings backingSettings;
+  late final BackingPlayer backingPlayer;
+  late final BackingCubit backingView;
+  late final BackingMixCubit backingMixView;
 
   /// The owned settings that run on the shared owner, in their fixed order.
   late final SettingsOwners owners;
@@ -185,6 +215,8 @@ class AppRuntime {
       timing.load(),
       fade.load(),
       tuner.load(),
+      backingSettings.load(),
+      backingPlayer.start(),
       control.load(),
     ]).then((_) => session.recordBaseline());
   }
@@ -253,6 +285,10 @@ class AppRuntime {
       // UI teardown starts debounced saves; confirm them while their owners
       // and the repository still live. A failure must not skip disposal.
       fxPersistence.flush,
+      backingView.close,
+      backingMixView.close,
+      backingPlayer.close,
+      backingSettings.close,
       fade.close,
       tuner.close,
       timing.close,

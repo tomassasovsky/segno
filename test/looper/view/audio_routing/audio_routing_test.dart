@@ -12,6 +12,8 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
+import 'package:segno/backing/cubit/backing_mix_cubit.dart';
+import 'package:segno/backing/model/backing_mix.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -158,6 +160,7 @@ void main() {
     WidgetTester tester, {
     LooperState state = _rig,
     Widget home = const AudioRoutingPage(),
+    BackingMixCubit? backingMix,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -200,6 +203,7 @@ void main() {
             BlocProvider.value(value: outputs),
             BlocProvider.value(value: monitors),
             BlocProvider.value(value: tempo),
+            if (backingMix != null) BlocProvider.value(value: backingMix),
           ],
           child: MaterialApp(
             navigatorKey: segnoNavigatorKey,
@@ -555,6 +559,52 @@ void main() {
     await tester.tap(find.byKey(const Key('routing_destination_0')));
     await tester.pump();
     verify(() => repository.setClickOutput(0x3)).called(1);
+  });
+
+  testWidgets('Backing & click routes the backing track through its own '
+      'owner and leaves the click where it was (#1200)', (tester) async {
+    final mix = _MockBackingMix();
+    final masks = StreamController<BackingMixState>.broadcast();
+    addTearDown(masks.close);
+    whenListen(
+      mix,
+      masks.stream,
+      initialState: const BackingMixState(mixReady: true, clickPanReady: true),
+    );
+    await pump(tester, backingMix: mix);
+    await openOutputs(tester);
+    final l10n = l10nOf(tester);
+    await tester.tap(find.byKey(const Key('routing_kind_players')));
+    await tester.pump();
+    expect(find.text(l10n.routingSourceBacking), findsOneWidget);
+    expect(find.text(l10n.routingSourceClick), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('routing_source_backing')));
+    await tester.pump();
+    expect(destinationSelected(tester, 0), isFalse);
+    await tester.tap(find.byKey(const Key('routing_destination_0')));
+    await tester.pump();
+    verify(() => mix.setOutput(0x3)).called(1);
+    verifyNever(() => repository.setClickOutput(any()));
+    // The owner's accepted mask is what the card draws.
+    masks.add(
+      const BackingMixState(
+        mix: BackingMix(outputMask: 0x3),
+        mixReady: true,
+        clickPanReady: true,
+      ),
+    );
+    await tester.pump();
+    expect(destinationSelected(tester, 0), isTrue);
+
+    // The click keeps its own route.
+    await tester.tap(find.byKey(const Key('routing_source_click')));
+    await tester.pump();
+    expect(destinationSelected(tester, 0), isFalse);
+    await tester.tap(find.byKey(const Key('routing_destination_0')));
+    await tester.pump();
+    verify(() => repository.setClickOutput(0x3)).called(1);
+    verifyNever(() => mix.setOutput(any()));
   });
 
   testWidgets('Hear live belongs to the live inputs and to no other kind', (
@@ -1411,3 +1461,6 @@ extension on LooperState {
     inputPeaks: inputPeaks,
   );
 }
+
+class _MockBackingMix extends MockCubit<BackingMixState>
+    implements BackingMixCubit {}

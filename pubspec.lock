@@ -41,6 +41,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.13.1"
+  backing_repository:
+    dependency: "direct main"
+    description:
+      path: "packages/backing_repository"
+      relative: true
+    source: path
+    version: "0.1.0"
   bloc:
     dependency: "direct main"
     description:

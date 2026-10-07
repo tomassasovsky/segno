@@ -25,6 +25,7 @@ import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/fake_key_value_store.dart';
+import '../../helpers/test_backing.dart';
 import '../../helpers/test_mix_settings.dart';
 
 class _Store extends FakeKeyValueStore {
@@ -147,6 +148,7 @@ void main() {
           pedal: pedal,
           performance: performance,
           sessions: sessions,
+          backing: testBackingRepository(),
           powerOff: () async => halts++,
           reboot: () async => halts++,
           storageSettled: () async {},

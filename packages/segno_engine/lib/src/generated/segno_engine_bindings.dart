@@ -2731,6 +2731,522 @@ class SegnoEngineBindings {
   late final _le_engine_set_click_volume = _le_engine_set_click_volumePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
 
+  /// Sets the click pan, clamped to -1..1 (default 0). The click is mono; the
+  /// pan places it in the first masked pair with the unity-centre law of
+  /// le_engine_set_lane_pan (the near side stays at unity), and further masked
+  /// channels get the pair's mid, as every routed source does. Centre is
+  /// bit-identical to an unpanned click. A direct store: works while stopped,
+  /// persists across configure like the other click settings. NaN is refused.
+  int le_engine_set_click_pan(
+    ffi.Pointer<le_engine> engine,
+    double pan,
+  ) {
+    return _le_engine_set_click_pan(
+      engine,
+      pan,
+    );
+  }
+
+  late final _le_engine_set_click_panPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Float)
+        >
+      >('le_engine_set_click_pan');
+  late final _le_engine_set_click_pan = _le_engine_set_click_panPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
+
+  /// Copies [frames] interleaved frames of [channels] (1 or 2) at [sample_rate]
+  /// into a new stereo buffer (mono is duplicated into both sides). Any thread.
+  /// LE_ERR_INVALID on NULL, frames <= 0, channels outside 1..2, a
+  /// non-positive rate or any non-finite sample (a NaN or Inf would poison the
+  /// output-bus FX state for good); LE_ERR_CAPACITY when the allocation
+  /// fails.
+  int le_backing_buffer_from_pcm(
+    ffi.Pointer<ffi.Float> interleaved,
+    int frames,
+    int channels,
+    int sample_rate,
+    ffi.Pointer<ffi.Pointer<le_backing_buffer>> out,
+  ) {
+    return _le_backing_buffer_from_pcm(
+      interleaved,
+      frames,
+      channels,
+      sample_rate,
+      out,
+    );
+  }
+
+  late final _le_backing_buffer_from_pcmPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Pointer<le_backing_buffer>>,
+          )
+        >
+      >('le_backing_buffer_from_pcm');
+  late final _le_backing_buffer_from_pcm = _le_backing_buffer_from_pcmPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<ffi.Float>,
+          int,
+          int,
+          int,
+          ffi.Pointer<ffi.Pointer<le_backing_buffer>>,
+        )
+      >();
+
+  int le_backing_buffer_frames(
+    ffi.Pointer<le_backing_buffer> buffer,
+  ) {
+    return _le_backing_buffer_frames(
+      buffer,
+    );
+  }
+
+  late final _le_backing_buffer_framesPtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_backing_buffer>)>
+      >('le_backing_buffer_frames');
+  late final _le_backing_buffer_frames = _le_backing_buffer_framesPtr
+      .asFunction<int Function(ffi.Pointer<le_backing_buffer>)>();
+
+  int le_backing_buffer_rate(
+    ffi.Pointer<le_backing_buffer> buffer,
+  ) {
+    return _le_backing_buffer_rate(
+      buffer,
+    );
+  }
+
+  late final _le_backing_buffer_ratePtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_backing_buffer>)>
+      >('le_backing_buffer_rate');
+  late final _le_backing_buffer_rate = _le_backing_buffer_ratePtr
+      .asFunction<int Function(ffi.Pointer<le_backing_buffer>)>();
+
+  /// Writes [buckets] per-bucket absolute peaks (max of both sides) over the
+  /// whole buffer into [out]; returns the count written, or LE_ERR_INVALID.
+  int le_backing_buffer_peaks(
+    ffi.Pointer<le_backing_buffer> buffer,
+    ffi.Pointer<ffi.Float> out,
+    int buckets,
+  ) {
+    return _le_backing_buffer_peaks(
+      buffer,
+      out,
+      buckets,
+    );
+  }
+
+  late final _le_backing_buffer_peaksPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_backing_buffer>,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_backing_buffer_peaks');
+  late final _le_backing_buffer_peaks = _le_backing_buffer_peaksPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_backing_buffer>,
+          ffi.Pointer<ffi.Float>,
+          int,
+        )
+      >();
+
+  /// Decodes [path] into a new stereo buffer at [sample_rate] (mono plays as
+  /// dual mono), converting the rate with the band-limited offline converter
+  /// after exact half-band halving for reductions below one half.
+  ///
+  /// Whole file (start_frame 0, max_frames 0): refused past
+  /// LE_BACKING_MAX_SECONDS (LE_ERR_TOO_LONG, before reading when the length is
+  /// stated), and refused as damaged when it decodes to a length other than the
+  /// one it states. Bounded read (a preview, a recording part): starts at the
+  /// first output frame at or after [start_frame] (source frames) and keeps at
+  /// most [max_frames] output frames, setting info->truncated when the file goes
+  /// on; its samples are exactly the whole-file decode's at the same positions.
+  /// A bounded read that starts past the last output frame (the last source
+  /// frame of a reduction) returns LE_OK with an empty (0-frame) buffer, which
+  /// the voice refuses to load.
+  ///
+  /// Refuses with LE_ERR_CAPACITY when the decode's peak (the source, the
+  /// planes a halving works on, and the output) would leave less than
+  /// LE_MEM_RESERVE_BYTES available, or an allocation fails. LE_ERR_UNSUPPORTED
+  /// and LE_ERR_INVALID as above; LE_ERR_INVALID also for bad arguments and a
+  /// missing or unreadable file. [info] (may be NULL) is filled as far as the
+  /// file was read.
+  int le_backing_decode_file(
+    ffi.Pointer<ffi.Char> path,
+    int sample_rate,
+    int start_frame,
+    int max_frames,
+    ffi.Pointer<ffi.Pointer<le_backing_buffer>> out,
+    ffi.Pointer<le_backing_decode_info> info,
+  ) {
+    return _le_backing_decode_file(
+      path,
+      sample_rate,
+      start_frame,
+      max_frames,
+      out,
+      info,
+    );
+  }
+
+  late final _le_backing_decode_filePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Int32,
+            ffi.Int64,
+            ffi.Int32,
+            ffi.Pointer<ffi.Pointer<le_backing_buffer>>,
+            ffi.Pointer<le_backing_decode_info>,
+          )
+        >
+      >('le_backing_decode_file');
+  late final _le_backing_decode_file = _le_backing_decode_filePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<ffi.Char>,
+          int,
+          int,
+          int,
+          ffi.Pointer<ffi.Pointer<le_backing_buffer>>,
+          ffi.Pointer<le_backing_decode_info>,
+        )
+      >();
+
+  /// Decodes all of [path] in small chunks, retaining no PCM, to prove it plays
+  /// and to measure it: fills [info] and [buckets] per-bucket absolute peaks
+  /// (max of both sides; buckets may be 0). The same refusals as a whole-file
+  /// decode, minus the memory one; a file it accepts decodes at every engine
+  /// rate. What an import runs before it keeps a file.
+  int le_backing_probe_file(
+    ffi.Pointer<ffi.Char> path,
+    ffi.Pointer<le_backing_decode_info> info,
+    ffi.Pointer<ffi.Float> peaks,
+    int buckets,
+  ) {
+    return _le_backing_probe_file(
+      path,
+      info,
+      peaks,
+      buckets,
+    );
+  }
+
+  late final _le_backing_probe_filePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<le_backing_decode_info>,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_backing_probe_file');
+  late final _le_backing_probe_file = _le_backing_probe_filePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<le_backing_decode_info>,
+          ffi.Pointer<ffi.Float>,
+          int,
+        )
+      >();
+
+  /// The buffer's interleaved stereo float32 samples (frames x 2), for a
+  /// consumer that copies them (the Library preview).
+  ffi.Pointer<ffi.Float> le_backing_buffer_pcm(
+    ffi.Pointer<le_backing_buffer> buffer,
+  ) {
+    return _le_backing_buffer_pcm(
+      buffer,
+    );
+  }
+
+  late final _le_backing_buffer_pcmPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Float> Function(ffi.Pointer<le_backing_buffer>)
+        >
+      >('le_backing_buffer_pcm');
+  late final _le_backing_buffer_pcm = _le_backing_buffer_pcmPtr
+      .asFunction<
+        ffi.Pointer<ffi.Float> Function(ffi.Pointer<le_backing_buffer>)
+      >();
+
+  /// Frees a buffer the caller still owns. NULL is a no-op.
+  void le_backing_buffer_free(
+    ffi.Pointer<le_backing_buffer> buffer,
+  ) {
+    return _le_backing_buffer_free(
+      buffer,
+    );
+  }
+
+  late final _le_backing_buffer_freePtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Void Function(ffi.Pointer<le_backing_buffer>)>
+      >('le_backing_buffer_free');
+  late final _le_backing_buffer_free = _le_backing_buffer_freePtr
+      .asFunction<void Function(ffi.Pointer<le_backing_buffer>)>();
+
+  /// Replaces the loaded buffer at the next block: the old one fades out if it
+  /// was sounding; the new one starts at frame 0, playing when [play] is 1,
+  /// else Stopped. [item] is the caller's token, reported back in the state.
+  /// LE_ERR_INVALID: NULL, an empty buffer, a buffer the engine already owns, a
+  /// rate other than the engine's, or the command ring full. LE_ERR_NOT_RUNNING: not
+  /// configured. Past LE_BACKING_MAX_BUFFERS or LE_BACKING_BUDGET_BYTES:
+  /// LE_ERR_NOT_READY while a buffer is in transit, else LE_ERR_CAPACITY (see
+  /// Buffers above).
+  int le_engine_backing_load(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_backing_buffer> buffer,
+    int item,
+    int play,
+  ) {
+    return _le_engine_backing_load(
+      engine,
+      buffer,
+      item,
+      play,
+    );
+  }
+
+  late final _le_engine_backing_loadPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_backing_buffer>,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_backing_load');
+  late final _le_engine_backing_load = _le_engine_backing_loadPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_backing_buffer>,
+          int,
+          int,
+        )
+      >();
+
+  /// Stages the buffer End = Next continues into (NULL clears the stage). Same
+  /// ownership and refusals as le_engine_backing_load.
+  int le_engine_backing_stage_next(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_backing_buffer> buffer,
+    int item,
+  ) {
+    return _le_engine_backing_stage_next(
+      engine,
+      buffer,
+      item,
+    );
+  }
+
+  late final _le_engine_backing_stage_nextPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_backing_buffer>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_backing_stage_next');
+  late final _le_engine_backing_stage_next = _le_engine_backing_stage_nextPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_backing_buffer>,
+          int,
+        )
+      >();
+
+  /// Unloads the loaded and staged buffers (fading out a sounding one).
+  int le_engine_backing_clear(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_engine_backing_clear(
+      engine,
+    );
+  }
+
+  late final _le_engine_backing_clearPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
+        'le_engine_backing_clear',
+      );
+  late final _le_engine_backing_clear = _le_engine_backing_clearPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+
+  /// le_backing_transport_op; a no-op with nothing loaded.
+  int le_engine_backing_transport(
+    ffi.Pointer<le_engine> engine,
+    int op,
+  ) {
+    return _le_engine_backing_transport(
+      engine,
+      op,
+    );
+  }
+
+  late final _le_engine_backing_transportPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_backing_transport');
+  late final _le_engine_backing_transport = _le_engine_backing_transportPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Moves the loaded buffer's position to [frame], clamped to its length;
+  /// playing or paused is kept. A no-op with nothing loaded.
+  int le_engine_backing_seek(
+    ffi.Pointer<le_engine> engine,
+    int frame,
+  ) {
+    return _le_engine_backing_seek(
+      engine,
+      frame,
+    );
+  }
+
+  late final _le_engine_backing_seekPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_backing_seek');
+  late final _le_engine_backing_seek = _le_engine_backing_seekPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// le_backing_end; LE_ERR_INVALID outside the enum. Direct store.
+  int le_engine_backing_set_end(
+    ffi.Pointer<le_engine> engine,
+    int mode,
+  ) {
+    return _le_engine_backing_set_end(
+      engine,
+      mode,
+    );
+  }
+
+  late final _le_engine_backing_set_endPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_backing_set_end');
+  late final _le_engine_backing_set_end = _le_engine_backing_set_endPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Output channel bitmask (bit c = hardware output c), default 0 = unrouted.
+  /// Direct store.
+  int le_engine_backing_set_output(
+    ffi.Pointer<le_engine> engine,
+    int mask,
+  ) {
+    return _le_engine_backing_set_output(
+      engine,
+      mask,
+    );
+  }
+
+  late final _le_engine_backing_set_outputPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_backing_set_output');
+  late final _le_engine_backing_set_output = _le_engine_backing_set_outputPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Gain, clamped to 0..LE_MAX_GAIN (default 1); NaN refused. Direct store.
+  int le_engine_backing_set_level(
+    ffi.Pointer<le_engine> engine,
+    double gain,
+  ) {
+    return _le_engine_backing_set_level(
+      engine,
+      gain,
+    );
+  }
+
+  late final _le_engine_backing_set_levelPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Float)
+        >
+      >('le_engine_backing_set_level');
+  late final _le_engine_backing_set_level = _le_engine_backing_set_levelPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
+
+  /// Balance, clamped to -1..1 (default 0) with the unity-centre law; NaN
+  /// refused. Direct store.
+  int le_engine_backing_set_pan(
+    ffi.Pointer<le_engine> engine,
+    double pan,
+  ) {
+    return _le_engine_backing_set_pan(
+      engine,
+      pan,
+    );
+  }
+
+  late final _le_engine_backing_set_panPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Float)
+        >
+      >('le_engine_backing_set_pan');
+  late final _le_engine_backing_set_pan = _le_engine_backing_set_panPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
+
+  /// Reads the published state (as of the last processed block) and frees every
+  /// buffer the audio thread has finished with. Control thread. LE_ERR_INVALID
+  /// on NULL arguments.
+  int le_engine_backing_state(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_backing_state> out,
+  ) {
+    return _le_engine_backing_state(
+      engine,
+      out,
+    );
+  }
+
+  late final _le_engine_backing_statePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_backing_state>,
+          )
+        >
+      >('le_engine_backing_state');
+  late final _le_engine_backing_state = _le_engine_backing_statePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_backing_state>)
+      >();
+
   /// Enqueues a coherent Count-in/Sound-start pair. Bars must be 0, 1, 2 or 4;
   /// sound_start must be 0/1 and cannot be enabled with positive bars. Actual
   /// capture refuses, including capture begun earlier in the same callback.
@@ -6406,7 +6922,9 @@ enum le_result {
 
   /// a plugin's bus topology is not a stereo (or
   /// mono-adaptable) effect — instrument / multi-bus /
-  /// sidechain / wrong channel count (D-BUS)
+  /// sidechain / wrong channel count (D-BUS); an
+  /// audio file outside the decoder's whitelist
+  /// (#1200)
   LE_ERR_UNSUPPORTED(-5),
 
   /// a requested allocation would exceed engine
@@ -6429,6 +6947,9 @@ enum le_result {
   /// (#1179): capture never writes through a
   /// fractional read head
   LE_ERR_TRANSFORMED(-10),
+
+  /// a backing file over LE_BACKING_MAX_SECONDS (#1200)
+  LE_ERR_TOO_LONG(-12),
 
   /// the file (or a directory on its path) does not
   /// exist (#1198)
@@ -6453,6 +6974,7 @@ enum le_result {
     -8 => LE_ERR_NOT_READY,
     -9 => LE_ERR_REVERSED,
     -10 => LE_ERR_TRANSFORMED,
+    -12 => LE_ERR_TOO_LONG,
     -18 => LE_ERR_NOT_FOUND,
     -19 => LE_ERR_TRUNCATED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
@@ -6916,7 +7438,22 @@ enum le_command_code {
   LE_CMD_TRANSPOSE(86),
 
   /// checked internal Transpose bypass
-  LE_CMD_TRANSPOSE_BYPASS(87);
+  LE_CMD_TRANSPOSE_BYPASS(87),
+
+  /// buffer + item token + play flag
+  LE_CMD_BACKING_LOAD(88),
+
+  /// buffer (NULL clears) + item token
+  LE_CMD_BACKING_STAGE_NEXT(89),
+
+  /// unload current and staged
+  LE_CMD_BACKING_CLEAR(90),
+
+  /// arg_i = le_backing_transport_op
+  LE_CMD_BACKING_TRANSPORT(91),
+
+  /// arg_i = frame of the loaded buffer
+  LE_CMD_BACKING_SEEK(92);
 
   final int value;
   const le_command_code(this.value);
@@ -7008,6 +7545,11 @@ enum le_command_code {
     85 => LE_CMD_SET_SPEED,
     86 => LE_CMD_TRANSPOSE,
     87 => LE_CMD_TRANSPOSE_BYPASS,
+    88 => LE_CMD_BACKING_LOAD,
+    89 => LE_CMD_BACKING_STAGE_NEXT,
+    90 => LE_CMD_BACKING_CLEAR,
+    91 => LE_CMD_BACKING_TRANSPORT,
+    92 => LE_CMD_BACKING_SEEK,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -8307,6 +8849,84 @@ enum le_reopen_outcome {
   };
 }
 
+final class le_backing_buffer extends ffi.Opaque {}
+
+final class le_backing_decode_info extends ffi.Struct {
+  /// the file's own rate
+  @ffi.Int32()
+  external int source_rate;
+
+  /// 1 or 2
+  @ffi.Int32()
+  external int source_channels;
+
+  /// frames decoded, at the source rate
+  @ffi.Int64()
+  external int source_frames;
+
+  /// a bounded read stopped before the end
+  @ffi.Int32()
+  external int truncated;
+}
+
+final class le_backing_state extends ffi.Struct {
+  /// bumps at configure and at every reopen
+  @ffi.Uint32()
+  external int epoch;
+
+  /// loaded buffer's token, -1 none
+  @ffi.Int32()
+  external int item;
+
+  /// staged buffer's token, -1 none
+  @ffi.Int32()
+  external int next_item;
+
+  /// le_backing_transport
+  @ffi.Int32()
+  external int transport;
+
+  /// frames into the loaded buffer
+  @ffi.Int32()
+  external int position;
+
+  /// loaded buffer length, 0 none
+  @ffi.Int32()
+  external int frames;
+
+  /// bumps on every end-of-buffer handling
+  @ffi.Uint32()
+  external int end_count;
+
+  /// le_backing_end_event of the latest one
+  @ffi.Int32()
+  external int last_end;
+
+  /// le_backing_end
+  @ffi.Int32()
+  external int end_mode;
+
+  @ffi.Uint32()
+  external int mask;
+
+  @ffi.Float()
+  external double level;
+
+  @ffi.Float()
+  external double pan;
+
+  @ffi.Float()
+  external double click_pan;
+
+  /// buffers the engine owns after this collect
+  @ffi.Int32()
+  external int owned;
+
+  /// their PCM bytes
+  @ffi.Int64()
+  external int owned_bytes;
+}
+
 /// Per-lane cache telemetry states (le_lane_cache_info.state).
 enum le_cache_state {
   /// no valid entry; playing live
@@ -8473,6 +9093,16 @@ const int LE_VIZ_POINTS = 512;
 const int LE_CB_BUCKETS = 8;
 
 const int LE_XRUN_KINDS = 4;
+
+const int LE_BACKING_MAX_BUFFERS = 4;
+
+const int LE_BACKING_BUDGET_BYTES = 1610612736;
+
+const int LE_BACKING_RAMP_MS = 5;
+
+const int LE_BACKING_MAX_SECONDS = 900;
+
+const int LE_MEM_RESERVE_BYTES = 536870912;
 
 const int LE_CACHE_DEFAULT_CAP_BYTES = 201326592;
 
