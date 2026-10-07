@@ -1110,7 +1110,7 @@ class SegnoEngineBindings {
       >();
 
   /// Allocates/resets the track buffers and marks the engine configured, without
-  /// opening a device. `max_loop_frames <= 0` selects the default (30 s).
+  /// opening a device. `max_loop_frames <= 0` selects the default (60 s).
   int le_engine_configure(
     ffi.Pointer<le_engine> engine,
     int sample_rate,

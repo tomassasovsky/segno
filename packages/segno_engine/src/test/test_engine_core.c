@@ -23784,6 +23784,7 @@ static void test_four_bar_preset_fits_default_loop_cap(void) {
   le_snapshot s;
 
   le_engine* e = tg_make_engine_cap(1000, 0);
+  CHECK(e->max_loop_frames == 60000);
   CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
@@ -23791,7 +23792,15 @@ static void test_four_bar_preset_fits_default_loop_cap(void) {
   CHECK(le_engine_commands_settled(e) == 1);
   le_engine_destroy(e);
 
+  e = tg_make_engine_cap(1000, 0);
+  bars[0] = 8;
+  CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) ==
+        LE_ERR_CAPACITY);
+  CHECK(le_engine_commands_settled(e) == 1);
+  le_engine_destroy(e);
+
   e = tg_make_engine_cap(1000, 30000);
+  bars[0] = 4;
   CHECK(le_engine_set_track_length_presets(e, bars, LE_MAX_TRACKS) ==
         LE_ERR_CAPACITY);
   CHECK(le_engine_commands_settled(e) == 1);
