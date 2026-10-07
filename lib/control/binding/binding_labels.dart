@@ -121,6 +121,9 @@ String valueTargetLabel(
   TrackFadeTarget(:final channel) =>
     '${l10n.trackName(trackNames, channel)} · ${l10n.fadeDurationLabel}',
   MasterGainTarget() => l10n.midiLearnTargetMaster,
+  BackingLevelTarget() => l10n.mixerBackingVolume,
+  BackingPanTarget() => l10n.mixerBackingPan,
+  ClickPanTarget() => l10n.mixerClickPan,
   FxParamTarget(:final address, :final slotId, :final param) =>
     l10n.midiLearnTargetParam(
       fxStageLabel(l10n, trackNames, address),

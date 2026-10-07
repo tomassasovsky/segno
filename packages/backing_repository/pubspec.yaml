@@ -1,0 +1,25 @@
+name: backing_repository
+description: >-
+  The backing player's repository (#1200): the managed Backing tracks store
+  (content-addressed internal copies, validated at import) and the player that
+  drives the engine's backing voice through loads, staging, transport, mix and
+  engine restarts. Depends on segno_engine; never on the UI.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+  flutter: ^3.41.0
+
+dependencies:
+  equatable: ^2.1.0
+  flutter:
+    sdk: flutter
+  meta: ^1.16.0
+  segno_engine:
+    path: ../segno_engine
+dev_dependencies:
+  fake_async: ^1.3.1
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^10.2.0

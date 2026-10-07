@@ -1,6 +1,7 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
+import 'package:segno/backing/application/session_backing.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
@@ -26,6 +27,7 @@ class SessionSettingsCoordinator {
     required RecordSettings record,
     required RecordTimingSettings timing,
     required FadeSettings fade,
+    SessionBackingPort? backing,
   }) : _looper = looper,
        _mix = mix,
        _fx = fx,
@@ -34,7 +36,8 @@ class SessionSettingsCoordinator {
        _playback = playback,
        _record = record,
        _timing = timing,
-       _fade = fade;
+       _fade = fade,
+       _backing = backing;
 
   final LooperRepository _looper;
   final MixSettingsCoordinator _mix;
@@ -45,6 +48,7 @@ class SessionSettingsCoordinator {
   final RecordSettings _record;
   final RecordTimingSettings _timing;
   final FadeSettings _fade;
+  final SessionBackingPort? _backing;
 
   /// Excludes settings edits through capture and the caller's session I/O.
   /// All session operations acquire these gates in this one order.
@@ -55,6 +59,16 @@ class SessionSettingsCoordinator {
   /// registry's exclusion, which Fade's owner joins.
   Future<void> installFade(FadeDurations incoming) =>
       _fade.installSession(incoming);
+
+  /// Stops the backing: Open and New Loop leave it stopped (#1200 D9).
+  void stopBacking() => _backing?.stop();
+
+  /// Installs a recalled Session's backing setup and click pan within the
+  /// held scope (#1200 D9): the registry's exclusion, which their owners
+  /// join.
+  Future<void> installBacking(SessionBacking backing, double clickPan) async {
+    await _backing?.install(backing, clickPan);
+  }
 
   /// Settles accepted edits and captures their Released values together.
   /// Called inside [runExclusive]; [stillOwned] fences the session lifetime.
@@ -98,5 +112,7 @@ class SessionSettingsCoordinator {
     recordLength: _record.durableRecordLengthSnapshot,
     recordTiming: _timing.durableRecordTimingSnapshot,
     fade: _fade.owner.durable,
+    backing: _backing?.backing ?? const SessionBacking(),
+    clickPan: _backing?.clickPan ?? 0,
   );
 }

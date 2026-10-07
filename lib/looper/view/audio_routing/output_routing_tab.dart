@@ -7,6 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
+import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
@@ -26,8 +27,17 @@ enum RoutingSourceKind {
   /// What the tracks play back.
   tracks,
 
-  /// The click, and the backing player when there is one.
+  /// The backing player and the click.
   players,
+}
+
+/// The two players under `Backing & click`, each with its own destinations.
+enum RoutingPlayer {
+  /// The backing player (#1200).
+  backing,
+
+  /// The click.
+  click,
 }
 
 /// What the Output routing tab draws.
@@ -100,6 +110,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
   RoutingSourceKind _kind = RoutingSourceKind.live;
   int _input = 0;
   int _channel = 0;
+  RoutingPlayer _player = RoutingPlayer.click;
 
   /// The pen's `source-grid` step, shared with Input setup.
   static const double _cardStep = 280;
@@ -120,8 +131,11 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
                   ? values.lanes[lane].outputMask
                   : const Lane().outputMask),
     ].fold<int>(0, (mask, laneMask) => mask | laneMask),
-    RoutingSourceKind.players =>
-      context.watch<TempoCubit>().state.clickOutputMask,
+    RoutingSourceKind.players => switch (_player) {
+      RoutingPlayer.backing =>
+        context.watch<BackingMixCubit>().state.mix.outputMask,
+      RoutingPlayer.click => context.watch<TempoCubit>().state.clickOutputMask,
+    },
   };
 
   /// Sends the chosen source to [mask], through whichever owner holds it.
@@ -136,7 +150,12 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
           LooperTrackOutputChanged(values.channel, mask),
         );
       case RoutingSourceKind.players:
-        unawaited(context.read<TempoCubit>().setClickOutput(mask));
+        switch (_player) {
+          case RoutingPlayer.backing:
+            context.read<BackingMixCubit>().setOutput(mask);
+          case RoutingPlayer.click:
+            unawaited(context.read<TempoCubit>().setClickOutput(mask));
+        }
     }
   }
 
@@ -325,15 +344,24 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
         names: trackDisplayNames(context, values.trackCount),
         onSelected: (channel) => setState(() => _channel = channel),
       ),
-      // The click is the only player this console has. The accepted design's
-      // backing track has no engine, repository or bloc seam yet; a card for
-      // it would be a control that routes nothing.
-      RoutingSourceKind.players => RoutingSourceCard(
-        key: const Key('routing_source_click'),
-        ordinal: null,
-        name: l10n.routingSourceClick,
-        selected: true,
-        onTap: () {},
+      // The pen's 21/04: the backing track and the click, each routed on
+      // its own.
+      RoutingSourceKind.players => Row(
+        children: [
+          for (final player in RoutingPlayer.values) ...[
+            if (player.index > 0) const SizedBox(width: _cardStep - 264),
+            RoutingSourceCard(
+              key: Key('routing_source_${player.name}'),
+              ordinal: null,
+              name: switch (player) {
+                RoutingPlayer.backing => l10n.routingSourceBacking,
+                RoutingPlayer.click => l10n.routingSourceClick,
+              },
+              selected: player == _player,
+              onTap: () => setState(() => _player = player),
+            ),
+          ],
+        ],
       ),
     };
   }

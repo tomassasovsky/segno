@@ -135,6 +135,12 @@ typedef struct le_command {
     } speed_log;
     le_mix_settings mix;
     struct le_prepared_fx* recipe;
+    struct { /* BACKING_LOAD / BACKING_STAGE_NEXT (#1200): an engine-owned
+              * buffer (registered before the push), the caller's token and,
+              * for LOAD, whether it starts playing. */
+      struct le_backing_buffer* buffer;
+      int32_t item, play;
+    } backing;
     struct {
       int32_t channel;
       uint32_t sequence;

@@ -62,12 +62,15 @@ sealed class ControlValueTarget extends Equatable {
     TrackRecordTimingTarget(:final channel) => channel >= 0 && channel < 8,
     DefaultFadeTarget() => true,
     TrackFadeTarget(:final channel) => channel >= 0 && channel < 8,
+    BackingLevelTarget() || BackingPanTarget() || ClickPanTarget() => true,
   };
 
   /// Where a new mapping's top endpoint sits: unity gain on a level fader,
   /// whose full travel is +6 dB; full travel on every other target.
   double get mappingTop => switch (this) {
-    TrackVolumeTarget() || LaneVolumeTarget() => mixerTravelFor(1),
+    TrackVolumeTarget() ||
+    LaneVolumeTarget() ||
+    BackingLevelTarget() => mixerTravelFor(1),
     _ => 1,
   };
 
@@ -118,6 +121,15 @@ sealed class ControlValueTarget extends Equatable {
       }
       if (ctl == 'fadeSeconds') {
         return raw.length == 1 ? const DefaultFadeTarget() : null;
+      }
+      if (ctl == 'backingLevel') {
+        return raw.length == 1 ? const BackingLevelTarget() : null;
+      }
+      if (ctl == 'backingPan') {
+        return raw.length == 1 ? const BackingPanTarget() : null;
+      }
+      if (ctl == 'clickPan') {
+        return raw.length == 1 ? const ClickPanTarget() : null;
       }
       final index = raw['index'];
       final lane = raw['lane'];
@@ -830,4 +842,83 @@ final class TrackFadeTarget extends FadeValueTarget {
 
   @override
   List<Object?> get props => [channel];
+}
+
+/// The backing's gain (#1200), on the Mixer level fader's axis: silence to
+/// +6.02 dB, unity at the same travel as a track fader.
+final class BackingLevelTarget extends OwnedValueTarget {
+  /// Creates the backing-level target.
+  const BackingLevelTarget();
+
+  @override
+  OwnedSetting get family => OwnedSetting.backingMix;
+
+  @override
+  double coerce(double normalized) =>
+      normalized.isFinite ? normalized.clamp(0.0, 1.0) : normalized;
+
+  /// Converts normalized travel to the backing's linear gain.
+  double toDomain(double normalized) => mixerGainAt(normalized);
+
+  /// Converts an accepted gain to normalized travel.
+  double fromDomain(double gain) => mixerTravelFor(gain);
+
+  @override
+  double get relativeStep => 0.02;
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'backingLevel'});
+
+  @override
+  List<Object?> get props => ['backingLevel'];
+}
+
+/// A balance owned by the backing settings (#1200): travel 0..1 is left to
+/// right, centre at one half.
+sealed class OwnedPanTarget extends OwnedValueTarget {
+  /// Const base constructor.
+  const OwnedPanTarget();
+
+  @override
+  double coerce(double normalized) =>
+      normalized.isFinite ? normalized.clamp(0.0, 1.0) : normalized;
+
+  /// Converts normalized travel to a balance in `-1..1`.
+  double toDomain(double normalized) => normalized.clamp(0.0, 1.0) * 2 - 1;
+
+  /// Converts an accepted balance to normalized travel.
+  double fromDomain(double pan) => ((pan + 1) / 2).clamp(0.0, 1.0);
+
+  @override
+  double get relativeStep => 0.025;
+}
+
+/// The backing's balance (#1200).
+final class BackingPanTarget extends OwnedPanTarget {
+  /// Creates the backing-pan target.
+  const BackingPanTarget();
+
+  @override
+  OwnedSetting get family => OwnedSetting.backingMix;
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'backingPan'});
+
+  @override
+  List<Object?> get props => ['backingPan'];
+}
+
+/// The click's balance (#1200 D6).
+final class ClickPanTarget extends OwnedPanTarget {
+  /// Creates the click-pan target.
+  const ClickPanTarget();
+
+  @override
+  OwnedSetting get family => OwnedSetting.clickPan;
+
+  @override
+  String canonicalString() => jsonEncode({'ctl': 'clickPan'});
+
+  @override
+  List<Object?> get props => ['clickPan'];
 }

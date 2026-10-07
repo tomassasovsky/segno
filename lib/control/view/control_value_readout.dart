@@ -48,6 +48,8 @@ String controlValueReadout(
     (target.toDomain(normalized) / 1000).toStringAsFixed(1),
   ),
   MasterGainTarget() => signalGainReadout(normalized),
+  BackingLevelTarget() => signalGainReadout(target.toDomain(normalized)),
+  OwnedPanTarget() => routingPlacementLabel(l10n, target.toDomain(normalized)),
 };
 
 String _decayReadout(AppLocalizations l10n, int percent) => percent == 0

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:segno_engine/src/audio_device.dart';
 import 'package:segno_engine/src/audio_engine.dart';
+import 'package:segno_engine/src/backing.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_fingerprint.dart';
@@ -241,7 +242,9 @@ class MockAudioEngine implements AudioEngine {
   String get deviceName => _running ? deviceLabel : '';
 
   @override
-  EngineResult start(EngineConfig config) {
+  EngineResult start(EngineConfig config) => _start(config);
+
+  EngineResult _start(EngineConfig config, {bool keepBacking = false}) {
     if (_running) return EngineResult.alreadyRunning;
     _activeConfig = config;
     _running = true;
@@ -268,6 +271,17 @@ class MockAudioEngine implements AudioEngine {
     // grid/click SETTINGS above it, which persist across start/stop —
     // mirrors engine.c:371-372 (has_tap/last_tap_frame reset on configure).
     _lastTapAt = null;
+    // A fresh start is a configure: the backing buffers were decoded at the
+    // old rate and go; the settings stay; the owner sees a new epoch. A
+    // retained reopen keeps both buffers, stopped at 0, like the native
+    // engine's le_engine_reset_runtime.
+    if (keepBacking) {
+      _backingTransport = BackingTransport.stopped;
+      _backingPosition = 0;
+    } else {
+      _backingRelease();
+    }
+    _backingEpoch++;
     return EngineResult.ok;
   }
 
@@ -310,7 +324,11 @@ class MockAudioEngine implements AudioEngine {
     final outcome = requested == previous
         ? ReopenOutcome.retained
         : ReopenOutcome.clearedRate;
-    return (result: start(config), outcome: outcome, droppedTracks: 0);
+    return (
+      result: _start(config, keepBacking: outcome == ReopenOutcome.retained),
+      outcome: outcome,
+      droppedTracks: 0,
+    );
   }
 
   @override
@@ -1802,6 +1820,236 @@ class MockAudioEngine implements AudioEngine {
   void dispose() {
     _running = false;
     _activeConfig = null;
+    _backingRelease();
+  }
+
+  // ---- backing player (#1200) ----
+  //
+  // An in-memory voice with the native transport and End rules, and its
+  // ownership: an accepted DecodedAudio is the engine's until it is replaced,
+  // cleared, advanced past or released, and is freed exactly then. The mock
+  // has no callback; [advanceBacking] plays frames. Declick ramps are not
+  // modelled (the native suite owns sample values).
+
+  DecodedAudio? _backingCur;
+  DecodedAudio? _backingNext;
+  int _backingItem = -1;
+  int _backingNextItem = -1;
+  BackingTransport _backingTransport = BackingTransport.stopped;
+  int _backingPosition = 0;
+  int _backingEndCount = 0;
+  BackingEndEvent _backingLastEnd = BackingEndEvent.none;
+  BackingEnd _backingEnd = BackingEnd.stop;
+  int _backingMask = 0;
+  double _backingLevel = 1;
+  double _backingPan = 0;
+  double _clickPan = 0;
+  int _backingEpoch = 0;
+
+  static const int _backingBudgetBytes = LE_BACKING_BUDGET_BYTES;
+
+  int get _backingOwnedBytes =>
+      (_backingCur?.bytes ?? 0) + (_backingNext?.bytes ?? 0);
+
+  /// The native engine accepts backing calls whenever it is configured, a
+  /// stopped device included; the mock is configured from its first start.
+  EngineResult _requireConfigured() => _running || _lastSampleRate != null
+      ? EngineResult.ok
+      : EngineResult.notRunning;
+
+  /// The rate the engine is configured at, running or not.
+  int get _configuredRate =>
+      _activeConfig?.sampleRate ?? _lastSampleRate ?? 48000;
+
+  EngineResult _backingAdmit(DecodedAudio audio) {
+    final configured = _requireConfigured();
+    if (!configured.isOk) return configured;
+    if (!audio.isOwned ||
+        audio.frames <= 0 ||
+        identical(audio, _backingCur) ||
+        identical(audio, _backingNext) ||
+        audio.sampleRate != _configuredRate) {
+      return EngineResult.invalid;
+    }
+    if (_backingOwnedBytes + audio.bytes > _backingBudgetBytes) {
+      return EngineResult.capacity;
+    }
+    return EngineResult.ok;
+  }
+
+  void _backingFree(DecodedAudio? audio) => audio?.payload.free();
+
+  void _backingRelease() {
+    _backingFree(_backingCur);
+    _backingFree(_backingNext);
+    _backingCur = null;
+    _backingNext = null;
+    _backingItem = -1;
+    _backingNextItem = -1;
+    _backingTransport = BackingTransport.stopped;
+    _backingPosition = 0;
+  }
+
+  @override
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  }) {
+    final admit = _backingAdmit(audio);
+    if (!admit.isOk) return admit;
+    audio.markTransferred();
+    _backingFree(_backingCur);
+    _backingCur = audio;
+    _backingItem = item;
+    _backingPosition = 0;
+    _backingTransport = play
+        ? BackingTransport.playing
+        : BackingTransport.stopped;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item}) {
+    if (audio != null) {
+      final admit = _backingAdmit(audio);
+      if (!admit.isOk) return admit;
+      audio.markTransferred();
+    } else {
+      final configured = _requireConfigured();
+      if (!configured.isOk) return configured;
+    }
+    _backingFree(_backingNext);
+    _backingNext = audio;
+    _backingNextItem = audio == null ? -1 : item;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult backingClear() {
+    final configured = _requireConfigured();
+    if (!configured.isOk) return configured;
+    _backingRelease();
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult backingTransport(BackingTransportOp op) {
+    final configured = _requireConfigured();
+    if (!configured.isOk) return configured;
+    if (_backingCur == null) return EngineResult.ok;
+    switch (op) {
+      case BackingTransportOp.play:
+        _backingTransport = BackingTransport.playing;
+      case BackingTransportOp.pause:
+        if (_backingTransport == BackingTransport.playing) {
+          _backingTransport = BackingTransport.paused;
+        }
+      case BackingTransportOp.stop:
+        _backingTransport = BackingTransport.stopped;
+        _backingPosition = 0;
+    }
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult backingSeek(int frame) {
+    final configured = _requireConfigured();
+    if (!configured.isOk) return configured;
+    final cur = _backingCur;
+    if (cur == null) return EngineResult.ok;
+    _backingPosition = frame.clamp(0, cur.frames - 1);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setBackingEnd(BackingEnd mode) {
+    _backingEnd = mode;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setBackingOutput(int mask) {
+    _backingMask = mask;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setBackingLevel(double gain) {
+    if (gain.isNaN) return EngineResult.invalid;
+    _backingLevel = gain.clamp(0.0, LE_MAX_GAIN);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setBackingPan(double pan) {
+    if (pan.isNaN) return EngineResult.invalid;
+    _backingPan = pan.clamp(-1.0, 1.0);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setClickPan(double pan) {
+    if (pan.isNaN) return EngineResult.invalid;
+    _clickPan = pan.clamp(-1.0, 1.0);
+    return EngineResult.ok;
+  }
+
+  @override
+  BackingState backingState() => BackingState(
+    epoch: _backingEpoch,
+    item: _backingItem,
+    nextItem: _backingNextItem,
+    transport: _backingTransport,
+    position: _backingPosition,
+    frames: _backingCur?.frames ?? 0,
+    endCount: _backingEndCount,
+    lastEnd: _backingLastEnd,
+    endMode: _backingEnd,
+    outputMask: _backingMask,
+    level: _backingLevel,
+    pan: _backingPan,
+    clickPan: _clickPan,
+    owned: (_backingCur == null ? 0 : 1) + (_backingNext == null ? 0 : 1),
+    ownedBytes: _backingOwnedBytes,
+  );
+
+  /// Plays [frames] frames of the backing voice, applying End at each file's
+  /// last frame exactly as the native callback does. A test seam: the mock
+  /// has no audio callback.
+  void advanceBacking(int frames) {
+    var left = frames;
+    while (left > 0) {
+      final cur = _backingCur;
+      if (cur == null || _backingTransport != BackingTransport.playing) return;
+      final step = left < cur.frames - _backingPosition
+          ? left
+          : cur.frames - _backingPosition;
+      _backingPosition += step;
+      left -= step;
+      if (_backingPosition < cur.frames) return;
+      _backingEndCount++;
+      switch (_backingEnd) {
+        case BackingEnd.repeat:
+          _backingPosition = 0;
+          _backingLastEnd = BackingEndEvent.repeated;
+        case BackingEnd.next when _backingNext != null:
+          _backingFree(cur);
+          _backingCur = _backingNext;
+          _backingItem = _backingNextItem;
+          _backingNext = null;
+          _backingNextItem = -1;
+          _backingPosition = 0;
+          _backingLastEnd = BackingEndEvent.advanced;
+        case BackingEnd.next:
+        case BackingEnd.stop:
+          _backingPosition = 0;
+          _backingTransport = BackingTransport.stopped;
+          _backingLastEnd = _backingEnd == BackingEnd.next
+              ? BackingEndEvent.nextMissing
+              : BackingEndEvent.stopped;
+      }
+    }
   }
 
   EngineResult _requireRunning() =>

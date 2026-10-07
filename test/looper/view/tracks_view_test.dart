@@ -2547,6 +2547,21 @@ void main() {
       }
     });
 
+    testWidgets('Backing & click belongs to the Mixer (#1200)', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      expect(find.byKey(const Key('stage_backing_click')), findsNothing);
+      await showMixer(tester);
+      expect(find.byKey(const Key('stage_backing_click')), findsOneWidget);
+      // Beside Reset mixer, before it.
+      expect(
+        tester.getRect(find.byKey(const Key('stage_backing_click'))).right,
+        lessThan(
+          tester.getRect(find.byKey(const Key('stage_reset_mixer'))).left,
+        ),
+      );
+    });
+
     testWidgets('Reset mixer belongs to the Mixer, and resets the mix', (
       tester,
     ) async {

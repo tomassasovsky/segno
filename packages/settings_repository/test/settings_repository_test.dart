@@ -265,6 +265,40 @@ void main() {
     });
   });
 
+  group('backing checkpoints (#1200)', () {
+    test('the mix record restores exact bytes or absence', () async {
+      expect(await repository.readBackingMixCheckpoint(), isNull);
+      const record =
+          '{ "level": 0.5, "pan": 0, "outputMask": 3, "end": "next" }';
+      await repository.restoreBackingMixCheckpoint(record);
+      expect(await repository.readBackingMixCheckpoint(), record);
+      await repository.restoreBackingMixCheckpoint(null);
+      expect(store.values.containsKey('backing.mix'), isFalse);
+      store.discardNextWriteKey = 'backing.mix';
+      await expectLater(
+        repository.restoreBackingMixCheckpoint(record),
+        throwsStateError,
+      );
+      expect(await repository.readBackingMixCheckpoint(), isNull);
+    });
+
+    test('click pan keeps absence distinct from centre', () async {
+      expect(await repository.readClickPanCheckpoint(), isNull);
+      await repository.restoreClickPanCheckpoint(-0.5);
+      expect(await repository.readClickPanCheckpoint(), -0.5);
+      await repository.restoreClickPanCheckpoint(0);
+      expect(store.values['tempo.click_pan'], 0);
+      await repository.restoreClickPanCheckpoint(null);
+      expect(store.values.containsKey('tempo.click_pan'), isFalse);
+      store.discardNextWriteKey = 'tempo.click_pan';
+      await expectLater(
+        repository.restoreClickPanCheckpoint(1),
+        throwsStateError,
+      );
+      expect(await repository.readClickPanCheckpoint(), isNull);
+    });
+  });
+
   group('Click scalar checkpoint', () {
     test(
       'absence and explicit unity remain distinct after restoration',
