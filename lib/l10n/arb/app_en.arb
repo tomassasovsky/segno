@@ -445,11 +445,7 @@
     "toggleOn": "On",
     "toggleOff": "Off",
     "auto": "Auto",
-    "viewGroupLabel": "VIEW",
-    "waveformWindowTitle": "Selected-track display",
-    "waveformWindowSubtitle": "Open a second window showing the selected track and its waveform",
     "highContrastTitle": "High contrast",
-    "highContrastSubtitle": "Force a brighter, higher-contrast palette. On desktop the OS contrast setting is not applied automatically.",
     "refreshRateHz": "{hz} Hz",
     "@refreshRateHz": {
         "placeholders": {
@@ -2078,15 +2074,12 @@
             }
         }
     },
-    "systemPerformanceGroup": "PERFORMANCE",
-    "systemHelpGroup": "HELP",
     "systemAutomaticGroup": "AUTOMATIC",
     "systemThisConsoleGroup": "THIS CONSOLE",
     "systemHousekeepingGroup": "HOUSEKEEPING",
     "systemHardwareGroup": "HARDWARE",
     "systemLegalGroup": "LEGAL",
     "systemRefreshRateTitle": "UI refresh rate",
-    "systemRefreshRateSubtitle": "How often waveforms and meters update. Higher is smoother but uses more CPU.",
     "consoleTryAgain": "Try again",
     "@consoleTryAgain": {
         "description": "Retry on any console banner. Was networkTryAgain until a second domain needed it — a primitive keeps no domain in its name."
@@ -6075,6 +6068,71 @@
     "settingsDisplaysTitle": "Displays",
     "@settingsDisplaysTitle": {
         "description": "Title of the Displays settings page."
+    },
+    "displaysTrackDisplay": "Track display",
+    "@displaysTrackDisplay": {
+        "description": "Heading of the Displays page card for the small panel that shows the selected track (the 7-inch panel)."
+    },
+    "displaysMainDisplay": "Main display",
+    "@displaysMainDisplay": {
+        "description": "Heading of the Displays page card for the large panel that shows the stage and pages."
+    },
+    "displaysTrackRole": "Selected track and waveform",
+    "@displaysTrackRole": {
+        "description": "What the Track display shows, under its heading."
+    },
+    "displaysMainRole": "Stage and settings",
+    "@displaysMainRole": {
+        "description": "What the Main display shows, under its heading."
+    },
+    "displaysTrackPanel": "7″",
+    "@displaysTrackPanel": {
+        "description": "The Track display's panel size, drawn in its preview."
+    },
+    "displaysMainPanel": "15.6″",
+    "@displaysMainPanel": {
+        "description": "The Main display's panel size, drawn in its preview."
+    },
+    "displaysConnected": "Connected",
+    "@displaysConnected": {
+        "description": "A display card's status when its panel is plugged in."
+    },
+    "displaysNotConnected": "Not connected",
+    "@displaysNotConnected": {
+        "description": "A display card's status when its panel is unplugged."
+    },
+    "displaysCalibrateTouch": "Calibrate touch",
+    "@displaysCalibrateTouch": {
+        "description": "Button on a display card that starts touch calibration for that panel."
+    },
+    "displaysDimWhileIdle": "Dim while idle",
+    "@displaysDimWhileIdle": {
+        "description": "Heading of the idle dimming choice on the Displays page."
+    },
+    "displaysDimNever": "Never",
+    "@displaysDimNever": {
+        "description": "Idle dimming choice: the displays never dim."
+    },
+    "displaysDimNote": "Playing or recording keeps both displays awake. A touch, the encoder, a pedal or MIDI wakes them.",
+    "@displaysDimNote": {
+        "description": "Note under the idle dimming choice explaining what keeps the displays awake and what wakes them."
+    },
+    "displaysOptions": "Display options",
+    "@displaysOptions": {
+        "description": "Heading of the row of other display settings on the Displays page."
+    },
+    "displaysTrackWindow": "Track display window",
+    "@displaysTrackWindow": {
+        "description": "Switch that opens or closes the Track display window."
+    },
+    "displaysDimMinutes": "{minutes} min",
+    "@displaysDimMinutes": {
+        "description": "Idle dimming choice: dim after this many minutes.",
+        "placeholders": {
+            "minutes": {
+                "type": "int"
+            }
+        }
     },
     "settingsStorageTitle": "Storage",
     "@settingsStorageTitle": {

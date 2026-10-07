@@ -1483,16 +1483,61 @@ void main() {
     });
   });
 
-  group('brightness', () {
-    test('defaults to full brightness (1.0) when unset', () async {
-      expect(await repository.loadBrightness(), 1.0);
+  group('display brightness', () {
+    test('defaults to 80% on each panel when nothing was ever set', () async {
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.8);
+      expect(await repository.loadDisplayBrightness(DisplayRole.main), 0.8);
     });
 
-    test('round-trips a saved preference and clamps', () async {
-      await repository.saveBrightness(0.42);
-      expect(await repository.loadBrightness(), 0.42);
-      await repository.saveBrightness(2);
-      expect(await repository.loadBrightness(), 1);
+    test('a panel never set starts from the one older brightness', () async {
+      await store.setDouble('ui.brightness', 0.6);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.6);
+      expect(await repository.loadDisplayBrightness(DisplayRole.main), 0.6);
+    });
+
+    test('an older brightness below the range lands on its floor', () async {
+      await store.setDouble('ui.brightness', 0.1);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.2);
+      expect(await repository.loadDisplayBrightness(DisplayRole.main), 0.2);
+    });
+
+    test('each panel keeps its own; the older key is left in place for a '
+        'downgrade', () async {
+      await store.setDouble('ui.brightness', 0.6);
+      await repository.saveDisplayBrightness(DisplayRole.main, 0.5);
+      expect(await repository.loadDisplayBrightness(DisplayRole.main), 0.5);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.6);
+      expect(await store.getDouble('ui.brightness'), 0.6);
+      expect(await store.getDouble('ui.brightness.main'), 0.5);
+    });
+
+    test('saves clamped into the range', () async {
+      await repository.saveDisplayBrightness(DisplayRole.track, 2);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 1);
+      await repository.saveDisplayBrightness(DisplayRole.track, 0);
+      expect(await repository.loadDisplayBrightness(DisplayRole.track), 0.2);
+    });
+  });
+
+  group('idle dimming', () {
+    test('defaults to never', () async {
+      expect(await repository.loadIdleDimSeconds(), 0);
+    });
+
+    test('round-trips each choice', () async {
+      for (final seconds in SettingsRepository.idleDimChoices) {
+        await repository.saveIdleDimSeconds(seconds);
+        expect(await repository.loadIdleDimSeconds(), seconds);
+      }
+    });
+
+    test('an unknown stored value reads as never', () async {
+      await store.setInt('ui.idle_dim_seconds', 45);
+      expect(await repository.loadIdleDimSeconds(), 0);
+    });
+
+    test('refuses a value that is not a choice', () {
+      expect(() => repository.saveIdleDimSeconds(45), throwsArgumentError);
     });
   });
 
