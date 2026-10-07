@@ -196,9 +196,23 @@ void main() {
         tracks: [],
       ),
     );
-    // The target refuses, so only the preservation is under test.
-    when(() => sessions.read(any())).thenThrow(
-      const SessionUnsupportedVersion(version: 99, supported: 11),
+    // The target is read first and must pass (an Open the target refuses
+    // keeps the rig as it is, #1178 Part 5 lows); an empty one, so only the
+    // preservation is under test.
+    when(
+      () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
+    ).thenAnswer(
+      _opened(
+        (_) async => (
+          session: const Session(
+            sampleRate: 48000,
+            channels: 1,
+            baseLengthFrames: 0,
+            tracks: [],
+          ),
+          laneStems: const <(int, int), List<Float32List>>{},
+        ),
+      ),
     );
 
     await runtime.session.open('Incoming');

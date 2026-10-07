@@ -1518,6 +1518,8 @@ void main() {
           failedSessionId: 's-gig',
           currentSessionId: 's-cur',
           sessions: _catalog,
+          // A new failure, not the one the page opened onto.
+          failureCount: 1,
         ),
       );
       await tester.pump();
