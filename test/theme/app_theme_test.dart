@@ -60,6 +60,40 @@ void main() {
       },
     );
 
+    test('the settings frame keeps the pen in the default flavour and '
+        'strengthens it at high contrast', () {
+      const dark = SurfaceTheme.dark;
+      const hc = SurfaceTheme.highContrast;
+      // The pen's values, untouched.
+      expect(dark.frameBackground, const Color(0xFF111215));
+      expect(dark.frameRule, const Color(0xFF3D3D3D));
+      expect(dark.frameControlLine, const Color(0xFF515D6E));
+      // Back has no fill: at high contrast its line is its only edge, and
+      // a control's edge needs 3:1 (WCAG 1.4.11).
+      expect(
+        ratio(hc.frameControlLine, hc.frameBackground),
+        greaterThanOrEqualTo(3),
+      );
+      expect(
+        ratio(hc.frameControlLine, hc.frameControlFill),
+        greaterThanOrEqualTo(3),
+      );
+      // Every frame line and text is stronger than the default's.
+      for (final (name, d, h) in [
+        ('rule', dark.frameRule, hc.frameRule),
+        ('control line', dark.frameControlLine, hc.frameControlLine),
+        ('text', dark.frameText, hc.frameText),
+        ('crumb', dark.frameCrumb, hc.frameCrumb),
+        ('icon', dark.frameIcon, hc.frameIcon),
+      ]) {
+        expect(
+          ratio(h, hc.frameBackground),
+          greaterThan(ratio(d, dark.frameBackground)),
+          reason: name,
+        );
+      }
+    });
+
     // WCAG 1.4.3 / 1.4.11: the high-contrast palette must be strictly brighter
     // than the default so the OS "increase contrast" preference helps.
     test('high-contrast text/line tokens out-contrast the default theme', () {

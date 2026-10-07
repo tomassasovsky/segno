@@ -306,7 +306,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// top bar, `#3d3d3d`; [frameControlLine] the line around Back and Stage,
   /// `#515d6e`; [frameControlFill] Stage's fill, `#202735`; [frameText] the
   /// title and Stage's label, `#e7edf6`; [frameCrumb] the breadcrumb,
-  /// `#b5b5b5`; [frameIcon] Back's chevron, `#f5f1e9`.
+  /// `#b5b5b5`; [frameIcon] Back's chevron, `#f5f1e9`. Those are the dark
+  /// flavour's; high contrast strengthens them (WCAG 1.4.11).
   final Color frameBackground;
   final Color frameRule;
   final Color frameControlLine;
@@ -713,13 +714,17 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     menuArtLine: Color(0xFF556881),
     menuPowerLine: Color(0xFF5F5F5F),
     encoderFocus: Color(0xFFF2BF70),
-    frameBackground: Color(0xFF111215),
-    frameRule: Color(0xFF3D3D3D),
-    frameControlLine: Color(0xFF515D6E),
+    // The pen's frame at high contrast: the page goes to this flavour's
+    // black, the rule and the control lines to its `line` and `borderStrong`
+    // (Back has no fill, so its line is its only edge and must clear 3:1),
+    // and the text to its white and `textSecondary`.
+    frameBackground: Color(0xFF000000),
+    frameRule: Color(0xFF6E6E6E),
+    frameControlLine: Color(0xFF8A8A8A),
     frameControlFill: Color(0xFF202735),
-    frameText: Color(0xFFE7EDF6),
-    frameCrumb: Color(0xFFB5B5B5),
-    frameIcon: Color(0xFFF5F1E9),
+    frameText: Color(0xFFFFFFFF),
+    frameCrumb: Color(0xFFD8D8D8),
+    frameIcon: Color(0xFFFFFFFF),
     knobFaceTop: Color(0xFF2E2E30),
     knobFaceBottom: Color(0xFF171719),
     // Dim less than [dark]: a disabled control must still clear the contrast
