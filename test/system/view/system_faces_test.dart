@@ -24,7 +24,6 @@ import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/session/cubit/session_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/system/view/about_system_tab.dart';
-import 'package:segno/system/view/display_system_tab.dart';
 import 'package:segno/system/view/storage_system_tab.dart';
 import 'package:segno/system/view/updates_system_tab.dart';
 import 'package:segno/theme/theme.dart';
@@ -174,9 +173,8 @@ final _running = UpdateState(
   currentVersion: Version.parse('0.1.0'),
 );
 
-/// The four bodies the Displays, Updates, Storage and About pages show.
+/// The three bodies the Updates, Storage and About pages show.
 enum _SystemBody {
-  display,
   updates,
   storage,
   about,
@@ -236,7 +234,7 @@ void main() {
   /// lands on nothing.
   Future<void> pump(
     WidgetTester tester, {
-    _SystemBody tab = _SystemBody.display,
+    required _SystemBody tab,
     ConsoleFactsClient? client,
     UpdateState? updateState,
   }) async {
@@ -345,7 +343,6 @@ void main() {
               body: Padding(
                 padding: const EdgeInsets.all(19),
                 child: switch (tab) {
-                  _SystemBody.display => const DisplaySystemTab(),
                   _SystemBody.updates => const UpdatesSystemTab(),
                   _SystemBody.storage => const StorageSystemTab(),
                   _SystemBody.about => const AboutSystemTab(),
@@ -358,115 +355,6 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
-
-  group('SYSTEM / display', () {
-    testWidgets('the view settings are switches, never on/off words', (
-      tester,
-    ) async {
-      await pump(tester);
-
-      for (final key in const [
-        Key('system_waveform_switch'),
-        Key('system_high_contrast_switch'),
-      ]) {
-        expect(find.byKey(key), findsOneWidget, reason: '$key');
-      }
-      // Never the WORDS: a boolean on this console is a switch (#498).
-      expect(find.text('On'), findsNothing);
-      expect(find.text('Off'), findsNothing);
-    });
-
-    testWidgets('the refresh rate opens in place onto a grid of tokens', (
-      tester,
-    ) async {
-      await pump(tester);
-      final l10n = l10nOf(tester);
-
-      // Shut: the chooser holds nothing tappable.
-      expect(find.byKey(const Key('system_refresh_rate_30')), findsNothing);
-
-      await tester.tap(find.byKey(const Key('system_refresh_rate_row')));
-      await tester.pumpAndSettle();
-
-      // A grid, not a list of rows — every option is a bare token.
-      expect(find.byType(ConsoleChipGrid<int>), findsOneWidget);
-      for (final hz in RefreshRateCubit.options) {
-        expect(find.byKey(Key('system_refresh_rate_$hz')), findsOneWidget);
-      }
-
-      await tester.tap(find.byKey(const Key('system_refresh_rate_30')));
-      await tester.pumpAndSettle();
-
-      expect(refresh.state, 30);
-      expect(find.text(l10n.refreshRateHz(30)), findsWidgets);
-      // A pick-one: answering it shuts the drawer.
-      expect(find.byKey(const Key('system_refresh_rate_120')), findsNothing);
-    });
-
-    testWidgets('the chooser is mid-animation one frame after the tap — a '
-        'golden only ever photographs the settled state', (tester) async {
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('system_refresh_rate_row')));
-      await tester.pump();
-      await tester.pump(kConsoleMotion ~/ 2);
-
-      // The CHOOSER's box, not the grid's: the grid is laid out at its full
-      // height from the first frame and the drawer clips it, so measuring the
-      // grid would report a settled size all the way through the animation.
-      const chooser = Key('system_refresh_rate_chooser');
-      final opening = tester.getRect(find.byKey(chooser));
-      await tester.pumpAndSettle();
-      final settled = tester.getRect(find.byKey(chooser));
-
-      // Grown from nothing rather than swapped in at full height.
-      expect(opening.height, lessThan(settled.height));
-      expect(opening.height, greaterThan(0));
-    });
-
-    testWidgets('the shortcuts row opens the legend', (tester) async {
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('system_shortcuts_row')));
-      await tester.pumpAndSettle();
-
-      // By its own key rather than `Dialog`: the legend is the console's
-      // dialog now, not Material's, so a type finder was really asserting
-      // which framework drew it.
-      expect(find.byKey(const Key('shortcutsHelp_dialog')), findsOneWidget);
-    });
-
-    testWidgets('a window that did not open says so where the setting is, '
-        'in the words the toast uses, and offers a retry', (tester) async {
-      await pump(tester);
-      final l10n = l10nOf(tester);
-
-      expect(
-        find.byKey(const Key('system_waveform_failed_banner')),
-        findsNothing,
-      );
-
-      waveform.reportOpenFailed();
-      await tester.pumpAndSettle();
-
-      expect(
-        find.byKey(const Key('system_waveform_failed_banner')),
-        findsOneWidget,
-      );
-      expect(find.text(l10n.waveformWindowFailedBanner), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('system_waveform_retry')));
-      await tester.pumpAndSettle();
-
-      // Clearing the flag IS the retry — the shell re-syncs on any change.
-      expect(waveform.state.openFailed, isFalse);
-      expect(waveform.state.enabled, isTrue);
-      expect(
-        find.byKey(const Key('system_waveform_failed_banner')),
-        findsNothing,
-      );
-    });
-  });
 
   group('SYSTEM / updates', () {
     testWidgets('an offer sits untouched until the button is pressed', (

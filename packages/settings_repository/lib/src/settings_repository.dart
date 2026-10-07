@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:local_storage_client/local_storage_client.dart';
 import 'package:pub_semver/pub_semver.dart';
+import 'package:settings_repository/src/display_role.dart';
 import 'package:settings_repository/src/fade_durations.dart';
 
 /// Exact recording timing scalars. Missing tracks inherit; zero does not.
@@ -744,17 +745,61 @@ class SettingsRepository {
   Future<void> saveHighContrast({required bool value}) =>
       _store.setBool(_highContrastKey, value: value);
 
-  static const String _brightnessKey = 'ui.brightness';
+  /// The one brightness the console kept for both panels before each panel
+  /// had its own. Read as each panel's starting value and never written, so
+  /// a downgrade still finds it.
+  static const String _legacyBrightnessKey = 'ui.brightness';
 
-  /// Console display brightness (`0..1`). Defaults to `1.0` when unset —
-  /// the same number as the app's `kDefaultDisplayBrightness`, which this
-  /// package cannot import (it must not depend on the app).
-  Future<double> loadBrightness() async =>
-      (await _store.getDouble(_brightnessKey) ?? 1.0).clamp(0.0, 1.0);
+  static String _displayBrightnessKey(DisplayRole role) =>
+      'ui.brightness.${role.name}';
 
-  /// Saves console display brightness (`0..1`).
-  Future<void> saveBrightness(double value) =>
-      _store.setDouble(_brightnessKey, value.clamp(0.0, 1.0));
+  /// The dimmest a panel can be set to (`0..1`): 20%, the accepted range's
+  /// floor.
+  static const double minDisplayBrightness = 0.2;
+
+  /// A panel's brightness before it was ever set: 80%.
+  static const double defaultDisplayBrightness = 0.8;
+
+  /// [role]'s panel brightness, in
+  /// `[minDisplayBrightness, 1]`.
+  ///
+  /// A panel never set starts from the single brightness older builds kept
+  /// for both, clamped into the range (a 10% setting becomes 20%), and
+  /// otherwise from [defaultDisplayBrightness].
+  Future<double> loadDisplayBrightness(DisplayRole role) async {
+    final value =
+        await _store.getDouble(_displayBrightnessKey(role)) ??
+        await _store.getDouble(_legacyBrightnessKey) ??
+        defaultDisplayBrightness;
+    return value.clamp(minDisplayBrightness, 1.0);
+  }
+
+  /// Saves [role]'s panel brightness, clamped into the range.
+  Future<void> saveDisplayBrightness(DisplayRole role, double value) =>
+      _store.setDouble(
+        _displayBrightnessKey(role),
+        value.clamp(minDisplayBrightness, 1.0),
+      );
+
+  static const String _idleDimKey = 'ui.idle_dim_seconds';
+
+  /// How long the console may sit idle before both panels dim, in seconds.
+  static const List<int> idleDimChoices = [0, 120, 300, 600];
+
+  /// The idle period before dimming, one of [idleDimChoices]; `0` (never,
+  /// the default) for an unset or unknown value.
+  Future<int> loadIdleDimSeconds() async {
+    final seconds = await _store.getInt(_idleDimKey) ?? 0;
+    return idleDimChoices.contains(seconds) ? seconds : 0;
+  }
+
+  /// Saves the idle period; a value outside [idleDimChoices] is refused.
+  Future<void> saveIdleDimSeconds(int seconds) {
+    if (!idleDimChoices.contains(seconds)) {
+      throw ArgumentError.value(seconds, 'seconds', 'not an idle-dim choice');
+    }
+    return _store.setInt(_idleDimKey, seconds);
+  }
 
   static const String _bluetoothRetiredNoticeKey = 'bluetooth.retired_notice';
 

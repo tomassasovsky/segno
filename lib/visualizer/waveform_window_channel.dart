@@ -9,3 +9,6 @@ const waveformWindowChannel = WindowMethodChannel('segno/waveform_window');
 
 /// Sent by the waveform window once [waveformWindowChannel] is registered.
 const waveformWindowReadyMethod = 'ready';
+
+/// Sent by the waveform window when a player touches it.
+const waveformWindowActivityMethod = 'activity';

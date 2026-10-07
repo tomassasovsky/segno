@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +21,7 @@ import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
+import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
@@ -523,6 +525,7 @@ void main() {
     PedalCubit pedal,
     UpdateCubit update,
     DisplayBrightnessCubit brightness,
+    IdleDimCubit idle,
   })
   systemProviders(
     WidgetTester tester, {
@@ -554,8 +557,11 @@ void main() {
     addTearDown(() => unawaited(pedal.close()));
     final brightness = DisplayBrightnessCubit(settings: settings);
     addTearDown(() => unawaited(brightness.close()));
+    final idle = IdleDimCubit(settings: settings);
+    addTearDown(() => unawaited(idle.close()));
     return (
       brightness: brightness,
+      idle: idle,
       waveform: waveform,
       contrast: contrast,
       refresh: refresh,
@@ -577,6 +583,7 @@ void main() {
       PedalCubit pedal,
       UpdateCubit update,
       DisplayBrightnessCubit brightness,
+      IdleDimCubit idle,
     })?
     system,
     ({
@@ -616,6 +623,9 @@ void main() {
                   wifi ?? const WifiRepository(client: UnsupportedWifiClient()),
             ),
             RepositoryProvider<LooperRepository>.value(value: rig.looper),
+            RepositoryProvider<DisplayOutputs>.value(
+              value: const UnknownDisplayOutputs(),
+            ),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -641,6 +651,7 @@ void main() {
                 BlocProvider.value(value: s.pedal),
                 BlocProvider.value(value: s.update),
                 BlocProvider.value(value: s.brightness),
+                BlocProvider.value(value: s.idle),
               ],
             ],
             child: page,
@@ -938,10 +949,10 @@ void main() {
 
   testWidgets('Displays page, the second window did not open', (tester) async {
     await pumpSystem(tester, const DisplaysSettingsPage());
-    // The failure the app shell reports, at the top of the list the setting
-    // lives in — never a toast once this face is open.
+    // The failure the app shell reports, beside the setting it is about —
+    // never a toast once this page is open.
     tester
-        .element(find.byKey(const Key('system_display_tab')))
+        .element(find.byType(DisplaysSettingsPage))
         .read<WaveformWindowCubit>()
         .reportOpenFailed();
     await tester.pumpAndSettle();

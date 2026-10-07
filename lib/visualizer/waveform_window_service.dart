@@ -70,6 +70,11 @@ abstract interface class WaveformWindowService {
   /// service drops its own; this is how the caller hears about it and drops
   /// the one the service cannot reach.
   abstract void Function()? onWindowReady;
+
+  /// Fired when a player touches the waveform window: activity on the Track
+  /// display, which wakes an idle-dimmed console like a touch on the main
+  /// one.
+  abstract void Function()? onWindowActivity;
 }
 
 /// Opens a real second OS window via `desktop_multi_window` and streams
@@ -101,6 +106,17 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   @override
   set onWindowReady(void Function()? handler) {
     _readyHandler = handler;
+  }
+
+  /// Static like [_readyHandler], for the same reason.
+  static void Function()? _activityHandler;
+
+  @override
+  void Function()? get onWindowActivity => _activityHandler;
+
+  @override
+  set onWindowActivity(void Function()? handler) {
+    _activityHandler = handler;
   }
 
   /// Closes sub-windows left over from a hot restart. Dart state is reset but
@@ -144,6 +160,9 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
         // completing twice throws out of this channel handler.
         final ready = _readyCompleter;
         if (ready != null && !ready.isCompleted) ready.complete();
+      }
+      if (call.method == waveformWindowActivityMethod) {
+        _activityHandler?.call();
       }
       return null;
     });
@@ -237,6 +256,9 @@ class NoopWaveformWindowService implements WaveformWindowService {
 
   @override
   void Function()? onWindowReady;
+
+  @override
+  void Function()? onWindowActivity;
 
   @override
   Future<bool> open({String title = 'Segno — Output'}) async => true;

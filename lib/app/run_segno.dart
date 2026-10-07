@@ -240,6 +240,7 @@ Future<void> runSegno(
       updates: updates,
       wifi: wifi,
       brightness: brightness,
+      displayOutputs: createDisplayOutputs(),
       consoleFacts: consoleFacts,
       guards: registry,
     ),
