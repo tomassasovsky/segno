@@ -962,6 +962,37 @@ void main() {
     );
   }, skip: !hasFonts);
 
+  testWidgets('Updates page, software updates', (tester) async {
+    await pumpSystem(
+      tester,
+      const UpdatesSettingsPage(),
+      updateState: _consoleBuild.copyWith(phase: UpdatePhase.upToDate),
+    );
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/settings_updates_idle.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('Updates page, an install that was cut off', (tester) async {
+    await pumpSystem(
+      tester,
+      const UpdatesSettingsPage(),
+      updateState: _consoleBuild.copyWith(
+        phase: UpdatePhase.interrupted,
+        interrupted: Version.parse('0.1.1'),
+        rollback: (
+          attempted: Version.parse('0.1.1'),
+          restored: Version.parse('0.1.0'),
+        ),
+      ),
+    );
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/settings_updates_paused.png'),
+    );
+  }, skip: !hasFonts);
+
   testWidgets('Updates page, an update on offer', (tester) async {
     await pumpSystem(
       tester,

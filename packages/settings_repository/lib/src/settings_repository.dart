@@ -2315,6 +2315,7 @@ class SettingsRepository {
   static const String _updateAutoCheckKey = 'updates.auto_check';
   static const String _updateChannelKey = 'updates.channel';
   static const String _updateDismissedKey = 'updates.dismissed';
+  static const String _updateRollbackKey = 'updates.rollback';
 
   /// Whether the app runs the passive, read-only update check automatically.
   /// Defaults to `true` (checking is read-only; applying stays opt-in).
@@ -2364,6 +2365,35 @@ class SettingsRepository {
         _updateDismissedKey,
         (versions.toList()..sort()).join(','),
       );
+
+  /// Loads the update that rolled back and has not been dismissed: the
+  /// version that did not start and the one the console went back to, or
+  /// `null` when there is none (or the stored pair does not parse).
+  ///
+  /// Stored because the helper reports a rollback once, at the first start
+  /// after it, and the notice has to outlive a restart until it is read.
+  Future<({Version attempted, Version restored})?> loadUpdateRollback() async {
+    final raw = await _store.getString(_updateRollbackKey);
+    final parts = raw?.split(',');
+    if (parts == null || parts.length != 2) return null;
+    try {
+      return (
+        attempted: Version.parse(parts[0].trim()),
+        restored: Version.parse(parts[1].trim()),
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Saves the update that rolled back, as `attempted,restored`.
+  Future<void> saveUpdateRollback({
+    required Version attempted,
+    required Version restored,
+  }) => _store.setString(_updateRollbackKey, '$attempted,$restored');
+
+  /// Forgets the rolled-back update once its notice is dismissed.
+  Future<void> clearUpdateRollback() => _store.remove(_updateRollbackKey);
 
   /// Clears all settings.
   Future<void> clear() => _store.clear();

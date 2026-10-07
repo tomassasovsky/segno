@@ -34,6 +34,19 @@ class _FakeBackend implements PlatformUpdateBackend {
   @override
   Future<Version> stagedVersion() async => staged;
 
+  UpdateRecovery recovery = const UpdateRecovery();
+  int recoverCount = 0;
+  int clearInterruptedCount = 0;
+
+  @override
+  Future<UpdateRecovery> recover() async {
+    recoverCount++;
+    return recovery;
+  }
+
+  @override
+  Future<void> clearInterrupted() async => clearInterruptedCount++;
+
   @override
   Future<UpdateManifest?> fetchManifest() async {
     fetchCount++;
@@ -139,6 +152,38 @@ void main() {
       expect(repo.channel, 'production');
       expect(await repo.currentVersion(), Version(0, 5, 0));
       expect(await repo.stagedVersion(), Version(0, 6, 0));
+    });
+
+    test('recover forwards what the backend read', () async {
+      final backend = _FakeBackend()
+        ..recovery = UpdateRecovery(
+          rolledBack: Version(0, 6, 0),
+          interrupted: Version(0, 7, 0),
+        );
+      final repo = UpdateRepository(backend: backend);
+
+      expect(
+        await repo.recover(),
+        UpdateRecovery(
+          rolledBack: Version(0, 6, 0),
+          interrupted: Version(0, 7, 0),
+        ),
+      );
+    });
+
+    test('recover never asks an unsupported backend', () async {
+      final backend = _FakeBackend(isSupported: false)
+        ..recovery = UpdateRecovery(interrupted: Version(0, 7, 0));
+      final repo = UpdateRepository(backend: backend);
+
+      expect(await repo.recover(), const UpdateRecovery());
+      expect(backend.recoverCount, 0);
+    });
+
+    test('clearInterrupted forwards to the backend', () async {
+      final backend = _FakeBackend();
+      await UpdateRepository(backend: backend).clearInterrupted();
+      expect(backend.clearInterruptedCount, 1);
     });
 
     test(

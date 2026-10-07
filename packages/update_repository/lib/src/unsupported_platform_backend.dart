@@ -1,6 +1,7 @@
 import 'package:pub_semver/pub_semver.dart';
 import 'package:update_repository/src/platform_update_backend.dart';
 import 'package:update_repository/src/update_manifest.dart';
+import 'package:update_repository/src/update_recovery.dart';
 
 /// The inert backend for platforms that do not offer in-app updates (a generic
 /// dev Linux build, tests, or any host without an appliance/desktop backend
@@ -24,6 +25,12 @@ class UnsupportedPlatformBackend implements PlatformUpdateBackend {
 
   @override
   Future<Version> stagedVersion() async => Version.none;
+
+  @override
+  Future<UpdateRecovery> recover() async => const UpdateRecovery();
+
+  @override
+  Future<void> clearInterrupted() async {}
 
   @override
   Future<UpdateManifest?> fetchManifest() async => null;

@@ -2,22 +2,10 @@
     "@@locale": "es",
     "appMenuLabel": "Segno",
     "settingsMenuItem": "Ajustes…",
-    "updatesInstalledVersionLabel": "Versión instalada",
-    "updatesChannelLabel": "Canal",
     "updatesVersionValue": "v{version}",
-    "updatesAutoCheckTitle": "Buscar actualizaciones automáticamente",
-    "updatesAutoCheckSubtitle": "Busca una versión más reciente en segundo plano. Nunca descarga ni instala por su cuenta.",
-    "updatesExperimentalChannelTitle": "Canal experimental",
-    "updatesExperimentalChannelSubtitle": "Recibe versiones preliminares. Desactívalo para seguir solo las versiones de producción.",
-    "updatesCheckNowTitle": "Buscar ahora",
-    "updatesCheckNowSubtitle": "Busca una versión más reciente ahora.",
     "updatesCheckingLabel": "Buscando actualizaciones…",
-    "updatesUpToDateTitle": "Estás al día",
     "updatesUpToDateSubtitle": "Esta es la última versión del canal {channel}.",
-    "updatesDownloadTitle": "Descargar e instalar",
-    "updatesStagedSubtitle": "La v{version} está instalada y lista. Reinicia cuando no estés en mitad de una sesión.",
     "updatesRestartBusySubtitle": "La reproducción se detendrá y tu sesión se guardará antes de reiniciar.",
-    "updatesErrorTitle": "La comprobación de actualizaciones falló",
     "updateBannerTitle": "Actualización disponible — v{version}",
     "updateBannerUpdateAction": "Actualizar…",
     "updateBannerDismissAction": "Ahora no",
@@ -1355,7 +1343,6 @@
     "audioMeasure": "Medir",
     "audioRecordOffsetSub": "desfase de grabación {frames} frames",
     "audioRefusedConfig": "El dispositivo no pudo abrirse a {asked}. Funcionando a {actual}.",
-    "systemAutomaticGroup": "AUTOMÁTICO",
     "systemThisConsoleGroup": "ESTA CONSOLA",
     "systemHousekeepingGroup": "MANTENIMIENTO",
     "systemHardwareGroup": "HARDWARE",
@@ -1363,35 +1350,6 @@
     "systemRefreshRateTitle": "Frecuencia de refresco",
     "consoleTryAgain": "Reintentar",
     "updatesUnsupportedBanner": "Las actualizaciones desde la app solo están disponibles en la consola Segno.",
-    "updatesAvailableBanner": "v{version} está disponible.",
-    "@updatesAvailableBanner": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesStagingBanner": "Preparando v{version} en el sistema de reserva — {percent} %",
-    "@updatesStagingBanner": {
-        "placeholders": {
-            "version": {
-                "type": "String"
-            },
-            "percent": {
-                "type": "int"
-            }
-        }
-    },
-    "updatesCheckFailedBanner": "Falló la comprobación de actualizaciones — {reason}",
-    "@updatesCheckFailedBanner": {
-        "placeholders": {
-            "reason": {
-                "type": "String"
-            }
-        }
-    },
-    "updatesCheckFailedReason": "no se pudo contactar con el servidor de actualizaciones.",
-    "updatesRestartNow": "Reiniciar ahora",
     "storageSessionsTitle": "Sesiones y tomas",
     "storageCapturesTitle": "Capturas",
     "storageCapturesSubtitle": "exportaciones y pistas",
@@ -1481,14 +1439,6 @@
         }
     },
     "storageActionFailed": "No se completó. No se modificó nada en el disco.",
-    "updatesDownloadFailedBanner": "Falló la descarga — {reason}",
-    "@updatesDownloadFailedBanner": {
-        "placeholders": {
-            "reason": {
-                "type": "String"
-            }
-        }
-    },
     "licencesReading": "Leyendo el registro de licencias…",
     "licenceCount": "{count, plural, =1{1 licencia} other{{count} licencias}}",
     "@licenceCount": {
@@ -2439,7 +2389,6 @@
     "settingsStorageTitle": "Almacenamiento",
     "settingsUpdatesTitle": "Actualizaciones",
     "settingsAboutTitle": "Acerca de Segno",
-    "settingsAboutSubtitle": "Nombre, versión, controlador y licencias",
     "aboutThisConsolePanel": "Esta consola",
     "aboutControllerPanel": "Controlador",
     "aboutLicensesPanel": "Licencias",
@@ -2462,6 +2411,33 @@
     "controllerInstalledPanel": "Instalado",
     "controllerUpdateUnsupported": "No se ha establecido si este hardware admite actualizar el controlador.",
     "controllerSoftwareUpdates": "Actualizaciones de software",
+    "updatesPageInstalled": "Segno {version} instalado",
+    "updatesPageCheck": "Buscar actualizaciones",
+    "updatesPanelSoftware": "Actualizaciones de software",
+    "updatesPanelAvailable": "Actualización disponible",
+    "updatesPanelDownloading": "Descargando",
+    "updatesPanelReady": "Lista para instalar",
+    "updatesPanelPaused": "Actualización en pausa",
+    "updatesPageVersion": "Segno {version}",
+    "updatesPageVersionSize": "Segno {version} · {megabytes} MB",
+    "updatesPageIdle": "Busca una versión más reciente de Segno.",
+    "updatesPageCheckFailed": "No se pudo contactar con el servidor de actualizaciones. Revisa la red y vuelve a intentarlo.",
+    "updatesPageDownloadFailed": "La descarga no terminó. El software actual no ha cambiado.",
+    "updatesPageInterrupted": "Descarga interrumpida. El software actual no ha cambiado.",
+    "updatesPagePercent": "{percent} %",
+    "updatesPageDownload": "Descargar e instalar",
+    "updatesPageInstallRestart": "Instalar y reiniciar",
+    "updatesPageRetry": "Reintentar",
+    "updatesPageCancel": "Cancelar",
+    "updatesPageRollback": "Segno {attempted} no arrancó, así que la consola volvió a {restored}.",
+    "updatesPageDismiss": "Descartar",
+    "updatesPageAutomaticPanel": "Automático",
+    "updatesPageAutoCheck": "Buscar automáticamente",
+    "updatesPageAutoCheckCaption": "Nunca descarga ni instala por su cuenta.",
+    "updatesPageChannel": "Canal de actualizaciones",
+    "updatesPageChannelProduction": "Producción",
+    "updatesPageChannelExperimental": "Experimental",
+    "updatesPageConsolePanel": "Esta consola",
     "settingsMidiTitle": "MIDI",
     "settingsPower": "Apagado",
     "bootModeRetiredNotice": "Segno ahora siempre inicia en modo Grabar. Pulsa Modo para pasar a Silenciar.",
