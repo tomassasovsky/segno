@@ -73,6 +73,41 @@ void main() {
       expect(await client.scan(), isEmpty);
     });
 
+    test('reports saved networks with Connect automatically', () async {
+      final client = FakeWifiClient();
+      final status = await client.status();
+
+      expect(status.autoConnect[status.ssid], isTrue);
+      expect(status.lastSsid, status.ssid);
+
+      await client.setAutoConnect(status.ssid, enabled: false);
+      expect((await client.status()).autoConnect[status.ssid], isFalse);
+    });
+
+    test('a dropped link leaves the last network to reconnect to', () async {
+      final client = FakeWifiClient();
+      final ssid = (await client.status()).ssid;
+
+      await client.disconnect();
+      final status = await client.status();
+      expect(status.connected, isFalse);
+      expect(status.lastSsid, ssid);
+    });
+
+    test('the connectivity answer is settable for desktop runs', () async {
+      final client = FakeWifiClient();
+      expect(await client.checkConnectivity(), isTrue);
+      client.internet = false;
+      expect(await client.checkConnectivity(), isFalse);
+    });
+
+    test('changing the key of a network never saved is refused', () async {
+      await expectLater(
+        FakeWifiClient().changePassword('Cafe Free', 'whatever1'),
+        throwsA(isA<StateError>()),
+      );
+    });
+
     test('delays are real, so a spinner has time to be seen', () async {
       final client = FakeWifiClient();
       final watch = Stopwatch()..start();

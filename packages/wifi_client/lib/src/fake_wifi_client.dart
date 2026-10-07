@@ -25,6 +25,17 @@ class FakeWifiClient implements WifiClient {
 
   bool _enabled = true;
   String _connected = 'MyHouseWTF_es';
+  String _last = 'MyHouseWTF_es';
+
+  /// Saved networks by SSID, with Connect automatically.
+  final Map<String, bool> _autoConnect = {
+    'MyHouseWTF_es': true,
+    'MyHouseWTF_es_2.4G': true,
+  };
+
+  /// What the connectivity check answers. Public so a desktop run can reach
+  /// "Connected · No internet".
+  bool internet = true;
 
   final List<WifiNetwork> _networks = [
     const WifiNetwork(
@@ -57,6 +68,8 @@ class FakeWifiClient implements WifiClient {
       ssid: joined ? _connected : '',
       ip: joined ? '192.168.50.212' : '',
       signal: joined ? -42 : 0,
+      autoConnect: Map.unmodifiable(_autoConnect),
+      lastSsid: _autoConnect.containsKey(_last) ? _last : '',
     );
   }
 
@@ -79,6 +92,8 @@ class FakeWifiClient implements WifiClient {
       throw StateError('segno-wifi-ctl: authentication failed');
     }
     _connected = ssid;
+    _last = ssid;
+    _autoConnect.putIfAbsent(ssid, () => true);
     _markSaved(ssid);
   }
 
@@ -92,6 +107,7 @@ class FakeWifiClient implements WifiClient {
   Future<void> forget(String ssid) async {
     await Future<void>.delayed(_actionDelay);
     if (_connected == ssid) _connected = '';
+    _autoConnect.remove(ssid);
     _networks.removeWhere((n) => n.ssid == ssid && !n.inRange);
     final index = _networks.indexWhere((n) => n.ssid == ssid);
     if (index < 0) return;
@@ -109,6 +125,29 @@ class FakeWifiClient implements WifiClient {
     await Future<void>.delayed(_actionDelay);
     _enabled = enabled;
     if (!enabled) _connected = '';
+  }
+
+  @override
+  Future<void> setAutoConnect(String ssid, {required bool enabled}) async {
+    await Future<void>.delayed(_actionDelay);
+    if (!_autoConnect.containsKey(ssid)) {
+      throw StateError('segno-wifi-ctl: no saved network named $ssid');
+    }
+    _autoConnect[ssid] = enabled;
+  }
+
+  @override
+  Future<void> changePassword(String ssid, String psk) async {
+    await Future<void>.delayed(_actionDelay);
+    if (!_autoConnect.containsKey(ssid)) {
+      throw StateError('segno-wifi-ctl: no saved network named $ssid');
+    }
+  }
+
+  @override
+  Future<bool> checkConnectivity() async {
+    await Future<void>.delayed(_actionDelay);
+    return internet;
   }
 
   void _markSaved(String ssid) {
