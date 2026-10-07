@@ -1608,7 +1608,7 @@
     "libraryNewLoopStaysUnnamed": "Tu loop actual se queda en tu Biblioteca.",
     "libraryNewLoopKeeps": "Se mantienen tus efectos, el tempo y la configuración de pedales.",
     "libraryNewLoopStart": "Empezar nuevo loop",
-    "libraryTakeStillRunning": "La toma todavía no terminó. No se cambió nada; vuelve a intentarlo cuando termine.",
+    "libraryTakeStillRunning": "La toma está terminando. Vuelve a intentarlo cuando se detenga.",
     "libraryOpenInterruptTitle": "¿Detener la reproducción y abrir {name}?",
     "libraryOpenInterruptBody": "Tu loop actual se queda en tu Biblioteca.",
     "libraryOpenConfirm": "Abrir",

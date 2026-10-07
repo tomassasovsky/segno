@@ -1425,6 +1425,35 @@ void main() {
       });
     }
 
+    for (final (what, armed) in const [
+      ('armed to record', Track(pending: true)),
+      (
+        'waiting on Count-in',
+        Track(pendingLaunch: PendingLaunchAction.record),
+      ),
+    ]) {
+      testWidgets('a track $what is asked about first (review D-1)', (
+        tester,
+      ) async {
+        await tapOpen(
+          tester,
+          LooperState(
+            transport: const TransportState(isRunning: true),
+            tracks: [
+              armed,
+              for (var c = 1; c < 8; c++) Track(channel: c),
+            ],
+          ),
+        );
+
+        expect(
+          find.text(l10n.libraryOpenInterruptTitle('Night set')),
+          findsOneWidget,
+        );
+        verifyNever(() => session.open(any()));
+      });
+    }
+
     testWidgets('Cancel changes nothing', (tester) async {
       await tapOpen(tester, withTrack(TrackState.playing));
       await tester.tap(find.byKey(const Key('console_confirm_cancel')));
