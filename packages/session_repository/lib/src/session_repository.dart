@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:meta/meta.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
+import 'package:session_repository/src/directory_sync.dart';
 import 'package:session_repository/src/models/session.dart';
 import 'package:session_repository/src/models/session_preview.dart';
 import 'package:session_repository/src/models/session_summary.dart';
@@ -1074,13 +1075,14 @@ class SessionRepository {
     // interrupted save.
     final rewrite = _isBundle(directory);
     final dest = rewrite ? Directory('$directory$_stagingSuffix') : target;
-    if (rewrite && dest.existsSync()) dest.deleteSync(recursive: true);
-    await dest.create(recursive: true);
     // A catalog read while this save writes must not take its stage for a
-    // leftover.
+    // leftover: the stage is registered before it exists, so no read can
+    // find it on disk unregistered, even while it is being created.
     if (rewrite) _staging.add(dest.path);
     final Session session;
     try {
+      if (rewrite && dest.existsSync()) dest.deleteSync(recursive: true);
+      await dest.create(recursive: true);
       session = await _writeBundle(
         dest.path,
         captured,
@@ -1128,6 +1130,16 @@ class SessionRepository {
   /// stand for a full disk or a failed write at that moment.
   @visibleForTesting
   static void Function(String path)? debugOnSaveWrite;
+
+  /// Called with each directory a save or a recovery fsyncs, just before the
+  /// fsync, so a test can see what is on disk at that moment.
+  @visibleForTesting
+  static void Function(String path)? debugOnDirectorySync;
+
+  static void _syncDirectory(String path) {
+    debugOnDirectorySync?.call(path);
+    syncDirectory(path);
+  }
 
   /// Writes the layers, the manifest and the mixdown of [captured] into the
   /// directory [path], each flushed to the device, and prunes layer files
@@ -1237,11 +1249,17 @@ class SessionRepository {
     if (retired.existsSync()) retired.deleteSync(recursive: true);
     target.renameSync(retired.path);
     try {
+      // Between the two renames: a test fails the second one here.
+      debugOnSaveWrite?.call(staging.path);
       staging.renameSync(target.path);
     } on Object {
       retired.renameSync(target.path);
+      _syncDirectory(target.parent.path);
       rethrow;
     }
+    // The swap is durable before the save reports success, and before
+    // the previous save is retired.
+    _syncDirectory(target.parent.path);
     _retire(retired, live: target);
   }
 
@@ -1406,6 +1424,7 @@ class SessionRepository {
             _retire(entity, live: Directory(live));
           } else {
             entity.renameSync(live);
+            _syncDirectory(dir.path);
           }
         } else if (path.endsWith(_stagingSuffix)) {
           if (!inFlight.contains(path)) entity.deleteSync(recursive: true);

@@ -814,6 +814,8 @@ void main() {
       expect(cubit.state.status, SessionStatus.failure);
       expect(cubit.state.error, SessionError.busy);
       expect(cubit.state.refusedBy, GuardKind.deviceChange);
+      // Counted like every other failure, so the Library shows it once.
+      expect(cubit.state.failureCount, 1);
       verifyNever(performance.disarmAndFinalize);
       verifyNever(() => looper.applySession(any()));
       expect(fxPersistence.sessionTransitionActive, isFalse);
@@ -2705,6 +2707,50 @@ void main() {
         isA<SessionState>().having((s) => s.sessions, 'sessions', summaries),
       ],
     );
+
+    test('every failure counts once, and a refresh keeps the last result '
+        'as it was', () async {
+      stubCatalog();
+      final cubit = build();
+      addTearDown(cubit.close);
+      cubit.emit(
+        const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
+      );
+
+      await cubit.deleteSession('A');
+      expect(cubit.state.failureCount, 1);
+      await cubit.deleteSession('A');
+      expect(cubit.state.failureCount, 2);
+
+      await cubit.refreshSessions();
+      expect(cubit.state.status, SessionStatus.failure);
+      expect(cubit.state.error, SessionError.currentSessionProtected);
+      expect(cubit.state.failureCount, 2);
+      expect(cubit.state.sessions, summaries);
+    });
+
+    test('a refresh keeps who refused the last action and the last '
+        'conversion notice', () async {
+      stubCatalog();
+      final cubit = build();
+      addTearDown(cubit.close);
+      const notice = SessionConversionNotice(fromVersion: 7, written: true);
+      cubit.emit(
+        const SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.busy,
+          refusedBy: GuardKind.transfer,
+          conversion: notice,
+          failureCount: 1,
+        ),
+      );
+
+      await cubit.refreshSessions();
+
+      expect(cubit.state.refusedBy, GuardKind.transfer);
+      expect(cubit.state.conversion, notice);
+      expect(cubit.state.sessions, summaries);
+    });
 
     blocTest<SessionCubit, SessionState>(
       'a write-back preserves the open session + catalog across the '

@@ -129,7 +129,19 @@ class SessionCubit extends Cubit<SessionState> {
     final sessions = await _repository.listSessions();
     final folders = await _listFolders();
     if (_closing || isClosed) return;
-    emit(state.copyWith(sessions: sessions, folders: folders));
+    // A quiet re-list: the last action's result stays as it was.
+    emit(
+      state.copyWith(
+        sessions: sessions,
+        folders: folders,
+        outcome: state.outcome,
+        error: state.error,
+        errorMessage: state.errorMessage,
+        failedSessionId: state.failedSessionId,
+        conversion: state.conversion,
+        refusedBy: state.refusedBy,
+      ),
+    );
   }
 
   /// The catalog's folders, or the ones already in state when they cannot be
@@ -1004,6 +1016,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failureCount: state.failureCount + 1,
           failedSessionId: subject,
           error: SessionError.bootPersistence,
           errorMessage: 'session boot settings still need recovery',
@@ -1018,6 +1031,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failureCount: state.failureCount + 1,
           failedSessionId: subject,
           error: SessionError.unknown,
           errorMessage: 'session load is still in progress',
@@ -1030,6 +1044,7 @@ class SessionCubit extends Cubit<SessionState> {
         emit(
           state.copyWith(
             status: SessionStatus.failure,
+            failureCount: state.failureCount + 1,
             failedSessionId: subject,
             error: SessionError.unknown,
             errorMessage: 'a session load is already active',
@@ -1062,6 +1077,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failureCount: state.failureCount + 1,
           error: refusal.error,
           errorMessage: '${refusal.cause ?? refusal.error.name}',
         ),
@@ -1071,6 +1087,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failureCount: state.failureCount + 1,
           failedSessionId: subject,
           error: SessionError.bootPersistence,
           errorMessage: '${error.cause}',
@@ -1087,6 +1104,7 @@ class SessionCubit extends Cubit<SessionState> {
           error: SessionError.busy,
           errorMessage: '$error',
           refusedBy: error.blockers.first.kind,
+          failureCount: state.failureCount + 1,
         ),
       );
     } on SessionException catch (error) {
@@ -1095,6 +1113,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failureCount: state.failureCount + 1,
           failedSessionId: subject,
           error: _classify(error),
           errorMessage: '$error',
@@ -1105,6 +1124,7 @@ class SessionCubit extends Cubit<SessionState> {
       emit(
         state.copyWith(
           status: SessionStatus.failure,
+          failureCount: state.failureCount + 1,
           failedSessionId: subject,
           error: SessionError.unknown,
           errorMessage: '$error',

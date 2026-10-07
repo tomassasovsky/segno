@@ -1245,14 +1245,18 @@ void main() {
     setUp(() => states = StreamController<SessionState>.broadcast());
     tearDown(() => states.close());
 
-    SessionState failed(SessionError error, {String? failedSessionId}) =>
-        SessionState(
-          status: SessionStatus.failure,
-          error: error,
-          failedSessionId: failedSessionId,
-          currentSessionId: 's-cur',
-          sessions: _catalog,
-        );
+    SessionState failed(
+      SessionError error, {
+      String? failedSessionId,
+      int count = 1,
+    }) => SessionState(
+      status: SessionStatus.failure,
+      error: error,
+      failedSessionId: failedSessionId,
+      currentSessionId: 's-cur',
+      sessions: _catalog,
+      failureCount: count,
+    );
 
     /// Opens the Library, then fails an action taken on it.
     Future<void> failWith(
@@ -1336,6 +1340,32 @@ void main() {
     ) async {
       await openLibrary(tester, state: failed(SessionError.saveFailed));
       expect(find.byKey(const Key('library_failure')), findsNothing);
+    });
+
+    testWidgets('a failure from before the Library opened stays hidden '
+        'through the refresh on open, and a new one shows', (tester) async {
+      await openLibrary(
+        tester,
+        state: failed(SessionError.saveFailed),
+        states: states.stream,
+      );
+      // The page's own refresh re-lists and keeps the result as it was.
+      states.add(failed(SessionError.saveFailed).copyWith(sessions: _catalog));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('library_failure')), findsNothing);
+
+      states.add(failed(SessionError.unknown, count: 2));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text(l10n.libraryActionFailed), findsOneWidget);
+    });
+
+    test('a failure with no classified error says nothing', () {
+      expect(
+        libraryFailureOf(const SessionState(status: SessionStatus.failure)),
+        isNull,
+      );
     });
 
     testWidgets('another failure goes once another row is selected', (
