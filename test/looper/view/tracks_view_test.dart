@@ -840,6 +840,20 @@ void main() {
     expect(find.byKey(const Key('tracks_tile_1')), findsOneWidget);
   });
 
+  testWidgets('the top bar Tuner button enters the Tuner by touch', (
+    tester,
+  ) async {
+    when(
+      () => repository.setTunerInput(input: any(named: 'input')),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.setTunerMute(any())).thenReturn(EngineResult.ok);
+    seed(const LooperState(tracks: [Track()]));
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('stage_tuner')));
+    await tester.pump();
+    expect(control.state.mode, InteractionMode.tuner);
+  });
+
   testWidgets('the stage has no settings tray or pull handle', (
     tester,
   ) async {
