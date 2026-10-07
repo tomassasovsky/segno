@@ -64,9 +64,9 @@ class LibraryView extends StatefulWidget {
 }
 
 class _LibraryViewState extends State<LibraryView> {
-  /// The session state whose failure the line does not show: the one the
-  /// page opened onto, or the one a later selection moved past.
-  late SessionState _dismissed = context.read<SessionCubit>().state;
+  /// The failure the line does not show ([SessionState.failureCount]): the
+  /// one the page opened onto, or one a later selection moved past.
+  late int _dismissed = context.read<SessionCubit>().state.failureCount;
 
   void _toTracks() => Navigator.popUntil(context, (route) => route.isFirst);
 
@@ -100,7 +100,7 @@ class _LibraryViewState extends State<LibraryView> {
     final session = context.read<SessionCubit>().state;
     if (libraryFailureOf(session) case final failure?
         when failure != LibraryFailure.saveFailed) {
-      setState(() => _dismissed = session);
+      setState(() => _dismissed = session.failureCount);
     }
   }
 
@@ -108,7 +108,7 @@ class _LibraryViewState extends State<LibraryView> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final session = context.watch<SessionCubit>().state;
-    final failure = identical(session, _dismissed)
+    final failure = session.failureCount == _dismissed
         ? null
         : libraryFailureOf(session);
     return MultiBlocListener(
@@ -237,8 +237,9 @@ LibraryFailure? libraryFailureOf(SessionState state) {
     SessionError.newLoopNotSaved => LibraryFailure.newLoopNotSaved,
     SessionError.nameCollision ||
     SessionError.corruptLayers ||
-    SessionError.unknown ||
-    null => LibraryFailure.actionFailed,
+    SessionError.unknown => LibraryFailure.actionFailed,
+    // No failure is classified: nothing to say.
+    null => null,
   };
 }
 

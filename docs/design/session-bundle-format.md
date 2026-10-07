@@ -57,6 +57,14 @@ old one to `<id>.old`, the new one to `<id>`, and deletes `<id>.old`. A
 failure before the renames leaves the previous save untouched. The catalog
 lists neither suffix, and on its next read it undoes a swap a power cut
 interrupted (`<id>.old` without `<id>` is put back) and removes leftovers.
+The stage is registered before it is created, so a catalog read during a
+save never takes it for a leftover. A failed second rename puts `<id>.old`
+back at once. The parent directory is flushed (`fsync`) after the renames,
+so a save is durable when it reports success. The swap relies on a
+journaling filesystem that commits renames in order (ext4, the appliance's
+`/data`): keep the sessions root off FAT, where a cut between the two
+directory entries of a rename can leave `<id>` and `<id>.old` sharing their
+files.
 
 **Mixdown.** `mixdown.wav` is written when the saved mix has any audible
 content and deleted when it has none (every track empty or muted), so a
