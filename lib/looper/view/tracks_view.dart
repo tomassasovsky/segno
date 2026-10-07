@@ -16,6 +16,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
+import 'package:segno/looper/view/foot_custom_view.dart';
 import 'package:segno/looper/view/foot_fade_view.dart';
 import 'package:segno/looper/view/foot_length_view.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
@@ -61,6 +62,7 @@ class _TracksViewState extends State<TracksView> {
     dismissAppToast(AppToastId.footFadeFailure);
     dismissAppToast(AppToastId.footReverseFailure);
     dismissAppToast(AppToastId.footPeelRefused);
+    dismissAppToast(AppToastId.assignedActionRefused);
     dismissAppToast(AppToastId.footTunerRefused);
     dismissAppToast(AppToastId.footLengthRefused);
     super.dispose();
@@ -199,6 +201,26 @@ class _TracksViewState extends State<TracksView> {
             ),
           ),
           BlocListener<ControlCubit, ControlState>(
+            // Every other refused assignment (a Custom switch, a CTRL switch
+            // or a MIDI control), from any mode: one cause, one notice.
+            listenWhen: (before, after) =>
+                before.assignedActionFailure != after.assignedActionFailure &&
+                after.assignedActionRefusal != null,
+            listener: (context, state) => showAppToast(
+              id: AppToastId.assignedActionRefused,
+              type: ToastificationType.warning,
+              title: Text(
+                assignedActionRefusedText(
+                  context.l10n,
+                  context.read<TracksCubit>().state.names,
+                  state.assignedActionRefusal!,
+                  lowDisk: state.assignedActionLowDisk,
+                ),
+              ),
+              autoCloseDuration: const Duration(seconds: 5),
+            ),
+          ),
+          BlocListener<ControlCubit, ControlState>(
             // Every refused foot Tuner press says why (#1229).
             listenWhen: (before, after) =>
                 before.footTunerFailure != after.footTunerFailure,
@@ -294,6 +316,8 @@ class _TracksViewState extends State<TracksView> {
                       ? const FootPeelView()
                       : mode == InteractionMode.tuner
                       ? const FootTunerView()
+                      : mode == InteractionMode.custom
+                      ? const FootCustomView()
                       : mode.isLength
                       ? const FootLengthView()
                       : Column(

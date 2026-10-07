@@ -27,6 +27,10 @@ class ControlState extends Equatable {
     this.footReverseRefusedEmpty = 0,
     this.footPeelFailure = 0,
     this.footPeelRefusal = FootPeelRefusal.failed,
+    this.customLit = const <PedalButton, bool>{},
+    this.assignedActionFailure = 0,
+    this.assignedActionRefusal,
+    this.assignedActionLowDisk = false,
     this.footTuner = const FootTunerSelection(),
     this.tunerPreferences = const TunerPreferences(),
     this.footTunerFailure = 0,
@@ -151,6 +155,24 @@ class ControlState extends Equatable {
 
   /// Why the latest refused Peel press removed nothing.
   final FootPeelRefusal footPeelRefusal;
+
+  /// Which switches the Custom face draws lit: exactly the switch LEDs the
+  /// cubit projects in Custom mode, published so the face cannot disagree
+  /// with the plate (#1229). Empty outside Custom mode. Derived by the cubit
+  /// on every projection, never edited.
+  final Map<PedalButton, bool> customLit;
+
+  /// Each refused assigned action (a Custom switch, a CTRL switch or a MIDI
+  /// control) that has no notice of its own notifies once; the notice names
+  /// [assignedActionRefusal] (#1229, notice policy rule 3).
+  final int assignedActionFailure;
+
+  /// The action the latest [assignedActionFailure] refused.
+  final ControlAction? assignedActionRefusal;
+
+  /// Whether the latest [assignedActionFailure] was a Record performance
+  /// refused for want of disk room, which says so in the recorder's words.
+  final bool assignedActionLowDisk;
 
   /// The foot Tuner's transient page and mute while the mode is up (#1229).
   /// Reset on every Tuner entry; never stored.
@@ -302,6 +324,10 @@ class ControlState extends Equatable {
     int? footReverseRefusedEmpty,
     int? footPeelFailure,
     FootPeelRefusal? footPeelRefusal,
+    Map<PedalButton, bool>? customLit,
+    int? assignedActionFailure,
+    ControlAction? assignedActionRefusal,
+    bool? assignedActionLowDisk,
     FootTunerSelection? footTuner,
     TunerPreferences? tunerPreferences,
     int? footTunerFailure,
@@ -348,6 +374,10 @@ class ControlState extends Equatable {
         footReverseRefusedEmpty ?? this.footReverseRefusedEmpty,
     footPeelFailure: footPeelFailure ?? this.footPeelFailure,
     footPeelRefusal: footPeelRefusal ?? this.footPeelRefusal,
+    customLit: customLit ?? this.customLit,
+    assignedActionFailure: assignedActionFailure ?? this.assignedActionFailure,
+    assignedActionRefusal: assignedActionRefusal ?? this.assignedActionRefusal,
+    assignedActionLowDisk: assignedActionLowDisk ?? this.assignedActionLowDisk,
     footTuner: footTuner ?? this.footTuner,
     tunerPreferences: tunerPreferences ?? this.tunerPreferences,
     footTunerFailure: footTunerFailure ?? this.footTunerFailure,
@@ -395,6 +425,10 @@ class ControlState extends Equatable {
     footReverseRefusedEmpty,
     footPeelFailure,
     footPeelRefusal,
+    customLit,
+    assignedActionFailure,
+    assignedActionRefusal,
+    assignedActionLowDisk,
     footTuner,
     tunerPreferences,
     footTunerFailure,
