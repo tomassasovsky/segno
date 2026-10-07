@@ -158,12 +158,13 @@ void main() {
 
   Future<void> pump(
     WidgetTester tester, {
+    Size size = const Size(1920, 1080),
     LooperState state = _rig,
     Widget home = const AudioRoutingPage(),
     BackingMixCubit? backingMix,
   }) async {
     tester.view
-      ..physicalSize = const Size(1920, 1080)
+      ..physicalSize = size
       ..devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -368,10 +369,11 @@ void main() {
     expect(find.byType(LoopSlider), findsNothing);
   });
 
-  testWidgets('Recording inputs checks the jacks the scoped track records, '
+  testWidgets('Recording input badges fit their cards on the compact display '
       'and scoping to another track shows that track instead', (tester) async {
     await pump(
       tester,
+      size: const Size(1024, 600),
       state: _rig.copyWithLanes(const [Lane(inputChannel: 1)]),
     );
     await openRecord(tester);
@@ -396,6 +398,10 @@ void main() {
       expect(
         cardRect.right - badgeRect.right,
         greaterThanOrEqualTo(26 * scale),
+      );
+      expect(
+        badgeRect.right,
+        lessThanOrEqualTo(tester.view.physicalSize.width),
       );
     }
 

@@ -3,18 +3,18 @@
 ## Success Criteria
 
 ```success-criteria
-GOAL: Fix the appliance-reported mixer pan, recording-input badge crop, and four-bar loop-length failures from release #154.
+GOAL: Fix the recording-input badge crop and four-bar loop-length failure from release #154; leave the mixer-pan failure open until it can be reproduced.
 
 SUCCESS CRITERIA:
-- Recording-input check badges remain fully inside the padded card on the appliance-sized layout. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view/audio_routing/audio_routing_test.dart
+- Recording-input check badges remain fully inside the padded card on the 1024×600 appliance layout. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view/audio_routing/audio_routing_test.dart
 - The default loop cap is one minute, four bars in 4/4 fit the default cap, and capacity refusals explain how to raise it. | verify: bash packages/segno_engine/src/test/run_native_tests.sh; /Users/Tomas/development/flutter/bin/flutter test test/looper/view/loop_settings/loop_settings_test.dart
-- Mixer pan has a focused regression test for its reproduced cause. | verify: /Users/Tomas/development/flutter/bin/flutter test test/looper/view/tracks_view_test.dart
 - Dart analysis and Bloc lint pass for the changed Dart code. | verify: /Users/Tomas/development/flutter/bin/dart analyze
-- The appliance confirms pan changes, shows complete input badges, accepts a four-bar length outside capture, and displays the useful capacity error for a preset longer than the one-minute cap. | verify: manual: 1. Install the candidate release on the appliance. 2. Check both recording-input badges. 3. Change mixer pan and confirm the audio image moves. 4. Set a four-bar loop length while no track is recording or overdubbing. 5. Try an eight-bar 4/4 preset and check the capacity explanation.
+- The appliance shows complete input badges, accepts a four-bar length outside capture, and displays the useful capacity error for a preset longer than the one-minute cap. | verify: manual: 1. Install the candidate release on the appliance. 2. Check both recording-input badges. 3. Set a four-bar loop length while no track is recording or overdubbing. 4. Try an eight-bar 4/4 preset and check the capacity explanation.
 
 NON-GOALS:
-- Deploy to or modify the appliance as part of this local fix.
-- Merge or publish the change without the issue's merge gate.
+- Resolve the mixer-pan report without reproducing its cause.
+- Install the candidate on the appliance as part of this build.
+- Merge the change without the issue's merge gate.
 
 VERIFICATION COMMAND: /Users/Tomas/development/flutter/bin/flutter test test/looper/view/audio_routing/audio_routing_test.dart test/looper/view/tracks_view_test.dart test/looper/view/loop_settings/loop_settings_test.dart test/looper/cubit/record_options_cubit_test.dart test/audio_setup/view/audio_faces_test.dart && /Users/Tomas/development/flutter/bin/dart analyze && bloc lint lib test packages
 ```
@@ -45,6 +45,8 @@ Capacity refusals will identify the loop-length limit and where to change it;
 other refusal causes retain their generic message. The mixer-pan cause remains
 under investigation; the source trace and existing tests show the expected
 dispatch and render path, so no pan change is made without device reproduction.
+The pan symptom remains open in #1298; this release candidate only fixes the
+badge and loop-cap reports.
 
 ## MVP
 
@@ -53,8 +55,8 @@ dispatch and render path, so no pan change is made without device reproduction.
 2. Raise the default loop cap to one minute and provide a capacity-specific
    explanation. Continue tracing and reproducing the pan failure; implement
    only a cause-specific fix.
-3. Run the focused test suites, Dart analysis, and Bloc lint. Preserve device
-   validation as a separate, authorized follow-up.
+3. Run the focused test suites, Dart analysis, and Bloc lint. Keep appliance
+   installation and the unresolved pan report as separate follow-ups.
 
 ## References
 
