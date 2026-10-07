@@ -11,10 +11,10 @@ import 'package:segno/theme/theme.dart';
 /// or null if it was cancelled.
 ///
 /// The console has **one keyboard**, and it is built into this sheet — the
-/// same reason `showWifiJoinSheet` is a sheet rather than a dialog. The
-/// app-wide keyboard host is driven by *field focus*, so a dialog holding a
-/// real `TextField` would summon a second keyboard panel underneath a dialog
-/// that is itself trying to centre in what is left of the screen.
+/// same reason `showNetworkPasswordSheet` holds its own. The app-wide
+/// keyboard host is driven by *field focus*, so a dialog holding a real
+/// `TextField` would summon a second keyboard panel underneath a dialog that
+/// is itself trying to centre in what is left of the screen.
 ///
 /// Every console rename comes through here — the stage's
 /// `showRenameTrackDialog` included, which the pen draws with this keyboard
