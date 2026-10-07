@@ -11,7 +11,6 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/track_column.dart'
     show PrimaryCrown, ShrinkToWidth;
 import 'package:segno/looper/view/track_meters.dart';
-import 'package:segno/looper/view/tracks_commands.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
 
@@ -87,10 +86,7 @@ class WaveTrackRow extends StatelessWidget {
       semanticLabel: switch (mode) {
         InteractionMode.record => l10n.a11yTrackTile(name, stateWord),
         InteractionMode.mute => l10n.a11yTrackTileMute(name, stateWord),
-        InteractionMode.fx =>
-          track.chainEnabled
-              ? l10n.a11yTrackTileFxOn(name, stateWord)
-              : l10n.a11yTrackTileFxOff(name, stateWord),
+        InteractionMode.fx ||
         InteractionMode.custom ||
         InteractionMode.mixer ||
         InteractionMode.fade ||
@@ -106,8 +102,6 @@ class WaveTrackRow extends StatelessWidget {
           case InteractionMode.mute:
             bloc.add(LooperMuteToggled(track.channel));
           case InteractionMode.fx:
-            TracksCommands(context).announceFxChainToggle(track.channel);
-            bloc.add(LooperTrackChainToggled(track.channel));
           case InteractionMode.record:
           case InteractionMode.mixer:
           case InteractionMode.fade:

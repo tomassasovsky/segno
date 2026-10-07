@@ -1506,6 +1506,17 @@ void main() {
     });
   });
 
+  group('FX Stop change notice', () {
+    test('is not shown yet when unset', () async {
+      expect(await repository.loadFxStopChangeNoticeShown(), isFalse);
+    });
+
+    test('stays shown once saved', () async {
+      await repository.saveFxStopChangeNoticeShown();
+      expect(await repository.loadFxStopChangeNoticeShown(), isTrue);
+    });
+  });
+
   group('high contrast', () {
     test('defaults to off when unset', () async {
       expect(await repository.loadHighContrast(), isFalse);
