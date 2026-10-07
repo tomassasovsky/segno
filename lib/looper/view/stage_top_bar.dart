@@ -11,6 +11,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -66,6 +67,20 @@ class StageTopBar extends StatelessWidget {
           const _BankButton(),
           const SizedBox(width: _gap),
           const _ViewButton(),
+          const SizedBox(width: _gap),
+          // The Tuner by touch; feet reach it through MODE or an assignment.
+          _StageIconButton(
+            key: const Key('stage_tuner'),
+            semanticLabel: l10n.actionModeTuner,
+            bordered: true,
+            onTap: () =>
+                context.read<ControlCubit>().setMode(InteractionMode.tuner),
+            child: Icon(
+              LucideIcons.guitar,
+              size: 28,
+              color: surface.textPrimary,
+            ),
+          ),
           const SizedBox(width: _gap),
           _StageIconButton(
             key: const Key('stage_settings'),

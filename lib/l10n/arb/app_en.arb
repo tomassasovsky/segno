@@ -898,7 +898,6 @@
             }
         }
     },
-    "recordingGroupLabel": "RECORDING",
     "maxLoopDefault30s": "Default (30 s)",
     "maxLoopMinutes": "{minutes} min",
     "@maxLoopMinutes": {
@@ -1270,10 +1269,6 @@
     "modeChangeBlockedCapturing": "Finish the take first.",
     "modeChangeBlockedQueued": "A queued action must fire or be cancelled first.",
     "modeChangeBlockedSpans": "The recorded loop lengths do not fit this mode.",
-    "trayLoopLabel": "Loop",
-    "@trayLoopLabel": {
-        "description": "Navigation-rail caption for the console's Loop domain."
-    },
     "loopTempoUnset": "not set",
     "@loopTempoUnset": {
         "description": "Shown where the tempo would be when none has been established. The console never draws an unknown fact as a zero."
@@ -1312,14 +1307,6 @@
             }
         }
     },
-    "trayBrightLabel": "Bright",
-    "@trayBrightLabel": {
-        "description": "Navigation rail entry for screen brightness, pinned below the eight domains as the mockups draw it."
-    },
-    "a11yTrayRail": "Tray destinations",
-    "@a11yTrayRail": {
-        "description": "Accessible label for the settings tray's vertical navigation rail, which selects which config face fills the open tray."
-    },
     "tunerCentsAndHz": "{cents} cents · {hz} Hz",
     "@tunerCentsAndHz": {
         "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
@@ -1339,14 +1326,6 @@
     "tunerNoTunableInput": "No input to tune",
     "@tunerNoTunableInput": {
         "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
-    },
-    "tunerNoDevice": "No audio device",
-    "@tunerNoDevice": {
-        "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
-    },
-    "trayTunerLabel": "Tuner",
-    "@trayTunerLabel": {
-        "description": "Label for the settings tray's Tuner rail entry."
     },
     "trayBrightnessLabel": "Brightness",
     "@trayBrightnessLabel": {
@@ -1670,26 +1649,6 @@
     "@wifiJoinAction": {
         "description": "Confirm button on the WiFi password dialog."
     },
-    "bluetoothIntro": "Make this console discoverable so a phone or sidecar can find it. Pairing comes later.",
-    "@bluetoothIntro": {
-        "description": "Intro copy on the Bluetooth page (discovery/broadcast only)."
-    },
-    "bluetoothAliasLabel": "Name",
-    "@bluetoothAliasLabel": {
-        "description": "Bluetooth adapter alias table label."
-    },
-    "bluetoothPoweredLabel": "Adapter",
-    "@bluetoothPoweredLabel": {
-        "description": "Bluetooth powered table label."
-    },
-    "bluetoothScanSubtitle": "Find nearby Bluetooth devices",
-    "@bluetoothScanSubtitle": {
-        "description": "Bluetooth scan action subtitle when idle."
-    },
-    "trayNetworkLabel": "Network",
-    "@trayNetworkLabel": {
-        "description": "Navigation rail entry for the Network domain — WiFi and Bluetooth as two tabs of one destination. One word, like every rail entry."
-    },
     "networkStateConnected": "connected",
     "@networkStateConnected": {
         "description": "State word at the trailing edge of a Network row: a live association or link. Lower case — it is a machine readout about the row, not a sentence."
@@ -1793,18 +1752,6 @@
     "wifiForgetConfirmAction": "Forget network",
     "@wifiForgetConfirmAction": {
         "description": "Destructive action on the forget-network confirmation."
-    },
-    "trayControlLabel": "Control",
-    "@trayControlLabel": {
-        "description": "Navigation rail entry for the Control domain — the footswitch plate and the MIDI foot controller as two tabs of one destination."
-    },
-    "controlPedalTab": "Pedal",
-    "@controlPedalTab": {
-        "description": "Tab of the Control domain: the footswitch plate's assignable switches."
-    },
-    "controlControllersTab": "Controllers",
-    "@controlControllersTab": {
-        "description": "Tab of the Control domain: everything plugged in — a MIDI foot controller, and the pedals in the CTRL jacks — and the mappings off them."
     },
     "controlTransportGroup": "TRANSPORT SWITCHES",
     "@controlTransportGroup": {
@@ -1984,21 +1931,6 @@
             }
         }
     },
-    "trayTracksLabel": "Tracks",
-    "@trayTracksLabel": {
-        "description": "Navigation-rail caption for the console's Tracks domain — names, lengths and routing as three tabs of one destination."
-    },
-    "tracksOrdinal": "track {number}",
-    "@tracksOrdinal": {
-        "description": "The mono readout beside a track's name, and the line under the routing dialog's title: which pad on the pedal this track is. Lower case, like every other mono readout on this surface.",
-        "placeholders": {
-            "number": {
-                "type": "int"
-            }
-        }
-    },
-    "tracksNamesFootnote": "Rename tracks. The name is what the stage, the pedal targets and the 7-inch readout all show.",
-    "tracksEmpty": "No tracks — the engine is not running.",
     "tracksRenameSheetTitle": "Rename track",
     "trackLanesGroup": "LANES",
     "trackLaneOutputsGroup": "OUTPUTS FOR THIS LANE",
@@ -2035,10 +1967,6 @@
     "@a11yTrackLaneStopRecording": {
         "description": "The lane row's custom action: what the check gutter does. Published on the row because the gutter's own semantics sit inside the row's ExcludeSemantics, and without it a screen reader can only reach `None (clean)`, which clears every lane on the track."
     },
-    "a11yTracksRenameField": "Track name",
-    "trayAudioLabel": "Audio",
-    "audioDeviceTab": "Device",
-    "audioRecordingTab": "Recording",
     "audioGroupLabel": "AUDIO",
     "audioRateBufferRow": "Sample rate / buffer",
     "audioRoundTripEstimate": "round-trip {milliseconds} ms",
@@ -2116,8 +2044,6 @@
     "audioOpenAsio4all": "Open asio4all.org",
     "audioMaxLoopTitle": "Maximum loop length",
     "audioMaxLoopSubtitle": "A higher cap reserves more memory per track. Changing it reopens the device.",
-    "audioDefaultLoopLengthTitle": "Default loop length",
-    "audioDefaultLoopLengthSubtitle": "Auto rounds up to whole base loops; a fixed multiple records that many.",
     "audioRenameInputTitle": "Rename input",
     "inputOrdinal": "input {number}",
     "@inputOrdinal": {
@@ -2152,14 +2078,6 @@
             }
         }
     },
-    "traySystemLabel": "System",
-    "@traySystemLabel": {
-        "description": "Rail entry for the System domain — what this console is and how it behaves."
-    },
-    "systemDisplayTab": "Display",
-    "systemUpdatesTab": "Updates",
-    "systemStorageTab": "Storage",
-    "systemAboutTab": "About",
     "systemPerformanceGroup": "PERFORMANCE",
     "systemHelpGroup": "HELP",
     "systemAutomaticGroup": "AUTOMATIC",
@@ -3512,6 +3430,14 @@
                 }
         }
     },
+    "loopDefaultMultipleLabel": "Later tracks",
+    "@loopDefaultMultipleLabel": {
+        "description": "Length & quantize, Defaults scope: label of the row that sets how long tracks recorded after the first loop are, as a multiple of it (Auto, ×1, ×2, ×3)."
+    },
+    "loopDefaultMultipleNote": "Multiples of the first loop. Auto rounds up to whole loops.",
+    "@loopDefaultMultipleNote": {
+        "description": "Length & quantize, Defaults scope: the note beside Later tracks, saying what ×2 is a multiple of and what Auto does."
+    },
     "loopTimingLabel": "Record timing",
     "@loopTimingLabel": {
         "description": "Record timing field label."
@@ -3835,6 +3761,14 @@
     "fxPedalAssignments": "Pedal assignments",
     "@fxPedalAssignments": {
         "description": "Opens the pedal assignment surface from the Effects page."
+    },
+    "fxPedalAssignmentsTitle": "Pedals",
+    "@fxPedalAssignmentsTitle": {
+        "description": "Title of the FX page's pedal assignments page, where each footswitch is pointed at an effect chain for FX mode (pen 04 / 02 Pedal banks)."
+    },
+    "fxPedalAssignmentsCrumb": "EFFECTS / PEDAL ASSIGNMENTS",
+    "@fxPedalAssignmentsCrumb": {
+        "description": "Breadcrumb of the FX page's pedal assignments page."
     },
     "fxKindLiveInputs": "Live inputs",
     "@fxKindLiveInputs": {
@@ -4817,14 +4751,6 @@
     "@pedalSetupFixedNote": {
         "description": "Shown in place of the editor when a dimmed, unassignable footswitch is selected."
     },
-    "controlPedalSetupRow": "Pedal setup",
-    "@controlPedalSetupRow": {
-        "description": "Opens the Pedals setup page from the Control face's Pedal tab."
-    },
-    "controlPedalSetupSub": "What each footswitch does on a press and on a hold",
-    "@controlPedalSetupSub": {
-        "description": "Subtitle of the row that opens the Pedals setup page."
-    },
     "pedalSetupContextLeds": "LED colors",
     "@pedalSetupContextLeds": {
         "description": "Opens the LED colors context of the Pedals setup, where each footswitch's indicator colour is chosen."
@@ -5631,10 +5557,6 @@
     "@midiWhen": {
         "description": "Label before the choice of when an action runs."
     },
-    "midiControlsEntryDetail": "Choose a controller and assign its buttons, keys and knobs.",
-    "@midiControlsEntryDetail": {
-        "description": "Entry into the shared MIDI controls editor."
-    },
     "actionTapTempo": "Tap tempo",
     "@actionTapTempo": {
         "description": "Shared action for setting tempo by tapping a control."
@@ -5923,6 +5845,117 @@
     "actionModePeel": "Peel",
     "@actionModePeel": {
         "description": "Foot Peel performance surface."
+    },
+    "actionModeTuner": "Tuner",
+    "@actionModeTuner": {
+        "description": "Foot Tuner: the mode's name, in pickers and on its face (#1229)."
+    },
+    "footTunerReference": "A4 reference",
+    "@footTunerReference": {
+        "description": "Foot Tuner face: the label over the A4 reference value."
+    },
+    "footTunerHzUnit": "Hz",
+    "@footTunerHzUnit": {
+        "description": "Foot Tuner face: the unit beside the A4 reference value."
+    },
+    "footTunerInputMuted": "Input muted",
+    "@footTunerInputMuted": {
+        "description": "Foot Tuner face: the tuned input is silent while tuning."
+    },
+    "footTunerInputAudible": "Input audible",
+    "@footTunerInputAudible": {
+        "description": "Foot Tuner face: the tuned input is heard while tuning."
+    },
+    "footTunerMuteInput": "Mute input",
+    "@footTunerMuteInput": {
+        "description": "Foot Tuner Stop switch while the input is audible."
+    },
+    "footTunerUnmuteInput": "Unmute input",
+    "@footTunerUnmuteInput": {
+        "description": "Foot Tuner Stop switch while the input is muted."
+    },
+    "footTunerReferenceDown": "Reference −",
+    "@footTunerReferenceDown": {
+        "description": "Foot Tuner Undo switch: lowers the A4 reference by 1 Hz."
+    },
+    "footTunerReferenceUp": "Reference +",
+    "@footTunerReferenceUp": {
+        "description": "Foot Tuner Clear switch: raises the A4 reference by 1 Hz."
+    },
+    "footTunerHoldReset": "Hold · {hz} Hz",
+    "@footTunerHoldReset": {
+        "description": "Foot Tuner Undo and Clear: holding resets the A4 reference to {hz}.",
+        "placeholders": {
+            "hz": {
+                "type": "int"
+            }
+        }
+    },
+    "footTunerInputs": "Inputs {first}–{last}",
+    "@footTunerInputs": {
+        "description": "Foot Tuner Bank switch: the inputs on the current page, 1-based.",
+        "placeholders": {
+            "first": {
+                "type": "int"
+            },
+            "last": {
+                "type": "int"
+            }
+        }
+    },
+    "footTunerInputsOne": "Input {number}",
+    "@footTunerInputsOne": {
+        "description": "Foot Tuner Bank switch: a page that holds one input.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "footTunerNextInputs": "Next inputs",
+    "@footTunerNextInputs": {
+        "description": "Foot Tuner Bank switch hint when there are more pages."
+    },
+    "footTunerFlat": "Flat",
+    "@footTunerFlat": {
+        "description": "Foot Tuner reading: the note is below pitch."
+    },
+    "footTunerInTune": "In tune",
+    "@footTunerInTune": {
+        "description": "Foot Tuner reading: the note is in tune."
+    },
+    "footTunerSharp": "Sharp",
+    "@footTunerSharp": {
+        "description": "Foot Tuner reading: the note is above pitch."
+    },
+    "footTunerCents": "{cents} cents",
+    "@footTunerCents": {
+        "description": "Foot Tuner reading: the deviation, one decimal, signed.",
+        "placeholders": {
+            "cents": {
+                "type": "String"
+            }
+        }
+    },
+    "footTunerPlayOneNote": "Play one note",
+    "@footTunerPlayOneNote": {
+        "description": "Foot Tuner reading with no pitch (pen 23/3)."
+    },
+    "footTunerSaveFailed": "Tuner settings could not be saved. Try again.",
+    "@footTunerSaveFailed": {
+        "description": "Foot Tuner: the A4 reference or input could not be saved."
+    },
+    "footTunerStartFailed": "The tuner could not start. Try again.",
+    "@footTunerStartFailed": {
+        "description": "Foot Tuner: the engine refused to arm the tuner or mute the input; the input stays audible."
+    },
+    "footTunerAtLimit": "A4 reference is at its limit.",
+    "@footTunerAtLimit": {
+        "description": "Foot Tuner: Reference + at 460 Hz or Reference − at 420 Hz."
+    },
+    "footTunerSeeded": "Tuner is on Custom: hold MODE, then hold pedal 2.",
+    "@footTunerSeeded": {
+        "description": "One-time notice when Hold · Tuner is added to Custom pedal 2 (#1229, D11)."
     },
     "actionOperationPeel": "Peel",
     "@actionOperationPeel": {
