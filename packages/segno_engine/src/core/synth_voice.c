@@ -669,7 +669,9 @@ int32_t le_synth_sustain(le_synth* s, int32_t inst, uint32_t origin, int on) {
 
 void le_synth_sustain_off(le_synth* s, uint32_t origin) {
   if (s == NULL) return;
-  for (int32_t k = 0; k < LE_SYNTH_MAX_INSTRUMENTS; ++k) sustain_remove(s, k, origin);
+  for (int32_t k = 0; k < LE_SYNTH_MAX_INSTRUMENTS; ++k) {
+    if (s->inst[k].sustain_n > 0) sustain_remove(s, k, origin);
+  }
 }
 
 void le_synth_expression(le_synth* s, int32_t inst, int32_t kind, float value) {
