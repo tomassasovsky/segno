@@ -510,8 +510,9 @@ void main() {
       repo = h.build();
       File('${h.exports}/take.wav.part').writeAsStringSync('mine');
       File('${h.exports}/.notes.part').writeAsStringSync('mine too');
-      File('${h.exports}/.take.wav.0123456789abcdef.part')
-          .writeAsStringSync('left by a crash');
+      File(
+        '${h.exports}/.take.wav.0123456789abcdef.part',
+      ).writeAsStringSync('left by a crash');
 
       await repo.copyFile(
         source.path,
