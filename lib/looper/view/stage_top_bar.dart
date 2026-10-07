@@ -170,14 +170,6 @@ class _SessionName extends StatelessWidget {
   }
 }
 
-/// Reset mixer, drawn only while the Mixer is showing.
-///
-/// Every track's level back to unity and every pan to centre. Mute, Solo,
-/// effects and the audio itself are untouched — the accepted design is
-/// explicit that this is a mix reset, not a session one.
-///
-/// Only in the Mixer view, because that is where the pen puts it and because
-/// an action that changes eight values at once wants to be beside them.
 /// The pen's `stage-aux` button (25 `bZDIR`): opens the Backing & click
 /// volume and pan dialog. Mixer view only, beside Reset mixer.
 class _BackingClickButton extends StatelessWidget {
@@ -207,6 +199,14 @@ class _BackingClickButton extends StatelessWidget {
   }
 }
 
+/// Reset mixer, drawn only while the Mixer is showing.
+///
+/// Every track's level back to unity and every pan to centre. Mute, Solo,
+/// effects and the audio itself are untouched — the accepted design is
+/// explicit that this is a mix reset, not a session one.
+///
+/// Only in the Mixer view, because that is where the pen puts it and because
+/// an action that changes eight values at once wants to be beside them.
 class _ResetMixerButton extends StatelessWidget {
   const _ResetMixerButton();
 

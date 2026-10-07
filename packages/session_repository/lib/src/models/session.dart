@@ -1229,8 +1229,9 @@ class Session {
   /// content; no [name], because the new loop takes its own. Every other
   /// field is copied as it is: tempo, signature, mode, defaults and their
   /// per-track overrides, click, count-in, Fade durations, levels, pans,
-  /// lane routing, input and output setup, all four chain stages and the
-  /// pedal remap.
+  /// lane routing, input and output setup, all four chain stages, the
+  /// pedal remap, and the backing setup and click pan (#1200; New loop only
+  /// stops the backing, plan D9).
   ///
   /// Each field is named here on purpose, with no copy helper: a field added
   /// to [Session] later reads its default until its New loop fate is written
@@ -1277,6 +1278,8 @@ class Session {
     pedalBindings: pedalBindings,
     inputSetup: inputSetup,
     outputSetup: outputSetup,
+    backing: backing,
+    clickPan: clickPan,
   );
 
   /// Serializes this session manifest to a JSON map. Always writes the
