@@ -121,7 +121,7 @@ static void test_clock_follow_tempo_step(void) {
   CHECK(r.reacquisitions == 1 && r.settle_s >= 0.0 && r.settle_s < 1.5);
 }
 
-/* A bus stall delays four pulses in a row by 4 ms: outliers of one sign,
+/* A bus stall delays four pulses in a row by 4 ms: errors of one sign,
  * but not a tempo step, so no re-acquisition and the tempo holds. */
 static double cf_stall_from = 20.0;
 static double cf_j_stall(double t) {
@@ -507,8 +507,8 @@ static void test_clock_follow_block_edge_drop_counted(void) {
 static void test_clock_follow_steps_keep_count(void) {
   printf("test_clock_follow_steps_keep_count\n");
   const double pairs[][2] = {{120.0, 100.0}, {100.0, 120.0}, {174.0, 140.0},
-                             {90.0, 93.0}, {120.0, 126.0}};
-  for (int s = 0; s < 5; ++s) {
+                             {90.0, 93.0},   {120.0, 126.0}, {90.0, 174.0}};
+  for (int s = 0; s < 6; ++s) {
     int wrong = 0;
     for (int ph = 0; ph < 50; ++ph) {
       le_clock_follow f;
@@ -530,6 +530,148 @@ static void test_clock_follow_steps_keep_count(void) {
              pairs[s][1], wrong);
     }
   }
+}
+
+/* A stall of the reader or the bus holds the pulses that fall in it and
+ * delivers them together at its end, microseconds apart (review DH1). They
+ * are late, not missed and not a tempo: the count stays exact, no re-fit
+ * starts, and the tempo is within 0.2 BPM two seconds after, on every
+ * source model, at 100 start phases each. */
+static void test_clock_follow_stall_bursts(void) {
+  printf("test_clock_follow_stall_bursts\n");
+  const double stalls[] = {0.010, 0.025, 0.045, 0.070, 0.100, 0.200};
+  const cf_jitter models[] = {cf_j_uniform, cf_j_usb, cf_j_block,
+                              cf_j_block_noise};
+  for (int m = 0; m < 4; ++m) {
+    for (int s = 0; s < 6; ++s) {
+      int wrong = 0;
+      double worst = 0.0;
+      for (int ph = 0; ph < 100; ++ph) {
+        cf_rng = 2000u + (uint64_t)ph;
+        le_clock_follow f;
+        le_clock_follow_reset(&f, 4);
+        const double p = 60.0 / (120.0 * LE_CLOCK_FOLLOW_PPQN);
+        const double at = 20.0 + ph * 0.00037;
+        uint64_t sent = 0u;
+        double tt = 0.0;
+        while (tt < at + 6.0) {
+          double st = tt + models[m](tt);
+          if (tt >= at && tt < at + stalls[s]) {
+            st = at + stalls[s] + 1e-6 * (double)(sent % 100u);
+          }
+          sent++;
+          le_clock_follow_pulse(&f, (uint64_t)llround((st + 1.0) * 1e9));
+          if (tt > at + stalls[s] + 2.0) {
+            const double e = fabs(le_clock_follow_quarter_bpm(&f) - 120.0);
+            if (e > worst) worst = e;
+          }
+          tt += p;
+        }
+        if (f.pulses != sent || f.reacquisitions != 0u) wrong++;
+      }
+      CHECK(wrong == 0 && worst < 0.2);
+      if (wrong != 0 || worst >= 0.2) {
+        printf("  model %d, %.0f ms stall: %d of 100 wrong, worst %.3f BPM\n",
+               m, stalls[s] * 1e3, wrong, worst);
+      }
+    }
+  }
+}
+
+/* The 100 ms stall on a clean clock, pulse by pulse: the first late pulse
+ * is held, the four behind it arrive within microseconds and are counted
+ * one each, and the next on-time pulse sees no error. */
+static void test_clock_follow_stall_trace(void) {
+  printf("test_clock_follow_stall_trace\n");
+  le_clock_follow f;
+  le_clock_follow_reset(&f, 4);
+  const double p = 60e9 / (120.0 * LE_CLOCK_FOLLOW_PPQN);
+  int k = 0;
+  for (k = 0; k < 480; ++k) le_clock_follow_pulse(&f, (uint64_t)llround(1e9 + k * p));
+  const uint64_t before = f.pulses;
+  /* Pulses 480-484 fall in a stall that ends at pulse 484.8. */
+  const double end = 1e9 + 484.8 * p;
+  for (k = 480; k < 485; ++k) {
+    CHECK(le_clock_follow_pulse(&f, (uint64_t)llround(end + (k - 480) * 1e3)) ==
+          0u);
+  }
+  CHECK(f.pulses == before + 5u && f.deferred == 0);
+  CHECK(f.n_out == 0 && f.refit == 0 && f.multi_extra == 0);
+  CHECK(fabs(f.pred - (1e9 + 485.0 * p)) < 1e3);
+  le_clock_follow_pulse(&f, (uint64_t)llround(1e9 + 485.0 * p));
+  CHECK(f.pulses == before + 6u && fabs(f.e_prev) < 1e3);
+  CHECK(fabs(le_clock_follow_quarter_bpm(&f) - 120.0) < 1e-6);
+}
+
+/* A drop that looks like a late pulse (174 BPM: the pulse after the gap
+ * 5 ms late, the next 5 ms early, so the hold lets the first go as late) is
+ * still counted, by the run of whole-period errors that follows. */
+static void test_clock_follow_late_or_dropped(void) {
+  printf("test_clock_follow_late_or_dropped\n");
+  le_clock_follow f;
+  le_clock_follow_reset(&f, 4);
+  const double p = 60e9 / (174.0 * LE_CLOCK_FOLLOW_PPQN);
+  int k;
+  for (k = 0; k < 480; ++k) le_clock_follow_pulse(&f, (uint64_t)llround(1e9 + k * p));
+  /* Pulse 480 is dropped; 481 comes 5 ms late, 482 5 ms early. */
+  le_clock_follow_pulse(&f, (uint64_t)llround(1e9 + 481 * p + 5e6));
+  le_clock_follow_pulse(&f, (uint64_t)llround(1e9 + 482 * p - 5e6));
+  for (k = 483; k < 700; ++k) le_clock_follow_pulse(&f, (uint64_t)llround(1e9 + k * p));
+  CHECK(f.pulses == 700u && f.reacquisitions == 0u);
+}
+
+/* A stall during acquisition (after the line spans a beat) and during a
+ * re-fit (once its period is known) is late delivery there too: the held
+ * pulse and the burst are counted once each, with no drop counted. */
+static void test_clock_follow_stall_while_fitting(void) {
+  printf("test_clock_follow_stall_while_fitting\n");
+  le_clock_follow f;
+  le_clock_follow_reset(&f, 4);
+  const double p = 60e9 / (120.0 * LE_CLOCK_FOLLOW_PPQN);
+  /* +-1.5 ms alternating keeps acquisition going past pulse 30. */
+  uint64_t sent = 0u;
+  for (int k = 0; k < 200; ++k) {
+    double t = 1e9 + k * p + ((k & 1) ? 1.5e6 : -1.5e6);
+    if (k >= 27 && k < 30) t = 1e9 + 29.9 * p + (k - 27) * 1e3;
+    sent++;
+    le_clock_follow_pulse(&f, (uint64_t)llround(t));
+  }
+  CHECK(f.pulses == sent && f.state == LE_CLOCK_FOLLOW_SYNCED);
+  /* A re-fit: 120 -> 100, then a 3-pulse stall 30 pulses into the step. */
+  le_clock_follow_reset(&f, 4);
+  sent = 0u;
+  double tt = 0.0;
+  int at = -1;
+  for (int k = 1; k <= 1400; ++k) {
+    const double per = 60e9 / ((k <= 600 ? 120.0 : 100.0) * 24.0);
+    tt += per;
+    double t = 1e9 + tt + ((k & 1) ? 1.5e6 : -1.5e6);
+    if (at < 0 && f.refit && f.fit.n > 20) at = k;
+    /* Pulses at, at+1 and at+2 all arrive 2.9 periods after pulse at. */
+    if (at > 0 && k >= at && k < at + 3) t = 1e9 + tt + (2.9 - (k - at)) * per;
+    sent++;
+    le_clock_follow_pulse(&f, (uint64_t)llround(t));
+  }
+  CHECK(at > 0);
+  CHECK(f.pulses == sent && f.reacquisitions == 1u);
+}
+
+/* The follower is not tempo-ready while it re-fits a period. */
+static void test_clock_follow_not_ready_while_refitting(void) {
+  printf("test_clock_follow_not_ready_while_refitting\n");
+  le_clock_follow f;
+  le_clock_follow_reset(&f, 4);
+  double tt = 0.0;
+  int refit_seen = 0, ready_in_refit = 0;
+  for (int k = 1; k <= 1200; ++k) {
+    tt += 60.0 / ((k <= 600 ? 120.0 : 100.0) * LE_CLOCK_FOLLOW_PPQN);
+    le_clock_follow_pulse(&f, (uint64_t)llround((tt + 1.0) * 1e9));
+    if (f.refit) {
+      refit_seen = 1;
+      if (le_clock_follow_tempo_ready(&f)) ready_in_refit = 1;
+    }
+  }
+  CHECK(refit_seen && !ready_in_refit && le_clock_follow_tempo_ready(&f));
 }
 
 /* A known loss (the port's gap mark) counts the pulses it hid even before
@@ -575,4 +717,9 @@ static void run_clock_follow_tests(void) {
   test_clock_follow_block_edge_seed();
   test_clock_follow_block_edge_drop_counted();
   test_clock_follow_steps_keep_count();
+  test_clock_follow_stall_bursts();
+  test_clock_follow_stall_trace();
+  test_clock_follow_not_ready_while_refitting();
+  test_clock_follow_late_or_dropped();
+  test_clock_follow_stall_while_fitting();
 }

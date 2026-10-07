@@ -16,7 +16,8 @@
  * A fit whose newest half has a different slope spans a tempo change and is
  * cut back to that half. The fit seeds a second-order delay-locked loop (F.
  * Adriaensen, "Using a DLL to filter time", LAC 2005; the filter JACK uses
- * for period times), 0.2 Hz wide.
+ * for period times), 0.2 Hz wide, and its residual spread seeds the jitter
+ * estimate.
  *
  * Tracking: each pulse's error against the prediction updates the jitter
  * estimate (errors past the outlier bar, max(2 ms, 2.5 sigma), do not). An
@@ -29,9 +30,21 @@
  * fitted through the run with the old slope, whole periods late, is pulses
  * dropped without a mark (count them, keep the period); a slope several
  * standard errors from the old one is a tempo step (re-fit a line over the
- * run and the pulses that follow, as at acquisition). So the pulse count
- * stays exact for anchors and Song Position, also on block-edge sources
- * where a single interval cannot tell a drop from jitter.
+ * run and the pulses that follow, as at acquisition); the classifier costs
+ * O(run length) per pulse. So the pulse count stays exact for anchors and
+ * Song Position, also on block-edge sources where a single interval cannot
+ * tell a drop from jitter.
+ *
+ * Late delivery (PR #1259 delta review DH1): a stall of the reader or the
+ * bus holds the pulses that fall in it and delivers them together. A pulse
+ * within a quarter period of the previous one is part of such a burst:
+ * counted, its time kept from the loop, runs and fits. A pulse late past the
+ * outlier bar (in a re-fit or acquisition: half a period off a line that
+ * knows its period) is held one pulse: if a burst follows, or the next
+ * pulse is less than half as late, it was late delivery and is counted
+ * without its time; otherwise it is processed as the evidence it is (a
+ * drop, a step, a whole multiple). A re-fit counts pulses its line finds
+ * whole periods late only once its period is known to 1 %.
  *
  * Loss: silence for max(6 periods, 250 ms) while Synced, decided at the
  * deadline whether or not a pulse arrives in the same block (review L1), or
@@ -94,6 +107,12 @@ typedef struct le_clock_follow {
   int32_t have_last;
   int32_t gap;          /* messages were lost since the last pulse */
   uint64_t last_t;      /* the last pulse's time, ns */
+  /* A pulse that arrived late enough to be either a late delivery (a burst
+   * of the pulses held behind it follows within a quarter period) or real
+   * evidence (a drop, a step): counted, its timing held for one pulse. */
+  int32_t deferred;
+  uint64_t def_t, def_prev;
+  double def_iv;
   /* Acquisition, and re-fitting after a tempo step. */
   le_clock_fit fit;
   int32_t refit;        /* Synced, but the period is being re-fitted */
