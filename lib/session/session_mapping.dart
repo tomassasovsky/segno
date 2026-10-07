@@ -123,6 +123,9 @@ SessionSettings settingsFromLooper(
     syncTempo: transport.syncTempo,
     quantizeDiv: recordTiming.rememberedDivision,
     loopBars: transport.loopBars,
+    loopBeats: transport.loopBeats > 0 || transport.loopBars == 0
+        ? transport.loopBeats
+        : transport.loopBars * transport.tsNum,
     recordTiming: recordTiming.defaultTiming,
     overdubDecay: decay.defaultPercent,
     defaultOneShot: oneShot.defaultOneShot,
@@ -306,6 +309,7 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
   syncTempo: bundle.session.syncTempo,
   quantizeDiv: bundle.session.quantizeDiv,
   loopBars: bundle.session.loopBars,
+  loopBeats: bundle.session.loopBeats,
   defaultOneShot: bundle.session.defaultOneShot,
   defaultLengthPresetBars: bundle.session.defaultLengthPresetBars,
   trackRecordTimingOverrides: bundle.session.trackRecordTimingOverrides,

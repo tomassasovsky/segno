@@ -150,8 +150,23 @@ typedef struct le_command {
       int32_t channel, slot, previous;
       uint32_t generation;
     } peel_log;
+    struct { /* LE_CMD_SET_LENGTH (#1168): publish `pool_slot` at `len` with
+              * this multiple/division (and master, when `reclock` > 0), the
+              * playhead mapped to (index - start) mod len. `receipt` is the
+              * request slot, -1 for Undo/Redo; `image_id` the staged image;
+              * `audio_rev` the track's a_audio_rev at admission. */
+      int32_t channel, receipt, pool_slot, len, multiple, divisor, reclock,
+          start;
+      uint32_t image_id;
+      uint32_t audio_rev; /* the content revision the image was read at */
+    } length;
+    struct { /* LE_PLOG_LENGTH (#1168): the slot now live at `len` frames and
+              * the image staged for it (0 = none). */
+      int32_t channel, slot, len;
+      uint32_t image_id;
+    } length_log;
     struct { /* COMMIT_SESSION: exact recorded span and musical bar count. */
-      int32_t base_frames, loop_bars;
+      int32_t base_frames, loop_beats;
     } session;
     struct {
       le_record_timing_settings settings;

@@ -22,7 +22,9 @@ class ControlState extends Equatable {
     this.footMixerFailure = 0,
     this.footFade = const FootFadeSelection(),
     this.footFadeFailure = 0,
+    this.footFadeRefusedEmpty = 0,
     this.footReverseFailure = 0,
+    this.footReverseRefusedEmpty = 0,
     this.footPeelFailure = 0,
     this.footPeelRefusal = FootPeelRefusal.failed,
     this.customLit = const <PedalButton, bool>{},
@@ -40,6 +42,9 @@ class ControlState extends Equatable {
     this.footFxRefusal = FootFxRefusal.unavailable,
     this.fxSwitches = const <PedalButton, FxSwitchReading>{},
     this.fxStopChangeNotice = false,
+    this.footLengthFailure = 0,
+    this.footLengthRefusal = FootLengthRefusal.failed,
+    this.footLengthOutcome = FootLengthOutcome.none,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -138,9 +143,17 @@ class ControlState extends Equatable {
   /// track, notifies the current flow once.
   final int footFadeFailure;
 
+  /// How many empty tracks the latest refused Fade was aimed at when every
+  /// one of its targets was empty (an assigned Fade); 0 for any other
+  /// refusal. The notice names the empty track instead of a retry.
+  final int footFadeRefusedEmpty;
+
   /// Each refused Reverse gesture, and each assigned Reverse that reached
   /// no track, notifies the current flow once.
   final int footReverseFailure;
+
+  /// The same as [footFadeRefusedEmpty], for Reverse.
+  final int footReverseRefusedEmpty;
 
   /// Each refused Peel press notifies the current flow once; the notice
   /// reads [footPeelRefusal].
@@ -215,6 +228,18 @@ class ControlState extends Equatable {
   /// told, so the app can say that Stop no longer switches every track's
   /// effects off in FX mode (#1229). Never cleared.
   final bool fxStopChangeNotice;
+
+  /// Each Multiply / Divide that changed nothing on a recorded track, from
+  /// the surface or an assigned action in any mode, notifies the current
+  /// flow once (#1168); the notice reads [footLengthRefusal].
+  final int footLengthFailure;
+
+  /// Why the latest refused Multiply / Divide changed nothing.
+  final FootLengthRefusal footLengthRefusal;
+
+  /// The latest Multiply or Divide the surface made on this visit, for the
+  /// length panel's outcome line; [FootLengthOutcome.none] outside a visit.
+  final FootLengthOutcome footLengthOutcome;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -329,7 +354,9 @@ class ControlState extends Equatable {
     int? footMixerFailure,
     FootFadeSelection? footFade,
     int? footFadeFailure,
+    int? footFadeRefusedEmpty,
     int? footReverseFailure,
+    int? footReverseRefusedEmpty,
     int? footPeelFailure,
     FootPeelRefusal? footPeelRefusal,
     Map<PedalButton, bool>? customLit,
@@ -347,6 +374,9 @@ class ControlState extends Equatable {
     FootFxRefusal? footFxRefusal,
     Map<PedalButton, FxSwitchReading>? fxSwitches,
     bool? fxStopChangeNotice,
+    int? footLengthFailure,
+    FootLengthRefusal? footLengthRefusal,
+    FootLengthOutcome? footLengthOutcome,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -379,7 +409,10 @@ class ControlState extends Equatable {
     footMixerFailure: footMixerFailure ?? this.footMixerFailure,
     footFade: footFade ?? this.footFade,
     footFadeFailure: footFadeFailure ?? this.footFadeFailure,
+    footFadeRefusedEmpty: footFadeRefusedEmpty ?? this.footFadeRefusedEmpty,
     footReverseFailure: footReverseFailure ?? this.footReverseFailure,
+    footReverseRefusedEmpty:
+        footReverseRefusedEmpty ?? this.footReverseRefusedEmpty,
     footPeelFailure: footPeelFailure ?? this.footPeelFailure,
     footPeelRefusal: footPeelRefusal ?? this.footPeelRefusal,
     customLit: customLit ?? this.customLit,
@@ -397,6 +430,9 @@ class ControlState extends Equatable {
     footFxRefusal: footFxRefusal ?? this.footFxRefusal,
     fxSwitches: fxSwitches ?? this.fxSwitches,
     fxStopChangeNotice: fxStopChangeNotice ?? this.fxStopChangeNotice,
+    footLengthFailure: footLengthFailure ?? this.footLengthFailure,
+    footLengthRefusal: footLengthRefusal ?? this.footLengthRefusal,
+    footLengthOutcome: footLengthOutcome ?? this.footLengthOutcome,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -431,7 +467,9 @@ class ControlState extends Equatable {
     footMixerFailure,
     footFade,
     footFadeFailure,
+    footFadeRefusedEmpty,
     footReverseFailure,
+    footReverseRefusedEmpty,
     footPeelFailure,
     footPeelRefusal,
     customLit,
@@ -449,6 +487,9 @@ class ControlState extends Equatable {
     footFxRefusal,
     fxSwitches,
     fxStopChangeNotice,
+    footLengthFailure,
+    footLengthRefusal,
+    footLengthOutcome,
     cursor,
     activeBank,
     excluded,

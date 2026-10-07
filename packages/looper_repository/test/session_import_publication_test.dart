@@ -33,8 +33,16 @@ class _ImportEngine extends PumpedNativeEngine {
   bool installForward = false;
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) {
-    final result = super.finalizeHistory(channel, history);
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) {
+    final result = super.finalizeHistory(
+      channel,
+      history,
+      imageLengths: imageLengths,
+    );
     if (result.isOk) finalized = true;
     return result;
   }
@@ -114,9 +122,9 @@ class _ImportEngine extends PumpedNativeEngine {
   }
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     if (dropCommit) return EngineResult.ok;
-    final result = super.commitSession(baseFrames, loopBars: loopBars);
+    final result = super.commitSession(baseFrames, loopBeats: loopBeats);
     if (result.isOk) committed = true;
     return result;
   }

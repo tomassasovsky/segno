@@ -993,6 +993,199 @@ void main() {
     );
   });
 
+  group('length edits (#1168)', () {
+    // A Double undone, its Last half undone: the live image is 8 frames and
+    // the images either side are 4, each length edit with its map.
+    final original = Float32List.fromList([1, 2, 3, 4]);
+    final doubled = Float32List.fromList([1, 2, 3, 4, 1, 2, 3, 4]);
+    final half = Float32List.fromList([1, 2, 3, 4]);
+    const history = [
+      HistoryEntry(HistoryKind.length),
+      HistoryEntry(HistoryKind.length, start: 4),
+    ];
+    FakeSessionEngine edited() => FakeSessionEngine()
+      ..seedLayers(
+        0,
+        [original, doubled, half],
+        undoDepth: 1,
+        redoDepth: 1,
+        history: history,
+      );
+
+    test('save then read keeps every image at its own length and each '
+        'map', () async {
+      final dir = '${tempDir.path}/length_edits';
+      await repoFor(edited()).save(dir, settings: const SessionSettings());
+      final manifest =
+          jsonDecode(
+                await File('$dir/${Session.manifestName}').readAsString(),
+              )
+              as Map;
+      expect(manifest['version'], 14);
+      final lane =
+          (((manifest['tracks'] as List).single as Map)['lanes'] as List).single
+              as Map;
+      expect(lane['history'], [
+        {'kind': 'length', 'skipped': 0, 'start': 0},
+        {'kind': 'length', 'skipped': 0, 'start': 4},
+      ]);
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      final read = bundle.session.tracks.single;
+      expect(read.lengthFrames, 8);
+      expect(
+        read.lanes.single.history,
+        const TrackHistory(history, undoCount: 1),
+      );
+      expect(bundle.laneStems[(0, 0)], [original, doubled, half]);
+    });
+
+    test('read refuses an image at a length its lineage does not give, '
+        'before anything is applied', () async {
+      // An overdub beneath the live image, a Last half above it: the
+      // overdub is as long as live, the edit's image its own 4 frames.
+      final source = FakeSessionEngine()
+        ..seedLayers(
+          0,
+          [doubled, doubled, half],
+          undoDepth: 1,
+          redoDepth: 1,
+          history: const [
+            HistoryEntry(HistoryKind.layer),
+            HistoryEntry(HistoryKind.length, start: 4),
+          ],
+        );
+      final dir = '${tempDir.path}/length_lineage';
+      await repoFor(source).save(dir, settings: const SessionSettings());
+      expect(
+        (await repoFor(FakeSessionEngine()).read(dir)).laneStems[(0, 0)],
+        [doubled, doubled, half],
+      );
+      // The overdub rewritten at the edit's length.
+      await File('$dir/track0_lane0_L0.wav').writeAsBytes(
+        WavCodec.encodeFloat32(
+          samples: half,
+          sampleRate: 48000,
+          channels: 1,
+        ),
+      );
+      await expectLater(
+        repoFor(FakeSessionEngine()).read(dir),
+        throwsA(
+          isA<SessionCorruptLayers>().having(
+            (e) => e.reason,
+            'reason',
+            'image 0 is 4 frames, its lineage gives 8',
+          ),
+        ),
+      );
+    });
+
+    test('read refuses a live length that is neither a whole multiple of '
+        'the base nor half or a quarter of it (#1244 L1)', () async {
+      Float32List frames(int n) => Float32List.fromList(List.filled(n, .5));
+      for (final (live, refused) in [
+        (6, true),
+        (3, true),
+        (2, false),
+        (1, false),
+        (8, false),
+      ]) {
+        // The base is the last seeded track's length: 4 frames.
+        final source = FakeSessionEngine()
+          ..seedTrack(1, frames(live))
+          ..seedTrack(0, frames(4));
+        final dir = '${tempDir.path}/live_$live';
+        await repoFor(source).save(dir, settings: const SessionSettings());
+        final read = repoFor(FakeSessionEngine()).read(dir);
+        if (refused) {
+          await expectLater(
+            read,
+            throwsA(
+              isA<SessionCorruptLayers>()
+                  .having((e) => e.channel, 'channel', 1)
+                  .having((e) => e.reason, 'reason', contains('base 4')),
+            ),
+          );
+        } else {
+          expect((await read).laneStems[(1, 0)]!.single.length, live);
+        }
+      }
+      // Free mode keeps independent lengths.
+      final free = FakeSessionEngine()
+        ..seedTrack(1, frames(6))
+        ..seedTrack(0, frames(4))
+        ..looperMode = LooperMode.free;
+      final dir = '${tempDir.path}/live_free';
+      await repoFor(free).save(dir, settings: const SessionSettings());
+      expect(
+        (await repoFor(FakeSessionEngine()).read(dir)).session.tracks,
+        hasLength(2),
+      );
+    });
+
+    test('save then read keeps a sub-bar grid in beats; a bar count that '
+        'disagrees with the beats is refused (#1168)', () async {
+      final source = edited()..loopBeats = 2;
+      final dir = '${tempDir.path}/beats';
+      await repoFor(source).save(dir, settings: const SessionSettings());
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.session.loopBeats, 2);
+      expect(bundle.session.loopBars, 0);
+      final file = File('$dir/${Session.manifestName}');
+      final manifest = jsonDecode(await file.readAsString()) as Map;
+      for (final (bars, beats) in [(1, 2), (0, 8), (0, -1)]) {
+        await file.writeAsString(
+          jsonEncode({...manifest, 'loopBars': bars, 'loopBeats': beats}),
+        );
+        await expectLater(
+          repoFor(FakeSessionEngine()).read(dir),
+          throwsFormatException,
+          reason: '$bars bars, $beats beats',
+        );
+      }
+      await file.writeAsString(
+        jsonEncode({...manifest, 'loopBars': 2, 'loopBeats': 8}),
+      );
+      expect(
+        (await repoFor(FakeSessionEngine()).read(dir)).session.loopBars,
+        2,
+      );
+    });
+
+    test('read refuses lanes of one track at different lengths', () async {
+      final dir = '${tempDir.path}/length_lanes';
+      await repoFor(edited()).save(dir, settings: const SessionSettings());
+      // A second lane whose three images are all 8 frames: a lineage of its
+      // own (each length edit names its image), but not lane 0's.
+      final file = File('$dir/${Session.manifestName}');
+      final manifest = jsonDecode(await file.readAsString()) as Map;
+      final lanes =
+          ((manifest['tracks'] as List).single as Map)['lanes'] as List;
+      final second = jsonDecode(jsonEncode(lanes.single)) as Map;
+      second['lane'] = 1;
+      second['layers'] = [
+        for (var o = 0; o < 3; o++) {'file': 'track0_lane1_L$o.wav'},
+      ];
+      lanes.add(second);
+      await file.writeAsString(jsonEncode(manifest));
+      for (var o = 0; o < 3; o++) {
+        await File('$dir/track0_lane1_L$o.wav').writeAsBytes(
+          WavCodec.encodeFloat32(
+            samples: doubled,
+            sampleRate: 48000,
+            channels: 1,
+          ),
+        );
+      }
+      await expectLater(
+        repoFor(FakeSessionEngine()).read(dir),
+        throwsA(
+          isA<SessionCorruptLayers>().having((e) => e.lane, 'lane', 1),
+        ),
+      );
+    });
+  });
+
   test('re-saving with fewer layers prunes the orphaned layer WAVs', () async {
     final dir = '${tempDir.path}/prune';
     // First save: a 3-layer history.

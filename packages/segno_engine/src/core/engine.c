@@ -499,6 +499,7 @@ static int le_engine_reset_material(le_engine* engine,
    * (tempo, signature, sync, granularity) persist, see le_engine_create. */
   engine->grid_total_beats = 0;
   store_i32(&engine->a_loop_bars, 0);
+  store_i32(&engine->a_loop_beats, 0);
   return 1;
 }
 
@@ -636,6 +637,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     atomic_store_explicit(&tr->a_clear_len, 0, memory_order_relaxed);
     atomic_store_explicit(&tr->a_clear_master_len, 0, memory_order_relaxed);
     tr->cancel_pending = 0;
+    tr->length_pending = 0; /* #1168: an unapplied edit dies with the ring */
     tr->depth_republish = 0;
     tr->pending_lane_trim = 0; /* #595: no un-route pending a post-drain trim */
     tr->state_cmds_posted = 0;
@@ -1558,6 +1560,7 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (code == LE_CMD_TRANSPOSE || code == LE_CMD_TRANSPOSE_BYPASS) {
     return LE_ERR_INVALID;
   }
+  if (code == LE_CMD_SET_LENGTH) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_CLICK_MODE) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_RECORD_START) return LE_ERR_INVALID;
   if (code == LE_CMD_SET_LOOPER_MODE) {

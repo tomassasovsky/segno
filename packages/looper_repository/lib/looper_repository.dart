@@ -20,6 +20,7 @@ export 'package:segno_engine/segno_engine.dart'
         HistoryKind,
         InputConditioningParam,
         LaneCacheState,
+        LengthEdit,
         LooperMode,
         LooperModeGate,
         PendingLaunchAction,

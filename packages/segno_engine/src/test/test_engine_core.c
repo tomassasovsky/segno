@@ -498,11 +498,44 @@ static void drain(le_engine* e) {
   process_const(e, 0.0f, 0, out); /* frames=0 just drains the ring */
 }
 
-/* le_engine_finalize_history over an all-overdub history: `undo` LAYER entries
- * beneath the live image and `redo` above it, the shape every layered import
- * from before #1164 rebuilds. */
+/* le_engine_finalize_history over `count` entries whose images all hold
+ * `len` frames, with no length-edit playhead maps (the shape of every import
+ * from before #1168). */
+static int32_t finalize_uniform(le_engine* e, int32_t ch, const int32_t* kinds,
+                                const int32_t* skipped, int32_t count,
+                                int32_t undo, int32_t len) {
+  static int32_t starts[2 * LE_POOL_SLOTS + 1];
+  static int32_t lens[2 * LE_POOL_SLOTS + 1];
+  int32_t images = undo + 1;
+  /* A negative split is a shape the engine refuses; never index with it. */
+  for (int32_t i = undo < 0 ? 0 : undo;
+       kinds != NULL && i < count && i < 2 * LE_POOL_SLOTS; ++i) {
+    if (kinds[i] != LE_HIST_PEEL) ++images;
+  }
+  if (images > 2 * LE_POOL_SLOTS + 1) images = 2 * LE_POOL_SLOTS + 1;
+  for (int32_t i = 0; i < 2 * LE_POOL_SLOTS + 1; ++i) {
+    starts[i] = 0;
+    lens[i] = len;
+  }
+  return le_engine_finalize_history(e, ch, kinds, skipped,
+                                    kinds != NULL ? starts : NULL, count, undo,
+                                    lens, images);
+}
+
+/* le_engine_export_history without the length edits' playhead maps. */
+static int32_t export_history(le_engine* e, int32_t ch, int32_t* kinds,
+                              int32_t* skipped, int32_t max,
+                              int32_t* undo_count) {
+  static int32_t starts[2 * LE_POOL_SLOTS];
+  return le_engine_export_history(e, ch, kinds, skipped, starts, max,
+                                  undo_count);
+}
+
+/* An all-overdub history: `undo` LAYER entries beneath the live image and
+ * `redo` above it, the shape every layered import from before #1164
+ * rebuilds. */
 static int32_t finalize_layer_history(le_engine* e, int32_t ch, int32_t undo,
-                                      int32_t redo) {
+                                      int32_t redo, int32_t len) {
   static int32_t kinds[2 * LE_POOL_SLOTS];
   static int32_t skipped[2 * LE_POOL_SLOTS];
   const int32_t count = undo + redo;
@@ -511,7 +544,7 @@ static int32_t finalize_layer_history(le_engine* e, int32_t ch, int32_t undo,
     kinds[i] = LE_HIST_LAYER;
     skipped[i] = 0;
   }
-  return le_engine_finalize_history(e, ch, kinds, skipped, count, undo);
+  return finalize_uniform(e, ch, kinds, skipped, count, undo, len);
 }
 
 /* Setup helpers explicitly publish structural commands before later import
@@ -5262,7 +5295,7 @@ static void test_session_import_restores_musical_grid_without_resizing(void) {
   float pcm[3500] = {0};
   pcm[2345] = 0.5f;
   CHECK(le_engine_import_track_lane(e, 0, 0, pcm, 3500) == LE_OK);
-  CHECK(le_engine_commit_session(e, 3500, 1) == LE_OK);
+  CHECK(le_engine_commit_session(e, 3500, 7) == LE_OK); /* one 7/8 bar */
   CHECK(le_engine_play(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_snapshot snapshot;
@@ -5270,6 +5303,7 @@ static void test_session_import_restores_musical_grid_without_resizing(void) {
   CHECK(snapshot.tempo_source == LE_TEMPO_SOURCE_TAPPED);
   CHECK(snapshot.ts_num == 7 && snapshot.ts_den == 8);
   CHECK(snapshot.loop_bars == 1); /* BPM counts denominator-note beats */
+  CHECK(snapshot.loop_beats == 7);
   CHECK(snapshot.master_length_frames == 3500);
   CHECK(snapshot.tracks[0].length_frames == 3500);
   float exported[3500];
@@ -5312,7 +5346,8 @@ static void test_session_import_preserves_actual_bar_count(void) {
     tg_advance(e, 1);
     CHECK(le_engine_restore_tempo(e, saved.tempo_bpm, saved.tempo_source) == LE_OK);
     CHECK(le_engine_import_track_lane(e, 0, 0, pcm, 100) == LE_OK);
-    CHECK(le_engine_commit_session(e, 100, saved.loop_bars) == LE_OK);
+    CHECK(saved.loop_beats == saved.loop_bars * saved.ts_num);
+    CHECK(le_engine_commit_session(e, 100, saved.loop_beats) == LE_OK);
     CHECK(le_engine_play(e, 0) == LE_OK);
     tg_advance(e, 1);
     le_snapshot restored;
@@ -5320,6 +5355,7 @@ static void test_session_import_preserves_actual_bar_count(void) {
     CHECK(restored.tempo_bpm == saved.tempo_bpm);
     CHECK(restored.tempo_source == saved.tempo_source);
     CHECK(restored.loop_bars == saved.loop_bars);
+    CHECK(restored.loop_beats == saved.loop_beats);
     CHECK(restored.master_length_frames == 100);
     float exported[100];
     CHECK(le_engine_export_track_lane(e, 0, 0, exported, 100) == 100);
@@ -6223,7 +6259,7 @@ static void test_commit_session_rebuilds_stale_grid(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.loop_bars == 2);
 
-  CHECK(le_engine_commit_session(e, 6000, 3) == LE_OK);
+  CHECK(le_engine_commit_session(e, 6000, 12) == LE_OK); /* 3 bars of 4 */
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.master_length_frames == 6000);
@@ -9200,7 +9236,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 9
+#define LE_TEST_EVENTS_VERSION 10
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -16275,7 +16311,7 @@ static void test_multi_lane_long_loop_dub_roundtrip(void) {
     CHECK(le_engine_import_layer(e, 0, 0, o, l0[o], len) == LE_OK);
     CHECK(le_engine_import_layer(e, 0, 1, o, l1[o], len) == LE_OK);
   }
-  CHECK(finalize_layer_history(e, 0, depth, 0) == LE_OK);
+  CHECK(finalize_layer_history(e, 0, depth, 0, len) == LE_OK);
   CHECK(le_engine_commit_session(e, len, 0) == LE_OK);
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
@@ -17285,7 +17321,7 @@ static void test_layer_export_import_roundtrip(void) {
   for (int o = 0; o < 3; ++o) {
     CHECK(le_engine_import_layer(e, 0, 0, o, layers[o], LOOP_N) == LE_OK);
   }
-  CHECK(finalize_layer_history(e, 0, 1, 1) == LE_OK);
+  CHECK(finalize_layer_history(e, 0, 1, 1, LOOP_N) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
@@ -17326,15 +17362,15 @@ static void test_layer_import_rejects_bad_reconstruction(void) {
   CHECK(le_engine_import_layer(e, 0, 0, LE_POOL_SLOTS, pcm, LOOP_N) ==
         LE_ERR_INVALID);
   /* A layer count past the pool cap is rejected. */
-  CHECK(finalize_layer_history(e, 0, LE_POOL_SLOTS, 0) == LE_ERR_INVALID);
+  CHECK(finalize_layer_history(e, 0, LE_POOL_SLOTS, 0, LOOP_N) == LE_ERR_INVALID);
   /* Finalizing a track with nothing staged (a_len 0) is rejected. */
-  CHECK(finalize_layer_history(e, 0, 0, 0) == LE_ERR_INVALID);
+  CHECK(finalize_layer_history(e, 0, 0, 0, LOOP_N) == LE_ERR_INVALID);
 
   /* Stage one layer, then a finalize claiming a missing second slot fails. */
   CHECK(le_engine_import_layer(e, 0, 0, 0, pcm, LOOP_N) == LE_OK);
-  CHECK(finalize_layer_history(e, 0, 1, 0) == LE_ERR_INVALID); /* slot 1 gone */
+  CHECK(finalize_layer_history(e, 0, 1, 0, LOOP_N) == LE_ERR_INVALID); /* slot 1 gone */
   /* The matching finalize (one live layer, no undo/redo) succeeds. */
-  CHECK(finalize_layer_history(e, 0, 0, 0) == LE_OK);
+  CHECK(finalize_layer_history(e, 0, 0, 0, LOOP_N) == LE_OK);
 
   le_engine_destroy(e);
 }
@@ -17385,7 +17421,7 @@ static void test_layer_multi_lane_roundtrip(void) {
     CHECK(le_engine_import_layer(e, 0, 0, o, l0[o], LOOP_N) == LE_OK);
     CHECK(le_engine_import_layer(e, 0, 1, o, l1[o], LOOP_N) == LE_OK);
   }
-  CHECK(finalize_layer_history(e, 0, 1, 0) == LE_OK);
+  CHECK(finalize_layer_history(e, 0, 1, 0, LOOP_N) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
@@ -17441,7 +17477,7 @@ static void test_layer_overdub_after_reload_no_corruption(void) {
   for (int o = 0; o < 3; ++o) {
     CHECK(le_engine_import_layer(e, 0, 0, o, layers[o], LOOP_N) == LE_OK);
   }
-  CHECK(finalize_layer_history(e, 0, 1, 1) == LE_OK);
+  CHECK(finalize_layer_history(e, 0, 1, 1, LOOP_N) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
@@ -17512,7 +17548,7 @@ static void test_layer_reconstruct_two_redo(void) {
   for (int o = 0; o < 4; ++o) {
     CHECK(le_engine_import_layer(e, 0, 0, o, layers[o], LOOP_N) == LE_OK);
   }
-  CHECK(finalize_layer_history(e, 0, 1, 2) == LE_OK);
+  CHECK(finalize_layer_history(e, 0, 1, 2, LOOP_N) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
@@ -18228,7 +18264,7 @@ static void test_record_image_punch_in_preserves_history(void) {
         for (int i = 0; i < 1024; ++i) pcm[i] = value;
         CHECK(le_engine_import_layer(e, 0, 0, layer, pcm, 1024) == LE_OK);
       }
-      CHECK(finalize_layer_history(e, 0, 1, 1) == LE_OK);
+      CHECK(finalize_layer_history(e, 0, 1, 1, 1024) == LE_OK);
       CHECK(le_engine_commit_session(e, 1024, 0) == LE_OK);
       CHECK(le_engine_play(e, 0) == LE_OK);
       CHECK(timing_gate(e, quantized) == LE_OK);
@@ -18685,13 +18721,13 @@ static le_engine* capture_guard_layered_fixture(void) {
   }
   CHECK(le_engine_import_layer(e, 0, 0, 0, a, LOOP_N) == LE_OK);
   CHECK(le_engine_import_layer(e, 0, 0, 1, a, LOOP_N) == LE_OK);
-  CHECK(finalize_layer_history(e, 0, 1, 0) == LE_OK);
+  CHECK(finalize_layer_history(e, 0, 1, 0, LOOP_N) == LE_OK);
   drain(e);
   CHECK(load_i32(&e->tracks[0].lanes[0].a_live) == 1);
   CHECK(le_engine_import_track(e, 0, a, LOOP_N) == LE_OK);
   CHECK(e->tracks[0].lanes[0].pool_cap[1] == e->max_loop_frames);
   CHECK(le_engine_import_layer(e, 0, 0, 2, b, LOOP_N) == LE_OK);
-  CHECK(finalize_layer_history(e, 0, 2, 0) == LE_OK);
+  CHECK(finalize_layer_history(e, 0, 2, 0, LOOP_N) == LE_OK);
   CHECK(le_engine_commit_session(e, LOOP_N, 0) == LE_OK);
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
@@ -35433,6 +35469,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_peel.h"
 #include "test_engine_tuner.h"
 #include "test_engine_midi_in.h"
+#include "test_engine_length.h"
 
 int main(void) {
   if (getenv("SEGNO_FADE_STAGING_TESTS_ONLY")) {
@@ -35461,6 +35498,7 @@ int main(void) {
   test_reopen_pending_state_drops_track();
   test_reopen_files_two_complete_passes();
   test_reopen_keeps_peel_history();
+  test_reopen_keeps_length_history();
   test_reopen_fewer_channels_keeps_material();
   test_reopen_device_lifecycle();
   test_reopen_ends_performance_capture();
@@ -35491,6 +35529,8 @@ int main(void) {
   if (getenv("SEGNO_HISTORY_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_peel_tests();
   if (getenv("SEGNO_PEEL_TESTS_ONLY")) return g_failures ? 1 : 0;
+  run_length_tests();
+  if (getenv("SEGNO_LENGTH_TESTS_ONLY")) return g_failures ? 1 : 0;
   test_record_start_owned_cancel_survives_queued_pair();
   test_record_start_capture_and_no_source_refusal();
   test_record_start_selected_source_triggers();

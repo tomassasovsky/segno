@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -412,6 +414,89 @@ class _BalanceControl extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The edited track's Solo, in the editor's titlebar (pen `Track Solo while
+/// editing FX`): the player hears the track on its own while shaping its
+/// effects, without leaving the editor.
+///
+/// The same Solo as the Mixer strip's: a toggle event on the track, read back
+/// from the rig, so a Solo set here shows on the Mixer and the other way
+/// round. Absent for every destination that is not one recorded track (a live
+/// input, All tracks, an output), since only a track has a Solo.
+class FxTrackSolo extends StatelessWidget {
+  /// Creates an [FxTrackSolo] for [destination].
+  const FxTrackSolo({required this.destination, super.key});
+
+  /// What the editor is editing.
+  final FxDestination destination;
+
+  /// The pen's chip: 49 by 24, 16 pt label.
+  static const double width = 49;
+  static const double height = 24;
+
+  @override
+  Widget build(BuildContext context) {
+    if (destination.kind != FxDestinationKind.recordedTrack ||
+        destination.isAllTracks) {
+      return const SizedBox.shrink();
+    }
+    final channel = destination.index;
+    final soloed = context.select<LooperBloc, bool>((bloc) {
+      final tracks = bloc.state.tracks;
+      return channel < tracks.length && tracks[channel].solo;
+    });
+    final l10n = context.l10n;
+    final surface = context.surface;
+    void toggle() =>
+        context.read<LooperBloc>().add(LooperTrackSoloToggled(channel));
+    return Semantics(
+      button: true,
+      selected: soloed,
+      label: soloed
+          ? l10n.a11yMixerUnsolo(channel + 1)
+          : l10n.a11yMixerSolo(channel + 1),
+      excludeSemantics: true,
+      child: LoopFocusable(
+        onActivate: toggle,
+        child: Material(
+          key: const Key('fx_track_solo'),
+          color: soloed ? surface.accent : surface.card,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(
+              color: soloed ? surface.accent : surface.borderStrong,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            canRequestFocus: false,
+            onTap: toggle,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: AppText(
+                    l10n.mixerSolo,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontFamily: SurfaceTheme.displayFont,
+                      fontSize: 16,
+                      height: 1,
+                      color: soloed ? surface.onAccent : surface.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

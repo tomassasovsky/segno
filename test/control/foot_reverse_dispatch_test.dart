@@ -39,6 +39,12 @@ class _Engine extends FakeAudioEngine {
   var _request = 0;
   bool refuse = false;
 
+  /// What the callback's receipt reports for an admitted toggle.
+  EngineResult receipt = EngineResult.ok;
+
+  /// While set, no receipt is published yet: the toggle stays pending.
+  bool holdReceipts = false;
+
   void publish() => nextSnapshot = nextSnapshot.copyWith(
     tracks: [
       for (var channel = 0; channel < 8; channel++)
@@ -68,13 +74,14 @@ class _Engine extends FakeAudioEngine {
     if (!reversedTracks.remove(channel)) reversedTracks.add(channel);
     publish();
     final request = ++_request;
-    _results[request] = EngineResult.ok;
+    _results[request] = receipt;
     return (result: EngineResult.ok, request: request);
   }
 
   @override
-  EngineResult? readRequestResult(int request) =>
-      _results.remove(request) ?? super.readRequestResult(request);
+  EngineResult? readRequestResult(int request) => holdReceipts
+      ? null
+      : _results.remove(request) ?? super.readRequestResult(request);
 
   /// A punch-in on a reversed track is refused, as the engine refuses it.
   @override
@@ -576,19 +583,70 @@ void main() {
           await _pump(const Duration(milliseconds: 30));
         }
 
-        // Track 3 is empty: nothing turns, and the stomp says so.
+        // Track 3 is empty: nothing turns, and the stomp names the empty
+        // track rather than offering a retry.
         await stomp(PedalButton.clear);
         expect(rig.engine.toggles, isEmpty);
         expect(rig.control.state.footReverseFailure, 1);
-        // An engine refusal says so too; an accepted toggle does not.
+        expect(rig.control.state.footReverseRefusedEmpty, 1);
+        // An engine refusal on a recorded track says so too, with the retry;
+        // an accepted toggle does not.
         rig.engine.refuse = true;
         await stomp(PedalButton.undo);
         expect(rig.control.state.footReverseFailure, 2);
+        expect(rig.control.state.footReverseRefusedEmpty, 0);
         rig.engine.refuse = false;
         await stomp(PedalButton.undo);
         expect(rig.engine.toggles, [4]);
         expect(rig.control.state.footReverseFailure, 2);
         expect(rig.control.state.mode, InteractionMode.custom);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('an assigned refusal that lands after the Session changed shows no '
+        'notice', () async {
+      final rig = _Rig();
+      try {
+        await rig.poll();
+        await rig.control.setPedalSetup(
+          const PedalSetup().withCustom(
+            PedalButton.undo,
+            bank: 0,
+            pair: const ControlGesturePair(press: fixed),
+          ),
+        );
+        rig.control.setMode(InteractionMode.custom);
+        rig.engine
+          ..receipt = EngineResult.invalid
+          ..holdReceipts = true;
+        Future<void> stomp() async {
+          rig.link.press(PedalButton.undo, down: true);
+          await _pump(const Duration(milliseconds: 50));
+          rig.link.press(PedalButton.undo, down: false);
+          await _pump(const Duration(milliseconds: 30));
+        }
+
+        Future<void> land() async {
+          rig.engine.holdReceipts = false;
+          await _pump(const Duration(milliseconds: 40));
+          rig.engine.holdReceipts = true;
+        }
+
+        // The control: a refused receipt in the same Session is reported.
+        await stomp();
+        expect(rig.control.state.footReverseFailure, 0, reason: 'pending');
+        await land();
+        expect(rig.engine.toggles, [4]);
+        expect(rig.control.state.footReverseFailure, 1);
+        // The same refusal, landing after a Session load began, belongs to
+        // the Session that is gone.
+        await stomp();
+        expect(rig.engine.toggles, [4, 4]);
+        unawaited(rig.looper.applySession(const SessionRig()));
+        await land();
+        expect(rig.control.state.footReverseFailure, 1);
       } finally {
         await rig.close();
       }

@@ -90,6 +90,19 @@ enum EngineResult {
 /// [LooperTransport.readRequestResult].
 typedef RequestAdmission = ({EngineResult result, int request});
 
+/// One length edit of a track's material (#1168).
+enum LengthEdit {
+  /// Repeats the material: twice the length.
+  doubled,
+
+  /// Keeps the first half, `ceil(length / 2)` frames.
+  firstHalf,
+
+  /// Keeps the last half, `ceil(length / 2)` frames; an odd length's halves
+  /// share the middle frame.
+  lastHalf,
+}
+
 /// What [EngineLifecycle.reopen] did with the recorded material.
 ///
 /// Mirrors the native `le_reopen_outcome`. [retained] and [retainedPartial]
@@ -358,8 +371,19 @@ abstract interface class LooperTransport {
   /// it; admitted whenever the engine is configured.
   RequestAdmission setTransposeBypass({required bool bypassed});
 
-  /// Consumes a completed Fade, Reverse, Speed or Transpose callback result;
-  /// null means still pending.
+  /// Queues a length edit of track [channel] (#1168): one recoverable history
+  /// entry, applied by the callback with its image, length and clock in one
+  /// block; the playhead keeps its phase. Refused before any change with
+  /// [EngineResult.modeMismatch] when the length would not fit the looper
+  /// mode (a track holding the rig's only content re-clocks it instead, at
+  /// the same tempo, refused when that would leave a fractional bar count),
+  /// [EngineResult.capacity] past the loop cap, [EngineResult.invalid] for a
+  /// track that is not playing or stopped and [EngineResult.notReady] while
+  /// it captures, drains or has an arm, launch or pending command.
+  RequestAdmission editLength({required int channel, required LengthEdit edit});
+
+  /// Consumes a completed Fade, Reverse, Speed, Transpose or length callback
+  /// result; null means still pending.
   EngineResult? readRequestResult(int request);
 
   /// Halts track [channel]'s playback, retaining the loop buffer.
@@ -1328,8 +1352,9 @@ abstract interface class SessionIo {
   /// argument. Ordinals run oldest→newest: `[0, undoCount)` are the undo
   /// snapshots, `undoCount` is the live buffer, then the redo snapshots; a
   /// redo-side Peel marker holds no image and takes no ordinal
-  /// ([exportHistory], [TrackHistory.imageCount]). Read-only — call when not
-  /// capturing.
+  /// ([exportHistory], [TrackHistory.imageCount]). Each image comes back at
+  /// its own length: a length edit's images differ from the live one
+  /// (#1168). Read-only — call when not capturing.
   Float32List exportLayer(int channel, int lane, int ordinal);
 
   /// Lists track [channel]'s history in image-ordinal order with its raw
@@ -1354,17 +1379,27 @@ abstract interface class SessionIo {
 
   /// Publishes a track reconstructed via [importLayer] with its [history]
   /// ([exportHistory] order): rebuilds the undo/redo stacks with their kinds
-  /// and points playback at the live image (ordinal
-  /// [TrackHistory.undoCount]), every active lane in lockstep.
-  /// [TrackHistory.imageCount] images must already be staged on every active
-  /// lane at one length. Returns [EngineResult.invalid] for a non-empty
-  /// track, a history the engine could not hold ([TrackHistory.malformation]),
-  /// or a torn (missing-image or mismatched-length) reconstruction.
-  EngineResult finalizeHistory(int channel, TrackHistory history);
+  /// and playhead maps and points playback at the live image (ordinal
+  /// [TrackHistory.undoCount]) at its length, every active lane in lockstep.
+  /// [imageLengths] gives each image's length in frames by ordinal (#1168);
+  /// [TrackHistory.imageCount] images must already be staged at those
+  /// lengths on every active lane. Returns [EngineResult.invalid] for a
+  /// non-empty track, a history the engine could not hold
+  /// ([TrackHistory.malformation]), lengths its lineage does not give
+  /// ([TrackHistory.lengthMalformation]), or a torn (missing or short image)
+  /// reconstruction.
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  });
 
   /// Establishes the master loop at [baseFrames] and leaves every imported
-  /// track stopped at its whole-loop multiple. Launch with [AudioEngine.play].
-  EngineResult commitSession(int baseFrames, {required int loopBars});
+  /// track stopped at its whole-loop multiple. Restores exactly [loopBeats]
+  /// beats (denominator notes) over the loop, `0` for a grid-free loop; a
+  /// whole-bar loop passes its bars times the signature's numerator (#1168).
+  /// Launch with [AudioEngine.play].
+  EngineResult commitSession(int baseFrames, {required int loopBeats});
 }
 
 /// Discovery of installed VST3 / CLAP plugins (umbrella D-SCAN).

@@ -206,6 +206,12 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult installReverseResult = EngineResult.ok;
 
   @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) => (result: EngineResult.invalid, request: 0);
+
+  @override
   RequestAdmission installReverse({
     required int channel,
     required bool reversed,
@@ -372,6 +378,7 @@ class FakeAudioEngine implements AudioEngine {
       importedLanes.removeWhere((key, _) => key.$1 == channel);
       importedLayers.removeWhere((key, _) => key.$1 == channel);
       finalizedHistory.remove(channel);
+      finalizedLengths.remove(channel);
       final tracks = [..._nextSnapshot.tracks];
       tracks[channel] = const TrackSnapshot.empty();
       _nextSnapshot = _nextSnapshot.copyWith(
@@ -1545,6 +1552,9 @@ class FakeAudioEngine implements AudioEngine {
   /// The history passed to [finalizeHistory], keyed by channel.
   final Map<int, TrackHistory> finalizedHistory = {};
 
+  /// The image lengths passed to [finalizeHistory], keyed by channel.
+  final Map<int, List<int>> finalizedLengths = {};
+
   /// Result returned by [importLayer] once any [importFailCountdown] is spent.
   EngineResult importResult = EngineResult.ok;
 
@@ -1600,19 +1610,28 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) {
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) {
     calls.add('finalizeHistory');
     finalizedHistory[channel] = history;
+    finalizedLengths[channel] = imageLengths;
     return EngineResult.ok;
   }
 
   /// Base frames passed to the last [commitSession].
   int? committedBaseFrames;
 
+  /// Grid beats passed to the last [commitSession].
+  int? committedLoopBeats;
+
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     calls.add('commitSession');
     committedBaseFrames = baseFrames;
+    committedLoopBeats = loopBeats;
     final tracks = [..._nextSnapshot.tracks];
     for (final entry in importedTracks.entries) {
       final finalized = finalizedHistory[entry.key];
@@ -1623,7 +1642,10 @@ class FakeAudioEngine implements AudioEngine {
         reversed: installedReverses[entry.key] ?? false,
         volume: 1,
         muted: false,
-        lengthFrames: entry.value.length,
+        // The live image's length: a length edit's images differ (#1168).
+        lengthFrames:
+            importedLayers[(entry.key, 0, finalized.undoCount)]?.length ??
+            entry.value.length,
         undoDepth: finalized.undoCount,
         redoDepth: finalized.redoCount,
         rms: 0,
@@ -2057,6 +2079,7 @@ class _LengthSnapshot extends EngineSnapshot {
         syncTempo: source.syncTempo,
         quantizeDiv: engine.lastQuantizeDiv ?? source.quantizeDiv,
         loopBars: source.loopBars,
+        loopBeats: source.loopBeats,
         currentBeat: source.currentBeat,
         clickMode: source.clickMode,
         clickModeRevision: source.clickModeRevision,
@@ -2114,6 +2137,8 @@ class _LengthTrack extends TrackSnapshot {
         clearRestore: source.clearRestore,
         redoDepth: source.redoDepth,
         multiple: source.multiple,
+        syncDivisor: source.syncDivisor,
+        lengthHistoryRefusals: source.lengthHistoryRefusals,
         inputMask: source.inputMask,
         outputMask: source.outputMask,
         layerInFlight: source.layerInFlight,

@@ -224,11 +224,14 @@ class FakePerformanceEngine implements AudioEngine {
   TrackHistory exportHistory(int channel) => TrackHistory.none;
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) =>
-      EngineResult.ok;
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) => EngineResult.ok;
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) =>
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) =>
       EngineResult.ok;
 
   @override
@@ -415,6 +418,12 @@ class FakePerformanceEngine implements AudioEngine {
   @override
   RequestAdmission toggleReverse({required int channel}) =>
       (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) => (result: EngineResult.invalid, request: 0);
 
   @override
   RequestAdmission installReverse({

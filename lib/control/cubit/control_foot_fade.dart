@@ -71,6 +71,11 @@ extension _FootFadeControl on ControlCubit {
         _looper.sessionRevision != session) {
       return;
     }
-    emit(state.copyWith(footFadeFailure: state.footFadeFailure + 1));
+    emit(
+      state.copyWith(
+        footFadeFailure: state.footFadeFailure + 1,
+        footFadeRefusedEmpty: 0,
+      ),
+    );
   }
 }
