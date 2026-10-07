@@ -14,6 +14,7 @@ class SessionPreview {
     required this.fxCount,
     required this.sampleRate,
     this.backingCount = 0,
+    this.hasMixdown = false,
   });
 
   /// The catalog row this preview belongs to.
@@ -31,6 +32,10 @@ class SessionPreview {
 
   /// Prepared backing files; always 0 until the backing player exists.
   final int backingCount;
+
+  /// Whether the bundle holds a `mixdown.wav` for Listen. A session whose
+  /// mix is empty (no tracks, or every lane muted) has none.
+  final bool hasMixdown;
 }
 
 /// One populated track in a [SessionPreview].

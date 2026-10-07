@@ -554,6 +554,11 @@ typedef enum le_command_code {
   LE_CMD_BACKING_CLEAR = 90,      /* unload current and staged */
   LE_CMD_BACKING_TRANSPORT = 91,  /* arg_i = le_backing_transport_op */
   LE_CMD_BACKING_SEEK = 92,       /* arg_i = frame of the loaded buffer */
+  /* ---- Library audition voice (#1178; 136-137 in the numbering ledger).
+   * Typed producers only (le_engine_audition_*): START carries an owned
+   * buffer pointer, so raw posts are refused. Never perf-logged. */
+  LE_CMD_AUDITION_START = 136, /* buffer + output pair */
+  LE_CMD_AUDITION_STOP = 137,
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -2546,6 +2551,63 @@ typedef struct le_backing_state {
  * on NULL arguments. */
 LE_EXPORT int32_t le_engine_backing_state(le_engine* engine,
                                           le_backing_state* out);
+
+/* ---- Library audition voice (#1178) ----
+ * One preview voice for the Library's Listen, isolated from the rig. It plays
+ * an engine-rate stereo le_backing_buffer once, from frame 0, into one output
+ * pair, summed AFTER the output-bus loop and BEFORE the master bus: no
+ * destination's chain, level or mute touches it, the performance capture
+ * (tapped inside the output buses) never contains it, it is never
+ * perf-logged, so stems, the offline master and loop takes never contain it,
+ * and only the master gain and the limiter shape it. It does not loop.
+ *
+ * A preview is decoded by the app's one decoder as a bounded read:
+ * le_backing_decode_file(path, rate, 0, LE_AUDITION_MAX_SECONDS * rate, ...)
+ * keeps the first LE_AUDITION_MAX_SECONDS of a longer file and sets
+ * info.truncated.
+ *
+ * Buffers are the backing player's type and follow its ownership rules: the
+ * caller owns a buffer until le_engine_audition_start accepts it; the
+ * callback hands back a buffer it will never read again (replaced, stopped,
+ * ended, cleared by a performance arm or Cut sound) and the control thread
+ * frees it in le_engine_audition_state (the collect point), before every
+ * start, at configure, at reopen and at destroy, never on the audio thread.
+ * At most LE_AUDITION_MAX_BUFFERS are engine-owned at once, so a start that
+ * replaces a playing preview while the one before it is not yet handed back
+ * reads LE_ERR_NOT_READY; retry after one block. */
+#define LE_AUDITION_MAX_SECONDS 120
+#define LE_AUDITION_MAX_BUFFERS 2
+
+/* Starts [buffer] from frame 0 into output pair [bus] at the next block,
+ * replacing a preview already playing (no fade). LE_ERR_INVALID: NULL, a
+ * buffer the engine already owns, a rate other than the engine's, more than
+ * LE_AUDITION_MAX_SECONDS of frames, a bus outside 0..LE_MAX_OUTPUT_BUSES-1
+ * or one the open device has no channels for, or the command ring full.
+ * LE_ERR_NOT_RUNNING: not configured. LE_ERR_ALREADY_RUNNING: a performance
+ * capture is armed. LE_ERR_NOT_READY: LE_AUDITION_MAX_BUFFERS already owned.
+ * On every refusal the caller still owns the buffer. A start that reaches
+ * the callback after a performance arm (posted between the arm and its
+ * apply) never sounds: the callback hands the buffer back unplayed. */
+LE_EXPORT int32_t le_engine_audition_start(le_engine* engine,
+                                           le_backing_buffer* buffer,
+                                           int32_t bus);
+/* Silences the preview at the next block (no fade). A no-op when none
+ * plays. */
+LE_EXPORT int32_t le_engine_audition_stop(le_engine* engine);
+
+typedef struct le_audition_state {
+  uint32_t epoch;   /* bumps at configure and at every reopen */
+  int32_t frames;   /* the playing preview's length, 0 when none plays */
+  int32_t position; /* frames played of it */
+  int32_t bus;      /* its output pair, -1 when none plays */
+  int32_t owned;    /* buffers the engine owns after this collect */
+} le_audition_state;
+
+/* Reads the published state (as of the last processed block) and frees every
+ * buffer the audio thread has handed back. Control thread. LE_ERR_INVALID on
+ * NULL arguments. */
+LE_EXPORT int32_t le_engine_audition_state(le_engine* engine,
+                                           le_audition_state* out);
 
 /* Enqueues a coherent Count-in/Sound-start pair. Bars must be 0, 1, 2 or 4;
  * sound_start must be 0/1 and cannot be enabled with positive bars. Actual

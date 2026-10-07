@@ -11,6 +11,7 @@ export 'src/audio_engine.dart'
         AudioEngine,
         BackingControl,
         EffectsControl,
+        EngineAudition,
         EngineException,
         EngineLifecycle,
         EngineMetering,
@@ -28,6 +29,8 @@ export 'src/audio_engine.dart'
         RequestAdmission,
         SessionIo,
         TempoControl;
+export 'src/audition.dart'
+    show AuditionStart, AuditionState, kAuditionMaxSeconds;
 export 'src/backing.dart'
     show
         AudioDecoder,
