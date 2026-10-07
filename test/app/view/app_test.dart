@@ -930,7 +930,8 @@ void main() {
       await tester.pump();
       expect(await settings.loadTrackFxChain(0), isNull);
       final power = tracksContext.read<PowerOffCubit>()
-        ..press(const PowerOffSnapshot());
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await tester.pump();
       // No virtual time has elapsed: shutdown, not the debounce timer,
       // must begin the edit's persistence and await it before goodbye.
@@ -991,7 +992,8 @@ void main() {
           } else if (recovery == 'Power') {
             final context = tester.element(find.byType(TracksView));
             final power = context.read<PowerOffCubit>()
-              ..press(const PowerOffSnapshot());
+              ..press(const PowerOffSnapshot())
+              ..confirmPowerOff(const PowerOffSnapshot());
             await tester.pumpAndSettle();
             expect(halted, isFalse);
             store.values.remove('looper.fade_durations');
@@ -1033,7 +1035,9 @@ void main() {
       unawaited(tempo.setClickVolume(1.5));
       await tester.pump();
       expect(store.writeEntered, isTrue);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await tester.pump(const Duration(milliseconds: 100));
       expect(power.state.phase, PowerOffPhase.flushing);
       expect(halted, isFalse);
@@ -1064,7 +1068,9 @@ void main() {
       await tester.pump();
       // The owed rollback makes Click unavailable until Retry.
       expect(tempo.state.confirmedClickVolume, isNull);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await tester.pumpAndSettle();
       expect(power.state.phase, PowerOffPhase.flushFailed);
       expect(find.text('Settings could not be confirmed'), findsOneWidget);
@@ -1131,7 +1137,9 @@ void main() {
       midi.push(127);
       await tester.pumpAndSettle();
       expect(tempo.state.confirmedClickVolume, 1.5);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await tester.pumpAndSettle();
       expect(power.state.phase, PowerOffPhase.goodbye);
       expect(tempo.state.confirmedClickVolume, .25);
@@ -1783,7 +1791,9 @@ void main() {
         unawaited(tempo.setSoundStart(enabled: true));
         await tester.pump();
         expect(store.writeEntered, isTrue);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(const PowerOffSnapshot())
+          ..confirmPowerOff(const PowerOffSnapshot());
         await tester.pump(const Duration(milliseconds: 100));
         expect(power.state.phase, PowerOffPhase.flushing);
         expect(haltCalls, 0);
@@ -1827,7 +1837,9 @@ void main() {
         expect(tempo.state.confirmedRecordStart?.countInBars, 1);
         expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
         expect(tempo.state.recordStartSnapshot, isNull);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(const PowerOffSnapshot())
+          ..confirmPowerOff(const PowerOffSnapshot());
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerOffPhase.flushFailed);
         expect(haltCalls, 0);
@@ -1891,7 +1903,9 @@ void main() {
       expect(store.values.containsKey('tempo.count_in_bars'), isFalse);
       expect(store.values.containsKey('looper.auto_record'), isFalse);
       expect(repository.recordStartRecoveryRequired, isFalse);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await tester.pumpAndSettle();
       expect(power.state.phase, PowerOffPhase.goodbye);
       await tester.pump(const Duration(seconds: 6));
@@ -1947,7 +1961,9 @@ void main() {
       unawaited(tempo.setClickMode(ClickMode.playRec));
       await tester.pump();
       expect(store.writeEntered, isTrue);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await tester.pump(const Duration(milliseconds: 100));
       expect(power.state.phase, PowerOffPhase.flushing);
       expect(haltCalls, 0);
@@ -1983,7 +1999,9 @@ void main() {
         await tester.pumpAndSettle();
         expect(tempo.state.clickMode, ClickMode.recFirst);
         expect(tempo.state.clickModeSnapshot, isNull);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(const PowerOffSnapshot())
+          ..confirmPowerOff(const PowerOffSnapshot());
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerOffPhase.flushFailed);
         expect(haltCalls, 0);
@@ -2141,7 +2159,9 @@ void main() {
       expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
       expect(store.values.containsKey('tempo.click_mode'), isFalse);
       expect(repository.clickModeRecoveryRequired, isFalse);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await tester.pumpAndSettle();
       expect(power.state.phase, PowerOffPhase.goodbye);
       await tester.pump(const Duration(seconds: 6));
@@ -2222,7 +2242,9 @@ void main() {
             expect(tempo.state.clickMode, ClickMode.playRec);
           }
           final stopCalls = engine.stopCalls;
-          power.press(const PowerOffSnapshot());
+          power
+            ..press(const PowerOffSnapshot())
+            ..confirmPowerOff(const PowerOffSnapshot());
           await tester.pumpAndSettle();
           expect(power.state.phase, PowerOffPhase.flushFailed);
           expect(haltCalls, 0);
@@ -2277,7 +2299,9 @@ void main() {
         }
         await tester.pump();
         expect(store.writeEntered, isTrue);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(const PowerOffSnapshot())
+          ..confirmPowerOff(const PowerOffSnapshot());
         await tester.pump(const Duration(milliseconds: 100));
         expect(power.state.phase, PowerOffPhase.flushing);
         expect(halted, isFalse);
@@ -2313,7 +2337,9 @@ void main() {
         unawaited(timing.setTiming(RecordTiming.half));
         await tester.pumpAndSettle();
         expect(timing.state.defaultTiming, RecordTiming.immediately);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(const PowerOffSnapshot())
+          ..confirmPowerOff(const PowerOffSnapshot());
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerOffPhase.flushFailed);
         expect(halted, isFalse);
@@ -2374,7 +2400,9 @@ void main() {
         }
         await tester.pump();
         expect(store.writeEntered, isTrue);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(const PowerOffSnapshot())
+          ..confirmPowerOff(const PowerOffSnapshot());
         await tester.pump(const Duration(milliseconds: 100));
         expect(power.state.phase, PowerOffPhase.flushing);
         expect(halted, isFalse);
@@ -2409,7 +2437,9 @@ void main() {
         await tester.pumpAndSettle();
         expect(decay.state.overdubDecay, 0);
         expect(debugAppToastActive(AppToastId.decaySettings), isTrue);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(const PowerOffSnapshot())
+          ..confirmPowerOff(const PowerOffSnapshot());
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerOffPhase.flushFailed);
         expect(debugAppToastActive(AppToastId.decaySettings), isFalse);
@@ -2471,7 +2501,9 @@ void main() {
           onceStore.values.containsKey('looper.default_one_shot'),
           isFalse,
         );
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(const PowerOffSnapshot())
+          ..confirmPowerOff(const PowerOffSnapshot());
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerOffPhase.goodbye);
         await tester.pump(const Duration(seconds: 6));
@@ -2536,7 +2568,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(decay.state.overdubDecay, 80);
       expect(decay.state.trackOverdubDecayOverrides, {7: 75});
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await tester.pumpAndSettle();
       expect(power.state.phase, PowerOffPhase.goodbye);
       expect(decay.state.overdubDecay, 20);
@@ -2578,7 +2612,9 @@ void main() {
         }
         await tester.pump();
         expect(store.writeEntered, isTrue);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(const PowerOffSnapshot())
+          ..confirmPowerOff(const PowerOffSnapshot());
         await tester.pump(const Duration(milliseconds: 100));
         expect(power.state.phase, PowerOffPhase.flushing);
         expect(halted, isFalse);
@@ -2612,7 +2648,9 @@ void main() {
         unawaited(once.setDefaultOneShot(value: true));
         await tester.pumpAndSettle();
         expect(once.state.defaultOneShot, isFalse);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(const PowerOffSnapshot())
+          ..confirmPowerOff(const PowerOffSnapshot());
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerOffPhase.flushFailed);
         expect(find.text('Settings could not be confirmed'), findsOneWidget);
@@ -2699,7 +2737,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(once.state.defaultOneShot, isTrue);
       expect(once.state.trackOneShotOverrides, {7: true});
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await tester.pumpAndSettle();
       expect(power.state.phase, PowerOffPhase.goodbye);
       expect(once.state.defaultOneShot, isFalse);
@@ -2742,7 +2782,9 @@ void main() {
         }
         await tester.pump();
         expect(store.writeEntered, isTrue);
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(const PowerOffSnapshot())
+          ..confirmPowerOff(const PowerOffSnapshot());
         await tester.pump(const Duration(milliseconds: 100));
         expect(power.state.phase, PowerOffPhase.flushing);
         expect(halted, isFalse);
@@ -2779,7 +2821,9 @@ void main() {
           unawaited(length.setDefaultLengthBars(4));
           await tester.pumpAndSettle();
           expect(length.state.options.defaultLengthBars, 0);
-          power.press(const PowerOffSnapshot());
+          power
+            ..press(const PowerOffSnapshot())
+            ..confirmPowerOff(const PowerOffSnapshot());
           await tester.pumpAndSettle();
           expect(power.state.phase, PowerOffPhase.flushFailed);
           expect(find.text('Settings could not be confirmed'), findsOneWidget);
@@ -2835,7 +2879,9 @@ void main() {
       // The write was refused and its rollback landed: nothing is owed.
       expect(length.state.options.defaultLengthBars, 0);
       expect(store.values.containsKey('looper.default_length_bars'), isFalse);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await tester.pumpAndSettle();
       expect(power.state.phase, PowerOffPhase.goodbye);
       await tester.pump(const Duration(seconds: 6));
@@ -2879,7 +2925,9 @@ void main() {
       expect(store.values.containsKey('looper.quantize'), isFalse);
       expect(store.values.containsKey('tempo.quantize_div'), isFalse);
       expect(repository.recordTimingRecoveryRequired, isFalse);
-      power.press(const PowerOffSnapshot());
+      power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await tester.pumpAndSettle();
       expect(power.state.phase, PowerOffPhase.goodbye);
       expect(find.byKey(const Key('power_off_retry')), findsNothing);
@@ -2967,7 +3015,9 @@ void main() {
             expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
           }
           final stopCalls = engine.stopCalls;
-          power.press(const PowerOffSnapshot());
+          power
+            ..press(const PowerOffSnapshot())
+            ..confirmPowerOff(const PowerOffSnapshot());
           await tester.pumpAndSettle();
           expect(power.state.phase, PowerOffPhase.flushFailed);
           expect(find.byKey(const Key('power_off_retry')), findsOneWidget);
@@ -3128,6 +3178,10 @@ void main() {
         expect(engine.stopCalls, stopCalls);
         key.press();
         await tester.pumpAndSettle();
+        expect(power.state.phase, PowerOffPhase.confirmEmpty);
+        expect(halted, isFalse);
+        await tester.tap(find.byKey(const Key('power_off_confirm')));
+        await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 3));
         expect(halted, isTrue);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -3257,6 +3311,10 @@ void main() {
         expect(engine.stopCalls, stopCalls);
         key.press();
         await tester.pumpAndSettle();
+        expect(power.state.phase, PowerOffPhase.confirmEmpty);
+        expect(halted, isFalse);
+        await tester.tap(find.byKey(const Key('power_off_confirm')));
+        await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 3));
         expect(halted, isTrue);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -3324,7 +3382,9 @@ void main() {
         await tester.pumpAndSettle();
         expect(length.state.options.defaultLengthBars, 4);
         expect(length.state.options.trackLengthPresetOverrides, {7: 4});
-        power.press(const PowerOffSnapshot());
+        power
+          ..press(const PowerOffSnapshot())
+          ..confirmPowerOff(const PowerOffSnapshot());
         await tester.pumpAndSettle();
         expect(power.state.phase, PowerOffPhase.goodbye);
         expect(length.state.options.defaultLengthBars, 0);
@@ -4259,7 +4319,8 @@ void main() {
 
       final power =
           tester.element(find.byType(LooperPage)).read<PowerOffCubit>()
-            ..press(const PowerOffSnapshot());
+            ..press(const PowerOffSnapshot())
+            ..confirmPowerOff(const PowerOffSnapshot());
       await tester.pump(const Duration(milliseconds: 40));
       expect(power.state.phase, PowerOffPhase.goodbye);
       expect(windowService.readouts.last.goodbye, ReadoutGoodbye.mark);
