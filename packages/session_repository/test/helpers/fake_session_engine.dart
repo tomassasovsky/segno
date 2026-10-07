@@ -54,6 +54,59 @@ class _FakeTrack {
 class FakeSessionEngine implements AudioEngine {
   FakeSessionEngine({this.channels = 1, this.sampleRate = 48000});
 
+  // The audition voice (#1178): records what it was asked to play.
+
+  /// The files [auditionStartFile] was handed, in order.
+  final List<({String path, int bus})> auditioned = [];
+
+  /// What [auditionStartFile] answers.
+  AuditionStart auditionAnswer = const AuditionStart(
+    result: EngineResult.ok,
+    frames: 48000,
+    sourceRate: 48000,
+  );
+
+  /// What [auditionState] reports.
+  AuditionState auditionNow = const AuditionState();
+
+  /// How many times [auditionStop] was called.
+  int auditionStops = 0;
+
+  /// The files [filePeaks] was asked for.
+  final List<({String path, int buckets})> peakReads = [];
+
+  /// What [filePeaks] answers.
+  Float32List? peaksAnswer;
+
+  @override
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async {
+    auditioned.add((path: path, bus: bus));
+    stillWantedChecks.add(stillWanted);
+    return auditionAnswer;
+  }
+
+  /// The `stillWanted` check each start was given.
+  final List<bool Function()?> stillWantedChecks = [];
+
+  @override
+  EngineResult auditionStop() {
+    auditionStops++;
+    return EngineResult.ok;
+  }
+
+  @override
+  AuditionState auditionState() => auditionNow;
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async {
+    peakReads.add((path: path, buckets: buckets));
+    return peaksAnswer;
+  }
+
   @override
   OutputFxSnapshot outputFxSnapshot({required int bus}) =>
       const OutputFxSnapshot();
@@ -660,6 +713,46 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult setClickMode(ClickMode mode) => EngineResult.ok;
   @override
   EngineResult setClickOutput(int mask) => EngineResult.ok;
+  // The backing player (#1200) is not this fake's concern: every call is
+  // accepted and nothing is loaded.
+  @override
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item}) =>
+      EngineResult.ok;
+
+  @override
+  EngineResult backingClear() => EngineResult.ok;
+
+  @override
+  EngineResult backingTransport(BackingTransportOp op) => EngineResult.ok;
+
+  @override
+  EngineResult backingSeek(int frame) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingEnd(BackingEnd mode) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingOutput(int mask) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingLevel(double gain) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingPan(double pan) => EngineResult.ok;
+
+  @override
+  EngineResult setClickPan(double pan) => EngineResult.ok;
+
+  @override
+  BackingState backingState() => const BackingState();
+
   @override
   EngineResult setClickVolume(double volume) => EngineResult.ok;
   @override

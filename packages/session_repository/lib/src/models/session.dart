@@ -705,8 +705,178 @@ class SessionOutputSetup {
   );
 }
 
+/// One prepared backing file as a session names it (#1200 plan D9): the
+/// managed asset's content identity, `sha256:<64 hex>`, and its display name,
+/// so an item whose file is gone can still be named. Never matched by name.
+@immutable
+class SessionBackingItem {
+  /// Creates a [SessionBackingItem].
+  const SessionBackingItem({required this.digest, required this.name});
+
+  /// Reads exactly `{"digest", "name"}`; anything else is refused.
+  factory SessionBackingItem.fromJson(Object? json) {
+    if (json is! Map<String, dynamic> ||
+        json.length != 2 ||
+        json['digest'] is! String ||
+        json['name'] is! String) {
+      throw const FormatException('invalid backing item');
+    }
+    final item = SessionBackingItem(
+      digest: json['digest'] as String,
+      name: json['name'] as String,
+    );
+    if (!item.isValid) throw const FormatException('invalid backing item');
+    return item;
+  }
+
+  /// The asset's full SHA-256, `sha256:<64 lower-case hex>`.
+  final String digest;
+
+  /// The file's display name.
+  final String name;
+
+  static final RegExp _digest = RegExp(r'^sha256:[0-9a-f]{64}$');
+
+  /// A well-formed digest and a non-blank name.
+  bool get isValid => _digest.hasMatch(digest) && name.trim().isNotEmpty;
+
+  /// Serializes this item.
+  Map<String, dynamic> toJson() => {'digest': digest, 'name': name};
+
+  @override
+  bool operator ==(Object other) =>
+      other is SessionBackingItem &&
+      other.digest == digest &&
+      other.name == name;
+
+  @override
+  int get hashCode => Object.hash(digest, name);
+}
+
+/// The backing player's setup a session owns (#1200 plan D9, schema 15): the
+/// prepared order, the loaded item, `At end`, and the backing's level, pan
+/// and output channels. The files themselves are the appliance's. Playback
+/// is never saved: a recalled backing is loaded stopped at 0.
+///
+/// Always written, every key present; the current schema refuses a manifest
+/// without it.
+@immutable
+class SessionBacking {
+  /// Creates a [SessionBacking]; the defaults are an empty, silent player.
+  const SessionBacking({
+    this.prepared = const [],
+    this.loaded,
+    this.endMode = BackingEnd.stop,
+    this.level = 1,
+    this.pan = 0,
+    this.outputMask = 0,
+  });
+
+  /// Reads the current schema's block strictly: exactly the six keys, a
+  /// prepared list without repeated digests, and every value in range.
+  factory SessionBacking.fromJson(Object? json) {
+    const keys = {
+      'prepared',
+      'loaded',
+      'endMode',
+      'level',
+      'pan',
+      'outputMask',
+    };
+    if (json is! Map<String, dynamic> ||
+        json.length != keys.length ||
+        !json.keys.every(keys.contains)) {
+      throw const FormatException('invalid backing setup');
+    }
+    final prepared = json['prepared'];
+    final level = json['level'];
+    final pan = json['pan'];
+    final mask = json['outputMask'];
+    if (prepared is! List || level is! num || pan is! num || mask is! int) {
+      throw const FormatException('invalid backing setup');
+    }
+    final loaded = json['loaded'];
+    final backing = SessionBacking(
+      prepared: List.unmodifiable(prepared.map(SessionBackingItem.fromJson)),
+      loaded: loaded == null ? null : SessionBackingItem.fromJson(loaded),
+      endMode: _readEnum(json['endMode'], BackingEnd.values),
+      level: level.toDouble(),
+      pan: pan.toDouble(),
+      outputMask: mask,
+    );
+    if (!backing.isValid) throw const FormatException('invalid backing setup');
+    return backing;
+  }
+
+  /// The prepared order.
+  final List<SessionBackingItem> prepared;
+
+  /// The item the player held, or null. It need not be prepared: Remove from
+  /// prepared keeps the playing file.
+  final SessionBackingItem? loaded;
+
+  /// What happens at the loaded file's end.
+  final BackingEnd endMode;
+
+  /// Backing gain, `0..2`.
+  final double level;
+
+  /// Backing balance, `-1..1`.
+  final double pan;
+
+  /// The output channels the backing sounds on; 0 is none.
+  final int outputMask;
+
+  /// Unique prepared digests, valid items and values in range.
+  bool get isValid =>
+      prepared.every((item) => item.isValid) &&
+      prepared.map((item) => item.digest).toSet().length == prepared.length &&
+      (loaded?.isValid ?? true) &&
+      level.isFinite &&
+      level >= 0 &&
+      level <= 2 &&
+      pan.isFinite &&
+      pan >= -1 &&
+      pan <= 1 &&
+      outputMask >= 0 &&
+      outputMask <= 0xffffffff;
+
+  /// Serializes the block, every key present.
+  Map<String, dynamic> toJson() {
+    if (!isValid) throw const FormatException('invalid backing setup');
+    return {
+      'prepared': [for (final item in prepared) item.toJson()],
+      'loaded': loaded?.toJson(),
+      'endMode': endMode.name,
+      'level': level,
+      'pan': pan,
+      'outputMask': outputMask,
+    };
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is SessionBacking &&
+      _listEquals(prepared, other.prepared) &&
+      loaded == other.loaded &&
+      endMode == other.endMode &&
+      level == other.level &&
+      pan == other.pan &&
+      outputMask == other.outputMask;
+
+  @override
+  int get hashCode => Object.hash(
+    Object.hashAll(prepared),
+    loaded,
+    endMode,
+    level,
+    pan,
+    outputMask,
+  );
+}
+
 /// A saved Segno session, paired with per-lane, per-layer WAV files in a
-/// `.segno` bundle directory. Only the current schema 14 is accepted; older
+/// `.segno` bundle directory. Only the current schema 15 is accepted; older
 /// ones convert first.
 ///
 /// Track settings are session-level maps, independent of audio entries.
@@ -766,6 +936,8 @@ class Session {
     this.pedalBindings = '',
     this.inputSetup = const SessionInputSetup(),
     this.outputSetup = const SessionOutputSetup(),
+    this.backing = const SessionBacking(),
+    this.clickPan = 0,
   }) : loopBeats = loopBeats ?? loopBars * tsNum;
 
   /// Projects a [Session] from a decoded JSON map.
@@ -866,14 +1038,17 @@ class Session {
       outputSetup: SessionOutputSetup.fromJson(
         json['outputSetup'] as Map<String, dynamic>?,
       ),
+      backing: SessionBacking.fromJson(json['backing']),
+      clickPan: _readClickPan(json['clickPan']),
     );
   }
 
   /// The current manifest schema stores per-track settings (including each
-  /// track's playback direction since 13), all FX stages, and since 14
+  /// track's playback direction since 13), all FX stages, since 14
   /// (#1168) length edits in a lane's history with their playhead maps
-  /// (`start`) and the grid in beats (`loopBeats`).
-  static const int formatVersion = 14;
+  /// (`start`) and the grid in beats (`loopBeats`), and since 15 (#1200)
+  /// the backing setup and the click's pan.
+  static const int formatVersion = 15;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -1051,6 +1226,12 @@ class Session {
   /// recorded. Omitted from the manifest when it is the default setup.
   final SessionOutputSetup outputSetup;
 
+  /// The backing player's setup (schema 15, #1200).
+  final SessionBacking backing;
+
+  /// The click's balance, `-1..1` (schema 15, #1200 D6); 0 is centre.
+  final double clickPan;
+
   /// Explicit source choices retained for inactive lanes and empty tracks.
   final Map<(int, int), int> laneInputs;
 
@@ -1069,8 +1250,9 @@ class Session {
   /// content; no [name], because the new loop takes its own. Every other
   /// field is copied as it is: tempo, signature, mode, defaults and their
   /// per-track overrides, click, count-in, Fade durations, levels, pans,
-  /// lane routing, input and output setup, all four chain stages and the
-  /// pedal remap.
+  /// lane routing, input and output setup, all four chain stages, the
+  /// pedal remap, and the backing setup and click pan (#1200; New loop only
+  /// stops the backing, plan D9).
   ///
   /// Each field is named here on purpose, with no copy helper: a field added
   /// to [Session] later reads its default until its New loop fate is written
@@ -1117,6 +1299,8 @@ class Session {
     pedalBindings: pedalBindings,
     inputSetup: inputSetup,
     outputSetup: outputSetup,
+    backing: backing,
+    clickPan: clickPan,
   );
 
   /// Serializes this session manifest to a JSON map. Always writes the
@@ -1188,6 +1372,8 @@ class Session {
     'pedalBindings': pedalBindings,
     if (!inputSetup.isEmpty) 'inputSetup': inputSetup.toJson(),
     if (!outputSetup.isEmpty) 'outputSetup': outputSetup.toJson(),
+    'backing': backing.toJson(),
+    'clickPan': clickPan,
   };
 
   @override
@@ -1251,7 +1437,9 @@ class Session {
           _laneMapEquals(laneOutputs, other.laneOutputs) &&
           _mapEquals(laneCounts, other.laneCounts) &&
           inputSetup == other.inputSetup &&
-          outputSetup == other.outputSetup;
+          outputSetup == other.outputSetup &&
+          backing == other.backing &&
+          clickPan == other.clickPan;
 
   // hashAll, not hash: the field count passed v6's addition of
   // [pedalBindings], and `Object.hash` caps at 20 positional arguments.
@@ -1302,6 +1490,8 @@ class Session {
     _mapHash(laneCounts),
     inputSetup,
     outputSetup,
+    backing,
+    clickPan,
   ]);
 }
 
@@ -1399,6 +1589,14 @@ Map<int, T> _readTrackOverrides<T>(Object? json, T Function(Object?) decode) {
     throw const FormatException('invalid session track override');
   }
   return values;
+}
+
+/// The click's balance: a number in `-1..1`.
+double _readClickPan(Object? raw) {
+  if (raw is! num || !raw.isFinite || raw < -1 || raw > 1) {
+    throw const FormatException('invalid click pan');
+  }
+  return raw.toDouble();
 }
 
 /// Count-in is Off or 1, 2 or 4 bars.

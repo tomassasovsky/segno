@@ -6,7 +6,9 @@ import 'dart:typed_data';
 import 'package:meta/meta.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno_engine/segno_engine.dart';
+import 'package:session_repository/src/directory_sync.dart';
 import 'package:session_repository/src/models/session.dart';
+import 'package:session_repository/src/models/session_mixdown.dart';
 import 'package:session_repository/src/models/session_preview.dart';
 import 'package:session_repository/src/models/session_summary.dart';
 import 'package:session_repository/src/session_exception.dart';
@@ -116,6 +118,8 @@ class SessionSettings {
     this.laneCounts = const {},
     this.inputSetup = const SessionInputSetup(),
     this.outputSetup = const SessionOutputSetup(),
+    this.backing = const SessionBacking(),
+    this.clickPan = 0,
   }) : loopBeats = loopBeats ?? loopBars * tsNum;
 
   SessionSettings._detached(SessionSettings source)
@@ -170,7 +174,16 @@ class SessionSettings {
         muted: Map.unmodifiable(source.outputSetup.muted),
         mono: Map.unmodifiable(source.outputSetup.mono),
         balance: Map.unmodifiable(source.outputSetup.balance),
-      );
+      ),
+      backing = SessionBacking(
+        prepared: List.unmodifiable(source.backing.prepared),
+        loaded: source.backing.loaded,
+        endMode: source.backing.endMode,
+        level: source.backing.level,
+        pan: source.backing.pan,
+        outputMask: source.backing.outputMask,
+      ),
+      clickPan = source.clickPan;
 
   /// Denominator-note beats per minute; zero means unset.
   final double tempoBpm;
@@ -277,6 +290,12 @@ class SessionSettings {
 
   /// The output setup (slice 3b), persisted session-level.
   final SessionOutputSetup outputSetup;
+
+  /// The backing player's prepared setup and mix (#1200).
+  final SessionBacking backing;
+
+  /// The click's balance, `-1..1` (#1200).
+  final double clickPan;
 }
 
 /// Saves Segno sessions, reads them back, keeps their catalog, and exports a
@@ -683,6 +702,120 @@ class SessionRepository {
       tracks: tracks,
       fxCount: summary.fxCount,
       sampleRate: session.sampleRate,
+      hasMixdown: File('$path/$mixdownName').existsSync(),
+    );
+  }
+
+  /// Starts the Library's preview of the saved session [id] (plan D10): its
+  /// `mixdown.wav` through the engine's audition voice on the main outputs,
+  /// decoded off the UI isolate by the engine's one decoder, at most
+  /// [kAuditionMaxSeconds] of it ([AuditionStart.truncated] says when the
+  /// file is longer). A session with no mixdown is refused with
+  /// [EngineResult.invalid] and nothing reaches the engine. Never loads the
+  /// session. [stillWanted] is handed to the engine: a start the caller
+  /// withdrew while it decoded never reaches the voice
+  /// ([AuditionStart.cancelled]).
+  Future<AuditionStart> startAudition(
+    SessionId id, {
+    bool Function()? stillWanted,
+  }) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    final mixdown = '$path/$mixdownName';
+    if (!File(mixdown).existsSync()) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    return _engine.auditionStartFile(mixdown, stillWanted: stillWanted);
+  }
+
+  /// Silences the Library's preview at the next block.
+  EngineResult stopAudition() => _engine.auditionStop();
+
+  /// The preview as the engine last reported it; a length of 0 means none
+  /// plays (it ended, was stopped, or a device reopen or a performance arm
+  /// ended it).
+  AuditionState auditionState() => _engine.auditionState();
+
+  /// [buckets] absolute peaks over [track]'s lane-0 live layer in the saved
+  /// session [id], streamed off the UI isolate through the app's one decoder,
+  /// or null when the layer cannot be read (plan D11: the lane then draws its
+  /// length only).
+  Future<Float32List?> readPeaks(
+    SessionId id,
+    SessionPreviewTrack track, {
+    int buckets = 256,
+  }) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null || !_layerFilePattern.hasMatch(track.liveLayerFile)) {
+      return null;
+    }
+    final layer = '$path/${track.liveLayerFile}';
+    if (!File(layer).existsSync()) return null;
+    return _engine.filePeaks(layer, buckets: buckets);
+  }
+
+  /// The saved bundle [id]'s mixdown, read from its WAV header, or null when
+  /// the bundle has none (an empty session) or its header does not read
+  /// (#1178 Part 7: the Audio tab lists sessions with a mixdown).
+  Future<SessionMixdown?> mixdownOf(SessionId id) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null) return null;
+    return _readMixdownHeader(File('$path/$mixdownName'));
+  }
+
+  /// [buckets] absolute peaks over the saved bundle [id]'s mixdown, streamed
+  /// off the UI isolate through the engine's one decoder, or null when there
+  /// is none or it does not read.
+  Future<Float32List?> readMixdownPeaks(
+    SessionId id, {
+    int buckets = 256,
+  }) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null) return null;
+    final mixdown = '$path/$mixdownName';
+    if (!File(mixdown).existsSync()) return null;
+    return _engine.filePeaks(mixdown, buckets: buckets);
+  }
+
+  /// The canonical 44-byte header [WavCodec] writes: `RIFF`/`WAVE`, `fmt `
+  /// with the channels, rate and bit depth, then `data` and its size.
+  static SessionMixdown? _readMixdownHeader(File file) {
+    final Uint8List head;
+    final int length;
+    try {
+      if (!file.existsSync()) return null;
+      length = file.lengthSync();
+      final raf = file.openSync();
+      try {
+        head = raf.readSync(44);
+      } finally {
+        raf.closeSync();
+      }
+    } on FileSystemException {
+      return null;
+    }
+    if (head.length < 44) return null;
+    String tag(int at) => String.fromCharCodes(head.sublist(at, at + 4));
+    if (tag(0) != 'RIFF' || tag(8) != 'WAVE' || tag(36) != 'data') {
+      return null;
+    }
+    final view = ByteData.sublistView(head);
+    final channels = view.getUint16(22, Endian.little);
+    final sampleRate = view.getUint32(24, Endian.little);
+    final bits = view.getUint16(34, Endian.little);
+    final dataBytes = view.getUint32(40, Endian.little);
+    final frameBytes = channels * bits ~/ 8;
+    if (frameBytes <= 0 || sampleRate <= 0) return null;
+    return SessionMixdown(
+      frames: dataBytes ~/ frameBytes,
+      sampleRate: sampleRate,
+      bytes: length,
     );
   }
 
@@ -814,6 +947,114 @@ class SessionRepository {
       rethrow;
     }
     return id;
+  }
+
+  /// Every file of the saved bundle [id], relative to its directory, the
+  /// manifest last (#1178 Part 8: what `Back up to USB` copies). That is the
+  /// manifest, every layer and the mixdown, and whatever else the bundle
+  /// keeps (a foreign file a save carried, an older schema's original
+  /// manifest or folder), so a backup restores to the same bundle. A
+  /// manifest still being written (`session.json.tmp`) is left out. Throws
+  /// [StateError] when there is no bundle [id].
+  Future<List<String>> bundleFiles(SessionId id) async {
+    _requireId(id);
+    final path = _locate(await _rootPath(), id);
+    if (path == null) throw StateError('no session with id "$id"');
+    final files =
+        [
+          for (final entity in Directory(path).listSync(recursive: true))
+            if (entity is File) entity.path.substring(path.length + 1),
+        ]..removeWhere(
+          (f) =>
+              f == Session.manifestName || f == '${Session.manifestName}.tmp',
+        );
+    return [...files..sort(), Session.manifestName];
+  }
+
+  /// The backups under [root] (a drive's `Segno/Sessions/`), newest save
+  /// first, each read as leniently as the catalog reads its own: a backup
+  /// whose manifest does not decode is listed [SessionSummary.unreadable].
+  /// The summary's id is the backup's directory name. Directories without a
+  /// manifest and hidden ones (a copy still being assembled) are left out;
+  /// a missing or unreadable [root] lists nothing.
+  List<SessionSummary> listBackups(String root) {
+    final List<FileSystemEntity> entries;
+    try {
+      entries = Directory(root).listSync();
+    } on FileSystemException {
+      return const [];
+    }
+    return [
+      for (final entity in entries)
+        if (entity is Directory &&
+            !_basename(entity.path).startsWith('.') &&
+            _isBundle(entity.path))
+          _summaryOf(entity, folder: null),
+    ]..sort(_newestFirst);
+  }
+
+  /// Copies the backup bundle at [source] into the catalog as a new,
+  /// independent session (#1178 Part 8, pen 34 `Restored session
+  /// selected`) and returns its id. The copy gets a fresh id
+  /// ([newSessionId]'s rule) at the root, Unfiled, and keeps the backup's
+  /// name, or `<name> (2)`, `(3)`... when a session already carries it.
+  /// Nothing reaches the engine; the live rig and every other bundle are
+  /// untouched.
+  ///
+  /// The copy follows Duplicate's rules: the reserved directory fills with
+  /// everything but the manifest, and the manifest, carrying the name, is
+  /// written last through a flushed temp file and a rename. A power cut
+  /// leaves an interrupted save that lists nowhere, never a half session,
+  /// and a failure removes the copy. It holds a `sessionWrite` guard on the
+  /// new bundle while it writes, so it is refused during a shutdown.
+  ///
+  /// Throws [ArgumentError] when [source] is not a bundle and [GuardRefused]
+  /// when the guard table forbids the write.
+  Future<SessionId> restoreFrom(String source) async {
+    if (!_isBundle(source)) {
+      throw ArgumentError.value(source, 'source', 'not a session bundle');
+    }
+    final root = await _rootPath();
+    final name = await _freeRestoredName(
+      _summaryOf(Directory(source), folder: null).name,
+    );
+    final id = _reserveId(root);
+    final target = Directory('$root/$id');
+    OperationGuard? guard;
+    try {
+      guard = _guards.enter(
+        GuardKind.sessionWrite,
+        GuardScope.internal(item: target.path),
+        purpose: name,
+      );
+      _copyDirSync(
+        Directory(source),
+        target,
+        skip: const {Session.manifestName, '${Session.manifestName}.tmp'},
+      );
+      _writeManifestNamed(
+        from: '$source/${Session.manifestName}',
+        to: '${target.path}/${Session.manifestName}',
+        name: name,
+      );
+      debugOnDuplicateWrite?.call('${target.path}/${Session.manifestName}');
+    } on Object {
+      if (target.existsSync()) target.deleteSync(recursive: true);
+      rethrow;
+    } finally {
+      guard?.release();
+    }
+    return id;
+  }
+
+  /// [name], or the first `<name> (n)` from 2 no session carries exactly.
+  Future<String> _freeRestoredName(String name) async {
+    final taken = {for (final s in await listSessions()) s.name};
+    if (!taken.contains(name)) return name;
+    for (var n = 2; ; n++) {
+      final candidate = '$name ($n)';
+      if (!taken.contains(candidate)) return candidate;
+    }
   }
 
   /// Called with each path a Duplicate has just written, in order, so a
@@ -1063,13 +1304,14 @@ class SessionRepository {
     // interrupted save.
     final rewrite = _isBundle(directory);
     final dest = rewrite ? Directory('$directory$_stagingSuffix') : target;
-    if (rewrite && dest.existsSync()) dest.deleteSync(recursive: true);
-    await dest.create(recursive: true);
     // A catalog read while this save writes must not take its stage for a
-    // leftover.
+    // leftover: the stage is registered before it exists, so no read can
+    // find it on disk unregistered, even while it is being created.
     if (rewrite) _staging.add(dest.path);
     final Session session;
     try {
+      if (rewrite && dest.existsSync()) dest.deleteSync(recursive: true);
+      await dest.create(recursive: true);
       session = await _writeBundle(
         dest.path,
         captured,
@@ -1117,6 +1359,16 @@ class SessionRepository {
   /// stand for a full disk or a failed write at that moment.
   @visibleForTesting
   static void Function(String path)? debugOnSaveWrite;
+
+  /// Called with each directory a save or a recovery fsyncs, just before the
+  /// fsync, so a test can see what is on disk at that moment.
+  @visibleForTesting
+  static void Function(String path)? debugOnDirectorySync;
+
+  static void _syncDirectory(String path) {
+    debugOnDirectorySync?.call(path);
+    syncDirectory(path);
+  }
 
   /// Writes the layers, the manifest and the mixdown of [captured] into the
   /// directory [path], each flushed to the device, and prunes layer files
@@ -1226,11 +1478,17 @@ class SessionRepository {
     if (retired.existsSync()) retired.deleteSync(recursive: true);
     target.renameSync(retired.path);
     try {
+      // Between the two renames: a test fails the second one here.
+      debugOnSaveWrite?.call(staging.path);
       staging.renameSync(target.path);
     } on Object {
       retired.renameSync(target.path);
+      _syncDirectory(target.parent.path);
       rethrow;
     }
+    // The swap is durable before the save reports success, and before
+    // the previous save is retired.
+    _syncDirectory(target.parent.path);
     _retire(retired, live: target);
   }
 
@@ -1395,6 +1653,7 @@ class SessionRepository {
             _retire(entity, live: Directory(live));
           } else {
             entity.renameSync(live);
+            _syncDirectory(dir.path);
           }
         } else if (path.endsWith(_stagingSuffix)) {
           if (!inFlight.contains(path)) entity.deleteSync(recursive: true);
@@ -1934,6 +2193,8 @@ class SessionRepository {
       // Control-surface configuration (schema v6), opaque here like the
       // chains — handed straight through from the bloc layer.
       pedalBindings: pedalBindings,
+      backing: settings.backing,
+      clickPan: settings.clickPan,
     );
   }
 

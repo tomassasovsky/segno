@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:segno_engine/src/audio_device.dart';
+import 'package:segno_engine/src/audition.dart';
+import 'package:segno_engine/src/backing.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
@@ -60,7 +62,10 @@ enum EngineResult {
   /// transposed track (`LE_ERR_TRANSFORMED`, #1179): capture never writes
   /// under playback it does not hear. Play, Stop, Mute, Fade and history stay
   /// available.
-  transformed;
+  transformed,
+
+  /// An audio file over the 15-minute backing cap (`LE_ERR_TOO_LONG`, #1200).
+  tooLong;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -77,6 +82,7 @@ enum EngineResult {
     -8 => EngineResult.notReady,
     -9 => EngineResult.reversed,
     -10 => EngineResult.transformed,
+    -12 => EngineResult.tooLong,
     _ => EngineResult.invalid,
   };
 
@@ -1609,6 +1615,100 @@ abstract interface class EnginePerformanceCapture {
   EngineResult renderCancel();
 }
 
+/// The backing player's voice (#1200): one engine-owned stereo file played
+/// from RAM, routed like the click (before the output buses), never part of
+/// stems or loop takes. Files come from an `AudioDecoder`; a successful
+/// [backingLoad] or [backingStageNext] transfers the samples to the engine
+/// (`DecodedAudio.ownership` reads `transferred`), any refusal leaves them
+/// the caller's. See `segno_engine_api.h` for the native contract.
+abstract interface class BackingControl {
+  /// Replaces the loaded file at the next block, fading out a sounding one.
+  /// [item] is the caller's token, reported back in [backingState]; [play]
+  /// starts it at frame 0. [EngineResult.invalid] for audio that is not the
+  /// caller's, decoded for another rate, or a full command ring;
+  /// [EngineResult.notReady] while a replaced buffer is still on its way back
+  /// (retry after one block); [EngineResult.capacity] past the backing
+  /// memory budget; [EngineResult.notRunning] when not configured.
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  });
+
+  /// Stages the file End = Next continues into; null clears the stage. Same
+  /// ownership and refusals as [backingLoad].
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item});
+
+  /// Unloads the loaded and staged files (fading out a sounding one).
+  EngineResult backingClear();
+
+  /// Play, pause or stop the loaded file; nothing loaded is a no-op.
+  EngineResult backingTransport(BackingTransportOp op);
+
+  /// Moves the loaded file to [frame], clamped; playing or paused is kept.
+  EngineResult backingSeek(int frame);
+
+  /// The End setting (persists across configure).
+  EngineResult setBackingEnd(BackingEnd mode);
+
+  /// The backing output channel mask (persists across configure).
+  EngineResult setBackingOutput(int mask);
+
+  /// The backing gain, clamped to 0..2 (persists across configure).
+  EngineResult setBackingLevel(double gain);
+
+  /// The backing balance, clamped to -1..1 (persists across configure).
+  EngineResult setBackingPan(double pan);
+
+  /// The click pan, clamped to -1..1 (persists across configure).
+  EngineResult setClickPan(double pan);
+
+  /// The voice as of the last processed block; also frees the buffers the
+  /// audio thread has finished with.
+  BackingState backingState();
+}
+
+/// The Library's audition voice (#1178): one preview, isolated from the rig.
+///
+/// It plays an audio file once into one output pair, summed after the output
+/// buses and before the master bus, so no destination's chain, level or mute
+/// touches it, no performance capture, stem or loop take contains it, and
+/// only the master gain and the limiter shape it. The file is decoded by the
+/// engine's one decoder (WAV and MP3, converted to the engine's rate; FLAC
+/// is compiled out until the vendored miniaudio carries the fix for
+/// CVE-2024-41147, and reads as [EngineResult.invalid]), at
+/// most [kAuditionMaxSeconds] of it, off the calling isolate.
+abstract interface class EngineAudition {
+  /// Decodes the audio file at [path] off the calling isolate and starts it
+  /// into output pair [bus] at the next block, replacing a preview already
+  /// playing. Retries once, a block later, when the voice is still handing
+  /// back the preview before last ([EngineResult.notReady]).
+  ///
+  /// [stillWanted] is asked once the decode is done and before each start:
+  /// when it answers false the decoded preview is dropped, nothing reaches
+  /// the voice, and the answer is [AuditionStart.cancelled]. A caller whose
+  /// request was superseded while the file decoded so never replaces the
+  /// preview that superseded it.
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  });
+
+  /// Silences the preview at the next block; a no-op when none plays.
+  EngineResult auditionStop();
+
+  /// The voice as of the last processed block. Also the point where the
+  /// engine frees the previews the audio thread has finished with.
+  AuditionState auditionState();
+
+  /// [buckets] absolute peaks (the louder side of each bucket) over the whole
+  /// audio file at [path], streamed through the same decoder off the calling
+  /// isolate with no PCM kept (`le_backing_probe_file`); null when the file
+  /// does not decode. For the Library's preview lanes.
+  Future<Float32List?> filePeaks(String path, {required int buckets});
+}
+
 /// The data-layer boundary over the native audio engine, composed from the
 /// role interfaces above (interface-segregation: a consumer can depend on the
 /// slice it needs — [SessionIo], [EngineMetering], … — instead of the whole
@@ -1619,6 +1719,7 @@ abstract interface class EnginePerformanceCapture {
 /// the native engine over FFI.
 abstract interface class AudioEngine
     implements
+        EngineAudition,
         EngineLifecycle,
         EngineMetering,
         LooperTransport,
@@ -1631,4 +1732,5 @@ abstract interface class AudioEngine
         InputConditioningControl,
         EnginePluginHosting,
         EnginePerformanceCapture,
-        SessionIo {}
+        SessionIo,
+        BackingControl {}

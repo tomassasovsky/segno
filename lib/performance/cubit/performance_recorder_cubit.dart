@@ -7,6 +7,7 @@ import 'package:daw_export/daw_export.dart';
 import 'package:equatable/equatable.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/performance/application/daw_project_export.dart';
 import 'package:storage_repository/storage_repository.dart';
 
 part 'performance_recorder_state.dart';
@@ -664,20 +665,20 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// are no track results to inspect; the captured bundle and master stay.
   Future<void> _finishRender(String dir, {bool renderFailed = false}) async {
     // A full volume must not take the capture down with it. Observed on the
-    // appliance: `writeFrom failed ... No space left on device` escaped
-    // _writeDawExports, and because it is awaited on this method's FIRST line
-    // the `PerformanceRecorderCompleted` emit on its last never ran — the
-    // console sat in `Rendering` forever and never reported that the capture
-    // had stopped at all (#640).
+    // appliance: `writeFrom failed ... No space left on device` escaped the
+    // DAW project write, and because it is awaited on this method's FIRST
+    // line the `PerformanceRecorderCompleted` emit on its last never ran —
+    // the console sat in `Rendering` forever and never reported that the
+    // capture had stopped at all (#640).
     //
     // The take is already safe by this point: finalize wrote the WAVs and the
-    // manifest before the render started. The export is the only casualty, and
-    // it is re-runnable from the finished bundle via [reExport] — which is why
-    // the catch lives here and not inside _writeDawExports, whose throwing is
-    // how that path detects its own failure.
+    // manifest before the render started. The DAW project is the only
+    // casualty, and Library > Audio's `DAW project` writes it again from the
+    // finished bundle — which is why the catch lives here and not inside
+    // [writeDawProject], whose throwing is how the Library reports it.
     List<DawTrack> tracks;
     try {
-      tracks = await _writeDawExports(dir);
+      tracks = await writeDawProject(dir);
     } on FileSystemException {
       tracks = const [];
     }
@@ -710,85 +711,6 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         hadGlitch: _sawOverrun,
       ),
     );
-  }
-
-  /// Re-runs `.als`/`fx-chains.txt` generation from the capture directory's
-  /// already-persisted `performance.json` — no engine, no re-render, no
-  /// audio-file writes
-  /// (part 11, D-REEXPORT). Useful after installing Segno's VST3 plugins (a
-  /// fresh export can then resolve a live device chain a prior export
-  /// couldn't, though resolution itself never depended on local plugin
-  /// installation — only on the manifest's own effects data) or simply to
-  /// regenerate without re-recording. A no-op when not currently
-  /// [PerformanceRecorderCompleted] with a delivered result, mirroring
-  /// [renameCompletedCapture]'s own guard. Failures (a malformed manifest
-  /// `buildAls` rejects, or a file-write error) are caught and surfaced via
-  /// [PerformanceRecorderCompleted.reExportFailed] rather than left
-  /// uncaught — this is a user-triggered background action, not something
-  /// that should crash the cubit.
-  Future<void> reExport() async {
-    final current = state;
-    if (current is! PerformanceRecorderCompleted) return;
-    final result = current.result;
-    if (result == null) return;
-    final dir = switch (result) {
-      PerformanceRecordDone(:final path) => path,
-      PerformanceRecordPartial(:final path) => path,
-      PerformanceRecordStoppedEarly(:final path) => path,
-    };
-    _emit(
-      PerformanceRecorderCompleted(
-        result,
-        tracks: current.tracks,
-        isReExporting: true,
-        duration: current.duration,
-        hadGlitch: current.hadGlitch,
-      ),
-    );
-    try {
-      final tracks = await _writeDawExports(dir);
-      _emit(
-        PerformanceRecorderCompleted(
-          result,
-          tracks: tracks,
-          duration: current.duration,
-          hadGlitch: current.hadGlitch,
-        ),
-      );
-    } on Object {
-      _emit(
-        PerformanceRecorderCompleted(
-          result,
-          tracks: current.tracks,
-          reExportFailed: true,
-          duration: current.duration,
-          hadGlitch: current.hadGlitch,
-        ),
-      );
-    }
-  }
-
-  /// Reads [dir]'s manifest and writes `.als`/`fx-chains.txt` from it,
-  /// returning the resolved [DawTrack]s (empty when the manifest couldn't be
-  /// read) for the caller to carry on [PerformanceRecorderCompleted.tracks].
-  Future<List<DawTrack>> _writeDawExports(String dir) async {
-    // Deliberately NOT catching here. [reExport] distinguishes success from
-    // failure precisely by whether this throws, and swallowing it there would
-    // report a failed re-export as a success. The capture-completion path
-    // guards at its own call site instead — see [_finishRender].
-    // Tempo comes from the manifest itself (#281): DawManifestReader.read
-    // resolves the capture's own persisted disarm-time (arm-time for a
-    // crash salvage) tempo, falling back to its fixed 120 BPM for a bundle
-    // carrying none.
-    final project = DawManifestReader.read(dir);
-    if (project != null) {
-      await File('$dir/project.als').writeAsBytes(buildAls(project));
-    }
-    final chains = FxChainsWriter.render(dir);
-    if (chains != null) {
-      await File('$dir/fx-chains.txt').writeAsString(chains);
-    }
-    return project?.tracks ?? const [];
   }
 
   /// The finalized capture's own sidecar, or `null` when it is missing or

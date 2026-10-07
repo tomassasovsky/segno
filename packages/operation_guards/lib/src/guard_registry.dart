@@ -10,8 +10,8 @@ enum GuardKind {
   /// Applying a session to the rig: Open, New loop.
   sessionApply,
 
-  /// Writing a session bundle: save, Save as, rename, duplicate, delete,
-  /// restore into Internal.
+  /// Writing a session bundle or a recording on Internal: save, Save as,
+  /// rename, duplicate, delete, restore into Internal.
   sessionWrite,
 
   /// A file copy to or from a removable volume: export, backup, import.
@@ -218,8 +218,11 @@ class GuardRegistry {
     // sessionApply: a running take is finished first (as today), so capture
     // allows it; never over another apply or a save in flight.
     [_a, _r, _r, _a, _a, _r, _r, _r],
-    // sessionWrite: anything but the same bundle or a shutdown.
-    [_a, _a, _i, _a, _a, _a, _a, _r],
+    // sessionWrite: anything but the same bundle or a shutdown. A transfer
+    // that reads an internal item (an export of a recording, a backup of a
+    // session) holds it as its item, so a save, rename or delete of that
+    // item waits for the copy (#1178 Part 7 review, finding 1).
+    [_a, _a, _i, _i, _a, _a, _a, _r],
     // transfer: not onto a volume being ejected or recorded to, not during
     // shutdown.
     [_v, _a, _a, _a, _v, _a, _a, _r],

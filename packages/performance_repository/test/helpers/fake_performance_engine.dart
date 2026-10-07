@@ -27,6 +27,40 @@ class _FakeTrack {
 class FakePerformanceEngine implements AudioEngine {
   FakePerformanceEngine({this.sampleRate = 48000});
 
+  // The audition voice (#1178): records what it was asked to play and
+  // answers peaks through [peaksOf].
+
+  /// Every file [auditionStartFile] was asked to play.
+  final List<String> auditionPaths = [];
+
+  /// Every `(path, buckets)` [filePeaks] was asked for.
+  final List<(String, int)> peaksRequests = [];
+
+  /// What [filePeaks] answers; null answers no peaks.
+  Float32List? Function(String path, int buckets)? peaksOf;
+
+  @override
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    int bus = 0,
+    bool Function()? stillWanted,
+  }) async {
+    auditionPaths.add(path);
+    return const AuditionStart(result: EngineResult.ok);
+  }
+
+  @override
+  EngineResult auditionStop() => EngineResult.ok;
+
+  @override
+  AuditionState auditionState() => const AuditionState();
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async {
+    peaksRequests.add((path, buckets));
+    return peaksOf?.call(path, buckets);
+  }
+
   final int sampleRate;
 
   final List<_FakeTrack> _tracks = List.generate(4, (_) => _FakeTrack());
@@ -616,6 +650,46 @@ class FakePerformanceEngine implements AudioEngine {
   EngineResult setClickMode(ClickMode mode) => EngineResult.ok;
   @override
   EngineResult setClickOutput(int mask) => EngineResult.ok;
+  // The backing player (#1200) is not this fake's concern: every call is
+  // accepted and nothing is loaded.
+  @override
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item}) =>
+      EngineResult.ok;
+
+  @override
+  EngineResult backingClear() => EngineResult.ok;
+
+  @override
+  EngineResult backingTransport(BackingTransportOp op) => EngineResult.ok;
+
+  @override
+  EngineResult backingSeek(int frame) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingEnd(BackingEnd mode) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingOutput(int mask) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingLevel(double gain) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingPan(double pan) => EngineResult.ok;
+
+  @override
+  EngineResult setClickPan(double pan) => EngineResult.ok;
+
+  @override
+  BackingState backingState() => const BackingState();
+
   @override
   EngineResult setClickVolume(double volume) => EngineResult.ok;
   @override

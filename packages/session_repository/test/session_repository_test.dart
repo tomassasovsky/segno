@@ -1021,7 +1021,7 @@ void main() {
                 await File('$dir/${Session.manifestName}').readAsString(),
               )
               as Map;
-      expect(manifest['version'], 14);
+      expect(manifest['version'], Session.formatVersion);
       final lane =
           (((manifest['tracks'] as List).single as Map)['lanes'] as List).single
               as Map;

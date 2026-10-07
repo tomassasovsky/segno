@@ -1665,6 +1665,20 @@ void main() {
       );
     });
 
+    test('never treats the backing store as a capture (#1200)', () async {
+      // The backing player's managed copies live in `Backing tracks/` under
+      // the same exports root; neither it nor an asset directory inside it
+      // carries a sidecar, so salvage must pass it by.
+      final root = Directory('${tempDir.path}/exports');
+      final asset = Directory('${root.path}/Backing tracks/0123456789abcdef')
+        ..createSync(recursive: true);
+      File('${asset.path}/info.json').writeAsStringSync('{}');
+      File('${asset.path}/Evening lights.wav').writeAsBytesSync([0, 1, 2]);
+
+      expect(await repo.findUnfinalized(), isEmpty);
+      expect(asset.existsSync(), isTrue);
+    });
+
     test('treats an unreadable (corrupt) sidecar as unfinalized', () async {
       final root = Directory('${tempDir.path}/exports');
       final corrupt = Directory('${root.path}/perf-corrupt')

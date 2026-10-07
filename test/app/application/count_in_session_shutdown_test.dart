@@ -27,6 +27,7 @@ import 'package:storage_repository/storage_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/fake_key_value_store.dart';
+import '../../helpers/test_backing.dart';
 import '../../helpers/test_mix_settings.dart';
 
 class _Store extends FakeKeyValueStore {
@@ -155,6 +156,7 @@ void main() {
             exportsRoot: () async => directory.path,
             volumeSpace: performance.volumeSpace,
           ),
+          backing: testBackingRepository(),
           powerOff: () async => halts++,
           reboot: () async => halts++,
           storageSettled: () async {},

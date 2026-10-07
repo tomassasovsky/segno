@@ -112,6 +112,8 @@ SessionSettings settingsFromLooper(
   required RecordTimingSnapshot recordTiming,
   required FadeDurations fade,
   MixSettingsSnapshot? mix,
+  SessionBacking backing = const SessionBacking(),
+  double clickPan = 0,
 }) {
   final transport = looper.sessionTransport;
   final snapshot = mix ?? looper.mixSettingsSnapshot;
@@ -167,6 +169,8 @@ SessionSettings settingsFromLooper(
     defaultMultiple: transport.defaultMultiple,
     looperMode: transport.looperMode,
     primaryTrack: transport.primaryTrack,
+    backing: backing,
+    clickPan: clickPan,
   );
 }
 
