@@ -1318,3 +1318,36 @@ human merge gate stays.
   - The two HARDWARE criteria: tuning on the device with the monitor silent,
     and callback p99 on the Pi 5.
   - Line coverage was not measured.
+
+### Part 3 review fixes (`3d89de67f`, rebased onto the trunk at `787d51db6`)
+
+- **M1. One notice per cause.** An assigned Record / Play refused with the
+  looper's own notice gets no generic one. This covers a needed recording
+  input, a reversed track and an owed mix.
+  - `LooperRepository.refusalNotices` counts the refusals it announces.
+  - The dispatcher reads it before and after a record action.
+  - A refusal the looper does not announce still gets the generic notice.
+- **M2. Refused performance arms.** An assigned Record performance the
+  engine refuses now gets the generic notice.
+  - With too little disk room, it is refused before the engine, with the
+    recorder's own words ("Not enough disk space to start a capture").
+  - A guard refusal keeps the recorder's toast.
+  - Widget tests assert both toasts.
+  - The pedal's MODE-hold arm is unchanged and still has no low-disk check
+    (trunk behaviour; noted for the Recording plan).
+- **L1. No raw keys.** An action this build cannot run reads
+  `Unavailable action` on the face, in its hint and in its notice ("This
+  control's action isn't available in this version. Reassign it."). The
+  saved key is never shown.
+- **L2. Wrapping.** A wrapped catalogue label keeps the separator on its
+  first line. The space before ` · ` is non-breaking.
+- Verification:
+  - App suite: 3546 passed, 57 skipped.
+  - `looper_repository`: 827 passed.
+  - analyze, Bloc lint and format clean.
+  - Mutations on the fixes: 10 run, all killed.
+- Parts 5 and 6 merge cleanly onto this trunk, so they were not rebased.
+  Part 6 conflicts with this part in `tracks_view.dart`, `tracks_view_test.dart`
+  and `tracks_screenshots_test.dart`. Both sides add a face branch, a
+  listener or tests beside each other there, so whichever lands second keeps
+  both.
