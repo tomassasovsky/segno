@@ -299,7 +299,7 @@ void main() {
       verifyNever(() => session.saveAs(any()));
     });
 
-    testWidgets('empty console flushes before goodbye and halt', (
+    testWidgets('empty console asks, then flushes before goodbye and halt', (
       tester,
     ) async {
       whenListen(
@@ -313,9 +313,41 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
+      expect(find.byKey(const Key('power_off_dialog')), findsOneWidget);
+      expect(find.byKey(const Key('power_off_save')), findsNothing);
+      expect(cubit.state.phase, PowerOffPhase.confirmEmpty);
+      expect(log, isEmpty);
+
+      await tester.tap(find.byKey(const Key('power_off_confirm')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
       expect(find.byKey(const Key('power_off_dialog')), findsNothing);
       expect(cubit.state.phase, PowerOffPhase.goodbye);
       expect(log, ['flush', 'pedal', 'powerOff']);
+    });
+
+    testWidgets('Keep playing on the empty confirm leaves the unit on', (
+      tester,
+    ) async {
+      whenListen(
+        looper,
+        const Stream<LooperState>.empty(),
+        initialState: const LooperState(),
+      );
+      await pumpHost(tester);
+      await tester.pump();
+      keys.emitPress();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      await tester.tap(find.byKey(const Key('power_off_keep_playing')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.byKey(const Key('power_off_dialog')), findsNothing);
+      expect(cubit.state.phase, PowerOffPhase.idle);
+      expect(log, isEmpty);
     });
 
     testWidgets('named Save success halts and does not open Save As', (

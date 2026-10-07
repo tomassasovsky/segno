@@ -562,7 +562,9 @@ void main() {
     'close cancels a pending halt before waiting for session storage',
     () async {
       await runtime.start();
-      runtime.power.press(const PowerOffSnapshot());
+      runtime.power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       await pumpEventQueue();
       expect(runtime.power.state.phase, PowerOffPhase.goodbye);
       final (loading, read) = await holdSessionRead();
@@ -819,7 +821,9 @@ void main() {
       );
       expect(repository.mixRecoveryRequired, isTrue);
       expect(runtime.tempo.clickVolumeOwner.ready, isFalse);
-      runtime.power.press(const PowerOffSnapshot());
+      runtime.power
+        ..press(const PowerOffSnapshot())
+        ..confirmPowerOff(const PowerOffSnapshot());
       for (var i = 0; i < 200 && halts == 0; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }

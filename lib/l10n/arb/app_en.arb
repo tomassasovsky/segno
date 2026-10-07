@@ -339,7 +339,7 @@
     "@shortcutFocusTraverse": {
         "description": "Legend description for the Tab shortcut."
     },
-    "a11yTrackTile": "{name}, {state}, activate to record",
+    "a11yTrackTile": "{name}, {state}, activate to select",
     "@a11yTrackTile": {
         "placeholders": {
             "name": {
@@ -2635,6 +2635,14 @@
     "powerOffConfirmBody": "Loops in RAM vanish if you power off without saving. The last on-disk save is kept.",
     "@powerOffConfirmBody": {
         "description": "Power-off three-choice body. There is no dirty flag; a named session still asks."
+    },
+    "powerOffConfirmEmptyBody": "Nothing is recorded, so nothing will be lost.",
+    "@powerOffConfirmEmptyBody": {
+        "description": "Body of the power-off confirmation when no track holds audio"
+    },
+    "powerOffConfirmAction": "Power off",
+    "@powerOffConfirmAction": {
+        "description": "Confirms powering off when nothing would be lost"
     },
     "powerOffKeepPlaying": "Keep playing",
     "@powerOffKeepPlaying": {
