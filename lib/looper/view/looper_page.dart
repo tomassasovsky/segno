@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:segno/appliance/power_off/power_off_host.dart';
+import 'package:segno/appliance/power_off/power_host.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/looper/view/tracks_view.dart';
 import 'package:segno/session/session.dart';
@@ -17,6 +17,6 @@ class LooperPage extends StatelessWidget {
             before != after && after.outcome == SessionOutcome.loaded,
         listener: (context, _) =>
             context.read<MonitorCubit>().projectFromRepository(),
-        child: const PowerOffHost(child: TracksView()),
+        child: const PowerHost(child: TracksView()),
       );
 }

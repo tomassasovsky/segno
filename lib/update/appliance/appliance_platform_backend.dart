@@ -6,8 +6,9 @@ import 'package:update_repository/update_repository.dart';
 
 /// The Raspberry Pi appliance update backend. Reads the running semantic
 /// version and channel from marker files, fetches the channel manifest over
-/// HTTPS, and delegates the privileged download/stage and reboot to the
-/// `segno-update-ctl` helper (via the injected [ApplianceEnv]).
+/// HTTPS, and delegates the privileged download/stage to the
+/// `segno-update-ctl` helper (via the injected [ApplianceEnv]). The restart
+/// that boots a staged slot is the power flow's, which saves first.
 ///
 /// Channel resolution (same order as the shell helpers):
 ///   1. [channelOverrideFile] on `/data` (user toggle; survives OS updates)
@@ -16,7 +17,7 @@ import 'package:update_repository/update_repository.dart';
 ///
 /// [isSupported] additionally requires the helper to be present, so on a build
 /// that hasn't shipped it the update UI stays hidden rather than offering a
-/// stage/reboot that would fail.
+/// stage that would fail.
 class AppliancePlatformBackend implements PlatformUpdateBackend {
   /// Creates an [AppliancePlatformBackend]. All paths and the base URL are
   /// overridable for tests; [env] defaults to the real [SystemApplianceEnv].
@@ -111,7 +112,4 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   @override
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
       _env.stage(manifest.version.toString());
-
-  @override
-  Future<void> applyAndRestart() => _env.reboot();
 }

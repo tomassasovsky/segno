@@ -13,8 +13,8 @@ import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/app_runtime.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
-import 'package:segno/appliance/power_off/power_off_gate.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
@@ -79,6 +79,8 @@ class _ReadGateStore extends FakeKeyValueStore {
   }
 }
 
+const _named = PowerSnapshot(currentSessionName: 'set');
+
 void main() {
   late AppRuntime runtime;
   late FakeAudioEngine engine;
@@ -142,6 +144,8 @@ void main() {
       performance: performance,
       sessions: sessions,
       powerOff: () async => halts++,
+      reboot: () async => halts++,
+      storageSettled: () async {},
     );
     addTearDown(() async {
       if (closeFailureExpected) {
@@ -563,10 +567,10 @@ void main() {
     () async {
       await runtime.start();
       runtime.power
-        ..press(const PowerOffSnapshot())
-        ..confirmPowerOff(const PowerOffSnapshot());
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await pumpEventQueue();
-      expect(runtime.power.state.phase, PowerOffPhase.goodbye);
+      expect(runtime.power.state.phase, PowerPhase.goodbye);
       final (loading, read) = await holdSessionRead();
       final closing = runtime.close();
       await Future<void>.delayed(const Duration(milliseconds: 2100));
@@ -822,12 +826,12 @@ void main() {
       expect(repository.mixRecoveryRequired, isTrue);
       expect(runtime.tempo.clickVolumeOwner.ready, isFalse);
       runtime.power
-        ..press(const PowerOffSnapshot())
-        ..confirmPowerOff(const PowerOffSnapshot());
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       for (var i = 0; i < 200 && halts == 0; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
-      expect(runtime.power.state.phase, PowerOffPhase.goodbye);
+      expect(runtime.power.state.phase, PowerPhase.goodbye);
       expect(halts, 1);
       // The next start replays what storage holds.
       expect(store.values['tempo.click_volume'], 1.5);
