@@ -5,17 +5,20 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
-import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
-/// The Pedal tab of the Control domain: which footswitch you are editing, and
-/// what it acts on in FX mode.
+/// The FX page's pedal assignments: which footswitch you are editing, and what
+/// it acts on in FX mode.
+///
+/// The only editor of [ControlCubit]'s global bindings. It was the Pedal tab
+/// of the settings tray's Control face; it moved behind the FX page's Pedal
+/// assignments button with the tray (pen `04 / 02 Pedal banks`). What each
+/// switch does in the other modes is the Pedals page's, which Settings opens.
 ///
 /// **No plate.** The full-screen assignment surface draws a scale diagram of
 /// the real top plate, which is the right picture when the question is *where
@@ -30,15 +33,15 @@ import 'package:segno/theme/theme.dart';
 ///
 /// MODE and Bank appear nowhere: neither can ever hold a binding (B12), and a
 /// card that exists only to refuse is worse than no card.
-class PedalTrayBody extends StatefulWidget {
-  /// Creates a [PedalTrayBody].
-  const PedalTrayBody({super.key});
+class FxPedalAssignmentsBody extends StatefulWidget {
+  /// Creates a [FxPedalAssignmentsBody].
+  const FxPedalAssignmentsBody({super.key});
 
   @override
-  State<PedalTrayBody> createState() => _PedalTrayBodyState();
+  State<FxPedalAssignmentsBody> createState() => _FxPedalAssignmentsBodyState();
 }
 
-class _PedalTrayBodyState extends State<PedalTrayBody> {
+class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
   /// The switch whose targets are listed, or null when none is being edited.
   PedalButton? _selected;
 
@@ -84,31 +87,11 @@ class _PedalTrayBodyState extends State<PedalTrayBody> {
     final selected = _selected;
 
     return KeyedSubtree(
-      key: const Key('pedal_tray_body'),
+      key: const Key('fx_pedal_assignments_body'),
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: _gap),
-            // The way to what each switch DOES, above the list of what the FX
-            // switches act on: a performer who opens this tab to change a
-            // footswitch should not have to learn that the two questions live
-            // on different surfaces.
-            ConsoleCard(
-              children: [
-                ConsoleRow(
-                  key: const Key('pedal_open_setup'),
-                  title: l10n.controlPedalSetupRow,
-                  subtitle: l10n.controlPedalSetupSub,
-                  showDivider: false,
-                  onTap: () => unawaited(
-                    openPedalSetup(
-                      onStage: context.read<SettingsTrayCubit>().closeTray,
-                    ),
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: _gap),
             ConsoleGroupLabel(l10n.controlTransportGroup),
             const SizedBox(height: _gap),

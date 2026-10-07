@@ -21,6 +21,7 @@ import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/session/application/session_settings_coordinator.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -56,6 +57,7 @@ class AppRuntime {
       sessionBlocked: () => fxPersistence.sessionTransitionActive,
     );
     timing = RecordTimingSettings(repository: repository, settings: settings);
+    tuner = TunerSettings(settings: settings);
     owners = SettingsOwners([
       ...tempo.owners,
       ...playback.owners,
@@ -100,6 +102,8 @@ class AppRuntime {
         fade: fade,
       ),
       fadeSettings: fade,
+      tunerSettings: tuner,
+      seedTunerDefault: true,
       pedal: pedal,
       performance: performance,
       controller: controllers,
@@ -150,6 +154,10 @@ class AppRuntime {
   late final RecordTimingSettings timing;
   late final FadeSettings fade;
 
+  /// The tuner's appliance preferences, read by the reading and the foot
+  /// Tuner.
+  late final TunerSettings tuner;
+
   /// The owned settings that run on the shared owner, in their fixed order.
   late final SettingsOwners owners;
 
@@ -176,6 +184,7 @@ class AppRuntime {
       record.load(),
       timing.load(),
       fade.load(),
+      tuner.load(),
       control.load(),
     ]).then((_) => session.recordBaseline());
   }
@@ -245,6 +254,7 @@ class AppRuntime {
       // and the repository still live. A failure must not skip disposal.
       fxPersistence.flush,
       fade.close,
+      tuner.close,
       timing.close,
       record.close,
       playback.close,

@@ -11,6 +11,8 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -65,6 +67,20 @@ class StageTopBar extends StatelessWidget {
           const _BankButton(),
           const SizedBox(width: _gap),
           const _ViewButton(),
+          const SizedBox(width: _gap),
+          // The Tuner by touch; feet reach it through MODE or an assignment.
+          _StageIconButton(
+            key: const Key('stage_tuner'),
+            semanticLabel: l10n.actionModeTuner,
+            bordered: true,
+            onTap: () =>
+                context.read<ControlCubit>().setMode(InteractionMode.tuner),
+            child: Icon(
+              LucideIcons.guitar,
+              size: 28,
+              color: surface.textPrimary,
+            ),
+          ),
           const SizedBox(width: _gap),
           _StageIconButton(
             key: const Key('stage_settings'),
@@ -259,78 +275,43 @@ class _BankButton extends StatelessWidget {
   }
 }
 
-/// The view button: opens the Track / Wave menu below itself. A radio menu
-/// (`menuitemradio` in the prototype): the current view is checked.
+/// The view button: opens the Track / Wave / Mixer menu below itself. A radio
+/// menu (`menuitemradio` in the prototype): the current view is checked.
 class _ViewButton extends StatelessWidget {
   const _ViewButton();
-
-  Future<void> _showMenu(BuildContext context) async {
-    final button = context.findRenderObject()! as RenderBox;
-    final overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
-    final origin = button.localToGlobal(Offset.zero, ancestor: overlay);
-    final current = context.read<TracksCubit>().state.stageView;
-    final l10n = context.l10n;
-    final surface = context.surface;
-    final choice = await showMenu<StageView>(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        origin.dx,
-        origin.dy + button.size.height + 8,
-        overlay.size.width - origin.dx - button.size.width,
-        0,
-      ),
-      color: surface.card,
-      items: [
-        for (final view in StageView.values)
-          PopupMenuItem<StageView>(
-            key: Key('stage_view_${view.name}'),
-            value: view,
-            child: Semantics(
-              inMutuallyExclusiveGroup: true,
-              checked: view == current,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppText(
-                    switch (view) {
-                      StageView.track => l10n.stageViewTrack,
-                      StageView.wave => l10n.stageViewWave,
-                      StageView.mixer => l10n.stageViewMixer,
-                    },
-                    style: TextStyle(
-                      fontFamily: SurfaceTheme.displayFont,
-                      color: surface.textPrimary,
-                      fontSize: 24,
-                    ),
-                  ),
-                  if (view == current) ...[
-                    const SizedBox(width: 16),
-                    Icon(LucideIcons.check, size: 22, color: surface.accent),
-                  ],
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-    if (choice != null && context.mounted) {
-      context.read<TracksCubit>().showView(choice);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return _StageIconButton(
-      key: const Key('stage_view_menu'),
-      semanticLabel: context.l10n.stageViewMenu,
-      bordered: true,
-      onTap: () => unawaited(_showMenu(context)),
-      child: PenIconView(
-        icon: PenIcon.views,
-        size: 28,
-        color: surface.textPrimary,
+    final l10n = context.l10n;
+    final current = context.select<TracksCubit, StageView>(
+      (cubit) => cubit.state.stageView,
+    );
+    return LoopMenu<StageView>(
+      value: current,
+      onSelected: context.read<TracksCubit>().showView,
+      items: [
+        for (final view in StageView.values)
+          LoopSelectItem(
+            key: Key('stage_view_${view.name}'),
+            value: view,
+            label: switch (view) {
+              StageView.track => l10n.stageViewTrack,
+              StageView.wave => l10n.stageViewWave,
+              StageView.mixer => l10n.stageViewMixer,
+            },
+          ),
+      ],
+      builder: (context, controller) => _StageIconButton(
+        key: const Key('stage_view_menu'),
+        semanticLabel: l10n.stageViewMenu,
+        bordered: true,
+        onTap: () => controller.isOpen ? controller.close() : controller.open(),
+        child: PenIconView(
+          icon: PenIcon.views,
+          size: 28,
+          color: surface.textPrimary,
+        ),
       ),
     );
   }

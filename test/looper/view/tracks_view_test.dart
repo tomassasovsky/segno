@@ -25,11 +25,9 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
 import 'package:segno/looper/view/mixer_column.dart';
-import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
 import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
@@ -39,6 +37,8 @@ import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
+import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:toastification/toastification.dart';
@@ -61,18 +61,6 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
-
-class _BrightnessStore extends FakeKeyValueStore {
-  bool refuse = true;
-
-  @override
-  Future<void> setDouble(String key, double value) async {
-    if (key == 'ui.brightness' && refuse) {
-      throw StateError('brightness storage unavailable');
-    }
-    await super.setDouble(key, value);
-  }
-}
 
 /// The rebuild probe for the `rebuild scope` group: a widget `TracksView.build`
 /// creates unconditionally, in console and desktop layouts alike.
@@ -269,8 +257,13 @@ void main() {
               BlocProvider<PerformanceRecorderCubit>.value(
                 value: performanceRecorder,
               ),
-              // The tray's Signal domain draws input cards, so opening it needs
-              // the same cubits the app provides around it.
+              // The foot Tuner face reads the same cubits the app provides.
+              BlocProvider<TunerCubit>(
+                create: (_) => TunerCubit(
+                  repository: repository,
+                  settings: TunerSettings(settings: settings),
+                ),
+              ),
               BlocProvider<InputsCubit>(
                 create: (_) =>
                     InputsCubit(settings: settings, repository: repository),
@@ -286,6 +279,12 @@ void main() {
               // The device-lost banner and the not-running gate read the
               // audio setup cubit (#453).
               BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+              BlocProvider<TunerCubit>(
+                create: (_) => TunerCubit(
+                  repository: repository,
+                  settings: TunerSettings(settings: settings),
+                ),
+              ),
             ],
             child: onAncestorKey == null
                 ? const TracksView()
@@ -365,21 +364,13 @@ void main() {
     },
   );
 
-  group('Settings opens over the stage, never the tray', () {
-    // The stage is under the Settings route, so its tray is offstage.
-    double scrim(WidgetTester tester) => tester
-        .widget<AnimatedOpacity>(
-          find.byKey(const Key('settingsTray_scrim'), skipOffstage: false),
-        )
-        .opacity;
-
+  group('Settings opens as a route over the stage', () {
     testWidgets('from the header icon', (tester) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
       await tester.tap(find.byKey(const Key('stage_settings')));
       await tester.pumpAndSettle();
       expect(find.byType(SettingsHomePage), findsOneWidget);
-      expect(scrim(tester), 0);
     });
 
     testWidgets('from the foot Mixer', (tester) async {
@@ -395,7 +386,6 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byType(SettingsHomePage), findsOneWidget);
-      expect(scrim(tester), 0);
     });
   });
 
@@ -430,18 +420,6 @@ void main() {
         await tester.sendKeyEvent(activation);
         await tester.pumpAndSettle();
         expect(find.byType(SettingsHomePage), findsOneWidget);
-        // Settings opens over the stage; the tray stays shut.
-        expect(
-          tester
-              .widget<AnimatedOpacity>(
-                find.byKey(
-                  const Key('settingsTray_scrim'),
-                  skipOffstage: false,
-                ),
-              )
-              .opacity,
-          0,
-        );
         verifyNever(() => bloc.add(const LooperPlayAllPressed()));
       },
     );
@@ -506,6 +484,9 @@ void main() {
     when(
       () => repository.setMute(muted: true),
     ).thenReturn(EngineResult.invalid);
+    when(
+      () => repository.setTunerInput(input: any(named: 'input')),
+    ).thenReturn(EngineResult.ok);
     when(() => repository.laneMuted(any(), any())).thenReturn(false);
     when(() => repository.fxRecipesSettled).thenReturn(true);
     when(() => repository.laneEffects(any(), any())).thenReturn(const []);
@@ -516,8 +497,6 @@ void main() {
     await pump(tester);
     control.setMode(InteractionMode.mixer);
     await tester.pump();
-    tester.element(find.byType(SettingsTray)).read<SettingsTrayCubit>().open();
-    await tester.pumpAndSettle();
     await control.toggleFootMixerMute();
     await tester.pumpAndSettle();
     expect(
@@ -792,6 +771,40 @@ void main() {
     });
   }
 
+  testWidgets('the foot Tuner shows its face, and an arm the engine '
+      'refuses says so (#1229)', (tester) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    seed(
+      const LooperState(
+        status: EngineStatus(inputChannels: 2),
+        tracks: [Track()],
+      ),
+    );
+    when(
+      () => repository.setTunerInput(input: any(named: 'input')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTunerMute(any()),
+    ).thenReturn(EngineResult.invalid);
+    await pump(tester);
+    control.setMode(InteractionMode.tuner);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('foot_tuner_view')), findsOneWidget);
+    expect(
+      find.text('The tuner could not start. Try again.').hitTestable(),
+      findsOneWidget,
+    );
+    control.setMode(InteractionMode.record);
+    await tester.pumpAndSettle();
+    verify(() => repository.setTunerInput(input: -1)).called(1);
+    dismissAppToast(AppToastId.footTunerRefused);
+    await tester.pump(const Duration(seconds: 10));
+  });
+
   testWidgets('the layer badge drops by one when a Peel removes a layer', (
     tester,
   ) async {
@@ -827,59 +840,30 @@ void main() {
     expect(find.byKey(const Key('tracks_tile_1')), findsOneWidget);
   });
 
-  testWidgets('mounts the settings tray with its always-visible handle', (
+  testWidgets('the top bar Tuner button enters the Tuner by touch', (
+    tester,
+  ) async {
+    when(
+      () => repository.setTunerInput(input: any(named: 'input')),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.setTunerMute(any())).thenReturn(EngineResult.ok);
+    seed(const LooperState(tracks: [Track()]));
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('stage_tuner')));
+    await tester.pump();
+    expect(control.state.mode, InteractionMode.tuner);
+  });
+
+  testWidgets('the stage has no settings tray or pull handle', (
     tester,
   ) async {
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);
 
-    expect(find.byKey(const Key('settingsTray_handle')), findsOneWidget);
+    expect(find.byKey(const Key('settingsTray_handle')), findsNothing);
   });
 
-  /// The tray's own state, read from inside the provider it lives under.
-  SettingsTrayState trayState(WidgetTester tester) =>
-      BlocProvider.of<SettingsTrayCubit>(
-        tester.element(find.byType(SettingsTray)),
-      ).state;
-
-  testWidgets('brightness failure stays visible above the real tray and '
-      'another adjustment saves', (tester) async {
-    tester.view
-      ..physicalSize = const Size(1920, 1080)
-      ..devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final store = _BrightnessStore();
-    settings = SettingsRepository(store: store);
-    seed(const LooperState(tracks: [Track()]));
-    await pump(tester);
-    tester.element(find.byType(SettingsTray)).read<SettingsTrayCubit>().open();
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('settingsTray_brightness')));
-    await tester.pumpAndSettle();
-    final context = tester.element(find.byType(SettingsTray));
-    final title = context.l10n.displayBrightnessSaveFailed;
-    // A SnackBar can exist but be painted and hit-tested behind the opaque
-    // SettingsTray sibling. The failure must be reachable above that sibling.
-    expect(find.text(title).hitTestable(), findsOneWidget);
-    expect(store.values['ui.brightness'], isNull);
-    expect(tester.takeException(), isNull);
-    store.refuse = false;
-    await tester.drag(
-      find.byKey(const Key('settingsTray_brightness')),
-      const Offset(0, -80),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      await settings.loadBrightness(),
-      context.read<DisplayBrightnessCubit>().state,
-    );
-    await tester.pump(const Duration(seconds: 10));
-  });
-
-  testWidgets('G reaches the Effects route, and no longer opens the tray', (
+  testWidgets('G reaches the Effects route', (
     tester,
   ) async {
     seed(const LooperState(tracks: [Track()]));
@@ -888,12 +872,10 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
     await tester.pumpAndSettle();
 
-    // Effects is a full-screen route now, not a tray domain. The route itself
-    // needs the app's root navigator, which this harness does not install, so
-    // what this pins is that the handler runs cleanly and leaves the tray
-    // alone — the shortcut used to open it.
+    // Effects is a full-screen route. The route itself needs the app's root
+    // navigator, which this harness does not install, so what this pins is
+    // that the handler runs cleanly.
     expect(tester.takeException(), isNull);
-    expect(trayState(tester).dragProgress, 0);
   });
 
   testWidgets('tapping a tile only selects that channel in record mode', (

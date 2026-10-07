@@ -11,13 +11,12 @@ import 'package:segno/wifi/wifi_join_failure.dart';
 import 'package:segno/wifi/wifi_network_visibility.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
-/// The WiFi tab of the Network domain — chrome-less.
+/// The Wi-Fi body of the Network settings page — chrome-less.
 ///
-/// No chrome bar and no back chevron: the rail is always on screen, and a
-/// second way back would be a second navigation surface. What was the panel's
-/// title bar is now [ConsoleFaceHeader], which belongs to *this tab* because
-/// the controls it carries — rescan, power — are this radio's, not the
-/// domain's.
+/// No chrome bar and no back chevron: the page's own frame has Back, and a
+/// second way back would be a second navigation surface. The title row is
+/// [ConsoleFaceHeader], which carries this radio's controls — rescan,
+/// power.
 class WifiTrayBody extends StatefulWidget {
   /// Creates a [WifiTrayBody].
   const WifiTrayBody({super.key});

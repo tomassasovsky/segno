@@ -18,6 +18,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/app/view/control_settings_notices.dart';
+import 'package:segno/app/view/encoder_navigation.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_goodbye.dart';
@@ -37,6 +38,7 @@ import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:segno/update/appliance/system_appliance_env.dart';
@@ -458,6 +460,7 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.repository),
         RepositoryProvider.value(value: _runtime.timing),
         RepositoryProvider.value(value: _runtime.fade),
+        RepositoryProvider.value(value: _runtime.tuner),
         RepositoryProvider.value(value: _runtime.record),
         RepositoryProvider.value(value: widget.controllerRepository),
         RepositoryProvider.value(value: widget.midiDeviceRepository),
@@ -582,8 +585,10 @@ class _AppState extends State<App> {
           // to the looper stream and arms the engine, and a console that never
           // opens the Tuner face should pay for neither.
           BlocProvider(
-            create: (context) =>
-                TunerCubit(repository: context.read<LooperRepository>()),
+            create: (context) => TunerCubit(
+              repository: context.read<LooperRepository>(),
+              settings: context.read<TunerSettings>(),
+            ),
           ),
           BlocProvider(
             create: (context) {
@@ -1122,6 +1127,16 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
+  /// Where the Tuner went once the tray stopped carrying it (#1229, D11):
+  /// said once, the boot `Hold · Tuner` was added to Custom pedal 2.
+  void _showTunerSeededNotice() {
+    showAppToast(
+      id: AppToastId.tunerSeeded,
+      title: AppText(_l10n.footTunerSeeded),
+      icon: const Icon(Icons.info_outline),
+    );
+  }
+
   /// Only one display on the dual-display console.
   void _showSingleDisplayNotice() {
     final l10n = _l10n;
@@ -1190,8 +1205,10 @@ class _AppViewState extends State<_AppView> {
         // appliance is dead — including this branch's own Wi-Fi password
         // field. Inside the brightness wrapper so the keys dim with
         // everything else.
-        final typed = OnScreenKeyboardHost(
-          child: AppTextDefaults(child: child ?? const SizedBox.shrink()),
+        final typed = EncoderNavigation(
+          child: OnScreenKeyboardHost(
+            child: AppTextDefaults(child: child ?? const SizedBox.shrink()),
+          ),
         );
         return BlocBuilder<DisplayBrightnessCubit, double>(
           buildWhen: (previous, current) => previous != current,
@@ -1247,6 +1264,11 @@ class _AppViewState extends State<_AppView> {
               previous.retiredBootMode == null &&
               current.retiredBootMode != null,
           listener: (_, _) => _showBootModeRetiredNotice(),
+        ),
+        BlocListener<ControlCubit, ControlState>(
+          listenWhen: (previous, current) =>
+              !previous.tunerDefaultSeeded && current.tunerDefaultSeeded,
+          listener: (_, _) => _showTunerSeededNotice(),
         ),
         BlocListener<TracksCubit, TracksState>(
           listener: (_, _) => _updateDisplayContext(),
