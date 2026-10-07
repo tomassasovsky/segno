@@ -29,14 +29,13 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/fx/fx_pedal_assignments_page.dart';
-import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
@@ -195,8 +194,8 @@ class _PreviewWifiClient implements WifiClient {
 }
 
 /// The Settings pages and the FX pedal assignments in the states worth
-/// checking by eye (a list open, a refusal, an update in each phase), and the
-/// tray open on the tuner. Author-machine goldens, like the other suites here;
+/// checking by eye (a list open, a refusal, an update in each phase).
+/// Author-machine goldens, like the other suites here;
 /// each page's resting state is in `settings_destinations_screenshots_test`.
 void main() {
   late TempoSettings tempoOwner;
@@ -541,7 +540,6 @@ void main() {
   Future<void> pumpPage(
     WidgetTester tester, {
     required Widget page,
-    SettingsTrayCubit? tray,
     WifiRepository? wifi,
     ({
       WaveformWindowCubit waveform,
@@ -570,7 +568,12 @@ void main() {
     control,
   }) {
     final rig = control ?? controlProviders(tester);
-    final tuner = TunerCubit(repository: rig.looper);
+    final tuner = TunerCubit(
+      repository: rig.looper,
+      settings: TunerSettings(
+        settings: SettingsRepository(store: FakeKeyValueStore()),
+      ),
+    );
     addTearDown(() => unawaited(tuner.close()));
     return tester.pumpWidget(
       MaterialApp(
@@ -588,7 +591,6 @@ void main() {
           ],
           child: MultiBlocProvider(
             providers: [
-              if (tray != null) BlocProvider.value(value: tray),
               BlocProvider.value(value: tuner),
               BlocProvider.value(value: rig.control),
               if (system == null) BlocProvider.value(value: rig.pedal),
@@ -619,38 +621,6 @@ void main() {
       ),
     );
   }
-
-  testWidgets('the tray open on the tuner', (tester) async {
-    await size(tester);
-    final cubit = SettingsTrayCubit()..open();
-    addTearDown(cubit.close);
-    final rig = controlProviders(
-      tester,
-      looperState: const LooperState(tracks: [Track()], status: _previewStatus),
-    );
-    when(
-      () => rig.looper.setTunerInput(input: any(named: 'input')),
-    ).thenReturn(EngineResult.ok);
-
-    await pumpPage(
-      tester,
-      control: rig,
-      tray: cubit,
-      page: const Scaffold(
-        body: Stack(
-          children: [
-            ColoredBox(color: Color(0xFF1A1520)),
-            SettingsTray(),
-          ],
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(Scaffold),
-      matchesGoldenFile('goldens/tray_tuner.png'),
-    );
-  }, skip: !hasFonts);
 
   testWidgets('Network page, wifi tab', (tester) async {
     await size(tester);

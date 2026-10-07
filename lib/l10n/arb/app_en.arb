@@ -1327,14 +1327,6 @@
     "@tunerNoTunableInput": {
         "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
     },
-    "tunerNoDevice": "No audio device",
-    "@tunerNoDevice": {
-        "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
-    },
-    "trayTunerLabel": "Tuner",
-    "@trayTunerLabel": {
-        "description": "Label for the settings tray's Tuner rail entry."
-    },
     "trayBrightnessLabel": "Brightness",
     "@trayBrightnessLabel": {
         "description": "Label for the settings tray's brightness slider (UI-only this round — not persisted, no real display dimming)."
@@ -5845,6 +5837,117 @@
     "actionModePeel": "Peel",
     "@actionModePeel": {
         "description": "Foot Peel performance surface."
+    },
+    "actionModeTuner": "Tuner",
+    "@actionModeTuner": {
+        "description": "Foot Tuner: the mode's name, in pickers and on its face (#1229)."
+    },
+    "footTunerReference": "A4 reference",
+    "@footTunerReference": {
+        "description": "Foot Tuner face: the label over the A4 reference value."
+    },
+    "footTunerHzUnit": "Hz",
+    "@footTunerHzUnit": {
+        "description": "Foot Tuner face: the unit beside the A4 reference value."
+    },
+    "footTunerInputMuted": "Input muted",
+    "@footTunerInputMuted": {
+        "description": "Foot Tuner face: the tuned input is silent while tuning."
+    },
+    "footTunerInputAudible": "Input audible",
+    "@footTunerInputAudible": {
+        "description": "Foot Tuner face: the tuned input is heard while tuning."
+    },
+    "footTunerMuteInput": "Mute input",
+    "@footTunerMuteInput": {
+        "description": "Foot Tuner Stop switch while the input is audible."
+    },
+    "footTunerUnmuteInput": "Unmute input",
+    "@footTunerUnmuteInput": {
+        "description": "Foot Tuner Stop switch while the input is muted."
+    },
+    "footTunerReferenceDown": "Reference −",
+    "@footTunerReferenceDown": {
+        "description": "Foot Tuner Undo switch: lowers the A4 reference by 1 Hz."
+    },
+    "footTunerReferenceUp": "Reference +",
+    "@footTunerReferenceUp": {
+        "description": "Foot Tuner Clear switch: raises the A4 reference by 1 Hz."
+    },
+    "footTunerHoldReset": "Hold · {hz} Hz",
+    "@footTunerHoldReset": {
+        "description": "Foot Tuner Undo and Clear: holding resets the A4 reference to {hz}.",
+        "placeholders": {
+            "hz": {
+                "type": "int"
+            }
+        }
+    },
+    "footTunerInputs": "Inputs {first}–{last}",
+    "@footTunerInputs": {
+        "description": "Foot Tuner Bank switch: the inputs on the current page, 1-based.",
+        "placeholders": {
+            "first": {
+                "type": "int"
+            },
+            "last": {
+                "type": "int"
+            }
+        }
+    },
+    "footTunerInputsOne": "Input {number}",
+    "@footTunerInputsOne": {
+        "description": "Foot Tuner Bank switch: a page that holds one input.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "footTunerNextInputs": "Next inputs",
+    "@footTunerNextInputs": {
+        "description": "Foot Tuner Bank switch hint when there are more pages."
+    },
+    "footTunerFlat": "Flat",
+    "@footTunerFlat": {
+        "description": "Foot Tuner reading: the note is below pitch."
+    },
+    "footTunerInTune": "In tune",
+    "@footTunerInTune": {
+        "description": "Foot Tuner reading: the note is in tune."
+    },
+    "footTunerSharp": "Sharp",
+    "@footTunerSharp": {
+        "description": "Foot Tuner reading: the note is above pitch."
+    },
+    "footTunerCents": "{cents} cents",
+    "@footTunerCents": {
+        "description": "Foot Tuner reading: the deviation, one decimal, signed.",
+        "placeholders": {
+            "cents": {
+                "type": "String"
+            }
+        }
+    },
+    "footTunerPlayOneNote": "Play one note",
+    "@footTunerPlayOneNote": {
+        "description": "Foot Tuner reading with no pitch (pen 23/3)."
+    },
+    "footTunerSaveFailed": "Tuner settings could not be saved. Try again.",
+    "@footTunerSaveFailed": {
+        "description": "Foot Tuner: the A4 reference or input could not be saved."
+    },
+    "footTunerStartFailed": "The tuner could not start. Try again.",
+    "@footTunerStartFailed": {
+        "description": "Foot Tuner: the engine refused to arm the tuner or mute the input; the input stays audible."
+    },
+    "footTunerAtLimit": "A4 reference is at its limit.",
+    "@footTunerAtLimit": {
+        "description": "Foot Tuner: Reference + at 460 Hz or Reference − at 420 Hz."
+    },
+    "footTunerSeeded": "Tuner is on Custom: hold MODE, then hold pedal 2.",
+    "@footTunerSeeded": {
+        "description": "One-time notice when Hold · Tuner is added to Custom pedal 2 (#1229, D11)."
     },
     "actionOperationPeel": "Peel",
     "@actionOperationPeel": {
