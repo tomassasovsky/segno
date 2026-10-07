@@ -154,7 +154,7 @@ void main() {
   });
 
   test('MODE and BANK never keep a colour (#1274)', () {
-    final stored = PedalPalette.fromJson({
+    final stored = PedalPalette.fromJson(const {
       'leds': {'mode': 'red', 'bank': 'violet', 'stop': 'cyan'},
     });
     expect(stored.choices.keys, [PedalButton.stop]);
