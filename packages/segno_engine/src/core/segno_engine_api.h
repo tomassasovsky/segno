@@ -53,16 +53,27 @@ typedef enum le_result {
   LE_ERR_NOT_READY = -8,     /* a pending command/report prevents a safe decision */
   LE_ERR_REVERSED = -9,      /* a punch-in on a reversed track (#1162): overdub
                               * is unavailable while Reverse is on */
-  LE_ERR_TRANSFORMED = -10,  /* a record or overdub while Speed is not 1x
-                              * (#1179): capture never writes through a
-                              * fractional read head */
+  LE_ERR_TRANSFORMED = -10,  /* a record or overdub while Speed is not 1x,
+                              * or a punch-in on a transposed track or one
+                              * playing at another span than its take's
+                              * (#1179): capture never writes under playback
+                              * it does not hear */
   /* -11 belongs to pitch/time (#1179); -12 and -13 to the backing
-   * player (#1200); the rest up to -17 to other work (the numbering ledger). */
+   * player (#1200); -14 and -15 to other work (the numbering ledger). */
   LE_ERR_TOO_LONG = -12, /* a backing file over LE_BACKING_MAX_SECONDS (#1200) */
+  LE_ERR_NO_COMMON_CYCLE = -16, /* render recipe (#1202): the selected tracks'
+                                 * lengths share no common cycle within the
+                                 * cap; a chosen length is required */
+  LE_ERR_TRACKS_CHANGED = -17,  /* render recipe (#1202): a source's material
+                                 * changed after the render froze it */
   LE_ERR_NOT_FOUND = -18,    /* the file (or a directory on its path) does not
                               * exist (#1198) */
   LE_ERR_TRUNCATED = -19,    /* the file exists but is shorter than the range
                               * it must hold (#1198) */
+  LE_ERR_EXTERNAL_CLOCK = -20, /* tempo is owned by an external MIDI clock
+                                * source (#1228); select Internal first */
+  LE_ERR_SYNC_LOCKED = -21,    /* the clock source cannot change while a track
+                                * records, overdubs, is armed or counting in */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -86,7 +97,8 @@ typedef enum le_track_state {
  * (D7 precedence). MANUAL and TAPPED are last-writer-wins; DERIVED is set only
  * when a defining loop finalizes with sync on and the source was NONE (a set
  * tempo is never re-derived); EXTERNAL is reserved for the Phase E MIDI-clock
- * follower and unused here. A DERIVED tempo survives clearing the loop that
+ * follower (#1228): written once per beat while an external clock source is
+ * selected and the tempo is not locked. A DERIVED tempo survives clearing the loop that
  * produced it (the "dead tempo" lesson): only an explicit reset returns the
  * source to NONE. */
 typedef enum le_tempo_source {
@@ -94,7 +106,7 @@ typedef enum le_tempo_source {
   LE_TEMPO_SOURCE_MANUAL = 1,   /* LE_CMD_SET_TEMPO */
   LE_TEMPO_SOURCE_TAPPED = 2,   /* LE_CMD_TAP_TEMPO */
   LE_TEMPO_SOURCE_DERIVED = 3,  /* derived from a defining loop (D7) */
-  LE_TEMPO_SOURCE_EXTERNAL = 4, /* reserved: MIDI clock receive (Phase E) */
+  LE_TEMPO_SOURCE_EXTERNAL = 4, /* the selected MIDI clock source (#1228) */
 } le_tempo_source;
 
 /* Click (metronome) audibility mode, mirrored in le_snapshot.click_mode — a
@@ -158,23 +170,25 @@ typedef enum le_mode_gate {
                                * stops every playing track before switching */
 } le_mode_gate;
 
-/* MIDI clock tri-state (Phase C/E, D15), mirrored in le_snapshot.clock_mode.
- * `off` and `send` are fully implemented by this part (C1): a native 24-PPQN
- * emitter (src/midi/le_midi_clock.h) drives 0xF8/Start/Stop through the
- * grid/transport each block whenever `send` is active AND the looper mode is
- * Multi/Sync/Band (manual-verified: Song and Free stay silent regardless of
- * this field — see le_engine_set_clock_mode). `receive` is REJECTED by the
- * setter for now — the enum value exists so Phase E (clock follower) can
- * reuse this same tri-state field without a breaking rename, per the index
- * plan's "Phase 5 reuses the tri-state clock_mode introduced here". Send and
- * receive are mutually exclusive by construction (only one non-off value is
- * ever accepted at a time). */
-typedef enum le_clock_mode {
-  LE_CLOCK_OFF = 0,     /* default: no MIDI clock I/O */
-  LE_CLOCK_SEND = 1,    /* segno is MIDI clock master (C1) */
-  LE_CLOCK_RECEIVE = 2, /* segno follows an external clock (Phase E; the
-                         * setter rejects this value until then) */
-} le_clock_mode;
+/* MIDI clock sync state (#1228), mirrored in le_snapshot.clock_state.
+ * INTERNAL: Segno's own tempo; incoming clock is ignored. With an external
+ * source selected (le_engine_set_clock_sync): WAITING until six consecutive
+ * valid pulse intervals arrive, then SYNCED; LOST when a Synced clock goes
+ * silent for max(6 pulse periods, 250 ms) or its device goes away. Silence
+ * after a received Stop reads WAITING, not LOST. */
+typedef enum le_clock_state {
+  LE_CLOCK_STATE_INTERNAL = 0,
+  LE_CLOCK_STATE_WAITING = 1,
+  LE_CLOCK_STATE_SYNCED = 2,
+  LE_CLOCK_STATE_LOST = 3,
+} le_clock_state;
+
+/* What happens to the loops when an external clock is lost (#1228 D5). The
+ * setting is stored now; the engine acts on it from #1228 Part 5. */
+typedef enum le_clock_loss_policy {
+  LE_CLOCK_LOSS_KEEP_PLAYING = 0,
+  LE_CLOCK_LOSS_STOP_LOOPS = 1,
+} le_clock_loss_policy;
 
 /* Atomic recording-start edits retain their distinct transient semantics. */
 typedef enum le_record_start_edit_kind {
@@ -393,13 +407,13 @@ typedef enum le_command_code {
    * without moving the shared musical clock. See le_engine_set_one_shot. */
   LE_CMD_SET_ONE_SHOT = 47, /* arg_i = channel, arg_f = 0/1 */
 
-  /* ---- MIDI clock (Phase C/E, D15) ----
-   * The tri-state le_clock_mode. Not perf-logged, for the same reason as
-   * LE_CMD_SET_LOOPER_MODE above (clock output is a routing/sync concern,
-   * not a captured audible source — the emitter sums nothing into the mix,
-   * it only ever pushes bytes out through le_midi_out_send). */
-  LE_CMD_SET_CLOCK_MODE = 48, /* arg_i = le_clock_mode. RECEIVE (2) is
-                               * rejected — see le_engine_set_clock_mode. */
+  /* ---- MIDI clock (Phase C, D15; #1228) ----
+   * Not perf-logged, for the same reason as LE_CMD_SET_LOOPER_MODE above
+   * (clock output is a routing/sync concern, not a captured audible source).
+   * Code 48 was the tri-state clock mode; receive moved to
+   * LE_CMD_SET_CLOCK_SYNC (124), and the send switch keeps 48 until the
+   * per-output send table (#1228 Part 6) replaces it. */
+  LE_CMD_SET_CLOCK_SEND = 48, /* arg_i = 0/1 */
 
   /* ---- Track-stage chains (FX v3 part 1b) ----
    * The bus twins of the lane / monitor FX commands: type/count ride the ring
@@ -560,6 +574,21 @@ typedef enum le_command_code {
    * buffer pointer, so raw posts are refused. Never perf-logged. */
   LE_CMD_AUDITION_START = 136, /* buffer + output pair */
   LE_CMD_AUDITION_STOP = 137,
+  LE_CMD_RENDER_FREEZE = 112, /* render recipe (#1202): the callback records
+                               * every source's read law; never raw-posted */
+  LE_CMD_BOUNCE = 113,         /* Bounce (#1202): installs a rendered result on
+                                * the destination in one drain; checked,
+                                * never raw-posted */
+  LE_CMD_BOUNCE_RECOVER = 114, /* Bounce Undo/Redo (#1202): reinstalls the
+                                * other side of a bounce; never raw-posted */
+  /* MIDI clock sync (#1228; codes 124-131 are this epic's): one complete
+   * vector {source port or -1, follow transport, loss policy} with a receipt
+   * sequence. Rechecked by the callback (LE_ERR_SYNC_LOCKED). */
+  LE_CMD_SET_CLOCK_SYNC = 124,
+  LE_CMD_SET_FOLLOW_TEMPO = 120, /* checked internal Follow tempo setting
+                                  * (#1179 Part 4a) */
+  LE_CMD_SET_PITCH_MODE = 121, /* checked internal Pitch setting (#1179 Part
+                                * 4a-ii); 122-123 are held for #1179 */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -1006,6 +1035,22 @@ typedef struct le_track_snapshot {
    * reports that result, so one tap raises one notice. The host reports each
    * increase, so a tap that did nothing is never silent. */
   uint32_t length_history_refusals;
+  /* Trailing (#1179 Part 4a): this track's Follow tempo override (-1
+   * inherits le_snapshot.follow_tempo, 0 keeps its recorded speed, 1 follows
+   * the song tempo). */
+  int32_t follow_override;
+  /* Trailing (#1179 Part 4a-ii): this track's Pitch override (-1 inherits
+   * le_snapshot.pitch_follows_speed, 0 Unchanged, 1 Follows speed), and the
+   * pitch the tempo retime puts on what it sounds now, in cents: 0 at its
+   * own span or once a stretch render plays (within the 0.5 % tolerance,
+   * about 9 cents), the varispeed's shift while that render is pending or
+   * with Follows speed. Speed and Transpose are not included. */
+  int32_t pitch_override;
+  int32_t pitch_effective_cents;
+  /* Trailing (#1179 Part 4b): the shared-clock length this track's take was
+   * laid down against once a retime moved the clock (0: the clock in force).
+   * A Session saves it so a recall reads every take at its own ratio. */
+  int32_t span_frames;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1349,10 +1394,10 @@ typedef struct le_snapshot {
    * Sync/Band (see le_sync_quantize_active). */
   int32_t primary_track;
 
-  /* ---- MIDI clock (Phase C, D15; trailing for the same offset-stability
-   * reason as the blocks above). le_clock_mode; default 0 = OFF, so an
-   * untouched engine emits no clock bytes. See le_engine_set_clock_mode. */
-  int32_t clock_mode;
+  /* ---- MIDI clock send (Phase C, D15; trailing for the same
+   * offset-stability reason as the blocks above). 0/1; default 0, so an
+   * untouched engine emits no clock bytes. See le_engine_set_clock_send. */
+  int32_t clock_send;
 
   /* ---- input clip detector + conditioning activity (input clip, S2;
    * trailing for the same offset-stability reason as the blocks above).
@@ -1478,7 +1523,54 @@ typedef struct le_snapshot {
    * whole bars; a Divide of a sole 1- or 3-bar loop keeps the tempo and
    * leaves 2 or 6 beats with loop_bars 0. */
   int32_t loop_beats;
+  /* ---- MIDI clock sync (#1228 Part 2; trailing). clock_state is an
+   * le_clock_state; clock_source_port is -1 for Internal. clock_bpm is the
+   * external tempo for display (0.1 BPM steps with hysteresis, Segno's
+   * denominator-note unit; the last value is kept while LOST, 0 before the
+   * first acquisition). clock_out_of_range is 1 while a steady clock lies
+   * outside 30..300 BPM in the current signature. clock_pulses counts every
+   * pulse received or recognised as missed since the source was selected
+   * (low 32 bits). clock_receipt is the sequence of the last applied
+   * le_engine_set_clock_sync, clock_result its outcome (LE_OK or
+   * LE_ERR_SYNC_LOCKED). clock_losses counts Synced -> Lost transitions. */
+  int32_t clock_state;
+  int32_t clock_source_port;
+  int32_t clock_follow_transport;
+  int32_t clock_loss_policy;
+  float clock_bpm;
+  int32_t clock_out_of_range;
+  uint32_t clock_pulses;
+  uint32_t clock_receipt;
+  int32_t clock_result;
+  uint32_t clock_losses;
+  /* Trailing (#1179 Part 4a): the tempo the takes were recorded at (0 with
+   * no master), the Follow tempo default every track inherits (0 = keep the
+   * recorded speed), and what a song-tempo change does now
+   * (le_tempo_follow_state). */
+  float recorded_tempo_bpm;
+  int32_t follow_tempo;
+  int32_t tempo_follow;
+  /* Trailing (#1179 Part 4a-ii): the Pitch default every track inherits
+   * (0 Unchanged, the default; 1 Follows speed). */
+  int32_t pitch_follows_speed;
+  /* Trailing (#1179 Part 4b): the master length recorded_tempo_bpm
+   * measured (0 with none). A Session saves the pair, so a recall commits
+   * the takes at the tempo they were laid down at and retimes from there. */
+  int32_t recorded_length_frames;
 } le_snapshot;
+
+/* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part
+ * 4a). With no content the tempo is free. With content it retimes the shared
+ * clock only on a bar grid (Multi, Sync or Band with a tempo) with at least
+ * one track following, and never while a track records, overdubs, is armed
+ * or launching, or a count-in runs. */
+typedef enum le_tempo_follow_state {
+  LE_TEMPO_FOLLOW_FREE = 0,        /* no content: the tempo changes freely */
+  LE_TEMPO_FOLLOW_RETIMES = 1,     /* a change retimes the recorded tracks */
+  LE_TEMPO_FOLLOW_NO_GRID = 2,     /* locked: no bar grid to follow */
+  LE_TEMPO_FOLLOW_NO_FOLLOWER = 3, /* locked: no track follows the tempo */
+  LE_TEMPO_FOLLOW_BUSY = 4,        /* locked while capture, arm or count-in */
+} le_tempo_follow_state;
 
 /* ============================ Plugin hosting ==============================
  * Discovery of installed VST3 / CLAP audio-effect plugins. This first slice is
@@ -2151,7 +2243,10 @@ LE_EXPORT int32_t le_engine_finalize_take(le_engine* engine, int32_t channel);
  * (loop_bars > 0 or tempo_source != none), set_tempo / set_time_signature /
  * tap_tempo are accepted but IGNORED by the audio thread (the published state
  * is unchanged). Clearing every track releases the lock; the tempo VALUE and
- * its source survive the clear (a derived tempo outlives its source loop). */
+ * its source survive the clear (a derived tempo outlives its source loop).
+ * Follow tempo (#1179 Part 4a, le_engine_set_follow_tempo) lifts the lock for
+ * set_tempo and tap_tempo when a following track plays on a bar grid: the
+ * change then retimes the recorded tracks (le_snapshot.tempo_follow). */
 
 /* Sets the tempo in denominator-note beats per minute, clamped to 30..300.
  * Sets tempo_source = manual; ignored while the tempo is locked. */
@@ -2319,20 +2414,43 @@ LE_EXPORT int32_t le_engine_set_one_shot_mask(le_engine* engine,
                                               uint32_t channels,
                                               int32_t enabled);
 
-/* ---- MIDI clock (Phase C/E, decision D15) ----
- * The tri-state le_clock_mode (off / send / receive). This part (C1)
- * implements send: a native 24-PPQN emitter (src/midi/le_midi_clock.h) drives
- * 0xF8 clock ticks plus Start/Stop through the existing verbatim
- * le_midi_out_send transport, gated on the transport actually running
+/* ---- MIDI clock (Phase C, decision D15; #1228) ----
+ * Send: a native 24-PPQN emitter (src/midi/le_midi_clock.h) drives 0xF8 clock
+ * ticks plus Start/Stop, gated on the transport actually running
  * (recording/overdubbing/playing — manual-verified, not free-running while
- * idle) AND the looper mode being Multi/Sync/Band (Song/Free stay silent
- * regardless of this field). */
+ * idle), the looper mode being Multi/Sync/Band (Song/Free stay silent), and
+ * the Internal clock source (an external source is relayed, never
+ * regenerated).
+ *
+ * Receive (#1228 Part 2): an external source port (le_engine_attach_midi_input)
+ * owns the tempo. The follower runs on the audio thread from the port's
+ * timestamped Timing Clock bytes; while SYNCED and the tempo is not locked by
+ * recorded content, it writes the session tempo once per beat with
+ * LE_TEMPO_SOURCE_EXTERNAL, in the denominator-note unit. Meanwhile
+ * le_engine_set_tempo, le_engine_tap_tempo and a non-NONE
+ * le_engine_restore_tempo return LE_ERR_EXTERNAL_CLOCK (and the callback
+ * ignores any that were already queued). Selecting Internal again keeps the
+ * last tempo as MANUAL. */
 
-/* Sets the MIDI clock mode (le_clock_mode: 0 off, 1 send). RECEIVE (2) and
- * any value outside the enum return LE_ERR_INVALID without posting — receive
- * is Phase E's clock follower, not yet implemented; this setter stubs the
- * tri-state field now so that part can reuse it without a breaking rename. */
-LE_EXPORT int32_t le_engine_set_clock_mode(le_engine* engine, int32_t mode);
+/* Turns clock send on (1) or off (0). Returns LE_ERR_INVALID for any other
+ * value or a null engine. The setting persists across configure. */
+LE_EXPORT int32_t le_engine_set_clock_send(le_engine* engine, int32_t enabled);
+
+/* Selects the tempo source: `source_port` -1 for Internal, or an input port
+ * 0..LE_MAX_MIDI_PORTS-1 whose capture is (or will be) attached.
+ * `follow_transport` (0/1) and `loss_policy` (le_clock_loss_policy) are
+ * stored with it; Follow Play/Stop and the loss policy act from #1228 Parts
+ * 4 and 5. Each accepted call is one complete vector: the n-th accepted call
+ * carries receipt sequence n, published in le_snapshot.clock_receipt with
+ * clock_result once the audio thread has applied or refused it. Returns
+ * LE_OK, LE_ERR_INVALID (bad argument), LE_ERR_NOT_RUNNING (unconfigured),
+ * or LE_ERR_SYNC_LOCKED when changing the source while a track records,
+ * overdubs, is armed or counting in (re-selecting the same source with other
+ * settings is allowed). */
+LE_EXPORT int32_t le_engine_set_clock_sync(le_engine* engine,
+                                           int32_t source_port,
+                                           int32_t follow_transport,
+                                           int32_t loss_policy);
 
 /* ---- click + count-in (A2, decisions D5/D9) ----
  * The click is a synthesized voice (sine 1000 Hz on beats / 1500 Hz on the
@@ -3622,6 +3740,19 @@ LE_EXPORT int32_t le_fs_sync_dir_errno(const char* path, int32_t* out_errno);
  * with *out_errno set to the OS error otherwise, EEXIST when `to` is taken. */
 LE_EXPORT int32_t le_fs_rename_noreplace(const char* from, const char* to,
                                          int32_t* out_errno);
+/* Repairs a float WAV part the engine's writer opened but never sealed (a
+ * power cut or a crash), or cuts one back to a trusted length, for the
+ * recording recovery (#1198) and anything else that salvages a part: keeps
+ * the first min(whole frames present, `max_frames`) frames, truncates
+ * anything after them (a torn last frame included), patches the RIFF and data
+ * sizes and fsyncs. UINT64_MAX keeps every whole frame. `*kept` (may be NULL)
+ * receives the frames kept. The file must be 32-bit float in the writer's
+ * layout (RIFF/WAVE, `fmt `, an optional caller chunk such as `sgno`, then
+ * `data`, whose size may still be the open file's zero). Returns 1 on
+ * success, 0 when the file is not in that layout or a read or write fails.
+ * The one size patcher; implemented by the native WAV writer (engine_wav.c). */
+LE_EXPORT int32_t le_wav_patch_sizes(const char* path, uint64_t max_frames,
+                                     uint64_t* kept);
 
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's
@@ -3828,18 +3959,32 @@ LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
                                            int32_t* starts, int32_t max,
                                            int32_t* undo_count);
 
+/* Sets the span an imported take was laid down against (#1179 Part 4b):
+ * the shared-clock length it played over at its own speed, as a Session
+ * saved it from le_track_snapshot.span_frames. Track `channel` must be EMPTY
+ * with lane 0 imported (LE_ERR_INVALID otherwise, and for a span outside
+ * 1..max_loop_frames); 0 clears it. le_engine_commit_session then parks the
+ * track at length / span laps and keeps the span, so a take recorded after a
+ * retime reads at its own ratio on the recorded clock and follows the next
+ * retime like the takes around it. Call after the take's lanes are imported
+ * (a lane-0 le_engine_import_track_lane, or le_engine_import_layer of lane 0
+ * ordinal 0, starts a new take and clears it) and before the commit.
+ * Control thread. */
+LE_EXPORT int32_t le_engine_import_span(le_engine* engine, int32_t channel,
+                                        int32_t span_frames);
+
 /* Establishes the master loop at `base_frames` and parks every imported track
  * (EMPTY with a loaded length) STOPPED at its whole-loop multiple
- * (length / base_frames; a base/2 or base/4 track is that Sync division).
- * Restores exactly `loop_beats` musical beats (denominator notes; #1168: a
- * sub-bar loop a Divide left keeps its beats) over that span; zero keeps the
- * loop grid-free even when a tempo is known. The caller restores
- * tempo/source/signature before this commit, so a whole-bar loop passes
- * bars * ts_num. Does not infer beats from BPM or change audio length.
- * Requires base_frames > 0 and loop_beats in 0..INT32_MAX/15, and every
- * staged track a whole multiple of base_frames or exactly base/2 or base/4
- * (LE_ERR_INVALID otherwise, before anything is posted). Posts one command;
- * returns LE_OK or an le_result error.
+ * (length / base_frames, or length / its imported span; a base/2 or base/4
+ * track is that Sync division). Restores exactly `loop_beats` musical beats
+ * (denominator notes; #1168: a sub-bar loop a Divide left keeps its beats)
+ * over that span; zero keeps the loop grid-free even when a tempo is known.
+ * The caller restores tempo/source/signature before this commit, so a
+ * whole-bar loop passes bars * ts_num. Does not infer beats from BPM or
+ * change audio length. Requires base_frames > 0 and loop_beats in
+ * 0..INT32_MAX/15, and every staged track a whole multiple of base_frames
+ * or exactly base/2 or base/4 (LE_ERR_INVALID otherwise, before anything is
+ * posted). Posts one command; returns LE_OK or an le_result error.
  */
 LE_EXPORT int32_t le_engine_commit_session(le_engine* engine,
                                            int32_t base_frames,
@@ -3956,9 +4101,39 @@ typedef enum le_length_edit {
 LE_EXPORT int32_t le_engine_edit_length(le_engine* engine, int32_t channel,
                                         int32_t edit, uint64_t* request);
 
-/* Consumes one completed Fade, Reverse, Speed, Transpose or length result.
- * Returns NOT_READY before callback publication, INVALID for an
- * absent/consumed/retired id; otherwise OK and fills result. */
+/* Follow tempo (#1179 Part 4a). With content on a bar grid, a song-tempo
+ * change (le_engine_set_tempo, a tap pair) retimes the shared clock: the
+ * master length becomes the recorded length scaled by recorded / new tempo
+ * (rounded up to a whole number of the largest active Sync division), the
+ * position keeps its phase, bars and beats keep their count, and every track
+ * that follows reads its take at speed * take length / span, its pitch
+ * following. A track that does not follow keeps its recorded speed, its lap
+ * no longer the song lap, until the tempo returns. A take recorded at the
+ * new tempo plays at its own speed. While a track plays at another span
+ * than its take's, a punch-in on it is refused with LE_ERR_TRANSFORMED.
+ * [channel] -1 sets the default every track inherits ([value] 0 keeps the
+ * recorded speed, 1 follows; 0 until set); a track sets its override (-1
+ * inherits the default). LE_ERR_INVALID for a bad channel or value. */
+LE_EXPORT int32_t le_engine_set_follow_tempo(le_engine* engine,
+                                            int32_t channel, int32_t value,
+                                            uint64_t* request);
+/* Pitch across a retime (#1179 Part 4a-ii). A following track that plays
+ * over another span than its take's either keeps its pitch (0 Unchanged,
+ * the default): the cache worker renders the take time-stretched to the
+ * span (with its Transpose pitch, one render) and the track crossfades to
+ * it at the same position; until it lands the take plays through the
+ * varispeed head, timing exact, its pitch off by the tempo ratio and
+ * reported in le_track_snapshot.pitch_effective_cents. A render within
+ * 0.5 % of the span serves it (the head absorbs the rest), so a small tempo
+ * move does not re-render. Or its pitch follows the ratio (1 Follows
+ * speed), with no render. [channel] -1 sets the default ([value] 0/1); a
+ * track sets its override (-1 inherits). LE_ERR_INVALID for a bad channel
+ * or value. */
+LE_EXPORT int32_t le_engine_set_pitch_mode(le_engine* engine, int32_t channel,
+                                          int32_t value, uint64_t* request);
+/* Consumes one completed Fade, Reverse, Speed, Transpose, length, Follow
+ * tempo or Pitch result. Returns NOT_READY before callback publication,
+ * INVALID for an absent/consumed/retired id; otherwise OK and fills result. */
 LE_EXPORT int32_t le_engine_read_request_result(le_engine* engine,
                                                uint64_t request,
                                                int32_t* result);
@@ -4143,6 +4318,161 @@ LE_EXPORT int32_t le_midi_out_close(le_midi_out* m);
  * len), or LE_ERR_DEVICE (no port open or the OS rejected the send). */
 LE_EXPORT int32_t le_midi_out_send(le_midi_out* m, const uint8_t* data,
                                    int32_t len);
+
+/* ---- Shared render recipe (#1202): Bounce and Save selected audio ----
+ *
+ * Renders the selected recorded tracks offline, regardless of transport, Mute
+ * and Solo, with their levels, pans, track gain, frozen Fade, direction, Pre
+ * (the take, as printed) and Post processing, optionally the All tracks chain
+ * (Mix FX), and never live inputs, monitors, click, output buses, output FX or
+ * the master. One job per engine, run in slices on the wet cache's worker.
+ * Lengths: the exact common cycle of the sources (at most 1024 beats, or 512
+ * seconds without a tempo) or a chosen whole number of bars. Tails: Wrap
+ * renders the window twice and keeps the second pass; Cut renders it once
+ * from cold Post states. Output is interleaved stereo float. */
+typedef enum le_render_tails {
+  LE_RENDER_WRAP = 0,
+  LE_RENDER_CUT = 1,
+} le_render_tails;
+
+typedef enum le_render_target {
+  LE_RENDER_TARGET_MEMORY = 0, /* kept in the job (Bounce; le_engine_render_copy) */
+  LE_RENDER_TARGET_FILE = 1,   /* a stereo float WAV published at `path` */
+} le_render_target;
+
+typedef enum le_render_method {
+  LE_RENDER_COMMON_CYCLE = 0,
+  LE_RENDER_CHOSEN_LENGTH = 1,
+} le_render_method;
+
+typedef enum le_render_state {
+  LE_RENDER_NONE = 0,
+  LE_RENDER_FREEZING = 1,
+  LE_RENDER_STAGING = 2,
+  LE_RENDER_RENDERING = 3,
+  LE_RENDER_DONE = 4,
+  LE_RENDER_FAILED = 5,
+} le_render_state;
+
+typedef struct le_render_request {
+  uint32_t source_mask; /* bit t = track t */
+  int32_t length_bars;  /* 0 = the common cycle */
+  int32_t tails;        /* le_render_tails */
+  int32_t mix_fx;       /* 1 = include the All tracks chain */
+  int32_t target;       /* le_render_target */
+  const char* path;     /* file target: the final path ("<path>.part" while
+                         * writing) */
+  int32_t max_frames;   /* 0 = no cap beyond the cycle cap; Bounce passes the
+                         * destination's capacity */
+} le_render_request;
+
+typedef struct le_render_plan {
+  int32_t frames;        /* the window, in frames */
+  int32_t method;        /* le_render_method */
+  int32_t beats_milli;   /* the window in beats x 1000 (0 without a tempo) */
+  int32_t tempo_set;     /* 0 = no tempo: lengths read in seconds */
+  uint32_t plugin_mask;  /* sources whose chains hold a hosted plugin, which
+                          * renders dry */
+  uint32_t faded_mask;   /* sources whose Fade amount is below unity */
+  uint32_t pending_mask; /* sources heard through a not-yet-ready transform */
+  uint32_t once_cut_mask; /* Once sources longer than a chosen length: only
+                           * the part of their single pass inside the window
+                           * sounds, none when it starts after the window */
+} le_render_plan;
+
+/* Admission only: the verdict and the plan, with no job. Returns LE_OK,
+ * LE_ERR_NO_COMMON_CYCLE, LE_ERR_CAPACITY (over max_frames), LE_ERR_INVALID
+ * (no sources, an empty source, a chosen length without a tempo, a file
+ * target without a path), LE_ERR_NOT_READY (a source is recording or
+ * overdubbing, counting a posted command that will make it so, or has a
+ * layer in flight) or LE_ERR_NOT_RUNNING. */
+LE_EXPORT int32_t le_engine_render_measure(le_engine* engine,
+                                           const le_render_request* request,
+                                           le_render_plan* plan);
+
+/* Starts the job: re-measures and posts LE_CMD_RENDER_FREEZE. Returns LE_OK
+ * with *job set, any measure refusal, LE_ERR_ALREADY_RUNNING while a job
+ * exists, LE_ERR_CAPACITY when the job's bytes exceed the recipe's own
+ * budget (it never evicts the wet cache), LE_ERR_UNSUPPORTED without a
+ * render worker, or a ring refusal. */
+LE_EXPORT int32_t le_engine_render_begin(le_engine* engine,
+                                         const le_render_request* request,
+                                         uint32_t* job);
+
+/* Progress of job `job`: *state (le_render_state), *permille (0..1000, one
+ * scale over staging, then the render) and,
+ * once FAILED, *result (LE_ERR_TRACKS_CHANGED, LE_ERR_CAPACITY,
+ * LE_ERR_INVALID on an effect allocation failure, LE_ERR_DEVICE on a write
+ * failure or a configure/stop that joined the worker; a file whose
+ * directory sync alone failed is published and reads DONE). Also the staging
+ * heartbeat: call it from the control thread until DONE or FAILED. Returns
+ * LE_OK, or LE_ERR_INVALID for an unknown job. */
+LE_EXPORT int32_t le_engine_render_poll(le_engine* engine, uint32_t job,
+                                        int32_t* state, int32_t* permille,
+                                        int32_t* result);
+
+/* Copies a DONE memory result (interleaved stereo) into `out`. Returns the
+ * frames copied (at most max_frames), or LE_ERR_INVALID / LE_ERR_NOT_READY. */
+LE_EXPORT int32_t le_engine_render_copy(le_engine* engine, uint32_t job,
+                                        float* out, int32_t max_frames);
+
+/* Cancels and releases job `job` (any state). A file target leaves no
+ * partial file. Returns LE_OK or LE_ERR_INVALID for an unknown job. */
+LE_EXPORT int32_t le_engine_render_cancel(le_engine* engine, uint32_t job);
+
+/* ---- Bounce (#1202, Part 4a: Keep sources) ----
+ *
+ * Installs a finished memory render (le_engine_render_begin with
+ * LE_RENDER_TARGET_MEMORY) on one destination track in ONE callback drain:
+ * the image as a stereo pair (lanes 0 and 1, image pans -1/+1, the other
+ * lanes silent), its length and clock, STOPPED, and the destination's
+ * processing reset — unity gain, unity lane levels, centred lane pans, mutes
+ * off, Fade and direction reset, and the chains given here (empty when NULL).
+ * `topology` (optional) is the destination's lane count, routing and mix,
+ * applied first through the ordinary mix path; the reset values then win.
+ * The destination's previous state becomes one LE_HIST_BOUNCE history entry;
+ * le_engine_bounce_recover undoes or redoes it whole. */
+typedef struct le_bounce_request {
+  uint32_t job;          /* a DONE memory render */
+  int32_t destination;   /* the track that receives the result */
+  int32_t keep_sources;  /* must be 1 until Clear sources lands (Part 4b) */
+  const le_mix_settings* topology; /* NULL: keep lane count and routing */
+  const le_fx_recipe* lane_fx; /* lane_fx_count recipes; NULL: empty chains */
+  int32_t lane_fx_count;
+  const le_fx_recipe* track_fx; /* NULL: an empty track chain */
+} le_bounce_request;
+
+/* Admits a bounce. Returns LE_OK with *request (read the callback outcome
+ * with le_engine_read_request_result), LE_ERR_NOT_READY (the render is not a
+ * finished memory job, or the destination is busy: capturing, armed, a
+ * pending command, a layer in flight, a previous bounce not yet filed, or
+ * a full undo stack), LE_ERR_TRACKS_CHANGED (a source changed after the
+ * render froze it), LE_ERR_MODE_MISMATCH (the length does not fit the loop
+ * mode), LE_ERR_CAPACITY (no slot or buffer), LE_ERR_UNSUPPORTED (Clear
+ * sources) or LE_ERR_INVALID. The history entry is filed when the outcome is
+ * collected (the next le_engine_drain_events after the callback applied). */
+LE_EXPORT int32_t le_engine_bounce(le_engine* engine,
+                                   const le_bounce_request* request,
+                                   uint64_t* receipt);
+
+typedef struct le_bounce_recover_request {
+  int32_t destination;
+  int32_t redo;          /* 0: undo the bounce on top of the undo stack;
+                          * 1: redo the one on top of the redo stack */
+  const le_mix_settings* topology; /* the side being restored */
+  const le_fx_recipe* lane_fx;     /* its chains; NULL: empty */
+  int32_t lane_fx_count;
+  const le_fx_recipe* track_fx;
+} le_bounce_recover_request;
+
+/* Undoes or redoes a whole bounce in one callback drain. Plain le_engine_undo
+ * and le_engine_redo refuse a BOUNCE entry on top (LE_ERR_INVALID), so no path
+ * restores part of one. Returns LE_OK with *receipt, LE_ERR_INVALID (no
+ * bounce on top), LE_ERR_NOT_READY (busy, as le_engine_bounce),
+ * LE_ERR_MODE_MISMATCH or a ring refusal. */
+LE_EXPORT int32_t le_engine_bounce_recover(
+    le_engine* engine, const le_bounce_recover_request* request,
+    uint64_t* receipt);
 
 #ifdef __cplusplus
 }

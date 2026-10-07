@@ -205,6 +205,7 @@ class SessionTrack {
     required this.fadeAmount,
     required this.reversed,
     required this.lanes,
+    this.spanFrames = 0,
   });
 
   /// Projects a [SessionTrack] from a current-schema JSON map.
@@ -238,6 +239,10 @@ class SessionTrack {
         );
       }
     }
+    final span = json['spanFrames'];
+    if (span is! int || span < 0) {
+      throw const FormatException('invalid track span');
+    }
     return SessionTrack(
       channel: channel,
       multiple: (json['multiple'] as num).toInt(),
@@ -245,6 +250,7 @@ class SessionTrack {
       fadeAmount: amount.toDouble(),
       reversed: reversed,
       lanes: lanes,
+      spanFrames: span,
     );
   }
 
@@ -269,6 +275,12 @@ class SessionTrack {
   /// The track's lanes, each with its own mix/routing and audio layers.
   final List<SessionLane> lanes;
 
+  /// The master length the take was laid down against when that is not
+  /// [Session.recordedLengthFrames] (#1179, schema 16): a take recorded
+  /// after a retime. 0 for a take on the recorded master. Recalled through
+  /// the engine's import span, so the take reads at its own ratio.
+  final int spanFrames;
+
   /// Serializes this track to a JSON map.
   Map<String, dynamic> toJson() => {
     'channel': channel,
@@ -276,6 +288,7 @@ class SessionTrack {
     'lengthFrames': lengthFrames,
     'fadeAmount': fadeAmount,
     'reversed': reversed,
+    'spanFrames': spanFrames,
     'lanes': [for (final l in lanes) l.toJson()],
   };
 
@@ -289,6 +302,7 @@ class SessionTrack {
           lengthFrames == other.lengthFrames &&
           fadeAmount == other.fadeAmount &&
           reversed == other.reversed &&
+          spanFrames == other.spanFrames &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -298,6 +312,7 @@ class SessionTrack {
     lengthFrames,
     fadeAmount,
     reversed,
+    spanFrames,
     Object.hashAll(lanes),
   );
 }
@@ -938,6 +953,12 @@ class Session {
     this.outputSetup = const SessionOutputSetup(),
     this.backing = const SessionBacking(),
     this.clickPan = 0,
+    this.recordedTempoBpm = 0,
+    this.recordedLengthFrames = 0,
+    this.defaultFollowTempo = true,
+    this.trackFollowTempoOverrides = const {},
+    this.defaultPitchMode = PitchMode.unchanged,
+    this.trackPitchModeOverrides = const {},
   }) : loopBeats = loopBeats ?? loopBars * tsNum;
 
   /// Projects a [Session] from a decoded JSON map.
@@ -955,6 +976,10 @@ class Session {
         supported: formatVersion,
       );
     }
+    final recorded = _readRecorded(
+      json['recordedTempoBpm'],
+      json['recordedLengthFrames'],
+    );
     return Session(
       name: _readName(json['name']),
       sampleRate: (json['sampleRate'] as num).toInt(),
@@ -1040,15 +1065,28 @@ class Session {
       ),
       backing: SessionBacking.fromJson(json['backing']),
       clickPan: _readClickPan(json['clickPan']),
+      recordedTempoBpm: recorded.tempo,
+      recordedLengthFrames: recorded.length,
+      defaultFollowTempo: json['defaultFollowTempo'] as bool,
+      trackFollowTempoOverrides: _readTrackOverrides(
+        json['trackFollowTempoOverrides'] as Map<String, dynamic>,
+        (value) => value! as bool,
+      ),
+      defaultPitchMode: _readEnum(json['defaultPitchMode'], PitchMode.values),
+      trackPitchModeOverrides: _readTrackOverrides(
+        json['trackPitchModeOverrides'] as Map<String, dynamic>,
+        (value) => _readEnum(value, PitchMode.values),
+      ),
     );
   }
 
   /// The current manifest schema stores per-track settings (including each
   /// track's playback direction since 13), all FX stages, since 14
   /// (#1168) length edits in a lane's history with their playhead maps
-  /// (`start`) and the grid in beats (`loopBeats`), and since 15 (#1200)
-  /// the backing setup and the click's pan.
-  static const int formatVersion = 15;
+  /// (`start`) and the grid in beats (`loopBeats`), since 15 (#1200) the
+  /// backing setup and the click's pan, and since 16 (#1179 Part 4b) the
+  /// recorded tempo, each take's span and the Audio & tempo settings.
+  static const int formatVersion = 16;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -1232,6 +1270,29 @@ class Session {
   /// The click's balance, `-1..1` (schema 15, #1200 D6); 0 is centre.
   final double clickPan;
 
+  /// The tempo the takes were laid down at and the master length it measured
+  /// (#1179, schema 16); both 0 when the takes are at [tempoBpm] on
+  /// [baseLengthFrames] or there is no grid. A recall commits the takes at
+  /// this pair and then retimes to [tempoBpm], which lands on
+  /// [baseLengthFrames].
+  final double recordedTempoBpm;
+
+  /// See [recordedTempoBpm].
+  final int recordedLengthFrames;
+
+  /// The Follow tempo default every track inherits (#1179, schema 16).
+  final bool defaultFollowTempo;
+
+  /// Explicit Follow tempo choices; missing tracks follow
+  /// [defaultFollowTempo].
+  final Map<int, bool> trackFollowTempoOverrides;
+
+  /// The Pitch default every following track inherits (#1179, schema 16).
+  final PitchMode defaultPitchMode;
+
+  /// Explicit Pitch choices; missing tracks follow [defaultPitchMode].
+  final Map<int, PitchMode> trackPitchModeOverrides;
+
   /// Explicit source choices retained for inactive lanes and empty tracks.
   final Map<(int, int), int> laneInputs;
 
@@ -1248,7 +1309,8 @@ class Session {
   /// [loopBars] 0, because an empty rig that kept a grid would lock the next
   /// take's length; [primaryTrack] -1, because the crown goes with the
   /// content; no [name], because the new loop takes its own. Every other
-  /// field is copied as it is: tempo, signature, mode, defaults and their
+  /// field is copied as it is (the recorded tempo and length go with the
+  /// takes): tempo, signature, mode, defaults and their
   /// per-track overrides, click, count-in, Fade durations, levels, pans,
   /// lane routing, input and output setup, all four chain stages, the
   /// pedal remap, and the backing setup and click pan (#1200; New loop only
@@ -1301,6 +1363,12 @@ class Session {
     outputSetup: outputSetup,
     backing: backing,
     clickPan: clickPan,
+    // The recorded pair describes the takes, which New loop drops; Follow
+    // tempo and Pitch are settings and stay.
+    defaultFollowTempo: defaultFollowTempo,
+    trackFollowTempoOverrides: trackFollowTempoOverrides,
+    defaultPitchMode: defaultPitchMode,
+    trackPitchModeOverrides: trackPitchModeOverrides,
   );
 
   /// Serializes this session manifest to a JSON map. Always writes the
@@ -1374,6 +1442,18 @@ class Session {
     if (!outputSetup.isEmpty) 'outputSetup': outputSetup.toJson(),
     'backing': backing.toJson(),
     'clickPan': clickPan,
+    'recordedTempoBpm': recordedTempoBpm,
+    'recordedLengthFrames': recordedLengthFrames,
+    'defaultFollowTempo': defaultFollowTempo,
+    'trackFollowTempoOverrides': {
+      for (final entry in trackFollowTempoOverrides.entries)
+        '${entry.key}': entry.value,
+    },
+    'defaultPitchMode': defaultPitchMode.name,
+    'trackPitchModeOverrides': {
+      for (final entry in trackPitchModeOverrides.entries)
+        '${entry.key}': entry.value.name,
+    },
   };
 
   @override
@@ -1439,7 +1519,16 @@ class Session {
           inputSetup == other.inputSetup &&
           outputSetup == other.outputSetup &&
           backing == other.backing &&
-          clickPan == other.clickPan;
+          clickPan == other.clickPan &&
+          recordedTempoBpm == other.recordedTempoBpm &&
+          recordedLengthFrames == other.recordedLengthFrames &&
+          defaultFollowTempo == other.defaultFollowTempo &&
+          _mapEquals(
+            trackFollowTempoOverrides,
+            other.trackFollowTempoOverrides,
+          ) &&
+          defaultPitchMode == other.defaultPitchMode &&
+          _mapEquals(trackPitchModeOverrides, other.trackPitchModeOverrides);
 
   // hashAll, not hash: the field count passed v6's addition of
   // [pedalBindings], and `Object.hash` caps at 20 positional arguments.
@@ -1492,7 +1581,26 @@ class Session {
     outputSetup,
     backing,
     clickPan,
+    recordedTempoBpm,
+    recordedLengthFrames,
+    defaultFollowTempo,
+    _mapHash(trackFollowTempoOverrides),
+    defaultPitchMode,
+    _mapHash(trackPitchModeOverrides),
   ]);
+}
+
+/// The recorded pair (#1179): both 0, or a tempo the engine accepts with a
+/// positive length.
+({double tempo, int length}) _readRecorded(Object? tempo, Object? length) {
+  if (tempo is! num || length is! int || !tempo.isFinite || length < 0) {
+    throw const FormatException('invalid recorded tempo');
+  }
+  final none = tempo == 0 && length == 0;
+  if (!none && (tempo < 30 || tempo > 300 || length == 0)) {
+    throw const FormatException('invalid recorded tempo');
+  }
+  return (tempo: tempo.toDouble(), length: length);
 }
 
 /// A blank or non-string `name` reads as absent rather than failing the load:

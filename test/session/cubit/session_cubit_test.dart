@@ -22,6 +22,7 @@ import 'package:segno/looper/application/settings_families.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/application/settings_owners.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
@@ -159,6 +160,14 @@ class _OneShotOwner extends Fake
   );
 }
 
+class _InheritOwner<T extends Object> extends Fake
+    implements SettingsOwner<InheritSnapshot<T>, bool?> {
+  _InheritOwner(this.durable);
+
+  @override
+  final InheritSnapshot<T> durable;
+}
+
 class _PlaybackOwner extends Fake implements PlaybackSettings {
   _PlaybackOwner(LooperRepository looper)
     : decayOwner = _DecayOwner(looper),
@@ -169,6 +178,21 @@ class _PlaybackOwner extends Fake implements PlaybackSettings {
 
   @override
   final SettingsOwner<OneShotSnapshot, bool?> oneShotOwner;
+
+  @override
+  final SettingsOwner<InheritSnapshot<bool>, bool?> followTempoOwner =
+      _InheritOwner(
+        InheritSnapshot(defaultValue: true, trackOverrides: const {}),
+      );
+
+  @override
+  final SettingsOwner<InheritSnapshot<PitchMode>, bool?> pitchModeOwner =
+      _InheritOwner(
+        InheritSnapshot(
+          defaultValue: PitchMode.unchanged,
+          trackOverrides: const {},
+        ),
+      );
 }
 
 class _RecordOwner extends Fake implements RecordSettings {

@@ -15,6 +15,7 @@ import 'package:segno_engine/src/output_fx_snapshot.dart';
 import 'package:segno_engine/src/perf_target.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
+import 'package:segno_engine/src/selected_render.dart';
 import 'package:segno_engine/src/track_effect.dart';
 import 'package:segno_engine/src/volume_space.dart';
 
@@ -65,7 +66,15 @@ enum EngineResult {
   transformed,
 
   /// An audio file over the 15-minute backing cap (`LE_ERR_TOO_LONG`, #1200).
-  tooLong;
+  tooLong,
+
+  /// The tracks selected for a render share no common cycle within the cap
+  /// (`LE_ERR_NO_COMMON_CYCLE`); a chosen length is required.
+  noCommonCycle,
+
+  /// A render source's material changed after the render froze it
+  /// (`LE_ERR_TRACKS_CHANGED`).
+  tracksChanged;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -83,6 +92,8 @@ enum EngineResult {
     -9 => EngineResult.reversed,
     -10 => EngineResult.transformed,
     -12 => EngineResult.tooLong,
+    -16 => EngineResult.noCommonCycle,
+    -17 => EngineResult.tracksChanged,
     _ => EngineResult.invalid,
   };
 
@@ -388,8 +399,22 @@ abstract interface class LooperTransport {
   /// it captures, drains or has an arm, launch or pending command.
   RequestAdmission editLength({required int channel, required LengthEdit edit});
 
-  /// Consumes a completed Fade, Reverse, Speed, Transpose or length callback
-  /// result; null means still pending.
+  /// Sets the Follow tempo default every track inherits ([channel] null,
+  /// [follow] required) or track [channel]'s override ([follow] null
+  /// inherits), #1179. With content on a bar grid and a following track, a
+  /// song-tempo change retimes the recorded tracks
+  /// ([EngineSnapshot.tempoFollow]). Admitted whenever the engine is
+  /// configured; [EngineResult.invalid] for a bad channel or a default
+  /// without a value.
+  RequestAdmission setFollowTempo({int? channel, bool? follow});
+
+  /// Sets the Pitch default ([channel] null, [mode] required) or track
+  /// [channel]'s override ([mode] null inherits), #1179: what a retime does
+  /// to a following track's pitch. Admitted like [setFollowTempo].
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode});
+
+  /// Consumes a completed Fade, Reverse, Speed, Transpose, length, Follow
+  /// tempo or Pitch callback result; null means still pending.
   EngineResult? readRequestResult(int request);
 
   /// Halts track [channel]'s playback, retaining the loop buffer.
@@ -1400,11 +1425,22 @@ abstract interface class SessionIo {
     required List<int> imageLengths,
   });
 
+  /// Gives imported track [channel] the span its take was laid down against
+  /// (#1179 Part 4b), as a Session saved it ([TrackSnapshot.spanFrames], or
+  /// the master length in force when that was 0): [commitSession] parks it at
+  /// its length over that span and keeps the span, so a take recorded after
+  /// a retime reads at its own ratio on the recorded clock. Call after the
+  /// track's lane-0 import and before the commit; 0 clears it.
+  /// [EngineResult.invalid] for a track that is not EMPTY with a take, or a
+  /// span past the buffer cap.
+  EngineResult importSpan(int channel, int spanFrames);
+
   /// Establishes the master loop at [baseFrames] and leaves every imported
-  /// track stopped at its whole-loop multiple. Restores exactly [loopBeats]
-  /// beats (denominator notes) over the loop, `0` for a grid-free loop; a
-  /// whole-bar loop passes its bars times the signature's numerator (#1168).
-  /// Launch with [AudioEngine.play].
+  /// track stopped at its whole-loop multiple (or its length over its
+  /// [importSpan]). Restores exactly [loopBeats] beats (denominator notes)
+  /// over the loop, `0` for a grid-free loop; a whole-bar loop passes its
+  /// bars times the signature's numerator (#1168). Launch with
+  /// [AudioEngine.play].
   EngineResult commitSession(int baseFrames, {required int loopBeats});
 }
 
@@ -1709,6 +1745,39 @@ abstract interface class EngineAudition {
   Future<Float32List?> filePeaks(String path, {required int buckets});
 }
 
+/// The shared render recipe (#1202) behind Bounce and Save selected audio:
+/// the selected recorded tracks rendered offline over their common cycle or a
+/// chosen bar length, regardless of transport, Mute and Solo, with their
+/// levels, Pre (as printed) and Post processing, optionally the All tracks
+/// chain, and never live inputs, click, outputs or the master. One job at a
+/// time; [pollRender] is also the job's staging heartbeat, so a caller polls
+/// it until the job ends.
+abstract interface class EngineSelectedRender {
+  /// The verdict and plan for [request], with no job: [EngineResult.ok] with
+  /// the plan, or [EngineResult.noCommonCycle], [EngineResult.capacity],
+  /// [EngineResult.invalid], [EngineResult.notReady] or
+  /// [EngineResult.notRunning] with none.
+  RenderMeasurement measureRender(RenderRequest request);
+
+  /// Starts a job: any [measureRender] refusal, [EngineResult.alreadyRunning]
+  /// while a job runs, [EngineResult.capacity] when its bytes do not fit,
+  /// [EngineResult.unsupported] without a render worker, or [EngineResult.ok]
+  /// with the job id.
+  RenderAdmission beginRender(RenderRequest request);
+
+  /// The job's status, or `null` for a job the engine no longer holds
+  /// (cancelled, or replaced by a newer job).
+  RenderJobStatus? pollRender(int job);
+
+  /// A finished memory job's interleaved stereo result (at most [maxFrames]
+  /// frames), or `null` when the job is unknown, not finished or not a memory
+  /// job.
+  Float32List? copyRender(int job, {required int maxFrames});
+
+  /// Cancels and releases [job]. A file job leaves no partial file.
+  EngineResult cancelRender(int job);
+}
+
 /// The data-layer boundary over the native audio engine, composed from the
 /// role interfaces above (interface-segregation: a consumer can depend on the
 /// slice it needs — [SessionIo], [EngineMetering], … — instead of the whole
@@ -1732,5 +1801,6 @@ abstract interface class AudioEngine
         InputConditioningControl,
         EnginePluginHosting,
         EnginePerformanceCapture,
+        EngineSelectedRender,
         SessionIo,
         BackingControl {}

@@ -109,6 +109,8 @@ class SessionSettingsCoordinator {
     recordStart: _tempo.recordStartOwner.durable,
     decay: _playback.decayOwner.durable,
     oneShot: _playback.oneShotOwner.durable,
+    followTempo: _playback.followTempoOwner.durable,
+    pitchMode: _playback.pitchModeOwner.durable,
     recordLength: _record.durableRecordLengthSnapshot,
     recordTiming: _timing.durableRecordTimingSnapshot,
     fade: _fade.owner.durable,

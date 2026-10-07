@@ -237,6 +237,9 @@ class FakePerformanceEngine implements AudioEngine {
   EngineResult importTrack(int channel, Float32List pcm) => EngineResult.ok;
 
   @override
+  EngineResult importSpan(int channel, int spanFrames) => EngineResult.ok;
+
+  @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       EngineResult.ok;
 
@@ -373,6 +376,25 @@ class FakePerformanceEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  // ---- shared render recipe (#1202): not modelled by this fake ----
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, plan: null);
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, job: 0);
+
+  @override
+  RenderJobStatus? pollRender(int job) => null;
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) => null;
+
+  @override
+  EngineResult cancelRender(int job) => EngineResult.invalid;
+
   // ---- unused by PerformanceRepository: inert defaults ----
   @override
   String get version => 'fake';
@@ -481,6 +503,14 @@ class FakePerformanceEngine implements AudioEngine {
 
   @override
   RequestAdmission setTransposeBypass({required bool bypassed}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) =>
       (result: EngineResult.invalid, request: 0);
 
   @override

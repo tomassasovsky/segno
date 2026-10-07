@@ -19,6 +19,7 @@ export 'src/audio_engine.dart'
         EnginePluginHosting,
         EngineResult,
         EngineRouting,
+        EngineSelectedRender,
         InputConditioningControl,
         LengthEdit,
         LooperModeControl,
@@ -60,9 +61,11 @@ export 'src/engine_snapshot.dart'
         LooperModeGate,
         PendingLaunchAction,
         PerfStopReason,
+        PitchMode,
         RecordStartEditKind,
         RecordTiming,
         SpeedFactor,
+        TempoFollowState,
         TempoSource,
         TrackRestoreState,
         TrackSnapshot,
@@ -106,6 +109,18 @@ export 'src/plugin_descriptor.dart'
         PluginParamInfo,
         PluginScanProgress,
         PluginSlotHandle;
+export 'src/selected_render.dart'
+    show
+        RenderAdmission,
+        RenderJobState,
+        RenderJobStatus,
+        RenderMeasurement,
+        RenderMethod,
+        RenderPlan,
+        RenderRequest,
+        RenderTails,
+        RenderTarget,
+        renderTracksOfMask;
 export 'src/storage_io.dart'
     show
         FileDigest,

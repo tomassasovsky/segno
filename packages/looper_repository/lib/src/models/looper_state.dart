@@ -7,7 +7,8 @@ import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
 import 'package:looper_repository/src/models/tuner_reading.dart';
-import 'package:segno_engine/segno_engine.dart' show SpeedFactor;
+import 'package:segno_engine/segno_engine.dart'
+    show PitchMode, SpeedFactor, TempoFollowState;
 
 /// The single source of looper truth: transport, the tracks, and engine status,
 /// projected from one engine snapshot.
@@ -35,6 +36,10 @@ class LooperState extends Equatable {
     this.recordingInputLocks = const {},
     this.speed = SpeedFactor.normal,
     this.transposeBypass = false,
+    this.recordedTempoBpm = 0,
+    this.tempoFollow = TempoFollowState.free,
+    this.defaultFollowTempo = false,
+    this.defaultPitchMode = PitchMode.unchanged,
   });
 
   /// Master loop transport.
@@ -116,6 +121,19 @@ class LooperState extends Equatable {
   /// its stored pitch kept in `Track.transpose`.
   final bool transposeBypass;
 
+  /// The tempo the takes were recorded at (#1179), 0 with no material.
+  final double recordedTempoBpm;
+
+  /// What a song-tempo change does now, and why not when it is locked.
+  final TempoFollowState tempoFollow;
+
+  /// The Follow tempo default every track inherits (#1179): the
+  /// repository's accepted setting, `Track.followTempoOverride` beside it.
+  final bool defaultFollowTempo;
+
+  /// The Pitch default every track inherits (#1179).
+  final PitchMode defaultPitchMode;
+
   /// Output destination [bus]'s configured entries.
   List<TrackEffect> outputEffects(int bus) =>
       outputChains[bus]?.entries ?? const [];
@@ -156,5 +174,9 @@ class LooperState extends Equatable {
     recordingInputLocks,
     speed,
     transposeBypass,
+    recordedTempoBpm,
+    tempoFollow,
+    defaultFollowTempo,
+    defaultPitchMode,
   ];
 }

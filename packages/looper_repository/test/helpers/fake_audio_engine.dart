@@ -293,6 +293,28 @@ class FakeAudioEngine implements AudioEngine {
     () => lastTransposeInstall = (channel: channel, semitones: semitones),
   );
 
+  /// What the Follow tempo and Pitch settings admit and the receipt each
+  /// answers later (#1179), and every admitted call, in order.
+  EngineResult settingAdmission = EngineResult.ok;
+  EngineResult settingResult = EngineResult.ok;
+  final List<({String kind, int? channel, Object? value})> settingCalls = [];
+
+  RequestAdmission _admitSetting(String kind, int? channel, Object? value) {
+    if (!settingAdmission.isOk) return (result: settingAdmission, request: 0);
+    settingCalls.add((kind: kind, channel: channel, value: value));
+    final request = ++_fadeRequest;
+    _fadeResults[request] = settingResult;
+    return (result: EngineResult.ok, request: request);
+  }
+
+  @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) =>
+      _admitSetting('follow', channel, follow);
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) =>
+      _admitSetting('pitch', channel, mode);
+
   @override
   RequestAdmission setTransposeBypass({required bool bypassed}) =>
       _admitTranspose(() => lastTransposeBypass = bypassed);
@@ -1625,6 +1647,17 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult importTrack(int channel, Float32List pcm) =>
       importTrackLane(channel, 0, pcm);
 
+  /// Spans [importSpan] gave, by channel (#1179 Part 4b); the commit puts
+  /// them on the tracks' snapshots.
+  final Map<int, int> importedSpans = {};
+
+  @override
+  EngineResult importSpan(int channel, int spanFrames) {
+    calls.add('importSpan');
+    importedSpans[channel] = spanFrames;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       importLayer(channel, lane, 0, pcm);
@@ -1708,6 +1741,7 @@ class FakeAudioEngine implements AudioEngine {
         redoDepth: finalized.redoCount,
         rms: 0,
         peak: 0,
+        spanFrames: importedSpans[entry.key] ?? 0,
       );
     }
     _nextSnapshot = _nextSnapshot.copyWith(
@@ -1769,6 +1803,71 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult renderCancel() {
     calls.add('renderCancel');
+    return EngineResult.ok;
+  }
+
+  // ---- shared render recipe (#1202): scripted by the tests ----
+
+  /// Answer of [measureRender].
+  RenderMeasurement measureRenderAnswer = (
+    result: EngineResult.ok,
+    plan: const RenderPlan(
+      frames: 48,
+      method: RenderMethod.commonCycle,
+      beatsMilli: 0,
+      tempoSet: false,
+    ),
+  );
+
+  /// Answer of [beginRender].
+  RenderAdmission beginRenderAnswer = (result: EngineResult.ok, job: 1);
+
+  /// Statuses [pollRender] returns in order; the last one repeats. An empty
+  /// list (or `null` in it) reads as an unknown job.
+  List<RenderJobStatus?> renderStatuses = const [
+    RenderJobStatus(state: RenderJobState.done, permille: 1000),
+  ];
+
+  /// Samples [copyRender] returns.
+  Float32List? renderSamples;
+
+  /// Requests passed to [measureRender] and [beginRender], in order.
+  final List<RenderRequest> renderRequests = [];
+
+  /// Jobs passed to [cancelRender], in order.
+  final List<int> cancelledRenders = [];
+
+  int _renderPolls = 0;
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) {
+    renderRequests.add(request);
+    return measureRenderAnswer;
+  }
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) {
+    renderRequests.add(request);
+    _renderPolls = 0;
+    return beginRenderAnswer;
+  }
+
+  @override
+  RenderJobStatus? pollRender(int job) {
+    if (renderStatuses.isEmpty) return null;
+    final i = _renderPolls < renderStatuses.length
+        ? _renderPolls
+        : renderStatuses.length - 1;
+    _renderPolls++;
+    return renderStatuses[i];
+  }
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) => renderSamples;
+
+  @override
+  EngineResult cancelRender(int job) {
+    cancelledRenders.add(job);
     return EngineResult.ok;
   }
 
@@ -2153,6 +2252,11 @@ class _LengthSnapshot extends EngineSnapshot {
         primaryTrack: source.primaryTrack,
         speed: source.speed,
         transposeBypass: source.transposeBypass,
+        recordedTempoBpm: source.recordedTempoBpm,
+        recordedLengthFrames: source.recordedLengthFrames,
+        followTempo: source.followTempo,
+        tempoFollow: source.tempoFollow,
+        pitchMode: source.pitchMode,
         quantize: engine.lastQuantize ?? source.quantize,
         recordTimingRevision: engine.recordTimingRevision,
         recordTimingResult: engine.recordTimingResult,
@@ -2186,6 +2290,10 @@ class _LengthTrack extends TrackSnapshot {
         reversed: source.reversed,
         headRate: source.headRate,
         transpose: source.transpose,
+        followTempoOverride: source.followTempoOverride,
+        pitchModeOverride: source.pitchModeOverride,
+        pitchEffectiveCents: source.pitchEffectiveCents,
+        spanFrames: source.spanFrames,
         volume: engine.trackLevels[channel] ?? source.volume,
         muted: source.muted,
         lengthFrames: source.lengthFrames,

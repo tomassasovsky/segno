@@ -197,6 +197,119 @@ void main() {
     });
   });
 
+  group('Audio & tempo (#1179, schema 14)', () {
+    const retimed = Session(
+      sampleRate: 48000,
+      channels: 1,
+      baseLengthFrames: 2400,
+      tempoBpm: 100,
+      tempoSource: TempoSource.manual,
+      loopBars: 1,
+      recordedTempoBpm: 120,
+      recordedLengthFrames: 2000,
+      defaultFollowTempo: false,
+      trackFollowTempoOverrides: {1: true, 3: false},
+      defaultPitchMode: PitchMode.followsSpeed,
+      trackPitchModeOverrides: {2: PitchMode.unchanged},
+      tracks: [
+        SessionTrack(
+          channel: 0,
+          multiple: 1,
+          lengthFrames: 2400,
+          fadeAmount: 1,
+          reversed: false,
+          spanFrames: 2400,
+          lanes: [
+            SessionLane(
+              lane: 0,
+              volume: 1,
+              muted: false,
+              outputMask: 3,
+              inputChannel: 0,
+              layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+              history: TrackHistory.none,
+            ),
+          ],
+        ),
+      ],
+    );
+
+    test('round-trips the recorded pair, spans and both settings', () {
+      final json = jsonDecode(jsonEncode(retimed.toJson()));
+      final back = Session.fromJson(json as Map<String, dynamic>);
+      expect(back, retimed);
+      expect(back.recordedTempoBpm, 120);
+      expect(back.recordedLengthFrames, 2000);
+      expect(back.tracks.single.spanFrames, 2400);
+      expect(back.defaultFollowTempo, isFalse);
+      expect(back.trackFollowTempoOverrides, {1: true, 3: false});
+      expect(back.defaultPitchMode, PitchMode.followsSpeed);
+      expect(back.trackPitchModeOverrides, {2: PitchMode.unchanged});
+      expect(back.hashCode, retimed.hashCode);
+    });
+
+    test('defaults: Follow on, Pitch unchanged, no recorded pair', () {
+      const plain = Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: [],
+      );
+      final json = plain.toJson();
+      expect(json['defaultFollowTempo'], isTrue);
+      expect(json['defaultPitchMode'], 'unchanged');
+      expect(json['recordedTempoBpm'], 0);
+      expect(json['recordedLengthFrames'], 0);
+      expect(Session.fromJson(json), plain);
+    });
+
+    test('refuses malformed values at decode, field by field', () {
+      final good = retimed.toJson();
+      Map<String, dynamic> withTrack(Object? span) => {
+        ...good,
+        'tracks': [
+          {...(good['tracks'] as List).single as Map<String, dynamic>}
+            ..['spanFrames'] = span,
+        ],
+      };
+      for (final (key, bad) in <(String, Object?)>[
+        ('recordedTempoBpm', null),
+        ('recordedTempoBpm', 25),
+        ('recordedTempoBpm', 301),
+        ('recordedTempoBpm', double.nan),
+        ('recordedTempoBpm', 0), // a length without a tempo
+        ('recordedLengthFrames', null),
+        ('recordedLengthFrames', -1),
+        ('recordedLengthFrames', 0), // a tempo without a length
+        ('recordedLengthFrames', 2000.5),
+        ('defaultFollowTempo', null),
+        ('defaultFollowTempo', 'on'),
+        ('trackFollowTempoOverrides', null),
+        ('trackFollowTempoOverrides', {'8': true}),
+        ('trackFollowTempoOverrides', {'1': 'yes'}),
+        ('defaultPitchMode', null),
+        ('defaultPitchMode', 'sideways'),
+        ('trackPitchModeOverrides', null),
+        ('trackPitchModeOverrides', {'-1': 'unchanged'}),
+        ('trackPitchModeOverrides', {'1': 'sideways'}),
+      ]) {
+        expect(
+          () => Session.fromJson({...good, key: bad}),
+          throwsA(anyOf(isA<FormatException>(), isA<TypeError>())),
+          reason: '$key: $bad',
+        );
+      }
+      for (final bad in <Object?>[null, -1, 1.5, '0']) {
+        expect(
+          () => Session.fromJson(withTrack(bad)),
+          throwsFormatException,
+          reason: 'spanFrames: $bad',
+        );
+      }
+      expect(Session.fromJson(withTrack(0)).tracks.single.spanFrames, 0);
+    });
+  });
+
   group('Session', () {
     test('round-trips through JSON (including jsonEncode/decode)', () {
       final json = jsonDecode(jsonEncode(session.toJson()));
@@ -334,10 +447,10 @@ void main() {
       );
     });
 
-    test('serializes the manifest version (v15) and the grid in beats', () {
+    test('serializes the manifest version (v16) and the grid in beats', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 15);
+      expect(json['version'], 16);
       // Constructed with bars only, the beats are the bars' (#1168).
       expect(json['loopBeats'], session.loopBars * session.tsNum);
       expect(json['baseLengthFrames'], 96000);

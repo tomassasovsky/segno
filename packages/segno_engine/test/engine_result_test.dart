@@ -16,6 +16,8 @@ void main() {
       expect(EngineResult.fromCode(-9), EngineResult.reversed);
       expect(EngineResult.fromCode(-10), EngineResult.transformed);
       expect(EngineResult.fromCode(-12), EngineResult.tooLong);
+      expect(EngineResult.fromCode(-16), EngineResult.noCommonCycle);
+      expect(EngineResult.fromCode(-17), EngineResult.tracksChanged);
     });
 
     test('maps unknown codes to invalid', () {

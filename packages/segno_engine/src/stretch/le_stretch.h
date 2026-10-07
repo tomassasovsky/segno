@@ -105,10 +105,12 @@ int32_t le_stretch_render_offline(const float* const* in, int32_t in_frames,
                                   float* const* out,
                                   int32_t out_frames) LE_STRETCH_NOEXCEPT;
 
-/* A pitch-shifted LOOP of one mono lap (Transpose, #1179 Part 3a): the lap
- * rendered cyclically at ratio 1 for `frames + fold` frames, the last `fold`
- * of which continue past the lap's end into its head again; those are then
- * folded over the head with an equal-power crossfade, so out[frames - 1] ->
+/* A pitch-shifted, time-stretched LOOP of one mono lap (Transpose, #1179
+ * Part 3a; the stretch, Part 4a-ii): the `frames`-frame lap rendered
+ * cyclically to `out_frames` frames (ratio out_frames / frames, 1 for a
+ * plain Transpose) plus `fold` more, which continue past the lap's end into
+ * its head again; those are then folded over the head (a crossfade that
+ * holds the level of the two correlated renders), so out[out_frames - 1] ->
  * out[0] continues the stretcher's own output and the loop point is
  * seamless (a pitch shift's phase does not come back round exactly, so the
  * plain cyclic render alone steps at the wrap). `fold` is clamped to what
@@ -116,6 +118,7 @@ int32_t le_stretch_render_offline(const float* const* in, int32_t in_frames,
  * preset, sample rate and input: the cache worker and the offline renderer
  * both call this one function. */
 int32_t le_stretch_render_loop(const float* in, int32_t frames,
+                               int32_t out_frames,
                                int32_t sample_rate, float semitones,
                                float tonality_limit, int32_t cheaper,
                                uint32_t seed, int32_t fold,

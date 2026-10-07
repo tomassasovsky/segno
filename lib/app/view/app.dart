@@ -428,6 +428,18 @@ class _AppState extends State<App> {
       refused: (context) => context.l10n.clickPanSettingsRefusedTitle,
       body: (context) => context.l10n.clickPanSettingsRecoveryBody,
     ),
+    OwnedSetting.followTempo => (
+      id: AppToastId.followTempoSettings,
+      recovery: (context) => context.l10n.followTempoSettingsRecoveryTitle,
+      refused: (context) => context.l10n.followTempoSettingsRefusedTitle,
+      body: (context) => context.l10n.followTempoSettingsRecoveryBody,
+    ),
+    OwnedSetting.pitchMode => (
+      id: AppToastId.pitchModeSettings,
+      recovery: (context) => context.l10n.pitchModeSettingsRecoveryTitle,
+      refused: (context) => context.l10n.pitchModeSettingsRefusedTitle,
+      body: (context) => context.l10n.pitchModeSettingsRecoveryBody,
+    ),
   };
 
   void _showRecordingInputRequired(int channel) {

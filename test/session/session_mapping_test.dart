@@ -8,6 +8,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
 import 'package:segno/looper/model/record_length.dart';
@@ -151,6 +152,14 @@ void main() {
             defaultOneShot: looper.defaultOneShot,
             trackOverrides: looper.trackOneShotOverrides,
           ),
+          followTempo: InheritSnapshot(
+            defaultValue: looper.defaultFollowTempo,
+            trackOverrides: looper.trackFollowTempoOverrides,
+          ),
+          pitchMode: InheritSnapshot(
+            defaultValue: looper.defaultPitchMode,
+            trackOverrides: looper.trackPitchModeOverrides,
+          ),
         ),
       );
       final manifest =
@@ -237,6 +246,14 @@ void main() {
             defaultOneShot: looper.defaultOneShot,
             trackOverrides: looper.trackOneShotOverrides,
           ),
+          followTempo: InheritSnapshot(
+            defaultValue: true,
+            trackOverrides: const {},
+          ),
+          pitchMode: InheritSnapshot(
+            defaultValue: PitchMode.unchanged,
+            trackOverrides: const {},
+          ),
         ),
         isA<SessionSettings>()
             .having((s) => s.loopBars, 'loopBars', 7)
@@ -280,7 +297,15 @@ void main() {
           ..setTrackRecordTiming(channel: 0, timing: RecordTiming.eighth)
           ..setTrackOverdubDecay(channel: 0, percent: 30)
           ..setTrackOverdubDecay(channel: 1, percent: 0)
-          ..setTrackLengthPreset(channel: 0, bars: 4);
+          ..setTrackLengthPreset(channel: 0, bars: 4)
+          ..setFollowTempoSettings(
+            defaultFollow: false,
+            trackOverrides: {1: true},
+          )
+          ..setPitchModeSettings(
+            defaultMode: PitchMode.followsSpeed,
+            trackOverrides: {2: PitchMode.unchanged},
+          );
         expect(engine.snapshot().isRunning, isFalse);
         expect(engine.snapshot().tempoBpm, 0);
         final settings = settingsFromLooper(
@@ -308,6 +333,14 @@ void main() {
           oneShot: OneShotSnapshot(
             defaultOneShot: looper.defaultOneShot,
             trackOverrides: looper.trackOneShotOverrides,
+          ),
+          followTempo: InheritSnapshot(
+            defaultValue: looper.defaultFollowTempo,
+            trackOverrides: looper.trackFollowTempoOverrides,
+          ),
+          pitchMode: InheritSnapshot(
+            defaultValue: looper.defaultPitchMode,
+            trackOverrides: looper.trackPitchModeOverrides,
           ),
         );
         final repository = SessionRepository(
@@ -341,6 +374,13 @@ void main() {
         expect(rig.trackOneShotOverrides, {0: false, 1: true});
         expect(rig.trackLengthPresetOverrides, {0: 4});
         expect(rig.trackPans, isEmpty);
+        expect(rig.defaultFollowTempo, isFalse);
+        expect(rig.trackFollowTempoOverrides, {1: true});
+        expect(rig.defaultPitchMode, PitchMode.followsSpeed);
+        expect(rig.trackPitchModeOverrides, {2: PitchMode.unchanged});
+        // A save with no takes carries no recorded pair.
+        expect(rig.recordedTempoBpm, 0);
+        expect(rig.retimed, isFalse);
 
         looper
           ..setTrackRecordTiming(channel: 0, timing: null)
@@ -377,6 +417,14 @@ void main() {
           oneShot: OneShotSnapshot(
             defaultOneShot: looper.defaultOneShot,
             trackOverrides: looper.trackOneShotOverrides,
+          ),
+          followTempo: InheritSnapshot(
+            defaultValue: looper.defaultFollowTempo,
+            trackOverrides: looper.trackFollowTempoOverrides,
+          ),
+          pitchMode: InheritSnapshot(
+            defaultValue: looper.defaultPitchMode,
+            trackOverrides: looper.trackPitchModeOverrides,
           ),
         );
         expect(inherited.trackRecordTimingOverrides, isEmpty);
@@ -875,6 +923,58 @@ void main() {
       expect(rig.loopBars, 7);
       expect(rig.loopBeats, 28);
       expect(rig.gridBeats, 28);
+    });
+
+    test('the recorded pair, the spans and both Audio & tempo vectors reach '
+        'the rig (#1179)', () {
+      final pcm = Float32List(4);
+      final rig = rigFromBundle((
+        session: const Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 6,
+          tempoBpm: 80,
+          tempoSource: TempoSource.manual,
+          recordedTempoBpm: 120,
+          recordedLengthFrames: 4,
+          defaultFollowTempo: false,
+          trackFollowTempoOverrides: {0: true},
+          defaultPitchMode: PitchMode.followsSpeed,
+          trackPitchModeOverrides: {0: PitchMode.unchanged},
+          tracks: [
+            SessionTrack(
+              channel: 0,
+              multiple: 1,
+              lengthFrames: 4,
+              fadeAmount: 1,
+              reversed: false,
+              spanFrames: 6,
+              lanes: [
+                SessionLane(
+                  lane: 0,
+                  volume: 1,
+                  muted: false,
+                  outputMask: 3,
+                  inputChannel: 0,
+                  layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                  history: TrackHistory.none,
+                ),
+              ],
+            ),
+          ],
+        ),
+        laneStems: {
+          (0, 0): [pcm],
+        },
+      ));
+      expect(rig.recordedTempoBpm, 120);
+      expect(rig.recordedLengthFrames, 4);
+      expect(rig.retimed, isTrue);
+      expect(rig.tracks.single.spanFrames, 6);
+      expect(rig.defaultFollowTempo, isFalse);
+      expect(rig.trackFollowTempoOverrides, {0: true});
+      expect(rig.defaultPitchMode, PitchMode.followsSpeed);
+      expect(rig.trackPitchModeOverrides, {0: PitchMode.unchanged});
     });
 
     test("a manifest that names no defaults still carries the model's own, "
@@ -1385,6 +1485,12 @@ void main() {
       outputSetup: const SessionOutputSetup(level: {0: 0.5}),
       backing: const SessionBacking(level: 0.5, pan: 0.25, outputMask: 0x3),
       clickPan: -0.5,
+      recordedTempoBpm: 90,
+      recordedLengthFrames: 96000,
+      defaultFollowTempo: false,
+      trackFollowTempoOverrides: const {1: true},
+      defaultPitchMode: PitchMode.followsSpeed,
+      trackPitchModeOverrides: const {2: PitchMode.unchanged},
     );
 
     test('the source session sets every manifest field away from its '
@@ -1442,6 +1548,12 @@ void main() {
         'outputSetup',
         'backing',
         'clickPan',
+        'recordedTempoBpm',
+        'recordedLengthFrames',
+        'defaultFollowTempo',
+        'trackFollowTempoOverrides',
+        'defaultPitchMode',
+        'trackPitchModeOverrides',
       });
       final defaults = const Session(
         sampleRate: 48000,
@@ -1459,7 +1571,7 @@ void main() {
     });
 
     test('keeps every field and drops exactly the tracks, the grid, the '
-        'crown and the name', () {
+        'crown, the recorded tempo and length, and the name', () {
       final source = full.toJson();
       final expected = {
         for (final entry in source.entries)
@@ -1469,6 +1581,8 @@ void main() {
         'loopBars': 0,
         'loopBeats': 0,
         'primaryTrack': -1,
+        'recordedTempoBpm': 0.0,
+        'recordedLengthFrames': 0,
       };
 
       expect(
