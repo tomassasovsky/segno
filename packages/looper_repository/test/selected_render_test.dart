@@ -297,4 +297,142 @@ void main() {
       const SelectedRender(sources: {2, 1}),
     );
   });
+
+  group('render value types', () {
+    test('SelectedRender copyWith keeps or replaces each field', () {
+      const render = SelectedRender(sources: {0}, lengthBars: 2);
+      expect(render.copyWith(), render);
+      expect(render.copyWith(lengthBars: 8).lengthBars, 8);
+      expect(
+        render.copyWith(clearLength: true, lengthBars: 8).lengthBars,
+        isNull,
+      );
+      final cut = render.copyWith(
+        sources: {1, 3},
+        tails: RenderTailRule.cut,
+        mixFx: true,
+      );
+      expect(cut.sources, {1, 3});
+      expect(cut.lengthBars, 2);
+      expect(cut.tails, RenderTailRule.cut);
+      expect(cut.mixFx, isTrue);
+    });
+
+    test('SelectedRender equality ignores source order and reads fields', () {
+      const a = SelectedRender(sources: {1, 2}, lengthBars: 4);
+      const b = SelectedRender(sources: {2, 1}, lengthBars: 4);
+      expect(a.hashCode, b.hashCode);
+      expect(a, isNot(const SelectedRender(sources: {1}, lengthBars: 4)));
+      expect(a, isNot(const SelectedRender(sources: {1, 3}, lengthBars: 4)));
+      expect(a, isNot(a.copyWith(clearLength: true)));
+      expect(a, isNot(a.copyWith(tails: RenderTailRule.cut)));
+      expect(a, isNot(a.copyWith(mixFx: true)));
+      expect(
+        a.toString(),
+        'SelectedRender(sources: {1, 2}, lengthBars: 4, '
+        'tails: RenderTailRule.wrap, mixFx: false)',
+      );
+    });
+
+    test('SelectedRenderPlan equality covers every field and set', () {
+      const plan = SelectedRenderPlan(
+        frames: 96000,
+        seconds: 2,
+        commonCycle: true,
+        beats: 4,
+        bars: 1,
+        pluginTracks: {1, 2},
+        fadedTracks: {0},
+        pendingTracks: {3},
+        onceCutTracks: {4},
+      );
+      const same = SelectedRenderPlan(
+        frames: 96000,
+        seconds: 2,
+        commonCycle: true,
+        beats: 4,
+        bars: 1,
+        pluginTracks: {2, 1},
+        fadedTracks: {0},
+        pendingTracks: {3},
+        onceCutTracks: {4},
+      );
+      expect(plan, same);
+      expect(plan.hashCode, same.hashCode);
+      expect(plan.tempoSet, isTrue);
+      expect(
+        plan,
+        isNot(
+          const SelectedRenderPlan(
+            frames: 96000,
+            seconds: 2,
+            commonCycle: true,
+            beats: 4,
+            bars: 1,
+            pluginTracks: {1, 2},
+            fadedTracks: {0},
+            pendingTracks: {3},
+          ),
+        ),
+      );
+      expect(
+        const SelectedRenderPlan(frames: 1, seconds: 0, commonCycle: false),
+        isNot(
+          const SelectedRenderPlan(frames: 1, seconds: 0, commonCycle: true),
+        ),
+      );
+      expect(
+        plan.toString(),
+        'SelectedRenderPlan(frames: 96000, seconds: 2.0, '
+        'commonCycle: true, beats: 4.0, bars: 1.0, '
+        'pluginTracks: {1, 2}, fadedTracks: {0}, '
+        'pendingTracks: {3}, onceCutTracks: {4})',
+      );
+    });
+
+    test('SelectedRenderPlan reads a zero sample rate as zero seconds', () {
+      final plan = SelectedRenderPlan.fromEngine(
+        const RenderPlan(
+          frames: 480,
+          method: RenderMethod.commonCycle,
+          beatsMilli: 0,
+          tempoSet: false,
+        ),
+        sampleRate: 0,
+        beatsPerBar: 4,
+      );
+      expect(plan.seconds, 0);
+      expect(plan.tempoSet, isFalse);
+    });
+
+    test('RenderProgress and RenderOutcome are values', () {
+      const progress = RenderProgress(phase: RenderPhase.staging, permille: 5);
+      expect(
+        progress.hashCode,
+        const RenderProgress(phase: RenderPhase.staging, permille: 5).hashCode,
+      );
+      expect(
+        progress,
+        isNot(const RenderProgress(phase: RenderPhase.rendering, permille: 5)),
+      );
+      expect(
+        progress.toString(),
+        'RenderProgress(phase: RenderPhase.staging, permille: 5)',
+      );
+      const outcome = RenderOutcome(result: EngineResult.ok, path: '/a.wav');
+      expect(
+        outcome.hashCode,
+        const RenderOutcome(result: EngineResult.ok, path: '/a.wav').hashCode,
+      );
+      expect(
+        outcome,
+        isNot(const RenderOutcome(result: EngineResult.ok, cancelled: true)),
+      );
+      expect(
+        outcome.toString(),
+        'RenderOutcome(result: EngineResult.ok, path: /a.wav, '
+        'cancelled: false)',
+      );
+    });
+  });
 }
