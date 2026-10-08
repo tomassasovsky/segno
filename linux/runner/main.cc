@@ -1,5 +1,6 @@
 #include <glib.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "my_application.h"
 
@@ -24,8 +25,26 @@ static void force_skia_renderer() {
   g_setenv("FLUTTER_ENGINE_SWITCHES", count_value, TRUE);
 }
 
+// segno-prof gsources (deploy/yocto, #1299) reads the main loop's sources from
+// outside the process, which works even while the loop is wedged. GLib keeps
+// the default context in a private static, so say where it is. Only the
+// appliance image creates /run/segno; elsewhere this does nothing.
+static void publish_main_context() {
+  if (!g_file_test("/run/segno", G_FILE_TEST_IS_DIR)) {
+    return;
+  }
+  g_autofree gchar* contents = g_strdup_printf(
+      "%d %u.%u.%u %p\n", getpid(), glib_major_version, glib_minor_version,
+      glib_micro_version, static_cast<void*>(g_main_context_default()));
+  g_autoptr(GError) error = nullptr;
+  if (!g_file_set_contents("/run/segno/main-context", contents, -1, &error)) {
+    g_warning("cannot publish the main context: %s", error->message);
+  }
+}
+
 int main(int argc, char** argv) {
   force_skia_renderer();
+  publish_main_context();
 
   g_autoptr(MyApplication) app = my_application_new();
   return g_application_run(G_APPLICATION(app), argc, argv);

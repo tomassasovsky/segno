@@ -1,0 +1,124 @@
+#!/bin/sh
+# Records how the Segno app behaves over hours and days, so slow growth shows
+# up as a trend instead of as "it got sluggish at some point" (#1299).
+#
+# Every minute, one CSV row in /data/profile/metrics-<date>.csv:
+#   time            ISO 8601, UTC
+#   pid             the app; a new pid means it restarted
+#   app_uptime_s    seconds since that pid started
+#   rss_kb          resident memory
+#   threads, fds    counts
+#   cpu_pct         whole process, % of one core over the last interval
+#   main_pct        main thread: GTK and the Dart UI isolate
+#   raster_pct      the io.flutter.raster threads, summed
+#   rt_pct          SCHED_FIFO threads, summed (the audio engine)
+#   main_preempt_s  main-thread involuntary context switches per second: high
+#                   means it is runnable and waiting for a core
+#   gsources        sources attached to the main context (segno-prof gsources)
+#   embedder_timeouts  of those, the Flutter task runner's timeouts; more than
+#                   one or two means the #1299 leak is back
+#   idle_sources    idle callbacks waiting to run; a backlog means starvation
+#   source_ids_s    GSources created per second: main-loop churn
+#   load1, mem_available_kb  system-wide
+#
+# Every 15 minutes, a folded-stack profile of the main thread
+# (stacks-<time>.folded, segno-prof stack, 1000 samples 10 ms apart).
+#
+# Files older than 30 days are deleted. Experimental images only: the unit
+# checks the channel before starting this.
+set -u
+
+dir=/data/profile
+interval=60
+stack_every=15        # in intervals
+keep_days=30
+hz=100                # USER_HZ on this kernel; the image has no getconf
+
+mkdir -p "$dir"
+state=$(mktemp -d)
+trap 'rm -rf "$state"' EXIT
+
+# One line per thread: tid comm cpu_ticks policy nonvoluntary_switches
+snapshot_threads() {
+  for task in /proc/"$1"/task/*; do
+    stat=$(cat "$task/stat" 2>/dev/null) || continue
+    comm=$(tr ' ' '_' < "$task/comm" 2>/dev/null) || continue
+    nvcsw=$(awk '/^nonvoluntary_ctxt_switches/ {print $2}' "$task/status" 2>/dev/null)
+    # Fields after "pid (comm) ": state is 1, utime 12, stime 13, policy 39.
+    set -- ${stat##*) }
+    echo "${task##*/} $comm $(( ${12} + ${13} )) ${39} ${nvcsw:-0}"
+  done
+}
+
+tick=0
+pid_before=""
+ids_before=""
+uptime_before=""
+while :; do
+  pid=$(pidof segno | awk '{print $1}')
+  if [ -z "$pid" ]; then
+    sleep "$interval"
+    continue
+  fi
+  if [ "$pid" != "$pid_before" ]; then
+    : > "$state/threads"
+    ids_before=""
+    uptime_before=""
+    pid_before=$pid
+  fi
+
+  snapshot_threads "$pid" > "$state/threads.now"
+  read -r uptime _ < /proc/uptime
+  # Rates divide by the time that really passed: a pass that also samples
+  # stacks takes several seconds longer than the interval.
+  elapsed=$(awk -v now="$uptime" -v then="${uptime_before:-0}" 'BEGIN {printf "%.2f", now - then}')
+  uptime_before=$uptime
+  started=$(set -- $(sed 's/.*) //' /proc/"$pid"/stat); echo "${20}")
+  app_uptime=$(awk -v u="$uptime" -v s="$started" -v hz="$hz" 'BEGIN {printf "%d", u - s / hz}')
+  rss=$(awk '/^VmRSS/ {print $2}' /proc/"$pid"/status)
+  threads=$(awk '/^Threads/ {print $2}' /proc/"$pid"/status)
+  fds=$(ls /proc/"$pid"/fd | wc -l)
+  load1=$(cut -d' ' -f1 /proc/loadavg)
+  available=$(awk '/^MemAvailable/ {print $2}' /proc/meminfo)
+
+  # Per-thread CPU over the interval. A thread new since the last snapshot
+  # counts from zero, which over-reports it once; the first row after a
+  # restart is blank for the same reason.
+  cpu=$(awk -v pid="$pid" -v secs="$elapsed" -v hz="$hz" '
+    FILENAME == ARGV[1] { ticks[$1] = $3; nv[$1] = $5; seen = 1; next }
+    {
+      if (!seen) next
+      d = $3 - ticks[$1]
+      total += d
+      if ($1 == pid) { main = d; preempt = $5 - nv[$1] }
+      if ($2 ~ /^io\.flutter\.rast/) raster += d
+      if ($4 == 1) rt += d
+    }
+    END {
+      if (!seen) { print ",,,,"; exit }
+      f = 100 / (secs * hz)
+      printf "%.1f,%.1f,%.1f,%.1f,%.0f", total * f, main * f, raster * f, rt * f, preempt / secs
+    }' "$state/threads" "$state/threads.now")
+  mv "$state/threads.now" "$state/threads"
+
+  census=$(segno-prof gsources "$pid" --csv 2>/dev/null) || census=",,,"
+  ids_now=${census##*,}
+  rate=""
+  if [ -n "$ids_now" ] && [ -n "$ids_before" ]; then
+    rate=$(awk -v d=$(( (ids_now - ids_before + 4294967296) % 4294967296 )) \
+      -v secs="$elapsed" 'BEGIN {printf "%d", d / secs}')
+  fi
+  ids_before=$ids_now
+
+  file="$dir/metrics-$(date -u +%Y%m%d).csv"
+  [ -s "$file" ] || echo "time,pid,app_uptime_s,rss_kb,threads,fds,cpu_pct,main_pct,raster_pct,rt_pct,main_preempt_s,gsources,embedder_timeouts,idle_sources,source_ids_s,load1,mem_available_kb" > "$file"
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$pid,$app_uptime,$rss,$threads,$fds,$cpu,${census%,*},$rate,$load1,$available" >> "$file"
+
+  if [ $(( tick % stack_every )) -eq 0 ]; then
+    segno-prof stack "$pid" "$pid" 1000 10 \
+      > "$dir/stacks-$(date -u +%Y%m%dT%H%M%SZ).folded" 2>/dev/null
+    find "$dir" -type f -mtime +"$keep_days" -exec rm -f {} +
+  fi
+  tick=$(( tick + 1 ))
+  sleep "$interval"
+done
