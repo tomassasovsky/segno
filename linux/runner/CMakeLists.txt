@@ -11,6 +11,7 @@ add_executable(${BINARY_NAME}
   "my_application.cc"
   "sub_window_plugin_registrant.cc"
   "task_runner_timeout_guard.cc"
+  "gpu_frame_present.cc"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
 
@@ -32,5 +33,13 @@ target_link_libraries(${BINARY_NAME} PRIVATE ${CMAKE_DL_LIBS})
 # it, but that is incidental, so say it explicitly.
 target_link_options(${BINARY_NAME} PRIVATE
   "LINKER:--export-dynamic-symbol=g_timeout_add")
+
+# gpu_frame_present.cc replaces gdk_cairo_draw_from_gl for the Flutter
+# embedder (#1302): it issues GL calls through libepoxy, as GDK does, and the
+# interposition only works if the executable exports the symbol.
+pkg_check_modules(EPOXY REQUIRED IMPORTED_TARGET epoxy)
+target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::EPOXY)
+target_link_options(${BINARY_NAME} PRIVATE
+  "LINKER:--export-dynamic-symbol=gdk_cairo_draw_from_gl")
 
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
