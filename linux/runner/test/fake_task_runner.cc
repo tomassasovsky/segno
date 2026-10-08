@@ -21,6 +21,7 @@ struct _FakeTaskRunner {
   guint timeout_source_id;
   GList* pending_tasks;
   guint64 tasks_run;
+  FakeTaskRunnerHook before_timeout;
 };
 
 typedef struct {
@@ -56,6 +57,12 @@ static void process_expired_tasks_locked(FakeTaskRunner* self) {
 
 static gboolean on_expired_timeout(gpointer data) {
   FakeTaskRunner* self = static_cast<FakeTaskRunner*>(data);
+  // Not upstream: the test's way into the race window, between GLib
+  // dispatching this timeout and the callback taking the mutex. A task posted
+  // here is what another thread's post does when it lands in that window.
+  if (self->before_timeout != nullptr) {
+    self->before_timeout(self);
+  }
   g_mutex_lock(&self->mutex);
   self->timeout_source_id = 0;
   process_expired_tasks_locked(self);
@@ -99,6 +106,11 @@ void fake_task_runner_post(FakeTaskRunner* self, uint64_t target_time_nanos) {
   self->pending_tasks = g_list_append(self->pending_tasks, task);
   tasks_did_change_locked(self);
   g_mutex_unlock(&self->mutex);
+}
+
+void fake_task_runner_set_before_timeout(FakeTaskRunner* self,
+                                         FakeTaskRunnerHook hook) {
+  self->before_timeout = hook;
 }
 
 guint64 fake_task_runner_tasks_run(FakeTaskRunner* self) {
