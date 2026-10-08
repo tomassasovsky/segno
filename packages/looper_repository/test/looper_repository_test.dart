@@ -1892,10 +1892,11 @@ void main() {
       },
     );
 
-    test('meters carry the master, input and output levels', () async {
+    test('meters carry the master, input, monitor and output levels', () async {
       engine.nextSnapshot = _playingSnapshot.copyWith(
         outputPeak: 0.5,
         inputPeaks: [0.25, 0.125],
+        monitorPeaks: [0, 0.2],
         outputPeaks: [0.5, 0.4, 0, 0],
       );
       final repo = buildRepo();
@@ -1907,6 +1908,8 @@ void main() {
       final meters = repo.meters;
       expect(meters.outputPeak, 0.5);
       expect(meters.inputPeak(1), 0.125);
+      expect(meters.monitorPeak(1), 0.2);
+      expect(meters.monitorPeak(5), 0);
       expect(meters.outputChannelPeak(1), 0.4);
       // Out of range reads as silence rather than throwing.
       expect(meters.inputPeak(7), 0);
