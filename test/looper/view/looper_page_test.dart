@@ -156,6 +156,9 @@ void main() {
               BlocProvider<TransportClockCubit>(
                 create: (_) => TransportClockCubit(repository: repository),
               ),
+              BlocProvider<OutputLevelCubit>(
+                create: (_) => OutputLevelCubit(repository: repository),
+              ),
               BlocProvider<TracksCubit>(
                 create: (_) => TracksCubit(settings: settings),
               ),
