@@ -5,23 +5,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
-import 'package:segno/looper/cubit/output_level_cubit.dart' show kClipPeak;
+import 'package:segno/looper/view/live_meter.dart';
 import 'package:segno/theme/theme.dart';
 
-/// One track's [PeakMeterBar], following [channel]'s live [Track.peak].
+/// One track's [PeakMeterBar], following [channel]'s live level from
+/// `LooperRepository.meterLevels` (#1301).
 ///
-/// The leaf of the rebuild split (#646/#654/#832): every tile above it compares
-/// on [Track.steadyProps], which excludes `peak`, so the only thing a meter
-/// tick rebuilds is this bar. Everything else the bar needs — its colour,
+/// The leaf of the rebuild split (#646/#654/#832): levels are not part of the
+/// looper state at all, so the only thing a meter tick rebuilds is this bar,
+/// and only when the level it draws changes ([meterPeak]). Everything else the
+/// bar needs — its colour,
 /// whether the track has content, whether it is frozen — is derived from steady
 /// fields and passed in by the tile, which is why this leaf can take the
 /// channel and read the one moving number itself.
 ///
 /// The level is therefore the RIG's, always: it is read here so it can reach
 /// the bar without rebuilding the ~250 lines of tile around it. That makes
-/// every surface built out of these tiles a live view of the ambient
-/// [LooperBloc] rather than a function of the [Track] handed in — see
-/// `TrackColumn.track`.
+/// every surface built out of these tiles a live view of the rig rather than
+/// a function of the [Track] handed in — see `TrackColumn.track`.
 class TrackPeakMeter extends StatelessWidget {
   /// Creates a [TrackPeakMeter].
   const TrackPeakMeter({
@@ -50,35 +51,22 @@ class TrackPeakMeter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final peak = context.select<LooperBloc, double>(
-      (bloc) => peakOf(bloc.state, channel),
-    );
-    return PeakMeterBar(
-      peak: peak,
-      color: color,
-      hasContent: hasContent,
-      frozen: frozen,
-      clipColor: clipColor,
+    return LiveMeter<double>(
+      key: ValueKey(channel),
+      select: (levels) => meterPeak(levels.track(channel).peak),
+      builder: (context, peak) => PeakMeterBar(
+        peak: peak,
+        color: color,
+        hasContent: hasContent,
+        frozen: frozen,
+        clipColor: clipColor,
+      ),
     );
   }
-}
-
-/// [channel]'s per-side peaks, or `(0, 0)` when [state] has no such channel —
-/// the same emit-time tolerance as [peakOf].
-///
-/// A record, so one selector delivers both sides: subscribing to them
-/// separately would rebuild each lane on the other's tick.
-({double left, double right}) stereoPeakOf(LooperState state, int channel) {
-  for (final track in state.tracks) {
-    if (track.channel == channel) {
-      return (left: track.peakL, right: track.peakR);
-    }
-  }
-  return (left: 0, right: 0);
 }
 
 /// One track's two-lane level meter, following [channel]'s own per-side peaks
-/// ([Track.peakL] / [Track.peakR]) — the Mixer's meter.
+/// ([TrackLevels.peakL] / [TrackLevels.peakR]) — the Mixer's meter.
 ///
 /// Its own leaf on the live values, for the reason [TrackPeakMeter] is one:
 /// a level tick must redraw two bars, not the strip around them.
@@ -118,33 +106,39 @@ class TrackStereoMeter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final peaks = context.select<LooperBloc, ({double left, double right})>(
-      (bloc) => stereoPeakOf(bloc.state, channel),
-    );
-    return Row(
-      children: [
-        Expanded(
-          child: PeakMeterBar(
-            key: Key('mixer_meter_l_$channel'),
-            peak: peaks.left,
-            color: color,
-            hasContent: hasContent,
-            frozen: frozen,
-            clipColor: clipColor,
+    // A record, so one cubit delivers both sides: following them separately
+    // would rebuild each lane on the other's tick.
+    return LiveMeter<({double left, double right})>(
+      key: ValueKey(channel),
+      select: (levels) {
+        final track = levels.track(channel);
+        return (left: meterPeak(track.peakL), right: meterPeak(track.peakR));
+      },
+      builder: (context, peaks) => Row(
+        children: [
+          Expanded(
+            child: PeakMeterBar(
+              key: Key('mixer_meter_l_$channel'),
+              peak: peaks.left,
+              color: color,
+              hasContent: hasContent,
+              frozen: frozen,
+              clipColor: clipColor,
+            ),
           ),
-        ),
-        SizedBox(width: gap),
-        Expanded(
-          child: PeakMeterBar(
-            key: Key('mixer_meter_r_$channel'),
-            peak: peaks.right,
-            color: color,
-            hasContent: hasContent,
-            frozen: frozen,
-            clipColor: clipColor,
+          SizedBox(width: gap),
+          Expanded(
+            child: PeakMeterBar(
+              key: Key('mixer_meter_r_$channel'),
+              peak: peaks.right,
+              color: color,
+              hasContent: hasContent,
+              frozen: frozen,
+              clipColor: clipColor,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -200,9 +194,10 @@ class TrackProgressBar extends StatelessWidget {
   }
 }
 
-/// [channel]'s current peak level, or `0` when [state] has no such channel.
+/// [channel]'s normalized play position, or `0` when [state] has no such
+/// channel.
 ///
-/// Silence, not an exception — and not because losing a channel is harmless,
+/// Zero, not an exception — and not because losing a channel is harmless,
 /// but because this runs at the wrong moment to react to it. A selector is
 /// evaluated when the bloc EMITS, before anything rebuilds, so a state that
 /// has dropped [channel] reaches this function on its way to the frame that
@@ -210,15 +205,6 @@ class TrackProgressBar extends StatelessWidget {
 /// null, and the slot above it returns a `SizedBox` in the same frame. The
 /// value computed here is never drawn, so throwing would only turn an
 /// already-handled case into a crash.
-double peakOf(LooperState state, int channel) {
-  for (final track in state.tracks) {
-    if (track.channel == channel) return track.peak;
-  }
-  return 0;
-}
-
-/// [channel]'s normalized play position, or `0` when [state] has no such
-/// channel — the same emit-time tolerance as [peakOf].
 double progressOf(LooperState state, int channel) {
   for (final track in state.tracks) {
     if (track.channel == channel) return track.progress;
@@ -227,21 +213,22 @@ double progressOf(LooperState state, int channel) {
 }
 
 /// A [Track] compared by its [Track.steadyProps] alone — everything about it
-/// EXCEPT the live [Track.peak] and [Track.positionFrames].
+/// EXCEPT the live [Track.positionFrames].
 ///
-/// What a track tile selects. `Track`'s own equality includes `peak`, so
-/// selecting the track itself puts the tile back on the meter's rebuild path —
+/// What a track tile selects. `Track`'s own equality includes the playhead,
+/// so selecting the track itself puts the tile back on the progress bar's
+/// rebuild path —
 /// exactly the leak that made #646/#654/#832 stop short: the tiles were
 /// subscribed per channel, but every one of them still rebuilt on every poll
 /// tick. Wrapping rather than restating the field list means a field added to
 /// `Track` is compared here automatically.
 class SteadyTrack extends Equatable {
-  /// Wraps [track] for a peak-insensitive comparison.
+  /// Wraps [track] for a playhead-insensitive comparison.
   const SteadyTrack(this.track);
 
-  /// The wrapped track. Its `peak` and `positionFrames` may be a tick stale —
-  /// by design: whoever draws the level or the playhead subscribes to it
-  /// directly ([TrackPeakMeter], [TrackProgressBar]).
+  /// The wrapped track. Its `positionFrames` may be a tick stale — by design:
+  /// whoever draws the playhead subscribes to it directly
+  /// ([TrackProgressBar]).
   final Track track;
 
   @override
