@@ -10,6 +10,7 @@ add_executable(${BINARY_NAME}
   "main.cc"
   "my_application.cc"
   "sub_window_plugin_registrant.cc"
+  "gpu_frame_present.cc"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
 
@@ -23,5 +24,13 @@ add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 # Add dependency libraries. Add any application-specific dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
+
+# gpu_frame_present.cc replaces gdk_cairo_draw_from_gl for the Flutter
+# embedder (#1302): it issues GL calls through libepoxy, as GDK does, and the
+# interposition only works if the executable exports the symbol.
+pkg_check_modules(EPOXY REQUIRED IMPORTED_TARGET epoxy)
+target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::EPOXY ${CMAKE_DL_LIBS})
+target_link_options(${BINARY_NAME} PRIVATE
+  "LINKER:--export-dynamic-symbol=gdk_cairo_draw_from_gl")
 
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
