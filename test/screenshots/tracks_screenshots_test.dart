@@ -47,6 +47,9 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 class _MockTransportClockCubit extends MockCubit<TransportClockState>
     implements TransportClockCubit {}
 
+class _MockOutputLevelCubit extends MockCubit<OutputLevelState>
+    implements OutputLevelCubit {}
+
 /// A performance repository whose capture status a scene sets, so the
 /// Control owner's armed LED follows the recorder the scene shows.
 class _ScenePerformance extends PerformanceRepository {
@@ -141,6 +144,7 @@ void main() {
   late _ScenePerformance performance;
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
+  late OutputLevelCubit outputLevel;
   late AudioSetupCubit audioSetup;
   late FadeSettings fade;
 
@@ -247,6 +251,12 @@ void main() {
     ).thenReturn(const PerformanceRecorderIdle());
     // The status bar's clock reads elapsed transport time (#678); the pen's
     // own 0:00:11 figure, so the decal matches the design literally.
+    outputLevel = _MockOutputLevelCubit();
+    whenListen(
+      outputLevel,
+      const Stream<OutputLevelState>.empty(),
+      initialState: const OutputLevelState(),
+    );
     transportClock = _MockTransportClockCubit();
     whenListen(
       transportClock,
@@ -313,6 +323,7 @@ void main() {
                 value: performanceRecorder,
               ),
               BlocProvider<TransportClockCubit>.value(value: transportClock),
+              BlocProvider<OutputLevelCubit>.value(value: outputLevel),
               // Console mode mounts the tray in the main window, and the tray
               // opens on Signal — whose input cards read both of these. Absent,
               // this whole test throws `ProviderNotFound` before it can draw,

@@ -1,13 +1,11 @@
-import 'dart:math' show ln10, log;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/output_level_cubit.dart';
 import 'package:segno/looper/cubit/transport_clock_cubit.dart';
 import 'package:segno/looper/view/track_column.dart' show ShrinkToWidth;
-import 'package:segno/looper/view/track_meters.dart' show kClipPeak;
 import 'package:segno/theme/theme.dart';
 
 /// The session strip under the track run (the accepted stage): tempo and time
@@ -162,30 +160,14 @@ class _ElapsedClock extends StatelessWidget {
   }
 }
 
-/// The output reading the strip renders: the master-bus peak in tenths of a
-/// dB, or `null` for silence — quantised so a level tick that does not move
-/// the displayed figure rebuilds nothing.
-typedef _OutputReading = ({int? tenths, bool clip});
-
-/// `OUT -3.8 dBFS`, or `OUT CLIP` in red — the master bus after summing,
-/// because a sum can clip when no single track does.
 class _OutputLevel extends StatelessWidget {
   const _OutputLevel();
-
-  static _OutputReading readingOf(double peak) {
-    if (peak <= 0) return (tenths: null, clip: false);
-    if (peak >= kClipPeak) return (tenths: 0, clip: true);
-    final db = 20 * log(peak) / ln10;
-    return (tenths: (db * 10).round(), clip: false);
-  }
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
-    final reading = context.select<LooperBloc, _OutputReading>(
-      (bloc) => readingOf(bloc.state.transport.outputPeak),
-    );
+    final reading = context.watch<OutputLevelCubit>().state;
     final tenths = reading.tenths;
     final db = tenths == null ? '−∞' : (tenths / 10).toStringAsFixed(1);
     return Semantics(
