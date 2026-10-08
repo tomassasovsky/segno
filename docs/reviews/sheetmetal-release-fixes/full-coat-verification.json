@@ -1,0 +1,78 @@
+{
+  "scope": "Fully coated enclosure, retired full-face overlay and plain-text process instructions. Local CAD/source verification; physical process/assembly acceptance remains open.",
+  "source_sha256": "a459e831512a7a1985507dbfc7fd1854393752122aa82a8f5016a5f6a8f3f6c6",
+  "tests": {
+    "count": 40,
+    "result": "PASS",
+    "log_sha256": "4e3c76d93e0adb5bb90e7be55f0d43806afc677ed91ef823a81ab7a52c2e6821"
+  },
+  "full_generator": {
+    "result": "ALL PASS",
+    "log_sha256": "07933865bc239768d728699caf2a33d19b63e5c63b6e0e33b66c025e22ec61b6"
+  },
+  "archives": {
+    "segno_3dprint.zip": {
+      "sha256": "065bf711852ffe9bcffead68c286737635c29c57761a073d8a4de79ee2d5216f",
+      "members": 36
+    },
+    "segno_pedal_tiles.zip": {
+      "sha256": "5ecdbfdd6be4b6bb8ea707a3540dbcc197fc56b39b41f73c4dde42659c257797",
+      "members": 22
+    },
+    "segno_pintura.zip": {
+      "sha256": "6258780f6dfad03ba9fbbcc590db51ce6808e600f5ea6d14d26eac0afc278576",
+      "members": 8
+    },
+    "segno_sheetmetal.zip": {
+      "sha256": "ff58dde08f4085860b80c800b2a7e7aecf73bb200838aca4a8a81fd335b70413",
+      "members": 14
+    },
+    "segno_sheetmetal_step.zip": {
+      "sha256": "6cfa6ee0f1d2f21cb9bd9d2eab5eff635ae0955b2de61240ad369583b8f26f3b",
+      "members": 8
+    }
+  },
+  "drawing_review": {
+    "changed_pdfs": 8,
+    "rendered_and_visually_reviewed_pages": 11,
+    "extra_machining_pages": 0
+  },
+  "native": {
+    "vsm": {
+      "document": "VAMP sheet metal",
+      "version": 137,
+      "snapshot_sha256": "cbb7aef084e03a8d8d23a5334ea522e50199ef79f8ea47c98ee6ae20b0b0d001",
+      "occurrences": 45,
+      "bodies": 45,
+      "empty_leaf_components": [],
+      "historical_warning_groups": 0
+    },
+    "pop": {
+      "document": "VAMP console (populated)",
+      "version": 350,
+      "snapshot_sha256": "661c539b6408b516da8a3cd0f92073175d06d8a1114347ed4828710da5064d57",
+      "occurrences": 441,
+      "bodies": 991,
+      "empty_leaf_components": [],
+      "historical_warning_groups": 41
+    }
+  },
+  "standalone_mini": {
+    "version": 13,
+    "geometry_unchanged": true
+  },
+  "supplier_messages_sent": false,
+  "production_release": false,
+  "remaining_acceptance": [
+    "Shop stock, tooling, bend development, rivets and local PD web qualification",
+    "Purchased hardware, complete finished-hole patterns and coated coupon",
+    "Smooth matte finish and local film thickness",
+    "Finished assembly, shim fit, retention, thread/load and thermal qualification"
+  ],
+  "independent_reviews": {
+    "geometry": "No unresolved actionable findings; metal measurements unchanged in populated350",
+    "interfaces": "No unresolved actionable findings on saved/reopened populated350 and sheet-metal137",
+    "pipeline": "No unresolved actionable findings; exact archive content and drawing review completed"
+  },
+  "native_interface_proof_sha256": "ae5ebc6849b064d51c0c396e4631e9b91dae5a79e8cfdaad4d69be7458e64356"
+}

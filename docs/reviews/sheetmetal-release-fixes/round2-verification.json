@@ -1,0 +1,1931 @@
+{
+  "source_sha256": {
+    "hardware/enclosure/segno_enclosure.py": "5d1c19ad481229e4023ff4fef9aa2d153902059bd1ae6176624d6a9c535390bc",
+    "hardware/enclosure/flat_pattern_check.py": "76c041bb51fc30c94c531e95bec2e250eaf0cd85be10176054fba186469d0ff1",
+    "hardware/enclosure/fusion_export_formed.py": "d5c140b56a6b2a49b99081de5427127d8a9414c1d1e46e2841458247335673fe",
+    "hardware/enclosure/tests/test_manufacturing_fit.py": "0bc8b793a4d144ce25342fc5dcc9e4da82842d72fc84bffe50768aefc1b89328",
+    "hardware/enclosure/tests/test_manufacturing_pipeline.py": "2e60cef28a307909445abc2a65912224b8c9d72967d2fe3cfc9d7cc96b8c8017",
+    "hardware/enclosure/reference/ring24_interface.json": "4e8306a6598b7aa3ba80dfe26cb6af241999183f24fe0fbb22b7b351d2609174",
+    "hardware/enclosure/reference/ring24_orientation.svg": "21b3ef8cae6ae43f74a6c9908b107d6981d365717d26317398bc1c4924a3db2d"
+  },
+  "archives": {
+    "segno_3dprint.zip": {
+      "sha256": "fbe66b9a2c60dc645c9979e8eee36c5d827835ba2e98a1d9895bbf7850916813",
+      "members": {
+        "segno_platform_front_ring.step": "2b50c5366ab2f60189a01b2c8b1fb3b439b119c9574270a4377fac1cec4fd9d0",
+        "segno_platform_front_ring.stl": "8594fb6942ad088b3747378e1f42471ea7674e0be5741979c4a8fb1a64581381",
+        "segno_platform_mid_ring.step": "203f37cb635a4ee896a9dc0eee0f70ba4c066c3382444b29db9f18c42608c2c7",
+        "segno_platform_mid_ring.stl": "a3240f0b00e86e9bbb3ed3b4e3dfae97af5cf3306705fe1dc672e6bb989e661c",
+        "segno_platform_sled.step": "0ab1dfa63cd067f56649dcdf8a3a3b8967be9720331ce8811f3a83ff0d1d48b5",
+        "segno_platform_sled.stl": "9b9f25a4ce3965ae0412574f323b7e2bf3635b9f5e2bec3de55517509064eb57",
+        "segno_led_diffuser.step": "7f90b48ed349fd00dd18e193c976b90728d338a667ff588999de05ff3349e415",
+        "segno_led_diffuser.stl": "3ae2ec3fbfaf7bd567ab2cb7338d4b9c7045fe5dee23baa3ef28c7916f901a8a",
+        "segno_ring_diffuser.step": "4e8b793dbd60e2cc70a83f441c120963d84054e894d6b884e6c205d9a9ed602f",
+        "segno_ring_diffuser.stl": "9a8f876a82764a605308d55d01c38b5e0b46c5fa4757e0ff8a4a97bae57ea6f1",
+        "segno_pedal_tile_REC_PLAY.step": "9dd54a0a9b93e3bea3e7e6d212520d819951cbe98400da49b1a53c3246aab85f",
+        "segno_pedal_tile_REC_PLAY.stl": "3d9b740a1d1e7e74b6b95403e2cd2ab57dcf26398bd0eb4b34d0e05b6da74927",
+        "segno_pedal_tile_STOP.step": "8f1b7496053eb6c9e0896ff79e709c8f49e106e77c87665c31c9812e5849767b",
+        "segno_pedal_tile_STOP.stl": "4cce4a0c000d8e982531f5fa6b7d46b03af7ec496cdf20f213bdeed2c92f4fca",
+        "segno_pedal_tile_UNDO.step": "9a31de05fae7fa8d8087078a280cd1a2c17b2673c649317f4f79bcd581e5d678",
+        "segno_pedal_tile_UNDO.stl": "032d22216f4b5063a01968904d352c2a8e4829cf1850e2f333ef3c9c5b861a2c",
+        "segno_pedal_tile_MODE.step": "dd44d7f6711946060c1a5c9802b8676123e58d8e6881a4e9cb72f77aae79fd2b",
+        "segno_pedal_tile_MODE.stl": "ff14d241f2baf3fce6083cd3decf3844b437fe38aee9cc4658542407354b3ee0",
+        "segno_pedal_tile_TRACK1.step": "764c7319ad4c7b54655f8ab343286d977b6851d57a3057294317c0f00c323424",
+        "segno_pedal_tile_TRACK1.stl": "44e4fada2cd23494a486b320f9cf7fc287ad05affde2d133e9667f42335803b7",
+        "segno_pedal_tile_TRACK2.step": "33d10f39109778be123a00c6daef30c0d4d7fdfc1327c89b196baa6316c5b915",
+        "segno_pedal_tile_TRACK2.stl": "d72b0b9fe0129f6a5cb444185fcbb65d49d846dbceeadd2bcc7da7332c6a7e7f",
+        "segno_pedal_tile_TRACK3.step": "48fc696b9228ee2ac51b665e2e4826fb27eaa8c02344a1645930556bcf6bb2b4",
+        "segno_pedal_tile_TRACK3.stl": "ab678d5fdf3f0c5a08094c3a26f23a5ee5316a994ea01591af0c7504b98655cf",
+        "segno_pedal_tile_TRACK4.step": "d693cdb6460050d67fcb0ed0921c77ec7814db93a466eb5be04920e43d913097",
+        "segno_pedal_tile_TRACK4.stl": "f48860f032752d17dca734911c2bbc9565c8f300d9d8344a80ddd52957189f3d",
+        "segno_pedal_tile_CLEAR.step": "172f0473f7af4f261944957ea6deb9d5143ebfbaf52aaf6c9552c04bd5411630",
+        "segno_pedal_tile_CLEAR.stl": "b81e970c8e060bd10f749b62ac87917c382d64f9cf6be8cad04285336d790c1c",
+        "segno_pedal_tile_BANK.step": "53dd21e49ce33772831945880666e918c7ff758bb6abcd8d59c0bfa8cf5ca5b3",
+        "segno_pedal_tile_BANK.stl": "01e9224c8df659c6de1bda41a57610fdf95247b39fbc11b5bc9a87d4ec304f9e",
+        "segno_screen7_tower.step": "90087908941dd772f965f62ce1feb25bb864b1740718ebae7534bfd768aeda40",
+        "segno_screen7_tower.stl": "6734a26b76f6256f46cbdda6c34caff2df1429fe279d6f4c48ca205da4ca9128",
+        "segno_screen16_stand_L.step": "bb5539cc27fe32f7ddc4bf213af25e5eac02c999e26f3d652af36b94a16af075",
+        "segno_screen16_stand_L.stl": "4a1070fe04d297fd97169a7ab4d94590526804c4eefdb3fd1b45e7c134264257",
+        "segno_screen16_stand_R.step": "cdd0d5049e9c7ee12be96c0e13285fcbbe6474df31c5dbaef199e7315375bd2d",
+        "segno_screen16_stand_R.stl": "eba82d79ee95c3f01ba5a64d34f214403b154400792132ec1c03cb32efe4a5e5"
+      },
+      "member_count": 36
+    },
+    "segno_overlay.zip": {
+      "sha256": "b860cda93b1a9e22027ccc7860f81bb2f2601586f2506f8124981e333d744a3c",
+      "members": {
+        "segno_overlay.dxf": "cf758744d1766b3c28b509d84a40c1df154e5bfbb98fbf6edd96097465c1b660",
+        "segno_overlay.pdf": "ff599a2d2f2ba6fef093d3f7d50419210d9212e18a25fa9bc78aa02450f052f6"
+      },
+      "member_count": 2
+    },
+    "segno_pedal_tiles.zip": {
+      "sha256": "fb47bfeb4025e1e2b7d39bbe637699aee46e68cf083bffc0160db55dcf380ab0",
+      "members": {
+        "segno_pedal_tiles.pdf": "848523d420d491a6879a99294f99666f4ff3d5965581889450bb52bee6d31eea",
+        "segno_pedal_tiles.dxf": "e2dc7b9783a688b9af1af6fcf5e473407d3d9f36b21af7e14a4016df49465e49",
+        "segno_pedal_tile_REC_PLAY.dxf": "877d0f02069078602b6ffebd18642aca5c3bd1ce10c338a05e03bde20d8022df",
+        "segno_pedal_tile_STOP.dxf": "5ebb51de0e1f184eb23a0e55dcda7fb2b755bf3dc2ac86573c3be24893667da4",
+        "segno_pedal_tile_UNDO.dxf": "e512b7b92a6680144b4d71702f2185422ca3d4f95d084887926f118f753d7314",
+        "segno_pedal_tile_MODE.dxf": "94b402a81749062db0f36b1ea396df0d4fde32576f941e73e3dbae87a484a1af",
+        "segno_pedal_tile_TRACK1.dxf": "beaf8d9f76901037f8f8f1af910b0ce266d4519f402bc15f2200e92aa6345389",
+        "segno_pedal_tile_TRACK2.dxf": "1fc9c6e82ccdbd714ca5d1b4d433931971e6689517a7bd5c31bc2a643435b24b",
+        "segno_pedal_tile_TRACK3.dxf": "03412be1a44b20998aac68c1c03513f78dde96c38f8b658a76825e8e83224501",
+        "segno_pedal_tile_TRACK4.dxf": "473bc47403c0121873ef1adffc1c7799f3999ed566b433b6d6f5c2bb0b3abcca",
+        "segno_pedal_tile_CLEAR.dxf": "5c8e8b6e5b9080502197fdb5ed2cc4b56f47aa52604eb3432d5e9ba9bade38a9",
+        "segno_pedal_tile_BANK.dxf": "ccfd9b3a1ac189067c86360e9760c1598869956882e522206dfa4eb3219951cf",
+        "segno_pedal_tile_REC_PLAY.pdf": "390d3df75b73725b1138c9bf7ac8a0c24021dbf52cb29f3a40cfdf784b0abbb7",
+        "segno_pedal_tile_STOP.pdf": "65f4cf48d0118fcd4a4731953466fa32c8982acd4163cbed6cc20b6458896617",
+        "segno_pedal_tile_UNDO.pdf": "7119d069e4f9e7a6715bed7ece9deaf36f75fca9b742b2ab418661170594da21",
+        "segno_pedal_tile_MODE.pdf": "385b5975d31629725ac4771d509b61732274f3c78a26883d4e73ac6c3a1c5c9f",
+        "segno_pedal_tile_TRACK1.pdf": "e714f205467715d01865d536b44650ad60b05d2d7014b57d1b71ee6a4d323406",
+        "segno_pedal_tile_TRACK2.pdf": "926c688d77cf9370fd232ac63d3e9fa997d2beeedca10d43cc89dcef1295388f",
+        "segno_pedal_tile_TRACK3.pdf": "1751ad761f606a4a1c3660c58391edf7eef5d6ac5939c0d2a9eed4d76cde5b39",
+        "segno_pedal_tile_TRACK4.pdf": "dbfa85c526483686e15c7ae1de2a72e90212fb79b55fb3d693a339aa4b2fd869",
+        "segno_pedal_tile_CLEAR.pdf": "063d8741b920e9c0238b13242c39522efcef5c325f4a997d48b1fe4e43bc5dc5",
+        "segno_pedal_tile_BANK.pdf": "47cdb41a5f991b06161f09725b2b69fdeb91b8f685649952c79ecec9fcb806e7"
+      },
+      "member_count": 22
+    },
+    "segno_pintura.zip": {
+      "sha256": "21c88a1720e022638e15a1cb9cee4b2662a78f8d656f69c1fd282aefbc65a9e0",
+      "members": {
+        "segno_paint_quote.pdf": "e0a7f619f97bc56586806ff589040e1d732ea708b4b7144f6351666384f88890",
+        "segno_base.pdf": "8985ff33818d9c6e19e74f78140f59c9113c8c2c485cccee6e15150deabf57cc",
+        "segno_faceplate.pdf": "f5b446b8e9b9d68f85bf8212374f07215c0989665b2f4e3f40bfb71682705026",
+        "segno_rear_panel.pdf": "23037350ba2fddefca64a15eda32215ce734b6a72dae5f4165c2aa7d38b77d45",
+        "segno_corner_bracket_rear.pdf": "71062a7ead2d2d3f72438a929938719034f6702482a91eeb01b4afc213b43714",
+        "segno_ring_disc.pdf": "0f4d0a3616d2d752ded3319c2ff4bda63ab6dd3bb89b80a388da0eaa1a43ed0f",
+        "segno_post.pdf": "8a13fb191d86019cdc9bde5c5e6e626ade8c84c15fc2d9ba6b6d7244e355a41c"
+      },
+      "member_count": 7
+    },
+    "segno_sheetmetal.zip": {
+      "sha256": "b891f1244565b1e78fe30f68dec18c880e5dba41040b607a4dae77c5a8e937b3",
+      "members": {
+        "segno_faceplate.dxf": "f6f4fadb7d1ee57b7c8b8f0955fa72dcffd6985bf288b165b9e4237f86463213",
+        "segno_faceplate.pdf": "f5b446b8e9b9d68f85bf8212374f07215c0989665b2f4e3f40bfb71682705026",
+        "segno_base.dxf": "5486215b18ffa7b0968488348c0d216620beebfc0960d655b55a4895b8ac11a5",
+        "segno_base.pdf": "8985ff33818d9c6e19e74f78140f59c9113c8c2c485cccee6e15150deabf57cc",
+        "segno_rear_panel.dxf": "19a9a356d6025d4a3633c435708f579e8596675cb9170ba9df4eb4eb25cdea23",
+        "segno_rear_panel.pdf": "23037350ba2fddefca64a15eda32215ce734b6a72dae5f4165c2aa7d38b77d45",
+        "segno_ring_disc.dxf": "a091c2f7fe079097023df860b2b4b06db31155c19fb9865af71748ca201e49b0",
+        "segno_ring_disc.pdf": "0f4d0a3616d2d752ded3319c2ff4bda63ab6dd3bb89b80a388da0eaa1a43ed0f",
+        "segno_corner_bracket_rear.dxf": "b4626dddebc4806d011a8088b2da84e3c0526ec3298bfb29e110ac59c1b17149",
+        "segno_corner_bracket_rear.pdf": "71062a7ead2d2d3f72438a929938719034f6702482a91eeb01b4afc213b43714",
+        "segno_post.dxf": "64ba2d76bf9321214036ad12a56849c77abe2063b7c3a2d9f89cc2ca6a4c7cd6",
+        "segno_post.pdf": "8a13fb191d86019cdc9bde5c5e6e626ade8c84c15fc2d9ba6b6d7244e355a41c"
+      },
+      "member_count": 12
+    },
+    "segno_sheetmetal_step.zip": {
+      "sha256": "652075f647fead7d2eb1f29e71f7c6c0a7976530192fa2384d2a5d4df4b7ea50",
+      "members": {
+        "segno_assembly.step": "1242fb495e3cba56e829a5c873c8a46fd17ae4ebd4d4ebd6b09461d53f847811",
+        "segno_faceplate.step": "f45de8d75346c5cfabeb7f26282f7d5c94a40271e7cee169a79160c8c05c3a6e",
+        "segno_base.step": "dd5cab2b3aa418613f1fdbb1e24b01f53aef94dd4976bfd5a9e80ea92aaaae73",
+        "segno_rear_panel.step": "814b4649fdc4769e212d113a6ce6866f9d83493413f4b7cacd096d36a72df27c",
+        "segno_ring_disc.step": "24247bc8edd8eadbd3dfc3ee3bc6659dd030a82dc1b8322e2e53081596e28d4f",
+        "segno_corner_bracket_rear.step": "01bf7e5ea64f535884736a009e060e1b84d8b2f9b1f1971733772418df029ad7",
+        "segno_post.step": "5b774f77d0849900c35cc3c5cc4051d5a68b4cc94332c41d0263eff5bdb23479"
+      },
+      "member_count": 7
+    }
+  },
+  "flat_parity": {
+    "segno_faceplate": {
+      "matched_reference_holes": 10,
+      "missing_area_mm2": 0.008358020637356134,
+      "extra_area_mm2": 0.00835802063552915,
+      "area_tolerance_mm2": 0.01
+    },
+    "segno_base": {
+      "matched_reference_holes": 107,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "segno_corner_bracket_rear": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    }
+  },
+  "pdf_pages": {
+    "segno_base.pdf": 2,
+    "segno_corner_bracket_rear.pdf": 1,
+    "segno_faceplate.pdf": 2,
+    "segno_overlay.pdf": 1,
+    "segno_paint_quote.pdf": 4,
+    "segno_pedal_base_gauge.pdf": 1,
+    "segno_pedal_tile_BANK.pdf": 1,
+    "segno_pedal_tile_CLEAR.pdf": 1,
+    "segno_pedal_tile_MODE.pdf": 1,
+    "segno_pedal_tile_REC_PLAY.pdf": 1,
+    "segno_pedal_tile_STOP.pdf": 1,
+    "segno_pedal_tile_TRACK1.pdf": 1,
+    "segno_pedal_tile_TRACK2.pdf": 1,
+    "segno_pedal_tile_TRACK3.pdf": 1,
+    "segno_pedal_tile_TRACK4.pdf": 1,
+    "segno_pedal_tile_UNDO.pdf": 1,
+    "segno_pedal_tiles.pdf": 1,
+    "segno_post.pdf": 1,
+    "segno_rear_panel.pdf": 1,
+    "segno_ring_disc.pdf": 1
+  },
+  "contours": {
+    "segno_faceplate": "pass",
+    "segno_base": "pass",
+    "segno_rear_panel": "pass",
+    "segno_ring_disc": "pass",
+    "segno_corner_bracket_rear": "pass",
+    "segno_post": "pass"
+  },
+  "interface_final_reviewed_sha256": {
+    "hardware/enclosure/segno_enclosure.py": "5d1c19ad481229e4023ff4fef9aa2d153902059bd1ae6176624d6a9c535390bc",
+    "hardware/enclosure/tests/test_manufacturing_fit.py": "0bc8b793a4d144ce25342fc5dcc9e4da82842d72fc84bffe50768aefc1b89328",
+    "hardware/enclosure/reference/ring24_interface.json": "4e8306a6598b7aa3ba80dfe26cb6af241999183f24fe0fbb22b7b351d2609174",
+    "hardware/enclosure/reference/ring24_orientation.svg": "21b3ef8cae6ae43f74a6c9908b107d6981d365717d26317398bc1c4924a3db2d",
+    "hardware/MANUFACTURING.md": "10716d3466c45a19ee3ed1078b90f6bb5b22e00552e71bc89abeb075c94ef4c5",
+    "hardware/enclosure/FUSION_MODELS.md": "751604007e6eb85559e31bf05ac9e7cdcf98d540b43b0be64a731c63510c1b17",
+    "hardware/enclosure/SHOP_REVIEW.md": "bc83f687ed28a7d21e5b4e368916c65de5382d193e10017d200e3b4d0a2b6949"
+  },
+  "date": "2026-09-05",
+  "base_head": "1d14d701ee9f6c3ad304a63fc60a79e3681afbd1",
+  "branch": "codex/sheetmetal-release-fixes",
+  "scope": "Repeat review of local manufacturing source, outputs and native Fusion; physical/shop qualification remains open",
+  "native_preservation": [
+    {
+      "document": "VAMP console (populated)",
+      "before_version": 343,
+      "after_version": 344,
+      "modified": false,
+      "occurrences": 415,
+      "bodies": 964,
+      "changed_occurrences": [
+        "ring_holder24:1"
+      ],
+      "unchanged_occurrences": 414,
+      "empty_leaves": [],
+      "preserved_existing_feature_warnings": 41
+    },
+    {
+      "document": "VAMP sheet metal",
+      "before_version": 131,
+      "after_version": 131,
+      "modified": false,
+      "occurrences": 18,
+      "bodies": 18,
+      "changed_occurrences": [],
+      "unchanged_occurrences": 18,
+      "empty_leaves": [],
+      "preserved_existing_feature_warnings": 0
+    }
+  ],
+  "holder_native_source_parity": {
+    "source_valid": true,
+    "native_valid": true,
+    "source_solids": 1,
+    "native_solids": 1,
+    "source_volume_mm3": 4485.550371828379,
+    "native_volume_mm3": 4485.55037182941,
+    "source_only_volume_mm3": 0.0,
+    "native_only_volume_mm3": 0.0
+  },
+  "expanded_printed_body_sweep": {
+    "pairs": 1056,
+    "boolean_failures": 0,
+    "positive_contacts": [
+      {
+        "a": "platforms:1+platform_sled_v375:1/Body1",
+        "b": "platforms:1+platform_front_v375:1/Body1",
+        "success": true,
+        "volume_mm3": 1.2017313817751083,
+        "bounds_mm": [
+          [
+            30.222618814712096,
+            10.164860628314006,
+            4.043000000000001
+          ],
+          [
+            107.77289755808411,
+            122.23513937168603,
+            4.043139371685999
+          ]
+        ]
+      },
+      {
+        "a": "platforms:1+platform_sled_v375:2/Body1",
+        "b": "platforms:1+platform_mid_ring:1/Body1",
+        "success": true,
+        "volume_mm3": 1.2017313744709708,
+        "bounds_mm": [
+          [
+            232.5126188147128,
+            173.93579459881238,
+            40.344869494719845
+          ],
+          [
+            310.06289755808314,
+            286.0060733421827,
+            40.345008866405
+          ]
+        ]
+      },
+      {
+        "a": "platforms:1+platform_front_v375:2/Body1",
+        "b": "platforms:1+platform_sled_v375:3/Body1",
+        "success": true,
+        "volume_mm3": 1.2017313817934783,
+        "bounds_mm": [
+          [
+            131.36261881471188,
+            10.164860628314006,
+            4.043
+          ],
+          [
+            208.91289755808387,
+            122.23513937168599,
+            4.043139371685999
+          ]
+        ]
+      },
+      {
+        "a": "platforms:1+platform_front_v375:3/Body1",
+        "b": "platforms:1+platform_sled_v375:4/Body1",
+        "success": true,
+        "volume_mm3": 1.2017313817934785,
+        "bounds_mm": [
+          [
+            232.51261881471194,
+            10.164860628314006,
+            4.043
+          ],
+          [
+            310.06289755808393,
+            122.23513937168599,
+            4.043139371685999
+          ]
+        ]
+      },
+      {
+        "a": "platforms:1+platform_front_v375:4/Body1",
+        "b": "platforms:1+platform_sled_v375:5/Body1",
+        "success": true,
+        "volume_mm3": 1.201731381793479,
+        "bounds_mm": [
+          [
+            333.652618814712,
+            10.164860628314006,
+            4.043
+          ],
+          [
+            411.20289755808403,
+            122.23513937168599,
+            4.043139371685999
+          ]
+        ]
+      },
+      {
+        "a": "platforms:1+platform_front_v375:5/Body1",
+        "b": "platforms:1+platform_sled_v375:6/Body1",
+        "success": true,
+        "volume_mm3": 1.201731381793479,
+        "bounds_mm": [
+          [
+            434.7926188147119,
+            10.164860628314042,
+            4.043
+          ],
+          [
+            512.3428975580839,
+            122.23513937168603,
+            4.043139371685999
+          ]
+        ]
+      },
+      {
+        "a": "platforms:1+platform_front_v375:6/Body1",
+        "b": "platforms:1+platform_sled_v375:7/Body1",
+        "success": true,
+        "volume_mm3": 1.201731381793479,
+        "bounds_mm": [
+          [
+            535.9326188147121,
+            10.164860628314042,
+            4.043
+          ],
+          [
+            613.4828975580841,
+            122.23513937168603,
+            4.043139371685999
+          ]
+        ]
+      },
+      {
+        "a": "platforms:1+platform_front_v375:7/Body1",
+        "b": "platforms:1+platform_sled_v375:8/Body1",
+        "success": true,
+        "volume_mm3": 1.201731381793479,
+        "bounds_mm": [
+          [
+            637.0826188147121,
+            10.164860628314042,
+            4.043
+          ],
+          [
+            714.6328975580841,
+            122.23513937168603,
+            4.043139371685999
+          ]
+        ]
+      },
+      {
+        "a": "platforms:1+platform_front_v375:8/Body1",
+        "b": "platforms:1+platform_sled_v375:9/Body1",
+        "success": true,
+        "volume_mm3": 1.201731381793479,
+        "bounds_mm": [
+          [
+            738.222618814712,
+            10.164860628314042,
+            4.043
+          ],
+          [
+            815.772897558084,
+            122.23513937168603,
+            4.043139371685999
+          ]
+        ]
+      },
+      {
+        "a": "platforms:1+platform_sled_v375:10/Body1",
+        "b": "platforms:1+platform_mid_ring:2/Body1",
+        "success": true,
+        "volume_mm3": 1.2017313744709721,
+        "bounds_mm": [
+          [
+            333.6526188147128,
+            173.93579459881238,
+            40.344869494719845
+          ],
+          [
+            411.2028975580831,
+            286.0060733421827,
+            40.345008866405
+          ]
+        ]
+      },
+      {
+        "a": "screen7_tower:1/Body1",
+        "b": "screen7_module:1/Body1",
+        "success": true,
+        "volume_mm3": 0.8593145112006813,
+        "bounds_mm": [
+          [
+            38.77142857142857,
+            257.21727760227816,
+            61.961694726536535
+          ],
+          [
+            203.8714285714286,
+            378.27978267139247,
+            88.80089807630013
+          ]
+        ]
+      },
+      {
+        "a": "tile_REC_PLAY:1+Open CASCADE STEP translator 7.9 3.1 (4):1/Body1",
+        "b": "pedals:1+Cherub WTB-006 Footswitch:1+Top Pad:1/Top Pad",
+        "success": true,
+        "volume_mm3": 0.7549997980379404,
+        "bounds_mm": [
+          [
+            42.12238158454883,
+            92.70237202512085,
+            40.875572701246384
+          ],
+          [
+            95.8776184154512,
+            92.75602987051299,
+            42.67518725357511
+          ]
+        ]
+      },
+      {
+        "a": "tile_STOP:1+Open CASCADE STEP translator 7.9 4.1:1/Body1",
+        "b": "pedals:1+Cherub WTB-006 Footswitch:2+Top Pad:1/Top Pad",
+        "success": true,
+        "volume_mm3": 0.7549997980379407,
+        "bounds_mm": [
+          [
+            143.2653815845488,
+            92.70237202512085,
+            40.875572701246384
+          ],
+          [
+            197.0206184154512,
+            92.75602987051299,
+            42.67518725357511
+          ]
+        ]
+      },
+      {
+        "a": "tile_UNDO:1+Open CASCADE STEP translator 7.9 5.1:1/Body1",
+        "b": "pedals:1+Cherub WTB-006 Footswitch:3+Top Pad:1/Top Pad",
+        "success": true,
+        "volume_mm3": 0.7549997980379407,
+        "bounds_mm": [
+          [
+            244.4083815845488,
+            92.70237202512085,
+            40.875572701246384
+          ],
+          [
+            298.1636184154512,
+            92.75602987051299,
+            42.67518725357511
+          ]
+        ]
+      },
+      {
+        "a": "tile_MODE:1+Open CASCADE STEP translator 7.9 6.1:1/Body1",
+        "b": "pedals:1+Cherub WTB-006 Footswitch:4+Top Pad:1/Top Pad",
+        "success": true,
+        "volume_mm3": 0.7549997980379429,
+        "bounds_mm": [
+          [
+            345.55138158454884,
+            92.70237202512085,
+            40.875572701246384
+          ],
+          [
+            399.3066184154512,
+            92.75602987051299,
+            42.67518725357511
+          ]
+        ]
+      },
+      {
+        "a": "tile_TRACK1:1+Open CASCADE STEP translator 7.9 7.1:1/Body1",
+        "b": "pedals:1+Cherub WTB-006 Footswitch:5+Top Pad:1/Top Pad",
+        "success": true,
+        "volume_mm3": 0.7549997980379429,
+        "bounds_mm": [
+          [
+            446.69338158454883,
+            92.70237202512085,
+            40.875572701246384
+          ],
+          [
+            500.4486184154513,
+            92.75602987051299,
+            42.67518725357511
+          ]
+        ]
+      },
+      {
+        "a": "tile_TRACK2:1+Open CASCADE STEP translator 7.9 8.1:1/Body1",
+        "b": "pedals:1+Cherub WTB-006 Footswitch:6+Top Pad:1/Top Pad",
+        "success": true,
+        "volume_mm3": 0.7549997980379429,
+        "bounds_mm": [
+          [
+            547.8363815845488,
+            92.70237202512085,
+            40.875572701246384
+          ],
+          [
+            601.5916184154513,
+            92.75602987051299,
+            42.67518725357511
+          ]
+        ]
+      },
+      {
+        "a": "tile_TRACK3:1+Open CASCADE STEP translator 7.9 9.1:1/Body1",
+        "b": "pedals:1+Cherub WTB-006 Footswitch:7+Top Pad:1/Top Pad",
+        "success": true,
+        "volume_mm3": 0.7549997980379451,
+        "bounds_mm": [
+          [
+            648.979381584549,
+            92.70237202512085,
+            40.875572701246384
+          ],
+          [
+            702.7346184154512,
+            92.75602987051299,
+            42.67518725357511
+          ]
+        ]
+      },
+      {
+        "a": "tile_TRACK4:1+Open CASCADE STEP translator 7.9 10.1:1/Body1",
+        "b": "pedals:1+Cherub WTB-006 Footswitch:8+Top Pad:1/Top Pad",
+        "success": true,
+        "volume_mm3": 0.7549997980379451,
+        "bounds_mm": [
+          [
+            750.122381584549,
+            92.70237202512085,
+            40.875572701246384
+          ],
+          [
+            803.8776184154513,
+            92.75602987051299,
+            42.67518725357511
+          ]
+        ]
+      },
+      {
+        "a": "tile_CLEAR:1+Open CASCADE STEP translator 7.9 11.1:1/Body1",
+        "b": "pedals:1+Cherub WTB-006 Footswitch:9+Top Pad:1/Top Pad",
+        "success": true,
+        "volume_mm3": 0.7549997980413742,
+        "bounds_mm": [
+          [
+            244.40838158454878,
+            256.4733059956184,
+            77.17744219596624
+          ],
+          [
+            298.16361841545114,
+            256.52696384101046,
+            78.97705674829496
+          ]
+        ]
+      },
+      {
+        "a": "tile_BANK:1+Open CASCADE STEP translator 7.9 12.1:1/Body1",
+        "b": "pedals:1+Cherub WTB-006 Footswitch:10+Top Pad:1/Top Pad",
+        "success": true,
+        "volume_mm3": 0.7549997980413776,
+        "bounds_mm": [
+          [
+            345.55138158454884,
+            256.4733059956184,
+            77.17744219596624
+          ],
+          [
+            399.3066184154512,
+            256.52696384101046,
+            78.97705674829496
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_00",
+        "success": true,
+        "volume_mm3": 19.789943791624996,
+        "bounds_mm": [
+          [
+            115.21042517985029,
+            246.20104743602673,
+            69.09893129795427
+          ],
+          [
+            123.92957482014972,
+            253.7955185086895,
+            71.05739410576393
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_01",
+        "success": true,
+        "volume_mm3": 19.78999266620244,
+        "bounds_mm": [
+          [
+            122.94459798513202,
+            244.4960865771858,
+            68.72100546526407
+          ],
+          [
+            132.351626640994,
+            253.516548198461,
+            70.99613889245597
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_02",
+        "success": true,
+        "volume_mm3": 19.789988891906518,
+        "bounds_mm": [
+          [
+            129.46386445869848,
+            241.20132504127298,
+            67.99068049004914
+          ],
+          [
+            139.90263172889127,
+            251.31334360096136,
+            70.51212497815813
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_03",
+        "success": true,
+        "volume_mm3": 19.789932607976617,
+        "bounds_mm": [
+          [
+            135.30877273932762,
+            236.54178001791476,
+            66.95783423802011
+          ],
+          [
+            146.06800156572726,
+            247.05707915831397,
+            69.57700832409883
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_04",
+        "success": true,
+        "volume_mm3": 19.78982582320675,
+        "bounds_mm": [
+          [
+            140.08084370840731,
+            230.83517579779004,
+            65.6928942597557
+          ],
+          [
+            150.427576385877,
+            241.03781225847564,
+            68.254542902609
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_05",
+        "success": true,
+        "volume_mm3": 19.78967277866859,
+        "bounds_mm": [
+          [
+            143.45479466817696,
+            224.44391049121208,
+            64.28210744593375
+          ],
+          [
+            152.68425836988527,
+            233.66574599336147,
+            66.63489333065739
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_06",
+        "success": true,
+        "volume_mm3": 19.789480489150506,
+        "bounds_mm": [
+          [
+            145.1997834712048,
+            216.89313997867256,
+            62.60841162165327
+          ],
+          [
+            152.97,
+            225.4432744960235,
+            64.8284793705999
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_07",
+        "success": true,
+        "volume_mm3": 19.789256973034107,
+        "bounds_mm": [
+          [
+            143.45228591541678,
+            208.6975089663057,
+            60.78580438275161
+          ],
+          [
+            152.68425836988527,
+            217.89274524325282,
+            63.15475693991467
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_08",
+        "success": true,
+        "volume_mm3": 19.788572385292294,
+        "bounds_mm": [
+          [
+            140.07818384652842,
+            201.32605947410926,
+            59.15183069178616
+          ],
+          [
+            150.4275084419266,
+            211.52906621958496,
+            61.72780345612948
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_09",
+        "success": true,
+        "volume_mm3": 19.78758085968016,
+        "bounds_mm": [
+          [
+            135.30648293987542,
+            195.30771334040068,
+            57.81778923141749
+          ],
+          [
+            146.06714158441125,
+            205.82344008326157,
+            60.448539361832815
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_10",
+        "success": true,
+        "volume_mm3": 19.786691633746926,
+        "bounds_mm": [
+          [
+            129.46236672663758,
+            191.0524269402757,
+            56.87455194373236
+          ],
+          [
+            139.90140170193283,
+            201.16481585090168,
+            59.40411707262291
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_11",
+        "success": true,
+        "volume_mm3": 19.785967640626673,
+        "bounds_mm": [
+          [
+            122.94410206888834,
+            188.84999560610143,
+            56.386355577467036
+          ],
+          [
+            132.35054770394908,
+            197.87067106519999,
+            58.66567146274136
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_12",
+        "success": true,
+        "volume_mm3": 19.785460856217117,
+        "bounds_mm": [
+          [
+            115.21092110006936,
+            188.57126652450236,
+            56.32457180119319
+          ],
+          [
+            123.9291276207286,
+            196.1654962494705,
+            58.283563152094786
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_13",
+        "success": true,
+        "volume_mm3": 19.78520809849864,
+        "bounds_mm": [
+          [
+            106.78987109113748,
+            188.8503569075953,
+            56.38643566444805
+          ],
+          [
+            116.19589793111167,
+            197.87067106519999,
+            58.66589025994051
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_14",
+        "success": true,
+        "volume_mm3": 19.785227779024126,
+        "bounds_mm": [
+          [
+            99.23965809509514,
+            191.0534140415907,
+            56.87477074704652
+          ],
+          [
+            109.67763327336243,
+            201.16481585090168,
+            59.404415960592075
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_15",
+        "success": true,
+        "volume_mm3": 19.785518459193053,
+        "bounds_mm": [
+          [
+            93.0746584072686,
+            195.30906176507665,
+            57.81808812655977
+          ],
+          [
+            103.83351706012459,
+            205.82344008326157,
+            60.4488382574909
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_16",
+        "success": true,
+        "volume_mm3": 19.786058926343706,
+        "bounds_mm": [
+          [
+            88.71493261885118,
+            201.3274079259432,
+            59.15212959294835
+          ],
+          [
+            99.06181615347158,
+            211.52906621958496,
+            61.728022269831015
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_17",
+        "success": true,
+        "volume_mm3": 19.786810016384866,
+        "bounds_mm": [
+          [
+            86.45761899674604,
+            208.69849612590883,
+            60.78602319898607
+          ],
+          [
+            95.68771408458325,
+            217.89286526767438,
+            63.15483703410244
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_18",
+        "success": true,
+        "volume_mm3": 19.787717907268604,
+        "bounds_mm": [
+          [
+            86.17143,
+            216.89350131405874,
+            62.60846510946489
+          ],
+          [
+            93.941150333487,
+            225.4431544084831,
+            64.82839927380441
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_19",
+        "success": true,
+        "volume_mm3": 19.788716448420853,
+        "bounds_mm": [
+          [
+            86.45667592587836,
+            224.44354914406142,
+            64.2820539694989
+          ],
+          [
+            95.68764662620724,
+            233.66574599336144,
+            66.63467449606807
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_20",
+        "success": true,
+        "volume_mm3": 19.78929210416854,
+        "bounds_mm": [
+          [
+            88.71242361412303,
+            230.83418854371698,
+            65.6926754225808
+          ],
+          [
+            99.06095655730033,
+            241.03781225847564,
+            68.25424396156112
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_21",
+        "success": true,
+        "volume_mm3": 19.7895100600972,
+        "bounds_mm": [
+          [
+            93.07199843427273,
+            236.54043136079466,
+            66.95753529135371
+          ],
+          [
+            103.83228726796926,
+            247.05707915831394,
+            69.57670937697645
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_22",
+        "success": true,
+        "volume_mm3": 19.789697285135055,
+        "bounds_mm": [
+          [
+            99.23736827110875,
+            241.19997634906298,
+            67.99038153560461
+          ],
+          [
+            109.67655443315095,
+            251.31334360096136,
+            70.51190613053143
+          ]
+        ]
+      },
+      {
+        "a": "ring_holder24:1/Body1",
+        "b": "ring_comet:1/led_23",
+        "success": true,
+        "volume_mm3": 19.789844055685215,
+        "bounds_mm": [
+          [
+            106.78837335900602,
+            244.4950992478004,
+            68.72078661139527
+          ],
+          [
+            116.19545074774622,
+            253.516548198461,
+            70.99605878806926
+          ]
+        ]
+      }
+    ],
+    "dispositions": {
+      "sled_collar": "10 seating contacts, 0.000139371686 mm normal depth",
+      "screen7_tower_module": "4 tab patches in one body pair, 0.004513071 mm normal depth",
+      "pedal_tiles_rubber_pad": "10 compliant-rubber fit contacts, 0.007802872 mm transverse penetration",
+      "ring_comet": "24 nonphysical light-effect bodies, retained visual appearance"
+    }
+  },
+  "holder_interface_proof": {
+    "valid": true,
+    "solid_count": 1,
+    "volume_mm3": 4485.550371829448,
+    "angles_deg": [
+      7.5,
+      82.5,
+      112.5,
+      187.5,
+      232.5,
+      262.5,
+      292.5,
+      322.5
+    ],
+    "rib_width_mm": 1.2,
+    "rib_radial_range_mm": [
+      25.85,
+      32.8
+    ],
+    "rib_z_range_mm": [
+      -0.25,
+      1.35
+    ],
+    "minimum_upper_lens_inner_wall_mm": 0.5,
+    "minimum_lens_roof_mm": 1.05,
+    "minimum_shelf_height_mm": 0.25,
+    "contacts": [],
+    "clearances": [
+      {
+        "index": 0,
+        "body_volume_mm3": 243.60718271248146,
+        "minimum_clearance_mm": 16.02355953526938
+      },
+      {
+        "index": 1,
+        "body_volume_mm3": 31.838877892507334,
+        "minimum_clearance_mm": 16.57709629382941
+      },
+      {
+        "index": 2,
+        "body_volume_mm3": 296.12925289943604,
+        "minimum_clearance_mm": 16.17520187905773
+      },
+      {
+        "index": 3,
+        "body_volume_mm3": 292.89228000736523,
+        "minimum_clearance_mm": 18.459510946592236
+      },
+      {
+        "index": 4,
+        "body_volume_mm3": 278.2296528298442,
+        "minimum_clearance_mm": 22.657706045874516
+      },
+      {
+        "index": 5,
+        "body_volume_mm3": 2.8869904298484033e-05,
+        "minimum_clearance_mm": 18.33358329800768
+      },
+      {
+        "index": 6,
+        "body_volume_mm3": 3.9999737882809685e-05,
+        "minimum_clearance_mm": 18.30321667391146
+      },
+      {
+        "index": 7,
+        "body_volume_mm3": 4.318943858244499e-05,
+        "minimum_clearance_mm": 18.259257481341425
+      },
+      {
+        "index": 8,
+        "body_volume_mm3": 5.661853095551825e-05,
+        "minimum_clearance_mm": 18.175994531656638
+      },
+      {
+        "index": 9,
+        "body_volume_mm3": 4.9585565626514e-05,
+        "minimum_clearance_mm": 18.072447830691168
+      },
+      {
+        "index": 10,
+        "body_volume_mm3": 4.3189438582260715e-05,
+        "minimum_clearance_mm": 18.333917651073577
+      },
+      {
+        "index": 11,
+        "body_volume_mm3": 3.786847392272523e-05,
+        "minimum_clearance_mm": 18.3074361584636
+      },
+      {
+        "index": 12,
+        "body_volume_mm3": 2.842013788152538e-05,
+        "minimum_clearance_mm": 18.271563774138638
+      },
+      {
+        "index": 13,
+        "body_volume_mm3": 3.641146825002865e-05,
+        "minimum_clearance_mm": 18.214404433902285
+      },
+      {
+        "index": 14,
+        "body_volume_mm3": 4.318943858253203e-05,
+        "minimum_clearance_mm": 18.152361339964507
+      },
+      {
+        "index": 15,
+        "body_volume_mm3": 5.6618530955284993e-05,
+        "minimum_clearance_mm": 18.035657960585628
+      },
+      {
+        "index": 16,
+        "body_volume_mm3": 4.9585565627554994e-05,
+        "minimum_clearance_mm": 17.90462687733773
+      },
+      {
+        "index": 17,
+        "body_volume_mm3": 0.0009200465405871315,
+        "minimum_clearance_mm": 18.015561941593326
+      },
+      {
+        "index": 18,
+        "body_volume_mm3": 1890.1710407216285,
+        "minimum_clearance_mm": 0.13460105774812625
+      },
+      {
+        "index": 19,
+        "body_volume_mm3": 33.07577449967626,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 20,
+        "body_volume_mm3": 1.4261400000000044,
+        "minimum_clearance_mm": 0.44826876370731605
+      },
+      {
+        "index": 21,
+        "body_volume_mm3": 0.15845999999999974,
+        "minimum_clearance_mm": 1.3860855392172928
+      },
+      {
+        "index": 22,
+        "body_volume_mm3": 33.07577449967626,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 23,
+        "body_volume_mm3": 33.07577449967626,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 24,
+        "body_volume_mm3": 33.075774499676264,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 25,
+        "body_volume_mm3": 33.07577449967626,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 26,
+        "body_volume_mm3": 33.075774499676264,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 27,
+        "body_volume_mm3": 33.07577449967625,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 28,
+        "body_volume_mm3": 33.07577449967627,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 29,
+        "body_volume_mm3": 33.07577449967625,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 30,
+        "body_volume_mm3": 33.075774499676264,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 31,
+        "body_volume_mm3": 33.07577449967627,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 32,
+        "body_volume_mm3": 33.07577449967626,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 33,
+        "body_volume_mm3": 33.07577449967626,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 34,
+        "body_volume_mm3": 33.07577449967627,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 35,
+        "body_volume_mm3": 33.07577449967626,
+        "minimum_clearance_mm": 0.33280014458214396
+      },
+      {
+        "index": 36,
+        "body_volume_mm3": 33.07577449967627,
+        "minimum_clearance_mm": 0.3322424842005482
+      },
+      {
+        "index": 37,
+        "body_volume_mm3": 33.07577449967626,
+        "minimum_clearance_mm": 0.33314307319130954
+      },
+      {
+        "index": 38,
+        "body_volume_mm3": 33.07577449967627,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 39,
+        "body_volume_mm3": 33.07577449967626,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 40,
+        "body_volume_mm3": 33.07577449967627,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 41,
+        "body_volume_mm3": 33.07577449967626,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 42,
+        "body_volume_mm3": 33.075774499676264,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 43,
+        "body_volume_mm3": 33.07577449967627,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 44,
+        "body_volume_mm3": 33.07577449967626,
+        "minimum_clearance_mm": 0.334601057748126
+      },
+      {
+        "index": 45,
+        "body_volume_mm3": 1.4261400000000042,
+        "minimum_clearance_mm": 0.44675546643036296
+      },
+      {
+        "index": 46,
+        "body_volume_mm3": 1.4261400000000037,
+        "minimum_clearance_mm": 0.4469086479095321
+      },
+      {
+        "index": 47,
+        "body_volume_mm3": 1.4261400000000082,
+        "minimum_clearance_mm": 0.4642032651425991
+      },
+      {
+        "index": 48,
+        "body_volume_mm3": 1.4261400000000053,
+        "minimum_clearance_mm": 0.4789053285886931
+      },
+      {
+        "index": 49,
+        "body_volume_mm3": 1.4261400000000086,
+        "minimum_clearance_mm": 0.49175015544812095
+      },
+      {
+        "index": 50,
+        "body_volume_mm3": 1.4261400000000013,
+        "minimum_clearance_mm": 0.4487570970609494
+      },
+      {
+        "index": 51,
+        "body_volume_mm3": 1.42614000000001,
+        "minimum_clearance_mm": 0.45724626147166897
+      },
+      {
+        "index": 52,
+        "body_volume_mm3": 1.426140000000004,
+        "minimum_clearance_mm": 0.5011180032911904
+      },
+      {
+        "index": 53,
+        "body_volume_mm3": 1.4261400000000028,
+        "minimum_clearance_mm": 0.5029225567527369
+      },
+      {
+        "index": 54,
+        "body_volume_mm3": 1.426140000000001,
+        "minimum_clearance_mm": 0.5005922956197795
+      },
+      {
+        "index": 55,
+        "body_volume_mm3": 1.4261400000000095,
+        "minimum_clearance_mm": 0.49068649028384204
+      },
+      {
+        "index": 56,
+        "body_volume_mm3": 1.4261400000000095,
+        "minimum_clearance_mm": 0.4846812100774932
+      },
+      {
+        "index": 57,
+        "body_volume_mm3": 1.4261400000000042,
+        "minimum_clearance_mm": 0.4775891193726083
+      },
+      {
+        "index": 58,
+        "body_volume_mm3": 1.4261400000000048,
+        "minimum_clearance_mm": 0.47019574221900085
+      },
+      {
+        "index": 59,
+        "body_volume_mm3": 28.016644493935704,
+        "minimum_clearance_mm": 2.27530449554086
+      },
+      {
+        "index": 60,
+        "body_volume_mm3": 30.113453722678415,
+        "minimum_clearance_mm": 5.494349201566496
+      },
+      {
+        "index": 61,
+        "body_volume_mm3": 386.16998033940763,
+        "minimum_clearance_mm": 0.8746010577481274
+      },
+      {
+        "index": 62,
+        "body_volume_mm3": 389.5638535566112,
+        "minimum_clearance_mm": 2.1746010577481263
+      },
+      {
+        "index": 63,
+        "body_volume_mm3": 881.6031378268864,
+        "minimum_clearance_mm": 4.174601057748124
+      },
+      {
+        "index": 64,
+        "body_volume_mm3": 247.8634531973336,
+        "minimum_clearance_mm": 0.7746010577481264
+      },
+      {
+        "index": 65,
+        "body_volume_mm3": 36.404630715643734,
+        "minimum_clearance_mm": 1.6746010577481263
+      },
+      {
+        "index": 66,
+        "body_volume_mm3": 7527.007137302574,
+        "minimum_clearance_mm": 2.5796010577481265
+      },
+      {
+        "index": 67,
+        "body_volume_mm3": 28.016644493935694,
+        "minimum_clearance_mm": 2.1746010577481263
+      },
+      {
+        "index": 68,
+        "body_volume_mm3": 30.113453722678415,
+        "minimum_clearance_mm": 1.1746010577481263
+      },
+      {
+        "index": 69,
+        "body_volume_mm3": 30.113453722678415,
+        "minimum_clearance_mm": 2.818731411456436
+      },
+      {
+        "index": 70,
+        "body_volume_mm3": 30.113453722678436,
+        "minimum_clearance_mm": 2.1784874793578446
+      },
+      {
+        "index": 71,
+        "body_volume_mm3": 28.016644493935697,
+        "minimum_clearance_mm": 5.161756981105699
+      },
+      {
+        "index": 72,
+        "body_volume_mm3": 28.0166444939357,
+        "minimum_clearance_mm": 2.206978745140734
+      }
+    ],
+    "insertion": [
+      {
+        "translation_z_mm": 0,
+        "total_intersection_mm3": 0.0
+      },
+      {
+        "translation_z_mm": -0.1,
+        "total_intersection_mm3": 0.0
+      },
+      {
+        "translation_z_mm": -0.25,
+        "total_intersection_mm3": 0.0
+      },
+      {
+        "translation_z_mm": -0.5,
+        "total_intersection_mm3": 0.0
+      },
+      {
+        "translation_z_mm": -1,
+        "total_intersection_mm3": 0.0
+      },
+      {
+        "translation_z_mm": -2,
+        "total_intersection_mm3": 0.0
+      },
+      {
+        "translation_z_mm": -3,
+        "total_intersection_mm3": 0.0
+      },
+      {
+        "translation_z_mm": -5,
+        "total_intersection_mm3": 0.0
+      }
+    ],
+    "nominal_disc_contact_mm3": 0.0,
+    "upper_visible_geometry_removed_mm3": 0.0,
+    "upper_visible_geometry_added_mm3": 0.0,
+    "added_outside_original_envelope_mm3": 0.0,
+    "nominal_disc_seating_distance_mm": 0.0,
+    "minimum_outer_lens_wall_mm": 1.1,
+    "source_native_parity": {
+      "native_valid": true,
+      "native_solid_count": 1,
+      "source_volume_mm3": 4485.550371828379,
+      "native_volume_mm3": 4485.55037182941,
+      "native_extra_mm3": 0.0,
+      "native_missing_mm3": 0.0,
+      "source_extra_vs_reviewed_candidate_mm3": 0.0,
+      "source_missing_vs_reviewed_candidate_mm3": 0.0
+    },
+    "reviewed_sha256": {
+      "hardware/enclosure/segno_enclosure.py": "5d1c19ad481229e4023ff4fef9aa2d153902059bd1ae6176624d6a9c535390bc",
+      "hardware/enclosure/tests/test_manufacturing_fit.py": "0bc8b793a4d144ce25342fc5dcc9e4da82842d72fc84bffe50768aefc1b89328",
+      "hardware/enclosure/reference/ring24_interface.json": "4e8306a6598b7aa3ba80dfe26cb6af241999183f24fe0fbb22b7b351d2609174",
+      "hardware/enclosure/reference/ring24_orientation.svg": "21b3ef8cae6ae43f74a6c9908b107d6981d365717d26317398bc1c4924a3db2d",
+      "hardware/MANUFACTURING.md": "10716d3466c45a19ee3ed1078b90f6bb5b22e00552e71bc89abeb075c94ef4c5",
+      "hardware/enclosure/FUSION_MODELS.md": "751604007e6eb85559e31bf05ac9e7cdcf98d540b43b0be64a731c63510c1b17",
+      "hardware/enclosure/SHOP_REVIEW.md": "bc83f687ed28a7d21e5b4e368916c65de5382d193e10017d200e3b4d0a2b6949"
+    },
+    "native_step_sha256": "31ee09191072d6efd7f2f38d729b44881bbfe11d9ff42134453be26de5a44281",
+    "tests": "Both focused tests passed again on final test SHA after comment-spacing-only edit; no assertion changes since parent full26-test run.",
+    "orientation_svg_visual_review": "Rendered and visually inspected: all eight rib angles match numeric fixture; top view +X toward 15.6-inch screen, front at bottom, underside mirroring stated."
+  },
+  "export_date_normalization": {
+    "baseline": "Verified final outputs saved at the start of this repeat-review turn",
+    "restored": {
+      "segno_assembly.step": {
+        "before_sha256": "1242fb495e3cba56e829a5c873c8a46fd17ae4ebd4d4ebd6b09461d53f847811",
+        "generated_sha256": "2ee33b0b7b127f9a7eebc4ab8afa5daff4289a890ca1721b364913041f9e44f1",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "8b489932b4bdfcd9a0d89ffbc687a8c54af6f27009b0f1ebdfeb4906a58bcd87",
+        "final_sha256": "1242fb495e3cba56e829a5c873c8a46fd17ae4ebd4d4ebd6b09461d53f847811"
+      },
+      "segno_buck_envelope.step": {
+        "before_sha256": "f698e21e15d830188c1e6f778af606d9297b322bb840e434505292fff33658da",
+        "generated_sha256": "94a74d5b67401760abdf186f147fdb0171694b875fafd404de14f187402f7807",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "a23e78af05549a3390acd7841ae824cce7ff06f16688119aca983c98702c71af",
+        "final_sha256": "f698e21e15d830188c1e6f778af606d9297b322bb840e434505292fff33658da"
+      },
+      "segno_buck_reference.step": {
+        "before_sha256": "f0561790b1e61c20b5d8043f2b19414e36a9539ffcb8bdcf83eb232eb8740e1d",
+        "generated_sha256": "504c8edb9cb0503a854000b32f8dc7965d79e7b3170d0b066eaebb1e4245e43c",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "7a728ddebe22585e555a48ea62233684f68fd63749862e42f591c5542c84e989",
+        "final_sha256": "f0561790b1e61c20b5d8043f2b19414e36a9539ffcb8bdcf83eb232eb8740e1d"
+      },
+      "segno_corner_bracket_rear.pdf": {
+        "before_sha256": "71062a7ead2d2d3f72438a929938719034f6702482a91eeb01b4afc213b43714",
+        "generated_sha256": "b4f8469abd70d6c5580147c940b6ee8d651b51fd014871b09bd215634db9dda1",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "56552c1e0919e095e90514b9ec02b3560d20c7c6506dc486d2893b0c3dfd3712",
+        "final_sha256": "71062a7ead2d2d3f72438a929938719034f6702482a91eeb01b4afc213b43714"
+      },
+      "segno_encoder_knob.step": {
+        "before_sha256": "ea8d5b39a35e66701491e9c27884b8b1509499b45389e4bea4da6d025d85e783",
+        "generated_sha256": "d3ea8fdc5f8abc59c858d9d13c112a1fec1a78b595777c19495d754a9717346e",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "fcde9e682ad07bd4133afcadd9b218537c3d8f3d5f285fae3f3bfe1a26d503a3",
+        "final_sha256": "ea8d5b39a35e66701491e9c27884b8b1509499b45389e4bea4da6d025d85e783"
+      },
+      "segno_led_diffuser.step": {
+        "before_sha256": "7f90b48ed349fd00dd18e193c976b90728d338a667ff588999de05ff3349e415",
+        "generated_sha256": "69c88eb94b6cebbce6fab9d6d6ec100b891af8b9ddce933b558f55a55c3edcaa",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "c31dde5eea9ade284627871c5009cdddb8ee0df5e79f498530e36f1b4efda3f9",
+        "final_sha256": "7f90b48ed349fd00dd18e193c976b90728d338a667ff588999de05ff3349e415"
+      },
+      "segno_mini_console_assembly.step": {
+        "before_sha256": "7eb15859ed427963d05d36e0ed7d28846c483d51051a8576aa0e119d4489e30a",
+        "generated_sha256": "8325b526b943d5370e9b7dbb530d545d77179acd7a5dc9f0eeb17b20d5587f55",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "921f9770a139f4b94051b2474e3de6470ddd467e3fed44c6e4ab66287452053c",
+        "final_sha256": "7eb15859ed427963d05d36e0ed7d28846c483d51051a8576aa0e119d4489e30a"
+      },
+      "segno_mini_console_lid.step": {
+        "before_sha256": "8eafb9149d133cfd8dd6d622ccb742d107e27614b3e835b054102e9f5d437bbe",
+        "generated_sha256": "97e399669c4cb729f37d6c318b8888804d4d20cf992b671f3e9bf5346500a27e",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "23e254a4763dda75527207fbc86634f8914b3bb9da72c13e9e2a5b7740f22c98",
+        "final_sha256": "8eafb9149d133cfd8dd6d622ccb742d107e27614b3e835b054102e9f5d437bbe"
+      },
+      "segno_mini_console_sled.step": {
+        "before_sha256": "241c573a25863b880d788ff1b2a8898a93910018cca6e4d23da9cf2f7d0b98d2",
+        "generated_sha256": "e106671da0c2d2af13d307f77ed5e5f8499a5c9403ab16f0e9ba5dc1427086c2",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "733ec91410d7d0c25b20f762d30ed6a30b0608db5e7f36116d5233ca3b40e287",
+        "final_sha256": "241c573a25863b880d788ff1b2a8898a93910018cca6e4d23da9cf2f7d0b98d2"
+      },
+      "segno_mini_console_tray.step": {
+        "before_sha256": "fcc2f9d434e11c0b60699641e76e08836b8b5575be3178ef6fa7cbf1b40dfc00",
+        "generated_sha256": "bb1bb0ff68343a977ec09364cf97a30649343729ee7601f5e3ea3214ecd7f5ee",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "fe6ac074f2429828d2b0c19d0c68d26942f76736b5973197372768d87a0b7b94",
+        "final_sha256": "fcc2f9d434e11c0b60699641e76e08836b8b5575be3178ef6fa7cbf1b40dfc00"
+      },
+      "segno_overlay.pdf": {
+        "before_sha256": "ff599a2d2f2ba6fef093d3f7d50419210d9212e18a25fa9bc78aa02450f052f6",
+        "generated_sha256": "dfb02db941fcae4f6df7d956161660495b0fd14dac294e5447613ba10cb72606",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "e366009270533a7565a17be0c2f8e6e046231911b3371db4e1fcee31a8fee69a",
+        "final_sha256": "ff599a2d2f2ba6fef093d3f7d50419210d9212e18a25fa9bc78aa02450f052f6"
+      },
+      "segno_pedal_tile_BANK.pdf": {
+        "before_sha256": "47cdb41a5f991b06161f09725b2b69fdeb91b8f685649952c79ecec9fcb806e7",
+        "generated_sha256": "133681fd9f9ff52f027b02c029981cfb3b405c1d12f9ae6aee5b2e7839b6dbb0",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "3c633567a950acbb01f470d6e6cb582ac0ce6ac5cc9cb3b75166cd0704bc61d5",
+        "final_sha256": "47cdb41a5f991b06161f09725b2b69fdeb91b8f685649952c79ecec9fcb806e7"
+      },
+      "segno_pedal_tile_BANK.step": {
+        "before_sha256": "53dd21e49ce33772831945880666e918c7ff758bb6abcd8d59c0bfa8cf5ca5b3",
+        "generated_sha256": "d3e862378cef154cd8c40b6b6b72bd8af060eae7a9e05edfcc1f5dd78419078f",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "b2b088f33c37e35ab7346cda940de5cf69ae25975495aaddefa472fd2a6c6bd0",
+        "final_sha256": "53dd21e49ce33772831945880666e918c7ff758bb6abcd8d59c0bfa8cf5ca5b3"
+      },
+      "segno_pedal_tile_CLEAR.pdf": {
+        "before_sha256": "063d8741b920e9c0238b13242c39522efcef5c325f4a997d48b1fe4e43bc5dc5",
+        "generated_sha256": "7d2798607bc3e1aefece4a36ebc6e90ef34c4e352fb582b8cc36324594f435fa",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "1f14ce87ec0620d85159cc271cd2660026eb4166db9fbb092ba3a7670b319aab",
+        "final_sha256": "063d8741b920e9c0238b13242c39522efcef5c325f4a997d48b1fe4e43bc5dc5"
+      },
+      "segno_pedal_tile_CLEAR.step": {
+        "before_sha256": "172f0473f7af4f261944957ea6deb9d5143ebfbaf52aaf6c9552c04bd5411630",
+        "generated_sha256": "1a80b1c824aceb5c61332e8f019173e96b956186e316d6de0132e8b32bd211db",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "bab388f2cb2608a4b3255b021cab4da7b5fdf90e6fe0d8cd866c8d686c119385",
+        "final_sha256": "172f0473f7af4f261944957ea6deb9d5143ebfbaf52aaf6c9552c04bd5411630"
+      },
+      "segno_pedal_tile_MODE.pdf": {
+        "before_sha256": "385b5975d31629725ac4771d509b61732274f3c78a26883d4e73ac6c3a1c5c9f",
+        "generated_sha256": "3a7a5925056e903623bcaafd9f7719e4a60ca80d7fa6245637452d66919c38e3",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "163b8415a3a6c6d11a8ba6a2f0a04539b16c84ecbf039e80000ae883070de22d",
+        "final_sha256": "385b5975d31629725ac4771d509b61732274f3c78a26883d4e73ac6c3a1c5c9f"
+      },
+      "segno_pedal_tile_MODE.step": {
+        "before_sha256": "dd44d7f6711946060c1a5c9802b8676123e58d8e6881a4e9cb72f77aae79fd2b",
+        "generated_sha256": "bf6b77cb19bc50d1ef1ee5dd52caa90c53b302f5b2ae50165d60706d55c5197f",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "a70b2a5ca6a0528041054e1e79cdfc1146adc21c88fab457cbfea63e947e8869",
+        "final_sha256": "dd44d7f6711946060c1a5c9802b8676123e58d8e6881a4e9cb72f77aae79fd2b"
+      },
+      "segno_pedal_tile_REC_PLAY.pdf": {
+        "before_sha256": "390d3df75b73725b1138c9bf7ac8a0c24021dbf52cb29f3a40cfdf784b0abbb7",
+        "generated_sha256": "dc88ef9c2a32226ca0361b303b2ee326894607929e6f4926cd22805a474e0b8b",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "4d957092c49f795f9f4309c0198e6d750bea0bcf82d4d85c25acd78ab129e7ea",
+        "final_sha256": "390d3df75b73725b1138c9bf7ac8a0c24021dbf52cb29f3a40cfdf784b0abbb7"
+      },
+      "segno_pedal_tile_REC_PLAY.step": {
+        "before_sha256": "9dd54a0a9b93e3bea3e7e6d212520d819951cbe98400da49b1a53c3246aab85f",
+        "generated_sha256": "1558d104d0aa38298f70ce72d4c78fdcb405de5c9b5405dc14feb4b9b0132a43",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "d81b0b8a74dc1ce9e61ed85e742f58dcb9431d6d16b49345bf2b33c8f67cdfae",
+        "final_sha256": "9dd54a0a9b93e3bea3e7e6d212520d819951cbe98400da49b1a53c3246aab85f"
+      },
+      "segno_pedal_tile_STOP.pdf": {
+        "before_sha256": "65f4cf48d0118fcd4a4731953466fa32c8982acd4163cbed6cc20b6458896617",
+        "generated_sha256": "8af7044edbd9510059e145fd5c7bcacb15be03313dee5862667ebcc472b70607",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "ac9dba6195fdc0e02a9ca78bc8d4610f27b2716119ff4af315cc0cc050125072",
+        "final_sha256": "65f4cf48d0118fcd4a4731953466fa32c8982acd4163cbed6cc20b6458896617"
+      },
+      "segno_pedal_tile_STOP.step": {
+        "before_sha256": "8f1b7496053eb6c9e0896ff79e709c8f49e106e77c87665c31c9812e5849767b",
+        "generated_sha256": "cdc2523838eea4e538f1a6d7a80fa13be3d0d0013741e591fea80f67a64364bb",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "00e7ea5ddfdad3ae48ed8b51b57997e9831ce0e5b305f2da1cc52e8901b60b3b",
+        "final_sha256": "8f1b7496053eb6c9e0896ff79e709c8f49e106e77c87665c31c9812e5849767b"
+      },
+      "segno_pedal_tile_TRACK1.pdf": {
+        "before_sha256": "e714f205467715d01865d536b44650ad60b05d2d7014b57d1b71ee6a4d323406",
+        "generated_sha256": "5d92fd25b0f9ba643b961ed7b18290324e943d3125b726ae41c9864298bfa76f",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "5a1fabdaddaff630c11d59d78e0e26ad388f225803a8f6454144ef2dfbdec7fb",
+        "final_sha256": "e714f205467715d01865d536b44650ad60b05d2d7014b57d1b71ee6a4d323406"
+      },
+      "segno_pedal_tile_TRACK1.step": {
+        "before_sha256": "764c7319ad4c7b54655f8ab343286d977b6851d57a3057294317c0f00c323424",
+        "generated_sha256": "b5066740cecf363526def0d619d4567f4693294cb4aa52ab154ee702d0ae2735",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "5af04c3524fcf29f7a54ef1b9aa4a4f294a92db6d2578a8873e13384d99557a9",
+        "final_sha256": "764c7319ad4c7b54655f8ab343286d977b6851d57a3057294317c0f00c323424"
+      },
+      "segno_pedal_tile_TRACK2.pdf": {
+        "before_sha256": "926c688d77cf9370fd232ac63d3e9fa997d2beeedca10d43cc89dcef1295388f",
+        "generated_sha256": "d38afea057dc41aa965a8b3650d5d2d1652ccd4184fb13b7c809073607519e58",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "12e9d4415380bcf38a12db45b2038a9a8650d4e3c422e4e7d9b4333c707c6cba",
+        "final_sha256": "926c688d77cf9370fd232ac63d3e9fa997d2beeedca10d43cc89dcef1295388f"
+      },
+      "segno_pedal_tile_TRACK2.step": {
+        "before_sha256": "33d10f39109778be123a00c6daef30c0d4d7fdfc1327c89b196baa6316c5b915",
+        "generated_sha256": "aa61a07e21d2e7ebe22421c9cb4c3077065d97ea83cdfc02f098cc772c9985fe",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "d7610dff9157e9fd33b8f8f354450a01058ef3d0c8ea69da2efbfb9f501dbbbe",
+        "final_sha256": "33d10f39109778be123a00c6daef30c0d4d7fdfc1327c89b196baa6316c5b915"
+      },
+      "segno_pedal_tile_TRACK3.pdf": {
+        "before_sha256": "1751ad761f606a4a1c3660c58391edf7eef5d6ac5939c0d2a9eed4d76cde5b39",
+        "generated_sha256": "d3dca9a90918f8ec03658e7317c552deb12a87a2df49931ec080175542217242",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "a778c05f640df3ca20f91e4f6eb8f684b546c85e1b4391d6ac7037c1ae646c08",
+        "final_sha256": "1751ad761f606a4a1c3660c58391edf7eef5d6ac5939c0d2a9eed4d76cde5b39"
+      },
+      "segno_pedal_tile_TRACK3.step": {
+        "before_sha256": "48fc696b9228ee2ac51b665e2e4826fb27eaa8c02344a1645930556bcf6bb2b4",
+        "generated_sha256": "272c5a794946a6cfa6cc41353d2aaa6a19a45fd1c00603adf8cd1bc0759d0915",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "57c97b1c8406d12d61d7cac6a08e3ac9d9c3ab3495bdc0fe1e169ff39335f44e",
+        "final_sha256": "48fc696b9228ee2ac51b665e2e4826fb27eaa8c02344a1645930556bcf6bb2b4"
+      },
+      "segno_pedal_tile_TRACK4.pdf": {
+        "before_sha256": "dbfa85c526483686e15c7ae1de2a72e90212fb79b55fb3d693a339aa4b2fd869",
+        "generated_sha256": "cf44c7356bb86cda6d44aec6f95125f062d36952b978dc7bf2e7950ca23b8cb9",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "f7c8193da0738309de59580bab9013c20ec50c35cca98e38f1f36d26cae1beb2",
+        "final_sha256": "dbfa85c526483686e15c7ae1de2a72e90212fb79b55fb3d693a339aa4b2fd869"
+      },
+      "segno_pedal_tile_TRACK4.step": {
+        "before_sha256": "d693cdb6460050d67fcb0ed0921c77ec7814db93a466eb5be04920e43d913097",
+        "generated_sha256": "4184f83de4d2d82e92d2351e733ba877575dfa345f0e668d5198895601993093",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "cb4dce510f4a6390fa07bf853d5f50e38480d621be1e8e37fcce2d567f0b99c2",
+        "final_sha256": "d693cdb6460050d67fcb0ed0921c77ec7814db93a466eb5be04920e43d913097"
+      },
+      "segno_pedal_tile_UNDO.pdf": {
+        "before_sha256": "7119d069e4f9e7a6715bed7ece9deaf36f75fca9b742b2ab418661170594da21",
+        "generated_sha256": "c5f310602ddb513b530024764ac55ba82191409ca9400aa23a14fe00d2a48431",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "f9961b6eb8c8322141b4dfbcaaf7618ef5c7e844fbe6d66403d3681ebfa347b6",
+        "final_sha256": "7119d069e4f9e7a6715bed7ece9deaf36f75fca9b742b2ab418661170594da21"
+      },
+      "segno_pedal_tile_UNDO.step": {
+        "before_sha256": "9a31de05fae7fa8d8087078a280cd1a2c17b2673c649317f4f79bcd581e5d678",
+        "generated_sha256": "9065641390ccef36bc4dec73adcea46ec15b718491709a2858a8c2d5cd6faaf4",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "bac73ae9282bc09bb325ba685748912226ebddcb04556feb903fa4a6783ed0be",
+        "final_sha256": "9a31de05fae7fa8d8087078a280cd1a2c17b2673c649317f4f79bcd581e5d678"
+      },
+      "segno_pedal_tiles.pdf": {
+        "before_sha256": "848523d420d491a6879a99294f99666f4ff3d5965581889450bb52bee6d31eea",
+        "generated_sha256": "3c1d2b4c667c5f330bdec4cf5b72e531d827dfaf20e19c2b5442a150c52954c6",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "d5120c1db478f4eb9ba20c97bbb5c0824053923a12a35466fddcc7cae835ce50",
+        "final_sha256": "848523d420d491a6879a99294f99666f4ff3d5965581889450bb52bee6d31eea"
+      },
+      "segno_platform_front_ring.step": {
+        "before_sha256": "2b50c5366ab2f60189a01b2c8b1fb3b439b119c9574270a4377fac1cec4fd9d0",
+        "generated_sha256": "c4c615ae251c8f27092e6aa2432e03001d4c93303ab9d9d16ae563c25a19a827",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "d66717ca20ca4efeba8e00b2f4a93a1c836b003130fe6bbc6c7bff967e018e3d",
+        "final_sha256": "2b50c5366ab2f60189a01b2c8b1fb3b439b119c9574270a4377fac1cec4fd9d0"
+      },
+      "segno_platform_mid_ring.step": {
+        "before_sha256": "203f37cb635a4ee896a9dc0eee0f70ba4c066c3382444b29db9f18c42608c2c7",
+        "generated_sha256": "61d26a94f13b6e763e64d167c0ae5277b77121600e0928c80d4ed3e2a2734e26",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "f724fba305a12bda8f76e09d08c72ab5d3ba6d060a5e56802aa6f89118ed438e",
+        "final_sha256": "203f37cb635a4ee896a9dc0eee0f70ba4c066c3382444b29db9f18c42608c2c7"
+      },
+      "segno_platform_sled.step": {
+        "before_sha256": "0ab1dfa63cd067f56649dcdf8a3a3b8967be9720331ce8811f3a83ff0d1d48b5",
+        "generated_sha256": "81b6281521d568ac89bbb075ae1c8e19b8ddcdce21aee700154e87f6ccc23078",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "21562e48f8ff7dcf7e6c948aa403dafb102493fdfdf93c262fe058a407357248",
+        "final_sha256": "0ab1dfa63cd067f56649dcdf8a3a3b8967be9720331ce8811f3a83ff0d1d48b5"
+      },
+      "segno_post.step": {
+        "before_sha256": "5b774f77d0849900c35cc3c5cc4051d5a68b4cc94332c41d0263eff5bdb23479",
+        "generated_sha256": "61413827acb9c43b8ce61d31e5e02d8447365f6c69e509f9043d4345a9d25f60",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "a38515335a4cf9905bf7f891e2fde27100c3ff131b582851198f66e253a47acb",
+        "final_sha256": "5b774f77d0849900c35cc3c5cc4051d5a68b4cc94332c41d0263eff5bdb23479"
+      },
+      "segno_post_felt.step": {
+        "before_sha256": "a99592cea0addb00013d04736135609e19d1700e0e9ab45d6dd9107b85a0bd04",
+        "generated_sha256": "50036dabb534b8c21bf7dcd6e760341b53d9bc96ece38d37860626df33b96869",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "68256d2d0549dad4dd7e369216d1bd603ef7cca9110c7d8378c3adfe1b344ab0",
+        "final_sha256": "a99592cea0addb00013d04736135609e19d1700e0e9ab45d6dd9107b85a0bd04"
+      },
+      "segno_rear_panel.pdf": {
+        "before_sha256": "23037350ba2fddefca64a15eda32215ce734b6a72dae5f4165c2aa7d38b77d45",
+        "generated_sha256": "756c29ec78779b79060f3bcb51be64374dca388e3ed1815fa849c4e0a1fe093c",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "ff12a3124b144d351fae3c343862317f7cd2aace539b201f3267351b8d8fa2d7",
+        "final_sha256": "23037350ba2fddefca64a15eda32215ce734b6a72dae5f4165c2aa7d38b77d45"
+      },
+      "segno_rear_panel.step": {
+        "before_sha256": "814b4649fdc4769e212d113a6ce6866f9d83493413f4b7cacd096d36a72df27c",
+        "generated_sha256": "0a76257176877a5132b15bcfb33ab69606dcdb9b78425b1b413797b1d5cb34c6",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "ec0fc7d97af1aab6b09b664849e54c7ea2fa8d0c6f77bbcb1310356c105e6517",
+        "final_sha256": "814b4649fdc4769e212d113a6ce6866f9d83493413f4b7cacd096d36a72df27c"
+      },
+      "segno_ring_disc.step": {
+        "before_sha256": "24247bc8edd8eadbd3dfc3ee3bc6659dd030a82dc1b8322e2e53081596e28d4f",
+        "generated_sha256": "3ec9b260dc377c632e3493546c3bc87b3e6e5459f64bbd75ea3963b66df64744",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "40e2fd9851d57aeaca94b782b0ca27388a94769af266f71e989c4886589f85fd",
+        "final_sha256": "24247bc8edd8eadbd3dfc3ee3bc6659dd030a82dc1b8322e2e53081596e28d4f"
+      },
+      "segno_screen16_monitor.step": {
+        "before_sha256": "7b5850b99635924d66cfbc6100f5fccbd5460bb3be5ffcd337100172977f7148",
+        "generated_sha256": "07b3e20e707e8ebc75f4a4ee3c140300bb0e35bdf6b396c050db600540cadef0",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "a29a0241259d79cab007e04badc690ac6910db8ac8a54fe6e844db3447235733",
+        "final_sha256": "7b5850b99635924d66cfbc6100f5fccbd5460bb3be5ffcd337100172977f7148"
+      },
+      "segno_screen16_portclear.step": {
+        "before_sha256": "cdd753a9abea03fb1ad4f4176b0b90de6dde7a79dc25a61f7ab6ad9d490e7494",
+        "generated_sha256": "405bc8f90d1988ed70cdd205f37698c3657cca938188394e433193b8c87c3235",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "101fc100ca60905959c42253aa980cedede00c571e6e81b7923517ea3e6ff365",
+        "final_sha256": "cdd753a9abea03fb1ad4f4176b0b90de6dde7a79dc25a61f7ab6ad9d490e7494"
+      },
+      "segno_screen16_stand_L.step": {
+        "before_sha256": "bb5539cc27fe32f7ddc4bf213af25e5eac02c999e26f3d652af36b94a16af075",
+        "generated_sha256": "fc3243e765290f98ac2ae8f6fb1e9302c6e5a8f0f54dfdc1ce52600f6bdeff50",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "b74f790c282f1659eeb2bd4e9749778c6a161296a3d7317cf0a0b5eed09a2a5f",
+        "final_sha256": "bb5539cc27fe32f7ddc4bf213af25e5eac02c999e26f3d652af36b94a16af075"
+      },
+      "segno_screen16_stand_R.step": {
+        "before_sha256": "cdd0d5049e9c7ee12be96c0e13285fcbbe6474df31c5dbaef199e7315375bd2d",
+        "generated_sha256": "2d08d91dd0c848d4c65b0a24b10a60dfd4c806786239306202dd2c7929e51b1a",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "ed98137f45c7bce606e4bf1c4c512c2d365c093e94d867d793f0f013685ca85e",
+        "final_sha256": "cdd0d5049e9c7ee12be96c0e13285fcbbe6474df31c5dbaef199e7315375bd2d"
+      },
+      "segno_screen7_fit_test.step": {
+        "before_sha256": "d9e4c9865ca69fd0ad9d9890cd235dd0fb40a3f270e9bd1209c7743535c6d315",
+        "generated_sha256": "af7d119310f8ae0cc0603a678eea221bb6af0c7a3a55116b66b2c39049c9f4aa",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "3ccb813a6d1c6999a5fdedeee937d3fdd3da81069bffdb7071d529477263241b",
+        "final_sha256": "d9e4c9865ca69fd0ad9d9890cd235dd0fb40a3f270e9bd1209c7743535c6d315"
+      },
+      "segno_screen7_tower.step": {
+        "before_sha256": "90087908941dd772f965f62ce1feb25bb864b1740718ebae7534bfd768aeda40",
+        "generated_sha256": "c81e433b54f6df8d2f884ca59aa4e72c28027507cbe1b99f915c0060e1ce937f",
+        "date_fields": 1,
+        "normalized_nondate_sha256": "d86ea525b31a2ee26d4d1dd0ffaf7d53380ff97b777ffc68fcd6a35f5667b8fa",
+        "final_sha256": "90087908941dd772f965f62ce1feb25bb864b1740718ebae7534bfd768aeda40"
+      }
+    },
+    "unchanged": [
+      "segno_base.step",
+      "segno_corner_bracket_rear.step",
+      "segno_faceplate.step",
+      "segno_pedal_base_fit_test.step",
+      "segno_pedal_base_gauge.pdf"
+    ],
+    "retained_changed": {
+      "segno_base.pdf": {
+        "before_sha256": "97621b14a3f13198c295173233162709537e59ae7479a45940e2ffb6eaa2c115",
+        "generated_sha256": "8985ff33818d9c6e19e74f78140f59c9113c8c2c485cccee6e15150deabf57cc",
+        "date_fields": 1
+      },
+      "segno_faceplate.pdf": {
+        "before_sha256": "e7fdd61c5e621e9ff09fc57337d01e55b655abd4056bc04daca187c16ef4dd20",
+        "generated_sha256": "f5b446b8e9b9d68f85bf8212374f07215c0989665b2f4e3f40bfb71682705026",
+        "date_fields": 1
+      },
+      "segno_paint_quote.pdf": {
+        "before_sha256": "a90d1635343d60e3c823fc7225735efe88e83a293e12cb21bf73dae63d232f51",
+        "generated_sha256": "e0a7f619f97bc56586806ff589040e1d732ea708b4b7144f6351666384f88890",
+        "date_fields": 1
+      },
+      "segno_post.pdf": {
+        "before_sha256": "35fa814253dc4177b8570b14a28c72dd6009c203b8c6806bceca6049e1d5cf08",
+        "generated_sha256": "8a13fb191d86019cdc9bde5c5e6e626ade8c84c15fc2d9ba6b6d7244e355a41c",
+        "date_fields": 1
+      },
+      "segno_ring_diffuser.step": {
+        "before_sha256": "7f20c0d3bd91b0b37619df6925c6ec58c4daff46d25f188bcd0097c935e7df42",
+        "generated_sha256": "4e8b793dbd60e2cc70a83f441c120963d84054e894d6b884e6c205d9a9ed602f",
+        "date_fields": 1
+      },
+      "segno_ring_disc.pdf": {
+        "before_sha256": "f399e76c315f52128d9c00ef92a2ad93692e023defe971992d48e708e73302cf",
+        "generated_sha256": "0f4d0a3616d2d752ded3319c2ff4bda63ab6dd3bb89b80a388da0eaa1a43ed0f",
+        "date_fields": 1
+      }
+    },
+    "archives": {
+      "segno_3dprint.zip": {
+        "generated_sha256": "ffd4b7712736901c231e47a2918acca84d8b605cc9f4f454a72f9a0cc0bd6479",
+        "final_sha256": "fbe66b9a2c60dc645c9979e8eee36c5d827835ba2e98a1d9895bbf7850916813",
+        "member_count": 36
+      },
+      "segno_overlay.zip": {
+        "generated_sha256": "7318a6ad134ab82ea4f53d251f8e0ba452a9f69ba1109f5c82db23a1a94b2e65",
+        "final_sha256": "b860cda93b1a9e22027ccc7860f81bb2f2601586f2506f8124981e333d744a3c",
+        "member_count": 2
+      },
+      "segno_pedal_tiles.zip": {
+        "generated_sha256": "6bc4e511fdd16b5f28b5277abe6ba7de6c665558870241ece84890e941bfa645",
+        "final_sha256": "fb47bfeb4025e1e2b7d39bbe637699aee46e68cf083bffc0160db55dcf380ab0",
+        "member_count": 22
+      },
+      "segno_pintura.zip": {
+        "generated_sha256": "e08d761befdadc7c13b6b0da83a020ae6ff0b4d8ed8deae557f418a4ab01fb3c",
+        "final_sha256": "21c88a1720e022638e15a1cb9cee4b2662a78f8d656f69c1fd282aefbc65a9e0",
+        "member_count": 7
+      },
+      "segno_sheetmetal.zip": {
+        "generated_sha256": "01469600ff6b49026e47feaf0843ff29ec6fee9a66153874c9025d7addf1792c",
+        "final_sha256": "b891f1244565b1e78fe30f68dec18c880e5dba41040b607a4dae77c5a8e937b3",
+        "member_count": 12
+      },
+      "segno_sheetmetal_step.zip": {
+        "generated_sha256": "66e6ff58670d1a5097efa31a6f22aa7e584059311b7f0cec708ffb9a85e531f1",
+        "final_sha256": "652075f647fead7d2eb1f29e71f7c6c0a7976530192fa2384d2a5d4df4b7ea50",
+        "member_count": 7
+      }
+    },
+    "applied": true
+  },
+  "validation": {
+    "full_generator": "passed",
+    "tests_passed": 26,
+    "tests_seconds": 33.388,
+    "changed_pdfs": {
+      "segno_base.pdf": 2,
+      "segno_faceplate.pdf": 2,
+      "segno_paint_quote.pdf": 4,
+      "segno_post.pdf": 1,
+      "segno_ring_disc.pdf": 1
+    },
+    "rendered_changed_pages": 10,
+    "visual_review": "All changed pages inspected by coordinator and geometry reviewer",
+    "archives": "All six archives, 86 members, exact final loose bytes",
+    "independent_reviews": "Final results recorded in round2-review.md",
+    "final_test_comment_edit": "Comment spacing only after full run; both focused tests rerun and passed on recorded final hash"
+  }
+}

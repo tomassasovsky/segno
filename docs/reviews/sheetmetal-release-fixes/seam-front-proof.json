@@ -1,0 +1,204 @@
+{
+  "scope": "Independent front shim source/native and support review; physical fitting and torque remain required.",
+  "source": {
+    "path": "hardware/enclosure/segno_enclosure.py",
+    "sha256": "3d552e9b6f74ba66725f9ee4e24b569875eafdb3c4c312eb5018c85a7785f66f"
+  },
+  "native": {
+    "pop": {
+      "snapshot_name": "with-ridge-pop.json",
+      "snapshot_sha256": "8723e673603ea75f0c93b262e8e44215e993e593ba9d7ea498c3bc2024b5fc29",
+      "snapshot_version": 344,
+      "snapshot_modified": true,
+      "occurrences": 9,
+      "shared_components": 1,
+      "max_transform_error_cm": 0,
+      "step_name": "pop-front-shim.step",
+      "step_sha256": "b4ba821662e63e0e42a5ed63b30fa9cea28dfff908270862c6b7dd32ae3f140b",
+      "volume_mm3": 9.326603190344697,
+      "source_missing_mm3": 0.0,
+      "source_extra_mm3": 0.0
+    },
+    "vsm": {
+      "snapshot_name": "with-ridge-vsm.json",
+      "snapshot_sha256": "e1c123359e278af368ca8e12c596970aea078fae369e00d128ec9f921e37c5fa",
+      "snapshot_version": 131,
+      "snapshot_modified": true,
+      "occurrences": 9,
+      "shared_components": 1,
+      "max_transform_error_cm": 7.105427357601002e-15,
+      "step_name": "vsm-front-shim.step",
+      "step_sha256": "34b5c472e665fd91051c0f0ba471b4e98ba97ac374d267c28e73bbfed6a1f0ca",
+      "volume_mm3": 9.326603190344697,
+      "source_missing_mm3": 0.0,
+      "source_extra_mm3": 0.0
+    }
+  },
+  "independent_contacts": [
+    {
+      "station": 1,
+      "overlap_mm3": {
+        "base": 0.0,
+        "faceplate": 0.0,
+        "M3_maximum_shaft_envelope": 0.0
+      },
+      "lid_contact_residue_mm": 1.362991131514948e-06,
+      "base_contact_distance_mm": 0.0
+    },
+    {
+      "station": 2,
+      "overlap_mm3": {
+        "base": 0.0,
+        "faceplate": 0.0,
+        "M3_maximum_shaft_envelope": 0.0
+      },
+      "lid_contact_residue_mm": 1.362991131514948e-06,
+      "base_contact_distance_mm": 0.0
+    },
+    {
+      "station": 3,
+      "overlap_mm3": {
+        "base": 0.0,
+        "faceplate": 0.0,
+        "M3_maximum_shaft_envelope": 0.0
+      },
+      "lid_contact_residue_mm": 1.362991131514948e-06,
+      "base_contact_distance_mm": 0.0
+    },
+    {
+      "station": 4,
+      "overlap_mm3": {
+        "base": 0.0,
+        "faceplate": 0.0,
+        "M3_maximum_shaft_envelope": 0.0
+      },
+      "lid_contact_residue_mm": 1.362991131514948e-06,
+      "base_contact_distance_mm": 0.0
+    },
+    {
+      "station": 5,
+      "overlap_mm3": {
+        "base": 0.0,
+        "faceplate": 0.0,
+        "M3_maximum_shaft_envelope": 0.0
+      },
+      "lid_contact_residue_mm": 1.362991131514948e-06,
+      "base_contact_distance_mm": 0.0
+    },
+    {
+      "station": 6,
+      "overlap_mm3": {
+        "base": 0.0,
+        "faceplate": 0.0,
+        "M3_maximum_shaft_envelope": 0.0
+      },
+      "lid_contact_residue_mm": 1.362991131514948e-06,
+      "base_contact_distance_mm": 0.0
+    },
+    {
+      "station": 7,
+      "overlap_mm3": {
+        "base": 0.0,
+        "faceplate": 0.0,
+        "M3_maximum_shaft_envelope": 0.0
+      },
+      "lid_contact_residue_mm": 1.362991131514948e-06,
+      "base_contact_distance_mm": 0.0
+    },
+    {
+      "station": 8,
+      "overlap_mm3": {
+        "base": 0.0,
+        "faceplate": 0.0,
+        "M3_maximum_shaft_envelope": 0.0
+      },
+      "lid_contact_residue_mm": 1.362991131514948e-06,
+      "base_contact_distance_mm": 0.0
+    },
+    {
+      "station": 9,
+      "overlap_mm3": {
+        "base": 0.0,
+        "faceplate": 0.0,
+        "M3_maximum_shaft_envelope": 0.0
+      },
+      "lid_contact_residue_mm": 1.362991131514948e-06,
+      "base_contact_distance_mm": 0.0
+    }
+  ],
+  "root_native_boolean_cross_check": {
+    "file": "intersections-0.json",
+    "sha256": "ea189559ecb580709239a4a240fb0ae01e864f58034f5229667d8c94c0ba2c37",
+    "pairs": 27,
+    "failed_operations": 0,
+    "positive_intersections": 0,
+    "scope": "Actual native shims against base, lid and each corresponding ISO7380 M3 screw; independently read and checked result file."
+  },
+  "nominal_planar_bearing": [
+    {
+      "axis_delta_mm": -0.12,
+      "lower_overhang_mm": 0.16457945013901698,
+      "upper_overhang_mm": 0,
+      "planar_supported_mm2": 18.43694879623697,
+      "planar_supported_fraction": 0.9884064122790006
+    },
+    {
+      "axis_delta_mm": 0,
+      "lower_overhang_mm": 0.044579450139016874,
+      "upper_overhang_mm": 0,
+      "planar_supported_mm2": 18.62253410344973,
+      "planar_supported_fraction": 0.998355656576479
+    },
+    {
+      "axis_delta_mm": 0.12,
+      "lower_overhang_mm": 0,
+      "upper_overhang_mm": 0,
+      "planar_supported_mm2": 18.653206380689397,
+      "planar_supported_fraction": 1.0
+    }
+  ],
+  "dimensional_acceptance": {
+    "od_mm": [
+      5.9,
+      6.0
+    ],
+    "id_mm": [
+      3.4,
+      3.6
+    ],
+    "cad_nominal_thickness_mm": 0.5,
+    "final_land_to_pack_residual_mm": [
+      0,
+      0.02
+    ],
+    "actual_thickness": "Measure independently at 9 stations on final uncoated hidden lands; record fitted packs."
+  },
+  "limits": [
+    "The nominal model does not prove final measured shim thickness, coating-land cleaning, edge-tack retention, or thread durability.",
+    "Effective planar bearing figures assume the pack centered on the actual screw axis; install and retain it in that position.",
+    "M3 threads in 2 mm 1050 aluminium and cosmetic coating under the exterior screw head require qualified assembly torque and physical retention/removal checks.",
+    "No polymer or coating may remain between the two hidden bearing lands. Edge adhesive is retention only, outside the bearing faces and bore.",
+    "Snapshot versions above were modified during correction; root save/reopen evidence governs final persisted document versions."
+  ],
+  "primary_sources": [
+    {
+      "url": "https://www.spirol.com/product/precision-shims/",
+      "supports": "Solid/edge-bonded metal shim packs compensate measured mating tolerances; supplier can produce simple washer forms."
+    },
+    {
+      "url": "https://www.accu.co.uk/shim-washers/62835-HSHN-3-6-0-1-A2",
+      "supports": "DIN988 product labelled 3x6 has nominal 3.0 mm ID; example 0.1 mm thickness has \u00b10.05 mm tolerance, so purchasing name alone does not meet fit."
+    },
+    {
+      "url": "https://us.misumi-ec.com/pdf/fa/2019/2019_US_2348.pdf",
+      "supports": "Configurable precision stainless shim rings offer 0.5 mm OD/ID increments and selected fine thicknesses; catalog is form/process evidence, not current stock confirmation."
+    }
+  ],
+  "operation_figure_review": {
+    "method": "Rendered final source operation figure directly to PNG for layout inspection; actual release PDFs are verified separately.",
+    "lines": 24,
+    "font_pt": 9.2,
+    "last_baseline_page_fraction": 0.031,
+    "clipping_or_overlap": false
+  }
+}

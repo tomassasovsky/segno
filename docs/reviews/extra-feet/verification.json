@@ -1,0 +1,170 @@
+{
+  "scope": "Eleven added rubber feet,15total, plus32owner-tappedpilot process correction; no structural release",
+  "source_sha256": "5d2ffe266fedf7f2f185d6a8a37b44fa80ca1bffd8d9cf9b40cecd3052de810a",
+  "feet": [
+    [
+      14.3,
+      45.0
+    ],
+    [
+      14.3,
+      374.0
+    ],
+    [
+      831.7,
+      45.0
+    ],
+    [
+      831.7,
+      374.0
+    ],
+    [
+      119.57142857142857,
+      66.19802648362678
+    ],
+    [
+      321.8571428571429,
+      66.19802648362678
+    ],
+    [
+      524.1428571428571,
+      66.19802648362678
+    ],
+    [
+      726.4285714285714,
+      66.19802648362678
+    ],
+    [
+      119.57142857142857,
+      374.0
+    ],
+    [
+      321.8571428571429,
+      374.0
+    ],
+    [
+      524.1428571428571,
+      374.0
+    ],
+    [
+      726.4285714285714,
+      374.0
+    ],
+    [
+      321.8571428571429,
+      229.96896045412427
+    ],
+    [
+      625.2857142857143,
+      131.44
+    ],
+    [
+      726.4285714285714,
+      131.44
+    ]
+  ],
+  "native": {
+    "vsm": {
+      "document": "VAMP sheet metal",
+      "version": 139,
+      "saved_reopened": true,
+      "occurrences": 45,
+      "bodies": 45,
+      "warnings": 0
+    },
+    "pop": {
+      "document": "VAMP console (populated)",
+      "version": 352,
+      "saved_reopened": true,
+      "occurrences": 452,
+      "bodies": 1002,
+      "warnings": 41
+    }
+  },
+  "preservation": {
+    "vsm": {
+      "original_occurrences_preserved_except_base_and_foot_group_count": true,
+      "added_foot_solids": 0,
+      "occurrences": 45,
+      "bodies": 45,
+      "warnings_unchanged": true,
+      "base_pose_appearance_bounds_preserved": true
+    },
+    "pop": {
+      "original_occurrences_preserved_except_base_and_foot_group_count": true,
+      "added_foot_solids": 11,
+      "occurrences": 452,
+      "bodies": 1002,
+      "warnings_unchanged": true,
+      "base_pose_appearance_bounds_preserved": true
+    }
+  },
+  "flat_parity": {
+    "vsm": {
+      "matched_reference_holes": 118,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "pop": {
+      "matched_reference_holes": 118,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    }
+  },
+  "surface_comparison": {
+    "vsm": {
+      "surface_groups_expected": 492,
+      "surface_groups_actual": 491,
+      "differences": [],
+      "old_volume_mm3": 936608.6874202288,
+      "new_volume_mm3": 936210.6168772854,
+      "expected_removed_volume_mm3": 398.10262106289855,
+      "station_tolerance_mm": 0.0011,
+      "direction_tolerance": 2e-06,
+      "area_tolerance_mm2": 0.005,
+      "volume_tolerance_mm3": 0.05
+    },
+    "pop": {
+      "surface_groups_expected": 491,
+      "surface_groups_actual": 491,
+      "differences": [],
+      "old_volume_mm3": 936608.7195293511,
+      "new_volume_mm3": 936210.6168772859,
+      "expected_removed_volume_mm3": 398.10262106289855
+    }
+  },
+  "boolean_comparison_limitation": "Coincident-surface Boolean subtraction was numerically invalid in both kernels. Used complete unfolded-contour parity, prescribed bend checks, native underlying surface/area accounting, volumes and bounds instead. VSM previous return-bend rounding differed by less than0.0011mm; rebuilt bases now agree.",
+  "tests": {
+    "count": 45,
+    "passed": true,
+    "log_sha256": "6173399311d47e4899fd79d608fa5b050c044b4aef0b7a2a82b1bffd7be14ac0"
+  },
+  "archive": {
+    "archive": "hardware/enclosure/out/segno_sheetmetal_STEP_DXF.zip",
+    "count": 14,
+    "only_sheet_metal_step_dxf": true,
+    "sha256": "d2329edf667586356f759a7ce9282a4ffc76195bff03da4c540ad787232829d9",
+    "files": {
+      "segno_base.dxf": "fd30b33b747dc870b5849a09cde15b6ffafc6f1fdc95573f4a08940f3dbd53eb",
+      "segno_base.step": "49524c736bcdfafb3229ab92f944cfd8d1bbb938be4646eef767822581ec04f4",
+      "segno_corner_bracket_rear.dxf": "1f285b73df8968f111bcdf24494c05a39215ee45ccc91dd25d517b2ec026769a",
+      "segno_corner_bracket_rear.step": "3616fa54390f788a1988dc1c42e015315407d0ffe3dbebbeb684dca135b17b36",
+      "segno_corner_bracket_rear_mirrored.dxf": "ff71c4c69bf0265f8d6f10826e61c7609fb91468029bcc9545a42ee747b42cd4",
+      "segno_corner_bracket_rear_mirrored.step": "4c0d90a16580a5e96a347606ee897e16db6efcde6e732a87a214bae441b720ac",
+      "segno_faceplate.dxf": "7b1f0d69323160f70b2e2f77cdd8a157f226c3b2da66901e25dd8a362854a96b",
+      "segno_faceplate.step": "f7df96f30e82641d3bcd41e4ce92d1fd4bda612011a188d0b7b8cceba0ab5bf2",
+      "segno_post.dxf": "358ba26a619b25ad26ba09a68ab50b7a8b2693e807d40c920f3ebe2afc2ff9f6",
+      "segno_post.step": "ff142de08b689b7a12e6e15e5419abf2b84b4a4d44bc1d0ef0c56d4fe74425b1",
+      "segno_rear_panel.dxf": "5465b8f8af464cffeb4d85b00dd958c2d8f307f7753839d3bf80c26fb138572e",
+      "segno_rear_panel.step": "83700d046ab11c2c1e6c11a6095fc75f70b5f71facd931351789f8cc27e09112",
+      "segno_ring_disc.dxf": "48a482d47fb1204a3f11986839febb0f7667c28db80c7d5e5e5fd21df28f5104",
+      "segno_ring_disc.step": "bea9f7c380a9a6db56174b160b32139f2ede28d54e645ae5a5a3e5994fd42bae"
+    }
+  },
+  "base_pdf_visual_review": "onepagePASS",
+  "source_native_cache_drawing_validation": "PASS",
+  "strength_validation": "NOTESTABLISHED; see temper-screening.json",
+  "production_release": false
+}

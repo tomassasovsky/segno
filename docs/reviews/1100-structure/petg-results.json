@@ -1,0 +1,1371 @@
+{
+  "description": "Approximate PETG sensitivity calculation, not certification",
+  "geometry": {
+    "segno_platform_front_ring": {
+      "volume": 53550.48356482023,
+      "bb": [
+        -59.23500000000218,
+        59.235,
+        -44.375,
+        44.375,
+        0.0,
+        38.04315340155541
+      ],
+      "horizontal_faces": [
+        {
+          "z": 2.043139371686,
+          "area": 9030.972096572354,
+          "center": [
+            0.27023835019114983,
+            -7.301358610504817e-16,
+            2.043139371686
+          ],
+          "wires": 5
+        },
+        {
+          "z": 0.0,
+          "area": 10471.204096572355,
+          "center": [
+            -1.7763568394002505e-15,
+            -2.426560307338348e-15,
+            0.0
+          ],
+          "wires": 5
+        }
+      ]
+    },
+    "segno_platform_mid_ring": {
+      "volume": 165908.17817350308,
+      "bb": [
+        -59.235000000001975,
+        59.235,
+        -44.375,
+        44.375,
+        0.0,
+        74.3450228962744
+      ],
+      "horizontal_faces": [
+        {
+          "z": 38.345008866405,
+          "area": 9030.972096572354,
+          "center": [
+            0.2702383501911463,
+            -8.717570409956183e-16,
+            38.345008866405
+          ],
+          "wires": 5
+        },
+        {
+          "z": 30.345008866405,
+          "area": 8811.494754455429,
+          "center": [
+            -4.440892098500626e-16,
+            -2.6320295865219517e-15,
+            30.345008866405
+          ],
+          "wires": 9
+        },
+        {
+          "z": 0.0,
+          "area": 97.19302272043426,
+          "center": [
+            48.685,
+            22.1875,
+            0.0
+          ],
+          "wires": 2
+        },
+        {
+          "z": 6.0,
+          "area": 15.904312808798327,
+          "center": [
+            48.685,
+            22.1875,
+            6.000000000000001
+          ],
+          "wires": 1
+        },
+        {
+          "z": 0.0,
+          "area": 97.19302272043426,
+          "center": [
+            -48.685,
+            22.1875,
+            0.0
+          ],
+          "wires": 2
+        },
+        {
+          "z": 6.0,
+          "area": 15.904312808798327,
+          "center": [
+            -48.685,
+            22.1875,
+            6.000000000000001
+          ],
+          "wires": 1
+        },
+        {
+          "z": 0.0,
+          "area": 97.19302272043426,
+          "center": [
+            48.685,
+            -22.1875,
+            0.0
+          ],
+          "wires": 2
+        },
+        {
+          "z": 6.0,
+          "area": 15.904312808798327,
+          "center": [
+            48.685,
+            -22.1875,
+            6.000000000000001
+          ],
+          "wires": 1
+        },
+        {
+          "z": 0.0,
+          "area": 97.19302272043426,
+          "center": [
+            -48.685,
+            -22.1875,
+            0.0
+          ],
+          "wires": 2
+        },
+        {
+          "z": 6.0,
+          "area": 15.904312808798327,
+          "center": [
+            -48.685,
+            -22.1875,
+            6.000000000000001
+          ],
+          "wires": 1
+        },
+        {
+          "z": 0.0,
+          "area": 1207.3199999999997,
+          "center": [
+            -2.472460018106816e-14,
+            -1.492693256545522e-14,
+            0.0
+          ],
+          "wires": 2
+        }
+      ]
+    },
+    "segno_platform_sled": {
+      "volume": 110919.65190122327,
+      "bb": [
+        -56.63500000000017,
+        56.635,
+        -39.375,
+        39.375,
+        -1.7949197113312135e-15,
+        12.633000000020662
+      ],
+      "horizontal_faces": [
+        {
+          "z": 12.633,
+          "area": 8082.564053656381,
+          "center": [
+            4.936582476258103,
+            6.188903455071546e-16,
+            12.633
+          ],
+          "wires": 5
+        },
+        {
+          "z": 0.0,
+          "area": 8622.466822449485,
+          "center": [
+            -7.105427357601002e-15,
+            8.570220801157898e-16,
+            3.944304526105059e-31
+          ],
+          "wires": 5
+        },
+        {
+          "z": 6.633,
+          "area": 15.904312808798327,
+          "center": [
+            -44.305,
+            -26.5,
+            6.633
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.633,
+          "area": 15.904312808798327,
+          "center": [
+            35.695,
+            -27.875,
+            6.633
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.633,
+          "area": 15.904312808798327,
+          "center": [
+            -44.305,
+            26.5,
+            6.633
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.633,
+          "area": 15.904312808798327,
+          "center": [
+            35.695,
+            27.875,
+            6.633
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.0,
+          "area": 15.904312808798327,
+          "center": [
+            -48.685,
+            -22.1875,
+            6.000000000000001
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.0,
+          "area": 15.904312808798327,
+          "center": [
+            48.685,
+            -22.1875,
+            6.000000000000001
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.0,
+          "area": 15.904312808798327,
+          "center": [
+            -48.685,
+            22.1875,
+            6.000000000000001
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.0,
+          "area": 15.904312808798327,
+          "center": [
+            48.685,
+            22.1875,
+            6.000000000000001
+          ],
+          "wires": 1
+        }
+      ]
+    },
+    "segno_platform_mid_sled": {
+      "volume": 110919.65190122327,
+      "bb": [
+        -56.63500000000017,
+        56.635,
+        -39.375,
+        39.375,
+        -1.7949197113312135e-15,
+        12.633000000020662
+      ],
+      "horizontal_faces": [
+        {
+          "z": 12.633,
+          "area": 8082.564053656381,
+          "center": [
+            4.936582476258103,
+            6.188903455071546e-16,
+            12.633
+          ],
+          "wires": 5
+        },
+        {
+          "z": 0.0,
+          "area": 8622.466822449485,
+          "center": [
+            -7.993605777301127e-15,
+            8.833919902731987e-16,
+            3.944304526105059e-31
+          ],
+          "wires": 5
+        },
+        {
+          "z": 6.633,
+          "area": 15.904312808798327,
+          "center": [
+            -44.305,
+            -26.5,
+            6.633
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.633,
+          "area": 15.904312808798327,
+          "center": [
+            35.695,
+            -27.875,
+            6.633
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.633,
+          "area": 15.904312808798327,
+          "center": [
+            -44.305,
+            26.5,
+            6.633
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.633,
+          "area": 15.904312808798327,
+          "center": [
+            35.695,
+            27.875,
+            6.633
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.0,
+          "area": 15.904312808798327,
+          "center": [
+            -30.0,
+            -18.0,
+            6.000000000000001
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.0,
+          "area": 15.904312808798327,
+          "center": [
+            30.0,
+            -18.0,
+            6.000000000000001
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.0,
+          "area": 15.904312808798327,
+          "center": [
+            -30.0,
+            18.0,
+            6.000000000000001
+          ],
+          "wires": 1
+        },
+        {
+          "z": 6.0,
+          "area": 15.904312808798327,
+          "center": [
+            30.0,
+            18.0,
+            6.000000000000001
+          ],
+          "wires": 1
+        }
+      ]
+    },
+    "params": {
+      "CONSOLE_PLATFORM_D": 118.47,
+      "SKIRT_OUT_W": 88.75,
+      "SKIRT_IN_D": 113.67,
+      "SKIRT_IN_W": 79.14999999999999,
+      "PLAT_WALL": 3.0,
+      "PLAT_DECK": 8.0,
+      "CONSOLE_SLED_T": 12.633,
+      "SLOPE_ANGLE": 12.498241812070852,
+      "SKIRT_GAP": 0.0,
+      "PEDAL_ROW1_V": 67.80482117368535,
+      "PEDAL_ROW2_V": 235.55089278903117,
+      "PEDAL_D": 109.87,
+      "PEDAL_W": 76.35,
+      "PEDAL_TOE_W": 73.08,
+      "PEDAL_BODY_H": 24.9
+    },
+    "foot_xy": [
+      [
+        -48.685,
+        -22.1875
+      ],
+      [
+        48.685,
+        -22.1875
+      ],
+      [
+        -48.685,
+        22.1875
+      ],
+      [
+        48.685,
+        22.1875
+      ]
+    ],
+    "top_inserts": [
+      [
+        35.69500000000001,
+        -27.875
+      ],
+      [
+        35.69500000000001,
+        27.875
+      ],
+      [
+        -44.30499999999999,
+        -26.5
+      ],
+      [
+        -44.30499999999999,
+        26.5
+      ]
+    ],
+    "mid_sled_xy": [
+      [
+        -30.0,
+        -18.0
+      ],
+      [
+        30.0,
+        -18.0
+      ],
+      [
+        -30.0,
+        18.0
+      ],
+      [
+        30.0,
+        18.0
+      ]
+    ]
+  },
+  "printed_assumptions": {
+    "layer_height_mm": 0.2,
+    "perimeters": 6,
+    "assumed_line_width_mm": 0.4,
+    "solid_top_bottom_layers": 6,
+    "skin_mm": 1.2,
+    "nominal_infill": 0.4,
+    "skin_E_MPa": [
+      1000,
+      2000
+    ],
+    "core_E_ratio": [
+      0.16,
+      0.4
+    ],
+    "nu": 0.35
+  },
+  "benchmark": {
+    "square_uniform_w_coefficient": 0.004062352659370942,
+    "expected": 0.00406235266
+  },
+  "convergence": [
+    {
+      "force_N": 700,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 12.633,
+      "modes": 31,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 123.37685765782666,
+      "D_Nmm": 140600.40758726685,
+      "max_deflection_mm": 0.43112803095894237,
+      "max_principal_tension_MPa": 6.513977986468285,
+      "max_von_mises_MPa": 6.095507209416441,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "force_N": 700,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 123.37685765782666,
+      "D_Nmm": 140600.40758726685,
+      "max_deflection_mm": 0.4311284167300529,
+      "max_principal_tension_MPa": 6.51534155548658,
+      "max_von_mises_MPa": 6.097063750284559,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "force_N": 700,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 12.633,
+      "modes": 101,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 123.37685765782666,
+      "D_Nmm": 140600.40758726685,
+      "max_deflection_mm": 0.43112842557626707,
+      "max_principal_tension_MPa": 6.51531297517771,
+      "max_von_mises_MPa": 6.097117744175769,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "plate_cases": [
+    {
+      "force_N": 200,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 123.37685765782666,
+      "D_Nmm": 140600.40758726685,
+      "max_deflection_mm": 0.12317954763715804,
+      "max_principal_tension_MPa": 1.8615261587104508,
+      "max_von_mises_MPa": 1.742018214367016,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "central_30x30",
+      "max_deflection_at_E2000_mm": 0.06158977381857902
+    },
+    {
+      "force_N": 200,
+      "patch_mm": [
+        90,
+        60
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 123.37685765782666,
+      "D_Nmm": 140600.40758726685,
+      "max_deflection_mm": 0.07349933851719545,
+      "max_principal_tension_MPa": 0.8731755200621856,
+      "max_von_mises_MPa": 0.7803402337798104,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "broad_90x60",
+      "max_deflection_at_E2000_mm": 0.036749669258597725
+    },
+    {
+      "force_N": 200,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        -39.935,
+        21.54
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 10.84,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 94.43546112000001,
+      "D_Nmm": 107618.75911111111,
+      "max_deflection_mm": 0.056459655595953125,
+      "max_principal_tension_MPa": 1.2883381325076968,
+      "max_von_mises_MPa": 1.426748037044871,
+      "max_vm_at_mm": [
+        -56.235,
+        41.375
+      ],
+      "case": "toe_corner_30x30",
+      "max_deflection_at_E2000_mm": 0.028229827797976562
+    },
+    {
+      "force_N": 200,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.4,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 148.32000404456664,
+      "D_Nmm": 169025.64563483378,
+      "max_deflection_mm": 0.10246430084116395,
+      "max_principal_tension_MPa": 1.5484711545755485,
+      "max_von_mises_MPa": 1.4490609992615757,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "central_30x30",
+      "max_deflection_at_E2000_mm": 0.051232150420581976
+    },
+    {
+      "force_N": 200,
+      "patch_mm": [
+        90,
+        60
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.4,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 148.32000404456664,
+      "D_Nmm": 169025.64563483378,
+      "max_deflection_mm": 0.06113886986852894,
+      "max_principal_tension_MPa": 0.7263325843534958,
+      "max_von_mises_MPa": 0.6491095153880809,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "broad_90x60",
+      "max_deflection_at_E2000_mm": 0.03056943493426447
+    },
+    {
+      "force_N": 200,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        -39.935,
+        21.54
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.4,
+      "sled_t_mm": 10.84,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 109.97201280000002,
+      "D_Nmm": 125324.23111111112,
+      "max_deflection_mm": 0.048483186541078006,
+      "max_principal_tension_MPa": 1.1063251687782512,
+      "max_von_mises_MPa": 1.2251808923914433,
+      "max_vm_at_mm": [
+        -56.235,
+        41.375
+      ],
+      "case": "toe_corner_30x30",
+      "max_deflection_at_E2000_mm": 0.024241593270539003
+    },
+    {
+      "force_N": 350,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 123.37685765782666,
+      "D_Nmm": 140600.40758726685,
+      "max_deflection_mm": 0.21556420836502646,
+      "max_principal_tension_MPa": 3.25767077774329,
+      "max_von_mises_MPa": 3.0485318751422796,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "central_30x30",
+      "max_deflection_at_E2000_mm": 0.10778210418251323
+    },
+    {
+      "force_N": 350,
+      "patch_mm": [
+        90,
+        60
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 123.37685765782666,
+      "D_Nmm": 140600.40758726685,
+      "max_deflection_mm": 0.1286238424050921,
+      "max_principal_tension_MPa": 1.5280571601088235,
+      "max_von_mises_MPa": 1.3655954091146678,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "broad_90x60",
+      "max_deflection_at_E2000_mm": 0.06431192120254604
+    },
+    {
+      "force_N": 350,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        -39.935,
+        21.54
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 10.84,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 94.43546112000001,
+      "D_Nmm": 107618.75911111111,
+      "max_deflection_mm": 0.09880439729291783,
+      "max_principal_tension_MPa": 2.2545917318884707,
+      "max_von_mises_MPa": 2.4968090648285237,
+      "max_vm_at_mm": [
+        -56.235,
+        41.375
+      ],
+      "case": "toe_corner_30x30",
+      "max_deflection_at_E2000_mm": 0.049402198646458916
+    },
+    {
+      "force_N": 350,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.4,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 148.32000404456664,
+      "D_Nmm": 169025.64563483378,
+      "max_deflection_mm": 0.17931252647203674,
+      "max_principal_tension_MPa": 2.70982452050721,
+      "max_von_mises_MPa": 2.5358567487077583,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "central_30x30",
+      "max_deflection_at_E2000_mm": 0.08965626323601837
+    },
+    {
+      "force_N": 350,
+      "patch_mm": [
+        90,
+        60
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.4,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 148.32000404456664,
+      "D_Nmm": 169025.64563483378,
+      "max_deflection_mm": 0.1069930222699256,
+      "max_principal_tension_MPa": 1.2710820226186168,
+      "max_von_mises_MPa": 1.135941651929141,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "broad_90x60",
+      "max_deflection_at_E2000_mm": 0.0534965111349628
+    },
+    {
+      "force_N": 350,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        -39.935,
+        21.54
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.4,
+      "sled_t_mm": 10.84,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 109.97201280000002,
+      "D_Nmm": 125324.23111111112,
+      "max_deflection_mm": 0.0848455764468865,
+      "max_principal_tension_MPa": 1.9360690453619407,
+      "max_von_mises_MPa": 2.1440665616850256,
+      "max_vm_at_mm": [
+        -56.235,
+        41.375
+      ],
+      "case": "toe_corner_30x30",
+      "max_deflection_at_E2000_mm": 0.04242278822344325
+    },
+    {
+      "force_N": 700,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 123.37685765782666,
+      "D_Nmm": 140600.40758726685,
+      "max_deflection_mm": 0.4311284167300529,
+      "max_principal_tension_MPa": 6.51534155548658,
+      "max_von_mises_MPa": 6.097063750284559,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "central_30x30",
+      "max_deflection_at_E2000_mm": 0.21556420836502646
+    },
+    {
+      "force_N": 700,
+      "patch_mm": [
+        90,
+        60
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 123.37685765782666,
+      "D_Nmm": 140600.40758726685,
+      "max_deflection_mm": 0.2572476848101842,
+      "max_principal_tension_MPa": 3.056114320217647,
+      "max_von_mises_MPa": 2.7311908182293356,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "broad_90x60",
+      "max_deflection_at_E2000_mm": 0.1286238424050921
+    },
+    {
+      "force_N": 700,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        -39.935,
+        21.54
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 10.84,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 94.43546112000001,
+      "D_Nmm": 107618.75911111111,
+      "max_deflection_mm": 0.19760879458583566,
+      "max_principal_tension_MPa": 4.5091834637769415,
+      "max_von_mises_MPa": 4.993618129657047,
+      "max_vm_at_mm": [
+        -56.235,
+        41.375
+      ],
+      "case": "toe_corner_30x30",
+      "max_deflection_at_E2000_mm": 0.09880439729291783
+    },
+    {
+      "force_N": 700,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.4,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 148.32000404456664,
+      "D_Nmm": 169025.64563483378,
+      "max_deflection_mm": 0.3586250529440735,
+      "max_principal_tension_MPa": 5.41964904101442,
+      "max_von_mises_MPa": 5.071713497415517,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "central_30x30",
+      "max_deflection_at_E2000_mm": 0.17931252647203674
+    },
+    {
+      "force_N": 700,
+      "patch_mm": [
+        90,
+        60
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.4,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 148.32000404456664,
+      "D_Nmm": 169025.64563483378,
+      "max_deflection_mm": 0.2139860445398512,
+      "max_principal_tension_MPa": 2.5421640452372336,
+      "max_von_mises_MPa": 2.271883303858282,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "broad_90x60",
+      "max_deflection_at_E2000_mm": 0.1069930222699256
+    },
+    {
+      "force_N": 700,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        -39.935,
+        21.54
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.4,
+      "sled_t_mm": 10.84,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 109.97201280000002,
+      "D_Nmm": 125324.23111111112,
+      "max_deflection_mm": 0.169691152893773,
+      "max_principal_tension_MPa": 3.8721380907238814,
+      "max_von_mises_MPa": 4.288133123370051,
+      "max_vm_at_mm": [
+        -56.235,
+        41.375
+      ],
+      "case": "toe_corner_30x30",
+      "max_deflection_at_E2000_mm": 0.0848455764468865
+    },
+    {
+      "force_N": 1400,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 123.37685765782666,
+      "D_Nmm": 140600.40758726685,
+      "max_deflection_mm": 0.8622568334601058,
+      "max_principal_tension_MPa": 13.03068311097316,
+      "max_von_mises_MPa": 12.194127500569119,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "central_30x30",
+      "max_deflection_at_E2000_mm": 0.4311284167300529
+    },
+    {
+      "force_N": 1400,
+      "patch_mm": [
+        90,
+        60
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 123.37685765782666,
+      "D_Nmm": 140600.40758726685,
+      "max_deflection_mm": 0.5144953696203683,
+      "max_principal_tension_MPa": 6.112228640435294,
+      "max_von_mises_MPa": 5.462381636458671,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "broad_90x60",
+      "max_deflection_at_E2000_mm": 0.2572476848101842
+    },
+    {
+      "force_N": 1400,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        -39.935,
+        21.54
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.16,
+      "sled_t_mm": 10.84,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 94.43546112000001,
+      "D_Nmm": 107618.75911111111,
+      "max_deflection_mm": 0.3952175891716713,
+      "max_principal_tension_MPa": 9.018366927553883,
+      "max_von_mises_MPa": 9.987236259314095,
+      "max_vm_at_mm": [
+        -56.235,
+        41.375
+      ],
+      "case": "toe_corner_30x30",
+      "max_deflection_at_E2000_mm": 0.19760879458583566
+    },
+    {
+      "force_N": 1400,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.4,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 148.32000404456664,
+      "D_Nmm": 169025.64563483378,
+      "max_deflection_mm": 0.717250105888147,
+      "max_principal_tension_MPa": 10.83929808202884,
+      "max_von_mises_MPa": 10.143426994831033,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "central_30x30",
+      "max_deflection_at_E2000_mm": 0.3586250529440735
+    },
+    {
+      "force_N": 1400,
+      "patch_mm": [
+        90,
+        60
+      ],
+      "patch_center_mm": [
+        0,
+        0
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.4,
+      "sled_t_mm": 12.633,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 148.32000404456664,
+      "D_Nmm": 169025.64563483378,
+      "max_deflection_mm": 0.4279720890797024,
+      "max_principal_tension_MPa": 5.084328090474467,
+      "max_von_mises_MPa": 4.543766607716564,
+      "max_vm_at_mm": [
+        0.0,
+        0.0
+      ],
+      "case": "broad_90x60",
+      "max_deflection_at_E2000_mm": 0.2139860445398512
+    },
+    {
+      "force_N": 1400,
+      "patch_mm": [
+        30,
+        30
+      ],
+      "patch_center_mm": [
+        -39.935,
+        21.54
+      ],
+      "skin_E_MPa": 1000,
+      "core_E_ratio": 0.4,
+      "sled_t_mm": 10.84,
+      "modes": 61,
+      "span_mm": [
+        112.47,
+        82.75
+      ],
+      "I_per_width_mm3": 109.97201280000002,
+      "D_Nmm": 125324.23111111112,
+      "max_deflection_mm": 0.339382305787546,
+      "max_principal_tension_MPa": 7.744276181447763,
+      "max_von_mises_MPa": 8.576266246740103,
+      "max_vm_at_mm": [
+        -56.235,
+        41.375
+      ],
+      "case": "toe_corner_30x30",
+      "max_deflection_at_E2000_mm": 0.169691152893773
+    }
+  ],
+  "compression": [
+    {
+      "force_N": 200,
+      "front_mean_MPa": 0.019100000167647197,
+      "mid_mean_MPa": 0.1253060529167293,
+      "all_load_via_four_columns_MPa": 0.5638993165104002,
+      "all_load_via_one_column_MPa": 2.2555972660416006,
+      "all_load_via_one_column_skin_only_MPa": 2.7631066509009607,
+      "pressure_30x30_MPa": 0.2222222222222222,
+      "nominal_core_stress_30x30_MPa": 0.5555555555555556
+    },
+    {
+      "force_N": 350,
+      "front_mean_MPa": 0.03342500029338259,
+      "mid_mean_MPa": 0.21928559260427627,
+      "all_load_via_four_columns_MPa": 0.9868238038932003,
+      "all_load_via_one_column_MPa": 3.9472952155728014,
+      "all_load_via_one_column_skin_only_MPa": 4.835436639076681,
+      "pressure_30x30_MPa": 0.3888888888888889,
+      "nominal_core_stress_30x30_MPa": 0.9722222222222222
+    },
+    {
+      "force_N": 700,
+      "front_mean_MPa": 0.06685000058676518,
+      "mid_mean_MPa": 0.43857118520855254,
+      "all_load_via_four_columns_MPa": 1.9736476077864007,
+      "all_load_via_one_column_MPa": 7.894590431145603,
+      "all_load_via_one_column_skin_only_MPa": 9.670873278153362,
+      "pressure_30x30_MPa": 0.7777777777777778,
+      "nominal_core_stress_30x30_MPa": 1.9444444444444444
+    },
+    {
+      "force_N": 1400,
+      "front_mean_MPa": 0.13370000117353037,
+      "mid_mean_MPa": 0.8771423704171051,
+      "all_load_via_four_columns_MPa": 3.9472952155728014,
+      "all_load_via_one_column_MPa": 15.789180862291206,
+      "all_load_via_one_column_skin_only_MPa": 19.341746556306724,
+      "pressure_30x30_MPa": 1.5555555555555556,
+      "nominal_core_stress_30x30_MPa": 3.888888888888889
+    }
+  ],
+  "column_euler_skin_only_E1000_N": 9495.96211297067,
+  "contact_area": {
+    "front_mm2": 10471.204096572355,
+    "mid_perimeter_mm2": 1207.3199999999997,
+    "mid_each_column_bottom_mm2": 97.19302272043423,
+    "mid_total_mm2": 1596.0920908817366,
+    "column_upper_effective_area_mm2": 88.66831105491832
+  },
+  "rocking_sensitivity": [
+    {
+      "force_N": 200,
+      "H_to_P": 0.2,
+      "base_side_per_insert_N": 14.145505011501967,
+      "base_toe_per_insert_N": 10.485175846257416,
+      "deck_side_per_insert_N": 11.758779956427016,
+      "deck_toe_per_insert_N": 7.2102498990015675
+    },
+    {
+      "force_N": 350,
+      "H_to_P": 0.2,
+      "base_side_per_insert_N": 24.754633770128443,
+      "base_toe_per_insert_N": 18.349057730950477,
+      "deck_side_per_insert_N": 20.57786492374728,
+      "deck_toe_per_insert_N": 12.617937323252743
+    },
+    {
+      "force_N": 700,
+      "H_to_P": 0.2,
+      "base_side_per_insert_N": 49.509267540256886,
+      "base_toe_per_insert_N": 36.698115461900954,
+      "deck_side_per_insert_N": 41.15572984749456,
+      "deck_toe_per_insert_N": 25.235874646505486
+    },
+    {
+      "force_N": 1400,
+      "H_to_P": 0.2,
+      "base_side_per_insert_N": 99.01853508051377,
+      "base_toe_per_insert_N": 73.39623092380191,
+      "deck_side_per_insert_N": 82.31145969498913,
+      "deck_toe_per_insert_N": 50.47174929301097
+    }
+  ]
+}

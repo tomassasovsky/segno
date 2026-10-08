@@ -1,0 +1,124 @@
+{
+  "baseline": "/tmp/segno-rear-closure/out-before",
+  "restored": {
+    "segno_mini_console_assembly.step": {
+      "before_sha256": "1866b5b07202b6af4c2bebccf82d2035ce38fc2a5943a4f620b6ae135a6d3587",
+      "generated_sha256": "f8ae4398970d4754e081995fcaa76269e27a49079f172dab338867c84b869fb5",
+      "date_fields": 1,
+      "normalized_nondate_sha256": "7b5406c89f05e36570c233f7207720198f2c98d619e63ea5de02a4487f4b3358",
+      "final_sha256": "1866b5b07202b6af4c2bebccf82d2035ce38fc2a5943a4f620b6ae135a6d3587"
+    }
+  },
+  "unchanged": [
+    "segno_buck_envelope.step",
+    "segno_buck_reference.step",
+    "segno_corner_bracket_rear.pdf",
+    "segno_corner_bracket_rear.step",
+    "segno_corner_bracket_rear_mirrored.pdf",
+    "segno_corner_bracket_rear_mirrored.step",
+    "segno_encoder_knob.step",
+    "segno_faceplate.pdf",
+    "segno_faceplate.step",
+    "segno_front_shim_pack_reference.step",
+    "segno_led_diffuser.step",
+    "segno_mini_console_lid.step",
+    "segno_mini_console_sled.step",
+    "segno_mini_console_tray.step",
+    "segno_overlay.pdf",
+    "segno_pedal_base_fit_test.step",
+    "segno_pedal_base_gauge.pdf",
+    "segno_pedal_tile_BANK.pdf",
+    "segno_pedal_tile_BANK.step",
+    "segno_pedal_tile_CLEAR.pdf",
+    "segno_pedal_tile_CLEAR.step",
+    "segno_pedal_tile_MODE.pdf",
+    "segno_pedal_tile_MODE.step",
+    "segno_pedal_tile_REC_PLAY.pdf",
+    "segno_pedal_tile_REC_PLAY.step",
+    "segno_pedal_tile_STOP.pdf",
+    "segno_pedal_tile_STOP.step",
+    "segno_pedal_tile_TRACK1.pdf",
+    "segno_pedal_tile_TRACK1.step",
+    "segno_pedal_tile_TRACK2.pdf",
+    "segno_pedal_tile_TRACK2.step",
+    "segno_pedal_tile_TRACK3.pdf",
+    "segno_pedal_tile_TRACK3.step",
+    "segno_pedal_tile_TRACK4.pdf",
+    "segno_pedal_tile_TRACK4.step",
+    "segno_pedal_tile_UNDO.pdf",
+    "segno_pedal_tile_UNDO.step",
+    "segno_pedal_tiles.pdf",
+    "segno_platform_front_ring.step",
+    "segno_platform_mid_ring.step",
+    "segno_platform_sled.step",
+    "segno_post.pdf",
+    "segno_post.step",
+    "segno_post_felt.step",
+    "segno_rear_panel.pdf",
+    "segno_rear_panel.step",
+    "segno_ring_diffuser.step",
+    "segno_ring_disc.pdf",
+    "segno_ring_disc.step",
+    "segno_screen16_monitor.step",
+    "segno_screen16_portclear.step",
+    "segno_screen16_stand_L.step",
+    "segno_screen16_stand_R.step",
+    "segno_screen7_fit_test.step",
+    "segno_screen7_tower.step"
+  ],
+  "retained_changed": {
+    "segno_assembly.step": {
+      "before_sha256": "824052b822574d3f91d77f4291955feb70c0d71a6a8cdecd6cf1704dd0690874",
+      "generated_sha256": "02ddd5e94f89b33fc71dab2819e6801de104c04ccce0d677696087203d099632",
+      "date_fields": 1
+    },
+    "segno_base.pdf": {
+      "before_sha256": "557173d7d1ee2635cf5c1fa66035587bbc16f3c0d9162346e8bdb1d802de4384",
+      "generated_sha256": "5422cacdd0183e861878d319275c44d05cbe294f843ed21e803ef73874d1677d",
+      "date_fields": 1
+    },
+    "segno_base.step": {
+      "before_sha256": "2668641e2ebed4f0e9ec495015133400d343d0b40894e9586f1a9c6a18dad615",
+      "generated_sha256": "2e9976ec08f5719bd3ad19980c6c36938089901fa860633eafee6fe16e72e52a",
+      "date_fields": 1
+    },
+    "segno_paint_quote.pdf": {
+      "before_sha256": "3c785ed6593528e77d0c16cb79ba8ac4408768ae632a1dc944b97a77c1578a0f",
+      "generated_sha256": "950b9486003d692ab1445f8387b6e9dc30434430fb26c898e5642730523a6e9b",
+      "date_fields": 1
+    }
+  },
+  "archives": {
+    "segno_3dprint.zip": {
+      "generated_sha256": "21996287c61e0c5cd5b463124eb0be1a9d1e65a1fcf5eb35763a5b36685a6e7d",
+      "final_sha256": "21996287c61e0c5cd5b463124eb0be1a9d1e65a1fcf5eb35763a5b36685a6e7d",
+      "member_count": 36
+    },
+    "segno_overlay.zip": {
+      "generated_sha256": "0208448546f39e7af6593465fb8b05410427c0898af89e42d9499c0620b20a2e",
+      "final_sha256": "0208448546f39e7af6593465fb8b05410427c0898af89e42d9499c0620b20a2e",
+      "member_count": 2
+    },
+    "segno_pedal_tiles.zip": {
+      "generated_sha256": "a53327efb834c589e639e57274d4e7bc127b784a03233f04697fbb3ab0f1caca",
+      "final_sha256": "a53327efb834c589e639e57274d4e7bc127b784a03233f04697fbb3ab0f1caca",
+      "member_count": 22
+    },
+    "segno_pintura.zip": {
+      "generated_sha256": "1c7a404fe57ec2ddb070fa37ffef5ca0b518773c51e1315a01f24c39d4e83cb7",
+      "final_sha256": "1c7a404fe57ec2ddb070fa37ffef5ca0b518773c51e1315a01f24c39d4e83cb7",
+      "member_count": 8
+    },
+    "segno_sheetmetal.zip": {
+      "generated_sha256": "9c9a5678230fdc49104e7bee4a768e2d96936f64670d1ae03aba42ac054ed190",
+      "final_sha256": "9c9a5678230fdc49104e7bee4a768e2d96936f64670d1ae03aba42ac054ed190",
+      "member_count": 14
+    },
+    "segno_sheetmetal_step.zip": {
+      "generated_sha256": "894054039fd0409dc9b77c1061bef4a38941b3fd946a016d2d0a1131f4bfd0f4",
+      "final_sha256": "894054039fd0409dc9b77c1061bef4a38941b3fd946a016d2d0a1131f4bfd0f4",
+      "member_count": 8
+    }
+  },
+  "applied": true
+}

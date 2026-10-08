@@ -1,0 +1,307 @@
+{
+  "scope": "Fully coated enclosure support corrections; bare native assembly reference remains at its accepted datum. No manufacturing-process guarantee beyond measured geometry and stated coating range.",
+  "baseline": "Accepted Fusion populated348 with matching generated supports before full-coat relief",
+  "source_constants": {
+    "CONSOLE_LID_RELIEF_N": 0.15,
+    "SCREEN_COATED_SETBACK": 0.2,
+    "S7C_FRONT_SHIFT": 0.5,
+    "SKIRT_GAP": 0.0
+  },
+  "source_function_sha256": {
+    "pedal_console_sled": "da6d694c60a1e751f5393babf5014f3cb25bfdd7e3450fe03044471a6c6f3404",
+    "_platform_printed": "725f8231596426e385db651479643c48aca1f59cf91f28bd0f9a82ba08249d38",
+    "build_screen7_tower_step": "557d6697898e1942d3c67cbf98e0df09a3b87c867557ed1457b92b45dcc51a4f",
+    "build_screen16_stand_steps": "b0772d2f5a70bb835529945df6baebb91f343ba8afa4ac41045bc59f10857497",
+    "_s16_monitor_solids": "056d32c32db10f5fc7d655bea3d914b30d733d62fae746a71ea70850ea2ca84e",
+    "build_screen16_portclear_step": "e382e03e586583f794f7a0091ae3a753fc704b6df85f1e99af27d6e1bfccb9ca",
+    "_glass_depth": "6f1ef8db543833307c5f936823da0986748334949bf161312461a5dfdd561a90"
+  },
+  "step_sha256": {
+    "segno_platform_front_ring.step": "7ff2b4be2b8ec54a768ec4671643b701a4a23c95666a2cda9ba3f148a2406f19",
+    "segno_platform_mid_ring.step": "c477574f8922ec892ace86250c3eca444f06888c9674f34c06974e6e81de05d7",
+    "segno_platform_sled.step": "0a4c2f498e9a92fe1f665f43f37312642b9ce64b3b2686fba48b9f0e7ef69f54",
+    "segno_screen16_monitor.step": "31e9359b4781cb18f1594ac9f6a5f0144c5da5ced9b5b4a2d0f340e1bf27ccc0",
+    "segno_screen16_portclear.step": "71a5d7bb98e9bf2afeadadb16082bd9b804322e46bd7350166f33e629505570f",
+    "segno_screen16_stand_L.step": "346203eb35c11a5ed54f91d636ea6bd0461d107a68bf9bca8d684671c083f2bc",
+    "segno_screen16_stand_R.step": "41ff350c612182e2e77382cd5b9f22409495cfd6266a87c0ea1f40dbcb059494",
+    "segno_screen7_tower.step": "cb49550cb7b55f2dc728da8187716666f781a9e6e398d3ee68ef1a7519a7b292"
+  },
+  "console_supports": {
+    "normal_relief_mm": 0.15,
+    "equivalent_vertical_cutter_drop_mm": 0.15364088200678308,
+    "cases": [
+      {
+        "path": "platforms:1+platform_front_v375:1",
+        "bare_lid_distance_mm": 0.1799983667777161,
+        "coated_cases": [
+          {
+            "qside_mm": 0.12,
+            "qrear_mm": 0.12,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.10236810194144733
+          },
+          {
+            "qside_mm": 0.12,
+            "qrear_mm": 0.2,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.10236810194140956
+          },
+          {
+            "qside_mm": 0.2,
+            "qrear_mm": 0.12,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.18236810200216005
+          },
+          {
+            "qside_mm": 0.2,
+            "qrear_mm": 0.2,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.1823681019414424
+          }
+        ]
+      },
+      {
+        "path": "platforms:1+platform_mid_ring:1",
+        "bare_lid_distance_mm": 0.17957127878780932,
+        "coated_cases": [
+          {
+            "qside_mm": 0.12,
+            "qrear_mm": 0.12,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.10194101395151973
+          },
+          {
+            "qside_mm": 0.12,
+            "qrear_mm": 0.2,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.10194101395150586
+          },
+          {
+            "qside_mm": 0.2,
+            "qrear_mm": 0.12,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.18194101400466176
+          },
+          {
+            "qside_mm": 0.2,
+            "qrear_mm": 0.2,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.18194101395151482
+          }
+        ]
+      },
+      {
+        "path": "platforms:1+platform_sled_v375:1",
+        "bare_lid_distance_mm": 0.1801344357843709,
+        "coated_cases": [
+          {
+            "qside_mm": 0.12,
+            "qrear_mm": 0.12,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.10250417094810695
+          },
+          {
+            "qside_mm": 0.12,
+            "qrear_mm": 0.2,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.10250417094810135
+          },
+          {
+            "qside_mm": 0.2,
+            "qrear_mm": 0.12,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.18250417094808932
+          },
+          {
+            "qside_mm": 0.2,
+            "qrear_mm": 0.2,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.18250417094809107
+          }
+        ]
+      },
+      {
+        "path": "platforms:1+platform_sled_v375:2",
+        "bare_lid_distance_mm": 0.18013443578437766,
+        "coated_cases": [
+          {
+            "qside_mm": 0.12,
+            "qrear_mm": 0.12,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.10250417094810887
+          },
+          {
+            "qside_mm": 0.12,
+            "qrear_mm": 0.2,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.10250417094810887
+          },
+          {
+            "qside_mm": 0.2,
+            "qrear_mm": 0.12,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.18250417094809782
+          },
+          {
+            "qside_mm": 0.2,
+            "qrear_mm": 0.2,
+            "overlap_mm3": 0.0,
+            "distance_mm": 0.18250417094809782
+          }
+        ]
+      }
+    ],
+    "sled_all_8_insert_cylinders_preserved": true,
+    "smallest_painted_clearance_mm": 0.10194101395150586
+  },
+  "screens": {
+    "setback_normal_mm": 0.2,
+    "module_delta_mm": [
+      -0.0,
+      0.043281931010536845,
+      -0.19526052967253554
+    ],
+    "parts": {
+      "segno_screen7_tower": {
+        "valid": true,
+        "floor_contact_faces_exact": true,
+        "floor_anchor_cylinders_exact": 6,
+        "removed_volume_mm3": 46.64636766840704,
+        "boss_top_normal_heights_mm": [
+          72.29455295083832,
+          72.29455295083832,
+          72.29455295083807,
+          72.29455295083807
+        ]
+      },
+      "segno_screen16_stand_L": {
+        "valid": true,
+        "floor_contact_faces_exact": true,
+        "floor_anchor_cylinders_exact": 4,
+        "removed_volume_mm3": 527.5538273846032,
+        "monitor_contact_overlap_mm3": 0.0,
+        "distance_to_measured_monitor_mm": 2.8546491033670735e-12
+      },
+      "segno_screen16_stand_R": {
+        "valid": true,
+        "floor_contact_faces_exact": true,
+        "floor_anchor_cylinders_exact": 4,
+        "removed_volume_mm3": 527.553827384545,
+        "monitor_contact_overlap_mm3": 0.0,
+        "distance_to_measured_monitor_mm": 2.8546491033670735e-12
+      }
+    },
+    "coated_display_checks": [
+      {
+        "screen": "screen7",
+        "qside_mm": 0.12,
+        "qrear_mm": 0.12,
+        "overlap_mm3": 0.0,
+        "minimum_distance_mm": 0.12240675738967585
+      },
+      {
+        "screen": "screen7",
+        "qside_mm": 0.12,
+        "qrear_mm": 0.2,
+        "overlap_mm3": 0.0,
+        "minimum_distance_mm": 0.12240675738967585
+      },
+      {
+        "screen": "screen7",
+        "qside_mm": 0.2,
+        "qrear_mm": 0.12,
+        "overlap_mm3": 0.0,
+        "minimum_distance_mm": 0.2024067573896725
+      },
+      {
+        "screen": "screen7",
+        "qside_mm": 0.2,
+        "qrear_mm": 0.2,
+        "overlap_mm3": 0.0,
+        "minimum_distance_mm": 0.2024067573896725
+      },
+      {
+        "screen": "screen16",
+        "qside_mm": 0.12,
+        "qrear_mm": 0.12,
+        "overlap_mm3": 0.0,
+        "minimum_distance_mm": 0.1223697351411076
+      },
+      {
+        "screen": "screen16",
+        "qside_mm": 0.12,
+        "qrear_mm": 0.2,
+        "overlap_mm3": 0.0,
+        "minimum_distance_mm": 0.12236973514105368
+      },
+      {
+        "screen": "screen16",
+        "qside_mm": 0.2,
+        "qrear_mm": 0.12,
+        "overlap_mm3": 0.0,
+        "minimum_distance_mm": 0.20236973514113044
+      },
+      {
+        "screen": "screen16",
+        "qside_mm": 0.2,
+        "qrear_mm": 0.2,
+        "overlap_mm3": 0.0,
+        "minimum_distance_mm": 0.2023697351410765
+      }
+    ],
+    "post_felt_gap_mm": [
+      0.9247394703274641,
+      1.1628436821964785
+    ]
+  },
+  "mini_preservation": {
+    "segno_mini_console_assembly.step": {
+      "geometry_payload_identical": true,
+      "geometry_sha256": "4a4e87dd26d84195bf3e2ab0a537acaf6ae3eef80f913cb5702c60786dd15c12",
+      "comparison": "STEP DATA section"
+    },
+    "segno_mini_console_lid.step": {
+      "geometry_payload_identical": true,
+      "geometry_sha256": "bdebf6720381ebb601995da579ea95b76774735ae8d18910a99dad3486324629",
+      "comparison": "STEP DATA section"
+    },
+    "segno_mini_console_lid.stl": {
+      "geometry_payload_identical": true,
+      "geometry_sha256": "ca0b58791d4f508806123a80277faf542b6c89e94cc5fb7f7162c5714bfec872",
+      "comparison": "entire binary STL"
+    },
+    "segno_mini_console_sled.step": {
+      "geometry_payload_identical": true,
+      "geometry_sha256": "94569f2e45d5bf215107742aac369a08e7dc8ec0f9efa45797e020e8ecfbe271",
+      "comparison": "STEP DATA section"
+    },
+    "segno_mini_console_sled.stl": {
+      "geometry_payload_identical": true,
+      "geometry_sha256": "9aabfef4ea285b3a776867780786aecd2ac8f75dda2b504dfe5d920010f7778d",
+      "comparison": "entire binary STL"
+    },
+    "segno_mini_console_tray.step": {
+      "geometry_payload_identical": true,
+      "geometry_sha256": "2a94037b94a9e3d3c8ed11da7af89c5b189761922a6dc9c3051a92490c4250f6",
+      "comparison": "STEP DATA section"
+    },
+    "segno_mini_console_tray.stl": {
+      "geometry_payload_identical": true,
+      "geometry_sha256": "b08fd06ab12a2af9aead7894894e8301761ec17e2bd0eadfcc72df34fd607d4b",
+      "comparison": "entire binary STL"
+    }
+  },
+  "tests": {
+    "test_coated_supports.py": {
+      "passed": 3,
+      "coverage": "All20 actual console collar/sled occurrences at four independent side/rear coating-seat extremes; all14 screen floor anchors and complete bottom faces; all8 full sled insert-cylinder walls; both15.6-inch monitor/support contacts and coated lid fit"
+    },
+    "test_screen7_adjustment.py": {
+      "passed": 1,
+      "coverage": "Four measured7-inch module tab stations,7.80mm boss seats, six unchanged floor stations and printed fit jig"
+    },
+    "test_mini_sled_retention.py": {
+      "passed": 4
+    }
+  }
+}

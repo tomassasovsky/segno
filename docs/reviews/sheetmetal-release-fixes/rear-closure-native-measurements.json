@@ -1,0 +1,30 @@
+[
+  {
+    "doc": "VAMP sheet metal",
+    "side": "right",
+    "minimum_distance_mm": 0.050001126646961325,
+    "side_y_mm": 418.8608408853628,
+    "face_area_mm2": 160.59809545829106
+  },
+  {
+    "doc": "VAMP sheet metal",
+    "side": "left",
+    "minimum_distance_mm": 0.050001126646961325,
+    "side_y_mm": 418.8608408853628,
+    "face_area_mm2": 160.59809545827753
+  },
+  {
+    "doc": "VAMP console (populated)",
+    "side": "right",
+    "minimum_distance_mm": 0.050001126646961325,
+    "side_y_mm": 418.8608408853628,
+    "face_area_mm2": 160.59809545829106
+  },
+  {
+    "doc": "VAMP console (populated)",
+    "side": "left",
+    "minimum_distance_mm": 0.050001126646961325,
+    "side_y_mm": 418.8608408853628,
+    "face_area_mm2": 160.59809545827753
+  }
+]

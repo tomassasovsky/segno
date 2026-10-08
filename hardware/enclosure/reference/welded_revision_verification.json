@@ -1,0 +1,425 @@
+{
+  "date": "2026-09-14",
+  "status": "digital_geometry_verified_fabrication_held",
+  "source_baseline": "43c94a27",
+  "tests": {
+    "modules": 14,
+    "passed": 126
+  },
+  "documents": [
+    {
+      "name": "VAMP sheet metal",
+      "reopened_version": 158,
+      "occurrences": 42,
+      "parts": [
+        {
+          "part": "base",
+          "volume_cm3": 945.3259296443288,
+          "matrix": [
+            -1.0,
+            0.0,
+            0.0,
+            84.8,
+            0.0,
+            0.0,
+            1.0,
+            0.2,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "part": "faceplate",
+          "volume_cm3": 403.11269257546473,
+          "matrix": [
+            -1.0,
+            0.0,
+            0.0,
+            84.99,
+            0.0,
+            0.21640965505268422,
+            0.9763026483626777,
+            1.1080466062875105,
+            0.0,
+            0.9763026483626777,
+            -0.21640965505268422,
+            -1.5299694631998793,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "part": "ring_disc_51_5",
+          "volume_cm3": 3.9188226760880767,
+          "matrix": [
+            -1.0,
+            0.0,
+            0.0,
+            72.83999999999999,
+            0.0,
+            0.21640965505268422,
+            0.9763026483626777,
+            6.155152904679052,
+            0.0,
+            0.9763026483626777,
+            -0.21640965505268422,
+            22.16355265189212,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "part": "front_shim_pack",
+          "volume_cm3": 0.027810163567741443,
+          "matrix": [
+            -1.0,
+            0.0,
+            0.0,
+            82.95714285714286,
+            0.0,
+            -1.0,
+            0.0,
+            0.6455420442681393,
+            0.0,
+            0.0,
+            1.0,
+            -0.3010840885362787,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "part": "lid_rear_washer_M3_OD12",
+          "volume_cm3": 0.10505485833604719,
+          "matrix": [
+            -1.0,
+            0.0,
+            0.0,
+            82.95714285714286,
+            0.0,
+            -0.41380297756786516,
+            0.9103664623413854,
+            9.62324797813871,
+            0.0,
+            0.9103664623413854,
+            0.41380297756786516,
+            40.765363452743394,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        }
+      ]
+    },
+    {
+      "name": "VAMP console (populated)",
+      "reopened_version": 386,
+      "occurrences": 434,
+      "parts": [
+        {
+          "part": "base",
+          "volume_cm3": 945.3259296443285,
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.2,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "part": "faceplate",
+          "volume_cm3": 403.1126925754643,
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            -0.19,
+            0.0,
+            0.9763026483626777,
+            -0.21640965505268422,
+            -1.5299694631998793,
+            0.0,
+            0.21640965505268422,
+            0.9763026483626777,
+            1.1080466062875105,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "part": "ring_disc_51_5",
+          "volume_cm3": 3.9188226760880767,
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            11.957,
+            0.0,
+            0.9763026483626777,
+            -0.21640965505268422,
+            22.163064984623386,
+            0.0,
+            0.21640965505268422,
+            0.9763026483626777,
+            6.155044527551475,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "part": "front_shim_pack",
+          "volume_cm3": 0.027810163567741443,
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            1.842857142857143,
+            0.0,
+            0.0,
+            1.0,
+            -0.3010840885362787,
+            0.0,
+            -1.0,
+            0.0,
+            0.6455420442681393,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "part": "lid_rear_washer_M3_OD12",
+          "volume_cm3": 0.10505485833604719,
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            1.8428571428571403,
+            0.0,
+            0.9103664623413853,
+            0.4138029775678651,
+            40.76536345274339,
+            0.0,
+            -0.4138029775678651,
+            0.9103664623413853,
+            9.623247978138712,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        }
+      ]
+    }
+  ],
+  "export_comparison": [
+    {
+      "doc": "sheet-metal",
+      "part": "base",
+      "matching_faces": 580,
+      "matching_vertices": 1130,
+      "volume_mm3": 945323.6626077442,
+      "flat": {
+        "matched_reference_holes": 308,
+        "missing_area_mm2": 0.0006182400114855824,
+        "extra_area_mm2": 0.0003091200063014554,
+        "area_tolerance_mm2": 0.01
+      }
+    },
+    {
+      "doc": "sheet-metal",
+      "part": "faceplate",
+      "matching_faces": 164,
+      "matching_vertices": 308,
+      "volume_mm3": 403112.69257543696
+    },
+    {
+      "doc": "populated",
+      "part": "base",
+      "matching_faces": 580,
+      "matching_vertices": 1130,
+      "volume_mm3": 945323.6626077462,
+      "flat": {
+        "matched_reference_holes": 308,
+        "missing_area_mm2": 0.000618240011483806,
+        "extra_area_mm2": 0.00030912000519656146,
+        "area_tolerance_mm2": 0.01
+      }
+    },
+    {
+      "doc": "populated",
+      "part": "faceplate",
+      "matching_faces": 164,
+      "matching_vertices": 308,
+      "volume_mm3": 403112.6925754368,
+      "flat": {
+        "matched_reference_holes": 47,
+        "missing_area_mm2": 0.0,
+        "extra_area_mm2": 0.0,
+        "area_tolerance_mm2": 0.01
+      }
+    }
+  ],
+  "preservation": {
+    "sheet-metal": {
+      "starting_occurrences": 44,
+      "final_occurrences": 42,
+      "unchanged_transforms": 14,
+      "intended_moved_occurrences": [
+        "front_shim_pack:6",
+        "lid_washer_M3_OD7:4",
+        "lid_washer_M3_OD7:3",
+        "lid_washer_M3_OD7:7",
+        "front_shim_pack:9",
+        "front_shim_pack:1",
+        "lid_washer_M3_OD7:8",
+        "lid_washer_M3_OD7:1",
+        "front_shim_pack:2",
+        "front_shim_pack:5",
+        "front_shim_pack:7",
+        "front_shim_pack:4",
+        "lid_washer_M3_OD7:2",
+        "lid_washer_M3_OD7:6",
+        "lid_washer_M3_OD7:5",
+        "lid_washer_M3_OD7:9",
+        "front_shim_pack:8",
+        "front_shim_pack:3",
+        "faceplate:1"
+      ],
+      "removed_occurrences": [
+        "corner_bracket:2",
+        "corner_bracket_mirrored:1",
+        "lid_washer_M3_OD7:10",
+        "lid_washer_M3_OD7:11",
+        "lid_washer_M3_OD7:12",
+        "lid_washer_M3_OD7:13",
+        "lid_washer_M3_OD7:14",
+        "lid_washer_M3_OD7:15",
+        "lid_washer_M3_OD7:16",
+        "lid_washer_M3_OD7:17",
+        "lid_washer_M3_OD7:18"
+      ],
+      "added_occurrences": [
+        "lid_rear_washer_M3_OD12:1",
+        "lid_rear_washer_M3_OD12:2",
+        "lid_rear_washer_M3_OD12:3",
+        "lid_rear_washer_M3_OD12:4",
+        "lid_rear_washer_M3_OD12:5",
+        "lid_rear_washer_M3_OD12:6",
+        "lid_rear_washer_M3_OD12:7",
+        "lid_rear_washer_M3_OD12:8",
+        "lid_rear_washer_M3_OD12:9"
+      ]
+    },
+    "populated": {
+      "starting_occurrences": 436,
+      "final_occurrences": 434,
+      "unchanged_transforms": 388,
+      "intended_moved_occurrences": [
+        "front_shim_pack:2",
+        "front_shim_pack:4",
+        "fasteners:1+lid_washer_M3_OD7:9",
+        "fasteners:1+lid_washer_M3_OD7:7",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:11",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:4",
+        "front_shim_pack:6",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:17",
+        "front_shim_pack:5",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:15",
+        "front_shim_pack:7",
+        "front_shim_pack:3",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:7",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:13",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:3",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:9",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:16",
+        "front_shim_pack:9",
+        "fasteners:1+lid_washer_M3_OD7:6",
+        "faceplate:1",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:1",
+        "fasteners:1+lid_washer_M3_OD7:1",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:5",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:6",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:12",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:10",
+        "fasteners:1+lid_washer_M3_OD7:3",
+        "front_shim_pack:8",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:14",
+        "fasteners:1+lid_washer_M3_OD7:5",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:8",
+        "front_shim_pack:1",
+        "fasteners:1+lid_washer_M3_OD7:8",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:2",
+        "fasteners:1+lid_washer_M3_OD7:2",
+        "fasteners:1+Hexagon Socket Button Head Screw ISO 7380-1 - M3 x 8 Steel 4.6 Black:18",
+        "fasteners:1+lid_washer_M3_OD7:4"
+      ],
+      "removed_occurrences": [
+        "corner_bracket:1",
+        "corner_bracket_mirrored:1",
+        "fasteners:1+lid_washer_M3_OD7:10",
+        "fasteners:1+lid_washer_M3_OD7:11",
+        "fasteners:1+lid_washer_M3_OD7:12",
+        "fasteners:1+lid_washer_M3_OD7:13",
+        "fasteners:1+lid_washer_M3_OD7:14",
+        "fasteners:1+lid_washer_M3_OD7:15",
+        "fasteners:1+lid_washer_M3_OD7:16",
+        "fasteners:1+lid_washer_M3_OD7:17",
+        "fasteners:1+lid_washer_M3_OD7:18"
+      ],
+      "added_occurrences": [
+        "fasteners:1+lid_rear_washer_M3_OD12:1",
+        "fasteners:1+lid_rear_washer_M3_OD12:2",
+        "fasteners:1+lid_rear_washer_M3_OD12:3",
+        "fasteners:1+lid_rear_washer_M3_OD12:4",
+        "fasteners:1+lid_rear_washer_M3_OD12:5",
+        "fasteners:1+lid_rear_washer_M3_OD12:6",
+        "fasteners:1+lid_rear_washer_M3_OD12:7",
+        "fasteners:1+lid_rear_washer_M3_OD12:8",
+        "fasteners:1+lid_rear_washer_M3_OD12:9"
+      ]
+    }
+  },
+  "package": {
+    "name": "segno_sheetmetal.zip",
+    "metal_parts": 5,
+    "files": 15
+  },
+  "holds": [
+    "structural issue #1019 including welded corner effects",
+    "welder joint preparation and distortion control",
+    "post-weld prepaint front fitting and drilling provider",
+    "purchased washer, nonparallel joint and printed fit qualification",
+    "stock, tooling and coating capability confirmation"
+  ]
+}

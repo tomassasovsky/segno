@@ -1,0 +1,45 @@
+{
+  "date": "2026-09-05",
+  "status": "Prepared for shop review; not released for cutting",
+  "files": {
+    "segno_rear_panel.dxf": "2e245f77276e0386d02d57361c8ef2b753f11b4bd3c799dca80721480f1eed6f",
+    "segno_rear_panel.pdf": "4bd71dc24af914121734bcf6c8eb295464457d0698659b6bebb95e37b98b78e1",
+    "segno_rear_panel.step": "43aca478949f3b303b759c662be4abf4abfe8c1aaeda89fe8ddb0dc0b7246e4a",
+    "segno_assembly.step": "0734dbdbc0b7d6173ed7ae905ac7709d88a8bf038ff6d1f8447be77c8097295f",
+    "segno_paint_quote.pdf": "0bc461ad7498294984f57b16f9e52dd422d3a0d1c56bf9931d14f6b534681f62"
+  },
+  "packages": [
+    {
+      "file": "segno_3dprint.zip",
+      "members": 36,
+      "sha256": "44fd8ca845ceb75e0cc667ae5b8e6003b551812b18001a34fac1a2fc7a69b3b2"
+    },
+    {
+      "file": "segno_overlay.zip",
+      "members": 2,
+      "sha256": "ac4dfaf1807d7c6728b735e00111add59d6763a9f09d5cb0db1c672f7882ba0d"
+    },
+    {
+      "file": "segno_pedal_tiles.zip",
+      "members": 22,
+      "sha256": "8d878ddcf7236bf7a7a1babf2024e42141c5b5322d4d9bf01f591b05ebb5088a"
+    },
+    {
+      "file": "segno_pintura.zip",
+      "members": 7,
+      "sha256": "8ebb72a24a5a230ae919808a884e7d97d3b4ae9c3d22f4185695b489054995b0"
+    },
+    {
+      "file": "segno_sheetmetal.zip",
+      "members": 12,
+      "sha256": "3d837e286084715263758776efb7f8ef127707b491a1c8143d5228ace1159440"
+    },
+    {
+      "file": "segno_sheetmetal_step.zip",
+      "members": 7,
+      "sha256": "7eb633dcd32e925eae5a26c8f45edf34e54dd9ef99a0b4a13cfae658d734dd6e"
+    }
+  ],
+  "verification": "Full generation passed freshness, geometry and drawing gates. Metadata-only output rewrites were compared to the pre-panel-change files and restored when geometry/content was identical; unchanged PDFs matched rendered pixels. Archive membership was preserved and every final archive member was checked byte-for-byte against its output file. Rear-panel drawing (1 page), paint quote (4 pages) and shop review (2 pages) rendered and visually inspected.",
+  "owner_clarification": "Additional review PDF withdrawn; use short text drafts for separate metal and painting suppliers. Historical seven-page QA included the withdrawn form. Technical PDFs and vendor package bytes are unchanged."
+}

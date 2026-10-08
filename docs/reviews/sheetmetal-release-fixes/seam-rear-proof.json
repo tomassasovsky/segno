@@ -1,0 +1,777 @@
+{
+  "units": "mm; occurrence matrices in cm",
+  "scope": "Actual recorded populated occurrence matrices and actual exported component-local solids. Folded source/native flat parity is a separate gate.",
+  "snapshot": {
+    "occurrences": 423,
+    "bodies": 973,
+    "empty_visible_leaf_occurrences": [],
+    "sha256": "5f45cbabd5597963de3518ecd49e7b3527eb76ff33baa59c5c3d1e6175671458"
+  },
+  "rivet_registration_limit_mm": 0.011,
+  "rivet_registration_note": "Preexisting wall-seat clearances offset the rear axes by0.010840885mm and side axes by0.010000mm. Current profiles preserve all five existing stations; these are not mathematically coaxial axes. Confirm physical fit before riveting.",
+  "brackets": [
+    {
+      "source_stem": "segno_corner_bracket_rear",
+      "recorded_component": "corner_bracket",
+      "component_id": "09c07514-2dd1-45d0-9204-3cc7303bf916",
+      "actual_matrix_cm": [
+        1.0,
+        0.0,
+        0.0,
+        83.19891591146371,
+        0.0,
+        0.0,
+        -1.0,
+        41.69008408853628,
+        0.0,
+        1.0,
+        0.0,
+        0.4,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "old_pose_times_frame_correction_max_error": 0.0,
+      "valid": true,
+      "solid_count": 1,
+      "step_volume_mm3": 3950.474747967635,
+      "native_volume_mm3": 3950.5221077736924,
+      "volume_difference_mm3": -0.04735980605755685,
+      "world_bounds_mm": [
+        [
+          831.9891591146371,
+          404.99,
+          3.9999999
+        ],
+        [
+          845.9000000999998,
+          418.90084098536283,
+          87.0000001
+        ]
+      ],
+      "native_world_bounds_mm": [
+        [
+          831.9891591146371,
+          404.99,
+          4.0
+        ],
+        [
+          845.8999999999999,
+          418.90084088536287,
+          87.00000000000001
+        ]
+      ],
+      "max_bounds_error_mm": 9.999999983634211e-08,
+      "base_intersection_mm3": 0.0,
+      "lid_intersection_mm3": 0.0,
+      "minimum_lid_distance_mm": 2.45787021722559,
+      "rivet_axes": [
+        {
+          "bracket": {
+            "point": [
+              835.9891591146371,
+              416.9008408853628,
+              44.0
+            ],
+            "axis": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "radius": 1.65
+          },
+          "matched_base": {
+            "point": [
+              836.0,
+              418.910841992795,
+              43.9999999820475
+            ],
+            "axis": [
+              0.0,
+              0.9999999999999998,
+              -2.6794884594619993e-08
+            ],
+            "radius": 1.65000000000006
+          },
+          "axis_offset_mm": 0.0108408853628965,
+          "base_index": 8
+        },
+        {
+          "bracket": {
+            "point": [
+              835.9891591146371,
+              416.9008408853628,
+              12.0
+            ],
+            "axis": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "radius": 1.65
+          },
+          "matched_base": {
+            "point": [
+              836.0,
+              418.910841135359,
+              11.99999998204743
+            ],
+            "axis": [
+              0.0,
+              0.9999999999999998,
+              -2.6794884594619993e-08
+            ],
+            "radius": 1.65000000000006
+          },
+          "axis_offset_mm": 0.0108408853628965,
+          "base_index": 0
+        },
+        {
+          "bracket": {
+            "point": [
+              835.9891591146371,
+              416.9008408853628,
+              76.0
+            ],
+            "axis": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "radius": 1.65
+          },
+          "matched_base": {
+            "point": [
+              836.0,
+              418.910842850232,
+              75.9999999820474
+            ],
+            "axis": [
+              0.0,
+              0.9999999999999998,
+              -2.6794884594619993e-08
+            ],
+            "radius": 1.65000000000006
+          },
+          "axis_offset_mm": 0.0108408853628965,
+          "base_index": 1
+        },
+        {
+          "bracket": {
+            "point": [
+              843.8999999999999,
+              408.99,
+              60.0
+            ],
+            "axis": [
+              1.0,
+              -3.82856869892695e-16,
+              0.0
+            ],
+            "radius": 1.65
+          },
+          "matched_base": {
+            "point": [
+              845.910842421515,
+              409.0,
+              59.9999999820475
+            ],
+            "axis": [
+              0.9999999999999998,
+              0.0,
+              -2.6794913016329394e-08
+            ],
+            "radius": 1.65000000000006
+          },
+          "axis_offset_mm": 0.01000000000000779,
+          "base_index": 3
+        },
+        {
+          "bracket": {
+            "point": [
+              843.8999999999999,
+              408.99,
+              28.0
+            ],
+            "axis": [
+              1.0,
+              -3.82856869892695e-16,
+              0.0
+            ],
+            "radius": 1.65
+          },
+          "matched_base": {
+            "point": [
+              845.910841564078,
+              409.0,
+              27.9999999820475
+            ],
+            "axis": [
+              0.9999999999999998,
+              0.0,
+              -2.6794913016329394e-08
+            ],
+            "radius": 1.65000000000006
+          },
+          "axis_offset_mm": 0.01000000000000779,
+          "base_index": 4
+        }
+      ],
+      "neighbor_bounds": [
+        "faceplate:1 / Body1",
+        "base:1 / Body1"
+      ],
+      "step_sha256": "03ae39fe4f1da29896fd1f7eae58e6aec43d8fd277ea2292b3eedf638c5c5358"
+    },
+    {
+      "source_stem": "segno_corner_bracket_rear_mirrored",
+      "recorded_component": "corner_bracket_mirrored",
+      "component_id": "33489fbd-024e-4c18-9312-0db292fb2718",
+      "actual_matrix_cm": [
+        -1.0,
+        0.0,
+        0.0,
+        1.4010840885362796,
+        0.0,
+        0.0,
+        -1.0,
+        41.69008408853628,
+        0.0,
+        -1.0,
+        0.0,
+        8.4,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "old_pose_times_frame_correction_max_error": 2.220446049250313e-16,
+      "valid": true,
+      "solid_count": 1,
+      "step_volume_mm3": 3950.4747479676357,
+      "native_volume_mm3": 3950.5221077736924,
+      "volume_difference_mm3": -0.04735980605664736,
+      "world_bounds_mm": [
+        [
+          0.09999989999999609,
+          404.99,
+          3.9999999
+        ],
+        [
+          14.010840885362796,
+          418.90084098536283,
+          87.0000001
+        ]
+      ],
+      "native_world_bounds_mm": [
+        [
+          0.10000000000000453,
+          404.99,
+          4.0000000000000036
+        ],
+        [
+          14.010840885362796,
+          418.90084088536287,
+          87.00000000000001
+        ]
+      ],
+      "max_bounds_error_mm": 1.0000000844057055e-07,
+      "base_intersection_mm3": 0.0,
+      "lid_intersection_mm3": 0.0,
+      "minimum_lid_distance_mm": 2.45787021722559,
+      "rivet_axes": [
+        {
+          "bracket": {
+            "point": [
+              10.010840885362796,
+              416.9008408853628,
+              76.0
+            ],
+            "axis": [
+              -0.0,
+              1.0,
+              0.0
+            ],
+            "radius": 1.65
+          },
+          "matched_base": {
+            "point": [
+              10.0,
+              418.910842850232,
+              75.9999999820474
+            ],
+            "axis": [
+              0.0,
+              0.9999999999999998,
+              -2.6794884594619993e-08
+            ],
+            "radius": 1.65
+          },
+          "axis_offset_mm": 0.010840885362811236,
+          "base_index": 7
+        },
+        {
+          "bracket": {
+            "point": [
+              2.099999999999996,
+              408.99,
+              60.0
+            ],
+            "axis": [
+              -1.0,
+              -3.82856869892695e-16,
+              0.0
+            ],
+            "radius": 1.65
+          },
+          "matched_base": {
+            "point": [
+              0.089157578485791,
+              409.0,
+              59.9999999820474
+            ],
+            "axis": [
+              -0.9999999999999998,
+              0.0,
+              -2.6794896585028593e-08
+            ],
+            "radius": 1.65
+          },
+          "axis_offset_mm": 0.01000000000000779,
+          "base_index": 5
+        },
+        {
+          "bracket": {
+            "point": [
+              10.010840885362796,
+              416.9008408853628,
+              12.0
+            ],
+            "axis": [
+              -0.0,
+              1.0,
+              0.0
+            ],
+            "radius": 1.65
+          },
+          "matched_base": {
+            "point": [
+              10.0,
+              418.910841135359,
+              11.99999998204743
+            ],
+            "axis": [
+              0.0,
+              0.9999999999999998,
+              -2.6794884594619993e-08
+            ],
+            "radius": 1.65
+          },
+          "axis_offset_mm": 0.010840885362811236,
+          "base_index": 6
+        },
+        {
+          "bracket": {
+            "point": [
+              10.010840885362796,
+              416.9008408853628,
+              44.0
+            ],
+            "axis": [
+              -0.0,
+              1.0,
+              0.0
+            ],
+            "radius": 1.65
+          },
+          "matched_base": {
+            "point": [
+              10.0,
+              418.910841992795,
+              43.9999999820475
+            ],
+            "axis": [
+              0.0,
+              0.9999999999999998,
+              -2.6794884594619993e-08
+            ],
+            "radius": 1.65
+          },
+          "axis_offset_mm": 0.010840885362811236,
+          "base_index": 2
+        },
+        {
+          "bracket": {
+            "point": [
+              2.099999999999996,
+              408.99,
+              28.0
+            ],
+            "axis": [
+              -1.0,
+              -3.82856869892695e-16,
+              0.0
+            ],
+            "radius": 1.65
+          },
+          "matched_base": {
+            "point": [
+              0.0891584359224817,
+              409.0,
+              27.9999999820474
+            ],
+            "axis": [
+              -0.9999999999999998,
+              0.0,
+              -2.6794896585028593e-08
+            ],
+            "radius": 1.65
+          },
+          "axis_offset_mm": 0.01000000000000779,
+          "base_index": 9
+        }
+      ],
+      "neighbor_bounds": [
+        "faceplate:1 / Body1",
+        "base:1 / Body1"
+      ],
+      "step_sha256": "326dab512a05ff20245e03c57d5ec9888b0446aa1095073c5c021192bf1b1cb4"
+    }
+  ],
+  "vsm_snapshot": {
+    "sha256": "adbbde0163925508aa8d89d1f878c26c7932497cc37c36ea9492854ad1168bcf",
+    "brackets": [
+      {
+        "component": "corner_bracket",
+        "component_id": "7c90fea8-9929-4e52-b2fc-d53736471ae9",
+        "actual_matrix_cm": [
+          -1.0,
+          0.0,
+          0.0,
+          1.6010840885362825,
+          0.0,
+          1.0,
+          0.0,
+          0.4,
+          0.0,
+          0.0,
+          -1.0,
+          41.69008408853628,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "mapped_pop_matrix_cm": [
+          1.0,
+          0.0,
+          0.0,
+          83.19891591146371,
+          0.0,
+          0.0,
+          -1.0,
+          41.69008408853628,
+          0.0,
+          1.0,
+          0.0,
+          0.4,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "max_pop_matrix_error": 0.0,
+        "valid": true,
+        "solids": 1,
+        "base_intersection_mm3": 0.0,
+        "lid_intersection_mm3": 0.0,
+        "all_five_rivet_axis_offsets_mm": [
+          0.0108408853628965,
+          0.01000000000000779,
+          0.0108408853628965,
+          0.0108408853628965,
+          0.01000000000000779
+        ],
+        "max_mapped_bounds_difference_from_pop_mm": 0.0,
+        "step_sha256": "45b15a3177fe0ff34a09fb957a60dabb281d5d5d7aee3c754745888e6227dc91"
+      },
+      {
+        "component": "corner_bracket_mirrored",
+        "component_id": "1d52b056-89ee-4a2d-8b3a-e480cc339aab",
+        "actual_matrix_cm": [
+          1.0,
+          0.0,
+          0.0,
+          83.39891591146372,
+          0.0,
+          -1.0,
+          0.0,
+          8.4,
+          0.0,
+          0.0,
+          -1.0,
+          41.69008408853628,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "mapped_pop_matrix_cm": [
+          -1.0,
+          0.0,
+          0.0,
+          1.4010840885362796,
+          0.0,
+          0.0,
+          -1.0,
+          41.69008408853628,
+          0.0,
+          -1.0,
+          0.0,
+          8.4,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "max_pop_matrix_error": 0.0,
+        "valid": true,
+        "solids": 1,
+        "base_intersection_mm3": 0.0,
+        "lid_intersection_mm3": 0.0,
+        "all_five_rivet_axis_offsets_mm": [
+          0.010840885362811236,
+          0.010840885362811236,
+          0.010840885362811236,
+          0.01000000000000779,
+          0.01000000000000779
+        ],
+        "max_mapped_bounds_difference_from_pop_mm": 0.0,
+        "step_sha256": "591cf9fb4a1b34ce3c8cbcc327b064ca231b12a1e42caa2897a378a44ddbd507"
+      }
+    ]
+  },
+  "ridge": {
+    "valid": true,
+    "solids": 1,
+    "old_lid_intersection": 5.519205387623515,
+    "new_lid_intersection": 5.519205387175755,
+    "new_only_contact": 0.0,
+    "old_only_contact": 0.0,
+    "old_volume": 936682.4955650396,
+    "new_volume": 936696.3846807908,
+    "native_volume_delta": 13.889115751255304,
+    "boolean_limit": "Direct full-body subtraction on separately exported coincident sheets returned the full candidate; that result is not used as an added-material proof. Separately constructed canonical ridge patches each have zero lid intersection, and old/new native contact regions have zero symmetric difference.",
+    "profile_world_y_z_bulge": [
+      [
+        391.9204978945836,
+        98.99034496806524,
+        0.0
+      ],
+      [
+        394.12764278120886,
+        99.47958615200233,
+        -0.16260144785333497
+      ],
+      [
+        395.19900420011044,
+        99.3674946614722,
+        0.0
+      ],
+      [
+        395.53025192633106,
+        99.21692751319011,
+        0.0
+      ],
+      [
+        394.82678692101905,
+        97.66930450150369,
+        0.0
+      ]
+    ],
+    "normal_bare_fit_mm": [
+      0.3,
+      0.4
+    ],
+    "coated_minimum_normal_clearance_mm": {
+      "lid": 0.21972695,
+      "fixed_return_tip": 0.1
+    }
+  },
+  "bracket_top_clearance": {
+    "analytic_extrema": [
+      {
+        "phi_rad": 0.0,
+        "outer_y": 418.90084088536275,
+        "world_top_z": 85.34,
+        "chassis_ceiling_z": 85.63395272038993,
+        "vertical_clearance": 0.2939527203899246
+      },
+      {
+        "phi_rad": 0.09405642064743687,
+        "outer_y": 418.8831607047391,
+        "world_top_z": 85.55015966629463,
+        "chassis_ceiling_z": 85.76578789858551,
+        "vertical_clearance": 0.21562823229088224
+      },
+      {
+        "phi_rad": 0.47445899755677534,
+        "outer_y": 418.4590009361135,
+        "world_top_z": 86.40013118414086,
+        "chassis_ceiling_z": 86.70035902015806,
+        "vertical_clearance": 0.30022783601719993
+      },
+      {
+        "phi_rad": 0.5552099711223895,
+        "outer_y": 418.3,
+        "world_top_z": 86.58056115947588,
+        "chassis_ceiling_z": 86.87301472776127,
+        "vertical_clearance": 0.2924535682853957
+      },
+      {
+        "phi_rad": 0.7429287504475459,
+        "outer_y": 417.84680317894606,
+        "world_top_z": 87.0,
+        "chassis_ceiling_z": 87.20165885710574,
+        "vertical_clearance": 0.20165885710574116
+      },
+      {
+        "phi_rad": 0.7821469051911001,
+        "outer_y": 417.73844899162236,
+        "world_top_z": 87.0,
+        "chassis_ceiling_z": 87.25491373967121,
+        "vertical_clearance": 0.2549137396712098
+      },
+      {
+        "phi_rad": 1.5707963267948966,
+        "outer_y": 414.90084088536275,
+        "world_top_z": 87.0,
+        "chassis_ceiling_z": 88.54473560615281,
+        "vertical_clearance": 1.5447356061528126
+      }
+    ],
+    "whole_top_min_vertical_clearance": 0.20165885710574116,
+    "rear_seam_top_vertical_relief_bounds": [
+      0.21562823229088224,
+      0.30022783601719993
+    ],
+    "direct_outline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        24.0,
+        0.0
+      ],
+      [
+        24.0,
+        83.0
+      ],
+      [
+        11.88703136155326,
+        83.0
+      ],
+      [
+        9.910840885362788,
+        81.34
+      ],
+      [
+        0.0,
+        81.34
+      ]
+    ],
+    "mirrored_outline": [
+      [
+        0.0,
+        -1.3400000000000034
+      ],
+      [
+        9.910840885362788,
+        -1.3400000000000034
+      ],
+      [
+        11.88703136155326,
+        -3.0
+      ],
+      [
+        24.0,
+        -3.0
+      ],
+      [
+        24.0,
+        80.0
+      ],
+      [
+        0.0,
+        80.0
+      ]
+    ],
+    "rivet_axes_unchanged": true,
+    "proof_scope": "Nominal native chassis surfaces. Outer bracket radius4 has maximum depth at each bend angle; chassis ceiling height decreases monotonically with depth, so outer radius bounds every radius2..4. Back rear leg ceiling85.633953 > top85.34; side leg ceiling at least88.544736 > top87.0. Existing0.010002 wall seating clearance stays unchanged. All new top material therefore remains below chassis; final native solid Boolean still required.",
+    "bare_fit_acceptance_vertical_mm": [
+      0.2,
+      0.4
+    ],
+    "actual_native_sampled_outer_edge_seam_vertical_mm": [
+      0.21899,
+      0.30333
+    ]
+  },
+  "native_flat_parity": {
+    "pop_corner_bracket": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "pop_corner_bracket_mirrored": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "vsm_corner_bracket": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    },
+    "vsm_corner_bracket_mirrored": {
+      "matched_reference_holes": 5,
+      "missing_area_mm2": 0.0,
+      "extra_area_mm2": 0.0,
+      "area_tolerance_mm2": 0.01
+    }
+  },
+  "pdf_visual_review": [
+    {
+      "file": "hardware/enclosure/out/segno_base.pdf",
+      "pdf_pages": 2,
+      "visually_reviewed_pages": [
+        1
+      ],
+      "sha256": "557173d7d1ee2635cf5c1fa66035587bbc16f3c0d9162346e8bdb1d802de4384",
+      "result": "pass: no clipping or overlap; correct part hand, quantity, blank dimensions, bend values, and functional-clearance notes"
+    },
+    {
+      "file": "hardware/enclosure/out/segno_corner_bracket_rear.pdf",
+      "pdf_pages": 1,
+      "visually_reviewed_pages": [
+        1
+      ],
+      "sha256": "73d59a82f8f41fc82b77de3de675f96476830a6ba2e4f01ba3d9d2a1b5791f1f",
+      "result": "pass: no clipping or overlap; correct part hand, quantity, blank dimensions, bend values, and functional-clearance notes"
+    },
+    {
+      "file": "hardware/enclosure/out/segno_corner_bracket_rear_mirrored.pdf",
+      "pdf_pages": 1,
+      "visually_reviewed_pages": [
+        1
+      ],
+      "sha256": "46a800caf03fa5d513944174aa28b23d24686c987dc25ee26fc8dd59c7c31daf",
+      "result": "pass: no clipping or overlap; correct part hand, quantity, blank dimensions, bend values, and functional-clearance notes"
+    }
+  ]
+}
