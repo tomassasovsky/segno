@@ -626,6 +626,8 @@ class MixSettingsCoordinator {
   }) {
     final confirmed = _repository.mixSettingsSnapshot;
     final state = outcome.isOk ? _repository.state : null;
+    // Levels are published apart from the state (#1301).
+    final levels = outcome.isOk ? _repository.meters : null;
     final trackPans = <int, Object?>{};
     final inputPans = <int, Object?>{};
     for (final target in targets) {
@@ -638,7 +640,10 @@ class MixSettingsCoordinator {
         trackPans[index] = {
           'requested': requested?.trackPans[index],
           'confirmed': confirmed.trackPans[index],
-          'trackPeaks': (left: track?.peakL, right: track?.peakR),
+          'trackPeaks': (
+            left: levels?.track(index).peakL,
+            right: levels?.track(index).peakR,
+          ),
           'effectiveLanePans': track?.lanes
               .map((lane) => lane.pan)
               .toList(growable: false),
@@ -647,9 +652,7 @@ class MixSettingsCoordinator {
         inputPans[index] = {
           'requested': requested?.inputSetup.panOf(index),
           'confirmed': confirmed.inputSetup.panOf(index),
-          'monitorPeak': state != null && index < state.monitorPeaks.length
-              ? state.monitorPeaks[index]
-              : null,
+          'monitorPeak': levels?.monitorPeak(index),
         };
       }
     }
@@ -662,8 +665,8 @@ class MixSettingsCoordinator {
       'backend=${state?.status.activeBackend.name} '
       'sampleRate=${state?.status.sampleRate} '
       'outputBus0=${state?.outputSetup.of(0)} '
-      'monitorPeaks=${state?.monitorPeaks} '
-      'outputPeaks=${state?.outputPeaks}',
+      'monitorPeaks=${levels?.monitorPeaks} '
+      'outputPeaks=${levels?.outputPeaks}',
     );
   }
 
