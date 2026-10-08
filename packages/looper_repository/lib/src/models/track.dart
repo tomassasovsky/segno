@@ -30,8 +30,8 @@ enum ArmTrigger {
 ///
 /// The scalar [volume]/[muted]/[inputMask]/[outputMask] fields mirror lane 0
 /// so existing single-lane callers (the channel strip, the routing graph) keep
-/// working; full per-lane state lives in [lanes]. [peak] is the exception: it
-/// is the whole track's mixed level, not lane 0's (#655).
+/// working; full per-lane state lives in [lanes]. Live levels are not here:
+/// they arrive on `LooperRepository.meterLevels` (#1301).
 class Track extends Equatable {
   /// Creates a [Track].
   const Track({
@@ -47,10 +47,7 @@ class Track extends Equatable {
     this.muted = false,
     this.pan = 0,
     this.solo = false,
-    this.peakL = 0,
-    this.peakR = 0,
     this.lengthFrames = 0,
-    this.peak = 0,
     this.undoDepth = 0,
     this.clearRestore = false,
     this.redoDepth = 0,
@@ -128,20 +125,8 @@ class Track extends Equatable {
   /// route. Independent of [muted].
   final bool solo;
 
-  /// The track's block peak per side after volume, pan and its chain, `0..1`
-  /// (the Mixer's meter). Live, like [peak].
-  final double peakL;
-
-  /// See [peakL].
-  final double peakR;
-
   /// Captured length in frames, including divisions and independent takes.
   final int lengthFrames;
-
-  /// Peak level of the track's mixed output for the most recent block, in
-  /// `0..1` — the one field that changes at the poll rate while audio flows.
-  /// Kept out of [steadyProps] for that reason.
-  final double peak;
 
   /// Available undo steps (overdub layers).
   ///
@@ -180,9 +165,8 @@ class Track extends Equatable {
   /// [progress] is the track's own progress. While recording it is the write
   /// head instead. `0` for an empty track.
   ///
-  /// Moves at the poll rate while the track plays, like [peak], and is kept
-  /// out of [steadyProps] for the same reason: the progress bar subscribes
-  /// to it in its own leaf.
+  /// Moves at the poll rate while the track plays, so it is kept out of
+  /// [steadyProps]: the progress bar subscribes to it in its own leaf.
   final int positionFrames;
 
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
@@ -351,27 +335,27 @@ class Track extends Equatable {
     return whole > 0 && (lengthFrames - whole * unit).abs() <= 1 ? whole : null;
   }
 
-  /// Everything in [props] EXCEPT the live [peak] level and [positionFrames].
+  /// Everything in [props] EXCEPT [positionFrames].
   ///
-  /// Those two are the fields that change at the poll rate on a track that is
-  /// merely playing, so they are the only ones that have to be subscribed at
-  /// meter granularity. A surface that draws the tile AROUND a meter compares
-  /// on
-  /// this, and subscribes to [peak] separately in the meter leaf itself, so a
-  /// moving level rebuilds the bar and nothing else (#646/#654/#832).
+  /// The playhead is the one field that changes at the poll rate on a track
+  /// that is merely playing, so it is the only one that has to be subscribed
+  /// at progress-bar granularity. A surface that draws the tile AROUND the
+  /// progress bar compares on this, so a moving playhead rebuilds the bar
+  /// and nothing else (#646/#654/#832). Levels are not part of [Track] at all
+  /// (#1301).
   ///
-  /// This is the ONLY sanctioned way to ignore a moving level. Anything that
-  /// wants a peak-insensitive comparison — a `context.select` projection, a
-  /// `buildWhen`, a push gate on the second screen — compares on this rather
-  /// than editing [props]; see the warning there.
+  /// This is the ONLY sanctioned way to ignore the moving playhead. Anything
+  /// that wants a playhead-insensitive comparison — a `context.select`
+  /// projection, a `buildWhen`, a push gate on the second screen — compares
+  /// on this rather than editing [props]; see the warning there.
   ///
   /// Listed out rather than derived from [props] so neither list is built
   /// twice per comparison (a `Track ==` is on the console's hot path). The
   /// two are locked to each other by a test — `props` is exactly this list
-  /// plus [peak] and [positionFrames] — so a field added to one cannot
-  /// silently miss the other.
+  /// plus [positionFrames] — so a field added to one cannot silently miss
+  /// the other.
   ///
-  /// "Steady" means steady against a moving LEVEL, and nothing more — two
+  /// "Steady" means steady against a moving PLAYHEAD, and nothing more — two
   /// other fields here move on their own, both deliberately left in:
   ///
   /// - A track that is RECORDING differs on every poll tick as [lengthFrames]
@@ -421,20 +405,15 @@ class Track extends Equatable {
     chainEnabled,
   ];
 
-  /// Value equality over every field, [peak] and [positionFrames] INCLUDED —
+  /// Value equality over every field, [positionFrames] INCLUDED —
   /// deliberately, and load-bearing.
   ///
-  /// **Do not remove [peak] (or [positionFrames]) from this list.** The meters
-  /// are fed through
-  /// `LooperState ==`: `LooperRepository`'s poll drops a projection equal to
-  /// the one before it (`if (next == _last) return`), so a field outside
-  /// equality is a field that never reaches the UI at all. Taking [peak] out
-  /// — tempting, because it is what makes a fresh `LooperState` arrive on
-  /// every poll tick and so defeats any gate written as
-  /// `identical(state, previous)` — would flatten all eight meters with no
-  /// error and no failing widget test: they would simply stop moving.
+  /// **Do not remove [positionFrames] from this list.** The progress bars are
+  /// fed through `LooperState ==`: `LooperRepository`'s poll drops a
+  /// projection equal to the one before it (`if (next == _last) return`), so
+  /// a field outside equality is a field that never reaches the UI at all.
   ///
-  /// A caller that needs to ignore the moving level compares [steadyProps]
+  /// A caller that needs to ignore the moving playhead compares [steadyProps]
   /// instead. Locked by the tests in `test/models/track_test.dart`.
   @override
   List<Object?> get props => [
@@ -472,9 +451,6 @@ class Track extends Equatable {
     lanes,
     effects,
     chainEnabled,
-    peak,
     positionFrames,
-    peakL,
-    peakR,
   ];
 }

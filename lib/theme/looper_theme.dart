@@ -3,11 +3,11 @@ import 'dart:math' show ln10, log;
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/model/meter_scale.dart';
 import 'package:segno/theme/surface_theme.dart';
 
-/// The bottom of the shared meter scale, in dBFS: a peak at or below this
-/// draws no fill.
-const double kMeterFloorDb = -60;
+export 'package:segno/looper/model/meter_scale.dart'
+    show kClipPeak, kMeterFloorDb, meterPeak;
 
 /// Maps engine peak amplitude (`0..1`) to meter fill (`0..1`), linear in
 /// decibels over [kMeterFloorDb]..0 dBFS.

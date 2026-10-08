@@ -6,6 +6,7 @@ export 'bloc/looper_bloc.dart';
 export 'cubit/audio_recovery_cubit.dart';
 export 'cubit/fx_presets_cubit.dart';
 export 'cubit/high_contrast_cubit.dart';
+export 'cubit/output_level_cubit.dart';
 export 'cubit/playback_options_cubit.dart';
 export 'cubit/record_options_cubit.dart';
 export 'cubit/record_timing_cubit.dart';

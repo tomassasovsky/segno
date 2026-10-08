@@ -7,6 +7,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart';
+import 'package:segno/looper/view/live_meter.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -16,7 +17,6 @@ typedef _OutputValues = ({
   OutputBus bus,
   int busCount,
   int outputChannels,
-  List<double> peaks,
   int mixGeneration,
 });
 
@@ -33,7 +33,6 @@ _OutputValues _outputValues(LooperState state, int chosen) {
     bus: state.outputSetup.of(selected),
     busCount: count,
     outputChannels: state.status.outputChannels,
-    peaks: state.outputPeaks,
     mixGeneration: state.mixGeneration,
   );
 }
@@ -234,7 +233,6 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
               )),
               level: level,
               muted: bus.muted,
-              peaks: values.peaks,
               bus: selected,
               onCancel: () => setState(() {
                 _dragLevel = null;
@@ -433,7 +431,6 @@ class _LevelColumn extends StatelessWidget {
   const _LevelColumn({
     required this.level,
     required this.muted,
-    required this.peaks,
     required this.bus,
     required this.onChanged,
     required this.onCommit,
@@ -444,7 +441,6 @@ class _LevelColumn extends StatelessWidget {
 
   final double level;
   final bool muted;
-  final List<double> peaks;
   final int bus;
   final ValueChanged<double> onChanged;
   final ValueChanged<double> onCommit;
@@ -456,10 +452,6 @@ class _LevelColumn extends StatelessWidget {
 
   /// The pen's output-meter cell count.
   static const int _meterCells = 32;
-
-  /// The peak hardware output [channel] is putting out, `0` when the rig has
-  /// no such jack.
-  double _peak(int channel) => channel < peaks.length ? peaks[channel] : 0;
 
   @override
   Widget build(BuildContext context) {
@@ -499,13 +491,25 @@ class _LevelColumn extends StatelessWidget {
             Positioned(
               left: 0,
               top: 124 + 45.0 * row,
-              child: _MeterRow(
-                key: Key('output_meter_$row'),
-                side: side,
-                // A muted destination is putting out nothing, whatever the
-                // engine's last block said.
-                peak: muted ? 0 : _peak(2 * bus + row),
-              ),
+              child: muted
+                  // A muted destination is putting out nothing, whatever the
+                  // engine's last block said.
+                  ? _MeterRow(
+                      key: Key('output_meter_$row'),
+                      side: side,
+                      peak: 0,
+                    )
+                  // The live level, followed by this row alone (#1301).
+                  : LiveMeter<double>(
+                      key: ValueKey(2 * bus + row),
+                      select: (levels) =>
+                          meterPeak(levels.outputChannelPeak(2 * bus + row)),
+                      builder: (context, peak) => _MeterRow(
+                        key: Key('output_meter_$row'),
+                        side: side,
+                        peak: peak,
+                      ),
+                    ),
             ),
         ],
       ),

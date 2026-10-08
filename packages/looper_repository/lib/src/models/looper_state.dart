@@ -27,9 +27,6 @@ class LooperState extends Equatable {
     this.outputSetup = const OutputSetup(),
     this.outputBusCount = 0,
     this.tailResetRev = 0,
-    this.inputPeaks = const [],
-    this.monitorPeaks = const [],
-    this.outputPeaks = const [],
     this.laneInputs = const {},
     this.laneOutputs = const {},
     this.laneCounts = const {},
@@ -88,18 +85,6 @@ class LooperState extends Equatable {
 
   /// Advances once per Cut all sound the engine applied.
   final int tailResetRev;
-
-  /// Each hardware input's raw block peak, `0..1`, one entry per channel the
-  /// device has (before conditioning and trim). Live.
-  final List<double> inputPeaks;
-
-  /// What each input's monitor sends to the outputs, per channel the device
-  /// has (`0` while it is off or muted). Live.
-  final List<double> monitorPeaks;
-
-  /// Each hardware output's block peak after the master gain and limiter,
-  /// per channel the device has. Live.
-  final List<double> outputPeaks;
 
   /// Confirmed future source choices, including inactive slots.
   final Map<(int, int), int> laneInputs;
@@ -165,9 +150,6 @@ class LooperState extends Equatable {
     outputSetup,
     outputBusCount,
     tailResetRev,
-    inputPeaks,
-    monitorPeaks,
-    outputPeaks,
     laneInputs,
     laneOutputs,
     laneCounts,
