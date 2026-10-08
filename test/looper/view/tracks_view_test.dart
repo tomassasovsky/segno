@@ -57,6 +57,9 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 class _MockTransportClockCubit extends MockCubit<TransportClockState>
     implements TransportClockCubit {}
 
+class _MockOutputLevelCubit extends MockCubit<OutputLevelState>
+    implements OutputLevelCubit {}
+
 class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
 
@@ -99,6 +102,7 @@ void main() {
   int? freeBytes;
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
+  late OutputLevelCubit outputLevel;
   late AudioSetupCubit audioSetup;
   late PedalRepository pedalRepo;
   late FakePedalLink pedalLink;
@@ -185,6 +189,14 @@ void main() {
       const Stream<TransportClockState>.empty(),
       initialState: const TransportClockState(),
     );
+    // The footer's OUT readout. Mocked like the clock: [seed] sets its reading
+    // from the seeded peak, so the footer still shows the seeded level.
+    outputLevel = _MockOutputLevelCubit();
+    whenListen(
+      outputLevel,
+      const Stream<OutputLevelState>.empty(),
+      initialState: const OutputLevelState(),
+    );
     fxPersistence = FxChainPersistence(looper: repository);
     mixSettings = testMixSettings(repository, settings: settings);
     addTearDown(() => unawaited(mixSettings.close()));
@@ -228,6 +240,9 @@ void main() {
 
   void seed(LooperState state) {
     when(() => bloc.state).thenReturn(state);
+    when(
+      () => outputLevel.state,
+    ).thenReturn(OutputLevelState.of(state.transport.outputPeak));
     // Keep the repository snapshot (what ControlIntents reads) in step with
     // the bloc state the view renders.
     when(() => repository.state).thenReturn(state);
@@ -266,6 +281,7 @@ void main() {
               ),
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider<TransportClockCubit>.value(value: transportClock),
+              BlocProvider<OutputLevelCubit>.value(value: outputLevel),
               BlocProvider<TracksCubit>.value(value: tracks),
               BlocProvider<ControlCubit>.value(value: control),
               BlocProvider<SessionCubit>.value(value: session),
@@ -1372,6 +1388,7 @@ void main() {
               providers: [
                 BlocProvider<LooperBloc>.value(value: bloc),
                 BlocProvider<TransportClockCubit>.value(value: transportClock),
+                BlocProvider<OutputLevelCubit>.value(value: outputLevel),
                 BlocProvider<TracksCubit>.value(value: tracks),
                 BlocProvider<ControlCubit>.value(value: control),
               ],
