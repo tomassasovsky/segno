@@ -1,9 +1,15 @@
-// Drives the embedder's task-runner scheduling (fake_task_runner.cc) the way
-// the appliance does: the main thread runs the GLib loop while other threads
-// post tasks. Then it counts the timeouts left attached to the main context.
+// Drives the embedder's task-runner scheduling (fake_task_runner.cc) through
+// the race behind #1299, then counts the timeouts left attached to the main
+// context.
 //
-//   --expect-orphans  built WITHOUT the guard: the upstream race must leave
-//                     orphaned timeouts behind, or this harness proves nothing.
+// The race needs a task posted between GLib dispatching the runner's timeout
+// and the callback taking the runner's mutex. On the appliance another thread
+// lands there now and then; a CI runner may never do it in a few seconds. So
+// the fake runner calls a hook in exactly that window, and the hook posts the
+// task, on every dispatch: the race happens every time, on any machine.
+//
+//   --expect-orphans  built WITHOUT the guard: the race must leave orphaned
+//                     timeouts behind, or this harness proves nothing.
 //   --expect-guarded  built WITH task_runner_timeout_guard.cc: at most the one
 //                     tracked timeout may remain, and every task must have run.
 //
@@ -13,43 +19,35 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <atomic>
-
 #include "fake_task_runner.h"
 
 namespace {
 
-constexpr int kPosterThreads = 4;
-constexpr gint64 kPostingMicros = G_GINT64_CONSTANT(3) * G_USEC_PER_SEC;
-constexpr gint64 kDrainMicros = 500 * 1000;
+// How many dispatches get a post in the race window.
+constexpr int kRacedDispatches = 50;
+constexpr gint64 kNearMicros = 1000;
 // A task far in the future keeps the runner's queue non-empty, as the engine's
 // does in practice, so orphans keep rescheduling instead of dying out.
 constexpr gint64 kFarFutureMicros = G_GINT64_CONSTANT(3600) * G_USEC_PER_SEC;
+constexpr gint64 kDeadlineMicros = 5 * G_USEC_PER_SEC;
 
-std::atomic<bool> posting{true};
-std::atomic<guint64> near_tasks_posted{0};
+int raced = 0;
+guint64 near_tasks_posted = 0;
 
 guint64 nanos_from_now(gint64 micros) {
   return static_cast<guint64>(g_get_monotonic_time() + micros) * 1000;
 }
 
-gpointer poster(gpointer data) {
-  FakeTaskRunner* runner = static_cast<FakeTaskRunner*>(data);
-  GRand* rand = g_rand_new();
-  while (posting.load()) {
-    fake_task_runner_post(runner, nanos_from_now(g_rand_int_range(rand, 0, 2000)));
-    near_tasks_posted++;
-    g_usleep(g_rand_int_range(rand, 0, 200));
-  }
-  g_rand_free(rand);
-  return nullptr;
+void post_near(FakeTaskRunner* runner) {
+  fake_task_runner_post(runner, nanos_from_now(kNearMicros));
+  near_tasks_posted++;
 }
 
-void run_loop_for(gint64 micros) {
-  const gint64 end = g_get_monotonic_time() + micros;
-  while (g_get_monotonic_time() < end) {
-    g_main_context_iteration(nullptr, FALSE);
-    g_usleep(50);
+// Runs inside the race window: a post here orphans the replacement timeout.
+void post_in_race_window(FakeTaskRunner* runner) {
+  if (raced < kRacedDispatches) {
+    raced++;
+    post_near(runner);
   }
 }
 
@@ -84,25 +82,35 @@ int main(int argc, char** argv) {
 
   FakeTaskRunner* runner = fake_task_runner_new();
   fake_task_runner_post(runner, nanos_from_now(kFarFutureMicros));
+  fake_task_runner_set_before_timeout(runner, post_in_race_window);
+  post_near(runner);
 
-  GThread* threads[kPosterThreads];
-  for (GThread*& thread : threads) {
-    thread = g_thread_new("poster", poster, runner);
+  // Until every raced post has happened and every near task has run, then a
+  // little longer so any orphan due soon fires and shows its hand.
+  const gint64 deadline = g_get_monotonic_time() + kDeadlineMicros;
+  while (g_get_monotonic_time() < deadline &&
+         (raced < kRacedDispatches ||
+          fake_task_runner_tasks_run(runner) < near_tasks_posted)) {
+    g_main_context_iteration(nullptr, FALSE);
+    g_usleep(100);
   }
-  run_loop_for(kPostingMicros);
-  posting = false;
-  for (GThread* thread : threads) {
-    g_thread_join(thread);
+  const gint64 settle = g_get_monotonic_time() + 50 * 1000;
+  while (g_get_monotonic_time() < settle) {
+    g_main_context_iteration(nullptr, FALSE);
+    g_usleep(100);
   }
-  run_loop_for(kDrainMicros);
 
   const guint attached = count_attached_timeouts();
-  const guint64 posted = near_tasks_posted.load();
   const guint64 run = fake_task_runner_tasks_run(runner);
-  printf("posted %" G_GUINT64_FORMAT " near tasks, ran %" G_GUINT64_FORMAT
-         ", %u timeouts still attached\n",
-         posted, run, attached);
+  printf("raced %d dispatches, posted %" G_GUINT64_FORMAT
+         " near tasks, ran %" G_GUINT64_FORMAT ", %u timeouts attached\n",
+         raced, near_tasks_posted, run, attached);
 
+  if (raced < kRacedDispatches) {
+    fprintf(stderr, "FAIL: only %d of %d dispatches happened\n", raced,
+            kRacedDispatches);
+    return 1;
+  }
   if (expect_orphans) {
     if (attached <= 1) {
       fprintf(stderr, "FAIL: the unguarded runner left no orphans; the race "
@@ -117,10 +125,10 @@ int main(int argc, char** argv) {
             attached);
     return 1;
   }
-  if (run != posted) {
+  if (run != near_tasks_posted) {
     fprintf(stderr, "FAIL: %" G_GUINT64_FORMAT " of %" G_GUINT64_FORMAT
                     " tasks never ran\n",
-            posted - run, posted);
+            near_tasks_posted - run, near_tasks_posted);
     return 1;
   }
   printf("PASS: guard keeps one timeout and every task runs\n");
