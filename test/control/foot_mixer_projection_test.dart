@@ -70,14 +70,13 @@ void main() {
     expect(idle.selected!.monitorMode, MonitorMode.auto);
   });
 
-  test('level setting read model excludes changing peaks and playhead', () {
-    FootMixerProjection project(double peak, int position) => projectFootMixer(
+  test('level setting read model excludes the moving playhead', () {
+    FootMixerProjection project(int position) => projectFootMixer(
       LooperState(
         tracks: [
           Track(
             state: TrackState.playing,
             lengthFrames: 1000,
-            peak: peak,
             positionFrames: position,
             volume: .6,
           ),
@@ -86,7 +85,7 @@ void main() {
       const FootMixerSelection(channel: 0),
       monitors: const {},
     );
-    expect(project(.1, 10), project(.9, 500));
+    expect(project(10), project(500));
   });
 
   test('off-grid endpoint hints require a complete five percentage points', () {

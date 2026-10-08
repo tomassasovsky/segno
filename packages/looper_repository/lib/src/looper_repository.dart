@@ -13,6 +13,7 @@ import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
+import 'package:looper_repository/src/models/meter_levels.dart';
 import 'package:looper_repository/src/models/mix_settings_snapshot.dart';
 import 'package:looper_repository/src/models/output_setup.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart'
@@ -175,6 +176,38 @@ class LooperRepository {
   /// instruments, #1197) so the engine is read once per poll. Emits only
   /// while [looperState] is listened to, as the poll runs then.
   Stream<EngineSnapshot> get engineSnapshots => _engineSnapshots.stream;
+
+  final _meterLevels = StreamController<MeterLevels>.broadcast();
+  MeterLevels _meters = const MeterLevels();
+
+  /// The engine's live levels, published on the poll whenever they change
+  /// (#1301). Kept out of [looperState]: levels move on every poll while any
+  /// signal flows, an input's noise floor included, and inside the state they
+  /// rebuilt every surface 60 times a second at idle. Only meters follow this.
+  /// Emits only while [looperState] is listened to, as the poll runs then.
+  Stream<MeterLevels> get meterLevels => _meterLevels.stream;
+
+  /// The levels from the most recent poll.
+  MeterLevels get meters => _meters;
+
+  void _publishMeters(EngineSnapshot s) {
+    final next = MeterLevels(
+      outputPeak: s.outputPeak,
+      inputPeaks: s.inputPeaks,
+      outputPeaks: s.outputPeaks,
+      tracks: [
+        for (final track in s.tracks)
+          TrackLevels(
+            peak: track.peak,
+            peakL: track.peakL,
+            peakR: track.peakR,
+          ),
+      ],
+    );
+    if (next == _meters) return;
+    _meters = next;
+    _meterLevels.add(next);
+  }
 
   /// Fired when the repository changes a lane's chain or resets a remembered
   /// true mute on its own initiative. The bloc persists the resulting lane
@@ -2193,6 +2226,7 @@ class LooperRepository {
     _drainHistoryFx();
     final snapshot = _snapshotAndSettleImages();
     _engineSnapshots.add(snapshot);
+    _publishMeters(snapshot);
     _retryRefusedRecord(snapshot);
     _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
@@ -2386,7 +2420,6 @@ class LooperRepository {
       // (the designation survives its own clear while a sibling plays, so
       // its re-record re-establishes it), and none for an empty session.
       primaryTrack: resolvedPrimaryTrack(s.primaryTrack, s.tracks),
-      outputPeak: s.outputPeak,
       recDub: _recDub,
       // The record start and decay defaults are the repository's own
       // re-apply caches (what a stopped engine would be given on start);
@@ -2424,10 +2457,7 @@ class LooperRepository {
               muted: s.tracks[i].muted,
               pan: _trackPan[i] ?? 0,
               solo: s.tracks[i].solo,
-              peakL: s.tracks[i].peakL,
-              peakR: s.tracks[i].peakR,
               lengthFrames: s.tracks[i].lengthFrames,
-              peak: s.tracks[i].peak,
               undoDepth: s.tracks[i].undoDepth,
               clearRestore: s.tracks[i].clearRestore,
               redoDepth: s.tracks[i].redoDepth,
@@ -2494,10 +2524,6 @@ class LooperRepository {
     defaultPitchMode: _pitchMode.live.defaultValue,
     outputBusCount: s.outputBusCount,
     tailResetRev: s.tailResetRev,
-    // Sized by the engine to the channels the device has.
-    inputPeaks: s.inputPeaks,
-    monitorPeaks: s.monitorPeaks,
-    outputPeaks: s.outputPeaks,
     status: EngineStatus(
       deviceName: _engine.deviceName,
       sampleRate: s.sampleRate,
@@ -8512,6 +8538,7 @@ class LooperRepository {
     _paramAnnounceWindows.clear();
     _paramAnnounceDirty.clear();
     await _engineSnapshots.close();
+    await _meterLevels.close();
     await _monitorChanges.close();
     await _monitorParamChanges.close();
     await _fxReplayConfirmed.close();
