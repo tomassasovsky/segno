@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/output_level_cubit.dart' show kClipPeak;
 import 'package:segno/theme/theme.dart';
 
 /// One track's [PeakMeterBar], following [channel]'s live [Track.peak].
@@ -255,10 +256,6 @@ SteadyTrack? steadyTrackOf(LooperState state, int channel) {
   }
   return null;
 }
-
-/// A peak at or above this reads as clipping — the engine's level is the
-/// absolute sample peak, so full scale is 1.0.
-const double kClipPeak = 0.999;
 
 /// A bottom-anchored level meter driven by the track's current [peak]. Updates
 /// with the watched looper state — no own timer.
