@@ -178,6 +178,20 @@ jobs:
         run: |
           packages/segno_engine/tool/check_ffi_symbols.sh \
             build/linux/*/debug/bundle/lib/libsegno_engine.so
+      # The runner replaces g_timeout_add to stop the embedder's task runner
+      # leaking timeouts (#1299). That only works while the executable exports
+      # the symbol and the embedder still calls it by that name: an engine
+      # that switched to g_timeout_add_full would bypass the guard silently.
+      # The stress test only means something while the unguarded copy still
+      # reproduces the leak.
+      - name: Task runner timeout guard
+        run: |
+          nm -D --defined-only build/linux/*/debug/bundle/segno \
+            | grep -qw g_timeout_add
+          nm -D --undefined-only \
+            build/linux/*/debug/bundle/lib/libflutter_linux_gtk.so \
+            | grep -qw g_timeout_add
+          bash linux/runner/test/run_task_runner_guard_test.sh
 
   # ARM64 Linux guard for the Raspberry Pi 5 floor-console target (Pi OS is
   # arm64). Same compile-only contract as build-linux above — no audio runs (CI
