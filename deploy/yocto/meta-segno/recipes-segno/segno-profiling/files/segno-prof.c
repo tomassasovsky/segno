@@ -349,6 +349,11 @@ static void counter_print(Counter *c, FILE *out) {
 
 enum { kMaxDepth = 128 };
 
+/* Saved return addresses can carry a pointer-authentication signature in the
+ * bits above the 48-bit user address space (ARMv8.3+; the Pi 5's A76 has no
+ * PAC, but GLib is built with paciasp). Strip it before using the address. */
+static const uint64_t kUserAddressMask = (1ULL << 48) - 1;
+
 static volatile sig_atomic_t stop_requested;
 static void on_signal(int sig) {
   (void)sig;
@@ -399,7 +404,8 @@ static int cmd_stack(int argc, char **argv) {
       while (fp != 0 && depth < kMaxDepth) {
         uint64_t record[2]; /* saved fp, return address */
         if (peek(fp, record, sizeof record) < 0 || record[1] == 0) break;
-        frames[depth++] = record[1] - 4; /* the call, not the instruction after */
+        /* The call, not the instruction after it. */
+        frames[depth++] = (record[1] & kUserAddressMask) - 4;
         if (record[0] <= fp) break;
         fp = record[0];
       }

@@ -1,7 +1,7 @@
 SUMMARY = "On-device profiling for the Segno app"
 DESCRIPTION = "segno-prof samples the app's main-thread stack and counts the \
 GSources on its GLib main loop without stopping the app; segno-profile-recorder \
-logs CPU, memory, main-loop load and periodic stack profiles to /data/profile on \
+logs CPU, memory, main-loop load and periodic stack profiles to /data/perf on \
 experimental images, so slow degradation shows up as a trend (#1299)."
 LICENSE = "CLOSED"
 
