@@ -2,7 +2,7 @@
 # Records how the Segno app behaves over hours and days, so slow growth shows
 # up as a trend instead of as "it got sluggish at some point" (#1299).
 #
-# Every minute, one CSV row in /data/profile/metrics-<date>.csv:
+# Every minute, one CSV row in /data/perf/metrics-<date>.csv:
 #   time            ISO 8601, UTC
 #   pid             the app; a new pid means it restarted
 #   app_uptime_s    seconds since that pid started
@@ -25,10 +25,11 @@
 # (stacks-<time>.folded, segno-prof stack, 1000 samples 10 ms apart).
 #
 # Files older than 30 days are deleted. Experimental images only: the unit
-# checks the channel before starting this.
+# checks the channel before starting this. Not /data/profile: that is where
+# deploy/rpi/profile-on-device.sh unpacks (and first wipes) a profile build.
 set -u
 
-dir=/data/profile
+dir=/data/perf
 interval=60
 stack_every=15        # in intervals
 keep_days=30
@@ -81,13 +82,14 @@ while :; do
   load1=$(cut -d' ' -f1 /proc/loadavg)
   available=$(awk '/^MemAvailable/ {print $2}' /proc/meminfo)
 
-  # Per-thread CPU over the interval. A thread new since the last snapshot
-  # counts from zero, which over-reports it once; the first row after a
-  # restart is blank for the same reason.
+  # Per-thread CPU over the interval, counting only threads present in both
+  # snapshots: a new thread's cumulative time would land in one row as a
+  # spike, so short-lived threads under-report instead. The first row after a
+  # restart is blank.
   cpu=$(awk -v pid="$pid" -v secs="$elapsed" -v hz="$hz" '
     FILENAME == ARGV[1] { ticks[$1] = $3; nv[$1] = $5; seen = 1; next }
     {
-      if (!seen) next
+      if (!seen || !($1 in ticks)) next
       d = $3 - ticks[$1]
       total += d
       if ($1 == pid) { main = d; preempt = $5 - nv[$1] }
