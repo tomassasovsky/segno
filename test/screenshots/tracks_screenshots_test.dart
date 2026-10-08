@@ -167,6 +167,12 @@ void main() {
     );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
+    // Live levels reach the meters apart from the state (#1301); a test sets
+    // them with [levels].
+    when(() => repository.meters).thenReturn(const MeterLevels());
+    when(
+      () => repository.meterLevels,
+    ).thenAnswer((_) => const Stream<MeterLevels>.empty());
     when(
       () => repository.cancelArm(channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
@@ -267,6 +273,9 @@ void main() {
       ),
     );
   });
+
+  void levels(MeterLevels levels) =>
+      when(() => repository.meters).thenReturn(levels);
 
   void seed(LooperState state) {
     when(() => bloc.state).thenReturn(state);
@@ -1009,6 +1018,15 @@ void main() {
       for (var i = 0; i < names.length; i++) {
         await tracks.rename(i, names[i]);
       }
+      levels(
+        const MeterLevels(
+          tracks: [
+            TrackLevels(peak: 0.9),
+            TrackLevels(peak: 0.68),
+            TrackLevels(peak: 0.55),
+          ],
+        ),
+      );
       seed(
         const LooperState(
           status: EngineStatus(
@@ -1022,13 +1040,11 @@ void main() {
           tracks: [
             Track(
               state: TrackState.playing,
-              peak: 0.9,
               lengthFrames: 96000,
             ),
             Track(
               channel: 1,
               state: TrackState.playing,
-              peak: 0.68,
               lengthFrames: 96000,
             ),
             // RC20: loaded (has content) but muted.
@@ -1036,7 +1052,6 @@ void main() {
               channel: 2,
               state: TrackState.playing,
               muted: true,
-              peak: 0.55,
               lengthFrames: 96000,
             ),
             Track(channel: 3),
@@ -1059,6 +1074,15 @@ void main() {
       for (var i = 0; i < names.length; i++) {
         await tracks.rename(i, names[i]);
       }
+      levels(
+        const MeterLevels(
+          tracks: [
+            TrackLevels(peak: 0.9),
+            TrackLevels(peak: 0.68),
+            TrackLevels(peak: 0.55),
+          ],
+        ),
+      );
       seed(
         const LooperState(
           status: EngineStatus(
@@ -1070,11 +1094,10 @@ void main() {
             outputChannels: 2,
           ),
           tracks: [
-            Track(state: TrackState.playing, peak: 0.9, lengthFrames: 96000),
+            Track(state: TrackState.playing, lengthFrames: 96000),
             Track(
               channel: 1,
               state: TrackState.playing,
-              peak: 0.68,
               lengthFrames: 96000,
               reversed: true,
             ),
@@ -1082,7 +1105,6 @@ void main() {
               channel: 2,
               state: TrackState.playing,
               muted: true,
-              peak: 0.55,
               lengthFrames: 96000,
             ),
             Track(channel: 3),
@@ -1151,6 +1173,14 @@ void main() {
       for (var i = 0; i < names.length; i++) {
         await tracks.rename(i, names[i]);
       }
+      levels(
+        const MeterLevels(
+          tracks: [
+            TrackLevels(peakL: 0.9, peakR: 0.55),
+            TrackLevels(peakL: 0.62, peakR: 0.68),
+          ],
+        ),
+      );
       seed(
         const LooperState(
           status: EngineStatus(
@@ -1169,8 +1199,6 @@ void main() {
               volume: 0.8,
               pan: -0.4,
               solo: true,
-              peakL: 0.9,
-              peakR: 0.55,
             ),
             // Soloed, above unity.
             Track(
@@ -1179,8 +1207,6 @@ void main() {
               lengthFrames: 96000,
               volume: 1.4,
               solo: true,
-              peakL: 0.62,
-              peakR: 0.68,
             ),
             // Muted playback keeps its fader level but meters no signal.
             Track(

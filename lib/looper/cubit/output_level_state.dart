@@ -7,12 +7,16 @@ class OutputLevelState extends Equatable {
   /// Creates an [OutputLevelState].
   const OutputLevelState({this.tenths, this.clip = false});
 
-  /// The reading for an absolute sample [peak], where 1.0 is full scale.
+  /// The reading for an absolute sample [peak], where 1.0 is full scale. A
+  /// peak below the meters' floor ([kMeterFloorDb]) reads as silence, as the
+  /// routing readouts do: there is no level to give down there.
   factory OutputLevelState.of(double peak) {
-    if (peak <= 0) return const OutputLevelState();
-    if (peak >= kClipPeak) return const OutputLevelState(tenths: 0, clip: true);
-    final db = 20 * log(peak) / ln10;
-    return OutputLevelState(tenths: (db * 10).round());
+    final shown = meterPeak(peak);
+    if (shown <= 0) return const OutputLevelState();
+    if (shown >= kClipPeak) {
+      return const OutputLevelState(tenths: 0, clip: true);
+    }
+    return OutputLevelState(tenths: (200 * log(shown) / ln10).round());
   }
 
   /// The peak in tenths of a dBFS, or `null` for silence.

@@ -6,6 +6,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/audio_routing/routing_facts.dart';
+import 'package:segno/looper/view/live_meter.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -15,7 +16,6 @@ typedef _SetupValues = ({
   InputSetup setup,
   int inputCount,
   int clipMask,
-  List<double> peaks,
   bool locked,
   int mixGeneration,
 });
@@ -34,7 +34,6 @@ _SetupValues _setupValues(LooperState state, int selected) {
     setup: setup,
     inputCount: count,
     clipMask: state.status.inputClipMask,
-    peaks: state.inputPeaks,
     mixGeneration: state.mixGeneration,
     // The accepted lock: pairing and format cannot change while a track fed by
     // EITHER member of the pair is armed or capturing. Both members, because
@@ -147,7 +146,6 @@ class _InputSetupTabState extends State<InputSetupTab> {
     }
     final placement = _dragPlacement ?? confirmedPlacement;
     final trimDb = _dragTrim ?? setup.trimDbOf(input);
-    final peak = input < values.peaks.length ? values.peaks[input] : 0.0;
     final clipping = (values.clipMask & (1 << input)) != 0;
 
     if (count == 0) {
@@ -277,7 +275,7 @@ class _InputSetupTabState extends State<InputSetupTab> {
                       : l10n.routingPairRight)
                 : null,
             trimDb: trimDb,
-            peak: peak,
+            input: input,
             clipping: clipping,
             onCancel: () => setState(() {
               _dragTrim = null;
@@ -528,7 +526,7 @@ class _TrimColumn extends StatelessWidget {
   const _TrimColumn({
     required this.side,
     required this.trimDb,
-    required this.peak,
+    required this.input,
     required this.clipping,
     required this.onChanged,
     required this.onCommit,
@@ -541,7 +539,9 @@ class _TrimColumn extends StatelessWidget {
   final String? side;
 
   final double trimDb;
-  final double peak;
+
+  /// The hardware input whose live level the meter follows.
+  final int input;
   final bool clipping;
   final ValueChanged<double> onChanged;
   final ValueChanged<double> onCommit;
@@ -595,36 +595,50 @@ class _TrimColumn extends StatelessWidget {
               onDoubleTap: onReset,
             ),
           ),
-          Positioned(
-            left: 0,
-            top: 124,
-            child: RoutingInputMeter(
-              key: const Key('routing_input_meter'),
-              level: peak,
-              clipping: clipping,
-              width: _meterWidth,
-              semanticLabel: l10n.routingSignal,
-            ),
-          ),
-          // The reading beside the meter. A held clip says so in words: the
-          // number would be the peak that clipped, which is the same 0.0 dBFS
-          // the meter is already pinned at.
-          Positioned(
-            left: 683,
-            top: 124,
-            width: 145,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: AppText(
-                clipping ? l10n.routingClip : routingDbfsLabel(l10n, peak),
-                key: const Key('routing_input_meter_readout'),
-                style: TextStyle(
-                  color: clipping
-                      ? context.surface.rec
-                      : context.surface.textSecondary,
-                  fontSize: 22,
-                  height: 1,
-                ),
+          // The meter and its reading follow the input's live level on their
+          // own (#1301), so a level tick redraws them and nothing else.
+          Positioned.fill(
+            child: LiveMeter<double>(
+              key: ValueKey(input),
+              select: (levels) => meterPeak(levels.inputPeak(input)),
+              builder: (context, peak) => Stack(
+                children: [
+                  Positioned(
+                    left: 0,
+                    top: 124,
+                    child: RoutingInputMeter(
+                      key: const Key('routing_input_meter'),
+                      level: peak,
+                      clipping: clipping,
+                      width: _meterWidth,
+                      semanticLabel: l10n.routingSignal,
+                    ),
+                  ),
+                  // The reading beside the meter. A held clip says so in
+                  // words: the number would be the peak that clipped, which
+                  // is the same 0.0 dBFS the meter is already pinned at.
+                  Positioned(
+                    left: 683,
+                    top: 124,
+                    width: 145,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: AppText(
+                        clipping
+                            ? l10n.routingClip
+                            : routingDbfsLabel(l10n, peak),
+                        key: const Key('routing_input_meter_readout'),
+                        style: TextStyle(
+                          color: clipping
+                              ? context.surface.rec
+                              : context.surface.textSecondary,
+                          fontSize: 22,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

@@ -12,18 +12,17 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 const _minus6 = 0.501187;
 const _minus12 = 0.251189;
 
-LooperState _withPeak(double peak) =>
-    LooperState(transport: TransportState(outputPeak: peak));
+MeterLevels _withPeak(double peak) => MeterLevels(outputPeak: peak);
 
 void main() {
   late _MockLooperRepository repository;
-  late StreamController<LooperState> states;
+  late StreamController<MeterLevels> states;
 
   setUp(() {
     repository = _MockLooperRepository();
-    states = StreamController<LooperState>.broadcast(sync: true);
-    when(() => repository.looperState).thenAnswer((_) => states.stream);
-    when(() => repository.state).thenReturn(const LooperState());
+    states = StreamController<MeterLevels>.broadcast(sync: true);
+    when(() => repository.meterLevels).thenAnswer((_) => states.stream);
+    when(() => repository.meters).thenReturn(const MeterLevels());
   });
 
   tearDown(() => unawaited(states.close()));
@@ -45,6 +44,11 @@ void main() {
       );
     });
 
+    test('reads a peak below the meter floor as silence', () {
+      // -70 dBFS: an input's noise floor, not a level worth a figure.
+      expect(OutputLevelState.of(0.000316), const OutputLevelState());
+    });
+
     test('reads a peak in tenths of a dBFS', () {
       expect(OutputLevelState.of(_minus6), const OutputLevelState(tenths: -60));
     });
@@ -52,7 +56,7 @@ void main() {
 
   group(OutputLevelCubit, () {
     test('starts from the live peak', () {
-      when(() => repository.state).thenReturn(_withPeak(_minus6));
+      when(() => repository.meters).thenReturn(_withPeak(_minus6));
       final cubit = build();
       addTearDown(cubit.close);
 
