@@ -96,8 +96,13 @@ extern "C" __attribute__((visibility("default"))) guint g_timeout_add(
     slot = source;  // Keeps the attach reference.
   }
 
+  // A previous timeout that is mid-dispatch is not an orphan: its callback
+  // zeroed timeout_source_id and is rescheduling, and returning
+  // G_SOURCE_REMOVE ends it. GLib sets G_HOOK_FLAG_IN_CALL for the duration of
+  // the callback.
   if (previous != nullptr) {
-    if (!g_source_is_destroyed(previous)) {
+    if (!g_source_is_destroyed(previous) &&
+        (previous->flags & G_HOOK_FLAG_IN_CALL) == 0) {
       g_source_destroy(previous);
       note_orphan_destroyed();
     }

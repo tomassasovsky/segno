@@ -1,8 +1,8 @@
-# Records the app's CPU, memory, main-loop and stack profile to /data/profile
+# Records the app's CPU, memory, main-loop and stack profile to /data/perf
 # (segno-profile-recorder, #1299). Experimental images only: a production unit
 # never starts it, so the field build pays nothing for it.
 [Unit]
-Description=Segno: record app performance to /data/profile
+Description=Segno: record app performance to /data/perf
 After=segno.service
 RequiresMountsFor=/data
 

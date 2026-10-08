@@ -30,5 +30,14 @@ glib="$(pkg-config --cflags --libs glib-2.0)"
   -Wl,--export-dynamic-symbol=g_timeout_add
 
 export LD_LIBRARY_PATH="$out"
-"$out/unguarded" --expect-orphans
+# The leak depends on thread interleaving, so a busy or single-core CI runner
+# can miss it in one window. Give the unguarded run a few tries.
+reproduced=0
+for _ in 1 2 3; do
+  if "$out/unguarded" --expect-orphans; then
+    reproduced=1
+    break
+  fi
+done
+[ "$reproduced" = 1 ]
 "$out/guarded" --expect-guarded
