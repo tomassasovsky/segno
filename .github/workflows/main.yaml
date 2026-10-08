@@ -178,6 +178,17 @@ jobs:
         run: |
           packages/segno_engine/tool/check_ffi_symbols.sh \
             build/linux/*/debug/bundle/lib/libsegno_engine.so
+      # The runner replaces gdk_cairo_draw_from_gl so each frame reaches the
+      # window as a GPU blit instead of a CPU upload (#1302). That only works
+      # while the executable exports the symbol and the embedder still calls
+      # it by that name.
+      - name: GPU frame present interposition
+        run: |
+          nm -D --defined-only build/linux/*/debug/bundle/segno \
+            | grep -qw gdk_cairo_draw_from_gl
+          nm -D --undefined-only \
+            build/linux/*/debug/bundle/lib/libflutter_linux_gtk.so \
+            | grep -qw gdk_cairo_draw_from_gl
 
   # ARM64 Linux guard for the Raspberry Pi 5 floor-console target (Pi OS is
   # arm64). Same compile-only contract as build-linux above — no audio runs (CI
@@ -217,6 +228,17 @@ jobs:
         run: |
           packages/segno_engine/tool/check_ffi_symbols.sh \
             build/linux/*/debug/bundle/lib/libsegno_engine.so
+      # The runner replaces gdk_cairo_draw_from_gl so each frame reaches the
+      # window as a GPU blit instead of a CPU upload (#1302). That only works
+      # while the executable exports the symbol and the embedder still calls
+      # it by that name.
+      - name: GPU frame present interposition
+        run: |
+          nm -D --defined-only build/linux/*/debug/bundle/segno \
+            | grep -qw gdk_cairo_draw_from_gl
+          nm -D --undefined-only \
+            build/linux/*/debug/bundle/lib/libflutter_linux_gtk.so \
+            | grep -qw gdk_cairo_draw_from_gl
 
   # The #1179 pitch/time and #1197 instrument CPU proxies: the bench harnesses
   # on the same native arm64 runner as build-linux-arm64, asserting the arm64
