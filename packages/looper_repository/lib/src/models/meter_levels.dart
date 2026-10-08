@@ -15,6 +15,7 @@ class MeterLevels extends Equatable {
   const MeterLevels({
     this.outputPeak = 0,
     this.inputPeaks = const [],
+    this.monitorPeaks = const [],
     this.outputPeaks = const [],
     this.tracks = const [],
   });
@@ -26,6 +27,10 @@ class MeterLevels extends Equatable {
   /// Each hardware input's raw peak, one entry per channel the device has
   /// (before conditioning and trim).
   final List<double> inputPeaks;
+
+  /// What each input's monitor sends to the outputs, per channel the device
+  /// has (`0` while it is off or muted).
+  final List<double> monitorPeaks;
 
   /// Each hardware output's peak after the master gain and limiter, per
   /// channel the device has.
@@ -44,13 +49,24 @@ class MeterLevels extends Equatable {
   double inputPeak(int channel) =>
       channel >= 0 && channel < inputPeaks.length ? inputPeaks[channel] : 0;
 
+  /// Input [channel]'s monitor send, or `0` when the device has no such
+  /// input.
+  double monitorPeak(int channel) =>
+      channel >= 0 && channel < monitorPeaks.length ? monitorPeaks[channel] : 0;
+
   /// Hardware output [channel]'s peak, or `0` when the device has no such
   /// output.
   double outputChannelPeak(int channel) =>
       channel >= 0 && channel < outputPeaks.length ? outputPeaks[channel] : 0;
 
   @override
-  List<Object?> get props => [outputPeak, inputPeaks, outputPeaks, tracks];
+  List<Object?> get props => [
+    outputPeak,
+    inputPeaks,
+    monitorPeaks,
+    outputPeaks,
+    tracks,
+  ];
 }
 
 /// One track's levels.

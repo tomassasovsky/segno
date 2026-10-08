@@ -194,6 +194,7 @@ class LooperRepository {
     final next = MeterLevels(
       outputPeak: s.outputPeak,
       inputPeaks: s.inputPeaks,
+      monitorPeaks: s.monitorPeaks,
       outputPeaks: s.outputPeaks,
       tracks: [
         for (final track in s.tracks)
