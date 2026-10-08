@@ -39,8 +39,8 @@ segno-prof gsources $(pidof segno)
 
 Experimental images also run `segno-profile.service`, which writes a CSV row
 of CPU, memory, main-loop and churn figures every minute to
-`/data/profile/metrics-<date>.csv` and a main-thread stack profile every 15
-minutes to `/data/profile/stacks-<time>.folded`. The CSV columns are explained
+`/data/perf/metrics-<date>.csv` and a main-thread stack profile every 15
+minutes to `/data/perf/stacks-<time>.folded`. The CSV columns are explained
 at the top of `/usr/bin/segno-profile-recorder`. Experimental builds keep the
 Dart symbol table in `libapp.so`, so stack frames inside Dart code carry their
 function names; production builds are stripped.
