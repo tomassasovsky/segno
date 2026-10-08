@@ -22,6 +22,37 @@ journalctl -u segno.service -b --no-pager
 journalctl -u segno.service -f
 ```
 
+## Profiling (appliance)
+
+Every image ships `segno-prof`, which reads the running app from outside
+without stopping it:
+
+```bash
+# Main-thread stack profile as folded stacks, busiest first. 1000 samples,
+# 10 ms apart. Only the main thread is paused, for microseconds per sample.
+segno-prof stack $(pidof segno)
+
+# The GSources on the app's GLib main loop, grouped by kind and callback.
+# GLib walks all of them on every loop iteration (#1299).
+segno-prof gsources $(pidof segno)
+```
+
+Experimental images also run `segno-profile.service`, which writes a CSV row
+of CPU, memory, main-loop and churn figures every minute to
+`/data/profile/metrics-<date>.csv` and a main-thread stack profile every 15
+minutes to `/data/profile/stacks-<time>.folded`. The CSV columns are explained
+at the top of `/usr/bin/segno-profile-recorder`. Experimental builds keep the
+Dart symbol table in `libapp.so`, so stack frames inside Dart code carry their
+function names; production builds are stripped.
+
+Look at `embedder_timeouts` first: the Flutter embedder leaked these until the
+main thread saturated (#1299). The runner now keeps one per task runner, and
+reports on stderr (the journal) how many orphans it destroyed:
+
+```bash
+journalctl -b --no-pager -g 'task runner guard'
+```
+
 ## Persistent `/data` size (appliance)
 
 The flashable WIC image seeds the `data` partition at **2 GiB** so the image

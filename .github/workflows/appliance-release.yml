@@ -148,10 +148,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Experimental builds keep the Dart AOT symbol table (gen_snapshot
+      # --no-strip), so segno-stack-sample on the appliance can name the Dart
+      # functions it lands in (#1299). Production stays stripped.
       - name: Build the aarch64 app bundle
         run: |
           docker build -t segno-arm64-build deploy/rpi/build
-          docker run --rm -v "$PWD":/workspace segno-arm64-build
+          args=()
+          if [ "${{ needs.determine-meta.outputs.channel }}" = "experimental" ]; then
+            args+=(--extra-gen-snapshot-options=--no-strip)
+          fi
+          docker run --rm -v "$PWD":/workspace segno-arm64-build "${args[@]}"
 
       - uses: actions/upload-artifact@v7
         with:
