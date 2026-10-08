@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461314.852719907
+2461322.375162037
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461314.8527314817
+2461322.375162037
   9
 $TDUUPDATE
  40
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{ED3C6162-D581-4316-84E3-1FA6A1E34E71}
+{642FFF7E-DA4F-44AE-A4E2-A25022C8B00E}
   9
 $VERSIONGUID
   2
-{D50568E1-0BDC-4246-B9EA-15681F8852C1}
+{2E56302A-2E3D-4A67-8B61-3CC61EC938B4}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -7251,7 +7251,7 @@ AcDbText
  40
 9.0
   1
-la izquierda del músico. Plegar pestaña frontal y solapa trasera. Leyendas en pedales individuales. Frente: 9 pasos Ø4.5
+la izquierda del músico. Plegar pestaña frontal y solapa trasera. Leyendas en pedales individuales. Frente: el láser corta 9
  11
 10.0
  21
@@ -7281,7 +7281,7 @@ AcDbText
  40
 9.0
   1
-(±0.20): el láser corta sólo el piloto Ø1.0; agrandar con mecha DESPUÉS de plegar. Trasera: 9 ranuras oblongas 10.0 x 6.0 mm,
+pilotos Ø1.0. Con la tapa asentada sobre el cuerpo escuadrado y SIN SOLDAR, perforar Ø2.5 a través de cada piloto hasta la
  11
 10.0
  21
@@ -7311,7 +7311,7 @@ AcDbText
  40
 9.0
   1
-largo y ancho ±0.20 SIN PINTAR, eje largo en profundidad de solapa; CUT por láser. Verificar asiento sin forzar y luz frontal
+pared frontal del cuerpo; después agrandar la tapa a Ø4.5. Corte láser ±0.20; plegado convencional ±0.7. Trasera: 9 ranuras
  11
 10.0
  21
@@ -7341,7 +7341,7 @@ AcDbText
  40
 9.0
   1
-SIN PINTAR 0.70-1.50 después de soldar. Pintar ambas caras, cantos, agujeros y ranuras. Montar 9 arandelas M3 Ø7 delante y 9
+oblongas 10.0 x 6.0 mm, largo y ancho ±0.20 SIN PINTAR, eje largo en profundidad de solapa; CUT por láser. Pintar ambas caras,
  11
 10.0
  21
@@ -7371,7 +7371,7 @@ AcDbText
  40
 9.0
   1
-arandelas Ø12/paso3.2/espesor1 detrás (referencia de compra, tolerancias por confirmar). La arandela trasera aporta apoyo, no
+cantos, agujeros y ranuras. Montar 9 arandelas M3 Ø7 delante y 9 arandelas Ø12/paso3.2/espesor1 detrás (referencia de compra,
  11
 10.0
  21
@@ -7401,7 +7401,7 @@ AcDbText
  40
 9.0
   1
-tapa necesariamente toda la ranura. Calces frontales metálicos Ø7/paso4.0-4.2: ajustar cada espesor entre caras pintadas;
+tolerancias por confirmar). La arandela trasera aporta apoyo, no tapa necesariamente toda la ranura. Calces frontales
  11
 10.0
  21
@@ -7431,7 +7431,7 @@ AcDbText
  40
 9.0
   1
-verificar paralelismo y apoyo, sin cerrar la luz a fuerza de tornillo. Aberturas de lentes LED 60.4 x6.4 R3.2 y aro Ø67.4 SIN
+metálicos Ø7/paso4.0-4.2: ajustar cada espesor entre caras pintadas; verificar paralelismo y apoyo, sin cerrar la luz a fuerza
  11
 10.0
  21
@@ -7461,7 +7461,7 @@ AcDbText
  40
 9.0
   1
-PINTAR, tolerancia general ±0.20.
+de tornillo. Aberturas de lentes LED 60.4 x6.4 R3.2 y aro Ø67.4 SIN PINTAR, tolerancia general ±0.20.
  11
 10.0
  21
@@ -8573,7 +8573,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-30T23:27:55.918064+00:00
+1.4.4 @ 2026-10-08T12:00:14.801616+00:00
   0
 VISUALSTYLE
   5
@@ -15135,7 +15135,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-30T23:27:56.034091+00:00
+1.4.4 @ 2026-10-08T12:00:14.910700+00:00
   0
 ENDSEC
   0

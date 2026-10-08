@@ -80,8 +80,9 @@ FACE_RUN = 397.0     # depth of the TOP PLATE control area (front edge -> the pe
 H_REAR   = 100.0     # peak height (rear edge of the Top plate = tallest point)
 H_FRONT  = 12.0      # front lip height (low end) -- nearly at the floor. The lid front lip
                      # screws horizontally into this wall. DFM CAVEAT: at 12mm the flat wall
-                     # is only ~9mm; the front M3 holes are laser-PILOTED (FRONT_PILOT_D) and
-                     # drilled to size AFTER bending, before welding; owner-tapped after paint. A fully-clear front screw needs a taller front
+                     # is only ~9mm; the front M3 holes are drilled AFTER bending, before
+                     # welding, through the lid's laser pilots (FRONT_PILOT_D) into the wall
+                     # (see D_LID_SCREW); owner-tapped after paint. A fully-clear front screw needs a taller front
                      # (~17mm); an inward screw-ledge is blocked by the front-pedal row (~8mm).
 
 # Rear of the body steps down via an ANGLED TRANSITION SURFACE (a beveled shoulder)
@@ -1006,11 +1007,21 @@ RIDE_H = RAIL_T + (TAPE_T - RAIL_CH_D)   # 7.7 mm; the feet it replaces were 5.0
 
 # --- fasteners ----------------------------------------------------------------
 D_M3_METAL = 3.6     # bare ±0.20; worst coated 3.2 still clears M3
-D_LID_SCREW = 4.5    # front clearance, bare ±0.20; drilled out after forming
-FRONT_PILOT_D = 1.0  # laser-cut centre pilot at each front station (lid and body): the
+D_LID_SCREW = 4.5    # front clearance, bare ±0.20. The bends are CONVENTIONAL (±0.7,
+                     # owner call 2026-10-08, #1090: precision forming doubled the quote),
+                     # so a lid hole and a wall hole drilled separately can miss by
+                     # ~1.2-2 mm -- more than the 12 mm lip has room for. Dinacut drills
+                     # them TOGETHER instead: lid seated on the clamped, unwelded body,
+                     # Ø2.5 through the lid pilot into the wall, then the lid opened to
+                     # this size. It is NOT a plain M3 clearance (3.6): painting the seats
+                     # lifts the lid ~0.3-0.5 mm after the drilling, and the lid re-seats
+                     # within its rear slots each time it goes back on -- the seating-motion
+                     # gate in tests/test_manufacturing_fit.py needs this bore.
+FRONT_PILOT_D = 1.0  # laser-cut centre pilot at each front station on the LID only: the
                      # stations sit inside the V12 die zone, so a full-size hole cut flat
-                     # would distort in the fold. Dinacut drills the pilot out to size
-                     # after folding and BEFORE welding (owner call 2026-09-30, #1090).
+                     # would distort in the fold. The body's front wall has no pilot: its
+                     # hole is drilled through the lid's, and a pilot drawn 1 mm off would
+                     # pull the bit.
 LID_REAR_SLOT_W = 6.0  # width across the lap; long axis follows local lap depth
 LID_REAR_SLOT_L = 10.0
 LID_REAR_SLOT_TOL = 0.20 # +/- width/length allowance, bare
@@ -3401,12 +3412,11 @@ def dxf_faceplate(path):
           f"Segno TAPA SUPERIOR (segno_faceplate), aluminio {ALLOY_2MM} {T:.1f} mm, CANT. 1. "
           "Cara dibujada EXTERIOR, espejado canónico: encoder a la izquierda del músico. "
           "Plegar pestaña frontal y solapa trasera. Leyendas en pedales individuales. "
-          f"Frente: 9 pasos Ø{D_LID_SCREW:.1f} (±0.20): el láser corta sólo el piloto Ø{FRONT_PILOT_D:.1f}; "
-          "agrandar con mecha DESPUÉS de plegar. "
+          f"Frente: el láser corta 9 pilotos Ø{FRONT_PILOT_D:.1f}. Con la tapa asentada sobre el cuerpo escuadrado y SIN SOLDAR, "
+          f"perforar Ø2.5 a través de cada piloto hasta la pared frontal del cuerpo; después agrandar la tapa a Ø{D_LID_SCREW:.1f}. "
+          "Corte láser ±0.20; plegado convencional ±0.7. "
           f"Trasera: 9 ranuras oblongas {LID_REAR_SLOT_L:.1f} x {LID_REAR_SLOT_W:.1f} mm, "
           f"largo y ancho ±{LID_REAR_SLOT_TOL:.2f} SIN PINTAR, eje largo en profundidad de solapa; CUT por láser. "
-          f"Verificar asiento sin forzar y luz frontal SIN PINTAR {FRONT_BARE_GAP_MIN:.2f}-{FRONT_BARE_GAP_MAX:.2f} "
-          "después de soldar. "
           "Pintar ambas caras, cantos, agujeros y ranuras. Montar 9 arandelas M3 Ø7 delante y "
           "9 arandelas Ø12/paso3.2/espesor1 detrás (referencia de compra, tolerancias por confirmar). "
           "La arandela trasera aporta apoyo, no tapa necesariamente toda la ranura. "
@@ -3657,9 +3667,9 @@ def dxf_base(path):
     # ---- front wall: lid front-lip screws | rear wall: I/O + transition taps ------
     for u in FRONT_SCREW_U:
         _circle(msp, u, -_fscrew_flat, 2.5, "DRILL")                            # front-lip screws: Ø2.5 M3
-        _circle(msp, u, -_fscrew_flat, FRONT_PILOT_D)                          # laser pilot for that drill
-                                                                       # TAP PILOT (hand-tap M3; the
-                                                                       # lid lip carries Ø4.5 clearance)
+                                                                       # TAP DRILL, drilled THROUGH the
+                                                                       # seated lid's pilot -- no laser
+                                                                       # pilot here (see D_LID_SCREW)
     io = rear_holes()                                                  # canonical; no mirror
     for c in io:
         c["v"] = BD + c["v"]                                           # rear z -> depth on the flap
@@ -3674,7 +3684,7 @@ def dxf_base(path):
             _mask_circle(msp, c["u"], c["v"], MASK_GND_D,               # terminal needs bare metal
                          "zona de puesta a tierra del perno M6, AMBAS CARAS")
     _mask_top = _note(msp, 8, BD+Hr+Ht+10,
-          f"Segno CUERPO (segno_base), aluminio 2.0 mm, CANT. 1. Cara dibujada INTERIOR, espejado canónico: encoder a la izquierda del músico. Trasera con transición plegada. Dinacut: cortar, plegar y desbarbar, sin bisel. Otro taller: soldar las cuatro esquinas, cerrar sus alivios inferiores y las dos uniones superiores traseras. Aporte 5356 acordado con soldador; acabado exterior al ras sin adelgazar la chapa. Confirmar preparación y controlar escuadra. La tapa queda desmontable. Frente: el láser corta 9 pilotos Ø{FRONT_PILOT_D:.1f}; Dinacut los agranda con mecha a Ø2.5 DESPUÉS de plegar y ANTES de soldar. Dejar los 32 pilotos Ø2.5 SIN ROSCAR: 18 de tapa y 14 de soportes de pantallas. Propietario: limpiar los pilotos a Ø2.5 y roscar M3 DESPUÉS DE PINTAR. Pasos M3 Ø{D_M3_METAL:.1f}, M4 Ø{D_M4:.1f}, patas Ø{D_FOOT:.1f}, SIN PINTAR; no roscar los pasos libres. Conectores cortados en la pared trasera, cotas SIN PINTAR: FUSE Ø{D_FUSE+.50:.2f}; POWER Ø{D_PWRBTN+.30:.2f}; MIDI Ø{MIDI_CUT_D:.2f}; PD Ø{D_FLANGE_CUT_D:.2f}; USB cuatro planos {USB3_CUT_SQ:.2f} x{USB3_CUT_SQ:.2f} limitados por círculo concéntrico Ø{USB3_CUT_D:.2f}; redondos, sin plano. Jacks CTRL: Ø{D_FLANGE_CUT_D:.2f} con par M3 en la MISMA diagonal que el PD, según CUT. Todas las cotas con la tolerancia general ±0.20; no se pide nada más ajustado. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en texto.")
+          f"Segno CUERPO (segno_base), aluminio 2.0 mm, CANT. 1. Cara dibujada INTERIOR, espejado canónico: encoder a la izquierda del músico. Trasera con transición plegada. Dinacut: cortar, plegar y desbarbar, sin bisel. Otro taller: soldar las cuatro esquinas, cerrar sus alivios inferiores y las dos uniones superiores traseras. Aporte 5356 acordado con soldador; acabado exterior al ras sin adelgazar la chapa. Confirmar preparación y controlar escuadra. La tapa queda desmontable. Frente, 9 pasos (Dinacut, DESPUÉS de plegar y ANTES de soldar): escuadrar el cuerpo con prensas, asentar la tapa con calce de 1 mm en la luz frontal y perforar Ø2.5 a través de cada piloto Ø{FRONT_PILOT_D:.1f} de la tapa hasta la pared frontal del cuerpo; después agrandar sólo la tapa a Ø{D_LID_SCREW:.1f}. La pared frontal del cuerpo no lleva piloto láser. Dejar los 32 pilotos Ø2.5 SIN ROSCAR: 18 de tapa y 14 de soportes de pantallas. Propietario: limpiar los pilotos a Ø2.5 y roscar M3 DESPUÉS DE PINTAR. Pasos M3 Ø{D_M3_METAL:.1f}, M4 Ø{D_M4:.1f}, patas Ø{D_FOOT:.1f}, SIN PINTAR; no roscar los pasos libres. Conectores cortados en la pared trasera, cotas SIN PINTAR: FUSE Ø{D_FUSE+.50:.2f}; POWER Ø{D_PWRBTN+.30:.2f}; MIDI Ø{MIDI_CUT_D:.2f}; PD Ø{D_FLANGE_CUT_D:.2f}; USB cuatro planos {USB3_CUT_SQ:.2f} x{USB3_CUT_SQ:.2f} limitados por círculo concéntrico Ø{USB3_CUT_D:.2f}; redondos, sin plano. Jacks CTRL: Ø{D_FLANGE_CUT_D:.2f} con par M3 en la MISMA diagonal que el PD, según CUT. Corte láser ±0.20; plegado convencional ±0.7; no se pide nada más ajustado. Pintar ambas caras, asientos, cantos y paredes de pasos. Calces frontales ajustados después de pintar; proceso en texto.")
     _note(msp, 8, _mask_top + 8,
           "MASK = máscara de pintura: sólo contactos eléctricos de tierra indicados; NO CORTAR. Pilotos M3 sin rosca: el propietario limpia y rosca después de pintar. El resto del metal, incluidos asientos y pasos libres, se pinta.", layer="MASK")
     _save(doc, path)
@@ -6735,8 +6745,13 @@ TOLERANCE_ROWS = [
     ("diámetro de agujeros y ranuras",      "± 0,20 mm"),
     ("ángulos de plegado",                  "± 1,0°"),
     ("dimensiones exteriores (desarrollo)", "± 0,3 mm"),
-    ("dimensiones medidas sobre un pliegue", "± 0,5 mm"),
+    ("dimensiones medidas sobre un pliegue", "± 0,7 mm (plegado convencional)"),
 ]
+# The bend row is the shop's CONVENTIONAL press-brake class (#1090, 2026-10-08):
+# asking for ±0,5 across a pliegue priced the job as precision forming, at
+# more than twice the July quote. Every fit that crosses a bend absorbs ±0,7:
+# rear lap slots, felt-selected beam and prop, welded corners, and the front
+# holes drilled through the seated lid (see D_LID_SCREW).
 
 def _tolerance_lines():
     """The tolerance block as rendered text rows, heading first."""
@@ -6757,7 +6772,7 @@ ANNOT_LAYERS    = ("DRILL", "BEND", "NOTE", "ENGRAVE", "SILK", "MASK", "ACRYLIC"
 # 2 mm 5052 is a scrapped base (#775 R1 + R4).
 # (Layer NAMES stay in English -- they are the identifiers inside the DXF.)
 SHEET_LEGEND = ("CUT + VENT = CORTE PASANTE (las dos capas, la misma operación)   |   "
-                "DRILL = diámetro final con mecha, DESPUÉS DE PLEGAR y ANTES DE SOLDAR; el láser corta sólo el piloto del CUT   |   "
+                "DRILL = diámetro final con mecha, DESPUÉS DE PLEGAR y ANTES DE SOLDAR; el láser corta sólo el piloto del CUT (frente del cuerpo: sin piloto, perforar a través de la tapa)   |   "
                 "BEND = LÍNEA DE PLEGADO, SOLO REFERENCIA - no cortar, no marcar, no rayar ni grabar   |   "
                 "MASK = máscara de pintura (no pintar), NO CORTAR   |   "
                 "NOTE / ENGRAVE = texto, no es geometría")
@@ -6834,9 +6849,9 @@ BEND_FOOTNOTES = {
                    f"queda escuadra con su plegado). Matriz V12 en todos los plegados; el Ri {RI:.1f} mm es obligatorio - si aparecen "
                    f"fisuras en el sentido del laminado PARAR, no abrir el radio: hay que volver a desarrollar el plano. "
                    f"PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico). "
-                   f"Chapa de 1250 de ancho (desarrollo {W-2*T+2*(_base_ridge_peak_height()-DEV90):.1f} x 538.6). Conservar el contorno de cierre y los alivios; la tapa debe asentar sin forzar. Los 9 pilotos Ø2.5 de la pared frontal quedan con el centro a 4.545 mm de la línea de "
-                   f"plegado, dentro de la abertura de la matriz V12: el láser corta sólo un piloto Ø{FRONT_PILOT_D:.1f} en cada uno; agrandarlos con mecha DESPUÉS de plegar y ANTES de soldar (Dinacut). "
-                   f"Después de soldar: verificar asiento libre, caras alineadas y luz SIN PINTAR {FRONT_BARE_GAP_MIN:.2f}-{FRONT_BARE_GAP_MAX:.2f} mm. "
+                   f"Chapa de 1250 de ancho (desarrollo {W-2*T+2*(_base_ridge_peak_height()-DEV90):.1f} x 538.6). Conservar el contorno de cierre y los alivios; la tapa debe asentar sin forzar. Plegado convencional ±0.7. "
+                   f"Los 9 agujeros Ø2.5 de la pared frontal (centro a 4.545 mm de la línea de plegado) NO llevan piloto láser: "
+                   f"con el cuerpo escuadrado SIN SOLDAR y la tapa asentada (calce de 1 mm en la luz frontal), perforarlos a través de los pilotos Ø{FRONT_PILOT_D:.1f} de la tapa (Dinacut), DESPUÉS de plegar y ANTES de soldar. "
                    "Después de pintar: calces metálicos Ø7/paso4.0-4.2 ajustados individualmente entre caras pintadas. Verificar apoyo y paralelismo. "
                    "Arandelas M3 Ø7 delante; Ø12/paso3.2/espesor1 detrás, referencia de compra por confirmar. No apretar sobre la luz vacía. "
                    f"Soldar las cuatro esquinas del cuerpo, cerrar sus alivios y las dos uniones superiores trasera/lateral en otro taller; aporte 5356 elegido por el soldador. Terminación exterior al ras sin adelgazar chapa ni unión; conservar el asiento de la tapa desmontable. No soldar la tapa. Mantener escuadra sin forzar paredes; plegar la trasera a escuadra "
@@ -6844,13 +6859,12 @@ BEND_FOOTNOTES = {
     "segno_faceplate": (f"Factor K {KF} | desarrollo del plegado = rad(rotación) x (Ri + K x T). "
                         f"Material entre pliegue frontal y pedales: {_front_pedal_bend_land:.3f} mm; verificar herramental. "
                         "PLEGAR con la cara DIBUJADA como CARA EXTERIOR; encoder a la IZQUIERDA del músico. "
-                        f"Frente: 9 pasos Ø{D_LID_SCREW:.1f} (±0.20), centro a "
+                        f"Plegado convencional ±0.7. Frente: 9 pasos Ø{D_LID_SCREW:.1f}, centro a "
                         f"{abs(LID_FRONT_FL-(FRONT_SCREW_Z+DEV90)):.3f} mm del pliegue, dentro de la V12. "
-                        f"El láser corta un piloto Ø{FRONT_PILOT_D:.1f}; DRILL es el diámetro final, con mecha DESPUÉS de plegar. "
+                        f"El láser corta un piloto Ø{FRONT_PILOT_D:.1f}. Con la tapa asentada sobre el cuerpo escuadrado y SIN SOLDAR, "
+                        "perforar Ø2.5 a través del piloto hasta la pared frontal del cuerpo; después agrandar la tapa al Ø DRILL. "
                         f"Trasera: 9 ranuras CUT {LID_REAR_SLOT_L:.1f} x {LID_REAR_SLOT_W:.1f}, "
                         f"largo/ancho ±{LID_REAR_SLOT_TOL:.2f} SIN PINTAR, eje largo en profundidad de solapa; verificar zona de matriz. "
-                        f"La luz frontal {FRONT_BARE_GAP_MIN:.2f}-{FRONT_BARE_GAP_MAX:.2f} mm se verifica en el conjunto SIN PINTAR tras soldar, "
-                        "sin forzar paredes y con caras de apoyo alineadas. No la garantiza el taladrado. "
                         f"Calce STEP nominal {LIP_BARE_CLEAR:.2f} mm; elegir cada calce metálico después de pintar. "
                         "La estimación de luz pintada 0.357-1.488 mm presupone esa aceptación en seco; verificar asiento y paralelismo. "
                         "Arandelas M3 Ø7 delante y Ø12/paso3.2/espesor1 detrás; confirmar hardware. "

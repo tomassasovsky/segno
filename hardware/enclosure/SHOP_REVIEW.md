@@ -19,9 +19,11 @@ What changed since the 2026-09-15 drafts, as far as the shops are concerned:
   the centre of its free span. Neither changes a process step.
 - The beam has no wall ears (owner call 2026-09-30): a plain C with two long
   folds, 839.8 mm, square ends about 3 mm short of each side wall.
-- Dinacut drills (owner call 2026-09-30): the nine front stations on lid and
-  body are Ø1.0 laser pilots, drilled out to Ø2.5 / Ø4.5 after folding and
-  before welding. There is no post-weld drilling step and no provider to pick.
+- Dinacut drills (owner call 2026-09-30): the nine front stations are Ø1.0
+  laser pilots on the lid only. With conventional ±0.7 bends (owner call
+  2026-10-08, quote 4470) Dinacut drills the pair together after folding and
+  before welding: body clamped square, lid seated, Ø2.5 through the lid pilots
+  into the wall, lid opened to Ø4.5. There is no post-weld drilling step.
 - **Ring disc stays in the order** (owner call 2026-09-30): with the 34-LED strip
   ring it is glued on the printed centre cap so the centre matches the lid. It is
   now Ø51.0 with two Ø8.0 access holes over the cap screws.
@@ -61,11 +63,13 @@ secuencia de plegado y viabilidad del perfil agudo del desarrollo. Si cambian
 radio, abertura de matriz o descuento de pliegue, avísenme y corrijo los
 archivos antes de fabricar.
 
-Las nueve fijaciones delanteras de la tapa y del cuerpo quedan muy cerca del
-pliegue, así que el láser corta sólo un piloto de Ø1 en cada una (en CUT).
-Después de plegar, y antes de que la base vaya al soldador, hay que agrandarlas
-con mecha: Ø2,5 en el cuerpo y Ø4,5 en la tapa (capa DRILL, diámetro final).
-Se taladran por separado, no hace falta presentar la tapa. Las roscas M3 las
+Las nueve fijaciones delanteras quedan muy cerca del pliegue, así que el
+láser corta sólo un piloto de Ø1 en cada una de la tapa (en CUT); la pared
+frontal del cuerpo no lleva piloto. Después de plegar, y antes de que la base
+vaya al soldador: escuadrar el cuerpo con prensas, asentar la tapa con un calce
+de 1 mm en la luz frontal, perforar Ø2,5 a través de cada piloto de la tapa
+hasta la pared del cuerpo, y después agrandar sólo la tapa a Ø4,5 (capa DRILL,
+diámetro final). El plegado es convencional (±0,7). Las roscas M3 las
 hago yo después de pintar.
 
 ## Matías — agreed welding scope

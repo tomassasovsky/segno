@@ -54,11 +54,14 @@ remain internal assembly aids. Labels stay on individual pedal tiles.
 
 ### Work sequence
 
-1. **Dinacut:** cut, fold, drill and deburr, without chamfering, tapping or
-   painting. The nine front stations on the lid and on the body are cut as
-   Ø1.0 laser pilots only, because they sit inside the V12 die zone and a
-   full-size hole would distort in the fold. After folding, and before the base
-   goes to the welder, drill them out to Ø2.5 (body) and Ø4.5 (lid).
+1. **Dinacut:** cut, fold (conventional press brake, ±0.7 across a fold),
+   drill and deburr, without chamfering, tapping or painting. The nine front
+   stations on the lid are cut as Ø1.0 laser pilots only, because they sit
+   inside the V12 die zone and a full-size hole would distort in the fold; the
+   body's front wall has no pilots. After folding, and before the base goes to
+   the welder, Dinacut clamps the body square, seats the lid on it with a 1 mm
+   spacer in the front gap, drills Ø2.5 through each lid pilot into the wall,
+   and then opens the lid's nine holes to Ø4.5.
    Confirm stock, tool access, inside radii and bend development before final
    files. The source uses K=0.33, R2 for aluminium and R1.6 for the steel beam;
    follow each part's fold order and drawn-face orientation. Confirm tool access,
@@ -106,15 +109,21 @@ cutting. Do not issue the previous two-corner archive as this four-corner revisi
 Shop-facing instructions and title blocks are Spanish. Part stems and layer
 names remain the identifiers used in the matching files. `CUT` and `VENT` both
 cut through; the floor has no vents, while side/rear openings remain. `DRILL`
-is the finished diameter, drilled after folding and before welding; the laser
-cuts only the Ø1.0 pilot at the same centre, on `CUT`. `BEND` is reference only: do not
+is the finished diameter, drilled after folding and before welding; on the lid
+the laser cuts only the Ø1.0 pilot at the same centre, on `CUT`, and the body's
+front-wall `DRILL` circles have no pilot (drilled through the lid). `BEND` is reference only: do not
 cut, score or engrave it. `MASK` identifies electrical-bond coating protection,
 never a cutting contour.
 
 The general block is Dinacut's stated capability and nothing tighter (owner
 call 2026-09-30, #1090: tighter tolerances cost far more): hole position and
 hole or slot size ±0.20 mm, bend angle ±1°, flat exterior size ±0.30 mm and
-dimensions across one fold ±0.50 mm. The design carries the margin instead:
+dimensions across one fold ±0.70 mm. That last row is their **conventional**
+bending (owner call 2026-10-08, quote 4470): the ±0.50 the drawings asked for
+before was priced as precision forming, at more than twice the July quote
+(4462: US$375 against 4470: US$171). Every fit that crosses a fold absorbs
+±0.7: the lid's rear slots, the felt-selected beam and prop, the welded
+corners, and the front holes, which are drilled through the seated lid. The design carries the margin instead:
 every opening below still passes its part at −0.20 with the full coating, and
 the generator gates that. Fuse and MIDI were opened and the D flanges trimmed
 to Ø24.20 for it; at +0.20 on both holes the D-flange web to its M3 pair is
@@ -129,14 +138,18 @@ limits. Check one common, freely seated lid pose across all nine stations.
 Correct face alignment before coating: parallel shim packs cannot correct a
 wedge between the lip and wall.
 
-Only the **nine front lid clearances and nine matching body pilots** are
-`DRILL`. Each has a Ø1.0 laser pilot on `CUT` at its centre; the drawing
-stations (A at the bare floor underside, B at the bare left-wall interior) are
-for checking. Nominal front axis height is 6.455 mm above A. After folding and
-before welding, drill the body pilots out to Ø2.5 and the lid's nine front
-passages to **Ø4.50 ±0.20**. The parts are drilled separately, not as a
-fitted pair: the Ø4.5 clearance on an M3 leaves 0.75 mm of float for the fold
-and weld stack.
+Only the **nine front lid clearances and nine matching body holes** are
+`DRILL`. Each lid station has a Ø1.0 laser pilot on `CUT` at its centre; the
+body's front wall has none. The drawing stations (A at the bare floor
+underside, B at the bare left-wall interior) are for checking. Nominal front
+axis height is 6.455 mm above A. After folding and before welding, the parts
+are drilled **as a fitted pair**: body clamped square, lid seated with a 1 mm
+spacer in the front gap, Ø2.5 through each lid pilot into the wall, then the
+lid's nine passages opened to **Ø4.50 ±0.20**. Drilled separately, three
+conventional folds (wall, side-wall seat, lid lip) could put the two holes
+~1.2–2 mm apart, beyond what the 12 mm lip has room for. The Ø4.5 is still
+needed after the pair is drilled: coating the seats lifts the lid 0.3–0.5 mm
+and it re-seats within its rear slots each time it goes back on.
 Leave all body pilots untapped. The nine rear body pilots remain CUT; the
 lid's rear openings are **10 ×6 mm CUT slots, length along lap depth**, each
 dimension ±0.20 mm. Do not transfer-drill the retired rear round-hole pattern.

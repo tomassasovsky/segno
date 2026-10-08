@@ -42,7 +42,9 @@ Open before cutting metal (owner):
    Fallback if the floor ever takes a set: a fourth printed rail row at
    v 221.4, which the model puts at 86 MPa / 0.74 mm; no metal rework.
 3. ~~Post-weld fitting/drilling provider~~ settled (#1090): Dinacut drills the
-   nine front stations from Ø1.0 laser pilots after folding, before welding.
+   nine front stations after folding, before welding, as a fitted pair: lid
+   seated on the clamped body, Ø2.5 through the lid's Ø1.0 pilots into the
+   wall, lid opened to Ø4.5. Bends are conventional ±0.7 (quote 4470).
 4. ~~PD coupler diagonal~~ settled (#1090): the owner found the cut flipped
    against the part; it now takes the CTRL plates' diagonal (top-left /
    bottom-right seen from behind). The printed rear-wall coupons fit every
