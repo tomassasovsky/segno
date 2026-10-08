@@ -45,7 +45,6 @@ const _rig = LooperState(
     inputChannels: 4,
     outputChannels: 4,
   ),
-  inputPeaks: [0, 0, 0, 0],
   // Two destinations: outputs 1-2 and outputs 3-4.
   outputBusCount: 2,
 );
@@ -108,6 +107,12 @@ void main() {
     addTearDown(monitorChanges.close);
     addTearDown(monitorParams.close);
     when(() => repository.looperState).thenAnswer((_) => states.stream);
+    // Live levels reach the meters apart from the state (#1301): silence
+    // unless a test sets them.
+    when(() => repository.meters).thenReturn(const MeterLevels());
+    when(
+      () => repository.meterLevels,
+    ).thenAnswer((_) => const Stream<MeterLevels>.empty());
     when(
       () => repository.mixSettingsFailures,
     ).thenAnswer((_) => const Stream.empty());
@@ -798,13 +803,10 @@ void main() {
   testWidgets("the meters read the destination's own jacks", (tester) async {
     // Outputs 1-4 at four different peaks: the master hears the first pair
     // and the second destination the second.
-    await pump(
-      tester,
-      state: _rig.copyWithOutput(
-        const OutputBus(),
-        peaks: const [1, 0.5, 0.25, 0.125],
-      ),
+    when(() => repository.meters).thenReturn(
+      const MeterLevels(outputPeaks: [1, 0.5, 0.25, 0.125]),
     );
+    await pump(tester, state: _rig.copyWithOutput(const OutputBus()));
     await openOutputSetup(tester);
     final l10n = l10nOf(tester);
 
@@ -819,12 +821,12 @@ void main() {
 
   testWidgets('a muted destination meters silence, whatever the engine last '
       'reported', (tester) async {
+    when(
+      () => repository.meters,
+    ).thenReturn(const MeterLevels(outputPeaks: [1, 1, 0, 0]));
     await pump(
       tester,
-      state: _rig.copyWithOutput(
-        const OutputBus(muted: true),
-        peaks: const [1, 1, 0, 0],
-      ),
+      state: _rig.copyWithOutput(const OutputBus(muted: true)),
     );
     await openOutputSetup(tester);
     final l10n = l10nOf(tester);
@@ -1382,17 +1384,11 @@ Future<void> openRecord(WidgetTester tester) async {
 }
 
 extension on LooperState {
-  /// [_rig] with the master destination set to [bus] and the given jack
-  /// [peaks].
-  LooperState copyWithOutput(
-    OutputBus bus, {
-    List<double> peaks = const [0, 0, 0, 0],
-  }) => LooperState(
+  /// [_rig] with the master destination set to [bus].
+  LooperState copyWithOutput(OutputBus bus) => LooperState(
     tracks: tracks,
     status: status,
-    inputPeaks: inputPeaks,
     outputBusCount: outputBusCount,
-    outputPeaks: peaks,
     outputSetup: OutputSetup(buses: {kMasterOutputBus: bus}),
   );
 
@@ -1412,7 +1408,6 @@ extension on LooperState {
             inputChannels: inputs,
             outputChannels: status.outputChannels,
           ),
-    inputPeaks: inputPeaks,
     outputBusCount: outputBusCount,
   );
 
@@ -1427,7 +1422,6 @@ extension on LooperState {
           inputChannels: inputs,
           outputChannels: outputs,
         ),
-        inputPeaks: inputPeaks,
         outputBusCount: (outputs + 1) ~/ 2,
       );
 
@@ -1435,7 +1429,6 @@ extension on LooperState {
   LooperState copyWithInputSetup(InputSetup setup) => LooperState(
     tracks: tracks,
     status: status,
-    inputPeaks: inputPeaks,
     outputBusCount: outputBusCount,
     inputSetup: setup,
   );
@@ -1450,7 +1443,6 @@ extension on LooperState {
       inputChannels: inputs,
       outputChannels: status.outputChannels,
     ),
-    inputPeaks: inputPeaks,
     outputBusCount: outputBusCount,
   );
 
@@ -1464,7 +1456,6 @@ extension on LooperState {
       Track(channel: 1),
     ],
     status: status,
-    inputPeaks: inputPeaks,
     outputBusCount: outputBusCount,
   );
 
@@ -1479,7 +1470,6 @@ extension on LooperState {
       outputChannels: status.outputChannels,
       inputClipMask: 1 << input,
     ),
-    inputPeaks: inputPeaks,
   );
 }
 

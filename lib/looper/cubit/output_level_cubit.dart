@@ -4,15 +4,14 @@ import 'dart:math' show ln10, log;
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/looper/model/meter_scale.dart';
 
 part 'output_level_state.dart';
 
-/// A peak at or above this reads as clipping — the engine's level is the
-/// absolute sample peak, so full scale is 1.0.
-const double kClipPeak = 0.999;
-
 /// The stage footer's `OUT` readout: the master-bus peak, refreshed the way a
-/// DAW's numeric peak display is (#1301).
+/// DAW's numeric peak display is (#1301). It follows
+/// `LooperRepository.meterLevels`, not the looper state, which carries no
+/// levels.
 ///
 /// **Why it does not follow every poll.** The engine is polled every 16 ms,
 /// and with an input monitored the master bus carries that input's noise
@@ -34,14 +33,14 @@ class OutputLevelCubit extends Cubit<OutputLevelState> {
   OutputLevelCubit({
     required LooperRepository repository,
     Duration refreshInterval = const Duration(milliseconds: 250),
-  }) : super(OutputLevelState.of(repository.state.transport.outputPeak)) {
-    _latest = repository.state.transport.outputPeak;
+  }) : super(OutputLevelState.of(repository.meters.outputPeak)) {
+    _latest = repository.meters.outputPeak;
     _held = _latest;
-    _subscription = repository.looperState.listen(_onLooperState);
+    _subscription = repository.meterLevels.listen(_onLevels);
     _ticker = Timer.periodic(refreshInterval, (_) => _publish());
   }
 
-  late final StreamSubscription<LooperState> _subscription;
+  late final StreamSubscription<MeterLevels> _subscription;
   late final Timer _ticker;
 
   /// The most recent peak. The repository drops repeated identical states, so
@@ -52,8 +51,8 @@ class OutputLevelCubit extends Cubit<OutputLevelState> {
   /// The highest peak since the last publish.
   late double _held;
 
-  void _onLooperState(LooperState looper) {
-    _latest = looper.transport.outputPeak;
+  void _onLevels(MeterLevels levels) {
+    _latest = levels.outputPeak;
     if (_latest > _held) _held = _latest;
     if (_latest >= kClipPeak && !state.clip) _publish();
   }

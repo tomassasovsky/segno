@@ -103,6 +103,7 @@ void main() {
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
   late OutputLevelCubit outputLevel;
+  late StreamController<MeterLevels> meterLevels;
   late AudioSetupCubit audioSetup;
   late PedalRepository pedalRepo;
   late FakePedalLink pedalLink;
@@ -127,6 +128,12 @@ void main() {
     );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
+    // Live levels reach the meters apart from the state (#1301): silence
+    // unless a test sets them with [setLevels].
+    meterLevels = StreamController<MeterLevels>.broadcast();
+    addTearDown(meterLevels.close);
+    when(() => repository.meters).thenReturn(const MeterLevels());
+    when(() => repository.meterLevels).thenAnswer((_) => meterLevels.stream);
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -189,8 +196,8 @@ void main() {
       const Stream<TransportClockState>.empty(),
       initialState: const TransportClockState(),
     );
-    // The footer's OUT readout. Mocked like the clock: [seed] sets its reading
-    // from the seeded peak, so the footer still shows the seeded level.
+    // The footer's OUT readout. Mocked like the clock; a footer test sets its
+    // reading directly.
     outputLevel = _MockOutputLevelCubit();
     whenListen(
       outputLevel,
@@ -238,11 +245,15 @@ void main() {
     ).thenAnswer((_) async {});
   });
 
+  /// Sets the live levels the meters read: the starting levels for a pump,
+  /// and a tick for a meter already on screen.
+  void setLevels(MeterLevels levels) {
+    when(() => repository.meters).thenReturn(levels);
+    meterLevels.add(levels);
+  }
+
   void seed(LooperState state) {
     when(() => bloc.state).thenReturn(state);
-    when(
-      () => outputLevel.state,
-    ).thenReturn(OutputLevelState.of(state.transport.outputPeak));
     // Keep the repository snapshot (what ControlIntents reads) in step with
     // the bloc state the view renders.
     when(() => repository.state).thenReturn(state);
@@ -1425,8 +1436,8 @@ void main() {
       // `List.of`, not a literal: a const literal would be canonicalised into
       // the same instance both times and make this test vacuous, which is
       // exactly what the analyzer would rather have here.
-      Track projected({required double peak}) => Track(
-        peak: peak,
+      Track projected({required int position}) => Track(
+        positionFrames: position,
         lanes: List.of(const [Lane(inputChannel: 0)]),
         effects: List.of([BuiltInEffect(type: TrackEffectType.drive)]),
       );
@@ -1435,10 +1446,10 @@ void main() {
         tester,
         name: 'DRUMS',
         mode: InteractionMode.record,
-        track: projected(peak: 0),
-        // Same facts, new lists, and a level that has moved since — exactly
-        // what the rig looks like one poll later.
-        liveTrack: projected(peak: 0.9),
+        track: projected(position: 0),
+        // Same facts, new lists, and a playhead that has moved since —
+        // exactly what the rig looks like one poll later.
+        liveTrack: projected(position: 480),
       );
 
       expect(tester.takeException(), isNull);
@@ -1882,10 +1893,9 @@ void main() {
       tester,
     ) async {
       const playing = LooperState(
-        tracks: [
-          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.81),
-        ],
+        tracks: [Track(state: TrackState.playing, lengthFrames: 1000)],
       );
+      setLevels(const MeterLevels(tracks: [TrackLevels(peak: 0.81)]));
       const stopped = LooperState(
         tracks: [Track(state: TrackState.stopped, lengthFrames: 1000)],
       );
@@ -1903,6 +1913,8 @@ void main() {
       // instead of collapsing.
       current = stopped;
       controller.add(stopped);
+      setLevels(const MeterLevels(tracks: [TrackLevels.silent]));
+      await tester.pump();
       await tester.pump();
       expect(fillOf(tester, 0), live);
     });
@@ -1910,30 +1922,19 @@ void main() {
     testWidgets('a rising level moves the bar', (tester) async {
       // The companion to the freeze test above, and the guard #646 needs: that
       // one asserts the fill STAYS PUT, so it passes whether or not updates
-      // reach the column. Since the track now arrives through a selector in
-      // `_TrackSlot` rather than being handed down directly, a selector that
-      // stopped yielding new values would freeze every meter on the console
-      // with the rest of the suite still green.
-      const low = LooperState(
-        tracks: [
-          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.2),
-        ],
+      // reach the column. The level now arrives on the repository's meter
+      // stream (#1301), so a meter that stopped following it would freeze
+      // every meter on the console with the rest of the suite still green.
+      const playing = LooperState(
+        tracks: [Track(state: TrackState.playing, lengthFrames: 1000)],
       );
-      const high = LooperState(
-        tracks: [
-          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.9),
-        ],
-      );
-      final controller = StreamController<LooperState>();
-      addTearDown(controller.close);
-      var current = low;
-      when(() => bloc.state).thenAnswer((_) => current);
-      whenListen(bloc, controller.stream, initialState: low);
+      seed(playing);
+      setLevels(const MeterLevels(tracks: [TrackLevels(peak: 0.2)]));
       await pump(tester);
 
       final before = fillOf(tester, 0);
-      current = high;
-      controller.add(high);
+      setLevels(const MeterLevels(tracks: [TrackLevels(peak: 0.9)]));
+      await tester.pump();
       await tester.pump();
 
       expect(
@@ -2613,15 +2614,11 @@ void main() {
     testWidgets('the strip meters the two sides separately', (tester) async {
       seed(
         const LooperState(
-          tracks: [
-            Track(
-              state: TrackState.playing,
-              lengthFrames: 1000,
-              peakL: 1,
-              peakR: 0.001,
-            ),
-          ],
+          tracks: [Track(state: TrackState.playing, lengthFrames: 1000)],
         ),
+      );
+      setLevels(
+        const MeterLevels(tracks: [TrackLevels(peakL: 1, peakR: 0.001)]),
       );
       await pump(tester);
       await showMixer(tester);
@@ -2791,11 +2788,11 @@ void main() {
             tempoBpm: 84,
             tempoSource: TempoSource.manual,
             looperMode: LooperMode.sync,
-            outputPeak: 0.5,
           ),
           tracks: [Track()],
         ),
       );
+      when(() => outputLevel.state).thenReturn(OutputLevelState.of(0.5));
       await pump(tester);
 
       expect(find.text('84.0'), findsOneWidget);
@@ -2825,12 +2822,8 @@ void main() {
     });
 
     testWidgets('the footer flags output clipping in red', (tester) async {
-      seed(
-        const LooperState(
-          transport: TransportState(outputPeak: 1),
-          tracks: [Track()],
-        ),
-      );
+      seed(const LooperState(tracks: [Track()]));
+      when(() => outputLevel.state).thenReturn(OutputLevelState.of(1));
       await pump(tester);
 
       final output = tester.widget<AppText>(
@@ -3560,17 +3553,13 @@ void main() {
 
       final before = tester.widget<GestureDetector>(_chromeProbe);
 
-      // Exactly what a moving meter emits: same structure, new levels.
-      // Nothing the chrome renders depends on any of it.
-      const loud = LooperState(
-        tracks: [
-          Track(peak: 0.9),
-          Track(channel: 1, peak: 0.6),
-        ],
-        status: EngineStatus(isConnected: true),
+      // Exactly what a moving meter emits: new levels on the meter stream,
+      // and nothing at all on the looper state (#1301).
+      setLevels(
+        const MeterLevels(
+          tracks: [TrackLevels(peak: 0.9), TrackLevels(peak: 0.6)],
+        ),
       );
-      when(() => bloc.state).thenReturn(loud);
-      states.add(loud);
       await tester.pump();
 
       expect(
@@ -3603,15 +3592,8 @@ void main() {
       final before = tester.widget<TrackColumn>(_column(0));
       final other = tester.widget<TrackColumn>(_column(1));
 
-      const loud = LooperState(
-        tracks: [
-          Track(state: TrackState.playing, lengthFrames: 96000, peak: 0.9),
-          Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
-        ],
-        status: EngineStatus(isConnected: true),
-      );
-      when(() => bloc.state).thenReturn(loud);
-      states.add(loud);
+      setLevels(const MeterLevels(tracks: [TrackLevels(peak: 0.9)]));
+      await tester.pump();
       await tester.pump();
 
       expect(
@@ -3638,7 +3620,7 @@ void main() {
               ),
             )
             .peak,
-        0.9,
+        closeTo(0.9, 0.01),
       );
     });
 

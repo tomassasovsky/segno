@@ -634,7 +634,6 @@ void main() {
       expect(state.track.volume, closeTo(1, 1e-6));
       expect(state.track.muted, isFalse);
       expect(state.track.lengthFrames, 96000);
-      expect(state.track.peak, closeTo(0.5, 1e-6));
       expect(state.track.canUndo, isTrue);
       expect(state.track.hasContent, isTrue);
       expect(state.track.inputMask, 0x2);
@@ -1864,30 +1863,55 @@ void main() {
 
   group('looperState stream', () {
     test(
-      'a peak-only poll reaches subscribers without changing steady facts',
+      'a level-only poll moves the meters and leaves the state alone',
       () async {
+        // Levels change on every poll while any signal flows; inside
+        // LooperState they rebuilt every surface at idle (#1301).
         engine.nextSnapshot = _playingAt(24000, peak: 0.1);
         final repo = buildRepo();
         addTearDown(repo.dispose);
-        final emitted = <LooperState>[];
-        final sub = repo.looperState.listen(emitted.add);
-        addTearDown(sub.cancel);
+        final states = <LooperState>[];
+        final levels = <MeterLevels>[];
+        final stateSub = repo.looperState.listen(states.add);
+        final levelSub = repo.meterLevels.listen(levels.add);
+        addTearDown(stateSub.cancel);
+        addTearDown(levelSub.cancel);
         await Future<void>.delayed(Duration.zero);
 
         engine.nextSnapshot = _playingAt(24000, peak: 0.9);
         ticker.add(null);
         await Future<void>.delayed(Duration.zero);
 
-        // The unchanged following poll is still suppressed.
+        // An unchanged following poll publishes nothing on either stream.
         ticker.add(null);
         await Future<void>.delayed(Duration.zero);
 
-        expect(emitted, hasLength(2));
-        expect(emitted.map((state) => state.track.peak), [0.1, 0.9]);
-        expect(emitted.last.transport, emitted.first.transport);
-        expect(emitted.last.track.steadyProps, emitted.first.track.steadyProps);
+        expect(states, hasLength(1));
+        expect(levels.map((l) => l.track(0).peak), [0.1, 0.9]);
+        expect(repo.meters.track(0).peak, 0.9);
       },
     );
+
+    test('meters carry the master, input and output levels', () async {
+      engine.nextSnapshot = _playingSnapshot.copyWith(
+        outputPeak: 0.5,
+        inputPeaks: [0.25, 0.125],
+        outputPeaks: [0.5, 0.4, 0, 0],
+      );
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      final meters = repo.meters;
+      expect(meters.outputPeak, 0.5);
+      expect(meters.inputPeak(1), 0.125);
+      expect(meters.outputChannelPeak(1), 0.4);
+      // Out of range reads as silence rather than throwing.
+      expect(meters.inputPeak(7), 0);
+      expect(meters.track(99), TrackLevels.silent);
+    });
 
     test('emits a projected state on each tick, distinctly', () async {
       final repo = buildRepo();
@@ -6202,7 +6226,6 @@ void main() {
         expect(transport.countInBeatsLeft, 3);
         expect(transport.looperMode, LooperMode.band);
         expect(transport.primaryTrack, 2);
-        expect(transport.outputPeak, closeTo(0.5, 1e-9));
       },
     );
 
