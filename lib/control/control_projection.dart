@@ -108,9 +108,9 @@ int? queuedSongTrack(LooperState looper, ControlState overlay) {
 /// show each section with a take that is not muted. Record mode: the cursor
 /// and any capturing track read red, except a Song or Band section waiting
 /// to start ([queuedSongTrack]), which reads green for a waiting Play and
-/// red for a waiting Record (its pill fills) even on the cursor. FX mode: blue = the track's Track-stage chain is engaged. Custom
-/// mode: blue = the assigned function is active, based on its current
-/// target/contact state.
+/// red for a waiting Record (its pill fills) even on the cursor. FX mode:
+/// blue = the track's Track-stage chain is engaged. Custom mode: blue = the
+/// assigned function is active, based on its current target/contact state.
 ///
 /// The FX-mode reading costs ZERO new wire bytes (R8): the same `trackLeds`
 /// enum-index byte carries a different meaning per mode, so the firmware
