@@ -6187,6 +6187,8 @@ void main() {
           countInBeatsLeft: 3,
           looperMode: LooperMode.band,
           primaryTrack: 2,
+          songQueuedTrack: 1,
+          songQueueProgress: 0.375,
           outputPeak: 0.5,
           // The crown only projects onto a track that holds a completed
           // take (see `resolvedPrimaryTrack`), so give the designated
@@ -6229,6 +6231,9 @@ void main() {
         expect(transport.countInBeatsLeft, 3);
         expect(transport.looperMode, LooperMode.band);
         expect(transport.primaryTrack, 2);
+        // The Song queue is the engine's own fact, carried as it is (#1077).
+        expect(transport.songQueuedTrack, 1);
+        expect(transport.songQueueProgress, 0.375);
       },
     );
 

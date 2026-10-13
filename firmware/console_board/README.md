@@ -10,7 +10,7 @@ the state frames segno pushes back. segno runs the behavior machine.
 |---|---|---|
 | Link TX / RX | GP16 / GP17 | UART0 → Pi uart3 (GPIO8/9, `/dev/ttyAMA3`), 115200 8N1 |
 | Footswitches | GP2–GP11 | REC/PLAY, STOP, UNDO, MODE, TRACK1–4, CLEAR, BANK. Internal pull-up, active low, 8 ms stable-edge debounce |
-| Ring data | GP12 | **v2 only**: via 74AHCT125 → J6 pin 5, one continuous 40-pixel GRB strip. On v3 (#987) the ring board clocks its own LEDs and GP12 is on the expansion header |
+| Ring data | GP12 | **v2 only**: via 74AHCT125 → J6 pin 5, one continuous 34-pixel GRB strip (the console enclosure's strip ring, #1090). On v3 (#987) the ring board clocks its own LEDs and GP12 is on the expansion header |
 | Encoder A / B / SW | GP13 / GP14 / GP15 | **v2 only**: internal pull-ups plus the board's 10 k to the Pi's 3V3; one message per detent, decoded from pin-change interrupts. The push switch (SW) is active low and debounced like a footswitch (8 ms stable edge), one `ENCODER_BUTTON` message per press and per release |
 | Ring link | GP13 / GP14 | **v3** (#987): full-duplex UART to the ring board's XIAO RP2350 — GP13 drives, GP14 listens, 115200, PIO UART (neither pin is on a free hardware UART). The console board's 10 k pull-ups hold both lines. **Not implemented in this firmware yet**: it still drives GP12 and reads GP13–15 as an encoder, which is the v2 board |
 | Indicator data | GP18 | via 74AHCT125 → J7 pin 2, **80** GRB WS2812 pixels, eight per pill, sent with PIO/DMA |
@@ -22,13 +22,13 @@ the state frames segno pushes back. segno runs the behavior machine.
 
 ## Physical rendering and source boundary
 
-Firmware 1.13 uses public UART protocol 9 (protocol 8 plus `ENCODER_BUTTON`;
-the STATE layout is unchanged). The physical renderer is reconciled
-from PR #1079 (`ecea3af76fdb0708ca04632e260de5aa3fde09cd`), whose old-v2
-firmware 1.11 used protocol 7 with a different 21-byte Song queue payload.
-PR #1082 also uses public protocol 7 (and historical 6 for PD telemetry), with
-a separate new-v3 pin map and private ring link. Neither format is accepted
-here. Reconstructed Custom protocol 6 was a software intermediate and is not a
+Firmware 1.14 uses public UART protocol 10: protocol 9 (`ENCODER_BUTTON`)
+with two STATE bytes for the Song queue (#1077). The physical renderer is
+reconciled from PR #1079 (`ecea3af76fdb0708ca04632e260de5aa3fde09cd`), whose
+old-v2 firmware 1.11 used protocol 7 with a different 21-byte Song queue
+payload. PR #1082 also uses public protocol 7 (and historical 6 for PD
+telemetry), with a separate new-v3 pin map and private ring link. Neither
+format is accepted here. Reconstructed Custom protocol 6 was a software intermediate and is not a
 standalone hardware recommendation. Update this firmware and its matching app
 together; no downgrade or compatibility format is emitted.
 
@@ -46,20 +46,34 @@ dim the display. NeoPixelBus PIO/DMA preserves interrupts during the longer
 80-pixel transfer. Forced refresh, goodbye and stale-link darkening cover the
 whole chain. RGB black is a valid deliberately dark hue.
 
-The independent 40-pixel ring retains the sourced sustained comet: 1100 ms per
-turn, 30 lit positions, fractional circular interpolation, peak duty 192 and
-color-only gamma. It freezes position/color on a stopped loaded loop, shows
-master gain for 900 ms, and breathes green when empty. Ambient/startup output
-retains brightness 96; every transfer has a total channel budget of 11520.
-The combined estimated current is about 1.635 A including assumed pixel idle
-and logic consumption. This is a planning bound, not a measured guarantee.
-The app's semantic activity fields drive the ring independently of pill hue.
+The independent 34-pixel ring (the strip ring the owner chose for the
+console, #1090) keeps the approved sustained comet: 1100 ms per turn,
+fractional circular interpolation, peak duty 192 over a two-pixel lead and
+color-only gamma. The profile was approved on 40 pixels (30 lit, the last
+quarter dark); the 34-pixel table is the same profile at the same angles,
+linearly resampled, so 26 positions are lit and the last quarter stays dark
+([simulation](../../docs/simulations/sustained-ring-comet.html)). The ring
+freezes position/color on a stopped loaded loop, shows master gain for 900 ms,
+and breathes green when empty. Ambient/startup output retains brightness 96;
+every transfer has a total channel budget of 34 x 3 x 96 = 9792. The combined
+estimated current is about 1.49 A including assumed pixel idle and logic
+consumption. This is a planning bound, not a measured guarantee. The app's
+semantic activity fields drive the ring independently of pill hue.
 
-Only this physical renderer and its limits are sourced from #1079. Its Song
-queue fields and progress-fill behavior, native audio changes, bench diagnostic
-and CAD are excluded. New-v3 ring UART/PD firmware is a separate hardware
-boundary. No physical deployment or electrical/optical validation is implied
-by the host tests or a successful Arduino compile.
+**Song queue (#1077).** While a Song section waits for the playing one's next
+lap edge, STATE byte 51 names the footswitch whose pill shows it and byte 52
+how much of the wait has played (0..254 of 255). The board fills that pill
+left to right in the hue and activity the app gave it; nothing local advances
+the fill, and a queue never lights the whole pill. The engine ends the wait by
+starting the section, and the next frame carries no queue
+([plan](../../docs/plan/2026-09-24-feat-song-pill-completion-plan.md),
+[simulation](../../docs/simulations/song-pill-completion.html)).
+
+The physical renderer, its limits, the Song queue fill and the comet profile
+are sourced from #1079. Its bench diagnostic and CAD are excluded. New-v3 ring
+UART/PD firmware is a separate hardware boundary. No physical deployment or
+electrical/optical validation is implied by the host tests or a successful
+Arduino compile.
 
 ## Wire format: the pedal link
 
@@ -70,8 +84,9 @@ type, length and payload. Plain 8-bit bytes — no MIDI, no 7-bit packing, no
 version byte on the state frame; `HELLO` carries the protocol version so a
 mismatched build shows up in segno's log and cannot exchange control/state.
 STATE bytes 0–18 retain their current meanings; bytes 19–48 hold ten RGB
-triples, and bytes 49–50 hold the physical activity mask (bits 10–15 must be
-zero). The parser accepts exactly 51 bytes and preserves the last good frame
+triples, bytes 49–50 hold the physical activity mask (bits 10–15 must be
+zero), and bytes 51–52 the Song queue: the queued footswitch + 1 (0 none) and
+its progress 0..254 (0 without one). The parser accepts exactly 53 bytes and preserves the last good frame
 on malformed input. Logical track LEDs remain snapshot facts; they do not
 compete with the ten-button mask for physical output.
 
@@ -82,9 +97,9 @@ compete with the ten-button mask for physical output.
 | `0x03 HELLO` | board → segno | `protocol, fw major, fw minor` — at boot and once a second; segno counts the board as connected while these keep coming |
 | `0x04 CTRL` | board → segno | `jack, contact, kind, value` (unchanged four bytes) |
 | `0x05 ENCODER_BUTTON` | board → segno | `pressed (0/1)` — the encoder's push switch, one message per debounced edge (protocol 9) |
-| `0x10 STATE` | segno → board | 51 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain, ten RGB triples, active mask (LE16) — see `pedal_link.h` |
+| `0x10 STATE` | segno → board | 53 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain, ten RGB triples, active mask (LE16), queued switch, queue progress — see `pedal_link.h` |
 
-segno answers every compatible protocol-9 `HELLO` with its current `STATE`, so a board that just
+segno answers every compatible protocol-10 `HELLO` with its current `STATE`, so a board that just
 (re)connected is current within a second; the board goes dark if no `STATE`
 arrives for `PEDAL_LINK_FRAME_TIMEOUT_MS` (5 s) and on the goodbye flag, and
 segno reads the board as disconnected after three silent hello intervals. Both
@@ -149,7 +164,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 09 01 0d 05 (HELLO, protocol 9, fw 1.13), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0a 01 0e 05 (HELLO, protocol 10, fw 1.14), once a second
 ```
 
 ## Bring-up record

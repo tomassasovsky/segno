@@ -28,7 +28,9 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 9: ENCODER_BUTTON (0x05) -- the encoder's push switch, press and release.
+/* 10: STATE53 -- the Song queue (#1077): which footswitch's pill fills, and
+ * how far, while a section waits for the playing one's next lap edge.
+ * 9: ENCODER_BUTTON (0x05) -- the encoder's push switch, press and release.
  * 8: ten RGB hues and a ten-bit physical activity mask (STATE51).
  * 7 is the separate Song/hardware branch (STATE21), not this format.
  * 6: mode value 3 is CUSTOM, with the same STATE shape. 5: CTRL kind NONE --
@@ -40,7 +42,7 @@ extern "C" {
  * stopped tracking the loop. The board is flashed over SWD independently of
  * the app, so the two can drift; this is what makes that visible instead of
  * silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 9u
+#define PEDAL_LINK_PROTOCOL_VERSION 10u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -55,7 +57,7 @@ extern "C" {
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
 
-#define PEDAL_LINK_STATE_LEN 51u
+#define PEDAL_LINK_STATE_LEN 53u
 #define PEDAL_LINK_MAX_PAYLOAD PEDAL_LINK_STATE_LEN
 #define PEDAL_LINK_MAX_FRAME (4u + PEDAL_LINK_MAX_PAYLOAD)
 
@@ -152,6 +154,12 @@ enum { PEDAL_LED_OFF = 0, PEDAL_LED_GREEN, PEDAL_LED_RED, PEDAL_LED_BLUE, PEDAL_
  *   18     master_gain, 0..255
  *   19..48 ten RGB triples in PEDAL_BTN order
  *   49..50 active_button_mask LE16; bits10..15 reserved zero
+ *   51     queued_button: 0 none, else the PEDAL_BTN value + 1
+ *   52     queued_progress: 0..254 of 255, 0 without a queued button
+ * The app picks the button (only a visible queued Song section has one) and
+ * lights it like any other; the board only fills that pill left to right by
+ * the progress. A full pill is never drawn from a queue: the engine ends the
+ * wait by starting the section, and the next frame carries no queue.
  */
 typedef struct pedal_color { uint8_t r, g, b; } pedal_color;
 
@@ -170,6 +178,8 @@ typedef struct pedal_state {
   uint8_t master_gain;
   pedal_color pedal_colors[PEDAL_BTN_COUNT];
   uint16_t active_button_mask;
+  uint8_t queued_button;
+  uint8_t queued_progress;
 } pedal_state;
 
 /* Frame a payload. `out` must hold PEDAL_LINK_MAX_FRAME bytes. Returns the
@@ -185,8 +195,10 @@ size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8
 size_t pedal_link_encode_state(const pedal_state *state, uint8_t *out);
 
 /* Decode a STATE payload. Returns 1 on success, 0 for a wrong length, an
- * out-of-range enum, a reserved flag bit, an active_bank > 1 or a
- * selected_track >= PEDAL_TRACK_COUNT - the same rejections as the Dart side. */
+ * out-of-range enum, a reserved flag bit, an active_bank > 1, a
+ * selected_track >= PEDAL_TRACK_COUNT, a queued_button > PEDAL_BTN_COUNT, a
+ * queued_progress of 255 or a progress without a button - the same
+ * rejections as the Dart side. */
 int pedal_link_decode_state(const uint8_t *payload, uint8_t len, pedal_state *out);
 
 /* The payload length a message type carries, or -1 for a type this codec does

@@ -94,6 +94,20 @@ bool _sounding(Track t) =>
     !t.muted &&
     (t.state == TrackState.playing || t.state == TrackState.overdubbing);
 
+/// The waiting Song section Mute mode shows, restated from engine truth.
+int? _queuedSong(ControlContext c) {
+  final transport = c.looper.transport;
+  final queued = transport.songQueuedTrack;
+  if (c.overlay.mode != InteractionMode.mute ||
+      transport.looperMode != LooperMode.song ||
+      queued < 0 ||
+      queued >= PedalStateFrame.trackCount ||
+      !(_trackAt(c.looper, queued)?.hasContent ?? false)) {
+    return null;
+  }
+  return queued;
+}
+
 bool _parked(LooperState s) =>
     s.tracks.any((t) => t.hasContent) &&
     !s.tracks.any(
@@ -240,9 +254,39 @@ final List<ControlInvariant> controlInvariants = [
     }
     return null;
   }),
+  // The Song queue the pedal shows is the engine's (#1077): the waiting
+  // section reads green and its pill fills by the engine's own progress,
+  // and nothing waits on the plate that the engine is not holding.
+  ControlInvariant('song-queue-mirrors-engine', (c) {
+    final queued = _queuedSong(c);
+    const perBank = ControlState.tracksPerBank;
+    final base = c.overlay.activeBank * perBank;
+    final onPlate = queued != null && queued >= base && queued < base + perBank;
+    final button = onPlate
+        ? PedalButton.values[PedalButton.track1.index + queued - base]
+        : null;
+    if (c.frame.queuedButton != button) {
+      return 'queued pill ${c.frame.queuedButton} != engine queue $button';
+    }
+    final progress = onPlate
+        ? (c.looper.transport.songQueueProgress * 255).floor().clamp(0, 254)
+        : 0;
+    if (c.frame.queuedProgress != progress) {
+      return 'queued fill ${c.frame.queuedProgress} != engine wait $progress';
+    }
+    if (queued != null && c.frame.trackLeds[queued] != PedalTrackLed.green) {
+      return 'queued Song section $queued is not green';
+    }
+    if (button != null && !c.frame.isLit(button)) {
+      return 'queued pill $button is dark';
+    }
+    return null;
+  }),
   ControlInvariant('muted-dark-in-mute', (c) {
     if (c.overlay.mode != InteractionMode.mute) return null;
+    final queued = _queuedSong(c);
     for (final t in c.looper.tracks) {
+      if (t.channel == queued) continue; // lit to say it is waiting
       if (t.muted &&
           t.channel < c.frame.trackLeds.length &&
           c.frame.trackLeds[t.channel] != PedalTrackLed.off) {
@@ -270,8 +314,11 @@ final List<ControlInvariant> controlInvariants = [
     return null;
   }),
   // While parked, the LEDs preview exactly what Rec/Play resumes.
+  // Song previews nothing while parked: its Rec/Play starts one section.
   ControlInvariant('parked-preview-matches-resume', (c) {
-    if (c.overlay.mode != InteractionMode.mute || !_parked(c.looper)) {
+    if (c.overlay.mode != InteractionMode.mute ||
+        c.looper.transport.looperMode == LooperMode.song ||
+        !_parked(c.looper)) {
       return null;
     }
     for (var ch = 0; ch < c.frame.trackLeds.length; ch++) {

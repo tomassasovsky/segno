@@ -50,6 +50,8 @@ size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8
 
 size_t pedal_link_encode_state(const pedal_state *s, uint8_t *out) {
   if (s->active_button_mask & ~0x03FFu) return 0;
+  if (s->queued_button > PEDAL_BTN_COUNT || s->queued_progress == 255 ||
+      (!s->queued_button && s->queued_progress)) return 0;
   uint8_t p[PEDAL_LINK_STATE_LEN];
   p[0] = (uint8_t)((s->clear_fade ? 0x01u : 0u) | (s->goodbye ? 0x02u : 0u) |
                    (s->performance_armed ? 0x04u : 0u) | (s->counting_in ? 0x08u : 0u));
@@ -71,6 +73,8 @@ size_t pedal_link_encode_state(const pedal_state *s, uint8_t *out) {
   }
   p[49] = (uint8_t)s->active_button_mask;
   p[50] = (uint8_t)(s->active_button_mask >> 8);
+  p[51] = s->queued_button;
+  p[52] = s->queued_progress;
   return pedal_link_encode(PEDAL_LINK_TYPE_STATE, p, PEDAL_LINK_STATE_LEN, out);
 }
 
@@ -86,6 +90,7 @@ int pedal_link_decode_state(const uint8_t *p, uint8_t len, pedal_state *out) {
   for (uint8_t i = 0; i < PEDAL_TRACK_COUNT; i++) {
     if (p[6 + i] >= PEDAL_LED_COUNT) return 0;
   }
+  if (p[51] > PEDAL_BTN_COUNT || p[52] == 255 || (!p[51] && p[52])) return 0;
   out->clear_fade = (p[0] & 0x01u) ? 1 : 0;
   out->goodbye = (p[0] & 0x02u) ? 1 : 0;
   out->performance_armed = (p[0] & 0x04u) ? 1 : 0;
@@ -105,6 +110,8 @@ int pedal_link_decode_state(const uint8_t *p, uint8_t len, pedal_state *out) {
     out->pedal_colors[i].b = p[21 + i * 3];
   }
   out->active_button_mask = (uint16_t)p[49] | (uint16_t)p[50] << 8;
+  out->queued_button = p[51];
+  out->queued_progress = p[52];
   return 1;
 }
 

@@ -1523,6 +1523,14 @@ class SegnoEngineBindings {
   late final _le_engine_stop_track = _le_engine_stop_trackPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// In Song (#1077) Play is a section request: with nothing playing it starts
+  /// the stopped section alone from its beginning; while another section plays
+  /// it waits for that section's next lap edge (le_snapshot.song_queued_track),
+  /// then stops every playing section and starts the target from its beginning
+  /// on the next sample. Requesting the waiting target again, or a playing
+  /// section, cancels the request; another stopped section replaces it. A
+  /// capture refuses it. Count-in launches keep their own rules. Other modes
+  /// play at once.
   int le_engine_play(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -9997,6 +10005,17 @@ final class le_snapshot extends ffi.Struct {
   /// the takes at the tempo they were laid down at and retimes from there.
   @ffi.Int32()
   external int recorded_length_frames;
+
+  /// Trailing (#1077): the Song section waiting for the playing section's
+  /// next lap edge (-1: none) and the fraction of that wait already played,
+  /// 0..1 (0 with none; it stays below 1 until the handoff clears it). Both
+  /// are decoded from ONE atomic word, so they always describe the same
+  /// request.
+  @ffi.Int32()
+  external int song_queued_track;
+
+  @ffi.Float()
+  external double song_queue_progress;
 }
 
 /// The plugin format a descriptor was discovered in.

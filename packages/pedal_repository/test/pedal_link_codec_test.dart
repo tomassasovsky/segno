@@ -94,7 +94,78 @@ void main() {
       expect(payload[18], 255);
     });
 
-    test('Custom is mode byte 3 in the 51-byte STATE', () {
+    group('Song queue (#1077)', () {
+      test('carries the queued switch and its progress in bytes 51-52', () {
+        final frame = PedalStateFrame.blank().copyWith(
+          looperMode: PedalLooperMode.song,
+          activeButtonMask: 1 << PedalButton.track3.index,
+          queuedButton: PedalButton.track3,
+          queuedProgress: 200,
+        );
+        final payload = PedalLinkCodec.encodeStatePayload(frame);
+        expect(payload[51], PedalButton.track3.index + 1);
+        expect(payload[52], 200);
+        expect(PedalLinkCodec.decodeStatePayload(payload), frame);
+      });
+
+      test('no queue is two zero bytes', () {
+        final payload = PedalLinkCodec.encodeStatePayload(
+          PedalStateFrame.blank(),
+        );
+        expect(payload.sublist(51), [0, 0]);
+        final frame = PedalLinkCodec.decodeStatePayload(payload)!;
+        expect(frame.queuedButton, isNull);
+        expect(frame.queuedProgress, 0);
+      });
+
+      test('every switch round-trips, Bank included', () {
+        for (final button in PedalButton.values) {
+          final frame = PedalStateFrame.blank().copyWith(
+            queuedButton: button,
+            queuedProgress: 254,
+          );
+          expect(
+            PedalLinkCodec.decodeStatePayload(
+              PedalLinkCodec.encodeStatePayload(frame),
+            ),
+            frame,
+          );
+        }
+      });
+
+      test('refuses a switch past Bank, a full pill and a buttonless fill', () {
+        final payload = PedalLinkCodec.encodeStatePayload(
+          PedalStateFrame.blank(),
+        );
+        for (final (button, progress) in [
+          (PedalButton.values.length + 1, 0),
+          (1, 255),
+          (0, 1),
+        ]) {
+          expect(
+            PedalLinkCodec.decodeStatePayload(
+              List<int>.of(payload)
+                ..[51] = button
+                ..[52] = progress,
+            ),
+            isNull,
+          );
+        }
+        expect(
+          () => PedalStateFrame.blank().copyWith(queuedProgress: 1),
+          throwsArgumentError,
+        );
+        expect(
+          () => PedalStateFrame.blank().copyWith(
+            queuedButton: PedalButton.track1,
+            queuedProgress: 255,
+          ),
+          throwsArgumentError,
+        );
+      });
+    });
+
+    test('Custom is mode byte 3 in the 53-byte STATE', () {
       final frame = PedalStateFrame.blank().copyWith(
         mode: PedalMode.custom,
         activeBank: 1,
@@ -111,7 +182,7 @@ void main() {
         ],
       );
       final payload = PedalLinkCodec.encodeStatePayload(frame);
-      expect(payload, hasLength(51));
+      expect(payload, hasLength(53));
       expect(payload[1], 3);
       expect(payload[4], 1);
       expect(payload[5], 5);

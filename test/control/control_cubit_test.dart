@@ -87,12 +87,18 @@ LooperState _stateWith(
   int masterPositionFrames = 0,
   int sampleRate = 48000,
   bool countingIn = false,
+  LooperMode looperMode = LooperMode.multi,
+  int songQueuedTrack = -1,
+  double songQueueProgress = 0,
 }) => LooperState(
   transport: TransportState(
     isRunning: true,
     masterLengthFrames: masterLengthFrames,
     masterPositionFrames: masterPositionFrames,
     countingIn: countingIn,
+    looperMode: looperMode,
+    songQueuedTrack: songQueuedTrack,
+    songQueueProgress: songQueueProgress,
   ),
   tracks: tracks,
   status: EngineStatus(sampleRate: sampleRate),
@@ -171,10 +177,14 @@ void main() {
     void setEngine(
       List<Track> tracks, {
       int masterPositionFrames = 0,
+      LooperMode looperMode = LooperMode.multi,
+      int songQueuedTrack = -1,
     }) {
       final state = _stateWith(
         tracks,
         masterPositionFrames: masterPositionFrames,
+        looperMode: looperMode,
+        songQueuedTrack: songQueuedTrack,
       );
       when(() => looper.state).thenReturn(state);
       looperStates.add(state);
@@ -2656,6 +2666,288 @@ void main() {
         );
         cubit
           ..toggleMode()
+          ..trackPressed(1);
+        verify(() => looper.setMute(muted: false, channel: 1)).called(1);
+        verify(() => looper.play(channel: 1)).called(1);
+      });
+    });
+
+    group('Song sections in Mute mode (#1077)', () {
+      final sections = _tracksWith(const [
+        Track(state: TrackState.playing, lengthFrames: 48000),
+        Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+        Track(channel: 5, state: TrackState.stopped, lengthFrames: 48000),
+      ]);
+
+      test('a section press is a Play request; the engine queues, cancels '
+          'and replaces', () {
+        setEngine(sections, looperMode: LooperMode.song);
+        cubit.setMode(InteractionMode.mute);
+        final overlay = cubit.state;
+        cubit.trackPressed(1);
+        verify(() => looper.play(channel: 1)).called(1);
+        setEngine(sections, looperMode: LooperMode.song, songQueuedTrack: 1);
+        cubit.trackPressed(1); // the engine cancels the waiting target
+        verify(() => looper.play(channel: 1)).called(1);
+        cubit.trackPressed(5); // the engine replaces it
+        verify(() => looper.play(channel: 5)).called(1);
+        cubit.trackPressed(0); // the playing source cancels the request
+        verify(() => looper.play()).called(1);
+        verifyNever(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        );
+        verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+        expect(cubit.state.excluded, overlay.excluded);
+        expect(cubit.state.parkedResume, overlay.parkedResume);
+      });
+
+      test('an empty track asks for nothing', () {
+        setEngine(sections, looperMode: LooperMode.song);
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..trackPressed(2);
+        verifyNever(() => looper.play(channel: any(named: 'channel')));
+      });
+
+      test('unmutes a stopped muted target before asking for it', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000, muted: true),
+            Track(
+              channel: 5,
+              state: TrackState.stopped,
+              lengthFrames: 48000,
+              muted: true,
+            ),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..trackPressed(5);
+        verifyInOrder([
+          () => looper.setMute(muted: false, channel: 5),
+          () => looper.play(channel: 5),
+        ]);
+        // A press on the muted playing section brings it back into the mix
+        // (and cancels the request that waits, in the engine).
+        cubit.trackPressed(0);
+        verifyInOrder([
+          () => looper.setMute(muted: false),
+          () => looper.play(),
+        ]);
+      });
+
+      test('Rec/Play while a section plays never asks for another', () {
+        setEngine(sections, looperMode: LooperMode.song);
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..recPlay();
+        verifyNever(() => looper.play(channel: any(named: 'channel')));
+        setEngine(sections, looperMode: LooperMode.song, songQueuedTrack: 5);
+        cubit.recPlay();
+        verifyNever(() => looper.play(channel: any(named: 'channel')));
+      });
+
+      test('Stop stops the playing section and the one that waits', () {
+        setEngine(sections, looperMode: LooperMode.song, songQueuedTrack: 1);
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..stop();
+        verify(() => looper.stopTrack()).called(1);
+        verify(() => looper.stopTrack(channel: 1)).called(1);
+        verifyNever(() => looper.stopTrack(channel: 5));
+        expect(cubit.state.parkedResume, {0});
+      });
+
+      test('Stop stops a section the engine started after the last poll', () {
+        final parked = _tracksWith(const [
+          Track(state: TrackState.stopped, lengthFrames: 48000),
+          Track(channel: 5, state: TrackState.stopped, lengthFrames: 48000),
+        ]);
+        setEngine(parked, looperMode: LooperMode.song);
+        cubit.setMode(InteractionMode.mute);
+        when(() => looper.state).thenReturn(
+          _stateWith(
+            _tracksWith(const [
+              Track(state: TrackState.stopped, lengthFrames: 48000),
+              Track(
+                channel: 5,
+                state: TrackState.playing,
+                lengthFrames: 48000,
+              ),
+            ]),
+            looperMode: LooperMode.song,
+          ),
+        );
+        cubit.stop();
+        verify(() => looper.stopTrack(channel: 5)).called(1);
+        verifyNever(() => looper.stopTrack());
+        expect(cubit.state.parkedResume, {5});
+      });
+
+      test('Stop latches the section the engine plays now, even when the '
+          'handoff landed after the last poll', () {
+        setEngine(sections, looperMode: LooperMode.song, songQueuedTrack: 1);
+        cubit.setMode(InteractionMode.mute);
+        // The engine handed off to section 1; the cubit has not polled yet.
+        when(() => looper.state).thenReturn(
+          _stateWith(
+            _tracksWith(const [
+              Track(state: TrackState.stopped, lengthFrames: 48000),
+              Track(
+                channel: 1,
+                state: TrackState.playing,
+                lengthFrames: 48000,
+              ),
+              Track(
+                channel: 5,
+                state: TrackState.stopped,
+                lengthFrames: 48000,
+              ),
+            ]),
+            looperMode: LooperMode.song,
+          ),
+        );
+        cubit.stop();
+        verify(() => looper.stopTrack()).called(1);
+        verify(() => looper.stopTrack(channel: 1)).called(1);
+        verifyNever(() => looper.stopTrack(channel: 5));
+        expect(cubit.state.parkedResume, {1});
+      });
+
+      test('a parked Stop sends nothing', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 5, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..stop();
+        verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+      });
+
+      test(
+        'entering Mute keeps the section a Stop in another mode latched',
+        () {
+          final playing = _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 2, state: TrackState.playing, lengthFrames: 48000),
+          ]);
+          setEngine(playing, looperMode: LooperMode.song);
+          cubit
+            ..setMode(InteractionMode.fade)
+            ..stop();
+          expect(cubit.state.parkedResume, {2});
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.stopped, lengthFrames: 48000),
+              Track(channel: 2, state: TrackState.stopped, lengthFrames: 48000),
+            ]),
+            looperMode: LooperMode.song,
+          );
+          cubit
+            ..setMode(InteractionMode.mute)
+            ..recPlay();
+          verify(() => looper.play(channel: 2)).called(1);
+          verifyNever(() => looper.play());
+        },
+      );
+
+      test('Stop then Rec/Play starts only the section that was playing', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 5, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..stop();
+        expect(cubit.state.parkedResume, {5});
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 5, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit.recPlay();
+        verify(() => looper.play(channel: 5)).called(1);
+        verifyNever(() => looper.play());
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 5, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        expect(cubit.state.parkedResume, isEmpty);
+      });
+
+      test('parked with nothing latched starts the selected section, else the '
+          'first', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 5, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..selectTrack(5)
+          ..setMode(InteractionMode.mute)
+          ..recPlay();
+        verify(() => looper.play(channel: 5)).called(1);
+        verifyNever(() => looper.play());
+        cubit
+          ..setMode(InteractionMode.record)
+          ..selectTrack(3)
+          ..setMode(InteractionMode.mute)
+          ..recPlay();
+        verify(() => looper.play()).called(1);
+      });
+
+      test('a bank B switch asks for its own section', () async {
+        setEngine(sections, looperMode: LooperMode.song);
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..browseBank(1);
+        transport.press(PedalButton.track2, down: true);
+        await pumpEventQueue();
+        verify(() => looper.play(channel: 5)).called(1);
+        verifyNever(() => looper.play(channel: 1));
+      });
+
+      test('the pedal frame fills the waiting section on the plate', () async {
+        setEngine(sections, looperMode: LooperMode.song);
+        cubit.setMode(InteractionMode.mute);
+        final state = _stateWith(
+          sections,
+          looperMode: LooperMode.song,
+          songQueuedTrack: 1,
+          songQueueProgress: 0.25,
+        );
+        when(() => looper.state).thenReturn(state);
+        looperStates.add(state);
+        await pumpEventQueue();
+        final frame = transport.lastFrame!;
+        expect(frame.queuedButton, PedalButton.track2);
+        expect(frame.queuedProgress, 63);
+        expect(frame.isLit(PedalButton.track2), isTrue);
+      });
+
+      test('Multi keeps its mute and resume meaning', () {
+        setEngine(sections);
+        cubit
+          ..setMode(InteractionMode.mute)
           ..trackPressed(1);
         verify(() => looper.setMute(muted: false, channel: 1)).called(1);
         verify(() => looper.play(channel: 1)).called(1);
