@@ -1244,8 +1244,8 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Content tracks whose playhead is RUNNING (playing or overdubbing),
   /// mute-ignored — what a park must freeze, and what it resumes.
-  Set<int> _running() => {
-    for (final t in _tracks)
+  Set<int> _running([List<Track>? tracks]) => {
+    for (final t in tracks ?? _tracks)
       if (t.hasContent &&
           (t.state == TrackState.playing || t.state == TrackState.overdubbing))
         t.channel,
@@ -1893,6 +1893,9 @@ class ControlCubit extends Cubit<ControlState> {
   bool _playSongSection(int channel) {
     final track = _trackAt(channel);
     if (!_playable(track)) return false;
+    // The engine refuses a section while a take or pass is captured; leave
+    // the mute alone rather than change it for a press that does nothing.
+    if (_tracks.any((t) => t.isCapturing)) return false;
     if (!track!.muted) return _looper.play(channel: channel).isOk;
     // A muted section joins the mix, as a press on a muted track does in
     // Multi. A playing one only unmutes: its Play would also drop the
@@ -1978,13 +1981,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// the stops apply is stopped too. Latch what plays now for Rec/Play.
   bool _parkSong(Set<int> running) {
     final live = _looper.state;
-    final playingNow = {
-      for (final t in live.tracks)
-        if (t.hasContent &&
-            (t.state == TrackState.playing ||
-                t.state == TrackState.overdubbing))
-          t.channel,
-    };
+    final playingNow = _running(live.tracks);
     final waiting = live.transport.songQueuedTrack;
     final stopping = {
       ...running,
