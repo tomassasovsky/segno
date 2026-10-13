@@ -151,9 +151,9 @@ Guards:
 ### CI
 
 `appliance-release.yml` takes `embedder: ivi`, which only works for rpi5 on
-the experimental channel with `publish: no`. Its version is marked
-`X.Y.Z-experimental.<run>.ivi`, so it is never a shipping release's version.
-That dispatch:
+the experimental channel with `publish: no`. Its version,
+`X.Y.Z-experimental.<run>`, is therefore never a shipping release's version,
+and every later experimental build sorts above it. That dispatch:
 
 - builds the bundle with the pinned Flutter (`FLUTTER_VERSION` build argument);
 - builds the image from `kas-segno-rpi5-ivi.yml`;
@@ -208,6 +208,9 @@ Build: dispatch `appliance-release` with `board: rpi5`, `embedder: ivi`,
 
 - [ ] Boots straight to both screens: main UI on HDMI-A-1, readout on HDMI-A-2,
       no Weston process.
+- [ ] Both outputs come up at 1920x1080@60 (pinned in `homescreen.toml`, as
+      `weston.ini` pins them). If the process exits naming a mode,
+      `homescreen --drm-list-modes` lists what the connector offers.
 - [ ] The 7" readout is the right size (`pixel_ratio = 3` matches Weston's
       `scale=3`), and taps land where they are aimed. Check the MIX overlay
       faders and mute.

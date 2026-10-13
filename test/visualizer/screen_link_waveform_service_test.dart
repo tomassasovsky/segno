@@ -94,6 +94,31 @@ void main() {
     expect(readout.visible.value, isFalse);
   });
 
+  test('a newer open survives an older one timing out', () async {
+    final first = service.open();
+    await service.close();
+    // The second open starts halfway through the first one's wait.
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    final second = service.open();
+    expect(await first, isFalse);
+
+    final readout = startReadout();
+    expect(await second, isTrue);
+    await settle();
+    expect(service.isOpen, isTrue);
+    expect(readout.visible.value, isTrue);
+  });
+
+  test('a readout announcing to a closed link is told to stay blank', () async {
+    final readout = startReadout();
+    readout.visible.value = true; // left showing by an earlier main screen
+
+    await service.close();
+    await settle();
+
+    expect(readout.visible.value, isFalse);
+  });
+
   test('the re-seed pushed on the first announcement lands', () async {
     final peaks = Float32List.fromList([0.2, 0.4]);
     final seeded = Completer<void>();

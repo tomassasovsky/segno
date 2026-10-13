@@ -160,16 +160,19 @@ jobs:
                 exit 1
               fi
               [ "$board" = rpi5 ] || { echo "::error::the ivi-homescreen image exists for rpi5 only"; exit 1; }
-              # Never the version of a shipping release. A unit moved onto the
+              # Never the version of a shipping release: a unit moved onto the
               # spike would otherwise report a GTK release's exact version, and
               # the update client would never offer that release back to it.
-              # Experimental only, and marked: X.Y.Z-experimental.<run>.ivi
-              # still sorts below every later experimental build.
+              # On the experimental channel the run number already makes the
+              # version this build's alone, and every later experimental build
+              # sorts above it. Leave it unmarked: segno-update-ctl's
+              # semver_newer reads the last dot-field of the prerelease as the
+              # build number, so a suffix would hide every later build from a
+              # unit on the spike.
               if [ "$channel" != experimental ]; then
                 echo "::error::the ivi-homescreen image (#1318) builds on the experimental channel only"
                 exit 1
               fi
-              version="$version.ivi"
               kas="deploy/yocto/kas-segno-$board-ivi.yml"
               flutter_version=$(sed -n 's/^FLUTTER_ENGINE_VERSION = "\(.*\)"$/\1/p' \
                 deploy/yocto/meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc)
@@ -375,8 +378,12 @@ jobs:
           path: |
             ${{ env.YOCTO_WORK_DIR }}/sstate-cache
             ${{ env.YOCTO_WORK_DIR }}/downloads
-          key: yocto-sstate-${{ runner.os }}-${{ hashFiles('deploy/yocto/**') }}
-          restore-keys: yocto-sstate-${{ runner.os }}-
+          # Per embedder: the ivi spike image (#1318) must not be the entry a
+          # shipping build restores, or the next release rebuilds weston/GTK.
+          key: yocto-sstate-${{ runner.os }}-${{ needs.determine-meta.outputs.embedder }}-${{ hashFiles('deploy/yocto/**') }}
+          restore-keys: |
+            yocto-sstate-${{ runner.os }}-${{ needs.determine-meta.outputs.embedder }}-
+            yocto-sstate-${{ runner.os }}-
 
       # segno-kiosk-image is already a dependency of the bundle, but name it
       # explicitly: the .wic is a deliverable now, not a build by-product.
