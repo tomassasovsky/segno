@@ -30,7 +30,6 @@ class TransportState extends Equatable {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
-    this.outputPeak = 0,
     this.recDub = false,
     this.quantize = false,
     this.autoRecord = false,
@@ -115,11 +114,6 @@ class TransportState extends Equatable {
   /// `resolvedPrimaryTrack`.
   final int primaryTrack;
 
-  /// Master-bus absolute peak for the most recent block, in `0..1`, after the
-  /// master gain and limiter — what reaches the outputs. Moves at the poll
-  /// rate while audio flows, like [masterPositionFrames].
-  final double outputPeak;
-
   /// The rec/dub second-press setting the repository holds and re-applies to
   /// the engine: with it on, a take's end lands the track OVERDUBBING rather
   /// than PLAYING — what a queued take-end will do.
@@ -187,7 +181,6 @@ class TransportState extends Equatable {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
-    outputPeak,
     recDub,
     quantize,
     autoRecord,

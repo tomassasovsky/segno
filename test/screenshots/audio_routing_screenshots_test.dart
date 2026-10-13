@@ -48,8 +48,6 @@ const _rig = LooperState(
     inputChannels: 4,
     outputChannels: 4,
   ),
-  inputPeaks: [0.5, 0.12, 0, 0],
-  outputPeaks: [0.35, 0.28, 0, 0],
   outputBusCount: 2,
 );
 
@@ -95,6 +93,17 @@ void main() {
   setUp(() {
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
+    // The jacks' live levels, which the meters read apart from the state
+    // (#1301).
+    when(() => repository.meters).thenReturn(
+      const MeterLevels(
+        inputPeaks: [0.5, 0.12, 0, 0],
+        outputPeaks: [0.35, 0.28, 0, 0],
+      ),
+    );
+    when(
+      () => repository.meterLevels,
+    ).thenAnswer((_) => const Stream<MeterLevels>.empty());
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.recordStartSettingsFailures).thenAnswer(
       (_) => const Stream<EngineResult>.empty(),
