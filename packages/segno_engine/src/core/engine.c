@@ -349,9 +349,9 @@ static void le_clamp_shape(int32_t* sample_rate, int32_t* input_channels,
   if (*output_channels <= 0) *output_channels = 2;
   if (*output_channels > LE_MAX_CHANNELS) *output_channels = LE_MAX_CHANNELS;
   if (*sample_rate <= 0) *sample_rate = 48000;
-  /* Default cap of 30 s/track keeps total memory modest across all tracks
+  /* Default cap of 60 s/track bounds total memory across all tracks
    * (live + undo). Longer loops are configurable; stream-to-disk is deferred. */
-  if (*max_loop_frames <= 0) *max_loop_frames = *sample_rate * 30;
+  if (*max_loop_frames <= 0) *max_loop_frames = *sample_rate * 60;
 }
 
 /* Joins every background worker and ends a performance capture BEFORE any

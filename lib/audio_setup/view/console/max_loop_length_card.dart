@@ -66,5 +66,5 @@ class _MaxLoopLengthCardState extends State<MaxLoopLengthCard> {
   }
 
   String _capLabel(AppLocalizations l10n, int minutes) =>
-      minutes <= 0 ? l10n.maxLoopDefault30s : l10n.maxLoopMinutes(minutes);
+      minutes <= 0 ? l10n.maxLoopDefault1m : l10n.maxLoopMinutes(minutes);
 }

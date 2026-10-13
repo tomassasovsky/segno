@@ -163,12 +163,13 @@ void main() {
 
   Future<void> pump(
     WidgetTester tester, {
+    Size size = const Size(1920, 1080),
     LooperState state = _rig,
     Widget home = const AudioRoutingPage(),
     BackingMixCubit? backingMix,
   }) async {
     tester.view
-      ..physicalSize = const Size(1920, 1080)
+      ..physicalSize = size
       ..devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -373,10 +374,11 @@ void main() {
     expect(find.byType(LoopSlider), findsNothing);
   });
 
-  testWidgets('Recording inputs checks the jacks the scoped track records, '
+  testWidgets('Recording input badges fit their cards on the compact display '
       'and scoping to another track shows that track instead', (tester) async {
     await pump(
       tester,
+      size: const Size(1024, 600),
       state: _rig.copyWithLanes(const [Lane(inputChannel: 1)]),
     );
     await openRecord(tester);
@@ -388,6 +390,25 @@ void main() {
     // Track 0 records input 1; track 1's input 3 is not this track's.
     expect(cardSelected(tester, 1), isTrue);
     expect(cardSelected(tester, 3), isFalse);
+
+    for (final input in [0, 1]) {
+      final card = find.byKey(Key('routing_record_card_$input'));
+      final badge = find.descendant(
+        of: card,
+        matching: find.byType(RoutingCheck),
+      );
+      final cardRect = tester.getRect(card);
+      final badgeRect = tester.getRect(badge);
+      final scale = cardRect.width / 360;
+      expect(
+        cardRect.right - badgeRect.right,
+        greaterThanOrEqualTo(26 * scale),
+      );
+      expect(
+        badgeRect.right,
+        lessThanOrEqualTo(tester.view.physicalSize.width),
+      );
+    }
 
     await tester.tap(find.byKey(const Key('routing_track_1')));
     await tester.pump();
