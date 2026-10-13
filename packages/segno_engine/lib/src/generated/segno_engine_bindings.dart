@@ -10022,9 +10022,10 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Float()
   external double song_queue_progress;
 
-  /// Trailing (#1077): the Song section that sounded most recently, -1 for
-  /// none. It survives a Stop; it is forgotten when that track empties, on a
-  /// mode switch and on configure, and is never saved with a session.
+  /// Trailing (#1077): the Song or Band section (#1323; never Band's primary)
+  /// that sounded most recently, -1 for none. It survives a Stop; it is
+  /// forgotten when that track empties, on a mode switch and on configure,
+  /// and is never saved with a session.
   @ffi.Int32()
   external int song_last_section;
 
