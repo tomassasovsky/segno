@@ -128,7 +128,7 @@ behaviour changes, record every decision). Each goes into the PR body and on
    names Song, and a "join" press there now waits like any other request.
 7. **`le_engine_toggle_section`** (Band trigger-2 transport) is not called
    by the app and could start several sections. It is left unchanged here;
-   a follow-up issue tracks removing it.
+   #1324 tracks removing it.
 8. **The handoff is the Record's boundary.** A waiting Record starts at the
    handoff even with Sound start or quantize on; neither applies to it.
 9. **Rec/Play on a muted stopped section** keeps the existing meaning in
@@ -202,7 +202,7 @@ SUCCESS CRITERIA:
 
 NON-GOALS:
 - The 34-LED ring (PR #1320); RING_N stays 40.
-- Removing le_engine_toggle_section (follow-up issue).
+- Removing le_engine_toggle_section (#1324).
 - Band Mute-mode changes.
 
 VERIFICATION COMMAND: bash firmware/test/run_tests.sh && bash packages/segno_engine/src/test/run_native_tests.sh && /Users/Tomas/development/flutter/bin/flutter test test/control && dart analyze
