@@ -25,17 +25,13 @@ static void test_audition_refusals(void) {
   printf("test_audition_refusals\n");
   le_backing_buffer* b = au_mono(64, BK_SR);
   le_engine* unconfigured = le_engine_create();
-  CHECK(le_engine_audition_start(unconfigured, b, 0) == LE_ERR_NOT_RUNNING);
+  CHECK(le_engine_audition_start(unconfigured, b) == LE_ERR_NOT_RUNNING);
   le_engine_destroy(unconfigured);
 
   le_engine* e = bk_engine(2);
-  CHECK(le_engine_audition_start(e, NULL, 0) == LE_ERR_INVALID);
-  CHECK(le_engine_audition_start(e, b, -1) == LE_ERR_INVALID);
-  CHECK(le_engine_audition_start(e, b, LE_MAX_OUTPUT_BUSES) == LE_ERR_INVALID);
-  /* A pair the open device has no channels for: it would play silently. */
-  CHECK(le_engine_audition_start(e, b, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_audition_start(e, NULL) == LE_ERR_INVALID);
   le_backing_buffer* other = au_mono(64, 44100);
-  CHECK(le_engine_audition_start(e, other, 0) == LE_ERR_INVALID); /* rate */
+  CHECK(le_engine_audition_start(e, other) == LE_ERR_INVALID); /* rate */
   le_backing_buffer_free(other);
   CHECK(le_engine_audition_state(e, NULL) == LE_ERR_INVALID);
   CHECK(le_engine_audition_state(NULL, NULL) == LE_ERR_INVALID);
@@ -46,67 +42,126 @@ static void test_audition_refusals(void) {
   CHECK(le_engine_post_command(e, LE_CMD_AUDITION_STOP, 0, 0.0f) ==
         LE_ERR_INVALID);
   atomic_store_explicit(&e->a_running, 0, memory_order_release);
-  CHECK(le_engine_audition_start(e, b, 0) == LE_OK);
-  CHECK(le_engine_audition_start(e, b, 0) == LE_ERR_INVALID); /* owned */
+  CHECK(le_engine_audition_start(e, b) == LE_OK);
+  CHECK(le_engine_audition_start(e, b) == LE_ERR_INVALID); /* owned */
   le_audition_state s = au_state(e);
-  CHECK(s.owned == 1 && s.frames == 0 && s.bus == -1);
+  CHECK(s.owned == 1 && s.frames == 0 && s.outputs == 0);
   le_engine_destroy(e); /* frees the queued buffer (ASAN) */
+
+  /* No output enabled (#1305): nothing would sound, so it is refused. */
+  static float none[64 * 2];
+  e = bk_engine(2);
+  CHECK(le_engine_set_output_enabled(e, 0, 0) == LE_OK);
+  CHECK(le_engine_set_output_enabled(e, 1, 0) == LE_OK);
+  bk_run(e, none, 64, 2, 64);
+  le_backing_buffer* gated = au_mono(64, BK_SR);
+  CHECK(le_engine_audition_start(e, gated) == LE_ERR_INVALID);
+  /* One channel back on is enough. */
+  CHECK(le_engine_set_output_enabled(e, 1, 1) == LE_OK);
+  bk_run(e, none, 64, 2, 64);
+  CHECK(le_engine_audition_start(e, gated) == LE_OK);
+  le_engine_destroy(e);
 
   /* Longer than LE_AUDITION_MAX_SECONDS: refused (8 kHz keeps it small). */
   le_engine* slow = le_engine_create();
   CHECK(le_engine_configure(slow, 8000, 1, 2, 8000 * 4) == LE_OK);
   le_backing_buffer* longest = au_mono(LE_AUDITION_MAX_SECONDS * 8000, 8000);
   le_backing_buffer* over = au_mono(LE_AUDITION_MAX_SECONDS * 8000 + 1, 8000);
-  CHECK(le_engine_audition_start(slow, over, 0) == LE_ERR_INVALID);
-  CHECK(le_engine_audition_start(slow, longest, 0) == LE_OK);
+  CHECK(le_engine_audition_start(slow, over) == LE_ERR_INVALID);
+  CHECK(le_engine_audition_start(slow, longest) == LE_OK);
   le_backing_buffer_free(over);
   le_engine_destroy(slow);
 }
 
-/* A 64-frame mono ramp into pair 0 appears exactly once on both channels;
- * the next block is silent; the position advances by the block; the length
- * reads 0 after the end and the buffer is handed back. */
+/* A 64-frame mono ramp appears exactly once on every channel of both
+ * pairs; the next block is silent; the position advances by the block; the
+ * length reads 0 after the end and the buffer is handed back. */
 static void test_audition_plays_once(void) {
   printf("test_audition_plays_once\n");
   static float out[256 * 4];
   le_engine* e = bk_engine(4);
-  CHECK(le_engine_audition_start(e, au_mono(64, BK_SR), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, au_mono(64, BK_SR)) == LE_OK);
   bk_run(e, out, 32, 4, 32);
   le_audition_state s = au_state(e);
-  CHECK(s.frames == 64 && s.position == 32 && s.bus == 0 && s.owned == 1);
+  CHECK(s.frames == 64 && s.position == 32 && s.outputs == 0xFu &&
+        s.owned == 1);
   bk_run(e, out + 32 * 4, 32, 4, 32);
   for (int f = 0; f < 64; ++f) {
-    CHECK(out[4 * f] == bk_l(f) && out[4 * f + 1] == bk_l(f));
-    CHECK(out[4 * f + 2] == 0.0f && out[4 * f + 3] == 0.0f);
+    for (int c = 0; c < 4; ++c) CHECK(out[4 * f + c] == bk_l(f));
   }
   s = au_state(e);
-  CHECK(s.frames == 0 && s.bus == -1 && s.owned == 0);
+  CHECK(s.frames == 0 && s.outputs == 0 && s.owned == 0);
   bk_run(e, out, 64, 4, 64);
   for (int i = 0; i < 64 * 4; ++i) CHECK(out[i] == 0.0f);
   le_engine_destroy(e);
 }
 
-/* A stereo buffer keeps its interleave in pair 1. */
+/* A stereo buffer keeps its interleave in every pair. */
 static void test_audition_stereo_pair(void) {
   printf("test_audition_stereo_pair\n");
   static float out[128 * 4];
   le_engine* e = bk_engine(4);
-  CHECK(le_engine_audition_start(e, bk_buffer(128, 0.0f), 1) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(128, 0.0f)) == LE_OK);
   bk_run(e, out, 128, 4, 64);
   for (int f = 0; f < 128; ++f) {
-    CHECK(out[4 * f] == 0.0f && out[4 * f + 1] == 0.0f);
+    CHECK(out[4 * f] == bk_l(f) && out[4 * f + 1] == bk_r(f));
     CHECK(out[4 * f + 2] == bk_l(f) && out[4 * f + 3] == bk_r(f));
+  }
+  le_engine_destroy(e);
+
+  /* An odd device's single-channel last pair takes the mid, as a
+   * single-channel output bus does. */
+  static float odd[64 * 3];
+  e = bk_engine(3);
+  CHECK(le_engine_audition_start(e, bk_buffer(64, 0.0f)) == LE_OK);
+  bk_run(e, odd, 64, 3, 64);
+  for (int f = 0; f < 64; ++f) {
+    CHECK(odd[3 * f] == bk_l(f) && odd[3 * f + 1] == bk_r(f));
+    CHECK(fabsf(odd[3 * f + 2] - 0.5f * (bk_l(f) + bk_r(f))) < 1e-6f);
   }
   le_engine_destroy(e);
 
   /* A disabled jack of the pair is never written. */
   e = bk_engine(2);
   CHECK(le_engine_set_output_enabled(e, 1, 0) == LE_OK);
-  CHECK(le_engine_audition_start(e, bk_buffer(128, 0.0f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(128, 0.0f)) == LE_OK);
   bk_run(e, out, 64, 2, 64);
   for (int f = 0; f < 64; ++f) {
     CHECK(out[2 * f] == bk_l(f) && out[2 * f + 1] == 0.0f);
   }
+  le_engine_destroy(e);
+}
+
+/* #1305: Listen plays on all active outputs. Six outputs, pairs 1 and 3 on,
+ * pair 2 gated off: pairs 1 and 3 carry the preview sample for sample as a
+ * one-pair device does (no gain change for playing on two), pair 2 stays 0,
+ * and the state names the channels it sounded on. */
+static void test_audition_every_enabled_pair(void) {
+  printf("test_audition_every_enabled_pair\n");
+  static float one[128 * 2], six[128 * 6];
+  le_engine* e = bk_engine(2);
+  CHECK(le_engine_audition_start(e, bk_buffer(128, 0.5f)) == LE_OK);
+  bk_run(e, one, 128, 2, 64);
+  le_engine_destroy(e);
+
+  e = bk_engine(6);
+  CHECK(le_engine_set_output_enabled(e, 2, 0) == LE_OK);
+  CHECK(le_engine_set_output_enabled(e, 3, 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(128, 0.5f)) == LE_OK);
+  bk_run(e, six, 64, 6, 64);
+  CHECK(au_state(e).outputs == 0x33u);
+  bk_run(e, six + 64 * 6, 64, 6, 64);
+  float peak[6] = {0};
+  for (int f = 0; f < 128; ++f) {
+    CHECK(six[6 * f] == one[2 * f] && six[6 * f + 1] == one[2 * f + 1]);
+    CHECK(six[6 * f + 2] == 0.0f && six[6 * f + 3] == 0.0f);
+    CHECK(six[6 * f + 4] == one[2 * f] && six[6 * f + 5] == one[2 * f + 1]);
+    for (int c = 0; c < 6; ++c) {
+      if (fabsf(six[6 * f + c]) > peak[c]) peak[c] = fabsf(six[6 * f + c]);
+    }
+  }
+  CHECK(peak[0] > 0.4f && peak[1] > 0.4f && peak[4] > 0.4f && peak[5] > 0.4f);
+  CHECK(peak[2] == 0.0f && peak[3] == 0.0f);
   le_engine_destroy(e);
 }
 
@@ -116,7 +171,7 @@ static void test_audition_stop(void) {
   static float out[128 * 2];
   le_engine* e = bk_engine(2);
   CHECK(le_engine_audition_stop(e) == LE_OK); /* nothing plays: a no-op */
-  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f)) == LE_OK);
   bk_run(e, out, 64, 2, 64);
   CHECK(out[0] == bk_l(0));
   CHECK(le_engine_audition_stop(e) == LE_OK);
@@ -133,15 +188,15 @@ static void test_audition_replace(void) {
   printf("test_audition_replace\n");
   static float out[64 * 2];
   le_engine* e = bk_engine(2);
-  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f)) == LE_OK);
   bk_run(e, out, 64, 2, 64);
-  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.5f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.5f)) == LE_OK);
   le_backing_buffer* third = bk_buffer(4096, 0.25f);
-  CHECK(le_engine_audition_start(e, third, 0) == LE_ERR_NOT_READY);
+  CHECK(le_engine_audition_start(e, third) == LE_ERR_NOT_READY);
   CHECK(au_state(e).owned == 2);
   bk_run(e, out, 64, 2, 64);
   CHECK(out[0] == 0.5f + bk_l(0)); /* the second, from its first frame */
-  CHECK(le_engine_audition_start(e, third, 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, third) == LE_OK);
   bk_run(e, out, 64, 2, 64);
   CHECK(out[0] == 0.25f + bk_l(0));
   CHECK(au_state(e).owned == 1);
@@ -155,7 +210,7 @@ static void test_audition_after_buses_before_master(void) {
   static float out[64 * 2];
   le_engine* e = bk_engine(2);
   CHECK(le_engine_set_output_level(e, 0, 0.0f) == LE_OK);
-  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f)) == LE_OK);
   bk_run(e, out, 64, 2, 64);
   for (int f = 0; f < 64; ++f) CHECK(out[2 * f] == bk_l(f));
   CHECK(le_engine_set_output_level(e, 0, 1.0f) == LE_OK);
@@ -175,7 +230,7 @@ static void test_audition_after_buses_before_master(void) {
   le_backing_buffer* b = NULL;
   CHECK(le_backing_buffer_from_pcm(half, 64, 2, BK_SR, &b) == LE_OK);
   CHECK(le_engine_set_limiter(e, 1, 0.25f) == LE_OK);
-  CHECK(le_engine_audition_start(e, b, 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, b) == LE_OK);
   bk_run(e, out, 64, 2, 64);
   for (int i = 0; i < 64 * 2; ++i) CHECK(out[i] == 0.25f);
   le_engine_destroy(e);
@@ -196,7 +251,7 @@ static void test_audition_sums_with_loop(void) {
     CHECK(le_engine_commit_session(rig[k], 128, 0) == LE_OK);
     CHECK(le_engine_play(rig[k], 0) == LE_OK);
   }
-  CHECK(le_engine_audition_start(rig[1], bk_buffer(4096, 0.0f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(rig[1], bk_buffer(4096, 0.0f)) == LE_OK);
   bk_run(rig[0], without, N, 2, 64);
   bk_run(rig[1], with, N, 2, 64);
   int loop_heard = 0;
@@ -222,7 +277,7 @@ static void test_audition_not_recorded(void) {
   for (int k = 0; k < 2; ++k) {
     le_engine* e = bk_engine(2);
     if (k == 1) {
-      CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f), 0) == LE_OK);
+      CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f)) == LE_OK);
     }
     CHECK(le_engine_record(e, 0) == LE_OK);
     le_engine_process(e, out, in, N);
@@ -240,7 +295,7 @@ static void test_audition_not_recorded(void) {
 static void test_audition_and_performance_capture(void) {
   printf("test_audition_and_performance_capture\n");
   le_engine* e = bk_engine(2);
-  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f)) == LE_OK);
   drain(e);
   CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);
@@ -252,9 +307,9 @@ static void test_audition_and_performance_capture(void) {
     CHECK(captured[i] == 0.0f && out[i] == 0.0f);
   }
   le_backing_buffer* b = bk_buffer(64, 0.0f);
-  CHECK(le_engine_audition_start(e, b, 0) == LE_ERR_ALREADY_RUNNING);
+  CHECK(le_engine_audition_start(e, b) == LE_ERR_ALREADY_RUNNING);
   CHECK(le_perf_disarm(e) == LE_OK);
-  CHECK(le_engine_audition_start(e, b, 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, b) == LE_OK);
   CHECK(au_state(e).owned == 1); /* the arm handed the first one back */
   le_engine_destroy(e);
 }
@@ -267,7 +322,7 @@ static void test_audition_start_racing_an_arm(void) {
   le_engine* e = bk_engine(2);
   CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   /* No drain: the arm is still in the ring, so the start is accepted. */
-  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f)) == LE_OK);
   static float out[256 * 2];
   bk_run(e, out, 256, 2, 64);
   CHECK(atomic_load(&e->a_perf_armed) == 1);
@@ -284,7 +339,7 @@ static void test_audition_cut_sound(void) {
   printf("test_audition_cut_sound\n");
   static float out[64 * 2];
   le_engine* e = bk_engine(2);
-  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f)) == LE_OK);
   bk_run(e, out, 64, 2, 64);
   CHECK(le_engine_cut_sound(e) == LE_OK);
   bk_run(e, out, 64, 2, 64);
@@ -299,10 +354,10 @@ static void test_audition_lifetimes(void) {
   printf("test_audition_lifetimes\n");
   static float out[64 * 2];
   le_engine* e = bk_engine(2);
-  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f)) == LE_OK);
   bk_run(e, out, 64, 2, 64);
   const uint32_t epoch = au_state(e).epoch;
-  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f)) == LE_OK);
   int32_t outcome = -1, dropped = -1;
   CHECK(le_engine_reopen_configured(e, BK_SR, 1, 2, BK_SR * 4, &outcome,
                                     &dropped) == LE_OK);
@@ -310,12 +365,12 @@ static void test_audition_lifetimes(void) {
   CHECK(s.epoch == epoch + 1 && s.frames == 0 && s.owned == 0);
   bk_run(e, out, 64, 2, 64);
   for (int i = 0; i < 64 * 2; ++i) CHECK(out[i] == 0.0f);
-  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f)) == LE_OK);
   bk_run(e, out, 64, 2, 64);
   CHECK(le_engine_configure(e, BK_SR, 1, 2, BK_SR * 4) == LE_OK);
   s = au_state(e);
   CHECK(s.epoch == epoch + 2 && s.frames == 0 && s.owned == 0);
-  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f), 0) == LE_OK);
+  CHECK(le_engine_audition_start(e, bk_buffer(4096, 0.0f)) == LE_OK);
   bk_run(e, out, 64, 2, 64);
   le_engine_destroy(e);
 }
@@ -339,7 +394,7 @@ static void test_audition_bounded_decode(void) {
   CHECK(le_backing_buffer_frames(b) == LE_AUDITION_MAX_SECONDS * SR);
   le_engine* e = le_engine_create();
   CHECK(le_engine_configure(e, SR, 1, 2, SR * 4) == LE_OK);
-  CHECK(le_engine_audition_start(e, b, 0) == LE_OK); /* exactly the cap */
+  CHECK(le_engine_audition_start(e, b) == LE_OK); /* exactly the cap */
   le_engine_destroy(e);
   bk_write_wav(bk_path("short_preview.wav"), 1, 16, 1, SR, pcm, SR, 0);
   CHECK(le_backing_decode_file(bk_path("short_preview.wav"), SR, 0,
@@ -361,6 +416,7 @@ static void run_audition_tests(void) {
   test_audition_not_recorded();
   test_audition_and_performance_capture();
   test_audition_start_racing_an_arm();
+  test_audition_every_enabled_pair();
   test_audition_cut_sound();
   test_audition_lifetimes();
   test_audition_bounded_decode();

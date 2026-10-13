@@ -577,7 +577,7 @@ typedef enum le_command_code {
   /* ---- Library audition voice (#1178; 136-137 in the numbering ledger).
    * Typed producers only (le_engine_audition_*): START carries an owned
    * buffer pointer, so raw posts are refused. Never perf-logged. */
-  LE_CMD_AUDITION_START = 136, /* buffer + output pair */
+  LE_CMD_AUDITION_START = 136, /* buffer */
   LE_CMD_AUDITION_STOP = 137,
   LE_CMD_RENDER_FREEZE = 112, /* render recipe (#1202): the callback records
                                * every source's read law; never raw-posted */
@@ -2763,8 +2763,10 @@ LE_EXPORT int32_t le_engine_backing_state(le_engine* engine,
 
 /* ---- Library audition voice (#1178) ----
  * One preview voice for the Library's Listen, isolated from the rig. It plays
- * an engine-rate stereo le_backing_buffer once, from frame 0, into one output
- * pair, summed AFTER the output-bus loop and BEFORE the master bus: no
+ * an engine-rate stereo le_backing_buffer once, from frame 0, into every
+ * enabled output pair at unity (#1305: left on each pair's first channel,
+ * right on its second; a single-channel last pair takes the mid; a channel
+ * the output gate disables stays silent), summed AFTER the output-bus loop and BEFORE the master bus: no
  * destination's chain, level or mute touches it, the performance capture
  * (tapped inside the output buses) never contains it, it is never
  * perf-logged, so stems, the offline master and loop takes never contain it,
@@ -2787,19 +2789,18 @@ LE_EXPORT int32_t le_engine_backing_state(le_engine* engine,
 #define LE_AUDITION_MAX_SECONDS 120
 #define LE_AUDITION_MAX_BUFFERS 2
 
-/* Starts [buffer] from frame 0 into output pair [bus] at the next block,
+/* Starts [buffer] from frame 0 on every enabled output at the next block,
  * replacing a preview already playing (no fade). LE_ERR_INVALID: NULL, a
  * buffer the engine already owns, a rate other than the engine's, more than
- * LE_AUDITION_MAX_SECONDS of frames, a bus outside 0..LE_MAX_OUTPUT_BUSES-1
- * or one the open device has no channels for, or the command ring full.
+ * LE_AUDITION_MAX_SECONDS of frames, no output of the open device enabled,
+ * or the command ring full.
  * LE_ERR_NOT_RUNNING: not configured. LE_ERR_ALREADY_RUNNING: a performance
  * capture is armed. LE_ERR_NOT_READY: LE_AUDITION_MAX_BUFFERS already owned.
  * On every refusal the caller still owns the buffer. A start that reaches
  * the callback after a performance arm (posted between the arm and its
  * apply) never sounds: the callback hands the buffer back unplayed. */
 LE_EXPORT int32_t le_engine_audition_start(le_engine* engine,
-                                           le_backing_buffer* buffer,
-                                           int32_t bus);
+                                           le_backing_buffer* buffer);
 /* Silences the preview at the next block (no fade). A no-op when none
  * plays. */
 LE_EXPORT int32_t le_engine_audition_stop(le_engine* engine);
@@ -2808,7 +2809,7 @@ typedef struct le_audition_state {
   uint32_t epoch;   /* bumps at configure and at every reopen */
   int32_t frames;   /* the playing preview's length, 0 when none plays */
   int32_t position; /* frames played of it */
-  int32_t bus;      /* its output pair, -1 when none plays */
+  uint32_t outputs; /* output channels it sounded on, 0 when none plays */
   int32_t owned;    /* buffers the engine owns after this collect */
 } le_audition_state;
 

@@ -60,7 +60,7 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
   // The audition voice (#1178): records what it was asked to play.
 
   /// The files [auditionStartFile] was handed, in order.
-  final List<({String path, int bus})> auditioned = [];
+  final List<String> auditioned = [];
 
   /// What [auditionStartFile] answers.
   AuditionStart auditionAnswer = const AuditionStart(
@@ -84,10 +84,9 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
   @override
   Future<AuditionStart> auditionStartFile(
     String path, {
-    int bus = 0,
     bool Function()? stillWanted,
   }) async {
-    auditioned.add((path: path, bus: bus));
+    auditioned.add(path);
     stillWantedChecks.add(stillWanted);
     return auditionAnswer;
   }

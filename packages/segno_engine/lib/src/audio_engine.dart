@@ -1728,9 +1728,12 @@ abstract interface class BackingControl {
 /// most [kAuditionMaxSeconds] of it, off the calling isolate.
 abstract interface class EngineAudition {
   /// Decodes the audio file at [path] off the calling isolate and starts it
-  /// into output pair [bus] at the next block, replacing a preview already
-  /// playing. Retries once, a block later, when the voice is still handing
-  /// back the preview before last ([EngineResult.notReady]).
+  /// on every enabled output pair at the next block (#1305), replacing a
+  /// preview already playing. A channel the output gate disables stays
+  /// silent; with no output enabled the start is refused with
+  /// [EngineResult.invalid] before anything decodes. Retries
+  /// once, a block later, when the voice is still handing back the preview
+  /// before last ([EngineResult.notReady]).
   ///
   /// [stillWanted] is asked once the decode is done and before each start:
   /// when it answers false the decoded preview is dropped, nothing reaches
@@ -1739,7 +1742,6 @@ abstract interface class EngineAudition {
   /// preview that superseded it.
   Future<AuditionStart> auditionStartFile(
     String path, {
-    int bus = 0,
     bool Function()? stillWanted,
   });
 

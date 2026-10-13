@@ -44,14 +44,14 @@ void le_audition_release(le_engine* e) {
   }
   e->audition_buf = NULL;
   e->audition_pos = 0;
-  e->audition_bus = -1;
+  e->audition_outputs = 0;
   store_i32(&e->a_audition_frames, 0);
   store_i32(&e->a_audition_position, 0);
-  store_i32(&e->a_audition_bus, -1);
+  store_i32(&e->a_audition_outputs, 0);
 }
 
-int32_t le_engine_audition_start(le_engine* engine, le_backing_buffer* buffer,
-                                 int32_t bus) {
+int32_t le_engine_audition_start(le_engine* engine,
+                                 le_backing_buffer* buffer) {
   if (engine == NULL || buffer == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
@@ -59,9 +59,17 @@ int32_t le_engine_audition_start(le_engine* engine, le_backing_buffer* buffer,
   if (buffer->sample_rate != engine->sample_rate || buffer->frames <= 0 ||
       (int64_t)buffer->frames >
           (int64_t)LE_AUDITION_MAX_SECONDS * engine->sample_rate ||
-      bus < 0 || bus >= LE_MAX_OUTPUT_BUSES ||
-      2 * bus >= load_i32(&engine->a_out_channels) ||
       le_audition_owned_index(engine, buffer) >= 0) {
+    return LE_ERR_INVALID;
+  }
+  /* It plays on every enabled output (#1305): with none, nothing sounds. */
+  const int32_t ch_out = load_i32(&engine->a_out_channels);
+  const uint32_t device =
+      ch_out >= 32 ? 0xFFFFFFFFu
+                   : ch_out <= 0 ? 0u : ((1u << (uint32_t)ch_out) - 1u);
+  if ((atomic_load_explicit(&engine->a_output_enabled_mask,
+                            memory_order_acquire) &
+       device) == 0u) {
     return LE_ERR_INVALID;
   }
   if (atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
@@ -73,7 +81,7 @@ int32_t le_engine_audition_start(le_engine* engine, le_backing_buffer* buffer,
   engine->audition_owned[slot] = buffer;
   const int32_t rc = le_push_cmd(
       engine, (le_command){.code = LE_CMD_AUDITION_START,
-                           .backing = {buffer, bus, 0}});
+                           .backing = {buffer, 0, 0}});
   if (rc != LE_OK) engine->audition_owned[slot] = NULL;
   return rc;
 }
@@ -89,7 +97,7 @@ int32_t le_engine_audition_state(le_engine* engine, le_audition_state* out) {
                                     memory_order_acquire);
   out->frames = load_i32(&engine->a_audition_frames);
   out->position = load_i32(&engine->a_audition_position);
-  out->bus = load_i32(&engine->a_audition_bus);
+  out->outputs = (uint32_t)load_i32(&engine->a_audition_outputs);
   int owned = 0;
   for (int i = 0; i < LE_AUDITION_MAX_BUFFERS; ++i) {
     if (engine->audition_owned[i] != NULL) ++owned;

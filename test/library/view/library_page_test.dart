@@ -131,7 +131,7 @@ void main() {
     );
     when(() => repository.stopAudition()).thenReturn(EngineResult.ok);
     when(() => repository.auditionState()).thenReturn(
-      const AuditionState(frames: 480000, position: 96000, bus: 0),
+      const AuditionState(frames: 480000, position: 96000, outputs: 0x3),
     );
     when(
       () => repository.readPeaks(
