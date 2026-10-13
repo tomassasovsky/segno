@@ -30,7 +30,6 @@ extension _FootLengthControl on ControlCubit {
     if (!_lengthEditable) return;
     if (role.press == FootLengthAction.undo) {
       _armUndo();
-      _acceptedContacts.add(button);
       return;
     }
     final hold = role.hold;
@@ -48,12 +47,9 @@ extension _FootLengthControl on ControlCubit {
           if (_lengthEditable) _undoLength(channel);
         },
       );
-      _acceptedContacts.add(button);
       return;
     }
-    if (_dispatchLengthAction(role.press, role.slot)) {
-      _acceptedContacts.add(button);
-    }
+    _dispatchLengthAction(role.press, role.slot);
   }
 
   bool _dispatchLengthAction(FootLengthAction action, int? slot) {

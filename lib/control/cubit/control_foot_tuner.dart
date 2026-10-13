@@ -93,7 +93,7 @@ extension _FootTunerControl on ControlCubit {
           onHold: () => act(() => unawaited(_resetTunerReference())),
         );
       case FootTunerRole.input || FootTunerRole.mute || FootTunerRole.nextPage:
-        if (_dispatchTunerAction(pedal)) _acceptedContacts.add(button);
+        _dispatchTunerAction(pedal);
       case FootTunerRole.exit || FootTunerRole.none:
         break;
     }

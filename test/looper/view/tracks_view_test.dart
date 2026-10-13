@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -106,10 +107,13 @@ void main() {
   late StreamController<MeterLevels> meterLevels;
   late AudioSetupCubit audioSetup;
   late PedalRepository pedalRepo;
+  // The top bar's CPU readout; hidden unless a test gives it a figure.
+  late CpuLoadRepository cpuLoad;
   late FakePedalLink pedalLink;
 
   setUp(() {
     resetSegnoNavigatorForTest();
+    cpuLoad = const CpuLoadRepository.unsupported();
     // The toast registry is module-level and survives between tests; a stale
     // entry would make the next identical toast a silent duplicate. The
     // `toastification` singleton leaks too, across files, under
@@ -282,6 +286,7 @@ void main() {
           providers: [
             RepositoryProvider<LooperRepository>.value(value: repository),
             RepositoryProvider<PerformanceRepository>.value(value: performance),
+            RepositoryProvider<CpuLoadRepository>.value(value: cpuLoad),
             RepositoryProvider<SettingsRepository>.value(value: settings),
             RepositoryProvider<PedalRepository>.value(value: pedalRepo),
           ],
@@ -3291,6 +3296,89 @@ void main() {
     }
   });
 
+  group('CPU load (#1307)', () {
+    Rect rectOf(WidgetTester tester, String key) =>
+        tester.getRect(find.byKey(Key(key)));
+
+    for (final size in const [Size(1024, 600), Size(1920, 1080)]) {
+      final at = '${size.width.toInt()}x${size.height.toInt()}';
+
+      testWidgets('the figure sits right of the record light ($at)', (
+        tester,
+      ) async {
+        cpuLoad = const FixedCpuLoadRepository(23);
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester, size: size);
+        await tester.pump();
+        expect(find.text('CPU 23%'), findsOneWidget);
+        final record = rectOf(tester, 'stage_record_slot');
+        final cpu = rectOf(tester, 'stage_cpu_load');
+        expect(cpu.left, record.right + 24);
+        expect(cpu.center.dy, closeTo(record.center.dy, 1));
+        expect(
+          cpu.right,
+          lessThan(rectOf(tester, 'stage_session_name').left),
+        );
+        // The title stays centred on the bar with the readout beside it.
+        expect(
+          rectOf(tester, 'stage_session_name').center.dx,
+          closeTo(rectOf(tester, 'stage_top_bar').center.dx, 0.5),
+        );
+      });
+    }
+
+    testWidgets('reads as a load for a screen reader', (tester) async {
+      final handle = tester.ensureSemantics();
+      cpuLoad = const FixedCpuLoadRepository(64);
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      expect(
+        find.bySemanticsLabel(RegExp('Processor load 64 percent')),
+        findsOne,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('shows a dash until the first reading', (tester) async {
+      cpuLoad = const _SilentCpuLoad();
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      expect(find.text('CPU —'), findsOneWidget);
+    });
+
+    testWidgets('is absent where the load cannot be measured', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      expect(find.byKey(const Key('stage_cpu_load')), findsNothing);
+      expect(find.textContaining('CPU'), findsNothing);
+    });
+
+    testWidgets('no figure moves anything in the top bar', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      const keys = [
+        'stage_record_slot',
+        'stage_cpu_load',
+        'stage_session_name',
+        'stage_bank_button',
+      ];
+      List<Rect>? first;
+      for (final load in const [0, 7, 42, 100]) {
+        cpuLoad = FixedCpuLoadRepository(load);
+        await tester.pumpWidget(const SizedBox());
+        await pump(tester, size: const Size(1024, 600));
+        await tester.pump();
+        expect(find.text('CPU $load%'), findsOneWidget);
+        final rects = [for (final key in keys) rectOf(tester, key)];
+        first ??= rects;
+        expect(rects, first);
+      }
+    });
+  });
+
   group('accessibility', () {
     testWidgets('track tile is a labelled button naming its state', (
       tester,
@@ -4076,3 +4164,13 @@ class _PushObserver extends NavigatorObserver {
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
       onPush(route);
 }
+
+/// A supported CPU load that never reports a figure.
+class _SilentCpuLoad extends CpuLoadRepository {
+  const _SilentCpuLoad() : super(readStat: _neverRead);
+
+  @override
+  Stream<int> watch() => const Stream<int>.empty();
+}
+
+Future<String> _neverRead() => throw UnimplementedError();

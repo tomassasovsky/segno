@@ -2156,7 +2156,7 @@ struct le_engine {
    * PUBLISHED at the end of every block that ran the voice. */
   struct le_backing_buffer* _Atomic a_audition_dead[LE_AUDITION_MAX_BUFFERS];
   struct le_backing_buffer* audition_owned[LE_AUDITION_MAX_BUFFERS];
-  _Atomic int32_t a_audition_frames, a_audition_position, a_audition_bus;
+  _Atomic int32_t a_audition_frames, a_audition_position, a_audition_outputs;
   _Atomic uint32_t a_audition_epoch;
   /* Callback-published exclusive recording-start choice: positive = count-in
    * measures, 0 = neither, -1 = sound start. One load reports a coherent pair. */
@@ -2499,9 +2499,11 @@ struct le_engine {
   int32_t backing_last_end;
 
   /* Audio-thread-local audition voice (#1178): the playing preview, which
-   * owns its buffer, its read position and its output pair. */
+   * owns its buffer and its read position; [audition_outputs] is the gated
+   * channel set it sounded on in the last block (#1305). */
   struct le_backing_buffer* audition_buf;
-  int32_t audition_pos, audition_bus;
+  int32_t audition_pos;
+  uint32_t audition_outputs;
 
   /* One frozen stopped-launch deadline, with bounded insertion order. Actions
    * are 0 none, 1 fresh Record, 2 Play, 3 overdub. Members retain their own

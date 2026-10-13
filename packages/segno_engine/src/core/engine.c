@@ -1271,8 +1271,8 @@ le_engine* le_engine_create(void) {
   engine->backing_next_item = -1;
   store_i32(&engine->a_backing_item, -1);
   store_i32(&engine->a_backing_next_item, -1);
-  engine->audition_bus = -1;
-  store_i32(&engine->a_audition_bus, -1);
+  engine->audition_outputs = 0;
+  store_i32(&engine->a_audition_outputs, 0);
   store_i32(&engine->a_record_start, 0);
   /* Looper mode SETTING (B2a, D4): same seeded-once persistence as the
    * tempo/click settings above. MULTI (0) is both the enum's zero value and

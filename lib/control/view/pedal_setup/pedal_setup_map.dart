@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/control/binding/pedal_button_legend.dart';
-import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -25,7 +24,7 @@ class PedalSetupMap extends StatelessWidget {
     required this.bank,
     required this.bankSelectable,
     required this.onToggleBank,
-    this.palette,
+    this.preview,
     this.physicalLabels = false,
     super.key,
   });
@@ -33,8 +32,10 @@ class PedalSetupMap extends StatelessWidget {
   /// The actual frame sent to the board; selection never lights an indicator.
   final PedalStateFrame? frame;
 
-  /// Local hue preview. Activity still comes only from the published frame.
-  final PedalPalette? palette;
+  /// The LED colors editor's draft: each pedal the previewed mode lights,
+  /// shown lit in that colour in place of the published frame. Pedals absent
+  /// from it are drawn dark.
+  final Map<PedalButton, PedalColor>? preview;
 
   /// Names physical switches when editing their bank-independent colors.
   final bool physicalLabels;
@@ -132,14 +133,17 @@ class PedalSetupMap extends StatelessWidget {
       slot: slot,
       selected: selected.contains(button),
       ledColor:
-          palette?.colorFor(button) ??
+          preview?[button] ??
           frame?.colorFor(button) ??
           PedalColor.defaultColor,
       // A draft bank is not a performance bank change. Do not show another
       // track's live state beside a different assignment's label.
-      ledActive:
-          (frame?.isLit(button) ?? false) &&
-          (physicalLabels || channel == null || frame?.activeBank == bank),
+      ledActive: preview != null
+          ? preview!.containsKey(button)
+          : (frame?.isLit(button) ?? false) &&
+                (physicalLabels ||
+                    channel == null ||
+                    frame?.activeBank == bank),
       enabled: live,
       onTap: !live
           ? null

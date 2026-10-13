@@ -1456,7 +1456,7 @@ void main() {
         final dir = Directory.systemTemp.createTempSync('mock_audition');
         addTearDown(() => dir.deleteSync(recursive: true));
         final file = File('${dir.path}/a.wav')..writeAsBytesSync([0]);
-        final started = await engine.auditionStartFile(file.path, bus: 1);
+        final started = await engine.auditionStartFile(file.path);
         expect(started.result, EngineResult.ok);
         expect(started.frames, 48000);
         expect(started.rate, 48000);
@@ -1468,7 +1468,7 @@ void main() {
           isTrue,
         );
         expect(engine.auditionState().playing, isTrue);
-        expect(engine.auditionState().bus, 1);
+        expect(engine.auditionState().outputs, (1 << 20) - 1);
         expect(engine.auditionStop(), EngineResult.ok);
         expect(engine.auditionState().playing, isFalse);
         expect(
@@ -1490,12 +1490,6 @@ void main() {
       Future<void> play() async => expect(
         (await engine.auditionStartFile(file.path)).result,
         EngineResult.ok,
-      );
-
-      // A pair the device has no channels for is refused.
-      expect(
-        (await engine.auditionStartFile(file.path, bus: 64)).result,
-        EngineResult.invalid,
       );
 
       // It advances a block per snapshot and ends after its last frame.

@@ -8,7 +8,8 @@ import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_action_labels.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
-import 'package:segno/control/binding/pedal_palette.dart';
+import 'package:segno/control/binding/pedal_led_labels.dart';
+import 'package:segno/control/binding/pedal_led_map.dart';
 import 'package:segno/control/binding/pedal_setup.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/view/pedal_setup/pedal_choice_picker.dart';
@@ -32,8 +33,8 @@ enum PedalSetupContext {
   /// The free map: eight switches, each with its own Press and Hold.
   custom,
 
-  /// Colors of the Custom-assignable indicators, independent of bank. Record,
-  /// Mute and FX light in fixed state colours.
+  /// The LED colour map: per mode, a colour for every state each pedal group
+  /// can show. The four track pedals are one group.
   leds,
 }
 
@@ -86,6 +87,9 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   PedalButton _selected = PedalButton.mode;
 
   int _bank = 0;
+
+  /// The mode whose colours LED colors is showing.
+  InteractionMode _ledMode = InteractionMode.record;
 
   bool _saved = false;
   bool _saving = false;
@@ -162,11 +166,11 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                       top: _mapTop,
                       child: PedalSetupMap(
                         frame: frame,
-                        // The colour editor previews the performer's
-                        // palette, saved or drafted; every other context
-                        // shows what the pedal lights now.
-                        palette: _context == PedalSetupContext.leds
-                            ? (_draft ?? control.state.pedalSetup).palette
+                        // LED colors previews the shown mode's draft
+                        // colours; every other context shows what the pedal
+                        // lights now.
+                        preview: _context == PedalSetupContext.leds
+                            ? _ledPreview(setup)
                             : null,
                         physicalLabels: _context == PedalSetupContext.leds,
                         selected: _selectedGroup,
@@ -268,6 +272,15 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
               ),
             ),
           ),
+        if (_context == PedalSetupContext.leds) ...[
+          LoopOutlinedButton(
+            key: const Key('pedal_led_reset'),
+            width: 300,
+            label: l10n.pedalLedReset,
+            onTap: setup.leds.isEdited(_ledMode) ? _resetLeds : null,
+          ),
+          const SizedBox(width: 16),
+        ],
         if (_context == PedalSetupContext.custom) ...[
           LoopOutlinedButton(
             key: const Key('pedal_setup_clear_custom'),
@@ -381,8 +394,17 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
       width: 1720,
       height: 72,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
         children: [
+          // Which mode's colours are shown. Left of the raised row, where the
+          // map leaves the band free.
+          if (_context == PedalSetupContext.leds)
+            LoopOutlinedButton(
+              key: const Key('pedal_led_mode'),
+              width: 420,
+              label: l10n.pedalLedMode(_modeLabel(context, _ledMode)),
+              onTap: () => unawaited(_pickLedMode()),
+            ),
+          const Spacer(),
           LoopChoiceButton(
             key: const Key('pedal_setup_context_tracks'),
             label: l10n.pedalSetupContextTracks,
@@ -423,10 +445,18 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
       _selected = switch (next) {
         PedalSetupContext.tracks => PedalButton.mode,
         PedalSetupContext.custom => PedalButton.track1,
-        PedalSetupContext.leds => PedalButton.track1,
+        PedalSetupContext.leds => _firstLedButton(_ledMode),
       };
     });
   }
+
+  /// The first pedal [mode] colours: Track 1 wherever the track pedals have a
+  /// state, MODE in Custom, where only MODE and Bank are the mode's own.
+  static PedalButton _firstLedButton(InteractionMode mode) =>
+      PedalButton.values.firstWhere(
+        (button) =>
+            PedalLedMap.groupOf(button) == PedalLedMap.schema(mode).keys.first,
+      );
 
   /// The bank the MAP is showing.
   ///
@@ -440,7 +470,14 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     // Colour is the performer's only where the function is: Record, Mute and
     // FX light in fixed state colours, so only the switches Custom mode can
     // assign take a colour.
-    PedalSetupContext.leds || PedalSetupContext.custom => {
+    PedalSetupContext.leds => {
+      for (final button in PedalButton.values)
+        if (PedalLedMap.schema(
+          _ledMode,
+        ).containsKey(PedalLedMap.groupOf(button)))
+          button,
+    },
+    PedalSetupContext.custom => {
       for (final button in PedalButton.values)
         if (!PedalBindingKey.unbindable.contains(button)) button,
     },
@@ -459,7 +496,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   /// setting covers all four and marking only the tapped one would promise a
   /// per-switch assignment that does not exist.
   Set<PedalButton> get _selectedGroup =>
-      _context == PedalSetupContext.tracks && kTrackSwitches.contains(_selected)
+      _context != PedalSetupContext.custom && kTrackSwitches.contains(_selected)
       ? kTrackSwitches.toSet()
       : {_selected};
 
@@ -472,48 +509,119 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     PedalSetupContext.custom => _customEditor(context, setup),
     PedalSetupContext.leds => PedalLedEditor(
       title: _controlName(context),
-      palette: setup.palette,
-      button: _selected,
-      onChoose: (entry) => setState(() {
-        final latest = _draft ?? context.read<ControlCubit>().state.pedalSetup;
-        _draft = latest.copyWith(
-          palette: latest.palette.withChoice(_selected, entry),
-        );
-        _saved = false;
-      }),
-      onAdd: () => unawaited(_editColor()),
-      onEdit: (entry) => unawaited(_editColor(entry)),
+      colors: {
+        for (final state in PedalLedMap.schema(
+          _ledMode,
+        )[PedalLedMap.groupOf(_selected)]!.keys)
+          state: setup.leds.colorFor(
+            _ledMode,
+            PedalLedMap.groupOf(_selected),
+            state,
+          ),
+      },
+      onEdit: (state) => unawaited(_editLedColor(state)),
     ),
   };
 
-  Future<void> _editColor([CustomPaletteEntry? entry]) async {
+  /// Each pedal the shown mode colours, in its first state's draft colour.
+  Map<PedalButton, PedalColor> _ledPreview(PedalSetup setup) {
+    final schema = PedalLedMap.schema(_ledMode);
+    return {
+      for (final button in PedalButton.values)
+        if (schema[PedalLedMap.groupOf(button)] case final states?)
+          button: setup.leds.colorFor(
+            _ledMode,
+            PedalLedMap.groupOf(button),
+            states.keys.first,
+          ),
+    };
+  }
+
+  String _modeLabel(BuildContext context, InteractionMode mode) =>
+      controlActionLabel(
+        context.l10n,
+        context.read<TracksCubit>().state.names,
+        ModeAction(mode),
+      );
+
+  Future<void> _pickLedMode() async {
+    final chosen = await showPedalChoicePicker<InteractionMode>(
+      context,
+      title: context.l10n.pedalSetupContextLeds,
+      current: _ledMode,
+      groups: [
+        PedalChoiceGroup(
+          label: context.l10n.actionGroupFunctions,
+          id: 'modes',
+          choices: [
+            for (final mode in InteractionMode.values)
+              PedalChoice(
+                value: mode,
+                id: 'mode_${ModeAction(mode).token}',
+                label: _modeLabel(context, mode),
+              ),
+          ],
+        ),
+      ],
+    );
+    if (chosen == null || !mounted) return;
+    setState(() {
+      _ledMode = chosen.value;
+      if (!_editable.contains(_selected)) {
+        _selected = _firstLedButton(_ledMode);
+      }
+    });
+  }
+
+  void _resetLeds() => setState(() {
+    final latest = _draft ?? context.read<ControlCubit>().state.pedalSetup;
+    _draft = latest.copyWith(leds: latest.leds.resetMode(_ledMode));
+    _saved = false;
+  });
+
+  /// Opens the colour editor on one state of the selected group in the shown
+  /// mode.
+  Future<void> _editLedColor(PedalLedState state) async {
+    final mode = _ledMode;
+    final group = PedalLedMap.groupOf(_selected);
+    await _editColor(
+      (leds) => leds.colorFor(mode, group, state),
+      (leds, color) => leds.withColor(mode, group, state, color),
+    );
+  }
+
+  /// Opens the colour editor on the selected Custom assignment's [state].
+  Future<void> _editCustomColor(PedalLedState state) async {
+    final key = _customKey;
+    await _editColor(
+      (leds) => leds.customColorFor(key, state),
+      (leds, color) => leds.withCustomColor(key, state, color),
+    );
+  }
+
+  PedalBindingKey get _customKey => PedalBindingKey(
+    button: _selected,
+    bank: PedalBindingKey.isBankKeyed(_selected) ? _bank : null,
+  );
+
+  /// Mixes one colour and merges it into the latest draft, without
+  /// resurrecting a setup replaced while the dialog was open.
+  Future<void> _editColor(
+    PedalColor Function(PedalLedMap leds) read,
+    PedalLedMap Function(PedalLedMap leds, PedalColor color) write,
+  ) async {
     final control = context.read<ControlCubit>();
     final liveAtOpen = control.state.pedalSetup;
-    final button = _selected;
-    final palette = (_draft ?? liveAtOpen).palette;
     final chosen = await showPedalColorDialog(
       context,
-      initial: entry == null
-          ? const PedalColor(64, 160, 224)
-          : palette.colorOf(entry)!,
-      editing: entry != null,
+      initial: read((_draft ?? liveAtOpen).leds),
     );
     if (chosen == null || !mounted || control.state.pedalSetup != liveAtOpen) {
       return;
     }
-    // Merge into the latest draft, without taking over another selection or
-    // resurrecting a setup replaced while the dialog was open.
-    final latest = _draft ?? control.state.pedalSetup;
-    if (entry != null && !latest.palette.customs.containsKey(entry.number)) {
-      return;
-    }
-    final number = entry?.number ?? latest.palette.nextCustomNumber;
-    var next = latest.palette.withCustom(number, chosen);
-    if (entry == null) {
-      next = next.withChoice(button, CustomPaletteEntry(number));
-    }
     setState(() {
-      _draft = latest.copyWith(palette: next);
+      final latest = _draft ?? control.state.pedalSetup;
+      _draft = latest.copyWith(leds: write(latest.leds, chosen));
       _saved = false;
     });
   }
@@ -615,19 +723,35 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
         key: const Key('pedal_setup_press'),
         label: l10n.pedalSetupPress,
         value: label(pair.press),
+        width: PedalSetupField.compactWidth,
         onTap: () => unawaited(_editCustom(setup, hold: false)),
       ),
       hold: PedalSetupField(
         key: const Key('pedal_setup_hold'),
         label: l10n.pedalSetupHold,
         value: label(pair.hold),
+        width: PedalSetupField.compactWidth,
         onTap: () => unawaited(_editCustom(setup, hold: true)),
       ),
+      // The pedal's own colours, beside the assignment they light for.
+      trailing: [
+        for (final state in PedalLedMap.customStates)
+          PedalColorField(
+            key: Key('pedal_setup_color_${state.name}'),
+            label: pedalLedStateLabel(l10n, state),
+            color: setup.leds.customColorFor(_customKey, state),
+            width: PedalColorField.compactWidth,
+            onTap: () => unawaited(_editCustomColor(state)),
+          ),
+      ],
     );
   }
 
   String _controlName(BuildContext context) {
     final l10n = context.l10n;
+    if (_context == PedalSetupContext.leds) {
+      return pedalLedGroupLabel(l10n, PedalLedMap.groupOf(_selected));
+    }
     if (_context == PedalSetupContext.tracks &&
         kTrackSwitches.contains(_selected)) {
       return l10n.pedalSetupTrackGroup;

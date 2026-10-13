@@ -3292,11 +3292,11 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_backing_state>)
       >();
 
-  /// Starts [buffer] from frame 0 into output pair [bus] at the next block,
+  /// Starts [buffer] from frame 0 on every enabled output at the next block,
   /// replacing a preview already playing (no fade). LE_ERR_INVALID: NULL, a
   /// buffer the engine already owns, a rate other than the engine's, more than
-  /// LE_AUDITION_MAX_SECONDS of frames, a bus outside 0..LE_MAX_OUTPUT_BUSES-1
-  /// or one the open device has no channels for, or the command ring full.
+  /// LE_AUDITION_MAX_SECONDS of frames, no output of the open device enabled,
+  /// or the command ring full.
   /// LE_ERR_NOT_RUNNING: not configured. LE_ERR_ALREADY_RUNNING: a performance
   /// capture is armed. LE_ERR_NOT_READY: LE_AUDITION_MAX_BUFFERS already owned.
   /// On every refusal the caller still owns the buffer. A start that reaches
@@ -3305,12 +3305,10 @@ class SegnoEngineBindings {
   int le_engine_audition_start(
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_backing_buffer> buffer,
-    int bus,
   ) {
     return _le_engine_audition_start(
       engine,
       buffer,
-      bus,
     );
   }
 
@@ -3320,17 +3318,12 @@ class SegnoEngineBindings {
           ffi.Int32 Function(
             ffi.Pointer<le_engine>,
             ffi.Pointer<le_backing_buffer>,
-            ffi.Int32,
           )
         >
       >('le_engine_audition_start');
   late final _le_engine_audition_start = _le_engine_audition_startPtr
       .asFunction<
-        int Function(
-          ffi.Pointer<le_engine>,
-          ffi.Pointer<le_backing_buffer>,
-          int,
-        )
+        int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_backing_buffer>)
       >();
 
   /// Silences the preview at the next block (no fade). A no-op when none
@@ -8496,7 +8489,7 @@ enum le_command_code {
   /// arg_i = frame of the loaded buffer
   LE_CMD_BACKING_SEEK(92),
 
-  /// buffer + output pair
+  /// buffer
   LE_CMD_AUDITION_START(136),
   LE_CMD_AUDITION_STOP(137),
 
@@ -10243,9 +10236,9 @@ final class le_audition_state extends ffi.Struct {
   @ffi.Int32()
   external int position;
 
-  /// its output pair, -1 when none plays
-  @ffi.Int32()
-  external int bus;
+  /// output channels it sounded on, 0 when none plays
+  @ffi.Uint32()
+  external int outputs;
 
   /// buffers the engine owns after this collect
   @ffi.Int32()
