@@ -10,6 +10,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/loop_count_words.dart';
 import 'package:segno/looper/view/rename_track_dialog.dart';
+import 'package:segno/looper/view/slot_row.dart';
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -507,9 +508,8 @@ class _TrackInfo extends StatelessWidget {
 
 /// The meta row under the name: the channel number, the bar and layer counts
 /// with their small units, then the Reverse and FX markers at the trailing
-/// edge. FX is bright when the chain is engaged, dim when bypassed, and always
-/// holds its place. REV takes a slot only while the track plays reversed, so
-/// a forward row is the pen row and a reversed row makes room for the marker.
+/// edge. FX is bright when the chain is engaged, dim when bypassed; REV shows
+/// while the track plays reversed. Every part has a fixed slot (#1308).
 class _TrackMeta extends StatelessWidget {
   const _TrackMeta({
     required this.channel,
@@ -529,6 +529,15 @@ class _TrackMeta extends StatelessWidget {
   final int layers;
   final _FxMarker fxMarker;
   final bool reversed;
+
+  /// The narrowest row the slots are laid out at.
+  static const double minWidth = 320;
+
+  /// The channel number's slot: two figures at 22.
+  static const double numberWidth = 30;
+
+  /// The markers' slot: `REV`, the gap, `FX`, at 19 bold.
+  static const double markersWidth = 96;
 
   @override
   Widget build(BuildContext context) {
@@ -558,86 +567,98 @@ class _TrackMeta extends StatelessWidget {
       // with the meta line instead.
       label: reversed ? '$meta, ${l10n.a11yStageReversed}' : meta,
       child: ExcludeSemantics(
-        // Spread across the column at the pen's size; scaled down as one
-        // piece in a narrower column (a desktop window) rather than
-        // overflowing or wrapping.
-        child: ShrinkToWidth(
-          child: Row(
-            key: Key('tracks_meta_$channel'),
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            // A floor under the pen's even spread: when long counts or units
-            // fill the row, its parts still never touch (the row then scales
-            // down as one piece). With room to spare the layout is unchanged.
-            spacing: _ReverseMarker.gap,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              AppText(
+        // Fixed slots (#1308): a count growing from `2` to `16`, a longer
+        // unit, or REV appearing moves nothing in the row. Scaled down as one
+        // piece in a column narrower than [minWidth] (a desktop window).
+        child: SlotRow(
+          key: Key('tracks_meta_$channel'),
+          minWidth: minWidth,
+          spacing: _ReverseMarker.gap,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          slots: [
+            RowSlot(
+              width: numberWidth,
+              child: AppText(
                 '${channel + 1}',
+                maxLines: 1,
+                overflow: TextOverflow.clip,
                 style: TextStyle(
                   fontFamily: SurfaceTheme.displayFont,
                   color: surface.textTertiary,
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                   height: 1,
                 ),
               ),
-              _Figure(
+            ),
+            RowSlot(
+              child: SlotFigure(
                 key: Key('tracks_bars_$channel'),
                 figure: count.figure,
                 unit: count.unit,
                 figureStyle: figure,
                 unitStyle: unit,
               ),
-              _Figure(
+            ),
+            RowSlot(
+              child: SlotFigure(
                 key: Key('tracks_layers_$channel'),
                 figure: '$layers',
                 unit: l10n.stageLayersUnit(layers),
                 figureStyle: figure,
                 unitStyle: unit,
               ),
-              // REV takes a real slot before FX while the track plays
-              // reversed, so it can never paint over a long Spanish unit or
-              // a two-digit count; a forward row is the pen's row exactly.
-              Row(
+            ),
+            // REV and FX each hold their place whether or not they show, so
+            // a chain appearing or the track reversing never reflows the row.
+            RowSlot(
+              width: markersWidth,
+              alignment: AlignmentDirectional.centerEnd,
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  if (reversed) ...[
-                    _ReverseMarker(channel: channel),
-                    const SizedBox(width: _ReverseMarker.gap),
-                  ],
-                  Semantics(
-                    label: switch (fxMarker) {
-                      _FxMarker.active => l10n.a11yStageFxActive,
-                      _FxMarker.bypassed => l10n.a11yStageFxBypassed,
-                      _FxMarker.absent => null,
-                    },
+                  Flexible(
                     child: Opacity(
-                      // Absent keeps its width so the row never reflows when a
-                      // chain appears.
-                      opacity: fxMarker == _FxMarker.absent ? 0 : 1,
-                      child: AppText(
-                        l10n.stageFxMarker,
-                        key: Key('tracks_fx_$channel'),
-                        style: TextStyle(
-                          fontFamily: SurfaceTheme.displayFont,
-                          color: fxMarker == _FxMarker.active
-                              ? surface.textPrimary
-                              : surface.textMuted,
-                          fontSize: 19,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1,
-                          height: 1,
+                      opacity: reversed ? 1 : 0,
+                      child: _ReverseMarker(channel: reversed ? channel : null),
+                    ),
+                  ),
+                  const SizedBox(width: _ReverseMarker.gap),
+                  Flexible(
+                    child: Semantics(
+                      label: switch (fxMarker) {
+                        _FxMarker.active => l10n.a11yStageFxActive,
+                        _FxMarker.bypassed => l10n.a11yStageFxBypassed,
+                        _FxMarker.absent => null,
+                      },
+                      child: Opacity(
+                        opacity: fxMarker == _FxMarker.absent ? 0 : 1,
+                        child: AppText(
+                          l10n.stageFxMarker,
+                          key: Key('tracks_fx_$channel'),
+                          maxLines: 1,
+                          overflow: TextOverflow.clip,
+                          style: TextStyle(
+                            fontFamily: SurfaceTheme.displayFont,
+                            color: fxMarker == _FxMarker.active
+                                ? surface.textPrimary
+                                : surface.textMuted,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1,
+                            height: 1,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -645,11 +666,13 @@ class _TrackMeta extends StatelessWidget {
 }
 
 /// "REV" while the track plays reversed. It reads the repository's
-/// published direction, so it stays after the Reverse surface is left.
+/// published direction, so it stays after the Reverse surface is left. A
+/// forward track keeps an invisible, unkeyed one holding the slot.
 class _ReverseMarker extends StatelessWidget {
   const _ReverseMarker({required this.channel});
 
-  final int channel;
+  /// The reversed track's channel; null for the forward placeholder.
+  final int? channel;
 
   /// The gap kept between REV and the FX marker after it.
   static const gap = 12.0;
@@ -657,7 +680,9 @@ class _ReverseMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AppText(
     context.l10n.stageReverseMarker,
-    key: Key('tracks_reverse_$channel'),
+    key: channel == null ? null : Key('tracks_reverse_$channel'),
+    maxLines: 1,
+    overflow: TextOverflow.clip,
     style: TextStyle(
       fontFamily: SurfaceTheme.displayFont,
       color: context.surface.textPrimary,
@@ -669,46 +694,34 @@ class _ReverseMarker extends StatelessWidget {
   );
 }
 
-/// Lays [child] out at least as wide as the available width, then scales it
-/// down uniformly when its own width exceeds that — the idiom for a row of
-/// pen-sized readouts that must survive a narrower desktop window without
-/// overflowing. At the pen's size nothing scales.
-class ShrinkToWidth extends StatelessWidget {
-  /// Creates a [ShrinkToWidth].
-  const ShrinkToWidth({required this.child, super.key});
-
-  /// The row to protect.
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          minWidth: constraints.maxWidth.isFinite ? constraints.maxWidth : 0,
-        ),
-        child: child,
-      ),
-    ),
-  );
-}
-
-/// A figure with its small unit after it: `2 bars`, `4 layers`.
-class _Figure extends StatelessWidget {
-  const _Figure({
+/// A figure with its small unit after it — `2 bars`, `4 layers` — for a
+/// [RowSlot]: both parts single-line and ellipsized, so a long count or unit
+/// is shortened inside the slot rather than pushing past it.
+class SlotFigure extends StatelessWidget {
+  /// Creates a [SlotFigure].
+  const SlotFigure({
     required this.figure,
     required this.unit,
     required this.figureStyle,
     required this.unitStyle,
+    this.gap = 5,
     super.key,
   });
 
+  /// The number.
   final String figure;
+
+  /// The unit after it.
   final String unit;
+
+  /// The number's style; tabular figures are added.
   final TextStyle figureStyle;
+
+  /// The unit's style.
   final TextStyle unitStyle;
+
+  /// The space between number and unit.
+  final double gap;
 
   @override
   Widget build(BuildContext context) => Row(
@@ -716,9 +729,25 @@ class _Figure extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.baseline,
     textBaseline: TextBaseline.alphabetic,
     children: [
-      AppText(figure, style: figureStyle),
-      const SizedBox(width: 5),
-      AppText(unit, style: unitStyle),
+      Flexible(
+        child: AppText(
+          figure,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: figureStyle.copyWith(
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ),
+      SizedBox(width: gap),
+      Flexible(
+        child: AppText(
+          unit,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: unitStyle,
+        ),
+      ),
     ],
   );
 }

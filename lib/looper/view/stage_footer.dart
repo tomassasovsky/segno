@@ -5,7 +5,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/output_level_cubit.dart';
 import 'package:segno/looper/cubit/transport_clock_cubit.dart';
-import 'package:segno/looper/view/track_column.dart' show ShrinkToWidth;
+import 'package:segno/looper/view/slot_row.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The session strip under the track run (the accepted stage): tempo and time
@@ -19,6 +19,10 @@ class StageFooter extends StatelessWidget {
   /// The strip's inset from the screen edges — the pen's 54.
   static const double sideInset = 54;
 
+  /// The narrowest strip the four slots are laid out at; a narrower window
+  /// scales the strip down as one piece.
+  static const double minWidth = 900;
+
   @override
   Widget build(BuildContext context) => Padding(
     // The pen's 22 above the readouts; the run's own inset holds the strip
@@ -26,19 +30,21 @@ class StageFooter extends StatelessWidget {
     padding: const EdgeInsets.fromLTRB(sideInset, 22, sideInset, 0),
     child: ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 44),
-      // Spread at the pen's width; scaled down as one strip in a narrower
-      // desktop window.
-      child: const ShrinkToWidth(
-        child: Row(
-          key: Key('stage_footer'),
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _TempoBlock(),
-            _ElapsedClock(),
-            _OutputLevel(),
-            _LoopModePill(),
-          ],
-        ),
+      // Four fixed slots across the strip (#1308): a readout changing value
+      // or length moves neither itself nor its neighbours. Scaled down as
+      // one strip in a window narrower than [minWidth].
+      child: const SlotRow(
+        key: Key('stage_footer'),
+        minWidth: minWidth,
+        slots: [
+          RowSlot(child: _TempoBlock()),
+          RowSlot(alignment: Alignment.center, child: _ElapsedClock()),
+          RowSlot(alignment: Alignment.center, child: _OutputLevel()),
+          RowSlot(
+            alignment: AlignmentDirectional.centerEnd,
+            child: _LoopModePill(),
+          ),
+        ],
       ),
     ),
   );
@@ -60,6 +66,9 @@ typedef _TempoFacts = ({
 /// `0.0` over a grid that does not exist would state a wrong fact.
 class _TempoBlock extends StatelessWidget {
   const _TempoBlock();
+
+  /// The bpm figure's box: five tabular Inter figures at 32.
+  static const double bpmWidth = 96;
 
   @override
   Widget build(BuildContext context) {
@@ -92,27 +101,39 @@ class _TempoBlock extends StatelessWidget {
       child: ExcludeSemantics(
         child: Row(
           key: const Key('stage_footer_tempo'),
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            AppText(
-              bpm,
-              key: const Key('stage_footer_bpm'),
-              style: TextStyle(
-                fontFamily: SurfaceTheme.displayFont,
-                color: surface.textPrimary,
-                fontSize: 32,
-                height: 1,
+            // A fixed box for the figure, sized for `999.9`: `—`, `84.0`
+            // and `120.0` all leave BPM and the signature where they are.
+            SizedBox(
+              width: bpmWidth,
+              child: AppText(
+                bpm,
+                key: const Key('stage_footer_bpm'),
+                textAlign: TextAlign.end,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: SurfaceTheme.displayFont,
+                  color: surface.textPrimary,
+                  fontSize: 32,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  height: 1,
+                ),
               ),
             ),
             const SizedBox(width: 6),
             AppText(l10n.stageBpmUnit, style: secondary),
             const SizedBox(width: 22),
-            AppText(
-              signature,
-              key: const Key('stage_footer_signature'),
-              style: secondary,
+            Flexible(
+              child: AppText(
+                signature,
+                key: const Key('stage_footer_signature'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: secondary,
+              ),
             ),
           ],
         ),
@@ -148,10 +169,13 @@ class _ElapsedClock extends StatelessWidget {
         child: AppText(
           time,
           key: const Key('stage_footer_clock'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontFamily: SurfaceTheme.monoFont,
             color: surface.textPrimary,
             fontSize: 28,
+            fontFeatures: const [FontFeature.tabularFigures()],
             height: 1,
           ),
         ),
@@ -160,8 +184,14 @@ class _ElapsedClock extends StatelessWidget {
   }
 }
 
+/// `OUT -12.3 dBFS`, `OUT −∞ dBFS` or `OUT CLIP`, start-aligned in a box
+/// sized for the longest normal reading, so the level's changes move
+/// nothing (#1308).
 class _OutputLevel extends StatelessWidget {
   const _OutputLevel();
+
+  /// Seventeen JetBrains Mono characters at 20: `SALIDA -60.0 dBFS`.
+  static const double width = 204;
 
   @override
   Widget build(BuildContext context) {
@@ -175,15 +205,21 @@ class _OutputLevel extends StatelessWidget {
           ? l10n.a11yStageOutputClip
           : l10n.a11yStageOutputLevel(db),
       child: ExcludeSemantics(
-        child: AppText(
-          reading.clip ? l10n.stageOutputClip : l10n.stageOutputLevel(db),
-          key: const Key('stage_footer_output'),
-          style: TextStyle(
-            fontFamily: SurfaceTheme.monoFont,
-            color: reading.clip ? surface.rec : surface.textSecondary,
-            fontSize: 20,
-            fontWeight: reading.clip ? FontWeight.w700 : FontWeight.w400,
-            height: 1,
+        child: SizedBox(
+          width: width,
+          child: AppText(
+            reading.clip ? l10n.stageOutputClip : l10n.stageOutputLevel(db),
+            key: const Key('stage_footer_output'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: SurfaceTheme.monoFont,
+              color: reading.clip ? surface.rec : surface.textSecondary,
+              fontSize: 20,
+              fontWeight: reading.clip ? FontWeight.w700 : FontWeight.w400,
+              fontFeatures: const [FontFeature.tabularFigures()],
+              height: 1,
+            ),
           ),
         ),
       ),
@@ -222,6 +258,8 @@ class _LoopModePill extends StatelessWidget {
           ),
           child: AppText(
             label.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontFamily: SurfaceTheme.displayFont,
               color: surface.textSecondary,
