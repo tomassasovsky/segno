@@ -11,7 +11,6 @@ import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
-import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_fx.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -1055,22 +1054,22 @@ void main() {
           await pumpEventQueue();
           final held = transport.lastFrame!;
           expect(held.isLit(PedalButton.undo), isTrue);
+          const cyan = PedalColor(0, 200, 220);
           final next = cubit.state.pedalSetup.copyWith(
-            palette: const PedalPalette().withChoice(
-              PedalButton.undo,
-              const BuiltInPaletteEntry(PedalPaletteColor.cyan),
+            leds: const PedalLedMap().withColor(
+              InteractionMode.record,
+              PedalLedGroup.undo,
+              PedalLedState.pressed,
+              cyan,
             ),
           );
           await cubit.setPedalSetup(next);
           final recolored = transport.lastFrame!;
           expect(recolored.isLit(PedalButton.undo), isTrue);
           expect(recolored.activeButtonMask, held.activeButtonMask);
-          // Record mode lights in fixed state colours; the saved hue waits
-          // for Custom mode.
-          expect(
-            recolored.colorFor(PedalButton.undo),
-            held.colorFor(PedalButton.undo),
-          );
+          // The held Undo takes the saved pressed colour at once.
+          expect(held.colorFor(PedalButton.undo), ledWhite);
+          expect(recolored.colorFor(PedalButton.undo), cyan);
           expect(await settings.loadPedalSetup(), next.encode());
           transport.press(PedalButton.undo, down: false);
           await pumpEventQueue();
@@ -1086,16 +1085,18 @@ void main() {
         await expectLater(
           cubit.setPedalSetup(
             cubit.state.pedalSetup.copyWith(
-              palette: const PedalPalette().withChoice(
-                PedalButton.undo,
-                const BuiltInPaletteEntry(PedalPaletteColor.red),
+              leds: const PedalLedMap().withColor(
+                InteractionMode.record,
+                PedalLedGroup.undo,
+                PedalLedState.pressed,
+                ledRed,
               ),
             ),
           ),
           throwsException,
         );
         expect(transport.lastFrame, held);
-        expect(cubit.state.pedalSetup.palette, const PedalPalette());
+        expect(cubit.state.pedalSetup.leds, const PedalLedMap());
         transport.press(PedalButton.undo, down: false);
         await pumpEventQueue();
       });
@@ -1107,9 +1108,11 @@ void main() {
           await pumpEventQueue();
           await cubit.setPedalSetup(
             cubit.state.pedalSetup.copyWith(
-              palette: const PedalPalette().withChoice(
-                PedalButton.mode,
-                const BuiltInPaletteEntry(PedalPaletteColor.blue),
+              leds: const PedalLedMap().withColor(
+                InteractionMode.record,
+                PedalLedGroup.mode,
+                PedalLedState.current,
+                ledBlue,
               ),
             ),
           );
@@ -1126,9 +1129,11 @@ void main() {
           cubit.setMode(InteractionMode.fx);
           await cubit.setPedalSetup(
             cubit.state.pedalSetup.copyWith(
-              palette: cubit.state.pedalSetup.palette.withChoice(
-                PedalButton.mode,
-                const BuiltInPaletteEntry(PedalPaletteColor.amber),
+              leds: cubit.state.pedalSetup.leds.withColor(
+                InteractionMode.fx,
+                PedalLedGroup.mode,
+                PedalLedState.pressed,
+                ledYellow,
               ),
             ),
           );
@@ -1462,7 +1467,7 @@ void main() {
         expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.off);
       });
 
-      test('refused Custom Record/Play never lights its contact', () async {
+      test('refused Custom Record/Play lights only while held', () async {
         await assign(
           PedalButton.stop,
           const ControlGesturePair(
@@ -1479,12 +1484,14 @@ void main() {
         verify(
           () => looper.record(channel: any(named: 'channel')),
         ).called(1);
-        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+        // Every press lights at once, refused or not; release darkens it.
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
         transport.press(PedalButton.stop, down: false);
         await pumpEventQueue();
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
       });
 
-      test('refused Custom Clear All keeps its contact dark', () async {
+      test('refused Custom Clear All lights only while held', () async {
         await assign(
           PedalButton.stop,
           const ControlGesturePair(
@@ -1502,13 +1509,14 @@ void main() {
         await pumpEventQueue();
 
         verify(() => looper.clearAll([0])).called(1);
-        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
         transport.press(PedalButton.stop, down: false);
         await pumpEventQueue();
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
       });
 
       test(
-        'normal Stop lights only on admission and clears on link loss',
+        'normal Stop lights while held, refused or not; link loss clears it',
         () async {
           setEngine(
             _tracksWith(const [
@@ -1524,9 +1532,10 @@ void main() {
           ).thenReturn(EngineResult.notReady);
           transport.press(PedalButton.stop, down: true);
           await pumpEventQueue();
-          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
           transport.press(PedalButton.stop, down: false);
           await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
 
           when(
             () => looper.setMute(
@@ -1552,7 +1561,7 @@ void main() {
         },
       );
 
-      test('Mute Stop refusal leaves its contact dark', () async {
+      test('Mute Stop refusal lights only while held', () async {
         setEngine(
           _tracksWith(const [
             Track(state: TrackState.playing, lengthFrames: 48000),
@@ -1567,13 +1576,14 @@ void main() {
         verify(
           () => looper.stopTrack(channel: any(named: 'channel')),
         ).called(1);
-        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
         transport.press(PedalButton.stop, down: false);
         await pumpEventQueue();
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
       });
 
       test(
-        'an unbound FX Stop stays dark: it does nothing in FX mode',
+        'an unbound FX Stop does nothing but still lights while held',
         () async {
           trackChains[0] = [BuiltInEffect(type: TrackEffectType.drive)];
           cubit.setMode(InteractionMode.fx);
@@ -1585,9 +1595,10 @@ void main() {
               enabled: any(named: 'enabled'),
             ),
           );
-          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
           transport.press(PedalButton.stop, down: false);
           await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
         },
       );
 
@@ -1612,22 +1623,23 @@ void main() {
         setEngine(_tracksWith(const [Track(channel: 1, muted: true)]));
         await pumpEventQueue();
         expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);
+        const violet = PedalColor(177, 154, 250);
         await cubit.setPedalSetup(
           cubit.state.pedalSetup.copyWith(
-            palette: const PedalPalette().withChoice(
-              PedalButton.track1,
-              const BuiltInPaletteEntry(PedalPaletteColor.violet),
+            leds: const PedalLedMap().withCustomColor(
+              const PedalBindingKey(button: PedalButton.track1, bank: 0),
+              PedalLedState.lit,
+              violet,
             ),
           ),
         );
         expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);
-        expect(
-          transport.lastFrame?.colorFor(PedalButton.track1),
-          PedalPaletteColor.violet.color,
-        );
+        // Held, the pedal shows its pressed colour; released, its own.
+        expect(transport.lastFrame?.colorFor(PedalButton.track1), ledWhite);
         transport.press(PedalButton.track1, down: false);
         await pumpEventQueue();
         expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);
+        expect(transport.lastFrame?.colorFor(PedalButton.track1), violet);
       });
 
       test(
@@ -1990,7 +2002,7 @@ void main() {
       });
 
       test(
-        'a refused Record press with no retry owed keeps its contact dark',
+        'a refused Record press with no retry owed lights only while held',
         () async {
           when(
             () => looper.record(channel: any(named: 'channel')),
@@ -1998,9 +2010,10 @@ void main() {
 
           transport.press(PedalButton.recPlay, down: true);
           await pumpEventQueue();
-          expect(transport.lastFrame?.isLit(PedalButton.recPlay), isFalse);
+          expect(transport.lastFrame?.isLit(PedalButton.recPlay), isTrue);
           transport.press(PedalButton.recPlay, down: false);
           await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.recPlay), isFalse);
         },
       );
 
@@ -4362,21 +4375,67 @@ void main() {
     });
 
     group('frame projection (frames out via PedalRepository)', () {
-      test('normal Undo lights only for accepted physical contact', () async {
-        setEngine(_emptyTracks());
-        transport.press(PedalButton.undo, down: true);
-        await pumpEventQueue();
-        expect(transport.lastFrame?.isLit(PedalButton.undo), isTrue);
-        transport.press(PedalButton.undo, down: false);
-        await pumpEventQueue();
-        expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
+      test(
+        'normal Undo lights while held; a take-locked press is ignored',
+        () async {
+          setEngine(_emptyTracks());
+          transport.press(PedalButton.undo, down: true);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.undo), isTrue);
+          transport.press(PedalButton.undo, down: false);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
 
-        takeIsLocked = true;
-        transport.press(PedalButton.undo, down: true);
+          takeIsLocked = true;
+          transport.press(PedalButton.undo, down: true);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
+          transport.press(PedalButton.undo, down: false);
+          await pumpEventQueue();
+        },
+      );
+
+      test('every press lights its pedal in the frame the press itself '
+          'pushes, MODE included, before any engine answer', () async {
+        setEngine(_emptyTracks());
         await pumpEventQueue();
-        expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
-        transport.press(PedalButton.undo, down: false);
+        for (final mode in [
+          InteractionMode.record,
+          InteractionMode.mute,
+          InteractionMode.fx,
+          InteractionMode.custom,
+          InteractionMode.peel,
+        ]) {
+          cubit.setMode(mode);
+          // MODE last: its press leaves the mode (on release, or on contact
+          // in FX and Custom), and the held switch still shows first.
+          for (final button in [
+            PedalButton.undo,
+            PedalButton.clear,
+            PedalButton.track3,
+            PedalButton.mode,
+          ]) {
+            transport.press(button, down: true);
+            await pumpEventQueue();
+            final held = transport.lastFrame!;
+            expect(held.isLit(button), isTrue, reason: '$mode $button');
+            expect(
+              held.colorFor(button),
+              // Clear keeps the red it always lit while held; a Custom
+              // assignment's own pressed colour defaults to white.
+              button == PedalButton.clear && mode != InteractionMode.custom
+                  ? ledRed
+                  : ledWhite,
+              reason: '$mode $button',
+            );
+            transport.press(button, down: false);
+            await pumpEventQueue();
+          }
+        }
+        // MODE is always lit; its press is told apart by the flash colour.
+        cubit.setMode(InteractionMode.record);
         await pumpEventQueue();
+        expect(transport.lastFrame!.colorFor(PedalButton.mode), ledRed);
       });
 
       test('pushes an encoded frame to the pedal link', () async {
@@ -4495,15 +4554,20 @@ void main() {
         );
       });
 
-      test('Clear on an empty rig leaves its LED dark', () async {
-        setEngine(_emptyTracks());
-        transport.press(PedalButton.clear, down: true);
-        await pumpEventQueue();
-        expect(transport.lastFrame?.clearFadeActive, isFalse);
-        expect(transport.lastFrame?.isLit(PedalButton.clear), isFalse);
-        transport.press(PedalButton.clear, down: false);
-        await pumpEventQueue();
-      });
+      test(
+        'Clear on an empty rig fades nothing but lights while held',
+        () async {
+          setEngine(_emptyTracks());
+          transport.press(PedalButton.clear, down: true);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.clearFadeActive, isFalse);
+          expect(transport.lastFrame?.isLit(PedalButton.clear), isTrue);
+          expect(transport.lastFrame?.colorFor(PedalButton.clear), ledRed);
+          transport.press(PedalButton.clear, down: false);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.clear), isFalse);
+        },
+      );
 
       test(
         'global_color carries the ring activity color (recording = red)',

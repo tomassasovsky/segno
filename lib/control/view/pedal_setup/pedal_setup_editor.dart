@@ -15,6 +15,7 @@ class PedalSetupField extends StatelessWidget {
     required this.label,
     required this.value,
     required this.onTap,
+    this.width = defaultWidth,
     super.key,
   });
 
@@ -27,8 +28,14 @@ class PedalSetupField extends StatelessWidget {
   /// Opens the picker; `null` when this gesture is fixed.
   final VoidCallback? onTap;
 
+  /// How wide the field is.
+  final double width;
+
   /// The pen's field.
-  static const double width = 680;
+  static const double defaultWidth = 680;
+
+  /// The field beside two colour fields, in Custom controls.
+  static const double compactWidth = 480;
 
   /// The pen's field height: the label band plus the value button.
   static const double height = 140;
@@ -184,6 +191,7 @@ class PedalSetupEditor extends StatelessWidget {
     required this.title,
     required this.press,
     required this.hold,
+    this.trailing = const [],
     super.key,
   });
 
@@ -196,8 +204,11 @@ class PedalSetupEditor extends StatelessWidget {
   /// The Hold field.
   final Widget hold;
 
-  /// The pen's gap between the two fields.
-  static const double _fieldGap = 28;
+  /// Further fields after Hold: the pedal's colours in Custom controls.
+  final List<Widget> trailing;
+
+  /// The pen's gap between the fields.
+  static const double fieldGap = 28;
 
   @override
   Widget build(BuildContext context) => PedalSetupEditorFrame(
@@ -206,8 +217,12 @@ class PedalSetupEditor extends StatelessWidget {
     child: Row(
       children: [
         press,
-        const SizedBox(width: _fieldGap),
+        const SizedBox(width: fieldGap),
         hold,
+        for (final field in trailing) ...[
+          const SizedBox(width: fieldGap),
+          field,
+        ],
       ],
     ),
   );

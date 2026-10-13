@@ -47,6 +47,7 @@ class ControlContext {
     this.boundChains = const {},
     this.customFunctions = const {},
     this.physicalCustomStates = const {},
+    this.pressed = const {},
   });
 
   /// Engine truth (the polled snapshot projection).
@@ -68,6 +69,10 @@ class ControlContext {
 
   /// Current function-state facts for all ten physical switches in Custom.
   final Map<PedalButton, bool> physicalCustomStates;
+
+  /// The switches held right now. A held switch lights whatever its function
+  /// state, so the press shows at once.
+  final Set<PedalButton> pressed;
 }
 
 /// One named rule whose check returns `null` when satisfied, or a description
@@ -232,7 +237,9 @@ final List<ControlInvariant> controlInvariants = [
         bank: c.overlay.activeBank,
       );
       final available = pair.press != null || pair.hold != null;
-      final active = available && (c.physicalCustomStates[button] ?? false);
+      final active =
+          (available && (c.physicalCustomStates[button] ?? false)) ||
+          c.pressed.contains(button);
       if (c.frame.isLit(button) != active) {
         return 'custom ${button.name} physical LED disagrees with its '
             'current function state';

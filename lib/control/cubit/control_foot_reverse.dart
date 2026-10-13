@@ -16,9 +16,7 @@ extension _FootReverseControl on ControlCubit {
       return;
     }
     if (!_reverseEditable) return;
-    if (_dispatchReverseAction(role.press, role.slot)) {
-      _acceptedContacts.add(button);
-    }
+    _dispatchReverseAction(role.press, role.slot);
   }
 
   bool _dispatchReverseAction(FootReverseAction action, int? slot) {
