@@ -123,13 +123,25 @@ int32_t le_push_cmd(le_engine* engine, le_command cmd);
  * engine.c as le_monitor_input_reset.) */
 void le_lane_reset(le_lane* ln, int32_t input_channel);
 
+/* le_lane_ensure_slot outcomes. Both success codes are non-zero, so the plain
+ * `if (!le_lane_ensure_slot(...))` failure check reads exactly as it always
+ * did; the FRESH/REUSED split exists for the one caller that would otherwise
+ * re-zero a buffer calloc just handed back zeroed (see le_engine_set_lane_count
+ * in engine_commands.c — the memset alone faulted in 11.5 MB per lane). */
+enum {
+  LE_SLOT_FAILED = 0, /* allocation failed; the slot is left unallocated */
+  LE_SLOT_REUSED = 1, /* the existing buffer was big enough; CONTENT IS STALE */
+  LE_SLOT_FRESH = 2   /* freshly calloc'd: the buffer is already all zeros */
+};
+
 /* Ensures lane [ln]'s pool slot [slot] holds a buffer of >= [frames] frames
  * (control thread only; the caller guarantees the audio thread is not reading
  * the slot's CONTENT — an EMPTY track's live slot, or a slot outside
  * live/stacks/outstanding). Growth replaces the buffer (free + fresh calloc);
  * no content survives a regrow by design — snapshots are always written whole
- * before use. Returns 1 on success, 0 on allocation failure (the slot is left
- * unallocated). Defined in engine.c. */
+ * before use. Returns LE_SLOT_FRESH when it allocated (buffer already zeroed),
+ * LE_SLOT_REUSED when the existing buffer served, LE_SLOT_FAILED (0) on
+ * allocation failure. Defined in engine.c. */
 int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames);
 
 /* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`

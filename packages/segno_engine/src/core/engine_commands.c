@@ -2196,10 +2196,17 @@ int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
     for (int32_t l = old; l < count; ++l) {
       le_lane* ln = &t->lanes[l];
       le_lane_reset(ln, l); /* defaults to recording hardware input channel l */
-      if (!le_lane_ensure_slot(ln, 0, engine->max_loop_frames)) {
-        return LE_ERR_INVALID;
-      }
-      memset(ln->pool[0], 0, cap * sizeof(float));
+      const int slot = le_lane_ensure_slot(ln, 0, engine->max_loop_frames);
+      if (slot == LE_SLOT_FAILED) return LE_ERR_INVALID;
+      /* Only a REUSED slot can still hold a prior take; a FRESH one came
+       * straight out of calloc and is already all zeros. Clearing it anyway
+       * is not free: the memset is what makes every page of the cap-sized
+       * buffer RESIDENT (11.52 MB per lane at 96 kHz x 30 s), so growing 8
+       * tracks to 8 lanes each measured 623 MB peak RSS with nothing
+       * recorded, against 2 MB for the same callocs left untouched. The
+       * clear on the reuse path stays — it is load-bearing (a shrink then
+       * regrow must not play back the old lane's audio, #594/#595). */
+      if (slot == LE_SLOT_REUSED) memset(ln->pool[0], 0, cap * sizeof(float));
     }
   }
   t->lane_count = count;
