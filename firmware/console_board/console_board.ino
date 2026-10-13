@@ -27,7 +27,7 @@
 struct Rgb { uint8_t r, g, b; };
 
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 14;
+static const uint8_t FW_MINOR = 15;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -57,9 +57,10 @@ static const uint8_t CTRL_PRESENT_PIN[PEDAL_CTRL_COUNT] = {19, 22};
 static const uint8_t PIN_SMPS_PWM = 23;
 
 // ---- LEDs --------------------------------------------------------------------
-// One continuous 40-pixel GRB WS2812B strip around the encoder, driven by
-// the existing v2 GP12/J6 path. Keep the established clockwise index order.
-static const uint16_t RING_N = 40;
+// One continuous 34-pixel GRB WS2812B strip around the encoder (the strip
+// ring in the console enclosure, #1090), driven by the existing v2 GP12/J6
+// path. Keep the established clockwise index order.
+static const uint16_t RING_N = 34;
 // Ten eight-pixel pills on J7, in the owner-verified data-chain order.
 static const uint8_t PILL_PIXELS = 8, IND_N = PEDAL_BTN_COUNT * PILL_PIXELS;
 static const uint8_t PILL_BUTTON[PEDAL_BTN_COUNT] = {
@@ -70,9 +71,10 @@ static const uint8_t PILL_BUTTON[PEDAL_BTN_COUNT] = {
 static const uint8_t PILL_PEAK = 191;
 static const uint8_t PILL_WEIGHTS[PILL_PIXELS] = {38, 92, 201, 255, 255, 201, 92, 38};
 // Limit the whole pill chain to ~471 mA of color-channel current using the
-// conservative 20 mA/channel model. The ring's 11520-channel budget adds
-// <=904 mA; 120 mA pixel idle +140 mA logic gives ~1.635 A on the old PCB's
-// estimated ~1.65 A rail. This is a planning model, not measured consumption.
+// conservative 20 mA/channel model. The ring's 9792-channel budget (34 pixels
+// at the ambient 96) adds <=768 mA; 114 mA pixel idle +140 mA logic gives
+// ~1.49 A on the old PCB's estimated ~1.65 A rail. This is a planning model,
+// not measured consumption.
 static const uint32_t PILL_CHANNEL_BUDGET = 6000;
 Adafruit_NeoPixel ring(RING_N, PIN_RING, NEO_GRB + NEO_KHZ800);
 // DMA keeps interrupts available throughout the 80-pixel transfer.
@@ -626,14 +628,18 @@ static const unsigned long RING_MS_PER_REV = 1100;
 static const unsigned long BREATHE_MS = 1200;
 // The dimmest the breathe goes, as a fraction of full: never off.
 static const float BREATHE_FLOOR = 0.35f;
-// Owner-approved sustained-fade preview: physical channel duties, head first.
-// The last quarter is dark. These values already describe LED output, so only
-// the hue receives gamma; applying brightness gamma again shortens the tail.
+// Owner-approved sustained fade: physical channel duties, head first. The
+// profile was approved on 40 pixels (192 peak over a two-pixel lead, 30 lit,
+// the last quarter dark); these are the same angles on 34 pixels, linearly
+// resampled with the lead kept at the peak (docs/simulations/
+// sustained-ring-comet.html). These values already describe LED output, so
+// only the hue receives gamma; applying brightness gamma again shortens the
+// tail.
 static const uint8_t COMET_DUTY[RING_N] = {
-  192, 192, 180, 174, 168, 162, 156, 150, 144, 138,
-  132, 126, 120, 114, 108, 102, 96, 89, 82, 74,
-  66, 58, 50, 41, 33, 25, 18, 11, 6, 2,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+  192, 192, 178, 171, 164, 157, 150, 143, 136, 128,
+  121, 114, 107, 100, 93, 84, 75, 66, 57, 47,
+  37, 27, 19, 11, 5, 1, 0, 0, 0, 0,
+  0, 0, 0, 0
 };
 static float g_ringPhase = 0.0f;  // comet head, 0..RING_N
 static unsigned long g_ringLastMs = 0;
