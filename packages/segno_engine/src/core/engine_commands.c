@@ -1206,6 +1206,17 @@ static int le_handoff_waits(le_engine* engine, int32_t channel) {
   return 0;
 }
 
+/* Whether a Record on [channel] takes the handoff path: its own handoff arm
+ * is pending (a second press cancels it), or no other trigger's arm is and
+ * it would wait (le_handoff_waits). Another trigger's pending arm keeps its
+ * own rules, so a second press still cancels a grid or Sound arm. */
+static int le_handoff_record(le_engine* engine, int32_t channel) {
+  if (engine->armed[channel] && load_i32(&engine->tracks[channel].a_pending)) {
+    return engine->armed_trigger[channel] == 3;
+  }
+  return le_handoff_waits(engine, channel);
+}
+
 /* Whether the kept master grid is still needed by any track OTHER than
  * [channel]: content (or a pending length), an undo history, or an
  * undone-to-empty redo history that would resurrect onto that grid. When
@@ -1675,7 +1686,7 @@ static le_record_admission le_classify_record(le_engine* e, int channel) {
     if (trigger == 0 || (trigger == 1 && (load_i32(&e->a_record_start) < 0))) return LE_RECORD_CANCEL;
     return LE_RECORD_REFUSE;
   }
-  const int handoff = le_handoff_waits(e, channel);
+  const int handoff = le_handoff_record(e, channel);
   const int has_master = le_rig_effective_master_len(e) > 0 &&
       !(state == LE_TRACK_EMPTY && !le_grid_still_needed(e, channel));
   const int sound = !handoff && (load_i32(&e->a_record_start) < 0) &&
@@ -1831,9 +1842,7 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
   /* Song and Band (#1323): an empty or stopped section waits for the
    * sounding section's end, ahead of Sound start and quantize — the
    * handoff is its boundary. A second press cancels its own arm. */
-  const int handoff_arm = le_handoff_waits(engine, channel) ||
-      (engine->armed[channel] && load_i32(&t->a_pending) &&
-       engine->armed_trigger[channel] == 3);
+  const int handoff_arm = le_handoff_record(engine, channel);
   const int sound_arm = !handoff_arm &&
       (load_i32(&engine->a_record_start) < 0) && st == LE_TRACK_EMPTY &&
       !(load_i32(&engine->a_record_start) > 0 && !capture_has_master);
