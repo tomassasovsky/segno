@@ -138,6 +138,21 @@ void main() {
       );
     });
 
+    test('passes over a sounding section that is muted', () {
+      expect(
+        rig().sectionToStart([
+          const Track(
+            channel: 1,
+            state: TrackState.playing,
+            lengthFrames: 100,
+            muted: true,
+          ),
+          stopped,
+        ]),
+        2,
+      );
+    });
+
     test('else the last one that is not muted, else the first audible, else '
         'the first', () {
       expect(rig(last: 3).sectionToStart([muted, stopped, other]), 3);
