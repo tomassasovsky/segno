@@ -4,7 +4,7 @@ type: spike
 date: 2026-10-13
 ---
 
-<!-- cspell:words libepoxy Wrynose libapp pixman gitsm libdisplay libdrm libxkbcommon libseat EDID -->
+<!-- cspell:words libepoxy Wrynose libapp pixman gitsm libdisplay libdrm libxkbcommon libseat EDID SIGSEGV unmapping -->
 
 ## Spike: Segno on ivi-homescreen (DRM/KMS, no Weston, no GTK)
 
