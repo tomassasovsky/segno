@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -11,12 +13,22 @@ import 'package:segno/theme/theme.dart';
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
+class _MockLooperRepository extends Mock implements LooperRepository {}
+
 void main() {
   late LooperBloc bloc;
+  late LooperRepository repository;
+  late StreamController<MeterLevels> levels;
 
   setUp(() {
     bloc = _MockLooperBloc();
+    repository = _MockLooperRepository();
+    levels = StreamController<MeterLevels>.broadcast();
+    when(() => repository.meterLevels).thenAnswer((_) => levels.stream);
+    when(() => repository.meters).thenReturn(const MeterLevels());
   });
+
+  tearDown(() => unawaited(levels.close()));
 
   void seed(LooperState state) {
     when(() => bloc.state).thenReturn(state);
@@ -26,18 +38,23 @@ void main() {
   Future<void> pumpLeaf(WidgetTester tester, Widget leaf) => tester.pumpWidget(
     MaterialApp(
       theme: AppTheme.neon,
-      home: BlocProvider<LooperBloc>.value(
-        value: bloc,
-        child: Scaffold(body: SizedBox(width: 100, height: 300, child: leaf)),
+      home: RepositoryProvider<LooperRepository>.value(
+        value: repository,
+        child: BlocProvider<LooperBloc>.value(
+          value: bloc,
+          child: Scaffold(
+            body: SizedBox(width: 100, height: 300, child: leaf),
+          ),
+        ),
       ),
     ),
   );
 
   group('TrackPeakMeter', () {
-    // The level is read from the ambient bloc by channel — that is what lets
-    // a meter tick skip the ~250-line tile above it, and what makes every
-    // surface built from these tiles a LIVE view rather than a function of
-    // the Track it was handed.
+    // The level is read from the repository's live levels by channel, not
+    // from the looper state (#1301) — that is what lets a meter tick skip the
+    // ~250-line tile above it, and what makes every surface built from these
+    // tiles a LIVE view rather than a function of the Track it was handed.
     Widget meter(int channel) => TrackPeakMeter(
       channel: channel,
       color: Colors.green,
@@ -45,26 +62,66 @@ void main() {
       frozen: false,
     );
 
+    double drawn(WidgetTester tester) =>
+        tester.widget<PeakMeterBar>(find.byType(PeakMeterBar)).peak;
+
     testWidgets('draws the rig level for its channel', (tester) async {
-      seed(
-        const LooperState(tracks: [Track(peak: 0.75), Track(channel: 1)]),
+      when(() => repository.meters).thenReturn(
+        const MeterLevels(
+          tracks: [TrackLevels(peak: 0.75), TrackLevels.silent],
+        ),
       );
+      seed(const LooperState());
       await pumpLeaf(tester, meter(0));
 
-      expect(tester.widget<PeakMeterBar>(find.byType(PeakMeterBar)).peak, 0.75);
+      expect(drawn(tester), closeTo(0.75, 0.01));
+    });
+
+    testWidgets('follows the live level', (tester) async {
+      seed(const LooperState());
+      await pumpLeaf(tester, meter(0));
+      expect(drawn(tester), 0);
+
+      levels.add(const MeterLevels(tracks: [TrackLevels(peak: 0.5)]));
+      await tester.pump();
+      await tester.pump();
+
+      expect(drawn(tester), closeTo(0.5, 0.01));
+    });
+
+    testWidgets('a level below the meter floor does not rebuild the bar', (
+      tester,
+    ) async {
+      seed(const LooperState());
+      await pumpLeaf(tester, meter(0));
+      final before = tester.widget<PeakMeterBar>(find.byType(PeakMeterBar));
+
+      // -70 and -80 dBFS: a noise floor moving under the meter's -60 floor.
+      levels
+        ..add(const MeterLevels(tracks: [TrackLevels(peak: 0.000316)]))
+        ..add(const MeterLevels(tracks: [TrackLevels(peak: 0.0001)]));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        identical(
+          tester.widget<PeakMeterBar>(find.byType(PeakMeterBar)),
+          before,
+        ),
+        isTrue,
+      );
     });
 
     testWidgets('a channel the rig has dropped meters as silence', (
       tester,
     ) async {
-      // Never drawn in the app — the slot above unmounts the tile in the same
-      // frame. Asserted anyway because the selector runs at EMIT time, before
-      // that unmount, so this path is reached on every channel removal and
-      // must not throw.
-      seed(const LooperState(tracks: [Track(peak: 0.75)]));
+      when(() => repository.meters).thenReturn(
+        const MeterLevels(tracks: [TrackLevels(peak: 0.75)]),
+      );
+      seed(const LooperState());
       await pumpLeaf(tester, meter(6));
 
-      expect(tester.widget<PeakMeterBar>(find.byType(PeakMeterBar)).peak, 0);
+      expect(drawn(tester), 0);
     });
   });
 
