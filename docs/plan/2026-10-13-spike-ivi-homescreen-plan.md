@@ -150,8 +150,10 @@ Guards:
 
 ### CI
 
-`appliance-release.yml` takes `embedder: ivi`, which only works for rpi5 with
-`publish: no`. That dispatch:
+`appliance-release.yml` takes `embedder: ivi`, which only works for rpi5 on
+the experimental channel with `publish: no`. Its version is marked
+`X.Y.Z-experimental.<run>.ivi`, so it is never a shipping release's version.
+That dispatch:
 
 - builds the bundle with the pinned Flutter (`FLUTTER_VERSION` build argument);
 - builds the image from `kas-segno-rpi5-ivi.yml`;

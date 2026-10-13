@@ -160,6 +160,16 @@ jobs:
                 exit 1
               fi
               [ "$board" = rpi5 ] || { echo "::error::the ivi-homescreen image exists for rpi5 only"; exit 1; }
+              # Never the version of a shipping release. A unit moved onto the
+              # spike would otherwise report a GTK release's exact version, and
+              # the update client would never offer that release back to it.
+              # Experimental only, and marked: X.Y.Z-experimental.<run>.ivi
+              # still sorts below every later experimental build.
+              if [ "$channel" != experimental ]; then
+                echo "::error::the ivi-homescreen image (#1318) builds on the experimental channel only"
+                exit 1
+              fi
+              version="$version.ivi"
               kas="deploy/yocto/kas-segno-$board-ivi.yml"
               flutter_version=$(sed -n 's/^FLUTTER_ENGINE_VERSION = "\(.*\)"$/\1/p' \
                 deploy/yocto/meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc)

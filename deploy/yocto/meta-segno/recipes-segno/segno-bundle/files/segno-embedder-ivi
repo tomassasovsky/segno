@@ -4,8 +4,9 @@
 # /opt/segno. /etc/segno/homescreen.toml says which screen goes where; each
 # engine learns its role from the --segno-screen= argument that file gives it.
 #
-# The audio engine is opened by library name. The GTK runner's RUNPATH puts
+# The engine library is opened by name. The GTK runner's RUNPATH puts
 # /opt/segno/lib on that lookup and ivi-homescreen's does not, so name the file
-# outright (native_audio_engine.dart honours this override on every platform).
+# outright: both of its loaders honour this override (segno_engine's
+# native_audio_engine.dart and midi_client's native_library.dart).
 export SEGNO_ENGINE_LIB=/opt/segno/lib/libsegno_engine.so
 exec /usr/bin/homescreen --config /etc/segno/homescreen.toml "$@"

@@ -25,8 +25,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Flutter 3.44.4 — the repo-pinned version, cloned from the same ref the CI
 # arm64 job uses (a shallow clone of the tag, not a channel). The ivi-homescreen
-# image (#1318) needs the release its prebuilt engine comes from instead:
-#   docker build --build-arg FLUTTER_VERSION=3.47.5 ...
+# image (#1318) needs the release its prebuilt engine comes from instead,
+# FLUTTER_ENGINE_VERSION in deploy/yocto/meta-segno/recipes-graphics/
+# flutter-engine/flutter-engine-version.inc: build-arm64-bundle.sh --ivi
+# passes it here.
 ARG FLUTTER_VERSION=3.44.4
 ENV FLUTTER_HOME=/opt/flutter
 RUN git clone --depth 1 --branch "$FLUTTER_VERSION" \

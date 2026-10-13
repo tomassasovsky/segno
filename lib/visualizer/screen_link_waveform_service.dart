@@ -35,7 +35,14 @@ class ScreenLinkWaveformService implements WaveformWindowService {
   ReceivePort? _inbox;
   SendPort? _screen;
   Completer<void>? _ready;
+
+  /// Whether the readout should be drawn: set by [open], cleared by [close].
   var _open = false;
+
+  /// Whether an [open] is waiting for the readout to announce itself. The
+  /// announcement opens the link itself (see [_onMessage]), and a [close] in
+  /// the meantime cancels that rather than racing it.
+  var _opening = false;
   var _seq = 0;
   final _acks = <int, Completer<void>>{};
 
@@ -81,10 +88,22 @@ class ScreenLinkWaveformService implements WaveformWindowService {
         // anything still awaiting an ack from an earlier announcement will
         // never get one.
         _forgetScreenState();
-        onWindowReady?.call();
+        // The link is open BEFORE anyone hears of the announcement: the caller
+        // re-seeds the readout from [onWindowReady], and a push made while
+        // still closed would be dropped without the error that makes the
+        // caller retry it — on a quiet rig, a blank waveform for good.
+        if (_opening) {
+          _opening = false;
+          _open = true;
+        }
+        // A closed link has nothing to re-seed: the next open starts from
+        // scratch anyway.
+        if (_open) {
+          port.send({'op': ScreenLinkOp.show});
+          onWindowReady?.call();
+        }
         final ready = _ready;
         if (ready != null && !ready.isCompleted) ready.complete();
-        if (_open) port.send({'op': ScreenLinkOp.show});
       case ScreenLinkOp.ack:
         final seq = message['seq'];
         if (seq is int) _acks.remove(seq)?.complete();
@@ -108,26 +127,33 @@ class ScreenLinkWaveformService implements WaveformWindowService {
     }
   }
 
+  /// Returns once the readout is reachable, `true`, or [readyTimeout] passed
+  /// without it announcing itself, `false`. A [close] while waiting leaves the
+  /// readout blank either way.
   @override
   Future<bool> open({String title = 'Segno — Output'}) async {
     _listen();
     if (_open) return true;
-    if (_screen == null) {
-      final ready = _ready ??= Completer<void>();
-      var arrived = true;
-      await ready.future.timeout(
-        readyTimeout,
-        onTimeout: () => arrived = false,
-      );
-      if (!arrived) return false;
+    if (_screen != null) {
+      _open = true;
+      _screen!.send({'op': ScreenLinkOp.show});
+      return true;
     }
-    _open = true;
-    _screen?.send({'op': ScreenLinkOp.show});
-    return true;
+    _opening = true;
+    final ready = _ready ??= Completer<void>();
+    var arrived = true;
+    await ready.future.timeout(
+      readyTimeout,
+      onTimeout: () => arrived = false,
+    );
+    _ready = null;
+    if (!arrived) _opening = false;
+    return arrived;
   }
 
   @override
   Future<void> close() async {
+    _opening = false;
     if (!_open) return;
     _open = false;
     _forgetScreenState();
@@ -141,21 +167,20 @@ class ScreenLinkWaveformService implements WaveformWindowService {
     String selectedTrack,
   ) async {
     if (!_open) return;
-    final payload = waveformFramePayload(
+    final message = waveformFramePayload(
       samples: samples,
       progress: progress,
       selectedTrack: selectedTrack,
       lastSent: _lastSamples,
     );
-    final carriesSamples = payload.containsKey('samples');
+    final carriesSamples = message.containsKey('samples');
     final revision = carriesSamples ? ++_sampleRevision : _sampleRevision;
-    if (carriesSamples) _lastSamples = null;
-    await _request({
-      'op': ScreenLinkOp.waveform,
-      'progress': progress,
-      'selectedTrack': selectedTrack,
-      if (carriesSamples) 'samples': packSamples(samples),
-    });
+    if (carriesSamples) {
+      _lastSamples = null;
+      message['samples'] = packSamples(samples);
+    }
+    message['op'] = ScreenLinkOp.waveform;
+    await _request(message);
     if (carriesSamples && revision == _sampleRevision) _lastSamples = samples;
   }
 
@@ -179,7 +204,8 @@ class ScreenLinkWaveformService implements WaveformWindowService {
     if (screen == null) throw StateError('the readout screen is not linked');
     final seq = ++_seq;
     final ack = _acks[seq] = Completer<void>();
-    screen.send({...message, 'seq': seq});
+    message['seq'] = seq;
+    screen.send(message);
     try {
       await ack.future.timeout(ackTimeout);
     } finally {

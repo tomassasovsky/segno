@@ -82,6 +82,50 @@ void main() {
     });
   });
 
+  test('a close while open is waiting keeps the readout blank', () async {
+    final opening = service.open();
+    await settle();
+    await service.close();
+    final readout = startReadout();
+
+    expect(await opening, isTrue, reason: 'the readout is reachable');
+    await settle();
+    expect(service.isOpen, isFalse);
+    expect(readout.visible.value, isFalse);
+  });
+
+  test('the re-seed pushed on the first announcement lands', () async {
+    final peaks = Float32List.fromList([0.2, 0.4]);
+    final seeded = Completer<void>();
+    // What App does: re-seed the readout the moment it announces itself.
+    service.onWindowReady = () =>
+        seeded.complete(service.pushWaveform(peaks, 0.5, 'Seed'));
+    final opening = service.open();
+    await settle();
+    final readout = startReadout();
+
+    expect(await opening, isTrue);
+    await seeded.future;
+    expect(readout.frame.value.samples, peaks);
+    expect(readout.frame.value.selectedTrack, 'Seed');
+  });
+
+  test('hiding drops what the readout held', () async {
+    final readout = startReadout();
+    await service.open();
+    await service.pushWaveform(Float32List.fromList([1]), 0.5, 'T');
+
+    await service.close();
+    await settle();
+    expect(readout.frame.value.samples, isEmpty);
+    expect(readout.frame.value.selectedTrack, isEmpty);
+
+    // Reopened, the next frame carries the peaks again.
+    await service.open();
+    await service.pushWaveform(Float32List.fromList([1]), 0.6, 'T');
+    expect(readout.frame.value.samples, [1.0]);
+  });
+
   test('close blanks the readout and stops pushes', () async {
     final readout = startReadout();
     await service.open();
