@@ -40,8 +40,9 @@ ivi-homescreen on the Pi 5, with both screens and touch, and is it better on the
 four measurements below?
 
 **This is a spike, not a migration.** The GTK/Weston image stays the shipping
-default and builds unchanged. The ivi image is opt-in, built only on dispatch,
-and never published to an update channel. Whether to switch the shipping stack
+default and builds unchanged. The ivi image is opt-in and built only on
+dispatch. It may be published to the experimental channel only, never to
+production. Whether to switch the shipping stack
 stays the owner's call under #897.
 
 ## What was established before building (2026-10-13)
@@ -163,13 +164,18 @@ Guards:
 ### CI
 
 `appliance-release.yml` takes `embedder: ivi`, which only works for rpi5 on
-the experimental channel with `publish: no`. Its version,
-`X.Y.Z-experimental.<run>`, is therefore never a shipping release's version,
-and every later experimental build sorts above it. That dispatch:
+the experimental channel. Its version, `X.Y.Z-experimental.<run>`, is therefore
+never a shipping release's version, and every later experimental build sorts
+above it. That dispatch:
 
 - builds the bundle with the pinned Flutter (`FLUTTER_VERSION` build argument);
 - builds the image from `kas-segno-rpi5-ivi.yml`;
-- uploads the `.wic`, `.bmap` and `.raucb` as an `-ivi` workflow artifact.
+- uploads the `.wic`, `.bmap` and `.raucb` as an `-ivi` workflow artifact;
+- with `publish: yes`, also publishes it to the experimental channel (owner's
+  call, 2026-10-13). The release title is marked as the ivi spike.
+  - Every unit on that channel is then offered it, and installs stay opt-in
+    from Settings.
+  - The next GTK experimental build, being newer, is offered back.
 
 ## Validated off-device (2026-10-13)
 
@@ -215,8 +221,11 @@ and every later experimental build sorts above it. That dispatch:
 ## On-device checklist (blocked-verify)
 
 Build: dispatch `appliance-release` with `board: rpi5`, `embedder: ivi`,
-`publish: no`. Install the artifact's `.raucb` with `rauc install`, or flash the
-`.wic`.
+`channel: experimental`. Then either:
+
+- install it from Settings, once it is published; or
+- with `publish: no`, install the artifact's `.raucb` with `rauc install`, or
+  flash the `.wic`.
 
 - [ ] Boots straight to both screens: main UI on HDMI-A-1, readout on HDMI-A-2,
       no Weston process.
