@@ -64,7 +64,7 @@ on:
         options: ['no', 'yes']
         default: 'no'
       embedder:
-        description: Flutter embedder (ivi = the ivi-homescreen spike, #1318; rpi5 only, never published)
+        description: Flutter embedder (ivi = the ivi-homescreen spike, #1318; rpi5, experimental channel only)
         type: choice
         options: [gtk, ivi]
         default: gtk
@@ -144,8 +144,11 @@ jobs:
 
           # Embedder: the ivi-homescreen image (#1318) is a bench spike. It
           # shares the shipping image's RAUC compatible string so a unit can
-          # move between the two, which is exactly why it must never reach a
-          # channel: every polling unit would install it. Its app bundle is
+          # move between the two, and that move is an ordinary update: a
+          # published ivi build is offered to every unit on the experimental
+          # channel (installs are opt-in, from Settings), and the next GTK
+          # experimental build, being newer, is offered back. Never on the
+          # production channel (owner's call, 2026-10-13). Its app bundle is
           # built with the Flutter release whose prebuilt engine the image
           # ships, read from the one file that pins it.
           embedder="${{ github.event.inputs.embedder }}"
@@ -155,10 +158,6 @@ jobs:
           case "$embedder" in
             gtk) ;;
             ivi)
-              if [ "${{ github.event.inputs.publish }}" != "no" ]; then
-                echo "::error::the ivi-homescreen image is a bench spike (#1318) and is never published: it carries the shipping RAUC compatible string, so every unit polling the channel would install it. Dispatch it with publish=no."
-                exit 1
-              fi
               [ "$board" = rpi5 ] || { echo "::error::the ivi-homescreen image exists for rpi5 only"; exit 1; }
               # Never the version of a shipping release: a unit moved onto the
               # spike would otherwise report a GTK release's exact version, and
@@ -504,9 +503,9 @@ jobs:
           # instead — the live file, not the free space around it.
 
           name="segno-appliance-$version-$board"
-          # The ivi-homescreen spike (#1318) is never published, so its .raucb
-          # rides along here: `rauc install` on a bench unit moves it onto the
-          # spike and a rollback moves it back, without reflashing.
+          # The ivi-homescreen spike's .raucb (#1318) rides along here too, for
+          # an unpublished build: `rauc install` on a bench unit moves it onto
+          # the spike and a rollback moves it back, without reflashing.
           if [ '${{ needs.determine-meta.outputs.embedder }}' = ivi ]; then
             name="$name-ivi"
             cp release-artifacts/*.raucb "$out/$name.raucb"
@@ -542,7 +541,7 @@ jobs:
           # same commit every build job checked out, rather than default master.
           target_commitish: ${{ github.sha }}
           tag_name: appliance-${{ needs.determine-meta.outputs.channel }}-${{ needs.determine-meta.outputs.version }}
-          name: "Appliance ${{ needs.determine-meta.outputs.channel }} ${{ needs.determine-meta.outputs.version }}"
+          name: "Appliance ${{ needs.determine-meta.outputs.channel }} ${{ needs.determine-meta.outputs.version }}${{ needs.determine-meta.outputs.embedder == 'ivi' && ' (ivi-homescreen spike, #1318)' || '' }}"
           prerelease: ${{ needs.determine-meta.outputs.channel == 'experimental' }}
           files: |
             release-artifacts/*.raucb
