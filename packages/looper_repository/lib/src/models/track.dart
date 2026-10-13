@@ -14,13 +14,17 @@ enum ArmTrigger {
   sound,
 
   /// A Band section toggle at the primary's loop top.
-  section;
+  section,
+
+  /// A Song or Band Record waiting for the sounding section's end (#1323).
+  handoff;
 
   /// Decodes the snapshot's `pending_trigger` code; `null` for none.
   static ArmTrigger? fromCode(int code) => switch (code) {
     0 => ArmTrigger.grid,
     1 => ArmTrigger.sound,
     2 => ArmTrigger.section,
+    3 => ArmTrigger.handoff,
     _ => null,
   };
 }

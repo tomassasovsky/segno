@@ -2284,6 +2284,7 @@ class _LengthSnapshot extends EngineSnapshot {
         songQueuedTrack: source.songQueuedTrack,
         songQueueProgress: source.songQueueProgress,
         songLastSection: source.songLastSection,
+        songQueueRecord: source.songQueueRecord,
         followTempo: source.followTempo,
         tempoFollow: source.tempoFollow,
         pitchMode: source.pitchMode,

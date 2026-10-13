@@ -399,10 +399,11 @@ void main() {
     });
   });
 
-  group('Song queue (#1077)', () {
+  group('Song queue (#1077, #1323)', () {
     LooperState song({
       int queued = 1,
       double progress = 0.5,
+      bool record = false,
       LooperMode mode = LooperMode.song,
       List<Track>? tracks,
     }) => LooperState(
@@ -411,6 +412,7 @@ void main() {
         looperMode: mode,
         songQueuedTrack: queued,
         songQueueProgress: progress,
+        songQueueRecord: record,
       ),
       tracks:
           tracks ??
@@ -421,40 +423,12 @@ void main() {
           ]),
       status: const EngineStatus(sampleRate: 48000),
     );
+    const record = ControlState(cursor: 5);
     const mute = ControlState(mode: InteractionMode.mute);
 
-    test('the waiting section reads green and its pill fills', () {
-      final frame = projectFrame(song(), mute);
-      expect(frame.trackLeds[0], PedalTrackLed.green); // playing
-      expect(frame.trackLeds[1], PedalTrackLed.green); // waiting
-      expect(frame.trackLeds[5], PedalTrackLed.off);
-      expect(frame.queuedButton, PedalButton.track2);
-      expect(frame.queuedProgress, 127);
-      expect(frame.isLit(PedalButton.track2), isTrue);
-      expect(frame.colorFor(PedalButton.track2), ledGreen);
-    });
-
-    test('the fill never reaches a full pill', () {
-      expect(projectFrame(song(progress: 0), mute).queuedProgress, 0);
-      expect(projectFrame(song(progress: 0.999999), mute).queuedProgress, 254);
-      expect(projectFrame(song(progress: 1), mute).queuedProgress, 254);
-    });
-
-    test('a section on the other bank has no pill on the plate', () {
-      final a = projectFrame(song(queued: 5), mute);
-      expect(a.trackLeds[5], PedalTrackLed.green);
-      expect(a.queuedButton, isNull);
-      expect(a.queuedProgress, 0);
-      final b = projectFrame(
-        song(queued: 5),
-        const ControlState(mode: InteractionMode.mute, activeBank: 1),
-      );
-      expect(b.queuedButton, PedalButton.track2);
-    });
-
-    test('Record mode fills the waiting section too', () {
+    test('a section waiting to play reads green and its pill fills', () {
       // The cursor sits elsewhere; the waiting section still reads green.
-      final frame = projectFrame(song(), const ControlState(cursor: 5));
+      final frame = projectFrame(song(), record);
       expect(frame.trackLeds[1], PedalTrackLed.green);
       expect(frame.trackLeds[5], PedalTrackLed.red);
       expect(frame.queuedButton, PedalButton.track2);
@@ -467,13 +441,59 @@ void main() {
       expect(onCursor.queuedButton, PedalButton.track2);
     });
 
-    test('nothing waits outside Song, outside Mute and Record or without a '
-        'take', () {
+    test('a section waiting to record reads red and its pill fills', () {
+      final waiting = song(
+        queued: 2,
+        record: true,
+        tracks: _tracksWith(const [
+          Track(state: TrackState.playing, lengthFrames: 48000),
+        ]),
+      );
+      final frame = projectFrame(waiting, record);
+      expect(frame.trackLeds[2], PedalTrackLed.red);
+      expect(frame.queuedButton, PedalButton.track3);
+      expect(frame.queuedProgress, 127);
+      expect(frame.colorFor(PedalButton.track3), ledRed);
+      final overdub = projectFrame(song(record: true), record);
+      expect(overdub.trackLeds[1], PedalTrackLed.red);
+      expect(overdub.colorFor(PedalButton.track2), ledRed);
+    });
+
+    test('a waiting Band section fills too', () {
+      final frame = projectFrame(song(mode: LooperMode.band), record);
+      expect(frame.queuedButton, PedalButton.track2);
+      expect(frame.trackLeds[1], PedalTrackLed.green);
+    });
+
+    test('the fill never reaches a full pill', () {
+      expect(projectFrame(song(progress: 0), record).queuedProgress, 0);
+      expect(
+        projectFrame(song(progress: 0.999999), record).queuedProgress,
+        254,
+      );
+      expect(projectFrame(song(progress: 1), record).queuedProgress, 254);
+    });
+
+    test('a section on the other bank has no pill on the plate', () {
+      final a = projectFrame(song(queued: 5), const ControlState());
+      expect(a.trackLeds[5], PedalTrackLed.green);
+      expect(a.queuedButton, isNull);
+      expect(a.queuedProgress, 0);
+      final b = projectFrame(
+        song(queued: 5),
+        const ControlState(activeBank: 1),
+      );
+      expect(b.queuedButton, PedalButton.track2);
+    });
+
+    test('nothing waits outside Song and Band, outside Record mode or on an '
+        'empty section waiting to play', () {
       for (final (looper, overlay) in [
-        (song(mode: LooperMode.multi), mute),
+        (song(mode: LooperMode.multi), record),
+        (song(), mute),
         (song(), const ControlState(mode: InteractionMode.fx)),
-        (song(queued: 3), mute),
-        (song(queued: -1), mute),
+        (song(queued: 3), record),
+        (song(queued: -1), record),
       ]) {
         final frame = projectFrame(looper, overlay);
         expect(frame.queuedButton, isNull);
@@ -481,21 +501,29 @@ void main() {
       }
     });
 
-    test('Song shows sounding sections, not a parked preview', () {
-      final parked = song(
+    test("Song's Mute mode shows each unmuted section with a take", () {
+      final rig = song(
         queued: -1,
         progress: 0,
         tracks: _tracksWith(const [
           Track(state: TrackState.stopped, lengthFrames: 48000),
-          Track(channel: 1, state: TrackState.stopped, lengthFrames: 96000),
+          Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+          Track(
+            channel: 2,
+            state: TrackState.stopped,
+            lengthFrames: 96000,
+            muted: true,
+          ),
         ]),
       );
       final frame = projectFrame(
-        parked,
-        const ControlState(mode: InteractionMode.mute, parkedResume: {0}),
+        rig,
+        const ControlState(mode: InteractionMode.mute),
       );
-      expect(frame.trackLeds[0], PedalTrackLed.off);
-      expect(frame.trackLeds[1], PedalTrackLed.off);
+      expect(frame.trackLeds[0], PedalTrackLed.green);
+      expect(frame.trackLeds[1], PedalTrackLed.green);
+      expect(frame.trackLeds[2], PedalTrackLed.off); // muted
+      expect(frame.trackLeds[3], PedalTrackLed.off); // empty
     });
   });
 }

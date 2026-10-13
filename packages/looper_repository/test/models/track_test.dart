@@ -333,6 +333,7 @@ void main() {
       expect(ArmTrigger.fromCode(0), ArmTrigger.grid);
       expect(ArmTrigger.fromCode(1), ArmTrigger.sound);
       expect(ArmTrigger.fromCode(2), ArmTrigger.section);
+      expect(ArmTrigger.fromCode(3), ArmTrigger.handoff);
       expect(ArmTrigger.fromCode(-1), isNull);
       expect(ArmTrigger.fromCode(7), isNull);
     });

@@ -28707,6 +28707,16 @@ static void test_band_one_section_handoff(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
   CHECK(s.song_queued_track == -1);
+  /* From a stopped rig a section wakes the primary, not the other
+   * sections. */
+  for (int c = 0; c < 3; ++c) CHECK(le_engine_stop_track(e, c) == LE_OK);
+  drain(e);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
   le_engine_destroy(e);
 }
 
