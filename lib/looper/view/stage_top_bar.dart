@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -11,6 +12,7 @@ import 'package:segno/common/pen_icons.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/cpu_load_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/backing_click_dialog.dart';
@@ -20,11 +22,11 @@ import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 
-/// The stage's top bar (the accepted design): Library and the record light at
-/// the leading edge, the session name centred on the whole bar, and at the
-/// trailing edge the bank, the view menu, the Tuner and Settings. Track, Wave
-/// and Mixer are choices behind the view icon, not tabs in the track area; the
-/// bank indicator also changes bank.
+/// The stage's top bar (the accepted design): Library, the record light and
+/// the CPU load at the leading edge, the session name centred on the whole
+/// bar, and at the trailing edge the bank, the view menu, the Tuner and
+/// Settings. Track, Wave and Mixer are choices behind the view icon, not tabs
+/// in the track area; the bank indicator also changes bank.
 ///
 /// Each element subscribes to its own slice, so a session rename rebuilds the
 /// name and a bank change the bank button.
@@ -72,6 +74,7 @@ class StageTopBar extends StatelessWidget {
                 ),
                 const SizedBox(width: _gap),
                 const _RecordLight(),
+                const _CpuLoad(),
               ],
             ),
           ),
@@ -528,6 +531,69 @@ class _RecordLight extends StatelessWidget {
                 ),
               ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The console's CPU load, right of the record light (#1307): `CPU 23%`, the
+/// share of the whole machine with every core counted as 100%.
+///
+/// Absent on a build that cannot measure it (no `/proc/stat`, the macOS
+/// desktop). Owns its [CpuLoadCubit], so the load is sampled only while the
+/// bar is on screen, and only a change in the shown figure rebuilds the
+/// figure. A fixed slot sized for `CPU 100%`, so no reading moves anything.
+class _CpuLoad extends StatelessWidget {
+  const _CpuLoad();
+
+  /// Eight JetBrains Mono characters at 16: `CPU 100%`.
+  static const double slotWidth = 80;
+
+  @override
+  Widget build(BuildContext context) {
+    final repository = context.read<CpuLoadRepository>();
+    if (!repository.isSupported) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(left: StageTopBar._gap),
+      child: BlocProvider(
+        create: (_) => CpuLoadCubit(repository: repository),
+        child: const _CpuLoadFigure(),
+      ),
+    );
+  }
+}
+
+class _CpuLoadFigure extends StatelessWidget {
+  const _CpuLoadFigure();
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final l10n = context.l10n;
+    final load = context.watch<CpuLoadCubit>().state;
+    return Semantics(
+      label: load == null
+          ? l10n.a11yStageCpuLoadPending
+          : l10n.a11yStageCpuLoad(load),
+      child: ExcludeSemantics(
+        child: SizedBox(
+          key: const Key('stage_cpu_load_slot'),
+          width: _CpuLoad.slotWidth,
+          child: AppText(
+            load == null ? l10n.stageCpuLoadPending : l10n.stageCpuLoad(load),
+            key: const Key('stage_cpu_load'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: surface.textSecondary,
+              fontFamily: SurfaceTheme.monoFont,
+              fontSize: 16,
+              fontFeatures: const [FontFeature.tabularFigures()],
+              height: 1.15,
+              leadingDistribution: TextLeadingDistribution.even,
+            ),
           ),
         ),
       ),
