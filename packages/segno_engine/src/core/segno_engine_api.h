@@ -167,7 +167,8 @@ typedef enum le_looper_mode {
   /* Band (B3): the primary plus one section at a time (#1323). A section is
    * a non-primary track; a Play or a Record on one while another section
    * sounds waits for that section's lap end and lands on the primary's next
-   * loop top, in phase with the primary. */
+   * loop top, in phase with the primary. A start from a stopped rig resumes
+   * the primary, not the other sections. */
   LE_LOOPER_MODE_BAND = 3,
   LE_LOOPER_MODE_FREE = 4,  /* independent per-track clocks (B2b) */
 } le_looper_mode;

@@ -136,18 +136,21 @@ class LooperState extends Equatable {
   /// Whether any track holds recorded audio.
   bool get hasContent => tracks.any((t) => t.hasContent);
 
-  /// The Song section waiting for the playing one's next lap edge (#1077),
-  /// or null: only in Song, only on a track that holds a take and is not
-  /// capturing. The one rule the pedal projection and the stage both read.
+  /// The Song or Band section waiting for the sounding one's end (#1077,
+  /// #1323), or null: only in Song and Band, only on a track that is not
+  /// capturing and holds a take, or is empty with a waiting Record. The one
+  /// rule the pedal projection and the stage both read.
   int? get songWaitingSection {
     final queued = transport.songQueuedTrack;
-    if (transport.looperMode != LooperMode.song ||
+    if ((transport.looperMode != LooperMode.song &&
+            transport.looperMode != LooperMode.band) ||
         queued < 0 ||
         queued >= tracks.length) {
       return null;
     }
     final track = tracks[queued];
-    return track.hasContent && !track.isCapturing ? queued : null;
+    if (track.isCapturing) return null;
+    return track.hasContent || transport.songQueueRecord ? queued : null;
   }
 
   @override

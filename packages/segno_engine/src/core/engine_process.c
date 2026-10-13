@@ -242,6 +242,9 @@ static void le_unpark_stopped(le_engine* e, uint64_t frame) {
   for (int32_t c = 0; c < e->track_count; ++c) {
     le_track* t = &e->tracks[c];
     if (load_i32(&t->a_state) != LE_TRACK_STOPPED) continue;
+    /* Band keeps the primary plus one section (#1323): the primary resumes,
+     * the other sections stay stopped. */
+    if (le_band_section(e, c)) continue;
     if (e->launch_committing && (e->launch_stopped_mask & (1u << c))) continue;
     if (t->once_ended) continue; /* an automatic end needs its own launch */
     if (load_i32(&t->lanes[0].a_len) <= 0) continue;

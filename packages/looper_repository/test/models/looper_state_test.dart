@@ -66,14 +66,19 @@ void main() {
     });
   });
 
-  group('songWaitingSection (#1077)', () {
+  group('songWaitingSection (#1077, #1323)', () {
     LooperState rig({
       LooperMode mode = LooperMode.song,
       int queued = 1,
       TrackState state = TrackState.stopped,
       int length = 100,
+      bool record = false,
     }) => LooperState(
-      transport: TransportState(looperMode: mode, songQueuedTrack: queued),
+      transport: TransportState(
+        looperMode: mode,
+        songQueuedTrack: queued,
+        songQueueRecord: record,
+      ),
       tracks: [
         const Track(state: TrackState.playing, lengthFrames: 100),
         Track(channel: 1, state: state, lengthFrames: length),
@@ -84,16 +89,35 @@ void main() {
       expect(rig().songWaitingSection, 1);
     });
 
-    test('is null outside Song, without a queue, out of range, on an empty '
-        'or a capturing track', () {
+    test('names a waiting Band section', () {
+      expect(rig(mode: LooperMode.band).songWaitingSection, 1);
+    });
+
+    test('names an empty section waiting to record', () {
+      expect(
+        rig(
+          state: TrackState.empty,
+          length: 0,
+          record: true,
+        ).songWaitingSection,
+        1,
+      );
+    });
+
+    test('is null outside Song and Band, without a queue, out of range, on '
+        'an empty track waiting to play or on a capturing track', () {
       expect(rig(mode: LooperMode.multi).songWaitingSection, isNull);
+      expect(rig(mode: LooperMode.free).songWaitingSection, isNull);
       expect(rig(queued: -1).songWaitingSection, isNull);
       expect(rig(queued: 5).songWaitingSection, isNull);
       expect(
         rig(state: TrackState.empty, length: 0).songWaitingSection,
         isNull,
       );
-      expect(rig(state: TrackState.recording).songWaitingSection, isNull);
+      expect(
+        rig(state: TrackState.recording, record: true).songWaitingSection,
+        isNull,
+      );
     });
   });
 }

@@ -33,6 +33,7 @@ class TransportState extends Equatable {
     this.songQueuedTrack = -1,
     this.songQueueProgress = 0,
     this.songLastSection = -1,
+    this.songQueueRecord = false,
     this.recDub = false,
     this.quantize = false,
     this.autoRecord = false,
@@ -116,8 +117,8 @@ class TransportState extends Equatable {
   /// `resolvedPrimaryTrack`.
   final int primaryTrack;
 
-  /// The Song section waiting for the playing section's next lap edge
-  /// (#1077), or `-1` with none ([EngineSnapshot.songQueuedTrack]).
+  /// The Song or Band section waiting for the sounding section's end
+  /// (#1077, #1323), or `-1` with none ([EngineSnapshot.songQueuedTrack]).
   final int songQueuedTrack;
 
   /// How much of that wait has played, `0`..`1`, straight from the audio
@@ -127,6 +128,10 @@ class TransportState extends Equatable {
   /// The Song section that sounded most recently, or `-1`
   /// ([EngineSnapshot.songLastSection]). Song's Play All starts it again.
   final int songLastSection;
+
+  /// Whether the waiting request is a Record rather than a Play (#1323,
+  /// [EngineSnapshot.songQueueRecord]).
+  final bool songQueueRecord;
 
   /// The rec/dub second-press setting the repository holds and re-applies to
   /// the engine: with it on, a take's end lands the track OVERDUBBING rather
@@ -198,6 +203,7 @@ class TransportState extends Equatable {
     songQueuedTrack,
     songQueueProgress,
     songLastSection,
+    songQueueRecord,
     recDub,
     quantize,
     autoRecord,
