@@ -9,4 +9,4 @@
 # outright: both of its loaders honour this override (segno_engine's
 # native_audio_engine.dart and midi_client's native_library.dart).
 export SEGNO_ENGINE_LIB=/opt/segno/lib/libsegno_engine.so
-exec /usr/bin/homescreen --config /etc/segno/homescreen.toml "$@"
+exec /usr/bin/segno --config /etc/segno/homescreen.toml "$@"
