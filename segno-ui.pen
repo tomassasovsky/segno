@@ -204,6 +204,20 @@
                           ]
                         }
                       ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "yxuBC",
+                      "name": "CPU load",
+                      "context": "span",
+                      "fill": "#9a9aa2",
+                      "textGrowth": "fixed-width",
+                      "width": 80,
+                      "content": "CPU 23%",
+                      "lineHeight": 1.19,
+                      "fontFamily": "SF Mono",
+                      "fontSize": 16,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -2229,6 +2243,20 @@
                           "fontWeight": "normal"
                         }
                       ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "S6d4x",
+                      "name": "CPU load",
+                      "context": "span",
+                      "fill": "#9a9aa2",
+                      "textGrowth": "fixed-width",
+                      "width": 80,
+                      "content": "CPU 23%",
+                      "lineHeight": 1.19,
+                      "fontFamily": "SF Mono",
+                      "fontSize": 16,
+                      "fontWeight": "normal"
                     }
                   ]
                 },
@@ -216199,6 +216227,18 @@
                           ]
                         }
                       ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "KiSGZ",
+                      "name": "CPU load",
+                      "fill": "$text-secondary",
+                      "textGrowth": "fixed-width",
+                      "width": 80,
+                      "content": "CPU 23%",
+                      "fontFamily": "$font-mono",
+                      "fontSize": "$text-md",
+                      "fontWeight": "normal"
                     }
                   ]
                 },
