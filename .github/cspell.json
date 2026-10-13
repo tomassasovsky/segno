@@ -1052,6 +1052,25 @@
     "polyphase",
     "strided",
     "tsan",
-    "BEXT"
+    "BEXT",
+    "armhf",
+    "devicetree",
+    "DIGI",
+    "dwmmc",
+    "fxpreset",
+    "idbloader",
+    "Ilitek",
+    "inmusic",
+    "libavcodec",
+    "libavformat",
+    "libmali",
+    "libswresample",
+    "LVDS",
+    "mipi",
+    "Nunito",
+    "rbin",
+    "rksd",
+    "Rockchip",
+    "uncompiled"
   ]
 }
