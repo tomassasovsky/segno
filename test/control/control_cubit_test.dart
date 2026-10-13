@@ -2704,6 +2704,31 @@ void main() {
         expect(cubit.state.parkedResume, overlay.parkedResume);
       });
 
+      test('a press while a take is captured leaves the mute alone', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.recording),
+            Track(
+              channel: 1,
+              state: TrackState.stopped,
+              lengthFrames: 48000,
+              muted: true,
+            ),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..trackPressed(1);
+        verifyNever(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        );
+        verifyNever(() => looper.play(channel: any(named: 'channel')));
+      });
+
       test('an empty track asks for nothing', () {
         setEngine(sections, looperMode: LooperMode.song);
         cubit

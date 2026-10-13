@@ -3015,21 +3015,29 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperPlayAllPressed starts only the first section in Song (#1077)',
+    'LooperPlayAllPressed starts only the first audible section in Song '
+    '(#1077)',
     build: buildBloc,
     seed: () => const LooperState(
       transport: TransportState(looperMode: LooperMode.song),
       tracks: [
         Track(),
-        Track(channel: 1, lengthFrames: 100, state: TrackState.stopped),
+        Track(
+          channel: 1,
+          lengthFrames: 100,
+          state: TrackState.stopped,
+          muted: true,
+        ),
         Track(channel: 2, lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 3, lengthFrames: 100, state: TrackState.stopped),
       ],
     ),
     act: (bloc) => bloc.add(const LooperPlayAllPressed()),
     verify: (_) {
-      verify(() => repository.play(channel: 1)).called(1);
+      verify(() => repository.play(channel: 2)).called(1);
       verifyNever(() => repository.play());
-      verifyNever(() => repository.play(channel: 2));
+      verifyNever(() => repository.play(channel: 1));
+      verifyNever(() => repository.play(channel: 3));
     },
   );
 }

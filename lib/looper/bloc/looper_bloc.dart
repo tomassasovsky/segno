@@ -772,14 +772,19 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     );
     on<LooperPlayAllPressed>((_, _) {
       final content = state.tracks.where((track) => track.hasContent);
-      // Song plays one section at a time (#1077): a Play for each would start
-      // the first and leave the last waiting to replace it. Start the first.
-      final starts = state.transport.looperMode == LooperMode.song
-          ? content.take(1)
-          : content;
-      for (final track in starts) {
-        _repository.play(channel: track.channel);
+      if (state.transport.looperMode != LooperMode.song) {
+        for (final track in content) {
+          _repository.play(channel: track.channel);
+        }
+        return;
       }
+      // Song plays one section at a time (#1077): a Play for each would start
+      // the first and leave the last waiting to replace it. Start the first
+      // one that will be heard.
+      final first =
+          content.where((track) => !track.muted).firstOrNull ??
+          content.firstOrNull;
+      if (first != null) _repository.play(channel: first.channel);
     });
     on<LooperStopAllPressed>((_, _) {
       for (final track in state.tracks) {

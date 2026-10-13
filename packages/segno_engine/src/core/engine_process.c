@@ -114,6 +114,15 @@ static int le_transport_held(le_engine* e) {
   return 1;
 }
 
+/* Whether any track is capturing (a take or an overdub pass). */
+static int le_any_capturing(le_engine* e) {
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    const int32_t st = load_i32(&e->tracks[c].a_state);
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) return 1;
+  }
+  return 0;
+}
+
 static void le_reset_track_playback(le_track* t) {
   t->head.origin = 0.0;
   t->turn_left = 0; /* a parked origin has no old head to mix (#1162) */
@@ -2827,7 +2836,7 @@ static void le_song_start(le_engine* e, int32_t ch, uint64_t frame) {
 }
 
 /* Whether the waiting request can still land; drops it when it cannot. Run
- * after every command drain and at the lap edge, because Clear, Undo, a
+ * at the lap edge and when the block publishes, because Clear, Undo, a
  * capture or a mode switch can each invalidate an end of it without going
  * through a Song path. */
 static int le_song_queue_valid(le_engine* e) {
@@ -2837,16 +2846,10 @@ static int le_song_queue_valid(le_engine* e) {
       load_i32(&e->tracks[e->song_source].a_state) != LE_TRACK_PLAYING ||
       load_i32(&e->tracks[e->song_target].a_state) != LE_TRACK_STOPPED ||
       e->tracks[e->song_source].free_clock.length <= 0 ||
-      e->tracks[e->song_target].free_clock.length <= 0) {
+      e->tracks[e->song_target].free_clock.length <= 0 ||
+      le_any_capturing(e)) {
     le_song_cancel(e);
     return 0;
-  }
-  for (int32_t c = 0; c < e->track_count; ++c) {
-    const int32_t st = load_i32(&e->tracks[c].a_state);
-    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) {
-      le_song_cancel(e);
-      return 0;
-    }
   }
   return 1;
 }
@@ -2864,16 +2867,15 @@ static void handle_song_play(le_engine* e, int32_t ch, uint64_t frame) {
   }
   le_track* target = &e->tracks[ch];
   const int32_t state = load_i32(&target->a_state);
+  if (le_any_capturing(e)) {
+    le_song_cancel(e);
+    return;
+  }
+  /* An older session can hold several playing sections; the lowest one
+   * times the handoff, and the commit stops them all. */
   int32_t source = -1;
-  for (int32_t c = 0; c < e->track_count; ++c) {
-    const int32_t st = load_i32(&e->tracks[c].a_state);
-    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) {
-      le_song_cancel(e);
-      return;
-    }
-    /* An older session can hold several playing sections; the lowest one
-     * times the handoff, and the commit stops them all. */
-    if (source < 0 && st == LE_TRACK_PLAYING) source = c;
+  for (int32_t c = 0; c < e->track_count && source < 0; ++c) {
+    if (load_i32(&e->tracks[c].a_state) == LE_TRACK_PLAYING) source = c;
   }
   if (target->free_clock.length <= 0 ||
       (state != LE_TRACK_STOPPED && state != LE_TRACK_PLAYING)) {
