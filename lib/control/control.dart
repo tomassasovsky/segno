@@ -40,6 +40,7 @@ export 'binding/midi_learn.dart';
 export 'binding/midi_mapping_draft.dart';
 export 'binding/pedal_binding.dart';
 export 'binding/pedal_binding_set.dart';
+export 'binding/pedal_led_map.dart';
 export 'binding/pedal_setup.dart';
 export 'control_projection.dart';
 export 'cubit/control_cubit.dart';

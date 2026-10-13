@@ -1,220 +1,164 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/pedal_color_display.dart';
-import 'package:segno/control/binding/pedal_palette.dart';
-import 'package:segno/control/binding/pedal_palette_labels.dart';
+import 'package:segno/control/binding/pedal_led_labels.dart';
+import 'package:segno/control/binding/pedal_led_map.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_editor.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
-/// The LED colors editor: which colour the selected footswitch's indicator
-/// uses, over the whole palette.
-///
-/// Colors share one scrollable row rather than a separate picker, because
-/// choosing one is comparing it against the others — a list of names would
-/// make the performer open and close a dialog nine times to see nine hues.
+/// The LED colors editor for one pedal group in one mode: a colour field per
+/// state the group can show, side by side, so a state is chosen against the
+/// others it has to be told apart from.
 class PedalLedEditor extends StatelessWidget {
   /// Creates a [PedalLedEditor].
   const PedalLedEditor({
     required this.title,
-    required this.palette,
-    required this.button,
-    required this.onChoose,
-    required this.onAdd,
+    required this.colors,
     required this.onEdit,
     super.key,
   });
 
-  /// What the selected footswitch is called.
+  /// What the selected group is called.
   final String title;
 
-  /// The palette being edited.
-  final PedalPalette palette;
+  /// Each state the group can show, in order, with its current colour.
+  final Map<PedalLedState, PedalColor> colors;
 
-  /// The footswitch being edited.
-  final PedalButton button;
-
-  /// Puts an existing palette entry on the footswitch.
-  final ValueChanged<PedalPaletteEntry> onChoose;
-
-  /// Mixes a new colour.
-  final VoidCallback onAdd;
-
-  /// Changes the custom colour the footswitch currently uses, which moves
-  /// every other footswitch using it too.
-  final ValueChanged<CustomPaletteEntry> onEdit;
-
-  /// The pen's swatch row.
-  static const double _tileTop = 4;
-  static const double _tile = 88;
-  static const double _tilePitch = 106;
-  static const double _dot = 48;
-
-  /// The pen's heading, and the taller one that holds Edit color.
-  static const double _headingHeight = 28;
-  static const double _editHeadingHeight = 56;
-  static const double _headingGap = 16;
-
-  /// Where the heading's text sits, whichever height the row is.
-  static const double _headingTextTop = 41.5;
+  /// Opens the colour editor on one state.
+  final ValueChanged<PedalLedState> onEdit;
 
   @override
   Widget build(BuildContext context) {
-    final selected = palette.entryFor(button);
-    final editable = selected is CustomPaletteEntry ? selected : null;
-    final heading = editable == null ? _headingHeight : _editHeadingHeight;
+    final l10n = context.l10n;
     return PedalSetupEditorFrame(
       title: title,
-      // The heading grows downward around its text when Edit color appears, so
-      // the label and the name beside it do not jump between a built-in colour
-      // and a custom one.
-      top: _headingTextTop - (heading - _headingHeight) / 2,
-      child: SizedBox(
-        width: PedalSetupEditorFrame.fieldsWidth,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              height: heading,
-              child: _heading(context, selected, editable),
-            ),
-            const SizedBox(height: _headingGap + _tileTop),
-            SizedBox(height: _tile, child: _swatches(context, selected)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _heading(
-    BuildContext context,
-    PedalPaletteEntry selected,
-    CustomPaletteEntry? editable,
-  ) {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    final label = TextStyle(
-      color: surface.textSecondary,
-      fontSize: 24,
-      height: 1,
-    );
-    return Row(
-      children: [
-        AppText(l10n.pedalSetupLedColor, style: label),
-        const SizedBox(width: 24),
-        AppText(
-          pedalPaletteLabel(l10n, selected),
-          key: const Key('pedal_setup_led_name'),
-          style: label,
-        ),
-        const Spacer(),
-        if (editable != null)
-          LoopOutlinedButton(
-            key: const Key('pedal_setup_led_edit'),
-            width: 151,
-            label: l10n.pedalSetupLedEdit,
-            onTap: () => onEdit(editable),
-          ),
-      ],
-    );
-  }
-
-  Widget _swatches(BuildContext context, PedalPaletteEntry selected) {
-    final l10n = context.l10n;
-    final entries = palette.entries;
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      // A palette can grow past the pen's row. It scrolls rather than
-      // overflowing; with the shipped nine swatches there is nothing to
-      // scroll.
+      top: 46,
       child: Row(
         children: [
-          for (final entry in entries) ...[
-            _PedalSwatch(
-              key: Key('pedal_setup_swatch_${entry.key}'),
-              label: pedalPaletteLabel(l10n, entry),
-              color: palette.colorOf(entry),
-              selected: entry == selected,
-              onTap: () => onChoose(entry),
+          for (final (index, MapEntry(key: state, value: color))
+              in colors.entries.indexed) ...[
+            if (index > 0) const SizedBox(width: PedalSetupEditor.fieldGap),
+            PedalColorField(
+              key: Key('pedal_led_state_${state.name}'),
+              label: pedalLedStateLabel(l10n, state),
+              color: color,
+              onTap: () => onEdit(state),
             ),
-            const SizedBox(width: _tilePitch - _tile),
           ],
-          _PedalSwatch(
-            key: const Key('pedal_setup_swatch_add'),
-            label: l10n.pedalSetupLedAdd,
-            color: null,
-            selected: false,
-            onTap: onAdd,
-          ),
         ],
       ),
     );
   }
 }
 
-/// One palette swatch: the hue itself on a tile that says whether it is the
-/// one in use. With no [color] this is the add-a-colour tile.
-class _PedalSwatch extends StatelessWidget {
-  const _PedalSwatch({
+/// One state's colour: its name over a tile showing the hue and its hex.
+///
+/// The same shape as a gesture field, so a colour sits beside Press and Hold
+/// in Custom controls without a second visual language.
+class PedalColorField extends StatelessWidget {
+  /// Creates a [PedalColorField].
+  const PedalColorField({
     required this.label,
     required this.color,
-    required this.selected,
     required this.onTap,
+    this.width = defaultWidth,
     super.key,
   });
 
+  /// The state's name.
   final String label;
-  final PedalColor? color;
-  final bool selected;
+
+  /// The colour it lights in.
+  final PedalColor color;
+
+  /// Opens the colour editor.
   final VoidCallback onTap;
+
+  /// How wide the field is.
+  final double width;
+
+  /// The LED editor's field: five fit beside the group's name.
+  static const double defaultWidth = 240;
+
+  /// The field beside Press and Hold in Custom controls.
+  static const double compactWidth = 172;
+
+  static const double _buttonHeight = 96;
+  static const double _dot = 48;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      child: LoopFocusable(
-        onActivate: onTap,
-        radius: 10,
-        child: Material(
-          color: selected ? surface.accentSurface : surface.cardHigh,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(
-              color: selected ? surface.accent : surface.borderSubtle,
+    return SizedBox(
+      width: width,
+      height: PedalSetupField.height,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppText(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: surface.textSecondary,
+              fontSize: 26,
+              height: 1,
             ),
           ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            canRequestFocus: false,
-            child: SizedBox(
-              width: PedalLedEditor._tile,
-              height: PedalLedEditor._tile,
-              child: Center(
-                child: color == null
-                    ? Icon(
-                        LucideIcons.plus,
-                        size: 40,
-                        color: surface.textPrimary,
-                      )
-                    : Container(
-                        width: PedalLedEditor._dot,
-                        height: PedalLedEditor._dot,
-                        decoration: BoxDecoration(
-                          color: color!.display,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: surface.borderSubtle),
+          const Spacer(),
+          Semantics(
+            button: true,
+            label: label,
+            value: color.toString(),
+            child: LoopFocusable(
+              onActivate: onTap,
+              radius: 10,
+              child: Material(
+                color: surface.cardHigh,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(color: surface.borderStrong),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  canRequestFocus: false,
+                  onTap: onTap,
+                  child: SizedBox(
+                    height: _buttonHeight,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: _dot,
+                          height: _dot,
+                          decoration: BoxDecoration(
+                            color: color.display,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: surface.borderSubtle),
+                          ),
                         ),
-                      ),
+                        if (width >= defaultWidth) ...[
+                          const SizedBox(width: 16),
+                          AppText(
+                            color.toString(),
+                            style: TextStyle(
+                              color: surface.textPrimary,
+                              fontFamily: SurfaceTheme.monoFont,
+                              fontSize: 22,
+                              height: 1,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

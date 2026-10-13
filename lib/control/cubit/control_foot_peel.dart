@@ -16,9 +16,7 @@ extension _FootPeelControl on ControlCubit {
       return;
     }
     if (!_peelEditable) return;
-    if (_dispatchPeelAction(role.press, role.slot)) {
-      _acceptedContacts.add(button);
-    }
+    _dispatchPeelAction(role.press, role.slot);
   }
 
   bool _dispatchPeelAction(FootPeelAction action, int? slot) {

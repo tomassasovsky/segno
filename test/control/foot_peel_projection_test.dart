@@ -81,11 +81,11 @@ void main() {
           (1 << PedalButton.clear.index),
       0,
     );
-    // A slot-less pedal lights only for its accepted contact.
+    // A slot-less pedal lights only while held.
     final pressed = projectFrame(
       looper,
       overlay,
-      acceptedContacts: {PedalButton.stop},
+      pressed: {PedalButton.stop},
     );
     expect(pressed.activeButtonMask & (1 << PedalButton.stop.index), isNonZero);
   });

@@ -897,6 +897,7 @@ class _Harness {
     looper: looper,
     overlay: control.state,
     frame: frame,
+    pressed: _held,
   );
 
   /// The FX-state invariant, checked only while the engine is running (a
