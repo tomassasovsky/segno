@@ -6,6 +6,7 @@ import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/library/application/audio_export.dart';
 import 'package:segno/library/application/removable_volumes.dart';
+import 'package:segno/logging/app_log.dart';
 import 'package:session_repository/session_repository.dart';
 
 part 'library_state.dart';
@@ -179,6 +180,14 @@ class LibraryCubit extends Cubit<LibraryState> {
       }
       return;
     }
+    // LISTEN_DIAG (#1305): what the engine said to the start, so an
+    // appliance log shows a refusal, a rate conversion or a cancel.
+    AppLog.info(
+      'LISTEN_DIAG start result=${started.result.name} '
+      'frames=${started.frames} rate=${started.rate} '
+      'sourceRate=${started.sourceRate} truncated=${started.truncated} '
+      'cancelled=${started.cancelled} wanted=${wanted()}',
+    );
     if (!wanted()) {
       // Stopped, or another selection, after the voice took it: the engine
       // checks only up to the start itself.
@@ -222,6 +231,14 @@ class LibraryCubit extends Cubit<LibraryState> {
     if (isClosed || listen == null) return;
     final now = _sessions.auditionState();
     if (now.playing) {
+      if (!_listenSeenPlaying) {
+        // LISTEN_DIAG (#1305): the output pairs the preview sounds on.
+        AppLog.info(
+          'LISTEN_DIAG playing pairs=${now.pairs} '
+          'outputs=0x${now.outputs.toRadixString(16)} '
+          'position=${now.position} frames=${now.frames}',
+        );
+      }
       _listenSeenPlaying = true;
       emit(state.copyWith(listen: _withPosition(listen, now.position)));
       return;
@@ -232,7 +249,10 @@ class LibraryCubit extends Cubit<LibraryState> {
     if (!_listenSeenPlaying && ++_listenPollsBeforePlaying < 5) return;
     // A start that never reported playing may still sit in the engine's
     // queue: withdraw it, so it cannot sound later with no Stop on screen.
-    if (!_listenSeenPlaying) _sessions.stopAudition();
+    if (!_listenSeenPlaying) {
+      AppLog.info('LISTEN_DIAG never reported playing');
+      _sessions.stopAudition();
+    }
     _endListen();
   }
 

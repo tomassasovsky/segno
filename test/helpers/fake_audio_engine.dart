@@ -11,7 +11,6 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   @override
   Future<AuditionStart> auditionStartFile(
     String path, {
-    int bus = 0,
     bool Function()? stillWanted,
   }) async => const AuditionStart(result: EngineResult.ok);
 

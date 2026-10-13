@@ -16,9 +16,7 @@ extension _FootFadeControl on ControlCubit {
     }
     if (!_fadeEditable) return;
     if (role.immediate) {
-      if (_dispatchFadeAction(role.press, role.slot)) {
-        _acceptedContacts.add(button);
-      }
+      _dispatchFadeAction(role.press, role.slot);
       return;
     }
     // A pending track hold follows a bank change until it fires: the slot

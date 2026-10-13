@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -317,6 +318,10 @@ void main() {
           providers: [
             RepositoryProvider<LooperRepository>.value(value: repository),
             RepositoryProvider<PerformanceRepository>.value(value: performance),
+            // The top bar's CPU readout (#1307) at a steady figure.
+            RepositoryProvider<CpuLoadRepository>.value(
+              value: const FixedCpuLoadRepository(23),
+            ),
             // Share the fixture the cubits already use so every reader sees
             // the same store.
             RepositoryProvider<SettingsRepository>.value(value: settings),

@@ -2798,12 +2798,18 @@ class NativeAudioEngine implements AudioEngine {
   @override
   Future<AuditionStart> auditionStartFile(
     String path, {
-    int bus = 0,
     bool Function()? stillWanted,
   }) async {
     _checkAlive();
-    final rate = snapshot().sampleRate;
+    final now = snapshot();
+    final rate = now.sampleRate;
     if (rate <= 0) return const AuditionStart(result: EngineResult.notRunning);
+    // It plays on every enabled output (#1305): with none, nothing would
+    // sound, so it is refused before the decode.
+    final device = (1 << now.outputChannels) - 1;
+    if (now.outputEnabledMask & device == 0) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
     // The decode reads and converts up to two minutes of audio: never on the
     // calling (UI) isolate. The buffer crosses back as an address.
     final decoded = await _decodeAuditionOffIsolate(
@@ -2829,7 +2835,7 @@ class NativeAudioEngine implements AudioEngine {
       return const AuditionStart(result: EngineResult.invalid, cancelled: true);
     }
     var result = EngineResult.fromCode(
-      _bindings.le_engine_audition_start(_engine, buffer, bus),
+      _bindings.le_engine_audition_start(_engine, buffer),
     );
     if (result == EngineResult.notReady) {
       await auditionRetryWait();
@@ -2843,7 +2849,7 @@ class NativeAudioEngine implements AudioEngine {
       result = _disposed
           ? EngineResult.invalid
           : EngineResult.fromCode(
-              _bindings.le_engine_audition_start(_engine, buffer, bus),
+              _bindings.le_engine_audition_start(_engine, buffer),
             );
     }
     if (result != EngineResult.ok) {
@@ -2885,7 +2891,7 @@ class NativeAudioEngine implements AudioEngine {
         epoch: s.epoch,
         frames: s.frames,
         position: s.position,
-        bus: s.bus,
+        outputs: s.outputs,
       );
     } finally {
       calloc.free(out);

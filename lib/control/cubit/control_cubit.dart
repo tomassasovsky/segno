@@ -1141,7 +1141,6 @@ class ControlCubit extends Cubit<ControlState> {
       <PedalBindingKey, ({ControlAction action, List<int> channels})>{};
   final _customActiveKeys = <PedalButton, PedalBindingKey>{};
   final _customDispatchTokens = <PedalButton, Object>{};
-  final _acceptedContacts = <PedalButton>{};
   int _customActionSession = -1;
   final _displayBoundTargets =
       <
@@ -1508,7 +1507,7 @@ class ControlCubit extends Cubit<ControlState> {
     final behaviorChanged =
         state.pedalSetupUnavailable ||
         setup.copyWith(
-              palette: state.pedalSetup.palette,
+              leds: state.pedalSetup.leds,
               external: state.pedalSetup.external,
             ) !=
             state.pedalSetup ||
@@ -2311,7 +2310,6 @@ class ControlCubit extends Cubit<ControlState> {
     }
     _systemGesture(button)?.cancel();
     _pressedButtons.remove(button);
-    _acceptedContacts.remove(button);
     _pushProjected();
   }
 
@@ -2359,7 +2357,6 @@ class ControlCubit extends Cubit<ControlState> {
     _systemGesture(button)?.cancel();
     _bindingGestures[button]?.cancel();
     _pressedButtons.remove(button);
-    _acceptedContacts.remove(button);
     _releaseBinding(button);
     _pushProjected();
   }
@@ -2456,7 +2453,6 @@ class ControlCubit extends Cubit<ControlState> {
     }
     _bindingGestures[button]?.cancel();
     _pressedButtons.remove(button);
-    _acceptedContacts.remove(button);
     _customActiveKeys.remove(button);
     _pushProjected();
   }
@@ -2504,7 +2500,6 @@ class ControlCubit extends Cubit<ControlState> {
     _systemGesture(button)?.cancel();
     _trackHoldGestures[button]?.cancel();
     _pressedButtons.remove(button);
-    _acceptedContacts.remove(button);
     _pushProjected();
   }
 
@@ -2756,7 +2751,6 @@ class ControlCubit extends Cubit<ControlState> {
       case ButtonReleased(:final button):
         if (!identical(_pressedButtons[button], owner)) break;
         _pressedButtons.remove(button);
-        _acceptedContacts.remove(button);
         if (button == PedalButton.clear) _clearPressToken = null;
         if (button == PedalButton.clear) _onClearRelease();
         if (_takeLocked()) {
@@ -2868,33 +2862,23 @@ class ControlCubit extends Cubit<ControlState> {
         // INERT in FX mode until the #219 toggle-undo contract exists: an
         // undo that silently means "the last overdub" while the foot is in a
         // chain-editing mode is the surprise this matrix exists to prevent.
-        if (!fx) {
-          _armUndo();
-          _acceptedContacts.add(button);
-        }
+        if (!fx) _armUndo();
       case PedalButton.recPlay:
-        final accepted = switch (state.mode) {
-          InteractionMode.record => !_takeLocked() && _recAdvance(state.cursor),
-          InteractionMode.mute => !_takeLocked() && _muteRecPlay(),
-          InteractionMode.fx ||
-          InteractionMode.custom ||
-          InteractionMode.mixer ||
-          InteractionMode.fade ||
-          InteractionMode.reverse ||
-          InteractionMode.peel ||
-          InteractionMode.tuner => false,
-          InteractionMode.multiply || InteractionMode.divide => false,
-        };
-        if (accepted) _acceptedContacts.add(button);
+        if (state.mode == InteractionMode.record && !_takeLocked()) {
+          _recAdvance(state.cursor);
+        } else if (state.mode == InteractionMode.mute && !_takeLocked()) {
+          _muteRecPlay();
+        }
         _armRecordHold();
       case PedalButton.stop:
         // INERT in FX mode when unbound, as pen 10/03 draws it (#1229); the
         // other modes act on the press, as they always have.
         if (!fx) {
-          final accepted = state.mode == InteractionMode.record
-              ? _recStop(state.cursor)
-              : _parkAllAccepted();
-          if (accepted) _acceptedContacts.add(button);
+          if (state.mode == InteractionMode.record) {
+            _recStop(state.cursor);
+          } else {
+            _parkAllAccepted();
+          }
         }
       case PedalButton.mode:
         _armMode();
@@ -3003,7 +2987,7 @@ class ControlCubit extends Cubit<ControlState> {
         isClosed ||
         state.mode != InteractionMode.custom ||
         state.pedalSetupUnavailable ||
-        state.pedalSetup.copyWith(palette: setup.palette) != setup ||
+        state.pedalSetup.copyWith(leds: setup.leds) != setup ||
         _looper.sessionRevision != session ||
         !identical(_customDispatchTokens[button], token)) {
       return;
@@ -3377,7 +3361,6 @@ class ControlCubit extends Cubit<ControlState> {
         return;
       }
       _clearHeld = true;
-      _acceptedContacts.add(PedalButton.clear);
       _pushProjected();
     } on Object catch (error, stackTrace) {
       addError(error, stackTrace);
@@ -3399,10 +3382,7 @@ class ControlCubit extends Cubit<ControlState> {
       cue: PedalButton.undo,
       onHold: () {
         _log('redo ch=$channel  (long-press)');
-        if (!_looper.redo(channel: channel).isOk) {
-          _acceptedContacts.remove(PedalButton.undo);
-          _pushProjected();
-        }
+        _looper.redo(channel: channel);
       },
       onTap: () {
         _log('undo ch=$channel  (tap)');
@@ -3587,7 +3567,6 @@ class ControlCubit extends Cubit<ControlState> {
     }
     _customActiveKeys.clear();
     _customDispatchTokens.clear();
-    _acceptedContacts.clear();
     _clearHeld = false;
     _clearPressToken = null;
     _displayBoundTargets.clear();
@@ -3954,7 +3933,6 @@ class ControlCubit extends Cubit<ControlState> {
     _retireAllExternal();
     _externalContacts.clear();
     _pressedButtons.clear();
-    _acceptedContacts.clear();
     _clearHeld = false;
     _clearPressToken = null;
     _invalidateGestures();
@@ -3993,7 +3971,7 @@ class ControlCubit extends Cubit<ControlState> {
       customFunctions: customFunctions,
       physicalCustomStates: physicalCustom,
       tunerStates: _tunerStates(),
-      acceptedContacts: _acceptedContacts,
+      pressed: _pressedButtons.keys.toSet(),
     );
     _pedal.pushState(frame);
   }

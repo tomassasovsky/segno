@@ -7,6 +7,7 @@ export 'fake_one_shot_control.dart';
 export 'fake_record_length_control.dart';
 export 'fake_record_start_control.dart';
 export 'fake_record_timing_control.dart';
+export 'fixed_cpu_load.dart';
 export 'pump_app.dart';
 export 'screenshot_fonts.dart';
 export 'slot_rects.dart';
