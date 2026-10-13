@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
-import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/readout_control.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
@@ -296,8 +295,8 @@ class NoopWaveformWindowService implements WaveformWindowService {
 /// so the frame must carry samples to seed the window.
 ///
 /// Pure so the diff can be proven without a second OS window — the same
-/// discipline `waveformWindowPlacement` uses for its own decision.
-@visibleForTesting
+/// discipline `waveformWindowPlacement` uses for its own decision — and shared
+/// by every service, so each transport sends the peaks under the same rule.
 Map<String, Object?> waveformFramePayload({
   required Float32List samples,
   required double progress,

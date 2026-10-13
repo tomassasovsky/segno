@@ -1,0 +1,19 @@
+# The Pi 5 appliance image on ivi-homescreen instead of weston + GTK (#1318).
+#
+# Everything in kas-segno-rpi5.yml, with one difference: SEGNO_EMBEDDER, which
+# segno-kiosk-image and segno-bundle read. The image keeps its name, RAUC
+# compatible string and partition layout, so a bench unit can be moved onto it
+# by an ordinary A/B update and back by rolling back.
+#
+# The app bundle it installs must be built with the Flutter release named in
+# meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc
+# (segno-bundle refuses any other); the release workflow does that when
+# dispatched with `embedder: ivi`.
+header:
+  version: 14
+  includes:
+    - kas-segno-rpi5.yml
+
+local_conf_header:
+  segno-embedder: |
+    SEGNO_EMBEDDER = "ivi"

@@ -117,8 +117,8 @@ typedef WaveformFrame = ({
 /// makes that safe — reading an absent key as an empty buffer would blank the
 /// waveform on every frame the peaks did not change, which is most of them.
 ///
-/// Pure so the hold can be proven without a second engine.
-@visibleForTesting
+/// Pure so the hold can be proven without a second engine, and shared by both
+/// readout transports (this window's channel and the screen link).
 WaveformFrame waveformFrameFrom(
   Map<Object?, Object?> payload,
   WaveformFrame previous,

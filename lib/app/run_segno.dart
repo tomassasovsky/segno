@@ -50,10 +50,21 @@ Future<void> runSegno(
   );
   WidgetsFlutterBinding.ensureInitialized();
 
-  final windowController = await WindowController.fromCurrentEngine();
-  if (WaveformWindowArgs.isWaveformWindow(windowController.arguments)) {
-    await runWaveformWindow(windowController);
+  // An embedder that runs one engine per screen names the role in the Dart
+  // arguments (ivi-homescreen on the appliance). The GTK runner names none:
+  // there the readout is a `desktop_multi_window` sub-window, recognised by
+  // the arguments that plugin hands its engine.
+  final screen = segnoScreenFrom(args);
+  if (screen == SegnoScreen.readout) {
+    await runReadoutScreen();
     return;
+  }
+  if (screen == null) {
+    final windowController = await WindowController.fromCurrentEngine();
+    if (WaveformWindowArgs.isWaveformWindow(windowController.arguments)) {
+      await runWaveformWindow(windowController);
+      return;
+    }
   }
 
   // Durable logfile under $HOME/log (→ /data/log on the appliance). Before
@@ -65,16 +76,21 @@ Future<void> runSegno(
   // where its lines were read from anyway.
   await initAppLogging();
 
-  // Hot restart resets Dart state while native sub-windows survive.
-  await DesktopMultiWindowWaveformService.closeOrphanWindows();
+  // The window plugins below exist only on the GTK runner. An embedder that
+  // names the screen owns the outputs itself: every view is already
+  // fullscreen on its own output, and there are no sub-windows to reclaim.
+  if (screen == null) {
+    // Hot restart resets Dart state while native sub-windows survive.
+    await DesktopMultiWindowWaveformService.closeOrphanWindows();
 
-  await configureSegnoDesktopWindow();
-  // On a multi-display console the output waveform fills the secondary, so fill
-  // the primary with the control surface too. Single-monitor / dev runs keep a
-  // normal window. Toggle off any time with `F`.
-  await applyMainWindowFullscreen(
-    WidgetsBinding.instance.platformDispatcher.displays.length,
-  );
+    await configureSegnoDesktopWindow();
+    // On a multi-display console the output waveform fills the secondary, so
+    // fill the primary with the control surface too. Single-monitor / dev runs
+    // keep a normal window. Toggle off any time with `F`.
+    await applyMainWindowFullscreen(
+      WidgetsBinding.instance.platformDispatcher.displays.length,
+    );
+  }
 
   // One engine instance, shared by the looper (which owns its lifecycle) and
   // the session repository (which only reads/writes its loop PCM). On the
@@ -198,11 +214,18 @@ Future<void> runSegno(
       simulatedControllerSource: simulatedControllerSource,
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
-      displayCount: () =>
-          WidgetsBinding.instance.platformDispatcher.displays.length,
+      // One engine per screen is told about its own output only, so its
+      // display count is always one. There the readout's own announcement is
+      // what says a second screen exists, and `open` reports when it never
+      // comes.
+      displayCount: screen == null
+          ? () => WidgetsBinding.instance.platformDispatcher.displays.length
+          : null,
       audioRecoveryConfig: audioRecoveryConfig,
       settings: settings,
-      waveformWindow: DesktopMultiWindowWaveformService(),
+      waveformWindow: screen == null
+          ? DesktopMultiWindowWaveformService()
+          : ScreenLinkWaveformService(),
       waveformWindowOpenDelay: Duration(
         milliseconds:
             int.tryParse(
