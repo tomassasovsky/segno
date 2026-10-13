@@ -4,7 +4,7 @@ type: spike
 date: 2026-10-13
 ---
 
-<!-- cspell:words libepoxy Wrynose libapp pixman -->
+<!-- cspell:words libepoxy Wrynose libapp pixman gitsm libdisplay libdrm libxkbcommon libseat -->
 
 ## Spike: Segno on ivi-homescreen (DRM/KMS, no Weston, no GTK)
 
@@ -156,6 +156,28 @@ Guards:
 - builds the bundle with the pinned Flutter (`FLUTTER_VERSION` build argument);
 - builds the image from `kas-segno-rpi5-ivi.yml`;
 - uploads the `.wic`, `.bmap` and `.raucb` as an `-ivi` workflow artifact.
+
+## Validated off-device (2026-10-13)
+
+- **ivi-homescreen.** It builds with GCC 13 (C++17) using exactly the recipe's
+  `EXTRA_OECMAKE`: drm-kms-egl plus the compositor, nothing else, no plugins.
+  - It builds without network access once the submodules are present, so
+    `gitsm://` is enough.
+  - The pixel-ratio patch applies and builds.
+  - The config parser accepts `homescreen.toml` and prints both views: HDMI-A-1
+    at 1.0, HDMI-A-2 at 3.0.
+- **Engine.** The arm64 release engine exports all 38 embedder symbols the
+  shell resolves.
+- **Dependencies.** Every one has a recipe at the pinned walnascar commits:
+  libdisplay-info 0.2.0 (it needs at least 0.2.0), libinput 1.27.1, libdrm
+  2.4.124, meta-raspberrypi's mesa 25.1.6, libxkbcommon 1.8.1, seatd 0.9.1
+  (whose libseat is required at build time) and cmake 3.31.6.
+- **BitBake.** Parsing the real layer stack at the pinned commits:
+  - The ivi image resolves its full graph (413 recipes) with no weston and no
+    GTK.
+  - The GTK image's recipe list is **identical to master's**.
+  - `segno-update-bundle` is skipped only because there are no signing keys
+    locally.
 
 ## Known gaps, accepted for the spike
 
