@@ -1,0 +1,12 @@
+# Sourced by segno-kiosk-launch on the ivi-homescreen image (SEGNO_EMBEDDER=ivi,
+# #1318). ivi-homescreen drives both HDMI outputs itself over DRM/KMS, with no
+# compositor, and runs one Flutter engine per screen from the bundle in
+# /opt/segno. /etc/segno/homescreen.toml says which screen goes where; each
+# engine learns its role from the --segno-screen= argument that file gives it.
+#
+# The engine library is opened by name. The GTK runner's RUNPATH puts
+# /opt/segno/lib on that lookup and ivi-homescreen's does not, so name the file
+# outright: both of its loaders honour this override (segno_engine's
+# native_audio_engine.dart and midi_client's native_library.dart).
+export SEGNO_ENGINE_LIB=/opt/segno/lib/libsegno_engine.so
+exec /usr/bin/homescreen --config /etc/segno/homescreen.toml "$@"
