@@ -1,0 +1,23 @@
+{
+  "valid_single_solids": 3,
+  "part_interference_mm3": 0,
+  "full_strip_support_mm": [
+    56.955555555555556,
+    12.0
+  ],
+  "base_thickness_mm": 2.0,
+  "air_gap_mm": 5.0,
+  "face_thickness_mm": 0.8,
+  "cap_to_base_relative_play_checked_mm": 0.5,
+  "bench_assembly_mm": [
+    71.7,
+    17.7,
+    10.13
+  ],
+  "sheet_thickness_mm": 2.0,
+  "lens_to_sheet_step_mm": 0,
+  "depth_below_sheet_mm": 8.13,
+  "print_orientation": "carrier floor down; lens flange down; collar face down",
+  "optical_roof_bridge_mm": 4.199999999999999,
+  "physical_fit_and_light_leakage": "not established by geometry checks"
+}

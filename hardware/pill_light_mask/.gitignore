@@ -1,0 +1,6 @@
+__pycache__/
+out/*.png
+out/*.svg
+out/*.zip
+out/*/
+!out/pill_top_mount_preview.png
