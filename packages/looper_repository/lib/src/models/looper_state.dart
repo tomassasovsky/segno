@@ -161,13 +161,13 @@ class LooperState extends Equatable {
 
   /// The one section of [candidates] a "start everything" gesture starts in
   /// Song or Band (#1077, #1323): the one sounding now, else the one that
-  /// sounded last while it holds a take and is not muted, else the first
-  /// that is not muted, else the first. Null with no candidates.
+  /// sounded last, else the first; a muted section counts only when every
+  /// one is muted. Null with no candidates.
   int? sectionToStart(Iterable<Track> candidates) {
     final content = candidates.where((track) => track.hasContent).toList();
     final audible = content.where((track) => !track.muted);
     final last = transport.songLastSection;
-    return (content
+    return (audible
                 .where(
                   (track) =>
                       track.state == TrackState.playing ||
