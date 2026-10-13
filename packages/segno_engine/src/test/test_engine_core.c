@@ -30696,6 +30696,66 @@ static void test_fx_recipe_deferred_block_invariance(void) {
   }
 }
 
+/* #1306: a take recorded after its input's chain is switched off prints dry.
+ * The first take inherits a drive and is undone back to EMPTY (the lane keeps
+ * that chain for Redo); the next take's arm carries an EMPTY lane recipe,
+ * which must replace the leftover chain at capture start, so it plays back
+ * exactly like a take that never had FX. An arm that names no lane recipe
+ * keeps the leftover chain (the control: the drive really would be heard). */
+static void fx_off_take(le_engine* e, int first_fx, int second) {
+  le_fx_recipe lanes[LE_MAX_LANES] = {0};
+  lanes[0] = test_drive_recipe(.5f);
+  le_record_image image = {.revision = 1, .lane_mask = 1, .gain = {1},
+      .fx_lane_mask = first_fx ? 1 : 0, .lane_fx = lanes};
+  float out[64];
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK);
+  process_const(e, .4f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(load_i32(&e->tracks[0].lanes[0].a_fx_count) == (first_fx ? 1 : 0));
+  /* second: 0 = no lane recipe, 1 = an explicit empty (dry) one. */
+  memset(&lanes[0], 0, sizeof(lanes[0]));
+  lanes[0].enabled = 1;
+  image = (le_record_image){.revision = 2, .lane_mask = 1, .gain = {1},
+      .fx_lane_mask = second ? 1 : 0, .lane_fx = lanes};
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK);
+  process_const(e, .4f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+}
+
+static void test_fx_off_take_prints_dry(void) {
+  printf("test_fx_off_take_prints_dry\n");
+  le_engine* wet_then_dry = make_configured_engine();
+  le_engine* never_wet = make_configured_engine();
+  le_engine* leftover = make_configured_engine();
+  fx_off_take(wet_then_dry, 1, 1);
+  fx_off_take(never_wet, 0, 1);
+  fx_off_take(leftover, 1, 0);
+  CHECK(load_i32(&wet_then_dry->tracks[0].lanes[0].a_fx_count) == 0);
+  CHECK(load_i32(&leftover->tracks[0].lanes[0].a_fx_count) == 1);
+  float dry[LOOP_N * 4], ref[LOOP_N * 4], wet[LOOP_N * 4];
+  process_const(wet_then_dry, 0, LOOP_N * 4, dry);
+  process_const(never_wet, 0, LOOP_N * 4, ref);
+  process_const(leftover, 0, LOOP_N * 4, wet);
+  int audible = 0, differs = 0;
+  for (int i = 0; i < LOOP_N * 4; ++i) {
+    CHECK(dry[i] == ref[i]);
+    if (fabsf(dry[i]) > .01f) audible = 1;
+    if (fabsf(wet[i] - dry[i]) > 1e-4f) differs = 1;
+  }
+  CHECK(audible); /* equality cannot pass on silence */
+  CHECK(differs); /* the leftover drive is really heard without the fix */
+  le_engine_destroy(wet_then_dry);
+  le_engine_destroy(never_wet);
+  le_engine_destroy(leftover);
+}
+
 static void test_fx_channel_refusal_preserves_stereo(void) {
   printf("test_fx_channel_refusal_preserves_stereo\n");
   const int owners[] = {LE_FX_OWNER_TRACK, LE_FX_OWNER_OUTPUT, LE_FX_OWNER_ALL_TRACKS};
@@ -36329,6 +36389,7 @@ int main(void) {
   test_whole_track_pre_processes_the_combination();
   test_fx_recipe_atomic_admission_and_frozen_arm();
   test_fx_recipe_deferred_block_invariance();
+  test_fx_off_take_prints_dry();
   test_fx_channel_refusal_preserves_stereo();
   test_track_gain_is_after_combined_pre_before_post();
   test_track_pan_updates_with_whole_track_pre_cache();

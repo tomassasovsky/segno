@@ -9889,6 +9889,75 @@ void main() {
       expect(repo.laneChainInheritedFrom(0, 0), isEmpty);
     });
 
+    test('a fresh take with the input chain off prints dry: the chain an '
+        'earlier take inherited does not carry over (#1306)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final changed = <(int, int)>[];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+      expect(repo.laneChainInheritedFrom(0, 0), [0]);
+
+      // The take is undone back to EMPTY (its chain stays for Redo), then
+      // the input's chain is switched off and a new take is recorded.
+      repo
+        ..undo()
+        ..setMonitorChainEnabled(input: 0, enabled: false)
+        ..onLaneChainChanged = ((c, l) => changed.add((c, l)))
+        ..record();
+
+      expect(engine.lastRecordImage!.laneFx[0]!.slots, isEmpty);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]!.slots, isEmpty);
+      expect(repo.laneEffects(0, 0), isEmpty);
+      expect(repo.laneChainInheritedFrom(0, 0), isEmpty);
+      expect(repo.laneChainEnabled(0, 0), isTrue);
+      expect(changed, [(0, 0)]);
+
+      // Switching the input's chain back on prints it again.
+      repo
+        ..setMonitorChainEnabled(input: 0, enabled: true)
+        ..record();
+      expect(
+        (repo.laneEffects(0, 0).single as BuiltInEffect).type,
+        TrackEffectType.delay,
+      );
+      expect(repo.laneChainInheritedFrom(0, 0), [0]);
+    });
+
+    test('a fresh take with an empty input chain also drops a previously '
+        'inherited chain, and Track FX stay (#1306)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+      final trackFx = repo.trackEffects(0);
+
+      repo
+        ..setMonitorEffects(input: 0, effects: const [])
+        ..record();
+
+      expect(repo.laneEffects(0, 0), isEmpty);
+      expect(repo.trackEffects(0), trackFx);
+      expect(
+        (repo.trackEffects(0).single as BuiltInEffect).type,
+        TrackEffectType.reverb,
+      );
+    });
+
     test('overdub never re-inherits (A7): a record on a non-empty track '
         'leaves the take chain and provenance alone', () {
       engine.nextSnapshot = emptyTrackSnapshot();

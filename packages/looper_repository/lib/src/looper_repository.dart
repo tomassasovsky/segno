@@ -3247,8 +3247,20 @@ class LooperRepository {
       try {
         for (var lane = 0; lane < laneCount(channel); lane++) {
           final chain = _inheritableChain(channel, lane);
-          if (chain == null) continue;
           final input = _laneInput[(channel, lane)] ?? lane;
+          if (chain == null) {
+            // A dry input prints a dry take (#1306). A chain this lane
+            // inherited for an earlier take (one undone back to empty keeps
+            // it for Redo) belongs to that take, so it goes; a chain the
+            // player staged on the lane has no provenance and stays.
+            if (laneChainInheritedFrom(channel, lane).isNotEmpty) {
+              inherited[lane] = const [];
+              inheritedInputs[lane] = input;
+              inheritedHandles[lane] = const {};
+              recipes[lane] = FxRecipe(slots: const []);
+            }
+            continue;
+          }
           final captured = <TrackEffect>[];
           for (var index = 0; index < chain.length; index++) {
             final fx = _capturePluginForLane(chain[index], input, index);
