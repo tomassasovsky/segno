@@ -2782,6 +2782,35 @@ void main() {
         verify(() => looper.play(channel: 2)).called(1);
       });
 
+      test('Band Mute-mode Rec/Play starts the primary and one section', () {
+        final band = _tracksWith(const [
+          Track(state: TrackState.stopped, lengthFrames: 48000),
+          Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+          Track(channel: 2, state: TrackState.stopped, lengthFrames: 48000),
+        ]);
+        setEngine(band, looperMode: LooperMode.band, primaryTrack: 0);
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..recPlay();
+        verify(() => looper.play()).called(1);
+        verify(() => looper.play(channel: 1)).called(1);
+        verifyNever(() => looper.play(channel: 2));
+        // The section left stopped keeps its mute: it does not unpark.
+        verifyNever(() => looper.setMute(muted: true, channel: 2));
+        // Running, the expansion keeps the sounding section, not another.
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 2, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.band,
+          primaryTrack: 0,
+        );
+        cubit.recPlay();
+        verifyNever(() => looper.play(channel: 1));
+      });
+
       test('Multi and Free Record-mode presses only select', () {
         for (final mode in [LooperMode.multi, LooperMode.free]) {
           setEngine(sections, looperMode: mode);

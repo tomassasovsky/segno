@@ -129,6 +129,23 @@ behaviour changes, record every decision). Each goes into the PR body and on
 7. **`le_engine_toggle_section`** (Band trigger-2 transport) is not called
    by the app and could start several sections. It is left unchanged here;
    a follow-up issue tracks removing it.
+8. **The handoff is the Record's boundary.** A waiting Record starts at the
+   handoff even with Sound start or quantize on; neither applies to it.
+9. **Rec/Play on a muted stopped section** keeps the existing meaning in
+   every mode (unmute and bring it back), so in Song and Band it is a
+   waiting Play, not a Record.
+10. **Undo and redo keep one section.** A redo from empty, or the undo of a
+    Clear, that would bring a section back playing while another section
+    sounds brings it back stopped.
+11. **Band from a stopped rig.** A start resumes the primary, not the other
+    sections (the unpark rule now skips Band sections). Play All and
+    Mute-mode Rec/Play start every track that is not a section plus one
+    section: the one sounding, else the last played, else the first
+    unmuted, else the first. The engine tracks the last played section in
+    Band as well.
+12. **A Band request whose section ends on a held rig is dropped.** When
+    the sounding section stops on its own lap end (Once) and nothing else
+    keeps the clock running, there is no primary top to land on.
 
 ## Implementation
 

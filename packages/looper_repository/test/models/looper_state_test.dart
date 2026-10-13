@@ -66,6 +66,87 @@ void main() {
     });
   });
 
+  group('isSection (#1323)', () {
+    LooperState rig(
+      LooperMode mode, {
+      Track crown = const Track(lengthFrames: 100),
+    }) => LooperState(
+      transport: TransportState(looperMode: mode, primaryTrack: 0),
+      tracks: [
+        crown,
+        const Track(channel: 1, lengthFrames: 100),
+      ],
+    );
+
+    test('every Song track is a section', () {
+      expect(rig(LooperMode.song).isSection(0), isTrue);
+      expect(rig(LooperMode.song).isSection(1), isTrue);
+    });
+
+    test("Band's other tracks are sections under an established primary", () {
+      expect(rig(LooperMode.band).isSection(0), isFalse);
+      expect(rig(LooperMode.band).isSection(1), isTrue);
+      final multiple = rig(
+        LooperMode.band,
+        crown: const Track(lengthFrames: 200, multiple: 2),
+      );
+      expect(multiple.isSection(1), isFalse);
+      expect(
+        rig(LooperMode.band, crown: const Track()).isSection(1),
+        isFalse,
+      );
+    });
+
+    test('no other mode has sections', () {
+      for (final mode in [LooperMode.multi, LooperMode.sync, LooperMode.free]) {
+        expect(rig(mode).isSection(1), isFalse);
+      }
+    });
+  });
+
+  group('sectionToStart (#1323)', () {
+    LooperState rig({int last = -1}) => LooperState(
+      transport: TransportState(
+        looperMode: LooperMode.song,
+        songLastSection: last,
+      ),
+    );
+    const muted = Track(
+      channel: 1,
+      state: TrackState.stopped,
+      lengthFrames: 100,
+      muted: true,
+    );
+    const stopped = Track(
+      channel: 2,
+      state: TrackState.stopped,
+      lengthFrames: 100,
+    );
+    const other = Track(
+      channel: 3,
+      state: TrackState.stopped,
+      lengthFrames: 100,
+    );
+
+    test('prefers the sounding section', () {
+      expect(
+        rig(last: 2).sectionToStart([
+          stopped,
+          const Track(channel: 3, lengthFrames: 100, state: TrackState.playing),
+        ]),
+        3,
+      );
+    });
+
+    test('else the last one that is not muted, else the first audible, else '
+        'the first', () {
+      expect(rig(last: 3).sectionToStart([muted, stopped, other]), 3);
+      expect(rig(last: 1).sectionToStart([muted, stopped, other]), 2);
+      expect(rig().sectionToStart([muted]), 1);
+      expect(rig().sectionToStart(const [Track(channel: 4)]), isNull);
+    });
+  });
+
   group('songWaitingSection (#1077, #1323)', () {
     LooperState rig({
       LooperMode mode = LooperMode.song,
