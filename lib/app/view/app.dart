@@ -664,6 +664,13 @@ class _AppState extends State<App> {
               repository: context.read<LooperRepository>(),
             ),
           ),
+          // The stage footer's `OUT` readout, refreshed four times a second
+          // rather than on every 16 ms engine poll (#1301).
+          BlocProvider(
+            create: (context) => OutputLevelCubit(
+              repository: context.read<LooperRepository>(),
+            ),
+          ),
           // Beside the track names and for the same reason: an input is called
           // what the player calls it on every surface that shows one — the
           // Audio face's input list, the Tracks routing summary, and the
