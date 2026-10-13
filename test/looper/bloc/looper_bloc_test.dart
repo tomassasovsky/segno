@@ -49,6 +49,7 @@ void main() {
 
   setUp(() {
     repository = _MockLooperRepository();
+    when(() => repository.meters).thenReturn(const MeterLevels());
     recordLength = _MockRecordLengthControl();
     recordTiming = _MockRecordTimingControl();
     when(
