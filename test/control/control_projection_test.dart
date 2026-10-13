@@ -641,4 +641,88 @@ void main() {
       );
     });
   });
+
+  group('Song queue (#1077)', () {
+    LooperState song({
+      int queued = 1,
+      double progress = 0.5,
+      LooperMode mode = LooperMode.song,
+      List<Track>? tracks,
+    }) => LooperState(
+      transport: TransportState(
+        isRunning: true,
+        looperMode: mode,
+        songQueuedTrack: queued,
+        songQueueProgress: progress,
+      ),
+      tracks:
+          tracks ??
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 96000),
+            Track(channel: 5, state: TrackState.stopped, lengthFrames: 96000),
+          ]),
+      status: const EngineStatus(sampleRate: 48000),
+    );
+    const mute = ControlState(mode: InteractionMode.mute);
+
+    test('the waiting section reads green and its pill fills', () {
+      final frame = projectFrame(song(), mute);
+      expect(frame.trackLeds[0], PedalTrackLed.green); // playing
+      expect(frame.trackLeds[1], PedalTrackLed.green); // waiting
+      expect(frame.trackLeds[5], PedalTrackLed.off);
+      expect(frame.queuedButton, PedalButton.track2);
+      expect(frame.queuedProgress, 127);
+      expect(frame.isLit(PedalButton.track2), isTrue);
+      expect(frame.colorFor(PedalButton.track2), ledGreen);
+    });
+
+    test('the fill never reaches a full pill', () {
+      expect(projectFrame(song(progress: 0), mute).queuedProgress, 0);
+      expect(projectFrame(song(progress: 0.999999), mute).queuedProgress, 254);
+      expect(projectFrame(song(progress: 1), mute).queuedProgress, 254);
+    });
+
+    test('a section on the other bank has no pill on the plate', () {
+      final a = projectFrame(song(queued: 5), mute);
+      expect(a.trackLeds[5], PedalTrackLed.green);
+      expect(a.queuedButton, isNull);
+      expect(a.queuedProgress, 0);
+      final b = projectFrame(
+        song(queued: 5),
+        const ControlState(mode: InteractionMode.mute, activeBank: 1),
+      );
+      expect(b.queuedButton, PedalButton.track2);
+    });
+
+    test('nothing waits outside Song, outside Mute mode or without a take', () {
+      for (final (looper, overlay) in [
+        (song(mode: LooperMode.multi), mute),
+        (song(), const ControlState()),
+        (song(queued: 3), mute),
+        (song(queued: -1), mute),
+      ]) {
+        final frame = projectFrame(looper, overlay);
+        expect(frame.queuedButton, isNull);
+        expect(frame.queuedProgress, 0);
+      }
+    });
+
+    test('Song shows sounding sections, not a parked preview', () {
+      final parked = song(
+        queued: -1,
+        progress: 0,
+        tracks: _tracksWith(const [
+          Track(state: TrackState.stopped, lengthFrames: 48000),
+          Track(channel: 1, state: TrackState.stopped, lengthFrames: 96000),
+        ]),
+      );
+      final frame = projectFrame(
+        parked,
+        const ControlState(mode: InteractionMode.mute, parkedResume: {0}),
+      );
+      expect(frame.trackLeds[0], PedalTrackLed.off);
+      expect(frame.trackLeds[1], PedalTrackLed.off);
+    });
+  });
 }

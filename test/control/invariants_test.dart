@@ -494,4 +494,111 @@ void main() {
       expect(debugControlInvariantsHold(clean), isTrue);
     });
   });
+
+  group('song-queue-mirrors-engine', () {
+    LooperState song({int queued = 1, double progress = 0.5}) => LooperState(
+      transport: TransportState(
+        isRunning: true,
+        looperMode: LooperMode.song,
+        songQueuedTrack: queued,
+        songQueueProgress: progress,
+      ),
+      tracks: [
+        const Track(state: TrackState.playing, lengthFrames: 100),
+        const Track(channel: 1, state: TrackState.stopped, lengthFrames: 100),
+        for (var i = 2; i < 8; i++) Track(channel: i),
+      ],
+    );
+    final leds = [
+      PedalTrackLed.green,
+      PedalTrackLed.green,
+      for (var i = 2; i < 8; i++) PedalTrackLed.off,
+    ];
+    final lit =
+        1 << PedalButton.track1.index |
+        1 << PedalButton.track2.index |
+        1 << PedalButton.mode.index;
+    const mute = ControlState(mode: InteractionMode.mute);
+
+    test('accepts the engine queue on its pill', () {
+      final c = ControlContext(
+        looper: song(),
+        overlay: mute,
+        frame: frame(leds: leds, mode: PedalMode.play).copyWith(
+          activeButtonMask: lit,
+          queuedButton: PedalButton.track2,
+          queuedProgress: 127,
+        ),
+      );
+      expect(violation(c, 'song-queue-mirrors-engine'), isNull);
+    });
+
+    test('rejects a fill the engine did not report', () {
+      final c = ControlContext(
+        looper: song(),
+        overlay: mute,
+        frame: frame(leds: leds, mode: PedalMode.play).copyWith(
+          activeButtonMask: lit,
+          queuedButton: PedalButton.track2,
+          queuedProgress: 200,
+        ),
+      );
+      expect(violation(c, 'song-queue-mirrors-engine'), isNotNull);
+    });
+
+    test('rejects a missing, dark or invented queue', () {
+      final missing = ControlContext(
+        looper: song(),
+        overlay: mute,
+        frame: frame(leds: leds, mode: PedalMode.play),
+      );
+      expect(violation(missing, 'song-queue-mirrors-engine'), isNotNull);
+      final dark = ControlContext(
+        looper: song(),
+        overlay: mute,
+        frame: frame(leds: leds, mode: PedalMode.play).copyWith(
+          queuedButton: PedalButton.track2,
+          queuedProgress: 127,
+        ),
+      );
+      expect(violation(dark, 'song-queue-mirrors-engine'), isNotNull);
+      final invented = ControlContext(
+        looper: song(queued: -1, progress: 0),
+        overlay: mute,
+        frame: frame(leds: leds, mode: PedalMode.play).copyWith(
+          activeButtonMask: lit,
+          queuedButton: PedalButton.track2,
+          queuedProgress: 10,
+        ),
+      );
+      expect(violation(invented, 'song-queue-mirrors-engine'), isNotNull);
+    });
+
+    test('a muted waiting section may read green', () {
+      final looper = song();
+      final muted = LooperState(
+        transport: looper.transport,
+        tracks: [
+          looper.tracks[0],
+          const Track(
+            channel: 1,
+            state: TrackState.stopped,
+            muted: true,
+            lengthFrames: 100,
+          ),
+          ...looper.tracks.skip(2),
+        ],
+      );
+      final c = ControlContext(
+        looper: muted,
+        overlay: mute,
+        frame: frame(leds: leds, mode: PedalMode.play).copyWith(
+          activeButtonMask: lit,
+          queuedButton: PedalButton.track2,
+          queuedProgress: 127,
+        ),
+      );
+      expect(violation(c, 'muted-dark-in-mute'), isNull);
+    });
+  });
 }

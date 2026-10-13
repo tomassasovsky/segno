@@ -39,6 +39,8 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// | 18     | master gain, `round(masterGain * 255)`                     |
 /// | 19..48 | ten RGB triples, in [PedalButton] order                   |
 /// | 49..50 | active-button mask, unsigned 16-bit LE, bits 10–15 zero   |
+/// | 51     | queued button: 0 none, else [PedalButton] index + 1        |
+/// | 52     | queue progress, 0..254 of 255; 0 without a queued button   |
 ///
 /// Enum indices are the wire values: none of those enums may be reordered.
 abstract final class PedalLinkCodec {
@@ -48,10 +50,13 @@ abstract final class PedalLinkCodec {
   /// The link protocol this codec speaks, reported by the board in
   /// [HelloMessage.protocolVersion].
   ///
-  /// 9: ENCODER_BUTTON (`0x05`) — the encoder's push switch, press and
-  /// release; the STATE layout is unchanged. 8: ten RGB hues and a ten-bit
-  /// physical activity mask. Version 7 is reserved by the separate
-  /// Song/hardware branch (STATE21); no fallback.
+  /// 10: STATE grows to 53 bytes with the Song queue (#1077): which
+  /// footswitch's pill fills, and how far, while a section waits for the
+  /// playing one's next lap edge. 9: ENCODER_BUTTON (`0x05`) — the encoder's
+  /// push switch, press and release; the STATE layout is unchanged. 8: ten
+  /// RGB hues and a ten-bit physical activity mask. Version 7 was the
+  /// separate Song/hardware branch (STATE21) and is never spoken; no
+  /// fallback.
   /// 6: mode value `3` is Custom, with the same STATE shape. 5: CTRL kind
   /// `none` — the board can say a jack is empty instead of
   /// reporting an unplugged jack as a pedal at full toe. 4: CTRL (`0x04`)
@@ -61,7 +66,7 @@ abstract final class PedalLinkCodec {
   /// when the ring stopped tracking the loop. The board is flashed over SWD
   /// independently of the app, so the two can drift; this is what makes
   /// that visible rather than silent.
-  static const protocolVersion = 9;
+  static const protocolVersion = 10;
 
   /// Message types, board → segno.
   static const typeButton = 0x01;
@@ -83,7 +88,7 @@ abstract final class PedalLinkCodec {
   static const typeState = 0x10;
 
   /// The number of payload bytes in a [StateMessage].
-  static const statePayloadLength = 51;
+  static const statePayloadLength = 53;
 
   /// How often the board sends [HelloMessage], in milliseconds
   /// (`PEDAL_LINK_HELLO_MS`). The liveness clocks on both ends derive from
@@ -204,6 +209,7 @@ abstract final class PedalLinkCodec {
 
   /// The [statePayloadLength]-byte payload for [frame].
   static Uint8List encodeStatePayload(PedalStateFrame frame) {
+    final queued = frame.queuedButton;
     final p = Uint8List(statePayloadLength);
     p[0] =
         (frame.clearFadeActive ? 0x01 : 0) |
@@ -232,6 +238,8 @@ abstract final class PedalLinkCodec {
     }
     p[49] = frame.activeButtonMask & 0xFF;
     p[50] = frame.activeButtonMask >> 8;
+    p[51] = queued == null ? 0 : queued.index + 1;
+    p[52] = frame.queuedProgress;
     return p;
   }
 
@@ -249,6 +257,11 @@ abstract final class PedalLinkCodec {
     if (p[3] >= GlobalColor.values.length) return null;
     if (p[4] > 1) return null;
     if (p[5] >= PedalStateFrame.trackCount) return null;
+    if (p[51] > PedalButton.values.length ||
+        p[52] == 255 ||
+        (p[51] == 0 && p[52] != 0)) {
+      return null;
+    }
     final leds = <PedalTrackLed>[];
     for (var i = 0; i < PedalStateFrame.trackCount; i++) {
       final index = p[6 + i];
@@ -273,6 +286,8 @@ abstract final class PedalLinkCodec {
           PedalColor(p[19 + i * 3], p[20 + i * 3], p[21 + i * 3]),
       ],
       activeButtonMask: p[49] | (p[50] << 8),
+      queuedButton: p[51] == 0 ? null : PedalButton.values[p[51] - 1],
+      queuedProgress: p[52],
     );
   }
 }

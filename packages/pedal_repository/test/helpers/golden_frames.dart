@@ -51,6 +51,47 @@ final goldenMessages = <String, PedalLinkMessage>{
       activeButtonMask: 0x201,
     ),
   ),
+  // A Song section waiting on track 2 of bank A, half way through the wait.
+  'song_queue_track2_127': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      globalColor: GlobalColor.green,
+      mode: PedalMode.play,
+      looperMode: PedalLooperMode.song,
+      trackLeds: const [
+        PedalTrackLed.green,
+        PedalTrackLed.green,
+        PedalTrackLed.off,
+        PedalTrackLed.off,
+        PedalTrackLed.off,
+        PedalTrackLed.off,
+        PedalTrackLed.off,
+        PedalTrackLed.off,
+      ],
+      activeButtonMask:
+          1 << PedalButton.track1.index |
+          1 << PedalButton.track2.index |
+          1 << PedalButton.mode.index,
+      queuedButton: PedalButton.track2,
+      queuedProgress: 127,
+    ),
+  ),
+  // The last step before the handoff, on bank B's fourth switch.
+  'song_queue_track4_254': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      mode: PedalMode.play,
+      looperMode: PedalLooperMode.song,
+      activeBank: 1,
+      queuedButton: PedalButton.track4,
+      queuedProgress: 254,
+    ),
+  ),
+  // Song with nothing waiting.
+  'song_queue_none': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      mode: PedalMode.play,
+      looperMode: PedalLooperMode.song,
+    ),
+  ),
   'blank_goodbye': StateMessage(PedalStateFrame.blank(goodbye: true)),
   'idle_rec': StateMessage(
     PedalStateFrame.blank().copyWith(globalColor: GlobalColor.green),
