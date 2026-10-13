@@ -81,6 +81,13 @@ static void my_application_window_added(GtkApplication* application,
   GTK_APPLICATION_CLASS(my_application_parent_class)
       ->window_added(application, window);
 
+  // Flutter paints every pixel of the window, so GTK's own background is
+  // wasted work. It is not cheap: GTK 3 composites a Flutter frame by painting
+  // a window-sized CPU surface, uploading it, and blending the frame over it,
+  // and the theme background fills that surface on every frame (#1302).
+  // App-paintable windows skip it.
+  gtk_widget_set_app_paintable(GTK_WIDGET(window), TRUE);
+
   MyApplication* self = MY_APPLICATION(application);
   if (!self->main_window_added) {
     // The first window is the main window created in activate; it keeps
@@ -95,6 +102,14 @@ static void my_application_window_added(GtkApplication* application,
   g_signal_connect(window, "map", G_CALLBACK(sub_window_map_cb), nullptr);
 }
 
+// An opaque FlView background makes the embedder fill the whole window
+// surface in software before every frame, under a Flutter frame that covers
+// it anyway (#1302). Transparent skips the fill.
+static void set_transparent_background(FlView* view) {
+  GdkRGBA transparent = {0, 0, 0, 0};
+  fl_view_set_background_color(view, &transparent);
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
@@ -104,6 +119,9 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
 // register `desktop_multi_window` internally; calling fl_register_plugins here
 // re-attaches the main window and can break inter-window messaging.
 static void register_plugins_for_window(FlPluginRegistry* registry) {
+  if (FL_IS_VIEW(registry)) {
+    set_transparent_background(FL_VIEW(registry));
+  }
   register_sub_window_plugins(registry);
 }
 
@@ -147,11 +165,7 @@ static void my_application_activate(GApplication* application) {
       project, self->dart_entrypoint_arguments);
 
   FlView* view = fl_view_new(project);
-  GdkRGBA background_color;
-  // Background defaults to black, override it here if necessary, e.g. #00000000
-  // for transparent.
-  gdk_rgba_parse(&background_color, "#000000");
-  fl_view_set_background_color(view, &background_color);
+  set_transparent_background(view);
   gtk_widget_show(GTK_WIDGET(view));
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
 
