@@ -343,7 +343,7 @@ void main() {
         "plays the selected session's preview and follows its progress",
         () async {
           reports = [
-            const AuditionState(frames: 480000, position: 4800, bus: 0),
+            const AuditionState(frames: 480000, position: 4800, outputs: 0x3),
           ];
           final cubit = fast();
           addTearDown(cubit.close);
@@ -369,7 +369,7 @@ void main() {
       test('ends when the engine no longer plays it: the end, a performance '
           'arm or a device reopen', () async {
         reports = [
-          const AuditionState(frames: 480000, position: 4800, bus: 0),
+          const AuditionState(frames: 480000, position: 4800, outputs: 0x3),
           const AuditionState(),
         ];
         final cubit = fast();
@@ -386,7 +386,7 @@ void main() {
         reports = [
           const AuditionState(),
           const AuditionState(),
-          const AuditionState(frames: 480000, position: 64, bus: 0),
+          const AuditionState(frames: 480000, position: 64, outputs: 0x3),
         ];
         final cubit = fast();
         addTearDown(cubit.close);
@@ -408,7 +408,7 @@ void main() {
       });
 
       test('Listen again stops it', () async {
-        reports = [const AuditionState(frames: 480000, bus: 0)];
+        reports = [const AuditionState(frames: 480000, outputs: 0x3)];
         final cubit = fast();
         addTearDown(cubit.close);
         await cubit.select('s-a');
@@ -420,7 +420,7 @@ void main() {
       });
 
       test('another selection stops it', () async {
-        reports = [const AuditionState(frames: 480000, bus: 0)];
+        reports = [const AuditionState(frames: 480000, outputs: 0x3)];
         final cubit = fast();
         addTearDown(cubit.close);
         await cubit.select('s-a');
@@ -432,7 +432,7 @@ void main() {
       });
 
       test('a footswitch press stops it', () async {
-        reports = [const AuditionState(frames: 480000, bus: 0)];
+        reports = [const AuditionState(frames: 480000, outputs: 0x3)];
         final cubit = fast();
         addTearDown(cubit.close);
         await cubit.select('s-a');
@@ -446,7 +446,7 @@ void main() {
 
       test('showing the Audio section stops it; showing the same section '
           'again changes nothing', () async {
-        reports = [const AuditionState(frames: 480000, bus: 0)];
+        reports = [const AuditionState(frames: 480000, outputs: 0x3)];
         final cubit = fast();
         addTearDown(cubit.close);
         await cubit.select('s-a');
@@ -465,7 +465,7 @@ void main() {
       });
 
       test('leaving the Library stops it', () async {
-        reports = [const AuditionState(frames: 480000, bus: 0)];
+        reports = [const AuditionState(frames: 480000, outputs: 0x3)];
         final cubit = fast();
         await cubit.select('s-a');
         await cubit.listen();
@@ -547,7 +547,7 @@ void main() {
           aWanted = call.namedArguments[#stillWanted] as bool Function()?;
           return aLanded.future;
         });
-        reports = [const AuditionState(frames: 4800, bus: 0)];
+        reports = [const AuditionState(frames: 4800, outputs: 0x3)];
         final cubit = fast();
         addTearDown(cubit.close);
         await cubit.select('s-a');
@@ -580,7 +580,7 @@ void main() {
       });
 
       test('dropping the selection ends Listen with it', () async {
-        reports = [const AuditionState(frames: 480000, bus: 0)];
+        reports = [const AuditionState(frames: 480000, outputs: 0x3)];
         final cubit = fast();
         addTearDown(cubit.close);
         await cubit.select('s-a');
@@ -594,7 +594,7 @@ void main() {
 
       test('reselecting the playing session keeps Listen (a save reselects '
           'it)', () async {
-        reports = [const AuditionState(frames: 480000, bus: 0)];
+        reports = [const AuditionState(frames: 480000, outputs: 0x3)];
         final cubit = fast();
         addTearDown(cubit.close);
         await cubit.select('s-a');

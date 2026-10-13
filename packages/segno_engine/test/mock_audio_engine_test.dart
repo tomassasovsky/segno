@@ -1468,7 +1468,7 @@ void main() {
           isTrue,
         );
         expect(engine.auditionState().playing, isTrue);
-        expect(engine.auditionState().bus, 0);
+        expect(engine.auditionState().outputs, (1 << 20) - 1);
         expect(engine.auditionStop(), EngineResult.ok);
         expect(engine.auditionState().playing, isFalse);
         expect(

@@ -1145,13 +1145,13 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   /// frame, on a performance arm, a Cut sound, a stop, a start or a reopen.
   int _auditionFrames = 0;
   int _auditionPosition = 0;
-  int _auditionBus = -1;
+  int _auditionOutputs = 0;
   int _auditionEpoch = 0;
 
   void _endAudition() {
     _auditionFrames = 0;
     _auditionPosition = 0;
-    _auditionBus = -1;
+    _auditionOutputs = 0;
   }
 
   @override
@@ -1161,8 +1161,6 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }) async {
     final running = _requireRunning();
     if (!running.isOk) return AuditionStart(result: running);
-    // The mock models no output gate: its main output is the first pair.
-    const bus = 0;
     if (!File(path).existsSync() || _negotiatedOutputs <= 0) {
       return const AuditionStart(result: EngineResult.invalid);
     }
@@ -1176,7 +1174,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     final rate = _activeConfig?.sampleRate ?? 48000;
     _auditionFrames = rate;
     _auditionPosition = 0;
-    _auditionBus = bus;
+    _auditionOutputs = (1 << _negotiatedOutputs) - 1;
     return AuditionStart(
       result: EngineResult.ok,
       frames: rate,
@@ -1201,7 +1199,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     epoch: _auditionEpoch,
     frames: _auditionFrames,
     position: _auditionPosition,
-    bus: _auditionBus,
+    outputs: _auditionOutputs,
   );
 
   @override

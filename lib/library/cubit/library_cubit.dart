@@ -232,10 +232,11 @@ class LibraryCubit extends Cubit<LibraryState> {
     final now = _sessions.auditionState();
     if (now.playing) {
       if (!_listenSeenPlaying) {
-        // LISTEN_DIAG (#1305): the output pair the preview sounds on.
+        // LISTEN_DIAG (#1305): the output pairs the preview sounds on.
         AppLog.info(
-          'LISTEN_DIAG playing bus=${now.bus} position=${now.position} '
-          'frames=${now.frames}',
+          'LISTEN_DIAG playing pairs=${now.pairs} '
+          'outputs=0x${now.outputs.toRadixString(16)} '
+          'position=${now.position} frames=${now.frames}',
         );
       }
       _listenSeenPlaying = true;

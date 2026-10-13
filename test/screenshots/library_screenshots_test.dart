@@ -187,7 +187,11 @@ void main() {
       ),
     );
     when(repository.auditionState).thenReturn(
-      const AuditionState(frames: 48000 * 120, position: 48000 * 12, bus: 0),
+      const AuditionState(
+        frames: 48000 * 120,
+        position: 48000 * 12,
+        outputs: 0x3,
+      ),
     );
     when(repository.stopAudition).thenReturn(EngineResult.ok);
     final pedal = _MockPedalRepository();

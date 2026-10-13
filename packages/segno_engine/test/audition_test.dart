@@ -83,45 +83,48 @@ void main() {
     expect(state.playing, isTrue);
     expect(state.frames, 4000);
     expect(state.position, 64);
-    expect(state.bus, 0);
+    expect(state.outputs, 0x3);
+    expect(state.pairs, [0]);
 
     expect(engine.auditionStop(), EngineResult.ok);
     engine.pump(frames: 64);
     state = engine.auditionState();
     expect(state.playing, isFalse);
-    expect(state.bus, -1);
+    expect(state.outputs, 0);
+    expect(state.pairs, isEmpty);
   }, skip: skip);
 
   test(
-    'plays on the main output: the first destination with an enabled '
-    'channel (#1305)',
+    'plays on every enabled output pair, a disabled one stays silent '
+    '(#1305)',
     () async {
-      // A four-output interface whose monitors are on outputs 3/4, with 1/2
-      // switched off: the take captures 3/4, and Listen must sound there too.
+      // Six outputs, pairs 1 and 3 on, pair 2 switched off.
       engine = PumpedNativeEngine()
         ..start(
           const EngineConfig(
             sampleRate: 8000,
             inputChannels: 1,
-            outputChannels: 4,
+            outputChannels: 6,
             maxLoopFrames: 8000,
           ),
         )
-        ..setOutputEnabled(output: 0, enabled: false)
-        ..setOutputEnabled(output: 1, enabled: false)
+        ..setOutputEnabled(output: 2, enabled: false)
+        ..setOutputEnabled(output: 3, enabled: false)
         ..pump(frames: 0);
-      expect(engine.snapshot().perfCaptureBus, 1);
 
       final started = await engine.auditionStartFile(wav('a.wav', 4000));
       expect(started.result, EngineResult.ok);
       engine.pump(frames: 64);
 
-      expect(engine.auditionState().bus, 1);
+      expect(engine.auditionState().outputs, 0x33);
+      expect(engine.auditionState().pairs, [0, 2]);
       final peaks = engine.snapshot().outputPeaks;
-      expect(peaks[0], 0);
-      expect(peaks[1], 0);
-      expect(peaks[2], greaterThan(0.1));
-      expect(peaks[3], greaterThan(0.1));
+      expect(peaks[0], greaterThan(0.1));
+      expect(peaks[1], peaks[0]);
+      expect(peaks[2], 0);
+      expect(peaks[3], 0);
+      expect(peaks[4], peaks[0]);
+      expect(peaks[5], peaks[0]);
     },
     skip: skip,
   );

@@ -2668,8 +2668,9 @@ static void le_backing_cut(le_engine* e) {
 /* ---- Library audition voice, audio thread (#1178; contract in
  * segno_engine_api.h, ownership in engine_audition.c) ----
  *
- * One read head over an engine-owned stereo buffer, summed into one output
- * pair after the output buses and before the master bus. A buffer the
+ * One read head over an engine-owned stereo buffer, summed into every
+ * enabled output pair after the output buses and before the master bus
+ * (#1305: Listen plays on all active outputs). A buffer the
  * callback will never read again goes back through an a_audition_dead slot;
  * the callback never frees. Nothing here is perf-logged. */
 
@@ -2691,7 +2692,15 @@ static void le_audition_publish(le_engine* e) {
   store_i32(&e->a_audition_frames,
             e->audition_buf != NULL ? e->audition_buf->frames : 0);
   store_i32(&e->a_audition_position, e->audition_pos);
-  store_i32(&e->a_audition_bus, e->audition_buf != NULL ? e->audition_bus : -1);
+  store_i32(&e->a_audition_outputs,
+            e->audition_buf != NULL ? (int32_t)e->audition_outputs : 0);
+}
+
+/* The device's channels the output gate leaves on: what the voice sounds on. */
+static uint32_t le_audition_outputs(uint32_t out_enabled, int ch_out) {
+  const uint32_t device =
+      ch_out >= 32 ? 0xFFFFFFFFu : ((1u << (uint32_t)ch_out) - 1u);
+  return out_enabled & device;
 }
 
 /* Silences the voice and hands its buffer back. */
@@ -2699,7 +2708,7 @@ static void le_audition_clear(le_engine* e) {
   le_audition_return(e, e->audition_buf);
   e->audition_buf = NULL;
   e->audition_pos = 0;
-  e->audition_bus = -1;
+  e->audition_outputs = 0;
   le_audition_publish(e);
 }
 
@@ -2714,7 +2723,9 @@ static void le_audition_apply(le_engine* e, const le_command* cmd) {
     return;
   }
   e->audition_buf = cmd->backing.buffer;
-  e->audition_bus = cmd->backing.item;
+  e->audition_outputs = le_audition_outputs(
+      atomic_load_explicit(&e->a_output_enabled_mask, memory_order_relaxed),
+      e->out_channels > 0 ? e->out_channels : 1);
   le_audition_publish(e);
 }
 
@@ -5943,27 +5954,33 @@ static inline void backing_frame(le_engine* e, float* out, uint32_t f,
   }
 }
 
-/* One frame of the audition voice (#1178) into its pair: after the output
- * buses, before the master bus. A disabled channel of the pair stays
- * untouched; a single-channel last pair takes the mid. The preview ends after
- * its last frame and hands its buffer back. The caller skips it while no
- * preview plays. */
+/* One frame of the audition voice (#1178) into every output pair at once
+ * (#1305), after the output buses and before the master bus, at unity on
+ * each: left on the pair's first channel, right on its second. [outputs] is
+ * the block's gated channel set (le_audition_outputs): a disabled channel
+ * stays untouched. A single-channel last pair takes the mid, as a
+ * single-channel output bus processes its channel as l == r. The preview
+ * ends after its last frame and hands its buffer back. The caller skips it
+ * while no preview plays. */
 static inline void audition_frame(le_engine* e, float* out, uint32_t f,
-                                  int ch_out, uint32_t out_enabled) {
+                                  int ch_out, uint32_t outputs) {
   le_backing_buffer* b = e->audition_buf;
   const float l = b->pcm[2 * e->audition_pos];
   const float r = b->pcm[2 * e->audition_pos + 1];
   float* o = out + (size_t)f * (size_t)ch_out;
-  const int c0 = 2 * e->audition_bus;
-  const int c1 = c0 + 1;
-  if (c0 < ch_out && (out_enabled & (1u << c0))) {
-    o[c0] += c1 < ch_out ? l : 0.5f * (l + r);
+  for (int c0 = 0; c0 < ch_out; c0 += 2) {
+    const int c1 = c0 + 1;
+    if (c1 >= ch_out) {
+      if (outputs & (1u << c0)) o[c0] += 0.5f * (l + r);
+      break;
+    }
+    if (outputs & (1u << c0)) o[c0] += l;
+    if (outputs & (1u << c1)) o[c1] += r;
   }
-  if (c1 < ch_out && (out_enabled & (1u << c1))) o[c1] += r;
   if (++e->audition_pos >= b->frames) {
     le_audition_return(e, b);
     e->audition_buf = NULL;
-    e->audition_bus = -1;
+    e->audition_outputs = 0;
   }
 }
 
@@ -8712,6 +8729,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   /* Audition voice (#1178): dormant cost one compare per frame. */
   int audition_live = e->audition_buf != NULL;
   const int audition_ran = audition_live;
+  const uint32_t audition_outputs = le_audition_outputs(out_enabled, ch_out);
+  if (audition_live) e->audition_outputs = audition_outputs;
 
   /* Backing player settings (#1200), read once per block like the click's. */
   int backing_live = e->backing_fade.buf != NULL ||
@@ -8876,7 +8895,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * no destination level, mute or chain, no performance capture; the
      * master gain and the limiter below still shape it. */
     if (audition_live) {
-      audition_frame(e, out, f, ch_out, out_enabled);
+      audition_frame(e, out, f, ch_out, audition_outputs);
       audition_live = e->audition_buf != NULL;
     }
     master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
