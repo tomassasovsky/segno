@@ -8581,7 +8581,6 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     e->commands_applied++; /* rejected and no-op commands settle too */
   }
   le_head_land(e, perf_frame_base);
-  le_song_queue_valid(e); /* a command may have invalidated a handoff */
 
   /* Instruments (#1197): parameter changes and the note rings in posting
    * order before the MIDI drain, so a MIDI note meets a patch posted ahead

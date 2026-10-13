@@ -1893,14 +1893,13 @@ class ControlCubit extends Cubit<ControlState> {
   bool _playSongSection(int channel) {
     final track = _trackAt(channel);
     if (!_playable(track)) return false;
+    if (!track!.muted) return _looper.play(channel: channel).isOk;
     // A muted section joins the mix, as a press on a muted track does in
-    // Multi: a stopped one so it is heard when it starts, a playing one
-    // because a press is the only way back from the pedal.
-    if (track!.muted &&
-        (track.state == TrackState.stopped ||
-            track.state == TrackState.playing)) {
-      if (!_setTrackMute(muted: false, channel: channel).isOk) return false;
-    }
+    // Multi. A playing one only unmutes: its Play would also drop the
+    // section waiting to follow it. A stopped one is unmuted so it is heard
+    // when it starts.
+    if (!_setTrackMute(muted: false, channel: channel).isOk) return false;
+    if (track.state == TrackState.playing) return true;
     return _looper.play(channel: channel).isOk;
   }
 

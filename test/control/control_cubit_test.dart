@@ -2732,13 +2732,11 @@ void main() {
           () => looper.setMute(muted: false, channel: 5),
           () => looper.play(channel: 5),
         ]);
-        // A press on the muted playing section brings it back into the mix
-        // (and cancels the request that waits, in the engine).
+        // A press on the muted playing section only brings it back into the
+        // mix: a Play would also drop the section waiting to follow it.
         cubit.trackPressed(0);
-        verifyInOrder([
-          () => looper.setMute(muted: false),
-          () => looper.play(),
-        ]);
+        verify(() => looper.setMute(muted: false)).called(1);
+        verifyNever(() => looper.play());
       });
 
       test('Rec/Play while a section plays never asks for another', () {
