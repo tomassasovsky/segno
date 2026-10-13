@@ -2423,6 +2423,7 @@ class LooperRepository {
       primaryTrack: resolvedPrimaryTrack(s.primaryTrack, s.tracks),
       songQueuedTrack: s.songQueuedTrack,
       songQueueProgress: s.songQueueProgress,
+      songLastSection: s.songLastSection,
       recDub: _recDub,
       // The record start and decay defaults are the repository's own
       // re-apply caches (what a stopped engine would be given on start);

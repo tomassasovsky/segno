@@ -8,7 +8,7 @@ import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
 import 'package:looper_repository/src/models/tuner_reading.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show PitchMode, SpeedFactor, TempoFollowState;
+    show LooperMode, PitchMode, SpeedFactor, TempoFollowState;
 
 /// The single source of looper truth: transport, the tracks, and engine status,
 /// projected from one engine snapshot.
@@ -135,6 +135,20 @@ class LooperState extends Equatable {
 
   /// Whether any track holds recorded audio.
   bool get hasContent => tracks.any((t) => t.hasContent);
+
+  /// The Song section waiting for the playing one's next lap edge (#1077),
+  /// or null: only in Song, only on a track that holds a take and is not
+  /// capturing. The one rule the pedal projection and the stage both read.
+  int? get songWaitingSection {
+    final queued = transport.songQueuedTrack;
+    if (transport.looperMode != LooperMode.song ||
+        queued < 0 ||
+        queued >= tracks.length) {
+      return null;
+    }
+    final track = tracks[queued];
+    return track.hasContent && !track.isCapturing ? queued : null;
+  }
 
   @override
   List<Object?> get props => [

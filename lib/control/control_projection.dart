@@ -56,18 +56,17 @@ Set<int> armedTracks(LooperState looper, ControlState overlay) {
   };
 }
 
-/// The Song section waiting for the playing one's next lap edge, as Mute
-/// mode shows it (#1077): only in Song, only on a track that still holds a
-/// take, and `null` otherwise. The engine owns the queue; this only decides
-/// whether the pedal shows it.
+/// The Song section waiting for the playing one's next lap edge, as the
+/// pedal shows it (#1077): in Song, in Mute and Record mode (a queue can start
+/// from either, or from the screen), only on a track that still holds a take,
+/// and `null` otherwise. The engine owns the queue; this only decides whether
+/// the pedal shows it.
 int? queuedSongTrack(LooperState looper, ControlState overlay) {
-  final queued = looper.transport.songQueuedTrack;
-  if (overlay.mode != InteractionMode.mute ||
-      looper.transport.looperMode != LooperMode.song ||
-      queued < 0 ||
-      queued >= looper.tracks.length ||
-      queued >= PedalStateFrame.trackCount ||
-      !looper.tracks[queued].hasContent) {
+  final queued = looper.songWaitingSection;
+  if ((overlay.mode != InteractionMode.mute &&
+          overlay.mode != InteractionMode.record) ||
+      queued == null ||
+      queued >= PedalStateFrame.trackCount) {
     return null;
   }
   return queued;
@@ -107,9 +106,11 @@ int? queuedSongTrack(LooperState looper, ControlState overlay) {
 /// off; while parked, the parked-resume members show what Rec/Play brings
 /// back). In Song a press asks for a section instead, so the LEDs show the
 /// sections that sound and the one waiting to start ([queuedSongTrack]).
-/// Record mode: the cursor and any capturing track read red. FX mode: blue =
-/// the track's Track-stage chain is engaged. Custom mode: blue = the
-/// assigned function is active, based on its current target/contact state.
+/// Record mode: the cursor and any capturing track read red, except a Song
+/// section waiting to start, which reads green (its pill fills) even on the
+/// cursor. FX mode: blue = the track's Track-stage chain is engaged. Custom
+/// mode: blue = the assigned function is active, based on its current
+/// target/contact state.
 ///
 /// The FX-mode reading costs ZERO new wire bytes (R8): the same `trackLeds`
 /// enum-index byte carries a different meaning per mode, so the firmware
@@ -140,6 +141,11 @@ PedalTrackLed projectTrackLed(
           ? PedalTrackLed.green
           : PedalTrackLed.off;
     case InteractionMode.record:
+      // A waiting Song section reads green, as in Mute mode, so its pill can
+      // fill; it is never capturing (a capture refuses the queue).
+      if (channel == queuedSongTrack(looper, overlay)) {
+        return PedalTrackLed.green;
+      }
       if (channel == overlay.cursor) return PedalTrackLed.red;
       if (track?.isCapturing ?? false) return PedalTrackLed.red;
       return PedalTrackLed.off;
@@ -356,6 +362,7 @@ List<PedalColor> projectPedalColors(
       final track = channel < looper.tracks.length
           ? looper.tracks[channel]
           : null;
+      if (trackLeds[channel] == PedalTrackLed.green) return ledGreen;
       return switch (track?.state) {
         TrackState.recording || TrackState.overdubbing => ledRed,
         TrackState.playing => ledGreen,

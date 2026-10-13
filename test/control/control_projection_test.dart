@@ -695,10 +695,26 @@ void main() {
       expect(b.queuedButton, PedalButton.track2);
     });
 
-    test('nothing waits outside Song, outside Mute mode or without a take', () {
+    test('Record mode fills the waiting section too', () {
+      // The cursor sits elsewhere; the waiting section still reads green.
+      final frame = projectFrame(song(), const ControlState(cursor: 5));
+      expect(frame.trackLeds[1], PedalTrackLed.green);
+      expect(frame.trackLeds[5], PedalTrackLed.red);
+      expect(frame.queuedButton, PedalButton.track2);
+      expect(frame.queuedProgress, 127);
+      expect(frame.isLit(PedalButton.track2), isTrue);
+      expect(frame.colorFor(PedalButton.track2), ledGreen);
+      // On the cursor itself the wait wins until the section starts.
+      final onCursor = projectFrame(song(), const ControlState(cursor: 1));
+      expect(onCursor.trackLeds[1], PedalTrackLed.green);
+      expect(onCursor.queuedButton, PedalButton.track2);
+    });
+
+    test('nothing waits outside Song, outside Mute and Record or without a '
+        'take', () {
       for (final (looper, overlay) in [
         (song(mode: LooperMode.multi), mute),
-        (song(), const ControlState()),
+        (song(), const ControlState(mode: InteractionMode.fx)),
         (song(queued: 3), mute),
         (song(queued: -1), mute),
       ]) {

@@ -2190,6 +2190,12 @@ struct le_engine {
   int32_t song_source, song_target;
   int64_t song_elapsed;
   _Atomic uint32_t a_song_queue;
+  /* The Song section that sounded most recently (#1077), -1 for none. It
+   * survives a Stop, so Play All can start it again; it is forgotten when
+   * that track empties, on a mode switch, configure and create, and never
+   * saved with a session. Audio-thread owned; a_song_last publishes it. */
+  int32_t song_last;
+  _Atomic int32_t a_song_last;
   /* Control posts mode/crown/defining-record commands; callback acknowledges
    * every outcome.
    * Recovery waits until their actual clock policy is known. */

@@ -522,6 +522,7 @@ static int le_engine_reset_material(le_engine* engine,
   store_i32(&engine->a_primary_track, -1);
   le_loop_clock_reset(&engine->clock);
   le_song_cancel(engine);
+  le_song_forget(engine);
   store_i32(&engine->a_master_len, 0);
   /* The loop-derived half of the tempo grid dies with the loop; the SETTINGS
    * (tempo, signature, sync, granularity) persist, see le_engine_create. */
@@ -1280,6 +1281,7 @@ le_engine* le_engine_create(void) {
    * default is legible at the seed site rather than implied by calloc. */
   store_i32(&engine->a_looper_mode, LE_LOOPER_MODE_MULTI);
   le_song_cancel(engine);
+  le_song_forget(engine);
   /* Primary track (B3, D18 as revised): -1 (none) until the first completed
    * take or an explicit crown. Unlike a_looper_mode it does NOT survive
    * configure(): configure empties every track, and an empty rig has no

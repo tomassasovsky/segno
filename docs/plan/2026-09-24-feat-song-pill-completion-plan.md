@@ -28,18 +28,28 @@ Song plays one section at a time.
    drop a waiting request. A Count-in launch keeps its own rules.
 4. With nothing playing, a Play starts that section at once, alone and from
    its top; the rest of the rig stays stopped.
-5. Other modes keep immediate play.
+5. A take or a punch-in from a stopped rig starts only the section it
+   captures on (owner, 2026-10-13). Song keeps no unpark rule; the other
+   modes keep theirs, where a start from a held rig resumes every stopped
+   track.
+6. The engine remembers the section that sounded last
+   (`song_last_section`). It survives a Stop and follows every handoff; it
+   is forgotten when that track empties, on a mode switch and on configure.
+   It is not saved with a session: under the
+   repo's standing rules (drop uncertain native state, no silent changes)
+   a recalled session has played nothing yet, and adding it to the session
+   format would persist a guess.
+7. Other modes keep immediate play.
 
 This supersedes the July Song spec's "sections start independently and
 immediately" for starting a second section; the accepted design's Song card
-already reads "One section at a time." A record start from a stopped rig
-still resumes the stopped sections, the unpark rule every mode shares; #1079
-did not change it, and neither does this port. Whether Song should start only
-the recorded section is an open question for the owner.
+already reads "One section at a time."
 
 ## Control
 
-In Mute mode, in Song, a track press asks the engine for that section. The
+In Mute mode, in Song, a track press asks the engine for that section. In
+Record mode the pedal's Rec/Play on a muted stopped section, and the screen's
+Play, can also queue one. The
 engine queues, cancels and replaces; the app does not keep its own copy. A
 muted stopped section is unmuted first; a press on a muted playing section
 only unmutes it, so it does not drop the section waiting to follow it.
@@ -48,11 +58,22 @@ make each one replace the last). Parked, Rec/Play starts the section Stop
 latched, else the selected one, else the first with a take. Stop reads the
 engine live and stops what plays there, what the poll saw playing and the
 section that waits, so a handoff that landed between polls is stopped too.
-The on-screen Play All starts the first section with a take. Record and FX
-keep their meanings, and Multi keeps its mute and resume rules.
+The on-screen Play All starts the section that sounded last, while it still
+holds a take and is not muted (a muted one would start silent), else the
+first unmuted section with a take, else the first with a take (owner,
+2026-10-13). In Record mode the pedal's Rec/Play keeps its meaning: on a
+stopped section it punches in at once, a capture rather than a section
+change; on a muted stopped section it asks for the section like a Mute-mode
+press. Record and FX keep their meanings, and Multi keeps
+its mute and resume rules.
 
-The pedal shows the sounding sections and the waiting one green. Song does not
-preview a parked resume set.
+The waiting section shows wherever a queue can start (owner, 2026-10-13). On
+the pedal, in Mute and in Record mode, it reads green and its pill fills, on
+the visible bank only; in Record mode it reads green even on the cursor until
+the section starts. On the screen it wears the accepted stage's queued cue,
+Play over Loop start, whatever started the request. In Mute mode the pedal
+also shows the sounding sections green; Song does not preview a parked resume
+set.
 
 ## Wire and firmware
 
