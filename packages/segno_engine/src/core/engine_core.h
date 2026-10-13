@@ -40,6 +40,22 @@ int32_t le_length_presets_check(le_engine* engine, const int32_t* bars,
 /* Input level (0..1) that triggers sound-activated recording (~-34 dBFS). */
 #define LE_AUTO_RECORD_THRESHOLD 0.02f
 
+/* Drops any Song handoff (#1077). Audio thread, or lifecycle code while the
+ * callback is stopped. */
+static inline void le_song_cancel(le_engine* e) {
+  e->song_source = -1;
+  e->song_target = -1;
+  e->song_elapsed = 0;
+  atomic_store_explicit(&e->a_song_queue, 0u, memory_order_relaxed);
+}
+
+/* Forgets the Song section that sounded last (#1077). Audio thread, or
+ * lifecycle code while the callback is stopped. */
+static inline void le_song_forget(le_engine* e) {
+  e->song_last = -1;
+  atomic_store_explicit(&e->a_song_last, -1, memory_order_relaxed);
+}
+
 /* Wraps `pos - offset` into [0, len). Used to write captured input at the
  * latency-compensated loop position so overdubs align with what was heard. */
 static inline int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {

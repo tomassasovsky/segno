@@ -65,4 +65,35 @@ void main() {
       );
     });
   });
+
+  group('songWaitingSection (#1077)', () {
+    LooperState rig({
+      LooperMode mode = LooperMode.song,
+      int queued = 1,
+      TrackState state = TrackState.stopped,
+      int length = 100,
+    }) => LooperState(
+      transport: TransportState(looperMode: mode, songQueuedTrack: queued),
+      tracks: [
+        const Track(state: TrackState.playing, lengthFrames: 100),
+        Track(channel: 1, state: state, lengthFrames: length),
+      ],
+    );
+
+    test('names a waiting section with a take', () {
+      expect(rig().songWaitingSection, 1);
+    });
+
+    test('is null outside Song, without a queue, out of range, on an empty '
+        'or a capturing track', () {
+      expect(rig(mode: LooperMode.multi).songWaitingSection, isNull);
+      expect(rig(queued: -1).songWaitingSection, isNull);
+      expect(rig(queued: 5).songWaitingSection, isNull);
+      expect(
+        rig(state: TrackState.empty, length: 0).songWaitingSection,
+        isNull,
+      );
+      expect(rig(state: TrackState.recording).songWaitingSection, isNull);
+    });
+  });
 }

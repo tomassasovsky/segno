@@ -361,7 +361,8 @@ enum LooperMode {
   /// land in part B3; unimplemented here.
   sync,
 
-  /// Section sequencing. Semantics land in part B4; unimplemented here.
+  /// Section sequencing: a Play starts one section at a time, and while
+  /// another plays it waits for that section's next lap edge (#1077).
   song,
 
   /// Primary track plus independently start/stoppable, quantized section
@@ -1515,6 +1516,9 @@ class EngineSnapshot {
     this.transposeBypass = false,
     this.recordedTempoBpm = 0,
     this.recordedLengthFrames = 0,
+    this.songQueuedTrack = -1,
+    this.songQueueProgress = 0,
+    this.songLastSection = -1,
     this.followTempo = false,
     this.tempoFollow = TempoFollowState.free,
     this.pitchMode = PitchMode.unchanged,
@@ -1610,6 +1614,9 @@ class EngineSnapshot {
       transposeBypass = false,
       recordedTempoBpm = 0,
       recordedLengthFrames = 0,
+      songQueuedTrack = -1,
+      songQueueProgress = 0,
+      songLastSection = -1,
       followTempo = false,
       tempoFollow = TempoFollowState.free,
       pitchMode = PitchMode.unchanged,
@@ -1720,6 +1727,9 @@ class EngineSnapshot {
       transposeBypass: native.transpose_bypass != 0,
       recordedTempoBpm: native.recorded_tempo_bpm,
       recordedLengthFrames: native.recorded_length_frames,
+      songQueuedTrack: native.song_queued_track,
+      songQueueProgress: native.song_queue_progress,
+      songLastSection: native.song_last_section,
       followTempo: native.follow_tempo != 0,
       tempoFollow: TempoFollowState.fromCode(native.tempo_follow),
       pitchMode: PitchMode.fromCode(native.pitch_follows_speed),
@@ -1823,6 +1833,9 @@ class EngineSnapshot {
     bool? transposeBypass,
     double? recordedTempoBpm,
     int? recordedLengthFrames,
+    int? songQueuedTrack,
+    double? songQueueProgress,
+    int? songLastSection,
     bool? followTempo,
     TempoFollowState? tempoFollow,
     PitchMode? pitchMode,
@@ -1915,6 +1928,9 @@ class EngineSnapshot {
     transposeBypass: transposeBypass ?? this.transposeBypass,
     recordedTempoBpm: recordedTempoBpm ?? this.recordedTempoBpm,
     recordedLengthFrames: recordedLengthFrames ?? this.recordedLengthFrames,
+    songQueuedTrack: songQueuedTrack ?? this.songQueuedTrack,
+    songQueueProgress: songQueueProgress ?? this.songQueueProgress,
+    songLastSection: songLastSection ?? this.songLastSection,
     followTempo: followTempo ?? this.followTempo,
     tempoFollow: tempoFollow ?? this.tempoFollow,
     pitchMode: pitchMode ?? this.pitchMode,
@@ -2241,6 +2257,21 @@ class EngineSnapshot {
   /// were laid down at and retimes from there.
   final int recordedLengthFrames;
 
+  /// The Song section waiting for the playing section's next lap edge
+  /// (#1077), or `-1` with none. Read from one native word together with
+  /// [songQueueProgress], so the two always describe the same request.
+  final int songQueuedTrack;
+
+  /// How much of that wait has played, `0`..`1`, measured by the audio
+  /// engine; `0` with none. It stays below `1` while the section waits: the
+  /// handoff starts the section and clears the request in the same block.
+  final double songQueueProgress;
+
+  /// The Song section that sounded most recently (#1077), or `-1`. It
+  /// survives a Stop and is forgotten when that track empties, on a mode
+  /// switch and on configure; it is not saved with a session.
+  final int songLastSection;
+
   /// The Follow tempo default every track inherits (#1179): with it, a
   /// song-tempo change retimes the recorded tracks.
   final bool followTempo;
@@ -2444,6 +2475,9 @@ class EngineSnapshot {
           transposeBypass == other.transposeBypass &&
           recordedTempoBpm == other.recordedTempoBpm &&
           recordedLengthFrames == other.recordedLengthFrames &&
+          songQueuedTrack == other.songQueuedTrack &&
+          songQueueProgress == other.songQueueProgress &&
+          songLastSection == other.songLastSection &&
           followTempo == other.followTempo &&
           tempoFollow == other.tempoFollow &&
           pitchMode == other.pitchMode &&
@@ -2538,6 +2572,9 @@ class EngineSnapshot {
     transposeBypass,
     recordedTempoBpm,
     recordedLengthFrames,
+    songQueuedTrack,
+    songQueueProgress,
+    songLastSection,
     followTempo,
     tempoFollow,
     pitchMode,

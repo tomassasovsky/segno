@@ -30,6 +30,9 @@ class TransportState extends Equatable {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.songQueuedTrack = -1,
+    this.songQueueProgress = 0,
+    this.songLastSection = -1,
     this.recDub = false,
     this.quantize = false,
     this.autoRecord = false,
@@ -100,9 +103,8 @@ class TransportState extends Equatable {
   /// Beat countdown while counting in; `0` when idle.
   final int countInBeatsLeft;
 
-  /// The five-mode axis (default [LooperMode.multi]). Locked (rejected,
-  /// no-op) while any track has content (D4). No semantics beyond the field
-  /// exist yet for the non-multi values (B2a — see [LooperMode]'s class doc).
+  /// The five-mode axis (default [LooperMode.multi]). The Song queue is
+  /// carried separately by [songQueuedTrack] and [songQueueProgress].
   final LooperMode looperMode;
 
   /// The crowned track every surface draws, or `-1` for an empty session.
@@ -113,6 +115,18 @@ class TransportState extends Equatable {
   /// names a track that holds a completed take — see
   /// `resolvedPrimaryTrack`.
   final int primaryTrack;
+
+  /// The Song section waiting for the playing section's next lap edge
+  /// (#1077), or `-1` with none ([EngineSnapshot.songQueuedTrack]).
+  final int songQueuedTrack;
+
+  /// How much of that wait has played, `0`..`1`, straight from the audio
+  /// engine; `0` with none.
+  final double songQueueProgress;
+
+  /// The Song section that sounded most recently, or `-1`
+  /// ([EngineSnapshot.songLastSection]). Song's Play All starts it again.
+  final int songLastSection;
 
   /// The rec/dub second-press setting the repository holds and re-applies to
   /// the engine: with it on, a take's end lands the track OVERDUBBING rather
@@ -181,6 +195,9 @@ class TransportState extends Equatable {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
+    songQueuedTrack,
+    songQueueProgress,
+    songLastSection,
     recDub,
     quantize,
     autoRecord,

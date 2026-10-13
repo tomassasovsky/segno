@@ -127,6 +127,7 @@ class TrackColumn extends StatelessWidget {
     this.beats,
     this.quantizeDiv = GridDivision.off,
     this.recDub = false,
+    this.songQueued = false,
     super.key,
   });
 
@@ -177,6 +178,10 @@ class TrackColumn extends StatelessWidget {
 
   /// The rec/dub second-press setting: what a queued take-end lands as.
   final bool recDub;
+
+  /// Whether this Song section waits to start at the playing section's next
+  /// lap edge (#1077). It wears the queued cue: Play at the loop start.
+  final bool songQueued;
 
   /// The column's inset from its ring to its content — the pen's 18.
   static const double padding = 18;
@@ -359,7 +364,7 @@ class TrackColumn extends StatelessWidget {
                     // A queued action sits centrally in its own track, with
                     // its action and boundary (the accepted stage). A readout,
                     // never a target: the tap falls through to the tile.
-                    if (track.pending)
+                    if (track.pending || songQueued)
                       Positioned.fill(
                         child: Center(
                           child: FittedBox(
@@ -368,11 +373,15 @@ class TrackColumn extends StatelessWidget {
                               key: Key('tracks_queued_${track.channel}'),
                               action: _queueActionLabel(
                                 l10n,
-                                queueActionOf(track, recDub: recDub),
+                                track.pending
+                                    ? queueActionOf(track, recDub: recDub)
+                                    : QueueAction.play,
                               ),
                               timing: _queueTimingLabel(
                                 l10n,
-                                queueTimingOf(track, quantizeDiv),
+                                track.pending
+                                    ? queueTimingOf(track, quantizeDiv)
+                                    : QueueTiming.loopStart,
                               ),
                             ),
                           ),

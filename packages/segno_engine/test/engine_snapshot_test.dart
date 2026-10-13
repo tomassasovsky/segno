@@ -393,6 +393,39 @@ void main() {
       expect(whole.hashCode, isNot(division.hashCode));
     });
 
+    test('the Song queue is projected from the native fields (#1077)', () {
+      final snap = calloc<le_snapshot>();
+      addTearDown(() => calloc.free(snap));
+      const initial = EngineSnapshot.initial();
+      expect(initial.songQueuedTrack, -1);
+      expect(initial.songQueueProgress, 0);
+      snap.ref
+        ..song_queued_track = -1
+        ..song_queue_progress = 0;
+      final none = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(none.songQueuedTrack, -1);
+      expect(none.songQueueProgress, 0);
+      snap.ref
+        ..song_queued_track = 5
+        ..song_queue_progress = 0.25;
+      final queued = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(queued.songQueuedTrack, 5);
+      expect(queued.songQueueProgress, 0.25);
+      expect(queued, isNot(none));
+      expect(queued.hashCode, isNot(none.hashCode));
+      expect(
+        none.copyWith(songQueuedTrack: 5, songQueueProgress: 0.25),
+        queued,
+      );
+      expect(queued.copyWith(songQueueProgress: 0.5), isNot(queued));
+      expect(initial.songLastSection, -1);
+      snap.ref.song_last_section = 3;
+      final last = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(last.songLastSection, 3);
+      expect(last, isNot(queued));
+      expect(queued.copyWith(songLastSection: 3), last);
+    });
+
     test('tempo follow and pitch are projected from the native fields '
         '(#1179)', () {
       final snap = calloc<le_snapshot>();
@@ -1870,6 +1903,12 @@ void main() {
         // that moves with content, not per callback.
         'recordedTempoBpm',
         'recordedLengthFrames',
+        // The Song queue (#1077): the progress moves with the playhead while a
+        // section waits, like masterPositionFrames, and is still once per
+        // block, not per callback.
+        'songQueuedTrack',
+        'songQueueProgress',
+        'songLastSection', // moves when a section starts, not per callback
         'followTempo',
         'tempoFollow',
         'pitchMode',

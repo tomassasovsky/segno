@@ -656,6 +656,11 @@ class _TrackSlot extends StatelessWidget {
       (bloc) => steadyTrackOf(bloc.state, channel),
     );
     final track = steady?.track;
+    // The Song section waiting for the playing one's lap edge (#1077): the
+    // screen shows it with the queued cue, whatever started the request.
+    final waiting = context.select<LooperBloc, bool>(
+      (bloc) => bloc.state.songWaitingSection == channel,
+    );
     // Defence only: `channels` is derived from the same `tracks` list, and any
     // change to it changes [_ChromeState], so the row rebuilds in the same
     // frame and this should be unreachable. Returning a bare SizedBox rather
@@ -676,6 +681,7 @@ class _TrackSlot extends StatelessWidget {
         beats: beats,
         quantizeDiv: quantizeDiv,
         recDub: recDub,
+        songQueued: waiting,
       ),
     );
   }

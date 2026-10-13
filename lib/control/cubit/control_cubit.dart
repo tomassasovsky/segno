@@ -1243,8 +1243,8 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Content tracks whose playhead is RUNNING (playing or overdubbing),
   /// mute-ignored — what a park must freeze, and what it resumes.
-  Set<int> _running() => {
-    for (final t in _tracks)
+  Set<int> _running([List<Track>? tracks]) => {
+    for (final t in tracks ?? _tracks)
       if (t.hasContent &&
           (t.state == TrackState.playing || t.state == TrackState.overdubbing))
         t.channel,
@@ -1583,10 +1583,16 @@ class ControlCubit extends Cubit<ControlState> {
           state.copyWith(
             mode: InteractionMode.mute,
             excluded: const <int>{},
-            parkedResume: {
-              for (final track in _tracks)
-                if (_playable(track)) track.channel,
-            },
+            // Song plays one section: Rec/Play resumes the one that plays
+            // now (or the one a Stop latched), not every section with a take.
+            parkedResume: _l.transport.looperMode == LooperMode.song
+                ? (isParked(_l) && state.parkedResume.isNotEmpty
+                      ? state.parkedResume
+                      : _running())
+                : {
+                    for (final track in _tracks)
+                      if (_playable(track)) track.channel,
+                  },
           ),
         );
       case InteractionMode.reverse:
@@ -1760,10 +1766,19 @@ class ControlCubit extends Cubit<ControlState> {
   /// Rec mode: advance the cursor track through record / overdub / play. A
   /// muted track is first unmuted and brought back: overdub if its loop still
   /// runs, plain resume if it was parked (the engine unparks the rest of the
-  /// loop with it — starting anything resumes everything).
+  /// loop with it — starting anything resumes everything). In Song a muted
+  /// stopped section is asked for instead (it starts alone, or waits behind
+  /// the playing section); an unmuted stopped one still punches in.
   bool _recAdvance(int channel) {
     final track = _trackAt(channel);
     if (track != null && track.muted) {
+      // A muted stopped Song section is asked for like a Mute-mode press:
+      // it starts alone or waits for the playing section's lap edge, and a
+      // capture anywhere leaves its mute alone.
+      if (track.state == TrackState.stopped &&
+          _l.transport.looperMode == LooperMode.song) {
+        return _playSongSection(channel);
+      }
       if (!_setTrackMute(muted: false, channel: channel).isOk) return false;
       if (track.state == TrackState.stopped) {
         return _looper.play(channel: channel).isOk; // parked -> resume
@@ -1790,6 +1805,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// Mute mode Rec/Play: resume while parked; while running, expand to the
   /// whole content set (a no-op when everything audible is already in).
   bool _muteRecPlay() {
+    if (_l.transport.looperMode == LooperMode.song) return _songRecPlay();
     if (isParked(_l)) {
       final resume = state.parkedResume.isNotEmpty
           ? state.parkedResume
@@ -1861,6 +1877,43 @@ class ControlCubit extends Cubit<ControlState> {
     return accepted;
   }
 
+  /// Song Rec/Play in Mute mode (#1077). Song has one current section, so
+  /// it never expands to every stopped section (each Play would replace the
+  /// last as the waiting one). Parked, it starts one section: the one Stop
+  /// latched, else the selected one, else the first with a take.
+  bool _songRecPlay() {
+    if (!isParked(_l)) return false;
+    final remembered = state.parkedResume
+        .where((channel) => _playable(_trackAt(channel)))
+        .firstOrNull;
+    final selected = _playable(_trackAt(state.cursor)) ? state.cursor : null;
+    final channel =
+        remembered ??
+        selected ??
+        _tracks.where((track) => track.hasContent).firstOrNull?.channel;
+    if (channel == null) return false;
+    return _playSongSection(channel);
+  }
+
+  /// Asks the engine for Song section [channel]: it starts at once when
+  /// nothing plays, and otherwise waits for the playing section's next lap
+  /// edge. The engine owns queueing, cancelling, replacing and the edge.
+  bool _playSongSection(int channel) {
+    final track = _trackAt(channel);
+    if (!_playable(track)) return false;
+    // The engine refuses a section while a take or pass is captured; leave
+    // the mute alone rather than change it for a press that does nothing.
+    if (_tracks.any((t) => t.isCapturing)) return false;
+    if (!track!.muted) return _looper.play(channel: channel).isOk;
+    // A muted section joins the mix, as a press on a muted track does in
+    // Multi. A playing one only unmutes: its Play would also drop the
+    // section waiting to follow it. A stopped one is unmuted so it is heard
+    // when it starts.
+    if (!_setTrackMute(muted: false, channel: channel).isOk) return false;
+    if (track.state == TrackState.playing) return true;
+    return _looper.play(channel: channel).isOk;
+  }
+
   // ---------------------------------------------------------------------------
   // Stop
   // ---------------------------------------------------------------------------
@@ -1915,6 +1968,7 @@ class ControlCubit extends Cubit<ControlState> {
   bool _parkAllAccepted() {
     if (!_looper.cancelCountIn().isOk) return false;
     final running = _running();
+    if (_l.transport.looperMode == LooperMode.song) return _parkSong(running);
     if (running.isEmpty) return true; // Keep the parked resume set.
     emit(
       state.copyWith(
@@ -1923,6 +1977,30 @@ class ControlCubit extends Cubit<ControlState> {
     );
     var accepted = false;
     for (final channel in running) {
+      accepted = _looper.stopTrack(channel: channel).isOk || accepted;
+    }
+    return accepted;
+  }
+
+  /// Song's Stop. A section can start between polls (a handoff at a lap
+  /// edge, or a Play from a stopped rig), so the polled [running] set may
+  /// miss the one playing now. Read the engine live: stop what plays there
+  /// and here, and the section still waiting, so a handoff that lands before
+  /// the stops apply is stopped too. Latch what plays now for Rec/Play.
+  bool _parkSong(Set<int> running) {
+    final live = _looper.state;
+    final playingNow = _running(live.tracks);
+    final waiting = live.transport.songQueuedTrack;
+    final stopping = {
+      ...running,
+      ...playingNow,
+      if (waiting >= 0) waiting,
+    };
+    if (stopping.isEmpty) return true; // Keep the parked resume set.
+    final latch = playingNow.isEmpty ? running : playingNow;
+    if (latch.isNotEmpty) emit(state.copyWith(parkedResume: latch));
+    var accepted = false;
+    for (final channel in stopping) {
       accepted = _looper.stopTrack(channel: channel).isOk || accepted;
     }
     return accepted;
@@ -1940,7 +2018,13 @@ class ControlCubit extends Cubit<ControlState> {
       case InteractionMode.record:
         _recTrackPressed(channel);
       case InteractionMode.mute:
-        _muteTrackPressed(channel);
+        // Song asks for a section; Multi's mute and resume membership must
+        // not change one.
+        if (_l.transport.looperMode == LooperMode.song) {
+          _playSongSection(channel);
+        } else {
+          _muteTrackPressed(channel);
+        }
       case InteractionMode.fx:
         toggleTrackChain(channel);
       case InteractionMode.mixer:

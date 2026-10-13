@@ -2179,6 +2179,23 @@ struct le_engine {
    * pending arms, playing takes, or spans that cannot fit the target mode
    * (le_looper_mode_switch_blocked, engine_process.c). */
   _Atomic int32_t a_looper_mode; /* le_looper_mode; default 0 = MULTI */
+  /* Song section handoff (#1077), audio-thread owned; reset off the callback
+   * only while it is stopped (configure, create, stop). song_source is the
+   * section that was playing when the request was accepted, never the UI
+   * selection; song_target starts at its next lap edge. song_elapsed counts
+   * the frames the source has sounded since. One packed word publishes
+   * target and progress together: low byte target + 1 (0 = none), upper 24
+   * bits the fraction played, so a reader never pairs one request's target
+   * with another's progress. */
+  int32_t song_source, song_target;
+  int64_t song_elapsed;
+  _Atomic uint32_t a_song_queue;
+  /* The Song section that sounded most recently (#1077), -1 for none. It
+   * survives a Stop, so Play All can start it again; it is forgotten when
+   * that track empties, on a mode switch, configure and create, and never
+   * saved with a session. Audio-thread owned; a_song_last publishes it. */
+  int32_t song_last;
+  _Atomic int32_t a_song_last;
   /* Control posts mode/crown/defining-record commands; callback acknowledges
    * every outcome.
    * Recovery waits until their actual clock policy is known. */
