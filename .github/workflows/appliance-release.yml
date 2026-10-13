@@ -63,6 +63,11 @@ on:
         type: choice
         options: ['no', 'yes']
         default: 'no'
+      embedder:
+        description: Flutter embedder (ivi = the ivi-homescreen spike, #1318; rpi5 only, never published)
+        type: choice
+        options: [gtk, ivi]
+        default: gtk
 
 permissions:
   contents: write        # create releases
@@ -76,6 +81,8 @@ jobs:
       board: ${{ steps.meta.outputs.board }}
       machine: ${{ steps.meta.outputs.machine }}
       kas: ${{ steps.meta.outputs.kas }}
+      embedder: ${{ steps.meta.outputs.embedder }}
+      flutter_version: ${{ steps.meta.outputs.flutter_version }}
     steps:
       - uses: actions/checkout@v7
 
@@ -135,12 +142,40 @@ jobs:
             exit 1
           fi
 
+          # Embedder: the ivi-homescreen image (#1318) is a bench spike. It
+          # shares the shipping image's RAUC compatible string so a unit can
+          # move between the two, which is exactly why it must never reach a
+          # channel: every polling unit would install it. Its app bundle is
+          # built with the Flutter release whose prebuilt engine the image
+          # ships, read from the one file that pins it.
+          embedder="${{ github.event.inputs.embedder }}"
+          [ -n "$embedder" ] || embedder=gtk
+          kas="deploy/yocto/kas-segno-$board.yml"
+          flutter_version=""
+          case "$embedder" in
+            gtk) ;;
+            ivi)
+              if [ "${{ github.event.inputs.publish }}" != "no" ]; then
+                echo "::error::the ivi-homescreen image is a bench spike (#1318) and is never published: it carries the shipping RAUC compatible string, so every unit polling the channel would install it. Dispatch it with publish=no."
+                exit 1
+              fi
+              [ "$board" = rpi5 ] || { echo "::error::the ivi-homescreen image exists for rpi5 only"; exit 1; }
+              kas="deploy/yocto/kas-segno-$board-ivi.yml"
+              flutter_version=$(sed -n 's/^FLUTTER_ENGINE_VERSION = "\(.*\)"$/\1/p' \
+                deploy/yocto/meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc)
+              [ -n "$flutter_version" ] || { echo "::error::no FLUTTER_ENGINE_VERSION in flutter-engine-version.inc"; exit 1; }
+              ;;
+            *) echo "unknown embedder: $embedder" >&2; exit 1 ;;
+          esac
+
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "board=$board" >> "$GITHUB_OUTPUT"
           echo "machine=$machine" >> "$GITHUB_OUTPUT"
-          echo "kas=deploy/yocto/kas-segno-$board.yml" >> "$GITHUB_OUTPUT"
-          echo "Building channel=$channel version=$version board=$board machine=$machine"
+          echo "kas=$kas" >> "$GITHUB_OUTPUT"
+          echo "embedder=$embedder" >> "$GITHUB_OUTPUT"
+          echo "flutter_version=$flutter_version" >> "$GITHUB_OUTPUT"
+          echo "Building channel=$channel version=$version board=$board machine=$machine embedder=$embedder"
 
   build-app:
     needs: determine-meta
@@ -149,8 +184,13 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Build the aarch64 app bundle
+        env:
+          # Empty for the shipping image: the Dockerfile's own default.
+          FLUTTER_VERSION: ${{ needs.determine-meta.outputs.flutter_version }}
         run: |
-          docker build -t segno-arm64-build deploy/rpi/build
+          build_args=()
+          [ -z "$FLUTTER_VERSION" ] || build_args+=(--build-arg "FLUTTER_VERSION=$FLUTTER_VERSION")
+          docker build "${build_args[@]}" -t segno-arm64-build deploy/rpi/build
           docker run --rm -v "$PWD":/workspace segno-arm64-build
 
       - uses: actions/upload-artifact@v7
@@ -447,6 +487,13 @@ jobs:
           # instead — the live file, not the free space around it.
 
           name="segno-appliance-$version-$board"
+          # The ivi-homescreen spike (#1318) is never published, so its .raucb
+          # rides along here: `rauc install` on a bench unit moves it onto the
+          # spike and a rollback moves it back, without reflashing.
+          if [ '${{ needs.determine-meta.outputs.embedder }}' = ivi ]; then
+            name="$name-ivi"
+            cp release-artifacts/*.raucb "$out/$name.raucb"
+          fi
           # gzip -1, not bzip2/zstd: present on every runner, and fast enough on
           # a mostly-zero 8 GiB image. macOS `gunzip` reads it with no install.
           gzip -1 -c "$wic" > "$out/$name.wic.gz"
@@ -459,7 +506,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: segno-image-${{ needs.determine-meta.outputs.board }}-${{ needs.determine-meta.outputs.version }}
+          name: segno-image-${{ needs.determine-meta.outputs.board }}${{ needs.determine-meta.outputs.embedder == 'ivi' && '-ivi' || '' }}-${{ needs.determine-meta.outputs.version }}
           path: image-artifacts
           retention-days: 14
           # Already gzipped; a second pass costs minutes and saves nothing.

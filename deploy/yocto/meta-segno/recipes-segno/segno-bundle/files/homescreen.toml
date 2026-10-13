@@ -1,0 +1,68 @@
+# ivi-homescreen configuration for the Segno console (#1318). Installed as
+# /etc/segno/homescreen.toml on the ivi image only; segno-embedder-ivi passes it
+# with --config.
+#
+# Two views of the same bundle, one Flutter engine each, in one process, drawn
+# straight to the two HDMI outputs over DRM/KMS with no compositor. Each engine
+# learns its role from --segno-screen= (lib/visualizer/screen_link.dart), and
+# the two talk through the Dart VM they share, not through the embedder.
+#
+# Keys are ivi-homescreen v3's (docs/config-examples/reference.toml at the
+# commit ivi-homescreen_git.bb pins).
+
+[global]
+# Nothing on the console is driven by a pointer.
+disable_cursor = true
+
+# --- Main UI: the 16" panel on HDMI-A-1 ---------------------------------------
+[[view]]
+bundle = '/opt/segno'
+fullscreen = true
+
+  [view.args]
+  dart = ['--segno-screen=main']
+  # Skia, as on the GTK runner (linux/runner/main.cc): Impeller draws the
+  # Material icon font as tofu on this stack (#897).
+  engine = ['--enable-impeller=false']
+
+  [view.backend]
+  type = 'drm-kms-egl'
+
+    [view.backend.drm]
+    # No `device`: ivi-homescreen picks the card with a connected connector,
+    # which on the Pi 5 is the vc4 display card, never the render-only v3d one.
+    # Both views must name the device identically (here: not at all) or they
+    # open two DRM masters on one card.
+    #
+    # The service runs as root on a kiosk with no logind session: take the DRM
+    # master and the input devices directly instead of through a seat.
+    no_seat = true
+
+  [view.output]
+  drm_connector = 'HDMI-A-1'
+
+# --- Readout: the 7" touch panel on HDMI-A-2 ----------------------------------
+[[view]]
+bundle = '/opt/segno'
+fullscreen = true
+# What weston's `scale=3` gave this output on the GTK image: a 640x360 logical
+# surface on the 1920x1080 mode (weston.ini explains what depends on it). Needs
+# the pixel-ratio patch ivi-homescreen_git.bb carries; upstream ignores it on DRM.
+pixel_ratio = 3.0
+
+  [view.args]
+  dart = ['--segno-screen=readout']
+  engine = ['--enable-impeller=false']
+
+  [view.backend]
+  type = 'drm-kms-egl'
+
+    [view.backend.drm]
+    no_seat = true
+
+  [view.output]
+  drm_connector = 'HDMI-A-2'
+  # The 7"'s controller (USB 1a86:e5e3, see 97-segno-touch-output.rules):
+  # a substring of its libinput device name. Touch that matches no view goes
+  # to the main screen.
+  touch_device = 'USB2IIC_CTP_CONTROL'

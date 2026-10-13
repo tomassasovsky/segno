@@ -24,9 +24,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # Flutter 3.44.4 — the repo-pinned version, cloned from the same ref the CI
-# arm64 job uses (a shallow clone of the tag, not a channel).
+# arm64 job uses (a shallow clone of the tag, not a channel). The ivi-homescreen
+# image (#1318) needs the release its prebuilt engine comes from instead:
+#   docker build --build-arg FLUTTER_VERSION=3.47.5 ...
+ARG FLUTTER_VERSION=3.44.4
 ENV FLUTTER_HOME=/opt/flutter
-RUN git clone --depth 1 --branch 3.44.4 \
+RUN git clone --depth 1 --branch "$FLUTTER_VERSION" \
       https://github.com/flutter/flutter.git "$FLUTTER_HOME"
 ENV PATH="$FLUTTER_HOME/bin:$PATH"
 
@@ -57,6 +60,12 @@ flutter build linux --debug --target lib/main_development.dart
 # verbatim so callers can override.
 echo "==> Release bundle: flutter build linux --release (main_production) $*"
 flutter build linux --release --target lib/main_production.dart "$@"
+
+# Record the Flutter release that built this bundle. The ivi-homescreen image
+# runs the bundle's AOT snapshot on a separately shipped engine, which loads
+# only a snapshot from its own engine revision; segno-bundle.bb reads this file
+# to refuse a mismatch at image build time rather than on the device (#1318).
+flutter --version --machine > build/linux/arm64/release/bundle/flutter-version.json
 
 # Hand the generated artifacts back to the invoking host user; without this the
 # mounted output would be root-owned on the Mac. `flutter pub get` in this

@@ -1,5 +1,12 @@
-SUMMARY = "Segno floor-console kiosk image: weston + the prebuilt Flutter GTK bundle"
+SUMMARY = "Segno floor-console kiosk image: the prebuilt Flutter bundle under its embedder"
 LICENSE = "MIT"
+
+# Which embedder the image carries (see segno-bundle.bb): `gtk` (weston + the
+# Flutter GTK runner, shipping) or `ivi` (ivi-homescreen on DRM/KMS, #1318).
+# One image name for both, so the RAUC bundle, the .wic and the release
+# workflow do not change, and a bench unit can move between the two by an A/B
+# update and back by rolling back.
+SEGNO_EMBEDDER ??= "gtk"
 
 # Start from the stock Wayland image (weston + weston-init + GTK3 already present),
 # then add our bundle and its runtime deps. See docs/plan Tier 3a §Phase 2.
@@ -10,20 +17,24 @@ LICENSE = "MIT"
 # ships segno-mark-good.service in its place, behind a health gate (#307).
 require recipes-graphics/images/core-image-weston.bb
 
+# The ivi image is the same image without the compositor and the GTK stack:
+# ivi-homescreen drives both outputs itself, so weston, weston-init and the
+# demo clients core-image-weston adds have nothing to do.
+IMAGE_FEATURES:remove = "${@'weston' if d.getVar('SEGNO_EMBEDDER') == 'ivi' else ''}"
+CORE_IMAGE_BASE_INSTALL:remove = "${@'gtk+3-demo weston-xwayland matchbox-terminal' if d.getVar('SEGNO_EMBEDDER') == 'ivi' else ''}"
+
 # segno-console-board carries the console board's firmware and the boot-time
 # check that applies it: the board is a second computer, and the image owns
 # what runs on it (#989). No comments inside the list below — BitBake treats a
 # '#' in a line-continued value as part of the value, not as a comment.
 IMAGE_INSTALL:append = " \
     segno-bundle \
-    gtk+3 \
+    ${SEGNO_EMBEDDER_INSTALL} \
     mesa \
     alsa-lib \
     alsa-utils \
     alsa-plugins \
     util-linux-chrt \
-    gsettings-desktop-schemas \
-    seatd \
     xdg-user-dirs \
     plymouth \
     plymouth-segno-theme \
@@ -38,6 +49,10 @@ IMAGE_INSTALL:append = " \
     networkmanager-wifi \
     bluez5 \
     "
+# gtk: GTK3 itself, the schema its settings lookup needs, and seatd for weston.
+# ivi: nothing beyond segno-bundle's RDEPENDS (ivi-homescreen and the engine);
+# it takes the DRM master and opens input itself, as root, without a seat.
+SEGNO_EMBEDDER_INSTALL = "${@'gtk+3 gsettings-desktop-schemas seatd' if d.getVar('SEGNO_EMBEDDER') == 'gtk' else ''}"
 # tryboot-cmdline.bbclass edits cmdline.txt inside the .wic (mtools) and regenerates
 # the bmap (bmaptool) — both are native build tools its task needs.
 do_update_tryboot_cmdline[depends] += "mtools-native:do_populate_sysroot bmaptool-native:do_populate_sysroot"

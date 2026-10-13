@@ -1,7 +1,8 @@
-SUMMARY = "Prebuilt Segno Flutter GTK bundle (installed as-is; NOT built from source)"
-DESCRIPTION = "Installs the exact aarch64 Flutter GTK bundle produced by \
-deploy/rpi/build/build-arm64-bundle.sh into /opt/segno, plus a Wayland launcher \
-and a systemd unit that runs it under weston. See docs/plan Tier 3a §Phase 2."
+SUMMARY = "Prebuilt Segno Flutter bundle (installed as-is; NOT built from source)"
+DESCRIPTION = "Installs the exact aarch64 Flutter bundle produced by \
+deploy/rpi/build/build-arm64-bundle.sh into /opt/segno, plus the launcher and \
+systemd unit that run it under the image's embedder (SEGNO_EMBEDDER), and the \
+appliance's host helpers. See docs/plan Tier 3a §Phase 2 and #1318."
 # CLOSED: a prebuilt binary we install verbatim — no in-tree license file to
 # checksum here (the app's licensing lives in the main repo, not this recipe).
 LICENSE = "CLOSED"
@@ -22,8 +23,34 @@ SEGNO_BUILD_VERSION ?= "0.0.0"
 # silently poll production (which has no manifests yet).
 SEGNO_UPDATE_CHANNEL ?= "production"
 
+# Which Flutter embedder runs the app:
+#   gtk  the bundle's own Flutter GTK runner, a Wayland client of weston. The
+#        shipping image.
+#   ivi  ivi-homescreen driving both HDMI outputs over DRM/KMS with no
+#        compositor, one engine per screen (the #1318 spike). It runs the
+#        bundle's AOT snapshot on the prebuilt engine flutter-engine-prebuilt
+#        installs, so the bundle has to come from that engine's exact Flutter
+#        release; do_install refuses one that does not.
+# Set for the whole image by the kas project (kas-segno-rpi5-ivi.yml);
+# segno-kiosk-image reads the same variable.
+SEGNO_EMBEDDER ??= "gtk"
+
+python () {
+    embedder = d.getVar('SEGNO_EMBEDDER')
+    if embedder not in ('gtk', 'ivi'):
+        bb.fatal("SEGNO_EMBEDDER must be 'gtk' or 'ivi', not '%s'" % embedder)
+}
+
+# The engine commit the ivi image's bundle must have been built against.
+require recipes-graphics/flutter-engine/flutter-engine-version.inc
+
 SRC_URI = "file://segno.service \
            file://segno-kiosk-launch \
+           file://segno-embedder-gtk \
+           file://segno-embedder-ivi \
+           file://segno-gtk.conf \
+           file://segno-ivi.conf \
+           file://homescreen.toml \
            file://segno-wait-wayland \
            file://segno-runtime.conf \
            file://segno-rtirq.service \
@@ -90,8 +117,8 @@ INSANE_SKIP:${PN} += "already-stripped ldflags arch textrel file-rdeps"
 # Contains target ELF/.so, so it is machine-specific, not allarch.
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
-# Runtime libs the GTK embedder + native engine link against, named explicitly so
-# they're guaranteed in the image (hard `=`, so keep everything ON this line).
+# Runtime deps, named explicitly so they're guaranteed in the image (hard `=`).
+# The embedder's own stack is SEGNO_EMBEDDER_RDEPENDS, below.
 # curl/jq/ca-certificates: the OTA client (segno-ota-check). rauc: the installer.
 # parted + e2fsprogs-resize2fs: segno-data-grow (expand /data to fill the SD card).
 # coreutils: the app's pedal link configures the pedal UART with stty.
@@ -102,19 +129,27 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # is answered on device: segno-wifi-regdom warns when the latter is missing.
 # networkmanager-nmcli: segno-wifi-ctl (NM owns wpa_supplicant via -wifi plugin).
 # bluez5: segno-bt-ctl. ddcutil: segno-brightness-ctl.
-# weston-examples: ships weston-touch-calibrator, which is what actually measures
-# the touchscreen (segno-touch-ctl only persists the result). core-image-weston
-# happens to pull it in today via packagegroup-core-weston — named here so a
-# future image trim can't silently remove the console's only way to recalibrate.
-RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
-                  fontconfig freetype glib-2.0 mesa alsa-lib libstdc++ \
+RDEPENDS:${PN} = "mesa alsa-lib libstdc++ \
                   curl jq ca-certificates rauc \
                   parted e2fsprogs-resize2fs \
                   networkmanager-nmcli networkmanager-wifi \
                   bluez5 ddcutil \
                   iw \
-                  weston-examples \
-                  coreutils"
+                  coreutils \
+                  ${SEGNO_EMBEDDER_RDEPENDS}"
+
+# gtk: the libraries the GTK runner links against, and weston-examples, which
+# ships weston-touch-calibrator — what actually measures the touchscreen
+# (segno-touch-ctl only persists the result). core-image-weston happens to pull
+# it in today via packagegroup-core-weston; named here so a future image trim
+# can't silently remove the console's only way to recalibrate.
+# ivi: the embedder and the engine it loads. ivi-homescreen reads the same
+# libinput calibration matrix segno-touch-ctl persists, but there is no
+# calibrator on that image yet (#1318).
+SEGNO_EMBEDDER_RDEPENDS = "${@{ \
+    'gtk': 'gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy fontconfig freetype glib-2.0 weston-examples', \
+    'ivi': 'ivi-homescreen flutter-engine-prebuilt', \
+}.get(d.getVar('SEGNO_EMBEDDER'), '')}"
 
 inherit systemd
 # App + rtirq oneshot + data-grow oneshot + the /boot(tryboot selector) and
@@ -126,6 +161,9 @@ inherit systemd
 SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount"
 
 FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-wayland ${bindir}/segno-rtirq \
+                ${libexecdir}/segno/embedder \
+                ${systemd_system_unitdir}/segno.service.d/10-embedder.conf \
+                ${sysconfdir}/segno/homescreen.toml \
                 ${bindir}/segno-data-grow \
                 ${bindir}/segno-ota-check \
                 ${bindir}/segno-update-ctl \
@@ -187,23 +225,45 @@ python do_fetch:prepend() {
 
 do_install() {
     bundle="${SEGNO_BUNDLE_DIR}"
-    if [ ! -x "${bundle}/segno" ]; then
-        bbfatal "No 'segno' binary under SEGNO_BUNDLE_DIR=${bundle}"
-    fi
-
     install -d ${D}/opt/segno
-    # cp -R (not -a): preserve the executable bits but NOT the host uid/gid, then
-    # force root ownership — staged files must not carry the build user's uid
-    # (else do_package fails with "uid not found / host contamination").
-    cp -R "${bundle}/." ${D}/opt/segno/
+    case "${SEGNO_EMBEDDER}" in
+    gtk)
+        if [ ! -x "${bundle}/segno" ]; then
+            bbfatal "No 'segno' binary under SEGNO_BUNDLE_DIR=${bundle}"
+        fi
+        # cp -R (not -a): preserve the executable bits but NOT the host
+        # uid/gid, then force root ownership — staged files must not carry the
+        # build user's uid (else do_package fails with "uid not found / host
+        # contamination").
+        cp -R "${bundle}/." ${D}/opt/segno/
+        ;;
+    ivi)
+        segno_check_bundle_engine "${bundle}"
+        # Only what ivi-homescreen runs: the assets, the AOT snapshot, and the
+        # audio engine. The GTK runner, its engine and its plugins would be
+        # dead weight that still looks like a way to start the app.
+        install -d ${D}/opt/segno/lib
+        cp -R "${bundle}/data" ${D}/opt/segno/
+        install -m 0755 "${bundle}/lib/libapp.so" "${bundle}/lib/libsegno_engine.so" \
+            ${D}/opt/segno/lib/
+        install -d ${D}${sysconfdir}/segno
+        install -m 0644 ${UNPACKDIR}/homescreen.toml ${D}${sysconfdir}/segno/homescreen.toml
+        ;;
+    esac
     chown -R root:root ${D}/opt/segno
 
     install -d ${D}${bindir}
     install -m 0755 ${UNPACKDIR}/segno-kiosk-launch ${D}${bindir}/segno-kiosk-launch
-    install -m 0755 ${UNPACKDIR}/segno-wait-wayland ${D}${bindir}/segno-wait-wayland
+    install -d ${D}${libexecdir}/segno
+    install -m 0644 ${UNPACKDIR}/segno-embedder-${SEGNO_EMBEDDER} ${D}${libexecdir}/segno/embedder
+    if [ "${SEGNO_EMBEDDER}" = gtk ]; then
+        install -m 0755 ${UNPACKDIR}/segno-wait-wayland ${D}${bindir}/segno-wait-wayland
+    fi
 
-    install -d ${D}${systemd_system_unitdir}
+    install -d ${D}${systemd_system_unitdir}/segno.service.d
     install -m 0644 ${UNPACKDIR}/segno.service ${D}${systemd_system_unitdir}/segno.service
+    install -m 0644 ${UNPACKDIR}/segno-${SEGNO_EMBEDDER}.conf \
+        ${D}${systemd_system_unitdir}/segno.service.d/10-embedder.conf
 
     # rtirq: oneshot that raises the USB (xhci) sound-card IRQ thread to SCHED_FIFO
     # (above the app's audio thread) so the interrupt delivering a period preempts
@@ -364,7 +424,26 @@ do_install() {
 
 # Rebuild when CI stamps a new version/channel (otherwise sstate can leave a
 # stale /etc/segno/* from a prior package).
-do_install[vardeps] += "SEGNO_BUILD_VERSION SEGNO_UPDATE_CHANNEL"
+do_install[vardeps] += "SEGNO_BUILD_VERSION SEGNO_UPDATE_CHANNEL SEGNO_EMBEDDER FLUTTER_ENGINE_COMMIT"
+
+# The ivi image runs the bundle's AOT snapshot (lib/libapp.so) on
+# flutter-engine-prebuilt's engine instead of the engine the bundle was built
+# with. A snapshot only loads on the exact engine it was compiled for, and a
+# mismatch builds, installs and boots, then dies on the device before the first
+# frame. The build records `flutter --version --machine` in the bundle
+# (segno-build.sh), so compare the engine it names with the one this image
+# ships, here, where it costs seconds instead of a bench session.
+segno_check_bundle_engine() {
+    bundle="$1"
+    for f in data/flutter_assets lib/libapp.so lib/libsegno_engine.so flutter-version.json; do
+        [ -e "${bundle}/$f" ] || bbfatal "SEGNO_BUNDLE_DIR=${bundle} has no $f"
+    done
+    revision=$(sed -n 's/.*"engineRevision"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
+        "${bundle}/flutter-version.json")
+    if [ "$revision" != "${FLUTTER_ENGINE_COMMIT}" ]; then
+        bbfatal "The bundle was built on Flutter engine '$revision', but the ivi image ships engine ${FLUTTER_ENGINE_COMMIT} (Flutter ${FLUTTER_ENGINE_VERSION}). Build the bundle with Flutter ${FLUTTER_ENGINE_VERSION}."
+    fi
+}
 # The prebuilt bundle is read from outside SRC_URI, so bitbake has to be told
 # it is an input or shared state would reuse a stale package. Today the
 # version stamp above happens to re-run this task on every release; this
