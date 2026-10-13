@@ -43,6 +43,10 @@ class ScreenLinkWaveformService implements WaveformWindowService {
   /// announcement opens the link itself (see [_onMessage]), and a [close] in
   /// the meantime cancels that rather than racing it.
   var _opening = false;
+
+  /// Bumped by every [open] that waits, so a wait that times out only gives
+  /// up on its own behalf, not on a newer [open] sharing the same [_ready].
+  var _openGeneration = 0;
   var _seq = 0;
   final _acks = <int, Completer<void>>{};
 
@@ -101,8 +105,13 @@ class ScreenLinkWaveformService implements WaveformWindowService {
         if (_open) {
           port.send({'op': ScreenLinkOp.show});
           onWindowReady?.call();
+        } else {
+          // Say so: a readout left showing by an earlier main screen would
+          // otherwise hold its last picture.
+          port.send({'op': ScreenLinkOp.hide});
         }
         final ready = _ready;
+        _ready = null;
         if (ready != null && !ready.isCompleted) ready.complete();
       case ScreenLinkOp.ack:
         final seq = message['seq'];
@@ -140,19 +149,22 @@ class ScreenLinkWaveformService implements WaveformWindowService {
       return true;
     }
     _opening = true;
+    final generation = ++_openGeneration;
     final ready = _ready ??= Completer<void>();
     var arrived = true;
     await ready.future.timeout(
       readyTimeout,
       onTimeout: () => arrived = false,
     );
-    _ready = null;
-    if (!arrived) _opening = false;
+    if (!arrived && generation == _openGeneration) _opening = false;
     return arrived;
   }
 
   @override
   Future<void> close() async {
+    // Listening even to close: a readout that announces itself later is then
+    // told to stay blank (see [_onMessage]).
+    _listen();
     _opening = false;
     if (!_open) return;
     _open = false;

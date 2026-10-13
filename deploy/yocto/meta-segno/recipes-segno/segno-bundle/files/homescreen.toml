@@ -37,6 +37,10 @@ fullscreen = true
     # The service runs as root on a kiosk with no logind session: take the DRM
     # master and the input devices directly instead of through a seat.
     no_seat = true
+    # Unset, ivi-homescreen drives the EDID-preferred mode — 4K on the bench
+    # TV, which this connector cannot hold (weston.ini pins the same mode, and
+    # says why).
+    mode = '1920x1080@60'
 
   [view.output]
   drm_connector = 'HDMI-A-1'
@@ -59,6 +63,12 @@ pixel_ratio = 3.0
 
     [view.backend.drm]
     no_seat = true
+    # The mode weston drives here (`mode=current`, i.e. the kernel's
+    # video=HDMI-A-2:1920x1080@60D), which pixel_ratio 3 is sized for. Unset,
+    # ivi-homescreen would take the 7"'s EDID-preferred 1024x600 instead. A
+    # mode the connector does not list stops the whole process at start:
+    # `homescreen --drm-list-modes` shows what it offers.
+    mode = '1920x1080@60'
 
   [view.output]
   drm_connector = 'HDMI-A-2'
