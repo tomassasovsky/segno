@@ -92,6 +92,58 @@ void main() {
     expect(state.bus, -1);
   }, skip: skip);
 
+  test(
+    'plays on the main output: the first destination with an enabled '
+    'channel (#1305)',
+    () async {
+      // A four-output interface whose monitors are on outputs 3/4, with 1/2
+      // switched off: the take captures 3/4, and Listen must sound there too.
+      engine = PumpedNativeEngine()
+        ..start(
+          const EngineConfig(
+            sampleRate: 8000,
+            inputChannels: 1,
+            outputChannels: 4,
+            maxLoopFrames: 8000,
+          ),
+        )
+        ..setOutputEnabled(output: 0, enabled: false)
+        ..setOutputEnabled(output: 1, enabled: false)
+        ..pump(frames: 0);
+      expect(engine.snapshot().perfCaptureBus, 1);
+
+      final started = await engine.auditionStartFile(wav('a.wav', 4000));
+      expect(started.result, EngineResult.ok);
+      engine.pump(frames: 64);
+
+      expect(engine.auditionState().bus, 1);
+      final peaks = engine.snapshot().outputPeaks;
+      expect(peaks[0], 0);
+      expect(peaks[1], 0);
+      expect(peaks[2], greaterThan(0.1));
+      expect(peaks[3], greaterThan(0.1));
+    },
+    skip: skip,
+  );
+
+  test('refuses before decoding when no output is enabled', () async {
+    start();
+    var decoded = 0;
+    engine
+      ..offIsolate = <R>(FutureOr<R> Function() computation) {
+        decoded++;
+        return Isolate.run(computation);
+      }
+      ..setOutputEnabled(output: 0, enabled: false)
+      ..setOutputEnabled(output: 1, enabled: false)
+      ..pump(frames: 0);
+
+    final started = await engine.auditionStartFile(wav('a.wav', 4000));
+
+    expect(started.result, EngineResult.invalid);
+    expect(decoded, 0);
+  }, skip: skip);
+
   test('the decode runs off the calling isolate', () async {
     start();
     var offloaded = 0;

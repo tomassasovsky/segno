@@ -2798,12 +2798,16 @@ class NativeAudioEngine implements AudioEngine {
   @override
   Future<AuditionStart> auditionStartFile(
     String path, {
-    int bus = 0,
     bool Function()? stillWanted,
   }) async {
     _checkAlive();
-    final rate = snapshot().sampleRate;
+    final now = snapshot();
+    final rate = now.sampleRate;
     if (rate <= 0) return const AuditionStart(result: EngineResult.notRunning);
+    // The main output, the destination a take captures (#1305): bus 0 is
+    // silent on a rig whose first pair is switched off.
+    final bus = now.perfCaptureBus;
+    if (bus < 0) return const AuditionStart(result: EngineResult.invalid);
     // The decode reads and converts up to two minutes of audio: never on the
     // calling (UI) isolate. The buffer crosses back as an address.
     final decoded = await _decodeAuditionOffIsolate(
