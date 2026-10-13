@@ -14,7 +14,7 @@
 # Nothing on the console is driven by a pointer.
 disable_cursor = true
 
-# --- Main UI: the 16" panel on HDMI-A-1 ---------------------------------------
+# --- Main UI: the 15.6" 1080p touch panel on HDMI-A-1 --------------------------
 [[view]]
 bundle = '/opt/segno'
 fullscreen = true
@@ -37,22 +37,28 @@ fullscreen = true
     # The service runs as root on a kiosk with no logind session: take the DRM
     # master and the input devices directly instead of through a seat.
     no_seat = true
-    # Unset, ivi-homescreen drives the EDID-preferred mode — 4K on the bench
-    # TV, which this connector cannot hold (weston.ini pins the same mode, and
-    # says why).
-    mode = '1920x1080@60'
+    # No `mode`: the panel's own EDID-preferred mode, its native 1080p. A pinned
+    # mode the connector does not list stops the whole process at start, so
+    # pin one only for a panel whose preferred mode is wrong.
 
   [view.output]
   drm_connector = 'HDMI-A-1'
+  # Its touch needs no `touch_device`: touch that matches no view's lands on
+  # the first view, this one.
 
-# --- Readout: the 7" touch panel on HDMI-A-2 ----------------------------------
+# --- Readout: the 7" 1024x600 touch panel on HDMI-A-2 --------------------------
 [[view]]
 bundle = '/opt/segno'
 fullscreen = true
-# What weston's `scale=3` gave this output on the GTK image: a 640x360 logical
-# surface on the 1920x1080 mode (weston.ini explains what depends on it). Needs
-# the pixel-ratio patch ivi-homescreen_git.bb carries; upstream ignores it on DRM.
-pixel_ratio = 3.0
+# The readout's physical size on the GTK image, at the panel's native mode.
+# There weston draws a 640x360 logical surface at scale=3 into a 1920x1080i
+# signal the panel scales down to its 1024x600: about 1.6 panel pixels per
+# logical pixel (1024/640). Here the panel is driven natively, so the same
+# ratio gives the same size (640x375 logical) without the panel's scaler or
+# the interlaced link, weston.ini's first suspects for softness and flicker.
+# A float: an integer is ignored. Needs the pixel-ratio patch
+# ivi-homescreen_git.bb carries; upstream ignores it on DRM.
+pixel_ratio = 1.6
 
   [view.args]
   dart = ['--segno-screen=readout']
@@ -63,12 +69,11 @@ pixel_ratio = 3.0
 
     [view.backend.drm]
     no_seat = true
-    # The mode weston drives here (`mode=current`, i.e. the kernel's
-    # video=HDMI-A-2:1920x1080@60D), which pixel_ratio 3 is sized for. Unset,
-    # ivi-homescreen would take the 7"'s EDID-preferred 1024x600 instead. A
-    # mode the connector does not list stops the whole process at start:
-    # `homescreen --drm-list-modes` shows what it offers.
-    mode = '1920x1080@60'
+    # No `mode`: the panel's EDID-preferred 1024x600, which pixel_ratio is set
+    # for. weston.ini records this connector sometimes reading an empty EDID;
+    # then the mode is whatever the connector lists first and the readout,
+    # being proportional, still fills it. A pinned mode would instead stop the
+    # whole process when it is missing.
 
   [view.output]
   drm_connector = 'HDMI-A-2'
