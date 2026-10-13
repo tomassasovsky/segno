@@ -13,8 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git curl unzip xz-utils zip liblzma-dev ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# Flutter 3.44.4 by default. The ivi-homescreen image (#1318) builds with the
+# release its prebuilt engine comes from instead: appliance-release.yml passes
+# FLUTTER_ENGINE_VERSION from meta-segno's flutter-engine-version.inc.
+ARG FLUTTER_VERSION=3.44.4
 ENV FLUTTER_HOME=/opt/flutter
-RUN git clone --depth 1 --branch 3.44.4 https://github.com/flutter/flutter.git "$FLUTTER_HOME"
+RUN git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$FLUTTER_HOME"
 ENV PATH=/opt/flutter/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN git config --global --add safe.directory '*' \
     && flutter config --enable-linux-desktop \

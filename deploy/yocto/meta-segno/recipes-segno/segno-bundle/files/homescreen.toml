@@ -1,0 +1,83 @@
+# ivi-homescreen configuration for the Segno console (#1318). Installed as
+# /etc/segno/homescreen.toml on the ivi image only; segno-embedder-ivi passes it
+# with --config.
+#
+# Two views of the same bundle, one Flutter engine each, in one process, drawn
+# straight to the two HDMI outputs over DRM/KMS with no compositor. Each engine
+# learns its role from --segno-screen= (lib/visualizer/screen_link.dart), and
+# the two talk through the Dart VM they share, not through the embedder.
+#
+# Keys are ivi-homescreen v3's (docs/config-examples/reference.toml at the
+# commit ivi-homescreen_git.bb pins).
+
+[global]
+# Nothing on the console is driven by a pointer.
+disable_cursor = true
+
+# --- Main UI: the 15.6" 1080p touch panel on HDMI-A-1 --------------------------
+[[view]]
+bundle = '/opt/segno'
+fullscreen = true
+
+  [view.args]
+  dart = ['--segno-screen=main']
+  # Skia, as on the GTK runner (linux/runner/main.cc): Impeller draws the
+  # Material icon font as tofu on this stack (#897).
+  engine = ['--enable-impeller=false']
+
+  [view.backend]
+  type = 'drm-kms-egl'
+
+    [view.backend.drm]
+    # No `device`: ivi-homescreen picks the card with a connected connector,
+    # which on the Pi 5 is the vc4 display card, never the render-only v3d one.
+    # Both views must name the device identically (here: not at all) or they
+    # open two DRM masters on one card.
+    #
+    # The service runs as root on a kiosk with no logind session: take the DRM
+    # master and the input devices directly instead of through a seat.
+    no_seat = true
+    # No `mode`: the panel's own EDID-preferred mode, its native 1080p. A pinned
+    # mode the connector does not list stops the whole process at start, so
+    # pin one only for a panel whose preferred mode is wrong.
+
+  [view.output]
+  drm_connector = 'HDMI-A-1'
+  # Its touch needs no `touch_device`: touch that matches no view's lands on
+  # the first view, this one.
+
+# --- Readout: the 7" 1024x600 touch panel on HDMI-A-2 --------------------------
+[[view]]
+bundle = '/opt/segno'
+fullscreen = true
+# The readout's physical size on the GTK image, at the panel's native mode.
+# There weston draws a 640x360 logical surface at scale=3 into a 1920x1080i
+# signal the panel scales down to its 1024x600: about 1.6 panel pixels per
+# logical pixel (1024/640). Here the panel is driven natively, so the same
+# ratio gives the same size (640x375 logical) without the panel's scaler or
+# the interlaced link, weston.ini's first suspects for softness and flicker.
+# A float: an integer is ignored. Needs the pixel-ratio patch
+# ivi-homescreen_git.bb carries; upstream ignores it on DRM.
+pixel_ratio = 1.6
+
+  [view.args]
+  dart = ['--segno-screen=readout']
+  engine = ['--enable-impeller=false']
+
+  [view.backend]
+  type = 'drm-kms-egl'
+
+    [view.backend.drm]
+    no_seat = true
+    # No `mode`: the panel's EDID-preferred 1024x600, which pixel_ratio is set
+    # for. weston.ini records this connector sometimes reading an empty EDID;
+    # then the mode is whatever the connector lists first and the readout,
+    # being proportional, still fills it. A pinned mode would instead stop the
+    # whole process when it is missing.
+
+  [view.output]
+  drm_connector = 'HDMI-A-2'
+  # The 7"'s controller (USB 1a86:e5e3, see 97-segno-touch-output.rules):
+  # a substring of its libinput device name. Touch that matches no view goes
+  # to the main screen.
+  touch_device = 'USB2IIC_CTP_CONTROL'
