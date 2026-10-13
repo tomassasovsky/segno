@@ -24910,6 +24910,19 @@ static void test_song_record_requests_wait(void) {
   CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
   tg_advance(e, 10);
+  /* Stopping the source drops a waiting Record and its arm. */
+  CHECK(le_engine_record(e, 3) == LE_OK);
+  drain(e);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == -1);
+  CHECK(s.tracks[3].pending == 0 && s.tracks[3].state == LE_TRACK_EMPTY);
+  tg_advance(e, 200); /* and nothing records later */
+  CHECK(load_i32(&e->tracks[3].a_state) == LE_TRACK_EMPTY);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  tg_advance(e, 10);
   /* A second Record on a waiting Record cancels it. */
   CHECK(le_engine_record(e, 3) == LE_OK);
   drain(e);
@@ -25251,10 +25264,11 @@ static void test_song_mode_redo_from_empty_restores_targeted_track_only(
   tg_advance(e, 1);
 
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  /* Back stopped, since section 1 is the one playing (#1323). */
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
   CHECK(s.tracks[0].length_frames == 811);
   CHECK(e->tracks[0].free_clock.length == 811);
-  CHECK(e->tracks[0].free_clock.position == 1);
+  CHECK(e->tracks[0].free_clock.position == 0);
   CHECK(e->tracks[0].free_iteration == 0);
 
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
@@ -28733,6 +28747,106 @@ static void test_band_one_section_handoff(void) {
   CHECK(s.tracks[3].pending == 0 && s.tracks[3].state == LE_TRACK_EMPTY);
   CHECK(s.song_queued_track == -1);
   le_engine_destroy(e);
+}
+
+/* Band (#1323), the rest of the handoff: a Record on a stopped section waits
+ * and overdubs at the handoff; a Once source that ends between primary tops
+ * hands off on the next top; a held rig drops the request; the section that
+ * sounded last is kept for Play All, never the primary. */
+static void test_band_handoff_overdub_once_and_hold(void) {
+  printf("test_band_handoff_overdub_once_and_hold\n");
+  for (int hold = 0; hold < 2; ++hold) {
+    le_engine* e = make_configured_engine();
+    float out[64];
+    le_snapshot s;
+    CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
+    drain(e);
+    sb_make_primary(e, 1.0f);
+    sb_arm_and_start(e, 1);
+    process_const(e, 2.0f, SB_BASE, out);
+    le_engine_record(e, 1); /* one base loop */
+    drain(e);
+    CHECK(le_engine_stop_track(e, 1) == LE_OK);
+    drain(e);
+    sb_arm_and_start(e, 2);
+    process_const(e, 3.0f, SB_BASE / 2, out);
+    le_engine_record(e, 2); /* half a base loop: a division */
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[2].state == LE_TRACK_PLAYING);
+    CHECK(s.tracks[2].sync_divisor == 2);
+    CHECK(s.song_last_section == 2);
+
+    /* A Record on stopped section 1 while 2 plays waits, then overdubs on
+     * the primary's top, in phase. */
+    process_const(e, 0.0f, 3, out);
+    CHECK(le_engine_record(e, 1) == LE_OK);
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.song_queued_track == 1 && s.song_queue_record == 1);
+    CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+    int frames = 0;
+    while (load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED &&
+           frames < 100) {
+      tg_advance(e, 1);
+      ++frames;
+    }
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.master_position_frames == 0);
+    CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
+    CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
+    CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+    CHECK(s.song_last_section == 1);
+    le_engine_record(e, 1); /* punch out */
+    drain(e);
+    CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING);
+    CHECK(le_engine_stop_track(e, 1) == LE_OK);
+    drain(e);
+
+    /* Once on the division, started 9 frames into the primary: its first
+     * whole lap ends at frame 8 of the next primary loop, between tops. A
+     * request made after that top waits for that end, then for the top. */
+    CHECK(le_engine_set_one_shot(e, 2, 1) == LE_OK);
+    drain(e);
+    while (e->clock.position != 9) tg_advance(e, 1);
+    CHECK(le_engine_play(e, 2) == LE_OK);
+    drain(e);
+    while (e->clock.position != 4) tg_advance(e, 1);
+    CHECK(load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING);
+    CHECK(le_engine_play(e, 1) == LE_OK);
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.song_queued_track == 1 && s.song_queue_record == 0);
+    if (hold) {
+      CHECK(le_engine_stop_track(e, 0) == LE_OK); /* the primary */
+      drain(e);
+    }
+    int ended = -1;
+    frames = 0;
+    while (load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED &&
+           frames < 4 * SB_BASE) {
+      tg_advance(e, 1);
+      ++frames;
+      if (ended < 0 && load_i32(&e->tracks[2].a_state) == LE_TRACK_STOPPED) {
+        ended = frames;
+        CHECK(e->clock.position != 0 || hold); /* between primary tops */
+      }
+    }
+    le_engine_get_snapshot(e, &s);
+    CHECK(ended > 0);
+    if (hold) {
+      /* Nothing runs once the division ends: the request is dropped. */
+      CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+      CHECK(s.song_queued_track == -1);
+    } else {
+      CHECK(frames > ended);
+      CHECK(s.master_position_frames == 0);
+      CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+      CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+      CHECK(s.song_queued_track == -1);
+    }
+    le_engine_destroy(e);
+  }
 }
 
 /* THE core Band arming test: a section-transport press at a NON-boundary
@@ -37001,6 +37115,7 @@ int main(void) {
   test_band_section_toggle_rejected_for_empty_track();
   test_band_section_start_stop_quantized_to_primary_top();
   test_band_one_section_handoff();
+  test_band_handoff_overdub_once_and_hold();
   test_band_section_toggle_rejected_when_primary_not_established();
   test_band_section_pending_toggle_survives_record_press();
   test_band_section_pending_record_survives_toggle_press();

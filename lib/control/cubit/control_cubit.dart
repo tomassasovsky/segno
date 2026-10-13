@@ -1767,8 +1767,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// muted track is first unmuted and brought back: overdub if its loop still
   /// runs, plain resume if it was parked (the engine unparks the rest of the
   /// loop with it — starting anything resumes everything). In Song and Band
-  /// the engine holds a Record or a resume on a stopped or empty section
-  /// while another section sounds, until that section's end (#1323).
+  /// the engine holds the start of a stopped or empty section while another
+  /// section sounds, until that section's end (#1323): a Record or an
+  /// overdub, or, for a muted section that is brought back, a Play.
   bool _recAdvance(int channel) {
     final track = _trackAt(channel);
     if (track != null && track.muted) {
@@ -1800,12 +1801,14 @@ class ControlCubit extends Cubit<ControlState> {
   bool _muteRecPlay() {
     if (_l.transport.looperMode == LooperMode.song) return _songRecPlay();
     if (isParked(_l)) {
-      final resume = state.parkedResume.isNotEmpty
-          ? state.parkedResume
-          : {
-              for (final track in _tracks)
-                if (_playable(track)) track.channel,
-            };
+      final resume = _oneSection(
+        state.parkedResume.isNotEmpty
+            ? state.parkedResume
+            : {
+                for (final track in _tracks)
+                  if (_playable(track)) track.channel,
+              },
+      );
       if (resume.isEmpty) return false; // nothing recorded yet
       // The engine unparks the ENTIRE loop on the first play (starting
       // anything resumes everything), so a deselected member must be muted
@@ -1814,11 +1817,13 @@ class ControlCubit extends Cubit<ControlState> {
       // later unmute, instead of staying frozen. A CAPTURING track is not a
       // deselected member — it is a live take (isParked ignores `recording`,
       // so one can be running under a parked transport) and muting it would
-      // punch it out; leave it alone.
+      // punch it out; leave it alone. A Band section is not unparked (#1323),
+      // so its mute is left alone too.
       var muteAccepted = true;
       for (final track in _tracks) {
         if (_playable(track) &&
             !track.isCapturing &&
+            !_l.isSection(track.channel) &&
             !resume.contains(track.channel) &&
             !track.muted) {
           if (!_setTrackMute(muted: true, channel: track.channel).isOk) {
@@ -1848,10 +1853,10 @@ class ControlCubit extends Cubit<ControlState> {
     // Running: expand to every content track unless the full audible set is
     // already in the mix (then the press is a no-op).
     final armed = armedTracks(_l, state);
-    final all = {
+    final all = _oneSection({
       for (final track in _tracks)
         if (track.hasContent) track.channel,
-    };
+    });
     final anyAudible = _tracks.any(
       (t) => armed.contains(t.channel) && !t.muted && isSounding(t),
     );
@@ -2053,17 +2058,29 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
+  /// [channels] as one start may play them together (#1323): every track
+  /// that is not a section (Band's primary), plus one section
+  /// ([LooperState.sectionToStart]). Outside Song and Band, all of them.
+  Set<int> _oneSection(Set<int> channels) {
+    final looper = _l;
+    final section = looper.sectionToStart(
+      channels.where(looper.isSection).map(_trackAt).nonNulls,
+    );
+    return {
+      for (final channel in channels)
+        if (!looper.isSection(channel)) channel,
+      ?section,
+    };
+  }
+
   /// Song or Band section switching from a Record-mode track press (#1323),
   /// the Looper X track pedal: a press on the waiting section cancels its
   /// request; a press on a stopped section with a take asks for it (at once
   /// when no other section sounds, else at the sounding section's end). A
-  /// press on an empty, sounding or capturing section, or on Band's primary,
-  /// only selects it.
+  /// press on an empty, sounding or capturing section, or on a track that is
+  /// no section (Band's primary), only selects it.
   void _switchSection(int channel) {
-    final transport = _l.transport;
-    final band = transport.looperMode == LooperMode.band;
-    if (transport.looperMode != LooperMode.song && !band) return;
-    if (band && channel == transport.primaryTrack) return;
+    if (!_l.isSection(channel)) return;
     if (_l.songWaitingSection == channel) {
       _looper.cancelArm(channel: channel);
       return;

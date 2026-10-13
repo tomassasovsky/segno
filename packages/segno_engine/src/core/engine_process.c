@@ -2880,6 +2880,18 @@ static int le_handoff_target_ok(le_track* t, int record) {
   return record && st == LE_TRACK_EMPTY;
 }
 
+/* The state a history restore gives [ch] in place of PLAYING (#1323): a
+ * Song or Band section comes back stopped while another section sounds, so
+ * an undo or redo never makes two sections sound. */
+static int32_t le_handoff_restore_state(le_engine* e, int32_t ch,
+                                        int32_t state) {
+  if (state != LE_TRACK_PLAYING || !le_handoff_section(e, ch) ||
+      le_handoff_source(e, ch) < 0) {
+    return state;
+  }
+  return LE_TRACK_STOPPED;
+}
+
 /* Drops the arm a waiting Record holds on [ch]: the DISARM body. */
 static void le_handoff_disarm(le_engine* e, int32_t ch) {
   le_track* t = &e->tracks[ch];
@@ -2946,7 +2958,8 @@ static void le_handoff_play_now(le_engine* e, int32_t ch, uint64_t frame) {
  * at the commit and when the block publishes, because Clear, Undo, a
  * capture, a crown or a mode switch can each invalidate an end of it without
  * going through a handoff path. A Band source that Once stopped on its own
- * lap edge still hands off at the primary's top. */
+ * lap edge still hands off at the primary's top, while the rig still runs
+ * to reach it; a held rig drops the request. */
 static int le_song_queue_valid(le_engine* e) {
   if (e->song_target < 0) return 0;
   const int32_t source = e->song_source;
@@ -2957,7 +2970,7 @@ static int le_song_queue_valid(le_engine* e) {
     const int32_t st = load_i32(&e->tracks[source].a_state);
     le_track* t = &e->tracks[target];
     ok = (le_song_sounding_state(st) ||
-          (e->song_edge && st == LE_TRACK_STOPPED)) &&
+          (e->song_edge && st == LE_TRACK_STOPPED && !le_transport_held(e))) &&
          le_handoff_target_ok(t, e->song_record) &&
          (!e->song_record || (t->pending_record && t->pending_trigger == 3)) &&
          !le_handoff_capture_elsewhere(e, source);
@@ -3088,19 +3101,22 @@ static int le_song_sounding(le_engine* e, int32_t ch) {
   return st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING;
 }
 
-/* Keeps the section that sounded most recently: the one sounding now (the
- * remembered one while it still sounds, else the lowest that does), else
- * the last one that did. A track that empties is forgotten. */
+/* Keeps the Song or Band section that sounded most recently: the one
+ * sounding now (the remembered one while it still sounds, else the lowest
+ * that does), else the last one that did. A track that empties, or becomes
+ * Band's primary, is forgotten. */
 static void le_song_note_last(le_engine* e) {
-  if (load_i32(&e->a_looper_mode) != LE_LOOPER_MODE_SONG) return;
+  const int32_t mode = load_i32(&e->a_looper_mode);
+  if (mode != LE_LOOPER_MODE_SONG && mode != LE_LOOPER_MODE_BAND) return;
+  const int32_t primary = le_handoff_primary(e);
   int32_t last = e->song_last;
-  if (last >= e->track_count ||
+  if (last >= e->track_count || last == primary ||
       (last >= 0 && load_i32(&e->tracks[last].a_state) == LE_TRACK_EMPTY)) {
     last = -1;
   }
   if (last < 0 || !le_song_sounding(e, last)) {
     for (int32_t c = 0; c < e->track_count; ++c) {
-      if (le_song_sounding(e, c)) {
+      if (c != primary && le_song_sounding(e, c)) {
         last = c;
         break;
       }
@@ -4579,7 +4595,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         le_track_set_len(t, len);
         le_head_follow(e, t, frame, 0); /* its span's rate (#1179) */
         t->start_iter = 0;
-        store_i32(&t->a_state, LE_TRACK_PLAYING);
+        store_i32(&t->a_state,
+                  le_handoff_restore_state(e, ch, LE_TRACK_PLAYING));
         le_primary_reconcile(e); /* a redone first take is a first take */
         /* The from-EMPTY edge case of redo (LE_PLOG_REDO — see the UNDO_TO_
          * EMPTY case above for why every redo path logs the same code). */
@@ -4616,7 +4633,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
          * the first frame it mixes the slot PLAYING or STOPPED. */
         if (t->fade_generation != UINT64_MAX) t->fade_generation++;
         le_fade_log(e, ch, frame);
-        store_i32(&t->a_state, cmd->restore.state);
+        store_i32(&t->a_state,
+                  le_handoff_restore_state(e, ch, cmd->restore.state));
         le_primary_reconcile(e); /* a restored only take is crowned again */
         /* The clear-restore edge case of undo: same semantic code as every
          * other undo path (see LE_CMD_UNDO_TO_EMPTY), so a downstream consumer

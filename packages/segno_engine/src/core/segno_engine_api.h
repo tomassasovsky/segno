@@ -1626,9 +1626,10 @@ typedef struct le_snapshot {
    * its first take; it stays below 1 until the handoff clears it). */
   int32_t song_queued_track;
   float song_queue_progress;
-  /* Trailing (#1077): the Song section that sounded most recently, -1 for
-   * none. It survives a Stop; it is forgotten when that track empties, on a
-   * mode switch and on configure, and is never saved with a session. */
+  /* Trailing (#1077): the Song or Band section (#1323; never Band's primary)
+   * that sounded most recently, -1 for none. It survives a Stop; it is
+   * forgotten when that track empties, on a mode switch and on configure,
+   * and is never saved with a session. */
   int32_t song_last_section;
   /* Trailing (#1323): 1 when the waiting request is a Record (a new take,
    * or an overdub from the section's top), 0 for a Play or with none. It,
