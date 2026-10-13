@@ -20,6 +20,8 @@ dependencies:
   clock: ^1.1.2
   console_facts_client:
     path: packages/console_facts_client
+  cpu_load_repository:
+    path: packages/cpu_load_repository
   controller_repository:
     path: packages/controller_repository
   cupertino_icons: ^1.0.9
