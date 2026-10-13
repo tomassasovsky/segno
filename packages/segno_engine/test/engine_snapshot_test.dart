@@ -418,6 +418,12 @@ void main() {
         queued,
       );
       expect(queued.copyWith(songQueueProgress: 0.5), isNot(queued));
+      expect(initial.songLastSection, -1);
+      snap.ref.song_last_section = 3;
+      final last = EngineSnapshot.fromNative(snap.ref, const []);
+      expect(last.songLastSection, 3);
+      expect(last, isNot(queued));
+      expect(queued.copyWith(songLastSection: 3), last);
     });
 
     test('tempo follow and pitch are projected from the native fields '
@@ -1902,6 +1908,7 @@ void main() {
         // block, not per callback.
         'songQueuedTrack',
         'songQueueProgress',
+        'songLastSection', // moves when a section starts, not per callback
         'followTempo',
         'tempoFollow',
         'pitchMode',

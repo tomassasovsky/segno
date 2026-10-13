@@ -3040,4 +3040,74 @@ void main() {
       verifyNever(() => repository.play(channel: 3));
     },
   );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed starts the section that played last in Song '
+    '(#1077)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(
+        looperMode: LooperMode.song,
+        songLastSection: 3,
+      ),
+      tracks: [
+        Track(lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 1, lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 2, lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 3, lengthFrames: 100, state: TrackState.stopped),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verify(() => repository.play(channel: 3)).called(1);
+      verifyNever(() => repository.play());
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed passes over a muted last section in Song (#1077)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(
+        looperMode: LooperMode.song,
+        songLastSection: 1,
+      ),
+      tracks: [
+        Track(lengthFrames: 100, state: TrackState.stopped),
+        Track(
+          channel: 1,
+          lengthFrames: 100,
+          state: TrackState.stopped,
+          muted: true,
+        ),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verify(() => repository.play()).called(1);
+      verifyNever(() => repository.play(channel: 1));
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed falls back to the first audible section when the '
+    'last one has no take (#1077)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(
+        looperMode: LooperMode.song,
+        songLastSection: 2,
+      ),
+      tracks: [
+        Track(lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 1, lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 2), // cleared
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verify(() => repository.play()).called(1);
+      verifyNever(() => repository.play(channel: 2));
+    },
+  );
 }

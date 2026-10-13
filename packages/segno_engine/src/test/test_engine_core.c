@@ -24747,6 +24747,79 @@ static void test_song_queue_waits_for_a_reversed_lap(void) {
   le_engine_destroy(e);
 }
 
+/* Song starts one section at a time from a held rig too (#1077): a take or
+ * a punch-in starts only the section it captures on, never every stopped
+ * section (the unpark rule the other modes keep). */
+static void test_song_record_from_held_starts_only_that_section(void) {
+  printf("test_song_record_from_held_starts_only_that_section\n");
+  le_engine* e = song_queue_fixture();
+  le_snapshot s;
+  CHECK(le_engine_record(e, 3) == LE_OK); /* a new section's take */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[3].state == LE_TRACK_RECORDING);
+  for (int c = 0; c < 3; ++c) CHECK(s.tracks[c].state == LE_TRACK_STOPPED);
+  le_engine_destroy(e);
+
+  e = song_queue_fixture();
+  CHECK(le_engine_record(e, 1) == LE_OK); /* a punch-in on a stopped one */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
+  le_engine_destroy(e);
+
+  /* Free keeps the shared rule: a take from a held rig resumes the loop. */
+  e = fm_make_free_engine(1000);
+  fm_record_track(e, 0, 100);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  le_engine_destroy(e);
+}
+
+/* The section that sounded last survives a Stop, follows a handoff, and is
+ * forgotten when its track empties or the mode changes (#1077). */
+static void test_song_last_section(void) {
+  printf("test_song_last_section\n");
+  le_engine* e = song_queue_fixture();
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_last_section == 0); /* the fixture's first section */
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_last_section == 0);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  tg_advance(e, 100); /* the handoff at 0's lap edge */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.song_last_section == 1);
+  CHECK(le_engine_stop_track(e, 1) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  CHECK(s.song_last_section == 1); /* a Stop keeps it */
+  CHECK(le_engine_clear(e, 1) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_last_section == -1); /* emptied: forgotten */
+  CHECK(le_engine_play(e, 2) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_last_section == 2);
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_FREE) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_last_section == -1); /* a mode switch forgets it */
+  le_engine_destroy(e);
+}
+
 static void test_song_queue_free_mode_keeps_immediate_play(void) {
   printf("test_song_queue_free_mode_keeps_immediate_play\n");
   le_engine* e = fm_make_free_engine(1000);
@@ -36528,6 +36601,8 @@ int main(void) {
   test_song_queue_invalidation_and_capture();
   test_song_queue_one_shot_and_several_playing();
   test_song_queue_waits_for_a_reversed_lap();
+  test_song_record_from_held_starts_only_that_section();
+  test_song_last_section();
   test_song_queue_free_mode_keeps_immediate_play();
   test_song_queue_logs_committed_handoff_only();
   test_song_mode_independent_lengths_wraps();

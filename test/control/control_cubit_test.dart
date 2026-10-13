@@ -2729,6 +2729,51 @@ void main() {
         verifyNever(() => looper.play(channel: any(named: 'channel')));
       });
 
+      test('Record mode asks for a muted stopped section like Mute mode', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(
+              channel: 1,
+              state: TrackState.stopped,
+              lengthFrames: 48000,
+              muted: true,
+            ),
+            Track(channel: 2, state: TrackState.recording),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..selectTrack(1)
+          ..recPlay();
+        // A take runs on track 3: the request would be refused, so the mute
+        // stays as it is and nothing is asked.
+        verifyNever(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        );
+        verifyNever(() => looper.play(channel: any(named: 'channel')));
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(
+              channel: 1,
+              state: TrackState.stopped,
+              lengthFrames: 48000,
+              muted: true,
+            ),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit.recPlay();
+        verifyInOrder([
+          () => looper.setMute(muted: false, channel: 1),
+          () => looper.play(channel: 1),
+        ]);
+      });
+
       test('an empty track asks for nothing', () {
         setEngine(sections, looperMode: LooperMode.song);
         cubit

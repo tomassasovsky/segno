@@ -1767,10 +1767,19 @@ class ControlCubit extends Cubit<ControlState> {
   /// Rec mode: advance the cursor track through record / overdub / play. A
   /// muted track is first unmuted and brought back: overdub if its loop still
   /// runs, plain resume if it was parked (the engine unparks the rest of the
-  /// loop with it — starting anything resumes everything).
+  /// loop with it — starting anything resumes everything). In Song a muted
+  /// stopped section is asked for instead (it starts alone, or waits behind
+  /// the playing section); an unmuted stopped one still punches in.
   bool _recAdvance(int channel) {
     final track = _trackAt(channel);
     if (track != null && track.muted) {
+      // A muted stopped Song section is asked for like a Mute-mode press:
+      // it starts alone or waits for the playing section's lap edge, and a
+      // capture anywhere leaves its mute alone.
+      if (track.state == TrackState.stopped &&
+          _l.transport.looperMode == LooperMode.song) {
+        return _playSongSection(channel);
+      }
       if (!_setTrackMute(muted: false, channel: channel).isOk) return false;
       if (track.state == TrackState.stopped) {
         return _looper.play(channel: channel).isOk; // parked -> resume

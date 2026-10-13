@@ -150,8 +150,10 @@ typedef enum le_looper_mode {
    * on a stopped section while another plays waits for that section's next
    * lap edge, where the handoff stops it and starts the target from its
    * beginning (le_engine_play). This supersedes the spec's "immediately"
-   * for starting a second section. A record start from a held rig still
-   * resumes the stopped sections (le_unpark_stopped), as in every mode. No separate section object, no advance gesture (the
+   * for starting a second section. A start from a held rig (a take, a
+   * punch-in) starts only that section: Song keeps no unpark rule
+   * (le_unpark_stopped). le_snapshot.song_last_section names the section
+   * that sounded last. No separate section object, no advance gesture (the
    * plan's original `advanceSection` was explicitly dropped once the manual
    * research showed no such gesture exists on the Sheeran — see the spec's
    * six B1 answers). Structurally IDENTICAL to Free's transport (independent
@@ -1616,6 +1618,10 @@ typedef struct le_snapshot {
    * request. */
   int32_t song_queued_track;
   float song_queue_progress;
+  /* Trailing (#1077): the Song section that sounded most recently, -1 for
+   * none. It survives a Stop; it is forgotten when that track empties, on a
+   * mode switch and on configure, and is never saved with a session. */
+  int32_t song_last_section;
 } le_snapshot;
 
 /* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part

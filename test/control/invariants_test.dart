@@ -601,4 +601,58 @@ void main() {
       expect(violation(c, 'muted-dark-in-mute'), isNull);
     });
   });
+
+  group('transition rules in Song (#1077)', () {
+    LooperState rig(LooperMode mode, List<TrackState> states) => LooperState(
+      transport: TransportState(isRunning: true, looperMode: mode),
+      tracks: [
+        for (var i = 0; i < states.length; i++)
+          Track(channel: i, state: states[i], lengthFrames: 100),
+      ],
+    );
+    const held = [TrackState.stopped, TrackState.stopped, TrackState.stopped];
+    const one = [TrackState.stopped, TrackState.recording, TrackState.stopped];
+    const all = [TrackState.playing, TrackState.recording, TrackState.playing];
+    const take = [TrackState.playing, TrackState.recording, TrackState.stopped];
+
+    test('Song wakes only the started section, and is no unpark breach', () {
+      final violations = checkControlTransitionRules(
+        LooperTransition(
+          pre: rig(LooperMode.song, held),
+          post: rig(LooperMode.song, one),
+        ),
+      );
+      expect(violations, isEmpty);
+    });
+
+    test('Song flags a start that wakes several sections', () {
+      final violations = checkControlTransitionRules(
+        LooperTransition(
+          pre: rig(LooperMode.song, held),
+          post: rig(LooperMode.song, all),
+        ),
+      );
+      expect(violations.single, startsWith('song-start-one-section:'));
+    });
+
+    test('a take committed beside the started section is not counted', () {
+      final violations = checkControlTransitionRules(
+        LooperTransition(
+          pre: rig(LooperMode.song, held),
+          post: rig(LooperMode.song, take),
+        ),
+      );
+      expect(violations, isEmpty);
+    });
+
+    test('Multi still requires the whole loop to resume', () {
+      final violations = checkControlTransitionRules(
+        LooperTransition(
+          pre: rig(LooperMode.multi, held),
+          post: rig(LooperMode.multi, one),
+        ),
+      );
+      expect(violations.single, startsWith('unpark-on-start:'));
+    });
+  });
 }

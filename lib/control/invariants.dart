@@ -94,15 +94,14 @@ bool _sounding(Track t) =>
     !t.muted &&
     (t.state == TrackState.playing || t.state == TrackState.overdubbing);
 
-/// The waiting Song section Mute mode shows, restated from engine truth.
+/// The waiting Song section the pedal shows in Mute and Record mode: the
+/// model's own fact (`songWaitingSection`), gated by mode and the wire.
 int? _queuedSong(ControlContext c) {
-  final transport = c.looper.transport;
-  final queued = transport.songQueuedTrack;
-  if (c.overlay.mode != InteractionMode.mute ||
-      transport.looperMode != LooperMode.song ||
-      queued < 0 ||
-      queued >= PedalStateFrame.trackCount ||
-      !(_trackAt(c.looper, queued)?.hasContent ?? false)) {
+  final queued = c.looper.songWaitingSection;
+  if ((c.overlay.mode != InteractionMode.mute &&
+          c.overlay.mode != InteractionMode.record) ||
+      queued == null ||
+      queued >= PedalStateFrame.trackCount) {
     return null;
   }
   return queued;
@@ -447,8 +446,10 @@ final List<ControlTransitionRule> controlTransitionRules = [
   // is held resumes the ENTIRE loop — after the settle, no content track may
   // still sit frozen. (Mutes are preserved: unparking un-freezes, it does not
   // un-silence.) Holds for every surface and every start path: pedal, bloc,
-  // record punch-ins, plain plays, and redo-from-empty resurrection.
+  // record punch-ins, plain plays, and redo-from-empty resurrection. Song is
+  // the exception: it plays one section at a time (#1077).
   ControlTransitionRule('unpark-on-start', (t) {
+    if (t.post.transport.looperMode == LooperMode.song) return null;
     if (!_transportHeld(t.pre)) return null;
     if (!t.pre.tracks.any((tr) => tr.hasContent)) return null;
     final started = t.post.tracks.any((tr) {
@@ -465,6 +466,21 @@ final List<ControlTransitionRule> controlTransitionRules = [
       }
     }
     return null;
+  }),
+  // Song's side of the same moment: a start from a held rig (a take, a
+  // punch-in, a Play) wakes only the section it starts (#1077).
+  // Captures are not counted: a Count-in launch can commit a take beside
+  // the section it plays ('section exclusion changes playback, not capture
+  // ownership').
+  ControlTransitionRule('song-start-one-section', (t) {
+    if (t.post.transport.looperMode != LooperMode.song) return null;
+    if (!_transportHeld(t.pre)) return null;
+    final playing = t.post.tracks
+        .where((tr) => tr.state == TrackState.playing)
+        .length;
+    return playing > 1
+        ? '$playing sections play after one start from a held rig'
+        : null;
   }),
 ];
 

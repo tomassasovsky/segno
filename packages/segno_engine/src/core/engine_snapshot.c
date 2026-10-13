@@ -630,6 +630,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
                                             memory_order_relaxed);
   out->song_queued_track = (int32_t)(song & 255u) - 1;
   out->song_queue_progress = (float)(song >> 8) / 16777215.0f;
+  out->song_last_section = load_i32(&engine->a_song_last);
   out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);
   const int perf_armed =
