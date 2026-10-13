@@ -57,7 +57,7 @@ dependencies:
   toastification: ^3.2.0
   update_repository:
     path: packages/update_repository
-  url_launcher: ^6.3.0
+  url_launcher: ^6.3.3
   wifi_repository:
     path: packages/wifi_repository
   window_manager: ^0.5.2
