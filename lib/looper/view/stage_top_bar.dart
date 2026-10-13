@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -19,10 +20,11 @@ import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 
-/// The stage's top bar (the accepted design): Library at the leading edge, the
-/// session name centred, and at the trailing edge the bank, the view menu and
-/// Settings. Track, Wave and (later) Mixer are choices behind the view icon,
-/// not tabs in the track area; the bank indicator also changes bank.
+/// The stage's top bar (the accepted design): Library and the record light at
+/// the leading edge, the session name centred on the whole bar, and at the
+/// trailing edge the bank, the view menu, the Tuner and Settings. Track, Wave
+/// and Mixer are choices behind the view icon, not tabs in the track area; the
+/// bank indicator also changes bank.
 ///
 /// Each element subscribes to its own slice, so a session rename rebuilds the
 /// name and a bank change the bank button.
@@ -50,56 +52,153 @@ class StageTopBar extends StatelessWidget {
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: surface.line)),
       ),
-      child: Row(
+      child: CustomMultiChildLayout(
+        delegate: _CentredTitleLayout(gap: _gap),
         children: [
-          _StageIconButton(
-            key: const Key('stage_library'),
-            semanticLabel: l10n.stageLibrary,
-            onTap: () => unawaited(openLibrary()),
-            child: PenIconView(
-              icon: PenIcon.library,
-              size: 28,
-              color: surface.textPrimary,
+          LayoutId(
+            id: _BarSlot.leading,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _StageIconButton(
+                  key: const Key('stage_library'),
+                  semanticLabel: l10n.stageLibrary,
+                  onTap: () => unawaited(openLibrary()),
+                  child: PenIconView(
+                    icon: PenIcon.library,
+                    size: 28,
+                    color: surface.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: _gap),
+                const _RecordLight(),
+              ],
             ),
           ),
-          const SizedBox(width: _gap),
-          const _RecordLight(),
-          const Expanded(child: _SessionName()),
-          const _BackingClickButton(),
-          const _ResetMixerButton(),
-          const _BankButton(),
-          const SizedBox(width: _gap),
-          const _ViewButton(),
-          const SizedBox(width: _gap),
-          // The Tuner by touch; feet reach it through MODE or an assignment.
-          _StageIconButton(
-            key: const Key('stage_tuner'),
-            semanticLabel: l10n.actionModeTuner,
-            bordered: true,
-            onTap: () =>
-                context.read<ControlCubit>().setMode(InteractionMode.tuner),
-            child: Icon(
-              LucideIcons.guitar,
-              size: 28,
-              color: surface.textPrimary,
-            ),
-          ),
-          const SizedBox(width: _gap),
-          _StageIconButton(
-            key: const Key('stage_settings'),
-            semanticLabel: l10n.stageSettings,
-            bordered: true,
-            onTap: () => unawaited(openSegnoSettings()),
-            child: Icon(
-              LucideIcons.settings,
-              size: 28,
-              color: surface.textPrimary,
+          LayoutId(id: _BarSlot.title, child: const _SessionName()),
+          LayoutId(
+            id: _BarSlot.trailing,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const _BackingClickButton(),
+                const _ResetMixerButton(),
+                const _BankButton(),
+                const SizedBox(width: _gap),
+                const _ViewButton(),
+                const SizedBox(width: _gap),
+                // The Tuner by touch; feet reach it through MODE or an
+                // assignment.
+                _StageIconButton(
+                  key: const Key('stage_tuner'),
+                  semanticLabel: l10n.actionModeTuner,
+                  bordered: true,
+                  onTap: () => context.read<ControlCubit>().setMode(
+                    InteractionMode.tuner,
+                  ),
+                  child: Icon(
+                    LucideIcons.guitar,
+                    size: 28,
+                    color: surface.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: _gap),
+                _StageIconButton(
+                  key: const Key('stage_settings'),
+                  semanticLabel: l10n.stageSettings,
+                  bordered: true,
+                  onTap: () => unawaited(openSegnoSettings()),
+                  child: Icon(
+                    LucideIcons.settings,
+                    size: 28,
+                    color: surface.textPrimary,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
+}
+
+/// The bar's three slots.
+enum _BarSlot { leading, title, trailing }
+
+/// Lays the bar out with the title centred on the WHOLE bar, not on the room
+/// between the side groups (#1308).
+///
+/// The side groups sit at their own widths at either edge. The title is
+/// centred on the bar and may be at most twice the distance from the centre
+/// to the nearer group, less [gap], so it stays centred whatever the groups'
+/// widths and is ellipsized rather than run under either of them. Only when
+/// a group reaches so near the centre that less than
+/// [minCentredWidth] is left does the title fall back to the room between
+/// the groups.
+///
+/// Flutter's `NavigationToolbar` was the obvious candidate and does not fit:
+/// a long middle slides off centre towards the roomier side there.
+class _CentredTitleLayout extends MultiChildLayoutDelegate {
+  _CentredTitleLayout({required this.gap});
+
+  final double gap;
+
+  /// The narrowest centred room the title is still drawn in; below it the
+  /// title falls back to the room between the groups.
+  static const double minCentredWidth = 120;
+
+  @override
+  void performLayout(Size size) {
+    final loose = BoxConstraints.loose(size);
+    final leading = layoutChild(_BarSlot.leading, loose);
+    final trailing = layoutChild(
+      _BarSlot.trailing,
+      loose.copyWith(maxWidth: math.max(0, size.width - leading.width)),
+    );
+    positionChild(
+      _BarSlot.leading,
+      Offset(0, (size.height - leading.height) / 2),
+    );
+    positionChild(
+      _BarSlot.trailing,
+      Offset(size.width - trailing.width, (size.height - trailing.height) / 2),
+    );
+    final centre = size.width / 2;
+    final centredRoom =
+        2 * (math.min(centre - leading.width, centre - trailing.width) - gap);
+    if (centredRoom >= minCentredWidth) {
+      final title = layoutChild(
+        _BarSlot.title,
+        BoxConstraints(maxWidth: centredRoom, maxHeight: size.height),
+      );
+      positionChild(
+        _BarSlot.title,
+        Offset(centre - title.width / 2, (size.height - title.height) / 2),
+      );
+      return;
+    }
+    // A side group reaches (nearly) to the centre — the Mixer's extra
+    // buttons on the 1024-wide appliance — so no centred room is left: the
+    // title takes the room between the groups instead of vanishing.
+    final start = leading.width + gap;
+    final room = math.max(0, size.width - trailing.width - gap - start);
+    final title = layoutChild(
+      _BarSlot.title,
+      BoxConstraints(maxWidth: room.toDouble(), maxHeight: size.height),
+    );
+    positionChild(
+      _BarSlot.title,
+      Offset(
+        start + (room - title.width) / 2,
+        (size.height - title.height) / 2,
+      ),
+    );
+  }
+
+  @override
+  bool shouldRelayout(_CentredTitleLayout oldDelegate) =>
+      oldDelegate.gap != gap;
 }
 
 /// A 60×60 icon target, bordered like the pen's trailing buttons or bare like
@@ -354,8 +453,15 @@ class _ViewButton extends StatelessWidget {
 /// while a capture runs. A state light, not a button: the MODE footswitch
 /// long-press owns arm/disarm on the console, and the recording indicator
 /// persists on the stage while a capture runs.
+///
+/// A fixed slot (#1308): the elapsed readout appears inside room the light
+/// always holds, so arming moves nothing beside it.
 class _RecordLight extends StatelessWidget {
   const _RecordLight();
+
+  /// The light's 36, the 12 before the readout, and the readout's 60 — six
+  /// JetBrains Mono figures at 16, enough for `100:00`.
+  static const double slotWidth = 36 + 12 + 60;
 
   static String _format(Duration elapsed) {
     final minutes = elapsed.inMinutes.toString().padLeft(2, '0');
@@ -375,46 +481,54 @@ class _RecordLight extends StatelessWidget {
           ? l10n.a11yStageRecordIdle
           : l10n.perfArmedElapsed(elapsed),
       child: ExcludeSemantics(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              key: const Key('stage_record_light'),
-              width: 36,
-              height: 36,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: armed != null ? surface.recSurface : null,
-                border: Border.all(
-                  color: armed != null ? surface.rec : surface.borderStrong,
+        child: SizedBox(
+          key: const Key('stage_record_slot'),
+          width: slotWidth,
+          child: Row(
+            children: [
+              Container(
+                key: const Key('stage_record_light'),
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: armed != null ? surface.recSurface : null,
+                  border: Border.all(
+                    color: armed != null ? surface.rec : surface.borderStrong,
+                  ),
                 ),
-              ),
-              child: armed != null
-                  ? Container(width: 12, height: 12, color: surface.rec)
-                  : DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: surface.rec,
-                        shape: BoxShape.circle,
+                child: armed != null
+                    ? Container(width: 12, height: 12, color: surface.rec)
+                    : DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: surface.rec,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const SizedBox.square(dimension: 14),
                       ),
-                      child: const SizedBox.square(dimension: 14),
-                    ),
-            ),
-            if (elapsed != null) ...[
-              const SizedBox(width: 12),
-              AppText(
-                elapsed,
-                key: const Key('stage_record_elapsed'),
-                style: TextStyle(
-                  color: surface.rec,
-                  fontFamily: SurfaceTheme.monoFont,
-                  fontSize: 16,
-                  height: 1.15,
-                  leadingDistribution: TextLeadingDistribution.even,
-                ),
               ),
+              if (elapsed != null) ...[
+                const SizedBox(width: 12),
+                Flexible(
+                  child: AppText(
+                    elapsed,
+                    key: const Key('stage_record_elapsed'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: surface.rec,
+                      fontFamily: SurfaceTheme.monoFont,
+                      fontSize: 16,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      height: 1.15,
+                      leadingDistribution: TextLeadingDistribution.even,
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

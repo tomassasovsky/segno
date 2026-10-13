@@ -609,7 +609,7 @@ void main() {
       control.setMode(InteractionMode.record);
       await tester.pump();
       await tester.pump();
-      expect(find.text('REV'), findsOneWidget);
+      // A forward track holds REV's slot with an invisible, unkeyed marker.
       expect(find.byKey(const Key('tracks_reverse_0')), findsOneWidget);
       expect(find.byKey(const Key('tracks_reverse_1')), findsNothing);
       expect(find.byKey(const Key('tracks_meta_2')), findsOneWidget);
@@ -620,31 +620,33 @@ void main() {
       );
     });
 
-    testWidgets('a forward meta row is the pen row: evenly spread, no REV', (
+    testWidgets('reversing a track moves nothing in its meta row (#1308)', (
       tester,
     ) async {
       pin(tester);
-      seed(
-        const LooperState(
-          tracks: [
-            Track(state: TrackState.playing, lengthFrames: 48000),
-            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
-          ],
-        ),
+      LooperState rig({required bool reversed}) => LooperState(
+        tracks: [
+          Track(
+            state: TrackState.playing,
+            lengthFrames: 48000,
+            reversed: reversed,
+          ),
+        ],
       );
+      List<Rect> slots() => slotRects(find.byKey(const Key('tracks_meta_0')));
+      seed(rig(reversed: false));
       await pump(tester);
-      for (final channel in [0, 1]) {
-        Rect box(String part) =>
-            tester.getRect(find.byKey(Key('tracks_${part}_$channel')));
-        expect(find.byKey(Key('tracks_reverse_$channel')), findsNothing);
-        final gapBarsLayers = box('layers').left - box('bars').right;
-        final gapLayersFx = box('fx').left - box('layers').right;
-        expect(
-          gapLayersFx,
-          closeTo(gapBarsLayers, 1),
-          reason: 'track $channel',
-        );
-      }
+      expect(find.byKey(const Key('tracks_reverse_0')), findsNothing);
+      final forward = slots();
+      final fx = tester.getRect(find.byKey(const Key('tracks_fx_0')));
+      expect(forward, hasLength(4));
+
+      seed(rig(reversed: true));
+      await tester.pumpWidget(const SizedBox());
+      await pump(tester);
+      expect(find.byKey(const Key('tracks_reverse_0')), findsOneWidget);
+      expect(slots(), forward);
+      expect(tester.getRect(find.byKey(const Key('tracks_fx_0'))), fx);
     });
 
     for (final locale in const [Locale('en'), Locale('es')]) {
@@ -2945,6 +2947,309 @@ void main() {
 
       expect(find.byKey(const Key('tracks_audioNotRunning')), findsNothing);
     });
+  });
+
+  group('fixed slot geometry (#1308)', () {
+    const sizes = [Size(1024, 600), Size(1920, 1080)];
+
+    /// Mounts the stage afresh, so every const readout re-reads its mocked
+    /// state.
+    Future<void> remount(WidgetTester tester, Size size) async {
+      await tester.pumpWidget(const SizedBox());
+      await pump(tester, size: size);
+    }
+
+    Rect rectOf(WidgetTester tester, String key) =>
+        tester.getRect(find.byKey(Key(key)));
+
+    void name(String? value) => when(
+      () => session.state,
+    ).thenReturn(SessionState(currentSessionName: value));
+
+    for (final size in sizes) {
+      final at = '${size.width.toInt()}x${size.height.toInt()}';
+
+      testWidgets('the title is centred on the whole bar ($at)', (
+        tester,
+      ) async {
+        seed(const LooperState(tracks: [Track()]));
+        name('Set');
+        await pump(tester, size: size);
+        final bar = rectOf(tester, 'stage_top_bar');
+        final leading = rectOf(tester, 'stage_record_slot').right - bar.left;
+        final trailing = bar.right - rectOf(tester, 'stage_bank_button').left;
+        // The groups really are unequal, so centring between them would
+        // put the title off the bar's centre.
+        expect((trailing - leading).abs(), greaterThan(50));
+        final title = rectOf(tester, 'stage_session_name');
+        expect(title.center.dx, closeTo(bar.center.dx, 0.5));
+        expect(title.center.dy, closeTo(bar.center.dy, 1));
+      });
+
+      testWidgets('a long title is ellipsized, centred and clear of both '
+          'groups ($at)', (tester) async {
+        seed(const LooperState(tracks: [Track()]));
+        name('An extremely long session name that cannot fit ' * 4);
+        await pump(tester, size: size);
+        expect(tester.takeException(), isNull);
+        final bar = rectOf(tester, 'stage_top_bar');
+        final title = rectOf(tester, 'stage_session_name');
+        expect(title.center.dx, closeTo(bar.center.dx, 0.5));
+        expect(
+          title.left,
+          greaterThanOrEqualTo(rectOf(tester, 'stage_record_slot').right + 24),
+        );
+        expect(
+          title.right,
+          lessThanOrEqualTo(rectOf(tester, 'stage_bank_button').left - 24),
+        );
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.byKey(const Key('stage_session_name')),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(paragraph.didExceedMaxLines, isTrue);
+      });
+
+      testWidgets('the Mixer keeps the title clear of its wider trailing '
+          'group ($at)', (tester) async {
+        seed(const LooperState(tracks: [Track()]));
+        name('An extremely long session name that cannot fit ' * 4);
+        tracks.showView(StageView.mixer);
+        await pump(tester, size: size);
+        expect(tester.takeException(), isNull);
+        final title = rectOf(tester, 'stage_session_name');
+        expect(
+          title.left,
+          greaterThanOrEqualTo(rectOf(tester, 'stage_record_slot').right),
+        );
+        expect(
+          title.right,
+          lessThanOrEqualTo(rectOf(tester, 'stage_backing_click').left),
+        );
+        if (size.width >= 1920) {
+          final bar = rectOf(tester, 'stage_top_bar');
+          expect(title.center.dx, closeTo(bar.center.dx, 0.5));
+        }
+      });
+
+      testWidgets('arming moves nothing in the top bar ($at)', (tester) async {
+        seed(const LooperState(tracks: [Track()]));
+        name('Set');
+        const keys = [
+          'stage_library',
+          'stage_record_slot',
+          'stage_record_light',
+          'stage_session_name',
+          'stage_bank_button',
+          'stage_settings',
+        ];
+        await pump(tester, size: size);
+        final idle = [for (final key in keys) rectOf(tester, key)];
+        for (final elapsed in const [
+          Duration.zero,
+          Duration(minutes: 99, seconds: 59),
+          Duration(minutes: 140),
+        ]) {
+          when(() => performanceRecorder.state).thenReturn(
+            PerformanceRecorderArmed(elapsed: elapsed, overrun: false),
+          );
+          await remount(tester, size);
+          expect(find.byKey(const Key('stage_record_elapsed')), findsOne);
+          expect([for (final key in keys) rectOf(tester, key)], idle);
+          expect(tester.takeException(), isNull);
+        }
+      });
+
+      testWidgets('footer readouts changing move nothing in the strip ($at)', (
+        tester,
+      ) async {
+        const keys = [
+          'stage_footer_bpm',
+          'stage_footer_clock',
+          'stage_footer_output',
+        ];
+        final variants = <(LooperState, OutputLevelState, Duration)>[
+          (
+            const LooperState(tracks: [Track()]),
+            const OutputLevelState(),
+            Duration.zero,
+          ),
+          (
+            const LooperState(
+              transport: TransportState(
+                tempoBpm: 120,
+                tempoSource: TempoSource.manual,
+                countingIn: true,
+                countInBeatsLeft: 3,
+                looperMode: LooperMode.band,
+              ),
+              tracks: [Track()],
+            ),
+            const OutputLevelState(tenths: -600),
+            const Duration(hours: 9, minutes: 59, seconds: 59),
+          ),
+          (
+            const LooperState(
+              transport: TransportState(
+                tempoBpm: 84,
+                tempoSource: TempoSource.manual,
+                looperMode: LooperMode.sync,
+              ),
+              tracks: [Track()],
+            ),
+            const OutputLevelState(tenths: 0, clip: true),
+            const Duration(seconds: 7),
+          ),
+          (
+            const LooperState(
+              transport: TransportState(
+                tempoBpm: 7.5,
+                tempoSource: TempoSource.manual,
+              ),
+              tracks: [Track()],
+            ),
+            const OutputLevelState(tenths: -32),
+            const Duration(minutes: 3),
+          ),
+        ];
+        List<Rect>? first;
+        for (final (looper, output, elapsed) in variants) {
+          seed(looper);
+          when(() => outputLevel.state).thenReturn(output);
+          when(
+            () => transportClock.state,
+          ).thenReturn(TransportClockState(elapsed: elapsed));
+          await remount(tester, size);
+          expect(tester.takeException(), isNull);
+          final rects = [
+            ...slotRects(find.byKey(const Key('stage_footer'))),
+            for (final key in keys) rectOf(tester, key),
+          ];
+          expect(rects, hasLength(7));
+          first ??= rects;
+          expect(rects, first);
+        }
+      });
+
+      testWidgets('track meta counts changing move nothing in the row ($at)', (
+        tester,
+      ) async {
+        LooperState rig({
+          required int lengthFrames,
+          required int peelDepth,
+          required bool reversed,
+        }) => LooperState(
+          status: const EngineStatus(sampleRate: 48000),
+          transport: const TransportState(
+            masterLengthFrames: 1000,
+            loopBars: 1,
+          ),
+          tracks: [
+            Track(
+              state: TrackState.playing,
+              lengthFrames: lengthFrames,
+              peelDepth: peelDepth,
+              reversed: reversed,
+            ),
+            const Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 1000,
+            ),
+          ],
+        );
+        List<Rect>? first;
+        for (final looper in [
+          rig(lengthFrames: 1000, peelDepth: 0, reversed: false),
+          rig(lengthFrames: 128000, peelDepth: 11, reversed: true),
+          rig(lengthFrames: 16000, peelDepth: 3, reversed: false),
+        ]) {
+          seed(looper);
+          await remount(tester, size);
+          expect(tester.takeException(), isNull);
+          final rects = [
+            for (final channel in [0, 1])
+              ...slotRects(find.byKey(Key('tracks_meta_$channel'))),
+          ];
+          expect(rects, hasLength(8));
+          first ??= rects;
+          expect(rects, first);
+        }
+      });
+
+      testWidgets('Wave meta counts changing move nothing in the row ($at)', (
+        tester,
+      ) async {
+        tracks.showView(StageView.wave);
+        List<Rect>? first;
+        for (final lengthFrames in const [1000, 128000]) {
+          seed(
+            LooperState(
+              status: const EngineStatus(sampleRate: 48000),
+              transport: const TransportState(
+                masterLengthFrames: 1000,
+                loopBars: 1,
+              ),
+              tracks: [
+                Track(state: TrackState.playing, lengthFrames: lengthFrames),
+              ],
+            ),
+          );
+          await remount(tester, size);
+          expect(tester.takeException(), isNull);
+          final rects = slotRects(find.byKey(const Key('wave_meta_0')));
+          expect(rects, hasLength(3));
+          first ??= rects;
+          expect(rects, first);
+        }
+      });
+
+      testWidgets('Mixer readouts changing move nothing in their rows ($at)', (
+        tester,
+      ) async {
+        tracks.showView(StageView.mixer);
+        List<Rect>? first;
+        for (final (volume, pan, lengthFrames) in const [
+          (1.0, 0.0, 1000),
+          (0.0, -1.0, 128000),
+          (0.001, 0.05, 16000),
+          (2.0, 1.0, 1000),
+        ]) {
+          seed(
+            LooperState(
+              status: const EngineStatus(sampleRate: 48000),
+              transport: const TransportState(
+                masterLengthFrames: 1000,
+                loopBars: 1,
+              ),
+              tracks: [
+                Track(
+                  state: TrackState.playing,
+                  lengthFrames: lengthFrames,
+                  volume: volume,
+                  pan: pan,
+                ),
+              ],
+            ),
+          );
+          await remount(tester, size);
+          expect(tester.takeException(), isNull);
+          final rects = [
+            for (final row in const [
+              'mixer_meta_0',
+              'mixer_pan_row_0',
+              'mixer_gain_row_0',
+            ])
+              ...slotRects(find.byKey(Key(row))),
+          ];
+          expect(rects, hasLength(7));
+          first ??= rects;
+          expect(rects, first);
+        }
+      });
+    }
   });
 
   group('accessibility', () {
