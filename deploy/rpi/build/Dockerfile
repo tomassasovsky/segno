@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Flutter 3.44.4 by default. The ivi-homescreen image (#1318) builds with the
-# release its prebuilt engine comes from instead (--build-arg FLUTTER_VERSION=).
+# release its prebuilt engine comes from instead: appliance-release.yml passes
+# FLUTTER_ENGINE_VERSION from meta-segno's flutter-engine-version.inc.
 ARG FLUTTER_VERSION=3.44.4
 ENV FLUTTER_HOME=/opt/flutter
 RUN git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$FLUTTER_HOME"

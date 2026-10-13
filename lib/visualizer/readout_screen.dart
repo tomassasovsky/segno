@@ -95,6 +95,11 @@ class ReadoutScreenLink {
         visible.value = true;
       case ScreenLinkOp.hide:
         visible.value = false;
+        // Hidden means holding nothing, as a closed GTK window does: the next
+        // show starts blank and is re-seeded, rather than flashing whatever
+        // the rig showed before it was hidden.
+        frame.value = (samples: Float32List(0), progress: 0, selectedTrack: '');
+        readout.value = const PerformanceReadout();
       case ScreenLinkOp.waveform:
         final samples = unpackSamples(message['samples']);
         frame.value = waveformFrameFrom({

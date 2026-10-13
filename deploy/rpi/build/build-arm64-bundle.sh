@@ -13,13 +13,17 @@
 #
 #   (no args)                      Console kiosk release bundle.
 #   --deploy pi@raspberrypi.local  After building, rsync the bundle to the Pi.
+#   --ivi                          Build for the ivi-homescreen image (#1318):
+#                                  with the Flutter release its prebuilt engine
+#                                  comes from (flutter-engine-version.inc),
+#                                  in an image tag of its own.
 #
 # Any extra args are forwarded to `flutter build` verbatim.
 #
 # Output: build/linux/arm64/release/bundle/ (segno + libsegno_engine.so + lib/ + data/).
 set -euo pipefail
 
-readonly IMAGE="segno-arm64-build"
+image="segno-arm64-build"
 readonly BUNDLE_REL="build/linux/arm64/release/bundle"
 
 # Print the leading comment block (everything from line 2 to the first code line).
@@ -27,10 +31,12 @@ usage() { awk 'NR==1{next} /^#/{sub(/^# ?/,"");print;next}{exit}' "$0"; }
 
 # --- Parse args: pull out --deploy, forward the rest to flutter build ---------
 deploy_target=""
+ivi=0
 forward=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --deploy)   deploy_target="${2:?--deploy needs a user@host target}"; shift 2 ;;
+    --ivi)      ivi=1; shift ;;
     -h|--help)  usage; exit 0 ;;
     *)          forward+=("$1"); shift ;;
   esac
@@ -44,15 +50,27 @@ repo_root="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 cd "$repo_root"
 
 # --- Build the image, then run the build inside it ----------------------------
-echo "==> Building $IMAGE (arm64)"
-DOCKER_BUILDKIT=1 docker build --platform linux/arm64 \
-  -f deploy/rpi/build/Dockerfile.arm64 -t "$IMAGE" deploy/rpi/build
+build_args=()
+if [ "$ivi" = 1 ]; then
+  pin=deploy/yocto/meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc
+  flutter_version=$(sed -n 's/^FLUTTER_ENGINE_VERSION = "\(.*\)"$/\1/p' "$pin")
+  [ -n "$flutter_version" ] || { echo "error: no FLUTTER_ENGINE_VERSION in $pin" >&2; exit 1; }
+  build_args+=(--build-arg "FLUTTER_VERSION=$flutter_version")
+  # Its own tag, so the default image is not silently rebuilt on another
+  # Flutter (and vice versa).
+  image="$image-ivi"
+fi
+readonly image
+
+echo "==> Building $image (arm64)"
+DOCKER_BUILDKIT=1 docker build --platform linux/arm64 ${build_args[@]+"${build_args[@]}"} \
+  -f deploy/rpi/build/Dockerfile.arm64 -t "$image" deploy/rpi/build
 
 echo "==> Building the aarch64 bundle: flutter build linux --release $*"
 docker run --rm --platform linux/arm64 \
   -v "$repo_root":/workspace -w /workspace \
   -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
-  "$IMAGE" "$@"
+  "$image" "$@"
 
 # --- Verify the bundle looks like an aarch64 ELF ------------------------------
 bin="$BUNDLE_REL/segno"

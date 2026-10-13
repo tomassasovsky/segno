@@ -418,8 +418,11 @@ do_install() {
 
     # tmpfiles.d rule that creates /run/user/1000 for the weston user at boot
     # (no logind session makes it otherwise; weston crash-loops without it).
-    install -d ${D}${sysconfdir}/tmpfiles.d
-    install -m 0644 ${UNPACKDIR}/segno-runtime.conf ${D}${sysconfdir}/tmpfiles.d/segno-runtime.conf
+    # The ivi image has no weston and no weston user to own it.
+    if [ "${SEGNO_EMBEDDER}" = gtk ]; then
+        install -d ${D}${sysconfdir}/tmpfiles.d
+        install -m 0644 ${UNPACKDIR}/segno-runtime.conf ${D}${sysconfdir}/tmpfiles.d/segno-runtime.conf
+    fi
 }
 
 # Rebuild when CI stamps a new version/channel (otherwise sstate can leave a
