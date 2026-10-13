@@ -28717,6 +28717,21 @@ static void test_band_one_section_handoff(void) {
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
   CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
+  /* A section's own grid arm, set while no other section sounded, is still
+   * cancelled by a second Record once one does. */
+  CHECK(le_engine_stop_track(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 3) == LE_OK); /* the primary-top arm */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[3].pending == 1 && s.tracks[3].pending_trigger == 0);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 3) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[3].pending == 0 && s.tracks[3].state == LE_TRACK_EMPTY);
+  CHECK(s.song_queued_track == -1);
   le_engine_destroy(e);
 }
 
