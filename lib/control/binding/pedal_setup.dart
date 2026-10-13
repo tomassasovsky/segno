@@ -5,7 +5,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
-import 'package:segno/control/binding/pedal_palette.dart';
+import 'package:segno/control/binding/pedal_led_map.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 /// What a HOLD on Record / Play does.
@@ -147,7 +147,7 @@ class PedalSetup extends Equatable {
     this.modeHold = InteractionMode.custom,
     this.recordHold = RecordHold.undoRecording,
     this.trackHold = TrackHold.armOverdub,
-    this.palette = const PedalPalette(),
+    this.leds = const PedalLedMap(),
     this.external = ExternalPedalSetup.empty,
   }) : custom = const <PedalBindingKey, ControlGesturePair>{};
 
@@ -157,7 +157,7 @@ class PedalSetup extends Equatable {
     required this.recordHold,
     required this.trackHold,
     required this.custom,
-    required this.palette,
+    required this.leds,
     required this.external,
   });
 
@@ -177,13 +177,13 @@ class PedalSetup extends Equatable {
       throw const FormatException('Invalid pedal setup object');
     }
     final raw = decoded;
-    final rawPalette = raw['palette'];
-    if (raw.containsKey('palette') && rawPalette is! Map<String, dynamic>) {
-      throw const FormatException('Invalid pedal palette');
+    final rawLeds = raw['leds'];
+    if (raw.containsKey('leds') && rawLeds is! Map<String, dynamic>) {
+      throw const FormatException('Invalid pedal LED colours');
     }
-    final palette = rawPalette is Map<String, dynamic>
-        ? PedalPalette.fromJson(rawPalette)
-        : const PedalPalette();
+    final leds = rawLeds is Map<String, dynamic>
+        ? PedalLedMap.fromJson(rawLeds)
+        : const PedalLedMap();
     final rawExternal = raw['external'];
     if (raw.containsKey('external') && rawExternal is! Map<String, dynamic>) {
       throw const FormatException('Invalid external pedals');
@@ -239,7 +239,7 @@ class PedalSetup extends Equatable {
       recordHold: RecordHold.fromToken(optionalToken('recordHold')),
       trackHold: TrackHold.fromToken(optionalToken('trackHold')),
       custom: Map.unmodifiable(custom),
-      palette: palette,
+      leds: leds,
       external: external,
     );
   }
@@ -269,8 +269,9 @@ class PedalSetup extends Equatable {
   /// The Custom-controls map, keyed exactly like the FX remap.
   final Map<PedalBindingKey, ControlGesturePair> custom;
 
-  /// Per-physical-switch LED hues, shared across both action banks.
-  final PedalPalette palette;
+  /// The LED colour map: per mode, per group, per state, and per Custom
+  /// assignment.
+  final PedalLedMap leds;
 
   /// Both external CTRL jacks, retained with their inactive type settings.
   final ExternalPedalSetup external;
@@ -327,7 +328,7 @@ class PedalSetup extends Equatable {
     RecordHold? recordHold,
     TrackHold? trackHold,
     Map<PedalBindingKey, ControlGesturePair>? custom,
-    PedalPalette? palette,
+    PedalLedMap? leds,
     ExternalPedalSetup? external,
     bool clearModeHold = false,
   }) => PedalSetup._(
@@ -336,7 +337,7 @@ class PedalSetup extends Equatable {
     recordHold: recordHold ?? this.recordHold,
     trackHold: trackHold ?? this.trackHold,
     custom: Map.unmodifiable(custom ?? this.custom),
-    palette: palette ?? this.palette,
+    leds: leds ?? this.leds,
     external: external ?? this.external,
   );
 
@@ -353,7 +354,7 @@ class PedalSetup extends Equatable {
         for (final key in _orderedCustomKeys())
           {...key.toJson(), ...custom[key]!.toJson()},
       ],
-    if (!palette.isEmpty) 'palette': palette.toJson(),
+    if (!leds.isEmpty) 'leds': leds.toJson(),
     if (!external.isEmpty) 'external': external.toJson(),
   });
 
@@ -379,7 +380,7 @@ class PedalSetup extends Equatable {
     modeHold,
     recordHold,
     trackHold,
-    palette,
+    leds,
     external,
     // An ORDERED flattening of the map, not the map itself: two setups built
     // in different insertion orders must compare equal, which a Map does not

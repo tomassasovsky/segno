@@ -888,6 +888,9 @@ class _Harness {
   late final PerformanceRepository performance;
   late final ControlCubit control;
   late final PedalCubit cubit;
+
+  /// The switches physically down, as the board last reported them: the
+  /// oracle the held-pedal light is checked against.
   final Set<PedalButton> _held = {};
 
   LooperState get looper => repo.state;
@@ -897,6 +900,7 @@ class _Harness {
     looper: looper,
     overlay: control.state,
     frame: frame,
+    pressed: _held,
   );
 
   /// The FX-state invariant, checked only while the engine is running (a
@@ -995,6 +999,10 @@ class _Tap extends _FuzzAction {
   final PedalButton button;
   @override
   void apply(_Harness h, FakeAsync fa) {
+    // A tap ends with the switch up, even one a _Hold left down: the oracle
+    // of what is physically held must say so, or a held light it expects
+    // outlives the release the board already sent.
+    h._held.remove(button);
     h.sim
       ..press(button, down: true)
       ..press(button, down: false);
@@ -1032,6 +1040,7 @@ class _LongPressUndo extends _FuzzAction {
   const _LongPressUndo();
   @override
   void apply(_Harness h, FakeAsync fa) {
+    h._held.remove(PedalButton.undo);
     h.sim.press(PedalButton.undo, down: true);
     fa
       // Cross the accepted 800 ms default without deriving the oracle from

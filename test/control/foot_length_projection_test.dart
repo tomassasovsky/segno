@@ -167,7 +167,7 @@ void main() {
     final pressed = projectFrame(
       looper,
       overlay,
-      acceptedContacts: {PedalButton.undo},
+      pressed: {PedalButton.undo},
     );
     expect(pressed.activeButtonMask & (1 << PedalButton.undo.index), isNonZero);
   });
