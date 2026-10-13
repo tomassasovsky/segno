@@ -59,8 +59,11 @@ sets it to `ivi`; everything else leaves the default `gtk`.
   - The app bundle must come from the Flutter release named in
     `recipes-graphics/flutter-engine/flutter-engine-version.inc`, and
     `segno-bundle` refuses any other.
-  - CI builds it with `-f embedder=ivi -f publish=no`. It is never published,
-    and the artifact carries a `.raucb` for moving a bench unit onto it.
+  - CI builds it with `-f embedder=ivi`, on the experimental channel only.
+    - With `publish=yes` it is offered to experimental-channel units like any
+      build, and installs stay opt-in.
+    - The artifact also carries a `.raucb` for moving a bench unit onto it by
+      hand.
   - Plan and on-device checklist:
     [`docs/plan/2026-10-13-spike-ivi-homescreen-plan.md`](../../docs/plan/2026-10-13-spike-ivi-homescreen-plan.md).
 
