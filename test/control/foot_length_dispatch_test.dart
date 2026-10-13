@@ -545,17 +545,22 @@ void main() {
   test('an empty track is dimmed and silent', () async {
     final rig = await enter(cursor: 2);
     try {
-      // The edit pedals rest while the selected track is empty: a held
-      // stomp is not accepted, so its pedal stays dark.
+      // The edit pedals rest while the selected track is empty: the held
+      // stomp does nothing, but its pedal still lights until release, as
+      // every press does.
       rig.press(PedalButton.clear);
       await _pump();
       await rig.poll();
       expect(
         rig.link.lastFrame!.activeButtonMask & (1 << PedalButton.clear.index),
-        0,
+        isNonZero,
       );
       rig.release(PedalButton.clear);
       await _pump();
+      expect(
+        rig.link.lastFrame!.activeButtonMask & (1 << PedalButton.clear.index),
+        0,
+      );
       await tap(rig, PedalButton.clear);
       rig.control.activateFootLengthPedal(PedalButton.clear);
       rig.control.setMode(InteractionMode.divide);

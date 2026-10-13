@@ -4710,80 +4710,96 @@
     "@pedalSetupFixedNote": {
         "description": "Shown in place of the editor when a dimmed, unassignable footswitch is selected."
     },
-    "pedalSetupContextLeds": "Custom colors",
+    "pedalSetupContextLeds": "LED colors",
     "@pedalSetupContextLeds": {
-        "description": "Opens the Custom colors context of the Pedals setup, where each Custom-assignable footswitch's indicator colour is chosen. Record, Mute and FX use fixed state colours."
+        "description": "Opens the LED colors context of the Pedals setup: per mode, a color for every state each pedal group can show."
     },
-    "pedalSetupLedColor": "LED color",
-    "@pedalSetupLedColor": {
-        "description": "Label of the field that picks the selected footswitch's indicator colour."
-    },
-    "pedalSetupLedEdit": "Edit color",
-    "@pedalSetupLedEdit": {
-        "description": "Opens the colour editor on the custom colour the selected footswitch uses. Absent on the eight built-in colours, which cannot be edited."
-    },
-    "pedalSetupLedAdd": "Add custom color",
-    "@pedalSetupLedAdd": {
-        "description": "Accessible name of the + swatch that mixes a new reusable colour."
-    },
-    "pedalColorWhite": "White",
-    "@pedalColorWhite": {
-        "description": "Built-in LED colour, and the default on all ten footswitches."
-    },
-    "pedalColorAmber": "Amber",
-    "@pedalColorAmber": {
-        "description": "Built-in LED colour."
-    },
-    "pedalColorRed": "Red",
-    "@pedalColorRed": {
-        "description": "Built-in LED colour."
-    },
-    "pedalColorOrange": "Orange",
-    "@pedalColorOrange": {
-        "description": "Built-in LED colour."
-    },
-    "pedalColorGreen": "Green",
-    "@pedalColorGreen": {
-        "description": "Built-in LED colour."
-    },
-    "pedalColorCyan": "Cyan",
-    "@pedalColorCyan": {
-        "description": "Built-in LED colour."
-    },
-    "pedalColorBlue": "Blue",
-    "@pedalColorBlue": {
-        "description": "Built-in LED colour."
-    },
-    "pedalColorViolet": "Violet",
-    "@pedalColorViolet": {
-        "description": "Built-in LED colour."
-    },
-    "pedalColorCustom": "Custom {number}",
-    "@pedalColorCustom": {
-        "description": "Name of a colour the performer mixed. The number is the entry's own, stable for its life so that editing a colour never renames it.",
+    "pedalLedMode": "Mode: {mode}",
+    "@pedalLedMode": {
+        "description": "The LED colors mode picker; {mode} is the mode whose colors are shown.",
         "placeholders": {
-            "number": {
-                "type": "int"
+            "mode": {
+                "type": "String"
             }
         }
     },
-    "pedalColorAddTitle": "Add color",
-    "@pedalColorAddTitle": {
-        "description": "Title of the colour editor while mixing a new colour."
+    "pedalLedReset": "Reset to defaults",
+    "@pedalLedReset": {
+        "description": "Puts every LED color of the shown mode back to the pedal's original colors."
+    },
+    "pedalLedStateRecording": "Recording",
+    "@pedalLedStateRecording": {
+        "description": "LED state: capturing a first pass."
+    },
+    "pedalLedStateOverdubbing": "Overdubbing",
+    "@pedalLedStateOverdubbing": {
+        "description": "LED state: overdubbing an existing loop."
+    },
+    "pedalLedStatePlaying": "Playing",
+    "@pedalLedStatePlaying": {
+        "description": "LED state: a loop is playing."
+    },
+    "pedalLedStateSelected": "Selected",
+    "@pedalLedStateSelected": {
+        "description": "LED state: the selected track or channel."
+    },
+    "pedalLedStateArmed": "Armed",
+    "@pedalLedStateArmed": {
+        "description": "LED state, Mute mode: armed and audible."
+    },
+    "pedalLedStateEngaged": "Engaged",
+    "@pedalLedStateEngaged": {
+        "description": "LED state, FX mode: the chain or binding is on."
+    },
+    "pedalLedStateFading": "Fading",
+    "@pedalLedStateFading": {
+        "description": "LED state, Fade mode: fading or faded out."
+    },
+    "pedalLedStateReversed": "Reversed",
+    "@pedalLedStateReversed": {
+        "description": "LED state, Reverse mode: playing reversed."
+    },
+    "pedalLedStatePeelable": "Can peel",
+    "@pedalLedStatePeelable": {
+        "description": "LED state, Peel mode: a press would remove a layer."
+    },
+    "pedalLedStateTuned": "Tuning",
+    "@pedalLedStateTuned": {
+        "description": "LED state, Tuner mode: the input being tuned."
+    },
+    "pedalLedStateMuted": "Muted",
+    "@pedalLedStateMuted": {
+        "description": "LED state, Tuner mode: the tuned input is muted."
+    },
+    "pedalLedStateIdle": "Idle",
+    "@pedalLedStateIdle": {
+        "description": "LED state of Rec/Play: lit with no loop running."
+    },
+    "pedalLedStateCurrent": "Lit",
+    "@pedalLedStateCurrent": {
+        "description": "LED state of MODE, which is always lit."
+    },
+    "pedalLedStateLaterBank": "Bank B",
+    "@pedalLedStateLaterBank": {
+        "description": "LED state of Bank: bank B or a later page."
+    },
+    "pedalLedStateLit": "Active",
+    "@pedalLedStateLit": {
+        "description": "LED state, Custom mode: the assigned function is active."
+    },
+    "pedalLedStatePressed": "Pressed",
+    "@pedalLedStatePressed": {
+        "description": "LED state: the pedal is held. Every press lights its pedal at once."
     },
     "pedalColorEditTitle": "Edit color",
     "@pedalColorEditTitle": {
         "description": "Title of the colour editor while changing a colour the palette already has."
     },
-    "pedalColorAddConfirm": "Add color",
-    "@pedalColorAddConfirm": {
-        "description": "Commits a newly mixed colour to the palette and puts it on the selected footswitch."
-    },
     "pedalColorEditConfirm": "Save color",
     "@pedalColorEditConfirm": {
         "description": "Commits a change to a colour the palette already has, moving every footswitch that uses it."
     },
-    "pedalColorDialogLabel": "Custom LED color",
+    "pedalColorDialogLabel": "LED color",
     "@pedalColorDialogLabel": {
         "description": "Accessible name of the colour editor dialog."
     },
