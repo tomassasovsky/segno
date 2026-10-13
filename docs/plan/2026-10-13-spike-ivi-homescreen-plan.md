@@ -4,7 +4,7 @@ type: spike
 date: 2026-10-13
 ---
 
-<!-- cspell:words libepoxy Wrynose libapp pixman gitsm libdisplay libdrm libxkbcommon libseat -->
+<!-- cspell:words libepoxy Wrynose libapp pixman gitsm libdisplay libdrm libxkbcommon libseat EDID -->
 
 ## Spike: Segno on ivi-homescreen (DRM/KMS, no Weston, no GTK)
 
@@ -86,9 +86,21 @@ Sources: ivi-homescreen `v3.0` at `80f9ea4` (2026-10-12), meta-flutter
      meta-segno.
 5. **One embedder gap needs a patch.** On DRM, ivi-homescreen sends window
    metrics with a pixel ratio of 1.0 whatever the view's configured
-   `pixel_ratio` is (`shell/engine.cc` `SetWindowSize`). The 7" readout relies
-   on Weston's `scale=3`, so the recipe carries a small patch that applies the
-   configured ratio. It is worth sending upstream.
+   `pixel_ratio` is (`shell/engine.cc` `SetWindowSize`). The 7" readout needs a
+   ratio (below), so the recipe carries a small patch that applies the
+   configured one. It is worth sending upstream.
+6. **Each panel runs its native mode.**
+   - The bench uses the console's own panels, not the old TV: a 1080p touch
+     panel on HDMI-A-1 and the 7" 1024x600 on HDMI-A-2.
+   - The GTK image drives the 7" with a 1920x1080i signal that the panel
+     scales down. ivi-homescreen drives each connector's EDID-preferred mode
+     instead.
+   - So the readout's `pixel_ratio` is 1.6, not Weston's 3. That keeps its
+     physical size: about 1.6 panel pixels per logical pixel either way, now
+     at 640x375 logical, without the scaler or the interlaced link.
+   - No mode is pinned. A pinned mode the connector does not list stops the
+     whole process, while an unexpected native mode only resizes a
+     proportional layout.
 
 ## Design
 
@@ -137,7 +149,7 @@ and partition layout stay the same, so a bench unit moves onto the spike with
 | `/opt/segno` | the whole bundle | `data/`, `lib/libapp.so`, `lib/libsegno_engine.so` |
 | Launch tail | `segno-embedder-gtk` (wait for Wayland, `exec /opt/segno/segno`) | `segno-embedder-ivi` (`exec homescreen --config /etc/segno/homescreen.toml`) |
 | Unit drop-in | `segno-gtk.conf` (after and requires weston) | `segno-ivi.conf` (after plymouth quits, which frees DRM master) |
-| Screen layout | `weston.ini` app-ids, `scale=3` | `/etc/segno/homescreen.toml` connectors, `pixel_ratio = 3` |
+| Screen layout | `weston.ini` app-ids, pinned 1080 modes, `scale=3` | `/etc/segno/homescreen.toml` connectors, native modes, readout `pixel_ratio = 1.6` |
 
 Guards:
 
@@ -167,7 +179,7 @@ and every later experimental build sorts above it. That dispatch:
     `gitsm://` is enough.
   - The pixel-ratio patch applies and builds.
   - The config parser accepts `homescreen.toml` and prints both views: HDMI-A-1
-    at 1.0, HDMI-A-2 at 3.0.
+    at 1.0, HDMI-A-2 at 1.6.
 - **Engine.** The arm64 release engine exports all 38 embedder symbols the
   shell resolves.
 - **Dependencies.** Every one has a recipe at the pinned walnascar commits:
@@ -208,12 +220,14 @@ Build: dispatch `appliance-release` with `board: rpi5`, `embedder: ivi`,
 
 - [ ] Boots straight to both screens: main UI on HDMI-A-1, readout on HDMI-A-2,
       no Weston process.
-- [ ] Both outputs come up at 1920x1080@60 (pinned in `homescreen.toml`, as
-      `weston.ini` pins them). If the process exits naming a mode,
-      `homescreen --drm-list-modes` lists what the connector offers.
-- [ ] The 7" readout is the right size (`pixel_ratio = 3` matches Weston's
-      `scale=3`), and taps land where they are aimed. Check the MIX overlay
-      faders and mute.
+- [ ] Each output comes up in its panel's native mode: 1080p main, 1024x600
+      readout. The journal logs the mode each view drives;
+      `homescreen --drm-list-modes` lists what a connector offers.
+- [ ] The 7" readout is the same physical size as on the GTK image
+      (`pixel_ratio = 1.6`), and visibly sharper. Taps land where they are
+      aimed: check the MIX overlay faders and mute.
+- [ ] Touch on the main panel reaches the main UI. Touch that matches no
+      view's `touch_device` goes to the first view.
 - [ ] The waveform moves with playback, the readout follows the cursor and
       track states, and readout off/on in `SYSTEM / display` blanks and
       restores it.
