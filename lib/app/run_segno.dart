@@ -4,6 +4,7 @@ import 'package:backing_repository/backing_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
+import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/widgets.dart';
 import 'package:instrument_repository/instrument_repository.dart';
@@ -279,6 +280,7 @@ Future<void> runSegno(
       brightness: brightness,
       displayOutputs: createDisplayOutputs(),
       consoleFacts: consoleFacts,
+      cpuLoad: CpuLoadRepository.system(),
       guards: registry,
       storage: storage,
     ),

@@ -127,6 +127,14 @@ jobs:
       working_directory: packages/operation_guards
       run_bloc_lint: false
       min_coverage: 100
+  # The console's CPU load (#1307): /proc/stat sampling. Pure Dart.
+  cpu-load-repository:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
+    with:
+      flutter_version: "3.47.x"
+      working_directory: packages/cpu_load_repository
+      run_bloc_lint: false
+      min_coverage: 100
   pedal-repository:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
     with:

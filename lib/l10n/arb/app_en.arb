@@ -2890,6 +2890,25 @@
         }
     },
     "stageOutputClip": "OUT CLIP",
+    "stageCpuLoad": "CPU {percent}%",
+    "@stageCpuLoad": {
+        "description": "Stage top bar: the console's CPU load as a share of the whole machine (all cores = 100).",
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "stageCpuLoadPending": "CPU —",
+    "a11yStageCpuLoad": "Processor load {percent} percent",
+    "@a11yStageCpuLoad": {
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "a11yStageCpuLoadPending": "Processor load not measured yet",
     "a11yStageOutputLevel": "Output level {db} dBFS",
     "@a11yStageOutputLevel": {
         "placeholders": {

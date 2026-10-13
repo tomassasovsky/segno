@@ -4,6 +4,7 @@ import 'package:backing_repository/backing_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
+import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -93,6 +94,7 @@ class App extends StatefulWidget {
     this.brightness = const UnsupportedBrightnessClient(),
     this.displayOutputs = const UnknownDisplayOutputs(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
+    this.cpuLoad = const CpuLoadRepository.unsupported(),
     this.removableVolumes = const InternalOnlyVolumes(),
     this.storage,
     this.powerKeySource,
@@ -120,6 +122,11 @@ class App extends StatefulWidget {
   /// where it can export to. Defaults to the client that answers "unknown",
   /// which is what every non-appliance build gets.
   final ConsoleFactsClient consoleFacts;
+
+  /// The console's CPU load for the stage top bar (#1307). Defaults to the
+  /// unsupported repository, which hides the readout; the entrypoint injects
+  /// the `/proc/stat` one.
+  final CpuLoadRepository cpuLoad;
 
   /// The removable drives the Library browses and copies to. Defaults to
   /// [InternalOnlyVolumes] (no drive, every removable write refused) until
@@ -566,6 +573,7 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.brightness),
         RepositoryProvider.value(value: widget.displayOutputs),
         RepositoryProvider.value(value: widget.consoleFacts),
+        RepositoryProvider.value(value: widget.cpuLoad),
         RepositoryProvider<RemovableVolumes>.value(
           value: widget.removableVolumes,
         ),
