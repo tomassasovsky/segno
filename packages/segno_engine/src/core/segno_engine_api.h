@@ -1931,7 +1931,7 @@ LE_EXPORT int32_t le_engine_reopen(le_engine* engine, const le_config* config,
  * the app's runtime surface — the app always goes through le_engine_start. */
 
 /* Allocates/resets the track buffers and marks the engine configured, without
- * opening a device. `max_loop_frames <= 0` selects the default (30 s). */
+ * opening a device. `max_loop_frames <= 0` selects the default (60 s). */
 LE_EXPORT int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
                                       int32_t input_channels,
                                       int32_t output_channels,
