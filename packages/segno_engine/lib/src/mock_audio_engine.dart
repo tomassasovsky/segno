@@ -1145,24 +1145,23 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   /// frame, on a performance arm, a Cut sound, a stop, a start or a reopen.
   int _auditionFrames = 0;
   int _auditionPosition = 0;
-  int _auditionBus = -1;
+  int _auditionOutputs = 0;
   int _auditionEpoch = 0;
 
   void _endAudition() {
     _auditionFrames = 0;
     _auditionPosition = 0;
-    _auditionBus = -1;
+    _auditionOutputs = 0;
   }
 
   @override
   Future<AuditionStart> auditionStartFile(
     String path, {
-    int bus = 0,
     bool Function()? stillWanted,
   }) async {
     final running = _requireRunning();
     if (!running.isOk) return AuditionStart(result: running);
-    if (!File(path).existsSync() || bus < 0 || 2 * bus >= _negotiatedOutputs) {
+    if (!File(path).existsSync() || _negotiatedOutputs <= 0) {
       return const AuditionStart(result: EngineResult.invalid);
     }
     // Refused while a take records, as the native voice is.
@@ -1175,7 +1174,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     final rate = _activeConfig?.sampleRate ?? 48000;
     _auditionFrames = rate;
     _auditionPosition = 0;
-    _auditionBus = bus;
+    _auditionOutputs = (1 << _negotiatedOutputs) - 1;
     return AuditionStart(
       result: EngineResult.ok,
       frames: rate,
@@ -1200,7 +1199,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     epoch: _auditionEpoch,
     frames: _auditionFrames,
     position: _auditionPosition,
-    bus: _auditionBus,
+    outputs: _auditionOutputs,
   );
 
   @override

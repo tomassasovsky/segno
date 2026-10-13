@@ -731,7 +731,7 @@ class SessionRepository {
   }
 
   /// Starts the Library's preview of the saved session [id] (plan D10): its
-  /// `mixdown.wav` through the engine's audition voice on the main outputs,
+  /// `mixdown.wav` through the engine's audition voice on every enabled output,
   /// decoded off the UI isolate by the engine's one decoder, at most
   /// [kAuditionMaxSeconds] of it ([AuditionStart.truncated] says when the
   /// file is longer). A session with no mixdown is refused with

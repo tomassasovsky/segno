@@ -83,13 +83,68 @@ void main() {
     expect(state.playing, isTrue);
     expect(state.frames, 4000);
     expect(state.position, 64);
-    expect(state.bus, 0);
+    expect(state.outputs, 0x3);
+    expect(state.pairs, [0]);
 
     expect(engine.auditionStop(), EngineResult.ok);
     engine.pump(frames: 64);
     state = engine.auditionState();
     expect(state.playing, isFalse);
-    expect(state.bus, -1);
+    expect(state.outputs, 0);
+    expect(state.pairs, isEmpty);
+  }, skip: skip);
+
+  test(
+    'plays on every enabled output pair, a disabled one stays silent '
+    '(#1305)',
+    () async {
+      // Six outputs, pairs 1 and 3 on, pair 2 switched off.
+      engine = PumpedNativeEngine()
+        ..start(
+          const EngineConfig(
+            sampleRate: 8000,
+            inputChannels: 1,
+            outputChannels: 6,
+            maxLoopFrames: 8000,
+          ),
+        )
+        ..setOutputEnabled(output: 2, enabled: false)
+        ..setOutputEnabled(output: 3, enabled: false)
+        ..pump(frames: 0);
+
+      final started = await engine.auditionStartFile(wav('a.wav', 4000));
+      expect(started.result, EngineResult.ok);
+      engine.pump(frames: 64);
+
+      expect(engine.auditionState().outputs, 0x33);
+      expect(engine.auditionState().pairs, [0, 2]);
+      final peaks = engine.snapshot().outputPeaks;
+      expect(peaks[0], greaterThan(0.1));
+      expect(peaks[1], peaks[0]);
+      expect(peaks[2], 0);
+      expect(peaks[3], 0);
+      expect(peaks[4], peaks[0]);
+      expect(peaks[5], peaks[0]);
+    },
+    skip: skip,
+  );
+
+  test('refuses before decoding when no output is enabled', () async {
+    start();
+    var decoded = 0;
+    engine
+      ..offIsolate = <R>(FutureOr<R> Function() computation) {
+        decoded++;
+        return Isolate.run(computation);
+      }
+      ..setOutputEnabled(output: 0, enabled: false)
+      ..setOutputEnabled(output: 1, enabled: false)
+      ..pump(frames: 0);
+
+    final started = await engine.auditionStartFile(wav('a.wav', 4000));
+
+    expect(started.result, EngineResult.invalid);
+    expect(decoded, 0);
   }, skip: skip);
 
   test('the decode runs off the calling isolate', () async {
