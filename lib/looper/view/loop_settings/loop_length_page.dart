@@ -80,6 +80,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
   int? _lengthAttemptId;
   int? _confirmedBarsAtAttempt;
   bool _candidateRefused = false;
+  bool _candidateCapacityFailure = false;
   int? _sessionRevision;
 
   void _discardCandidate() {
@@ -87,6 +88,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
     _lengthAttemptId = null;
     _confirmedBarsAtAttempt = null;
     _candidateRefused = false;
+    _candidateCapacityFailure = false;
   }
 
   void _setBars(int? bars) {
@@ -105,6 +107,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
         _candidateBars = bars;
         _confirmedBarsAtAttempt = _confirmedBars();
         _candidateRefused = false;
+        _candidateCapacityFailure = false;
       });
     }
     final command = scope == null
@@ -196,6 +199,8 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
             }
             setState(() {
               _candidateRefused = attempt.phase == LengthEditPhase.refused;
+              _candidateCapacityFailure =
+                  _candidateRefused && attempt.capacityFailure;
             });
           },
         ),
@@ -293,7 +298,13 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
               top: top + 132,
               child: LoopNote(
                 _candidateRefused
-                    ? l10n.loopLengthNotApplied(lengthPresetLabel(l10n, bars))
+                    ? _candidateCapacityFailure
+                          ? l10n.loopLengthCapacityNotApplied(
+                              lengthPresetLabel(l10n, bars),
+                            )
+                          : l10n.loopLengthNotApplied(
+                              lengthPresetLabel(l10n, bars),
+                            )
                     : lengthPresetNote(l10n, shownBars),
                 key: const Key('loop_length_note'),
               ),

@@ -14,6 +14,9 @@ require recipes-graphics/images/core-image-weston.bb
 # check that applies it: the board is a second computer, and the image owns
 # what runs on it (#989). No comments inside the list below — BitBake treats a
 # '#' in a line-continued value as part of the value, not as a comment.
+#
+# segno-profiling ships segno-prof (stack sampler, main-loop census) on every
+# image; its recorder service only runs on experimental ones (#1299).
 IMAGE_INSTALL:append = " \
     segno-bundle \
     gtk+3 \
@@ -32,6 +35,7 @@ IMAGE_INSTALL:append = " \
     rauc-rpi-backend \
     raspi-utils \
     segno-console-board \
+    segno-profiling \
     dtc \
     ddcutil \
     networkmanager-nmcli \

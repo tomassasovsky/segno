@@ -1,12 +1,44 @@
 # Segno — Progress & Roadmap
 
-<!-- cspell:words hashlib -->
+<!-- cspell:words hashlib manufacturability -->
 
 Living status doc for the Flutter desktop loopstation. Pairs with the original
 plan in `docs/plan/2026-06-08-feat-flutter-desktop-loopstation-plan.md`.
 Update this as work lands so any session (human or agent) can resume cold.
 
 Repo: https://github.com/tomassasovsky/segno · branch `master`.
+
+---
+
+## Active threads
+
+Issues with a live branch. Agents add a row when a thread starts, update it
+when its stage changes, and remove it in the PR that closes the issue or when
+the work is parked (rules in `AGENTS.md`). Stage and autonomy are copied from
+the issue labels, which are authoritative; if a row disagrees, fix the row.
+
+| Issue | Thread | Stage | Autonomy | Branch |
+|-------|--------|-------|----------|--------|
+| #1299 | Appliance slowdown profiler and GLib timeout leak | in-review | merge-gate | `claude/appliance-responsiveness-08d39b` |
+| #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |
+| #1302 | GTK composites Flutter frames on the CPU | build | merge-gate | `claude/gtk-background-1302` |
+| #1088 | Console base enclosure for fabrication | in-review | merge-gate | `claude/segno-pedal-manufacturability-5f08a2` |
+| #1140 | Keep recorded material across audio-engine reopen | in-review | merge-gate | `claude/engine-reopen-1140*` |
+| #1143 | Replay audio-history changes in performance stems | build | merge-gate | `claude/stem-history-replay-1143` |
+| #1144 | Report render manifest failures | in-review | merge-gate | `claude/manifest-failure-1144` |
+| #1146 | Guard fresh capture preparation | in-review | merge-gate | `claude/capture-prep-guard-1146` |
+| #1159 | One settings-transaction owner | (none) | merge-gate | `claude/settings-owner-1159-*` |
+| #1164 | Foot Peel | plan-review | merge-gate | `claude/peel-plan-1164` |
+| #1168 | Foot Multiply and Divide | plan-review | merge-gate | `claude/multiply-divide-1168-*` |
+| #1177 | Appliance USB storage service | build | merge-gate | `claude/usb-storage-1177-*` |
+| #1178 | Library and Sessions redesign | build | merge-gate | `claude/library-1178-*` |
+| #1179 | Pitch and time DSP core | build | merge-gate | `claude/pitch-time-1179-*` |
+| #1197 | Instruments | plan | merge-gate | `claude/instruments-1197-*` |
+| #1198 | Recording to USB and long recordings | plan | merge-gate | `claude/recording-1198-*` |
+| #1200 | Backing player | plan | merge-gate | `claude/backing-1200-*` |
+| #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
+| #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
+| #1270 | Device and appliance pages | plan | merge-gate | `claude/device-pages-plan-1270` |
 
 ---
 

@@ -88,6 +88,7 @@ export 'src/models/input_monitor.dart';
 export 'src/models/input_setup.dart';
 export 'src/models/lane.dart';
 export 'src/models/looper_state.dart';
+export 'src/models/meter_levels.dart';
 export 'src/models/mix_settings_snapshot.dart';
 export 'src/models/output_setup.dart';
 export 'src/models/plugin_descriptor.dart'
