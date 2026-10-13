@@ -14,7 +14,8 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=39ae29158ce710399736340c60147314"
 # and fetches nothing at configure or build time once they are present.
 SRCREV = "80f9ea426825ada81825e6e06c4361bb2dee441c"
 SRC_URI = "gitsm://github.com/toyota-connected/ivi-homescreen.git;protocol=https;branch=v3.0 \
-           file://0001-drm-apply-the-configured-pixel-ratio-to-window-metrics.patch"
+           file://0001-drm-apply-the-configured-pixel-ratio-to-window-metrics.patch \
+           file://0002-engine-keep-the-AOT-snapshot-mapped-after-engine-shutdown.patch"
 PV = "3.0+git${SRCPV}"
 S = "${WORKDIR}/git"
 
@@ -48,3 +49,15 @@ EXTRA_OECMAKE = " \
 RDEPENDS:${PN} += "flutter-engine-prebuilt xkeyboard-config"
 
 FILES:${PN}-dev += "${libdir}/cmake"
+
+# Installed as /usr/bin/segno: this process is the Segno app, and the name is
+# not cosmetic. With no GApplication in the process, path_provider_linux names
+# the app's support directory, where shared_preferences keeps every setting,
+# after the executable. As `homescreen` the app looked in
+# $XDG_DATA_HOME/homescreen and started as a fresh install, while the GTK
+# runner (/opt/segno/segno) keeps its settings in $XDG_DATA_HOME/segno. The
+# same name also keeps `pidof segno` (segno-profile-recorder) and the core
+# dump names the same on both images.
+do_install:append() {
+    mv ${D}${bindir}/homescreen ${D}${bindir}/segno
+}

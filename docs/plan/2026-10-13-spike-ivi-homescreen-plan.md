@@ -145,10 +145,10 @@ and partition layout stay the same, so a bench unit moves onto the spike with
 | Piece | gtk (shipping, unchanged) | ivi (spike) |
 |---|---|---|
 | Base | `core-image-weston` | same, minus the `weston` feature and its demo clients |
-| Embedder | the bundle's `segno` GTK runner | `ivi-homescreen` (meta-segno CMake recipe, pinned, one patch) |
+| Embedder | the bundle's `segno` GTK runner | `ivi-homescreen` (meta-segno CMake recipe, pinned, two patches), installed as `/usr/bin/segno` |
 | Engine | `libflutter_linux_gtk.so` in the bundle | `flutter-engine-prebuilt` (meta-flutter release, arm64, 3.47.5) |
 | `/opt/segno` | the whole bundle | `data/`, `lib/libapp.so`, `lib/libsegno_engine.so` |
-| Launch tail | `segno-embedder-gtk` (wait for Wayland, `exec /opt/segno/segno`) | `segno-embedder-ivi` (`exec homescreen --config /etc/segno/homescreen.toml`) |
+| Launch tail | `segno-embedder-gtk` (wait for Wayland, `exec /opt/segno/segno`) | `segno-embedder-ivi` (`exec /usr/bin/segno --config /etc/segno/homescreen.toml`) |
 | Unit drop-in | `segno-gtk.conf` (after and requires weston) | `segno-ivi.conf` (after plymouth quits, which frees DRM master) |
 | Screen layout | `weston.ini` app-ids, pinned 1080 modes, `scale=3` | `/etc/segno/homescreen.toml` connectors, native modes, readout `pixel_ratio = 1.6` |
 
@@ -231,10 +231,12 @@ Build: dispatch `appliance-release` with `board: rpi5`, `embedder: ivi`,
       no Weston process.
 - [ ] Each output comes up in its panel's native mode: 1080p main, 1024x600
       readout. The journal logs the mode each view drives;
-      `homescreen --drm-list-modes` lists what a connector offers.
+      `segno --drm-list-modes` lists what a connector offers.
 - [ ] The 7" readout is the same physical size as on the GTK image
-      (`pixel_ratio = 1.6`), and visibly sharper. Taps land where they are
-      aimed: check the MIX overlay faders and mute.
+      (`pixel_ratio = 1.6`), and visibly sharper. A tap on it counts as
+      activity for idle dimming, its only touch target since integration
+      retired the MIX overlay: with a short idle dim set, a tap on the 7"
+      alone wakes both panels.
 - [ ] Touch on the main panel reaches the main UI. Touch that matches no
       view's `touch_device` goes to the first view.
 - [ ] The waveform moves with playback, the readout follows the cursor and
@@ -242,6 +244,9 @@ Build: dispatch `appliance-release` with `board: rpi5`, `embedder: ivi`,
       restores it.
 - [ ] Audio, pedals, console board, Wi-Fi, OTA check and power button all work
       as on the GTK image.
+- [ ] The app keeps the GTK image's settings: no `audio auto-start: first
+      run` on the first ivi boot, and the saved rate, routing and pedal
+      bindings in force.
 - [ ] `segno-prof` main-thread profile shows no per-frame pixman surface work or
       GL readback (#1302's done-when).
 - [ ] 15× `systemctl restart segno`: no core dumps (#970's verify).
@@ -249,6 +254,23 @@ Build: dispatch `appliance-release` with `board: rpi5`, `embedder: ivi`,
       stopwatch to first frame).
 - [ ] Unplug and replug the 7": the readout comes back.
 - [ ] Roll back to the GTK slot, and confirm the unit is unchanged.
+
+## Bench findings (`0.1.0-experimental.166`)
+
+The first bench run (#1318, 2026-10-13) found two defects. Both are fixed on
+this branch:
+
+- **Settings not found.** With no GApplication in the process,
+  `path_provider_linux` names the support directory after the executable, so
+  the app read `$XDG_DATA_HOME/homescreen/shared_preferences.json` and started
+  as a fresh install. The GTK runner's directory is `$XDG_DATA_HOME/segno`.
+  The ivi-homescreen recipe now installs the binary as `/usr/bin/segno`,
+  which also makes `pidof segno` (the profile recorder) find it.
+- **SIGSEGV on stop, 12 of 16 stops.** `Engine::Shutdown` collected the AOT
+  data, unmapping `libapp.so`, while isolates spawned in the root isolate's
+  group were still alive. The pedal link's reader isolate, blocked in an FFI
+  `read()`, returned into unmapped code. Patch 0002 leaves the snapshot
+  mapped until the process exits.
 
 ## Out of scope
 
