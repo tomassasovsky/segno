@@ -21,8 +21,9 @@ import 'package:segno/looper/view/audio_routing/input_setup_tab.dart'
 import 'package:segno/looper/view/loop_count_words.dart';
 import 'package:segno/looper/view/rename_track_dialog.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/looper/view/slot_row.dart';
 import 'package:segno/looper/view/track_column.dart'
-    show PrimaryCrown, ShrinkToWidth;
+    show PrimaryCrown, SlotFigure;
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
 import 'package:segno/theme/theme.dart';
@@ -94,6 +95,14 @@ class MixerColumn extends StatelessWidget {
   static const double buttonHeight = _buttonsHeight;
   static const double panHeight = 54;
   static const double markerHeight = 4;
+
+  /// The pan word's fixed slot (#1308): `Paneo` at 22; the readout takes
+  /// the rest of the row.
+  static const double panLabelWidth = 64;
+
+  /// The gain readout's fixed slot (#1308): eight JetBrains Mono characters
+  /// at 22, `−60.0 dB`.
+  static const double gainReadoutWidth = 108;
 
   /// What the stage's dB scale aligns to, the same contract `TrackColumn`
   /// publishes: the scale lines up with the meter, not with the strip.
@@ -341,67 +350,52 @@ class _StripMeta extends StatelessWidget {
         l10n.stageLayersFigure(layers),
       ),
       child: ExcludeSemantics(
-        child: ShrinkToWidth(
-          child: Row(
-            key: Key('mixer_meta_$channel'),
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              AppText(
+        // Fixed slots (#1308), as the Track view's meta row.
+        child: SlotRow(
+          key: Key('mixer_meta_$channel'),
+          minWidth: 200,
+          spacing: 12,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          slots: [
+            RowSlot(
+              width: 30,
+              child: AppText(
                 '${channel + 1}',
+                maxLines: 1,
+                overflow: TextOverflow.clip,
                 style: TextStyle(
                   fontFamily: SurfaceTheme.displayFont,
                   color: surface.textTertiary,
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                   height: 1,
                 ),
               ),
-              _MetaFigure(
+            ),
+            RowSlot(
+              child: SlotFigure(
                 figure: count.figure,
                 unit: count.unit,
                 figureStyle: figure,
                 unitStyle: unit,
+                gap: 6,
               ),
-              _MetaFigure(
+            ),
+            RowSlot(
+              child: SlotFigure(
                 figure: '$layers',
                 unit: l10n.stageLayersUnit(layers),
                 figureStyle: figure,
                 unitStyle: unit,
+                gap: 6,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
-}
-
-class _MetaFigure extends StatelessWidget {
-  const _MetaFigure({
-    required this.figure,
-    required this.unit,
-    required this.figureStyle,
-    required this.unitStyle,
-  });
-
-  final String figure;
-  final String unit;
-  final TextStyle figureStyle;
-  final TextStyle unitStyle;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.baseline,
-    textBaseline: TextBaseline.alphabetic,
-    children: [
-      AppText(figure, style: figureStyle),
-      const SizedBox(width: 6),
-      AppText(unit, style: unitStyle),
-    ],
-  );
 }
 
 /// Mute, Solo and the FX pair. Mute and Solo are independent facts: a soloed
@@ -700,12 +694,19 @@ class _StripPanState extends State<_StripPan> {
         // add up to 89 does not.
         SizedBox(
           height: _labelHeight,
-          child: ShrinkToWidth(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                AppText(
+          // Fixed slots (#1308): `Center`, `5% left` and `100% right` leave
+          // the word put.
+          child: SlotRow(
+            key: Key('mixer_pan_row_${widget.track.channel}'),
+            minWidth: 160,
+            spacing: 8,
+            slots: [
+              RowSlot(
+                width: MixerColumn.panLabelWidth,
+                child: AppText(
                   l10n.routingPan,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: SurfaceTheme.displayFont,
                     color: surface.textSecondary,
@@ -713,18 +714,24 @@ class _StripPanState extends State<_StripPan> {
                     height: 1,
                   ),
                 ),
-                AppText(
+              ),
+              RowSlot(
+                alignment: AlignmentDirectional.centerEnd,
+                child: AppText(
                   routingPlacementLabel(l10n, pan),
                   key: Key('mixer_pan_readout_${widget.track.channel}'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: SurfaceTheme.displayFont,
                     color: surface.textPrimary,
                     fontSize: 22,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                     height: 1,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 10),
@@ -987,13 +994,19 @@ class _StripGainCaption extends StatelessWidget {
         : fade.amount < 1
         ? l10n.mixerFadeLevel((fade.amount * 100).round())
         : null;
-    return ShrinkToWidth(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          AppText(
+    // Fixed slots (#1308): the cue changing from `Level` to `Fade 40%` or
+    // the gain from `−∞` to `−60.0 dB` moves neither.
+    return SlotRow(
+      key: Key('mixer_gain_row_$channel'),
+      minWidth: 160,
+      spacing: 8,
+      slots: [
+        RowSlot(
+          child: AppText(
             cue ?? l10n.mixerLevel,
             key: Key('mixer_gain_caption_$channel'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontFamily: SurfaceTheme.displayFont,
               color: cue == null ? surface.textSecondary : surface.warning,
@@ -1001,13 +1014,21 @@ class _StripGainCaption extends StatelessWidget {
               height: 1,
             ),
           ),
-          AppText(
+        ),
+        RowSlot(
+          width: MixerColumn.gainReadoutWidth,
+          alignment: AlignmentDirectional.centerEnd,
+          child: AppText(
             signalGainReadout(volume),
             key: Key('mixer_gain_readout_$channel'),
-            style: signalMono(color: surface.textPrimary, size: 22),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: signalMono(color: surface.textPrimary, size: 22).copyWith(
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

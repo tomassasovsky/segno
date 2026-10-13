@@ -9,8 +9,9 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/loop_count_words.dart';
+import 'package:segno/looper/view/slot_row.dart';
 import 'package:segno/looper/view/track_column.dart'
-    show PrimaryCrown, ShrinkToWidth;
+    show PrimaryCrown, SlotFigure;
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
@@ -76,6 +77,7 @@ class WaveTrackRow extends StatelessWidget {
     final layers = track.layers;
     final barsCount = bars;
     final count = loopCountWords(l10n, bars: bars, beats: beats);
+    final hasFx = track.effects.isNotEmpty;
     final meta = TextStyle(
       fontFamily: SurfaceTheme.displayFont,
       color: surface.textPrimary,
@@ -212,36 +214,47 @@ class WaveTrackRow extends StatelessWidget {
                                     l10n.stageLayersFigure(layers),
                                   ),
                                   child: ExcludeSemantics(
-                                    child: ShrinkToWidth(
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.baseline,
-                                        textBaseline: TextBaseline.alphabetic,
-                                        children: [
-                                          AppText(
-                                            count.figure,
-                                            style: meta,
+                                    // Fixed slots (#1308): counts and the
+                                    // FX marker never move each other.
+                                    child: SlotRow(
+                                      key: Key('wave_meta_${track.channel}'),
+                                      minWidth: 260,
+                                      spacing: 12,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.baseline,
+                                      slots: [
+                                        RowSlot(
+                                          child: SlotFigure(
+                                            figure: count.figure,
+                                            unit: count.unit,
+                                            figureStyle: meta,
+                                            unitStyle: unit,
                                           ),
-                                          const SizedBox(width: 5),
-                                          AppText(
-                                            count.unit,
-                                            style: unit,
+                                        ),
+                                        RowSlot(
+                                          child: SlotFigure(
+                                            figure: '$layers',
+                                            unit: l10n.stageLayersUnit(layers),
+                                            figureStyle: meta,
+                                            unitStyle: unit,
                                           ),
-                                          const SizedBox(width: 24),
-                                          AppText('$layers', style: meta),
-                                          const SizedBox(width: 5),
-                                          AppText(
-                                            l10n.stageLayersUnit(layers),
-                                            style: unit,
-                                          ),
-                                          if (track.effects.isNotEmpty)
-                                            AppText(
+                                        ),
+                                        RowSlot(
+                                          width: 36,
+                                          alignment:
+                                              AlignmentDirectional.centerEnd,
+                                          child: Opacity(
+                                            opacity: hasFx ? 1 : 0,
+                                            child: AppText(
                                               l10n.stageFxMarker,
-                                              key: Key(
-                                                'wave_fx_${track.channel}',
-                                              ),
+                                              key: hasFx
+                                                  ? Key(
+                                                      'wave_fx_'
+                                                      '${track.channel}',
+                                                    )
+                                                  : null,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.clip,
                                               style: TextStyle(
                                                 fontFamily:
                                                     SurfaceTheme.displayFont,
@@ -254,8 +267,9 @@ class WaveTrackRow extends StatelessWidget {
                                                 height: 1,
                                               ),
                                             ),
-                                        ],
-                                      ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
