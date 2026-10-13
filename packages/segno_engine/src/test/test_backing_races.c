@@ -167,7 +167,7 @@ int main(void) {
       case 8:
       case 9: {
         le_backing_buffer* b = make_buffer();
-        rc = le_engine_audition_start(e, b, 0);
+        rc = le_engine_audition_start(e, b);
         if (rc != LE_OK) le_backing_buffer_free(b);
         else ++previews;
         break;

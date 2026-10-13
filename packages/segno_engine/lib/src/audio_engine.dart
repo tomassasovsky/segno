@@ -1728,11 +1728,10 @@ abstract interface class BackingControl {
 /// most [kAuditionMaxSeconds] of it, off the calling isolate.
 abstract interface class EngineAudition {
   /// Decodes the audio file at [path] off the calling isolate and starts it
-  /// on the main output at the next block, replacing a preview already
-  /// playing. The main output is the first destination with an enabled
-  /// channel, the one a performance take captures
-  /// ([EngineSnapshot.perfCaptureBus]); with no output enabled the start is
-  /// refused with [EngineResult.invalid] before anything decodes. Retries
+  /// on every enabled output pair at the next block (#1305), replacing a
+  /// preview already playing. A channel the output gate disables stays
+  /// silent; with no output enabled the start is refused with
+  /// [EngineResult.invalid] before anything decodes. Retries
   /// once, a block later, when the voice is still handing back the preview
   /// before last ([EngineResult.notReady]).
   ///

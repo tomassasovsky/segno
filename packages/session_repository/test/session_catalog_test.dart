@@ -1077,7 +1077,11 @@ void main() {
 
     test('stop and state go straight to the engine', () {
       final engine = FakeSessionEngine()
-        ..auditionNow = const AuditionState(frames: 100, position: 40, bus: 0);
+        ..auditionNow = const AuditionState(
+          frames: 100,
+          position: 40,
+          outputs: 0x3,
+        );
       final r = repo(engine: engine);
 
       expect(r.auditionState().position, 40);

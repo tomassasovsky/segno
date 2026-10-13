@@ -70,7 +70,7 @@ class AuditionState {
     this.epoch = 0,
     this.frames = 0,
     this.position = 0,
-    this.bus = -1,
+    this.outputs = 0,
   });
 
   /// Bumps at every configure and reopen, which end a preview.
@@ -83,8 +83,16 @@ class AuditionState {
   /// Frames of it played.
   final int position;
 
-  /// Its output pair; -1 when none plays.
-  final int bus;
+  /// The output channels it sounded on in the last block, one bit per
+  /// channel: every channel the output gate leaves on (#1305); 0 when none
+  /// plays.
+  final int outputs;
+
+  /// The output pairs it sounds on: each pair with a channel in [outputs].
+  List<int> get pairs => [
+    for (var pair = 0; 2 * pair < 32; pair++)
+      if (outputs & (0x3 << (2 * pair)) != 0) pair,
+  ];
 
   /// Whether a preview is playing.
   bool get playing => frames > 0;
@@ -95,8 +103,8 @@ class AuditionState {
       other.epoch == epoch &&
       other.frames == frames &&
       other.position == position &&
-      other.bus == bus;
+      other.outputs == outputs;
 
   @override
-  int get hashCode => Object.hash(epoch, frames, position, bus);
+  int get hashCode => Object.hash(epoch, frames, position, outputs);
 }
