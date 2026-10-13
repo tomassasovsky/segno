@@ -27,7 +27,7 @@
 struct Rgb { uint8_t r, g, b; };
 
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 14;
+static const uint8_t FW_MINOR = 15;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -69,6 +69,13 @@ static const uint8_t PILL_BUTTON[PEDAL_BTN_COUNT] = {
 };
 static const uint8_t PILL_PEAK = 191;
 static const uint8_t PILL_WEIGHTS[PILL_PIXELS] = {38, 92, 201, 255, 255, 201, 92, 38};
+// A waiting Song or Band section (#1323) fills at one level, with no centre
+// curve: the mean of the diffused levels {28, 69, 151, 191, 191, 151, 69, 28}
+// (878 / 8), so the full pill carries the light of the section it becomes.
+static const uint8_t PILL_QUEUE_LEVEL = 110;
+// When a pill leaves the queue and stays lit, it blends from its last fill
+// to the diffused curve over this long.
+static const unsigned long PILL_SETTLE_MS = 300;
 // Limit the whole pill chain to ~471 mA of color-channel current using the
 // conservative 20 mA/channel model. The ring's 11520-channel budget adds
 // <=904 mA; 120 mA pixel idle +140 mA logic gives ~1.635 A on the old PCB's
@@ -738,34 +745,61 @@ static bool renderRing() {
   return true;
 }
 
+// Per pill, the levels it last showed while queued and when it left the
+// queue: the start of the blend to the diffused curve.
+static uint8_t g_pillQueuedLevel[PEDAL_BTN_COUNT][PILL_PIXELS];
+static bool g_pillWasQueued[PEDAL_BTN_COUNT];
+static bool g_pillSettling[PEDAL_BTN_COUNT];
+static unsigned long g_pillSettleAt[PEDAL_BTN_COUNT];
+
 // The app owns both activation and hue for every physical button. The MCU
 // only maps that snapshot to the fitted harness and applies optical limits.
 static bool renderIndicators() {
+  const unsigned long now = millis();
   RgbColor desired[IND_N];
   uint32_t channelTotal = 0;
   for (uint8_t group = 0; group < PEDAL_BTN_COUNT; ++group) {
     const uint8_t button = PILL_BUTTON[group];
     Rgb color = {0, 0, 0};
-    bool queued = false;
+    bool lit = false, queued = false;
     if (g_haveFrame && !g_frame.goodbye &&
         (g_frame.active_button_mask & (1u << button))) {
       const pedal_color c = g_frame.pedal_colors[button];
       color = {c.r, c.g, c.b};
+      lit = true;
       queued = g_frame.queued_button == button + 1;
     }
+    // The queue is the app's word for it; the board only notices the pill
+    // leaving it (the section started, or the request was dropped).
+    if (queued) {
+      g_pillWasQueued[group] = true;
+      g_pillSettling[group] = false;
+    } else if (g_pillWasQueued[group]) {
+      g_pillWasQueued[group] = false;
+      g_pillSettling[group] = true;
+      g_pillSettleAt[group] = now;
+    }
+    const unsigned long settled = now - g_pillSettleAt[group];
+    if (!lit || settled >= PILL_SETTLE_MS) g_pillSettling[group] = false;
     // Preserve calibrated color ratios and the tested spatial curve, with no
     // extra gamma/dimmer. The total-current budget only dims crowded patterns.
     const uint32_t corrected = rgb(color.r, color.g, color.b);
     for (uint8_t pixel = 0; pixel < PILL_PIXELS; ++pixel) {
       uint8_t level = (uint8_t)(PILL_PEAK * PILL_WEIGHTS[pixel] / 255.0f + 0.5f);
       if (queued) {
-        // A waiting Song section fills physical left to right by the app's
-        // progress. Nothing here can finish it: 254 leaves the last pixel
-        // short, and only the engine's handoff (a frame with no queue)
-        // lights the whole pill.
+        // A waiting section fills physical left to right by the app's
+        // progress, every filled pixel at the same level; the leading pixel
+        // fills partially so the edge moves smoothly. Nothing here can finish
+        // it: 254 leaves the last pixel short, and only the engine's handoff
+        // (a frame with no queue) lights the whole pill.
         const int16_t coverage = g_frame.queued_progress * PILL_PIXELS - pixel * 255;
         const uint16_t fill = coverage <= 0 ? 0 : coverage >= 255 ? 255 : coverage;
-        level = (uint8_t)((level * fill + 127) / 255);
+        level = (uint8_t)((PILL_QUEUE_LEVEL * fill + 127) / 255);
+        g_pillQueuedLevel[group][pixel] = level;
+      } else if (g_pillSettling[group]) {
+        const int32_t from = g_pillQueuedLevel[group][pixel];
+        level = (uint8_t)(from + ((int32_t)level - from) * (int32_t)settled /
+                                     (int32_t)PILL_SETTLE_MS);
       }
       const RgbColor value(
           (uint8_t)((((corrected >> 16) & 255) * level + 127) / 255),
