@@ -5,7 +5,7 @@ import 'package:segno/visualizer/waveform_window.dart';
 
 void main() {
   group(ReadoutScreen, () {
-    testWidgets('is black until the main screen shows it', (tester) async {
+    testWidgets('is blank until the main screen shows it', (tester) async {
       final link = ReadoutScreenLink();
       addTearDown(link.dispose);
 

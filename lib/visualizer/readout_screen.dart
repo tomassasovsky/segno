@@ -2,6 +2,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/readout_control.dart';
 import 'package:segno/visualizer/screen_link.dart';
@@ -118,7 +119,7 @@ class ReadoutScreenLink {
 }
 
 /// The readout screen: [WaveformWindowApp] while the main screen wants it
-/// drawn, black otherwise.
+/// drawn, otherwise the readout's own background with nothing on it.
 class ReadoutScreen extends StatelessWidget {
   /// Creates a [ReadoutScreen] drawing [link]'s state.
   const ReadoutScreen({required this.link, super.key});
@@ -137,7 +138,7 @@ class ReadoutScreen extends StatelessWidget {
               title: 'Segno — Output',
               onControl: link.sendControl,
             )
-          : const ColoredBox(color: Color(0xFF000000)),
+          : ColoredBox(color: AppTheme.neon.scaffoldBackgroundColor),
     );
   }
 }
