@@ -324,8 +324,10 @@ struct le_perf_drain; /* opaque; full definition in perf_drain.c */
  * up until the corresponding le_perf_drain_stop — that call frees `drain`, so
  * a `drain` pointer retained past it is a use-after-free. Not part of the FFI
  * surface. */
-/* Whether the capture drain thread stopped ITSELF because a write failed
- * (disk full, quota, read-only remount, I/O error).
+/* Whether the capture drain thread stopped the take ITSELF: a write failed
+ * (disk full, quota, read-only remount, I/O error), the destination reached
+ * its reserve, or a capture ring dropped a frame (#1198); the engine's
+ * a_perf_stop_reason says which.
  *
  * No longer test-only: this is published on the engine snapshot as
  * `perf_stopped` so the app can react. Without that the thread stopped
@@ -377,6 +379,21 @@ void le_perf_drain_set_write_budget_for_test(int64_t bytes);
  * clear it (pass NULL) before the next test runs. Not part of the FFI
  * surface. */
 void le_perf_drain_set_mid_cycle_hook_for_test(void (*fn)(void*), void* ctx);
+
+/* Replaces the drain's reading of its volume's free bytes (#1198): the next
+ * reading returns `bytes` instead of asking the filesystem. A negative value
+ * restores the real reading (the default), LE_PD_VOLUME_FREE_UNREADABLE makes
+ * the reading fail. The drain reads at arm and every
+ * LE_PD_FREE_SAMPLE_CYCLES cycles after it, so a test sets this before
+ * arming. Process-global; reset it (-1) before the next test runs. Not part
+ * of the FFI surface. */
+#define LE_PD_VOLUME_FREE_UNREADABLE (-2)
+void le_perf_drain_set_volume_free_for_test(int64_t bytes);
+
+/* Re-reads the volume's free bytes every `cycles` drain cycles instead of
+ * LE_PD_FREE_SAMPLE_CYCLES (20, about 5 s); 0 restores that. Process-global;
+ * reset it before the next test runs. Not part of the FFI surface. */
+void le_perf_drain_set_free_sample_cycles_for_test(int cycles);
 
 /* ---- perf-render test seams (perf_render.c; part 8) ---- */
 

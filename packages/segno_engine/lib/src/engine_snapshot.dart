@@ -962,6 +962,35 @@ class TrackSnapshot {
   ]);
 }
 
+/// Why a performance take stopped (#1198). Mirrors the native
+/// `le_perf_stop_reason`.
+enum PerfStopReason {
+  /// The take is running, or none has run.
+  none,
+
+  /// Stopped by a disarm.
+  disarm,
+
+  /// The audio device changed while armed.
+  deviceChanged,
+
+  /// A write failed; the sidecar says `disk_full`.
+  writeFailed,
+
+  /// The destination reached its reserve; every stream ends at the last
+  /// whole frame it could hold.
+  reserveReached,
+
+  /// A capture ring overflowed because the storage fell behind; the take ends
+  /// at the first frame it could not keep.
+  slowStorage;
+
+  /// The reason for the native value [value], [none] for one this build
+  /// does not know.
+  static PerfStopReason fromNative(int value) =>
+      value >= 0 && value < values.length ? values[value] : none;
+}
+
 /// A class of real device dropout, as counted by [CallbackWindowStats.xruns].
 ///
 /// Mirrors the native `le_xrun_kind`; the ordinals are the array indices the
@@ -1269,6 +1298,10 @@ class EngineSnapshot {
     this.perfZeroFilledFrames = 0,
     this.perfStopped = false,
     this.perfRingSeconds = 0,
+    this.perfStopReason = PerfStopReason.none,
+    this.perfOvers = 0,
+    this.perfCaptureStreams = 0,
+    this.perfCaptureFrameBytes = 0,
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -1348,6 +1381,10 @@ class EngineSnapshot {
       perfZeroFilledFrames = 0,
       perfStopped = false,
       perfRingSeconds = 0,
+      perfStopReason = PerfStopReason.none,
+      perfOvers = 0,
+      perfCaptureStreams = 0,
+      perfCaptureFrameBytes = 0,
       tempoBpm = 0,
       tempoSource = TempoSource.none,
       tsNum = 4,
@@ -1442,6 +1479,10 @@ class EngineSnapshot {
       perfZeroFilledFrames: native.perf_zero_filled_frames,
       perfStopped: native.perf_stopped != 0,
       perfRingSeconds: native.perf_ring_seconds,
+      perfStopReason: PerfStopReason.fromNative(native.perf_stop_reason),
+      perfOvers: native.perf_overs,
+      perfCaptureStreams: native.perf_capture_streams,
+      perfCaptureFrameBytes: native.perf_capture_frame_bytes,
       tempoBpm: native.tempo_bpm,
       tempoSource: TempoSource.fromCode(native.tempo_source),
       tsNum: native.ts_num,
@@ -1529,6 +1570,10 @@ class EngineSnapshot {
     int? perfZeroFilledFrames,
     bool? perfStopped,
     int? perfRingSeconds,
+    PerfStopReason? perfStopReason,
+    int? perfOvers,
+    int? perfCaptureStreams,
+    int? perfCaptureFrameBytes,
     double? tempoBpm,
     TempoSource? tempoSource,
     int? tsNum,
@@ -1605,6 +1650,10 @@ class EngineSnapshot {
     perfZeroFilledFrames: perfZeroFilledFrames ?? this.perfZeroFilledFrames,
     perfStopped: perfStopped ?? this.perfStopped,
     perfRingSeconds: perfRingSeconds ?? this.perfRingSeconds,
+    perfStopReason: perfStopReason ?? this.perfStopReason,
+    perfOvers: perfOvers ?? this.perfOvers,
+    perfCaptureStreams: perfCaptureStreams ?? this.perfCaptureStreams,
+    perfCaptureFrameBytes: perfCaptureFrameBytes ?? this.perfCaptureFrameBytes,
     tempoBpm: tempoBpm ?? this.tempoBpm,
     tempoSource: tempoSource ?? this.tempoSource,
     tsNum: tsNum ?? this.tsNum,
@@ -1794,17 +1843,35 @@ class EngineSnapshot {
   /// into the capture's glitch flag alongside [perfOverruns] (#710).
   final int perfZeroFilledFrames;
 
-  /// Whether the capture drain thread stopped ITSELF because a write failed —
-  /// disk full, a quota, a read-only remount, an I/O error.
+  /// Whether the capture drain thread stopped the take ITSELF: a write
+  /// failed (disk full, a quota, a read-only remount, an I/O error), the
+  /// destination reached its reserve, or a capture ring dropped a frame
+  /// (#1198). [perfStopReason] says which.
   ///
   /// Distinct from a capture that is simply not armed: this says one WAS armed
-  /// and died. Without it the stop was invisible to the app — the capture
+  /// and ended. Without it the stop was invisible to the app — the capture
   /// stayed armed, its handles stayed open, and finalize never ran (#652).
   final bool perfStopped;
 
   /// Seconds each capture ring of the most recent take was granted, after
   /// the engine's ring memory cap (#1198); 0 before any arm.
   final int perfRingSeconds;
+
+  /// Why the most recent take stopped; [PerfStopReason.none] while it runs.
+  /// Survives the disarm, reset by the next arm.
+  final PerfStopReason perfStopReason;
+
+  /// Samples above full scale (magnitude over 1.0) across every stream of the
+  /// take so far. Kept as recorded, never clipped (#1198).
+  final int perfOvers;
+
+  /// The streams the armed take captures, or the next arm would: the first
+  /// enabled output pair plus every monitored input (#1198). 0 when nothing
+  /// could be captured.
+  final int perfCaptureStreams;
+
+  /// The bytes one frame of every [perfCaptureStreams] stream takes.
+  final int perfCaptureFrameBytes;
 
   // ---- tempo grid (A1) ----
 
@@ -2050,6 +2117,10 @@ class EngineSnapshot {
           perfZeroFilledFrames == other.perfZeroFilledFrames &&
           perfStopped == other.perfStopped &&
           perfRingSeconds == other.perfRingSeconds &&
+          perfStopReason == other.perfStopReason &&
+          perfOvers == other.perfOvers &&
+          perfCaptureStreams == other.perfCaptureStreams &&
+          perfCaptureFrameBytes == other.perfCaptureFrameBytes &&
           tempoBpm == other.tempoBpm &&
           tempoSource == other.tempoSource &&
           tsNum == other.tsNum &&
@@ -2128,6 +2199,10 @@ class EngineSnapshot {
     perfZeroFilledFrames,
     perfStopped,
     perfRingSeconds,
+    perfStopReason,
+    perfOvers,
+    perfCaptureStreams,
+    perfCaptureFrameBytes,
     tempoBpm,
     tempoSource,
     tsNum,

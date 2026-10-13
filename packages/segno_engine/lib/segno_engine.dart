@@ -41,6 +41,7 @@ export 'src/engine_snapshot.dart'
         LooperMode,
         LooperModeGate,
         PendingLaunchAction,
+        PerfStopReason,
         RecordStartEditKind,
         RecordTiming,
         TempoSource,

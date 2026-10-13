@@ -41,14 +41,6 @@ typedef struct le_engine le_engine; /* opaque; full definition in engine_private
 /* Opaque drain-thread handle, one per armed capture session. */
 typedef struct le_perf_drain le_perf_drain;
 
-/* Why a capture session ended, recorded in the sidecar's `stopped_early`
- * field (absent on a normal disarm — only le_perf_arm/disarm's own bookkeeping
- * needs `finalized`, still false in this slice either way). */
-typedef enum le_perf_stop_reason {
-  LE_PERF_STOP_DISARM = 0,         /* a normal, caller-requested disarm */
-  LE_PERF_STOP_DEVICE_CHANGED = 1, /* engine reconfigure while armed */
-} le_perf_stop_reason;
-
 /* Starts the drain thread for `engine`'s just-armed perf capture: creates
  * the target's capture (and live-sidecar) directory if missing, opens the
  * first part of the master and of every captured input, and begins the
@@ -66,7 +58,7 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
 /* Signals the drain thread to run one final drain-and-flush pass — which
  * also seals every open part — and stop, then joins it and frees `drain`. `reason` is recorded in the final sidecar
  * flush's `stopped_early` field UNLESS the thread already self-stopped for
- * its own reason (a disk-full write failure) — that reason always wins, since
+ * its own reason (a failed write, the reserve, a dropped frame) — that reason always wins, since
  * the thread reached it first. Safe to call on a thread that already
  * self-stopped early — the join simply reaps it. `drain` must not be used
  * again afterward. No-op on NULL. */

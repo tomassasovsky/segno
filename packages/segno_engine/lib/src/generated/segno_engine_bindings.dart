@@ -7724,6 +7724,39 @@ final class le_snapshot extends ffi.Struct {
   /// (le_perf_target.ring_seconds after the memory cap); 0 before any arm.
   @ffi.Int32()
   external int perf_ring_seconds;
+
+  /// ---- performance take accounting (#1198; trailing) ---- */
+  /// /* Why the most recent take stopped: an le_perf_stop_reason, NONE while it
+  /// runs. Survives disarm; reset by the next arm.
+  @ffi.Int32()
+  external int perf_stop_reason;
+
+  /// Bytes the drain has written for the take: part headers and samples,
+  /// events.log and layer files.
+  @ffi.Uint64()
+  external int perf_bytes_written;
+
+  /// The first capture frame a ring could not take, or UINT64_MAX. A take
+  /// that drops a frame ends there (LE_PERF_STOP_SLOW_STORAGE). Neither this
+  /// nor perf_overruns moves once the take has stopped: a full ring after a
+  /// stop is not part of the take.
+  @ffi.Uint64()
+  external int perf_first_drop_frame;
+
+  /// Samples above full scale (|x| > 1.0) across every stream so far.
+  @ffi.Uint64()
+  external int perf_overs;
+
+  /// The streams the armed take captures (or the next arm would: the first
+  /// enabled output pair plus every monitored input the device has), and the
+  /// bytes one frame of all of them takes, so the app can tell whether a
+  /// volume holds a minimum take of every stream before it arms. 0 when
+  /// nothing could be captured.
+  @ffi.Int32()
+  external int perf_capture_streams;
+
+  @ffi.Uint32()
+  external int perf_capture_frame_bytes;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -7975,6 +8008,47 @@ final class le_perf_target extends ffi.Struct {
   /// granted.
   @ffi.Int32()
   external int ring_seconds;
+
+  /// Bytes the take must leave free on its destination, on top of
+  /// LE_PERF_ALLOWANCE_BYTES: Internal keeps its storage reserve, a removable
+  /// volume a small floor. UINT64_MAX means no budget: the take stops only on
+  /// a failed write.
+  @ffi.Uint64()
+  external int reserve_bytes;
+}
+
+/// Why the most recent take stopped (le_snapshot.perf_stop_reason). NONE while
+/// a take runs; the first reason to happen is kept until the next arm.
+enum le_perf_stop_reason {
+  LE_PERF_STOP_NONE(0),
+
+  /// le_perf_disarm
+  LE_PERF_STOP_DISARM(1),
+
+  /// the engine reconfigured while armed
+  LE_PERF_STOP_DEVICE_CHANGED(2),
+
+  /// a write failed; sidecar `disk_full`
+  LE_PERF_STOP_WRITE_FAILED(3),
+
+  /// the destination reached its reserve
+  LE_PERF_STOP_RESERVE_REACHED(4),
+
+  /// a capture ring overflowed
+  LE_PERF_STOP_SLOW_STORAGE(5);
+
+  final int value;
+  const le_perf_stop_reason(this.value);
+
+  static le_perf_stop_reason fromValue(int value) => switch (value) {
+    0 => LE_PERF_STOP_NONE,
+    1 => LE_PERF_STOP_DISARM,
+    2 => LE_PERF_STOP_DEVICE_CHANGED,
+    3 => LE_PERF_STOP_WRITE_FAILED,
+    4 => LE_PERF_STOP_RESERVE_REACHED,
+    5 => LE_PERF_STOP_SLOW_STORAGE,
+    _ => throw ArgumentError('Unknown value for le_perf_stop_reason: $value'),
+  };
 }
 
 /// A MIDI input port discovered by le_midi_enumerate.
@@ -8066,3 +8140,5 @@ const int LE_PERF_RING_SECONDS_DEFAULT = 2;
 const int LE_PERF_RING_SECONDS_MAX = 8;
 
 const int LE_PERF_RING_BYTES_MAX = 67108864;
+
+const int LE_PERF_ALLOWANCE_BYTES = 1048576;

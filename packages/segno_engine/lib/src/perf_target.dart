@@ -16,6 +16,7 @@ class PerfTarget {
     this.volumeGeneration = internalVolume,
     this.partBytes = 0,
     this.ringSeconds = 0,
+    this.reserveBytes,
   }) : takeId = Uint8List.fromList(takeId) {
     if (takeId.length != takeIdBytes) {
       throw ArgumentError.value(takeId, 'takeId', 'must be 16 bytes');
@@ -24,6 +25,9 @@ class PerfTarget {
       throw ArgumentError.value(ringSeconds, 'ringSeconds');
     }
     if (partBytes < 0) throw ArgumentError.value(partBytes, 'partBytes');
+    if (reserveBytes != null && reserveBytes! < 0) {
+      throw ArgumentError.value(reserveBytes, 'reserveBytes');
+    }
   }
 
   /// The length of a take id.
@@ -60,4 +64,14 @@ class PerfTarget {
 
   /// The most [ringSeconds] may ask for. Mirrors `LE_PERF_RING_SECONDS_MAX`.
   static const int maxRingSeconds = 8;
+
+  /// Bytes the take leaves free on its destination, on top of
+  /// [allowanceBytes]: the take stops at the last whole frame every stream
+  /// can hold above it. Null means no budget; the take then stops only on a
+  /// failed write.
+  final int? reserveBytes;
+
+  /// Room the engine keeps above [reserveBytes] for files it rewrites in
+  /// place while a take runs. Mirrors `LE_PERF_ALLOWANCE_BYTES`.
+  static const int allowanceBytes = 1 << 20;
 }

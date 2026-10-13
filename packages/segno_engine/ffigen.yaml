@@ -47,6 +47,7 @@ enums:
     - 'le_cache_reason'
     - 'le_xrun_kind'
     - 'le_reopen_outcome'
+    - 'le_perf_stop_reason'
 preamble: |
   // ignore_for_file: type=lint, doc_directive_unknown
   // coverage:ignore-file
