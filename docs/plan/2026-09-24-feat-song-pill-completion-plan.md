@@ -40,12 +40,16 @@ the recorded section is an open question for the owner.
 ## Control
 
 In Mute mode, in Song, a track press asks the engine for that section. The
-engine queues, cancels and replaces; the app does not keep its own copy.
+engine queues, cancels and replaces; the app does not keep its own copy. A
+muted stopped section is unmuted first; a press on a muted playing section
+only unmutes it, so it does not drop the section waiting to follow it.
 Rec/Play while a section plays does nothing (expanding to every section would
 make each one replace the last). Parked, Rec/Play starts the section Stop
-latched, else the selected one, else the first with a take. Stop stops every
-section with a take, so a handoff that landed between polls is stopped too.
-Record and FX keep their meanings, and Multi keeps its mute and resume rules.
+latched, else the selected one, else the first with a take. Stop reads the
+engine live and stops what plays there, what the poll saw playing and the
+section that waits, so a handoff that landed between polls is stopped too.
+The on-screen Play All starts the first section with a take. Record and FX
+keep their meanings, and Multi keeps its mute and resume rules.
 
 The pedal shows the sounding sections and the waiting one green. Song does not
 preview a parked resume set.

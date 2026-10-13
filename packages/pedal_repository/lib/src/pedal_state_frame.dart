@@ -262,7 +262,8 @@ class PedalStateFrame extends Equatable {
   bool isLit(PedalButton button) =>
       !isGoodbye && (activeButtonMask & (1 << button.index)) != 0;
 
-  /// Returns a copy with the given fields replaced.
+  /// Returns a copy with the given fields replaced. A null [queuedButton]
+  /// keeps the current one; build a frame without a queue to clear it.
   PedalStateFrame copyWith({
     GlobalColor? globalColor,
     List<PedalTrackLed>? trackLeds,
