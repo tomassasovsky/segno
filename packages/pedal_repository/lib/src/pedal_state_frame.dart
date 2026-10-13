@@ -118,6 +118,8 @@ class PedalStateFrame extends Equatable {
     this.countingIn = false,
     List<PedalColor> pedalColors = defaultPedalColors,
     this.activeButtonMask = 0,
+    this.queuedButton,
+    this.queuedProgress = 0,
   }) : trackLeds = List.unmodifiable(trackLeds),
        pedalColors = List.unmodifiable(pedalColors),
        assert(
@@ -152,6 +154,9 @@ class PedalStateFrame extends Equatable {
         pedalColors.length != PedalButton.values.length ||
         activeButtonMask < 0 ||
         activeButtonMask > 0x3FF ||
+        queuedProgress < 0 ||
+        queuedProgress >= 255 ||
+        (queuedButton == null && queuedProgress != 0) ||
         pedalColors.any(
           (c) =>
               c.r < 0 ||
@@ -239,6 +244,17 @@ class PedalStateFrame extends Equatable {
   /// Reserved bits 10–15 must be zero. Logical track LEDs do not override it.
   final int activeButtonMask;
 
+  /// The footswitch whose pill fills while a Song section waits for the
+  /// playing one's next lap edge (#1077), or null. The app sets it only for a
+  /// section on the visible bank, and lights that switch like any other; the
+  /// board only fills its pill left to right by [queuedProgress].
+  final PedalButton? queuedButton;
+
+  /// How much of the wait has played, `0`..`254` of 255; `0` without a
+  /// [queuedButton]. A queue never reports a full pill: the engine ends the
+  /// wait by starting the section, and the next frame carries no queue.
+  final int queuedProgress;
+
   /// The configured hue, independent of activity.
   PedalColor colorFor(PedalButton button) => pedalColors[button.index];
 
@@ -246,7 +262,8 @@ class PedalStateFrame extends Equatable {
   bool isLit(PedalButton button) =>
       !isGoodbye && (activeButtonMask & (1 << button.index)) != 0;
 
-  /// Returns a copy with the given fields replaced.
+  /// Returns a copy with the given fields replaced. A null [queuedButton]
+  /// keeps the current one; build a frame without a queue to clear it.
   PedalStateFrame copyWith({
     GlobalColor? globalColor,
     List<PedalTrackLed>? trackLeds,
@@ -262,6 +279,8 @@ class PedalStateFrame extends Equatable {
     bool? countingIn,
     List<PedalColor>? pedalColors,
     int? activeButtonMask,
+    PedalButton? queuedButton,
+    int? queuedProgress,
   }) {
     return PedalStateFrame(
       globalColor: globalColor ?? this.globalColor,
@@ -278,6 +297,8 @@ class PedalStateFrame extends Equatable {
       countingIn: countingIn ?? this.countingIn,
       pedalColors: pedalColors ?? this.pedalColors,
       activeButtonMask: activeButtonMask ?? this.activeButtonMask,
+      queuedButton: queuedButton ?? this.queuedButton,
+      queuedProgress: queuedProgress ?? this.queuedProgress,
     );
   }
 
@@ -297,6 +318,8 @@ class PedalStateFrame extends Equatable {
     countingIn,
     pedalColors,
     activeButtonMask,
+    queuedButton,
+    queuedProgress,
   ];
 
   @override
@@ -307,5 +330,6 @@ class PedalStateFrame extends Equatable {
       'mode: ${mode.name}, loopUs: $loopLengthMicros, '
       'clearFade: $clearFadeActive, goodbye: $isGoodbye, '
       'performanceArmed: $performanceArmed, masterGain: $masterGain, '
-      'looperMode: ${looperMode.name}, countingIn: $countingIn)';
+      'looperMode: ${looperMode.name}, countingIn: $countingIn, '
+      'queued: ${queuedButton?.name}@$queuedProgress)';
 }

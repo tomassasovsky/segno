@@ -1526,6 +1526,45 @@ void main() {
   });
 
   group('queued cue', () {
+    testWidgets('a waiting Song section reads Play · Loop start (#1077)', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          transport: TransportState(
+            looperMode: LooperMode.song,
+            songQueuedTrack: 1,
+            songQueueProgress: 0.4,
+          ),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 1000),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_queued_1')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_queued_0')), findsNothing);
+      expect(find.text('Play'), findsOneWidget);
+      expect(find.text('Loop start'), findsOneWidget);
+    });
+
+    testWidgets('outside Song the engine queue shows no cue', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(songQueuedTrack: 1),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 1000),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_queued_1')), findsNothing);
+    });
+
     testWidgets('a pending arm on an empty track reads Record · Loop start', (
       tester,
     ) async {

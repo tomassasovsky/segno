@@ -258,6 +258,70 @@ static void fortyPixelRing() {
   expectRingDark();
 }
 
+// The Song queue (#1077): the queued switch's pill fills left to right by
+// the app's progress, in the colour and activity the app gave it. No local
+// clock moves it, and a queue never lights the whole pill.
+static void songQueueFill() {
+  const uint8_t level[8] = {28,69,151,191,191,151,69,28};
+  pedal_state state = {};
+  state.mode = PEDAL_MODE_PLAY;
+  state.looper_mode = PEDAL_LOOPER_SONG;
+  state.master_gain = 255;
+  for (auto &color : state.pedal_colors) color = {0,255,0};
+  // Track 2 waits on bank A; track 1 plays. Track 2 is group 2, track 1 is
+  // group 3 (physical harness order, PILL_BUTTON).
+  state.active_button_mask = (1u << PEDAL_BTN_TRACK1) | (1u << PEDAL_BTN_TRACK2);
+  state.queued_button = PEDAL_BTN_TRACK2 + 1;
+  uint32_t now = 200000;
+  // Pixel p is physical left to right; group < 8 enters from the right.
+  auto green = [](unsigned group, unsigned pixel) {
+    return (ind.shown[pillPixelIndex(group, pixel)] >> 8) & 255;
+  };
+  for (const unsigned progress : {0U, 1U, 32U, 127U, 128U, 200U, 254U}) {
+    state.queued_progress = (uint8_t)progress;
+    receive(state, now += 20);
+    for (unsigned pixel = 0; pixel < 8; ++pixel) {
+      const int coverage = (int)progress * 8 - (int)pixel * 255;
+      const unsigned fill = coverage <= 0 ? 0 : coverage >= 255 ? 255 : coverage;
+      assert(green(2, pixel) == (level[pixel] * fill + 127) / 255);
+      assert(green(3, pixel) == level[pixel]);  // the playing section: steady
+    }
+    // Time alone never advances the fill.
+    const auto held = ind.shown;
+    at(now += 400);
+    assert(ind.shown == held);
+  }
+  // Half way, exactly the left half is lit.
+  state.queued_progress = 127;
+  receive(state, now += 20);
+  for (unsigned pixel = 0; pixel < 8; ++pixel) assert((green(2, pixel) > 0) == (pixel < 4));
+  // 254 leaves the rightmost pixel short of full.
+  state.queued_progress = 254;
+  receive(state, now += 20);
+  assert(green(2, 7) < level[7] && green(2, 6) == level[6]);
+  // The handoff: the engine's next frame has no queue and lights the section.
+  state.queued_button = 0;
+  state.queued_progress = 0;
+  receive(state, now += 20);
+  for (unsigned pixel = 0; pixel < 8; ++pixel) assert(green(2, pixel) == level[pixel]);
+  // A queued switch the app does not light stays dark, whatever the progress.
+  state.active_button_mask = 1u << PEDAL_BTN_TRACK1;
+  state.queued_button = PEDAL_BTN_TRACK2 + 1;
+  state.queued_progress = 200;
+  receive(state, now += 20);
+  for (unsigned pixel = 0; pixel < 8; ++pixel) assert(ind.shown[pillPixelIndex(2, pixel)] == 0);
+  // Goodbye and a lost link darken a queued pill like every other.
+  state.active_button_mask = (1u << PEDAL_BTN_TRACK1) | (1u << PEDAL_BTN_TRACK2);
+  state.goodbye = 1;
+  receive(state, now += 20);
+  expectAllDark();
+  state.goodbye = 0;
+  receive(state, now += 20);
+  assert(green(2, 0) > 0);
+  at(now += 5001);
+  expectAllDark();
+}
+
 int main() {
   fake_arduino::analog[26] = fake_arduino::analog[27] = 4095;
   setup();
@@ -354,5 +418,6 @@ int main() {
   sustainedComet();
   ambientRingOutput();
   fortyPixelRing();
-  puts("Console v8 ten pills and sustained ring: all physical groups, host activity, limits and lifecycle pass");
+  songQueueFill();
+  puts("Console v10 ten pills, Song queue fill and sustained ring: all physical groups, host activity, limits and lifecycle pass");
 }

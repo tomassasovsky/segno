@@ -27,7 +27,7 @@
 struct Rgb { uint8_t r, g, b; };
 
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 13;
+static const uint8_t FW_MINOR = 14;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -746,16 +746,27 @@ static bool renderIndicators() {
   for (uint8_t group = 0; group < PEDAL_BTN_COUNT; ++group) {
     const uint8_t button = PILL_BUTTON[group];
     Rgb color = {0, 0, 0};
+    bool queued = false;
     if (g_haveFrame && !g_frame.goodbye &&
         (g_frame.active_button_mask & (1u << button))) {
       const pedal_color c = g_frame.pedal_colors[button];
       color = {c.r, c.g, c.b};
+      queued = g_frame.queued_button == button + 1;
     }
     // Preserve calibrated color ratios and the tested spatial curve, with no
     // extra gamma/dimmer. The total-current budget only dims crowded patterns.
     const uint32_t corrected = rgb(color.r, color.g, color.b);
     for (uint8_t pixel = 0; pixel < PILL_PIXELS; ++pixel) {
       uint8_t level = (uint8_t)(PILL_PEAK * PILL_WEIGHTS[pixel] / 255.0f + 0.5f);
+      if (queued) {
+        // A waiting Song section fills physical left to right by the app's
+        // progress. Nothing here can finish it: 254 leaves the last pixel
+        // short, and only the engine's handoff (a frame with no queue)
+        // lights the whole pill.
+        const int16_t coverage = g_frame.queued_progress * PILL_PIXELS - pixel * 255;
+        const uint16_t fill = coverage <= 0 ? 0 : coverage >= 255 ? 255 : coverage;
+        level = (uint8_t)((level * fill + 127) / 255);
+      }
       const RgbColor value(
           (uint8_t)((((corrected >> 16) & 255) * level + 127) / 255),
           (uint8_t)((((corrected >> 8) & 255) * level + 127) / 255),

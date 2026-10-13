@@ -146,7 +146,14 @@ typedef enum le_looper_mode {
   /* Song (B4): a "section" IS a track (song-mode-spec.md §2 Q1) — up to
    * LE_MAX_TRACKS independent sections, each started/stopped directly via
    * its OWN track press (record/play/stop), exactly like every other mode's
-   * per-track controls. No separate section object, no advance gesture (the
+   * per-track controls. Play starts one section at a time (#1077): a Play
+   * on a stopped section while another plays waits for that section's next
+   * lap edge, where the handoff stops it and starts the target from its
+   * beginning (le_engine_play). This supersedes the spec's "immediately"
+   * for starting a second section. A start from a held rig (a take, a
+   * punch-in) starts only that section: Song keeps no unpark rule
+   * (le_unpark_stopped). le_snapshot.song_last_section names the section
+   * that sounded last. No separate section object, no advance gesture (the
    * plan's original `advanceSection` was explicitly dropped once the manual
    * research showed no such gesture exists on the Sheeran — see the spec's
    * six B1 answers). Structurally IDENTICAL to Free's transport (independent
@@ -1604,6 +1611,17 @@ typedef struct le_snapshot {
    * measured (0 with none). A Session saves the pair, so a recall commits
    * the takes at the tempo they were laid down at and retimes from there. */
   int32_t recorded_length_frames;
+  /* Trailing (#1077): the Song section waiting for the playing section's
+   * next lap edge (-1: none) and the fraction of that wait already played,
+   * 0..1 (0 with none; it stays below 1 until the handoff clears it). Both
+   * are decoded from ONE atomic word, so they always describe the same
+   * request. */
+  int32_t song_queued_track;
+  float song_queue_progress;
+  /* Trailing (#1077): the Song section that sounded most recently, -1 for
+   * none. It survives a Stop; it is forgotten when that track empties, on a
+   * mode switch and on configure, and is never saved with a session. */
+  int32_t song_last_section;
 } le_snapshot;
 
 /* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part
@@ -2025,6 +2043,14 @@ LE_EXPORT int32_t le_engine_measure_latency(le_engine* engine);
  * undo — never a copy. */
 LE_EXPORT int32_t le_engine_record(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_stop_track(le_engine* engine, int32_t channel);
+/* In Song (#1077) Play is a section request: with nothing playing it starts
+ * the stopped section alone from its beginning; while another section plays
+ * it waits for that section's next lap edge (le_snapshot.song_queued_track),
+ * then stops every playing section and starts the target from its beginning
+ * on the next sample. Requesting the waiting target again, or a playing
+ * section, cancels the request; another stopped section replaces it. A
+ * capture refuses it. Count-in launches keep their own rules. Other modes
+ * play at once. */
 LE_EXPORT int32_t le_engine_play(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_clear(le_engine* engine, int32_t channel);
 /* Clear that leaves a restore point: identical to le_engine_clear, except the
