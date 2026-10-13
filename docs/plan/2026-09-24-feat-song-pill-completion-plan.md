@@ -1,16 +1,14 @@
-# Song queue completion and the sustained ring comet
+# Song queue completion
 
-Tracking: [#1077](https://github.com/tomassasovsky/segno/issues/1077) and
-[#1081](https://github.com/tomassasovsky/segno/issues/1081).
+Tracking: [#1077](https://github.com/tomassasovsky/segno/issues/1077).
 
-The owner approved the completion simulation and the sustained ring fade on
-the old v2 console (PR #1079, protocol 7, a 40-pixel ring). On 2026-10-13 the
-owner approved porting both onto the integration trunk, and chose the
-34-pixel strip ring for the console (#1090; the 40-pixel housing and the Ring
-24 holder are dropped). This plan records the port: protocol 10 on top of the
-trunk's protocol 9, and the comet on 34 pixels. The v3 console board and the
-XIAO ring board (#1082) are a separate, hardware-gated path and are not part
-of it.
+The owner approved the completion simulation on the old v2 console (PR #1079,
+protocol 7). On 2026-10-13 the owner approved porting it onto the integration
+trunk; this plan records the port, as protocol 10 on top of the trunk's
+protocol 9. The ring is not part of it: moving the sustained comet to the
+34-pixel strip ring (#1090) is held by the owner on a separate draft. The v3
+console board and the XIAO ring board (#1082) are a separate, hardware-gated
+path.
 
 ## Behaviour
 
@@ -35,8 +33,7 @@ Song plays one section at a time.
 6. The engine remembers the section that sounded last
    (`song_last_section`). It survives a Stop and follows every handoff; it
    is forgotten when that track empties, on a mode switch and on configure.
-   It is not saved with a session: under the
-   repo's standing rules (drop uncertain native state, no silent changes)
+   It is not saved with a session: under the repo's standing rules (drop uncertain native state, no silent changes)
    a recalled session has played nothing yet, and adding it to the session
    format would persist a guess.
 7. Other modes keep immediate play.
@@ -49,8 +46,7 @@ already reads "One section at a time."
 
 In Mute mode, in Song, a track press asks the engine for that section. In
 Record mode the pedal's Rec/Play on a muted stopped section, and the screen's
-Play, can also queue one. The
-engine queues, cancels and replaces; the app does not keep its own copy. A
+Play, can also queue one. The engine queues, cancels and replaces; the app does not keep its own copy. A
 muted stopped section is unmuted first; a press on a muted playing section
 only unmutes it, so it does not drop the section waiting to follow it.
 Rec/Play while a section plays does nothing (expanding to every section would
@@ -64,8 +60,8 @@ first unmuted section with a take, else the first with a take (owner,
 2026-10-13). In Record mode the pedal's Rec/Play keeps its meaning: on a
 stopped section it punches in at once, a capture rather than a section
 change; on a muted stopped section it asks for the section like a Mute-mode
-press. Record and FX keep their meanings, and Multi keeps
-its mute and resume rules.
+press. Record and FX keep their meanings, and Multi keeps its mute
+and resume rules.
 
 The waiting section shows wherever a queue can start (owner, 2026-10-13). On
 the pedal, in Mute and in Record mode, it reads green and its pill fills, on
@@ -85,14 +81,7 @@ left to right by the progress, with the sourced centre curve, harness order
 and 6000-channel budget. Nothing local advances the fill and a queue never
 draws a full pill: the engine ends the wait by starting the section, and the
 next frame carries no queue. The engine publishes target and progress in one
-atomic word, so the two always describe the same request.
-
-The ring is the 34-pixel strip on GP12 (`RING_N = 34`). The comet keeps its
-approved look: 1100 ms per turn, a 192 peak over a two-pixel lead, colour-only
-gamma, and the approved 40-pixel profile resampled to the same angles (26 of
-34 lit, the last quarter dark, the first ~42% at half the peak or more). The
-ring's channel budget follows the pixel count (34 x 3 x 96 = 9792), so the
-modelled combined current falls to about 1.49 A.
+atomic word, so the two always describe the same request. Firmware 1.14.
 
 ## Validation
 
@@ -103,13 +92,13 @@ modelled combined current falls to about 1.49 A.
   log (one STOP and one PLAY at the handoff frame, nothing for a cancelled
   request). Plain, AddressSanitizer and telemetry-off builds.
 - Firmware: the C codec against the regenerated Dart fixtures, queue
-  refusals, the pill fill at every progress step, the 34-pixel comet table
-  against the resampled approved profile, interpolation and the wire notch,
-  limits and lifecycle.
+  refusals, and the pill fill at every progress step, held against time,
+  hidden when the app does not light it, and dark on goodbye and a lost
+  link.
 - Dart: snapshot projection, repository projection, the frame codec and
   frame, projection, invariants and the cubit's Song gestures.
 
 Hardware remains the owner's check: a complete queued pill fill and an
-audible handoff during ordinary use, the comet through the actual diffuser on
-the 34-pixel ring, and the protocol 10 handshake after the appliance flashes
-firmware 1.14 with the matching app.
+audible handoff during ordinary use, in Mute and Record mode, and the
+protocol 10 handshake after the appliance flashes firmware 1.14 with the
+matching app.
