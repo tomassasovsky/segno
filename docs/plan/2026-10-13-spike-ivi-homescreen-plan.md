@@ -4,6 +4,8 @@ type: spike
 date: 2026-10-13
 ---
 
+<!-- cspell:words libepoxy Wrynose libapp pixman -->
+
 ## Spike: Segno on ivi-homescreen (DRM/KMS, no Weston, no GTK)
 
 Issue: #1318 · Direction issue: #897 (part B, the display stack) · Earlier
@@ -201,6 +203,6 @@ Build: dispatch `appliance-release` with `board: rpi5`, `embedder: ivi`,
 ## Out of scope
 
 - Switching the shipping image: that is decided under #897.
-- Upstreaming the pixel-ratio patch. It should be offered once the bench
+- Sending the pixel-ratio patch upstream. It should be offered once the bench
   confirms it.
 - A touch calibrator for the ivi image, the splash hand-off, and Impeller.
