@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[tracking] Substantive work (feature/multi-step/multi-session) needs a GitHub issue with stage:* + autonomy:* labels; new session with no ticket must create one. PRs need Closes #N; ready-to-merge only when CI is green AND /code-review is clean. Trivial one-liners skip the issue. Contract: docs/TRACKING.md'"
+            "command": "echo '[tracking] Substantive work (feature/multi-step/multi-session) needs a GitHub issue with stage:* + autonomy:* labels. Run the AGENTS.md session bootstrap first: list open issues and PRs and reuse an issue that already covers the scope; open a new one only when none does. PRs need Closes #N (stacked parts: Refs #N); ready-to-merge only when CI is green AND /code-review is clean. Trivial one-liners skip the issue. Contract: docs/TRACKING.md'"
           }
         ]
       }
