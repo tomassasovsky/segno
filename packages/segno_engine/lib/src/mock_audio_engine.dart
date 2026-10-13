@@ -1157,12 +1157,13 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   @override
   Future<AuditionStart> auditionStartFile(
     String path, {
-    int bus = 0,
     bool Function()? stillWanted,
   }) async {
     final running = _requireRunning();
     if (!running.isOk) return AuditionStart(result: running);
-    if (!File(path).existsSync() || bus < 0 || 2 * bus >= _negotiatedOutputs) {
+    // The mock models no output gate: its main output is the first pair.
+    const bus = 0;
+    if (!File(path).existsSync() || _negotiatedOutputs <= 0) {
       return const AuditionStart(result: EngineResult.invalid);
     }
     // Refused while a take records, as the native voice is.

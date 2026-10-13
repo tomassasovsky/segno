@@ -1033,12 +1033,11 @@ void main() {
         engine: engine,
       ).startAudition('s-a', stillWanted: () => wanted);
 
-      expect(engine.auditioned.single.path, '${dir.path}/mixdown.wav');
+      expect(engine.auditioned.single, '${dir.path}/mixdown.wav');
       // The caller's check reaches the engine, which asks it before the
       // start (review M-2).
       wanted = false;
       expect(engine.stillWantedChecks.single!(), isFalse);
-      expect(engine.auditioned.single.bus, 0);
       expect(started.truncated, isTrue);
       expect(started.frames, 5760000);
     });
