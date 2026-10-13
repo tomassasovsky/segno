@@ -23,7 +23,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |
 | #1302 | GTK composites Flutter frames on the CPU | build | merge-gate | `claude/gtk-background-1302` |
 | #1307 | CPU load indicator in the stage top bar | in-review | merge-gate | `claude/cpu-load-1307` |
-| #1308 | Centred stage title and fixed stage row slots | in-review | merge-gate | `claude/stage-title-1308` |
 | #1088 | Console base enclosure for fabrication | in-review | merge-gate | `claude/segno-pedal-manufacturability-5f08a2` |
 | #1140 | Keep recorded material across audio-engine reopen | in-review | merge-gate | `claude/engine-reopen-1140*` |
 | #1143 | Replay audio-history changes in performance stems | build | merge-gate | `claude/stem-history-replay-1143` |
