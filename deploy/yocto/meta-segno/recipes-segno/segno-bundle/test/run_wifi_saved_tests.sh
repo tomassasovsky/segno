@@ -32,6 +32,9 @@ case "\$*" in
         done
         printf '0\n'
         ;;
+    *"802-11-wireless-security.psk connection show"*)
+        printf '%s\n' "\${STORED_PSK:-}"
+        ;;
     *"-g 802-11-wireless.ssid "*|*"-g connection.id "*)
         id=\$(printf '%s' "\$*" | awk '{print \$NF}')
         printf '%s\n' "\${id#uuid-}"
@@ -62,7 +65,7 @@ teardown() { rm -rf "$work"; }
 # The key, when a test passes one, goes on stdin the way the app sends it.
 run() { printf '%s' "${KEY:-}" | PATH="$work/bin:$PATH" SEGNO_JOURNALCTL="$work/bin/journalctl" \
     SAVED="${SAVED:-}" PRIORITIES="${PRIORITIES:-}" \
-    UP_RC="${UP_RC:-0}" \
+    UP_RC="${UP_RC:-0}" STORED_PSK="${STORED_PSK:-}" \
     sh "$CTL" "$@" >"$work/stdout" 2>"$work/stderr"; }
 
 check() {
@@ -123,6 +126,31 @@ check "does not create a second profile" no \
     "$(grep -q 'connection add' "$work/nmcli-args" && echo yes || echo no)"
 check "activates the existing uuid" yes \
     "$(grep -q 'connection up uuid uuid-Cafe' "$work/nmcli-args" && echo yes || echo no)"
+teardown
+
+# After one failure NetworkManager's iwd backend asks secret agents for a NEW
+# key, and the console runs none: a plain up fails in milliseconds while the
+# key sits in the keyfile, and the owner had to re-type it (#1326).
+echo "joining a saved network without a password activates on its stored key"
+setup
+SAVED="Cafe" PRIORITIES="Cafe=100" STORED_PSK=stored run connect Cafe
+check "activates the existing uuid" yes \
+    "$(grep -q 'connection up uuid uuid-Cafe' "$work/nmcli-args" && echo yes || echo no)"
+check "hands the stored key over through passwd-file" yes \
+    "$(grep 'connection up uuid uuid-Cafe' "$work/nmcli-args" | grep -q 'passwd-file' && echo yes || echo no)"
+check "the key is never in argv" no \
+    "$(grep -q 'stored' "$work/nmcli-args" && echo yes || echo no)"
+check "does not rewrite the stored key" no \
+    "$(grep -q 'connection edit' "$work/nmcli-args" && echo yes || echo no)"
+teardown
+
+echo "joining a saved open network goes up without a passwd-file"
+setup
+SAVED="Cafe" PRIORITIES="Cafe=100" STORED_PSK= run connect Cafe
+check "activates the existing uuid" yes \
+    "$(grep -q 'connection up uuid uuid-Cafe' "$work/nmcli-args" && echo yes || echo no)"
+check "no passwd-file" no \
+    "$(grep -q 'passwd-file' "$work/nmcli-args" && echo yes || echo no)"
 teardown
 
 echo "joining a saved network with a new password still keeps the profile"
