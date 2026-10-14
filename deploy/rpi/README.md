@@ -101,7 +101,7 @@ bundle itself.
    ```
    The script stages the bundle under `/data/profile`, so the release install at
    `/opt/segno` is left alone, and runs it through the shipped launcher as the
-   transient unit `segno-profile`, with the same environment and RT limits as
+   transient unit `segno-devtools`, with the same environment and RT limits as
    `segno.service`. It stops `segno.service` for the duration and starts it
    again on exit however the run ends, and forwards the VM service to
    `127.0.0.1:8181` for DevTools. Both screens' isolates are on that one port.
