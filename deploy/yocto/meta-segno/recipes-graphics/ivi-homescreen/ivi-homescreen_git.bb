@@ -1,7 +1,7 @@
 SUMMARY = "ivi-homescreen: Flutter embedder for embedded Linux (DRM/KMS backend)"
 DESCRIPTION = "Toyota Connected's Flutter embedder, built with only its \
 compositor-less drm-kms-egl backend and no plugins: the embedder the \
-SEGNO_EMBEDDER=ivi image runs Segno on (#1318). It loads libflutter_engine.so \
+appliance image runs Segno on (#1318, #1330). It loads libflutter_engine.so \
 at runtime (flutter-engine-prebuilt) and runs one engine per configured view."
 HOMEPAGE = "https://github.com/toyota-connected/ivi-homescreen"
 LICENSE = "Apache-2.0"
@@ -54,10 +54,10 @@ FILES:${PN}-dev += "${libdir}/cmake"
 # not cosmetic. With no GApplication in the process, path_provider_linux names
 # the app's support directory, where shared_preferences keeps every setting,
 # after the executable. As `homescreen` the app looked in
-# $XDG_DATA_HOME/homescreen and started as a fresh install, while the GTK
-# runner (/opt/segno/segno) keeps its settings in $XDG_DATA_HOME/segno. The
-# same name also keeps `pidof segno` (segno-profile-recorder) and the core
-# dump names the same on both images.
+# $XDG_DATA_HOME/homescreen and started as a fresh install; every unit's
+# settings are in $XDG_DATA_HOME/segno, where the earlier GTK runner kept them.
+# The name is also what `pidof segno` (segno-profile-recorder) and the core
+# dump names use.
 do_install:append() {
     mv ${D}${bindir}/homescreen ${D}${bindir}/segno
 }

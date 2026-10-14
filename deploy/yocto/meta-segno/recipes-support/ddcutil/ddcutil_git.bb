@@ -16,7 +16,7 @@ SRCREV = "ca610f91d5483e19bfdae88bb0094973cc81fc95"
 
 inherit autotools pkgconfig
 
-# Headless appliance: DRM + udev + USB; skip X11 (we have Wayland/weston).
+# Appliance: DRM + udev + USB; no X11 (the app draws straight to DRM/KMS).
 PACKAGECONFIG ??= "drm systemd usb"
 PACKAGECONFIG[drm] = "--enable-drm=yes,--enable-drm=no,libdrm"
 PACKAGECONFIG[systemd] = "--enable-udev=yes,--enable-udev=no,udev"

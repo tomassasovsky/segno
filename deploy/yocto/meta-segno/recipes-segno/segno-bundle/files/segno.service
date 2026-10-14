@@ -1,13 +1,16 @@
-# Runs the Segno app. What it runs under is the embedder's business, and lives
-# in the drop-in segno-bundle.bb installs as segno.service.d/10-embedder.conf:
-# segno-gtk.conf (a Wayland client under weston) or segno-ivi.conf
-# (ivi-homescreen on DRM/KMS, #1318).
+# Runs the Segno app: ivi-homescreen drawing both HDMI outputs over DRM/KMS,
+# with no compositor (segno-kiosk-launch, #1318).
 [Unit]
 Description=Segno floor-console app
 # Wait for the data-grow oneshot (no-op when /data already fills the card) so
 # the app never starts mid-resize after flash/OTA onto a larger SD.
 After=segno-data-grow.service
 Wants=segno-data-grow.service
+# The app opens the vc4 card and takes the DRM master itself, which plymouth
+# holds for the boot splash until it quits. It also opens the touchscreens
+# through libinput itself, so the calibration rule segno-touch-persist
+# restores from /data has to exist first.
+After=plymouth-quit-wait.service segno-touch-persist.service
 # Persistent user data lives on /data (data.mount). Block startup until it is
 # mounted so the app never writes sessions/exports to the rootfs by mistake (the
 # launcher also guards, but this makes the ordering explicit).
@@ -36,6 +39,13 @@ LimitCORE=infinity
 ExecStart=/usr/bin/segno-kiosk-launch
 Restart=always
 RestartSec=3
+# A stop takes about 0.35 s. One stop in 61 on the bench hung until systemd's
+# 90 s SIGKILL and left nothing to debug (#1318). Give up after 15 s instead
+# (still above the ~10 s a segno-prof sample could hold a stop before it
+# attached per sample, #1328), and abort rather than kill: SIGABRT leaves a
+# core dump with every thread's stack in coredumpctl.
+TimeoutStopSec=15s
+TimeoutStopFailureMode=abort
 
 [Install]
 WantedBy=multi-user.target
