@@ -56,8 +56,11 @@ class _WifiReconnectHoldHostState extends State<WifiReconnectHoldHost> {
     _write(hold: hold);
   }
 
-  void _write({required bool hold}) =>
-      _writes = _writes.then((_) => _wifi.holdReconnects(hold: hold));
+  /// A write that fails must not stop the ones after it: a hold that is never
+  /// released would keep the console offline after the show.
+  void _write({required bool hold}) => _writes = _writes
+      .then((_) => _wifi.holdReconnects(hold: hold))
+      .catchError((Object _) {});
 
   @override
   Widget build(BuildContext context) => MultiBlocListener(

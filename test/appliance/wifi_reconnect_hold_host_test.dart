@@ -105,6 +105,26 @@ void main() {
       expect(holds, [false, true]);
     });
 
+    testWidgets('a write that fails does not stop the ones after it', (
+      tester,
+    ) async {
+      await pump(tester);
+      var calls = 0;
+      when(
+        () => wifi.holdReconnects(hold: any(named: 'hold')),
+      ).thenAnswer((invocation) async {
+        calls++;
+        if (calls == 1) throw StateError('no /run/segno');
+        holds.add(invocation.namedArguments[#hold] as bool);
+      });
+      looperStates.add(_playing);
+      await tester.pump();
+      looperStates.add(const LooperState());
+      await tester.pump();
+      expect(calls, 2);
+      expect(holds, [false, false]);
+    });
+
     testWidgets('releases a hold when it goes away', (tester) async {
       await pump(tester);
       looperStates.add(_playing);
