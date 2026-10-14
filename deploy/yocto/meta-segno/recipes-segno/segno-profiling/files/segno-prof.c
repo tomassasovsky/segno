@@ -5,11 +5,13 @@
  *       Samples one thread's stack through ptrace and prints folded stacks
  *       ("root;...;leaf count", flamegraph.pl input), busiest first. Only that
  *       thread is paused, for microseconds per sample; the audio thread never
- *       is. It is attached only while a sample is taken: a thread that stays
- *       attached between samples holds up the app's SIGTERM handling until it
- *       is detached, so a stop landing in the sampling window took ~10 s. tid defaults to the main thread, which runs GTK and the Dart UI
- *       isolate. Frames are named from each file's .symtab when it has one
- *       (experimental builds keep libapp.so's Dart symbols) and from .dynsym
+ *       is. It is attached only while a sample is taken. Measured on the
+ *       console (#1318): while a thread of the app stayed attached between
+ *       samples, the app did not act on SIGTERM until it was detached (8.3 s
+ *       into a 10 s run, against 0.23 s attaching per sample). tid defaults
+ *       to the main thread, which runs GTK and the Dart UI isolate. Frames
+ *       are named from each file's .symtab when it has one (experimental
+ *       builds keep libapp.so's Dart symbols) and from .dynsym
  *       otherwise; an address outside every known symbol prints as
  *       file:0x<address>.
  *
@@ -395,11 +397,11 @@ static int cmd_stack(int argc, char **argv) {
     /* Attach for this sample only (see the header): seize, stop, read, then
      * detach before the symbolizing and the sleep. */
     if (ptrace(PTRACE_SEIZE, tid, 0, 0) < 0) {
-      if (taken == 0) {
+      if (taken == 0 || errno != ESRCH) {
         fprintf(stderr, "ptrace seize %d: %s\n", tid, strerror(errno));
-        return 1;
+        if (taken == 0) return 1;
       }
-      break; /* the thread has exited */
+      break; /* ESRCH: the thread has exited */
     }
     if (interrupt_thread(tid) < 0) {
       ptrace(PTRACE_DETACH, tid, 0, 0);
@@ -421,7 +423,12 @@ static int cmd_stack(int argc, char **argv) {
       }
     }
     ptrace(PTRACE_DETACH, tid, 0, 0);
-    if (depth == 0) continue;
+    if (depth == 0) {
+      /* Still wait: a thread that keeps failing must not be stopped back to
+       * back. */
+      if (interval_ms > 0) usleep(interval_ms * 1000);
+      continue;
+    }
 
     char line[kMaxDepth * 96];
     size_t used = 0;
