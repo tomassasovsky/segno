@@ -120,7 +120,7 @@ The bench-verified spike and its fixes, merged into the trunk.
 - **The matrix:**
   - The app sees touches already transformed by the current matrix C. It
     fits the affine A that takes the observed points to the targets, in
-    normalised screen coordinates, and stores A·C.
+    normalized screen coordinates, and stores A·C.
   - `segno-touch-ctl` becomes per device, keyed by the libinput device name
     in `homescreen.toml`'s `touch_device`, with a catch-all for the main
     panel. Today one matrix applies to every touchscreen, and the console now
