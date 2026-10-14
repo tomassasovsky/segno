@@ -22,6 +22,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1299 | Appliance slowdown profiler and GLib timeout leak | in-review | merge-gate | `claude/appliance-responsiveness-08d39b` |
 | #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |
 | #1302 | GTK composites Flutter frames on the CPU | build | merge-gate | `claude/gtk-background-1302` |
+| #1326 | Boot Wi-Fi retry activates on the stored key | in-review | blocked-verify | `claude/wifi-retry-1326` |
 | #1088 | Console base enclosure for fabrication | in-review | merge-gate | `claude/segno-pedal-manufacturability-5f08a2` |
 | #1077 | Song queue completion | in-review | blocked-verify | `claude/song-queue-comet-1077` |
 | #1140 | Keep recorded material across audio-engine reopen | in-review | merge-gate | `claude/engine-reopen-1140*` |

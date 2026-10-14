@@ -18,10 +18,20 @@
 #                          is read from stdin, never from argv
 #   connectivity           {"internet":true|false}: one HEAD request to the
 #                          update host, 3 s limit
+#   activate <uuid> [secs] {} once the saved profile is up on its stored key
+#                          (up_saved); used by segno-wifi-retry at boot
 #
 # NetworkManager owns the radio, and nothing else may. There is deliberately no
 # second backend: see reclaim_wifi below for what having one cost us (#468).
 set -eu
+
+# A passwd-file holds a key in the clear, so it must not outlive the helper,
+# even when it is stopped mid-join. An untrapped TERM skips the EXIT trap in
+# dash, so the signals exit through it.
+passf=
+up_keyf=
+trap 'rm -f "$passf" "$up_keyf"' EXIT
+trap 'exit 1' HUP INT TERM
 
 IFACE="${SEGNO_WIFI_IFACE:-wlan0}"
 # The join budget. This was 20s while a wpa_supplicant fallback existed, so a
@@ -392,6 +402,32 @@ write_passwd_file() {
     printf '\n' >>"$1"
 }
 
+# Activates a saved profile on its stored key. NetworkManager's iwd backend
+# hands iwd the stored PSK only until the profile has a recorded attempt;
+# after one failure it asks secret agents for a NEW key (REQUEST_NEW in
+# nm_device_iwd_agent_query). A headless console runs none, so a plain
+# `connection up` then fails in milliseconds with "No agents were available"
+# while the key sits in the keyfile, and Join on a saved network only worked
+# after re-typing the password (#1326). nmcli reading a passwd-file is the
+# agent that answers. Open networks have no key and go up plainly.
+up_saved() {
+    up_uuid=$1
+    up_wait=$2
+    up_key=$(nmcli -s -e no -g 802-11-wireless-security.psk connection show uuid "$up_uuid" 2>/dev/null || true)
+    if [ -z "$up_key" ]; then
+        nmcli --wait "$up_wait" connection up uuid "$up_uuid"
+        return
+    fi
+    up_keyf=$(mktemp)
+    chmod 600 "$up_keyf"
+    write_passwd_file "$up_keyf" "$up_key"
+    up_rc=0
+    nmcli --wait "$up_wait" connection up uuid "$up_uuid" passwd-file "$up_keyf" || up_rc=$?
+    rm -f "$up_keyf"
+    up_keyf=
+    return "$up_rc"
+}
+
 # Stores the key on a saved profile through nmcli's editor, fed on stdin: an
 # argument would be readable by every process on the console through
 # /proc/<pid>/cmdline. The editor strips spaces at either end of a value, so a
@@ -440,7 +476,7 @@ restore_previous() {
     prev=$1
     [ -n "$prev" ] || return 0
     [ "$prev" != "$(active_wifi_uuid)" ] || return 0
-    if nmcli --wait "$RESTORE_WAIT_SECS" connection up uuid "$prev" >/dev/null 2>&1; then
+    if up_saved "$prev" "$RESTORE_WAIT_SECS" >/dev/null 2>&1; then
         name=$(profile_field "$prev" 802-11-wireless.ssid)
         log "join failed; reconnected to ${name:-$prev}"
         printf '{"restored":"%s"}\n' "$(json_escape "${name:-}")"
@@ -505,8 +541,7 @@ do_connect_nm() {
                 persist_psk_and_enable "$existing" "$psk"
             fi
         elif [ "$rc" -eq 0 ]; then
-            nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up uuid "$existing" \
-                >"$errf" 2>&1
+            up_saved "$existing" "$NM_CONNECT_WAIT_SECS" >"$errf" 2>&1
             rc=$?
         fi
     elif [ -n "$psk" ]; then
@@ -661,9 +696,18 @@ do_disconnect() { require_nm && do_disconnect_nm; }
 do_forget() { require_nm && do_forget_nm "$@"; }
 do_autoconnect() { require_nm && do_autoconnect_nm "$@"; }
 do_set_password() { require_nm && do_set_password_nm "$@"; }
+# nmcli's own chatter goes to stderr: stdout is the JSON contract.
+do_activate() {
+    require_nm || return 1
+    if up_saved "$1" "${2:-$NM_CONNECT_WAIT_SECS}" >&2; then
+        echo '{}'
+    else
+        return 1
+    fi
+}
 
 usage() {
-    log "usage: $0 status|scan|connect <ssid>|disconnect|forget <ssid>|radio on|off|autoconnect <ssid> on|off|set-password <ssid>|connectivity"
+    log "usage: $0 status|scan|connect <ssid>|disconnect|forget <ssid>|radio on|off|autoconnect <ssid> on|off|set-password <ssid>|connectivity|activate <uuid> [secs]"
     exit 2
 }
 
@@ -698,5 +742,9 @@ case "$verb" in
         do_set_password "$1"
         ;;
     connectivity) do_connectivity ;;
+    activate)
+        [ $# -ge 1 ] || usage
+        do_activate "$1" "${2:-}"
+        ;;
     *) usage ;;
 esac

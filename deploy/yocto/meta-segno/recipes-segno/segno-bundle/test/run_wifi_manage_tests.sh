@@ -195,6 +195,47 @@ check "reactivates it without the new key" yes \
 check "prints restored" '{"restored":"Studio"}' "$(cat "$work/stdout")"
 teardown
 
+# After one failure NetworkManager's iwd backend asks secret agents for a NEW
+# key and the console runs none, so the restore hands the stored key over
+# itself (#1326).
+echo "a failed join restores the previous network on its stored key"
+setup
+SAVED="The Studio" ACTIVE="The Studio" FAIL_UP="Rehearsal" STORED_PSK='old key' \
+    run_with_stdin 'wrongpass' connect Rehearsal
+check "the join fails" 1 "$rc"
+check "restores through a passwd-file" yes \
+    "$(grep 'connection up uuid uuid-The Studio' "$work/nmcli-args" | grep -q passwd-file && echo yes || echo no)"
+check "on the stored key, escaped" '802-11-wireless-security.psk:old\ key' "$(cat "$work/passwd-file")"
+check "prints restored" '{"restored":"The Studio"}' "$(cat "$work/stdout")"
+teardown
+
+echo "activate brings a saved profile up on its stored key"
+setup
+SAVED="Studio" STORED_PSK='s3cret' run activate uuid-Studio 20
+check "succeeds" 0 "$rc"
+check "prints {}" '{}' "$(cat "$work/stdout")"
+check "activates that uuid within the given wait" yes \
+    "$(has '--wait 20 connection up uuid uuid-Studio passwd-file' "$work/nmcli-args")"
+check "hands the stored key over" '802-11-wireless-security.psk:s3cret' "$(cat "$work/passwd-file")"
+check "the key is never in argv" no "$(has 's3cret' "$work/nmcli-args")"
+check "the key file is gone afterwards" 0 \
+    "$(find "${TMPDIR:-/tmp}" -maxdepth 1 -newer "$work/ctl-args" -type f -exec grep -l 's3cret' {} + 2>/dev/null | wc -l | tr -d ' ')"
+teardown
+
+echo "activate on an open network goes up without a key file"
+setup
+SAVED="Cafe" run activate uuid-Cafe
+check "succeeds" 0 "$rc"
+check "no passwd-file" no "$(has 'passwd-file' "$work/nmcli-args")"
+teardown
+
+echo "activate reports a failed activation"
+setup
+SAVED="Studio" STORED_PSK='s3cret' FAIL_UP="uuid-Studio" run activate uuid-Studio
+check "fails" 1 "$rc"
+check "prints nothing" "" "$(cat "$work/stdout")"
+teardown
+
 echo "connect reads the key from stdin and no argv ever holds it"
 setup
 ACTIVE="The Studio" run_with_stdin "$(printf 'n3w-s3cret\n')" connect Rehearsal
