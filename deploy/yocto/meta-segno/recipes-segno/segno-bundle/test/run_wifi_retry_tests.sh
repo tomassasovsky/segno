@@ -78,7 +78,9 @@ case "\$*" in
                 echo "\$last" > "$work/passwd-file-path"
                 ;;
         esac
-        exit \$(next "\$(printf '%s' "\${UP_RCS:-0}" | tr ' ' '|')" up-count)
+        rc=\$(next "\$(printf '%s' "\${UP_RCS:-0}" | tr ' ' '|')" up-count)
+        [ "\$rc" -eq 0 ] || echo "Error: Connection activation failed: (53) stub failure" >&2
+        exit "\$rc"
         ;;
     *) : ;;
 esac
@@ -255,6 +257,7 @@ STATES="disconnected connecting connected" RETRY_FOR=60 run_retry
 check "exit 0" 0 "$?"
 check "rescanned" yes "$(called_with 'device wifi rescan')"
 check "does not step on NM's activation" 0 "$(ups)"
+check "does not claim it was already connected" no "$(said 'no retry needed')"
 teardown
 
 echo "NetworkManager not answering is retried, not taken for nothing saved"
@@ -287,6 +290,7 @@ UP_RCS=1 RETRY_FOR=0 run_retry
 check "exit 1" 1 "$?"
 check "one activation" 1 "$(ups)"
 check "gave up" yes "$(said 'gave up')"
+check "nmcli's failure reason reaches the log" yes "$(said 'stub failure')"
 teardown
 
 echo
