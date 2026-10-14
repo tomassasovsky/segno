@@ -2624,5 +2624,17 @@
     "footLengthBeat": "Tiempo {beat}",
     "footLengthBeats": "Tiempos {first}–{last}",
     "stageBeatsFigure": "{count, plural, =1{1 tiempo} other{{count} tiempos}}",
-    "stageBeatsUnit": "{count, plural, =1{tiempo} other{tiempos}}"
+    "stageBeatsUnit": "{count, plural, =1{tiempo} other{tiempos}}",
+    "touchCalibrationTitle": "{display} · Calibración táctil",
+    "touchCalibrationInstruction": "Tocá el centro de cada objetivo",
+    "touchCalibrationTrackInstruction": "Tocá el centro de cada objetivo en la pantalla de pista",
+    "touchCalibrationStep": "{step} de {steps}",
+    "touchCalibrationTestInstruction": "Probá el táctil",
+    "touchCalibrationTestStep": "Prueba {step} de {steps}",
+    "touchCalibrationTestDone": "El táctil funciona",
+    "touchCalibrationPrevious": "La calibración anterior sigue disponible.",
+    "touchCalibrationCountdown": "{seconds} s",
+    "touchCalibrationRestart": "Reiniciar",
+    "touchCalibrationKeep": "Mantener calibración",
+    "touchCalibrationFailed": "No se pudo guardar la calibración."
 }

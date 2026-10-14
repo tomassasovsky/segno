@@ -256,4 +256,39 @@ void main() {
 
     expect(touches, 1);
   });
+
+  group('touch calibration', () {
+    test('draws a target on the readout and brings its taps back', () async {
+      final link = startReadout();
+      final taps = <({double x, double y})>[];
+      service.onCalibrationTap = taps.add;
+      await service.open();
+      await settle();
+
+      expect(
+        await service.showCalibrationTarget((
+          x: 0.12,
+          y: 0.16,
+        ), label: '1 of 5'),
+        isTrue,
+      );
+      await settle();
+      expect(link.calibration.value, (
+        target: (x: 0.12, y: 0.16),
+        label: '1 of 5',
+      ));
+
+      link.sendCalibrationTap((x: 0.13, y: 0.15));
+      await settle();
+      expect(taps, [(x: 0.13, y: 0.15)]);
+
+      expect(await service.showCalibrationTarget(null), isTrue);
+      await settle();
+      expect(link.calibration.value, isNull);
+    });
+
+    test('reports an unreachable readout', () async {
+      expect(await service.showCalibrationTarget((x: 0.5, y: 0.5)), isFalse);
+    });
+  });
 }

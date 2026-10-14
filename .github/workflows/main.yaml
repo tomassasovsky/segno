@@ -29,11 +29,11 @@ jobs:
       format_directories: "lib test packages/*/lib packages/*/test"
       analyze_directories: "lib test packages/*/lib packages/*/test"
       # Keep the 90% gate for real logic, but exclude platform / entrypoint glue
-      # that can't be meaningfully unit-tested: the custom window chrome
-      # (window_manager), the desktop_multi_window output-waveform sub-window,
-      # and the app bootstrap/entrypoint. Coverage on the remainder stays ~91%.
+      # that can't be meaningfully unit-tested: the Track display's app and its
+      # link service, and the app bootstrap/entrypoint. Coverage on the
+      # remainder stays ~91%.
       min_coverage: 90
-      coverage_excludes: "**/window_chrome.dart **/waveform_window*.dart **/run_segno.dart **/bootstrap.dart **/session_directory.dart **/system_appliance_env.dart"
+      coverage_excludes: "**/waveform_window*.dart **/run_segno.dart **/bootstrap.dart **/session_directory.dart **/system_appliance_env.dart"
 
   # daw_export is a pure Dart package (no Flutter dependency, plain `test`
   # instead of `flutter_test`) so it can't ride the root flutter_package.yml
@@ -54,6 +54,17 @@ jobs:
       working_directory: packages/usb_storage_client
       run_bloc_lint: false
       min_coverage: 100
+
+  # touch_calibration_client (#1330) is pure Dart: the calibration matrix fit
+  # and the appliance's segno-touch-ctl helper. The one line it cannot cover
+  # here is the factory's return of the real helper, which only the appliance
+  # has installed.
+  touch-calibration-client:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    with:
+      working_directory: packages/touch_calibration_client
+      run_bloc_lint: false
+      min_coverage: 98
 
   # Per-package test + coverage gates for the five domain packages (FX v3
   # part 3a [VGV-critical]): the root `build` job only runs the root app's own
@@ -535,6 +546,10 @@ jobs:
         run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_brightness_tests.sh
       - name: Run brightness-ctl tests (dash)
         run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_brightness_tests.sh
+      - name: Run touch-ctl tests (bash)
+        run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_touch_ctl_tests.sh
+      - name: Run touch-ctl tests (dash)
+        run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_touch_ctl_tests.sh
       - name: Run mark-good tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
       - name: Run update-ctl reboot tryboot tests

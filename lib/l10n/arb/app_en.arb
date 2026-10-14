@@ -7286,5 +7286,79 @@
                 "type": "int"
             }
         }
+    },
+    "touchCalibrationTitle": "{display} · Touch calibration",
+    "@touchCalibrationTitle": {
+        "description": "Title of the touch calibration page, for example Main display · Touch calibration.",
+        "placeholders": {
+            "display": {
+                "type": "String"
+            }
+        }
+    },
+    "touchCalibrationInstruction": "Tap the center of each target",
+    "@touchCalibrationInstruction": {
+        "description": "Instruction while capturing calibration targets on the main display."
+    },
+    "touchCalibrationTrackInstruction": "Tap the center of each target on the Track display",
+    "@touchCalibrationTrackInstruction": {
+        "description": "Instruction while capturing calibration targets shown on the Track display."
+    },
+    "touchCalibrationStep": "{step} of {steps}",
+    "@touchCalibrationStep": {
+        "description": "Which calibration target is showing, for example 1 of 5.",
+        "placeholders": {
+            "step": {
+                "type": "int"
+            },
+            "steps": {
+                "type": "int"
+            }
+        }
+    },
+    "touchCalibrationTestInstruction": "Test the touch",
+    "@touchCalibrationTestInstruction": {
+        "description": "Instruction while trying a new touch calibration."
+    },
+    "touchCalibrationTestStep": "Test {step} of {steps}",
+    "@touchCalibrationTestStep": {
+        "description": "Which test target is showing, for example Test 1 of 3.",
+        "placeholders": {
+            "step": {
+                "type": "int"
+            },
+            "steps": {
+                "type": "int"
+            }
+        }
+    },
+    "touchCalibrationTestDone": "Touch works",
+    "@touchCalibrationTestDone": {
+        "description": "Shown once every test target was hit."
+    },
+    "touchCalibrationPrevious": "Previous calibration stays available.",
+    "@touchCalibrationPrevious": {
+        "description": "Footer note: the old calibration comes back unless the new one is kept."
+    },
+    "touchCalibrationCountdown": "{seconds}s",
+    "@touchCalibrationCountdown": {
+        "description": "Seconds before an untried calibration reverts, for example 30s.",
+        "placeholders": {
+            "seconds": {
+                "type": "int"
+            }
+        }
+    },
+    "touchCalibrationRestart": "Restart",
+    "@touchCalibrationRestart": {
+        "description": "Button that discards the new calibration and starts over."
+    },
+    "touchCalibrationKeep": "Keep calibration",
+    "@touchCalibrationKeep": {
+        "description": "Button that keeps the new touch calibration."
+    },
+    "touchCalibrationFailed": "The calibration could not be saved.",
+    "@touchCalibrationFailed": {
+        "description": "Shown when the touch calibration could not be read or stored."
     }
 }
