@@ -21,8 +21,12 @@
 #   source_ids_s    GSources created per second: main-loop churn
 #   load1, mem_available_kb  system-wide
 #
-# Every 15 minutes, a folded-stack profile of the main thread
-# (stacks-<time>.folded, segno-prof stack, 1000 samples 10 ms apart).
+# Every 15 minutes, a folded-stack profile of the thread that runs the main
+# Dart UI isolate (stacks-<time>.folded, segno-prof stack, 1000 samples 10 ms
+# apart): the main thread under the GTK runner, which writes
+# /run/segno/main-context; otherwise (ivi-homescreen, #1318), whose main thread
+# is an idle reactor, the first engine's io.flutter.ui thread. The audio thread
+# inherits that name, so SCHED_FIFO threads are skipped.
 #
 # Files older than 30 days are deleted. Experimental images only: the unit
 # checks the channel before starting this. Not /data/profile: that is where
@@ -117,7 +121,13 @@ while :; do
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$pid,$app_uptime,$rss,$threads,$fds,$cpu,${census%,*},$rate,$load1,$available" >> "$file"
 
   if [ $(( tick % stack_every )) -eq 0 ]; then
-    segno-prof stack "$pid" "$pid" 1000 10 \
+    ui=$pid
+    if [ ! -e /run/segno/main-context ]; then
+      ui=$(awk '$2 == "io.flutter.ui" && $4 != 1 && $4 != 2 {print $1; exit}' \
+        "$state/threads")
+      [ -n "$ui" ] || ui=$pid
+    fi
+    segno-prof stack "$pid" "$ui" 1000 10 \
       > "$dir/stacks-$(date -u +%Y%m%dT%H%M%SZ).folded" 2>/dev/null
     find "$dir" -type f -mtime +"$keep_days" -exec rm -f {} +
   fi
