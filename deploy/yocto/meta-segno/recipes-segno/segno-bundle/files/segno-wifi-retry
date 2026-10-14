@@ -1,6 +1,7 @@
 #!/bin/sh
-# segno-wifi-retry -- keep activating a saved WiFi network after boot until
-# one connects or the budget runs out (#824, #963, #1326).
+# segno-wifi-retry -- keep activating a saved WiFi network after boot, and
+# after a drop while the console runs, until one connects or the budget runs
+# out (#824, #963, #1326, #1337).
 #
 # At boot, the first activation can fail for reasons that have nothing to do
 # with the password: iwd autoconnecting off its own store (#824), an empty
@@ -9,6 +10,9 @@
 # every one of them to 'no-secrets', blocks autoconnect, and never retries. A
 # console with a perfectly good saved network then sits offline until a human
 # opens the Network page.
+#
+# A runtime drop gets the same treatment: the NetworkManager dispatcher hook
+# (segno-wifi-dispatch) starts this service when wlan0 goes down.
 #
 # This service is the mechanism-independent backstop: while wlan0 is
 # disconnected, activate a saved network the owner lets auto-join, with
@@ -35,6 +39,12 @@
 # - Prefer the newest saved network that is in range. The newest one overall
 #   may be at home while the console is at a venue whose network failed once
 #   and is now blocked from NM's own autoconnect.
+# - Hold off while the app is performing (#1337). A scan takes the radio
+#   off-channel, which must not happen mid-show. The app keeps HOLD_FILE,
+#   holding its PID, for as long as the music plays or records; while it
+#   stands, the retry makes no nmcli call at all, and the wait is added to
+#   the budget. A file whose process is gone was left by a crashed app and
+#   does not count.
 #
 # The owner's choices always win: auto-join off on a network (Network page)
 # keeps it out of the candidates, and a Disconnect (`nmcli device disconnect`
@@ -53,6 +63,8 @@ SCAN_WAIT="${SEGNO_WIFI_RETRY_SCAN_WAIT:-16}"     # seconds to wait for a saved 
 UP_WAIT="${SEGNO_WIFI_RETRY_UP_WAIT:-20}"         # activation budget for one attempt
 IFACE="${SEGNO_WIFI_IFACE:-wlan0}"
 WIFI_CTL="${SEGNO_WIFI_CTL:-/usr/bin/segno-wifi-ctl}"
+HOLD_FILE="${SEGNO_WIFI_HOLD_FILE:-/run/segno/wifi-hold}"
+HOLD_POLL="${SEGNO_WIFI_RETRY_HOLD_POLL:-5}"      # seconds between checks while held
 TAB=$(printf '\t')
 
 log() { echo "$TAG: $*"; }
@@ -121,10 +133,36 @@ pick() {
   done
 }
 
+# Whether the app holds reconnects: the hold file names a live process.
+# `kill -0` asks the kernel without signalling; it answers for any PID to
+# root, which this service runs as.
+held() {
+  [ -f "$HOLD_FILE" ] || return 1
+  holder=$(cat "$HOLD_FILE" 2>/dev/null)
+  case "$holder" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$holder" 2>/dev/null
+}
+
 attempt=0
 waited_on_nm=no
+holding=no
 pause=$BACKOFF
 while :; do
+  if held; then
+    if [ "$holding" = no ]; then
+      log "performing; holding off"
+      holding=yes
+    fi
+    since=$(date +%s)
+    sleep "$HOLD_POLL"
+    deadline=$((deadline + $(date +%s) - since))
+    continue
+  fi
+  if [ "$holding" = yes ]; then
+    log "performance over; resuming"
+    holding=no
+  fi
+
   # The owner turned WiFi off? Their call wins -- retrying into a disabled
   # radio would fight the Control Center toggle.
   if [ "$(nmcli radio wifi 2>/dev/null)" = "disabled" ]; then
@@ -186,6 +224,9 @@ while :; do
       [ "$(date +%s)" -lt "$deadline" ] || break
       continue
     fi
+
+    # A performance may have started during the scan wait.
+    held && continue
 
     attempt=$((attempt + 1))
     log "attempt $attempt: activating $uuid${ssid:+ ($ssid)}"

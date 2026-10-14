@@ -29,6 +29,7 @@ import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_goodbye.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
 import 'package:segno/appliance/software_brightness.dart';
+import 'package:segno/appliance/wifi_reconnect_hold_host.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
 import 'package:segno/backing/cubit/backing_mix_cubit.dart';
@@ -1346,7 +1347,9 @@ class _AppViewState extends State<_AppView> {
           builder: (context, brightness) {
             final dimmed = SoftwareBrightness(
               brightness: brightness.softwareOf(DisplayRole.main),
-              child: IdleDimHost(child: typed),
+              child: IdleDimHost(
+                child: WifiReconnectHoldHost(child: typed),
+              ),
             );
             return BlocBuilder<PowerCubit, PowerState>(
               buildWhen: (previous, current) => previous != current,

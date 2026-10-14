@@ -17,6 +17,7 @@ set -uo pipefail
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 RETRY="$here/../files/segno-wifi-retry"
+DISPATCH="$here/../files/segno-wifi-dispatch"
 CTL="$here/../files/segno-wifi-ctl"
 TEST_SHELL="${TEST_SHELL:-sh}"
 
@@ -97,6 +98,26 @@ STUB
 exit 0
 STUB
     chmod +x "$work/bin/journalctl"
+    # sleep returns at once, and at its HOLD_ON_AT-th and HOLD_OFF_AT-th call
+    # stands in for the app starting and ending a performance. A release
+    # records how many nmcli calls had been made by then.
+    cat > "$work/bin/sleep" <<STUB
+#!/bin/sh
+n=0
+[ -f "$work/sleep-count" ] && n=\$(cat "$work/sleep-count")
+n=\$((n + 1))
+echo "\$n" > "$work/sleep-count"
+if [ "\$n" = "\${HOLD_ON_AT:-0}" ]; then
+    echo "\$HOLDER" > "$work/hold"
+    echo hold-on >> "$work/events"
+fi
+if [ "\$n" = "\${HOLD_OFF_AT:-0}" ]; then
+    rm -f "$work/hold"
+    echo "hold-off \$(wc -l < "$work/nmcli-args" | tr -d ' ')" >> "$work/events"
+fi
+exit 0
+STUB
+    chmod +x "$work/bin/sleep"
 }
 
 teardown() { rm -rf "$work"; }
@@ -110,6 +131,11 @@ run_retry() {
     SEGNO_WIFI_RETRY_BACKOFF=0 \
     SEGNO_WIFI_RETRY_POLL=0 \
     SEGNO_WIFI_RETRY_SCAN_WAIT="${SCAN_WAIT:-0}" \
+    SEGNO_WIFI_RETRY_HOLD_POLL=0 \
+    SEGNO_WIFI_HOLD_FILE="$work/hold" \
+    HOLD_ON_AT="${HOLD_ON_AT:-0}" \
+    HOLD_OFF_AT="${HOLD_OFF_AT:-0}" \
+    HOLDER="${HOLDER:-$$}" \
     RADIOS="${RADIOS:-enabled}" \
     DEV_AC="${DEV_AC:-yes}" \
     STATES="${STATES:-disconnected}" \
@@ -300,6 +326,63 @@ check "exit 1" 1 "$?"
 check "one activation" 1 "$(ups)"
 check "gave up" yes "$(said 'gave up')"
 check "nmcli's failure reason reaches the log" yes "$(said 'stub failure')"
+teardown
+
+# A reconnect scan takes the radio off-channel; mid-show it must wait (#1337).
+echo "holds off while the app performs, then catches up"
+setup
+echo $$ > "$work/hold"
+HOLD_OFF_AT=3 run_retry
+check "exit 0" 0 "$?"
+check "said so" yes "$(said 'holding off')"
+check "no nmcli call while held" "hold-off 0" "$(grep '^hold-off' "$work/events")"
+check "activated once released" "up uuid-Cafe" "$(grep '^up ' "$work/events")"
+check "said it resumed" yes "$(said 'performance over')"
+teardown
+
+echo "a hold left by a crashed app does not count"
+setup
+sh -c 'exit 0' &
+dead=$!
+wait "$dead"
+echo "$dead" > "$work/hold"
+run_retry
+check "exit 0" 0 "$?"
+check "does not hold" no "$(said 'holding off')"
+check "activates" "up uuid-Cafe" "$(grep '^up ' "$work/events")"
+teardown
+
+echo "a performance that starts during the scan wait stops the activation"
+setup
+LIST_MISS=1 SCAN_WAIT=3 HOLD_ON_AT=2 HOLD_OFF_AT=4 RETRY_FOR=60 run_retry
+check "exit 0" 0 "$?"
+check "held" yes "$(said 'holding off')"
+check "activated only after the release" yes \
+    "$([ "$(grep -n '^hold-off' "$work/events" | cut -d: -f1)" -lt \
+         "$(grep -n '^up ' "$work/events" | head -1 | cut -d: -f1)" ] 2>/dev/null && echo yes || echo no)"
+check "one activation" 1 "$(ups)"
+teardown
+
+# The NetworkManager dispatcher hook starts the retry for a runtime drop.
+dispatch() {
+    : > "$work/systemctl-args"
+    PATH="$work/bin:$PATH" "$TEST_SHELL" "$DISPATCH" "$@"
+}
+
+echo "the dispatcher hook starts the retry when wlan0 goes down"
+setup
+cat > "$work/bin/systemctl" <<STUB
+#!/bin/sh
+echo "\$@" >> "$work/systemctl-args"
+STUB
+chmod +x "$work/bin/systemctl"
+dispatch wlan0 down
+check "starts it without waiting" "start --no-block segno-wifi-retry.service" \
+    "$(cat "$work/systemctl-args")"
+dispatch wlan0 up
+check "not when wlan0 comes up" "" "$(cat "$work/systemctl-args")"
+dispatch eth0 down
+check "not for another interface" "" "$(cat "$work/systemctl-args")"
 teardown
 
 echo
