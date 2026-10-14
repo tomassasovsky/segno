@@ -77,30 +77,34 @@ keyboard or mouse.
 
 ## Profiling the UI on real hardware
 
-The shipped bundle is **release-mode AOT** — no `kernel_blob.bin`, no Dart VM
-service — so DevTools cannot attach to it, and the Yocto image is a pure runtime
-with no `flutter`/`dart`/`gcc`/`ninja` so it cannot build a profile bundle
-itself. macOS cannot cross-compile a Linux arm64 bundle either.
+The shipped bundle is **release-mode AOT** on the release Flutter engine, with no
+Dart VM service, so DevTools cannot attach to it, and the Yocto image is a pure
+runtime with no `flutter`/`dart`/`gcc`/`ninja`, so it cannot build a profile
+bundle itself.
 
-The containerized builder above (`build/build-arm64-bundle.sh`) is **release-only
-today** — `segno-build.sh` hardcodes `flutter build linux --release`. Teaching it
-a profile mode is the better long-term answer and would drop the CI round-trip;
-until then the arm64 CI runner is the path that needs no local Docker.
-
-1. Get a profile bundle from the `appliance-profile-bundle` workflow
+1. Build a profile bundle. It carries the profile engine
+   (`lib/libflutter_engine.so`) for the Flutter release the image ships, because
+   a profile snapshot runs only on a profile engine. Either locally:
+   ```bash
+   deploy/rpi/build/build-arm64-bundle.sh --profile
+   ```
+   which writes `build/appliance/profile-bundle`, or from the
+   `appliance-profile-bundle` workflow
    ([`.github/workflows/appliance-profile.yaml`](../../.github/workflows/appliance-profile.yaml)),
    which runs on demand or on any push to a `perf/**` branch:
    ```bash
-   gh run download <run-id> -n segno-linux-arm64-profile -D /tmp/segno-profile
+   gh run download <run-id> -n segno-appliance-profile -D /tmp/segno-profile
    ```
 2. Run it on the device and tunnel the VM service to your workstation:
    ```bash
    deploy/rpi/profile-on-device.sh /tmp/segno-profile
    ```
-   The script stops `segno.service` for the duration and restarts it on exit
-   however the run ends, stages the bundle under `/data/profile` so the release
-   install at `/opt/segno` and the ~1 GB rootfs are both left alone, and
-   forwards the VM service to `127.0.0.1:8181` for DevTools.
+   The script stages the bundle under `/data/profile`, so the release install at
+   `/opt/segno` is left alone, and runs it through the shipped launcher as the
+   transient unit `segno-profile`, with the same environment and RT limits as
+   `segno.service`. It stops `segno.service` for the duration and starts it
+   again on exit however the run ends, and forwards the VM service to
+   `127.0.0.1:8181` for DevTools. Both screens' isolates are on that one port.
 
 **Read the result as a split, not a score.** UI thread over budget points at the
 snapshot poll cadence and `context.watch` fan-out; raster thread over budget
