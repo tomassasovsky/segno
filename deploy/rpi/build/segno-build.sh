@@ -40,6 +40,10 @@ flutter assemble --no-version-check --output="$work/app" \
   release_bundle_linux-arm64_assets
 cp -R "$work/app/flutter_assets" "$out/data/"
 cp "$work/app/lib/libapp.so" "$out/lib/"
+# The Flutter tool still writes its desktop-runner scaffolding (the plugin
+# registrant and the GTK engine) under linux/flutter for a linux target. The
+# repo has no Linux runner, and nothing here reads it.
+rm -rf linux
 
 echo "==> Audio engine: packages/segno_engine/src (Release, clang)"
 CC=clang CXX=clang++ cmake -S packages/segno_engine/src -B "$work/engine" \
