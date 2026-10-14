@@ -256,4 +256,157 @@ void main() {
 
     expect(touches, 1);
   });
+
+  group('overlapping pushes', () {
+    late _ScriptedReadout readout;
+
+    setUp(() async {
+      readout = _ScriptedReadout(directory);
+      addTearDown(readout.close);
+      expect(await service.open(), isTrue);
+      await settle();
+    });
+
+    for (final waveform in [true, false]) {
+      group(waveform ? 'waveform samples' : 'readout', () {
+        Future<void> push(int value) => waveform
+            ? service.pushWaveform(
+                Float32List.fromList([value.toDouble()]),
+                0.5,
+                'Track',
+              )
+            : service.pushReadout(PerformanceReadout(tsNum: value));
+
+        bool carriesData(Map<Object?, Object?> delivery) => waveform
+            ? delivery.containsKey('samples')
+            : delivery.containsKey('readout');
+
+        /// [value] is what the readout holds: pushing it again sends no data.
+        Future<void> expectAcknowledged(int value) async {
+          final count = readout.deliveries.length;
+          final sent = push(value);
+          await settle();
+          if (waveform) {
+            expect(readout.deliveries, hasLength(count + 1));
+            expect(carriesData(readout.deliveries.last), isFalse);
+            readout.ack(readout.deliveries.last);
+          } else {
+            expect(readout.deliveries, hasLength(count));
+          }
+          await sent;
+        }
+
+        test(
+          'an equal follower carries data until delivery is acknowledged',
+          () async {
+            final first = push(1);
+            final rejected = expectLater(first, throwsA(isA<Exception>()));
+            await settle();
+            final second = push(1);
+            await settle();
+            expect(readout.deliveries, hasLength(2));
+            expect(readout.deliveries.every(carriesData), isTrue);
+
+            readout.ack(readout.deliveries[1]);
+            await second;
+            await rejected;
+            await expectAcknowledged(1);
+          },
+        );
+
+        test(
+          'a revert carries data and ignores an old acknowledgement',
+          () async {
+            final seed = push(1);
+            await settle();
+            readout.ack(readout.deliveries.single);
+            await seed;
+
+            final replacement = push(2);
+            await settle();
+            final revert = push(1);
+            await settle();
+            expect(readout.deliveries, hasLength(3));
+            expect(carriesData(readout.deliveries.last), isTrue);
+            readout.ack(readout.deliveries[2]);
+            await revert;
+            readout.ack(readout.deliveries[1]);
+            await replacement;
+            await expectAcknowledged(1);
+          },
+        );
+
+        test('a failed latest send is retried with its payload', () async {
+          await expectLater(push(1), throwsA(isA<Exception>()));
+          final retry = push(1);
+          await settle();
+          expect(carriesData(readout.deliveries.last), isTrue);
+          readout.ack(readout.deliveries.last);
+          await retry;
+        });
+
+        for (final reopen in [false, true]) {
+          test('a late reply cannot seed a '
+              '${reopen ? 'reopened' : 'reannounced'} readout', () async {
+            final old = push(1);
+            final dropped = expectLater(old, throwsA(isA<StateError>()));
+            await settle();
+            final stale = readout.deliveries.single;
+            if (reopen) {
+              await service.close();
+              expect(await service.open(), isTrue);
+            } else {
+              readout.announce();
+            }
+            await settle();
+            readout.ack(stale);
+            await dropped;
+            final fresh = push(1);
+            await settle();
+            expect(readout.deliveries, hasLength(2));
+            expect(carriesData(readout.deliveries.last), isTrue);
+            readout.ack(readout.deliveries.last);
+            await fresh;
+          });
+        }
+      });
+    }
+  });
+}
+
+/// A readout whose acknowledgements the test sends, so pushes can overlap.
+class _ScriptedReadout {
+  _ScriptedReadout(this._directory) {
+    _inbox.listen(_onMessage);
+    _directory.publish(screenLinkReadoutPort, _inbox.sendPort);
+  }
+
+  final _Directory _directory;
+  final _inbox = ReceivePort('scripted readout');
+
+  /// Every waveform frame and readout received, unacknowledged until [ack].
+  final deliveries = <Map<Object?, Object?>>[];
+
+  void _onMessage(Object? message) {
+    if (message is! Map<Object?, Object?>) return;
+    switch (message['op']) {
+      case ScreenLinkOp.hello:
+        announce();
+      case ScreenLinkOp.waveform || ScreenLinkOp.readout:
+        deliveries.add(message);
+    }
+  }
+
+  /// Says "I am up and hold nothing", as a restarted readout does.
+  void announce() => _directory.lookup(screenLinkMainPort)?.send({
+    'op': ScreenLinkOp.ready,
+    'port': _inbox.sendPort,
+  });
+
+  /// Acknowledges [delivery].
+  void ack(Map<Object?, Object?> delivery) => _directory
+      .lookup(screenLinkMainPort)!
+      .send({'op': ScreenLinkOp.ack, 'seq': delivery['seq']});
+
+  void close() => _inbox.close();
 }

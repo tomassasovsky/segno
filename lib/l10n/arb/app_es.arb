@@ -417,7 +417,6 @@
     "pitchOctaves": "{sign}{count} oct",
     "pitchSemitones": "{sign}{count} st",
     "defaultTrackName": "PISTA {trackNumber}",
-    "outputWaveformWindowTitle": "Segno — Pista",
     "@deviceReconnectedSnackbar": {
         "placeholders": {
             "deviceName": {

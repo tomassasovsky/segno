@@ -1876,13 +1876,6 @@ void main() {
       verify(() => repository.setMute(muted: false)).called(1);
       await settleToasts(tester); // clearing content raises the undo toast
     });
-
-    testWidgets('F toggles fullscreen without error', (tester) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
-      await tester.pump();
-    });
   });
 
   testWidgets('renaming a track updates its label', (tester) async {

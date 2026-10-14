@@ -136,7 +136,7 @@ class ScreenLinkWaveformService implements WaveformWindowService {
   /// without it announcing itself, `false`. A [close] while waiting leaves the
   /// readout blank either way.
   @override
-  Future<bool> open({String title = 'Segno — Output'}) async {
+  Future<bool> open() async {
     _listen();
     if (_open) return true;
     if (_screen != null) {

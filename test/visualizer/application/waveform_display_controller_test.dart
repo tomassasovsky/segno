@@ -31,7 +31,7 @@ class _Window implements WaveformWindowService {
   void Function()? onWindowActivity;
 
   @override
-  Future<bool> open({String title = ''}) async {
+  Future<bool> open() async {
     opens++;
     return isOpen = await (opening?.future ?? Future.value(true));
   }
@@ -96,13 +96,13 @@ void main() {
     test('${dispose ? 'close' : 'disable'} during opening sends no frames', () {
       fakeAsync((clock) {
         window.opening = Completer<bool>();
-        final display = build()..start(enabled: true, title: 'Waveform');
+        final display = build()..start(enabled: true);
         clock.flushMicrotasks();
         expect(window.opens, 1);
         if (dispose) {
           unawaited(display.close());
         } else {
-          display.setEnabled(enabled: false, title: 'Waveform');
+          display.setEnabled(enabled: false);
         }
         window.opening!.complete(true);
         clock
@@ -121,11 +121,11 @@ void main() {
     fakeAsync((clock) {
       final pending = Completer<bool>();
       window.opening = pending;
-      final display = build()..start(enabled: true, title: 'Waveform');
+      final display = build()..start(enabled: true);
       clock.flushMicrotasks();
       display
-        ..setEnabled(enabled: false, title: 'Waveform')
-        ..setEnabled(enabled: true, title: 'Waveform');
+        ..setEnabled(enabled: false)
+        ..setEnabled(enabled: true);
       window.opening = null;
       pending.complete(true);
       clock
@@ -145,7 +145,7 @@ void main() {
   test('every disposal caller waits for the in-flight window to close', () {
     fakeAsync((clock) {
       window.opening = Completer<bool>();
-      final display = build()..start(enabled: true, title: 'Waveform');
+      final display = build()..start(enabled: true);
       clock.flushMicrotasks();
       var completions = 0;
       unawaited(display.close().then((_) => completions++));
@@ -167,10 +167,10 @@ void main() {
         fakeAsync((clock) {
           final errors = <Object>[];
           runZonedGuarded(() {
-            final display = build()..start(enabled: true, title: 'Waveform');
+            final display = build()..start(enabled: true);
             clock.flushMicrotasks();
             window.closeFailures = failures;
-            display.setEnabled(enabled: false, title: 'Waveform');
+            display.setEnabled(enabled: false);
             clock.flushMicrotasks();
             expect(window.closes, 1);
             expect(errors, isEmpty);
@@ -180,7 +180,7 @@ void main() {
             expect(window.readouts, isEmpty);
             expect(window.closes, 1);
             // A new intent may retry; the failed intent must not spin.
-            display.setEnabled(enabled: false, title: 'Waveform');
+            display.setEnabled(enabled: false);
             clock.flushMicrotasks();
             expect(window.closes, 2);
             expect(errors, isEmpty);
@@ -202,7 +202,7 @@ void main() {
           window
             ..opening = Completer<bool>()
             ..closeFailures = failures;
-          final display = build()..start(enabled: true, title: 'Waveform');
+          final display = build()..start(enabled: true);
           var streamClosed = false;
           display.failures.listen((_) {}, onDone: () => streamClosed = true);
           clock.flushMicrotasks();
@@ -238,7 +238,7 @@ void main() {
           clock.elapse(const Duration(seconds: 1));
           expect(clock.periodicTimerCount, 0);
           expect(clock.nonPeriodicTimerCount, 0);
-          display.setEnabled(enabled: true, title: 'Waveform');
+          display.setEnabled(enabled: true);
           clock.flushMicrotasks();
           expect(window.opens, 1);
         }, (error, _) => errors.add(error));
@@ -251,13 +251,13 @@ void main() {
     fakeAsync((clock) {
       final errors = <Object>[];
       runZonedGuarded(() {
-        final display = build()..start(enabled: true, title: 'Waveform');
+        final display = build()..start(enabled: true);
         clock.flushMicrotasks();
         final closing = Completer<void>();
         window.closing = closing;
-        display.setEnabled(enabled: false, title: 'Waveform');
+        display.setEnabled(enabled: false);
         clock.flushMicrotasks();
-        display.setEnabled(enabled: true, title: 'Waveform');
+        display.setEnabled(enabled: true);
         window.closing = null;
         closing.completeError(StateError('window enumeration failed'));
         clock.flushMicrotasks();
@@ -275,7 +275,7 @@ void main() {
     fakeAsync((clock) {
       final failed = Completer<void>();
       window.failingFrame = failed;
-      final display = build()..start(enabled: true, title: 'Waveform');
+      final display = build()..start(enabled: true);
       clock.flushMicrotasks();
       display.updateContext(_context(1));
       clock.elapse(const Duration(milliseconds: 40));
@@ -293,7 +293,7 @@ void main() {
 
   test('the Track display dim reaches the second screen in its readout', () {
     fakeAsync((clock) {
-      final display = build()..start(enabled: true, title: 'Waveform');
+      final display = build()..start(enabled: true);
       clock
         ..flushMicrotasks()
         ..elapse(const Duration(milliseconds: 40));

@@ -59,8 +59,8 @@ class ReadoutScreenLink {
     _announce();
   }
 
-  /// Tells the main screen a player touched the readout. Fire-and-forget,
-  /// like on the GTK path: the next touch says the same thing.
+  /// Tells the main screen a player touched the readout. Fire-and-forget: the
+  /// next touch says the same thing.
   void sendActivity() {
     _mainPort()?.send({'op': ScreenLinkOp.activity});
   }
@@ -91,9 +91,9 @@ class ReadoutScreenLink {
         visible.value = true;
       case ScreenLinkOp.hide:
         visible.value = false;
-        // Hidden means holding nothing, as a closed GTK window does: the next
-        // show starts blank and is re-seeded, rather than flashing whatever
-        // the rig showed before it was hidden.
+        // Hidden means holding nothing: the next show starts blank and is
+        // re-seeded, rather than flashing whatever the rig showed before it
+        // was hidden.
         frame.value = (samples: Float32List(0), progress: 0, selectedTrack: '');
         readout.value = const PerformanceReadout();
       case ScreenLinkOp.waveform:

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:brightness_client/brightness_client.dart';
 import 'package:test/test.dart';
+import 'package:toml/toml.dart';
 
 const _toml = '''
 # ivi-homescreen configuration.
@@ -60,7 +61,8 @@ void main() {
   test('an empty connector pins nothing', () {
     expect(
       parseHomescreenScreenConnectors(
-        "[[view]]\ndart = ['--segno-screen=main']\ndrm_connector = ''\n",
+        "[[view]]\n  [view.args]\n  dart = ['--segno-screen=main']\n"
+        "  [view.output]\n  drm_connector = ''\n",
       ),
       isEmpty,
     );
@@ -73,6 +75,26 @@ void main() {
         "dart = ['--segno-screen=main']\n",
       ),
       isEmpty,
+    );
+  });
+
+  test('reads any TOML spelling of the same keys', () {
+    expect(
+      parseHomescreenScreenConnectors('''
+[[ view ]]  # the main screen
+args.dart = [
+  '--segno-screen=main',
+]
+output.drm_connector = 'HDMI-A-1'
+'''),
+      {'main': 'HDMI-A-1'},
+    );
+  });
+
+  test('a file that is not TOML throws', () {
+    expect(
+      () => parseHomescreenScreenConnectors('[[view]\n'),
+      throwsA(isA<TomlParserException>()),
     );
   });
 
@@ -127,6 +149,11 @@ void main() {
       );
       expect(await missing.screenConnectors(), isEmpty);
       expect(await missing.isConnected('HDMI-A-1'), isNull);
+    });
+
+    test('a configuration that is not TOML pins nothing', () async {
+      File('${root.path}/homescreen.toml').writeAsStringSync('[[view]\n');
+      expect(await outputs.screenConnectors(), isEmpty);
     });
   });
 }
