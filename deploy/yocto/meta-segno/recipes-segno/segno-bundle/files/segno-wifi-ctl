@@ -26,12 +26,12 @@
 set -eu
 
 # A passwd-file holds a key in the clear, so it must not outlive the helper,
-# even when it is stopped mid-join; and the device autoconnect up_saved paused
-# for an activation comes back. An untrapped TERM skips the
+# even when it is stopped mid-join; and the device autoconnect up_with_key
+# paused for an activation comes back. An untrapped TERM skips the
 # EXIT trap in dash, so the signals exit through it.
 passf=
 up_keyf=
-up_paused=
+paused_iface=
 trap 'rm -f "$passf" "$up_keyf"; resume_autoconnect' EXIT
 trap 'exit 1' HUP INT TERM
 
@@ -412,18 +412,6 @@ write_passwd_file() {
 # while the key sits in the keyfile, and Join on a saved network only worked
 # after re-typing the password (#1326). nmcli reading a passwd-file is the
 # agent that answers. Open networks have no key and go up plainly.
-#
-# nmcli registers that agent before it asks for the activation, and NM
-# answers a new agent by auto-activating whichever profile it had blocked for
-# missing secrets (nm-policy secret_agent_registered). Ours then lands while
-# that one is still in config, NM drops the first without finishing it, and
-# the bench console sat with an orphaned activation stuck in "getting IP
-# configuration", reporting itself offline while traffic flowed (#1326). So
-# the device's autoconnect is paused for the length of the up: NM starts
-# nothing on wlan0 by itself, and an explicit activation is unaffected. Only
-# a device that may autoconnect is paused; one the owner disconnected by hand
-# is already blocked. Runtime state only: a reboot undoes an interrupted
-# pause.
 up_saved() {
     up_uuid=$1
     up_wait=$2
@@ -435,23 +423,44 @@ up_saved() {
     up_keyf=$(mktemp)
     chmod 600 "$up_keyf"
     write_passwd_file "$up_keyf" "$up_key"
-    if [ "$(nmcli -g GENERAL.AUTOCONNECT device show "$IFACE" 2>/dev/null)" = yes ] \
-        && nmcli device set "$IFACE" autoconnect no >/dev/null 2>&1; then
-        up_paused=$IFACE
-    fi
     up_rc=0
-    nmcli --wait "$up_wait" connection up uuid "$up_uuid" passwd-file "$up_keyf" || up_rc=$?
+    up_with_key "$up_uuid" "$up_wait" "$up_keyf" || up_rc=$?
     rm -f "$up_keyf"
     up_keyf=
-    resume_autoconnect
     return "$up_rc"
 }
 
-# Gives back the device autoconnect up_saved paused, if it paused it.
+# Activates profile <uuid> within <secs>, answering NM's request for its key
+# from passwd-file <file>. Every activation that hands over a key goes
+# through here.
+#
+# nmcli registers its agent before it asks for the activation, and NM answers
+# a new agent by auto-activating whichever profile it had blocked for missing
+# secrets (nm-policy secret_agent_registered). Ours then lands while that one
+# is still in config, NM drops the first without finishing it, and the bench
+# console sat with an orphaned activation stuck in "getting IP
+# configuration", reporting itself offline while traffic flowed (#1326). So
+# the device's autoconnect is paused for the length of the up: NM starts
+# nothing on wlan0 by itself, and an explicit activation is unaffected. Only
+# a device that may autoconnect is paused; one the owner disconnected by hand
+# is already blocked. Runtime state only: a reboot undoes an interrupted
+# pause.
+up_with_key() {
+    if [ "$(nmcli -g GENERAL.AUTOCONNECT device show "$IFACE" 2>/dev/null)" = yes ] \
+        && nmcli device set "$IFACE" autoconnect no >/dev/null 2>&1; then
+        paused_iface=$IFACE
+    fi
+    uk_rc=0
+    nmcli --wait "$2" connection up uuid "$1" passwd-file "$3" || uk_rc=$?
+    resume_autoconnect
+    return "$uk_rc"
+}
+
+# Gives back the device autoconnect up_with_key paused, if it paused it.
 resume_autoconnect() {
-    [ -n "$up_paused" ] || return 0
-    nmcli device set "$up_paused" autoconnect yes >/dev/null 2>&1 || true
-    up_paused=
+    [ -n "$paused_iface" ] || return 0
+    nmcli device set "$paused_iface" autoconnect yes >/dev/null 2>&1 || true
+    paused_iface=
 }
 
 # Stores the key on a saved profile through nmcli's editor, fed on stdin: an
@@ -560,8 +569,7 @@ do_connect_nm() {
             passf=$(mktemp)
             chmod 600 "$passf"
             write_passwd_file "$passf" "$psk"
-            nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up uuid "$existing" \
-                passwd-file "$passf" >"$errf" 2>&1
+            up_with_key "$existing" "$NM_CONNECT_WAIT_SECS" "$passf" >"$errf" 2>&1
             rc=$?
             if [ "$rc" -eq 0 ]; then
                 persist_psk_and_enable "$existing" "$psk"
@@ -592,8 +600,7 @@ do_connect_nm() {
             passf=$(mktemp)
             chmod 600 "$passf"
             write_passwd_file "$passf" "$psk"
-            nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up uuid "$created" \
-                passwd-file "$passf" >"$errf" 2>&1
+            up_with_key "$created" "$NM_CONNECT_WAIT_SECS" "$passf" >"$errf" 2>&1
             rc=$?
             if [ "$rc" -eq 0 ]; then
                 persist_psk_and_enable "$created" "$psk"

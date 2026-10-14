@@ -237,6 +237,16 @@ check "resumes after the up" yes \
     "$([ -n "$(line 'device set wlan0 autoconnect yes')" ] && [ "$(line 'device set wlan0 autoconnect yes')" -gt "$(line 'connection up')" ] && echo yes || echo no)"
 teardown
 
+echo "a join with a password pauses device autoconnect around its activation too"
+setup
+run_with_stdin 'n3w-pass' connect Rehearsal
+check "the join succeeds" 0 "$rc"
+check "pauses before the up" yes \
+    "$([ -n "$(line 'device set wlan0 autoconnect no')" ] && [ "$(line 'device set wlan0 autoconnect no')" -lt "$(line 'connection up')" ] && echo yes || echo no)"
+check "resumes after the up" yes \
+    "$([ -n "$(line 'device set wlan0 autoconnect yes')" ] && [ "$(line 'device set wlan0 autoconnect yes')" -gt "$(line 'connection up')" ] && echo yes || echo no)"
+teardown
+
 echo "activate resumes device autoconnect after a failed activation too"
 setup
 SAVED="Studio" STORED_PSK='s3cret' FAIL_UP="uuid-Studio" run activate uuid-Studio
