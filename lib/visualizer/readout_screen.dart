@@ -136,7 +136,6 @@ class ReadoutScreen extends StatelessWidget {
           ? WaveformWindowApp(
               frame: link.frame,
               readout: link.readout,
-              title: 'Segno — Output',
               onActivity: link.sendActivity,
             )
           : ColoredBox(color: AppTheme.neon.scaffoldBackgroundColor),

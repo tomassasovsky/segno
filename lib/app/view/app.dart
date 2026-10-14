@@ -53,7 +53,6 @@ import 'package:segno/update/appliance/system_appliance_env.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/application/waveform_display_controller.dart';
 import 'package:segno/visualizer/visualizer.dart';
-import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:storage_repository/storage_repository.dart';
@@ -83,8 +82,6 @@ class App extends StatefulWidget {
     required this.backingRepository,
     this.instrumentRepository,
     this.pedalRepository,
-    this.displayCount,
-    this.waveformWindowOpenDelay = Duration.zero,
     this.audioRecoveryConfig,
     this.initialAsioDrivers = const [],
     this.updates = const UpdateRepository(
@@ -172,15 +169,6 @@ class App extends StatefulWidget {
   /// cubit always exists and its settings picker shows an empty state. Owned by
   /// the [PedalCubit], which disposes it.
   final PedalRepository? pedalRepository;
-
-  /// Reports the number of connected displays, for the dual-display console's
-  /// single-display fallback. `null` (the default) disables the fallback
-  /// (assumes the usual multi-window desktop); the Pi entrypoint wires the real
-  /// platform display count.
-  final int Function()? displayCount;
-
-  /// Startup spacing before the second native view opens under Weston.
-  final Duration waveformWindowOpenDelay;
 
   /// The pinned audio config a boot auto-start could not open, handed to the
   /// [AudioRecoveryCubit] so the engine auto-starts when that device reappears.
@@ -877,8 +865,6 @@ class _AppState extends State<App> {
         child: _AppView(
           controlNotices: _controlNotices,
           waveformWindow: widget.waveformWindow,
-          displayCount: widget.displayCount,
-          waveformWindowOpenDelay: widget.waveformWindowOpenDelay,
         ),
       ),
     );
@@ -891,14 +877,10 @@ class _AppView extends StatefulWidget {
   const _AppView({
     required this.controlNotices,
     required this.waveformWindow,
-    required this.waveformWindowOpenDelay,
-    this.displayCount,
   });
 
   final ControlSettingsNotices controlNotices;
   final WaveformWindowService waveformWindow;
-  final int Function()? displayCount;
-  final Duration waveformWindowOpenDelay;
 
   @override
   State<_AppView> createState() => _AppViewState();
@@ -935,14 +917,10 @@ class _AppViewState extends State<_AppView> {
       repository: context.read<LooperRepository>(),
       window: widget.waveformWindow,
       context: _displayContext(),
-      displayCount: widget.displayCount,
-      openDelay: widget.waveformWindowOpenDelay,
     );
     _displayFailures = _display.failures.listen((failure) {
       if (!mounted) return;
       switch (failure) {
-        case WaveformDisplayFailure.singleDisplay:
-          _showSingleDisplayNotice();
         case WaveformDisplayFailure.openFailed:
           context.read<WaveformWindowCubit>().reportOpenFailed();
           _showWaveformWindowFailedBanner();
@@ -1305,17 +1283,6 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
-  /// Only one display on the dual-display console.
-  void _showSingleDisplayNotice() {
-    final l10n = _l10n;
-    showAppToast(
-      id: AppToastId.singleDisplay,
-      type: ToastificationType.warning,
-      title: AppText(l10n.singleDisplayNotice),
-      icon: const Icon(Icons.monitor_outlined),
-    );
-  }
-
   /// Labels come from [_l10n] (above [MaterialApp]), not a builder context —
   /// the menu bar must not live under [MaterialApp] or DevTools / theme
   /// rebuilds remount it and trip the single-delegate lock assertion.
@@ -1353,24 +1320,12 @@ class _AppViewState extends State<_AppView> {
       highContrastTheme: AppTheme.highContrast,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: Builder(
-        builder: (context) {
-          const Widget page = LooperPage();
-          if (!segnoUsesFlutterTitleBar && !segnoUsesCursorAutoHide) {
-            return page;
-          }
-          return SegnoWindowChromeShell(
-            title: context.l10n.appMenuLabel,
-            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-            body: page,
-          );
-        },
-      ),
+      home: const LooperPage(),
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
-        // Console only: weston's kiosk-shell spawns no input panel and the
-        // image ships no IME, so without this every TextField on the
-        // appliance is dead — including this branch's own Wi-Fi password
+        // Console only: the appliance has no input method (ivi-homescreen
+        // brings no text-input panel and the image ships no IME), so without
+        // this every TextField on it is dead — including the Wi-Fi password
         // field. Inside the brightness wrapper so the keys dim with
         // everything else.
         final typed = EncoderNavigation(
