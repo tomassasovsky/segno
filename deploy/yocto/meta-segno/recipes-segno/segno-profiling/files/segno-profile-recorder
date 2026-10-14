@@ -56,6 +56,7 @@ snapshot_threads() {
 }
 
 tick=0
+stack_due=0
 pid_before=""
 ids_before=""
 uptime_before=""
@@ -120,16 +121,22 @@ while :; do
   [ -s "$file" ] || echo "time,pid,app_uptime_s,rss_kb,threads,fds,cpu_pct,main_pct,raster_pct,rt_pct,main_preempt_s,gsources,embedder_timeouts,idle_sources,source_ids_s,load1,mem_available_kb" > "$file"
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$pid,$app_uptime,$rss,$threads,$fds,$cpu,${census%,*},$rate,$load1,$available" >> "$file"
 
-  if [ $(( tick % stack_every )) -eq 0 ]; then
+  [ $(( tick % stack_every )) -eq 0 ] && stack_due=1
+  if [ "$stack_due" = 1 ]; then
     ui=$pid
     if [ ! -e /run/segno/main-context ]; then
       ui=$(awk '$2 == "io.flutter.ui" && $4 != 1 && $4 != 2 {print $1; exit}' \
         "$state/threads")
-      [ -n "$ui" ] || ui=$pid
     fi
-    segno-prof stack "$pid" "$ui" 1000 10 \
-      > "$dir/stacks-$(date -u +%Y%m%dT%H%M%SZ).folded" 2>/dev/null
-    find "$dir" -type f -mtime +"$keep_days" -exec rm -f {} +
+    # Right after the app starts its UI thread may not exist yet (at boot this
+    # loop's first pass runs before either engine is up). Keep the profile
+    # due and try again next interval rather than sample the wrong thread.
+    if [ -n "$ui" ]; then
+      segno-prof stack "$pid" "$ui" 1000 10 \
+        > "$dir/stacks-$(date -u +%Y%m%dT%H%M%SZ).folded" 2>/dev/null
+      find "$dir" -type f -mtime +"$keep_days" -exec rm -f {} +
+      stack_due=0
+    fi
   fi
   tick=$(( tick + 1 ))
   sleep "$interval"
