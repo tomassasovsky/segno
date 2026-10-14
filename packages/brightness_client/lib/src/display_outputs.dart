@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:toml/toml.dart';
+
 /// Which connector each screen is drawn on, and whether a panel is plugged
 /// into it. File reads only: no helper, no fork.
 abstract class DisplayOutputs {
@@ -48,6 +50,8 @@ class SystemDisplayOutputs implements DisplayOutputs {
       );
     } on FileSystemException {
       return const {};
+    } on TomlParserException {
+      return const {};
     }
   }
 
@@ -85,53 +89,29 @@ DisplayOutputs createDisplayOutputs() {
 }
 
 /// Reads ivi-homescreen's configuration: for each `[[view]]`, the screen its
-/// Dart arguments name (`--segno-screen=<role>`) and its `drm_connector`.
+/// Dart arguments name (`--segno-screen=<role>`) and its
+/// `output.drm_connector`.
 ///
-/// Only the two keys this needs are read, line by line: a view's keys sit in
-/// its own table or its `[view.*]` sub-tables, until the next `[[view]]` or
-/// another top-level table. A view without both pins nothing: an empty
-/// connector would reach whichever display the helper finds first.
+/// A view without both pins nothing: an empty connector would reach whichever
+/// display the helper finds first. Throws [TomlParserException] when [toml]
+/// is not TOML.
 Map<String, String> parseHomescreenScreenConnectors(String toml) {
+  final views = TomlDocument.parse(toml).toMap()['view'];
+  if (views is! List) return const {};
   final connectors = <String, String>{};
-  var inView = false;
-  String? screen;
-  String? connector;
-  void flush() {
-    if (inView && screen != null && (connector?.isNotEmpty ?? false)) {
-      connectors[screen!] = connector!;
-    }
-    screen = null;
-    connector = null;
-  }
-
-  final screenArg = RegExp("""['"]--segno-screen=([^'"]+)['"]""");
-  final quoted = RegExp(r"""^\s*['"]([^'"]*)['"]""");
-  for (final raw in toml.split('\n')) {
-    final line = raw.trim();
-    if (line.isEmpty || line.startsWith('#')) continue;
-    if (line.startsWith('[[')) {
-      flush();
-      inView = line == '[[view]]';
-      continue;
-    }
-    if (line.startsWith('[')) {
-      // `[view.args]` and the like stay inside the current view.
-      if (!line.startsWith('[view.')) {
-        flush();
-        inView = false;
+  for (final view in views.whereType<Map<String, dynamic>>()) {
+    final args = view['args'];
+    final dart = args is Map ? args['dart'] : null;
+    final output = view['output'];
+    final connector = output is Map ? output['drm_connector'] : null;
+    if (dart is! List || connector is! String || connector.isEmpty) continue;
+    for (final arg in dart.whereType<String>()) {
+      if (arg.startsWith(_screenArg)) {
+        connectors[arg.substring(_screenArg.length)] = connector;
       }
-      continue;
-    }
-    if (!inView) continue;
-    final eq = line.indexOf('=');
-    if (eq < 0) continue;
-    final key = line.substring(0, eq).trim();
-    final value = line.substring(eq + 1);
-    if (key == 'dart') screen = screenArg.firstMatch(value)?.group(1) ?? screen;
-    if (key == 'drm_connector') {
-      connector = quoted.firstMatch(value)?.group(1) ?? connector;
     }
   }
-  flush();
   return connectors;
 }
+
+const _screenArg = '--segno-screen=';

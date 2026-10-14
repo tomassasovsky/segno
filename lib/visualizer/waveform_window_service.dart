@@ -12,11 +12,10 @@ abstract interface class WaveformWindowService {
 
   /// Opens the waveform window (idempotent).
   ///
-  /// [title] sets the OS window title; defaults to English when omitted.
   /// Returns `true` once the window is ready, or `false` if it failed to signal
   /// readiness within the timeout — so the caller can surface the failure
   /// instead of degrading silently.
-  Future<bool> open({String title = 'Segno — Output'});
+  Future<bool> open();
 
   /// Closes the waveform window (idempotent).
   Future<void> close();
@@ -26,7 +25,7 @@ abstract interface class WaveformWindowService {
   ///
   /// [samples] are omitted only after their delivery is acknowledged. The
   /// source spans the selected track's full loop and is refreshed during
-  /// playback. Identical samples need not cross the platform channel again:
+  /// playback. Identical samples need not cross the screen link again:
   /// the window retains the acknowledged shape while samples-free frames
   /// move its playhead. Selection sends the new track's shape even when its
   /// display name matches the previous track.
@@ -101,7 +100,7 @@ class NoopWaveformWindowService implements WaveformWindowService {
   void Function(({double x, double y}) tap)? onCalibrationTap;
 
   @override
-  Future<bool> open({String title = 'Segno — Output'}) async => true;
+  Future<bool> open() async => true;
 
   @override
   Future<bool> showCalibrationTarget(

@@ -15,9 +15,6 @@ const _allowed = <String, String>{
   'lib/control/view/pedal_setup/pedal_hardware_face.dart':
       'Fusion pedal artwork — hardware replica',
 
-  // Gate decision on #499: the prototype is a 1920x1080 appliance view with no
-  // title bar, so there is no design to adopt here — only one to invent.
-
   // Drop shadows. The design system has no shadow tokens at all; these are not
   // palette drift, they are a gap on the DS side.
   'lib/app/app_toasts.dart': 'drop shadow — DS defines no shadow tokens',
@@ -27,8 +24,6 @@ const _allowed = <String, String>{
   // The playhead is deliberately white and carries its own gutter (3b).
   'lib/visualizer/widgets/waveform_view.dart':
       'themeless-context fallbacks + the white playhead',
-
-  // An OS window option set before runApp, so it cannot read a theme.
 
   // Must match the Plymouth splash field (#08080A), not a theme token —
   // the goodbye mark is the same pixel the unit booted with.

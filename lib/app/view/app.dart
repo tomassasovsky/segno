@@ -67,9 +67,9 @@ class App extends StatefulWidget {
   /// Creates an [App] driven by the injected repositories.
   ///
   /// The repositories and [waveformWindow] are injected so tests can supply
-  /// fakes / a no-op window service instead of the native device and a real
-  /// second OS window. [initialAsioDrivers] is the ASIO driver list enumerated
-  /// at startup, cached by the audio-setup cubit for the picker.
+  /// fakes / a no-op window service instead of the native device and the
+  /// link to the Track display. [initialAsioDrivers] is the ASIO driver list
+  /// enumerated at startup, cached by the audio-setup cubit for the picker.
   const App({
     required this.repository,
     required this.controllerRepository,
@@ -1038,13 +1038,11 @@ class _AppViewState extends State<_AppView> {
     if (!mounted) return;
     _display.start(
       enabled: context.read<WaveformWindowCubit>().state.enabled,
-      title: _l10n.outputWaveformWindowTitle,
     );
   }
 
   void _syncWindow() => _display.setEnabled(
     enabled: context.read<WaveformWindowCubit>().state.enabled,
-    title: _l10n.outputWaveformWindowTitle,
   );
 
   @override

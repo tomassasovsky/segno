@@ -100,7 +100,6 @@ class WaveformDisplayController {
   bool _enabled = false;
   bool _running = false;
   bool _closed = false;
-  String _title = '';
   Future<void>? _transition;
   Future<void>? _closing;
 
@@ -108,19 +107,18 @@ class WaveformDisplayController {
   Stream<WaveformDisplayFailure> get failures => _failures.stream;
 
   /// Begins after the persisted preference has been read.
-  void start({required bool enabled, required String title}) {
+  void start({required bool enabled}) {
     if (_closed || _started) return;
     _started = true;
-    setEnabled(enabled: enabled, title: title);
+    setEnabled(enabled: enabled);
     _ready = true;
     _requestTransition();
   }
 
   /// Updates desired state or retries an unsuccessful opening.
-  void setEnabled({required bool enabled, required String title}) {
+  void setEnabled({required bool enabled}) {
     if (_closed) return;
     _enabled = enabled;
-    _title = title;
     _intent++;
     if (!enabled) _stopDelivery();
     if (_ready) _requestTransition();
@@ -151,7 +149,7 @@ class WaveformDisplayController {
         } else {
           var opened = false;
           try {
-            opened = await _window.open(title: _title);
+            opened = await _window.open();
           } on Object {
             // Platform failure uses the same explicit retry as no readiness.
           }

@@ -8,7 +8,8 @@
 # The version is the newest Flutter release meta-flutter publishes a prebuilt
 # arm64 release engine for (github.com/meta-flutter/flutter-engine releases);
 # the commit is that release's bin/internal/engine.version, which is also the
-# `engineRevision` of `flutter --version --machine`. Bump all three together.
+# `engineRevision` of `flutter --version --machine`. Bump both together, with
+# the prebuilt recipe's file name (its PV) and SRC_URI checksum.
 FLUTTER_ENGINE_VERSION = "3.47.5"
 FLUTTER_ENGINE_COMMIT = "af7e796e161ae0bb1ff0758c71a7105418bd9ded"
 
