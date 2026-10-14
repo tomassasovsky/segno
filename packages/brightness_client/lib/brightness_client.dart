@@ -1,5 +1,5 @@
 /// Data client for appliance display brightness (`segno-brightness-ctl`) and
-/// the outputs the app's windows are shown on.
+/// the outputs the app's screens are drawn on.
 library;
 
 export 'src/brightness_client.dart'
@@ -10,6 +10,6 @@ export 'src/display_outputs.dart'
         SystemDisplayOutputs,
         UnknownDisplayOutputs,
         createDisplayOutputs,
-        parseWestonAppIdConnectors;
+        parseHomescreenScreenConnectors;
 export 'src/system_brightness_client.dart'
     show SystemBrightnessClient, createBrightnessClient;

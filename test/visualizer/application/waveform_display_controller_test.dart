@@ -86,13 +86,11 @@ void main() {
   });
   tearDown(() => states.close());
 
-  WaveformDisplayController build({Duration delay = Duration.zero}) =>
-      WaveformDisplayController(
-        repository: repository,
-        window: window,
-        context: _context(0),
-        openDelay: delay,
-      );
+  WaveformDisplayController build() => WaveformDisplayController(
+    repository: repository,
+    window: window,
+    context: _context(0),
+  );
 
   for (final dispose in [false, true]) {
     test('${dispose ? 'close' : 'disable'} during opening sends no frames', () {
@@ -159,38 +157,6 @@ void main() {
       expect(completions, 2);
       expect(window.isOpen, isFalse);
       expect(window.frames, isEmpty);
-    });
-  });
-
-  test('a startup delay cannot reopen a disposed display', () {
-    fakeAsync((clock) {
-      final display = build(delay: const Duration(seconds: 2))
-        ..start(enabled: true, title: 'Waveform');
-      unawaited(display.close());
-      clock
-        ..flushMicrotasks()
-        ..elapse(const Duration(seconds: 3));
-      expect(window.opens, 0);
-      expect(window.frames, isEmpty);
-    });
-  });
-
-  test('same-turn display retry reconciles the latest intent', () {
-    fakeAsync((clock) {
-      var displays = 1;
-      final display = WaveformDisplayController(
-        repository: repository,
-        window: window,
-        context: _context(0),
-        displayCount: () => displays,
-      )..start(enabled: true, title: 'Waveform');
-      displays = 2;
-      display.setEnabled(enabled: true, title: 'Waveform');
-      clock.flushMicrotasks();
-      expect(window.opens, 1);
-      expect(window.isOpen, isTrue);
-      unawaited(display.close());
-      clock.flushMicrotasks();
     });
   });
 

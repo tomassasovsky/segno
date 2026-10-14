@@ -34,7 +34,7 @@ class DisplayPresenceCubit extends Cubit<Set<DisplayRole>> {
 
   /// Reads which panels are unplugged.
   Future<void> refresh() async {
-    final connectors = displayConnectors(await _outputs.appIdConnectors());
+    final connectors = displayConnectors(await _outputs.screenConnectors());
     final unplugged = <DisplayRole>{};
     for (final MapEntry(key: role, value: connector) in connectors.entries) {
       if (await _outputs.isConnected(connector) == false) unplugged.add(role);

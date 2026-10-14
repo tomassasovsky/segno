@@ -33,7 +33,7 @@ class ReadoutTrack extends Equatable {
   final String name;
 
   /// `TrackState.name` — carried as a token rather than the enum because the
-  /// sub-window is a separate engine and the payload crosses a method channel.
+  /// readout is a separate engine and the payload crosses the screen link.
   final String state;
 
   /// Muted right now.

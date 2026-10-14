@@ -88,10 +88,6 @@
     "@waveformWindowFailedBanner": {
         "description": "Banner shown when the secondary waveform window fails to become ready."
     },
-    "singleDisplayNotice": "Only one display detected — the waveform screen is unavailable.",
-    "@singleDisplayNotice": {
-        "description": "Notice shown on the dual-display console when only one display is connected."
-    },
     "audioRecoveryWaitingBanner": "Waiting for the audio interface — it will start automatically when reconnected.",
     "@audioRecoveryWaitingBanner": {
         "description": "Banner shown when the console booted with its pinned audio interface absent and is waiting to auto-start it."
@@ -557,10 +553,6 @@
     "a11yUndoClearAll": "Restored all cleared tracks",
     "@a11yUndoClearAll": {
         "description": "Announced when the whole-rig undo-clear-all restores every track a clear-all cleared."
-    },
-    "fullscreenTooltip": "Fullscreen (F)",
-    "@fullscreenTooltip": {
-        "description": "Tooltip for the top-bar button (desktop only) that toggles OS fullscreen. The parenthetical names the keyboard shortcut."
     },
     "undoTooltip": "Undo ({shortcut})",
     "@undoTooltip": {

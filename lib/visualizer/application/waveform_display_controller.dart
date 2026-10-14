@@ -60,10 +60,7 @@ class WaveformDisplayContext extends Equatable {
 
 /// An opening problem to present in the existing display settings/notice UI.
 enum WaveformDisplayFailure {
-  /// No secondary display is available.
-  singleDisplay,
-
-  /// The window did not acknowledge readiness.
+  /// The readout did not announce itself.
   openFailed,
 }
 
@@ -77,25 +74,18 @@ class WaveformDisplayController {
     required LooperRepository repository,
     required WaveformWindowService window,
     required WaveformDisplayContext context,
-    this.openDelay = Duration.zero,
-    int Function()? displayCount,
   }) : _repository = repository,
        _window = window,
-       _context = context,
-       _displayCount = displayCount {
+       _context = context {
     _window.onWindowReady = _onWindowReady;
   }
 
-  /// Delay after preference restoration before opening a second OS window.
-  final Duration openDelay;
   static const _frame = Duration(milliseconds: 33);
   final LooperRepository _repository;
   final WaveformWindowService _window;
-  final int Function()? _displayCount;
   final _failures = StreamController<WaveformDisplayFailure>.broadcast();
   WaveformDisplayContext _context;
   StreamSubscription<LooperState>? _poll;
-  Timer? _startup;
   Timer? _readoutTimer;
   Timer? _frameGate;
   LooperState? _pendingFrame;
@@ -122,15 +112,6 @@ class WaveformDisplayController {
     if (_closed || _started) return;
     _started = true;
     setEnabled(enabled: enabled, title: title);
-    if (openDelay > Duration.zero) {
-      _startup = Timer(openDelay, _begin);
-    } else {
-      _begin();
-    }
-  }
-
-  void _begin() {
-    if (_closed) return;
     _ready = true;
     _requestTransition();
   }
@@ -167,8 +148,6 @@ class WaveformDisplayController {
       try {
         if (!_enabled) {
           await _window.close();
-        } else if ((_displayCount?.call() ?? 2) < 2) {
-          _failures.add(WaveformDisplayFailure.singleDisplay);
         } else {
           var opened = false;
           try {
@@ -301,7 +280,6 @@ class WaveformDisplayController {
 
   Future<void> _close() async {
     _closed = true;
-    _startup?.cancel();
     _stopDelivery();
     _window.onWindowReady = null;
     try {
