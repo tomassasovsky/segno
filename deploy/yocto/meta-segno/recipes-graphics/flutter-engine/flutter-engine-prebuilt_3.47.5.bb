@@ -1,7 +1,7 @@
 SUMMARY = "Prebuilt Flutter engine for embedders (libflutter_engine.so, release, arm64)"
 DESCRIPTION = "The Flutter engine's embedder library, as published prebuilt by \
 meta-flutter (github.com/meta-flutter/flutter-engine releases), for \
-ivi-homescreen on the SEGNO_EMBEDDER=ivi image (#1318). Installed rather than \
+ivi-homescreen on the appliance image (#1318). Installed rather than \
 built: meta-flutter's engine recipe compiles it from a 14 GB+ checkout and does \
 not support walnascar."
 HOMEPAGE = "https://github.com/meta-flutter/flutter-engine"

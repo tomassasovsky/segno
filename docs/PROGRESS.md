@@ -40,7 +40,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
 | #1270 | Device and appliance pages | plan | merge-gate | `claude/device-pages-plan-1270` |
-| #1318 | ivi-homescreen embedder spike (DRM/KMS, no Weston/GTK) | in-review | blocked-verify | `claude/admiring-pasteur-t957df` |
+| #1330 | ivi-homescreen as the only appliance embedder; GTK/Weston removed | build | merge-gate | `claude/ivi-only-1330-p*` |
 
 ---
 
@@ -556,9 +556,9 @@ install hook remain unchanged. A failed inspection stops the release build.
   ```sh
   packages/segno_engine/tool/check_ffi_symbols.sh <path-to-libsegno_engine.so>
   ```
-  Both Linux CI jobs run it against the bundle they just built, and
-  `build-arm64-bundle.sh` runs it before the bundle can be deployed or staged
-  for Yocto, so ordinary work should never see it fail. It is worth running by
+  CI's `appliance-bundle` job and the release build run it against the bundle
+  they just built, and `build-arm64-bundle.sh` runs it before the bundle can be
+  deployed or staged for Yocto, so ordinary work should never see it fail. It is worth running by
   hand after a regen if you are about to hand-stage a bundle. The check is
   itself tested (`bash packages/segno_engine/tool/test/run_check_ffi_symbols_tests.sh`),
   including that it **fails closed**: if ffigen's emitted call shape ever drifts
@@ -566,6 +566,13 @@ install hook remain unchanged. A failed inspection stops the release build.
 - **macOS app run/build:** flavor schemes required.
   `flutter build macos --debug --flavor development -t lib/main_development.dart`
   Run: `flutter run -d macos --flavor development -t lib/main_development.dart`
+- **Appliance bundle:** `deploy/rpi/build/build-arm64-bundle.sh` builds what
+  the console runs (`build/appliance/bundle`) in an arm64 container, on the
+  Flutter release the image's engine is (`FLUTTER_ENGINE_VERSION` in
+  `deploy/yocto/meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc`).
+  There is no `linux/` and no Linux desktop build: the app is built with
+  `flutter assemble` and the engine with its own CMake project, and the
+  console runs it on ivi-homescreen (#1330). macOS is the dev host.
 - **Driving the Network page off the appliance:** Wi-Fi is a Linux-only
   helper (`segno-wifi-ctl`), so on macOS every path past "no WiFi on this
   build" is unreachable — including the ones with the most
