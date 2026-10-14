@@ -18,10 +18,20 @@
 #                          is read from stdin, never from argv
 #   connectivity           {"internet":true|false}: one HEAD request to the
 #                          update host, 3 s limit
+#   activate <uuid> [secs] {} once the saved profile is up on its stored key
+#                          (up_saved); used by segno-wifi-retry at boot
 #
 # NetworkManager owns the radio, and nothing else may. There is deliberately no
 # second backend: see reclaim_wifi below for what having one cost us (#468).
 set -eu
+
+# A passwd-file holds a key in the clear, so it must not outlive the helper,
+# even when it is stopped mid-join. An untrapped TERM skips the EXIT trap in
+# dash, so the signals exit through it.
+passf=
+up_keyf=
+trap 'rm -f "$passf" "$up_keyf"' EXIT
+trap 'exit 1' HUP INT TERM
 
 IFACE="${SEGNO_WIFI_IFACE:-wlan0}"
 # The join budget. This was 20s while a wpa_supplicant fallback existed, so a
@@ -414,6 +424,7 @@ up_saved() {
     up_rc=0
     nmcli --wait "$up_wait" connection up uuid "$up_uuid" passwd-file "$up_keyf" || up_rc=$?
     rm -f "$up_keyf"
+    up_keyf=
     return "$up_rc"
 }
 
@@ -685,9 +696,18 @@ do_disconnect() { require_nm && do_disconnect_nm; }
 do_forget() { require_nm && do_forget_nm "$@"; }
 do_autoconnect() { require_nm && do_autoconnect_nm "$@"; }
 do_set_password() { require_nm && do_set_password_nm "$@"; }
+# nmcli's own chatter goes to stderr: stdout is the JSON contract.
+do_activate() {
+    require_nm || return 1
+    if up_saved "$1" "${2:-$NM_CONNECT_WAIT_SECS}" >&2; then
+        echo '{}'
+    else
+        return 1
+    fi
+}
 
 usage() {
-    log "usage: $0 status|scan|connect <ssid>|disconnect|forget <ssid>|radio on|off|autoconnect <ssid> on|off|set-password <ssid>|connectivity"
+    log "usage: $0 status|scan|connect <ssid>|disconnect|forget <ssid>|radio on|off|autoconnect <ssid> on|off|set-password <ssid>|connectivity|activate <uuid> [secs]"
     exit 2
 }
 
@@ -722,5 +742,9 @@ case "$verb" in
         do_set_password "$1"
         ;;
     connectivity) do_connectivity ;;
+    activate)
+        [ $# -ge 1 ] || usage
+        do_activate "$1" "${2:-}"
+        ;;
     *) usage ;;
 esac
