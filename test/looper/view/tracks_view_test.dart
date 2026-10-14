@@ -1550,6 +1550,63 @@ void main() {
       expect(find.text('Loop start'), findsOneWidget);
     });
 
+    testWidgets('a section waiting to record reads Record · Loop start '
+        '(#1323)', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(
+            looperMode: LooperMode.song,
+            songQueuedTrack: 2,
+            songQueueProgress: 0.4,
+            songQueueRecord: true,
+          ),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 1000),
+            Track(
+              channel: 2,
+              pending: true,
+              pendingTrigger: ArmTrigger.handoff,
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_queued_2')), findsOneWidget);
+      expect(find.text('Record'), findsOneWidget);
+      expect(find.text('Loop start'), findsOneWidget);
+    });
+
+    testWidgets('a stopped section waiting to record reads Overdub (#1323)', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          transport: TransportState(
+            looperMode: LooperMode.band,
+            songQueuedTrack: 1,
+            songQueueRecord: true,
+          ),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 1000),
+            Track(
+              channel: 1,
+              state: TrackState.stopped,
+              lengthFrames: 1000,
+              pending: true,
+              pendingTrigger: ArmTrigger.handoff,
+            ),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_queued_1')), findsOneWidget);
+      expect(find.text('Overdub'), findsOneWidget);
+      expect(find.text('Loop start'), findsOneWidget);
+    });
+
     testWidgets('outside Song the engine queue shows no cue', (tester) async {
       seed(
         const LooperState(

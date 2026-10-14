@@ -771,24 +771,19 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );
     on<LooperPlayAllPressed>((_, _) {
-      final content = state.tracks.where((track) => track.hasContent);
-      if (state.transport.looperMode != LooperMode.song) {
-        for (final track in content) {
+      final looper = state;
+      final content = looper.tracks.where((track) => track.hasContent);
+      // Song and Band play one section at a time (#1077, #1323): a Play for
+      // each would start the first and leave the last waiting to replace
+      // it. Start every other track (Band's primary) and one section.
+      final sections = content.where((t) => looper.isSection(t.channel));
+      for (final track in content) {
+        if (!looper.isSection(track.channel)) {
           _repository.play(channel: track.channel);
         }
-        return;
       }
-      // Song plays one section at a time (#1077): a Play for each would start
-      // the first and leave the last waiting to replace it. Start the section
-      // that played last while it still holds a take and is heard; else the
-      // first one that will be heard; else the first with a take.
-      final last = state.transport.songLastSection;
-      final audible = content.where((track) => !track.muted);
-      final section =
-          audible.where((track) => track.channel == last).firstOrNull ??
-          audible.firstOrNull ??
-          content.firstOrNull;
-      if (section != null) _repository.play(channel: section.channel);
+      final section = looper.sectionToStart(sections);
+      if (section != null) _repository.play(channel: section);
     });
     on<LooperStopAllPressed>((_, _) {
       for (final track in state.tracks) {

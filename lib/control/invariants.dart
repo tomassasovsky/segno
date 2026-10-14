@@ -99,12 +99,11 @@ bool _sounding(Track t) =>
     !t.muted &&
     (t.state == TrackState.playing || t.state == TrackState.overdubbing);
 
-/// The waiting Song section the pedal shows in Mute and Record mode: the
+/// The waiting Song or Band section the pedal shows in Record mode: the
 /// model's own fact (`songWaitingSection`), gated by mode and the wire.
 int? _queuedSong(ControlContext c) {
   final queued = c.looper.songWaitingSection;
-  if ((c.overlay.mode != InteractionMode.mute &&
-          c.overlay.mode != InteractionMode.record) ||
+  if (c.overlay.mode != InteractionMode.record ||
       queued == null ||
       queued >= PedalStateFrame.trackCount) {
     return null;
@@ -215,7 +214,9 @@ final List<ControlInvariant> controlInvariants = [
       final isCursor =
           c.overlay.mode == InteractionMode.record &&
           t.channel == c.overlay.cursor;
-      if (!isCursor && led != PedalTrackLed.off) {
+      // An empty section waiting to record is lit to say so (#1323).
+      final waiting = t.channel == _queuedSong(c);
+      if (!isCursor && !waiting && led != PedalTrackLed.off) {
         return 'EMPTY track ${t.channel} shows $led';
       }
     }
@@ -260,9 +261,10 @@ final List<ControlInvariant> controlInvariants = [
     }
     return null;
   }),
-  // The Song queue the pedal shows is the engine's (#1077): the waiting
-  // section reads green and its pill fills by the engine's own progress,
-  // and nothing waits on the plate that the engine is not holding.
+  // The Song queue the pedal shows is the engine's (#1077, #1323): the
+  // waiting section reads green to play or red to record, its pill fills by
+  // the engine's own progress, and nothing waits on the plate that the
+  // engine is not holding.
   ControlInvariant('song-queue-mirrors-engine', (c) {
     final queued = _queuedSong(c);
     const perBank = ControlState.tracksPerBank;
@@ -280,8 +282,11 @@ final List<ControlInvariant> controlInvariants = [
     if (c.frame.queuedProgress != progress) {
       return 'queued fill ${c.frame.queuedProgress} != engine wait $progress';
     }
-    if (queued != null && c.frame.trackLeds[queued] != PedalTrackLed.green) {
-      return 'queued Song section $queued is not green';
+    final colour = c.looper.transport.songQueueRecord
+        ? PedalTrackLed.red
+        : PedalTrackLed.green;
+    if (queued != null && c.frame.trackLeds[queued] != colour) {
+      return 'queued Song section $queued is not ${colour.name}';
     }
     if (button != null && !c.frame.isLit(button)) {
       return 'queued pill $button is dark';
@@ -290,9 +295,7 @@ final List<ControlInvariant> controlInvariants = [
   }),
   ControlInvariant('muted-dark-in-mute', (c) {
     if (c.overlay.mode != InteractionMode.mute) return null;
-    final queued = _queuedSong(c);
     for (final t in c.looper.tracks) {
-      if (t.channel == queued) continue; // lit to say it is waiting
       if (t.muted &&
           t.channel < c.frame.trackLeds.length &&
           c.frame.trackLeds[t.channel] != PedalTrackLed.off) {
@@ -454,9 +457,14 @@ final List<ControlTransitionRule> controlTransitionRules = [
   // still sit frozen. (Mutes are preserved: unparking un-freezes, it does not
   // un-silence.) Holds for every surface and every start path: pedal, bloc,
   // record punch-ins, plain plays, and redo-from-empty resurrection. Song is
-  // the exception: it plays one section at a time (#1077).
+  // the exception: it plays one section at a time (#1077). Band resumes its
+  // primary but not its other sections (#1323), so with a crown only the
+  // primary is held to the rule.
   ControlTransitionRule('unpark-on-start', (t) {
     if (t.post.transport.looperMode == LooperMode.song) return null;
+    final bandPrimary = t.post.transport.looperMode == LooperMode.band
+        ? t.post.transport.primaryTrack
+        : -1;
     if (!_transportHeld(t.pre)) return null;
     if (!t.pre.tracks.any((tr) => tr.hasContent)) return null;
     final started = t.post.tracks.any((tr) {
@@ -467,6 +475,7 @@ final List<ControlTransitionRule> controlTransitionRules = [
     });
     if (!started) return null;
     for (final tr in t.post.tracks) {
+      if (bandPrimary >= 0 && tr.channel != bandPrimary) continue;
       if (tr.hasContent && tr.state == TrackState.stopped) {
         return 'track ${tr.channel} still parked after a start woke the '
             'transport';

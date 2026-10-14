@@ -1311,7 +1311,8 @@ typedef struct le_track {
   int32_t pending_record; /* audio-thread-local: a deferred record is armed. */
   int32_t pending_trigger; /* what fires the pending record: 0 = next base-loop
                             * top (quantize), 1 = input level threshold
-                            * (sound-activated auto-record). */
+                            * (sound-activated auto-record), 2 = Band section
+                            * toggle, 3 = the Song/Band handoff (#1323). */
   int32_t record_pos; /* audio-thread-local shared write head, driving every
                        * active lane. Defining track: linear frame count. New
                        * track over a master: the absolute phase (segment*base +
@@ -2179,15 +2180,20 @@ struct le_engine {
    * pending arms, playing takes, or spans that cannot fit the target mode
    * (le_looper_mode_switch_blocked, engine_process.c). */
   _Atomic int32_t a_looper_mode; /* le_looper_mode; default 0 = MULTI */
-  /* Song section handoff (#1077), audio-thread owned; reset off the callback
-   * only while it is stopped (configure, create, stop). song_source is the
-   * section that was playing when the request was accepted, never the UI
-   * selection; song_target starts at its next lap edge. song_elapsed counts
-   * the frames the source has sounded since. One packed word publishes
-   * target and progress together: low byte target + 1 (0 = none), upper 24
-   * bits the fraction played, so a reader never pairs one request's target
-   * with another's progress. */
+  /* Song and Band section handoff (#1077, #1323), audio-thread owned; reset
+   * off the callback only while it is stopped (configure, create, stop).
+   * song_source is the section that was sounding when the request was
+   * accepted, never the UI selection; song_target starts at its next lap
+   * edge (Band: the primary's next loop top at or after it). song_record
+   * says the request is a Record (its arm waits on the target with
+   * pending_trigger 3) rather than a Play. song_elapsed counts the frames
+   * the source has sounded with a length since; song_edge latches that
+   * Band's source has reached its lap end. One packed word publishes the
+   * request: bits 0..6 target + 1 (0 = none), bit 7 the Record kind, upper
+   * 24 bits the fraction played, so a reader never pairs one request's
+   * target with another's kind or progress. */
   int32_t song_source, song_target;
+  int song_record, song_edge;
   int64_t song_elapsed;
   _Atomic uint32_t a_song_queue;
   /* The Song section that sounded most recently (#1077), -1 for none. It
@@ -2848,6 +2854,13 @@ static inline int le_sync_quantize_active(le_engine* e, int32_t ch) {
   if (load_i32(&pt->lanes[0].a_len) <= 0) return 0;
   if (load_i32(&pt->a_sync_divisor) != 0) return 0;
   return load_i32(&pt->a_multiple) == 1;
+}
+
+/* Whether [ch] is a Band section (#1323): a non-primary track under an
+ * established primary, the tracks that play one at a time. */
+static inline int le_band_section(le_engine* e, int32_t ch) {
+  return load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_BAND &&
+         le_sync_quantize_active(e, ch);
 }
 
 /* float/double <-> atomic-bits helpers. The published metering/gain fields are

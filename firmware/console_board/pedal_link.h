@@ -156,10 +156,12 @@ enum { PEDAL_LED_OFF = 0, PEDAL_LED_GREEN, PEDAL_LED_RED, PEDAL_LED_BLUE, PEDAL_
  *   49..50 active_button_mask LE16; bits10..15 reserved zero
  *   51     queued_button: 0 none, else the PEDAL_BTN value + 1
  *   52     queued_progress: 0..254 of 255, 0 without a queued button
- * The app picks the button (only a visible queued Song section has one) and
- * lights it like any other; the board only fills that pill left to right by
- * the progress. A full pill is never drawn from a queue: the engine ends the
- * wait by starting the section, and the next frame carries no queue.
+ * The app picks the button (only a waiting Song or Band section on the
+ * plate has one) and lights it like any other; the board only fills that
+ * pill left to right by the progress, at one uniform level, and blends it to
+ * the diffused curve when a later frame no longer queues it (firmware 1.15,
+ * #1323). A full pill is never drawn from a queue: the engine ends the wait
+ * by starting the section, and the next frame carries no queue.
  */
 typedef struct pedal_color { uint8_t r, g, b; } pedal_color;
 

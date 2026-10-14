@@ -1519,6 +1519,7 @@ class EngineSnapshot {
     this.songQueuedTrack = -1,
     this.songQueueProgress = 0,
     this.songLastSection = -1,
+    this.songQueueRecord = false,
     this.followTempo = false,
     this.tempoFollow = TempoFollowState.free,
     this.pitchMode = PitchMode.unchanged,
@@ -1617,6 +1618,7 @@ class EngineSnapshot {
       songQueuedTrack = -1,
       songQueueProgress = 0,
       songLastSection = -1,
+      songQueueRecord = false,
       followTempo = false,
       tempoFollow = TempoFollowState.free,
       pitchMode = PitchMode.unchanged,
@@ -1730,6 +1732,7 @@ class EngineSnapshot {
       songQueuedTrack: native.song_queued_track,
       songQueueProgress: native.song_queue_progress,
       songLastSection: native.song_last_section,
+      songQueueRecord: native.song_queue_record != 0,
       followTempo: native.follow_tempo != 0,
       tempoFollow: TempoFollowState.fromCode(native.tempo_follow),
       pitchMode: PitchMode.fromCode(native.pitch_follows_speed),
@@ -1836,6 +1839,7 @@ class EngineSnapshot {
     int? songQueuedTrack,
     double? songQueueProgress,
     int? songLastSection,
+    bool? songQueueRecord,
     bool? followTempo,
     TempoFollowState? tempoFollow,
     PitchMode? pitchMode,
@@ -1931,6 +1935,7 @@ class EngineSnapshot {
     songQueuedTrack: songQueuedTrack ?? this.songQueuedTrack,
     songQueueProgress: songQueueProgress ?? this.songQueueProgress,
     songLastSection: songLastSection ?? this.songLastSection,
+    songQueueRecord: songQueueRecord ?? this.songQueueRecord,
     followTempo: followTempo ?? this.followTempo,
     tempoFollow: tempoFollow ?? this.tempoFollow,
     pitchMode: pitchMode ?? this.pitchMode,
@@ -2257,15 +2262,22 @@ class EngineSnapshot {
   /// were laid down at and retimes from there.
   final int recordedLengthFrames;
 
-  /// The Song section waiting for the playing section's next lap edge
-  /// (#1077), or `-1` with none. Read from one native word together with
-  /// [songQueueProgress], so the two always describe the same request.
+  /// The Song or Band section waiting for the sounding section's end
+  /// (#1077, #1323), or `-1` with none. Read from one native word together
+  /// with [songQueueProgress] and [songQueueRecord], so they always describe
+  /// the same request.
   final int songQueuedTrack;
 
   /// How much of that wait has played, `0`..`1`, measured by the audio
-  /// engine; `0` with none. It stays below `1` while the section waits: the
-  /// handoff starts the section and clears the request in the same block.
+  /// engine; `0` with none, and while the sounding section still records its
+  /// first take. It stays below `1` while the section waits: the handoff
+  /// starts the section and clears the request in the same block.
   final double songQueueProgress;
+
+  /// Whether the waiting request is a Record (#1323): a new take on an empty
+  /// section, or an overdub from the top of a stopped one. `false` for a
+  /// Play, or with none.
+  final bool songQueueRecord;
 
   /// The Song section that sounded most recently (#1077), or `-1`. It
   /// survives a Stop and is forgotten when that track empties, on a mode
@@ -2478,6 +2490,7 @@ class EngineSnapshot {
           songQueuedTrack == other.songQueuedTrack &&
           songQueueProgress == other.songQueueProgress &&
           songLastSection == other.songLastSection &&
+          songQueueRecord == other.songQueueRecord &&
           followTempo == other.followTempo &&
           tempoFollow == other.tempoFollow &&
           pitchMode == other.pitchMode &&
@@ -2575,6 +2588,7 @@ class EngineSnapshot {
     songQueuedTrack,
     songQueueProgress,
     songLastSection,
+    songQueueRecord,
     followTempo,
     tempoFollow,
     pitchMode,

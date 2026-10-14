@@ -87,6 +87,8 @@ QueueTiming queueTimingOf(Track track, GridDivision division) {
     case ArmTrigger.sound:
       return QueueTiming.sound;
     case ArmTrigger.section:
+    // A Song or Band Record waits for the sounding section's end (#1323).
+    case ArmTrigger.handoff:
       return QueueTiming.loopStart;
     case ArmTrigger.grid:
     case null:

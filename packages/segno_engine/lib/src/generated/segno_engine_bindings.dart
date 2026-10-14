@@ -1523,14 +1523,24 @@ class SegnoEngineBindings {
   late final _le_engine_stop_track = _le_engine_stop_trackPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
-  /// In Song (#1077) Play is a section request: with nothing playing it starts
-  /// the stopped section alone from its beginning; while another section plays
-  /// it waits for that section's next lap edge (le_snapshot.song_queued_track),
-  /// then stops every playing section and starts the target from its beginning
-  /// on the next sample. Requesting the waiting target again, or a playing
-  /// section, cancels the request; another stopped section replaces it. A
-  /// capture refuses it. Count-in launches keep their own rules. Other modes
-  /// play at once.
+  /// In Song (#1077, #1323) Play is a section request: with nothing sounding
+  /// it starts the stopped section alone from its beginning; while another
+  /// section sounds (plays, overdubs or records) it waits for that section's
+  /// next lap edge (le_snapshot.song_queued_track), then stops the sounding
+  /// section and starts the target from its beginning on the next sample.
+  /// Band does the same for a section (a non-primary track) while another
+  /// section sounds, landing on the primary's next loop top in phase with it.
+  /// Requesting the waiting target again, or a playing section, cancels the
+  /// request, whatever its kind; another request replaces it. A capture on any
+  /// other section refuses it. Count-in launches keep their own rules. Other
+  /// modes play at once.
+  ///
+  /// le_engine_record follows the same rule for an empty or stopped Song
+  /// section (or Band section) while another section sounds: the Record waits
+  /// as a deferred arm (pending_trigger 3) and starts the take, or an overdub
+  /// from the section's top, at the handoff. A second Record on it cancels;
+  /// a Record on a section waiting to play turns that request into a Record.
+  /// Overdub and finish on the sounding section stay immediate.
   int le_engine_play(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -8171,7 +8181,9 @@ enum le_command_code {
   /// section transport (B3b) -- a play/stop TOGGLE on a
   /// content-bearing non-primary track, deferred to the
   /// next primary-track loop top rather than a record
-  /// action; see le_engine_toggle_section.
+  /// action; see le_engine_toggle_section. 3 = a Song or
+  /// Band Record waiting for the sounding section's end
+  /// (#1323; le_engine_record).
   LE_CMD_ARM(16),
 
   /// arg_i = track: cancel a pending quantized record
@@ -9133,7 +9145,8 @@ final class le_track_snapshot extends ffi.Struct {
   /// Trailing (accepted design, slice 1): what the arm reported by `pending`
   /// waits for — 0 = the quantize grid (next loop top / subdivision), 1 = a
   /// signal at the recording input (Sound start), 2 = a Band section toggle
-  /// at the primary's loop top; -1 while nothing is pending. The stage names
+  /// at the primary's loop top, 3 = a Song or Band Record waiting for the
+  /// sounding section's end (#1323); -1 while nothing is pending. The stage names
   /// the boundary from this rather than guessing from the settings.
   @ffi.Int32()
   external int pending_trigger;
@@ -9999,22 +10012,29 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int recorded_length_frames;
 
-  /// Trailing (#1077): the Song section waiting for the playing section's
-  /// next lap edge (-1: none) and the fraction of that wait already played,
-  /// 0..1 (0 with none; it stays below 1 until the handoff clears it). Both
-  /// are decoded from ONE atomic word, so they always describe the same
-  /// request.
+  /// Trailing (#1077): the Song or Band section waiting for the sounding
+  /// section's end (-1: none) and the fraction of that wait already played,
+  /// 0..1 (0 with none, and while the sounding section is still recording
+  /// its first take; it stays below 1 until the handoff clears it).
   @ffi.Int32()
   external int song_queued_track;
 
   @ffi.Float()
   external double song_queue_progress;
 
-  /// Trailing (#1077): the Song section that sounded most recently, -1 for
-  /// none. It survives a Stop; it is forgotten when that track empties, on a
-  /// mode switch and on configure, and is never saved with a session.
+  /// Trailing (#1077): the Song or Band section (#1323; never Band's primary)
+  /// that sounded most recently, -1 for none. It survives a Stop; it is
+  /// forgotten when that track empties, on a mode switch and on configure,
+  /// and is never saved with a session.
   @ffi.Int32()
   external int song_last_section;
+
+  /// Trailing (#1323): 1 when the waiting request is a Record (a new take,
+  /// or an overdub from the section's top), 0 for a Play or with none. It,
+  /// the track and the progress are decoded from ONE atomic word, so they
+  /// always describe the same request.
+  @ffi.Int32()
+  external int song_queue_record;
 }
 
 /// The plugin format a descriptor was discovered in.

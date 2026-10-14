@@ -3042,6 +3042,32 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed starts the primary and one section in Band '
+    '(#1323)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(
+        looperMode: LooperMode.band,
+        primaryTrack: 0,
+        songLastSection: 3,
+      ),
+      tracks: [
+        Track(lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 1, lengthFrames: 200, state: TrackState.stopped),
+        Track(channel: 2, lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 3, lengthFrames: 100, state: TrackState.stopped),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verify(() => repository.play()).called(1);
+      verify(() => repository.play(channel: 3)).called(1);
+      verifyNever(() => repository.play(channel: 1));
+      verifyNever(() => repository.play(channel: 2));
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
     'LooperPlayAllPressed starts the section that played last in Song '
     '(#1077)',
     build: buildBloc,

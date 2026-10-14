@@ -2,6 +2,16 @@
 
 Tracking: [#1077](https://github.com/tomassasovsky/segno/issues/1077).
 
+> **Superseded in part (2026-10-13, #1323).** This plan queued only Play and
+> put section switching in Mute mode, from a misreading of the Looper X. On
+> the Looper X a Record or Overdub on a stopped section waits too, track
+> presses in Record mode switch sections, Mute mode only mutes, and Band
+> keeps the primary plus one section. The waiting pill fills at one level
+> and softens when the section starts (firmware 1.15). See
+> [the #1323 plan](2026-10-13-fix-song-band-one-section-plan.md); the
+> Behaviour and Control sections below describe #1317 as shipped, not the
+> current rules.
+
 The owner approved the completion simulation on the old v2 console (PR #1079,
 protocol 7). On 2026-10-13 the owner approved porting it onto the integration
 trunk; this plan records the port, as protocol 10 on top of the trunk's
@@ -22,6 +32,8 @@ Song plays one section at a time.
 2. Requesting the waiting section again, or a playing section, cancels the
    request without changing playback. Another stopped section replaces it.
 3. A capture anywhere refuses the request rather than cutting a take short.
+   *(Superseded by #1323: a request waits on a sounding section that
+   overdubs or records, and only a capture on another section refuses it.)*
    Stop, Clear, Undo, a capture, a mode switch, configure and engine stop each
    drop a waiting request. A Count-in launch keeps its own rules.
 4. With nothing playing, a Play starts that section at once, alone and from
@@ -43,6 +55,9 @@ immediately" for starting a second section; the accepted design's Song card
 already reads "One section at a time."
 
 ## Control
+
+*(Superseded by #1323: switching moved to Record-mode track presses, and
+Song's Mute mode only mutes.)*
 
 In Mute mode, in Song, a track press asks the engine for that section. In
 Record mode the pedal's Rec/Play on a muted stopped section, and the screen's

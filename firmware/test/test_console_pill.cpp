@@ -258,13 +258,19 @@ static void fortyPixelRing() {
   expectRingDark();
 }
 
-// The Song queue (#1077): the queued switch's pill fills left to right by
-// the app's progress, in the colour and activity the app gave it. No local
-// clock moves it, and a queue never lights the whole pill.
+// The Song queue (#1077, #1323): the queued switch's pill fills left to right
+// by the app's progress, every filled pixel at one level, in the colour and
+// activity the app gave it. No local clock moves the fill, and a queue never
+// lights the whole pill. When the queue ends on a lit pill it blends to the
+// diffused curve over 300 ms.
 static void songQueueFill() {
   const uint8_t level[8] = {28,69,151,191,191,151,69,28};
+  const unsigned uniform = 110;  // the mean of level[]
+  unsigned sum = 0;
+  for (const uint8_t l : level) sum += l;
+  assert((sum + 4) / 8 == uniform);
   pedal_state state = {};
-  state.mode = PEDAL_MODE_PLAY;
+  state.mode = PEDAL_MODE_REC;
   state.looper_mode = PEDAL_LOOPER_SONG;
   state.master_gain = 255;
   for (auto &color : state.pedal_colors) color = {0,255,0};
@@ -283,7 +289,7 @@ static void songQueueFill() {
     for (unsigned pixel = 0; pixel < 8; ++pixel) {
       const int coverage = (int)progress * 8 - (int)pixel * 255;
       const unsigned fill = coverage <= 0 ? 0 : coverage >= 255 ? 255 : coverage;
-      assert(green(2, pixel) == (level[pixel] * fill + 127) / 255);
+      assert(green(2, pixel) == (uniform * fill + 127) / 255);
       assert(green(3, pixel) == level[pixel]);  // the playing section: steady
     }
     // Time alone never advances the fill.
@@ -291,21 +297,49 @@ static void songQueueFill() {
     at(now += 400);
     assert(ind.shown == held);
   }
-  // Half way, exactly the left half is lit.
+  // Half way, exactly the left half is lit, all at the same level.
   state.queued_progress = 127;
   receive(state, now += 20);
-  for (unsigned pixel = 0; pixel < 8; ++pixel) assert((green(2, pixel) > 0) == (pixel < 4));
+  for (unsigned pixel = 0; pixel < 8; ++pixel) {
+    assert(green(2, pixel) == (pixel < 3 ? uniform : pixel == 3 ? (uniform * 251 + 127) / 255 : 0));
+  }
   // 254 leaves the rightmost pixel short of full.
   state.queued_progress = 254;
   receive(state, now += 20);
-  assert(green(2, 7) < level[7] && green(2, 6) == level[6]);
-  // The handoff: the engine's next frame has no queue and lights the section.
+  assert(green(2, 7) < uniform && green(2, 6) == uniform);
+  const unsigned last = green(2, 7);
+  // The handoff: the engine's next frame has no queue and lights the
+  // section. The pill starts from its last fill and reaches the diffused
+  // curve 300 ms later, moving monotonically in between.
   state.queued_button = 0;
   state.queued_progress = 0;
-  receive(state, now += 20);
+  const uint32_t start = now += 20;
+  receive(state, start);
+  for (unsigned pixel = 0; pixel < 7; ++pixel) assert(green(2, pixel) == uniform);
+  assert(green(2, 7) == last);
+  at(start + 150);
+  for (unsigned pixel = 0; pixel < 8; ++pixel) {
+    const unsigned from = pixel == 7 ? last : uniform;
+    const unsigned to = level[pixel];
+    const unsigned lo = from < to ? from : to, hi = from < to ? to : from;
+    assert(green(2, pixel) >= lo && green(2, pixel) <= hi);
+    if (from != to) assert(green(2, pixel) != from && green(2, pixel) != to);
+  }
+  at(start + 300);
   for (unsigned pixel = 0; pixel < 8; ++pixel) assert(green(2, pixel) == level[pixel]);
-  // A queued switch the app does not light stays dark, whatever the progress.
+  const auto diffused = ind.shown;
+  at(start + 1000);
+  assert(ind.shown == diffused);
+  // A pill that leaves the queue dark goes dark at once.
+  state.queued_button = PEDAL_BTN_TRACK2 + 1;
+  state.queued_progress = 200;
+  receive(state, now = start + 1020);
+  state.queued_button = 0;
+  state.queued_progress = 0;
   state.active_button_mask = 1u << PEDAL_BTN_TRACK1;
+  receive(state, now += 20);
+  for (unsigned pixel = 0; pixel < 8; ++pixel) assert(ind.shown[pillPixelIndex(2, pixel)] == 0);
+  // A queued switch the app does not light stays dark, whatever the progress.
   state.queued_button = PEDAL_BTN_TRACK2 + 1;
   state.queued_progress = 200;
   receive(state, now += 20);

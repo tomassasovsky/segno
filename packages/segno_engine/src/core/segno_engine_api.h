@@ -146,11 +146,13 @@ typedef enum le_looper_mode {
   /* Song (B4): a "section" IS a track (song-mode-spec.md §2 Q1) — up to
    * LE_MAX_TRACKS independent sections, each started/stopped directly via
    * its OWN track press (record/play/stop), exactly like every other mode's
-   * per-track controls. Play starts one section at a time (#1077): a Play
-   * on a stopped section while another plays waits for that section's next
-   * lap edge, where the handoff stops it and starts the target from its
-   * beginning (le_engine_play). This supersedes the spec's "immediately"
-   * for starting a second section. A start from a held rig (a take, a
+   * per-track controls. Only one section records, overdubs or plays at a
+   * time, as on the Looper X (#1077, #1323): a Play or a Record on a
+   * stopped or empty section while another sounds waits for that section's
+   * next lap edge, where the handoff stops it and starts the target from
+   * its beginning (le_engine_play, le_engine_record); an overdub on the
+   * sounding section is immediate. This supersedes the July spec's
+   * "independently and immediately". A start from a held rig (a take, a
    * punch-in) starts only that section: Song keeps no unpark rule
    * (le_unpark_stopped). le_snapshot.song_last_section names the section
    * that sounded last. No separate section object, no advance gesture (the
@@ -162,8 +164,12 @@ typedef enum le_looper_mode {
    * also cover SONG (see free_clock's doc, engine_private.h) rather than
    * inventing a parallel mechanism. */
   LE_LOOPER_MODE_SONG = 2,
-  LE_LOOPER_MODE_BAND = 3,  /* primary + independently-quantized sections
-                             * (B3) */
+  /* Band (B3): the primary plus one section at a time (#1323). A section is
+   * a non-primary track; a Play or a Record on one while another section
+   * sounds waits for that section's lap end and lands on the primary's next
+   * loop top, in phase with the primary. A start from a stopped rig resumes
+   * the primary, not the other sections. */
+  LE_LOOPER_MODE_BAND = 3,
   LE_LOOPER_MODE_FREE = 4,  /* independent per-track clocks (B2b) */
 } le_looper_mode;
 
@@ -274,7 +280,9 @@ typedef enum le_command_code {
                        * section transport (B3b) -- a play/stop TOGGLE on a
                        * content-bearing non-primary track, deferred to the
                        * next primary-track loop top rather than a record
-                       * action; see le_engine_toggle_section. */
+                       * action; see le_engine_toggle_section. 3 = a Song or
+                       * Band Record waiting for the sounding section's end
+                       * (#1323; le_engine_record). */
   LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record
                        * (any trigger). */
   /* ---- click + count-in (A2, D5/D9). The click is its own routable source:
@@ -1008,7 +1016,8 @@ typedef struct le_track_snapshot {
   /* Trailing (accepted design, slice 1): what the arm reported by `pending`
    * waits for — 0 = the quantize grid (next loop top / subdivision), 1 = a
    * signal at the recording input (Sound start), 2 = a Band section toggle
-   * at the primary's loop top; -1 while nothing is pending. The stage names
+   * at the primary's loop top, 3 = a Song or Band Record waiting for the
+   * sounding section's end (#1323); -1 while nothing is pending. The stage names
    * the boundary from this rather than guessing from the settings. */
   int32_t pending_trigger;
   /* ---- per-track record timing and decay overrides (accepted design,
@@ -1611,17 +1620,22 @@ typedef struct le_snapshot {
    * measured (0 with none). A Session saves the pair, so a recall commits
    * the takes at the tempo they were laid down at and retimes from there. */
   int32_t recorded_length_frames;
-  /* Trailing (#1077): the Song section waiting for the playing section's
-   * next lap edge (-1: none) and the fraction of that wait already played,
-   * 0..1 (0 with none; it stays below 1 until the handoff clears it). Both
-   * are decoded from ONE atomic word, so they always describe the same
-   * request. */
+  /* Trailing (#1077): the Song or Band section waiting for the sounding
+   * section's end (-1: none) and the fraction of that wait already played,
+   * 0..1 (0 with none, and while the sounding section is still recording
+   * its first take; it stays below 1 until the handoff clears it). */
   int32_t song_queued_track;
   float song_queue_progress;
-  /* Trailing (#1077): the Song section that sounded most recently, -1 for
-   * none. It survives a Stop; it is forgotten when that track empties, on a
-   * mode switch and on configure, and is never saved with a session. */
+  /* Trailing (#1077): the Song or Band section (#1323; never Band's primary)
+   * that sounded most recently, -1 for none. It survives a Stop; it is
+   * forgotten when that track empties, on a mode switch and on configure,
+   * and is never saved with a session. */
   int32_t song_last_section;
+  /* Trailing (#1323): 1 when the waiting request is a Record (a new take,
+   * or an overdub from the section's top), 0 for a Play or with none. It,
+   * the track and the progress are decoded from ONE atomic word, so they
+   * always describe the same request. */
+  int32_t song_queue_record;
 } le_snapshot;
 
 /* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part
@@ -2043,14 +2057,24 @@ LE_EXPORT int32_t le_engine_measure_latency(le_engine* engine);
  * undo — never a copy. */
 LE_EXPORT int32_t le_engine_record(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_stop_track(le_engine* engine, int32_t channel);
-/* In Song (#1077) Play is a section request: with nothing playing it starts
- * the stopped section alone from its beginning; while another section plays
- * it waits for that section's next lap edge (le_snapshot.song_queued_track),
- * then stops every playing section and starts the target from its beginning
- * on the next sample. Requesting the waiting target again, or a playing
- * section, cancels the request; another stopped section replaces it. A
- * capture refuses it. Count-in launches keep their own rules. Other modes
- * play at once. */
+/* In Song (#1077, #1323) Play is a section request: with nothing sounding
+ * it starts the stopped section alone from its beginning; while another
+ * section sounds (plays, overdubs or records) it waits for that section's
+ * next lap edge (le_snapshot.song_queued_track), then stops the sounding
+ * section and starts the target from its beginning on the next sample.
+ * Band does the same for a section (a non-primary track) while another
+ * section sounds, landing on the primary's next loop top in phase with it.
+ * Requesting the waiting target again, or a playing section, cancels the
+ * request, whatever its kind; another request replaces it. A capture on any
+ * other section refuses it. Count-in launches keep their own rules. Other
+ * modes play at once.
+ *
+ * le_engine_record follows the same rule for an empty or stopped Song
+ * section (or Band section) while another section sounds: the Record waits
+ * as a deferred arm (pending_trigger 3) and starts the take, or an overdub
+ * from the section's top, at the handoff. A second Record on it cancels;
+ * a Record on a section waiting to play turns that request into a Record.
+ * Overdub and finish on the sounding section stay immediate. */
 LE_EXPORT int32_t le_engine_play(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_clear(le_engine* engine, int32_t channel);
 /* Clear that leaves a restore point: identical to le_engine_clear, except the

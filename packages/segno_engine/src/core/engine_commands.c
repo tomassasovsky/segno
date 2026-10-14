@@ -1180,6 +1180,43 @@ static int le_transport_active(le_engine* engine) {
   return 0;
 }
 
+/* Whether a Record on [channel] waits for the sounding section's end
+ * (#1323): a Song section, or a Band section, that is empty or stopped with
+ * a take while another section plays, overdubs or records. Band's primary
+ * is never the section it waits for. */
+static int le_handoff_waits(le_engine* engine, int32_t channel) {
+  const int32_t mode = load_i32(&engine->a_looper_mode);
+  const int band = le_band_section(engine, channel);
+  if (mode != LE_LOOPER_MODE_SONG && !band) return 0;
+  le_track* t = &engine->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  if (st != LE_TRACK_EMPTY &&
+      !(st == LE_TRACK_STOPPED && le_effective_len(t) > 0)) {
+    return 0;
+  }
+  const int32_t primary = band ? load_i32(&engine->a_primary_track) : -1;
+  for (int32_t c = 0; c < engine->track_count; ++c) {
+    if (c == channel || c == primary) continue;
+    const int32_t other = le_effective_state(&engine->tracks[c]);
+    if (other == LE_TRACK_PLAYING || other == LE_TRACK_OVERDUBBING ||
+        other == LE_TRACK_RECORDING) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* Whether a Record on [channel] takes the handoff path: its own handoff arm
+ * is pending (a second press cancels it), or no other trigger's arm is and
+ * it would wait (le_handoff_waits). Another trigger's pending arm keeps its
+ * own rules, so a second press still cancels a grid or Sound arm. */
+static int le_handoff_record(le_engine* engine, int32_t channel) {
+  if (engine->armed[channel] && load_i32(&engine->tracks[channel].a_pending)) {
+    return engine->armed_trigger[channel] == 3;
+  }
+  return le_handoff_waits(engine, channel);
+}
+
 /* Whether the kept master grid is still needed by any track OTHER than
  * [channel]: content (or a pending length), an undo history, or an
  * undone-to-empty redo history that would resurrect onto that grid. When
@@ -1638,23 +1675,30 @@ static le_record_admission le_classify_record(le_engine* e, int channel) {
   const int state = le_effective_state(t);
   if (le_launch_cancellable(t)) return LE_RECORD_CANCEL;
   if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) return LE_RECORD_FINISH;
+  /* A second Record on a section waiting for the handoff cancels it. */
+  if (e->armed[channel] && load_i32(&t->a_pending) &&
+      e->armed_trigger[channel] == 3) {
+    return LE_RECORD_CANCEL;
+  }
   if (e->armed[channel] && load_i32(&t->a_pending) &&
       e->record_timing_command > atomic_load_explicit(&e->a_commands_published, memory_order_acquire)) {
     const int trigger = e->armed_trigger[channel];
     if (trigger == 0 || (trigger == 1 && (load_i32(&e->a_record_start) < 0))) return LE_RECORD_CANCEL;
     return LE_RECORD_REFUSE;
   }
+  const int handoff = le_handoff_record(e, channel);
   const int has_master = le_rig_effective_master_len(e) > 0 &&
       !(state == LE_TRACK_EMPTY && !le_grid_still_needed(e, channel));
-  const int sound = (load_i32(&e->a_record_start) < 0) && state == LE_TRACK_EMPTY &&
+  const int sound = !handoff && (load_i32(&e->a_record_start) < 0) &&
+      state == LE_TRACK_EMPTY &&
       !(load_i32(&e->a_record_start) > 0 && !has_master);
-  const int quantized = (le_effective_quantize(e, channel) ||
+  const int quantized = !handoff && (le_effective_quantize(e, channel) ||
       (state == LE_TRACK_EMPTY && le_sync_quantize_active(e, channel))) &&
       has_master && le_transport_active(e);
   if (e->armed[channel] && load_i32(&t->a_pending)) {
     const int trigger = e->armed_trigger[channel];
     if ((sound && trigger == 1) || (!sound && quantized && trigger == 0)) return LE_RECORD_CANCEL;
-    if (trigger == 2 || sound || quantized) return LE_RECORD_REFUSE;
+    if (trigger == 2 || sound || quantized || handoff) return LE_RECORD_REFUSE;
   }
   return LE_RECORD_ACQUIRE;
 }
@@ -1795,11 +1839,16 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
   const int redefine_grid = st == LE_TRACK_EMPTY &&
       !le_grid_still_needed(engine, channel);
   const int capture_has_master = has_master && !redefine_grid;
-  const int sound_arm = (load_i32(&engine->a_record_start) < 0) && st == LE_TRACK_EMPTY &&
+  /* Song and Band (#1323): an empty or stopped section waits for the
+   * sounding section's end, ahead of Sound start and quantize — the
+   * handoff is its boundary. A second press cancels its own arm. */
+  const int handoff_arm = le_handoff_record(engine, channel);
+  const int sound_arm = !handoff_arm &&
+      (load_i32(&engine->a_record_start) < 0) && st == LE_TRACK_EMPTY &&
       !(load_i32(&engine->a_record_start) > 0 && !capture_has_master);
   const int sync_force_arm =
       st == LE_TRACK_EMPTY && le_sync_quantize_active(engine, channel);
-  const int quantized_arm =
+  const int quantized_arm = !handoff_arm &&
       (le_effective_quantize(engine, channel) || sync_force_arm) &&
       capture_has_master && le_transport_active(engine);
   /* Preparing a new capture while a structural command is unpublished
@@ -1814,7 +1863,8 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
     const int cancelling_arm = engine->armed[channel] &&
         load_i32(&t->a_pending) &&
         ((sound_arm && engine->armed_trigger[channel] == 1) ||
-         (quantized_arm && engine->armed_trigger[channel] == 0));
+         (quantized_arm && engine->armed_trigger[channel] == 0) ||
+         (handoff_arm && engine->armed_trigger[channel] == 3));
     if (cancelling_arm) return le_cancel_arm(engine, channel);
     return LE_ERR_INVALID;
   }
@@ -1866,9 +1916,12 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
    * Without a master nothing is touched, so it is still admitted. */
   if (st == LE_TRACK_EMPTY &&
       !(engine->armed[channel] && load_i32(&t->a_pending) &&
-        (sound_arm || quantized_arm || engine->armed_trigger[channel] == 2))) {
+        (sound_arm || quantized_arm || handoff_arm ||
+         engine->armed_trigger[channel] == 2))) {
     /* Zeroing: every deferred arm, and an immediate start over a grid this
-     * capture does not redefine (has_master survives the internal clear). */
+     * capture does not redefine (has_master survives the internal clear). A
+     * Song handoff starts its take at the top of its own clock, like an
+     * immediate one. */
     const int zero = sound_arm || quantized_arm || capture_has_master;
     int shadow = -1;
     int32_t shadow_frames = engine->max_loop_frames;
@@ -1877,7 +1930,7 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
       if (image) {
         /* le_prepare_image_capture: live + outstanding excluded, history not. */
         shadow = track_select_slot(t, 0, 0, t->outstanding_count, &evict);
-      } else if (!sound_arm && !quantized_arm) {
+      } else if (!sound_arm && !quantized_arm && !handoff_arm) {
         /* le_post_dub_shadows after RECORD: redo and outstanding are gone by
          * then (le_begin_empty_capture); the undo stack survives unless the
          * grid-redefining clear resets it or it is erased-take history that
@@ -1902,7 +1955,7 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
   int fresh_shadow = -1;
   int clear_first = 0;
   if (image && st == LE_TRACK_EMPTY) {
-    const int cancelling_arm = (sound_arm || quantized_arm) &&
+    const int cancelling_arm = (sound_arm || quantized_arm || handoff_arm) &&
         engine->armed[channel] && load_i32(&t->a_pending);
     const int prearm = !cancelling_arm &&
         le_capture_may_overdub(engine, channel, capture_has_master);
@@ -1977,6 +2030,38 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
    * A DEFINING press with count-in enabled skips this arm entirely (D9:
    * count-in wins when both are somehow set at once) and falls through to the
    * immediate path, where the audio thread starts the count-in. */
+  /* The Song/Band handoff (#1323): the same one-time prep a quantized arm
+   * does, deferred to the sounding section's end (LE_CMD_ARM trigger 3),
+   * where the callback starts the take, or an overdub from the section's
+   * top. With nothing sounding by then it starts at once. */
+  if (handoff_arm) {
+    if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
+      engine->armed[channel] = 0; /* spent: the handoff fired or dropped it */
+    }
+    if (engine->armed[channel]) {
+      /* Reject a DIFFERENT trigger's pending arm (B3b BUG 2's rule). */
+      if (engine->armed_trigger[channel] != 3) return LE_ERR_INVALID;
+      engine->armed[channel] = 0;
+      return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+    }
+    if (image && st == LE_TRACK_STOPPED && len > 0 &&
+        !le_prepare_image_punch_in(engine, channel)) {
+      return LE_ERR_INVALID;
+    }
+    engine->armed[channel] = 1;
+    engine->armed_trigger[channel] = 3;
+    if (st == LE_TRACK_EMPTY) {
+      le_begin_empty_capture(engine, channel, image != NULL);
+      if (capture_has_master) le_prepare_new_capture(engine, t);
+    } else if (!image && st == LE_TRACK_STOPPED && len > 0) {
+      le_begin_punch_in(engine, channel, 0);
+    }
+    const int32_t rc = le_post_record_image(engine, channel, LE_CMD_ARM, 3.0f,
+                                           0, image, fresh_shadow, clear_first);
+    if (rc == LE_OK && st == LE_TRACK_EMPTY) le_ticket_emptying(engine, channel);
+    return rc;
+  }
+
   if (sound_arm) {
     if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
       engine->armed[channel] = 0; /* spent: the signal already fired it */

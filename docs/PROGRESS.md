@@ -24,6 +24,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1302 | GTK composites Flutter frames on the CPU | build | merge-gate | `claude/gtk-background-1302` |
 | #1088 | Console base enclosure for fabrication | in-review | merge-gate | `claude/segno-pedal-manufacturability-5f08a2` |
 | #1077 | Song queue completion | in-review | blocked-verify | `claude/song-queue-comet-1077` |
+| #1323 | Song and Band: one section at a time | in-review | merge-gate | `claude/song-one-section-1323` |
 | #1140 | Keep recorded material across audio-engine reopen | in-review | merge-gate | `claude/engine-reopen-1140*` |
 | #1143 | Replay audio-history changes in performance stems | build | merge-gate | `claude/stem-history-replay-1143` |
 | #1144 | Report render manifest failures | in-review | merge-gate | `claude/manifest-failure-1144` |

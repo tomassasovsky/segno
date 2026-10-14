@@ -628,7 +628,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->recorded_length_frames = load_i32(&engine->a_rec_master_len);
   const uint32_t song = atomic_load_explicit(&engine->a_song_queue,
                                             memory_order_relaxed);
-  out->song_queued_track = (int32_t)(song & 255u) - 1;
+  out->song_queued_track = (int32_t)(song & 127u) - 1;
+  out->song_queue_record = (int32_t)((song >> 7) & 1u);
   out->song_queue_progress = (float)(song >> 8) / 16777215.0f;
   out->song_last_section = load_i32(&engine->a_song_last);
   out->tail_reset_rev =

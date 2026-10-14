@@ -22,8 +22,9 @@ the state frames segno pushes back. segno runs the behavior machine.
 
 ## Physical rendering and source boundary
 
-Firmware 1.14 uses public UART protocol 10: protocol 9 (`ENCODER_BUTTON`)
-with two STATE bytes for the Song queue (#1077). The physical renderer is
+Firmware 1.15 uses public UART protocol 10: protocol 9 (`ENCODER_BUTTON`)
+with two STATE bytes for the Song queue (#1077). 1.15 changes only how the
+queued pill is drawn (#1323); the wire is unchanged. The physical renderer is
 reconciled from PR #1079 (`ecea3af76fdb0708ca04632e260de5aa3fde09cd`), whose
 old-v2 firmware 1.11 used protocol 7 with a different 21-byte Song queue
 payload. PR #1082 also uses public protocol 7 (and historical 6 for PD
@@ -55,17 +56,22 @@ The combined estimated current is about 1.635 A including assumed pixel idle
 and logic consumption. This is a planning bound, not a measured guarantee.
 The app's semantic activity fields drive the ring independently of pill hue.
 
-**Song queue (#1077).** While a Song section waits for the playing one's next
-lap edge, STATE byte 51 names the footswitch whose pill shows it and byte 52
-how much of the wait has played (0..254 of 255). The board fills that pill
-left to right in the hue and activity the app gave it; nothing local advances
-the fill, and a queue never lights the whole pill. The engine ends the wait by
-starting the section, and the next frame carries no queue
-([plan](../../docs/plan/2026-09-24-feat-song-pill-completion-plan.md),
-[simulation](../../docs/simulations/song-pill-completion.html)).
+**Song queue (#1077, #1323).** While a Song or Band section waits for the
+sounding one's end, STATE byte 51 names the footswitch whose pill shows it and
+byte 52 how much of the wait has played (0..254 of 255). The board fills that
+pill left to right in the hue and activity the app gave it, every filled
+pixel at one level (110, the mean of the diffused levels, so a full pill
+carries the same light as the section it becomes) with no centre curve; the
+leading pixel fills partially so the edge moves smoothly. Nothing local
+advances the fill, and a queue never lights the whole pill. The engine ends
+the wait by starting the section, and the next frame carries no queue; a pill
+that leaves the queue and stays lit blends from its last fill to the diffused
+curve over 300 ms, and one that goes dark does so at once. The board keeps no
+Song or bank logic: it reacts only to the queued button the app sends
+([plan](../../docs/plan/2026-10-13-fix-song-band-one-section-plan.md)).
 
-The physical renderer, its limits and the Song queue fill are sourced from
-#1079. Its bench diagnostic and CAD are excluded. New-v3 ring UART/PD firmware is a separate hardware
+The physical renderer, its limits and the first Song queue fill are sourced
+from #1079. Its bench diagnostic and CAD are excluded. New-v3 ring UART/PD firmware is a separate hardware
 boundary. No physical deployment or electrical/optical validation is implied
 by the host tests or a successful Arduino compile.
 
@@ -158,7 +164,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0a 01 0e 05 (HELLO, protocol 10, fw 1.14), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0a 01 0f 04 (HELLO, protocol 10, fw 1.15), once a second
 ```
 
 ## Bring-up record

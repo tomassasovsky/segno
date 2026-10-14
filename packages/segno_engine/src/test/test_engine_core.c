@@ -24447,6 +24447,22 @@ static le_engine* sm_make_song_engine(int sr) {
   return e;
 }
 
+/* Records section [ch] alone and leaves it playing. Song records one
+ * section at a time (#1323): a Record while another section sounds waits
+ * for that section's end, so every other section is stopped first. Works
+ * the same in Free. */
+static void sm_record_section(le_engine* e, int32_t ch, int32_t len,
+                              float value) {
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    const int32_t st = load_i32(&e->tracks[c].a_state);
+    if (c != ch && (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING)) {
+      CHECK(le_engine_stop_track(e, c) == LE_OK);
+    }
+  }
+  drain(e);
+  fm_record_track_value(e, ch, len, value);
+}
+
 static void test_song_mode_defining_recording_sets_own_clock_not_master(
     void) {
   printf("test_song_mode_defining_recording_sets_own_clock_not_master\n");
@@ -24478,9 +24494,9 @@ static void test_song_mode_defining_recording_sets_own_clock_not_master(
  * handoff shows in the output and not only in private bookkeeping. */
 static le_engine* song_queue_fixture(void) {
   le_engine* e = sm_make_song_engine(1000);
-  fm_record_track_value(e, 0, 100, 0.2f);
-  fm_record_track_value(e, 1, 160, 0.6f);
-  fm_record_track_value(e, 2, 240, 0.8f);
+  sm_record_section(e, 0, 100, 0.2f);
+  sm_record_section(e, 1, 160, 0.6f);
+  sm_record_section(e, 2, 240, 0.8f);
   for (int c = 0; c < 3; ++c) CHECK(le_engine_stop_track(e, c) == LE_OK);
   drain(e);
   return e;
@@ -24582,6 +24598,9 @@ static void test_song_queue_replace_cancel_and_current(void) {
 static void test_song_queue_invalidation_and_capture(void) {
   printf("test_song_queue_invalidation_and_capture\n");
   for (int action = 0; action < 11; ++action) {
+    /* A Record on another section, and an overdub on the source, keep a
+     * request (test_song_record_requests_wait). */
+    if (action == 5 || action == 7) continue;
     le_engine* e = song_queue_fixture();
     le_snapshot s;
     CHECK(le_engine_play(e, 0) == LE_OK);
@@ -24612,19 +24631,6 @@ static void test_song_queue_invalidation_and_capture(void) {
     drain(e);
     le_engine_get_snapshot(e, &s);
     CHECK(s.song_queued_track == -1 && s.song_queue_progress == 0.0f);
-    if (action == 5 || action == 7) {
-      /* A capture refuses a new request without cutting the take. */
-      const int capturing = action == 5 ? 3 : 0;
-      const int32_t taking =
-          action == 5 ? LE_TRACK_RECORDING : LE_TRACK_OVERDUBBING;
-      CHECK(s.tracks[capturing].state == taking);
-      CHECK(le_engine_play(e, 2) == LE_OK);
-      drain(e);
-      le_engine_get_snapshot(e, &s);
-      CHECK(s.song_queued_track == -1);
-      CHECK(s.tracks[capturing].state == taking);
-      CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
-    }
     tg_advance(e, 130);
     le_engine_get_snapshot(e, &s);
     CHECK(s.song_queued_track == -1);
@@ -24661,8 +24667,8 @@ static void test_song_queue_invalidation_and_capture(void) {
   le_engine_destroy(e);
 }
 
-static void test_song_queue_one_shot_and_several_playing(void) {
-  printf("test_song_queue_one_shot_and_several_playing\n");
+static void test_song_queue_one_shot(void) {
+  printf("test_song_queue_one_shot\n");
   le_engine* e = song_queue_fixture();
   CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
   CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
@@ -24677,27 +24683,6 @@ static void test_song_queue_one_shot_and_several_playing(void) {
   CHECK(e->tracks[1].free_clock.position == 0);
   tg_advance(e, 160);
   CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED);
-  le_engine_destroy(e);
-
-  /* Recording one section after another leaves several playing. The lowest
-   * playing channel times the handoff, which stops all of them and starts
-   * only the target. */
-  e = sm_make_song_engine(1000);
-  fm_record_track(e, 0, 100);
-  fm_record_track(e, 1, 160);
-  fm_record_track(e, 2, 240);
-  CHECK(le_engine_stop_track(e, 2) == LE_OK);
-  drain(e);
-  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_PLAYING);
-  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING);
-  const int remaining = 100 - e->tracks[0].free_clock.position;
-  CHECK(le_engine_play(e, 2) == LE_OK);
-  drain(e);
-  tg_advance(e, remaining);
-  CHECK(load_i32(&e->tracks[0].a_state) == LE_TRACK_STOPPED);
-  CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED);
-  CHECK(load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING);
-  CHECK(e->tracks[2].free_clock.position == 0);
   le_engine_destroy(e);
 }
 
@@ -24790,7 +24775,7 @@ static void test_song_last_section(void) {
   le_engine* e = song_queue_fixture();
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
-  CHECK(s.song_last_section == 0); /* the fixture's first section */
+  CHECK(s.song_last_section == 2); /* the fixture's last recorded section */
   CHECK(le_engine_play(e, 0) == LE_OK);
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
@@ -24868,41 +24853,157 @@ static void test_song_queue_logs_committed_handoff_only(void) {
   CHECK(frame_of_log_entry_for_channel(buf, count, LE_CMD_STOP, 0) == 100);
   CHECK(frame_of_log_entry_for_channel(buf, count, LE_CMD_PLAY, 1) == 100);
   le_engine_destroy(e);
+}
 
-  /* A second old section can end its lap on the very same sample. Its Once
-   * stop must not repeat the stop the handoff already logged. */
-  e = sm_make_song_engine(1000);
-  fm_record_track(e, 0, 100);
-  fm_record_track(e, 1, 90);
-  fm_record_track(e, 2, 240);
-  CHECK(le_engine_stop_track(e, 2) == LE_OK);
+/* Song records and overdubs one section at a time (#1323): a Record on an
+ * empty or a stopped section while another plays waits for the playing
+ * section's lap edge. There the source stops and, on the next sample, the
+ * target records its first take or overdubs from its top. */
+static void test_song_record_requests_wait(void) {
+  printf("test_song_record_requests_wait\n");
+  for (int stopped = 0; stopped < 2; ++stopped) {
+    le_engine* e = song_queue_fixture();
+    le_snapshot s;
+    const int target = stopped ? 1 : 3;
+    CHECK(le_engine_play(e, 0) == LE_OK);
+    drain(e);
+    tg_advance(e, 30);
+    CHECK(le_engine_record(e, target) == LE_OK);
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.song_queued_track == target && s.song_queue_record == 1);
+    CHECK(s.song_queue_progress == 0.0f);
+    CHECK(s.tracks[target].pending == 1);
+    CHECK(s.tracks[target].pending_trigger == 3);
+    CHECK(s.tracks[target].state ==
+          (stopped ? LE_TRACK_STOPPED : LE_TRACK_EMPTY));
+    CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+    tg_advance(e, 35);
+    le_engine_get_snapshot(e, &s);
+    CHECK(fabsf(s.song_queue_progress - 0.5f) < 1e-6f);
+    tg_advance(e, 34);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+    CHECK(s.tracks[target].state ==
+          (stopped ? LE_TRACK_STOPPED : LE_TRACK_EMPTY));
+    float in[2] = {0}, out[2];
+    le_engine_process(e, out, in, 2); /* straddles the edge */
+    CHECK(fabsf(out[0] - 0.2f) < 1e-5f);
+    CHECK(fabsf(out[1] - (stopped ? 0.6f : 0.0f)) < 1e-5f);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+    CHECK(s.tracks[target].state ==
+          (stopped ? LE_TRACK_OVERDUBBING : LE_TRACK_RECORDING));
+    CHECK(s.tracks[target].pending == 0);
+    CHECK(s.song_queued_track == -1 && s.song_queue_record == 0);
+    if (stopped) {
+      CHECK(e->tracks[target].free_clock.position == 1); /* from its top */
+    } else {
+      CHECK(e->tracks[target].record_pos == 1);
+    }
+    CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
+    le_engine_destroy(e);
+  }
+
+  le_engine* e = song_queue_fixture();
+  le_snapshot s;
+  CHECK(le_engine_play(e, 0) == LE_OK);
   drain(e);
-  for (int i = 0; i < 900 &&
-       100 - e->tracks[0].free_clock.position !=
-       90 - e->tracks[1].free_clock.position; ++i) tg_advance(e, 1);
-  const int remaining = 100 - e->tracks[0].free_clock.position;
-  CHECK(remaining == 90 - e->tracks[1].free_clock.position);
-  CHECK(remaining > 20);
-  CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
-  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
+  tg_advance(e, 10);
+  /* Stopping the source drops a waiting Record and its arm. */
+  CHECK(le_engine_record(e, 3) == LE_OK);
   drain(e);
-  tg_advance(e, 20);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == -1);
+  CHECK(s.tracks[3].pending == 0 && s.tracks[3].state == LE_TRACK_EMPTY);
+  tg_advance(e, 200); /* and nothing records later */
+  CHECK(load_i32(&e->tracks[3].a_state) == LE_TRACK_EMPTY);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  tg_advance(e, 10);
+  /* A second Record on a waiting Record cancels it. */
+  CHECK(le_engine_record(e, 3) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 3) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == -1);
+  CHECK(s.tracks[3].pending == 0 && s.tracks[3].state == LE_TRACK_EMPTY);
+  /* A Record on a section waiting to play turns it into a Record... */
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 1 && s.song_queue_record == 0);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 1 && s.song_queue_record == 1);
+  CHECK(s.tracks[1].pending_trigger == 3);
+  /* ...and a Play on it cancels, whatever its kind, clearing the arm. */
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == -1);
+  CHECK(s.tracks[1].pending == 0 && s.tracks[1].state == LE_TRACK_STOPPED);
+  /* Another request replaces a waiting Record and drops its arm. */
+  CHECK(le_engine_record(e, 3) == LE_OK);
+  drain(e);
   CHECK(le_engine_play(e, 2) == LE_OK);
   drain(e);
-  tg_advance(e, remaining - 20 + 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 2 && s.song_queue_record == 0);
+  CHECK(s.tracks[3].pending == 0 && s.tracks[3].state == LE_TRACK_EMPTY);
+  /* Overdub on the playing section is immediate and keeps the request; the
+   * handoff ends the pass on the lap edge. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.song_queued_track == 2);
+  tg_advance(e, 100 - e->tracks[0].free_clock.position);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[2].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[2].free_clock.position == 0);
+  CHECK(s.song_queued_track == -1);
+  /* With nothing sounding a Record acts at once, on that section alone. */
+  CHECK(le_engine_stop_track(e, 2) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 3) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[3].state == LE_TRACK_RECORDING);
+  CHECK(s.song_queued_track == -1 && s.tracks[3].pending == 0);
+  for (int c = 0; c < 3; ++c) CHECK(s.tracks[c].state == LE_TRACK_STOPPED);
+  le_engine_destroy(e);
+}
+
+/* The performance log hears a waiting Record only when it starts: the
+ * source's STOP and the target's RECORD on the handoff frame. */
+static void test_song_record_handoff_logs_at_the_edge(void) {
+  printf("test_song_record_handoff_logs_at_the_edge\n");
+  le_engine* e = song_queue_fixture();
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  tg_advance(e, 20);
+  CHECK(le_engine_record(e, 3) == LE_OK);
+  drain(e);
+  tg_advance(e, 81);
   CHECK(le_perf_disarm(e) == LE_OK);
-  const size_t both_n = read_binary_file_for_test(path, buf, sizeof(buf));
-  CHECK(both_n >= LE_TEST_EVENTS_HEADER_BYTES);
-  const size_t both = log_entry_count(both_n);
-  CHECK(count_log_entries_for_channel(buf, both, LE_CMD_STOP, 0) == 1);
-  CHECK(count_log_entries_for_channel(buf, both, LE_CMD_STOP, 1) == 1);
-  CHECK(count_log_entries_for_channel(buf, both, LE_CMD_PLAY, 2) == 1);
-  CHECK(frame_of_log_entry_for_channel(buf, both, LE_CMD_STOP, 0) ==
-        (uint64_t)remaining);
-  CHECK(frame_of_log_entry_for_channel(buf, both, LE_CMD_STOP, 1) ==
-        (uint64_t)remaining);
-  CHECK(frame_of_log_entry_for_channel(buf, both, LE_CMD_PLAY, 2) ==
-        (uint64_t)remaining);
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+  CHECK(count_log_entries_for_channel(buf, count, LE_CMD_RECORD, 3) == 1);
+  CHECK(count_log_entries_for_channel(buf, count, LE_CMD_STOP, 0) == 1);
+  CHECK(frame_of_log_entry_for_channel(buf, count, LE_CMD_STOP, 0) == 100);
+  CHECK(frame_of_log_entry_for_channel(buf, count, LE_CMD_RECORD, 3) == 100);
   le_engine_destroy(e);
 }
 
@@ -24913,38 +25014,33 @@ static void test_song_mode_independent_lengths_wraps(void) {
 
   /* 4 mutually prime lengths (a section per track): enough to prove no
    * shared-grid interference between sections without wholesale duplicating
-   * Free's own 8-track proof of the same underlying clock math. */
+   * Free's own 8-track proof of the same underlying clock math. Each one is
+   * recorded alone (#1323), so the last one recorded is the one playing. */
   const int32_t len[4] = {97, 101, 103, 107};
   for (int32_t ch = 0; ch < 4; ++ch) {
-    fm_record_track(e, ch, len[ch]);
+    sm_record_section(e, ch, len[ch], 0.0f);
   }
 
   le_engine_get_snapshot(e, &s);
   for (int32_t ch = 0; ch < 4; ++ch) {
-    CHECK(s.tracks[ch].state == LE_TRACK_PLAYING);
+    CHECK(s.tracks[ch].state ==
+          (ch == 3 ? LE_TRACK_PLAYING : LE_TRACK_STOPPED));
     CHECK(s.tracks[ch].length_frames == len[ch]);
     CHECK(e->tracks[ch].free_clock.length == len[ch]);
   }
   CHECK(load_i32(&e->a_master_len) == 0);
   CHECK(e->clock.length == 0);
 
-  int32_t base_pos[4];
-  uint64_t base_iter[4];
-  for (int32_t ch = 0; ch < 4; ++ch) {
-    base_pos[ch] = e->tracks[ch].free_clock.position;
-    base_iter[ch] = e->tracks[ch].free_iteration;
-  }
-
+  /* Each section wraps on its own length when it plays, from its top. */
   const int N = 1500; /* several wraps on every section, even the longest */
-  tg_advance(e, N);
-
   for (int32_t ch = 0; ch < 4; ++ch) {
-    const int64_t total = (int64_t)base_pos[ch] + N;
-    const int32_t expect_pos = (int32_t)(total % len[ch]);
-    const uint64_t expect_iter = base_iter[ch] + (uint64_t)(total / len[ch]);
-    CHECK(e->tracks[ch].free_clock.position == expect_pos);
-    CHECK(e->tracks[ch].free_iteration == expect_iter);
-    CHECK(expect_iter >= base_iter[ch] + 3);
+    for (int32_t c = 0; c < 4; ++c) CHECK(le_engine_stop_track(e, c) == LE_OK);
+    drain(e);
+    CHECK(le_engine_play(e, ch) == LE_OK);
+    tg_advance(e, N);
+    CHECK(e->tracks[ch].free_clock.position == N % len[ch]);
+    CHECK(e->tracks[ch].free_iteration == (uint64_t)(N / len[ch]));
+    CHECK(N / len[ch] >= 3);
   }
 
   CHECK(load_i32(&e->a_master_len) == 0);
@@ -24960,33 +25056,50 @@ static void test_song_mode_one_capturer_handoff_finalizes_to_own_length(
   le_engine* e = sm_make_song_engine(1000);
   le_snapshot s;
 
-  /* Section 0 already established. */
-  fm_record_track(e, 0, 2000);
-  le_engine_get_snapshot(e, &s);
+  /* Section 0 already established, stopped. */
+  sm_record_section(e, 0, 2000, 0.0f);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  drain(e);
   const int32_t sec0_len_before = e->tracks[0].free_clock.length;
 
   /* Section 1 starts its own defining recording, left in flight. */
-  le_engine_record(e, 1);
+  CHECK(le_engine_record(e, 1) == LE_OK);
   tg_advance(e, 400);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
 
-  /* Punching in on section 0 hands off the one input stream
-   * (close_active_capture -- unconditional and mode-agnostic, unchanged by
-   * B4): section 1's in-flight recording finalizes RIGHT HERE, to ITS OWN
-   * length -- direct per-track presses, exactly as the spec's "no advance
-   * gesture, no special in-flight rule" (song-mode-spec.md §2 Q4) says. */
-  le_engine_record(e, 0);
+  /* A Record on section 0 while section 1 records does not take the input
+   * stream (#1323): one section at a time, so it waits for section 1's
+   * end. Section 1's first take has no end yet, so the wait shows none. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
   tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.song_queued_track == 0 && s.song_queue_record == 1);
+  CHECK(s.song_queue_progress == 0.0f);
 
+  /* Closing section 1's take sets its own length (after the seam
+   * crossfade's deferral); it plays one lap. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  tg_advance(e, 20);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
-  CHECK(s.tracks[1].length_frames == 400);
-  CHECK(e->tracks[1].free_clock.length == 400);
+  CHECK(s.tracks[1].length_frames == 401);
+  CHECK(e->tracks[1].free_clock.length == 401);
   CHECK(e->tracks[1].free_clock.length != sec0_len_before);
+  CHECK(s.song_queued_track == 0 && s.song_queue_progress > 0.0f);
 
+  /* At the end of that lap section 1 stops and section 0 overdubs from its
+   * top, on its own unchanged clock. */
+  const int remaining = 401 - e->tracks[1].free_clock.position;
+  tg_advance(e, remaining);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
   CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
   CHECK(e->tracks[0].free_clock.length == sec0_len_before);
+  CHECK(e->tracks[0].free_clock.position == 0);
+  CHECK(s.song_queued_track == -1 && s.song_queue_record == 0);
 
   CHECK(load_i32(&e->a_master_len) == 0);
   CHECK(e->clock.length == 0);
@@ -25134,8 +25247,8 @@ static void test_song_mode_redo_from_empty_restores_targeted_track_only(
   le_engine* e = sm_make_song_engine(1000);
   le_snapshot s;
 
-  fm_record_track(e, 0, 811);
-  fm_record_track(e, 1, 823);
+  sm_record_section(e, 0, 811, 0.0f);
+  sm_record_section(e, 1, 823, 0.0f); /* stops section 0 first */
   tg_advance(e, 300);
 
   const int32_t sib_pos_before = e->tracks[1].free_clock.position;
@@ -25151,10 +25264,11 @@ static void test_song_mode_redo_from_empty_restores_targeted_track_only(
   tg_advance(e, 1);
 
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  /* Back stopped, since section 1 is the one playing (#1323). */
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
   CHECK(s.tracks[0].length_frames == 811);
   CHECK(e->tracks[0].free_clock.length == 811);
-  CHECK(e->tracks[0].free_clock.position == 1);
+  CHECK(e->tracks[0].free_clock.position == 0);
   CHECK(e->tracks[0].free_iteration == 0);
 
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
@@ -25171,8 +25285,8 @@ static void test_song_mode_restore_clear_restores_targeted_track_only(void) {
   le_engine* e = sm_make_song_engine(1000);
   le_snapshot s;
 
-  fm_record_track(e, 0, 811);
-  fm_record_track(e, 1, 823);
+  sm_record_section(e, 0, 811, 0.0f);
+  sm_record_section(e, 1, 823, 0.0f); /* stops section 0 first */
   tg_advance(e, 300);
 
   const int32_t sib_pos_before = e->tracks[1].free_clock.position;
@@ -25189,7 +25303,8 @@ static void test_song_mode_restore_clear_restores_targeted_track_only(void) {
   tg_advance(e, 1);
 
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  /* Back as it was cleared: stopped, since section 1 is the one playing. */
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
   CHECK(s.tracks[0].length_frames == 811);
   CHECK(e->tracks[0].free_clock.length == 811);
   CHECK(e->tracks[0].free_iteration == 0);
@@ -27282,7 +27397,7 @@ static void test_history_restore_uses_current_mode_clock(void) {
       CHECK(snapshot.tracks[0].length_frames == 2000);
       CHECK(snapshot.tracks[0].multiple == 1);
       CHECK(snapshot.tracks[0].sync_divisor == 0);
-      fm_record_track(e, 1, 500);
+      sm_record_section(e, 1, 500, 0.0f); /* alone in Song (#1323) */
       le_engine_get_snapshot(e, &snapshot);
       CHECK(snapshot.tracks[1].length_frames == 500);
       CHECK(snapshot.master_length_frames == 0);
@@ -28510,6 +28625,228 @@ static void test_band_section_toggle_rejected_for_empty_track(void) {
   sb_make_primary(e, 1.0f);
   CHECK(le_engine_toggle_section(e, 1) == LE_ERR_INVALID); /* still EMPTY */
   le_engine_destroy(e);
+}
+
+/* Band keeps the primary plus one section (#1323): a Record or a Play on a
+ * second section while one plays waits for that section's lap end and
+ * lands on the primary's next loop top, in phase with it. The primary
+ * plays throughout. With only the primary playing a section starts at once,
+ * as before. */
+static void test_band_one_section_handoff(void) {
+  printf("test_band_one_section_handoff\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 1.0f);
+  sb_arm_and_start(e, 1);
+  process_const(e, 2.0f, 2 * SB_BASE, out);
+  le_engine_record(e, 1); /* two base loops, finalized on the top */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].multiple == 2);
+
+  /* Record on an empty section while section 1 plays: it waits. */
+  process_const(e, 0.0f, 5, out);
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 2 && s.song_queue_record == 1);
+  CHECK(s.tracks[2].pending_trigger == 3);
+  CHECK(s.tracks[2].state == LE_TRACK_EMPTY);
+  const int32_t len1 = 2 * SB_BASE;
+  const int32_t pos1 = (int32_t)(((e->loop_iteration - e->tracks[1].start_iter) *
+                                   (uint64_t)SB_BASE + e->clock.position) %
+                                  (uint64_t)len1);
+  const int expected = len1 - pos1;
+  CHECK(expected > SB_BASE); /* past the next primary top: no early start */
+  int frames = 0;
+  while (load_i32(&e->tracks[2].a_state) == LE_TRACK_EMPTY && frames < 200) {
+    CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING);
+    if (frames == 4) {
+      le_engine_get_snapshot(e, &s);
+      CHECK(s.song_queue_progress > 0.0f && s.song_queue_progress < 1.0f);
+    }
+    tg_advance(e, 1);
+    ++frames;
+  }
+  CHECK(frames == expected);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+  CHECK(s.tracks[2].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.song_queued_track == -1 && s.tracks[2].pending == 0);
+  process_const(e, 3.0f, SB_BASE, out);
+  le_engine_record(e, 2); /* one base loop, on the top */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[2].multiple == 1);
+
+  /* Play section 1 while section 2 plays: it waits for section 2's end. */
+  process_const(e, 0.0f, 3, out);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.song_queued_track == 1 && s.song_queue_record == 0);
+  frames = 0;
+  while (load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED && frames < 200) {
+    CHECK(load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING);
+    tg_advance(e, 1);
+    ++frames;
+  }
+  CHECK(frames == SB_BASE - 3);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  /* With only the primary playing, a section starts at once. */
+  CHECK(le_engine_stop_track(e, 1) == LE_OK);
+  process_const(e, 0.0f, 5, out);
+  CHECK(le_engine_play(e, 2) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].state == LE_TRACK_PLAYING);
+  CHECK(s.song_queued_track == -1);
+  /* The primary is no section: a Play on it never waits. */
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.song_queued_track == -1);
+  /* From a stopped rig a section wakes the primary, not the other
+   * sections. */
+  for (int c = 0; c < 3; ++c) CHECK(le_engine_stop_track(e, c) == LE_OK);
+  drain(e);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
+  /* A section's own grid arm, set while no other section sounded, is still
+   * cancelled by a second Record once one does. */
+  CHECK(le_engine_stop_track(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 3) == LE_OK); /* the primary-top arm */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[3].pending == 1 && s.tracks[3].pending_trigger == 0);
+  CHECK(le_engine_play(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 3) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[3].pending == 0 && s.tracks[3].state == LE_TRACK_EMPTY);
+  CHECK(s.song_queued_track == -1);
+  le_engine_destroy(e);
+}
+
+/* Band (#1323), the rest of the handoff: a Record on a stopped section waits
+ * and overdubs at the handoff; a Once source that ends between primary tops
+ * hands off on the next top; a held rig drops the request; the section that
+ * sounded last is kept for Play All, never the primary. */
+static void test_band_handoff_overdub_once_and_hold(void) {
+  printf("test_band_handoff_overdub_once_and_hold\n");
+  for (int hold = 0; hold < 2; ++hold) {
+    le_engine* e = make_configured_engine();
+    float out[64];
+    le_snapshot s;
+    CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
+    drain(e);
+    sb_make_primary(e, 1.0f);
+    sb_arm_and_start(e, 1);
+    process_const(e, 2.0f, SB_BASE, out);
+    le_engine_record(e, 1); /* one base loop */
+    drain(e);
+    CHECK(le_engine_stop_track(e, 1) == LE_OK);
+    drain(e);
+    sb_arm_and_start(e, 2);
+    process_const(e, 3.0f, SB_BASE / 2, out);
+    le_engine_record(e, 2); /* half a base loop: a division */
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[2].state == LE_TRACK_PLAYING);
+    CHECK(s.tracks[2].sync_divisor == 2);
+    CHECK(s.song_last_section == 2);
+
+    /* A Record on stopped section 1 while 2 plays waits, then overdubs on
+     * the primary's top, in phase. */
+    process_const(e, 0.0f, 3, out);
+    CHECK(le_engine_record(e, 1) == LE_OK);
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.song_queued_track == 1 && s.song_queue_record == 1);
+    CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+    int frames = 0;
+    while (load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED &&
+           frames < 100) {
+      tg_advance(e, 1);
+      ++frames;
+    }
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.master_position_frames == 0);
+    CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
+    CHECK(s.tracks[2].state == LE_TRACK_STOPPED);
+    CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+    CHECK(s.song_last_section == 1);
+    le_engine_record(e, 1); /* punch out */
+    drain(e);
+    CHECK(load_i32(&e->tracks[1].a_state) == LE_TRACK_PLAYING);
+    CHECK(le_engine_stop_track(e, 1) == LE_OK);
+    drain(e);
+
+    /* Once on the division, started 9 frames into the primary: its first
+     * whole lap ends at frame 8 of the next primary loop, between tops. A
+     * request made after that top waits for that end, then for the top. */
+    CHECK(le_engine_set_one_shot(e, 2, 1) == LE_OK);
+    drain(e);
+    while (e->clock.position != 9) tg_advance(e, 1);
+    CHECK(le_engine_play(e, 2) == LE_OK);
+    drain(e);
+    while (e->clock.position != 4) tg_advance(e, 1);
+    CHECK(load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING);
+    CHECK(le_engine_play(e, 1) == LE_OK);
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.song_queued_track == 1 && s.song_queue_record == 0);
+    if (hold) {
+      CHECK(le_engine_stop_track(e, 0) == LE_OK); /* the primary */
+      drain(e);
+    }
+    int ended = -1;
+    frames = 0;
+    while (load_i32(&e->tracks[1].a_state) == LE_TRACK_STOPPED &&
+           frames < 4 * SB_BASE) {
+      tg_advance(e, 1);
+      ++frames;
+      if (ended < 0 && load_i32(&e->tracks[2].a_state) == LE_TRACK_STOPPED) {
+        ended = frames;
+        CHECK(e->clock.position != 0 || hold); /* between primary tops */
+      }
+    }
+    le_engine_get_snapshot(e, &s);
+    CHECK(ended > 0);
+    if (hold) {
+      /* Nothing runs once the division ends: the request is dropped. */
+      CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+      CHECK(s.song_queued_track == -1);
+    } else {
+      CHECK(frames > ended);
+      CHECK(s.master_position_frames == 0);
+      CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+      CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+      CHECK(s.song_queued_track == -1);
+    }
+    le_engine_destroy(e);
+  }
 }
 
 /* THE core Band arming test: a section-transport press at a NON-boundary
@@ -36659,12 +36996,14 @@ int main(void) {
   test_song_queue_exact_boundary_both_channel_orders();
   test_song_queue_replace_cancel_and_current();
   test_song_queue_invalidation_and_capture();
-  test_song_queue_one_shot_and_several_playing();
+  test_song_queue_one_shot();
   test_song_queue_waits_for_a_reversed_lap();
   test_song_record_from_held_starts_only_that_section();
   test_song_last_section();
   test_song_queue_free_mode_keeps_immediate_play();
   test_song_queue_logs_committed_handoff_only();
+  test_song_record_requests_wait();
+  test_song_record_handoff_logs_at_the_edge();
   test_song_mode_independent_lengths_wraps();
   test_song_mode_one_capturer_handoff_finalizes_to_own_length();
   test_song_mode_commit_session_rejected_leaves_master_dormant();
@@ -36775,6 +37114,8 @@ int main(void) {
   test_band_section_toggle_rejected_for_primary();
   test_band_section_toggle_rejected_for_empty_track();
   test_band_section_start_stop_quantized_to_primary_top();
+  test_band_one_section_handoff();
+  test_band_handoff_overdub_once_and_hold();
   test_band_section_toggle_rejected_when_primary_not_established();
   test_band_section_pending_toggle_survives_record_press();
   test_band_section_pending_record_survives_toggle_press();
