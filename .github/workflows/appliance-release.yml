@@ -379,10 +379,11 @@ jobs:
             ${{ env.YOCTO_WORK_DIR }}/downloads
           # Per embedder: the ivi spike image (#1318) must not be the entry a
           # shipping build restores, or the next release rebuilds weston/GTK.
+          # No embedder-less fallback key: `yocto-sstate-<os>-` would match the
+          # other embedder's entries too and restore whichever is newest.
           key: yocto-sstate-${{ runner.os }}-${{ needs.determine-meta.outputs.embedder }}-${{ hashFiles('deploy/yocto/**') }}
           restore-keys: |
             yocto-sstate-${{ runner.os }}-${{ needs.determine-meta.outputs.embedder }}-
-            yocto-sstate-${{ runner.os }}-
 
       # segno-kiosk-image is already a dependency of the bundle, but name it
       # explicitly: the .wic is a deliverable now, not a build by-product.
@@ -508,7 +509,7 @@ jobs:
           # the spike and a rollback moves it back, without reflashing.
           if [ '${{ needs.determine-meta.outputs.embedder }}' = ivi ]; then
             name="$name-ivi"
-            cp release-artifacts/*.raucb "$out/$name.raucb"
+            cp "release-artifacts/segno-appliance-$version.raucb" "$out/$name.raucb"
           fi
           # gzip -1, not bzip2/zstd: present on every runner, and fast enough on
           # a mostly-zero 8 GiB image. macOS `gunzip` reads it with no install.
