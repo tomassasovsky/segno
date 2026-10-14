@@ -160,9 +160,11 @@ class _TouchCalibrationViewState extends State<TouchCalibrationView> {
         switch (state.phase) {
           case .kept || .reverted:
             Navigator.maybePop(context);
-          case .capture || .test || .applying:
+          case .capture || .test:
             if (_readout) unawaited(_mirror(state));
-          case .loading || .failed:
+          // The 7" keeps its last target while a calibration is applied,
+          // stored or reverted, rather than blanking for a moment.
+          case .loading || .applying || .saving || .reverting || .failed:
             return;
         }
       },

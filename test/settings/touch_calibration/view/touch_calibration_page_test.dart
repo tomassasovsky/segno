@@ -93,9 +93,10 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      expect(client.calls, ['read main', 'write main']);
+      expect(client.calls, ['read main', 'apply main']);
+      expect(client.stored, isNull);
       // Taps that land on the targets fit the identity.
-      final stored = client.stored!;
+      final stored = client.inForce!;
       for (final (got, want) in [
         (stored.a, 1.0),
         (stored.b, 0.0),
@@ -120,7 +121,8 @@ void main() {
       await tester.tap(find.byKey(const Key('touch_calibration_keep')));
       await tester.pumpAndSettle();
       expect(find.byType(TouchCalibrationPage), findsNothing);
-      expect(client.calls, ['read main', 'write main']);
+      expect(client.calls, ['read main', 'apply main', 'write main']);
+      expect(client.stored, stored);
     });
 
     testWidgets('the main targets sit in the pen 30 area', (tester) async {
@@ -149,7 +151,7 @@ void main() {
       }
       await tester.tap(find.byKey(const Key('touch_calibration_cancel')));
       await tester.pumpAndSettle();
-      expect(client.calls.last, 'reset main');
+      expect(client.calls.last, 'restore main');
       expect(find.byType(TouchCalibrationPage), findsNothing);
     });
 
@@ -163,7 +165,7 @@ void main() {
       expect(text(tester, 'touch_calibration_countdown'), '1s');
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
-      expect(client.calls.last, 'reset main');
+      expect(client.calls.last, 'restore main');
       expect(find.byType(TouchCalibrationPage), findsNothing);
     });
   });
@@ -195,7 +197,7 @@ void main() {
         link.onCalibrationTap!(point);
         await tester.pumpAndSettle();
       }
-      expect(client.calls, ['read readout', 'write readout']);
+      expect(client.calls, ['read readout', 'apply readout']);
       expect(link.shown.last, (
         target: TouchCalibrationPage.testTargets.first,
         label: 'Test 1 of 3',
