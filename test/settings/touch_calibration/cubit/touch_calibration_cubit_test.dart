@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/settings/touch_calibration/cubit/touch_calibration_cubit.dart';
@@ -61,9 +63,9 @@ void main() {
     fakeAsync((async) {
       final c = cubit();
       capture(async, c);
-      expect(client.calls, ['read readout', 'write readout']);
+      expect(client.calls, ['read readout', 'apply readout']);
       for (final target in _capture) {
-        final back = client.stored!.map(_skew.map(target));
+        final back = client.inForce!.map(_skew.map(target));
         expect(back.x, closeTo(target.x, 1e-9));
         expect(back.y, closeTo(target.y, 1e-9));
       }
@@ -79,6 +81,17 @@ void main() {
     });
   });
 
+  test('stores nothing until Keep, so a power cycle drops an untried fit', () {
+    fakeAsync((async) {
+      const previous = TouchMatrix(1.1, 0, -0.02, 0, 0.9, 0.04);
+      client.stored = client.inForce = previous;
+      final c = cubit();
+      capture(async, c);
+      expect(client.inForce, isNot(previous));
+      expect(client.stored, previous);
+    });
+  });
+
   test('composes the fit with the calibration already in force', () {
     fakeAsync((async) {
       const previous = TouchMatrix(1.1, 0, -0.02, 0, 0.9, 0.04);
@@ -88,7 +101,7 @@ void main() {
       final fit = fitTouchMatrix([
         for (final t in _capture) _skew.map(t),
       ], _capture)!;
-      expect(client.stored, fit.after(previous));
+      expect(client.inForce, fit.after(previous));
     });
   });
 
@@ -129,34 +142,36 @@ void main() {
       expect(c.state.secondsLeft, 20);
       async.elapse(const Duration(seconds: 20));
       expect(c.state.phase, TouchCalibrationPhase.reverted);
-      expect(client.calls.last, 'reset readout');
-      expect(client.stored, isNull);
+      expect(client.calls.last, 'restore readout');
+      expect(client.inForce, isNull);
     });
   });
 
   test('the countdown puts a previous calibration back', () {
     fakeAsync((async) {
       const previous = TouchMatrix(1.1, 0, -0.02, 0, 0.9, 0.04);
-      client.stored = previous;
+      client.stored = client.inForce = previous;
       final c = cubit();
       capture(async, c);
       async.elapse(const Duration(seconds: 30));
       expect(c.state.phase, TouchCalibrationPhase.reverted);
-      expect(client.stored, previous);
+      expect(client.inForce, previous);
     });
   });
 
-  test('Keep stops the countdown and leaves the new calibration', () {
+  test('Keep stores the new calibration and stops the countdown', () {
     fakeAsync((async) {
       final c = cubit();
       capture(async, c);
-      final applied = client.stored;
+      final applied = client.inForce;
       c.keep();
+      expect(c.state.phase, TouchCalibrationPhase.saving);
       async.elapse(const Duration(seconds: 60));
       expect(c.state.phase, TouchCalibrationPhase.kept);
       expect(client.stored, applied);
       _close(async, c);
-      expect(client.stored, applied);
+      expect(client.calls.last, 'write readout');
+      expect(client.inForce, applied);
     });
   });
 
@@ -166,7 +181,7 @@ void main() {
       capture(async, c);
       c.restart();
       async.flushMicrotasks();
-      expect(client.calls.last, 'reset readout');
+      expect(client.calls.last, 'restore readout');
       expect(c.state.phase, TouchCalibrationPhase.capture);
       expect(c.state.step, 0);
       async.elapse(const Duration(seconds: 60));
@@ -190,16 +205,93 @@ void main() {
       final c = cubit();
       capture(async, c);
       _close(async, c);
-      expect(client.calls.last, 'reset readout');
+      expect(client.calls.last, 'restore readout');
     });
   });
 
-  test('a failed write says so', () {
+  test('Cancel while the fit is applied reverts it once it lands', () {
     fakeAsync((async) {
-      client.failWrites = true;
+      client.applyGate = Completer<void>();
+      final c = cubit();
+      capture(async, c);
+      expect(c.state.phase, TouchCalibrationPhase.applying);
+      c.cancel();
+      async.flushMicrotasks();
+      expect(client.calls.last, 'apply readout');
+      client.applyGate!.complete();
+      async.flushMicrotasks();
+      expect(client.calls.last, 'restore readout');
+      expect(client.inForce, isNull);
+      expect(c.state.phase, TouchCalibrationPhase.reverted);
+    });
+  });
+
+  test('leaving while the fit is applied reverts it once it lands', () {
+    fakeAsync((async) {
+      client.applyGate = Completer<void>();
+      final c = cubit();
+      capture(async, c);
+      _close(async, c);
+      client.applyGate!.complete();
+      async.flushMicrotasks();
+      expect(client.calls, [
+        'read readout',
+        'apply readout',
+        'restore readout',
+      ]);
+      expect(client.inForce, isNull);
+    });
+  });
+
+  test('Keep and test taps do nothing while a revert runs', () {
+    fakeAsync((async) {
+      final c = cubit();
+      capture(async, c);
+      c
+        ..restart()
+        ..keep()
+        ..tap(_test.first);
+      expect(c.state.phase, TouchCalibrationPhase.reverting);
+      async.flushMicrotasks();
+      expect(client.calls, isNot(contains('write readout')));
+      expect(client.stored, isNull);
+    });
+  });
+
+  test('a failed apply says so, and leaving still reverts', () {
+    fakeAsync((async) {
+      client.failApply = true;
       final c = cubit();
       capture(async, c);
       expect(c.state.phase, TouchCalibrationPhase.failed);
+      _close(async, c);
+      expect(client.calls.last, 'restore readout');
+    });
+  });
+
+  test('a failed Keep says so', () {
+    fakeAsync((async) {
+      client.failWrite = true;
+      final c = cubit();
+      capture(async, c);
+      c.keep();
+      async.flushMicrotasks();
+      expect(c.state.phase, TouchCalibrationPhase.failed);
+    });
+  });
+
+  test('a failed revert is tried again on leaving', () {
+    fakeAsync((async) {
+      client.failRestore = true;
+      final c = cubit();
+      capture(async, c);
+      c.cancel();
+      async.flushMicrotasks();
+      expect(c.state.phase, TouchCalibrationPhase.failed);
+      client.failRestore = false;
+      _close(async, c);
+      expect(client.calls.last, 'restore readout');
+      expect(client.inForce, isNull);
     });
   });
 }

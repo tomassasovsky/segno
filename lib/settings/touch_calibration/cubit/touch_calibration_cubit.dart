@@ -13,11 +13,17 @@ enum TouchCalibrationPhase {
   /// Tapping the capture targets.
   capture,
 
-  /// Storing and applying the measured calibration.
+  /// Applying the measured calibration, not yet stored.
   applying,
 
   /// Trying the new calibration, under the revert countdown.
   test,
+
+  /// Storing the new calibration, after Keep.
+  saving,
+
+  /// Putting the stored calibration back.
+  reverting,
 
   /// The new calibration was kept.
   kept,
@@ -64,12 +70,17 @@ class TouchCalibrationState extends Equatable {
 /// Measures one screen's touch calibration (pen 30, "Displays & touch
 /// calibration"): the player taps five targets, the fit that maps where the
 /// taps landed onto where they were aimed is applied, and the player tries it
-/// on three more before keeping it. Not kept within [testDuration], and the
-/// previous calibration comes back on its own, so a calibration that made the
-/// screen untouchable undoes itself.
+/// on three more before keeping it. Not kept within the test duration (30 s by
+/// default), and the previous calibration comes back on its own, so a
+/// calibration that made the screen untouchable undoes itself.
 ///
 /// Taps arrive through [tap], already in the screen's normalized coordinates,
 /// and already through the calibration in force: the fit is composed with it.
+///
+/// The new calibration is only applied while it is tried, and stored on Keep,
+/// so one that a power cycle interrupts is gone after the reboot. Helper calls
+/// run one at a time, in the order they were made: a revert never overtakes
+/// the apply it undoes.
 class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   /// Creates a [TouchCalibrationCubit] for [screen].
   TouchCalibrationCubit({
@@ -77,14 +88,16 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
     required TouchScreen screen,
     required List<TouchPoint> captureTargets,
     required List<TouchPoint> testTargets,
-    this.testDuration = const Duration(seconds: 30),
-    this.hitTolerance = 0.04,
+    Duration testDuration = const Duration(seconds: 30),
+    double hitTolerance = 0.04,
   }) : assert(captureTargets.length >= 3, 'a fit needs three points'),
        assert(testTargets.isNotEmpty, 'the test needs a target'),
        _client = client,
        _screen = screen,
        _captureTargets = captureTargets,
        _testTargets = testTargets,
+       _testDuration = testDuration,
+       _hitTolerance = hitTolerance,
        super(const TouchCalibrationState());
 
   final TouchCalibrationClient _client;
@@ -93,15 +106,27 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   final List<TouchPoint> _testTargets;
 
   /// How long the player has to keep a new calibration.
-  final Duration testDuration;
+  final Duration _testDuration;
 
   /// How close to a test target a tap has to land, in normalized units.
-  final double hitTolerance;
+  final double _hitTolerance;
 
   TouchMatrix? _previous;
+  TouchMatrix? _tried;
   final _observed = <TouchPoint>[];
+
+  /// Whether a calibration that is not stored may be in force: set before the
+  /// apply starts, so leaving while it runs still reverts it.
   var _applied = false;
   Timer? _countdown;
+  Future<void> _helper = Future.value();
+
+  /// Runs [op] after every helper call made before it.
+  Future<void> _serial(Future<void> Function() op) {
+    final next = _helper.then((_) => op());
+    _helper = next.then((_) {}, onError: (Object _) {});
+    return next;
+  }
 
   /// Reads the calibration in force and shows the first target.
   void start() => unawaited(_start());
@@ -157,7 +182,13 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
             secondsLeft: state.secondsLeft,
           ),
         );
-      case .loading || .applying || .kept || .reverted || .failed:
+      case .loading ||
+          .applying ||
+          .saving ||
+          .reverting ||
+          .kept ||
+          .reverted ||
+          .failed:
         return;
     }
   }
@@ -166,7 +197,7 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
       math.sqrt(
         math.pow(point.x - target.x, 2) + math.pow(point.y - target.y, 2),
       ) <=
-      hitTolerance;
+      _hitTolerance;
 
   Future<void> _fitAndApply() async {
     final fit = fitTouchMatrix(List.of(_observed), _captureTargets);
@@ -176,7 +207,7 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
       _capture();
       return;
     }
-    final matrix = fit.after(_previous ?? TouchMatrix.identity);
+    final matrix = _tried = fit.after(_previous ?? TouchMatrix.identity);
     emit(
       TouchCalibrationState(
         phase: .applying,
@@ -184,20 +215,23 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
         steps: _captureTargets.length,
       ),
     );
+    _applied = true;
     try {
-      await _client.write(_screen, matrix);
+      await _serial(() => _client.apply(_screen, matrix));
     } on Object {
-      if (!isClosed) emit(const TouchCalibrationState(phase: .failed));
+      if (!isClosed && state.phase == .applying) {
+        emit(const TouchCalibrationState(phase: .failed));
+      }
       return;
     }
-    _applied = true;
-    if (isClosed) return;
+    // Left, or cancelled, while it was applied: the revert is already queued.
+    if (isClosed || state.phase != .applying) return;
     emit(
       TouchCalibrationState(
         phase: .test,
         steps: _testTargets.length,
         target: _testTargets.first,
-        secondsLeft: testDuration.inSeconds,
+        secondsLeft: _testDuration.inSeconds,
       ),
     );
     _countdown = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
@@ -218,35 +252,51 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
       );
       return;
     }
-    _countdown?.cancel();
     unawaited(_revertThen(const TouchCalibrationState(phase: .reverted)));
   }
 
-  /// Keeps the new calibration.
+  /// Stores the new calibration.
   void keep() {
-    if (state.phase != .test) return;
+    final matrix = _tried;
+    if (state.phase != .test || matrix == null) return;
     _countdown?.cancel();
-    _applied = false;
-    emit(const TouchCalibrationState(phase: .kept));
+    emit(const TouchCalibrationState(phase: .saving));
+    unawaited(_save(matrix));
   }
 
-  /// Puts the previous calibration back and starts the capture over.
+  Future<void> _save(TouchMatrix matrix) async {
+    try {
+      await _serial(() => _client.write(_screen, matrix));
+    } on Object {
+      if (!isClosed) emit(const TouchCalibrationState(phase: .failed));
+      return;
+    }
+    _applied = false;
+    if (!isClosed) emit(const TouchCalibrationState(phase: .kept));
+  }
+
+  /// Puts the stored calibration back and starts the capture over.
   void restart() {
     if (state.phase != .test) return;
-    _countdown?.cancel();
     unawaited(_revertThen(null));
   }
 
   /// Leaves without changing anything: a calibration applied but not kept is
-  /// reverted first.
+  /// reverted first. Ignored once Keep is storing it.
   void cancel() {
-    _countdown?.cancel();
-    unawaited(_revertThen(const TouchCalibrationState(phase: .reverted)));
+    switch (state.phase) {
+      case .saving || .reverting || .kept || .reverted:
+        return;
+      case .loading || .capture || .applying || .test || .failed:
+        unawaited(_revertThen(const TouchCalibrationState(phase: .reverted)));
+    }
   }
 
   /// Reverts what this calibration applied, then emits [next], or starts the
   /// capture over when [next] is null.
   Future<void> _revertThen(TouchCalibrationState? next) async {
+    _countdown?.cancel();
+    emit(const TouchCalibrationState(phase: .reverting));
     try {
       await _revert();
     } on Object {
@@ -264,11 +314,12 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   Future<void> _revert() async {
     if (!_applied) return;
     _applied = false;
-    final previous = _previous;
-    if (previous == null) {
-      await _client.reset(_screen);
-    } else {
-      await _client.write(_screen, previous);
+    try {
+      await _serial(() => _client.restore(_screen));
+    } on Object {
+      // Still possibly in force: leaving the page tries again.
+      _applied = true;
+      rethrow;
     }
   }
 
