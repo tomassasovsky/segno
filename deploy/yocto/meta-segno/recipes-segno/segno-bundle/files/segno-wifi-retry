@@ -132,13 +132,6 @@ while :; do
     exit 0
   fi
 
-  # A Disconnect from the Network page turns the device's autoconnect off
-  # until the next activation. Reconnecting would undo the owner's action.
-  if [ "$(nmcli -g GENERAL.AUTOCONNECT device show "$IFACE" 2>/dev/null)" = "no" ]; then
-    log "$IFACE was disconnected by hand; respecting it"
-    exit 0
-  fi
-
   state=$(wifi_state)
   if [ "$state" = connected ]; then
     if [ "$attempt" -eq 0 ] && [ "$waited_on_nm" = no ]; then
@@ -157,6 +150,15 @@ while :; do
     [ "$(date +%s)" -lt "$deadline" ] || break
     sleep "$POLL"
     continue
+  fi
+
+  # A Disconnect from the Network page turns the device's autoconnect off
+  # until the next activation. Reconnecting would undo the owner's action.
+  # Checked after the in-flight wait: segno-wifi-ctl pauses the same flag for
+  # the length of a join (up_saved), and that join reads as connecting.
+  if [ "$(nmcli -g GENERAL.AUTOCONNECT device show "$IFACE" 2>/dev/null)" = "no" ]; then
+    log "$IFACE was disconnected by hand; respecting it"
+    exit 0
   fi
 
   listing=$(nmcli -t -f UUID,TYPE,AUTOCONNECT,TIMESTAMP connection show 2>/dev/null)

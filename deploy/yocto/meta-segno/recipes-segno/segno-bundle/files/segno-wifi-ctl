@@ -26,11 +26,13 @@
 set -eu
 
 # A passwd-file holds a key in the clear, so it must not outlive the helper,
-# even when it is stopped mid-join. An untrapped TERM skips the EXIT trap in
-# dash, so the signals exit through it.
+# even when it is stopped mid-join; and the device autoconnect up_saved paused
+# for an activation comes back. An untrapped TERM skips the
+# EXIT trap in dash, so the signals exit through it.
 passf=
 up_keyf=
-trap 'rm -f "$passf" "$up_keyf"' EXIT
+up_paused=
+trap 'rm -f "$passf" "$up_keyf"; resume_autoconnect' EXIT
 trap 'exit 1' HUP INT TERM
 
 IFACE="${SEGNO_WIFI_IFACE:-wlan0}"
@@ -410,6 +412,18 @@ write_passwd_file() {
 # while the key sits in the keyfile, and Join on a saved network only worked
 # after re-typing the password (#1326). nmcli reading a passwd-file is the
 # agent that answers. Open networks have no key and go up plainly.
+#
+# nmcli registers that agent before it asks for the activation, and NM
+# answers a new agent by auto-activating whichever profile it had blocked for
+# missing secrets (nm-policy secret_agent_registered). Ours then lands while
+# that one is still in config, NM drops the first without finishing it, and
+# the bench console sat with an orphaned activation stuck in "getting IP
+# configuration", reporting itself offline while traffic flowed (#1326). So
+# the device's autoconnect is paused for the length of the up: NM starts
+# nothing on wlan0 by itself, and an explicit activation is unaffected. Only
+# a device that may autoconnect is paused; one the owner disconnected by hand
+# is already blocked. Runtime state only: a reboot undoes an interrupted
+# pause.
 up_saved() {
     up_uuid=$1
     up_wait=$2
@@ -421,11 +435,23 @@ up_saved() {
     up_keyf=$(mktemp)
     chmod 600 "$up_keyf"
     write_passwd_file "$up_keyf" "$up_key"
+    if [ "$(nmcli -g GENERAL.AUTOCONNECT device show "$IFACE" 2>/dev/null)" = yes ] \
+        && nmcli device set "$IFACE" autoconnect no >/dev/null 2>&1; then
+        up_paused=$IFACE
+    fi
     up_rc=0
     nmcli --wait "$up_wait" connection up uuid "$up_uuid" passwd-file "$up_keyf" || up_rc=$?
     rm -f "$up_keyf"
     up_keyf=
+    resume_autoconnect
     return "$up_rc"
+}
+
+# Gives back the device autoconnect up_saved paused, if it paused it.
+resume_autoconnect() {
+    [ -n "$up_paused" ] || return 0
+    nmcli device set "$up_paused" autoconnect yes >/dev/null 2>&1 || true
+    up_paused=
 }
 
 # Stores the key on a saved profile through nmcli's editor, fed on stdin: an

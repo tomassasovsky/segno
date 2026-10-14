@@ -227,6 +227,15 @@ check "file is removed afterwards" no \
 check "the key is never in argv" no "$(called_with 'pass word')"
 teardown
 
+echo "pauses device autoconnect around its activation"
+setup
+run_retry
+check "exit 0" 0 "$?"
+check "pause, up, resume in that order" "no up yes" \
+    "$(grep -oE 'device set wlan0 autoconnect (no|yes)|connection up' "$work/nmcli-args" \
+        | sed 's/device set wlan0 autoconnect //; s/connection up/up/' | tr '\n' ' ' | sed 's/ $//')"
+teardown
+
 echo "an open network goes up without a passwd-file"
 setup
 PSK='' run_retry
