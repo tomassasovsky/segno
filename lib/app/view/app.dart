@@ -57,6 +57,7 @@ import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:storage_repository/storage_repository.dart';
 import 'package:toastification/toastification.dart';
+import 'package:touch_calibration_client/touch_calibration_client.dart';
 import 'package:update_repository/update_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
@@ -90,6 +91,7 @@ class App extends StatefulWidget {
     this.wifi = const WifiRepository(client: UnsupportedWifiClient()),
     this.brightness = const UnsupportedBrightnessClient(),
     this.displayOutputs = const UnknownDisplayOutputs(),
+    this.touchCalibration = const UnsupportedTouchCalibrationClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     this.cpuLoad = const CpuLoadRepository.unsupported(),
     this.removableVolumes = const InternalOnlyVolumes(),
@@ -114,6 +116,10 @@ class App extends StatefulWidget {
   /// Which connector each window is shown on and whether a panel is plugged
   /// in. Defaults unknown (a desktop).
   final DisplayOutputs displayOutputs;
+
+  /// Reads and sets each panel's touch calibration. Defaults unsupported,
+  /// which leaves Calibrate touch off the Displays page.
+  final TouchCalibrationClient touchCalibration;
 
   /// Reads what the appliance knows about itself — the disk, the box, and
   /// where it can export to. Defaults to the client that answers "unknown",
@@ -560,6 +566,8 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.wifi),
         RepositoryProvider.value(value: widget.brightness),
         RepositoryProvider.value(value: widget.displayOutputs),
+        RepositoryProvider.value(value: widget.touchCalibration),
+        RepositoryProvider.value(value: widget.waveformWindow),
         RepositoryProvider.value(value: widget.consoleFacts),
         RepositoryProvider.value(value: widget.cpuLoad),
         RepositoryProvider<RemovableVolumes>.value(

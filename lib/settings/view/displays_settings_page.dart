@@ -18,10 +18,12 @@ import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/shortcuts_help_sheet.dart';
+import 'package:segno/settings/touch_calibration/view/touch_calibration_page.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:toastification/toastification.dart';
+import 'package:touch_calibration_client/touch_calibration_client.dart';
 
 /// The toast that says an idle-dim choice was not saved.
 const String idleDimSaveFailedToast = 'idle_dim_save_failed';
@@ -119,38 +121,62 @@ class _DisplaysSettingsPageState extends State<DisplaysSettingsPage> {
   }
 }
 
-class _DisplayCards extends StatelessWidget {
+class _DisplayCards extends StatefulWidget {
   const _DisplayCards();
+
+  @override
+  State<_DisplayCards> createState() => _DisplayCardsState();
+}
+
+class _DisplayCardsState extends State<_DisplayCards> {
+  late final TouchCalibrationClient _touch = context
+      .read<TouchCalibrationClient>();
+  late final Future<bool> _calibratable = _touch.isSupported();
+
+  void _calibrate(TouchScreen screen) =>
+      Navigator.push(context, TouchCalibrationPage.route(screen));
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final unplugged = context.watch<DisplayPresenceCubit>().state;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        DisplayCard(
-          key: const Key('displays_card_track'),
-          role: DisplayRole.track,
-          title: l10n.displaysTrackDisplay,
-          roleLabel: l10n.displaysTrackRole,
-          panelLabel: l10n.displaysTrackPanel,
-          connected: !unplugged.contains(DisplayRole.track),
-        ),
-        const SizedBox(
-          width:
-              DisplaysSettingsPage.contentWidth -
-              2 * DisplaysSettingsPage.cardWidth,
-        ),
-        DisplayCard(
-          key: const Key('displays_card_main'),
-          role: DisplayRole.main,
-          title: l10n.displaysMainDisplay,
-          roleLabel: l10n.displaysMainRole,
-          panelLabel: l10n.displaysMainPanel,
-          connected: !unplugged.contains(DisplayRole.main),
-        ),
-      ],
+    return FutureBuilder<bool>(
+      future: _calibratable,
+      builder: (context, snapshot) {
+        final calibratable = snapshot.data ?? false;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DisplayCard(
+              key: const Key('displays_card_track'),
+              role: DisplayRole.track,
+              title: l10n.displaysTrackDisplay,
+              roleLabel: l10n.displaysTrackRole,
+              panelLabel: l10n.displaysTrackPanel,
+              connected: !unplugged.contains(DisplayRole.track),
+              onCalibrate: calibratable
+                  ? () => _calibrate(TouchScreen.readout)
+                  : null,
+            ),
+            const SizedBox(
+              width:
+                  DisplaysSettingsPage.contentWidth -
+                  2 * DisplaysSettingsPage.cardWidth,
+            ),
+            DisplayCard(
+              key: const Key('displays_card_main'),
+              role: DisplayRole.main,
+              title: l10n.displaysMainDisplay,
+              roleLabel: l10n.displaysMainRole,
+              panelLabel: l10n.displaysMainPanel,
+              connected: !unplugged.contains(DisplayRole.main),
+              onCalibrate: calibratable
+                  ? () => _calibrate(TouchScreen.main)
+                  : null,
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -60,6 +60,8 @@ dependencies:
   storage_repository:
     path: packages/storage_repository
   toastification: ^3.2.0
+  touch_calibration_client:
+    path: packages/touch_calibration_client
   update_repository:
     path: packages/update_repository
   url_launcher: ^6.3.0
