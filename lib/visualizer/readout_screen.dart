@@ -69,8 +69,8 @@ class ReadoutScreenLink {
     _announce();
   }
 
-  /// Tells the main screen a player touched the readout. Fire-and-forget:
-  /// the next touch says the same thing.
+  /// Tells the main screen a player touched the readout. Fire-and-forget: the
+  /// next touch says the same thing.
   void sendActivity() {
     _mainPort()?.send({'op': ScreenLinkOp.activity});
   }

@@ -125,8 +125,8 @@ abstract final class ScreenLinkOp {
 /// [SendPort]s. An unmodifiable or typed list nested in a readout map would
 /// make [SendPort.send] throw, so maps and lists are rebuilt as plain literals
 /// rather than trusted. A typed list therefore arrives as a plain list of its
-/// numbers, as it already does through the GTK window channel; bulk data that
-/// should stay compact goes through [packSamples] instead.
+/// numbers; bulk data that should stay compact goes through [packSamples]
+/// instead.
 ///
 /// Throws [ArgumentError] for anything else, at the sender, where the stack
 /// still says which field it was.

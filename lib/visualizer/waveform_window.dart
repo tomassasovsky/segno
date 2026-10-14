@@ -34,11 +34,11 @@ WaveformFrame waveformFrameFrom(
   final selectedTrack = payload['selectedTrack'];
   final samples = payload['samples'];
   return (
-    // `is List` covers the absent key and the garbled value in one test: a
-    // frame with no `samples` is the ordinary progress-only push, and one
-    // carrying something that is not a buffer is a frame that arrived
+    // `is Float32List` covers the absent key and the garbled value in one
+    // test: a frame with no `samples` is the ordinary progress-only push, and
+    // one carrying something that is not a buffer is a frame that arrived
     // damaged. Both hold what is on screen.
-    samples: samples is List ? _toFloat32List(samples) : previous.samples,
+    samples: samples is Float32List ? samples : previous.samples,
     // Every field degrades to what is already on screen rather than throwing
     // OR resetting: this crosses an engine boundary as a loose map, and a
     // malformed frame must neither take the second screen down mid-set nor
@@ -50,21 +50,6 @@ WaveformFrame waveformFrameFrom(
         ? selectedTrack
         : previous.selectedTrack,
   );
-}
-
-/// Coerces a frame's `samples` (a [Float32List], or a `List` of numbers) into a
-/// [Float32List].
-Float32List _toFloat32List(Object? raw) {
-  if (raw is Float32List) return raw;
-  if (raw is List) {
-    final out = Float32List(raw.length);
-    for (var i = 0; i < raw.length; i++) {
-      final v = raw[i];
-      out[i] = v is num ? v.toDouble() : 0.0;
-    }
-    return out;
-  }
-  return Float32List(0);
 }
 
 /// The root widget of the waveform window: the selected-track readout
