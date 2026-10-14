@@ -65,17 +65,18 @@ flash an appliance. Release 137 remains the device reference until a separate
 release and hardware-validation task records a newer installed build.
 
 Software checks cover the Dart application and affected packages, the native
-firmware contract and sketch behavior, appliance shell helpers, and the Linux
-builds in CI. Local screenshot comparisons had the same 52 failing tests on
+firmware contract and sketch behavior, appliance shell helpers, and the
+appliance bundle build in CI. Local screenshot comparisons had the same 52 failing tests on
 the unmodified master baseline; their results must stay separate from the
 functional checks and remote CI.
 
 ## Startup readiness and release inspection
 
-The narrowed #982 work retains the startup mitigation from
-`7adfb722250078ab40c54274a39bf3b5e4ab43c7` on current master. It uses the boot
-archive and install hook delivered by #990; it does not add the old branch's
-alternate boot-image extraction or post-install hook.
+The narrowed #982 work used the boot archive and install hook delivered by
+#990; it did not add the old branch's alternate boot-image extraction or
+post-install hook. Its startup mitigation for #970 (from
+`7adfb722250078ab40c54274a39bf3b5e4ab43c7`) waited for Weston and was removed
+with it (#1330).
 
 The app is ivi-homescreen, installed as `/usr/bin/segno`, drawing both screens
 over DRM/KMS with no compositor (#1330). `segno-kiosk-launch` starts it with
@@ -102,7 +103,7 @@ Run the shell suites with:
 bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_slots_tests.sh
 ```
 
-These checks do not establish compositor/EGL readiness, either screen's
-behavior after a Weston restart, or an installed update's boot/rollback
-behavior. Those remain device checks under #970 and the appliance integration
-boundary above. No operating-system migration is included.
+These checks do not establish DRM/EGL readiness, either screen's behavior
+after `segno.service` restarts, or an installed update's boot/rollback
+behavior. Those remain device checks under the appliance integration boundary
+above. No operating-system migration is included.

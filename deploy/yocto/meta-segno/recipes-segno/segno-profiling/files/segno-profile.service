@@ -1,4 +1,4 @@
-# Records the app's CPU, memory, main-loop and stack profile to /data/perf
+# Records the app's CPU, memory and stack profiles to /data/perf
 # (segno-profile-recorder, #1299). Experimental images only: a production unit
 # never starts it, so the field build pays nothing for it.
 [Unit]
@@ -11,7 +11,7 @@ Type=simple
 ExecCondition=/bin/sh -c 'grep -qx experimental /etc/segno/update-channel'
 ExecStart=/usr/bin/segno-profile-recorder
 # Below the app, far below the audio thread. The stack sampler pauses only the
-# app's main thread, for microseconds per sample.
+# main screen's UI thread, for microseconds per sample.
 Nice=10
 Restart=on-failure
 RestartSec=30

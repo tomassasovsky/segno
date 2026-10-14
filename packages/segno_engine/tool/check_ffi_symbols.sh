@@ -38,10 +38,9 @@ die() { echo "$SELF: error: $*" >&2; exit 1; }
 # --- Resolve inputs -----------------------------------------------------------
 so="${1:-}"
 [ -n "$so" ] || die "usage: $SELF <libsegno_engine.so> [bindings.dart]"
-# CI passes a glob (build/linux/*/debug/bundle/lib/libsegno_engine.so). If a
-# stale sibling arch directory makes it match twice, the second path would land
-# in $2 and be read as the bindings file -- a confusing failure a long way from
-# its cause. Name it here instead.
+# A glob that matches two libraries would put the second path in $2, where it
+# would be read as the bindings file -- a confusing failure a long way from its
+# cause. Name it here instead.
 [ "$#" -le 2 ] || die "expected at most 2 arguments, got $#: $*
   (a glob matching more than one library will do this)"
 [ -f "$so" ] || die "shared object not found: $so"

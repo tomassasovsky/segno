@@ -145,9 +145,8 @@ else
 fi
 
 # --- 8. A glob matching two libraries is named, not misread ------------------
-# CI invokes this with build/linux/*/debug/bundle/lib/libsegno_engine.so. A
-# stale sibling arch dir would put the second match in $2, where it would be
-# read as the bindings file and fail far from its cause.
+# A glob that matches two libraries would put the second match in $2, where it
+# would be read as the bindings file and fail far from its cause.
 out="$("$CHECK" "$FAKE_SO" "$FAKE_SO" "$FAKE_SO" 2>&1)"; rc=$?
 if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'at most 2 arguments'; then
   pass "over-expanded glob is reported as such"

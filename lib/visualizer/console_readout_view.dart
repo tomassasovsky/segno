@@ -12,7 +12,8 @@ import 'package:segno/visualizer/performance_readout.dart';
 /// tap, and encoder focus stays on the main display.
 ///
 /// **Proportional, not absolute.** The prototype draws the screen at 1280×720,
-/// but the device window's logical size depends on the compositor scale.
+/// but the view's logical size depends on its `pixel_ratio` in
+/// homescreen.toml.
 /// Every dimension here is the prototype's figure times the limiting-axis
 /// scale against that reference, so the layout is the design's at any logical
 /// size — the proportions are the contract, not the pixels.
