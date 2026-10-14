@@ -64,9 +64,9 @@ class TouchCalibrationState extends Equatable {
 /// Measures one screen's touch calibration (pen 30, "Displays & touch
 /// calibration"): the player taps five targets, the fit that maps where the
 /// taps landed onto where they were aimed is applied, and the player tries it
-/// on three more before keeping it. Not kept within [testDuration], and the
-/// previous calibration comes back on its own, so a calibration that made the
-/// screen untouchable undoes itself.
+/// on three more before keeping it. Not kept within the test duration (30 s by
+/// default), and the previous calibration comes back on its own, so a
+/// calibration that made the screen untouchable undoes itself.
 ///
 /// Taps arrive through [tap], already in the screen's normalized coordinates,
 /// and already through the calibration in force: the fit is composed with it.
@@ -77,14 +77,16 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
     required TouchScreen screen,
     required List<TouchPoint> captureTargets,
     required List<TouchPoint> testTargets,
-    this.testDuration = const Duration(seconds: 30),
-    this.hitTolerance = 0.04,
+    Duration testDuration = const Duration(seconds: 30),
+    double hitTolerance = 0.04,
   }) : assert(captureTargets.length >= 3, 'a fit needs three points'),
        assert(testTargets.isNotEmpty, 'the test needs a target'),
        _client = client,
        _screen = screen,
        _captureTargets = captureTargets,
        _testTargets = testTargets,
+       _testDuration = testDuration,
+       _hitTolerance = hitTolerance,
        super(const TouchCalibrationState());
 
   final TouchCalibrationClient _client;
@@ -93,10 +95,10 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   final List<TouchPoint> _testTargets;
 
   /// How long the player has to keep a new calibration.
-  final Duration testDuration;
+  final Duration _testDuration;
 
   /// How close to a test target a tap has to land, in normalized units.
-  final double hitTolerance;
+  final double _hitTolerance;
 
   TouchMatrix? _previous;
   final _observed = <TouchPoint>[];
@@ -166,7 +168,7 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
       math.sqrt(
         math.pow(point.x - target.x, 2) + math.pow(point.y - target.y, 2),
       ) <=
-      hitTolerance;
+      _hitTolerance;
 
   Future<void> _fitAndApply() async {
     final fit = fitTouchMatrix(List.of(_observed), _captureTargets);
@@ -197,7 +199,7 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
         phase: .test,
         steps: _testTargets.length,
         target: _testTargets.first,
-        secondsLeft: testDuration.inSeconds,
+        secondsLeft: _testDuration.inSeconds,
       ),
     );
     _countdown = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
