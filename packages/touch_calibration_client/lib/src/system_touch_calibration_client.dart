@@ -32,13 +32,18 @@ class SystemTouchCalibrationClient implements TouchCalibrationClient {
   }
 
   @override
+  Future<void> apply(TouchScreen screen, TouchMatrix matrix) async {
+    await _run(['try', screen.name, ...matrix.toArgument().split(' ')]);
+  }
+
+  @override
   Future<void> write(TouchScreen screen, TouchMatrix matrix) async {
     await _run(['set', screen.name, ...matrix.toArgument().split(' ')]);
   }
 
   @override
-  Future<void> reset(TouchScreen screen) async {
-    await _run(['reset', screen.name]);
+  Future<void> restore(TouchScreen screen) async {
+    await _run(['restore', screen.name]);
   }
 
   Future<Object?> _runJson(List<String> args) async {

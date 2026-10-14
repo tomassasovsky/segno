@@ -73,9 +73,20 @@ void main() {
       );
     });
 
-    test('reset', () async {
-      await client.reset(TouchScreen.readout);
-      expect(args.readAsStringSync().trim(), 'reset readout');
+    test('apply, without storing', () async {
+      await client.apply(
+        TouchScreen.readout,
+        const TouchMatrix(1, 0, 0.01, 0, 1, -0.02),
+      );
+      expect(
+        args.readAsStringSync().trim(),
+        'try readout 1.000000 0.000000 0.010000 0.000000 1.000000 -0.020000',
+      );
+    });
+
+    test('restore', () async {
+      await client.restore(TouchScreen.readout);
+      expect(args.readAsStringSync().trim(), 'restore readout');
     });
   });
 
@@ -88,7 +99,7 @@ void main() {
     await expectLater(
       SystemTouchCalibrationClient(
         helperPath: helper.path,
-      ).reset(TouchScreen.main),
+      ).restore(TouchScreen.main),
       throwsA(
         isA<ProcessException>()
             .having((e) => e.message, 'message', 'need 6 values')
@@ -102,7 +113,8 @@ void main() {
     expect(await client.isSupported(), isFalse);
     expect(await client.read(TouchScreen.main), isNull);
     await client.write(TouchScreen.main, TouchMatrix.identity);
-    await client.reset(TouchScreen.readout);
+    await client.apply(TouchScreen.readout, TouchMatrix.identity);
+    await client.restore(TouchScreen.readout);
   });
 
   test('off the appliance there is nothing to calibrate', () {
