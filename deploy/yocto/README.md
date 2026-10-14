@@ -41,7 +41,7 @@ meta-segno/
   recipes-bsp/rauc-rpi-backend/                      tryboot bootloader backend
   recipes-segno/segno-bundle/                        installs the PREBUILT bundle + launcher + units
   recipes-graphics/weston-init/weston-init.bbappend  weston.ini: kiosk-shell + dual outputs
-  recipes-graphics/ivi-homescreen/                   ivi image only: the DRM/KMS embedder (pinned, one patch)
+  recipes-graphics/ivi-homescreen/                   ivi image only: the DRM/KMS embedder (pinned, two patches), installed as /usr/bin/segno
   recipes-graphics/flutter-engine/                   ivi image only: meta-flutter's prebuilt engine + its pin
 ```
 
