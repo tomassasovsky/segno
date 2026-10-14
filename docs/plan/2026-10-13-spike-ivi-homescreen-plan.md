@@ -272,6 +272,18 @@ this branch:
   `read()`, returned into unmapped code. Patch 0002 leaves the snapshot
   mapped until the process exits.
 
+Two smaller findings from the retest on `.167`:
+
+- **Slow stops while profiling.** While `segno-prof stack` stayed attached to
+  any thread of the app, the app did not act on SIGTERM until it detached, so
+  a stop landing in the profile recorder's 15-minute sample took ~10 s. #1328
+  attaches per sample, and the recorder samples the main engine's UI thread on
+  this image (its main thread is an idle reactor).
+- **One unexplained hang.** 1 of 211 stops on `.167` hung until systemd's
+  90 s SIGKILL; 150 further stop/start cycles did not reproduce it.
+  `segno-ivi.conf` now aborts a stop after 15 s (a normal stop takes 0.35 s),
+  so the next one leaves a core dump with every thread's stack.
+
 ## Out of scope
 
 - Switching the shipping image: that is decided under #897.
