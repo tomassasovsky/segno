@@ -215,11 +215,6 @@ jobs:
       - name: Install release metadata tools
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Restore the app binary's executable bit
-        # segno-bundle.bb's do_install checks `[ -x "${bundle}/segno" ]`; the
-        # upload/download-artifact round-trip doesn't reliably preserve it.
-        run: chmod +x deploy/yocto/prebuilt/bundle/segno
-
       - name: Stage RAUC signing material
         run: |
           kd=deploy/yocto/meta-segno/.rauc-keys
