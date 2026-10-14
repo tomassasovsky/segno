@@ -22,6 +22,9 @@ on:
     branches:
       - "perf/**"
 
+permissions:
+  contents: read
+
 jobs:
   profile-bundle:
     runs-on: ubuntu-24.04-arm
