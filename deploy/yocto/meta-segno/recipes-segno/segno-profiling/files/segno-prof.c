@@ -5,7 +5,9 @@
  *       Samples one thread's stack through ptrace and prints folded stacks
  *       ("root;...;leaf count", flamegraph.pl input), busiest first. Only that
  *       thread is paused, for microseconds per sample; the audio thread never
- *       is. tid defaults to the main thread, which runs GTK and the Dart UI
+ *       is. It is attached only while a sample is taken: a thread that stays
+ *       attached between samples holds up the app's SIGTERM handling until it
+ *       is detached, so a stop landing in the sampling window took ~10 s. tid defaults to the main thread, which runs GTK and the Dart UI
  *       isolate. Frames are named from each file's .symtab when it has one
  *       (experimental builds keep libapp.so's Dart symbols) and from .dynsym
  *       otherwise; an address outside every known symbol prints as
@@ -385,16 +387,24 @@ static int cmd_stack(int argc, char **argv) {
 
   signal(SIGINT, on_signal);
   signal(SIGTERM, on_signal);
-  if (ptrace(PTRACE_SEIZE, tid, 0, 0) < 0) {
-    fprintf(stderr, "ptrace seize %d: %s\n", tid, strerror(errno));
-    return 1;
-  }
 
   Counter stacks = {0};
   uint64_t frames[kMaxDepth];
   long taken = 0;
   for (; taken < samples && !stop_requested; taken++) {
-    if (interrupt_thread(tid) < 0) break;
+    /* Attach for this sample only (see the header): seize, stop, read, then
+     * detach before the symbolizing and the sleep. */
+    if (ptrace(PTRACE_SEIZE, tid, 0, 0) < 0) {
+      if (taken == 0) {
+        fprintf(stderr, "ptrace seize %d: %s\n", tid, strerror(errno));
+        return 1;
+      }
+      break; /* the thread has exited */
+    }
+    if (interrupt_thread(tid) < 0) {
+      ptrace(PTRACE_DETACH, tid, 0, 0);
+      break;
+    }
     struct user_regs_struct regs;
     struct iovec io = {&regs, sizeof regs};
     int depth = 0;
@@ -410,7 +420,7 @@ static int cmd_stack(int argc, char **argv) {
         fp = record[0];
       }
     }
-    ptrace(PTRACE_CONT, tid, 0, 0);
+    ptrace(PTRACE_DETACH, tid, 0, 0);
     if (depth == 0) continue;
 
     char line[kMaxDepth * 96];
@@ -429,7 +439,6 @@ static int cmd_stack(int argc, char **argv) {
     counter_add(&stacks, line);
     if (interval_ms > 0) usleep(interval_ms * 1000);
   }
-  ptrace(PTRACE_DETACH, tid, 0, 0);
 
   printf("# segno-prof stack pid=%d tid=%d samples=%ld interval_ms=%ld\n", target,
          tid, taken, interval_ms);
