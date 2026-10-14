@@ -57,6 +57,7 @@ snapshot_threads() {
 
 tick=0
 stack_due=0
+deferred_pid=""
 pid_before=""
 ids_before=""
 uptime_before=""
@@ -136,6 +137,12 @@ while :; do
         > "$dir/stacks-$(date -u +%Y%m%dT%H%M%SZ).folded" 2>/dev/null
       find "$dir" -type f -mtime +"$keep_days" -exec rm -f {} +
       stack_due=0
+      deferred_pid=""
+    elif [ "$deferred_pid" != "$pid" ]; then
+      # Once per pid, so a missing thread (a renamed UI thread, a crash loop)
+      # shows in the journal instead of as profiles that silently stop.
+      echo "no io.flutter.ui thread in $pid yet; profile deferred" >&2
+      deferred_pid=$pid
     fi
   fi
   tick=$(( tick + 1 ))
