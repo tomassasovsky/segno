@@ -324,10 +324,11 @@ static void counter_print(Counter *c, FILE *out) {
 
 enum { kMaxDepth = 128 };
 
-/* Saved return addresses can carry a pointer-authentication signature in the
- * bits above the 48-bit user address space (ARMv8.3+; the Pi 5's A76 has no
- * PAC, but code built with -mbranch-protection still signs them). Strip it
- * before using the address. */
+/* On a core with pointer authentication (ARMv8.3+), saved return addresses
+ * carry a signature in the bits above the 48-bit user address space. The Pi
+ * 5's A76 has none, and the signing instructions run there as no-ops, so this
+ * mask changes nothing on the console; it keeps the walk right on a core that
+ * signs. */
 static const uint64_t kUserAddressMask = (1ULL << 48) - 1;
 
 static volatile sig_atomic_t stop_requested;
