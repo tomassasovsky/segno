@@ -9,10 +9,17 @@
 #
 # Verbs (stdout = compact JSON; detail on stderr):
 #   get <screen>              {"calibrated":bool,"matrix":str}
+#   try <screen> <6 floats>   apply to that screen's touchscreen now, without
+#                             persisting: a reboot, or `restore`, drops it
 #   set <screen> <6 floats>   persist, and apply to that screen's touchscreen now
 #   reset <screen>            forget the matrix, and apply now
+#   restore <screen>          apply what is persisted again, dropping a `try`
 #   apply                     rebuild the udev rule from /data (boot, before the
 #                             app opens its input devices)
+#
+# The app tries a new calibration with `try` and persists it with `set` only
+# when the player keeps it, so a calibration that made a screen untouchable is
+# gone after a power cycle.
 #
 # The matrix is libinput's 6-element affine transform (the first two rows of a
 # 3x3, row-major): "m1 m2 m3 m4 m5 m6" maps device coordinates onto the output.
@@ -45,10 +52,24 @@ valid_screen() {
 
 # The readout's touch_device: a substring of its touchscreen's name. The
 # readout is the only view that names one; touch that matches no view goes to
-# the main screen, and so does the main screen's calibration.
+# the main screen, and so does the main screen's calibration. A name udev would
+# read as a pattern is refused, since udev and this script would then disagree
+# on which touchscreen it names.
 readout_name() {
-    sed -n "s/^[[:space:]]*touch_device[[:space:]]*=[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" \
-        "$CONFIG" 2>/dev/null | head -n1
+    n=$(sed -n "s/^[[:space:]]*touch_device[[:space:]]*=[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" \
+        "$CONFIG" 2>/dev/null | head -n1)
+    case "$n" in
+        *[][*?\|]*) log "touch_device '$n' has a udev pattern character: ignored" ;;
+        *) echo "$n" ;;
+    esac
+}
+
+# The readout's calibration cannot be applied without its touchscreen's name.
+routable() {
+    [ "$1" != readout ] || [ -n "$(readout_name)" ] || {
+        log "no usable touch_device in $CONFIG: the readout cannot be calibrated"
+        return 1
+    }
 }
 
 read_matrix() {
@@ -79,23 +100,28 @@ validate_matrix() {
     [ "$n" -eq 6 ] || { log "need 6 values, got $n"; return 1; }
 }
 
-# Regenerate the udev rule from the stored matrices: one line per calibrated
-# screen, matched by the touchscreen's name.
+# Regenerate the udev rule from the stored matrices, or with [matrix] in place
+# of [screen]'s for a `try`: one line per screen, matched by the touchscreen's
+# name. The main screen's line matches every touchscreen and comes first; the
+# readout's comes after and wins for its touchscreen (a later assignment
+# replaces an earlier one), with the identity when only the main screen is
+# calibrated, so the 7" never takes the main screen's matrix.
 write_rule() {
     name=$(readout_name)
+    main=$(read_matrix main) || main=""
+    readout=$(read_matrix readout) || readout=""
+    case "${1:-}" in
+        main) main=$2 ;;
+        readout) readout=$2 ;;
+    esac
+    [ -z "$name" ] || [ -n "$readout" ] || [ -z "$main" ] || readout="1 0 0 0 1 0"
     rules=""
-    if m=$(read_matrix readout); then
-        if [ -n "$name" ]; then
-            rules="${rules}ACTION==\"add|change\", SUBSYSTEM==\"input\", ENV{ID_INPUT_TOUCHSCREEN}==\"1\", ATTRS{name}==\"*${name}*\", ENV{LIBINPUT_CALIBRATION_MATRIX}=\"$m\"
+    if [ -n "$main" ]; then
+        rules="${rules}ACTION==\"add|change\", SUBSYSTEM==\"input\", ENV{ID_INPUT_TOUCHSCREEN}==\"1\", ENV{LIBINPUT_CALIBRATION_MATRIX}=\"$main\"
 "
-        else
-            log "no touch_device in $CONFIG: the readout's calibration is not applied"
-        fi
     fi
-    if m=$(read_matrix main); then
-        not_readout=""
-        [ -z "$name" ] || not_readout=" ATTRS{name}!=\"*${name}*\","
-        rules="${rules}ACTION==\"add|change\", SUBSYSTEM==\"input\", ENV{ID_INPUT_TOUCHSCREEN}==\"1\",${not_readout} ENV{LIBINPUT_CALIBRATION_MATRIX}=\"$m\"
+    if [ -n "$readout" ] && [ -n "$name" ]; then
+        rules="${rules}ACTION==\"add|change\", SUBSYSTEM==\"input\", ENV{ID_INPUT_TOUCHSCREEN}==\"1\", ATTRS{name}==\"*${name}*\", ENV{LIBINPUT_CALIBRATION_MATRIX}=\"$readout\"
 "
     fi
     if [ -z "$rules" ]; then
@@ -155,11 +181,33 @@ json_matrix() {
     fi
 }
 
+normalize() { echo "$*" | tr -s ' \t' ' ' | sed 's/^ *//;s/ *$//'; }
+
+do_try() {
+    screen=$1
+    shift
+    m=$(normalize "$@")
+    validate_matrix "$m" || return 2
+    routable "$screen" || return 3
+    write_rule "$screen" "$m"
+    reload_rules
+    readd "$screen"
+    printf '{"calibrated":true,"matrix":"%s"}\n' "$m"
+}
+
+do_restore() {
+    write_rule
+    reload_rules
+    readd "$1"
+    json_matrix "$1"
+}
+
 do_set() {
     screen=$1
     shift
-    m=$(echo "$*" | tr -s ' \t' ' ' | sed 's/^ *//;s/ *$//')
+    m=$(normalize "$@")
     validate_matrix "$m" || return 2
+    routable "$screen" || return 3
     mkdir -p "$DATA_DIR"
     echo "$m" > "$(matrix_file "$screen")"
     write_rule
@@ -186,7 +234,7 @@ do_apply() {
 }
 
 usage() {
-    log "usage: $0 get <screen>|set <screen> <m1 m2 m3 m4 m5 m6>|reset <screen>|apply  (screen: main, readout)"
+    log "usage: $0 get <screen>|try <screen> <m1 m2 m3 m4 m5 m6>|set <screen> <m1 m2 m3 m4 m5 m6>|reset <screen>|restore <screen>|apply  (screen: main, readout)"
     exit 2
 }
 
@@ -200,10 +248,20 @@ case "$verb" in
         valid_screen "$1" || exit 2
         json_matrix "$1"
         ;;
+    try)
+        [ $# -ge 2 ] || usage
+        valid_screen "$1" || exit 2
+        do_try "$@"
+        ;;
     set)
         [ $# -ge 2 ] || usage
         valid_screen "$1" || exit 2
         do_set "$@"
+        ;;
+    restore)
+        [ $# -eq 1 ] || usage
+        valid_screen "$1" || exit 2
+        do_restore "$1"
         ;;
     reset)
         [ $# -eq 1 ] || usage

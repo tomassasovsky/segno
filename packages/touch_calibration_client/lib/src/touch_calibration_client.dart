@@ -20,11 +20,15 @@ abstract interface class TouchCalibrationClient {
   /// libinput uses the identity.
   Future<TouchMatrix?> read(TouchScreen screen);
 
+  /// Applies [matrix] to [screen]'s touchscreen now without storing it: a
+  /// reboot, or [restore], puts the stored calibration back.
+  Future<void> apply(TouchScreen screen, TouchMatrix matrix);
+
   /// Stores [matrix] for [screen] and applies it to that touchscreen now.
   Future<void> write(TouchScreen screen, TouchMatrix matrix);
 
-  /// Forgets [screen]'s calibration and applies that now.
-  Future<void> reset(TouchScreen screen);
+  /// Applies [screen]'s stored calibration again, dropping one [apply]-ed.
+  Future<void> restore(TouchScreen screen);
 }
 
 /// No touch calibration: the macOS dev host.
@@ -39,8 +43,11 @@ class UnsupportedTouchCalibrationClient implements TouchCalibrationClient {
   Future<TouchMatrix?> read(TouchScreen screen) async => null;
 
   @override
+  Future<void> apply(TouchScreen screen, TouchMatrix matrix) async {}
+
+  @override
   Future<void> write(TouchScreen screen, TouchMatrix matrix) async {}
 
   @override
-  Future<void> reset(TouchScreen screen) async {}
+  Future<void> restore(TouchScreen screen) async {}
 }
