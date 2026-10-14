@@ -64,9 +64,10 @@ bundle itself.
    The script stages the bundle under `/data/profile`, so the release install at
    `/opt/segno` is left alone, and runs it through the shipped launcher as the
    transient unit `segno-devtools`, with `segno.service`'s environment, limits
-   and stop handling, plus `LD_LIBRARY_PATH` pointing at the profile engine. It stops `segno.service` for the duration and starts it
-   again on exit however the run ends, and forwards the VM service to
-   `127.0.0.1:8181` for DevTools. Both screens' isolates are on that one port.
+   and stop handling, plus `LD_LIBRARY_PATH` pointing at the profile engine.
+   It stops `segno.service` for the duration and starts it again on exit
+   however the run ends, and forwards the VM service to `127.0.0.1:8181` for
+   DevTools. Both screens' isolates are on that one port.
 
 **Read the result as a split, not a score.** UI thread over budget points at the
 snapshot poll cadence and `context.watch` fan-out; raster thread over budget
