@@ -111,7 +111,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   final Map<LooperMeterState, Color> muteMeterColors;
 
   /// Icon color for the toolbar's unarmed/neutral icon buttons (Play/Stop
-  /// All, Clear All, Fullscreen, Signal, Settings, Session, and the
+  /// All, Clear All, Signal, Settings, Session, and the
   /// unarmed performance-record button).
   final Color toolbarIconColor;
 
