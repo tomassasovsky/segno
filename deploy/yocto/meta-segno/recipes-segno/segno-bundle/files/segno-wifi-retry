@@ -122,6 +122,7 @@ pick() {
 }
 
 attempt=0
+waited_on_nm=no
 pause=$BACKOFF
 while :; do
   # The owner turned WiFi off? Their call wins -- retrying into a disabled
@@ -140,7 +141,7 @@ while :; do
 
   state=$(wifi_state)
   if [ "$state" = connected ]; then
-    if [ "$attempt" -eq 0 ]; then
+    if [ "$attempt" -eq 0 ] && [ "$waited_on_nm" = no ]; then
       log "wifi already connected; no retry needed"
     else
       log "wifi connected"
@@ -152,6 +153,7 @@ while :; do
   # page. Let it finish; whatever it ends in is the next check. It is not our
   # attempt, so it does not advance the backoff.
   if in_flight "$state"; then
+    waited_on_nm=yes
     [ "$(date +%s)" -lt "$deadline" ] || break
     sleep "$POLL"
     continue
@@ -178,13 +180,16 @@ while :; do
     # back to waiting for it.
     state=$(wifi_state)
     if [ "$state" = connected ] || in_flight "$state"; then
+      waited_on_nm=yes
       [ "$(date +%s)" -lt "$deadline" ] || break
       continue
     fi
 
     attempt=$((attempt + 1))
     log "attempt $attempt: activating $uuid${ssid:+ ($ssid)}"
-    if "$WIFI_CTL" activate "$uuid" "$UP_WAIT" >/dev/null 2>&1; then
+    # stdout is the helper's JSON; its stderr (nmcli's reason for a failure)
+    # goes to the journal, where the next offline boot will be read.
+    if "$WIFI_CTL" activate "$uuid" "$UP_WAIT" >/dev/null; then
       log "$uuid activated on attempt $attempt"
       exit 0
     fi
