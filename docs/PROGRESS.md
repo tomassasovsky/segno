@@ -39,7 +39,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
 | #1270 | Device and appliance pages | plan | merge-gate | `claude/device-pages-plan-1270` |
-| #1330 | ivi-homescreen as the only appliance embedder; GTK/Weston removed | build | merge-gate | `claude/ivi-only-1330-p*` |
 
 ---
 

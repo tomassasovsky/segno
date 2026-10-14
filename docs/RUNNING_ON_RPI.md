@@ -133,7 +133,7 @@ tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
 |--------|------|
 | `/usr/bin/segno-wifi-ctl` | scan / join / disconnect / forget (`nmcli` / NetworkManager) |
 | `/usr/bin/segno-brightness-ctl` | DDC/CI brightness via `ddcutil` VCP 0x10 |
-| `/usr/bin/segno-touch-ctl` | per-screen touchscreen calibration matrix (`get` / `set` / `reset` / `apply`) |
+| `/usr/bin/segno-touch-ctl` | per-screen touchscreen calibration matrix (`get` / `try` / `set` / `reset` / `restore` / `apply`) |
 
 WiFi is owned by **NetworkManager** (eth0 + wlan*). `systemd-networkd` is
 masked on the appliance image so the two managers do not fight. The unit
@@ -166,8 +166,11 @@ does not change the panel — note that for a gamma follow-up.
 ## Touchscreen calibration
 
 The app measures it: Settings → Displays → Calibrate touch, once per screen.
-Tap each target; the app then applies the new calibration and starts a test
-with a countdown, and reverts to the previous one unless you keep it.
+Tap each target; the app then applies the new calibration without storing it
+(`segno-touch-ctl try`) and starts a test with a countdown. Keep stores it
+(`set`); anything else puts the stored one back (`restore`). A calibration that
+was never kept is also gone after a power cycle, since only stored matrices
+are applied at boot.
 
 `segno-touch-ctl` stores one libinput matrix per screen at
 **`/data/touch/main`** and **`/data/touch/readout`**, on the persistent
@@ -178,8 +181,8 @@ touchscreen by name: the readout's is the one whose name contains its
 `touch_device` in `homescreen.toml`, and every other touchscreen belongs to the
 main screen.
 
-libinput reads the matrix only when a device is added, so `set` and `reset`
-remove and re-add that screen's touchscreen, and the app's libinput picks the
+libinput reads the matrix only when a device is added, so `try`, `set`,
+`reset` and `restore` remove and re-add that screen's touchscreen, and the app's libinput picks the
 new matrix up. At boot, `segno-touch-persist.service` runs `segno-touch-ctl
 apply` before `segno.service`, so the app opens its input devices already
 calibrated.

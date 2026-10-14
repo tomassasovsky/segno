@@ -13,19 +13,22 @@
 #   ui_pct          the io.flutter.ui threads, summed: the Dart UI isolates,
 #                   one per screen
 #   raster_pct      the io.flutter.raster threads, summed
-#   rt_pct          SCHED_FIFO threads, summed (the audio engine)
+#   rt_pct          SCHED_FIFO and SCHED_RR threads, summed (the audio engine)
 #   ui_preempt_s    involuntary context switches per second on the
 #                   io.flutter.ui threads: high means they are runnable and
 #                   waiting for a core
 #   load1, mem_available_kb  system-wide
 #
 # The audio thread inherits the io.flutter.ui name, so ui_pct and ui_preempt_s
-# skip SCHED_FIFO and SCHED_RR threads; rt_pct counts it.
+# skip SCHED_FIFO and SCHED_RR threads; rt_pct counts it. The engine's other
+# native threads (render, cache, restore) inherit the name too and run
+# SCHED_OTHER, so they count in ui_pct until the engine names them.
 #
 # Every 15 minutes, a folded-stack profile of the main screen's Dart UI
 # isolate (stacks-<time>.folded, segno-prof stack, 1000 samples 10 ms apart):
-# the first io.flutter.ui thread that is not real-time, which belongs to the
-# first engine, the main screen's (#1318).
+# the io.flutter.ui thread that is not real-time with the lowest tid, the
+# oldest, which is the first engine's, the main screen's (#1318). Lowest by
+# number: the threads are listed in text order, where 1003 comes before 987.
 #
 # Files older than 30 days are deleted. Experimental images only: the unit
 # checks the channel before starting this. Not /data/profile: that is where
@@ -101,7 +104,7 @@ while :; do
         preempt += $5 - nv[$1]
       }
       if ($2 ~ /^io\.flutter\.rast/) raster += d
-      if ($4 == 1) rt += d
+      if ($4 == 1 || $4 == 2) rt += d
     }
     END {
       if (!seen) { print ",,,,,"; exit }
@@ -115,15 +118,16 @@ while :; do
   # A day file an earlier build started has other columns: set it aside
   # rather than append rows that do not match its header.
   if [ -s "$file" ] && [ "$(head -n1 "$file")" != "$header" ]; then
-    mv "$file" "${file%.csv}-earlier-build.csv"
+    mv "$file" "${file%.csv}-earlier-build-$(date -u +%H%M%S).csv"
   fi
   [ -s "$file" ] || echo "$header" > "$file"
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$pid,$app_uptime,$rss,$threads,$fds,$cpu,$load1,$available" >> "$file"
 
   [ $(( tick % stack_every )) -eq 0 ] && stack_due=1
   if [ "$stack_due" = 1 ]; then
-    ui=$(awk '$2 == "io.flutter.ui" && $4 != 1 && $4 != 2 {print $1; exit}' \
-      "$state/threads")
+    ui=$(awk '$2 == "io.flutter.ui" && $4 != 1 && $4 != 2 &&
+      (first == "" || $1 + 0 < first + 0) { first = $1 }
+      END { if (first != "") print first }' "$state/threads")
     # Right after the app starts its UI thread may not exist yet (at boot this
     # loop's first pass runs before either engine is up). Keep the profile
     # due and try again next interval rather than sample the wrong thread.

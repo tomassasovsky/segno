@@ -162,7 +162,7 @@ The appliance announces itself as **`segno`** (#496) — that is the name on the
 router/AP client list (NetworkManager sends it in DHCP requests) and the SSH
 prompt. Set as image policy in `kas-segno-common.yml`
 (`hostname:pn-base-files`); older images announced the `MACHINE` name
-(`raspberrypi5`).
+(`raspberrypi5`, and before the Pi 5 `raspberrypi4-64`).
 
 No mDNS ships (no avahi), so the name does **not** buy `segno.local` — connect
 by IP unless your router resolves DHCP hostnames.

@@ -20,7 +20,7 @@ electronics shops / MercadoLibre, except the Pi 5, screens, and USB interface
       [`docs/RUNNING_ON_RPI.md`](../docs/RUNNING_ON_RPI.md).)*
 - [ ] Pi 5 **active cooler** (official, or a heatsink+fan) ×1 — **required** for a
       closed enclosure under sustained audio + GPU load
-- [ ] microSD card, A2, 64 GB+ ×1
+- [ ] NVMe SSD, M.2 2230/2242, 256 GB+, with a Pi 5 M.2 HAT ×1
 - [ ] **16″ touchscreen** monitor, 1080p, HDMI + USB-touch ×1 — main UI
 - [ ] **7″ HDMI** display ×1 — waveform. **HDMI, not DSI** (decision below)
 - [ ] micro-HDMI → HDMI cables (Pi 5 has 2× micro-HDMI) ×2
