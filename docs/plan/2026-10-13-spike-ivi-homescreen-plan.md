@@ -87,7 +87,7 @@ Sources: ivi-homescreen `v3.0` at `80f9ea4` (2026-10-12), meta-flutter
      meta-segno.
 5. **One embedder gap needs a patch.** On DRM, ivi-homescreen sends window
    metrics with a pixel ratio of 1.0 whatever the view's configured
-   `pixel_ratio` is (`shell/engine.cc` `SetWindowSize`). The 7" readout needs a
+   `pixel_ratio` is (`shell/view/flutter_view.cc`). The 7" readout needs a
    ratio (below), so the recipe carries a small patch that applies the
    configured one. It is worth sending upstream.
 6. **Each panel runs its native mode.**
@@ -158,8 +158,10 @@ Guards:
   by `segno-build.sh`) names a different engine revision than
   `flutter-engine-version.inc`. A mismatched AOT snapshot would otherwise
   build, install, boot, and die before the first frame.
-- The release workflow refuses to publish an ivi build. Its RAUC compatible
-  string is the shipping one, so every polling unit would install it.
+- An ivi build is never published by default: the release workflow builds it
+  only on dispatch, on the experimental channel, with `publish: no` unless the
+  dispatcher says otherwise. Its RAUC compatible string is the shipping one, so
+  a published ivi build reaches every unit polling the experimental channel.
 
 ### CI
 

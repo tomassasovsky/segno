@@ -46,6 +46,9 @@ RestartSec=3
 # core dump with every thread's stack in coredumpctl.
 TimeoutStopSec=15s
 TimeoutStopFailureMode=abort
+# Time for the core dump the abort exists for: without this, the abort window
+# is TimeoutStopSec again and SIGKILL can cut a 300-400 MB dump short.
+TimeoutAbortSec=120s
 
 [Install]
 WantedBy=multi-user.target
