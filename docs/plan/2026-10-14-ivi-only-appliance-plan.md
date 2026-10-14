@@ -98,9 +98,10 @@ The bench-verified spike and its fixes, merged into the trunk.
   - The appliance always passes `--segno-screen`. With no screen named (the
     macOS dev host) the app runs the main screen with
     `NoopWaveformWindowService`.
-- **Window chrome:** `window_chrome.dart` keeps `SegnoWindowChromeShell` and
-  the cursor auto-hide. The Windows title bar and the fullscreen helpers go,
-  and so does the `F` key.
+- **Window chrome:** `window_chrome.dart` goes whole, with the `F` key. Its
+  cursor auto-hide is the embedder's job on the appliance
+  (`disable_cursor = true` in `homescreen.toml`), and the macOS dev host is an
+  ordinary window.
 - **Dependencies:** drop `desktop_multi_window`, `window_manager` and
   `screen_retriever` from `pubspec.yaml`, and regenerate the macOS plugin
   registrant.

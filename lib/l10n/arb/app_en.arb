@@ -836,7 +836,6 @@
             }
         }
     },
-    "outputWaveformWindowTitle": "Segno — Track",
     "midiInputGroup": "MIDI FOOT CONTROLLER",
     "midiNoDevicesFound": "No MIDI input devices found",
     "midiNone": "None",

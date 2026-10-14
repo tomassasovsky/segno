@@ -147,21 +147,6 @@ void main() {
       expect(next.selectedTrack, 'Drums');
       expect(next.progress, 0.2);
     });
-
-    test('samples survive a list-encoded round trip', () {
-      // `desktop_multi_window` can hand the payload back as a plain List of
-      // numbers rather than a Float32List when it crosses engines.
-      final next = waveformFrameFrom(
-        {
-          'samples': <double>[0.4, 0.5],
-          'progress': 0.1,
-          'selectedTrack': 'Bass',
-        },
-        frameOf([0.1]),
-      );
-
-      expect(next.samples, Float32List.fromList([0.4, 0.5]));
-    });
   });
 
   group('WaveformWindowApp', () {
