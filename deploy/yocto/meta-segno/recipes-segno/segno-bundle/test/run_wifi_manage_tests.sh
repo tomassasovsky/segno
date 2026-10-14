@@ -83,6 +83,7 @@ case "\$*" in
         ;;
     *"WIFI radio"*) printf 'enabled\n' ;;
     *"GENERAL.STATE device show"*) printf 'GENERAL.STATE:30 (disconnected)\n' ;;
+    *"GENERAL.AUTOCONNECT device show"*) printf '%s\n' "\${DEV_AC:-yes}" ;;
     *) : ;;
 esac
 exit 0
@@ -117,7 +118,7 @@ run_with_stdin() {
     printf '%s' "$stdin" | PATH="$work/bin:$PATH" SEGNO_JOURNALCTL="$work/bin/journalctl" \
         SAVED="${SAVED:-}" ACTIVE="${ACTIVE:-}" FAIL_UP="${FAIL_UP:-<none>}" \
         LISTING="${LISTING:-}" PRIOR_AC="${PRIOR_AC:-yes}" \
-        STORED_PSK="${STORED_PSK:-}" \
+        STORED_PSK="${STORED_PSK:-}" DEV_AC="${DEV_AC:-yes}" \
         HTTP_CODE="${HTTP_CODE:-200}" CURL_RC="${CURL_RC:-0}" \
         "$TEST_SHELL" "$CTL" "$@" >"$work/stdout" 2>"$work/stderr"
     rc=$?
@@ -220,6 +221,34 @@ check "hands the stored key over" '802-11-wireless-security.psk:s3cret' "$(cat "
 check "the key is never in argv" no "$(has 's3cret' "$work/nmcli-args")"
 check "the key file is gone afterwards" 0 \
     "$(find "${TMPDIR:-/tmp}" -maxdepth 1 -newer "$work/ctl-args" -type f -exec grep -l 's3cret' {} + 2>/dev/null | wc -l | tr -d ' ')"
+teardown
+
+# nmcli registers its agent before asking for the activation, and NM answers
+# a new agent by auto-activating a profile it had blocked for missing
+# secrets. Two activations on wlan0 at once left the bench console stuck in
+# "getting IP configuration" (#1326).
+echo "activate pauses device autoconnect around the activation"
+setup
+SAVED="Studio" STORED_PSK='s3cret' run activate uuid-Studio
+line() { grep -n -F -- "$1" "$work/nmcli-args" | head -1 | cut -d: -f1; }
+check "pauses before the up" yes \
+    "$([ -n "$(line 'device set wlan0 autoconnect no')" ] && [ "$(line 'device set wlan0 autoconnect no')" -lt "$(line 'connection up')" ] && echo yes || echo no)"
+check "resumes after the up" yes \
+    "$([ -n "$(line 'device set wlan0 autoconnect yes')" ] && [ "$(line 'device set wlan0 autoconnect yes')" -gt "$(line 'connection up')" ] && echo yes || echo no)"
+teardown
+
+echo "activate resumes device autoconnect after a failed activation too"
+setup
+SAVED="Studio" STORED_PSK='s3cret' FAIL_UP="uuid-Studio" run activate uuid-Studio
+check "fails" 1 "$rc"
+check "resumes" yes "$(has 'device set wlan0 autoconnect yes' "$work/nmcli-args")"
+teardown
+
+echo "activate leaves a device the owner disconnected alone"
+setup
+SAVED="Studio" STORED_PSK='s3cret' DEV_AC=no run activate uuid-Studio
+check "succeeds" 0 "$rc"
+check "does not touch device autoconnect" no "$(has 'device set wlan0 autoconnect' "$work/nmcli-args")"
 teardown
 
 echo "activate on an open network goes up without a key file"
