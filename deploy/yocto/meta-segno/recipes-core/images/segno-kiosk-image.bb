@@ -101,9 +101,6 @@ segno_mask_networkd() {
 }
 ROOTFS_POSTPROCESS_COMMAND += "segno_mask_networkd; "
 
-# ALSA-only by design (no PipeWire/JACK): the engine falls straight to ALSA, so no
-# pw-jack shim is needed (cleaner than the Pi OS / Tier 2 path). See plan §Phase 3.
-
 # Spike convenience: root login (empty password) + SSH for bring-up debugging.
 # walnascar dropped the `debug-tweaks` umbrella feature, so name its parts. Drop
 # all of this for anything resembling production.

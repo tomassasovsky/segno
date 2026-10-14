@@ -16,8 +16,8 @@ electronics shops / MercadoLibre, except the Pi 5, screens, and USB interface
 ## Compute + displays
 
 - [ ] Raspberry Pi **5** (8 GB recommended; 4 GB OK) ×1
-      *(Pi 4 Model B 8 GB also works — see the Pi-4 note in
-      [`docs/RUNNING_ON_RPI.md`](../docs/RUNNING_ON_RPI.md); tighter latency/thermal margin.)*
+      *(Pi 5 only: the appliance image has no Pi 4 build. See
+      [`docs/RUNNING_ON_RPI.md`](../docs/RUNNING_ON_RPI.md).)*
 - [ ] Pi 5 **active cooler** (official, or a heatsink+fan) ×1 — **required** for a
       closed enclosure under sustained audio + GPU load
 - [ ] microSD card, A2, 64 GB+ ×1
@@ -159,20 +159,19 @@ indicator data) ~0.15 V of margin: works on the bench, flaky in the field.
 ### 7″ display: **HDMI, not DSI** (spike outcome)
 
 Both screens are wired as **HDMI** outputs, so they enumerate as uniform
-`HDMI-A-1` (16″) / `HDMI-A-2` (7″) wlr outputs. This gives clean, deterministic
-`wlr-randr` output-name pinning (matching Part 5's
-[`deploy/rpi/pin-displays.sh`](../deploy/rpi/pin-displays.sh)) with no DSI ribbon
-or DSI-specific compositor mapping. The official 7″ DSI panel's only advantage —
+`HDMI-A-1` (main) / `HDMI-A-2` (7″) DRM connectors, and the appliance's
+`homescreen.toml` names each screen's connector, with no DSI ribbon or
+DSI-specific mapping. The official 7″ DSI panel's only advantage —
 freeing a micro-HDMI port — is moot here since nothing else uses the second
 HDMI, and its 800×480 is lower-res than an HDMI 7″. Resolution matters little for
-a waveform, so pick any 7″ HDMI panel; set its per-output `--scale` in
-`pin-displays.sh`.
+a waveform, so pick any 7″ HDMI panel; set its `pixel_ratio` in
+`homescreen.toml`.
 
 ### Notes
 
-- Keep the engine at **48 kHz** with the PipeWire **Pro Audio** profile for the
-  full channel count + lowest stable latency (see
-  [`docs/RUNNING_ON_LINUX.md`](../docs/RUNNING_ON_LINUX.md)).
+- USB interfaces can expose fewer channels at higher sample rates; the
+  appliance drives the interface directly through ALSA (see
+  [`docs/RUNNING_ON_RPI.md`](../docs/RUNNING_ON_RPI.md#audio-interface)).
 - The LEDs and foot controls all terminate on the **console board v2**
   (`hardware/kicad/console_board.py`); Pi GPIO14/15 carry MIDI, and the pedal
   link rides uart3 (GPIO8/9) over the ribbon.
