@@ -41,6 +41,17 @@ else
   work=build/appliance/work
 fi
 
+# Hand the generated files back to the invoking host user, however the build
+# ends, or the bind-mounted output is root-owned on the host. `flutter pub get`
+# in this monorepo also touches packages/*/pubspec.lock, so the whole mounted
+# tree is handed back.
+hand_back() {
+  if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then
+    chown -R "$HOST_UID:$HOST_GID" /workspace 2>/dev/null || true
+  fi
+}
+trap hand_back EXIT
+
 rm -rf "$out" "$work"
 mkdir -p "$out/data" "$out/lib"
 
@@ -69,6 +80,13 @@ if [ "$mode" = profile ]; then
   pin=deploy/yocto/meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc
   commit=$(sed -n 's/^FLUTTER_ENGINE_COMMIT = "\(.*\)"$/\1/p' "$pin")
   digest=$(sed -n 's/^FLUTTER_ENGINE_PROFILE_SHA256 = "\(.*\)"$/\1/p' "$pin")
+  # segno-bundle.bb makes this check for the release bundle at image build;
+  # the profile bundle never reaches it.
+  revision=$(flutter --version --machine | sed -n 's/.*"engineRevision": *"\([0-9a-f]*\)".*/\1/p')
+  if [ "$revision" != "$commit" ]; then
+    echo "segno-build: Flutter's engine is $revision, the pin is $commit" >&2
+    exit 1
+  fi
   sdk="linux-engine-sdk-profile-arm64-$commit"
   echo "==> Profile engine: $sdk"
   curl -fsSL -o "$work/$sdk.tar.gz" \
@@ -85,10 +103,3 @@ fi
 # engine revision with the one the image ships and refuses a mismatch, which
 # would otherwise build, install and boot, then die before the first frame.
 flutter --version --machine > "$out/flutter-version.json"
-
-# Hand the generated files back to the invoking host user, or the bind-mounted
-# output is root-owned on the host. `flutter pub get` in this monorepo also
-# touches packages/*/pubspec.lock, so the whole mounted tree is handed back.
-if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then
-  chown -R "$HOST_UID:$HOST_GID" /workspace 2>/dev/null || true
-fi

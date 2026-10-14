@@ -20,10 +20,11 @@
 # profile snapshot runs only on a profile engine.
 #
 # The profile build runs through the shipped launcher, /usr/bin/segno-kiosk-launch,
-# with only SEGNO_ENGINE_LIB and SEGNO_HOMESCREEN_CONFIG pointed at
-# /data/profile, so it gets the same HOME, ALSA and RT settings as the
-# appliance. It runs as a transient systemd unit, segno-devtools, with the RT
-# limits segno.service has; segno.service is stopped for the duration, because
+# with SEGNO_ENGINE_LIB and SEGNO_HOMESCREEN_CONFIG pointed at /data/profile and
+# LD_LIBRARY_PATH at its lib/ (which every process the app starts inherits), so
+# it gets the same HOME, ALSA and RT settings as the appliance. It runs as a
+# transient systemd unit, segno-devtools, with segno.service's limits and stop
+# handling; segno.service is stopped for the duration, because
 # both screens and the audio device belong to one process at a time, and is
 # started again on exit however this script ends.
 #
@@ -76,6 +77,10 @@ if [ "$avail" -lt 524288 ]; then
   exit 1
 fi
 
+# A session whose workstation went away can leave its unit behind; it holds the
+# screens and runs from the directory about to be replaced.
+remote 'systemctl stop segno-devtools.service 2>/dev/null; systemctl reset-failed segno-devtools.service 2>/dev/null; true'
+
 echo "==> copying bundle to $REMOTE_DIR"
 remote "rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR/bundle"
 tar -C "$BUNDLE" -cf - . | remote "tar -C $REMOTE_DIR/bundle -xf -"
@@ -89,11 +94,10 @@ remote "[ \$(grep -c \"^bundle = '$REMOTE_DIR/bundle'\" $REMOTE_DIR/homescreen.t
   && [ \$(grep -c -- '--vm-service-port=$PORT' $REMOTE_DIR/homescreen.toml) -eq 2 ]" \
   || { echo "the installed homescreen.toml no longer has the lines this script rewrites" >&2; exit 1; }
 
-echo "==> stopping segno.service"
-remote 'systemctl stop segno.service'
-
 # Whatever happens next -- success, failure, Ctrl-C -- the appliance goes back to
 # running its release build. Leaving a floor unit dark is not an acceptable exit.
+# Set before segno.service stops, so an interrupt during the stop restores too;
+# INT and TERM exit, so the EXIT trap runs once and the script goes no further.
 restore() {
   echo
   echo "==> stopping the profile build"
@@ -101,21 +105,36 @@ restore() {
   echo "==> restoring segno.service"
   remote 'systemctl start segno.service' || true
 }
-trap restore EXIT INT TERM
+trap restore EXIT
+trap 'exit 130' INT TERM
+
+echo "==> stopping segno.service"
+remote 'systemctl stop segno.service'
 
 echo "==> starting the profile build"
-remote "systemd-run --unit=segno-devtools \
+# segno.service's limits and stop handling. ExecStopPost brings the release
+# build back from the device itself whenever this unit stops: the profile build
+# crashing, or this workstation dropping off the network, must not leave the
+# floor dark until someone reconnects.
+remote "systemd-run --unit=segno-devtools --collect \
   --property=LimitRTPRIO=95 --property=LimitMEMLOCK=infinity \
+  --property=LimitCORE=infinity --property=TimeoutStopSec=15s \
+  --property=TimeoutStopFailureMode=abort --property=TimeoutAbortSec=120s \
+  --property='ExecStopPost=/usr/bin/systemctl --no-block start segno.service' \
   --setenv=LD_LIBRARY_PATH=$REMOTE_DIR/bundle/lib \
   --setenv=SEGNO_ENGINE_LIB=$REMOTE_DIR/bundle/lib/libsegno_engine.so \
   --setenv=SEGNO_HOMESCREEN_CONFIG=$REMOTE_DIR/homescreen.toml \
   /usr/bin/segno-kiosk-launch"
 
+# This run's log only: an earlier session this boot logged the same line.
+invocation=$(remote 'systemctl show -p InvocationID --value segno-devtools.service')
+log="journalctl _SYSTEMD_INVOCATION_ID=$invocation --no-pager -o cat"
+
 echo "==> waiting for the VM service"
 up=""
 for _ in $(seq 1 30); do
   sleep 1
-  if remote "journalctl -u segno-devtools.service -b --no-pager -o cat | grep -q 'http://127\.0\.0\.1:$PORT/'"; then
+  if remote "$log | grep -q 'http://127\.0\.0\.1:$PORT/'"; then
     up=1
     break
   fi
@@ -123,7 +142,7 @@ done
 
 if [ -z "$up" ]; then
   echo "no VM service on port $PORT after 30s. Device-side log:" >&2
-  remote "journalctl -u segno-devtools.service -b --no-pager -o cat | tail -30" >&2 || true
+  remote "$log | tail -30" >&2 || true
   exit 1
 fi
 
@@ -144,4 +163,9 @@ echo "    context.watch fan-out. Raster over budget -> RepaintBoundary, the"
 echo "    per-sample waveform rects, card elevation."
 echo
 
-ssh -o BatchMode=yes -N -L "$PORT:127.0.0.1:$PORT" "$HOST"
+# ExitOnForwardFailure: a port already taken here would otherwise leave DevTools
+# attached to whatever holds it. ServerAlive: notice a dead link and exit, so
+# the restore runs.
+ssh -o BatchMode=yes -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+  -N -L "$PORT:127.0.0.1:$PORT" "$HOST"
