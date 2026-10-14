@@ -161,7 +161,7 @@ class _RecordingWindowService implements WaveformWindowService {
   bool get isOpen => _open;
 
   @override
-  Future<bool> open({String title = 'Segno — Output'}) async {
+  Future<bool> open() async {
     openCalls++;
     _open = openResult;
     return openResult;

@@ -146,6 +146,16 @@ jobs:
       working_directory: packages/cpu_load_repository
       run_bloc_lint: false
       min_coverage: 100
+  # The console's per-panel brightness and which output each screen is on,
+  # read from ivi-homescreen's homescreen.toml (#1330). Pure Dart. What it
+  # cannot cover here are the two factories, which only pick the real client
+  # on the appliance.
+  brightness-client:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    with:
+      working_directory: packages/brightness_client
+      run_bloc_lint: false
+      min_coverage: 80
   pedal-repository:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
     with:
