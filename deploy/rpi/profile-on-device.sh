@@ -22,7 +22,7 @@
 # The profile build runs through the shipped launcher, /usr/bin/segno-kiosk-launch,
 # with only SEGNO_ENGINE_LIB and SEGNO_HOMESCREEN_CONFIG pointed at
 # /data/profile, so it gets the same HOME, ALSA and RT settings as the
-# appliance. It runs as a transient systemd unit, segno-profile, with the RT
+# appliance. It runs as a transient systemd unit, segno-devtools, with the RT
 # limits segno.service has; segno.service is stopped for the duration, because
 # both screens and the audio device belong to one process at a time, and is
 # started again on exit however this script ends.
@@ -97,14 +97,14 @@ remote 'systemctl stop segno.service'
 restore() {
   echo
   echo "==> stopping the profile build"
-  remote 'systemctl stop segno-profile.service 2>/dev/null; systemctl reset-failed segno-profile.service 2>/dev/null; true' || true
+  remote 'systemctl stop segno-devtools.service 2>/dev/null; systemctl reset-failed segno-devtools.service 2>/dev/null; true' || true
   echo "==> restoring segno.service"
   remote 'systemctl start segno.service' || true
 }
 trap restore EXIT INT TERM
 
 echo "==> starting the profile build"
-remote "systemd-run --unit=segno-profile \
+remote "systemd-run --unit=segno-devtools \
   --property=LimitRTPRIO=95 --property=LimitMEMLOCK=infinity \
   --setenv=LD_LIBRARY_PATH=$REMOTE_DIR/bundle/lib \
   --setenv=SEGNO_ENGINE_LIB=$REMOTE_DIR/bundle/lib/libsegno_engine.so \
@@ -115,7 +115,7 @@ echo "==> waiting for the VM service"
 up=""
 for _ in $(seq 1 30); do
   sleep 1
-  if remote "journalctl -u segno-profile.service -b --no-pager -o cat | grep -q 'http://127\.0\.0\.1:$PORT/'"; then
+  if remote "journalctl -u segno-devtools.service -b --no-pager -o cat | grep -q 'http://127\.0\.0\.1:$PORT/'"; then
     up=1
     break
   fi
@@ -123,7 +123,7 @@ done
 
 if [ -z "$up" ]; then
   echo "no VM service on port $PORT after 30s. Device-side log:" >&2
-  remote "journalctl -u segno-profile.service -b --no-pager -o cat | tail -30" >&2 || true
+  remote "journalctl -u segno-devtools.service -b --no-pager -o cat | tail -30" >&2 || true
   exit 1
 fi
 
