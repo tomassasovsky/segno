@@ -95,7 +95,7 @@ class DisplayBrightnessCubit extends Cubit<DisplayBrightnessState> {
     // DDC/CI can take seconds.
     if (isClosed) return;
     emit(state.copyWith(levels: levels));
-    _connectors = displayConnectors(await _outputs.appIdConnectors());
+    _connectors = displayConnectors(await _outputs.screenConnectors());
     final hardware = <DisplayRole>{};
     for (final MapEntry(key: role, value: connector) in _connectors.entries) {
       try {

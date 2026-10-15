@@ -2,47 +2,111 @@ import 'dart:io';
 
 import 'package:brightness_client/brightness_client.dart';
 import 'package:test/test.dart';
+import 'package:toml/toml.dart';
 
-const _ini = '''
-[core]
-shell=kiosk-shell.so
-idle-time=0
+const _toml = '''
+# ivi-homescreen configuration.
+[global]
+disable_cursor = true
 
-[output]
-name=HDMI-A-1
-mode=1920x1080@60
-# The main UI, on the TV.
-app-ids=dev.aquiles.segno
+[[view]]
+bundle = '/opt/segno'
+fullscreen = true
 
-[output]
-name=HDMI-A-2
-mode=current
-app-ids=dev.aquiles.segno.waveform, other.app
+  [view.args]
+  dart = ['--segno-screen=main']
+  engine = ['--enable-impeller=false']
 
-[libinput]
-touchscreen_calibrator=true
+  [view.backend]
+  type = 'drm-kms-egl'
+
+  [view.output]
+  drm_connector = 'HDMI-A-1'
+
+[[view]]
+bundle = '/opt/segno'
+pixel_ratio = 1.6
+
+  [view.args]
+  dart = ["--segno-screen=readout"]
+
+  [view.output]
+  drm_connector = "HDMI-A-2"
+  touch_device = 'USB2IIC_CTP_CONTROL'
 ''';
 
 void main() {
-  test('reads each pinned app-id to its output', () {
-    expect(parseWestonAppIdConnectors(_ini), {
-      'dev.aquiles.segno': 'HDMI-A-1',
-      'dev.aquiles.segno.waveform': 'HDMI-A-2',
-      'other.app': 'HDMI-A-2',
+  test("reads each view's screen to its connector", () {
+    expect(parseHomescreenScreenConnectors(_toml), {
+      'main': 'HDMI-A-1',
+      'readout': 'HDMI-A-2',
     });
   });
 
-  test('an output without app-ids pins nothing', () {
-    expect(parseWestonAppIdConnectors('[output]\nname=HDMI-A-1\n'), isEmpty);
-  });
-
-  test('an output with an empty name pins nothing', () {
+  test('a view without a screen or a connector pins nothing', () {
     expect(
-      parseWestonAppIdConnectors(
-        '[output]\nname=\napp-ids=dev.aquiles.segno\n',
+      parseHomescreenScreenConnectors(
+        "[[view]]\n  [view.output]\n  drm_connector = 'HDMI-A-1'\n",
       ),
       isEmpty,
     );
+    expect(
+      parseHomescreenScreenConnectors(
+        "[[view]]\n  [view.args]\n  dart = ['--segno-screen=main']\n",
+      ),
+      isEmpty,
+    );
+  });
+
+  test('an empty connector pins nothing', () {
+    expect(
+      parseHomescreenScreenConnectors(
+        "[[view]]\n  [view.args]\n  dart = ['--segno-screen=main']\n"
+        "  [view.output]\n  drm_connector = ''\n",
+      ),
+      isEmpty,
+    );
+  });
+
+  test('a key outside any view belongs to no screen', () {
+    expect(
+      parseHomescreenScreenConnectors(
+        "[global]\ndrm_connector = 'HDMI-A-1'\n"
+        "dart = ['--segno-screen=main']\n",
+      ),
+      isEmpty,
+    );
+  });
+
+  test('reads any TOML spelling of the same keys', () {
+    expect(
+      parseHomescreenScreenConnectors('''
+[[ view ]]  # the main screen
+args.dart = [
+  '--segno-screen=main',
+]
+output.drm_connector = 'HDMI-A-1'
+'''),
+      {'main': 'HDMI-A-1'},
+    );
+  });
+
+  test('a file that is not TOML throws', () {
+    expect(
+      () => parseHomescreenScreenConnectors('[[view]\n'),
+      throwsA(isA<TomlParserException>()),
+    );
+  });
+
+  test('reads the configuration the image ships', () {
+    final shipped = File(
+      '../../deploy/yocto/meta-segno/recipes-segno/segno-bundle/files/'
+      'homescreen.toml',
+    );
+    expect(parseHomescreenScreenConnectors(shipped.readAsStringSync()), {
+      'main': 'HDMI-A-1',
+      'readout': 'HDMI-A-2',
+    });
   });
 
   group('SystemDisplayOutputs', () {
@@ -59,20 +123,17 @@ void main() {
       File(
         '${root.path}/drm/card1-HDMI-A-2/status',
       ).writeAsStringSync('disconnected\n');
-      File('${root.path}/weston.ini').writeAsStringSync(_ini);
+      File('${root.path}/homescreen.toml').writeAsStringSync(_toml);
       outputs = SystemDisplayOutputs(
-        westonIni: '${root.path}/weston.ini',
+        homescreenConfig: '${root.path}/homescreen.toml',
         drmRoot: '${root.path}/drm',
       );
     });
 
     tearDown(() => root.deleteSync(recursive: true));
 
-    test('reads the pins from the compositor configuration', () async {
-      expect(
-        (await outputs.appIdConnectors())['dev.aquiles.segno.waveform'],
-        'HDMI-A-2',
-      );
+    test("reads the connectors from the embedder's configuration", () async {
+      expect((await outputs.screenConnectors())['readout'], 'HDMI-A-2');
     });
 
     test('reads presence from the DRM connector status', () async {
@@ -83,11 +144,16 @@ void main() {
 
     test('a missing configuration pins nothing', () async {
       final missing = SystemDisplayOutputs(
-        westonIni: '${root.path}/absent.ini',
+        homescreenConfig: '${root.path}/absent.toml',
         drmRoot: '${root.path}/absent',
       );
-      expect(await missing.appIdConnectors(), isEmpty);
+      expect(await missing.screenConnectors(), isEmpty);
       expect(await missing.isConnected('HDMI-A-1'), isNull);
+    });
+
+    test('a configuration that is not TOML pins nothing', () async {
+      File('${root.path}/homescreen.toml').writeAsStringSync('[[view]\n');
+      expect(await outputs.screenConnectors(), isEmpty);
     });
   });
 }

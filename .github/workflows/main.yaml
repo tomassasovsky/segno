@@ -29,11 +29,11 @@ jobs:
       format_directories: "lib test packages/*/lib packages/*/test"
       analyze_directories: "lib test packages/*/lib packages/*/test"
       # Keep the 90% gate for real logic, but exclude platform / entrypoint glue
-      # that can't be meaningfully unit-tested: the custom window chrome
-      # (window_manager), the desktop_multi_window output-waveform sub-window,
-      # and the app bootstrap/entrypoint. Coverage on the remainder stays ~91%.
+      # that can't be meaningfully unit-tested: the Track display's app and its
+      # link service, and the app bootstrap/entrypoint. Coverage on the
+      # remainder stays ~91%.
       min_coverage: 90
-      coverage_excludes: "**/window_chrome.dart **/waveform_window*.dart **/run_segno.dart **/bootstrap.dart **/session_directory.dart **/system_appliance_env.dart"
+      coverage_excludes: "**/waveform_window*.dart **/run_segno.dart **/bootstrap.dart **/session_directory.dart **/system_appliance_env.dart"
 
   # daw_export is a pure Dart package (no Flutter dependency, plain `test`
   # instead of `flutter_test`) so it can't ride the root flutter_package.yml
@@ -135,6 +135,16 @@ jobs:
       working_directory: packages/cpu_load_repository
       run_bloc_lint: false
       min_coverage: 100
+  # The console's per-panel brightness and which output each screen is on,
+  # read from ivi-homescreen's homescreen.toml (#1330). Pure Dart. What it
+  # cannot cover here are the two factories, which only pick the real client
+  # on the appliance.
+  brightness-client:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    with:
+      working_directory: packages/brightness_client
+      run_bloc_lint: false
+      min_coverage: 80
   pedal-repository:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
     with:
