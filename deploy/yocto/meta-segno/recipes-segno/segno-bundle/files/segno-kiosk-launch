@@ -1,9 +1,9 @@
 #!/bin/sh
-# Launch the prebuilt Segno bundle. Everything here is the same whichever
-# embedder runs it; the last step sources the embedder's own launch tail, which
-# segno-bundle.bb installs as /usr/libexec/segno/embedder for SEGNO_EMBEDDER:
-#   gtk  segno-embedder-gtk  the Flutter GTK runner under weston (shipping)
-#   ivi  segno-embedder-ivi  ivi-homescreen over DRM/KMS, no compositor (#1318)
+# Launch Segno: ivi-homescreen, installed as /usr/bin/segno, drives both HDMI
+# outputs itself over DRM/KMS with no compositor, and runs one Flutter engine
+# per screen from the bundle in /opt/segno (#1318, #1330).
+# /etc/segno/homescreen.toml says which screen goes where; each engine learns
+# its role from the --segno-screen= argument that file gives it.
 # The console build is the only build; nothing to pass here.
 
 # Persistent data lives on the /data partition (label "data"), which OS/app updates
@@ -174,6 +174,9 @@ export SEGNO_RT_AUDIO=1
 # default stays 2; this override is appliance-only.
 export SEGNO_ALSA_PERIODS=8
 
-# Hand over to the embedder. Sourced, not executed, so its `exec` replaces this
-# shell and "$@" reaches the app unchanged.
-. /usr/libexec/segno/embedder
+# The engine library is opened by name, and ivi-homescreen puts nothing of
+# /opt/segno on the loader's path, so name the file outright: both of its
+# loaders honour this (segno_engine's native_audio_engine.dart and
+# midi_client's native_library.dart).
+export SEGNO_ENGINE_LIB=/opt/segno/lib/libsegno_engine.so
+exec /usr/bin/segno --config /etc/segno/homescreen.toml "$@"

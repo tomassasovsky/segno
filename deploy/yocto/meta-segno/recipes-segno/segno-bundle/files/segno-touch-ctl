@@ -1,5 +1,5 @@
 #!/bin/sh
-# segno-touch-ctl — privileged touchscreen calibration helper.
+# segno-touch-ctl — touchscreen calibration helper (run as root by the app).
 #
 # Verbs (stdout = compact JSON; detail on stderr):
 #   status          {"present":bool,"device":str,"calibrated":bool,"matrix":str}
@@ -15,9 +15,8 @@
 # rootfs — a matrix written into /etc is silently lost on the next OTA. Same
 # reason as segno-nm-persist / segno-ssh-persist.
 #
-# Weston does the measuring: weston-touch-calibrator draws the crosshairs and
-# computes the matrix, then calls the `calibration_helper` from weston.ini
-# (segno-touch-calibration-helper), which lands here as `set`.
+# The app does the measuring (Settings > Displays > Calibrate touch) and lands
+# here as `set`.
 #
 # See https://github.com/tomassasovsky/segno/issues/659
 set -eu
@@ -27,12 +26,6 @@ MATRIX_FILE="$DATA_DIR/calibration"
 RULE_FILE="${SEGNO_TOUCH_RULE:-/etc/udev/rules.d/98-segno-touch-calibration.rules}"
 
 log() { echo "segno-touch-ctl: $*" >&2; }
-
-# Writing the matrix is unprivileged (weston runs as User=weston and invokes the
-# calibration helper as itself); turning it into a udev rule is not. `set` from
-# an unprivileged caller therefore stores the matrix and lets
-# segno-touch-apply.path notice the write and run `apply` as root.
-is_root() { [ "$(id -u)" = "0" ]; }
 
 # Name of the first touchscreen udev knows about, or empty.
 #
@@ -78,12 +71,8 @@ validate_matrix() {
 }
 
 # Regenerate the udev rule from the stored matrix and re-trigger input devices
-# so it applies without a reboot. Root only — see is_root().
+# so it applies without a reboot.
 apply() {
-    if ! is_root; then
-        log "not root: leaving the udev rule to segno-touch-apply.path"
-        return 0
-    fi
     if ! m=$(read_matrix); then
         rm -f "$RULE_FILE"
     else
@@ -128,29 +117,14 @@ do_status() {
 do_set() {
     m=$(echo "$*" | tr -s ' \t' ' ' | sed 's/^ *//;s/ *$//')
     validate_matrix "$m" || return 2
-    # mkdir only works as root; when weston calls this the directory already
-    # exists and is owned by the compositor user (segno-touch-persist, which is
-    # ordered Before=weston.service, creates it).
-    if is_root; then
-        mkdir -p "$DATA_DIR"
-    elif [ ! -d "$DATA_DIR" ]; then
-        log "$DATA_DIR missing and not root — is segno-touch-persist enabled?"
-        return 1
-    fi
+    mkdir -p "$DATA_DIR"
     echo "$m" > "$MATRIX_FILE"
     apply
     json_matrix
 }
 
 do_reset() {
-    # `-f` hides a missing file, not a permission error — and under `set -e` an
-    # EACCES here killed the verb before it printed anything. The matrix is
-    # root-owned once a root-side `set` has run, so an unprivileged reset hits
-    # exactly that. Say so, the way do_set does for its own non-root case.
-    if [ -e "$MATRIX_FILE" ] && ! rm -f "$MATRIX_FILE" 2>/dev/null; then
-        log "cannot remove $MATRIX_FILE — not root?"
-        return 1
-    fi
+    rm -f "$MATRIX_FILE"
     apply
     json_matrix
 }

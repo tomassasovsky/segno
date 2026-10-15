@@ -21,7 +21,7 @@
 #   check_ffi_symbols.sh <libsegno_engine.so> [bindings.dart]
 #
 #   <libsegno_engine.so>  The BUILT shared object that ships in the bundle,
-#                         e.g. build/linux/arm64/release/bundle/lib/libsegno_engine.so
+#                         e.g. build/appliance/bundle/lib/libsegno_engine.so
 #   [bindings.dart]       Defaults to the generated bindings in this package.
 #
 # Environment:
