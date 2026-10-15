@@ -20,7 +20,6 @@
     "deviceReconnectedSnackbar": "{deviceName} reconectado",
     "dismiss": "Descartar",
     "waveformWindowFailedBanner": "La pantalla de forma de onda no se abrió: comprueba la segunda pantalla.",
-    "singleDisplayNotice": "Solo se detectó una pantalla: la pantalla de forma de onda no está disponible.",
     "audioRecoveryWaitingBanner": "Esperando la interfaz de audio: se iniciará automáticamente al reconectarse.",
     "close": "Cerrar",
     "sessionMenuTooltip": "Sesión",
@@ -239,10 +238,6 @@
     "undoClearAllToast": "Se borraron todas las pistas",
     "undoClearAllAction": "Deshacer",
     "a11yUndoClearAll": "Se restauraron todas las pistas borradas",
-    "fullscreenTooltip": "Pantalla completa (F)",
-    "@fullscreenTooltip": {
-        "description": "Tooltip for the top-bar button (desktop only) that toggles OS fullscreen. The parenthetical names the keyboard shortcut."
-    },
     "undoTooltip": "Deshacer ({shortcut})",
     "@undoTooltip": {
         "description": "Tooltip for the per-track Undo button. The placeholder is the platform-specific keyboard shortcut, e.g. ⌘Z or Ctrl+Z.",
@@ -422,7 +417,6 @@
     "pitchOctaves": "{sign}{count} oct",
     "pitchSemitones": "{sign}{count} st",
     "defaultTrackName": "PISTA {trackNumber}",
-    "outputWaveformWindowTitle": "Segno — Pista",
     "@deviceReconnectedSnackbar": {
         "placeholders": {
             "deviceName": {

@@ -21,9 +21,12 @@ void main() {
       expect(segnoScreenFrom(['--ihs-view=main']), isNull);
     });
 
-    test('is null for an unknown screen rather than guessing main', () {
-      expect(segnoScreenFrom(['--segno-screen=Main']), isNull);
-      expect(segnoScreenFrom(['--segno-screen=']), isNull);
+    test('throws for an unknown screen rather than starting a main one', () {
+      expect(
+        () => segnoScreenFrom(['--segno-screen=Main']),
+        throwsArgumentError,
+      );
+      expect(() => segnoScreenFrom(['--segno-screen=']), throwsArgumentError);
     });
   });
 

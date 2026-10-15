@@ -4,11 +4,10 @@ import 'dart:ui' show IsolateNameServer;
 
 /// Which of the console's two screens this Flutter engine renders.
 ///
-/// An embedder that runs one engine per screen (ivi-homescreen on the
-/// appliance) starts every engine from the same bundle and the same `main`, and
-/// names the role in the Dart arguments: `--segno-screen=main` or
-/// `--segno-screen=readout`. The GTK runner passes neither, because it opens
-/// the readout itself through `desktop_multi_window`.
+/// ivi-homescreen on the appliance starts one engine per screen from the same
+/// bundle and the same `main`, and names each one's role in its Dart arguments
+/// (homescreen.toml): `--segno-screen=main` or `--segno-screen=readout`. The
+/// macOS dev host names none and runs the main screen alone.
 enum SegnoScreen {
   /// The main console UI. Owns the audio engine and every repository.
   main,
@@ -21,11 +20,12 @@ enum SegnoScreen {
 /// The argument prefix an embedder uses to name the screen.
 const segnoScreenArgPrefix = '--segno-screen=';
 
-/// The screen named in [args], or `null` when no embedder named one.
+/// The screen named in [args], or `null` when none is named (the macOS dev
+/// host).
 ///
-/// An unrecognised value is `null` too: a typo in the embedder config must not
-/// start a second main screen with its own audio engine. It starts the GTK path
-/// instead, which fails loudly on an embedder that cannot serve it.
+/// Throws [ArgumentError] for a value that names no screen: a typo in the
+/// embedder config must not start a second main screen, with a second audio
+/// engine, in the same process.
 SegnoScreen? segnoScreenFrom(List<String> args) {
   for (final arg in args) {
     if (!arg.startsWith(segnoScreenArgPrefix)) continue;
@@ -33,7 +33,7 @@ SegnoScreen? segnoScreenFrom(List<String> args) {
     for (final screen in SegnoScreen.values) {
       if (screen.name == name) return screen;
     }
-    return null;
+    throw ArgumentError.value(arg, 'args', 'names no Segno screen');
   }
   return null;
 }
@@ -115,8 +115,8 @@ abstract final class ScreenLinkOp {
 /// [SendPort]s. An unmodifiable or typed list nested in a readout map would
 /// make [SendPort.send] throw, so maps and lists are rebuilt as plain literals
 /// rather than trusted. A typed list therefore arrives as a plain list of its
-/// numbers, as it already does through the GTK window channel; bulk data that
-/// should stay compact goes through [packSamples] instead.
+/// numbers; bulk data that should stay compact goes through [packSamples]
+/// instead.
 ///
 /// Throws [ArgumentError] for anything else, at the sender, where the stack
 /// still says which field it was.

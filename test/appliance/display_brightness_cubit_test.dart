@@ -47,9 +47,9 @@ class _FakeBrightnessClient implements BrightnessClient {
 
 class _FakeOutputs implements DisplayOutputs {
   @override
-  Future<Map<String, String>> appIdConnectors() async => const {
-    'dev.aquiles.segno': 'HDMI-A-1',
-    'dev.aquiles.segno.waveform': 'HDMI-A-2',
+  Future<Map<String, String>> screenConnectors() async => const {
+    'main': 'HDMI-A-1',
+    'readout': 'HDMI-A-2',
   };
 
   @override

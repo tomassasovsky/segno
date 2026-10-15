@@ -50,8 +50,8 @@ class ScreenLinkWaveformService implements WaveformWindowService {
   final _acks = <int, Completer<void>>{};
 
   /// Last acknowledged samples and readout: the diffs that keep the link
-  /// quiet, with the same revision discipline as
-  /// [DesktopMultiWindowWaveformService].
+  /// quiet. A revision that moved while a push was in flight leaves the diff
+  /// empty, so the next push carries everything again.
   Float32List? _lastSamples;
   var _sampleRevision = 0;
   PerformanceReadout? _lastReadout;
@@ -136,7 +136,7 @@ class ScreenLinkWaveformService implements WaveformWindowService {
   /// without it announcing itself, `false`. A [close] while waiting leaves the
   /// readout blank either way.
   @override
-  Future<bool> open({String title = 'Segno — Output'}) async {
+  Future<bool> open() async {
     _listen();
     if (_open) return true;
     if (_screen != null) {

@@ -103,7 +103,6 @@ class _ShortcutsHelpDialog extends StatelessWidget {
                     ]),
                     _group(context, l10n.shortcutGroupNavigation, [
                       _Shortcut('signal', 'G', l10n.signalTooltip),
-                      _Shortcut('fullscreen', 'F', l10n.fullscreenTooltip),
                       _Shortcut('settings', 'S', l10n.settingsTooltip),
                       _Shortcut('save', combo('S'), l10n.shortcutSaveSession),
                       _Shortcut('focus', 'Tab', l10n.shortcutFocusTraverse),

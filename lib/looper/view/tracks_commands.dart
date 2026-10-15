@@ -16,7 +16,6 @@ import 'package:segno/looper/view/shortcuts_help_sheet.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart'
     show SessionConversionChange;
 
@@ -170,7 +169,7 @@ class TracksCommands {
   /// beep) and dispatched to the looper; modifier combos other than undo/redo
   /// pass through to OS / menu shortcuts.
   ///
-  /// Every mode: `M` cycle mode · `S` settings · `G` signal · `F` fullscreen ·
+  /// Every mode: `M` cycle mode · `S` settings · `G` signal ·
   /// `Space` play/pause all · `C` clear all · `A` arm/disarm performance
   /// recording · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or `Shift+Z`) redo ·
   /// `Cmd/Ctrl+Shift+C` undo clear-all (whole-rig restore).
@@ -262,10 +261,6 @@ class TracksCommands {
     }
     if (key == LogicalKeyboardKey.keyG) {
       unawaited(openFx());
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.keyF) {
-      unawaited(toggleSegnoFullScreen());
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.space) {

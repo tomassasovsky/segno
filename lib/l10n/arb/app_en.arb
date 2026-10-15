@@ -88,10 +88,6 @@
     "@waveformWindowFailedBanner": {
         "description": "Banner shown when the secondary waveform window fails to become ready."
     },
-    "singleDisplayNotice": "Only one display detected — the waveform screen is unavailable.",
-    "@singleDisplayNotice": {
-        "description": "Notice shown on the dual-display console when only one display is connected."
-    },
     "audioRecoveryWaitingBanner": "Waiting for the audio interface — it will start automatically when reconnected.",
     "@audioRecoveryWaitingBanner": {
         "description": "Banner shown when the console booted with its pinned audio interface absent and is waiting to auto-start it."
@@ -558,10 +554,6 @@
     "@a11yUndoClearAll": {
         "description": "Announced when the whole-rig undo-clear-all restores every track a clear-all cleared."
     },
-    "fullscreenTooltip": "Fullscreen (F)",
-    "@fullscreenTooltip": {
-        "description": "Tooltip for the top-bar button (desktop only) that toggles OS fullscreen. The parenthetical names the keyboard shortcut."
-    },
     "undoTooltip": "Undo ({shortcut})",
     "@undoTooltip": {
         "description": "Tooltip for the per-track Undo button. The placeholder is the platform-specific keyboard shortcut, e.g. ⌘Z or Ctrl+Z.",
@@ -844,7 +836,6 @@
             }
         }
     },
-    "outputWaveformWindowTitle": "Segno — Track",
     "midiInputGroup": "MIDI FOOT CONTROLLER",
     "midiNoDevicesFound": "No MIDI input devices found",
     "midiNone": "None",
