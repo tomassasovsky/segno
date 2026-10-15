@@ -178,5 +178,10 @@ export SEGNO_ALSA_PERIODS=8
 # /opt/segno on the loader's path, so name the file outright: both of its
 # loaders honour this (segno_engine's native_audio_engine.dart and
 # midi_client's native_library.dart).
-export SEGNO_ENGINE_LIB=/opt/segno/lib/libsegno_engine.so
-exec /usr/bin/segno --config /etc/segno/homescreen.toml "$@"
+#
+# Both this and the configuration can be overridden from the environment, and
+# only deploy/rpi/profile-on-device.sh does: it runs a profile bundle from
+# /data/profile through this same script, so the profile measures the
+# environment above rather than a copy of it.
+export SEGNO_ENGINE_LIB="${SEGNO_ENGINE_LIB:-/opt/segno/lib/libsegno_engine.so}"
+exec /usr/bin/segno --config "${SEGNO_HOMESCREEN_CONFIG:-/etc/segno/homescreen.toml}" "$@"

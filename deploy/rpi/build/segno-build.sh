@@ -15,29 +15,54 @@
 #   --keep-dart-symbols   keep the AOT snapshot's symbol table (gen_snapshot
 #                         --no-strip), so segno-prof can name Dart frames on
 #                         the device. Experimental builds pass it.
+#   --profile             build a profile-mode bundle into
+#                         build/appliance/profile-bundle instead, with the
+#                         profile engine (lib/libflutter_engine.so) and its
+#                         icudtl.dat, for DevTools on the device
+#                         (deploy/rpi/profile-on-device.sh). The image ships
+#                         only the release engine, and a profile snapshot runs
+#                         only on a profile engine.
 set -euo pipefail
 
-out=build/appliance/bundle
-work=build/appliance/work
+mode=release
 defines=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --keep-dart-symbols) defines+=(-dExtraGenSnapshotOptions=--no-strip); shift ;;
+    --profile) mode=profile; shift ;;
     *) echo "segno-build: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+if [ "$mode" = profile ]; then
+  out=build/appliance/profile-bundle
+  work=build/appliance/profile-work
+else
+  out=build/appliance/bundle
+  work=build/appliance/work
+fi
+
+# Hand the generated files back to the invoking host user, however the build
+# ends, or the bind-mounted output is root-owned on the host. `flutter pub get`
+# in this monorepo also touches packages/*/pubspec.lock, so the whole mounted
+# tree is handed back.
+hand_back() {
+  if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then
+    chown -R "$HOST_UID:$HOST_GID" /workspace 2>/dev/null || true
+  fi
+}
+trap hand_back EXIT
 
 rm -rf "$out" "$work"
 mkdir -p "$out/data" "$out/lib"
 
 flutter pub get
 
-echo "==> App: flutter assemble (main_production, linux-arm64, release)"
+echo "==> App: flutter assemble (main_production, linux-arm64, $mode)"
 flutter assemble --no-version-check --output="$work/app" \
-  -dTargetPlatform=linux-arm64 -dBuildMode=release \
+  -dTargetPlatform=linux-arm64 -dBuildMode="$mode" \
   -dTargetFile=lib/main_production.dart -dTreeShakeIcons=true \
   ${defines[@]+"${defines[@]}"} \
-  release_bundle_linux-arm64_assets
+  "${mode}_bundle_linux-arm64_assets"
 cp -R "$work/app/flutter_assets" "$out/data/"
 cp "$work/app/lib/libapp.so" "$out/lib/"
 # The Flutter tool still writes its desktop-runner scaffolding (the plugin
@@ -51,14 +76,30 @@ CC=clang CXX=clang++ cmake -S packages/segno_engine/src -B "$work/engine" \
 ninja -C "$work/engine" segno_engine
 cp "$work/engine/libsegno_engine.so" "$out/lib/"
 
+if [ "$mode" = profile ]; then
+  pin=deploy/yocto/meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc
+  commit=$(sed -n 's/^FLUTTER_ENGINE_COMMIT = "\(.*\)"$/\1/p' "$pin")
+  digest=$(sed -n 's/^FLUTTER_ENGINE_PROFILE_SHA256 = "\(.*\)"$/\1/p' "$pin")
+  # segno-bundle.bb makes this check for the release bundle at image build;
+  # the profile bundle never reaches it.
+  revision=$(flutter --version --machine | sed -n 's/.*"engineRevision": *"\([0-9a-f]*\)".*/\1/p')
+  if [ "$revision" != "$commit" ]; then
+    echo "segno-build: Flutter's engine is $revision, the pin is $commit" >&2
+    exit 1
+  fi
+  sdk="linux-engine-sdk-profile-arm64-$commit"
+  echo "==> Profile engine: $sdk"
+  curl -fsSL -o "$work/$sdk.tar.gz" \
+    "https://github.com/meta-flutter/flutter-engine/releases/download/$sdk/$sdk.tar.gz"
+  echo "$digest  $work/$sdk.tar.gz" | sha256sum -c -
+  tar -C "$work" -xzf "$work/$sdk.tar.gz" --wildcards \
+    '*/engine-sdk/lib/libflutter_engine.so' '*/engine-sdk/data/icudtl.dat'
+  sdk_dir=$(dirname "$(find "$work" -path '*/engine-sdk/lib/libflutter_engine.so')")/..
+  cp "$sdk_dir/lib/libflutter_engine.so" "$out/lib/"
+  cp "$sdk_dir/data/icudtl.dat" "$out/data/"
+fi
+
 # The Flutter release that built the snapshot. segno-bundle.bb compares its
 # engine revision with the one the image ships and refuses a mismatch, which
 # would otherwise build, install and boot, then die before the first frame.
 flutter --version --machine > "$out/flutter-version.json"
-
-# Hand the generated files back to the invoking host user, or the bind-mounted
-# output is root-owned on the host. `flutter pub get` in this monorepo also
-# touches packages/*/pubspec.lock, so the whole mounted tree is handed back.
-if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then
-  chown -R "$HOST_UID:$HOST_GID" /workspace 2>/dev/null || true
-fi
