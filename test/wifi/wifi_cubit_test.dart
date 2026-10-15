@@ -151,6 +151,9 @@ class _FakeWifiClient implements WifiClient {
     return internet;
   }
 
+  @override
+  Future<void> holdReconnects({required bool hold}) async {}
+
   WifiStatus _withAutoConnect(Map<String, bool> autoConnect) => WifiStatus(
     supported: statusValue.supported,
     enabled: statusValue.enabled,

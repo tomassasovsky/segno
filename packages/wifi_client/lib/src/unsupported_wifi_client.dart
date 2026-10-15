@@ -35,4 +35,7 @@ class UnsupportedWifiClient implements WifiClient {
 
   @override
   Future<bool> checkConnectivity() async => false;
+
+  @override
+  Future<void> holdReconnects({required bool hold}) async {}
 }

@@ -10,10 +10,17 @@ import 'package:wifi_client/src/wifi_models.dart';
 /// Production [WifiClient]: shells out to `/usr/bin/segno-wifi-ctl`.
 class SystemWifiClient implements WifiClient {
   /// Creates a [SystemWifiClient].
-  const SystemWifiClient({this.helperPath = '/usr/bin/segno-wifi-ctl'});
+  const SystemWifiClient({
+    this.helperPath = '/usr/bin/segno-wifi-ctl',
+    this.holdPath = '/run/segno/wifi-hold',
+  });
 
   /// Path to the WiFi helper.
   final String helperPath;
+
+  /// The file `segno-wifi-retry` holds off on while it exists. It carries this
+  /// process's PID, so a file left behind by a crashed app is ignored.
+  final String holdPath;
 
   @override
   bool get isSupported => File(helperPath).existsSync();
@@ -75,6 +82,25 @@ class SystemWifiClient implements WifiClient {
   Future<bool> checkConnectivity() async {
     final json = await _runJson(const ['connectivity']);
     return json is Map<String, dynamic> && json['internet'] == true;
+  }
+
+  /// Written to a sibling and renamed into place, so the retry never reads a
+  /// half-written PID. Best effort: a hold that cannot be written only means
+  /// the console may reconnect mid-show, so it is not an error to report.
+  @override
+  Future<void> holdReconnects({required bool hold}) async {
+    if (!isSupported) return;
+    try {
+      if (!hold) {
+        await File(holdPath).delete();
+        return;
+      }
+      final staged = File('$holdPath.$pid');
+      await staged.writeAsString('$pid\n', flush: true);
+      await staged.rename(holdPath);
+    } on FileSystemException {
+      // Already released, or no /run/segno to hold in.
+    }
   }
 
   Future<Object?> _runJson(List<String> args) async {

@@ -224,6 +224,9 @@ class _PreviewWifiClient implements WifiClient {
 
   @override
   Future<bool> checkConnectivity() async => internet;
+
+  @override
+  Future<void> holdReconnects({required bool hold}) async {}
 }
 
 /// The Settings pages and the FX pedal assignments in the states worth
