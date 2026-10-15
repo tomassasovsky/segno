@@ -105,6 +105,16 @@ abstract final class ScreenLinkOp {
   /// Readout to main: a player touched the readout, which wakes an
   /// idle-dimmed console like a touch on the main screen.
   static const activity = 'activity';
+
+  /// Main to readout: touch calibration of the readout's own touchscreen.
+  /// `target` is the point to tap, `[x, y]` in the readout's normalized
+  /// coordinates, and `label` says which step it is; a `null` target ends
+  /// calibration and the readout goes back to what it was showing.
+  static const calibrate = 'calibrate';
+
+  /// Readout to main: a tap during calibration, `x` and `y` in the readout's
+  /// normalized coordinates.
+  static const calibrationTap = 'calibrationTap';
 }
 
 /// A copy of [value] that a [SendPort] can carry between isolate groups.

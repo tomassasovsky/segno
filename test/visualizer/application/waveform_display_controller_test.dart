@@ -31,6 +31,15 @@ class _Window implements WaveformWindowService {
   void Function()? onWindowActivity;
 
   @override
+  void Function(({double x, double y}) tap)? onCalibrationTap;
+
+  @override
+  Future<bool> showCalibrationTarget(
+    ({double x, double y})? target, {
+    String label = '',
+  }) async => false;
+
+  @override
   Future<bool> open() async {
     opens++;
     return isOpen = await (opening?.future ?? Future.value(true));

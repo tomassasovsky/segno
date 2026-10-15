@@ -136,6 +136,15 @@ class _RecordingWindowService implements WaveformWindowService {
   void Function()? onWindowActivity;
 
   @override
+  void Function(({double x, double y}) tap)? onCalibrationTap;
+
+  @override
+  Future<bool> showCalibrationTarget(
+    ({double x, double y})? target, {
+    String label = '',
+  }) async => false;
+
+  @override
   Future<void> pushReadout(PerformanceReadout readout) async {
     readouts.add(readout);
     if (failNextReadoutPushes > 0) {

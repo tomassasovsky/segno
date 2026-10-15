@@ -66,6 +66,19 @@ abstract interface class WaveformWindowService {
   /// the service cannot reach.
   abstract void Function()? onWindowReady;
 
+  /// Shows a touch calibration [target] on the Track display, a point in its
+  /// normalized coordinates, with [label] saying which step it is; a `null`
+  /// [target] ends calibration there. Returns `false` when the Track display
+  /// cannot be reached, so there is nothing to calibrate.
+  Future<bool> showCalibrationTarget(
+    ({double x, double y})? target, {
+    String label = '',
+  });
+
+  /// Fired with each tap on the Track display while it shows a calibration
+  /// target, as a point in its normalized coordinates.
+  abstract void Function(({double x, double y}) tap)? onCalibrationTap;
+
   /// Fired when a player touches the readout: activity on the Track
   /// display, which wakes an idle-dimmed console like a touch on the main
   /// one.
@@ -84,7 +97,16 @@ class NoopWaveformWindowService implements WaveformWindowService {
   void Function()? onWindowActivity;
 
   @override
+  void Function(({double x, double y}) tap)? onCalibrationTap;
+
+  @override
   Future<bool> open() async => true;
+
+  @override
+  Future<bool> showCalibrationTarget(
+    ({double x, double y})? target, {
+    String label = '',
+  }) async => false;
 
   @override
   Future<void> close() async {}

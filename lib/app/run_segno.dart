@@ -28,6 +28,7 @@ import 'package:segno/visualizer/visualizer.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:storage_repository/storage_repository.dart';
+import 'package:touch_calibration_client/touch_calibration_client.dart';
 import 'package:update_repository/update_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
@@ -261,6 +262,7 @@ Future<void> runSegno(
       wifi: wifi,
       brightness: brightness,
       displayOutputs: createDisplayOutputs(),
+      touchCalibration: createTouchCalibrationClient(),
       consoleFacts: consoleFacts,
       cpuLoad: CpuLoadRepository.system(),
       guards: registry,

@@ -27,9 +27,10 @@ import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
-import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
+import 'package:segno/visualizer/visualizer.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:toastification/toastification.dart';
+import 'package:touch_calibration_client/touch_calibration_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -124,6 +125,13 @@ class DestinationHarness {
 
   /// The outputs the Displays page reads presence from.
   final FakeDisplayOutputs outputs = FakeDisplayOutputs();
+
+  /// The touch calibration the Displays page offers. Unsupported unless a
+  /// test sets one before [pump].
+  TouchCalibrationClient touch = const UnsupportedTouchCalibrationClient();
+
+  /// The Track display link calibration draws its targets through.
+  WaveformWindowService link = NoopWaveformWindowService();
 
   /// The waveform window preference the Displays page shows.
   late MockWaveformWindowCubit waveform;
@@ -220,6 +228,8 @@ class DestinationHarness {
         providers: [
           RepositoryProvider.value(value: WifiRepository(client: wifi)),
           RepositoryProvider<DisplayOutputs>.value(value: outputs),
+          RepositoryProvider<TouchCalibrationClient>.value(value: touch),
+          RepositoryProvider<WaveformWindowService>.value(value: link),
         ],
         child: MultiBlocProvider(
           providers: [
