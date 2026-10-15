@@ -417,6 +417,7 @@
     "libglib",
     "libgpiod",
     "libinput",
+    "libseat",
     "libjack",
     "libm",
     "libpango",

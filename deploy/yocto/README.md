@@ -1,93 +1,77 @@
-# Segno appliance — Yocto/weston image
+# Segno appliance — Yocto image
 
 The image the floor console boots: a lean Yocto build running the **prebuilt**
-aarch64 Flutter GTK bundle under weston, with RAUC A/B updates over the Raspberry
-Pi firmware's `tryboot`.
+aarch64 app bundle on [ivi-homescreen](https://github.com/toyota-connected/ivi-homescreen),
+which drives both HDMI outputs straight over DRM/KMS with no compositor, one
+Flutter engine per screen. RAUC A/B updates go over the Raspberry Pi firmware's
+`tryboot`. There is no GTK, no Weston and no Wayland (#1318, #1330).
 
-The shipping board is the **Raspberry Pi 5**, booting from NVMe. The Pi 4 is
-retired (owner's call, 2026-08-25): its kas project is kept so the layer stays
-honestly board-parameterised and the board remains buildable on request, but
-nothing publishes for it and push/tag triggers do not build it.
+The board is the **Raspberry Pi 5**, booting from NVMe. The Pi 4 image is gone.
 
-| kas project | MACHINE | Boots from | `SEGNO_BOOT_DISK` | |
-|---|---|---|---|---|
-| `kas-segno-rpi5.yml` | `raspberrypi5` | NVMe in the M.2 slot | `nvme0n1` | **shipping** |
-| `kas-segno-rpi4.yml` | `raspberrypi4-64` | SD card | `mmcblk0` | retired |
-| `kas-segno-rpi5-ivi.yml` | `raspberrypi5` | NVMe in the M.2 slot | `nvme0n1` | spike ([#1318](https://github.com/tomassasovsky/segno/issues/1318)) |
+| kas project | MACHINE | Boots from | `SEGNO_BOOT_DISK` |
+|---|---|---|---|
+| `kas-segno-rpi5.yml` | `raspberrypi5` | NVMe in the M.2 slot | `nvme0n1` |
 
-Everything the two share lives in **`kas-segno-common.yml`** — put changes there
-unless they are genuinely board-specific. The boot device is a single variable
-threaded through the WIC layout, the RAUC slot table and the per-slot
+What is not specific to the board lives in **`kas-segno-common.yml`**. The boot
+device is a single variable threaded through the WIC layout, the RAUC slot
+table and the per-slot
 `cmdline.txt`, so those three cannot drift apart.
 
 Origin: the Tier 3a spike ([#284](https://github.com/tomassasovsky/segno/issues/284),
 child of #271). Pi 5 + NVMe: [#799](https://github.com/tomassasovsky/segno/issues/799).
-Plan: [`docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md`](../../docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md).
+Plans: [`docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md`](../../docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md)
+(the original GTK/Weston image),
+[`docs/plan/2026-10-13-spike-ivi-homescreen-plan.md`](../../docs/plan/2026-10-13-spike-ivi-homescreen-plan.md)
+and [`docs/plan/2026-10-14-ivi-only-appliance-plan.md`](../../docs/plan/2026-10-14-ivi-only-appliance-plan.md)
+(ivi-homescreen, now the only image).
 
 ## What's here
 
 ```
 kas-segno-common.yml        shared: poky + meta-openembedded + meta-raspberrypi + meta-rauc (walnascar, commit-pinned)
-kas-segno-rpi4.yml          raspberrypi4-64, SD
 kas-segno-rpi5.yml          raspberrypi5, NVMe (+ dtparam=pciex1)
-kas-segno-rpi5-ivi.yml      the rpi5 image on ivi-homescreen instead of weston + GTK (#1318 spike)
 meta-segno/
   conf/layer.conf
   classes/tryboot-cmdline.bbclass                    rewrites root= per boot slot inside the .wic
   wic/segno-tryboot.wks.in                           A/B layout template (${SEGNO_BOOT_DISK})
-  recipes-core/images/segno-kiosk-image.bb           core-image-weston + our bundle + GTK3/Mesa/ALSA
+  recipes-core/images/segno-kiosk-image.bb           core-image + our bundle + Mesa/ALSA, no compositor
   recipes-core/images/segno-update-bundle.bb         the signed .raucb
   recipes-core/rauc/                                 slot table (templated) + keyring
   recipes-bsp/rauc-rpi-backend/                      tryboot bootloader backend
-  recipes-segno/segno-bundle/                        installs the PREBUILT bundle + launcher + units
-  recipes-graphics/weston-init/weston-init.bbappend  weston.ini: kiosk-shell + dual outputs
-  recipes-graphics/ivi-homescreen/                   ivi image only: the DRM/KMS embedder (pinned, two patches), installed as /usr/bin/segno
-  recipes-graphics/flutter-engine/                   ivi image only: meta-flutter's prebuilt engine + its pin
+  recipes-segno/segno-bundle/                        installs the PREBUILT bundle + launcher + units + homescreen.toml (which screen goes where)
+  recipes-graphics/ivi-homescreen/                   the DRM/KMS embedder (pinned, two patches), installed as /usr/bin/segno
+  recipes-graphics/flutter-engine/                   meta-flutter's prebuilt engine + its pin
 ```
 
-### The ivi-homescreen spike image (#1318)
+### The engine and the app bundle
 
-`SEGNO_EMBEDDER` selects the embedder for the whole image. `kas-segno-rpi5-ivi.yml`
-sets it to `ivi`; everything else leaves the default `gtk`.
+- The engine is meta-flutter's prebuilt release build, not a source build, and
+  this layer does not include meta-flutter: it has no recipe for walnascar,
+  and its engine recipe needs a 14 GB+ checkout.
+- The app bundle must come from the Flutter release named in
+  `recipes-graphics/flutter-engine/flutter-engine-version.inc`, and
+  `segno-bundle` refuses any other. `deploy/rpi/build` builds it with
+  `flutter assemble` and the engine's own CMake project; there is no Flutter
+  desktop runner.
 
-- **`gtk`** is the shipping image described here.
-- **`ivi`** keeps the same image name, partitions and RAUC compatible string,
-  but drops weston and GTK. ivi-homescreen drives both HDMI outputs over
-  DRM/KMS, one Flutter engine per screen (`segno-bundle/files/homescreen.toml`).
-  - The engine is meta-flutter's prebuilt release build, not a source build,
-    and this layer does not include meta-flutter.
-  - The app bundle must come from the Flutter release named in
-    `recipes-graphics/flutter-engine/flutter-engine-version.inc`, and
-    `segno-bundle` refuses any other.
-  - CI builds it with `-f embedder=ivi`, on the experimental channel only.
-    - With `publish=yes` it is offered to experimental-channel units like any
-      build, and installs stay opt-in.
-    - The artifact also carries a `.raucb` for moving a bench unit onto it by
-      hand.
-  - Plan and on-device checklist:
-    [`docs/plan/2026-10-13-spike-ivi-homescreen-plan.md`](../../docs/plan/2026-10-13-spike-ivi-homescreen-plan.md).
-
-**No meta-flutter** — it has no GTK embedder (that's what 3b/ivi-homescreen is for).
-This is a stock weston image plus our prebuilt bundle. **ALSA-only** (no
-PipeWire/JACK → no `pw-jack`; the engine drives ALSA directly).
+**ALSA-only** (no PipeWire/JACK → no `pw-jack`; the engine drives ALSA
+directly).
 
 ## Getting an image
 
 ### The easy way — CI
 
 `appliance-release.yml` builds both the `.raucb` and the flashable `.wic`.
-Dispatch it, pick the board, and download the image artifact:
+Dispatch it and download the image artifact:
 
 ```bash
-gh workflow run appliance-release.yml -f channel=experimental -f runner=self-hosted -f board=rpi5 -f publish=no
+gh workflow run appliance-release.yml -f channel=experimental -f runner=self-hosted -f publish=no
 ```
 
-The run publishes a `segno-image-<board>-<version>` artifact holding
-`*.wic.gz`, its `.bmap` and `SHA256SUMS`. `board` defaults to **rpi5** everywhere, and on dispatch `publish`
-defaults to **no**, so a bench build cannot move the OTA channel. Note push to
-`experimental` and `v*` tags still publish — that is what they are for. Publishing any
-board other than rpi5 is refused outright: `manifest.json` has no board field and
-the client selects on version alone, so a channel can serve exactly one board.
+The run publishes a `segno-image-rpi5-<version>` artifact holding `*.wic.gz`,
+its `.bmap`, the `.raucb` and `SHA256SUMS`. On dispatch `publish` defaults to
+**no**, so a bench build cannot move the OTA channel. Push to `experimental`
+and `v*` tags still publish — that is what they are for.
 
 ### The local way — kas-container
 
@@ -99,9 +83,9 @@ cores**. First build is **~2–5 h**.
    ```bash
    deploy/rpi/build/build-arm64-bundle.sh
    mkdir -p deploy/yocto/prebuilt
-   cp -a build/linux/arm64/release/bundle deploy/yocto/prebuilt/bundle
+   cp -a build/appliance/bundle deploy/yocto/prebuilt/bundle
    ```
-   (`deploy/yocto/prebuilt/` is gitignored — it's a 26 MB binary artifact.)
+   (`deploy/yocto/prebuilt/` is gitignored — it's a ~30 MB binary artifact.)
 
 2. **Get `kas-container`** (Siemens' image runs **native arm64** on Apple Silicon —
    do **not** use crops/poky, which is amd64-only):
@@ -189,8 +173,18 @@ never a key-change warning. IP-keyed entries are untouched.
 
 ## Iterating
 
-App-only changes don't need a reflash — `rsync` the bundle to `/opt/segno` on the
-running unit. OS changes go out as a `.raucb` through the normal update flow.
+App-only changes don't need a reflash. Build the bundle, copy its three parts
+over the running unit's `/opt/segno`, and restart the app. The unit has no
+`rsync` or sftp server (dropbear), so copy with `scp -O` or `ssh ... cat`:
+
+```bash
+deploy/rpi/build/build-arm64-bundle.sh --keep-dart-symbols
+tar -C build/appliance/bundle -cf - data lib | ssh root@<unit> 'tar -C /opt/segno -xf - && systemctl restart segno'
+```
+
+The bundle must come from the Flutter release the image's engine is
+(`flutter-engine-version.inc`); the build script uses it. OS changes go out as
+a `.raucb` through the normal update flow.
 
 ## When to bail to a cloud builder
 

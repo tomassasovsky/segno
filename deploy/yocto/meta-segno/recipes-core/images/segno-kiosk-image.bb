@@ -1,38 +1,28 @@
-SUMMARY = "Segno floor-console kiosk image: the prebuilt Flutter bundle under its embedder"
+SUMMARY = "Segno floor-console kiosk image: the prebuilt Flutter bundle on ivi-homescreen"
 LICENSE = "MIT"
 
-# Which embedder the image carries (see segno-bundle.bb): `gtk` (weston + the
-# Flutter GTK runner, shipping) or `ivi` (ivi-homescreen on DRM/KMS, #1318).
-# One image name for both, so the RAUC bundle, the .wic and the release
-# workflow do not change, and a bench unit can move between the two by an A/B
-# update and back by rolling back.
-SEGNO_EMBEDDER ??= "gtk"
-
-# Start from the stock Wayland image (weston + weston-init + GTK3 already present),
-# then add our bundle and its runtime deps. See docs/plan Tier 3a §Phase 2.
+# A plain core image with no compositor: ivi-homescreen (segno-bundle's
+# RDEPENDS) drives both HDMI outputs itself over DRM/KMS, one Flutter engine
+# per screen (#1318, #1330). The features are the ones the image had when it
+# was based on core-image-weston, less weston, and less `splash`, which only
+# installs psplash (excluded below: plymouth owns the splash).
 #
 # Note what is NOT here: meta-rauc's rauc-mark-good. Its unit is condition-gated
 # on a `rauc.slot` kernel argument that the Pi tryboot backend never sets, so it
 # was skipped on every boot and every update silently rolled back. segno-bundle
 # ships segno-mark-good.service in its place, behind a health gate (#307).
-require recipes-graphics/images/core-image-weston.bb
-
-# The ivi image is the same image without the compositor and the GTK stack:
-# ivi-homescreen drives both outputs itself, so weston, weston-init and the
-# demo clients core-image-weston adds have nothing to do.
-IMAGE_FEATURES:remove = "${@'weston' if d.getVar('SEGNO_EMBEDDER') == 'ivi' else ''}"
-CORE_IMAGE_BASE_INSTALL:remove = "${@'gtk+3-demo weston-xwayland matchbox-terminal' if d.getVar('SEGNO_EMBEDDER') == 'ivi' else ''}"
+inherit core-image
+IMAGE_FEATURES += "package-management ssh-server-dropbear hwcodecs"
 
 # segno-console-board carries the console board's firmware and the boot-time
 # check that applies it: the board is a second computer, and the image owns
 # what runs on it (#989). No comments inside the list below — BitBake treats a
 # '#' in a line-continued value as part of the value, not as a comment.
 #
-# segno-profiling ships segno-prof (stack sampler, main-loop census) on every
-# image; its recorder service only runs on experimental ones (#1299).
+# segno-profiling ships segno-prof (the stack sampler) on every image; its
+# recorder service only runs on experimental ones (#1299).
 IMAGE_INSTALL:append = " \
     segno-bundle \
-    ${SEGNO_EMBEDDER_INSTALL} \
     mesa \
     alsa-lib \
     alsa-utils \
@@ -52,15 +42,11 @@ IMAGE_INSTALL:append = " \
     networkmanager-nmcli \
     networkmanager-wifi \
     "
-# gtk: GTK3 itself, the schema its settings lookup needs, and seatd for weston.
-# ivi: nothing beyond segno-bundle's RDEPENDS (ivi-homescreen and the engine);
-# it takes the DRM master and opens input itself, as root, without a seat.
-SEGNO_EMBEDDER_INSTALL = "${@'gtk+3 gsettings-desktop-schemas seatd' if d.getVar('SEGNO_EMBEDDER') == 'gtk' else ''}"
 # tryboot-cmdline.bbclass edits cmdline.txt inside the .wic (mtools) and regenerates
 # the bmap (bmaptool) — both are native build tools its task needs.
 do_update_tryboot_cmdline[depends] += "mtools-native:do_populate_sysroot bmaptool-native:do_populate_sysroot"
 # plymouth boot splash (segno mark, static, determinate progress) covers the black screen from
-# power-on until weston/segno render. plymouth-segno-theme sets itself active.
+# power-on until the app takes the display. plymouth-segno-theme sets itself active.
 # Keep psplash (the other splash, pulled in by the base image) out so the two don't
 # fight over the framebuffer — plymouth owns the splash.
 IMAGE_INSTALL:remove = "psplash psplash-raspberrypi"
@@ -86,7 +72,7 @@ PACKAGE_EXCLUDE += "bluez5"
 
 # RAUC A/B (tryboot) disk layout: boot selector + bootA/bootB + rootA/rootB +
 # data (Phase 1, #303). See wic/segno-tryboot.wks.in — a template, because the
-# boot device is per board (SD on the Pi 4, NVMe on the Pi 5, #799). `wic` = the
+# boot device is per board (NVMe on the Pi 5, #799). `wic` = the
 # flashable image; `ext4` = the bare rootfs the .raucb packages (RAUC_SLOT_rootfs).
 WKS_FILE = "segno-tryboot.wks.in"
 IMAGE_FSTYPES = "wic ext4"
@@ -102,17 +88,7 @@ IMAGE_ROOTFS_EXTRA_SPACE = "1048576"
 # out to it for getApplicationDocumentsDirectory; without it the app throws
 # MissingPlatformDirectoryException on startup. The launcher seeds a user-dirs.dirs
 # so it resolves ~/Documents (see segno-kiosk-launch). Validated on device.
-# gsettings-desktop-schemas provides the schema the embedder's settings lookup
-# needs (silences the G_IS_SETTINGS warning); the dconf persistent backend lives
-# in meta-gnome (not included) — not worth a whole layer for cosmetic polish.
 # alsa-plugins provides the dmix/dsnoop slaves the bare ALSA config references.
-#
-# seatd = the seat provider weston's libseat needs to open input devices. On this
-# minimal image weston has no active logind session and no seatd → keyboard/mouse
-# dead. Ship + enable seatd and point weston at it. NEEDS ON-DEVICE VALIDATION:
-# weston must reach /run/seatd.sock (the weston user in seatd's group, or seatd
-# started with a shared group) and run with LIBSEAT_BACKEND=seatd.
-SYSTEMD_AUTO_ENABLE:pn-seatd = "enable"
 
 # NetworkManager owns eth0 + wlan*. Mask systemd-networkd so the two managers
 # never fight over the same interfaces (SSH still comes up via NM DHCP).

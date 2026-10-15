@@ -159,24 +159,22 @@ jobs:
       run_bloc_lint: false
       min_coverage: 100
 
-  build-linux:
-    runs-on: ubuntu-latest
+  # The appliance bundle: the exact build the release ships, in the same
+  # container (deploy/rpi/build) on a native arm64 runner, with the Flutter
+  # release whose engine the image carries. There is no desktop runner: the app
+  # is built with `flutter assemble` and the engine with its own CMake project.
+  appliance-bundle:
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.47.x"
-          channel: stable
-          cache: true
-      - name: Install GTK build dependencies
+      - name: Build the appliance bundle
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build libgtk-3-dev libglib2.0-dev \
-            libpango1.0-dev libasound2-dev clang cmake pkg-config
-      - run: flutter config --enable-linux-desktop
-      - run: flutter pub get
-      - run: flutter build linux --debug --target lib/main_development.dart
-      # A clean compile proves the two halves of the bundle build; it does not
+          flutter_version=$(sed -n 's/^FLUTTER_ENGINE_VERSION = "\(.*\)"$/\1/p' \
+            deploy/yocto/meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc)
+          docker build --build-arg "FLUTTER_VERSION=$flutter_version" \
+            -t segno-bundle-build deploy/rpi/build
+          docker run --rm -v "$PWD":/workspace segno-bundle-build
+      # A clean build proves the two halves of the bundle build; it does not
       # prove they agree. Dart reaches the engine only through dlsym, which
       # resolves at first call, so a binding naming an entry point the C side
       # never exports links clean and throws on the device instead -- as it did
@@ -185,85 +183,10 @@ jobs:
       - name: FFI symbol parity (Dart bindings vs built libsegno_engine.so)
         run: |
           packages/segno_engine/tool/check_ffi_symbols.sh \
-            build/linux/*/debug/bundle/lib/libsegno_engine.so
-      # The runner replaces g_timeout_add to stop the embedder's task runner
-      # leaking timeouts (#1299). That only works while the executable exports
-      # the symbol and the embedder still calls it by that name: an engine
-      # that switched to g_timeout_add_full would bypass the guard silently.
-      # The stress test only means something while the unguarded copy still
-      # reproduces the leak.
-      - name: Task runner timeout guard
-        run: |
-          nm -D --defined-only build/linux/*/debug/bundle/segno \
-            | grep -qw g_timeout_add
-          nm -D --undefined-only \
-            build/linux/*/debug/bundle/lib/libflutter_linux_gtk.so \
-            | grep -qw g_timeout_add
-          bash linux/runner/test/run_task_runner_guard_test.sh
-      # The runner replaces gdk_cairo_draw_from_gl so each frame reaches the
-      # window as a GPU blit instead of a CPU upload (#1302). That only works
-      # while the executable exports the symbol and the embedder still calls
-      # it by that name.
-      - name: GPU frame present interposition
-        run: |
-          nm -D --defined-only build/linux/*/debug/bundle/segno \
-            | grep -qw gdk_cairo_draw_from_gl
-          nm -D --undefined-only \
-            build/linux/*/debug/bundle/lib/libflutter_linux_gtk.so \
-            | grep -qw gdk_cairo_draw_from_gl
-
-  # ARM64 Linux guard for the Raspberry Pi 5 floor-console target (Pi OS is
-  # arm64). Same compile-only contract as build-linux above — no audio runs (CI
-  # has no devices) — but on a native arm64 runner so the bundle is built for the
-  # Pi's architecture instead of x86_64. A native runner is used rather than
-  # FLUTTER_TARGET_PLATFORM_SYSROOT cross-compilation (linux/CMakeLists.txt
-  # honors that var) to avoid sysroot/toolchain drift; arm64 runners are free for
-  # public repos.
-  #
-  # subosito/flutter-action is NOT used here: Flutter only publishes prebuilt SDK
-  # archives for x64 Linux, so the action fails on arm64 with "Unable to
-  # determine Flutter version ... architecture: arm64". Instead Flutter is
-  # installed from git — the same way it is set up on an actual Pi — and the
-  # tooling fetches the linux-arm64 Dart SDK + engine artifacts on first run.
-  # Pinned to 3.44.4 (latest 3.44 patch) to track the 3.47.x the other build jobs
-  # use; bump this together with them so the matrix can't silently drift.
-  build-linux-arm64:
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Flutter (git, arm64 host)
-        run: |
-          git clone --depth 1 --branch 3.44.4 \
-            https://github.com/flutter/flutter.git "$HOME/flutter"
-          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
-      - name: Install GTK build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build libgtk-3-dev libglib2.0-dev \
-            libpango1.0-dev libasound2-dev clang cmake pkg-config
-      - run: flutter config --enable-linux-desktop
-      - run: flutter pub get
-      - run: flutter build linux --debug --target lib/main_development.dart
-      # FFI symbol parity, as in build-linux above -- run here too because this
-      # job builds for the architecture the appliance actually ships.
-      - name: FFI symbol parity (Dart bindings vs built libsegno_engine.so)
-        run: |
-          packages/segno_engine/tool/check_ffi_symbols.sh \
-            build/linux/*/debug/bundle/lib/libsegno_engine.so
-      # The runner replaces gdk_cairo_draw_from_gl so each frame reaches the
-      # window as a GPU blit instead of a CPU upload (#1302). That only works
-      # while the executable exports the symbol and the embedder still calls
-      # it by that name.
-      - name: GPU frame present interposition
-        run: |
-          nm -D --defined-only build/linux/*/debug/bundle/segno \
-            | grep -qw gdk_cairo_draw_from_gl
-          nm -D --undefined-only \
-            build/linux/*/debug/bundle/lib/libflutter_linux_gtk.so \
-            | grep -qw gdk_cairo_draw_from_gl
+            build/appliance/bundle/lib/libsegno_engine.so
 
   # The #1179 pitch/time and #1197 instrument CPU proxies: the bench harnesses
-  # on the same native arm64 runner as build-linux-arm64, asserting the arm64
+  # on the same native arm64 runner as appliance-bundle, asserting the arm64
   # PROXY thresholds (p50 and throughput only — a shared Neoverse VM without
   # SCHED_FIFO has no meaningful p99) at half the Pi 5 figures. The Pi 5
   # thresholds themselves are a hardware criterion (Part 1 of
@@ -559,7 +482,7 @@ jobs:
           # libasound2-dev: the engine's src/CMakeLists.txt (pulled in via
           # add_subdirectory) runs find_package(ALSA REQUIRED) at configure time
           # even though EXCLUDE_FROM_ALL means its ALSA-linking segno_engine target
-          # is never built here — matches build-linux / native-tests.
+          # is never built here — matches native-tests.
           sudo apt-get install -y build-essential cmake libasound2-dev
       - name: Configure + build + test the VST3 plugins
         run: |
@@ -567,9 +490,9 @@ jobs:
           cmake --build build/vst3
           ctest --test-dir build/vst3 --output-on-failure
 
-  # The appliance shell suites (bt, wifi, mark-good, journal persist, weston
-  # drop-in wiring, reconcile-staged, the update attempt marker), which share
-  # one shape: inject every path, stub the privileged call — no hardware.
+  # The appliance shell suites (wifi, mark-good, journal persist, the kernel
+  # cmdline, reconcile-staged, the update attempt marker), which share one
+  # shape: inject every path, stub the privileged call — no hardware.
   appliance-shell-tests:
     runs-on: ubuntu-latest
     steps:
@@ -618,12 +541,8 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_reboot_tests.sh
       - name: Run log-persistence tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_log_persist_tests.sh
-      - name: Run Wayland startup tests
-        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wayland_wait_tests.sh
-      - name: Run weston log tests
-        run: bash deploy/yocto/meta-segno/recipes-graphics/weston-init/test/run_weston_log_tests.sh
-      - name: Run HDMI HPD force-on tests
-        run: bash deploy/yocto/meta-segno/recipes-graphics/weston/test/run_hdmi_hpd_tests.sh
+      - name: Run kernel cmdline tests
+        run: bash deploy/yocto/test/run_kernel_cmdline_tests.sh
       # Twice on purpose: the appliance's /bin/sh is busybox ash, so the
       # scripts must hold under a strict POSIX shell (dash) as well as bash.
       - name: Run reconcile-staged tests (bash)

@@ -1,9 +1,0 @@
-# Sourced by segno-kiosk-launch on the GTK image (SEGNO_EMBEDDER=gtk): run the
-# Flutter GTK runner as a Wayland client under weston.
-# GDK_BACKEND=wayland forces the GTK embedder onto Wayland (not X11/XWayland).
-export GDK_BACKEND=wayland
-# Space the two native views after startup; this is a timing mitigation for
-# #970, not proof that the compositor's EGL state is ready.
-export SEGNO_WAVEFORM_OPEN_DELAY_MS=750
-/usr/bin/segno-wait-wayland || exit $?
-exec /opt/segno/segno "$@"
