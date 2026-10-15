@@ -16,9 +16,8 @@ import 'dart:io';
 ///
 /// A `SEGNO_ENGINE_LIB` environment variable overrides the lookup with an
 /// explicit path, exactly as the audio engine's loader does — the two must
-/// open the same file. The ivi-homescreen appliance image sets it, because
-/// that embedder does not put the bundle's `lib/` on the loader's path the way
-/// the GTK runner's RUNPATH does.
+/// open the same file. The appliance image sets it, because ivi-homescreen
+/// does not put the bundle's `lib/` on the loader's path.
 DynamicLibrary openSegnoEngineLibrary() {
   final override = Platform.environment['SEGNO_ENGINE_LIB'];
   if (override != null && override.isNotEmpty) {
