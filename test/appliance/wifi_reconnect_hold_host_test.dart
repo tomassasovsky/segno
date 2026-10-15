@@ -19,7 +19,11 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 
 class _MockWifiRepository extends Mock implements WifiRepository {}
 
-const _playing = LooperState(transport: TransportState(isRunning: true));
+const _open = LooperState(transport: TransportState(isRunning: true));
+const _playing = LooperState(
+  transport: TransportState(isRunning: true),
+  tracks: [Track(state: TrackState.playing)],
+);
 
 void main() {
   group('WifiReconnectHoldHost', () {
@@ -92,6 +96,13 @@ void main() {
       looperStates.add(const LooperState());
       await tester.pump();
       expect(holds, [false, true, false]);
+    });
+
+    testWidgets('an open audio device alone does not hold', (tester) async {
+      await pump(tester);
+      looperStates.add(_open);
+      await tester.pump();
+      expect(holds, [false]);
     });
 
     testWidgets('holds while a performance recording is armed', (

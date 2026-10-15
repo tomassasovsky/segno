@@ -11,10 +11,14 @@ import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/performance/performance.dart';
 
-/// Whether the music keeps both panels awake: the transport or a track
-/// playing, a track recording, or a performance recording running.
+/// Whether the music keeps both panels awake: a count-in, a track playing or
+/// recording, or a performance recording running.
+///
+/// Not `transport.isRunning`: that is the audio device being open, which on
+/// the appliance it always is, so it would keep the panels awake and hold
+/// the WiFi reconnect forever (#1337).
 bool idleKeepsAwake(LooperState looper, PerformanceRecorderState performance) =>
-    looper.transport.isRunning ||
+    looper.transport.countingIn ||
     looper.tracks.any(
       (track) => track.state == TrackState.playing || track.isCapturing,
     ) ||

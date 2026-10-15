@@ -24,8 +24,10 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit {}
 
+// The audio device is open on the appliance whether or not anything plays.
 const _playing = LooperState(
   transport: TransportState(isRunning: true),
+  tracks: [Track(state: TrackState.playing)],
 );
 
 void main() {
@@ -134,6 +136,14 @@ void main() {
       expect(idleKeepsAwake(const LooperState(), idle), isFalse);
       expect(
         idleKeepsAwake(
+          const LooperState(transport: TransportState(isRunning: true)),
+          idle,
+        ),
+        isFalse,
+        reason: 'an open audio device is not music playing',
+      );
+      expect(
+        idleKeepsAwake(
           const LooperState(tracks: [Track(state: TrackState.stopped)]),
           idle,
         ),
@@ -141,8 +151,15 @@ void main() {
       );
     });
 
-    test('the transport or a track playing does', () {
+    test('a count-in or a track playing does', () {
       expect(idleKeepsAwake(_playing, idle), isTrue);
+      expect(
+        idleKeepsAwake(
+          const LooperState(transport: TransportState(countingIn: true)),
+          idle,
+        ),
+        isTrue,
+      );
       expect(
         idleKeepsAwake(
           const LooperState(tracks: [Track(state: TrackState.playing)]),
