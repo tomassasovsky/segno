@@ -160,6 +160,15 @@ class FakeWifiClient implements WifiClient {
     return internet;
   }
 
+  /// Whether reconnects are held, as the last [holdReconnects] left it.
+  bool get reconnectsHeld => _reconnectsHeld;
+  var _reconnectsHeld = false;
+
+  @override
+  Future<void> holdReconnects({required bool hold}) async {
+    _reconnectsHeld = hold;
+  }
+
   void _markSaved(String ssid) {
     final index = _networks.indexWhere((n) => n.ssid == ssid);
     if (index < 0) return;

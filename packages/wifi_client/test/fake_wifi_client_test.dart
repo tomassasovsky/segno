@@ -107,6 +107,15 @@ void main() {
       expect(await client.checkConnectivity(), isFalse);
     });
 
+    test('remembers whether reconnects are held', () async {
+      final client = FakeWifiClient();
+      expect(client.reconnectsHeld, isFalse);
+      await client.holdReconnects(hold: true);
+      expect(client.reconnectsHeld, isTrue);
+      await client.holdReconnects(hold: false);
+      expect(client.reconnectsHeld, isFalse);
+    });
+
     test('changing the key of a network never saved is refused', () async {
       await expectLater(
         FakeWifiClient().changePassword('Cafe Free', 'whatever1'),

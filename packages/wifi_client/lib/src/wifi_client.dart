@@ -36,4 +36,10 @@ abstract class WifiClient {
 
   /// Whether the internet answers over the current link.
   Future<bool> checkConnectivity();
+
+  /// While [hold] is true, the appliance's background reconnect after a WiFi
+  /// drop (`segno-wifi-retry`) neither scans nor joins; it catches up once
+  /// released. Held for the length of a performance, so a reconnect scan never
+  /// takes the radio off-channel mid-show (#1337).
+  Future<void> holdReconnects({required bool hold});
 }
