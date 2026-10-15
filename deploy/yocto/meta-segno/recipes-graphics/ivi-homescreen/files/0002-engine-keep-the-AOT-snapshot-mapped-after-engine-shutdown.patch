@@ -1,0 +1,68 @@
+From 5047f31e100848ef3c356c151ea0f6ae5dd1ed1c Mon Sep 17 00:00:00 2001
+From: Segno <noreply@segno.invalid>
+Date: Tue, 13 Oct 2026 19:44:03 -0300
+Subject: [PATCH] engine: keep the AOT snapshot mapped after engine shutdown
+
+Engine::Shutdown collected the AOT data right after FlutterEngineShutdown
+returned. That call stops the root isolate, but isolates the app spawned
+with Isolate.spawn belong to the same isolate group and are not stopped
+with it, and the Dart VM outlives the engine: the embedder never shuts it
+down, and with more than one view the other engines are still running on
+it. FlutterEngineCollectAOTData unmaps the snapshot's code anyway.
+
+Any such isolate that runs again then executes unmapped memory. An
+isolate blocked in an FFI call (a serial read with a 100 ms timeout, for
+example) returns through a stub that no longer exists, and the process
+dies with SIGSEGV on SIGTERM. On a two-view console this happened on 12
+of 16 stops.
+
+Leave the data mapped. Engine::Shutdown only runs when a view is torn
+down, which is at process exit in practice, and the process releases
+the mapping when it exits.
+
+Upstream-Status: Pending
+---
+ shell/engine.cc | 11 +++++++----
+ shell/engine.h  |  4 +---
+ 2 files changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/shell/engine.cc b/shell/engine.cc
+index 6d8854a..018e943 100644
+--- a/shell/engine.cc
++++ b/shell/engine.cc
+@@ -380,10 +380,13 @@ void Engine::Shutdown() {
+     LibFlutterEngine->Deinitialize(m_flutter_engine);
+     LibFlutterEngine->Shutdown(m_flutter_engine);
+   }
+-  if (m_aot_data) {
+-    LibFlutterEngine->CollectAOTData(m_aot_data);
+-    m_aot_data = nullptr;
+-  }
++  // The AOT data is deliberately not collected. FlutterEngineShutdown stops
++  // the root isolate, but isolates it spawned live on in the same isolate
++  // group, and the Dart VM outlives this engine (it is never shut down, and a
++  // second view's engine may still be running on it). Collecting unmaps the
++  // snapshot's code while such an isolate can still execute it: one blocked
++  // in an FFI call returns into unmapped memory and the process dies with
++  // SIGSEGV on its way out. The mapping is released when the process exits.
+ }
+ 
+ bool Engine::IsRunning() const {
+diff --git a/shell/engine.h b/shell/engine.h
+index 7388a34..c2c332b 100644
+--- a/shell/engine.h
++++ b/shell/engine.h
+@@ -609,9 +609,7 @@ class Engine {
+   bool m_merge_render_platform = false;
+ 
+   // Zero-initialized: only assigned for AOT runs (RunsAOTCompiledDartCode()).
+-  // On a JIT/debug run LoadAotData() never runs, so this must be null —
+-  // otherwise the `if (m_aot_data)` guard in Shutdown() reads garbage and
+-  // CollectAOTData() corrupts the heap.
++  // Never collected: see Shutdown().
+   FlutterEngineAOTData m_aot_data{};
+ 
+   // Owned by Engine so it survives FlutterEngineDeinitialize. See
+-- 
+2.45.2
+

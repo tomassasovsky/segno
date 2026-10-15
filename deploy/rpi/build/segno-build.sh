@@ -14,6 +14,12 @@ flutter build linux --debug --target lib/main_development.dart
 echo "==> Release bundle: flutter build linux --release (main_production) $*"
 flutter build linux --release --target lib/main_production.dart "$@"
 
+# Record the Flutter release that built this bundle. The ivi-homescreen image
+# runs the bundle's AOT snapshot on a separately shipped engine, which loads
+# only a snapshot from its own engine revision; segno-bundle.bb reads this file
+# to refuse a mismatch at image build time rather than on the device (#1318).
+flutter --version --machine > build/linux/arm64/release/bundle/flutter-version.json
+
 # Hand the generated artifacts back to the invoking host user; without this the
 # mounted output would be root-owned on the Mac. Non-fatal if a path is absent.
 if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then

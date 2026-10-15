@@ -1,8 +1,10 @@
 #!/bin/sh
-# Launch the prebuilt Segno GTK bundle as a Wayland client under weston.
-# GDK_BACKEND=wayland forces the GTK embedder onto Wayland (not X11/XWayland).
+# Launch the prebuilt Segno bundle. Everything here is the same whichever
+# embedder runs it; the last step sources the embedder's own launch tail, which
+# segno-bundle.bb installs as /usr/libexec/segno/embedder for SEGNO_EMBEDDER:
+#   gtk  segno-embedder-gtk  the Flutter GTK runner under weston (shipping)
+#   ivi  segno-embedder-ivi  ivi-homescreen over DRM/KMS, no compositor (#1318)
 # The console build is the only build; nothing to pass here.
-export GDK_BACKEND=wayland
 
 # Persistent data lives on the /data partition (label "data"), which OS/app updates
 # never touch. Point HOME (and thus every XDG dir + ~/Documents) there so sessions,
@@ -171,8 +173,7 @@ export SEGNO_RT_AUDIO=1
 # to clear the capture case too, not just the monitor one. The engine's own
 # default stays 2; this override is appliance-only.
 export SEGNO_ALSA_PERIODS=8
-# Space the two native views after startup; this is a timing mitigation for
-# #970, not proof that the compositor's EGL state is ready.
-export SEGNO_WAVEFORM_OPEN_DELAY_MS=750
-/usr/bin/segno-wait-wayland || exit $?
-exec /opt/segno/segno "$@"
+
+# Hand over to the embedder. Sourced, not executed, so its `exec` replaces this
+# shell and "$@" reaches the app unchanged.
+. /usr/libexec/segno/embedder

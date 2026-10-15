@@ -97,9 +97,10 @@ fi
         self.assertEqual(self.change_during_wait(self.socket, attempts=2), 0)
 
     def test_launcher_propagates_wait_failure(self):
-        # Run its exact final launch block with only absolute executable paths
-        # redirected into this sandbox; none of the device setup above runs.
-        launch = (files / "segno-kiosk-launch").read_text()
+        # Run the GTK image's exact launch tail (the block segno-kiosk-launch
+        # sources there) with only absolute executable paths redirected into
+        # this sandbox; none of the device setup before it runs.
+        launch = (files / "segno-embedder-gtk").read_text()
         block = launch[launch.index("export SEGNO_WAVEFORM_OPEN_DELAY_MS="):]
         wait = self.root / "wait"
         app = self.root / "app"
