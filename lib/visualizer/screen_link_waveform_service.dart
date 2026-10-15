@@ -61,6 +61,9 @@ class ScreenLinkWaveformService implements WaveformWindowService {
   void Function()? onWindowActivity;
 
   @override
+  void Function(({double x, double y}) tap)? onCalibrationTap;
+
+  @override
   void Function()? onWindowReady;
 
   @override
@@ -117,6 +120,12 @@ class ScreenLinkWaveformService implements WaveformWindowService {
         if (seq is int) _acks.remove(seq)?.complete();
       case ScreenLinkOp.activity:
         onWindowActivity?.call();
+      case ScreenLinkOp.calibrationTap:
+        final x = message['x'];
+        final y = message['y'];
+        if (x is num && y is num) {
+          onCalibrationTap?.call((x: x.toDouble(), y: y.toDouble()));
+        }
     }
   }
 
@@ -154,6 +163,25 @@ class ScreenLinkWaveformService implements WaveformWindowService {
     );
     if (!arrived && generation == _openGeneration) _opening = false;
     return arrived;
+  }
+
+  /// Calibration does not depend on the readout preference: the 7" is
+  /// calibrated whether or not it is showing the readout, and the readout
+  /// goes back to what it was showing when calibration ends.
+  @override
+  Future<bool> showCalibrationTarget(
+    ({double x, double y})? target, {
+    String label = '',
+  }) async {
+    _listen();
+    final screen = _screen;
+    if (screen == null) return false;
+    screen.send({
+      'op': ScreenLinkOp.calibrate,
+      'target': target == null ? null : [target.x, target.y],
+      'label': label,
+    });
+    return true;
   }
 
   @override
