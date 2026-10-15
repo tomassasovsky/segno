@@ -63,6 +63,11 @@ on:
         type: choice
         options: ['no', 'yes']
         default: 'no'
+      embedder:
+        description: Flutter embedder (ivi = the ivi-homescreen spike, #1318; rpi5, experimental channel only)
+        type: choice
+        options: [gtk, ivi]
+        default: gtk
 
 permissions:
   contents: write        # create releases
@@ -76,6 +81,8 @@ jobs:
       board: ${{ steps.meta.outputs.board }}
       machine: ${{ steps.meta.outputs.machine }}
       kas: ${{ steps.meta.outputs.kas }}
+      embedder: ${{ steps.meta.outputs.embedder }}
+      flutter_version: ${{ steps.meta.outputs.flutter_version }}
     steps:
       - uses: actions/checkout@v7
 
@@ -135,12 +142,52 @@ jobs:
             exit 1
           fi
 
+          # Embedder: the ivi-homescreen image (#1318) is a bench spike. It
+          # shares the shipping image's RAUC compatible string so a unit can
+          # move between the two, and that move is an ordinary update: a
+          # published ivi build is offered to every unit on the experimental
+          # channel (installs are opt-in, from Settings), and the next GTK
+          # experimental build, being newer, is offered back. Never on the
+          # production channel (owner's call, 2026-10-13). Its app bundle is
+          # built with the Flutter release whose prebuilt engine the image
+          # ships, read from the one file that pins it.
+          embedder="${{ github.event.inputs.embedder }}"
+          [ -n "$embedder" ] || embedder=gtk
+          kas="deploy/yocto/kas-segno-$board.yml"
+          flutter_version=""
+          case "$embedder" in
+            gtk) ;;
+            ivi)
+              [ "$board" = rpi5 ] || { echo "::error::the ivi-homescreen image exists for rpi5 only"; exit 1; }
+              # Never the version of a shipping release: a unit moved onto the
+              # spike would otherwise report a GTK release's exact version, and
+              # the update client would never offer that release back to it.
+              # On the experimental channel the run number already makes the
+              # version this build's alone, and every later experimental build
+              # sorts above it. Leave it unmarked: segno-update-ctl's
+              # semver_newer reads the last dot-field of the prerelease as the
+              # build number, so a suffix would hide every later build from a
+              # unit on the spike.
+              if [ "$channel" != experimental ]; then
+                echo "::error::the ivi-homescreen image (#1318) builds on the experimental channel only"
+                exit 1
+              fi
+              kas="deploy/yocto/kas-segno-$board-ivi.yml"
+              flutter_version=$(sed -n 's/^FLUTTER_ENGINE_VERSION = "\(.*\)"$/\1/p' \
+                deploy/yocto/meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc)
+              [ -n "$flutter_version" ] || { echo "::error::no FLUTTER_ENGINE_VERSION in flutter-engine-version.inc"; exit 1; }
+              ;;
+            *) echo "unknown embedder: $embedder" >&2; exit 1 ;;
+          esac
+
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "board=$board" >> "$GITHUB_OUTPUT"
           echo "machine=$machine" >> "$GITHUB_OUTPUT"
-          echo "kas=deploy/yocto/kas-segno-$board.yml" >> "$GITHUB_OUTPUT"
-          echo "Building channel=$channel version=$version board=$board machine=$machine"
+          echo "kas=$kas" >> "$GITHUB_OUTPUT"
+          echo "embedder=$embedder" >> "$GITHUB_OUTPUT"
+          echo "flutter_version=$flutter_version" >> "$GITHUB_OUTPUT"
+          echo "Building channel=$channel version=$version board=$board machine=$machine embedder=$embedder"
 
   build-app:
     needs: determine-meta
@@ -152,8 +199,13 @@ jobs:
       # --no-strip), so segno-stack-sample on the appliance can name the Dart
       # functions it lands in (#1299). Production stays stripped.
       - name: Build the aarch64 app bundle
+        env:
+          # Empty for the shipping image: the Dockerfile's own default.
+          FLUTTER_VERSION: ${{ needs.determine-meta.outputs.flutter_version }}
         run: |
-          docker build -t segno-arm64-build deploy/rpi/build
+          build_args=()
+          [ -z "$FLUTTER_VERSION" ] || build_args+=(--build-arg "FLUTTER_VERSION=$FLUTTER_VERSION")
+          docker build "${build_args[@]}" -t segno-arm64-build deploy/rpi/build
           args=()
           if [ "${{ needs.determine-meta.outputs.channel }}" = "experimental" ]; then
             args+=(--extra-gen-snapshot-options=--no-strip)
@@ -332,8 +384,13 @@ jobs:
           path: |
             ${{ env.YOCTO_WORK_DIR }}/sstate-cache
             ${{ env.YOCTO_WORK_DIR }}/downloads
-          key: yocto-sstate-${{ runner.os }}-${{ hashFiles('deploy/yocto/**') }}
-          restore-keys: yocto-sstate-${{ runner.os }}-
+          # Per embedder: the ivi spike image (#1318) must not be the entry a
+          # shipping build restores, or the next release rebuilds weston/GTK.
+          # No embedder-less fallback key: `yocto-sstate-<os>-` would match the
+          # other embedder's entries too and restore whichever is newest.
+          key: yocto-sstate-${{ runner.os }}-${{ needs.determine-meta.outputs.embedder }}-${{ hashFiles('deploy/yocto/**') }}
+          restore-keys: |
+            yocto-sstate-${{ runner.os }}-${{ needs.determine-meta.outputs.embedder }}-
 
       # segno-kiosk-image is already a dependency of the bundle, but name it
       # explicitly: the .wic is a deliverable now, not a build by-product.
@@ -464,6 +521,13 @@ jobs:
           # instead — the live file, not the free space around it.
 
           name="segno-appliance-$version-$board"
+          # The ivi-homescreen spike's .raucb (#1318) rides along here too, for
+          # an unpublished build: `rauc install` on a bench unit moves it onto
+          # the spike and a rollback moves it back, without reflashing.
+          if [ '${{ needs.determine-meta.outputs.embedder }}' = ivi ]; then
+            name="$name-ivi"
+            cp "release-artifacts/segno-appliance-$version.raucb" "$out/$name.raucb"
+          fi
           # gzip -1, not bzip2/zstd: present on every runner, and fast enough on
           # a mostly-zero 8 GiB image. macOS `gunzip` reads it with no install.
           gzip -1 -c "$wic" > "$out/$name.wic.gz"
@@ -476,7 +540,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: segno-image-${{ needs.determine-meta.outputs.board }}-${{ needs.determine-meta.outputs.version }}
+          name: segno-image-${{ needs.determine-meta.outputs.board }}${{ needs.determine-meta.outputs.embedder == 'ivi' && '-ivi' || '' }}-${{ needs.determine-meta.outputs.version }}
           path: image-artifacts
           retention-days: 14
           # Already gzipped; a second pass costs minutes and saves nothing.
@@ -495,7 +559,7 @@ jobs:
           # same commit every build job checked out, rather than default master.
           target_commitish: ${{ github.sha }}
           tag_name: appliance-${{ needs.determine-meta.outputs.channel }}-${{ needs.determine-meta.outputs.version }}
-          name: "Appliance ${{ needs.determine-meta.outputs.channel }} ${{ needs.determine-meta.outputs.version }}"
+          name: "Appliance ${{ needs.determine-meta.outputs.channel }} ${{ needs.determine-meta.outputs.version }}${{ needs.determine-meta.outputs.embedder == 'ivi' && ' (ivi-homescreen spike, #1318)' || '' }}"
           prerelease: ${{ needs.determine-meta.outputs.channel == 'experimental' }}
           files: |
             release-artifacts/*.raucb

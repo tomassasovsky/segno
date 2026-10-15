@@ -13,6 +13,7 @@ nothing publishes for it and push/tag triggers do not build it.
 |---|---|---|---|---|
 | `kas-segno-rpi5.yml` | `raspberrypi5` | NVMe in the M.2 slot | `nvme0n1` | **shipping** |
 | `kas-segno-rpi4.yml` | `raspberrypi4-64` | SD card | `mmcblk0` | retired |
+| `kas-segno-rpi5-ivi.yml` | `raspberrypi5` | NVMe in the M.2 slot | `nvme0n1` | spike ([#1318](https://github.com/tomassasovsky/segno/issues/1318)) |
 
 Everything the two share lives in **`kas-segno-common.yml`** — put changes there
 unless they are genuinely board-specific. The boot device is a single variable
@@ -29,6 +30,7 @@ Plan: [`docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md`](../../docs/plan/20
 kas-segno-common.yml        shared: poky + meta-openembedded + meta-raspberrypi + meta-rauc (walnascar, commit-pinned)
 kas-segno-rpi4.yml          raspberrypi4-64, SD
 kas-segno-rpi5.yml          raspberrypi5, NVMe (+ dtparam=pciex1)
+kas-segno-rpi5-ivi.yml      the rpi5 image on ivi-homescreen instead of weston + GTK (#1318 spike)
 meta-segno/
   conf/layer.conf
   classes/tryboot-cmdline.bbclass                    rewrites root= per boot slot inside the .wic
@@ -39,7 +41,31 @@ meta-segno/
   recipes-bsp/rauc-rpi-backend/                      tryboot bootloader backend
   recipes-segno/segno-bundle/                        installs the PREBUILT bundle + launcher + units
   recipes-graphics/weston-init/weston-init.bbappend  weston.ini: kiosk-shell + dual outputs
+  recipes-graphics/ivi-homescreen/                   ivi image only: the DRM/KMS embedder (pinned, two patches), installed as /usr/bin/segno
+  recipes-graphics/flutter-engine/                   ivi image only: meta-flutter's prebuilt engine + its pin
 ```
+
+### The ivi-homescreen spike image (#1318)
+
+`SEGNO_EMBEDDER` selects the embedder for the whole image. `kas-segno-rpi5-ivi.yml`
+sets it to `ivi`; everything else leaves the default `gtk`.
+
+- **`gtk`** is the shipping image described here.
+- **`ivi`** keeps the same image name, partitions and RAUC compatible string,
+  but drops weston and GTK. ivi-homescreen drives both HDMI outputs over
+  DRM/KMS, one Flutter engine per screen (`segno-bundle/files/homescreen.toml`).
+  - The engine is meta-flutter's prebuilt release build, not a source build,
+    and this layer does not include meta-flutter.
+  - The app bundle must come from the Flutter release named in
+    `recipes-graphics/flutter-engine/flutter-engine-version.inc`, and
+    `segno-bundle` refuses any other.
+  - CI builds it with `-f embedder=ivi`, on the experimental channel only.
+    - With `publish=yes` it is offered to experimental-channel units like any
+      build, and installs stay opt-in.
+    - The artifact also carries a `.raucb` for moving a bench unit onto it by
+      hand.
+  - Plan and on-device checklist:
+    [`docs/plan/2026-10-13-spike-ivi-homescreen-plan.md`](../../docs/plan/2026-10-13-spike-ivi-homescreen-plan.md).
 
 **No meta-flutter** — it has no GTK embedder (that's what 3b/ivi-homescreen is for).
 This is a stock weston image plus our prebuilt bundle. **ALSA-only** (no

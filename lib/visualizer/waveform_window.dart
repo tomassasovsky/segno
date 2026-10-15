@@ -115,8 +115,8 @@ typedef WaveformFrame = ({
 /// makes that safe — reading an absent key as an empty buffer would blank the
 /// waveform on every frame the peaks did not change, which is most of them.
 ///
-/// Pure so the hold can be proven without a second engine.
-@visibleForTesting
+/// Pure so the hold can be proven without a second engine, and shared by both
+/// readout transports (this window's channel and the screen link).
 WaveformFrame waveformFrameFrom(
   Map<Object?, Object?> payload,
   WaveformFrame previous,
@@ -222,7 +222,17 @@ Future<void> runWaveformWindow(WindowController controller) async {
     },
   );
 
-  runApp(WaveformWindowApp(frame: frame, readout: readout, title: title));
+  runApp(
+    WaveformWindowApp(
+      frame: frame,
+      readout: readout,
+      title: title,
+      onActivity: () => waveformWindowChannel
+          .invokeMethod(waveformWindowActivityMethod)
+          .catchError((Object _) => null)
+          .ignore(),
+    ),
+  );
 }
 
 /// Coerces a method-channel payload (a [Float32List], or a `List` of numbers
@@ -250,8 +260,12 @@ class WaveformWindowApp extends StatelessWidget {
     required this.frame,
     required this.readout,
     required this.title,
+    this.onActivity = _noActivity,
     super.key,
   });
+
+  /// Default [onActivity]: drops the touch, for hosts that wire nothing.
+  static void _noActivity() {}
 
   /// The latest waveform frame, updated as the main window pushes new data.
   final ValueListenable<WaveformFrame> frame;
@@ -261,6 +275,11 @@ class WaveformWindowApp extends StatelessWidget {
 
   /// OS window title.
   final String title;
+
+  /// Called when a player touches the readout. Each host sends it its own way
+  /// to the main screen: the GTK sub-window over its window channel, the
+  /// ivi-homescreen readout over the screen link.
+  final VoidCallback onActivity;
 
   @override
   Widget build(BuildContext context) {
@@ -272,10 +291,7 @@ class WaveformWindowApp extends StatelessWidget {
     // barrier of its own.
     return Listener(
       behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => waveformWindowChannel
-          .invokeMethod(waveformWindowActivityMethod)
-          .catchError((Object _) => null)
-          .ignore(),
+      onPointerDown: (_) => onActivity(),
       child: _app(),
     );
   }
