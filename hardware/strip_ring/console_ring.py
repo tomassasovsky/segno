@@ -28,8 +28,9 @@ Carrier: the v3 XIAO ring carrier (Ø80) without its Ring24 module, the strip
 plugged into J2. It sits LIGHT_LIFT (7.0) deeper than today's Ring24 stack, the
 same lift as the standalone, so the strip's LED faces clear the PCB. Its top
 components stay inside r 26.65 or below the chamber (checked in Fusion against
-the v3 STEP: ~1 mm3 of grazing each). The EC11 nut clamps the retainer on the
-diffuser's seat and the carrier hangs from the encoder, as in the standalone.
+the v3 STEP: ~1 mm3 of grazing each). The encoder nut clamps the retainer on the
+diffuser's seat and the carrier hangs from the encoder, as in the standalone. The
+encoder is the Same Sky ACZ11BR1E-20FD1-20C, measured on the assembled board.
 """
 
 from math import pi, degrees
@@ -54,17 +55,36 @@ FACEPLATE_T = 2.0
 UNDER = -FACEPLATE_T               # faceplate underside = the cup's glue plane
 LIGHT_LIFT = 7.0
 # The standalone's passive-board datum, carried over: PCB top 7.085 below its
-# face-7 plane. The v3 carrier uses the same EC11 footprint, so the same 3.5 mm
-# spacer sets the same encoder height.
+# face-7 plane. The board hangs from the encoder: the nut pulls the encoder's
+# shoulder up against the spacer, so the spacer sets the board's height.
 CARRIER_TOP = -16.085
 STRIP_BOTTOM = CARRIER_TOP + 0.085  # the strip edge stands just clear of the PCB
 STRIP_TOP = STRIP_BOTTOM + STRIP_W
 LENS_R, LENS_BORE_R = 33.4, 25.85  # = the console's RING_OD/RING_ID less clearance
-SEAT_R, SEAT_HOLE_R = 25.9, 9.25
+SEAT_R, SEAT_HOLE_R = 25.9, 9.9    # hole clears the encoder body's corners
 CAP_SCREWS = [(-18, 0), (18, 0)]
 CAP_HEAD_FLOOR_Z = -2.6
 CAP_SEAT_Z = CAP_HEAD_FLOOR_Z - 1.0
-KNOB_BOTTOM = 0.5
+# The fitted ACZ11, measured on the assembled carrier (owner, 2026-10-16). The
+# old 3.5 mm spacer assumed a generic EC11 whose shoulder sat 4.585 above the
+# board; the ACZ11's sits 6.39 above it (datasheet 6.5), so the spacer is thinner
+# and the board, strip, catches and tower clearance stay where they were.
+ENC_BODY_H = 6.39                  # board top to the body top, where the bushing starts
+ENC_BUSHING_L = 5.0                # M7x0.75 thread above the body
+ENC_SHAFT_TIP = 26.5               # shaft tip above the board
+ENC_PUSH_MAX = 0.8                 # switch travel 0.5 + 0.3 drawing tolerance
+NUT_T_MAX = 2.1                    # SJ5-43502PM-nut, 2.0 +/- 0.1
+SEAT_TOP = -8.0                    # diffuser seat top = retainer underside
+RETAINER_TOP = -7.0
+ENC_SHOULDER_Z = CARRIER_TOP + ENC_BODY_H
+ENC_BODY_HALF_W, ENC_BODY_REACH = 5.85, 7.25  # 11.7 wide; 7.25 of 13.75 on the long side
+ENC_BODY_TOL = 0.3                 # drawing's general tolerance through 10 mm
+FRONT_JOINT_H = 2.0                # tallest solder joint on the carrier's front, measured;
+                                   # U2, C1, C4 and J1 joints sit under the neck at r ~26
+NECK_BOTTOM = -13.2                # the diffuser neck's lower end
+KNOB_BORE = 12.0                   # purchased knob's blind bore (model assumption)
+KNOB_BOTTOM = 1.0                  # knob pushed on to this far above the face, so the
+                                   # switch's full travel never bottoms it on the face
 
 # Carrier snap hold (#1090). The v3 carrier has no screw holes: RING_ASSEMBLY.md
 # says it snap-mounts. Three arms hang from the cup's roof, outside the strip
@@ -115,8 +135,8 @@ def diffuser():
                 .polyline([(32.6, UNDER - 1.21), (33.41, UNDER - 1.21), (32.6, UNDER - 0.40)])
                 .close().revolve().val())
     lens = lens.cut(entrance)
-    neck = annulus(26.65, LENS_BORE_R, -13.2, UNDER)
-    floor = annulus(SEAT_R, SEAT_HOLE_R, -10.0, -8.0)
+    neck = annulus(26.65, LENS_BORE_R, NECK_BOTTOM, UNDER)
+    floor = annulus(SEAT_R, SEAT_HOLE_R, SEAT_TOP - 2.0, SEAT_TOP)
     return lens.fuse(neck, floor).clean()
 
 
@@ -175,7 +195,7 @@ def cup():
 
 
 def encoder_retainer():
-    plate = annulus(25.6, 4.25, -8.0, -7.0)
+    plate = annulus(25.6, 4.25, SEAT_TOP, RETAINER_TOP)
     for x, y in CAP_SCREWS:
         plate = plate.fuse(cq.Solid.makeCylinder(5, CAP_SEAT_Z + 7.0, cq.Vector(x, y, -7.0)))
         plate = plate.cut(cq.Solid.makeCylinder(1.25, CAP_SEAT_Z + 8.02, cq.Vector(x, y, -8.01)))
@@ -201,7 +221,8 @@ def centre_cap():
 
 
 def spacer():
-    return annulus(8, 5, -11.5, -8.0)
+    """Fills the gap from the encoder's shoulder to the seat's top."""
+    return annulus(8, 5, ENC_SHOULDER_Z, SEAT_TOP)
 
 
 def led_strip():
@@ -275,6 +296,14 @@ def check():
     assert CUP_R + CLIP_GAP > PCB_R + 0.2, "snap arms grip the board edge radially"
     assert CLIP_CATCH_R < PCB_R - 0.8, "catch overlaps the board edge by too little"
     assert CLIP_CATCH_R > CARRIER_PARTS_R + 1.0, "catch reaches the carrier's underside parts"
+    assert (ENC_BODY_HALF_W ** 2 + ENC_BODY_REACH ** 2) ** 0.5 + ENC_BODY_TOL < SEAT_HOLE_R, (
+        "the encoder body's corners reach the diffuser seat")
+    assert NECK_BOTTOM - CARRIER_TOP >= FRONT_JOINT_H + 0.5, "front solder joints reach the neck"
+    assert SEAT_TOP - ENC_SHOULDER_Z >= 1.2, "encoder spacer too thin to print"
+    assert ENC_SHOULDER_Z + ENC_BUSHING_L >= RETAINER_TOP + NUT_T_MAX, (
+        "the encoder's thread does not pass the nut")
+    assert CARRIER_TOP + ENC_SHAFT_TIP - KNOB_BOTTOM < KNOB_BORE, "shaft bottoms in the knob"
+    assert KNOB_BOTTOM >= ENC_PUSH_MAX, "a full press bottoms the knob on the face"
     assert CLIP_RELIEF_GAP >= 0.5, "arm relief too narrow to stay open in an FDM print"
     assert CLIP_RELIEF_R - GLUE_R >= WALL_MIN, "relief leaves too little wall behind the strip"
     for a in CLIP_ANGLES:

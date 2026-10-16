@@ -1,12 +1,19 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
-## Cup arm reliefs - 2026-10-16, pending in Fusion (#1075)
+## Cup arm reliefs and the ACZ11 encoder stack - 2026-10-16, pending in Fusion (#1075)
 
 `console_ring_cup.step` now has a 0.6 mm relief pocket in the wall behind each
 snap arm (-129.0 mm3, nothing added). The populated clone's `cup` body is still
 the earlier 7,054.3 mm3 one. The change only removes material inside the cup's
 own outline, so the interference results below still hold; swap the body
 the next time the clone is open.
+
+The same pass corrected the encoder stack to the built carrier's Same Sky ACZ11
+(shoulder measured 6.39 mm above the board, not the EC11's 4.585): the encoder
+spacer is now 1.695 mm (207.7 mm3) and the diffuser's seat hole is Ø19.8
+(7,193.9 mm3) so the taller body's corners clear it. The clone's `ring_board_v3`
+still carries the EC11 board, and its `spacer` and `diffuser` bodies are the
+old ones; swap all three with the cup.
 
 ## Beam without ears, ±0.20 openings - 2026-10-01 (#1090)
 

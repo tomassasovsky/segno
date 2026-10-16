@@ -51,6 +51,31 @@ class ConsoleRingTest(unittest.TestCase):
         for a in lows:
             self.assertGreater(min(a, 360 - a), 15)
 
+    def test_spacer_matches_the_measured_encoder(self):
+        """The board hangs from the ACZ11's shoulder: the spacer runs from the
+        shoulder, 6.39 above the board as measured, to the seat's top, and the
+        nut still has thread above it."""
+        bb = ring.spacer().BoundingBox()
+        self.assertAlmostEqual(bb.zmin, ring.CARRIER_TOP + ring.ENC_BODY_H, places=6)
+        self.assertAlmostEqual(bb.zmax, ring.SEAT_TOP, places=6)
+        self.assertAlmostEqual(bb.zlen, 1.695, places=3)
+        thread_past_nut = (ring.ENC_SHOULDER_Z + ring.ENC_BUSHING_L
+                           - (ring.RETAINER_TOP + ring.NUT_T_MAX))
+        self.assertGreaterEqual(thread_past_nut, 0.0)
+
+    def test_encoder_body_clears_the_diffuser_seat_at_any_rotation(self):
+        """The ACZ11 body rises 0.3 into the seat's hole. Swept through every
+        rotation of the carrier (a cylinder at its corner radius plus the
+        drawing tolerance), it touches nothing of the diffuser. Control: the
+        old 9.25 hole would."""
+        import cadquery as cq
+        reach = (ring.ENC_BODY_HALF_W ** 2 + ring.ENC_BODY_REACH ** 2) ** 0.5 + ring.ENC_BODY_TOL
+        body = cq.Solid.makeCylinder(reach, ring.ENC_BODY_H,
+                                     cq.Vector(0, 0, ring.CARRIER_TOP))
+        self.assertLess(ring.diffuser().intersect(body).Volume(), 1e-6)
+        old_seat = ring.annulus(ring.SEAT_R, 9.25, ring.SEAT_TOP - 2.0, ring.SEAT_TOP)
+        self.assertGreater(old_seat.intersect(body).Volume(), 0.1)
+
     def test_relief_opens_the_gap_behind_every_arm(self):
         """Behind each arm, from the wall's foot to the roof, the half millimetre
         next to the arm's inner face is air, so the print cannot fuse arm and
