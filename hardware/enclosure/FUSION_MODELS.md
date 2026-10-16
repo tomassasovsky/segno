@@ -1,5 +1,13 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
+## Cup arm reliefs - 2026-10-16, pending in Fusion (#1075)
+
+`console_ring_cup.step` now has a 0.6 mm relief pocket in the wall behind each
+snap arm (-129.0 mm3, nothing added). The populated clone's `cup` body is still
+the earlier 7,054.3 mm3 one. The change only removes material inside the cup's
+own outline, so the interference results below still hold; swap the body
+the next time the clone is open.
+
 ## Beam without ears, ±0.20 openings - 2026-10-01 (#1090)
 
 Same clone, saved.

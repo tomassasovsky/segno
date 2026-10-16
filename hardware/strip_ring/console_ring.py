@@ -82,6 +82,18 @@ CLIP_CATCH_R = 39.0                # catch reaches in to here: 1.0 mm under the 
 CLIP_CATCH_H = 1.2                 # catch height; its underside is the 45-degree lead-in
 CARRIER_PARTS_R = 37.4             # outermost underside part (D1), measured in Fusion
 TOWER_CLEAR_R = 41.5               # segno_enclosure.S7T_RING_CLEAR_R (tower gate)
+# Arm relief. CLIP_GAP alone is far below the 0.3-0.5 mm an FDM print keeps open,
+# so along the wall's 13 mm the arm would print fused to it and only the short
+# stub below the wall could bend. A pocket in the wall's outer face behind each
+# arm opens the gap to CLIP_RELIEF_GAP from the roof down, so the whole arm flexes.
+# The strip is glued to the wall's inner face, which the pocket does not reach.
+CLIP_RELIEF_GAP = 0.6              # air between arm and wall behind each arm
+CLIP_RELIEF_SIDE = 0.5             # pocket wider than the arm on each side
+CLIP_RELIEF_R = CUP_R + CLIP_GAP - CLIP_RELIEF_GAP  # pocket floor radius
+WALL_MIN = 1.0                     # wall left behind the pocket
+# Fully flexed (catch pushed out past the board edge), an arm must still clear the
+# printed 7in tower: test_console_ring.py measures it against the tower's STEP.
+TOWER_FLEX_AIR = 1.0
 
 # Hard limits this variant exists to meet (Fusion clone, 2026-09-30, ENC_V 215.0):
 SCREEN7_CLEAR_R = 57.0             # 7in module's nearest point to the axis
@@ -131,13 +143,31 @@ def carrier_clip(deg_c):
     return bridge.fuse(arm, catch)
 
 
+def clip_relief(deg_c):
+    """The pocket in the wall's outer face behind one arm, from the wall's foot
+    up to the roof's underside, where the arm's root joins the bridge."""
+    return _sector(CUP_R + 0.01, CLIP_RELIEF_R, STRIP_BOTTOM - 0.01, UNDER - 1.2,
+                   deg_c, CLIP_W + 2 * CLIP_RELIEF_SIDE)
+
+
+def clip_flex_envelope(deg_c):
+    """Everything one arm sweeps while the board's edge pushes its catch out:
+    the arm from its relaxed radius out by the catch overlap."""
+    r_in = CUP_R + CLIP_GAP
+    z_bot = PCB_BOTTOM - CLIP_PLAY - CLIP_CATCH_H
+    return _sector(r_in + CLIP_T + (PCB_R - CLIP_CATCH_R), r_in, z_bot, UNDER - 1.2,
+                   deg_c, CLIP_W)
+
+
 def cup():
     """Roof glued to the faceplate underside; the diffuser's flange rests on the
     inner shelf; the wall carries the strip down to just above the carrier; three
-    arms snap the carrier in place."""
+    arms snap the carrier in place, each over a relief pocket in the wall."""
     roof = annulus(CUP_R, 35.65, UNDER - 1.2, UNDER)
     shelf = annulus(36.2, 34.4, UNDER - 2.0, UNDER - 1.2)
     wall = annulus(CUP_R, GLUE_R, STRIP_BOTTOM, UNDER)
+    for a in CLIP_ANGLES:
+        wall = wall.cut(clip_relief(a))
     body = roof.fuse(shelf, wall)
     for a in CLIP_ANGLES:
         body = body.fuse(carrier_clip(a))
@@ -245,6 +275,8 @@ def check():
     assert CUP_R + CLIP_GAP > PCB_R + 0.2, "snap arms grip the board edge radially"
     assert CLIP_CATCH_R < PCB_R - 0.8, "catch overlaps the board edge by too little"
     assert CLIP_CATCH_R > CARRIER_PARTS_R + 1.0, "catch reaches the carrier's underside parts"
+    assert CLIP_RELIEF_GAP >= 0.5, "arm relief too narrow to stay open in an FDM print"
+    assert CLIP_RELIEF_R - GLUE_R >= WALL_MIN, "relief leaves too little wall behind the strip"
     for a in CLIP_ANGLES:
         assert min(abs(a), abs(360 - a)) > 15, "a snap arm sits on the strip seam"
     for name, shape in parts().items():
