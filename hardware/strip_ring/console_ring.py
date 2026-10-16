@@ -89,7 +89,9 @@ TOWER_CLEAR_R = 41.5               # segno_enclosure.S7T_RING_CLEAR_R (tower gat
 # The strip is glued to the wall's inner face, which the pocket does not reach.
 CLIP_RELIEF_GAP = 0.6              # air between arm and wall behind each arm
 CLIP_RELIEF_SIDE = 0.5             # pocket wider than the arm on each side
-CLIP_RELIEF_R = CUP_R + CLIP_GAP - CLIP_RELIEF_GAP  # pocket floor radius
+CLIP_R_IN = CUP_R + CLIP_GAP       # arm's inner face
+CLIP_Z_BOT = PCB_BOTTOM - CLIP_PLAY - CLIP_CATCH_H  # catch's lowest point
+CLIP_RELIEF_R = CLIP_R_IN - CLIP_RELIEF_GAP  # pocket floor radius
 WALL_MIN = 1.0                     # wall left behind the pocket
 # Fully flexed (catch pushed out past the board edge), an arm must still clear the
 # printed 7in tower: test_console_ring.py measures it against the tower's STEP.
@@ -128,10 +130,10 @@ def _sector(ro, ri, z0, z1, deg_c, width):
 def carrier_clip(deg_c):
     """One snap arm: a bridge off the roof, a flexing arm down past the carrier,
     and the catch under the board edge with its lead-in on the underside."""
-    r_in = CUP_R + CLIP_GAP
+    r_in = CLIP_R_IN
     r_out = r_in + CLIP_T
     z_top = PCB_BOTTOM - CLIP_PLAY
-    z_bot = z_top - CLIP_CATCH_H
+    z_bot = CLIP_Z_BOT
     bridge = _sector(r_out, CUP_R - 0.4, UNDER - 1.2, UNDER, deg_c, CLIP_W)
     arm = _sector(r_out, r_in, z_bot, UNDER - 1.2, deg_c, CLIP_W)
     span = degrees(CLIP_W / r_in)
@@ -153,10 +155,8 @@ def clip_relief(deg_c):
 def clip_flex_envelope(deg_c):
     """Everything one arm sweeps while the board's edge pushes its catch out:
     the arm from its relaxed radius out by the catch overlap."""
-    r_in = CUP_R + CLIP_GAP
-    z_bot = PCB_BOTTOM - CLIP_PLAY - CLIP_CATCH_H
-    return _sector(r_in + CLIP_T + (PCB_R - CLIP_CATCH_R), r_in, z_bot, UNDER - 1.2,
-                   deg_c, CLIP_W)
+    return _sector(CLIP_R_IN + CLIP_T + (PCB_R - CLIP_CATCH_R), CLIP_R_IN, CLIP_Z_BOT,
+                   UNDER - 1.2, deg_c, CLIP_W)
 
 
 def cup():
