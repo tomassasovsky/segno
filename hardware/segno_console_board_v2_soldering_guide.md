@@ -7,7 +7,8 @@ soldered down by its castellations.
 
 
 For the current v3 board, use the current generated BOM for quantities and connector
-sizes; the v2 illustration and v2-only rows below are historical. J2 is Würth
+sizes; the v2 illustration and v2-only rows below are historical. The V3 solder order, with numbered images for the console,
+ring carrier and screen-power boards, is in [v3_soldering](v3_soldering/README.md). J2 is Würth
 61204021621 and J22 is Würth 61300621121, with 1.25 mm finished holes and minimum
 1.80 mm pads. The Pico is soldered by its castellations, not an unspecified header.
 
