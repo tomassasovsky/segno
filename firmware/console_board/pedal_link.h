@@ -56,6 +56,14 @@ extern "C" {
 #define PEDAL_LINK_TYPE_ENCODER_BUTTON 0x05u /* [pressed] */
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
+/* Pi -> board, from segno-ring-flash before the app starts, never from the
+ * app (PedalLinkCodec does not encode it): bridge this UART to the ring
+ * carrier's, so the Pi can update the ring XIAO (#1342, SegnoRing's
+ * ring_update.h). The payload is a fixed magic, so line noise that passes
+ * the checksum cannot enter the bridge. */
+#define PEDAL_LINK_TYPE_RING_BRIDGE 0x12u /* ['R', 'B'] */
+#define PEDAL_LINK_RING_BRIDGE_MAGIC0 0x52u
+#define PEDAL_LINK_RING_BRIDGE_MAGIC1 0x42u
 
 #define PEDAL_LINK_STATE_LEN 53u
 #define PEDAL_LINK_MAX_PAYLOAD PEDAL_LINK_STATE_LEN
@@ -193,6 +201,7 @@ size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out)
 size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8_t value,
                               uint8_t *out);
 size_t pedal_link_encode_state(const pedal_state *state, uint8_t *out);
+size_t pedal_link_encode_ring_bridge(uint8_t *out);
 
 /* Decode a STATE payload. Returns 1 on success, 0 for a wrong length, an
  * out-of-range enum, a reserved flag bit, an active_bank > 1, a

@@ -11,6 +11,8 @@
 // GP13 TX / GP14 RX (SegnoRing's ring_link.h): the Pico sends a five-byte ring
 // state, the XIAO sends cumulative encoder and button counters, and the Pico
 // turns those into the same ENCODER / ENCODER_BUTTON events the v2 board sent.
+// On the Pi's RING_BRIDGE message it bridges the two UARTs instead, so the Pi
+// can update the XIAO's firmware (SegnoRing's ring_update.h, #1342).
 //
 // Link: Serial1 = UART0, GP16 TX / GP17 RX -> the Pi's uart3 (GPIO8/9,
 // /dev/ttyAMA3), 115200 8N1. Wire format: pedal_link.h, shared byte for byte
@@ -38,8 +40,9 @@
 struct Rgb { uint8_t r, g, b; };
 
 // Major 2: the v3 board (ring on its own XIAO). Same pedal-link protocol.
+// 2.1: the ring-update bridge.
 static const uint8_t FW_MAJOR = 2;
-static const uint8_t FW_MINOR = 0;
+static const uint8_t FW_MINOR = 1;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -104,13 +107,16 @@ static bool g_haveFrame = false;
 static unsigned long g_lastFrameMs = 0;
 static unsigned long g_lastHelloMs = 0;
 
-SerialPIO ringLink(PIN_RING_TX, PIN_RING_RX, 256);
+// 2048: while bridging, a whole update chunk is copied the other way before
+// this buffer is drained again.
+SerialPIO ringLink(PIN_RING_TX, PIN_RING_RX, 2048);
 static ring_link::Parser g_ringParser;
 static ring_link::InputTracker g_ringInput;
 static unsigned long g_lastRingStateMs = 0;
 static bool g_ringButtonPressed = false;
 
 static void sendRingState();
+static void startBridge();
 
 static void sendFrame(const uint8_t *buf, size_t len) {
   LINK.write(buf, len);
@@ -133,13 +139,20 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
       }
       break;  // a malformed frame is dropped; the last good one is kept
     }
+    case PEDAL_LINK_TYPE_RING_BRIDGE:
+      if (len == 2 && payload[0] == PEDAL_LINK_RING_BRIDGE_MAGIC0 && payload[1] == PEDAL_LINK_RING_BRIDGE_MAGIC1)
+        startBridge();
+      break;
     default:
       break;
   }
 }
 
+static bool g_bridging = false;
+
 static void pollLink() {
-  while (LINK.available() > 0) {
+  // Stops at RING_BRIDGE: every byte after it belongs to the ring.
+  while (!g_bridging && LINK.available() > 0) {
     uint8_t type, len;
     const uint8_t *payload;
     if (pedal_link_parser_push(&g_parser, (uint8_t)LINK.read(), &type, &payload, &len)) {
@@ -230,6 +243,58 @@ static void pollRing() {
     }
   }
   if (g_ringInput.expire(millis())) sendEncoderButton(false);
+}
+
+// ---- ring-update bridge ---------------------------------------------------------
+// segno-ring-flash runs before the app. It sends RING_BRIDGE, then talks to the
+// XIAO through this board: every byte is copied between the Pi's UART and the
+// ring's, at the same 115200 baud, and nothing else runs. The Pi ends it with
+// a BRIDGE_END update frame, which this board spots in the Pi's stream (the
+// ring ignores it); if the Pi goes quiet instead, the bridge ends on its own.
+static const unsigned long BRIDGE_IDLE_MS = 5000;
+static unsigned long g_bridgeLastMs = 0;
+static uint8_t g_bridgeBody[8];  // BRIDGE_END and its CRC; anything longer is not it
+static ring_frame_parser g_bridgeParser;
+
+static void startBridge() {
+  g_bridging = true;
+  g_bridgeLastMs = millis();
+  ring_frame_parser_init(&g_bridgeParser, g_bridgeBody, sizeof(g_bridgeBody));
+  ind.ClearTo(RgbColor(0));
+  ind.Show();
+}
+
+static void endBridge() {
+  g_bridging = false;
+  pedal_link_parser_init(&g_parser);
+  g_ringParser = ring_link::Parser();
+  g_haveFrame = false;
+  sendRingState();
+  sendHello();
+  g_lastHelloMs = millis();
+}
+
+static void pumpBridge() {
+  const unsigned long now = millis();
+  while (LINK.available() > 0) {
+    const uint8_t byte = (uint8_t)LINK.read();
+    ringLink.write(&byte, 1);
+    g_bridgeLastMs = now;
+    size_t length = 0;
+    uint8_t type;
+    const uint8_t *payload;
+    size_t n;
+    if (ring_frame_parser_push(&g_bridgeParser, byte, &length) &&
+        ring_update_message(g_bridgeBody, length, &type, &payload, &n) && type == RING_UPDATE_BRIDGE_END) {
+      endBridge();
+      return;
+    }
+  }
+  while (ringLink.available() > 0) {
+    const uint8_t byte = (uint8_t)ringLink.read();
+    LINK.write(&byte, 1);
+  }
+  if (now - g_bridgeLastMs >= BRIDGE_IDLE_MS) endBridge();
 }
 
 // ---- CTRL jacks --------------------------------------------------------------
@@ -638,6 +703,7 @@ void setup() {
 
   LINK.setTX(PIN_LINK_TX);
   LINK.setRX(PIN_LINK_RX);
+  LINK.setFIFOSize(2048);  // room for two ring-update chunks while bridging
   LINK.begin(LINK_BAUD);
   pedal_link_parser_init(&g_parser);
 
@@ -653,6 +719,10 @@ void setup() {
 
 void loop() {
   pollLink();
+  if (g_bridging) {
+    pumpBridge();
+    return;
+  }
   pollButtons();
   pollRing();
   pollCtrl();

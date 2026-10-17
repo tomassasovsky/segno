@@ -7,20 +7,31 @@
 //
 // Build:
 //   arduino-cli compile --libraries firmware/libraries --fqbn rp2040:rp2040:seeed_xiao_rp2350 firmware/ring_board --output-dir firmware/ring_board/build
-// Install: hold BOOT, plug the XIAO's USB-C into a computer, copy the UF2 onto
-// the RP2350 drive. Turn AUX off and unplug J1 first (kicad/RING_ASSEMBLY.md).
+//   python3 -I firmware/ring_board/seal.py firmware/ring_board/build/ring_board.ino.elf firmware/ring_board/build
+// Install once over USB (README.md): the partition table, then the sealed UF2.
+// After that the Pi updates it over the ring link (ring_updater.h).
 
 #include <Adafruit_NeoPixel.h>
 #include <SerialPIO.h>
 #include <SegnoRing.h>
 #include "panel_pixels.h"
+#include "ring_updater.h"
 
 // A colour before gamma; the .ino auto-prototypes need the type declared first.
 struct Rgb { uint8_t r, g, b; };
 
+// The firmware's own version, reported in the update HELLO and sealed into the
+// image (seal.py reads these two lines). Bump it with every change: the Pi
+// updates the ring when the version differs from the image it ships.
+static const uint8_t FW_MAJOR = 1;
+static const uint8_t FW_MINOR = 0;
+
 // Seeed variant pin aliases, matching ring_board.py's D-number pads.
 static const uint8_t PIN_RING = D0, PIN_ENC_A = D1, PIN_ENC_B = D2, PIN_ENC_SW = D3;
-SerialPIO ringLink(D10, D9, 256);  // TX D10/GP3 -> console GP14; RX D9/GP4 <- GP13
+// TX D10/GP3 -> console GP14; RX D9/GP4 <- GP13. The receive buffer holds two
+// update chunks, so a slow loop pass cannot drop one.
+SerialPIO ringLink(D10, D9, 2048);
+RingUpdater<SerialPIO> g_updater(ringLink, FW_MAJOR, FW_MINOR);
 
 // ---- LEDs ---------------------------------------------------------------------
 // The console strip ring (#1090): 35 pixels of the 144/m strip, pixel 0 where
@@ -46,9 +57,11 @@ static bool g_gainArmed = false;
 
 static void pollState() {
   while (ringLink.available() > 0) {
+    const uint8_t byte = (uint8_t)ringLink.read();
+    g_updater.push(byte, millis());
     uint8_t type;
     const uint8_t *payload;
-    if (!g_parser.push((uint8_t)ringLink.read(), type, payload) || type != ring_link::STATE) continue;
+    if (!g_parser.push(byte, type, payload) || type != ring_link::STATE) continue;
     const ring_link::RingState next = ring_link::decodeState(payload);
     // The encoder is the master volume and has no pill of its own, so the ring
     // becomes the readout for a moment whenever the level moves.
@@ -298,6 +311,7 @@ void setup() {
   g_session = rp2040.hwrand32();
   buildCometDuty();
   ringLink.begin(115200);
+  g_updater.begin();
   ring.begin();
   for (uint16_t i = 0; i < RING_N; i++) g_pixels[i] = 0;
   showRing();
@@ -306,6 +320,7 @@ void setup() {
 
 void loop() {
   pollState();
+  g_updater.poll(millis());
   encoderSampleFromLoop();
   pollButton();
   const uint32_t now = millis();

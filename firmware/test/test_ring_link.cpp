@@ -65,6 +65,16 @@ static void rejectsAndRecovers() {
   std::vector<uint8_t> noise = {0x12, 0x34, ring_link::ESC, 0x00};
   noise.insert(noise.end(), good.begin(), good.end());
   assert(parse(parser, noise, type, got));  // the next END resynchronises
+
+  // Firmware-update frames share the wire (ring_update.h). They are not ring
+  // state and not noise either, however long they are.
+  const uint32_t before = parser.dropped;
+  std::vector<uint8_t> chunk(4 + RING_UPDATE_CHUNK, ring_link::END);
+  uint8_t update[RING_UPDATE_MAX_FRAME];
+  std::vector<uint8_t> traffic(update, update + ring_update_encode(RING_UPDATE_DATA, chunk.data(), chunk.size(), update));
+  traffic.insert(traffic.end(), good.begin(), good.end());
+  got.clear();
+  assert(parse(parser, traffic, type, got) && type == ring_link::STATE && parser.dropped == before);
 }
 
 static void trackerWrapsAndLeases() {

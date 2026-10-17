@@ -33,6 +33,18 @@ pins. A rebooted or silent XIAO replays no turns and releases a held button.
 Because the ring never sees pedal-link frames, a pedal-link protocol change
 does not need the XIAO reflashed.
 
+### Ring-update bridge (firmware 2.1)
+
+The XIAO has no SWD path, so the Pi updates it through this board (#1342).
+`segno-ring-flash` runs after the console flash and before the app, and sends
+`RING_BRIDGE` (pedal-link type `0x12`, payload `'R' 'B'`); the app never sends
+it. The board then darkens the pills, stops its own HELLO and ring state, and
+copies every byte between the Pi's UART and the ring's in both directions. It
+leaves the bridge on the Pi's `BRIDGE_END` update frame, which it spots in the
+Pi's stream (the ring ignores it), or after 5 s without a byte from the Pi,
+and carries on as before. The update itself is the ring's; see
+[its README](../ring_board/README.md#updates-over-the-console).
+
 ## Physical rendering and source boundary
 
 Firmware 2.0 is the v3 board on public UART protocol 10, unchanged from
@@ -155,7 +167,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0a 02 00 08 (HELLO, protocol 10, fw 2.0), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0a 02 01 09 (HELLO, protocol 10, fw 2.1), once a second
 ```
 
 ## Bring-up record
