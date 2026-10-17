@@ -48,8 +48,8 @@ The approved console ring behaviour, now on this board:
 - Every push shares one channel budget, 35 × 3 × 96 = 10,080; a larger frame is
   scaled uniformly.
 - **Dimmed**: while DIMMED is set, every push drops to about 20 % (51/255) after
-  the budget, whatever the view. A still frame picks the change up on the next
-  250 ms refresh. LED output is PIO/DMA (NeoPixelBus), so the link and
+  the budget, whatever the view, and at once on a still frame. A lit channel
+  stays at least 1, so the dimmed breathe never reaches black. LED output is PIO/DMA (NeoPixelBus), so the link and
   encoder interrupts keep running during a push.
 
 ## Encoder
