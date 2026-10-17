@@ -159,13 +159,23 @@ check "no table says so" 'grep -q "install it once over USB" "$work/log"'
 check "no table records no attempt" '[ ! -e "$state/attempts" ]'
 teardown
 
-# Silence: an old console or ring firmware. The boot waits about 1.5 s, no more.
+# Silence: an old console or ring firmware. The boot waits about 1.5 s, no
+# more, and the next boot of the same image does not wait at all.
 setup
 start=$(date +%s)
 run silent
 check "silence exits 0" '[ "$status" = 0 ]'
 check "silence says so" 'grep -q "no answer" "$work/log"'
 check "silence is short" '[ $(( $(date +%s) - start )) -le 8 ]'
+check "silence is recorded" 'grep -qx "firmware=1.2" "$state/silent"'
+run 1.2.0
+check "a recorded silence skips the ring" '[ ! -s "$work/seen" ] && grep -q "not asking" "$work/log"'
+check "the skip says how to ask again" 'grep -q "remove $state/silent" "$work/log"'
+# A new image asks again, and an answer clears the record.
+printf 'firmware=1.3 size=5000 sha256=%064d\n' 0 > "$work/fw/version"
+run 1.3.0
+check "a new image asks again" '[ "$(cat "$work/seen")" = "01 06" ]'
+check "an answer clears the record" '[ ! -e "$state/silent" ]'
 teardown
 
 # Nothing to trust: the ring is left alone.

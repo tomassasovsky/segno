@@ -73,7 +73,11 @@ python3 -I firmware/ring_board/seal.py firmware/ring_board/build/ring_board.ino.
 | `version` | `firmware=M.m size=N sha256=HEX`, the marker the appliance's flasher reads |
 
 The version is `FW_MAJOR`/`FW_MINOR` in `ring_board.ino`. **Bump it with every
-change**: the appliance updates a ring whose version differs from the image's.
+change**: the appliance updates a ring whose version differs from the image's,
+in either direction. A downgrade sticks: the version is sealed into the image,
+and when the bootrom tries a lower version than the other partition holds, the
+confirmation erases the higher one, so an appliance rolled back to an older
+image puts the ring back on that image's firmware.
 
 ## First install, over USB, once per carrier
 
@@ -130,7 +134,11 @@ new image that never answers. `segno-ring-flash` exits 0 whatever happens,
 retries on the next boot, and stops after three failed attempts at one
 version, so an image the ring rejects does not slow every boot. A transfer cut
 by the line counts too; to retry a held version, remove
-`/data/segno/ring-board/attempts` (the journal says so). An update
+`/data/segno/ring-board/attempts` (the journal says so). A ring that does not
+answer at all (its USB install not done yet, a console without the bridge, or
+no ring) is recorded in `/data/segno/ring-board/silent` for that image's ring
+version, and later boots of the same image skip the 1.5 s wait. A new image
+asks again; after the USB install on an unchanged image, remove that file. An update
 takes about ten seconds at 115200 baud.
 
 `firmware/test/test_ring_board.cpp` runs this sketch on the host: the comet

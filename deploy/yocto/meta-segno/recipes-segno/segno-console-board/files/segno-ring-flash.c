@@ -13,7 +13,9 @@
  *
  * The ring keeps booting its previous firmware if anything here fails; the
  * next boot tries again, up to MAX_ATTEMPTS per firmware version, so an image
- * the ring keeps rejecting does not slow every boot.
+ * the ring keeps rejecting does not slow every boot. A ring that does not
+ * answer at all (no updater yet, or no ring) is recorded the same way, per
+ * shipped version, so later boots skip the 1.5 s wait for it.
  */
 #define _DEFAULT_SOURCE /* cfmakeraw, CRTSCTS */
 
@@ -86,6 +88,16 @@ static unsigned uart_now(void *ctx) {
 static void uart_log(void *ctx, const char *message) {
   (void)ctx;
   log_line(message);
+}
+
+/* Whether a record file says "firmware=<want>" (the silent record). */
+static int recorded_for(const char *path, const char *want) {
+  FILE *f = fopen(path, "r");
+  if (!f) return 0;
+  char firmware[16] = "";
+  const int got = fscanf(f, "firmware=%15s", firmware);
+  fclose(f);
+  return got == 1 && strcmp(firmware, want) == 0;
 }
 
 /* attempts: "firmware=M.m count=N". Counts updates started at this version. */
@@ -202,6 +214,18 @@ int main(void) {
   snprintf(u.attempts_path, sizeof(u.attempts_path), "%s/attempts", state);
   make_dirs(state);
 
+  // A ring that did not answer for this shipped version will not answer now
+  // either: no updater yet (its one USB install), or no ring. A new image asks
+  // again; so does removing the record.
+  char silent_path[520];
+  snprintf(silent_path, sizeof(silent_path), "%s/silent", state);
+  if (recorded_for(silent_path, u.want)) {
+    snprintf(line, sizeof(line), "the ring did not answer when %s shipped; not asking (remove %s to ask again)",
+             u.want, silent_path);
+    log_line(line);
+    return 0;
+  }
+
   u.fd = open_uart(dev);
   if (u.fd < 0) {
     snprintf(line, sizeof(line), "cannot open %s: %s", dev, strerror(errno));
@@ -216,6 +240,14 @@ int main(void) {
   tcdrain(u.fd);
   close(u.fd);
 
+  if (outcome == RING_FLASH_SILENT) {
+    snprintf(line, sizeof(line), "firmware=%s\n", u.want);
+    write_record(silent_path, line);
+    snprintf(line, sizeof(line), "recorded in %s: later boots of this image skip the wait", silent_path);
+    log_line(line);
+  } else {
+    unlink(silent_path);
+  }
   if (outcome == RING_FLASH_HELD) {
     // A cut line counts as much as a rejected image: say how to try again.
     snprintf(line, sizeof(line), "remove %s to let the next boot try %s again", u.attempts_path, u.want);

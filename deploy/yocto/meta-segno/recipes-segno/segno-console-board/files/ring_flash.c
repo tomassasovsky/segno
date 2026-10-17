@@ -180,6 +180,12 @@ ring_flash_outcome ring_flash_run(const ring_flash_io *io, const ring_flash_job 
     say(&s, "the ring runs %d.%d without a partition table; install it once over USB", h.major, h.minor);
     return finish(&s, RING_FLASH_NO_TABLE);
   }
+  // Any other version is sent, older ones included: an appliance rolled back
+  // to an older image brings the ring back with it. The bootrom keeps such a
+  // downgrade: when a flash-update boot tries a lower version than the other
+  // partition holds, the buy erases that partition's first sector
+  // (pico-bootrom-rp2350 varm_flash_boot.c, explicit_buy in
+  // varm_launch_image.c), so the next normal boot cannot pick the higher one.
   const int wanted = h.major == job->major && h.minor == job->minor;
   if (wanted && (h.flags & RING_UPDATE_FLAG_TRIAL)) {
     say(&s, "the ring runs %d.%d on trial; confirming it", h.major, h.minor);

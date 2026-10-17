@@ -3,7 +3,8 @@
 
 // The XIAO's 2 MB QSPI flash, simulated: erase sets a sector to 0xff, program
 // can only clear bits, and both enforce the alignment the real ROM routines
-// need. Interrupts must be off around either, as on the device.
+// need. Interrupts must be off and the other core idle around either, as on
+// the device.
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -25,7 +26,7 @@ inline void reset() {
 }  // namespace fake_flash
 
 inline void flash_range_erase(uint32_t offset, size_t count) {
-  assert(fake_arduino::interruptsOff);
+  assert(fake_arduino::interruptsOff && rp2040.otherCoreIdle);
   assert(offset % FLASH_SECTOR_SIZE == 0 && count % FLASH_SECTOR_SIZE == 0);
   assert(offset + count <= fake_flash::SIZE);
   memset(fake_flash::mem + offset, 0xff, count);
@@ -33,7 +34,7 @@ inline void flash_range_erase(uint32_t offset, size_t count) {
 }
 
 inline void flash_range_program(uint32_t offset, const uint8_t *data, size_t count) {
-  assert(fake_arduino::interruptsOff);
+  assert(fake_arduino::interruptsOff && rp2040.otherCoreIdle);
   assert(offset % FLASH_PAGE_SIZE == 0 && count % FLASH_PAGE_SIZE == 0);
   assert(offset + count <= fake_flash::SIZE);
   for (size_t i = 0; i < count; ++i) fake_flash::mem[offset + i] &= data[i];

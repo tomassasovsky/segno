@@ -55,6 +55,9 @@ inline void delay(int duration) { fake_arduino::now += duration; }
 struct FakeRp2040 {
   uint32_t nonce = 0x5e9a0001;
   uint32_t hwrand32() { return nonce; }
+  bool otherCoreIdle = false;
+  void idleOtherCore() { otherCoreIdle = true; }
+  void resumeOtherCore() { otherCoreIdle = false; }
 };
 inline FakeRp2040 rp2040;
 

@@ -190,15 +190,21 @@ class RingUpdater {
     return true;
   }
 
-  // Flash runs from XIP: nothing that lives in flash may run while it is busy.
+  // Flash runs from XIP: nothing that lives in flash may run while it is busy,
+  // on either core. arduino-pico's own pattern (EEPROM, LittleFS); idling the
+  // other core is a no-op while the sketch has no setup1()/loop1().
   void erase(uint32_t offset) {
     noInterrupts();
+    rp2040.idleOtherCore();
     flash_range_erase(offset, FLASH_SECTOR_SIZE);
+    rp2040.resumeOtherCore();
     interrupts();
   }
   void program(uint32_t offset, const uint8_t *bytes, size_t n) {
     noInterrupts();
+    rp2040.idleOtherCore();
     flash_range_program(offset, bytes, n);
+    rp2040.resumeOtherCore();
     interrupts();
   }
 
