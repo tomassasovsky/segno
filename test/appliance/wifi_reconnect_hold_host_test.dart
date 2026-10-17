@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/appliance/wifi_reconnect_hold_host.dart';
+import 'package:segno/backing/cubit/backing_cubit.dart';
+import 'package:segno/backing/model/backing_state.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:wifi_repository/wifi_repository.dart';
@@ -19,7 +21,11 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 
 class _MockWifiRepository extends Mock implements WifiRepository {}
 
-const _playing = LooperState(transport: TransportState(isRunning: true));
+class _MockBackingCubit extends MockCubit<BackingCubitState>
+    implements BackingCubit {}
+
+const _playing = LooperState(tracks: [Track(state: TrackState.playing)]);
+const _noBacking = BackingCubitState(backing: BackingState());
 
 void main() {
   group('WifiReconnectHoldHost', () {
@@ -46,6 +52,12 @@ void main() {
         performanceStates.stream,
         initialState: const PerformanceRecorderIdle(),
       );
+      final backing = _MockBackingCubit();
+      whenListen(
+        backing,
+        const Stream<BackingCubitState>.empty(),
+        initialState: _noBacking,
+      );
       wifi = _MockWifiRepository();
       holds = [];
       when(
@@ -63,6 +75,7 @@ void main() {
             providers: [
               BlocProvider<LooperBloc>.value(value: looper),
               BlocProvider<PerformanceRecorderCubit>.value(value: performance),
+              BlocProvider<BackingCubit>.value(value: backing),
             ],
             child: const WifiReconnectHoldHost(child: SizedBox()),
           ),
