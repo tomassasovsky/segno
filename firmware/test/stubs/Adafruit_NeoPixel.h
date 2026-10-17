@@ -21,6 +21,13 @@
 #define CHANGE 0
 #define NEO_GRB 0x52
 #define NEO_KHZ800 0
+// The Seeed XIAO RP2350 variant's pad aliases (ring_board.ino).
+#define D0 26
+#define D1 27
+#define D2 28
+#define D3 5
+#define D9 4
+#define D10 3
 
 namespace fake_arduino {
 inline unsigned long now = 0;
@@ -28,6 +35,7 @@ inline int analog[32] = {};
 inline int digital[32] = {};
 inline std::vector<std::vector<uint8_t>> sent;
 inline std::deque<uint8_t> received;
+inline bool interruptsOff = false;
 }
 
 inline unsigned long millis() { return fake_arduino::now; }
@@ -39,13 +47,22 @@ inline void pinMode(int pin, int mode) {
   if (mode == INPUT_PULLDOWN) fake_arduino::digital[pin] = LOW;
 }
 inline void analogReadResolution(int) {}
-inline void noInterrupts() {}
-inline void interrupts() {}
+inline void noInterrupts() { fake_arduino::interruptsOff = true; }
+inline void interrupts() { fake_arduino::interruptsOff = false; }
 inline int digitalPinToInterrupt(int pin) { return pin; }
 inline void attachInterrupt(int, void (*)(), int) {}
 inline void delay(int duration) { fake_arduino::now += duration; }
+struct FakeRp2040 {
+  uint32_t nonce = 0x5e9a0001;
+  uint32_t hwrand32() { return nonce; }
+  bool otherCoreIdle = false;
+  void idleOtherCore() { otherCoreIdle = true; }
+  void resumeOtherCore() { otherCoreIdle = false; }
+};
+inline FakeRp2040 rp2040;
 
 struct FakeSerial {
+  void setFIFOSize(size_t) {}
   void setTX(int) {}
   void setRX(int) {}
   void begin(unsigned long) {}

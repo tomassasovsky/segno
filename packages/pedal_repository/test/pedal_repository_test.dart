@@ -112,6 +112,39 @@ void main() {
       expect(link.sent, [StateMessage(frame)]);
     });
 
+    test('setDimmed resends the current frame and stamps later ones', () async {
+      link.hello();
+      await pumpEventQueue();
+      final frame = PedalStateFrame.blank().copyWith(
+        globalColor: GlobalColor.red,
+      );
+      repo
+        ..pushState(frame)
+        ..setDimmed(dimmed: true);
+      expect(link.sent, [
+        StateMessage(frame),
+        StateMessage(frame.copyWith(dimmed: true)),
+      ]);
+      // Unchanged, it sends nothing; a new frame carries the flag.
+      repo
+        ..setDimmed(dimmed: true)
+        ..pushState(frame.copyWith(globalColor: GlobalColor.green));
+      expect(link.sent, hasLength(3));
+      expect(link.lastFrame!.dimmed, isTrue);
+      repo.setDimmed(dimmed: false);
+      expect(link.lastFrame!.dimmed, isFalse);
+      expect(link.lastFrame!.globalColor, GlobalColor.green);
+    });
+
+    test('setDimmed before any frame only stamps the first one', () async {
+      link.hello();
+      await pumpEventQueue();
+      repo.setDimmed(dimmed: true);
+      expect(link.sent, isEmpty);
+      repo.pushState(PedalStateFrame.blank());
+      expect(link.lastFrame!.dimmed, isTrue);
+    });
+
     test('a frame identical to the last push is not sent again', () async {
       link.hello();
       await pumpEventQueue();

@@ -318,6 +318,27 @@ void main() {
       unawaited(idle.close());
     });
 
+    testWidgets('the console LEDs dim and wake with the screens', (
+      tester,
+    ) async {
+      await pump(tester);
+      pedal.pushState(PedalStateFrame.blank());
+      expect(pedal.lastFrame!.dimmed, isFalse);
+
+      await tester.pump(const Duration(seconds: 120));
+      expect(brightness.state.dimmed, isTrue);
+      expect(pedal.lastFrame!.dimmed, isTrue);
+      // A frame the control surface pushes while dimmed keeps the flag.
+      pedal.pushState(PedalStateFrame.blank().copyWith(activeBank: 1));
+      expect(pedal.lastFrame!.dimmed, isTrue);
+
+      await tester.tap(find.byKey(const Key('control')), warnIfMissed: false);
+      await tester.pump();
+      expect(pedal.lastFrame!.dimmed, isFalse);
+      unawaited(idle.close());
+      unawaited(pedal.dispose());
+    });
+
     testWidgets('the encoder wakes it', (tester) async {
       await pump(tester);
       await tester.pump(const Duration(seconds: 120));

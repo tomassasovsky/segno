@@ -22,6 +22,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1299 | Appliance slowdown profiler | in-review | merge-gate | `claude/appliance-responsiveness-08d39b` |
 | #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |
 | #1337 | Retry Wi-Fi after a runtime drop, holding off while performing | in-review | blocked-verify | `claude/wifi-runtime-retry-1337` |
+| #1349 | Console LEDs dim with the screens (protocol 11, console 2.2, ring 1.1) | build | blocked-verify | `claude/idle-dim-leds-1349` |
+| #1081 | Console v3 and ring carrier firmware on protocol 10 | in-review | merge-gate | `claude/console-v3-port-1081` |
+| #1072 | Screen power follows the app (runtime on integration) | in-review | blocked-verify | `claude/screen-power-runtime-1072` |
 | #1088 | Console base enclosure for fabrication | in-review | merge-gate | `claude/segno-pedal-manufacturability-5f08a2` |
 | #1077 | Song queue completion | in-review | blocked-verify | `claude/song-queue-comet-1077` |
 | #1140 | Keep recorded material across audio-engine reopen | in-review | merge-gate | `claude/engine-reopen-1140*` |
@@ -40,6 +43,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
 | #1270 | Device and appliance pages | plan | merge-gate | `claude/device-pages-plan-1270` |
+| #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
 
 ---
 

@@ -28,7 +28,7 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// | byte   | meaning                                                    |
 /// |--------|------------------------------------------------------------|
 /// | 0      | flags: bit0 clearFadeActive, bit1 goodbye,                 |
-/// |        | bit2 performanceArmed, bit3 countingIn                     |
+/// |        | bit2 performanceArmed, bit3 countingIn, bit4 dimmed        |
 /// | 1      | [PedalMode] index                                          |
 /// | 2      | [PedalLooperMode] index                                    |
 /// | 3      | [GlobalColor] index                                        |
@@ -50,6 +50,9 @@ abstract final class PedalLinkCodec {
   /// The link protocol this codec speaks, reported by the board in
   /// [HelloMessage.protocolVersion].
   ///
+  /// 11: STATE flags bit 4 is `dimmed`: the console idled and the screens
+  /// dimmed, so the board dims its LEDs too (#1349); the layout is
+  /// otherwise unchanged.
   /// 10: STATE grows to 53 bytes with the Song queue (#1077): which
   /// footswitch's pill fills, and how far, while a section waits for the
   /// playing one's next lap edge. 9: ENCODER_BUTTON (`0x05`) — the encoder's
@@ -66,7 +69,7 @@ abstract final class PedalLinkCodec {
   /// when the ring stopped tracking the loop. The board is flashed over SWD
   /// independently of the app, so the two can drift; this is what makes
   /// that visible rather than silent.
-  static const protocolVersion = 10;
+  static const protocolVersion = 11;
 
   /// Message types, board → segno.
   static const typeButton = 0x01;
@@ -215,7 +218,8 @@ abstract final class PedalLinkCodec {
         (frame.clearFadeActive ? 0x01 : 0) |
         (frame.isGoodbye ? 0x02 : 0) |
         (frame.performanceArmed ? 0x04 : 0) |
-        (frame.countingIn ? 0x08 : 0);
+        (frame.countingIn ? 0x08 : 0) |
+        (frame.dimmed ? 0x10 : 0);
     p[1] = frame.mode.index;
     p[2] = frame.looperMode.index;
     p[3] = frame.globalColor.index;
@@ -251,7 +255,7 @@ abstract final class PedalLinkCodec {
       return null;
     }
     if (p[50] & ~0x03 != 0) return null;
-    if (p[0] & ~0x0F != 0) return null;
+    if (p[0] & ~0x1F != 0) return null;
     if (p[1] >= PedalMode.values.length) return null;
     if (p[2] >= PedalLooperMode.values.length) return null;
     if (p[3] >= GlobalColor.values.length) return null;
@@ -281,6 +285,7 @@ abstract final class PedalLinkCodec {
       masterGain: p[18] / 255.0,
       looperMode: PedalLooperMode.values[p[2]],
       countingIn: p[0] & 0x08 != 0,
+      dimmed: p[0] & 0x10 != 0,
       pedalColors: [
         for (var i = 0; i < PedalButton.values.length; i++)
           PedalColor(p[19 + i * 3], p[20 + i * 3], p[21 + i * 3]),
