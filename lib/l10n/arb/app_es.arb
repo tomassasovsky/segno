@@ -2635,5 +2635,18 @@
     "touchCalibrationCountdown": "{seconds} s",
     "touchCalibrationRestart": "Reiniciar",
     "touchCalibrationKeep": "Mantener calibración",
-    "touchCalibrationFailed": "No se pudo guardar la calibración."
+    "touchCalibrationFailed": "No se pudo guardar la calibración.",
+    "controllerPowerRow": "Alimentación",
+    "controllerPowerValue": "{volts} V · {amps} A · {watts} W",
+    "controllerPowerNoContract": "Sin contrato USB-C PD",
+    "controllerPowerNotRead": "La placa de alimentación no respondió",
+    "controllerPowerWriteFailed": "No se pudo escribir la configuración de la placa de alimentación",
+    "controllerPowerCyclePending": "Desenchufá la consola 5 segundos para usar los {watts} W del cargador",
+    "controllerPowerWeak": "El cargador da menos de 90 W: usá un cargador USB-C de 100 W",
+    "powerCycleBannerTitle": "Desenchufá la consola 5 segundos para usar toda la potencia del cargador",
+    "powerCycleBannerDescription": "Ahora usa {now} W; el cargador ofrece {offered} W.",
+    "powerCycleBannerDismiss": "Ahora no",
+    "powerCycleBannerPowerOff": "Apagar…",
+    "powerUnplugToApply": "Desenchufá el cable de alimentación 5 segundos y volvé a enchufarlo",
+    "weakChargerToast": "Este cargador ofrece {watts} W. Usá un cargador USB-C de 100 W."
 }

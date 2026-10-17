@@ -3571,6 +3571,130 @@ void main() {
       expect(find.text('Loop does not fit this mode'), findsNothing);
     });
 
+    group('USB-C power (#1352)', () {
+      const stale = PedalPowerSupply(
+        profile: PedalPowerProfile.matches,
+        millivolts: 20000,
+        milliamps: 3000,
+        maxMilliamps: 4700,
+      );
+
+      Future<(FakePedalLink, PedalRepository)> pumpWithPedal(
+        WidgetTester tester,
+      ) async {
+        final link = FakePedalLink();
+        final pedal = PedalRepository(link);
+        link.hello();
+        await tester.pumpWidget(
+          App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midiDeviceRepository,
+            settings: settings,
+            waveformWindow: NoopWaveformWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
+            pedalRepository: pedal,
+          ),
+        );
+        await tester.pump();
+        return (link, pedal);
+      }
+
+      Future<void> report(
+        WidgetTester tester,
+        FakePedalLink link,
+        PedalPowerSupply supply,
+      ) async {
+        link
+          ..hello()
+          ..emit(PdStatusMessage(supply));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('a stale contract raises the power-cycle banner until a '
+          'fresh one arrives', (tester) async {
+        final (link, pedal) = await pumpWithPedal(tester);
+        await report(tester, link, stale);
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsOneWidget);
+        expect(find.byKey(const Key(AppToastId.weakCharger)), findsNothing);
+
+        await report(
+          tester,
+          link,
+          const PedalPowerSupply(
+            profile: PedalPowerProfile.matches,
+            millivolts: 20000,
+            milliamps: 4700,
+            maxMilliamps: 4700,
+          ),
+        );
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      });
+
+      testWidgets('Not now holds the banner off for the rest of the boot', (
+        tester,
+      ) async {
+        final (link, pedal) = await pumpWithPedal(tester);
+        await report(tester, link, stale);
+        await tester.tap(find.byKey(const Key(AppToastId.powerCycleDismiss)));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        // A changed but still stale contract does not bring it back.
+        await report(
+          tester,
+          link,
+          const PedalPowerSupply(
+            profile: PedalPowerProfile.matches,
+            millivolts: 20000,
+            milliamps: 3000,
+            maxMilliamps: 4500,
+          ),
+        );
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      });
+
+      testWidgets('Power off… opens Power options', (tester) async {
+        final (link, pedal) = await pumpWithPedal(tester);
+        await report(tester, link, stale);
+        await tester.tap(find.byKey(const Key(AppToastId.powerCyclePowerOff)));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        expect(find.byKey(const Key('power_restart')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('power_cancel')));
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      });
+
+      testWidgets('a charger under 90 W is said once, with no banner', (
+        tester,
+      ) async {
+        final (link, pedal) = await pumpWithPedal(tester);
+        await report(
+          tester,
+          link,
+          const PedalPowerSupply(
+            profile: PedalPowerProfile.matches,
+            millivolts: 20000,
+            milliamps: 3250,
+            maxMilliamps: 3250,
+          ),
+        );
+        expect(find.byKey(const Key(AppToastId.weakCharger)), findsOneWidget);
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      });
+    });
+
     testWidgets('shows the startup update toast when a build is available', (
       tester,
     ) async {

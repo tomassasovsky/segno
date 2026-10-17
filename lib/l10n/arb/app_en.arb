@@ -7359,5 +7359,86 @@
     "touchCalibrationFailed": "The calibration could not be saved.",
     "@touchCalibrationFailed": {
         "description": "Shown when the touch calibration could not be read or stored."
+    },
+    "controllerPowerRow": "Power supply",
+    "@controllerPowerRow": {
+        "description": "Controller firmware page: the row stating the USB-C PD contract."
+    },
+    "controllerPowerValue": "{volts} V · {amps} A · {watts} W",
+    "@controllerPowerValue": {
+        "description": "The negotiated USB-C contract, for example 20 V · 4.7 A · 94 W.",
+        "placeholders": {
+            "volts": {
+                "type": "String"
+            },
+            "amps": {
+                "type": "String"
+            },
+            "watts": {
+                "type": "String"
+            }
+        }
+    },
+    "controllerPowerNoContract": "No USB-C PD contract",
+    "@controllerPowerNoContract": {
+        "description": "Power supply row when the trigger reports no PD contract."
+    },
+    "controllerPowerNotRead": "The power board did not answer",
+    "@controllerPowerNotRead": {
+        "description": "Caption under Power supply when the console board could not read the PD trigger."
+    },
+    "controllerPowerWriteFailed": "The power board's settings could not be written",
+    "@controllerPowerWriteFailed": {
+        "description": "Caption under Power supply when provisioning the PD trigger failed."
+    },
+    "controllerPowerCyclePending": "Unplug the console for 5 seconds to use the charger's full {watts} W",
+    "@controllerPowerCyclePending": {
+        "description": "Caption under Power supply when the contract predates the profile and a power cycle would raise it.",
+        "placeholders": {
+            "watts": {
+                "type": "String"
+            }
+        }
+    },
+    "controllerPowerWeak": "The charger offers under 90 W: use a 100 W USB-C charger",
+    "@controllerPowerWeak": {
+        "description": "Caption under Power supply when the charger offers less than the console wants."
+    },
+    "powerCycleBannerTitle": "Unplug the console for 5 seconds to use the charger's full power",
+    "@powerCycleBannerTitle": {
+        "description": "Banner when a power cycle would raise the USB-C contract."
+    },
+    "powerCycleBannerDescription": "It runs on {now} W; the charger offers {offered} W.",
+    "@powerCycleBannerDescription": {
+        "description": "Power-cycle banner detail.",
+        "placeholders": {
+            "now": {
+                "type": "String"
+            },
+            "offered": {
+                "type": "String"
+            }
+        }
+    },
+    "powerCycleBannerDismiss": "Not now",
+    "@powerCycleBannerDismiss": {
+        "description": "Power-cycle banner: hide it until the next boot."
+    },
+    "powerCycleBannerPowerOff": "Power off…",
+    "@powerCycleBannerPowerOff": {
+        "description": "Power-cycle banner: open Power options."
+    },
+    "powerUnplugToApply": "Unplug the power cable for 5 seconds, then plug it back in",
+    "@powerUnplugToApply": {
+        "description": "Under Safe to switch off when a power cycle would raise the USB-C contract."
+    },
+    "weakChargerToast": "This charger offers {watts} W. Use a 100 W USB-C charger.",
+    "@weakChargerToast": {
+        "description": "One-time toast at boot when the charger offers less than 90 W.",
+        "placeholders": {
+            "watts": {
+                "type": "String"
+            }
+        }
     }
 }

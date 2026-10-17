@@ -59,6 +59,11 @@ void main() {
         PedalLinkCodec.typeEncoderButton,
       );
       expect(define('PEDAL_LINK_TYPE_STATE'), PedalLinkCodec.typeState);
+      expect(define('PEDAL_LINK_TYPE_PD_STATUS'), PedalLinkCodec.typePdStatus);
+      expect(
+        define('PEDAL_LINK_PD_STATUS_LEN'),
+        PedalLinkCodec.pdStatusPayloadLength,
+      );
     });
 
     test('hello is the frozen three-byte message', () {

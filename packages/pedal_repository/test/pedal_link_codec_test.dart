@@ -257,6 +257,40 @@ void main() {
         expect(PedalLinkCodec.decode(PedalLinkCodec.typeEncoder, []), isNull);
         expect(PedalLinkCodec.decode(PedalLinkCodec.typeHello, [1, 0]), isNull);
         expect(PedalLinkCodec.decode(PedalLinkCodec.typeState, [0]), isNull);
+        expect(
+          PedalLinkCodec.decode(PedalLinkCodec.typePdStatus, [1, 0, 0]),
+          isNull,
+        );
+      });
+
+      test('a PD status with an unknown profile or mismatch value', () {
+        final good = [1, 0, 0x20, 0x4E, 0xB8, 0x0B, 0x5C, 0x12];
+        expect(
+          PedalLinkCodec.decode(PedalLinkCodec.typePdStatus, good),
+          const PdStatusMessage(
+            PedalPowerSupply(
+              profile: PedalPowerProfile.matches,
+              millivolts: 20000,
+              milliamps: 3000,
+              maxMilliamps: 4700,
+            ),
+          ),
+        );
+        expect(
+          PedalLinkCodec.decode(PedalLinkCodec.typePdStatus, [
+            4,
+            ...good.skip(1),
+          ]),
+          isNull,
+        );
+        expect(
+          PedalLinkCodec.decode(PedalLinkCodec.typePdStatus, [
+            1,
+            2,
+            ...good.skip(2),
+          ]),
+          isNull,
+        );
       });
     });
   });

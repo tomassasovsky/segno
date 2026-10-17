@@ -27,15 +27,25 @@ ReadoutGoodbye readoutGoodbyeOf(PowerPhase phase) => switch (phase) {
 /// With an [action] (the main display) the terminal face is pen 32's
 /// centered icon and text: "Safe to switch off" or "Restarting". Without one
 /// (the Track display, which only mirrors [ReadoutGoodbye]) it is the lockup.
+/// [unplugToApply] adds, under Safe to switch off, that unplugging for five
+/// seconds lets the console take the charger's full power (#1352).
 class PowerGoodbye extends StatelessWidget {
   /// Creates a [PowerGoodbye] for [face].
-  const PowerGoodbye({required this.face, this.action, super.key});
+  const PowerGoodbye({
+    required this.face,
+    this.action,
+    this.unplugToApply = false,
+    super.key,
+  });
 
   /// Which committed face to draw. [ReadoutGoodbye.none] draws nothing.
   final ReadoutGoodbye face;
 
   /// The committed action, which names the terminal face.
   final PowerAction? action;
+
+  /// Whether a power cycle would raise the USB-C contract.
+  final bool unplugToApply;
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +82,18 @@ class PowerGoodbye extends StatelessWidget {
             restart ? l10n.powerRestarting : l10n.powerSafeToSwitchOff,
             style: style,
           ),
+          if (!restart && unplugToApply) ...[
+            const SizedBox(height: 12),
+            AppText(
+              key: const Key('power_unplug_to_apply'),
+              l10n.powerUnplugToApply,
+              style: style.copyWith(
+                color: surface.textSecondary,
+                fontSize: 18,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
         ],
       );
     } else {

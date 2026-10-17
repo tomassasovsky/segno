@@ -17,16 +17,22 @@ trap 'rm -rf "$OUT"' EXIT
 "$OUT/pedal_link" "$ROOT/packages/pedal_repository/test/fixtures"
 "$CC" -std=c99 -Wall -Wextra -Werror -O1 -c \
   "$ROOT/firmware/console_board/pedal_link.c" -o "$OUT/pedal_link.o"
+"$CC" -std=c99 -Wall -Wextra -Werror -O1 -c \
+  "$ROOT/firmware/console_board/pd_trigger.c" -o "$OUT/pd_trigger.o"
+"$CXX" -std=c++17 -Wall -Wextra -Werror -O1 -I "$ROOT/firmware/console_board" \
+  "$ROOT/firmware/test/test_pd_trigger.cpp" "$OUT/pd_trigger.o" -o "$OUT/pd_trigger"
+"$OUT/pd_trigger"
 RING_INC=(-I "$ROOT/firmware/test/stubs" -I "$ROOT/firmware/libraries/SegnoRing/src")
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
   "${RING_INC[@]}" \
-  "$ROOT/firmware/test/test_console_ctrl.cpp" "$OUT/pedal_link.o" \
+  "$ROOT/firmware/test/test_console_ctrl.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" \
   -o "$OUT/console_ctrl"
 "$OUT/console_ctrl"
 
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
   "${RING_INC[@]}" \
-  "$ROOT/firmware/test/test_console_pill.cpp" "$OUT/pedal_link.o" \
+  -I "$ROOT/firmware/console_board" \
+  "$ROOT/firmware/test/test_console_pill.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" \
   -o "$OUT/console_pill"
 "$OUT/console_pill"
 
@@ -42,7 +48,7 @@ RING_INC=(-I "$ROOT/firmware/test/stubs" -I "$ROOT/firmware/libraries/SegnoRing/
 
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
   "${RING_INC[@]}" \
-  "$ROOT/firmware/test/test_console_bridge.cpp" "$OUT/pedal_link.o" \
+  "$ROOT/firmware/test/test_console_bridge.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" \
   -o "$OUT/console_bridge"
 "$OUT/console_bridge"
 
@@ -54,6 +60,6 @@ RING_FLASH="$ROOT/deploy/yocto/meta-segno/recipes-segno/segno-console-board/file
   -c "$RING_FLASH/ring_flash.c" -o "$OUT/ring_flash.o"
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
   "${RING_INC[@]}" -I "$ROOT/firmware/console_board" -I "$RING_FLASH" \
-  "$ROOT/firmware/test/test_ring_update.cpp" "$OUT/pedal_link.o" "$OUT/ring_flash.o" \
+  "$ROOT/firmware/test/test_ring_update.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" "$OUT/ring_flash.o" \
   -o "$OUT/ring_update"
 "$OUT/ring_update"

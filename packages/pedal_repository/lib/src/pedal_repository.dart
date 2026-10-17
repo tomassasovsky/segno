@@ -5,6 +5,7 @@ import 'package:pedal_repository/src/pedal_event.dart';
 import 'package:pedal_repository/src/pedal_link.dart';
 import 'package:pedal_repository/src/pedal_link_codec.dart';
 import 'package:pedal_repository/src/pedal_link_message.dart';
+import 'package:pedal_repository/src/pedal_power.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
 /// Whether the console board is on the other end of the link.
@@ -78,6 +79,18 @@ class PedalRepository {
 
   /// The last hello heard, or `null` while the board is quiet.
   HelloMessage? _hello;
+
+  PedalPowerSupply? _powerSupply;
+  final StreamController<PedalPowerSupply?> _powerSupplyChanges =
+      StreamController<PedalPowerSupply?>.broadcast();
+
+  /// What the console's USB-C supply negotiated, from the board's last
+  /// PD_STATUS while it is connected; `null` otherwise.
+  PedalPowerSupply? get powerSupply => _powerSupply;
+
+  /// Changes to [powerSupply], including back to `null` when the board goes.
+  Stream<PedalPowerSupply?> get powerSupplyChanges =>
+      _powerSupplyChanges.stream;
 
   PedalStateFrame? _lastFrame;
   final StreamController<PedalStateFrame> _frames =
@@ -190,6 +203,9 @@ class PedalRepository {
       case CtrlMessage(:final jack, :final contact, :final kind, :final value):
         if (!_connected) return;
         _onCtrl(jack, contact, kind, value);
+      case PdStatusMessage(:final supply):
+        if (!_connected) return;
+        _setPowerSupply(supply);
       case HelloMessage():
         _onHello(message);
       case StateMessage():
@@ -240,6 +256,14 @@ class PedalRepository {
     _hello = hello;
     _log?.call('pedal link: ${status.name} (${why()})');
     if (!_statusChanges.isClosed) _statusChanges.add(status);
+    if (status != PedalLinkStatus.connected) _setPowerSupply(null);
+  }
+
+  void _setPowerSupply(PedalPowerSupply? supply) {
+    if (supply == _powerSupply) return;
+    _powerSupply = supply;
+    if (supply != null) _log?.call('pedal link: power $supply');
+    if (!_powerSupplyChanges.isClosed) _powerSupplyChanges.add(supply);
   }
 
   void _emit(PedalEvent event) {
@@ -258,5 +282,6 @@ class PedalRepository {
     await _events.close();
     await _statusChanges.close();
     await _frames.close();
+    await _powerSupplyChanges.close();
   }
 }

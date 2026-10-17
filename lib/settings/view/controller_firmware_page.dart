@@ -7,13 +7,14 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
+import 'package:segno/pedal/power_supply_text.dart';
 import 'package:segno/settings/view/about_settings_page.dart';
 import 'package:segno/settings/view/settings_fact_panel.dart';
 import 'package:segno/system/controller_facts.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 
-/// Controller firmware: what the console board runs, and the plain statement
-/// that this console cannot update it.
+/// Controller firmware: what the console board runs, what its USB-C supply
+/// negotiated, and the plain statement that this console cannot update it.
 ///
 /// The page is the Unsupported state on purpose. Updating the board from the
 /// app has not been established for this hardware, so there is no Update
@@ -62,6 +63,18 @@ class ControllerFirmwarePage extends StatelessWidget {
                       value: controllerConnection(l10n, pedal.status),
                     ),
                     ...controllerFactRows(l10n, facts),
+                    SettingsFactRow(
+                      key: const Key('controller_power'),
+                      label: l10n.controllerPowerRow,
+                      value: switch (pedal.powerSupply) {
+                        final supply? => powerSupplyValue(l10n, supply),
+                        null => l10n.aboutNotReported,
+                      },
+                      caption: switch (pedal.powerSupply) {
+                        final supply? => powerSupplyCaption(l10n, supply),
+                        null => null,
+                      },
+                    ),
                   ],
                 ),
                 if (!facts.updateSupported) ...[

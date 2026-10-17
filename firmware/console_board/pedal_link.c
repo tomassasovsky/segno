@@ -38,6 +38,21 @@ size_t pedal_link_encode_ring_bridge(uint8_t *out) {
   return pedal_link_encode(PEDAL_LINK_TYPE_RING_BRIDGE, p, 2, out);
 }
 
+size_t pedal_link_encode_pd_status(uint8_t profile, uint8_t mismatch, uint16_t millivolts,
+                                   uint16_t milliamps, uint16_t max_milliamps, uint8_t *out) {
+  const uint8_t p[PEDAL_LINK_PD_STATUS_LEN] = {
+      profile,
+      mismatch ? 1u : 0u,
+      (uint8_t)(millivolts & 0xFFu),
+      (uint8_t)(millivolts >> 8),
+      (uint8_t)(milliamps & 0xFFu),
+      (uint8_t)(milliamps >> 8),
+      (uint8_t)(max_milliamps & 0xFFu),
+      (uint8_t)(max_milliamps >> 8),
+  };
+  return pedal_link_encode(PEDAL_LINK_TYPE_PD_STATUS, p, PEDAL_LINK_PD_STATUS_LEN, out);
+}
+
 size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out) {
   const uint8_t p[3] = {PEDAL_LINK_PROTOCOL_VERSION, fw_major, fw_minor};
   return pedal_link_encode(PEDAL_LINK_TYPE_HELLO, p, 3, out);
@@ -129,6 +144,7 @@ int pedal_link_payload_len(uint8_t type) {
     case PEDAL_LINK_TYPE_HELLO: return 3;
     case PEDAL_LINK_TYPE_CTRL: return 4;
     case PEDAL_LINK_TYPE_ENCODER_BUTTON: return 1;
+    case PEDAL_LINK_TYPE_PD_STATUS: return (int)PEDAL_LINK_PD_STATUS_LEN;
     case PEDAL_LINK_TYPE_STATE: return (int)PEDAL_LINK_STATE_LEN;
     case PEDAL_LINK_TYPE_RING_BRIDGE: return 2;
     default: return -1;

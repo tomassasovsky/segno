@@ -18,6 +18,11 @@
 // /dev/ttyAMA3), 115200 8N1. Wire format: pedal_link.h, shared byte for byte
 // with packages/pedal_repository and pinned by firmware/test/run_tests.sh.
 //
+// PD trigger: the STUSB4500 on the SparkFun board, over J23 (I2C0, GP0 SDA /
+// GP1 SCL, its own pull-ups). At boot the board makes the trigger's NVM hold
+// the console profile (pd_trigger.h) and from then on reports the contract in
+// a PD_STATUS after every HELLO (#1352).
+//
 // Half of several circuits on this board is firmware (#752): the footswitches
 // have no external pull-ups on the Pico side (INPUT_PULLUP is mandatory), a
 // release edge is an RC of ~5-8 ms through the 100 nF debounce caps, and GP23
@@ -31,9 +36,11 @@
 #include <Adafruit_NeoPixel.h>
 #include <NeoPixelBus.h>
 #include <SerialPIO.h>
+#include <Wire.h>
 
 #include "pedal_link.h"
 #include "console_presence.h"
+#include "pd_trigger.h"
 #include <SegnoRing.h>
 
 // A colour before gamma; the .ino auto-prototypes need the type declared first.
@@ -41,12 +48,14 @@ struct Rgb { uint8_t r, g, b; };
 
 // Major 2: the v3 board (ring on its own XIAO). Same pedal-link protocol.
 // 2.1: the ring-update bridge. 2.2: pills and ring dim with the screens
-// (protocol 11, #1349).
+// (protocol 11, #1349). 2.3: provisions the PD trigger and reports its
+// contract (protocol 12, #1352).
 static const uint8_t FW_MAJOR = 2;
-static const uint8_t FW_MINOR = 2;
+static const uint8_t FW_MINOR = 3;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
+static const uint8_t PIN_PD_SDA = 0, PIN_PD_SCL = 1;
 static const uint8_t FSW_PIN[PEDAL_BTN_COUNT] = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 // The ring carrier's UART (J6 pins 3/4). R11/R12 pull both lines up to the
 // Pico's own 3V3, so the link idles high while the Pi is off.
@@ -126,6 +135,51 @@ static void sendFrame(const uint8_t *buf, size_t len) {
 static void sendHello() {
   uint8_t buf[PEDAL_LINK_MAX_FRAME];
   sendFrame(buf, pedal_link_encode_hello(FW_MAJOR, FW_MINOR, buf));
+}
+
+// ---- PD trigger (J23) -------------------------------------------------------
+// The 1 ms after each write is the pace the ST NVM flasher was proven at.
+static int pdWrite(void *, uint8_t reg, const uint8_t *data, uint8_t len) {
+  Wire.beginTransmission(PD_TRIGGER_ADDRESS);
+  Wire.write(reg);
+  Wire.write(data, len);
+  const uint8_t error = Wire.endTransmission();
+  delay(1);
+  return error;
+}
+
+static int pdRead(void *, uint8_t reg, uint8_t *data, uint8_t len) {
+  Wire.beginTransmission(PD_TRIGGER_ADDRESS);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return 1;
+  if (Wire.requestFrom(PD_TRIGGER_ADDRESS, (size_t)len) != len) return 1;
+  for (uint8_t i = 0; i < len; ++i) data[i] = (uint8_t)Wire.read();
+  return 0;
+}
+
+static void pdSleep(void *, uint32_t ms) { delay(ms); }
+
+static const pd_trigger_bus PD_BUS = {pdWrite, pdRead, pdSleep, nullptr};
+static uint8_t g_pdProfile = PEDAL_PD_PROFILE_NOT_READ;
+static uint8_t g_pdQuietHellos = 0;
+static const uint8_t PD_RETRY_HELLOS = 10;
+
+// The contract is read live: a multi-port charger can renegotiate under us. A
+// trigger that is not answering is asked again only every tenth hello: with
+// J23 unplugged GP0/GP1 have no pull-ups and every read waits out Wire's
+// timeout. One that answers later (J23 seated after boot) is provisioned then.
+static void sendPdStatus() {
+  pd_trigger_contract c = {};
+  if (g_pdProfile == PEDAL_PD_PROFILE_NOT_READ && ++g_pdQuietHellos >= PD_RETRY_HELLOS) {
+    g_pdQuietHellos = 0;
+    g_pdProfile = pd_trigger_provision(&PD_BUS);
+  }
+  if (g_pdProfile != PEDAL_PD_PROFILE_NOT_READ && pd_trigger_read_contract(&PD_BUS, &c)) {
+    g_pdProfile = PEDAL_PD_PROFILE_NOT_READ;
+  }
+  uint8_t buf[PEDAL_LINK_MAX_FRAME];
+  sendFrame(buf, pedal_link_encode_pd_status(g_pdProfile, c.mismatch, c.millivolts, c.milliamps,
+                                             c.max_milliamps, buf));
 }
 
 static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
@@ -710,6 +764,14 @@ void setup() {
   }
   analogReadResolution(12);
 
+  // Before the link: an NVM write takes about a second, once per trigger.
+  Wire.setSDA(PIN_PD_SDA);
+  Wire.setSCL(PIN_PD_SCL);
+  Wire.setClock(100000);
+  Wire.setTimeout(25);
+  Wire.begin();
+  g_pdProfile = pd_trigger_provision(&PD_BUS);
+
   LINK.setTX(PIN_LINK_TX);
   LINK.setRX(PIN_LINK_RX);
   LINK.setFIFOSize(2048);  // room for two ring-update chunks while bridging
@@ -740,6 +802,7 @@ void loop() {
   if (now - g_lastHelloMs >= HELLO_MS) {
     g_lastHelloMs = now;
     sendHello();
+    sendPdStatus();
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));  // 0.5 Hz heartbeat
   }
   if (g_haveFrame && now - g_lastFrameMs > FRAME_TIMEOUT_MS) {

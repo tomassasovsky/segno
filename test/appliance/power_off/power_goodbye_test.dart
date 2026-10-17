@@ -51,6 +51,39 @@ void main() {
     });
   });
 
+  group('unplug to apply (#1352)', () {
+    testWidgets('Safe to switch off says to unplug when a power cycle would '
+        'raise the contract', (tester) async {
+      await tester.pumpApp(
+        const PowerGoodbye(
+          face: ReadoutGoodbye.mark,
+          action: PowerAction.shutDown,
+          unplugToApply: true,
+        ),
+      );
+      expect(find.byKey(const Key('power_safe_to_switch_off')), findsOne);
+      expect(find.byKey(const Key('power_unplug_to_apply')), findsOne);
+    });
+
+    testWidgets('not without one, and never on Restarting', (tester) async {
+      await tester.pumpApp(
+        const PowerGoodbye(
+          face: ReadoutGoodbye.mark,
+          action: PowerAction.shutDown,
+        ),
+      );
+      expect(find.byKey(const Key('power_unplug_to_apply')), findsNothing);
+      await tester.pumpApp(
+        const PowerGoodbye(
+          face: ReadoutGoodbye.mark,
+          action: PowerAction.restart,
+          unplugToApply: true,
+        ),
+      );
+      expect(find.byKey(const Key('power_unplug_to_apply')), findsNothing);
+    });
+  });
+
   group('terminal faces', () {
     testWidgets('Shut down draws Safe to switch off, centered, no lockup', (
       tester,

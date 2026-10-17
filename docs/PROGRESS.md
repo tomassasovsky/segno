@@ -23,6 +23,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |
 | #1337 | Retry Wi-Fi after a runtime drop, holding off while performing | in-review | blocked-verify | `claude/wifi-runtime-retry-1337` |
 | #1349 | Console LEDs dim with the screens (protocol 11, console 2.2, ring 1.1) | build | blocked-verify | `claude/idle-dim-leds-1349` |
+| #1352 | Console negotiates the charger's full 20 V current, with a power-cycle prompt | in-review | blocked-verify | `claude/pd-provisioning-1352` |
 | #1081 | Console v3 and ring carrier firmware on protocol 10 | in-review | merge-gate | `claude/console-v3-port-1081` |
 | #1072 | Screen power follows the app (runtime on integration) | in-review | blocked-verify | `claude/screen-power-runtime-1072` |
 | #1088 | Console base enclosure for fabrication | in-review | merge-gate | `claude/segno-pedal-manufacturability-5f08a2` |

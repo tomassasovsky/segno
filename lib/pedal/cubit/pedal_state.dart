@@ -8,6 +8,7 @@ class PedalState extends Equatable {
     this.protocolVersion,
     this.frame,
     this.ctrl = const {},
+    this.powerSupply,
   });
   final PedalLinkStatus status;
   final String? firmwareVersion;
@@ -16,12 +17,16 @@ class PedalState extends Equatable {
   final int? protocolVersion;
   final PedalStateFrame? frame;
   final Map<PedalCtrlInput, PedalCtrlReading> ctrl;
+
+  /// What the console's USB-C supply negotiated, while the board reports it.
+  final PedalPowerSupply? powerSupply;
   PedalState copyWith({
     PedalLinkStatus? status,
     PedalStateFrame? frame,
     String? Function()? firmwareVersion,
     int? Function()? protocolVersion,
     Map<PedalCtrlInput, PedalCtrlReading>? ctrl,
+    PedalPowerSupply? Function()? powerSupply,
   }) => PedalState(
     status: status ?? this.status,
     frame: frame ?? this.frame,
@@ -32,6 +37,7 @@ class PedalState extends Equatable {
         ? protocolVersion()
         : this.protocolVersion,
     ctrl: ctrl ?? this.ctrl,
+    powerSupply: powerSupply != null ? powerSupply() : this.powerSupply,
   );
   @override
   List<Object?> get props => [
@@ -40,6 +46,7 @@ class PedalState extends Equatable {
     protocolVersion,
     frame,
     ctrl,
+    powerSupply,
   ];
 }
 

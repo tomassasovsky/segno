@@ -266,6 +266,75 @@ void main() {
       expect(find.textContaining('simulated'), findsNothing);
     });
 
+    testWidgets('states the USB-C contract, and what would raise it', (
+      tester,
+    ) async {
+      final link = FakePedalLink();
+      await openAbout(tester, link: link);
+      await tester.tap(find.byKey(const Key('about_controller_firmware_row')));
+      await tester.pumpAndSettle();
+      final strings = l10n(tester);
+      expect(inRow('controller_power', strings.aboutNotReported), findsOne);
+
+      Future<void> report(PedalPowerSupply supply) async {
+        link
+          ..hello()
+          ..emit(PdStatusMessage(supply));
+        await tester.pumpAndSettle();
+      }
+
+      // The bench unit before its power cycle.
+      await report(
+        const PedalPowerSupply(
+          profile: PedalPowerProfile.matches,
+          millivolts: 20000,
+          milliamps: 3000,
+          maxMilliamps: 4700,
+        ),
+      );
+      expect(inRow('controller_power', '20 V · 3 A · 60 W'), findsOne);
+      expect(
+        inRow('controller_power', strings.controllerPowerCyclePending('94')),
+        findsOne,
+      );
+      // And after it: nothing to add.
+      await report(
+        const PedalPowerSupply(
+          profile: PedalPowerProfile.matches,
+          millivolts: 20000,
+          milliamps: 4700,
+          maxMilliamps: 4700,
+        ),
+      );
+      expect(inRow('controller_power', '20 V · 4.7 A · 94 W'), findsOne);
+      expect(
+        inRow('controller_power', strings.controllerPowerCyclePending('94')),
+        findsNothing,
+      );
+      // A 65 W brick.
+      await report(
+        const PedalPowerSupply(
+          profile: PedalPowerProfile.matches,
+          millivolts: 20000,
+          milliamps: 3250,
+          maxMilliamps: 3250,
+        ),
+      );
+      expect(inRow('controller_power', '20 V · 3.25 A · 65 W'), findsOne);
+      expect(inRow('controller_power', strings.controllerPowerWeak), findsOne);
+      // A trigger that did not answer.
+      await report(const PedalPowerSupply(profile: PedalPowerProfile.notRead));
+      expect(
+        inRow('controller_power', strings.controllerPowerNoContract),
+        findsOne,
+      );
+      expect(
+        inRow('controller_power', strings.controllerPowerNotRead),
+        findsOne,
+      );
+      await tester.pump(const Duration(seconds: 10));
+    });
+
     testWidgets('Software updates goes back down to Updates', (tester) async {
       await harness.pump(
         tester,

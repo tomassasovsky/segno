@@ -18,7 +18,7 @@ runs the encoder and the ring. segno runs the behavior machine.
 | CTRL1 / CTRL2 ring | GP20 / GP21 | Each jack's ring through 4.7 kΩ (R19/R20). The B switch of a two-switch pedal (a BOSS FS-6's A&B jack) reports as `CTRL n · footswitch B`; its first press on a jack the board has not yet seen a switch on is held 200 ms, so a plug brushing the contact cannot fake it |
 | CTRL1 / CTRL2 present | GP19 / GP22 | The Neutrik NJ6FD-V's ring-normal contact through 4.7 kΩ (R21/R22): high only while the jack is empty, **present = low** against the internal pull-down. Read through `console_presence.h`, which keeps the pad's input buffer off between samples (RP2350-E9). An empty jack reports CTRL kind `NONE` and is classified afresh on the next plug |
 | SMPS mode | GP23 | Driven high: PWM mode, less ADC ripple |
-| PD trigger I2C | GP0 / GP1 | J23: I2C0 to the STUSB4500 on the SparkFun PD board. **Not read by this firmware**: the pedal link has no message for the contract, so reporting it needs a protocol change with its app |
+| PD trigger I2C | GP0 / GP1 | J23: I2C0, 100 kHz, to the STUSB4500 on the SparkFun PD board (its own pull-ups). Provisioned at boot and read once a second: see [PD trigger](#pd-trigger-firmware-23) |
 
 ## The ring carrier
 
@@ -53,6 +53,39 @@ footswitch or playback wakes them. The board then shows the pills at about
 20 % (`ring_link::DIM_LEVEL`, 51/255, applied after the channel budget) and
 sets the ring state's DIMMED flag, so ring firmware 1.1 and later dim the ring
 by the same share.
+
+### PD trigger (firmware 2.3)
+
+The STUSB4500 negotiates the 20 V supply by itself, from the profile in its
+NVM, each time it powers up (#1352). `pd_trigger.c` makes that profile the
+console's and reports what was negotiated:
+
+- **At boot**, before the link starts, the board reads the NVM. If any profile
+  field differs, it erases and programs the NVM with what it read plus the
+  profile, then reads it back and compares it. It writes nothing on a trigger that
+  already matches, so the NVM is written once per trigger. The profile:
+  PDO1 5 V / 0.5 A, PDO2 20 V / 3 A, PDO3 20 V / 5 A, three PDOs,
+  `REQ_SRC_CURRENT` (once a PDO matches, request all the current the source
+  offers at that voltage), power only above 5 V, no external power, no USB
+  comms. Every other NVM field is left as the trigger had it.
+- **After every HELLO** it sends `PD_STATUS` (protocol 12): the profile state
+  (not read, matches, written, write failed) and the live contract from the
+  chip's RDO and negotiated-voltage register.
+
+A profile written at boot governs the next negotiation, which happens only
+when the trigger loses power (the console is unplugged). Until then the
+contract takes less than the source offers, and the app asks for a power
+cycle: a banner on the stage, and a line on the Safe to switch off face.
+
+A trigger that does not answer is asked again every tenth `HELLO`, and is
+provisioned when it does (J23 seated after boot). The write is ST's full-erase
+sequence, the one SparkFun's library proved: all five sectors erased and
+programmed back. A power cut in that second can leave a trigger that no longer
+powers the console; `hardware/console/stusb4500_pdo` reprograms it from an
+Arduino UNO.
+
+`firmware/test/test_pd_trigger.cpp` runs the driver against a simulated
+STUSB4500, NVM controller included (`firmware/test/stusb4500_sim.h`).
 
 ## Physical rendering and source boundary
 
@@ -109,9 +142,10 @@ compete with the ten-button mask for physical output.
 | `0x03 HELLO` | board → segno | `protocol, fw major, fw minor` — at boot and once a second; segno counts the board as connected while these keep coming |
 | `0x04 CTRL` | board → segno | `jack, contact, kind, value` (unchanged four bytes) |
 | `0x05 ENCODER_BUTTON` | board → segno | `pressed (0/1)` — the encoder's push switch, one message per debounced edge (protocol 9) |
+| `0x06 PD_STATUS` | board → segno | `profile, mismatch, mV (LE16), mA (LE16), source max mA (LE16)` — after every `HELLO` (protocol 12) |
 | `0x10 STATE` | segno → board | 53 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain, ten RGB triples, active mask (LE16), queued switch, queue progress — see `pedal_link.h` |
 
-segno answers every compatible protocol-10 `HELLO` with its current `STATE`, so a board that just
+segno answers every compatible `HELLO` with its current `STATE`, so a board that just
 (re)connected is current within a second; the board goes dark if no `STATE`
 arrives for `PEDAL_LINK_FRAME_TIMEOUT_MS` (5 s) and on the goodbye flag, and
 segno reads the board as disconnected after three silent hello intervals. Both
@@ -176,7 +210,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0b 02 02 0b (HELLO, protocol 11, fw 2.2), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0c 02 03 0d (HELLO, protocol 12, fw 2.3), once a second
 ```
 
 ## Bring-up record

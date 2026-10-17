@@ -242,6 +242,19 @@ final goldenMessages = <String, PedalLinkMessage>{
     kind: PedalCtrlKind.switchPedal,
     value: 255,
   ),
+  // The bench unit before its power cycle (#1352): the profile is in, the
+  // contract still takes 3 A of the 4.7 A on offer.
+  'pd_status_stale': const PdStatusMessage(
+    PedalPowerSupply(
+      profile: PedalPowerProfile.matches,
+      millivolts: 20000,
+      milliamps: 3000,
+      maxMilliamps: 4700,
+    ),
+  ),
+  'pd_status_not_read': const PdStatusMessage(
+    PedalPowerSupply(profile: PedalPowerProfile.notRead),
+  ),
   'hello': const HelloMessage(
     protocolVersion: PedalLinkCodec.protocolVersion,
     firmwareMajor: 1,
