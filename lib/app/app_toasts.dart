@@ -21,6 +21,10 @@ abstract final class AppToastId {
   static const sessionBootRecovery = 'app_sessionBootRecovery_error';
   static const monitorRestore = 'app_monitorRestore_error';
   static const audioRecovery = 'app_audioRecovery_banner';
+  static const powerCycle = 'app_powerCycle_banner';
+  static const powerCycleDismiss = 'app_powerCycle_banner_dismiss';
+  static const powerCyclePowerOff = 'app_powerCycle_banner_powerOff';
+  static const weakCharger = 'app_weakCharger_toast';
   static const update = 'app_update_banner';
   static const updateDismiss = 'app_update_banner_dismiss';
   static const updateAction = 'app_update_banner_update';

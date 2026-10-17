@@ -180,6 +180,13 @@ static void check_fixture(const char *dir, const char *name) {
             "%s: an empty jack with a value", name);
       m = pedal_link_encode_ctrl(payload[0], payload[1], payload[2], payload[3], again);
       break;
+    case PEDAL_LINK_TYPE_PD_STATUS:
+      CHECK(len == PEDAL_LINK_PD_STATUS_LEN && payload[0] < PEDAL_PD_PROFILE_COUNT && payload[1] <= 1,
+            "%s: bad pd status payload", name);
+      m = pedal_link_encode_pd_status(payload[0], payload[1], (uint16_t)(payload[2] | payload[3] << 8),
+                                      (uint16_t)(payload[4] | payload[5] << 8),
+                                      (uint16_t)(payload[6] | payload[7] << 8), again);
+      break;
     case PEDAL_LINK_TYPE_HELLO:
       CHECK(len == 3 && payload[0] == PEDAL_LINK_PROTOCOL_VERSION, "%s: bad hello", name);
       m = pedal_link_encode_hello(payload[1], payload[2], again);
@@ -198,6 +205,14 @@ static void check_fixture(const char *dir, const char *name) {
   /* Field checks on the named fixtures, against golden_frames.dart. */
   if (strcmp(name, "hello.bin") == 0) {
     CHECK(payload[1] == 1 && payload[2] == 0, "hello: fw %u.%u, want 1.0", payload[1], payload[2]);
+  } else if (strcmp(name, "pd_status_stale.bin") == 0) {
+    CHECK(payload[0] == PEDAL_PD_PROFILE_MATCHES && payload[1] == 0 &&
+              (payload[2] | payload[3] << 8) == 20000 && (payload[4] | payload[5] << 8) == 3000 &&
+              (payload[6] | payload[7] << 8) == 4700,
+          "pd_status_stale: fields drifted");
+  } else if (strcmp(name, "pd_status_not_read.bin") == 0) {
+    CHECK(payload[0] == PEDAL_PD_PROFILE_NOT_READ && payload[2] == 0 && payload[4] == 0,
+          "pd_status_not_read: fields drifted");
   } else if (strcmp(name, "button_track3_down.bin") == 0) {
     CHECK(payload[0] == PEDAL_BTN_TRACK3 && payload[1] == 1, "button_track3_down: %u %u", payload[0], payload[1]);
   } else if (strcmp(name, "button_bank_up.bin") == 0) {
@@ -351,7 +366,7 @@ static void check_physical_state(void) {
     0,128,255,165,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,
     18,19,20,21,22,23,254,253,252,1,2,10,200};
   pedal_state state;
-  CHECK(PEDAL_LINK_PROTOCOL_VERSION == 11 && PEDAL_LINK_STATE_LEN == 53,
+  CHECK(PEDAL_LINK_PROTOCOL_VERSION == 12 && PEDAL_LINK_STATE_LEN == 53,
         "wire reservation changed");
   CHECK(pedal_link_decode_state(p,53,&state),"literal RGB state refused");
   CHECK(state.active_button_mask == 0x201 && state.pedal_colors[0].g == 128 &&

@@ -56,14 +56,19 @@ tolerance only has to survive ~100 mm of internal wiring.
   100 W, 10 Gbps). The 10 Gbps matters only because it means **all 24 ways are
   wired**, so CC reaches the trigger and PD can negotiate — a charge-only
   coupler drops CC and nothing powers up.
-- **Trigger:** SparkFun STUSB4500 board, programmed (`hardware/console/stusb4500_pdo`)
-  with two 20 V PDOs, 5 A and 3 A, and `REQ_SRC_CURRENT` set: it takes 20 V
+- **Trigger:** SparkFun STUSB4500 board, programmed by the console board over
+  J23 (`firmware/console_board/pd_trigger.c`, #1352) with two 20 V PDOs, 5 A
+  and 3 A, and `REQ_SRC_CURRENT` set: it takes 20 V
   from any source that offers at least 3 A there, and requests all the current
   the source offers at 20 V rather than the matched PDO's own. Without that bit
   a 20 V / 4.7 A brick misses the 5 A PDO, matches the 3 A one, and contracts
   only 3 A (60 W, against the console's ~59 W worst case; measured on the bench
-  unit, 2026-10-17). Its shipped default asks 20 V at only 1.0 A, which
-  contracts 20 W — program it before first power-up.
+  unit, 2026-10-17). Its shipped default asks 20 V at only 1.0 A (20 W). The
+  console board writes the profile at its first boot and the app asks for one
+  unplug, after which every power-up negotiates the full current. A trigger
+  left unusable (power cut during that write) no longer powers the console;
+  reprogram it out of band with `hardware/console/stusb4500_pdo` from an
+  Arduino UNO over Qwiic.
 - **What did it actually get?** The chip is I2C-readable: its RDO
   (`0x91`–`0x94`) carries the requested operating current, the source's maximum
   and the source PDO it matched, plus a capability mismatch bit; `0x21` holds
@@ -77,8 +82,9 @@ tolerance only has to survive ~100 mm of internal wiring.
   that; the console's 3V3 is downstream of the contract being measured, so it
   must not feed the trigger. ~250 mm unshielded past two bucks: 100 kHz,
   twisted with the ground wire. On a v2 board the same read works from J22's
-  GP20/GP21 (I2C0) unless those pads carry the CTRL ring wires. Firmware
-  reads it and reports it up the pedal link; **not implemented yet**.
+  GP20/GP21 (I2C0) unless those pads carry the CTRL ring wires. Console
+  firmware 2.3 reads it once a second and reports it up the pedal link
+  (`PD_STATUS`); the Controller firmware page shows the contract.
 - **Fuse:** 5×20 **T5A slow-blow** in the 20 V feed, ahead of both bucks.
   Worst-case draw is ~3 A at 20 V, the PD contract ceiling is 5 A, and buck
   inrush wants the slow curve.
