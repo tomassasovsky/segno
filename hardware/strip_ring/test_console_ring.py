@@ -31,12 +31,10 @@ class ConsoleRingTest(unittest.TestCase):
 
     def test_snap_arms_hold_the_carrier_without_clamping_it(self):
         """The carrier snap-mounts (#1090): at its nominal height the board
-        touches nothing of the cup or its clips, and if it drops the catches
-        stop it."""
+        touches nothing of the cup, and if it drops the catches stop it."""
         import cadquery as cq
-        from math import atan2, degrees, hypot
-        clips = [ring.carrier_clip(a) for a in ring.CLIP_ANGLES]
-        cup = ring.cup().fuse(*clips)
+        from math import atan2, degrees
+        cup = ring.cup()
 
         def board(dz):
             return (cq.Workplane("XY").workplane(offset=ring.PCB_BOTTOM + dz)
@@ -44,40 +42,19 @@ class ConsoleRingTest(unittest.TestCase):
         self.assertLess(cup.intersect(board(0.0)).Volume(), 1e-6)
         self.assertLess(cup.intersect(board(-ring.CLIP_PLAY + 0.01)).Volume(), 1e-6)
         self.assertGreater(cup.intersect(board(-ring.CLIP_PLAY - 0.2)).Volume(), 1.0)
-        # nothing of the cup reaches the 7in tower's clearance cylinder
-        far = max(hypot(v.X, v.Y) for v in cup.Vertices())
-        self.assertLess(far, ring.TOWER_CLEAR_R)
         # three arms, none on the strip seam
-        lows = {round(degrees(atan2(v.Y, v.X))) % 360 for c in clips for v in c.Vertices()
+        lows = {round(degrees(atan2(v.Y, v.X))) % 360 for v in cup.Vertices()
                 if v.Z < ring.PCB_BOTTOM - ring.CLIP_PLAY - 0.5}
         for a in lows:
             self.assertGreater(min(a, 360 - a), 15)
 
-    def test_clip_prints_flat_with_its_layers_along_the_arm(self):
-        """Arms printed with the cup stood up across their layers and snapped
-        coming off the bed. A clip lies on a flat end face: it prints one clip
-        width tall, with the whole arm lying in the bed plane."""
-        bb = ring.print_pose("carrier_clip", None).BoundingBox()
-        self.assertAlmostEqual(bb.zmin, 0.0, places=6)
-        self.assertLess(bb.zlen, ring.CLIP_W + 0.3)
-        arm = ring.CLIP_HEAD_TOP - ring.CLIP_Z_BOT
-        self.assertGreater(max(bb.xlen, bb.ylen), arm - 0.01)
-
-    def test_clip_seats_in_its_slot_and_slides_out_with_the_cup_glued(self):
-        """In place, a clip overlaps nothing of the cup and its head rests on
-        the slot floor, which carries the board. Pulled straight out radially
-        (the faceplate closes the slot's top), the head meets nothing."""
-        cup = ring.cup()
-        for a in ring.CLIP_ANGLES:
-            clip = ring.carrier_clip(a)
-            self.assertLess(cup.intersect(clip).Volume(), 1e-6, f"clip at {a}")
-            self.assertAlmostEqual(clip.BoundingBox().zmax, ring.CLIP_HEAD_TOP, places=6)
-            path = ring._sector(60.0, ring.CLIP_HEAD_R0, ring.CLIP_HEAD_BOT + 0.01,
-                                ring.CLIP_HEAD_TOP, a, ring.CLIP_W)
-            self.assertLess(cup.intersect(path).Volume(), 1e-6, f"removal path at {a}")
-            floor = ring._sector(ring.CUP_R - 0.2, ring.CLIP_HEAD_R0, ring.CLIP_HEAD_BOT - 0.2,
-                                 ring.CLIP_HEAD_BOT, a, ring.CLIP_W)
-            self.assertGreater(cup.intersect(floor).Volume(), 1.0, f"slot floor at {a}")
+    def test_snap_arms_are_stronger_and_strain_less_than_the_first_print(self):
+        """The first print's 1.0 x 6 mm arms snapped along a layer line. These
+        have over four times the root bending strength (width x thickness
+        squared) and still strain the root less at full flex."""
+        strength = ring.CLIP_W * ring.CLIP_T_ROOT ** 2 / (6.0 * 1.0 ** 2)
+        self.assertGreater(strength, 4.0)
+        self.assertLess(ring.clip_root_strain(), 0.005)
 
     def test_spacer_matches_the_measured_encoder(self):
         """The board hangs from the ACZ11's shoulder: the spacer runs from the
@@ -105,15 +82,15 @@ class ConsoleRingTest(unittest.TestCase):
         self.assertGreater(old_seat.intersect(body).Volume(), 0.1)
 
     def test_relief_opens_the_gap_behind_every_arm(self):
-        """Behind each arm, from the wall's foot to the roof, the half millimetre
-        next to the arm's inner face is air, so the print cannot fuse arm and
-        wall. Control: the plain wall does fill that zone."""
+        """Behind each arm, from the wall's foot up to the root chamfer, the half
+        millimetre next to the arm's inner face is air, so the print cannot fuse
+        arm and wall. Control: the plain wall does fill that zone."""
         r_in = ring.CUP_R + ring.CLIP_GAP
         cup = ring.cup()
         plain_wall = ring.annulus(ring.CUP_R, ring.GLUE_R, ring.STRIP_BOTTOM, ring.UNDER)
         for a in ring.CLIP_ANGLES:
-            zone = ring._sector(r_in, r_in - 0.5, ring.STRIP_BOTTOM, ring.UNDER - 1.2,
-                                a, ring.CLIP_W)
+            zone = ring._sector(r_in, r_in - 0.5, ring.STRIP_BOTTOM,
+                                ring.CLIP_ROOT_Z - ring.CLIP_ROOT_CHAMFER, a, ring.CLIP_W)
             self.assertLess(cup.intersect(zone).Volume(), 1e-6, f"arm at {a}")
             self.assertGreater(plain_wall.intersect(zone).Volume(), 1.0, f"control at {a}")
 

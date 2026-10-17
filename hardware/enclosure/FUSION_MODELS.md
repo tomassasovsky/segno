@@ -1,14 +1,14 @@
 # The Fusion 360 models — how to change anything without wrecking them
 
-## Separate carrier clips and the ACZ11 encoder stack - 2026-10-16, pending in Fusion (#1075)
+## Stronger cup snap arms and the ACZ11 encoder stack - 2026-10-16, pending in Fusion (#1075)
 
-The snap arms are now three separate `console_ring_carrier_clip` prints
-(135.6 mm3 each) whose heads slide into slots in the cup's roof; the cup has the
-slots and a relief pocket behind each arm (6,519.4 mm3). The arms sit where the
-molded ones were, so the interference results below still hold. The populated
-clone still has the earlier 7,054.3 mm3 cup with molded arms: swap the body and
-add the three clips (`console_ring_assembly.step` places them) the next time
-the clone is open.
+The cup's snap arms are now 8 mm wide and taper from 1.8 mm at the root to
+1.0 mm at the catch, with a chamfered root and a catch 0.6 mm under the board;
+a relief pocket behind each arm keeps it off the wall (cup 7,168.8 mm3). The
+arms reach r 42.2, past the old r 41.5 cylinder, at bearings 17 mm from the
+tower; `test_console_ring.py` checks their full flex against the tower STEP.
+The populated clone still has the earlier 7,054.3 mm3 cup: swap the body and
+re-run its interference check the next time the clone is open.
 
 The same pass corrected the encoder stack to the built carrier's Same Sky ACZ11
 (shoulder measured 6.39 mm above the board, not the EC11's 4.585): the encoder
