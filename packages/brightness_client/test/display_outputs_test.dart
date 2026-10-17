@@ -103,9 +103,10 @@ output.drm_connector = 'HDMI-A-1'
       '../../deploy/yocto/meta-segno/recipes-segno/segno-bundle/files/'
       'homescreen.toml',
     );
+    // The console's cabling: the 15.6in main panel on HDMI1, the 7in on HDMI0.
     expect(parseHomescreenScreenConnectors(shipped.readAsStringSync()), {
-      'main': 'HDMI-A-1',
-      'readout': 'HDMI-A-2',
+      'main': 'HDMI-A-2',
+      'readout': 'HDMI-A-1',
     });
   });
 

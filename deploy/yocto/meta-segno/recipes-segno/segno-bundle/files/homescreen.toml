@@ -13,7 +13,11 @@
 # Nothing on the console is driven by a pointer.
 disable_cursor = true
 
-# --- Main UI: the 15.6" 1080p touch panel on HDMI-A-1 --------------------------
+# --- Main UI: the 15.6" 1080p touch panel on HDMI-A-2 --------------------------
+# The console's cabling: the 15.6" is on the Pi 5's HDMI1 port (HDMI-A-2) and
+# the 7" on HDMI0 (HDMI-A-1), confirmed on the assembled console 2026-10-17.
+# The app reads both connectors from this file (brightness_client), so the
+# roles follow it.
 [[view]]
 bundle = '/opt/segno'
 fullscreen = true
@@ -40,11 +44,11 @@ fullscreen = true
     # pin one only for a panel whose preferred mode is wrong.
 
   [view.output]
-  drm_connector = 'HDMI-A-1'
+  drm_connector = 'HDMI-A-2'
   # Its touch needs no `touch_device`: touch that matches no view's lands on
   # the first view, this one.
 
-# --- Readout: the 7" 1024x600 touch panel on HDMI-A-2 --------------------------
+# --- Readout: the 7" 1024x600 touch panel on HDMI-A-1 --------------------------
 [[view]]
 bundle = '/opt/segno'
 fullscreen = true
@@ -75,7 +79,7 @@ pixel_ratio = 1.6
     # whole process when it is missing.
 
   [view.output]
-  drm_connector = 'HDMI-A-2'
+  drm_connector = 'HDMI-A-1'
   # The 7"'s controller, a wch.cn "USB2IIC_CTP_CONTROL" (USB 1a86:e5e3,
   # verified on the bench unit): a substring of its libinput device name.
   # Touch that matches no view's touch_device goes to the first view, the
