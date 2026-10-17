@@ -163,6 +163,15 @@ soldered to the PCB: unplugging the XH housing disconnects all five conductors.
 See the [current harness notes](../../../docs/reviews/screen-power-ground-cleanup-1072/harness.md)
 for quantities, procurement and inspection details.
 
+**Both USB-C leads to the 15.6in screen need a real ground wire.** On the first
+assembled console (2026-10-17) a donor cable with no insulated ground conductor,
+which returns ground only through its shield, made the 15.6in screen unstable.
+Before cutting a donor for J102 or the J103 power lead, confirm it has a
+separate ground conductor (black in a standard USB cable) and meter the plug's
+GND pin to that wire. A shield-only cable can still serve a Pi host tail
+(J101/J201), whose VBUS carries only the host-presence current; crimp its drain
+into both pin 4 and pin 5 there.
+
 ### Separate main-power harness
 
 The new output connectors provide ordinary 5 V. They do not implement USB PD
