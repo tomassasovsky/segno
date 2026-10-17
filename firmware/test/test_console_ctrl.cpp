@@ -152,6 +152,25 @@ static void testReclassificationHasNoSyntheticRelease(bool ringOnly) {
         "NONE must precede expression even for ring-only prior switch");
 }
 
+// RP2350-E9: the presence pad's input buffer stays off between samples, which
+// clears the leakage latch, so a plug is still seen after the empty jack held
+// the pin high.
+static void testPresenceReadKeepsTheInputBufferOff() {
+  bootAt(CTRL_MAX);
+  const uint8_t pin = CTRL_PRESENT_PIN[0];
+  CHECK(fake_gpio::pulldown[pin] && !fake_gpio::enabled[pin],
+        "presence must start pulled down with its input buffer off");
+  const unsigned before = fake_gpio::reads;
+  fake_arduino::digital[pin] = HIGH;  // jack emptied
+  advance(100);
+  CHECK(fake_gpio::reads > before && !fake_gpio::enabled[pin],
+        "every sample must switch the input buffer back off");
+  CHECK(!g_ctrlPresent[0], "a high presence pin is an empty jack");
+  fake_arduino::digital[pin] = LOW;  // plug in: the contact opens
+  advance(100);
+  CHECK(g_ctrlPresent[0], "the latch must not hold an empty reading after a plug");
+}
+
 // The encoder lives on the ring carrier. Its cumulative snapshots become one
 // ENCODER frame per click and one ENCODER_BUTTON frame per edge, as the v2
 // board's own pins produced; a new session or a lapse replays nothing.
@@ -232,6 +251,7 @@ int main() {
   testPresenceDetachHasNoSyntheticRelease();
   testReclassificationHasNoSyntheticRelease(false);
   testReclassificationHasNoSyntheticRelease(true);
+  testPresenceReadKeepsTheInputBufferOff();
   testRingSnapshotsBecomeEncoderEvents();
   std::puts("Console sketch CTRL tests: ALL PASSED");
 }

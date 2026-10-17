@@ -58,6 +58,7 @@ static void pollState() {
       g_gainShownAt = millis();
       g_gainArmed = true;
     }
+    if (!(next.flags & ring_link::FLAG_LIVE)) g_gainArmed = false;  // no stale arc on return
     g_state = next;
     g_haveState = true;
     g_lastStateMs = millis();
