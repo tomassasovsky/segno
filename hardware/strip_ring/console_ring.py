@@ -8,9 +8,10 @@ only what sits between the faceplate and the ring carrier:
   diffuser   white; lens flush with the faceplate top in the Ø67 window, hidden
              flange under the faceplate, inner neck and the encoder seat;
   cup        white; its roof is glued to the faceplate underside, its wall
-             carries the strip, LEDs facing in;
+             carries the strip, LEDs facing in, and three arms snap the carrier;
   retainer, spacer, centre cap
-             the standalone encoder stack unchanged, cap flush with the face.
+             the standalone encoder stack, the spacer sized for the fitted
+             encoder, cap flush with the face.
 
 Why 34 LEDs: owner's call, 2026-09-30 (#1090). 34 was first forced by the 7in
 module (42.9 from the axis at ENC_V 229.16). Since the ring moved to ENC_V 215.0
@@ -28,8 +29,9 @@ Carrier: the v3 XIAO ring carrier (Ø80) without its Ring24 module, the strip
 plugged into J2. It sits LIGHT_LIFT (7.0) deeper than today's Ring24 stack, the
 same lift as the standalone, so the strip's LED faces clear the PCB. Its top
 components stay inside r 26.65 or below the chamber (checked in Fusion against
-the v3 STEP: ~1 mm3 of grazing each). The EC11 nut clamps the retainer on the
-diffuser's seat and the carrier hangs from the encoder, as in the standalone.
+the v3 STEP: ~1 mm3 of grazing each). The encoder nut clamps the retainer on the
+diffuser's seat and the carrier hangs from the encoder, as in the standalone. The
+encoder is the Same Sky ACZ11BR1E-20FD1-20C, measured on the assembled board.
 """
 
 from math import pi, degrees
@@ -54,34 +56,79 @@ FACEPLATE_T = 2.0
 UNDER = -FACEPLATE_T               # faceplate underside = the cup's glue plane
 LIGHT_LIFT = 7.0
 # The standalone's passive-board datum, carried over: PCB top 7.085 below its
-# face-7 plane. The v3 carrier uses the same EC11 footprint, so the same 3.5 mm
-# spacer sets the same encoder height.
+# face-7 plane. The board hangs from the encoder: the nut pulls the encoder's
+# shoulder up against the spacer, so the spacer sets the board's height.
 CARRIER_TOP = -16.085
 STRIP_BOTTOM = CARRIER_TOP + 0.085  # the strip edge stands just clear of the PCB
 STRIP_TOP = STRIP_BOTTOM + STRIP_W
 LENS_R, LENS_BORE_R = 33.4, 25.85  # = the console's RING_OD/RING_ID less clearance
-SEAT_R, SEAT_HOLE_R = 25.9, 9.25
+SEAT_R, SEAT_HOLE_R = 25.9, 9.9    # hole clears the encoder body's corners
 CAP_SCREWS = [(-18, 0), (18, 0)]
 CAP_HEAD_FLOOR_Z = -2.6
 CAP_SEAT_Z = CAP_HEAD_FLOOR_Z - 1.0
-KNOB_BOTTOM = 0.5
+# The fitted ACZ11, measured on the assembled carrier (owner, 2026-10-16). The
+# old 3.5 mm spacer assumed a generic EC11 whose shoulder sat 4.585 above the
+# board; the ACZ11's sits 6.39 above it (datasheet 6.5), so the spacer is thinner
+# and the board, strip, catches and tower clearance stay where they were.
+ENC_BODY_H = 6.39                  # board top to the body top, where the bushing starts
+ENC_BUSHING_L = 5.0                # M7x0.75 thread above the body
+ENC_SHAFT_TIP = 26.5               # shaft tip above the board
+ENC_PUSH_MAX = 0.8                 # switch travel 0.5 + 0.3 drawing tolerance
+NUT_T_MAX = 2.1                    # SJ5-43502PM-nut, 2.0 +/- 0.1
+SEAT_TOP = -8.0                    # diffuser seat top = retainer underside
+RETAINER_TOP = -7.0
+ENC_SHOULDER_Z = CARRIER_TOP + ENC_BODY_H
+ENC_BODY_HALF_W, ENC_BODY_REACH = 5.85, 7.25  # 11.7 wide; 7.25 of 13.75 on the long side
+ENC_BODY_TOL = 0.3                 # drawing's general tolerance through 10 mm
+FRONT_JOINT_H = 2.0                # tallest solder joint on the carrier's front, measured;
+                                   # U2, C1, C4 and J1 joints sit under the neck at r ~26
+NECK_BOTTOM = -13.2                # the diffuser neck's lower end
+KNOB_BORE = 12.0                   # purchased knob's blind bore (model assumption)
+KNOB_BOTTOM = 1.0                  # knob pushed on to this far above the face, so the
+                                   # switch's full travel never bottoms it on the face
 
 # Carrier snap hold (#1090). The v3 carrier has no screw holes: RING_ASSEMBLY.md
 # says it snap-mounts. Three arms hang from the cup's roof, outside the strip
-# wall, and click a 45-degree lead-in catch under the board edge. They only stop
-# the board dropping, swinging or turning: the EC11 nut still sets its height, so
-# the catch sits CLIP_PLAY below the board and the arms clear its edge radially.
+# wall, and click a lead-in catch under the board edge. They only stop the board
+# dropping, swinging or turning: the encoder nut still sets its height, so the
+# catch sits CLIP_PLAY below the board and the arms clear its edge radially.
+#
+# The cup prints roof-down, so the arms stand up with their layers across the
+# way they bend, the weakest direction in an FDM part. The first print's 1.0 x
+# 6 mm arms snapped along a layer line coming off the bed. These arms are 8 mm
+# wide and taper from 1.8 mm at the root to 1.0 mm at the catch, about four times
+# the bending strength at the root, and a chamfer removes the root's sharp inside
+# corner. The catch reaches 0.6 mm under the board, not 1.0, so a full flex
+# strains the root about 0.5 %, less than the old arm's 0.7 %.
 PCB_R, PCB_T = 40.0, 1.6           # v3 carrier: Ø80 Edge.Cuts circle, 1.6 mm FR4
 PCB_BOTTOM = CARRIER_TOP - PCB_T
 CLIP_ANGLES = (30.0, 150.0, 270.0)  # deg from +x; the strip seam and its wires are at 0
-CLIP_W = 6.0                       # tangential arm width
+CLIP_W = 8.0                       # tangential arm width
 CLIP_GAP = 0.12                    # arm inner face off the cup wall's outer face
-CLIP_T = 1.0                       # arm thickness (radial): ~0.6 % strain over its length
+CLIP_T_ROOT, CLIP_T_TIP = 1.8, 1.0  # radial arm thickness, tapering root to catch
+CLIP_ROOT_CHAMFER = 0.4            # 45-degree fill in the root's inside corner
 CLIP_PLAY = 0.3                    # catch below the board's underside
-CLIP_CATCH_R = 39.0                # catch reaches in to here: 1.0 mm under the board edge
-CLIP_CATCH_H = 1.2                 # catch height; its underside is the 45-degree lead-in
+CLIP_CATCH_R = 39.4                # catch reaches in to here: 0.6 mm under the board edge
+CLIP_CATCH_H = 1.2                 # catch height; its underside is the lead-in
+CLIP_STRAIN_MAX = 0.006            # root strain at full flex, kept low for PLA layers
 CARRIER_PARTS_R = 37.4             # outermost underside part (D1), measured in Fusion
 TOWER_CLEAR_R = 41.5               # segno_enclosure.S7T_RING_CLEAR_R (tower gate)
+# Arm relief. CLIP_GAP alone is far below the 0.3-0.5 mm an FDM print keeps open,
+# so along the wall's 13 mm the arm would print fused to it. A pocket in the
+# wall's outer face behind each arm opens the gap to CLIP_RELIEF_GAP from the
+# roof down. The strip is glued to the wall's inner face, which the pocket does
+# not reach.
+CLIP_RELIEF_GAP = 0.6              # air between arm and wall behind each arm
+CLIP_RELIEF_SIDE = 0.5             # pocket wider than the arm on each side
+CLIP_R_IN = CUP_R + CLIP_GAP       # arm's inner face
+CLIP_ROOT_Z = UNDER - 1.2          # arm's root: the roof's underside
+CLIP_Z_TOP = PCB_BOTTOM - CLIP_PLAY  # catch's bearing face
+CLIP_Z_BOT = CLIP_Z_TOP - CLIP_CATCH_H  # catch's lowest point
+CLIP_RELIEF_R = CLIP_R_IN - CLIP_RELIEF_GAP  # pocket floor radius
+WALL_MIN = 1.0                     # wall left behind the pocket
+# Fully flexed (catch pushed out past the board edge), an arm must still clear the
+# printed 7in tower: test_console_ring.py measures it against the tower's STEP.
+TOWER_FLEX_AIR = 1.0
 
 # Hard limits this variant exists to meet (Fusion clone, 2026-09-30, ENC_V 215.0):
 SCREEN7_CLEAR_R = 57.0             # 7in module's nearest point to the axis
@@ -101,8 +148,8 @@ def diffuser():
                 .polyline([(32.6, UNDER - 1.21), (33.41, UNDER - 1.21), (32.6, UNDER - 0.40)])
                 .close().revolve().val())
     lens = lens.cut(entrance)
-    neck = annulus(26.65, LENS_BORE_R, -13.2, UNDER)
-    floor = annulus(SEAT_R, SEAT_HOLE_R, -10.0, -8.0)
+    neck = annulus(26.65, LENS_BORE_R, NECK_BOTTOM, UNDER)
+    floor = annulus(SEAT_R, SEAT_HOLE_R, SEAT_TOP - 2.0, SEAT_TOP)
     return lens.fuse(neck, floor).clean()
 
 
@@ -114,30 +161,58 @@ def _sector(ro, ri, z0, z1, deg_c, width):
 
 
 def carrier_clip(deg_c):
-    """One snap arm: a bridge off the roof, a flexing arm down past the carrier,
-    and the catch under the board edge with its lead-in on the underside."""
-    r_in = CUP_R + CLIP_GAP
-    r_out = r_in + CLIP_T
-    z_top = PCB_BOTTOM - CLIP_PLAY
-    z_bot = z_top - CLIP_CATCH_H
-    bridge = _sector(r_out, CUP_R - 0.4, UNDER - 1.2, UNDER, deg_c, CLIP_W)
-    arm = _sector(r_out, r_in, z_bot, UNDER - 1.2, deg_c, CLIP_W)
+    """One snap arm: a bridge off the roof, the arm tapering down past the
+    carrier, and the catch under the board edge with its lead-in underneath."""
+    r_in = CLIP_R_IN
+    c = CLIP_ROOT_CHAMFER
+    profile = [(CUP_R - 0.4, UNDER), (r_in + CLIP_T_ROOT, UNDER),
+               (r_in + CLIP_T_ROOT, CLIP_ROOT_Z), (r_in + CLIP_T_TIP, CLIP_Z_TOP),
+               (r_in + CLIP_T_TIP, CLIP_Z_BOT), (r_in, CLIP_Z_BOT),
+               (CLIP_CATCH_R, CLIP_Z_TOP - 0.2), (CLIP_CATCH_R, CLIP_Z_TOP),
+               (r_in, CLIP_Z_TOP), (r_in, CLIP_ROOT_Z - c), (r_in - c, CLIP_ROOT_Z),
+               (CUP_R - 0.4, CLIP_ROOT_Z)]
     span = degrees(CLIP_W / r_in)
-    catch = (cq.Workplane("XZ")
-             .polyline([(r_in + 0.01, z_top), (CLIP_CATCH_R, z_top),
-                        (CLIP_CATCH_R, z_top - 0.2), (r_in + 0.01, z_bot)])
-             .close().revolve(span, (0, 0, 0), (0, 1, 0)).val()
-             .rotate((0, 0, 0), (0, 0, 1), deg_c - span / 2.0))
-    return bridge.fuse(arm, catch)
+    return (cq.Workplane("XZ").polyline(profile).close()
+            .revolve(span, (0, 0, 0), (0, 1, 0)).val()
+            .rotate((0, 0, 0), (0, 0, 1), deg_c - span / 2.0))
+
+
+def clip_root_strain():
+    """Root strain when the board's edge pushes the catch fully out: a tapered
+    cantilever, root at the roof, loaded mid-catch, deflected by the overlap."""
+    length = CLIP_ROOT_Z - (CLIP_Z_TOP - CLIP_CATCH_H / 2.0)
+    n, flex = 2000, 0.0
+    for i in range(n):              # deflection per unit load, unit width and modulus
+        x = (i + 0.5) * length / n  # from the load point toward the root
+        t = CLIP_T_TIP + (CLIP_T_ROOT - CLIP_T_TIP) * x / length
+        flex += x * x / (t ** 3 / 12.0) * length / n
+    load = (PCB_R - CLIP_CATCH_R) / flex
+    return load * length * (CLIP_T_ROOT / 2.0) / (CLIP_T_ROOT ** 3 / 12.0)
+
+
+def clip_relief(deg_c):
+    """The pocket in the wall's outer face behind one arm, from the wall's foot
+    up to the roof's underside, where the arm's root joins the bridge."""
+    return _sector(CUP_R + 0.01, CLIP_RELIEF_R, STRIP_BOTTOM - 0.01, CLIP_ROOT_Z,
+                   deg_c, CLIP_W + 2 * CLIP_RELIEF_SIDE)
+
+
+def clip_flex_envelope(deg_c):
+    """Everything one arm sweeps while the board's edge pushes its catch out:
+    the arm from its relaxed radius out by the catch overlap."""
+    return _sector(CLIP_R_IN + CLIP_T_ROOT + (PCB_R - CLIP_CATCH_R), CLIP_R_IN, CLIP_Z_BOT,
+                   CLIP_ROOT_Z, deg_c, CLIP_W)
 
 
 def cup():
     """Roof glued to the faceplate underside; the diffuser's flange rests on the
     inner shelf; the wall carries the strip down to just above the carrier; three
-    arms snap the carrier in place."""
+    arms snap the carrier in place, each over a relief pocket in the wall."""
     roof = annulus(CUP_R, 35.65, UNDER - 1.2, UNDER)
     shelf = annulus(36.2, 34.4, UNDER - 2.0, UNDER - 1.2)
     wall = annulus(CUP_R, GLUE_R, STRIP_BOTTOM, UNDER)
+    for a in CLIP_ANGLES:
+        wall = wall.cut(clip_relief(a))
     body = roof.fuse(shelf, wall)
     for a in CLIP_ANGLES:
         body = body.fuse(carrier_clip(a))
@@ -145,7 +220,7 @@ def cup():
 
 
 def encoder_retainer():
-    plate = annulus(25.6, 4.25, -8.0, -7.0)
+    plate = annulus(25.6, 4.25, SEAT_TOP, RETAINER_TOP)
     for x, y in CAP_SCREWS:
         plate = plate.fuse(cq.Solid.makeCylinder(5, CAP_SEAT_Z + 7.0, cq.Vector(x, y, -7.0)))
         plate = plate.cut(cq.Solid.makeCylinder(1.25, CAP_SEAT_Z + 8.02, cq.Vector(x, y, -8.01)))
@@ -171,7 +246,8 @@ def centre_cap():
 
 
 def spacer():
-    return annulus(8, 5, -11.5, -8.0)
+    """Fills the gap from the encoder's shoulder to the seat's top."""
+    return annulus(8, 5, ENC_SHOULDER_Z, SEAT_TOP)
 
 
 def led_strip():
@@ -241,10 +317,23 @@ def check():
     assert LED_FACE_R > 36.2, "LED faces foul the cup's diffuser shelf"
     assert STRIP_TOP <= UNDER - 2.0, "strip top reaches the shelf/roof"
     assert STRIP_BOTTOM > CARRIER_TOP, "strip edge reaches below the carrier PCB top"
-    assert CUP_R + CLIP_GAP + CLIP_T < TOWER_CLEAR_R, "snap arms reach the 7in tower's clearance"
+    assert CUP_R < TOWER_CLEAR_R, "cup wall reaches the 7in tower's clearance"
+    # the arms reach past it, at bearings away from the tower: test_console_ring.py
+    # measures their full flex against the tower's STEP
+    assert clip_root_strain() <= CLIP_STRAIN_MAX, "snap arm root strains too far"
     assert CUP_R + CLIP_GAP > PCB_R + 0.2, "snap arms grip the board edge radially"
-    assert CLIP_CATCH_R < PCB_R - 0.8, "catch overlaps the board edge by too little"
+    assert CLIP_CATCH_R <= PCB_R - 0.6, "catch overlaps the board edge by too little"
     assert CLIP_CATCH_R > CARRIER_PARTS_R + 1.0, "catch reaches the carrier's underside parts"
+    assert (ENC_BODY_HALF_W ** 2 + ENC_BODY_REACH ** 2) ** 0.5 + ENC_BODY_TOL < SEAT_HOLE_R, (
+        "the encoder body's corners reach the diffuser seat")
+    assert NECK_BOTTOM - CARRIER_TOP >= FRONT_JOINT_H + 0.5, "front solder joints reach the neck"
+    assert SEAT_TOP - ENC_SHOULDER_Z >= 1.2, "encoder spacer too thin to print"
+    assert ENC_SHOULDER_Z + ENC_BUSHING_L >= RETAINER_TOP + NUT_T_MAX, (
+        "the encoder's thread does not pass the nut")
+    assert CARRIER_TOP + ENC_SHAFT_TIP - KNOB_BOTTOM < KNOB_BORE, "shaft bottoms in the knob"
+    assert KNOB_BOTTOM >= ENC_PUSH_MAX, "a full press bottoms the knob on the face"
+    assert CLIP_RELIEF_GAP >= 0.5, "arm relief too narrow to stay open in an FDM print"
+    assert CLIP_RELIEF_R - GLUE_R >= WALL_MIN, "relief leaves too little wall behind the strip"
     for a in CLIP_ANGLES:
         assert min(abs(a), abs(360 - a)) > 15, "a snap arm sits on the strip seam"
     for name, shape in parts().items():
