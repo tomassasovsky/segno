@@ -56,7 +56,7 @@ class RingUpdater {
 
   // Every byte the ring UART receives, alongside the ring-link parser.
   void push(uint8_t byte, uint32_t now) {
-    size_t length;
+    size_t length = 0;
     if (!ring_frame_parser_push(&parser_, byte, &length)) return;
     uint8_t type;
     const uint8_t *payload;

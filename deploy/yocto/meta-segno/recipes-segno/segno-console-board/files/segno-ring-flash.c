@@ -166,7 +166,7 @@ int main(void) {
   const char *dev = env("SEGNO_LINK_DEV", "/dev/ttyAMA3");
   const char *dir = env("SEGNO_RING_FW_DIR", "/usr/lib/segno/ring-board");
   const char *state = env("SEGNO_RING_STATE_DIR", "/data/segno/ring-board");
-  char path[512], line[256];
+  char path[512], line[640];  // line holds a path and a sentence
 
   // The marker names what this image ships: "firmware=M.m size=N sha256=HEX".
   snprintf(path, sizeof(path), "%s/version", dir);

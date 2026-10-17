@@ -280,7 +280,7 @@ static void pumpBridge() {
     const uint8_t byte = (uint8_t)LINK.read();
     ringLink.write(&byte, 1);
     g_bridgeLastMs = now;
-    size_t length;
+    size_t length = 0;
     uint8_t type;
     const uint8_t *payload;
     size_t n;

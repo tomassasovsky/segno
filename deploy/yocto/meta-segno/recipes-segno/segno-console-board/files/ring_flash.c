@@ -56,7 +56,7 @@ static int receive(session *s, uint8_t want, unsigned deadline) {
     if ((int)(deadline - now) <= 0) return 0;
     const int byte = s->io->read(s->io->ctx, deadline - now);
     if (byte < 0) return 0;
-    size_t length;
+    size_t length = 0;
     if (!ring_frame_parser_push(&s->parser, (uint8_t)byte, &length)) continue;
     uint8_t type;
     const uint8_t *payload;

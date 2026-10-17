@@ -315,7 +315,7 @@ std::vector<uint8_t> ask(uint8_t type, const std::vector<uint8_t> &payload) {
   ring_frame_parser_init(&p, body, sizeof(body));
   for (const auto &chunk : ringLink.sent)
     for (const uint8_t b : chunk) {
-      size_t length;
+      size_t length = 0;
       uint8_t t;
       const uint8_t *pl;
       size_t m;
