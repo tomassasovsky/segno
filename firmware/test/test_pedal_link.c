@@ -329,6 +329,19 @@ static void check_rejections(void) {
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN - 1, &out) == 0, "short payload accepted");
 }
 
+/* RING_BRIDGE is the Pi tool's, not the app's, so no Dart fixture covers it:
+ * pin its bytes here. */
+static void check_ring_bridge(void) {
+  uint8_t frame[PEDAL_LINK_MAX_FRAME];
+  const size_t n = pedal_link_encode_ring_bridge(frame);
+  const uint8_t want[6] = {0xA5, 0x12, 0x02, 'R', 'B', 0x12 ^ 0x02 ^ 'R' ^ 'B'};
+  CHECK(n == 6 && memcmp(frame, want, 6) == 0, "ring bridge frame drifted");
+  uint8_t type, len, payload[PEDAL_LINK_MAX_PAYLOAD];
+  CHECK(parse_all(frame, n, &type, payload, &len, NULL) == 1 && type == PEDAL_LINK_TYPE_RING_BRIDGE &&
+            len == 2 && payload[0] == 'R' && payload[1] == 'B',
+        "ring bridge frame does not parse");
+}
+
 static void check_physical_state(void) {
   const uint8_t p[53] = {0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,255,
     0,128,255,165,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,
@@ -406,6 +419,7 @@ int main(int argc, char **argv) {
   }
   check_rejections();
   check_physical_state();
+  check_ring_bridge();
   if (g_failures) {
     fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

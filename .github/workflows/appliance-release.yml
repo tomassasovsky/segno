@@ -187,6 +187,18 @@ jobs:
           echo "protocol=$protocol firmware=$major.$minor" > console-board/version
           cat console-board/version
 
+      # The ring carrier's XIAO, sealed for the over-the-link update the image
+      # applies through the console (segno-ring-flash, #1342). Its marker
+      # carries the image's size and SHA-256, which the ring checks.
+      - name: Compile and seal the ring carrier firmware
+        run: |
+          set -eu
+          arduino-cli compile --libraries firmware/libraries --fqbn rp2040:rp2040:seeed_xiao_rp2350 firmware/ring_board --output-dir ring-out
+          python3 -I firmware/ring_board/seal.py ring-out/ring_board.ino.bin ring-sealed
+          mkdir -p console-board/ring-board
+          cp ring-sealed/ring_board.bin ring-sealed/version console-board/ring-board/
+          cat console-board/ring-board/version
+
       - uses: actions/upload-artifact@v7
         with:
           name: segno-console-board
@@ -338,7 +350,7 @@ jobs:
       # console went dark with an app on one link protocol and a board on
       # another. So read the marker and the firmware back out of the rootfs
       # and compare them with this run's artifacts.
-      - name: Verify the image carries this run's console firmware
+      - name: Verify the image carries this run's console and ring firmware
         run: |
           set -eu
           machine='${{ needs.determine-meta.outputs.machine }}'
@@ -361,6 +373,17 @@ jobs:
           rm -f "$tmp"
           if [ "$want_elf" != "$have_elf" ]; then
             echo "::error::the console firmware in the image is not the one this run built (sha256 $have_elf vs $want_elf). Refusing to publish."
+            exit 1
+          fi
+          want_ring=$(cat deploy/yocto/prebuilt/console-board/ring-board/version)
+          have_ring=$(debugfs -R 'cat /usr/lib/segno/ring-board/version' "$rootfs" 2>/dev/null)
+          tmp=$(mktemp)
+          debugfs -R "dump /usr/lib/segno/ring-board/ring_board.bin $tmp" "$rootfs" 2>/dev/null
+          want_bin=$(sha256sum deploy/yocto/prebuilt/console-board/ring-board/ring_board.bin | cut -d' ' -f1)
+          have_bin=$(sha256sum "$tmp" | cut -d' ' -f1)
+          rm -f "$tmp"
+          if [ "$want_ring" != "$have_ring" ] || [ "$want_bin" != "$have_bin" ]; then
+            echo "::error::the ring firmware in the image ('$have_ring', sha256 $have_bin) is not the one this run built ('$want_ring', sha256 $want_bin). Refusing to publish."
             exit 1
           fi
           echo "image firmware matches this run's artifact"
