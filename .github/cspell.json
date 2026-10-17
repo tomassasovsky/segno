@@ -958,5 +958,42 @@
     "pinouts",
     "SMPS",
     "stty"
+  ],
+  "overrides": [
+    {
+      "filename": "**/hardware/kicad/screen_power/models/licenses/Package_DIP-CREDITS.md",
+      "words": [
+        "dshapes",
+        "easyw",
+        "FCAD",
+        "Olsson",
+        "Terje",
+        "windwos"
+      ]
+    },
+    {
+      "filename": "**/docs/reviews/screen-power-claude-1072/original-rev-i-review.md",
+      "words": [
+        "Aavid",
+        "Axicom",
+        "AXICOM",
+        "datasheets",
+        "derate",
+        "derated",
+        "derating",
+        "desoldered",
+        "DPDT",
+        "energised",
+        "fanout",
+        "Hammerstad",
+        "Heatsinks",
+        "heatsinks",
+        "linearised",
+        "Littelfuse",
+        "Mbps",
+        "overcurrent",
+        "polarised"
+      ]
+    }
   ]
 }

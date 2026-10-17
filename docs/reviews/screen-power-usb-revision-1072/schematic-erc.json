@@ -1,0 +1,67 @@
+{
+    "$schema": "https://schemas.kicad.org/erc.v1.json",
+    "coordinate_units": "mm",
+    "date": "2026-09-26T16:45:24",
+    "ignored_checks": [
+        {
+            "description": "Global label only appears once in the schematic",
+            "key": "single_global_label"
+        },
+        {
+            "description": "Four connection points are joined together",
+            "key": "four_way_junction"
+        },
+        {
+            "description": "SPICE model issue",
+            "key": "simulation_model_issue"
+        },
+        {
+            "description": "Assigned footprint doesn't match footprint filters",
+            "key": "footprint_filter"
+        }
+    ],
+    "included_severities": [
+        "error",
+        "warning",
+        "exclusion"
+    ],
+    "kicad_version": "10.0.4",
+    "sheets": [
+        {
+            "path": "/",
+            "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546",
+            "violations": []
+        },
+        {
+            "path": "/gate drive/",
+            "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/5ba72232-3354-5edc-9ded-d75ff58774fe",
+            "violations": []
+        },
+        {
+            "path": "/shared power/",
+            "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/0157c963-12d5-5a27-8699-19e38824f98e",
+            "violations": []
+        },
+        {
+            "path": "/screen1 power/",
+            "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/2b4f2bc6-c7a6-56c4-ac6c-4e72a6852df9",
+            "violations": []
+        },
+        {
+            "path": "/screen1 touch/",
+            "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/480ecebe-e95e-539a-a92c-a9448db02fd9",
+            "violations": []
+        },
+        {
+            "path": "/screen2 power/",
+            "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/ebf3d20f-1f2b-56bd-97a8-f1d013a08173",
+            "violations": []
+        },
+        {
+            "path": "/screen2 touch/",
+            "uuid_path": "/63a63dd8-c505-5bb8-8418-5eb0e558e546/54c97e4c-a9b4-50bc-a883-235682587f3a",
+            "violations": []
+        }
+    ],
+    "source": "screen_power_hand.kicad_sch"
+}

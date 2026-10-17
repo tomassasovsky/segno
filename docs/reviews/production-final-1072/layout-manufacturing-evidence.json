@@ -1,0 +1,294 @@
+{
+  "base_commit": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
+  "scope": "three native PCBs, actual copper/ink, manufacturing geometry and mechanical footprints; no enclosure fit certification",
+  "native_invariants": {
+    "screen": {
+      "path": "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
+      "before_sha256": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
+      "after_sha256": "b1e5dbb5c4a9eef5137f5dd339a685fe2ce0eac174362ba4df1bfdb6f668a123",
+      "non_silk_sexpression_exact": true
+    },
+    "screen-placed": {
+      "path": "hardware/kicad/screen_power/hand/screen_power_hand.placed.kicad_pcb",
+      "before_sha256": "c14921ed198b39ea02ae1413d99dc5b53f258d42e8076e0640f4d6744b51b63a",
+      "after_sha256": "e1a6ca142fcb4fd2d765c5b1acab74d7173e3495e22f473a9d22a3771810ec41",
+      "non_silk_sexpression_exact": true
+    },
+    "console": {
+      "path": "hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "before_sha256": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+      "after_sha256": "1c64edd2e49c9e40830d37f0e9b553fd5c57d28cba674f5d815e043c0f226199",
+      "non_silk_sexpression_exact": true
+    },
+    "console-placed": {
+      "path": "hardware/kicad/out_console/console.placed.kicad_pcb",
+      "before_sha256": "4e062733930f25758f6ce0c46119e2ec2168bbdb5a091a4bcd06880b5e81fb6b",
+      "after_sha256": "f159f366e441a95a3e55892ba032c0eb33f20c0913ed866cf44239a746f93ad9",
+      "non_silk_sexpression_exact": true
+    },
+    "ring": {
+      "path": "hardware/kicad/segno_pedal_ring.kicad_pcb",
+      "before_sha256": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+      "after_sha256": "5ade14170d0280c922b7966e1f1d85d53a0e7ff9510e8342788400b7fe05d50b",
+      "non_silk_sexpression_exact": true
+    }
+  },
+  "ink": {
+    "screen": {
+      "silk_objects": 715,
+      "visible_text_objects": 84,
+      "min_height_mm": 1.0,
+      "min_text_stroke_mm": 0.15,
+      "min_stroked_graphic_mm": 0.15,
+      "min_mask_gap_mm": 0.15874286930126638,
+      "failures": 0
+    },
+    "console": {
+      "silk_objects": 1006,
+      "visible_text_objects": 96,
+      "min_height_mm": 1.0,
+      "min_text_stroke_mm": 0.15,
+      "min_stroked_graphic_mm": 0.15,
+      "min_mask_gap_mm": 0.16499999999999201,
+      "failures": 0
+    },
+    "ring": {
+      "silk_objects": 278,
+      "visible_text_objects": 32,
+      "min_height_mm": 1.0,
+      "min_text_stroke_mm": 0.15,
+      "min_stroked_graphic_mm": 0.15,
+      "min_mask_gap_mm": 0.15870759196573006,
+      "failures": 0
+    }
+  },
+  "geometry": {
+    "screen": {
+      "outline_bounds_mm": [
+        0.0,
+        0.0,
+        68.0,
+        76.0
+      ],
+      "outline_valid": true,
+      "outline_polygons": 1,
+      "min_hole_edge_gaps": {
+        "pad-pad": {
+          "gap_mm": 1.141686,
+          "a": "Q4.1",
+          "b": "Q4.2"
+        },
+        "via-involved": {
+          "gap_mm": 0.44173142288814526,
+          "a": "F101.1",
+          "b": "via"
+        }
+      },
+      "F.Cu": {
+        "minimum_copper_to_board_edge_mm": 0.5004999999999998,
+        "minimum_foreign_copper_gap_mm": 0.1908600000000007,
+        "closest_foreign_nets": [
+          "SWITCHED_5V",
+          "GND"
+        ],
+        "min_foreign_hole_copper_gap_mm": 0.4449999999999932,
+        "closest_foreign_hole": [
+          "via",
+          "via",
+          true
+        ],
+        "net_regions": 38,
+        "copper_area_mm2": 4382.837673090487
+      },
+      "B.Cu": {
+        "minimum_copper_to_board_edge_mm": 0.5004999999999998,
+        "minimum_foreign_copper_gap_mm": 0.1599999999999966,
+        "closest_foreign_nets": [
+          "S2_UP_N",
+          "S2_UP_P"
+        ],
+        "min_foreign_hole_copper_gap_mm": 0.4538429999999991,
+        "closest_foreign_hole": [
+          "Q3.2",
+          "pad",
+          true
+        ],
+        "net_regions": 38,
+        "copper_area_mm2": 3778.920295075007
+      }
+    },
+    "console": {
+      "outline_bounds_mm": [
+        100.0,
+        60.0,
+        199.5,
+        159.5
+      ],
+      "outline_valid": true,
+      "outline_polygons": 1,
+      "min_hole_edge_gaps": {
+        "pad-pad": {
+          "gap_mm": 1.021010465234885,
+          "a": "J1.",
+          "b": "J1."
+        },
+        "via-involved": {
+          "gap_mm": 0.5999999999999943,
+          "a": "via",
+          "b": "via"
+        }
+      },
+      "F.Cu": {
+        "minimum_copper_to_board_edge_mm": 0.49856675416162444,
+        "minimum_foreign_copper_gap_mm": 0.22475385591631147,
+        "closest_foreign_nets": [
+          "IND_DATA",
+          "LINK_RX"
+        ],
+        "min_foreign_hole_copper_gap_mm": 0.2505000000000024,
+        "closest_foreign_hole": [
+          "J1.",
+          "pad",
+          false
+        ],
+        "net_regions": 84,
+        "copper_area_mm2": 8146.307439371085
+      },
+      "B.Cu": {
+        "minimum_copper_to_board_edge_mm": 0.49856675416162444,
+        "minimum_foreign_copper_gap_mm": 0.2032617453804488,
+        "closest_foreign_nets": [
+          "LINK_RX_PI",
+          "SWCLK"
+        ],
+        "min_foreign_hole_copper_gap_mm": 0.2505000000000024,
+        "closest_foreign_hole": [
+          "J1.",
+          "pad",
+          false
+        ],
+        "net_regions": 84,
+        "copper_area_mm2": 8159.495354028827
+      }
+    },
+    "ring": {
+      "outline_bounds_mm": [
+        -4.002493,
+        -4.001246,
+        76.0,
+        76.001246
+      ],
+      "outline_valid": true,
+      "outline_polygons": 1,
+      "min_hole_edge_gaps": {
+        "pad-pad": {
+          "gap_mm": 1.2415439999999975,
+          "a": "ENC1.A",
+          "b": "ENC1.C"
+        },
+        "via-involved": {
+          "gap_mm": 0.3071067811865483,
+          "a": "via",
+          "b": "via"
+        }
+      },
+      "F.Cu": {
+        "minimum_copper_to_board_edge_mm": 0.5476397078572206,
+        "minimum_foreign_copper_gap_mm": 0.24354778840663216,
+        "closest_foreign_nets": [
+          "+5V_LED",
+          "RING_DATA"
+        ],
+        "min_foreign_hole_copper_gap_mm": 0.5500000000000007,
+        "closest_foreign_hole": [
+          "via",
+          "via",
+          true
+        ],
+        "net_regions": 18,
+        "copper_area_mm2": 4509.065333933192
+      },
+      "B.Cu": {
+        "minimum_copper_to_board_edge_mm": 0.5476392121334972,
+        "minimum_foreign_copper_gap_mm": 0.2260742977249075,
+        "closest_foreign_nets": [
+          "RING_DOUT",
+          "RING_DATA_3V3"
+        ],
+        "min_foreign_hole_copper_gap_mm": 0.4252176920499552,
+        "closest_foreign_hole": [
+          "via",
+          "via",
+          true
+        ],
+        "net_regions": 23,
+        "copper_area_mm2": 4327.390374214685
+      }
+    }
+  },
+  "native_netlist_parity": {
+    "console": {
+      "connected_pad_map_matches": true,
+      "connected_pad_count": 206,
+      "errors": []
+    },
+    "ring": {
+      "connected_pad_map_matches": true,
+      "connected_pad_count": 63,
+      "errors": []
+    },
+    "screen": {
+      "connected_pad_map_matches": true,
+      "connected_pad_count": 115,
+      "errors": []
+    }
+  },
+  "mask_webs": {
+    "screen": {
+      "minimum_separate_pad_mask_web": {
+        "gap_mm": 0.34999999999999964,
+        "a": "C4.1",
+        "b": "C4.2",
+        "layer": "F.Silkscreen"
+      }
+    },
+    "console": {
+      "minimum_separate_pad_mask_web": {
+        "gap_mm": 0.7399999999999807,
+        "a": "J22.3",
+        "b": "J22.4",
+        "layer": "F.Silkscreen"
+      }
+    },
+    "ring": {
+      "minimum_separate_pad_mask_web": {
+        "gap_mm": 0.5400010000003701,
+        "a": "U1.2",
+        "b": "U1.3",
+        "layer": "B.Silkscreen"
+      }
+    }
+  },
+  "console_source": {
+    "refs_exact": 66,
+    "functional_label_max_delta_nm": 2,
+    "clean_build_with_mask_gate": "PASS",
+    "negative_controls_passed": 15,
+    "source_sha256": "ef4fa0ac661d9a22b2a06eeeea0ad09f1e89effa6fba9c332aa8aba8958e6084",
+    "negative_control_exit_code": 0,
+    "routed_guard_exit_code": 0,
+    "new_mask_guard_order": "after all pre-existing circuit and placement checks"
+  },
+  "limitations": [
+    "Enclosure model does not yet integrate final screen-board mounting and mated harness envelopes.",
+    "Final fabrication ZIPs are refreshed and validated by the publication owner after the silk fix."
+  ],
+  "independent_replay": {
+    "native_non_silk_exact": 3,
+    "custom_footprint_non_silk_exact": 8,
+    "screen_printed_silk_parity": "PASS; existing capacitor serialization translation at most21nm",
+    "screen_hidden_field_difference": "H1-H4 reference sizes only; not printed",
+    "review_verdict": "No actionable source/native mismatch"
+  },
+  "shared_silkscreen_source_sha256": "312eb503bb86f75695ec26589957e48499781108cf5498d7d03c146fee7e2719"
+}

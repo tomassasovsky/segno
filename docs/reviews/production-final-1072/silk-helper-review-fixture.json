@@ -1,0 +1,84 @@
+{
+  "helper_sha256": "312eb503bb86f75695ec26589957e48499781108cf5498d7d03c146fee7e2719",
+  "checker_sha256": "fd84970aa612c4c92a54384b8e7374c17933cced167163bd6e7258f2e0f68856",
+  "cases": [
+    {
+      "case": "good_gap",
+      "expected_failure": false,
+      "actual_errors": []
+    },
+    {
+      "case": "nonoverlapping_short_gap",
+      "expected_failure": true,
+      "actual_errors": [
+        {
+          "check": "silk_mask_clearance",
+          "detail": "U1: silkscreen is within 0.15 mm of U1.1's mask opening"
+        }
+      ]
+    },
+    {
+      "case": "other_footprint_mask",
+      "expected_failure": true,
+      "actual_errors": [
+        {
+          "check": "silk_mask_clearance",
+          "detail": "U2: silkscreen is within 0.15 mm of U1.1's mask opening"
+        }
+      ]
+    },
+    {
+      "case": "large_mask_expansion",
+      "expected_failure": true,
+      "actual_errors": [
+        {
+          "check": "silk_mask_clearance",
+          "detail": "U1: silkscreen is within 0.15 mm of U1.1's mask opening"
+        }
+      ]
+    },
+    {
+      "case": "zero_mask_expansion",
+      "expected_failure": false,
+      "actual_errors": []
+    },
+    {
+      "case": "actual_split_stroke",
+      "changed_strokes": 1,
+      "preserved_text_pad_copper_placement": true,
+      "mask_check_passed": true,
+      "second_run_unchanged": true
+    },
+    {
+      "case": "start_inside_mask",
+      "original_far_end_preserved": true,
+      "mask_check_passed": true,
+      "second_run_unchanged": true
+    },
+    {
+      "case": "console_final_native",
+      "source_sha256": "1c64edd2e49c9e40830d37f0e9b553fd5c57d28cba674f5d815e043c0f226199",
+      "changes": 0,
+      "graphics_preserved": true,
+      "mask_check_passed": true,
+      "file_bytes_unchanged": true
+    },
+    {
+      "case": "ring_final_native",
+      "source_sha256": "5ade14170d0280c922b7966e1f1d85d53a0e7ff9510e8342788400b7fe05d50b",
+      "changes": 13,
+      "graphics_preserved": true,
+      "mask_check_passed": true,
+      "file_bytes_unchanged": true
+    },
+    {
+      "case": "screen_final_native",
+      "source_sha256": "b1e5dbb5c4a9eef5137f5dd339a685fe2ce0eac174362ba4df1bfdb6f668a123",
+      "changes": 33,
+      "graphics_preserved": true,
+      "mask_check_passed": true,
+      "file_bytes_unchanged": true
+    }
+  ],
+  "passed": true
+}

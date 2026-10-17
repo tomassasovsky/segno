@@ -1,0 +1,168 @@
+{
+  "board_sha256": "2d69a8b94dab43a378d97a5ebff961d7481817c71467e2393ad6d987d6dcec87",
+  "connectors": {
+    "J201": {
+      "angle_degrees": 90.0,
+      "pads": {
+        "1": {
+          "x_mm": 7.0,
+          "y_mm": 64.75,
+          "net": "HOST2_5V"
+        },
+        "2": {
+          "x_mm": 7.0,
+          "y_mm": 62.25,
+          "net": "S2_UP_N"
+        },
+        "3": {
+          "x_mm": 7.0,
+          "y_mm": 59.75,
+          "net": "S2_UP_P"
+        },
+        "4": {
+          "x_mm": 7.0,
+          "y_mm": 57.25,
+          "net": "GND"
+        }
+      }
+    },
+    "J1": {
+      "angle_degrees": 90.0,
+      "pads": {
+        "1": {
+          "x_mm": 56.0,
+          "y_mm": 14.0,
+          "net": "AUX_5V"
+        },
+        "2": {
+          "x_mm": 56.0,
+          "y_mm": 10.04,
+          "net": "GND"
+        }
+      }
+    },
+    "J102": {
+      "angle_degrees": 90.0,
+      "pads": {
+        "1": {
+          "x_mm": 56.0,
+          "y_mm": 39.75,
+          "net": "S1_TOUCH_5V"
+        },
+        "2": {
+          "x_mm": 56.0,
+          "y_mm": 37.25,
+          "net": "S1_DN_N"
+        },
+        "3": {
+          "x_mm": 56.0,
+          "y_mm": 34.75,
+          "net": "S1_DN_P"
+        },
+        "4": {
+          "x_mm": 56.0,
+          "y_mm": 32.25,
+          "net": "GND"
+        }
+      }
+    },
+    "J103": {
+      "angle_degrees": 90.0,
+      "pads": {
+        "1": {
+          "x_mm": 56.0,
+          "y_mm": 25.0,
+          "net": "S1_MAIN_5V"
+        },
+        "2": {
+          "x_mm": 56.0,
+          "y_mm": 21.04,
+          "net": "GND"
+        }
+      }
+    },
+    "J2": {
+      "angle_degrees": 90.0,
+      "pads": {
+        "1": {
+          "x_mm": 7.0,
+          "y_mm": 14.25,
+          "net": "PI_GPIO17"
+        },
+        "2": {
+          "x_mm": 7.0,
+          "y_mm": 11.75,
+          "net": "GND"
+        }
+      }
+    },
+    "J101": {
+      "angle_degrees": 90.0,
+      "pads": {
+        "1": {
+          "x_mm": 7.0,
+          "y_mm": 39.75,
+          "net": "HOST1_5V"
+        },
+        "2": {
+          "x_mm": 7.0,
+          "y_mm": 37.25,
+          "net": "S1_UP_N"
+        },
+        "3": {
+          "x_mm": 7.0,
+          "y_mm": 34.75,
+          "net": "S1_UP_P"
+        },
+        "4": {
+          "x_mm": 7.0,
+          "y_mm": 32.25,
+          "net": "GND"
+        }
+      }
+    },
+    "J202": {
+      "angle_degrees": 90.0,
+      "pads": {
+        "1": {
+          "x_mm": 56.0,
+          "y_mm": 64.75,
+          "net": "S2_TOUCH_5V"
+        },
+        "2": {
+          "x_mm": 56.0,
+          "y_mm": 62.25,
+          "net": "S2_DN_N"
+        },
+        "3": {
+          "x_mm": 56.0,
+          "y_mm": 59.75,
+          "net": "S2_DN_P"
+        },
+        "4": {
+          "x_mm": 56.0,
+          "y_mm": 57.25,
+          "net": "GND"
+        }
+      }
+    },
+    "J203": {
+      "angle_degrees": 90.0,
+      "pads": {
+        "1": {
+          "x_mm": 56.0,
+          "y_mm": 50.0,
+          "net": "S2_MAIN_5V"
+        },
+        "2": {
+          "x_mm": 56.0,
+          "y_mm": 46.04,
+          "net": "GND"
+        }
+      }
+    }
+  },
+  "usb_tracks_exactly_preserved": true,
+  "copper_layers": 2,
+  "console_board_unchanged": true
+}

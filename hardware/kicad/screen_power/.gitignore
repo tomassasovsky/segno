@@ -1,0 +1,14 @@
+__pycache__/
+*.log
+*.bak
+*.lck
+*.kicad_prl
+*.kicad_sch-bak
+*-backups/
+*.erc
+*_sklib.py
+*.pickle
+*/fabrication/
+*/pad_positions.json
+*/drc.json
+*/screen_power_*.placed.kicad_pro

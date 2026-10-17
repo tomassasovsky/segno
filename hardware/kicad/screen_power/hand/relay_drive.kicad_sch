@@ -1,0 +1,1197 @@
+(kicad_sch
+  (version 20250114)
+  (generator "eeschema")
+  (uuid 0b113414-631e-5e58-94dc-4e2e2e21925c)
+  (paper "A3")
+  (title_block
+    (title "Segno screen power / hand / relay drive")
+    (rev "P prototype")
+    (comment 1 "One normally open contact switches AUX; every board load sits behind F1.")
+    (comment 2 "AUX-powered relays; each host VBUS supplies only its presence detector.")
+    (comment 3 "Physical verification required before release."))
+  (lib_symbols
+    (symbol "screen_symbols:Device_R"
+      (pin_names
+        (offset 0.508))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "R"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "R"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Resistor"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Device_R_0_1"
+        (rectangle
+          (start -1.016 -2.54)
+          (end 1.016 2.54)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "Device_R_1_1"
+        (rectangle
+          (start -1.016 -2.54)
+          (end 1.016 2.54)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (pin passive line
+          (at 0 3.81 270)
+          (length 1.27)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 0 -3.81 90)
+          (length 1.27)
+          (name ""
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "screen_symbols:Transistor_FET_Q_NMOS_GDS"
+      (pin_names
+        (offset 0.508)
+        (hide yes))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "Q"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "Q_NMOS_GDS"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "N-MOSFET transistor, gate/drain/source"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Transistor_FET_Q_NMOS_GDS_0_1"
+        (polyline
+          (pts
+            (xy 0.254 1.905)
+            (xy 0.254 -1.905))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.254 0)
+            (xy -2.54 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 2.286)
+            (xy 0.762 1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 0.508)
+            (xy 0.762 -0.508))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 -1.27)
+            (xy 0.762 -2.286))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 -1.778)
+            (xy 3.302 -1.778)
+            (xy 3.302 1.778)
+            (xy 0.762 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 1.016 0)
+            (xy 2.032 0.381)
+            (xy 2.032 -0.381)
+            (xy 1.016 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (circle
+          (center 1.651 0)
+          (radius 2.794)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.54 2.54)
+            (xy 2.54 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 2.54 1.778)
+          (radius 0.254)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (circle
+          (center 2.54 -1.778)
+          (radius 0.254)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (polyline
+          (pts
+            (xy 2.54 -2.54)
+            (xy 2.54 0)
+            (xy 0.762 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.921 0.381)
+            (xy 3.683 0.381))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 3.302 0.381)
+            (xy 2.921 -0.254)
+            (xy 3.683 -0.254)
+            (xy 3.302 0.381))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "Transistor_FET_Q_NMOS_GDS_1_1"
+        (polyline
+          (pts
+            (xy 0.254 1.905)
+            (xy 0.254 -1.905))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.254 0)
+            (xy -2.54 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 2.286)
+            (xy 0.762 1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 0.508)
+            (xy 0.762 -0.508))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 -1.27)
+            (xy 0.762 -2.286))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.762 -1.778)
+            (xy 3.302 -1.778)
+            (xy 3.302 1.778)
+            (xy 0.762 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 1.016 0)
+            (xy 2.032 0.381)
+            (xy 2.032 -0.381)
+            (xy 1.016 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (circle
+          (center 1.651 0)
+          (radius 2.794)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.54 2.54)
+            (xy 2.54 1.778))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (circle
+          (center 2.54 1.778)
+          (radius 0.254)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (circle
+          (center 2.54 -1.778)
+          (radius 0.254)
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type outline)))
+        (polyline
+          (pts
+            (xy 2.54 -2.54)
+            (xy 2.54 0)
+            (xy 0.762 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 2.921 0.381)
+            (xy 3.683 0.381))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 3.302 0.381)
+            (xy 2.921 -0.254)
+            (xy 3.683 -0.254)
+            (xy 3.302 0.381))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (pin input line
+          (at -5.08 0 0)
+          (length 2.54)
+          (name "G"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 2.54 5.08 270)
+          (length 2.54)
+          (name "D"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 2.54 -5.08 90)
+          (length 2.54)
+          (name "S"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "3"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "screen_symbols:Device_D_TVS"
+      (pin_names
+        (offset 0.508)
+        (hide yes))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "D"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "D_TVS"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "~"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Bidirectional transient-voltage-suppression diode"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "Device_D_TVS_0_1"
+        (polyline
+          (pts
+            (xy -2.54 1.27)
+            (xy -2.54 -1.27)
+            (xy 2.54 1.27)
+            (xy 2.54 -1.27)
+            (xy -2.54 1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.508 1.27)
+            (xy 0 1.27)
+            (xy 0 -1.27)
+            (xy -0.508 -1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 1.27 0)
+            (xy -1.27 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "Device_D_TVS_1_1"
+        (polyline
+          (pts
+            (xy -2.54 1.27)
+            (xy -2.54 -1.27)
+            (xy 2.54 1.27)
+            (xy 2.54 -1.27)
+            (xy -2.54 1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.508 1.27)
+            (xy 0 1.27)
+            (xy 0 -1.27)
+            (xy -0.508 -1.27))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 1.27 0)
+            (xy -1.27 0))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (pin passive line
+          (at -3.81 0 0)
+          (length 2.54)
+          (name "A1"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 3.81 0 180)
+          (length 2.54)
+          (name "A2"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "screen_symbols:screen_relay_G6C-1117P-US"
+      (pin_names
+        (offset 0.508)
+        (hide yes))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "K"
+        (at 2.032 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Value" "G6C-1117P-US"
+        (at 0 0 90)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" "https://omronfs.omron.com/en_US/ecb/products/pdf/en-g6c.pdf"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Omron G6C single-pole PCB power relay, SPST-NO (1 Form A), 10 A 30 VDC, straight flux-protected terminals: coil 8 positive and 1 negative, normally open contact 3 to 4"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "screen_relay_G6C-1117P-US_0_1"
+        (rectangle
+          (start -10.16 5.08)
+          (end 7.62 -5.08)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background)))
+        (rectangle
+          (start -8.255 1.905)
+          (end -1.905 -1.905)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -7.62 -1.905)
+            (xy -2.54 1.905))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -5.08 5.08)
+            (xy -5.08 1.905))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -5.08 -5.08)
+            (xy -5.08 -1.905))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -1.905 0)
+            (xy -1.27 0))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -0.635 0)
+            (xy 0 0))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.635 0)
+            (xy 1.27 0))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 1.905 0)
+            (xy 2.54 0))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 3.175 0)
+            (xy 3.81 0))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 5.08 -2.54)
+            (xy 3.175 3.81))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 5.08 -2.54)
+            (xy 5.08 -5.08))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 5.08 5.08)
+            (xy 5.08 2.54)
+            (xy 4.445 3.175)
+            (xy 5.08 3.81))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "screen_relay_G6C-1117P-US_1_1"
+        (rectangle
+          (start -10.16 5.08)
+          (end 7.62 -5.08)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background)))
+        (rectangle
+          (start -8.255 1.905)
+          (end -1.905 -1.905)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -7.62 -1.905)
+            (xy -2.54 1.905))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -5.08 5.08)
+            (xy -5.08 1.905))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -5.08 -5.08)
+            (xy -5.08 -1.905))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -1.905 0)
+            (xy -1.27 0))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy -0.635 0)
+            (xy 0 0))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0.635 0)
+            (xy 1.27 0))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 1.905 0)
+            (xy 2.54 0))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 3.175 0)
+            (xy 3.81 0))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 5.08 -2.54)
+            (xy 3.175 3.81))
+          (stroke
+            (width 0.508)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 5.08 -2.54)
+            (xy 5.08 -5.08))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 5.08 5.08)
+            (xy 5.08 2.54)
+            (xy 4.445 3.175)
+            (xy 5.08 3.81))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (pin passive line
+          (at -5.08 -7.62 90)
+          (length 2.54)
+          (name "COIL-"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at -5.08 7.62 270)
+          (length 2.54)
+          (name "COIL+"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "8"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 5.08 -7.62 90)
+          (length 2.54)
+          (name "NO"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "3"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin passive line
+          (at 5.08 7.62 270)
+          (length 2.54)
+          (name "NO"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "4"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no)))
+  (wire
+    (pts
+      (xy 46.99 63.5)
+      (xy 41.91 63.5))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 01842dfc-12d9-527d-9568-eee5c8372b7c))
+  (global_label "POWER_COIL_LOW"
+    (shape bidirectional)
+    (at 41.91 63.5 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid bde56c6c-cba7-5929-8942-34554740247c))
+  (wire
+    (pts
+      (xy 54.61 63.5)
+      (xy 59.69 63.5))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid f5a15d75-de6e-5c36-b8ca-b9eb4b69343e))
+  (global_label "AUX_5V"
+    (shape bidirectional)
+    (at 59.69 63.5 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 564dc506-51c9-54b9-8248-9719a44eba4b))
+  (symbol
+    (lib_id "screen_symbols:Device_D_TVS")
+    (at 50.8 63.5 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 5ee63c74-77fa-5003-9720-bd80db31ee46)
+    (property "Reference" "D3"
+      (at 50.8 53.34 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "P6KE6.8CA"
+      (at 50.8 55.88 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Diode_THT:D_DO-15_P10.16mm_Horizontal"
+      (at 50.8 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "P6KE6.8CA"
+      (at 50.8 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid feae691e-00af-5420-be97-cff1729c0c62))
+    (pin "2"
+      (uuid dc66992e-42bc-508e-b2b5-f4d4619f9578))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/0b113414-631e-5e58-94dc-4e2e2e21925c"
+          (reference "D3")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 147.32 71.12)
+      (xy 147.32 76.2))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid fedab6e5-6aee-5ee6-bcef-d07c8c7bb5ba))
+  (global_label "POWER_COIL_LOW"
+    (shape bidirectional)
+    (at 147.32 76.2 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid d52a248d-0491-5c33-8e85-50eb81968fbd))
+  (wire
+    (pts
+      (xy 147.32 55.88)
+      (xy 147.32 50.8))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid e21e9f5f-7362-5c98-9912-00433e3c1b26))
+  (global_label "AUX_5V"
+    (shape bidirectional)
+    (at 147.32 50.8 90)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid a14c53e5-283d-512f-99b7-8d255a8ed279))
+  (wire
+    (pts
+      (xy 157.48 71.12)
+      (xy 157.48 76.2))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 9db7473e-1a19-565b-bf05-179d462f51bf))
+  (global_label "SWITCHED_5V"
+    (shape bidirectional)
+    (at 157.48 76.2 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 1e822919-791f-5c37-87a1-1502a8ea6be8))
+  (wire
+    (pts
+      (xy 157.48 55.88)
+      (xy 157.48 50.8))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 3e00570b-25ef-5f1d-8f9e-8c6cfed1d12d))
+  (global_label "AUX_5V"
+    (shape bidirectional)
+    (at 157.48 50.8 90)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid a46bf0e3-aa94-5dda-ab8f-4e0122274346))
+  (symbol
+    (lib_id "screen_symbols:screen_relay_G6C-1117P-US")
+    (at 152.39999999999998 63.5 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 57e15a1e-70f5-5734-85dc-22052d0d0347)
+    (property "Reference" "K1"
+      (at 175.26 45.72 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "G6C-1117P-US"
+      (at 175.26 48.26 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "screen_power:Relay_Omron_G6C-1117P-US"
+      (at 175.26 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "G6C-1117P-US DC5"
+      (at 175.26 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 29003114-2574-5fe7-a893-8725acabd1e1))
+    (pin "8"
+      (uuid 8e1aa468-68b2-55ae-ba8b-e1ccbf014b61))
+    (pin "3"
+      (uuid af4c74de-f600-5c0f-8846-664ac560234a))
+    (pin "4"
+      (uuid 4dfecbd0-01ab-5f78-9826-451b528ab06f))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/0b113414-631e-5e58-94dc-4e2e2e21925c"
+          (reference "K1")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 248.92 63.5)
+      (xy 243.84 63.5))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid c03b4da3-2cb4-5f5f-a8b3-919cb5f4f12d))
+  (global_label "DATA_ENABLE"
+    (shape bidirectional)
+    (at 243.84 63.5 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid ad3f9f65-13c0-5152-8ff5-558d6441e048))
+  (wire
+    (pts
+      (xy 256.54 58.42)
+      (xy 256.54 53.34))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid c740df67-a3c5-5feb-bfe8-9b4d63118986))
+  (global_label "POWER_COIL_LOW"
+    (shape bidirectional)
+    (at 256.54 53.34 90)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 01522ad5-66b0-52fd-b7d7-7700fd409649))
+  (wire
+    (pts
+      (xy 256.54 68.58)
+      (xy 256.54 73.66))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid d6329f92-b105-506b-8963-9fc6c3e43935))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 256.54 73.66 270)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid 612166e6-1e47-5eac-a5d8-38694aa3d7bc))
+  (symbol
+    (lib_id "screen_symbols:Transistor_FET_Q_NMOS_GDS")
+    (at 254.0 63.5 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid 12c1bf57-5ede-5b01-8378-58689155432b)
+    (property "Reference" "Q5"
+      (at 276.86 48.260000000000005 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "IRLZ44N"
+      (at 276.86 50.800000000000004 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "screen_power:TO-220-3_IRLZ44N"
+      (at 276.86 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "IRLZ44NPBF"
+      (at 276.86 63.5 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid a3c48a14-e816-5985-8887-2437fe88bbeb))
+    (pin "2"
+      (uuid 7ce3fb95-924b-5995-8ae3-fa6e83cf9d21))
+    (pin "3"
+      (uuid 2719c65d-99ce-5250-a1b9-6adae7c8c534))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/0b113414-631e-5e58-94dc-4e2e2e21925c"
+          (reference "Q5")
+          (unit 1)))))
+  (wire
+    (pts
+      (xy 351.79 63.5)
+      (xy 346.71 63.5))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 9707979b-91d2-514f-88fc-dbb779eb8ce0))
+  (global_label "DATA_ENABLE"
+    (shape bidirectional)
+    (at 346.71 63.5 180)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify right))
+    (uuid ed061f43-2e6a-57b5-9495-a27030efcfbf))
+  (wire
+    (pts
+      (xy 359.41 63.5)
+      (xy 364.49 63.5))
+    (stroke
+      (width 0)
+      (type default))
+    (uuid 68ca739f-3a6c-5b06-a280-7257013e33ba))
+  (global_label "GND"
+    (shape bidirectional)
+    (at 364.49 63.5 0)
+    (effects
+      (font
+        (size 1.0 1.0))
+      (justify left))
+    (uuid 2bafe180-b7ce-5e13-b2f4-91974a93dea9))
+  (symbol
+    (lib_id "screen_symbols:Device_R")
+    (at 355.59999999999997 63.5 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid e158c486-a0d8-5bdb-89cb-e34f382ead8c)
+    (property "Reference" "R7"
+      (at 355.59999999999997 53.34 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "10k 1%"
+      (at 355.59999999999997 55.88 90)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+      (at 355.59999999999997 63.5 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "MPN" "MFR-25FBF52-10K"
+      (at 355.59999999999997 63.5 90)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (pin "1"
+      (uuid 11046006-066d-5e44-8463-c52a72aed8eb))
+    (pin "2"
+      (uuid d43d44ac-e7b3-5566-b07e-0352dccc3da9))
+    (instances
+      (project "screen_power_hand"
+        (path "/63a63dd8-c505-5bb8-8418-5eb0e558e546/0b113414-631e-5e58-94dc-4e2e2e21925c"
+          (reference "R7")
+          (unit 1)))))
+  (embedded_fonts no))

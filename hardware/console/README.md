@@ -9,7 +9,7 @@ keyed ribbon to the Pi's 40-pin header
 reads no controls directly and never bit-bangs WS2812; the earlier plan of a
 USB-MIDI pedal board plus a separate RP2040 LED driver is dead. The Pico runs
 [`firmware/console_board`](../../firmware/console_board/), and
-[`pedal_link.h`](../../firmware/console_board/pedal_link.h) is the wire format
+[`pedal_link.h`](../../firmware/libraries/SegnoPanel/src/pedal_link.h) is the wire format
 of the link to the Pi.
 
 > **Status:** the board is fab-ready (#747); the enclosure is designed under

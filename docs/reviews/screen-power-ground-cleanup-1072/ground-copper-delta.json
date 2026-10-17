@@ -1,0 +1,31 @@
+{
+  "board_sha256": "d0d780a1cde8b70a55f7a60d444e36e02d50835875ba9150b0745ff1b8c3b1ea",
+  "baseline_board_sha256": "bf870faa7c5e1be2dd9843d1587c76888508ece7549b27b5013d0eb7a77c9fc2",
+  "scope": "Filled copper comparison after removal of two H1 exclusions. Subsequent title/silkscreen revision update changes no filled copper.",
+  "layers": {
+    "F": {
+      "added_area_mm2": 1.805564626828602,
+      "removed_area_mm2": 6.25823104521125e-07,
+      "difference_area_outside_h1_mm2": 9.253304248947033e-07,
+      "changed_region_mm": [
+        7.5,
+        1.5,
+        9.2,
+        7.2
+      ],
+      "method": "KiCad filled polygon contours normalized with shapely.make_valid; native fracture cut-lines have zero area."
+    },
+    "B": {
+      "added_area_mm2": 0.0,
+      "removed_area_mm2": 0.0,
+      "difference_area_outside_h1_mm2": 0.0,
+      "changed_region_mm": [
+        7.5,
+        1.5,
+        9.2,
+        7.2
+      ],
+      "method": "KiCad filled polygon contours normalized with shapely.make_valid; native fracture cut-lines have zero area."
+    }
+  }
+}

@@ -537,21 +537,21 @@ LED_LAND_MIN  = 2.4       # faceplate metal left between the shoulder's front ed
                           # at 12 the 3.0 a glue bead wants cannot hold -- that is
                           # what the trial also buys. Anything that eats into the
                           # land past this floor fails the build.
-D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
-                     # the vendor STEP shows the thread OD needs the 0.2, #762)
-# EC11 anti-rotation tab: NO keyway in the disc (user call 2026-08-19: the
-# slot looked bad -- the tab gets snapped off the EC11 instead; the nut alone
-# clamps the disc).
+D_ENC     = 7.2      # Same Sky ACZ11 M7 bushing clearance; unchanged hole.
+                     # Exact part and stack: ../kicad/RING_ENCODER.md.
+# No keyway in the disc (user call 2026-08-19). The legacy EC11 build
+# removed its anti-rotation tab; that is not an instruction to modify the
+# selected ACZ11. Its separately specified nut clamps the disc without a washer.
 # Encoder knob -- a PURCHASED part: O50 x 18 x O6 bore, black aluminium, plain
 # barrel (the owner's chosen knob). These are the VENDOR's numbers, not design
 # freedom: KNOB_D is what the ring window was sized around and KNOB_BORE_D is the
-# EC11's 6 mm shaft. The only modelled guess is the nut relief -- see
+# selected encoder's 6 mm D shaft. The modelled guess is the nut relief -- see
 # build_encoder_knob_step.
 KNOB_D        = 50.0
 KNOB_H        = 18.0
 KNOB_BORE_D   = 6.0
 KNOB_BORE_TOP = 12.0   # blind bore: stops 6 mm short of the top face
-KNOB_NUT_D    = 22.0   # underside relief over the EC11 mounting nut (assumed)
+KNOB_NUT_D    = 22.0   # underside relief over the M7 mounting nut (assumed)
 KNOB_NUT_H    = 4.5
 KNOB_TOP_FILLET = 1.6
 RING_OD   = 67.0     # diffused-annulus ring window, sized over the NeoPixel

@@ -1,5 +1,9 @@
 # Ring 16 snap-on diffuser — temporary bench part
 
+This is the earlier measured EC11 bench assembly. The new ring carrier selects
+[Same Sky ACZ11BR1E-20FD1-20C](../kicad/RING_ENCODER.md); the old measurements
+below are not a fit qualification for that encoder or the 40-LED strip housing.
+
 A diffuser cap that clips onto a **16-pixel WS2812 NeoPixel ring** with nothing
 else involved: no faceplate, no glue, no standoffs. The top face is **solid right
 across**; the only opening is a Ø7 hole for the EC11's threaded bush. It exists

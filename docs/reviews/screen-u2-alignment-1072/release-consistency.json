@@ -1,0 +1,1286 @@
+{
+  "scope": "Read-only release consistency review of U1/U2 alignment; no circuit or thermal tests rerun",
+  "passed": true,
+  "checks_passed": 313,
+  "checks_failed": 0,
+  "native_board_sha256": {
+    "console-v3": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+    "ring-white": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+    "screen-power-rev-l": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af"
+  },
+  "archive_sha256": {
+    "console-v3": "bff58e862b971e5e51872faa2eab3681ee25207b18a949fa4272ecb344e538e4",
+    "ring-white": "29ed635cc4119edfe609332ba62fbe7cb31c102bd6d18af23ef70a75b7cbd606",
+    "screen-power-rev-l": "ef2a39dd88ea89789cf60188186f3aca2d5505bcd202eb270830b81ee5c76e44"
+  },
+  "delivery_folder": "2026-09-26-aligned-screen-ics",
+  "report_input_hashes": {
+    "docs/reviews/pcb-finish-all-three-1072/manufacturing-zips.json": "2dc2afa0364ac141119bf273f200cfe2804679a43ec5c21445afbdab37635f1c",
+    "docs/reviews/screen-u2-alignment-1072/console-ring-fabrication-verification.json": "1aa76bcc9a5516a87cb657026377074f061f92ef73dc5dcad08dcf96ba8d1708",
+    "docs/reviews/screen-u2-alignment-1072/screen-fabrication-verification.json": "c09d84da0b314aa630c2b086db0d5e0626dc0b63a7cb1bc2ee2a8e3343a7b69d"
+  },
+  "source_inventory_counts": {
+    "console_ring": 46,
+    "screen": 66
+  },
+  "screen_assembly_file_count": 71,
+  "checks": [
+    {
+      "check": "console/ring report pass/count",
+      "passed": true
+    },
+    {
+      "check": "console/ring KiCad version",
+      "passed": true
+    },
+    {
+      "check": "screen report pass/count",
+      "passed": true
+    },
+    {
+      "check": "screen KiCad version",
+      "passed": true
+    },
+    {
+      "check": "console/ring all assertions passed",
+      "passed": true
+    },
+    {
+      "check": "sources verification stability",
+      "passed": true
+    },
+    {
+      "check": "archives verification stability",
+      "passed": true
+    },
+    {
+      "check": "loose verification stability",
+      "passed": true
+    },
+    {
+      "check": "current docs/reviews/screen-power-rev-l-1072/verify_fabrication.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/board_stackup.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/console_board.net",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/console_board.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/console_board_pcb.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/console_ring_power.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/netlist.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board.kicad_pcb",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board.kicad_pro",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/ring_board.net",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/ring_board.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/ring_power.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/round_routes.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/route_console_board.sh",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/route_ring_board.sh",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/build.sh",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/check.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/circuit.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/cleanup.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/export.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/finish.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand_checks.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/layout.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/model_geometry.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/pcb.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/route_critical.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/router.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/schematic.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/switch_circuit.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/segno.pretty/ModuleMountPads_4.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/segno.pretty/ModuleMountPads_Ring24.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/segno.pretty/NeoPixel_Ring24.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/segno.pretty/RaspberryPi_Pico_SMD_or_THT_Debug.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/segno.pretty/RotaryEncoder_EC11.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/segno.pretty/WirePads_1x04.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/segno.pretty/XIAO_RP2350_SMD.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/segno_pedal_ring.kicad_pcb",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/segno_pedal_ring.kicad_pro",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/silk_art.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/silk_art_compose.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/silk_art_extract.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/silk_art_pads.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/test_round_routes.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/vh_models.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/widen_power.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board-B_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board-F_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_console/segno_console_board-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_ring/gerbers/segno_pedal_ring-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_ring/gerbers/segno_pedal_ring-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_ring/gerbers/segno_pedal_ring-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_ring/gerbers/segno_pedal_ring-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_ring/gerbers/segno_pedal_ring-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_ring/gerbers/segno_pedal_ring-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_ring/gerbers/segno_pedal_ring-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_ring/gerbers/segno_pedal_ring-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_ring/gerbers/segno_pedal_ring-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/out_ring/gerbers/segno_pedal_ring-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/../../../LICENSE",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/../console_board.net",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/../netlist.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/../out_console/segno_console_board.kicad_pcb",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/../round_routes.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/COSTS.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/LIBRARY_LICENSE.txt",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/README.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/build.sh",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/check.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/circuit.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/cleanup.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/export.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/external_bom.csv",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/finish.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/bom.csv",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/components.json",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fp-lib-table",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/gate_drive.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/screen1_power.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/screen1_touch.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/screen2_power.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/screen2_touch.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/screen_power_hand.kicad_pro",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/screen_power_hand.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/screen_power_hand.net",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/screen_power_hand.placed.kicad_pro",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/screen_symbols.kicad_sym",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/shared_power.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/sym-lib-table",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand_checks.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/layout.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/model_geometry.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/DIP-4_W7.62mm.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/DIP-8_W7.62mm.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/D_DO-35_SOD27_P7.62mm_Horizontal.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/D_DO-41_SOD81_P10.16mm_Horizontal.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/Fuse_Littelfuse_251_P12.70mm.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/JST_VH_B2P-VH_1x02_P3.96mm_Vertical.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/Panasonic_ECEA1EN100U.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/Panasonic_EEUFR1A151.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/Panasonic_EEUFR1A221.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/README.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/TO-220-3_Vertical.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/TO-92_Inline_Wide.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/Vishay_PR01_P10.16mm.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/WIMA_MKS2C031001A00KSSD.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/licenses/Capacitor_THT-CREDITS.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/licenses/Connector_JST-CREDITS.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/licenses/Package_DIP-CREDITS.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/licenses/Package_TO_SOT_THT-CREDITS.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models/licenses/Resistor_THT-CREDITS.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/models.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/pcb.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/route_critical.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/router.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/schematic.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/screen_power.pretty/Fuse_Littelfuse_251_P12.70mm.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/screen_power.pretty/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.90mm.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/screen_power.pretty/TO-220-3_SUP70101EL.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/switch_circuit.py",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/B-copper.svg",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/COSTS.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/F-copper.svg",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/README.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/assembly.pdf",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/board.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/bom.csv",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/bottom.png",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/drill-report.txt",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/external_bom.csv",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/fit-template-1to1.pdf",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/gerbers/screen_power_hand-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/gerbers/screen_power_hand-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/gerbers/screen_power_hand-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/gerbers/screen_power_hand-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/gerbers/screen_power_hand-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/gerbers/screen_power_hand-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/gerbers/screen_power_hand-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/gerbers/screen_power_hand-NPTH-drl_map.pdf",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/gerbers/screen_power_hand-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/gerbers/screen_power_hand-PTH-drl_map.pdf",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/gerbers/screen_power_hand-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/gerbers/screen_power_hand-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/LIBRARY_LICENSE.txt",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/LICENSE",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/fp-lib-table",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/gate_drive.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/screen1_power.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/screen1_touch.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/screen2_power.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/screen2_touch.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/screen_power_hand.kicad_pcb",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/screen_power_hand.kicad_pro",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/screen_power_hand.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/screen_power_hand.net",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/screen_symbols.kicad_sym",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/shared_power.kicad_sch",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/hand/sym-lib-table",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/DIP-4_W7.62mm.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/DIP-8_W7.62mm.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/D_DO-35_SOD27_P7.62mm_Horizontal.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/D_DO-41_SOD81_P10.16mm_Horizontal.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/Fuse_Littelfuse_251_P12.70mm.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/JST_VH_B2P-VH_1x02_P3.96mm_Vertical.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/Panasonic_ECEA1EN100U.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/Panasonic_EEUFR1A151.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/Panasonic_EEUFR1A221.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/README.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/TO-220-3_Vertical.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/TO-92_Inline_Wide.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/Vishay_PR01_P10.16mm.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/WIMA_MKS2C031001A00KSSD.step",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/licenses/Capacitor_THT-CREDITS.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/licenses/Connector_JST-CREDITS.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/licenses/Package_DIP-CREDITS.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/licenses/Package_TO_SOT_THT-CREDITS.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/models/licenses/Resistor_THT-CREDITS.md",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/screen_power.pretty/Fuse_Littelfuse_251_P12.70mm.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/screen_power.pretty/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.90mm.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/native/screen_power.pretty/TO-220-3_SUP70101EL.kicad_mod",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/perspective.png",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/positions-all.csv",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/schematic.pdf",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/screen_power_hand_prototype_gerbers.zip",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/top.png",
+      "passed": true
+    },
+    {
+      "check": "current hardware/kicad/screen_power/hand/fabrication/validation.json",
+      "passed": true
+    },
+    {
+      "check": "verifier hash verify_console_ring.py",
+      "passed": true
+    },
+    {
+      "check": "verifier hash verify_fabrication.py",
+      "passed": true
+    },
+    {
+      "check": "console-v3 archive hash",
+      "passed": true
+    },
+    {
+      "check": "console-v3 board hash",
+      "passed": true
+    },
+    {
+      "check": "console-v3 delivery archive hash",
+      "passed": true
+    },
+    {
+      "check": "console-v3 basic order settings",
+      "passed": true
+    },
+    {
+      "check": "console-v3 colour and finish settings",
+      "passed": true
+    },
+    {
+      "check": "console-v3 exact member inventory",
+      "passed": true
+    },
+    {
+      "check": "console-v3 CRC",
+      "passed": true
+    },
+    {
+      "check": "console-v3 member segno_console_board-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "console-v3 member segno_console_board-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "console-v3 member segno_console_board-B_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "console-v3 member segno_console_board-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "console-v3 member segno_console_board-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "console-v3 member segno_console_board-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "console-v3 member segno_console_board-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "console-v3 member segno_console_board-F_Paste.gbr",
+      "passed": true
+    },
+    {
+      "check": "console-v3 member segno_console_board-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "console-v3 member segno_console_board-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "console-v3 member segno_console_board-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "console-v3 member segno_console_board-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "console-v3 report parity",
+      "passed": true
+    },
+    {
+      "check": "console-v3 native settings",
+      "passed": true
+    },
+    {
+      "check": "console-v3 DRC record",
+      "passed": true
+    },
+    {
+      "check": "console-v3 prior delivery artwork unchanged",
+      "passed": true
+    },
+    {
+      "check": "ring-white archive hash",
+      "passed": true
+    },
+    {
+      "check": "ring-white board hash",
+      "passed": true
+    },
+    {
+      "check": "ring-white delivery archive hash",
+      "passed": true
+    },
+    {
+      "check": "ring-white basic order settings",
+      "passed": true
+    },
+    {
+      "check": "ring-white colour and finish settings",
+      "passed": true
+    },
+    {
+      "check": "ring-white exact member inventory",
+      "passed": true
+    },
+    {
+      "check": "ring-white CRC",
+      "passed": true
+    },
+    {
+      "check": "ring-white member segno_pedal_ring-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "ring-white member segno_pedal_ring-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "ring-white member segno_pedal_ring-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "ring-white member segno_pedal_ring-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "ring-white member segno_pedal_ring-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "ring-white member segno_pedal_ring-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "ring-white member segno_pedal_ring-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "ring-white member segno_pedal_ring-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "ring-white member segno_pedal_ring-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "ring-white member segno_pedal_ring-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "ring-white report parity",
+      "passed": true
+    },
+    {
+      "check": "ring-white native settings",
+      "passed": true
+    },
+    {
+      "check": "ring-white DRC record",
+      "passed": true
+    },
+    {
+      "check": "ring-white prior delivery artwork unchanged",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l archive hash",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l board hash",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l delivery archive hash",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l basic order settings",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l colour and finish settings",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l exact member inventory",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l CRC",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l member screen_power_hand-B_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l member screen_power_hand-B_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l member screen_power_hand-B_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l member screen_power_hand-Edge_Cuts.gbr",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l member screen_power_hand-F_Cu.gbr",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l member screen_power_hand-F_Mask.gbr",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l member screen_power_hand-F_Silkscreen.gbr",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l member screen_power_hand-NPTH-drl_map.pdf",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l member screen_power_hand-NPTH.drl",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l member screen_power_hand-PTH-drl_map.pdf",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l member screen_power_hand-PTH.drl",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l member screen_power_hand-job.gbrjob",
+      "passed": true
+    },
+    {
+      "check": "screen-power-rev-l report parity",
+      "passed": true
+    },
+    {
+      "check": "manifest report hash docs/reviews/screen-u2-alignment-1072/console-ring-fabrication-verification.json",
+      "passed": true
+    },
+    {
+      "check": "manifest report hash docs/reviews/screen-u2-alignment-1072/screen-fabrication-verification.json",
+      "passed": true
+    },
+    {
+      "check": "delivery verification.json",
+      "passed": true
+    },
+    {
+      "check": "delivery console-ring-fabrication-verification.json",
+      "passed": true
+    },
+    {
+      "check": "delivery screen-fabrication-verification.json",
+      "passed": true
+    },
+    {
+      "check": "full screen assembly delivery inventory/bytes",
+      "passed": true
+    },
+    {
+      "check": "current screen preview F-copper.svg",
+      "passed": true
+    },
+    {
+      "check": "unchanged console preview F-copper.svg",
+      "passed": true
+    },
+    {
+      "check": "unchanged ring preview F-copper.svg",
+      "passed": true
+    },
+    {
+      "check": "current screen preview B-copper.svg",
+      "passed": true
+    },
+    {
+      "check": "unchanged console preview B-copper.svg",
+      "passed": true
+    },
+    {
+      "check": "unchanged ring preview B-copper.svg",
+      "passed": true
+    },
+    {
+      "check": "current screen preview top.png",
+      "passed": true
+    },
+    {
+      "check": "unchanged console preview top.png",
+      "passed": true
+    },
+    {
+      "check": "unchanged ring preview top.png",
+      "passed": true
+    },
+    {
+      "check": "current screen preview bottom.png",
+      "passed": true
+    },
+    {
+      "check": "unchanged console preview bottom.png",
+      "passed": true
+    },
+    {
+      "check": "unchanged ring preview bottom.png",
+      "passed": true
+    },
+    {
+      "check": "current screen preview perspective.png",
+      "passed": true
+    },
+    {
+      "check": "unchanged console preview perspective.png",
+      "passed": true
+    },
+    {
+      "check": "unchanged ring preview perspective.png",
+      "passed": true
+    },
+    {
+      "check": "alignment preview exactly matches populated alignment evidence",
+      "passed": true
+    },
+    {
+      "check": "desktop current pointer",
+      "passed": true
+    },
+    {
+      "check": "desktop pointer excludes prior folder",
+      "passed": true
+    },
+    {
+      "check": "delivery notes describe alignment",
+      "passed": true
+    },
+    {
+      "check": "earlier audit explicitly superseded for screen",
+      "passed": true
+    },
+    {
+      "check": "PROGRESS points to alignment",
+      "passed": true
+    },
+    {
+      "check": "native invariants evidence hash",
+      "passed": true
+    },
+    {
+      "check": "placed invariants evidence hash",
+      "passed": true
+    },
+    {
+      "check": "scoped circuit evidence hash",
+      "passed": true
+    },
+    {
+      "check": "ending stability .:46",
+      "passed": true
+    },
+    {
+      "check": "ending stability .:22",
+      "passed": true
+    },
+    {
+      "check": "ending stability hardware/kicad/screen_power:66",
+      "passed": true
+    },
+    {
+      "check": "ending stability hardware/kicad/screen_power/hand/fabrication:70",
+      "passed": true
+    },
+    {
+      "check": "manifest and reports stable during read-only review",
+      "passed": true
+    }
+  ],
+  "limits": [
+    "Artifact consistency and existing evidence freshness only; no new fabrication, circuit, thermal or assembled-hardware qualification."
+  ],
+  "alignment_preview_source": "docs/reviews/screen-u2-alignment-1072/alignment-populated.png",
+  "alignment_preview_sha256": "a6b8eb5fb0289daca1169a3b3880f69d02044902d9ac7d959d5a4e38ea687323"
+}

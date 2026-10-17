@@ -1,0 +1,445 @@
+{
+  "baseline_sha256": "c06e6b35438b2fc7208cdc50feeebee92e6c01a56a00dadd280f697d1e49d79b",
+  "final_sha256": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
+  "nets": {
+    "S1_DN_N": {
+      "exact_unchanged_geometry": true,
+      "segments": 37,
+      "baseline_length_mm": 26.178136397979593,
+      "length_mm": 26.178136397979593,
+      "terminal_coordinates_mm": {
+        "K101.4": [
+          30.8,
+          38.54
+        ],
+        "J102.2": [
+          56.0,
+          37.25
+        ]
+      }
+    },
+    "S1_DN_P": {
+      "exact_unchanged_geometry": true,
+      "segments": 37,
+      "baseline_length_mm": 26.1781363979796,
+      "length_mm": 26.1781363979796,
+      "terminal_coordinates_mm": {
+        "K101.5": [
+          30.8,
+          33.46
+        ],
+        "J102.3": [
+          56.0,
+          34.75
+        ]
+      }
+    },
+    "S1_UP_N": {
+      "exact_unchanged_geometry": true,
+      "segments": 36,
+      "baseline_length_mm": 23.526702576225986,
+      "length_mm": 23.526702576225986,
+      "terminal_coordinates_mm": {
+        "K101.3": [
+          28.6,
+          38.54
+        ],
+        "J101.2": [
+          7.0,
+          37.25
+        ]
+      }
+    },
+    "S1_UP_P": {
+      "exact_unchanged_geometry": true,
+      "segments": 36,
+      "baseline_length_mm": 23.52670162529889,
+      "length_mm": 23.52670162529889,
+      "terminal_coordinates_mm": {
+        "K101.6": [
+          28.6,
+          33.46
+        ],
+        "J101.3": [
+          7.0,
+          34.75
+        ]
+      }
+    },
+    "S2_DN_N": {
+      "exact_unchanged_geometry": true,
+      "segments": 37,
+      "baseline_length_mm": 26.178136397979593,
+      "length_mm": 26.178136397979593,
+      "terminal_coordinates_mm": {
+        "K201.4": [
+          30.8,
+          63.54
+        ],
+        "J202.2": [
+          56.0,
+          62.25
+        ]
+      }
+    },
+    "S2_DN_P": {
+      "exact_unchanged_geometry": true,
+      "segments": 37,
+      "baseline_length_mm": 26.1781363979796,
+      "length_mm": 26.1781363979796,
+      "terminal_coordinates_mm": {
+        "K201.5": [
+          30.8,
+          58.46
+        ],
+        "J202.3": [
+          56.0,
+          59.75
+        ]
+      }
+    },
+    "S2_UP_N": {
+      "exact_unchanged_geometry": true,
+      "segments": 36,
+      "baseline_length_mm": 23.526702576225986,
+      "length_mm": 23.526702576225986,
+      "terminal_coordinates_mm": {
+        "K201.3": [
+          28.6,
+          63.54
+        ],
+        "J201.2": [
+          7.0,
+          62.25
+        ]
+      }
+    },
+    "S2_UP_P": {
+      "exact_unchanged_geometry": true,
+      "segments": 36,
+      "baseline_length_mm": 23.52670162529889,
+      "length_mm": 23.52670162529889,
+      "terminal_coordinates_mm": {
+        "K201.6": [
+          28.6,
+          58.46
+        ],
+        "J201.3": [
+          7.0,
+          59.75
+        ]
+      }
+    }
+  },
+  "pairs": {
+    "S1_UP": {
+      "skew_mm": 9.509270952889892e-07,
+      "minimum_track_edge_gap_mm": 0.16000000000000514,
+      "baseline_minimum_track_edge_gap_mm": 0.16000000000000514,
+      "profiles": {
+        "S1_UP_P": {
+          "baseline": {
+            "coupled_mm": 17.017614180305447,
+            "uncoupled_mm": 6.509087444993446,
+            "connector_fanout_mm": 4.129421067253907,
+            "relay_fanout_mm": 2.3796663777395395,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129421067253907,
+                21.14703524755935
+              ]
+            ],
+            "sampling_step_mm": 0.009998598225796384,
+            "coupled_center_distance_min_mm": 1.010000000000005,
+            "coupled_center_distance_max_mm": 1.0190970215552662
+          },
+          "final": {
+            "coupled_mm": 17.017614180305447,
+            "uncoupled_mm": 6.509087444993446,
+            "connector_fanout_mm": 4.129421067253907,
+            "relay_fanout_mm": 2.3796663777395395,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129421067253907,
+                21.14703524755935
+              ]
+            ],
+            "sampling_step_mm": 0.009998598225796384,
+            "coupled_center_distance_min_mm": 1.010000000000005,
+            "coupled_center_distance_max_mm": 1.0190970215552662
+          }
+        },
+        "S1_UP_N": {
+          "baseline": {
+            "coupled_mm": 17.017614868141365,
+            "uncoupled_mm": 6.509087708084623,
+            "connector_fanout_mm": 4.129421234161212,
+            "relay_fanout_mm": 2.3796664739234106,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129421234161212,
+                21.147036102302575
+              ]
+            ],
+            "sampling_step_mm": 0.009998598629930296,
+            "coupled_center_distance_min_mm": 1.010000000000005,
+            "coupled_center_distance_max_mm": 1.0190965248149404
+          },
+          "final": {
+            "coupled_mm": 17.017614868141365,
+            "uncoupled_mm": 6.509087708084623,
+            "connector_fanout_mm": 4.129421234161212,
+            "relay_fanout_mm": 2.3796664739234106,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129421234161212,
+                21.147036102302575
+              ]
+            ],
+            "sampling_step_mm": 0.009998598629930296,
+            "coupled_center_distance_min_mm": 1.010000000000005,
+            "coupled_center_distance_max_mm": 1.0190965248149404
+          }
+        }
+      }
+    },
+    "S1_DN": {
+      "skew_mm": 7.105427357601002e-15,
+      "minimum_track_edge_gap_mm": 0.16000000000000514,
+      "baseline_minimum_track_edge_gap_mm": 0.16000000000000514,
+      "profiles": {
+        "S1_DN_P": {
+          "baseline": {
+            "coupled_mm": 17.188776343822358,
+            "uncoupled_mm": 8.989360054157242,
+            "connector_fanout_mm": 4.129706009306942,
+            "relay_fanout_mm": 4.8596540448503,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129706009306942,
+                21.3184823531293
+              ]
+            ],
+            "sampling_step_mm": 0.00999928815812819,
+            "coupled_center_distance_min_mm": 1.0100000000000051,
+            "coupled_center_distance_max_mm": 1.0198972878717478
+          },
+          "final": {
+            "coupled_mm": 17.188776343822358,
+            "uncoupled_mm": 8.989360054157242,
+            "connector_fanout_mm": 4.129706009306942,
+            "relay_fanout_mm": 4.8596540448503,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129706009306942,
+                21.3184823531293
+              ]
+            ],
+            "sampling_step_mm": 0.00999928815812819,
+            "coupled_center_distance_min_mm": 1.0100000000000051,
+            "coupled_center_distance_max_mm": 1.0198972878717478
+          }
+        },
+        "S1_DN_N": {
+          "baseline": {
+            "coupled_mm": 17.18877634382235,
+            "uncoupled_mm": 8.98936005415724,
+            "connector_fanout_mm": 4.129706009306941,
+            "relay_fanout_mm": 4.8596540448502985,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129706009306941,
+                21.318482353129294
+              ]
+            ],
+            "sampling_step_mm": 0.009999288158128186,
+            "coupled_center_distance_min_mm": 1.0100000000000051,
+            "coupled_center_distance_max_mm": 1.0198968646820306
+          },
+          "final": {
+            "coupled_mm": 17.18877634382235,
+            "uncoupled_mm": 8.98936005415724,
+            "connector_fanout_mm": 4.129706009306941,
+            "relay_fanout_mm": 4.8596540448502985,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129706009306941,
+                21.318482353129294
+              ]
+            ],
+            "sampling_step_mm": 0.009999288158128186,
+            "coupled_center_distance_min_mm": 1.0100000000000051,
+            "coupled_center_distance_max_mm": 1.0198968646820306
+          }
+        }
+      }
+    },
+    "S2_UP": {
+      "skew_mm": 9.509270952889892e-07,
+      "minimum_track_edge_gap_mm": 0.16000000000000514,
+      "baseline_minimum_track_edge_gap_mm": 0.16000000000000514,
+      "profiles": {
+        "S2_UP_P": {
+          "baseline": {
+            "coupled_mm": 17.017614180305447,
+            "uncoupled_mm": 6.509087444993446,
+            "connector_fanout_mm": 4.129421067253907,
+            "relay_fanout_mm": 2.3796663777395395,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129421067253907,
+                21.14703524755935
+              ]
+            ],
+            "sampling_step_mm": 0.009998598225796384,
+            "coupled_center_distance_min_mm": 1.010000000000005,
+            "coupled_center_distance_max_mm": 1.0190970215552662
+          },
+          "final": {
+            "coupled_mm": 17.017614180305447,
+            "uncoupled_mm": 6.509087444993446,
+            "connector_fanout_mm": 4.129421067253907,
+            "relay_fanout_mm": 2.3796663777395395,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129421067253907,
+                21.14703524755935
+              ]
+            ],
+            "sampling_step_mm": 0.009998598225796384,
+            "coupled_center_distance_min_mm": 1.010000000000005,
+            "coupled_center_distance_max_mm": 1.0190970215552662
+          }
+        },
+        "S2_UP_N": {
+          "baseline": {
+            "coupled_mm": 17.017614868141365,
+            "uncoupled_mm": 6.509087708084623,
+            "connector_fanout_mm": 4.129421234161212,
+            "relay_fanout_mm": 2.3796664739234106,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129421234161212,
+                21.147036102302575
+              ]
+            ],
+            "sampling_step_mm": 0.009998598629930296,
+            "coupled_center_distance_min_mm": 1.010000000000005,
+            "coupled_center_distance_max_mm": 1.0190965248149404
+          },
+          "final": {
+            "coupled_mm": 17.017614868141365,
+            "uncoupled_mm": 6.509087708084623,
+            "connector_fanout_mm": 4.129421234161212,
+            "relay_fanout_mm": 2.3796664739234106,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129421234161212,
+                21.147036102302575
+              ]
+            ],
+            "sampling_step_mm": 0.009998598629930296,
+            "coupled_center_distance_min_mm": 1.010000000000005,
+            "coupled_center_distance_max_mm": 1.0190965248149404
+          }
+        }
+      }
+    },
+    "S2_DN": {
+      "skew_mm": 7.105427357601002e-15,
+      "minimum_track_edge_gap_mm": 0.16000000000000514,
+      "baseline_minimum_track_edge_gap_mm": 0.16000000000000514,
+      "profiles": {
+        "S2_DN_P": {
+          "baseline": {
+            "coupled_mm": 17.188776343822358,
+            "uncoupled_mm": 8.989360054157242,
+            "connector_fanout_mm": 4.129706009306942,
+            "relay_fanout_mm": 4.8596540448503,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129706009306942,
+                21.3184823531293
+              ]
+            ],
+            "sampling_step_mm": 0.00999928815812819,
+            "coupled_center_distance_min_mm": 1.0100000000000051,
+            "coupled_center_distance_max_mm": 1.0198972878717478
+          },
+          "final": {
+            "coupled_mm": 17.188776343822358,
+            "uncoupled_mm": 8.989360054157242,
+            "connector_fanout_mm": 4.129706009306942,
+            "relay_fanout_mm": 4.8596540448503,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129706009306942,
+                21.3184823531293
+              ]
+            ],
+            "sampling_step_mm": 0.00999928815812819,
+            "coupled_center_distance_min_mm": 1.0100000000000051,
+            "coupled_center_distance_max_mm": 1.0198972878717478
+          }
+        },
+        "S2_DN_N": {
+          "baseline": {
+            "coupled_mm": 17.18877634382235,
+            "uncoupled_mm": 8.98936005415724,
+            "connector_fanout_mm": 4.129706009306941,
+            "relay_fanout_mm": 4.8596540448502985,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129706009306941,
+                21.318482353129294
+              ]
+            ],
+            "sampling_step_mm": 0.009999288158128186,
+            "coupled_center_distance_min_mm": 1.0100000000000051,
+            "coupled_center_distance_max_mm": 1.0198968646820306
+          },
+          "final": {
+            "coupled_mm": 17.18877634382235,
+            "uncoupled_mm": 8.98936005415724,
+            "connector_fanout_mm": 4.129706009306941,
+            "relay_fanout_mm": 4.8596540448502985,
+            "interior_uncoupled_mm": 0.0,
+            "coupled_runs": [
+              [
+                4.129706009306941,
+                21.318482353129294
+              ]
+            ],
+            "sampling_step_mm": 0.009999288158128186,
+            "coupled_center_distance_min_mm": 1.0100000000000051,
+            "coupled_center_distance_max_mm": 1.0198968646820306
+          }
+        }
+      }
+    }
+  },
+  "errors": [],
+  "all_exact_unchanged": true,
+  "ground_reference": {
+    "interval_mm": 0.1,
+    "sample_offsets": "centerline and both copper edges",
+    "samples": 6268,
+    "terminal_exclusion_mm": 1.35
+  },
+  "status": "PASS"
+}

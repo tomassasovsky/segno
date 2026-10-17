@@ -1,150 +1,29 @@
-"""SKiDL generator for the Segno pedal RING/ENCODER base board.
+"""SKiDL generator for the Segno ring/encoder carrier.
 
-Hosts an off-the-shelf **24-LED WS2812 5050 NeoPixel ring module** (O65.5 OD /
-O52.3 ID / 3.2 thick), the rotary encoder, and a **Seeed XIAO RP2350 module**
-that owns both of them locally. The link back to the console board is **three
-conductors** -- +5V, GND and one half-duplex data line.
+The selected assembly uses a 40-LED external WS2812 strip, a Same Sky
+ACZ11BR1E-20FD1-20C encoder and a Seeed XIAO RP2350 module. The 80 mm circular
+carrier is two-layer, white mask / black silk and hand soldered. It snap-mounts;
+the shaft location and M7 threaded-bushing mount are fixed by the enclosure.
+J3/J4 remain mutually exclusive alternatives for 24/16-LED purchased modules.
 
-## Why the MCU is here at all (#987)
+The XIAO drives the LED data locally through a 5 V AHCT buffer and reads the
+encoder through 10k / 10nF filters. Only its fourteen castellated side pads are
+soldered; its rear pads stay isolated. USB faces the clear east board rim.
 
-It is not about part count, it is about cable length. The console board lives at
-BOARD_U = 560 under the 16" screen; this board lives at COL_U = 119.6 on the
-sloped faceplate (`segno_enclosure.py`). That is 440 mm in u alone -- call it
-550-650 mm of harness once it climbs the face. The old design sent a 5 V WS2812
-edge and a raw EC11 quadrature pair down that run, on eight conductors, through
-a box carrying ~12 A across two switching bucks.
+For the selected strip, the near-ring AUX split separately supplies strip power
+and J1 pins 1/2. Only J1 pins 3/4 run to console J6 pins 3/4: 115200-baud
+full-duplex push-pull SerialPIO UART. The console's existing 10k pull-ups set
+idle levels, with none added here. See RING_ASSEMBLY.md and ../segno_wiring.md
+for the exact 16 AWG trunk / short 22 AWG branches and common-ground bounds.
+J2 pin 3 carries DIN; its power and DOUT pins are unused in that assembly.
 
-Now the WS2812 timing is generated 20 mm from the LEDs and the quadrature never
-leaves this PCB. What crosses the box is one 115200-baud line with a 10 k
-pull-up. The conductor count is a side effect:
-
-    8 conductors  ->  4      (+5V, GND, LINK_TO_RING, LINK_TO_CONSOLE)
-
-FULL DUPLEX, on an owner call: one wire would have carried the traffic easily
-(115200 is ~11.5 kB/s against a 72-byte pixel frame and a few bytes per detent),
-but a single wire forces a master-polled, collision-avoiding protocol on the
-firmware. A second conductor buys that discipline away for one crimp, and cost
-NOTHING in copper on the console board that existed at the time -- J6 pin 7 was
-already wired to GP14 with its 10 k pull-up, doing nothing.
-
-## The console end
-
-Console board v2 kept its fabbed 8-way J6 and this board's 4-way landed on four
-of its eight positions, mapped by `RING_PINMAP` in console_board.py and gated by
-RING_CONTRACT. That cable was asymmetric -- crimped 1:1 by position it put the
-LED rail on a Pico input -- and it was the whole hazard of the design.
-
-Console board v3 is new copper: its J6 is a 4-way and the cable is 1:1 with this
-board's J1 by position. RING_PINMAP is the identity there and RING_CONTRACT
-asserts that it is. The console's ring-data path (GP12, AHCT gate B, its series
-and pull-down parts) is gone from v3; on v2 it stays fitted and drives nothing.
-The link pins on the console are GP13 (drives this board) and GP14 (listens),
-each with the console's own 10 k pull-up to ITS 3V3 -- this board fits none.
-
-## Levels: the historical fault is now structurally impossible
-
-ring_board's old 10 k encoder pull-ups went to THIS board's 5 V rail while the
-far end of the cable had become a 3.3 V RP2350 -- 1.4 V over GP13/GP14's
-absolute maximum, continuously, and nothing caught it (see RING_LEVELS in
-console_board.py). The pull-ups then moved to the console board so they would
-track whatever MCU was really on the other end.
-
-They come back here, because the MCU is now here: 10 k to the XIAO's own
-3V3_OUT. The pull-up and the input it feeds are on the same board and the same
-rail, so they cannot disagree. RING_LEVELS survives, re-pointed from the three
-encoder pins to the one line that still crosses the cable into a Pico input.
-
-**RP2350 erratum E9** (A2 silicon) latches an input HIGH when it is configured
-with its INTERNAL PULL-DOWN enabled. Nothing here uses one: the encoder lines are
-pulled UP (R2-R4 below), both link lines are pulled up by the console's existing
-10 k, and the WS2812 line is an output. The one pull-down on the board, R5, is
-EXTERNAL and sits on that output -- the erratum's own workaround is an external
-pull-down, and an output's input buffer is never what the pin reads. Do not add
-an internal pull-down to any input here without re-reading E9.
-
-## The board grew to O80, and it SNAP-MOUNTS -- no mounting holes (owner calls)
-
-The O68 disc could not hold this. Its usable back is an annulus from r>~11 (clear
-of the encoder body) outwards, and three M3 holes sat at r=22 in the middle of
-it, so every large part had to dodge them. The XIAO ended up 0.85 mm from the
-encoder's courtyard with the encoder's own traces squeezing through that gap.
-
-- **Outline O68 -> O80.** Measured against `segno_enclosure.py` rather than
-  guessed: the binding neighbour is the 7" screen's BEZEL at r=58.6 (O117 would
-  still fit), with the row-1 pedal slots 60 mm clear the other way, so O80 keeps
-  ~18 mm of margin.
-- **No mounting holes at all.** They are gone; the board snap-mounts. That also
-  retires a constraint that was shaping the layout badly: a screw head has to
-  stay inside the ring's O52.3 bore, which confined holes to r < 22.95, and U1 --
-  which must sit east so its USB-C reaches the rim -- crosses that band from
-  r=14.6 outward. There was no legal eastern hole, so the three holes could only
-  reach an 82 degree spread and left the USB corner carried by the encoder nut
-  alone. Snap features have no such rule.
-
-Nothing in the enclosure had to change: it models no bosses for this board, and
-RING_OD/RING_ID (the faceplate window) are untouched -- the ring module and the
-encoder bush still sit exactly where they did.
-
-## The XIAO's USB-C is a keep-out
-
-Seeed's footprint puts the connector shell overhanging the module's +x end (silk
-to x=12.59, y +/-4.5). U1 therefore sits due east with that end facing the rim:
-5.4 mm of clear board in front of it and no part inside its approach.
-
-## Why the 5 V pins went from four to one
-
-Four ways (two pairs) were sized for 24 LEDs x 60 mA = 1.44 A all-white. One
-pair carries that, and the sizing is done against 1.44 A flat out rather than
-against a cap:
-
-  * J1 and the console's J6 are JST XH, ~3 A per contact. One +5V contact and
-    one GND contact at 1.44 A is 48% of rating.
-  * +5V_LED is 0.65 mm of 1 oz outer copper -- 1.75 A at a 10 degC rise by
-    IPC-2221, 21% of margin. It is routed at 0.55 and grown to 0.65 after the
-    fact; route_ring_board.sh step 5b says why, and widen_power.py does it.
-  * 96 mm of that from J1 to the Ring 24's VDD pad is 86 mohm, so 124 mV. With
-    the harness's 0.23 V over ~1.2 m of 26 AWG loop (~0.16 R) and ~30 mV of
-    contact resistance, the ring sees ~4.6 V of a 5.0 V rail. The WS2812B wants
-    3.5 V. U2 taps the rail 21 mm from J1, upstream of most of that drop, so its
-    VOH rises against the ring's 0.7 x VDD threshold: full white makes the data
-    margin better, not worse.
-  * GND is not a track at all -- the return is the pour on both layers, solid to
-    pads, 19 stitching vias.
-
-This used to read "the firmware caps ring brightness well under all-white -- the
-comet only ever lights part of the ring -- so one pair carries it with margin",
-with a trigger to add a second pair if a bench measurement of the CAPPED case
-exceeded ~0.7 A. The cap is real: console_board.ino sets LED_BRIGHTNESS = 128
-(#1064), which is 0.72 A all white and ~0.2 A for the comet. It is the wrong
-thing to size against anyway, for two reasons that hold whatever its value.
-
-It is the V2 path. console_board.ino generates the ring's WS2812 timing itself
-and calls ring.setBrightness(); on v3 the XIAO 20 mm from the LEDs does that
-instead, and firmware/ has no XIAO directory yet. The console's cap does not
-reach this board.
-
-And no cap covers the window before firmware runs. R5 below is fitted precisely
-because the ring CAN latch full white with nothing driving the buffer's input --
-power-up, the bootloader, a reflash, a crash. A console reflashed with a higher
-LED_BRIGHTNESS is the other uncapped case, and neither is exotic.
-
-So 1.44 A is the number, the trigger is gone, and nothing the capped case can do
-makes one pair insufficient when the uncapped case already fits.
-
-What does NOT fit one pair is a second ring chained off RING_DOUT, which J2, J3
-and J4 all carry a pad for. 2.88 A is past a single XH contact whatever the
-track width, and that needs VH on J1 and J6 the way J3/J24 went VH on the
-console. Chain a second ring and the connector is the change, not the copper.
-
-GND sits BETWEEN +5V and the link pair on J1 so the return is not the neighbour
-of the signal.
-
-Everything on this board is a module or through-hole. The XIAO and the ring are
-pre-assembled modules soldered down by their pads; nothing fine-pitch is
-hand-placed.
-
-Run (from hardware/kicad/):
-    python ring_board.py     # KICAD_SYMBOL_DIR may override the symbol path
+The retained J1-to-J2 power path also supports the documented module variants.
+ring_power.py checks the native rail, taps and return vias; ring_encoder.py
+checks the exact encoder's physical fit. Generator assertions below protect
+local voltage domains, diode polarity, idle data level and fixed references.
+Unplug J1 before USB programming: D1 blocks USB-to-AUX backfeed but does not
+isolate a USB host from live AUX. Runtime pin and direction contracts are in
+RING_ENCODER.md and the separately maintained firmware PR #1082.
 """
 import os
 import sys
@@ -278,13 +157,11 @@ for _p in XIAO_SPARE:
     XIAO[_p].do_erc = False
 
 # ---- D1: series Schottky into the module's VBUS -----------------------------
-# The XIAO's 5 V pad IS its USB VBUS rail. Plug USB in on the bench while the
-# harness is live and two 5 V sources fight; a series Schottky makes the harness
-# feed strictly one-way and costs ~0.35 V, leaving the module's LDO ~4.65 V --
-# far above what it needs for 3V3.
-# It sits ONLY in the module's feed. The WS2812 ring taps v5 ahead of it, because
-# a diode drop on the LED rail is what raises the WS2812's own VIH threshold and
-# it is already the tight number (see U2).
+# The XIAO's 5 V pad IS its USB VBUS rail. D1 stops USB power feeding the AUX
+# harness, but does not stop live AUX feeding the programming USB host.
+# Disconnect J1 before plugging in USB; remove USB before reconnecting J1.
+# The diode costs roughly 0.35 V in the MCU feed. The WS2812 ring taps v5
+# ahead of it, without this additional voltage drop.
 d1 = Part("Device", "D_Schottky", value="1N5819",
           footprint="Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", ref="D1")
 d1["A"] += v5
@@ -313,7 +190,7 @@ R("330", "R1")[1, 2] += ring_data_5v, ring_data
 # R16 on IND_DATA. Until the XIAO's firmware claims D0 -- power-up, its bootloader,
 # a reflash, a crash -- nothing drives this line, a CMOS input left floating drifts,
 # and the AHCT125 passes whatever it settles on to the ring as WS2812 data. The ring
-# then latches random colours, up to full white on all 24 LEDs. 100 k is weak
+# then latches random colours, up to full white on all 40 strip LEDs. 100 k is weak
 # enough that the pin drives it without noticing (33 uA) and holds the input low.
 R("100k", "R5")[1, 2] += ring_data_3v3, gnd
 
@@ -379,14 +256,12 @@ j4[4] += ring_dout   # Out (unused electrically; soldered for rigidity)
 # and the pins are modelled TRIMMED: KiCad's own PinHeader_1x01 leaves 4.54 mm of
 # bare pin standing above the ring, which nobody assembles, so
 # PinHeader_1x01_trimmed.wrl keeps the insulator at 2.54 and snips the pin 1.0 mm
-# proud. RING1 carries BOTH rings -- the Ring 24 shown on J3's circle, the Ring 16
-# hidden on J4's -- each with its own pins, so the 3D viewer switches between the
-# two builds by toggling which models are visible.
-# CLEARANCE, worth a bench check before the faceplate is cut: the EC11's M7 bush
-# runs z 5.0..11.5 above this board (measured off RotaryEncoder_EC11.step), and
-# the faceplate rides somewhere on it -- so the gap to the plate's inner face is
-# ~5.0 at worst and ~9.5 at best, against a 5.71 stack. It fits at a normal nut
-# depth and is tight at the extreme, and closer LEDs suit the diffuser anyway.
+# proud. RING1 retains both alternative module models and their pins, hidden
+# for the selected external 40-pixel strip. Toggle a module and its four pins
+# together only when inspecting that optional assembly.
+# Same Sky ACZ11BR1E-20FD1-20C: manufacturer seating-to-shaft datum 6.5 mm,
+# M7x0.75 bushing z=6.5..11.5, shaft tip z=26.5. The 5.71 mm alternative
+# module stack clears the bushing base. See RING_ENCODER.md for fit and sourcing.
 
 # bulk cap at the module power entry (24 LEDs, ~1.44 A all-white worst case; the
 # comet only ever lights part of the ring, so the real draw is far lower) -- THT
@@ -398,36 +273,34 @@ j4[4] += ring_dout   # Out (unused electrically; soldered for rigidity)
 Part("Device", "C_Polarized", value="470uF 16V low-ESR <=0.15R", ref="C1",
      footprint="Capacitor_THT:CP_Radial_D8.0mm_P3.50mm")[1, 2] += v5, gnd
 
-# ---- EC11 rotary encoder (A,B,C common, S1,S2 switch) ----------------------
+# ---- Same Sky ACZ11 rotary encoder (A,B,C common, S1,S2 switch) ------------
 # Now a purely LOCAL circuit: 20 mm of trace to U1 instead of ~600 mm of harness.
 enc = Part("Device", "RotaryEncoder_Switch",
-           footprint="segno:RotaryEncoder_EC11",   # vendored EC11 (LCSC C202365) + 3D model
-           ref="ENC1")
+           footprint="segno:RotaryEncoder_SameSky_ACZ11BR1E-20FD1-20C",
+           value="ACZ11BR1E-20FD1-20C", ref="ENC1")
 enc["A"] += encA
 enc["B"] += encB
 enc["C"] += gnd
 enc["S1"] += encSW
 enc["S2"] += gnd
 
-# 10k to the XIAO's OWN 3V3_OUT, plus 100nF: RC = 1 ms, which is the timing the
-# board has always had and which an EC11 needs. The RP2350's INTERNAL pull-ups
-# are deliberately NOT used here, unlike console_board.py's footswitches: those
-# are ~50-80k, which against 100nF is a 5-8 ms release edge. A stomp tolerates
-# that; quadrature does not -- a fast spin puts edges ~25 ms apart and 8 ms of
-# smear loses detents and direction.
+# 10k to the XIAO's OWN 3V3_OUT, plus 10nF: nominal RC = 0.1 ms. The shorter
+# release delay preserves the high-high detent when the knob is turned quickly.
+# Same Sky illustrates 10nF in its optional two-resistor filter; this local
+# one-resistor circuit uses firmware quadrature cancellation for contact bounce.
+# Exact THT capacitor and tolerance calculation: RING_ENCODER.md.
+# Runtime also enables internal pull-ups; they are in parallel with these
+# external resistors, so the effective release RC is less than 0.1 ms.
 R("10k", "R2")[1, 2] += v3v3, encA
 R("10k", "R3")[1, 2] += v3v3, encB
 R("10k", "R4")[1, 2] += v3v3, encSW
-C("100nF", "C2")[1, 2] += encA, gnd
-C("100nF", "C3")[1, 2] += encB, gnd
-C("100nF", "C4")[1, 2] += encSW, gnd
+C("10nF", "C2")[1, 2] += encA, gnd
+C("10nF", "C3")[1, 2] += encB, gnd
+C("10nF", "C4")[1, 2] += encSW, gnd
 
-# NOTE: neither link line gets a pull-up on this board. The console's existing 10k to
-# ITS 3V3 (console_board.py, the old ENC_A pull-up) is the one the open-drain
-# line needs; a second one here would halve it to 5k and, being on a different
-# board's rail, would re-create exactly the split-rail hazard RING_LEVELS exists
-# to catch. There is no series resistor either -- the two boards share one supply
-# through this cable, so there is no cross-domain window like the Pi link's.
+# The push-pull SerialPIO UART has its idle pull-ups only on the console.
+# Both controllers share AUX and the documented near-ring ground reference;
+# selected-strip supply current bypasses the console-to-ring UART harness.
 
 # ---- gates -----------------------------------------------------------------
 # This board grew an MCU, so it inherits the obligation that came with the one on
@@ -521,6 +394,14 @@ def _check():
         "not driving D0 the AHCT125's input floats and the ring latches random "
         "colours (console_board.py's R16 is the same fix on IND_DATA)")
 
+    # Preserve the encoder release bandwidth and keep filtering local to GND.
+    # This catches restoring the old 100nF parts or wiring a filter across rails.
+    for ref, signal in (("C2", "ENC_A"), ("C3", "ENC_B"), ("C4", "ENC_SW")):
+        cap = next(p for p in default_circuit.parts if p.ref == ref)
+        assert cap.value == "10nF", f"ENC_FILTER: {ref} exceeds selected release delay"
+        assert {n.name for pin in cap.pins for n in pin.nets} == {signal, "GND"}, (
+            f"ENC_FILTER: {ref} must filter {signal} to GND")
+
     # REFS runs LAST on purpose. It is the broadest assertion here, so ahead of
     # the others it fires first for every control that adds a part and masks the
     # gate that control exists to prove -- --selftest reported exactly that
@@ -578,6 +459,13 @@ def _selftest():
         r[1, 2] += v3v3, gnd
         added.append(r)
 
+    def _slow_filter():
+        next(p for p in default_circuit.parts if p.ref == "C2").value = "100nF"
+
+    def _miswired_filter():
+        cap = next(p for p in default_circuit.parts if p.ref == "C3")
+        cap[2].disconnect(); cap[2] += encA
+
     def _undo():
         for r in added:
             if isinstance(r, tuple):     # a disconnected design part: put it back
@@ -592,6 +480,9 @@ def _selftest():
             d["A"] += v5; d["K"] += v5_mcu
         if XIAO[5].nets:
             XIAO[5].disconnect()
+        next(p for p in default_circuit.parts if p.ref == "C2").value = "10nF"
+        cap = next(p for p in default_circuit.parts if p.ref == "C3")
+        cap[2].disconnect(); cap[2] += gnd
 
     cases = [
         ("ring board pulls a XIAO logic pad to 5 V", "XIAO_LEVELS:", _pullup_5v),
@@ -600,6 +491,8 @@ def _selftest():
         ("an ERC-exempt pad quietly wired",          "XIAO_PADS:",   _exempt_live_pad),
         ("the LED buffer input left floating",       "RING_DATA_IDLE:", _no_idle_pulldown),
         ("a part declared without a pinned ref",      "REFS:",        _unpinned_part),
+        ("old 100nF encoder filter restored",          "ENC_FILTER:",  _slow_filter),
+        ("encoder filter tied to the other phase",    "ENC_FILTER:",  _miswired_filter),
     ]
     ok = True
     for name, want, mutate in cases:

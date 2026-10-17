@@ -1,0 +1,94 @@
+{
+  "board_sha256": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
+  "pad_net_and_value_contracts_identical": true,
+  "placements_and_references_exact": true,
+  "all_other_positions_pad_centers_references_unchanged": true,
+  "source_unchanged": {
+    "switch_circuit.py": true,
+    "circuit.py": true,
+    "route_critical.py": true,
+    "pcb.py": true
+  },
+  "track_only_paths_before": {
+    "U1.2->C3.1": {
+      "net": "PUMP_CAP_PLUS",
+      "front_track_path_mm": 4.783708617895747
+    },
+    "U1.4->C3.2": {
+      "net": "PUMP_CAP_MINUS",
+      "front_track_path_mm": 4.783707959860282
+    },
+    "U1.5->C4.2": {
+      "net": "NEG_5V",
+      "front_track_path_mm": 3.380000000000001
+    },
+    "C5.1->U1.8": {
+      "net": "AUX_5V",
+      "front_track_path_mm": 3.3885610664957375
+    },
+    "U1.5->U2.3": {
+      "net": "NEG_5V",
+      "front_track_path_mm": 8.102509824835076
+    },
+    "U2.4->R3.1": {
+      "net": "GATE_SINK",
+      "front_track_path_mm": 11.310903349606528
+    },
+    "U2.1->R10.1": {
+      "net": "GATE_LED",
+      "front_track_path_mm": 3.6926794381483563
+    },
+    "U2.2->R10.2": {
+      "net": "CONTROL_SINK",
+      "front_track_path_mm": 7.023878506656233
+    }
+  },
+  "track_only_paths_after": {
+    "U1.2->C3.1": {
+      "net": "PUMP_CAP_PLUS",
+      "front_track_path_mm": 4.533708617895747
+    },
+    "U1.4->C3.2": {
+      "net": "PUMP_CAP_MINUS",
+      "front_track_path_mm": 4.533707959860282
+    },
+    "U1.5->C4.2": {
+      "net": "NEG_5V",
+      "front_track_path_mm": 3.630000000000001
+    },
+    "C5.1->U1.8": {
+      "net": "AUX_5V",
+      "front_track_path_mm": 3.6385610664957375
+    },
+    "U1.5->U2.3": {
+      "net": "NEG_5V",
+      "front_track_path_mm": 7.688296262461981
+    },
+    "U2.4->R3.1": {
+      "net": "GATE_SINK",
+      "front_track_path_mm": 10.56090334960653
+    },
+    "U2.1->R10.1": {
+      "net": "GATE_LED",
+      "front_track_path_mm": 4.442679438148357
+    },
+    "U2.2->R10.2": {
+      "net": "CONTROL_SINK",
+      "front_track_path_mm": 7.334538678436055
+    }
+  },
+  "no_connect_pads": {
+    "1": {
+      "net": "",
+      "connected_tracks": 0
+    },
+    "6": {
+      "net": "",
+      "connected_tracks": 0
+    },
+    "7": {
+      "net": "",
+      "connected_tracks": 0
+    }
+  }
+}
