@@ -5,6 +5,7 @@ import 'package:pedal_repository/src/pedal_color.dart';
 import 'package:pedal_repository/src/pedal_ctrl.dart';
 import 'package:pedal_repository/src/pedal_link_message.dart';
 import 'package:pedal_repository/src/pedal_mode.dart';
+import 'package:pedal_repository/src/pedal_power.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
 /// The pedal link wire format, shared byte for byte with the console board
@@ -50,6 +51,8 @@ abstract final class PedalLinkCodec {
   /// The link protocol this codec speaks, reported by the board in
   /// [HelloMessage.protocolVersion].
   ///
+  /// 12: PD_STATUS (`0x06`) — the USB-C contract and whether the PD
+  /// trigger holds the console profile (#1352).
   /// 11: STATE flags bit 4 is `dimmed`: the console idled and the screens
   /// dimmed, so the board dims its LEDs too (#1349); the layout is
   /// otherwise unchanged.
@@ -69,7 +72,7 @@ abstract final class PedalLinkCodec {
   /// when the ring stopped tracking the loop. The board is flashed over SWD
   /// independently of the app, so the two can drift; this is what makes
   /// that visible rather than silent.
-  static const protocolVersion = 11;
+  static const protocolVersion = 12;
 
   /// Message types, board → segno.
   static const typeButton = 0x01;
@@ -86,6 +89,13 @@ abstract final class PedalLinkCodec {
 
   /// See [typeButton]. `[pressed]` — the encoder's push switch.
   static const typeEncoderButton = 0x05;
+
+  /// See [typeButton]. `[profile, mismatch, mV LE16, mA LE16, max mA LE16]`
+  /// — the PD contract, once a second after the hello.
+  static const typePdStatus = 0x06;
+
+  /// The number of payload bytes in a [PdStatusMessage].
+  static const pdStatusPayloadLength = 8;
 
   /// The one message type segno → board.
   static const typeState = 0x10;
@@ -115,6 +125,7 @@ abstract final class PedalLinkCodec {
     typeHello => helloPayloadLength,
     typeCtrl => 4,
     typeEncoderButton => 1,
+    typePdStatus => pdStatusPayloadLength,
     typeState => statePayloadLength,
     _ => null,
   };
@@ -141,6 +152,16 @@ abstract final class PedalLinkCodec {
         typeCtrl,
         <int>[jack.index, contact.index, kind.index, value],
       ),
+      PdStatusMessage(:final supply) => (
+        typePdStatus,
+        <int>[
+          supply.profile.index,
+          if (supply.mismatch) 1 else 0,
+          ..._le16(supply.millivolts),
+          ..._le16(supply.milliamps),
+          ..._le16(supply.maxMilliamps),
+        ],
+      ),
       StateMessage(:final frame) => (typeState, encodeStatePayload(frame)),
     };
     final out = Uint8List(4 + payload.length);
@@ -151,6 +172,8 @@ abstract final class PedalLinkCodec {
     out[3 + payload.length] = checksum(type, payload);
     return out;
   }
+
+  static List<int> _le16(int value) => [value & 0xFF, value >> 8 & 0xFF];
 
   /// The XOR of [type], the payload length and every byte of [payload].
   static int checksum(int type, List<int> payload) {
@@ -201,6 +224,18 @@ abstract final class PedalLinkCodec {
           contact: contact,
           kind: kind,
           value: payload[3],
+        );
+      case typePdStatus:
+        final profile = PedalPowerProfile.values.elementAtOrNull(payload[0]);
+        if (profile == null || payload[1] > 1) return null;
+        return PdStatusMessage(
+          PedalPowerSupply(
+            profile: profile,
+            mismatch: payload[1] == 1,
+            millivolts: payload[2] | payload[3] << 8,
+            milliamps: payload[4] | payload[5] << 8,
+            maxMilliamps: payload[6] | payload[7] << 8,
+          ),
         );
       case typeState:
         final frame = decodeStatePayload(payload);

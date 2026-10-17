@@ -75,7 +75,7 @@ void main() {
       pedalColors: colors,
       activeButtonMask: 0x201,
     );
-    expect(PedalLinkCodec.protocolVersion, 11);
+    expect(PedalLinkCodec.protocolVersion, 12);
     expect(PedalLinkCodec.encodeStatePayload(frame), payload);
     expect(PedalLinkCodec.decodeStatePayload(payload), frame);
     expect(frame.isLit(PedalButton.recPlay), isTrue);
