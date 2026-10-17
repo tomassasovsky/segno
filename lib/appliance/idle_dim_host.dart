@@ -14,7 +14,7 @@ import 'package:segno/performance/performance.dart';
 /// Whether the music keeps both panels awake: the transport or a track
 /// playing, a track recording, or a performance recording running.
 bool idleKeepsAwake(LooperState looper, PerformanceRecorderState performance) =>
-    looper.transport.isRunning ||
+    looper.transport.deviceRunning ||
     looper.tracks.any(
       (track) => track.state == TrackState.playing || track.isCapturing,
     ) ||
