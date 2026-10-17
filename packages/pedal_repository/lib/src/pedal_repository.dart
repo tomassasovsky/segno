@@ -126,12 +126,27 @@ class PedalRepository {
   /// Sends [frame] to the board unless it is the frame already showing, and
   /// remembers it as the frame every later hello is answered with. Recorded
   /// but not sent until the board is [PedalLinkStatus.connected]; dropped
-  /// after [goodbye].
+  /// after [goodbye]. Every frame carries the current [setDimmed] state.
   void pushState(PedalStateFrame frame) {
-    if (_disposed || _goodbye || frame == _lastFrame) return;
-    _lastFrame = frame;
-    _frames.add(frame);
-    if (_connected) _link.send(StateMessage(frame));
+    final stamped = frame.dimmed == _dimmed
+        ? frame
+        : frame.copyWith(dimmed: _dimmed);
+    if (_disposed || _goodbye || stamped == _lastFrame) return;
+    _lastFrame = stamped;
+    _frames.add(stamped);
+    if (_connected) _link.send(StateMessage(stamped));
+  }
+
+  bool _dimmed = false;
+
+  /// Whether the console sat idle and the app dimmed the screens. The board
+  /// dims its LEDs with them (#1349): the current frame is sent again with
+  /// the flag, and every later frame carries it.
+  void setDimmed({required bool dimmed}) {
+    if (dimmed == _dimmed) return;
+    _dimmed = dimmed;
+    final last = _lastFrame;
+    if (last != null) pushState(last);
   }
 
   /// Darkens the console for a shutdown and holds the mark: from here on

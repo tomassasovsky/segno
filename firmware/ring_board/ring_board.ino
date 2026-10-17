@@ -24,7 +24,7 @@ struct Rgb { uint8_t r, g, b; };
 // image (seal.py reads these two lines). Bump it with every change: the Pi
 // updates the ring when the version differs from the image it ships.
 static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 0;
+static const uint8_t FW_MINOR = 1;  // 1.1: dims with the screens (#1349)
 
 // Seeed variant pin aliases, matching ring_board.py's D-number pads.
 static const uint8_t PIN_RING = D0, PIN_ENC_A = D1, PIN_ENC_B = D2, PIN_ENC_SW = D3;
@@ -164,8 +164,14 @@ static uint32_t ambientRingColor(uint32_t c) {
 }
 
 // Every push shares one full-white current ceiling. Normal patterns fit
-// without dimming; a larger frame is scaled uniformly, keeping its hue.
+// without dimming; a larger frame is scaled uniformly, keeping its hue. While
+// the console is idle and the screens are dimmed, the output drops to about
+// 20 % (#1349), at once even on a still frame.
+static bool g_shownDim = false;
+static bool dimmedNow() { return g_haveState && (g_state.flags & ring_link::FLAG_DIMMED); }
 static void showRing() {
+  const bool dim = dimmedNow();
+  g_shownDim = dim;
   uint32_t total = 0;
   for (uint16_t i = 0; i < RING_N; ++i) {
     const uint32_t c = g_pixels[i];
@@ -178,6 +184,10 @@ static void showRing() {
                                    ((c >> 8) & 255) * RING_CHANNEL_BUDGET / total,
                                    (c & 255) * RING_CHANNEL_BUDGET / total);
     }
+    if (dim)
+      c = Adafruit_NeoPixel::Color(ring_link::dimChannel((c >> 16) & 255),
+                                   ring_link::dimChannel((c >> 8) & 255),
+                                   ring_link::dimChannel(c & 255));
     ring.setPixelColor(i, c);
   }
   ring.show();
@@ -333,6 +343,6 @@ void loop() {
     const bool changed = renderRing();
     const bool refresh = (uint32_t)(now - g_lastRefreshMs) >= 250;
     if (refresh) g_lastRefreshMs = now;
-    if (changed || refresh) showRing();
+    if (changed || refresh || dimmedNow() != g_shownDim) showRing();
   }
 }

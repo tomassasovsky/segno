@@ -116,6 +116,7 @@ class PedalStateFrame extends Equatable {
     this.masterGain = 1,
     this.looperMode = PedalLooperMode.multi,
     this.countingIn = false,
+    this.dimmed = false,
     List<PedalColor> pedalColors = defaultPedalColors,
     this.activeButtonMask = 0,
     this.queuedButton,
@@ -237,6 +238,11 @@ class PedalStateFrame extends Equatable {
   /// (A2/D9). On the wire; the console board does not render it.
   final bool countingIn;
 
+  /// Whether the console sat idle and the app dimmed the screens: the board
+  /// dims its LEDs with them (#1349). Set by `PedalRepository.setDimmed`, not
+  /// by the control projection.
+  final bool dimmed;
+
   /// Saved hues in [PedalButton] order, detached from the caller.
   final List<PedalColor> pedalColors;
 
@@ -277,6 +283,7 @@ class PedalStateFrame extends Equatable {
     double? masterGain,
     PedalLooperMode? looperMode,
     bool? countingIn,
+    bool? dimmed,
     List<PedalColor>? pedalColors,
     int? activeButtonMask,
     PedalButton? queuedButton,
@@ -295,6 +302,7 @@ class PedalStateFrame extends Equatable {
       masterGain: masterGain ?? this.masterGain,
       looperMode: looperMode ?? this.looperMode,
       countingIn: countingIn ?? this.countingIn,
+      dimmed: dimmed ?? this.dimmed,
       pedalColors: pedalColors ?? this.pedalColors,
       activeButtonMask: activeButtonMask ?? this.activeButtonMask,
       queuedButton: queuedButton ?? this.queuedButton,
@@ -316,6 +324,7 @@ class PedalStateFrame extends Equatable {
     masterGain,
     looperMode,
     countingIn,
+    dimmed,
     pedalColors,
     activeButtonMask,
     queuedButton,
@@ -331,5 +340,6 @@ class PedalStateFrame extends Equatable {
       'clearFade: $clearFadeActive, goodbye: $isGoodbye, '
       'performanceArmed: $performanceArmed, masterGain: $masterGain, '
       'looperMode: ${looperMode.name}, countingIn: $countingIn, '
+      'dimmed: $dimmed, '
       'queued: ${queuedButton?.name}@$queuedProgress)';
 }

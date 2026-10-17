@@ -157,6 +157,13 @@ final goldenMessages = <String, PedalLinkMessage>{
       countingIn: true,
     ),
   ),
+  'dimmed': StateMessage(
+    PedalStateFrame.blank().copyWith(
+      globalColor: GlobalColor.green,
+      activeButtonMask: 1,
+      dimmed: true,
+    ),
+  ),
   'fx_mode': StateMessage(
     PedalStateFrame(
       globalColor: GlobalColor.green,

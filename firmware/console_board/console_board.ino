@@ -40,9 +40,10 @@
 struct Rgb { uint8_t r, g, b; };
 
 // Major 2: the v3 board (ring on its own XIAO). Same pedal-link protocol.
-// 2.1: the ring-update bridge.
+// 2.1: the ring-update bridge. 2.2: pills and ring dim with the screens
+// (protocol 11, #1349).
 static const uint8_t FW_MAJOR = 2;
-static const uint8_t FW_MINOR = 1;
+static const uint8_t FW_MINOR = 2;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
@@ -205,6 +206,7 @@ static ring_link::RingState ringStateFromFrame() {
   if ((activity.r || activity.g || activity.b) && g_frame.global_color != PEDAL_GLOBAL_BLUE)
     state.flags |= ring_link::FLAG_ACTIVE;
   if (g_frame.loop_length_micros > 0) state.flags |= ring_link::FLAG_LOADED;
+  if (g_frame.dimmed) state.flags |= ring_link::FLAG_DIMMED;
   return state;
 }
 
@@ -650,6 +652,13 @@ static bool renderIndicators() {
       value.R = (uint32_t)value.R * PILL_CHANNEL_BUDGET / channelTotal;
       value.G = (uint32_t)value.G * PILL_CHANNEL_BUDGET / channelTotal;
       value.B = (uint32_t)value.B * PILL_CHANNEL_BUDGET / channelTotal;
+    }
+    // Idle: the pills dim with the screens (#1349), after the budget so a
+    // crowded frame dims by the same share as a sparse one.
+    if (g_haveFrame && g_frame.dimmed) {
+      value.R = ring_link::dimChannel(value.R);
+      value.G = ring_link::dimChannel(value.G);
+      value.B = ring_link::dimChannel(value.B);
     }
     if (ind.GetPixelColor(pixel) != value) {
       ind.SetPixelColor(pixel, value);
