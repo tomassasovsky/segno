@@ -18,14 +18,14 @@ runs the encoder and the ring. segno runs the behavior machine.
 | CTRL1 / CTRL2 ring | GP20 / GP21 | Each jack's ring through 4.7 kΩ (R19/R20). The B switch of a two-switch pedal (a BOSS FS-6's A&B jack) reports as `CTRL n · footswitch B`; its first press on a jack the board has not yet seen a switch on is held 200 ms, so a plug brushing the contact cannot fake it |
 | CTRL1 / CTRL2 present | GP19 / GP22 | The Neutrik NJ6FD-V's ring-normal contact through 4.7 kΩ (R21/R22): high only while the jack is empty, **present = low** against the internal pull-down. Read through `console_presence.h`, which keeps the pad's input buffer off between samples (RP2350-E9). An empty jack reports CTRL kind `NONE` and is classified afresh on the next plug |
 | SMPS mode | GP23 | Driven high: PWM mode, less ADC ripple |
-| PD trigger I2C | GP0 / GP1 | J23: I2C0 to the STUSB4500 on the SparkFun PD board. **Not read by this firmware**: protocol 10 has no message for the contract, so reporting it needs a protocol change with its app |
+| PD trigger I2C | GP0 / GP1 | J23: I2C0 to the STUSB4500 on the SparkFun PD board. **Not read by this firmware**: the pedal link has no message for the contract, so reporting it needs a protocol change with its app |
 
 ## The ring carrier
 
 The encoder and its 35-pixel LED ring are on the ring carrier, run by its own
 XIAO. Over the ring link the Pico sends a five-byte ring state derived from each
 app frame — the activity colour, the master level, and whether the app is live,
-the transport active and a loop loaded — at once on every frame and every
+the transport active, a loop loaded and the LEDs dimmed — at once on every frame and every
 100 ms otherwise. The XIAO sends cumulative encoder and button counters every
 20 ms; the Pico turns them into one `ENCODER` frame per click and one
 `ENCODER_BUTTON` frame per edge, exactly what the v2 board sent from its own
@@ -44,6 +44,15 @@ leaves the bridge on the Pi's `BRIDGE_END` update frame, which it spots in the
 Pi's stream (the ring ignores it), or after 5 s without a byte from the Pi,
 and carries on as before. The update itself is the ring's; see
 [its README](../ring_board/README.md#updates-over-the-console).
+
+### Dimming with the screens (firmware 2.2)
+
+When the console idles and the app dims the screens, the app sets STATE flags
+bit 4 (`dimmed`, pedal-link protocol 11, #1349) until the next touch, key,
+footswitch or playback wakes them. The board then shows the pills at about
+20 % (`ring_link::DIM_LEVEL`, 51/255, applied after the channel budget) and
+sets the ring state's DIMMED flag, so ring firmware 1.1 and later dim the ring
+by the same share.
 
 ## Physical rendering and source boundary
 
@@ -167,7 +176,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0a 02 01 09 (HELLO, protocol 10, fw 2.1), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 0b 02 02 0b (HELLO, protocol 11, fw 2.2), once a second
 ```
 
 ## Bring-up record
