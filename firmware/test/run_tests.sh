@@ -17,14 +17,25 @@ trap 'rm -rf "$OUT"' EXIT
 "$OUT/pedal_link" "$ROOT/packages/pedal_repository/test/fixtures"
 "$CC" -std=c99 -Wall -Wextra -Werror -O1 -c \
   "$ROOT/firmware/console_board/pedal_link.c" -o "$OUT/pedal_link.o"
+RING_INC=(-I "$ROOT/firmware/test/stubs" -I "$ROOT/firmware/libraries/SegnoRing/src")
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
-  -I "$ROOT/firmware/test/stubs" \
+  "${RING_INC[@]}" \
   "$ROOT/firmware/test/test_console_ctrl.cpp" "$OUT/pedal_link.o" \
   -o "$OUT/console_ctrl"
 "$OUT/console_ctrl"
 
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
-  -I "$ROOT/firmware/test/stubs" \
+  "${RING_INC[@]}" \
   "$ROOT/firmware/test/test_console_pill.cpp" "$OUT/pedal_link.o" \
   -o "$OUT/console_pill"
 "$OUT/console_pill"
+
+"$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
+  "${RING_INC[@]}" -I "$ROOT/firmware/ring_board" \
+  "$ROOT/firmware/test/test_ring_board.cpp" -o "$OUT/ring_board"
+"$OUT/ring_board"
+
+"$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
+  "${RING_INC[@]}" \
+  "$ROOT/firmware/test/test_ring_link.cpp" -o "$OUT/ring_link"
+"$OUT/ring_link"
