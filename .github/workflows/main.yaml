@@ -574,6 +574,8 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_log_persist_tests.sh
       - name: Run kernel cmdline tests
         run: bash deploy/yocto/test/run_kernel_cmdline_tests.sh
+      - name: Run screen power lifecycle tests
+        run: python3 deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/test_screen_power.py
       # Twice on purpose: the appliance's /bin/sh is busybox ash, so the
       # scripts must hold under a strict POSIX shell (dash) as well as bash.
       - name: Run reconcile-staged tests (bash)

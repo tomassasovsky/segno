@@ -28,6 +28,9 @@ SEGNO_UPDATE_CHANNEL ?= "production"
 require recipes-graphics/flutter-engine/flutter-engine-version.inc
 
 SRC_URI = "file://segno.service \
+           file://segno-screen-power \
+           file://segno-screen-power.service \
+           file://30-segno-screen-power.conf \
            file://segno-kiosk-launch \
            file://homescreen.toml \
            file://segno-runtime.conf \
@@ -116,7 +119,7 @@ RDEPENDS:${PN} = "mesa alsa-lib libstdc++ \
                   ddcutil \
                   iw \
                   util-linux-mount util-linux-umount util-linux-blkid util-linux-flock \
-                  coreutils \
+                  coreutils python3-core python3-io python3-gpiod \
                   ivi-homescreen flutter-engine-prebuilt"
 
 inherit systemd
@@ -130,6 +133,9 @@ SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.servi
 
 FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${sysconfdir}/segno/homescreen.toml \
+                ${bindir}/segno-screen-power \
+                ${systemd_system_unitdir}/segno-screen-power.service \
+                ${systemd_system_unitdir}/segno.service.d/30-segno-screen-power.conf \
                 ${bindir}/segno-data-grow \
                 ${bindir}/segno-ota-check \
                 ${bindir}/segno-update-ctl \
@@ -208,6 +214,11 @@ do_install() {
     install -m 0755 ${UNPACKDIR}/segno-kiosk-launch ${D}${bindir}/segno-kiosk-launch
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/segno.service ${D}${systemd_system_unitdir}/segno.service
+
+    install -m 0755 ${UNPACKDIR}/segno-screen-power ${D}${bindir}/segno-screen-power
+    install -m 0644 ${UNPACKDIR}/segno-screen-power.service ${D}${systemd_system_unitdir}/segno-screen-power.service
+    install -d ${D}${systemd_system_unitdir}/segno.service.d
+    install -m 0644 ${UNPACKDIR}/30-segno-screen-power.conf ${D}${systemd_system_unitdir}/segno.service.d/30-segno-screen-power.conf
 
     # rtirq: oneshot that raises the USB (xhci) sound-card IRQ thread to SCHED_FIFO
     # (above the app's audio thread) so the interrupt delivering a period preempts
