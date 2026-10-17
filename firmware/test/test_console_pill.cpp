@@ -260,6 +260,15 @@ int main() {
   const auto pushes = ind.showCount;
   at(now += 260);
   assert(ind.shown == sparse && ind.showCount > pushes);
+  // Idle (#1349): the pills and the ring dim to ~20 % with the screens, and
+  // come back on the next undimmed frame.
+  state.dimmed = 1;
+  receive(state, now += 20);
+  assert(ind.shown[59] == ((uint32_t)ring_link::dimChannel(191) << 16));
+  assert(lastRingState().flags & ring_link::FLAG_DIMMED);
+  state.dimmed = 0;
+  receive(state, now += 20);
+  assert(ind.shown == sparse && !(lastRingState().flags & ring_link::FLAG_DIMMED));
   state.active_button_mask = 0x3ff;
   state.goodbye = 1;
   receive(state, now += 20);
@@ -274,5 +283,5 @@ int main() {
   for (unsigned group = 0; group < 10; ++group) assert(ind.shown[group*8+3]);
   songQueueFill();
   ringStateForwarding();
-  puts("Console v3 ten pills, Song queue fill and ring state: all physical groups, host activity, limits and lifecycle pass");
+  puts("Console v3 ten pills, Song queue fill and ring state: all physical groups, host activity, limits, dimming and lifecycle pass");
 }

@@ -154,6 +154,15 @@ static void lifecycle() {
   const unsigned lit = (128 * RING_N + 254) / 255;
   for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (96U << 8) : 0));
 
+  // Idle: the still arc drops to ~20 % within one 250 ms refresh, and comes back.
+  const auto dimmedArc = live({0, 0, 0}, 128, ring_link::FLAG_LOADED | ring_link::FLAG_DIMMED);
+  hold(dimmedArc, now, 300);
+  const uint32_t dimGreen = ring_link::dimChannel(96);
+  assert(dimGreen == 19);
+  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (dimGreen << 8) : 0));
+  hold(live({0, 0, 0}, 128, ring_link::FLAG_LOADED), now, 300);
+  for (unsigned i = 0; i < RING_N; ++i) assert(shown(i) == (i < lit ? (96U << 8) : 0));
+
   // Not live, a corrupt frame, or silence for 500 ms: dark.
   ring_link::RingState goodbye;
   send(goodbye, now += 1000);
@@ -234,5 +243,5 @@ int main() {
   cometOutput();
   lifecycle();
   inputSnapshots();
-  std::puts("Ring carrier: 35-pixel comet, breathe, gain arc, limit, lifecycle and input snapshots: ALL PASSED");
+  std::puts("Ring carrier: 35-pixel comet, breathe, gain arc, limit, dimming, lifecycle and input snapshots: ALL PASSED");
 }

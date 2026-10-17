@@ -211,7 +211,7 @@ void main() {
 
       test('a reserved flag bit', () {
         expect(
-          PedalLinkCodec.decodeStatePayload([0x10, ...good.skip(1)]),
+          PedalLinkCodec.decodeStatePayload([0x20, ...good.skip(1)]),
           isNull,
         );
       });

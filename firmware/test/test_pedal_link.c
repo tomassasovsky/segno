@@ -245,6 +245,10 @@ static void check_fixture(const char *dir, const char *name) {
     CHECK(st.looper_mode == PEDAL_LOOPER_SONG && st.queued_button == 0 &&
               st.queued_progress == 0,
           "song_queue_none: fields differ");
+  } else if (strcmp(name, "dimmed.bin") == 0) {
+    CHECK(st.dimmed == 1 && st.global_color == PEDAL_GLOBAL_GREEN && st.active_button_mask == 1 &&
+              !st.counting_in && !st.goodbye,
+          "dimmed: fields differ");
   } else if (strcmp(name, "mode_counting_in.bin") == 0) {
     CHECK(st.counting_in == 1 && st.looper_mode == PEDAL_LOOPER_BAND && st.global_color == PEDAL_GLOBAL_RED,
           "mode_counting_in: fields differ");
@@ -313,7 +317,7 @@ static void check_rejections(void) {
   uint8_t *pl = sf + 3;
   pedal_state out;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 1, "blank state rejected");
-  pl[0] = 0x10;
+  pl[0] = 0x20;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 0, "reserved flag accepted");
   pl[0] = 0;
   pl[1] = PEDAL_MODE_CUSTOM;
@@ -347,7 +351,7 @@ static void check_physical_state(void) {
     0,128,255,165,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,
     18,19,20,21,22,23,254,253,252,1,2,10,200};
   pedal_state state;
-  CHECK(PEDAL_LINK_PROTOCOL_VERSION == 10 && PEDAL_LINK_STATE_LEN == 53,
+  CHECK(PEDAL_LINK_PROTOCOL_VERSION == 11 && PEDAL_LINK_STATE_LEN == 53,
         "wire reservation changed");
   CHECK(pedal_link_decode_state(p,53,&state),"literal RGB state refused");
   CHECK(state.active_button_mask == 0x201 && state.pedal_colors[0].g == 128 &&

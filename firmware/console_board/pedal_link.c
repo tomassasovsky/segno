@@ -59,7 +59,8 @@ size_t pedal_link_encode_state(const pedal_state *s, uint8_t *out) {
       (!s->queued_button && s->queued_progress)) return 0;
   uint8_t p[PEDAL_LINK_STATE_LEN];
   p[0] = (uint8_t)((s->clear_fade ? 0x01u : 0u) | (s->goodbye ? 0x02u : 0u) |
-                   (s->performance_armed ? 0x04u : 0u) | (s->counting_in ? 0x08u : 0u));
+                   (s->performance_armed ? 0x04u : 0u) | (s->counting_in ? 0x08u : 0u) |
+                   (s->dimmed ? 0x10u : 0u));
   p[1] = s->mode;
   p[2] = s->looper_mode;
   p[3] = s->global_color;
@@ -85,7 +86,7 @@ size_t pedal_link_encode_state(const pedal_state *s, uint8_t *out) {
 
 int pedal_link_decode_state(const uint8_t *p, uint8_t len, pedal_state *out) {
   if (len != PEDAL_LINK_STATE_LEN) return 0;
-  if (p[0] & ~0x0Fu) return 0;
+  if (p[0] & ~0x1Fu) return 0;
   if (p[50] & ~0x03u) return 0;
   if (p[1] >= PEDAL_MODE_COUNT) return 0;
   if (p[2] >= PEDAL_LOOPER_COUNT) return 0;
@@ -100,6 +101,7 @@ int pedal_link_decode_state(const uint8_t *p, uint8_t len, pedal_state *out) {
   out->goodbye = (p[0] & 0x02u) ? 1 : 0;
   out->performance_armed = (p[0] & 0x04u) ? 1 : 0;
   out->counting_in = (p[0] & 0x08u) ? 1 : 0;
+  out->dimmed = (p[0] & 0x10u) ? 1 : 0;
   out->mode = p[1];
   out->looper_mode = p[2];
   out->global_color = p[3];

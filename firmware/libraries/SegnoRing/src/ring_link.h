@@ -30,7 +30,12 @@ constexpr uint32_t SNAPSHOT_MS = 20, STATE_MS = 100, TIMEOUT_MS = 500;
 // STATE flags. LIVE: the app is connected and has not said goodbye; without it
 // the ring goes dark. ACTIVE: the transport is doing something worth a comet.
 // LOADED: a loop exists, so a stopped transport freezes the comet in place.
-constexpr uint8_t FLAG_LIVE = 1, FLAG_ACTIVE = 2, FLAG_LOADED = 4;
+// DIMMED: the console idled and the screens dimmed; the ring dims with them
+// (#1349). A ring firmware that predates it ignores the bit.
+constexpr uint8_t FLAG_LIVE = 1, FLAG_ACTIVE = 2, FLAG_LOADED = 4, FLAG_DIMMED = 8;
+// The share of normal output the console's LEDs keep while dimmed: ~20 %.
+constexpr uint8_t DIM_LEVEL = 51;
+inline uint8_t dimChannel(uint8_t value) { return (uint8_t)((value * DIM_LEVEL + 127) / 255); }
 
 struct RingState {
   uint8_t r = 0, g = 0, b = 0;  // the activity colour, black when none

@@ -20,7 +20,8 @@ bool idleKeepsAwake(LooperState looper, PerformanceRecorderState performance) =>
     ) ||
     performance is PerformanceRecorderArmed;
 
-/// Feeds the [IdleDimCubit] and carries its dim to the panels.
+/// Feeds the [IdleDimCubit] and carries its dim to the panels and the
+/// console's LEDs.
 ///
 /// Activity comes from every way a player acts on the console: touch and
 /// keys (here), the encoder and the pedals (the console board's events) and
@@ -86,9 +87,11 @@ class _IdleDimHostState extends State<IdleDimHost> {
       ),
       BlocListener<IdleDimCubit, IdleDimState>(
         listenWhen: (previous, current) => previous.dimmed != current.dimmed,
-        listener: (context, idle) => context
-            .read<DisplayBrightnessCubit>()
-            .setDimmed(dimmed: idle.dimmed),
+        listener: (context, idle) {
+          context.read<DisplayBrightnessCubit>().setDimmed(dimmed: idle.dimmed);
+          // The console's ring and pills dim with the screens (#1349).
+          context.read<PedalRepository>().setDimmed(dimmed: idle.dimmed);
+        },
       ),
     ],
     child: IdleDimBarrier(child: widget.child),

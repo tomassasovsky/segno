@@ -28,7 +28,9 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 10: STATE53 -- the Song queue (#1077): which footswitch's pill fills, and
+/* 11: STATE flags bit 4 is dimmed -- the console idled and the app dimmed the
+ * screens, so the board dims its LEDs too (#1349).
+ * 10: STATE53 -- the Song queue (#1077): which footswitch's pill fills, and
  * how far, while a section waits for the playing one's next lap edge.
  * 9: ENCODER_BUTTON (0x05) -- the encoder's push switch, press and release.
  * 8: ten RGB hues and a ten-bit physical activity mask (STATE51).
@@ -42,7 +44,7 @@ extern "C" {
  * stopped tracking the loop. The board is flashed over SWD independently of
  * the app, so the two can drift; this is what makes that visible instead of
  * silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 10u
+#define PEDAL_LINK_PROTOCOL_VERSION 11u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -154,7 +156,7 @@ enum { PEDAL_LED_OFF = 0, PEDAL_LED_GREEN, PEDAL_LED_RED, PEDAL_LED_BLUE, PEDAL_
 
 /* The decoded STATE payload. Byte layout (see PedalLinkCodec):
  *   0      flags: bit0 clear_fade, bit1 goodbye, bit2 performance_armed,
- *          bit3 counting_in (bits 4-7 reserved, must be zero)
+ *          bit3 counting_in, bit4 dimmed (bits 5-7 reserved, must be zero)
  *   1      mode          2 looper_mode   3 global_color
  *   4      active_bank   5 selected_track
  *   6..13  track_leds[0..7]
@@ -176,6 +178,7 @@ typedef struct pedal_state {
   uint8_t goodbye;
   uint8_t performance_armed;
   uint8_t counting_in;
+  uint8_t dimmed;
   uint8_t mode;
   uint8_t looper_mode;
   uint8_t global_color;

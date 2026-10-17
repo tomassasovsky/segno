@@ -23,9 +23,9 @@ not need it reflashed.
 framing, CRC-16/CCITT-FALSE, version 3, PIO UART at 115200 8N1.
 
 - **STATE**, console to ring, on every app frame and every 100 ms: the activity
-  colour (RGB, black when none), the master level, and three flags — LIVE (the
-  app is connected), ACTIVE (the transport is doing something) and LOADED (a
-  loop exists). The ring goes dark if no valid STATE arrives for 500 ms.
+  colour (RGB, black when none), the master level, and four flags — LIVE (the
+  app is connected), ACTIVE (the transport is doing something), LOADED (a
+  loop exists) and DIMMED (the console idled and the screens dimmed, #1349). The ring goes dark if no valid STATE arrives for 500 ms.
 - **INPUT_STATE**, ring to console, every 20 ms: a boot nonce, the cumulative
   detent count and the cumulative button edge count (odd means pressed).
   Snapshots recover dropped short presses as well as missing clicks; the
@@ -46,7 +46,10 @@ The approved console ring behaviour, now on this board:
 - **Gain arc** in the activity colour (or green) for 900 ms whenever the master
   level changes between two live states.
 - Every push shares one channel budget, 35 × 3 × 96 = 10,080; a larger frame is
-  scaled uniformly. LED output is PIO/DMA (NeoPixelBus), so the link and
+  scaled uniformly.
+- **Dimmed**: while DIMMED is set, every push drops to about 20 % (51/255) after
+  the budget, whatever the view. A still frame picks the change up on the next
+  250 ms refresh. LED output is PIO/DMA (NeoPixelBus), so the link and
   encoder interrupts keep running during a push.
 
 ## Encoder
@@ -142,7 +145,7 @@ asks again; after the USB install on an unchanged image, remove that file. An up
 takes about ten seconds at 115200 baud.
 
 `firmware/test/test_ring_board.cpp` runs this sketch on the host: the comet
-profile and output, breathe, arc, freeze, budget, link timeout and the input
+profile and output, breathe, arc, freeze, budget, dimming, link timeout and the input
 snapshots. `firmware/test/test_ring_update.cpp` runs updates end to end, the
 Pi's engine against this sketch on simulated flash and bootrom. Encoder feel,
 UART noise immunity, LED timing and the bootrom's own trial and revert still
