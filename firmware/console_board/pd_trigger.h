@@ -62,8 +62,9 @@ void pd_trigger_apply_profile(const pd_trigger_nvm in, pd_trigger_nvm out);
 int pd_trigger_read_nvm(const pd_trigger_bus *bus, pd_trigger_nvm out);
 
 /* Makes the NVM hold the console profile: reads it, and if any profile field
- * differs erases and programs only the sectors that changed, then reads the
- * NVM back and compares it whole. Returns a PEDAL_PD_PROFILE_* value. The new
+ * differs erases all five sectors and programs them with the image read plus
+ * the profile (the proven full-erase sequence), then reads the NVM back and
+ * compares it whole. Returns a PEDAL_PD_PROFILE_* value. The new
  * profile only governs the next negotiation, at the chip's next power-up. */
 uint8_t pd_trigger_provision(const pd_trigger_bus *bus);
 

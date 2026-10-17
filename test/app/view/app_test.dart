@@ -3637,6 +3637,43 @@ void main() {
         await tester.pump(pedal.helloTimeout);
       });
 
+      testWidgets('Not now holds the banner off for the rest of the boot', (
+        tester,
+      ) async {
+        final (link, pedal) = await pumpWithPedal(tester);
+        await report(tester, link, stale);
+        await tester.tap(find.byKey(const Key(AppToastId.powerCycleDismiss)));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        // A changed but still stale contract does not bring it back.
+        await report(
+          tester,
+          link,
+          const PedalPowerSupply(
+            profile: PedalPowerProfile.matches,
+            millivolts: 20000,
+            milliamps: 3000,
+            maxMilliamps: 4500,
+          ),
+        );
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      });
+
+      testWidgets('Power off… opens Power options', (tester) async {
+        final (link, pedal) = await pumpWithPedal(tester);
+        await report(tester, link, stale);
+        await tester.tap(find.byKey(const Key(AppToastId.powerCyclePowerOff)));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key(AppToastId.powerCycle)), findsNothing);
+        expect(find.byKey(const Key('power_restart')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('power_cancel')));
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(pedal.helloTimeout);
+      });
+
       testWidgets('a charger under 90 W is said once, with no banner', (
         tester,
       ) async {

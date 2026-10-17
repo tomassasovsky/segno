@@ -61,8 +61,8 @@ NVM, each time it powers up (#1352). `pd_trigger.c` makes that profile the
 console's and reports what was negotiated:
 
 - **At boot**, before the link starts, the board reads the NVM. If any profile
-  field differs, it erases and programs only the sectors that changed, then
-  reads the NVM back and compares it. It writes nothing on a trigger that
+  field differs, it erases and programs the NVM with what it read plus the
+  profile, then reads it back and compares it. It writes nothing on a trigger that
   already matches, so the NVM is written once per trigger. The profile:
   PDO1 5 V / 0.5 A, PDO2 20 V / 3 A, PDO3 20 V / 5 A, three PDOs,
   `REQ_SRC_CURRENT` (once a PDO matches, request all the current the source
@@ -77,8 +77,15 @@ when the trigger loses power (the console is unplugged). Until then the
 contract takes less than the source offers, and the app asks for a power
 cycle: a banner on the stage, and a line on the Safe to switch off face.
 
+A trigger that does not answer is asked again every tenth `HELLO`, and is
+provisioned when it does (J23 seated after boot). The write is ST's full-erase
+sequence, the one SparkFun's library proved: all five sectors erased and
+programmed back. A power cut in that second can leave a trigger that no longer
+powers the console; `hardware/console/stusb4500_pdo` reprograms it from an
+Arduino UNO.
+
 `firmware/test/test_pd_trigger.cpp` runs the driver against a simulated
-STUSB4500, NVM controller included.
+STUSB4500, NVM controller included (`firmware/test/stusb4500_sim.h`).
 
 ## Physical rendering and source boundary
 

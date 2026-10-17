@@ -161,11 +161,22 @@ static void pdSleep(void *, uint32_t ms) { delay(ms); }
 
 static const pd_trigger_bus PD_BUS = {pdWrite, pdRead, pdSleep, nullptr};
 static uint8_t g_pdProfile = PEDAL_PD_PROFILE_NOT_READ;
+static uint8_t g_pdQuietHellos = 0;
+static const uint8_t PD_RETRY_HELLOS = 10;
 
-// The contract is read live: a multi-port charger can renegotiate under us.
+// The contract is read live: a multi-port charger can renegotiate under us. A
+// trigger that is not answering is asked again only every tenth hello: with
+// J23 unplugged GP0/GP1 have no pull-ups and every read waits out Wire's
+// timeout. One that answers later (J23 seated after boot) is provisioned then.
 static void sendPdStatus() {
-  pd_trigger_contract c;
-  (void)pd_trigger_read_contract(&PD_BUS, &c);
+  pd_trigger_contract c = {};
+  if (g_pdProfile == PEDAL_PD_PROFILE_NOT_READ && ++g_pdQuietHellos >= PD_RETRY_HELLOS) {
+    g_pdQuietHellos = 0;
+    g_pdProfile = pd_trigger_provision(&PD_BUS);
+  }
+  if (g_pdProfile != PEDAL_PD_PROFILE_NOT_READ && pd_trigger_read_contract(&PD_BUS, &c)) {
+    g_pdProfile = PEDAL_PD_PROFILE_NOT_READ;
+  }
   uint8_t buf[PEDAL_LINK_MAX_FRAME];
   sendFrame(buf, pedal_link_encode_pd_status(g_pdProfile, c.mismatch, c.millivolts, c.milliamps,
                                              c.max_milliamps, buf));

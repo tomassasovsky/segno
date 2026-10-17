@@ -31,6 +31,7 @@ RING_INC=(-I "$ROOT/firmware/test/stubs" -I "$ROOT/firmware/libraries/SegnoRing/
 
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
   "${RING_INC[@]}" \
+  -I "$ROOT/firmware/console_board" \
   "$ROOT/firmware/test/test_console_pill.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" \
   -o "$OUT/console_pill"
 "$OUT/console_pill"

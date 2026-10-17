@@ -65,7 +65,10 @@ tolerance only has to survive ~100 mm of internal wiring.
   only 3 A (60 W, against the console's ~59 W worst case; measured on the bench
   unit, 2026-10-17). Its shipped default asks 20 V at only 1.0 A (20 W). The
   console board writes the profile at its first boot and the app asks for one
-  unplug, after which every power-up negotiates the full current.
+  unplug, after which every power-up negotiates the full current. A trigger
+  left unusable (power cut during that write) no longer powers the console;
+  reprogram it out of band with `hardware/console/stusb4500_pdo` from an
+  Arduino UNO over Qwiic.
 - **What did it actually get?** The chip is I2C-readable: its RDO
   (`0x91`–`0x94`) carries the requested operating current, the source's maximum
   and the source PDO it matched, plus a capability mismatch bit; `0x21` holds

@@ -72,15 +72,17 @@ int pd_trigger_read_nvm(const pd_trigger_bus *bus, pd_trigger_nvm out) {
   return failed;
 }
 
-/* Erases the sectors in `mask` (bit n = sector n) and programs them from
- * `image`. ST's partial erase: the RW buffer must be zero when SER is loaded. */
-static int program(const pd_trigger_bus *bus, uint8_t mask, const pd_trigger_nvm image) {
-  int failed = enter(bus) || put(bus, REG_RW_BUFFER, 0) ||
-               put(bus, REG_FTP_CTRL_1, (uint8_t)(((mask << 3) & FTP_SER) | OP_WRITE_SER)) ||
+/* Erases all five sectors and programs them from `image`, in the order ST's
+ * flasher and SparkFun's library run it: password, RW buffer cleared, NVM
+ * controller reset and powered, then the erase opcodes (SER with every
+ * sector, soft program, erase) and one write-and-program per sector. */
+static int program(const pd_trigger_bus *bus, const pd_trigger_nvm image) {
+  int failed = put(bus, REG_FTP_PASSWORD, FTP_PASSWORD) || put(bus, REG_RW_BUFFER, 0) ||
+               put(bus, REG_FTP_CTRL_0, 0) || put(bus, REG_FTP_CTRL_0, FTP_PWR | FTP_RST_N) ||
+               put(bus, REG_FTP_CTRL_1, (uint8_t)((0x1Fu << 3) | OP_WRITE_SER)) ||
                run(bus, 0) || opcode(bus, OP_SOFT_PROG_SECTOR, 0) ||
                opcode(bus, OP_ERASE_SECTOR, 0);
   for (uint8_t s = 0; !failed && s < PD_TRIGGER_SECTORS; ++s) {
-    if (!(mask & (1u << s))) continue;
     failed = bus->write(bus->ctx, REG_RW_BUFFER, image[s], PD_TRIGGER_SECTOR_LEN) ||
              put(bus, REG_FTP_CTRL_0, FTP_PWR | FTP_RST_N) ||
              opcode(bus, OP_WRITE_PL, 0) || opcode(bus, OP_PROG_SECTOR, s);
@@ -117,12 +119,8 @@ uint8_t pd_trigger_provision(const pd_trigger_bus *bus) {
   pd_trigger_nvm found, want, back;
   if (pd_trigger_read_nvm(bus, found)) return PEDAL_PD_PROFILE_NOT_READ;
   pd_trigger_apply_profile(found, want);
-  uint8_t mask = 0;
-  for (uint8_t s = 0; s < PD_TRIGGER_SECTORS; ++s) {
-    if (memcmp(found[s], want[s], PD_TRIGGER_SECTOR_LEN) != 0) mask |= (uint8_t)(1u << s);
-  }
-  if (!mask) return PEDAL_PD_PROFILE_MATCHES;
-  if (program(bus, mask, want) || pd_trigger_read_nvm(bus, back) ||
+  if (memcmp(found, want, sizeof(pd_trigger_nvm)) == 0) return PEDAL_PD_PROFILE_MATCHES;
+  if (program(bus, want) || pd_trigger_read_nvm(bus, back) ||
       memcmp(back, want, sizeof(pd_trigger_nvm)) != 0)
     return PEDAL_PD_PROFILE_WRITE_FAILED;
   return PEDAL_PD_PROFILE_WRITTEN;
