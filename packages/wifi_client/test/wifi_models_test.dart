@@ -36,6 +36,25 @@ void main() {
       });
       expect(status.enabled, isTrue);
       expect(status.connected, isFalse);
+      expect(status.autoConnect, isEmpty);
+      expect(status.lastSsid, isEmpty);
+    });
+
+    test('parses each saved network with its autoconnect, and the last', () {
+      final status = WifiStatus.fromJson(const {
+        'supported': true,
+        'enabled': true,
+        'connected': false,
+        'saved': [
+          {'ssid': 'The Studio', 'autoconnect': true},
+          {'ssid': 'Cafe', 'autoconnect': false},
+          {'ssid': '', 'autoconnect': true},
+          'junk',
+        ],
+        'last': 'The Studio',
+      });
+      expect(status.autoConnect, {'The Studio': true, 'Cafe': false});
+      expect(status.lastSsid, 'The Studio');
     });
   });
 }

@@ -56,34 +56,84 @@ class SystemApplianceEnv implements ApplianceEnv {
   Stream<double> stage(String version) => _runHelper(['install', version]);
 
   /// Runs the privileged helper with [args], republishing its
-  /// `PROGRESS <0-100>` lines as `[0, 1]` and throwing with the collected
+  /// `PROGRESS <0-100>` lines as `[0, 1]` and failing with the collected
   /// stderr on a non-zero exit.
-  Stream<double> _runHelper(List<String> args) async* {
-    final process = await Process.start(helperPath, args);
-    final stderrLines = <String>[];
-    final stderrDone = process.stderr
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .forEach(stderrLines.add);
-    final progress = RegExp(r'^PROGRESS\s+(\d+)');
-    await for (final line
-        in process.stdout
+  ///
+  /// Cancelling the subscription sends the helper SIGTERM and completes once
+  /// it has exited, so whatever the helper leaves behind on a kill is in
+  /// place by the time the caller goes on.
+  Stream<double> _runHelper(List<String> args) {
+    Process? process;
+    var cancelled = false;
+    late final StreamController<double> controller;
+
+    Future<void> run() async {
+      try {
+        final started = process = await Process.start(helperPath, args);
+        if (cancelled) {
+          started.kill();
+          return;
+        }
+        final stderrLines = <String>[];
+        final stderrDone = started.stderr
             .transform(utf8.decoder)
-            .transform(const LineSplitter())) {
-      final match = progress.firstMatch(line);
-      if (match != null) {
-        yield (int.parse(match.group(1)!) / 100).clamp(0.0, 1.0);
+            .transform(const LineSplitter())
+            .forEach(stderrLines.add);
+        final progress = RegExp(r'^PROGRESS\s+(\d+)');
+        await for (final line
+            in started.stdout
+                .transform(utf8.decoder)
+                .transform(const LineSplitter())) {
+          final match = progress.firstMatch(line);
+          if (match != null && !cancelled) {
+            controller.add((int.parse(match.group(1)!) / 100).clamp(0.0, 1.0));
+          }
+        }
+        final code = await started.exitCode;
+        await stderrDone;
+        if (cancelled) return;
+        if (code != 0) {
+          final reason = stderrLines.isEmpty
+              ? 'update helper failed'
+              : stderrLines.join('\n');
+          controller.addError(ProcessException(helperPath, args, reason, code));
+        } else {
+          controller.add(1);
+        }
+      } on Object catch (error, stack) {
+        if (!cancelled) controller.addError(error, stack);
+      } finally {
+        if (!cancelled) await controller.close();
       }
     }
-    final code = await process.exitCode;
-    await stderrDone;
-    if (code != 0) {
-      final reason = stderrLines.isEmpty
-          ? 'update helper failed'
-          : stderrLines.join('\n');
-      throw ProcessException(helperPath, args, reason, code);
+
+    controller = StreamController<double>(
+      onListen: () => unawaited(run()),
+      onCancel: () async {
+        cancelled = true;
+        final running = process;
+        if (running == null) return;
+        running.kill();
+        await running.exitCode;
+      },
+    );
+    return controller.stream;
+  }
+
+  @override
+  Future<String?> updateAttempt() async {
+    final json = await _runJson(const ['attempt']);
+    final version = json?['version'];
+    return version is String && version.isNotEmpty ? version : null;
+  }
+
+  @override
+  Future<void> clearUpdateAttempt() async {
+    try {
+      await Process.run(helperPath, const ['clear-attempt']);
+    } on Exception {
+      // Helper missing / old image — there is no marker to clear.
     }
-    yield 1;
   }
 
   @override
@@ -113,11 +163,24 @@ class SystemApplianceEnv implements ApplianceEnv {
   }
 
   @override
-  Future<void> reconcileStaged() async {
+  Future<String?> reconcileStaged() async {
+    final json = await _runJson(const ['reconcile-staged']);
+    if (json == null || json['cleared'] != true) return null;
+    final reason = json['reason'];
+    return reason is String ? reason : null;
+  }
+
+  /// Runs a helper verb that answers with one JSON object, or returns `null`
+  /// when the helper is missing, fails, or prints anything else (an old
+  /// image without the verb).
+  Future<Map<String, dynamic>?> _runJson(List<String> args) async {
     try {
-      await Process.run(helperPath, const ['reconcile-staged']);
+      final result = await Process.run(helperPath, args);
+      if (result.exitCode != 0) return null;
+      final json = jsonDecode('${result.stdout}'.trim());
+      return json is Map<String, dynamic> ? json : null;
     } on Exception {
-      // Helper missing / old image — leave the marker alone.
+      return null;
     }
   }
 }

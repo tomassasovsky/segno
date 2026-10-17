@@ -1,28 +1,457 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/looper/model/audio_tempo.dart';
+import 'package:segno/looper/model/one_shot.dart';
+import 'package:segno/looper/model/overdub_decay.dart';
+import 'package:segno/looper/model/record_length.dart';
+import 'package:segno/looper/model/record_start.dart';
+import 'package:segno/looper/model/record_timing.dart';
 import 'package:segno/session/session_mapping.dart';
 // The chains a performance arm records cross the boundary as ENGINE models
 // (the manifest embeds them as canonical JSON), so the assertions on them name
 // the engine types under an `le` prefix — everything else here is domain.
 import 'package:segno_engine/segno_engine.dart'
     as le
-    show BuiltInEffect, PluginEffect, PluginFormat, TrackEffectType;
+    show
+        BuiltInEffect,
+        LatencyState,
+        PluginEffect,
+        PluginFormat,
+        TrackEffectType;
+import 'package:segno_engine/segno_engine.dart'
+    show EngineSnapshot, HistoryEntry, HistoryKind, LaneSnapshot, TrackSnapshot;
 import 'package:session_repository/session_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
+
+import '../helpers/fake_audio_engine.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
 void main() {
+  test(
+    'pair image and untouched fader survive a file save and recall',
+    () async {
+      final empty = EngineSnapshot(
+        isRunning: true,
+        devicePresent: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        inputChannels: 2,
+        outputChannels: 2,
+        tracks: List.generate(8, (_) => const TrackSnapshot.empty()),
+      );
+      final engine = FakeAudioEngine()..nextSnapshot = empty;
+      final ticker = StreamController<void>.broadcast();
+      final looper = LooperRepository(engine: engine, ticker: ticker.stream)
+        ..startEngine(const EngineConfig(sampleRate: 48000));
+      final directory = Directory.systemTemp.createTempSync(
+        'session_pair_image',
+      );
+      addTearDown(ticker.close);
+      addTearDown(looper.dispose);
+      addTearDown(() => directory.deleteSync(recursive: true));
+
+      expect(looper.setInputPair(input: 0, paired: true), EngineResult.ok);
+      expect(looper.setPairBalance(input: 0, balance: 2 / 3), EngineResult.ok);
+      expect(looper.record(), EngineResult.ok);
+      expect(engine.laneVol[(0, 0)], closeTo(0.5, 1e-6));
+
+      final pcm = Float32List.fromList([0.4, 0.4, 0.4, 0.4]);
+      engine.laneExports[(0, 0)] = pcm;
+      engine.nextSnapshot = EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        inputChannels: 2,
+        outputChannels: 2,
+        masterLengthFrames: 4,
+        tracks: [
+          const TrackSnapshot(
+            state: TrackState.playing,
+            volume: 0.5,
+            muted: false,
+            lengthFrames: 4,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+            lanes: [
+              LaneSnapshot(
+                inputChannel: 0,
+                outputMask: 3,
+                volume: 0.5,
+                muted: false,
+                lengthFrames: 4,
+                rms: 0,
+                peak: 0,
+                pan: -1,
+              ),
+            ],
+          ),
+          for (var channel = 1; channel < 8; channel++)
+            const TrackSnapshot.empty(),
+        ],
+      );
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      final live = looper.state.tracks.first.lanes.single;
+      expect(live.volume, 1);
+      expect(live.balance, closeTo(0.5, 1e-6));
+      final files = SessionRepository(guards: GuardRegistry(), engine: engine);
+      await files.save(
+        directory.path,
+        chains: chainsFromLooper(
+          looper,
+          projection: FxChainPersistence(looper: looper),
+        ),
+        settings: settingsFromLooper(
+          looper,
+          fade: FadeDurations.defaults,
+          recordStart: RecordStartSettings(countInBars: 0, soundStart: false),
+          clickMode: looper.sessionTransport.clickMode,
+          recordTiming: RecordTimingSnapshot(
+            defaultTiming: looper.defaultRecordTiming,
+            rememberedDivision: looper.sessionTransport.quantizeDiv,
+            trackOverrides: looper.trackRecordTimingOverrides,
+            captureLocked: false,
+          ),
+          recordLength: RecordLengthSnapshot(
+            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+            trackOverrides: looper.trackLengthPresetOverrides,
+            mode: looper.sessionTransport.looperMode,
+            captureLocked: false,
+          ),
+          clickVolume: 1,
+          decay: DecaySnapshot(
+            defaultPercent: looper.defaultOverdubDecay,
+            trackOverrides: looper.trackOverdubDecayOverrides,
+          ),
+          oneShot: OneShotSnapshot(
+            defaultOneShot: looper.defaultOneShot,
+            trackOverrides: looper.trackOneShotOverrides,
+          ),
+          followTempo: InheritSnapshot(
+            defaultValue: looper.defaultFollowTempo,
+            trackOverrides: looper.trackFollowTempoOverrides,
+          ),
+          pitchMode: InheritSnapshot(
+            defaultValue: looper.defaultPitchMode,
+            trackOverrides: looper.trackPitchModeOverrides,
+          ),
+        ),
+      );
+      final manifest =
+          jsonDecode(
+                await File(
+                  '${directory.path}/${Session.manifestName}',
+                ).readAsString(),
+              )
+              as Map<String, dynamic>;
+      final track =
+          (manifest['tracks'] as List<dynamic>).single as Map<String, dynamic>;
+      final savedLane =
+          (track['lanes'] as List<dynamic>).single as Map<String, dynamic>;
+      expect(savedLane['volume'], 1);
+      expect(savedLane['balance'], closeTo(0.5, 1e-6));
+
+      final bundle = await files.read(directory.path);
+      expect(bundle.laneStems[(0, 0)]!.single.first, closeTo(0.4, 1e-6));
+      final rig = rigFromBundle(bundle);
+      final recalledEngine = FakeAudioEngine()..nextSnapshot = empty;
+      final recalled = LooperRepository(engine: recalledEngine)
+        ..startEngine(const EngineConfig(sampleRate: 48000));
+      addTearDown(recalled.dispose);
+      await recalled.applySession(rig, clearPollInterval: Duration.zero);
+      expect(recalledEngine.laneVol[(0, 0)], closeTo(0.5, 1e-6));
+      expect(
+        recalledEngine.laneVol[(0, 0)]! *
+            recalledEngine.exportLayer(0, 0, 0).first,
+        closeTo(0.2, 1e-6),
+      );
+      // Reopening must clear the previous import before publishing this one.
+      await recalled.applySession(rig, clearPollInterval: Duration.zero);
+      expect(recalled.state.tracks.first.lengthFrames, 4);
+      expect(recalledEngine.exportLayer(0, 0, 0), pcm);
+      expect(recalledEngine.laneVol[(0, 0)], closeTo(0.5, 1e-6));
+    },
+  );
+
+  group('settingsFromLooper', () {
+    test('captures the exact published grid relationship', () {
+      final looper = _MockLooperRepository();
+      when(() => looper.sessionTransport).thenReturn(
+        const TransportState(
+          tempoBpm: 30,
+          tempoSource: TempoSource.derived,
+          loopBars: 7,
+        ),
+      );
+      when(
+        () => looper.defaultRecordTiming,
+      ).thenReturn(RecordTiming.immediately);
+      when(() => looper.defaultOverdubDecay).thenReturn(0);
+      when(() => looper.defaultOneShot).thenReturn(false);
+      when(() => looper.trackRecordTimingOverrides).thenReturn(const {});
+      when(() => looper.trackOverdubDecayOverrides).thenReturn(const {});
+      when(() => looper.trackOneShotOverrides).thenReturn(const {});
+      when(() => looper.trackLengthPresetOverrides).thenReturn(const {});
+      when(() => looper.state).thenReturn(const LooperState());
+      when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
+      expect(
+        settingsFromLooper(
+          looper,
+          fade: FadeDurations.defaults,
+          recordStart: RecordStartSettings(countInBars: 0, soundStart: false),
+          clickMode: looper.sessionTransport.clickMode,
+          recordTiming: RecordTimingSnapshot(
+            defaultTiming: looper.defaultRecordTiming,
+            rememberedDivision: looper.sessionTransport.quantizeDiv,
+            trackOverrides: looper.trackRecordTimingOverrides,
+            captureLocked: false,
+          ),
+          recordLength: RecordLengthSnapshot(
+            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+            trackOverrides: looper.trackLengthPresetOverrides,
+            mode: looper.sessionTransport.looperMode,
+            captureLocked: false,
+          ),
+          clickVolume: 1,
+          decay: DecaySnapshot(
+            defaultPercent: looper.defaultOverdubDecay,
+            trackOverrides: looper.trackOverdubDecayOverrides,
+          ),
+          oneShot: OneShotSnapshot(
+            defaultOneShot: looper.defaultOneShot,
+            trackOverrides: looper.trackOneShotOverrides,
+          ),
+          followTempo: InheritSnapshot(
+            defaultValue: true,
+            trackOverrides: const {},
+          ),
+          pitchMode: InheritSnapshot(
+            defaultValue: PitchMode.unchanged,
+            trackOverrides: const {},
+          ),
+        ),
+        isA<SessionSettings>()
+            .having((s) => s.loopBars, 'loopBars', 7)
+            // Bars only, as an engine before #1168 published: their beats.
+            .having((s) => s.loopBeats, 'loopBeats', 28),
+      );
+    });
+
+    test(
+      'stopped desired settings survive save, read, and rig mapping',
+      () async {
+        final engine = FakeAudioEngine();
+        final looper = LooperRepository(engine: engine);
+        final directory = Directory.systemTemp.createTempSync(
+          'session_settings',
+        );
+        addTearDown(looper.dispose);
+        addTearDown(() => directory.deleteSync(recursive: true));
+        looper
+          ..setTempo(117)
+          ..setTimeSignature(7, 8)
+          ..setSyncTempo(on: false)
+          ..setRecordTiming(RecordTiming.eighth)
+          ..setOverdubDecay(30)
+          ..setOneShotSnapshot(
+            defaultOneShot: true,
+            trackOverrides: {0: false, 1: true},
+          )
+          ..setDefaultLengthPreset(8)
+          ..setDefaultMultiple(multiple: 3)
+          ..setRecDub(enabled: true)
+          ..setClickMode(ClickMode.rec)
+          ..setClickOutput(0x2)
+          ..setClickVolume(0.6)
+          ..setRecordStartSettings(
+            countInBars: 2,
+            soundStart: false,
+            editKind: RecordStartEditKind.restore,
+          )
+          ..setLooperMode(LooperMode.free)
+          ..setTrackRecordTiming(channel: 0, timing: RecordTiming.eighth)
+          ..setTrackOverdubDecay(channel: 0, percent: 30)
+          ..setTrackOverdubDecay(channel: 1, percent: 0)
+          ..setTrackLengthPreset(channel: 0, bars: 4)
+          ..setFollowTempoSettings(
+            defaultFollow: false,
+            trackOverrides: {1: true},
+          )
+          ..setPitchModeSettings(
+            defaultMode: PitchMode.followsSpeed,
+            trackOverrides: {2: PitchMode.unchanged},
+          );
+        expect(engine.snapshot().isRunning, isFalse);
+        expect(engine.snapshot().tempoBpm, 0);
+        final settings = settingsFromLooper(
+          looper,
+          fade: FadeDurations.defaults,
+          recordStart: RecordStartSettings(countInBars: 2, soundStart: false),
+          clickMode: looper.sessionTransport.clickMode,
+          recordTiming: RecordTimingSnapshot(
+            defaultTiming: looper.defaultRecordTiming,
+            rememberedDivision: looper.sessionTransport.quantizeDiv,
+            trackOverrides: looper.trackRecordTimingOverrides,
+            captureLocked: false,
+          ),
+          recordLength: RecordLengthSnapshot(
+            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+            trackOverrides: looper.trackLengthPresetOverrides,
+            mode: looper.sessionTransport.looperMode,
+            captureLocked: false,
+          ),
+          clickVolume: .6,
+          decay: DecaySnapshot(
+            defaultPercent: looper.defaultOverdubDecay,
+            trackOverrides: looper.trackOverdubDecayOverrides,
+          ),
+          oneShot: OneShotSnapshot(
+            defaultOneShot: looper.defaultOneShot,
+            trackOverrides: looper.trackOneShotOverrides,
+          ),
+          followTempo: InheritSnapshot(
+            defaultValue: looper.defaultFollowTempo,
+            trackOverrides: looper.trackFollowTempoOverrides,
+          ),
+          pitchMode: InheritSnapshot(
+            defaultValue: looper.defaultPitchMode,
+            trackOverrides: looper.trackPitchModeOverrides,
+          ),
+        );
+        final repository = SessionRepository(
+          guards: GuardRegistry(),
+          engine: engine,
+        );
+        await repository.save(directory.path, settings: settings);
+        final rig = rigFromBundle(await repository.read(directory.path));
+        expect(rig.tracks, isEmpty);
+        expect(rig.tempoBpm, 117);
+        expect(rig.tempoSource, TempoSource.manual);
+        expect(rig.tsNum, 7);
+        expect(rig.tsDen, 8);
+        expect(rig.syncTempo, isFalse);
+        expect(rig.quantizeDiv, GridDivision.eighth);
+        expect(rig.recordTiming, RecordTiming.eighth);
+        expect(rig.overdubDecay, 30);
+        expect(rig.defaultOneShot, isTrue);
+        expect(rig.defaultLengthPresetBars, 8);
+        expect(rig.defaultMultiple, 3);
+        expect(rig.recDub, isTrue);
+        expect(rig.autoRecord, isFalse);
+        expect(rig.clickMode, ClickMode.rec);
+        expect(rig.clickMask, 0x2);
+        expect(rig.clickVolume, 0.6);
+        expect(rig.countInBars, 2);
+        expect(rig.looperMode, LooperMode.free);
+        expect(rig.primaryTrack, -1);
+        expect(rig.trackRecordTimingOverrides, {0: RecordTiming.eighth});
+        expect(rig.trackOverdubDecayOverrides, {0: 30, 1: 0});
+        expect(rig.trackOneShotOverrides, {0: false, 1: true});
+        expect(rig.trackLengthPresetOverrides, {0: 4});
+        expect(rig.trackPans, isEmpty);
+        expect(rig.defaultFollowTempo, isFalse);
+        expect(rig.trackFollowTempoOverrides, {1: true});
+        expect(rig.defaultPitchMode, PitchMode.followsSpeed);
+        expect(rig.trackPitchModeOverrides, {2: PitchMode.unchanged});
+        // A save with no takes carries no recorded pair.
+        expect(rig.recordedTempoBpm, 0);
+        expect(rig.retimed, isFalse);
+
+        looper
+          ..setTrackRecordTiming(channel: 0, timing: null)
+          ..setTrackOverdubDecay(channel: 0, percent: null)
+          ..setOneShotSnapshot(defaultOneShot: true, trackOverrides: {1: true})
+          ..setTrackLengthPreset(channel: 0, bars: null)
+          ..setRecordStartSettings(
+            countInBars: 0,
+            soundStart: true,
+            editKind: RecordStartEditKind.restore,
+          );
+        final inherited = settingsFromLooper(
+          looper,
+          fade: FadeDurations.defaults,
+          recordStart: RecordStartSettings(countInBars: 0, soundStart: true),
+          clickMode: looper.sessionTransport.clickMode,
+          recordTiming: RecordTimingSnapshot(
+            defaultTiming: looper.defaultRecordTiming,
+            rememberedDivision: looper.sessionTransport.quantizeDiv,
+            trackOverrides: looper.trackRecordTimingOverrides,
+            captureLocked: false,
+          ),
+          recordLength: RecordLengthSnapshot(
+            defaultBars: looper.sessionTransport.defaultLengthPresetBars,
+            trackOverrides: looper.trackLengthPresetOverrides,
+            mode: looper.sessionTransport.looperMode,
+            captureLocked: false,
+          ),
+          clickVolume: 1,
+          decay: DecaySnapshot(
+            defaultPercent: looper.defaultOverdubDecay,
+            trackOverrides: looper.trackOverdubDecayOverrides,
+          ),
+          oneShot: OneShotSnapshot(
+            defaultOneShot: looper.defaultOneShot,
+            trackOverrides: looper.trackOneShotOverrides,
+          ),
+          followTempo: InheritSnapshot(
+            defaultValue: looper.defaultFollowTempo,
+            trackOverrides: looper.trackFollowTempoOverrides,
+          ),
+          pitchMode: InheritSnapshot(
+            defaultValue: looper.defaultPitchMode,
+            trackOverrides: looper.trackPitchModeOverrides,
+          ),
+        );
+        expect(inherited.trackRecordTimingOverrides, isEmpty);
+        expect(inherited.trackOverdubDecayOverrides, {1: 0});
+        expect(inherited.trackOneShotOverrides, {1: true});
+        expect(inherited.trackLengthPresetOverrides, isEmpty);
+        expect(inherited.autoRecord, isTrue);
+        expect(inherited.countInBars, 0);
+        // A previously captured payload does not change as the rig is edited.
+        expect(settings.trackRecordTimingOverrides, {0: RecordTiming.eighth});
+        expect(settings.trackOverdubDecayOverrides, {0: 30, 1: 0});
+        expect(settings.trackOneShotOverrides, {0: false, 1: true});
+        expect(settings.trackLengthPresetOverrides, {0: 4});
+      },
+    );
+  });
+
   group('chainsFromLooper', () {
     late LooperRepository looper;
 
     setUp(() {
       looper = _MockLooperRepository();
+      when(() => looper.sessionRevision).thenReturn(0);
       when(looper.allLaneChains).thenReturn(const {});
       when(looper.allTrackChains).thenReturn(const {});
-      when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+      when(looper.allOutputChains).thenReturn(const {});
+      when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());
       when(looper.allMonitors).thenReturn(const {});
     });
 
@@ -33,12 +462,15 @@ void main() {
         1: InputMonitor(input: 1, mode: MonitorMode.on, outputMask: 0x2),
       });
 
-      final chains = chainsFromLooper(looper);
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       expect(chains.monitors, hasLength(1));
       final monitor = chains.monitors.single;
       expect(monitor.input, 1);
-      expect(monitor.enabled, isTrue);
+      expect(monitor.mode, 'on');
       expect(monitor.outputMask, 0x2);
       expect(monitor.volume, 1.0);
       expect(monitor.muted, isFalse);
@@ -46,7 +478,7 @@ void main() {
       expect(decodeFxChain(monitor.encoded), const FxChainEnvelope());
     });
 
-    test('saves the gate by name as well as by boolean', () {
+    test('saves the monitor gate by its canonical mode', () {
       when(looper.allMonitors).thenReturn(const {
         0: InputMonitor(input: 0, mode: MonitorMode.auto),
         1: InputMonitor(input: 1, mode: MonitorMode.on),
@@ -54,16 +486,13 @@ void main() {
       });
 
       final saved = {
-        for (final m in chainsFromLooper(looper).monitors) m.input: m,
+        for (final m in chainsFromLooper(
+          looper,
+          projection: FxChainPersistence(looper: looper),
+        ).monitors)
+          m.input: m,
       };
 
-      // The boolean stays — not for older readers, which reject a v7 manifest
-      // on the version gate before they reach it, but because it is what THIS
-      // build reads back from every bundle written before the name existed.
-      expect(saved[0]!.enabled, isTrue);
-      expect(saved[1]!.enabled, isTrue);
-      expect(saved[2]!.enabled, isFalse);
-      // The name is which of the two non-off states it was.
       expect(saved[0]!.mode, 'auto');
       expect(saved[1]!.mode, 'on');
       expect(saved[2]!.mode, 'off');
@@ -78,14 +507,37 @@ void main() {
         ),
       });
 
-      final chains = chainsFromLooper(looper);
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       final decoded = decodeFxChain(chains.monitors.single.encoded).entries;
       expect((decoded.single as BuiltInEffect).type, TrackEffectType.reverb);
     });
 
+    test('writes no monitor pan (slice 3): the load rebuilds it from the '
+        'input setup', () {
+      when(looper.allMonitors).thenReturn(const {
+        0: InputMonitor(input: 0, mode: MonitorMode.on, pan: -1),
+      });
+
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
+
+      expect(chains.monitors.single.toJson().containsKey('pan'), isFalse);
+    });
+
     test('emits no monitors when none are configured', () {
-      expect(chainsFromLooper(looper).monitors, isEmpty);
+      expect(
+        chainsFromLooper(
+          looper,
+          projection: FxChainPersistence(looper: looper),
+        ).monitors,
+        isEmpty,
+      );
     });
 
     test('encodes every stage as the chain ENVELOPE — chain flag, per-slot '
@@ -107,7 +559,10 @@ void main() {
         0: InputMonitor(input: 0, mode: MonitorMode.on, chainEnabled: false),
       });
 
-      final chains = chainsFromLooper(looper);
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       final lane = decodeFxChain(chains.laneChains.single.encoded);
       expect(lane.chainEnabled, isFalse);
@@ -120,20 +575,51 @@ void main() {
       expect(decodeFxChain(chains.monitors.single.encoded).chainEnabled, false);
     });
 
-    test('captures the two BUS stages (Track + Master) as envelopes', () {
+    test('the All tracks chain round-trips as an envelope, and a rig with '
+        'none writes the empty-string spelling (slice 3e)', () {
+      when(looper.allTracksChainEnvelope).thenReturn(
+        FxChainEnvelope(entries: [BuiltInEffect(type: TrackEffectType.reverb)]),
+      );
+
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
+      expect(chains.allTracksChain, isNotEmpty);
+      expect(
+        decodeFxChain(chains.allTracksChain).entries.single,
+        BuiltInEffect(type: TrackEffectType.reverb),
+      );
+
+      // A rig with no All tracks state writes the manifest's one way to say
+      // "empty", the Master rule exactly.
+      when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());
+      expect(
+        chainsFromLooper(
+          looper,
+          projection: FxChainPersistence(looper: looper),
+        ).allTracksChain,
+        '',
+      );
+    });
+
+    test('captures Track and destination output chains as envelopes', () {
       when(looper.allTrackChains).thenReturn({
         1: FxChainEnvelope(
           chainEnabled: false,
           entries: [BuiltInEffect(type: TrackEffectType.reverb)],
         ),
       });
-      when(looper.masterChainEnvelope).thenReturn(
-        FxChainEnvelope(
+      when(looper.allOutputChains).thenReturn({
+        0: FxChainEnvelope(
           entries: [BuiltInEffect(type: TrackEffectType.filter)],
         ),
-      );
+      });
 
-      final chains = chainsFromLooper(looper);
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       expect(chains.trackChains.single.channel, 1);
       final track = decodeFxChain(chains.trackChains.single.encoded);
@@ -142,22 +628,23 @@ void main() {
         (track.entries.single as BuiltInEffect).type,
         TrackEffectType.reverb,
       );
-      final master = decodeFxChain(chains.masterChain);
-      expect(master.chainEnabled, isTrue);
+      final output = decodeFxChain(chains.outputChains.single.encoded);
+      expect(chains.outputChains.single.bus, 0);
+      expect(output.chainEnabled, isTrue);
       expect(
-        (master.entries.single as BuiltInEffect).type,
+        (output.entries.single as BuiltInEffect).type,
         TrackEffectType.filter,
       );
     });
 
-    test("emits the manifest's empty-string Master spelling for a rig with no "
-        'Master state — one way to say "empty", and it still overwrites a '
-        'leftover on load', () {
-      final chains = chainsFromLooper(looper);
+    test('omits unconfigured output chains from the manifest', () {
+      final chains = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       expect(chains.trackChains, isEmpty);
-      expect(chains.masterChain, '');
-      expect(decodeFxChain(chains.masterChain), const FxChainEnvelope());
+      expect(chains.outputChains, isEmpty);
     });
   });
 
@@ -168,7 +655,8 @@ void main() {
       looper = _MockLooperRepository();
       when(looper.allLaneChains).thenReturn(const {});
       when(looper.allTrackChains).thenReturn(const {});
-      when(looper.masterChainEnvelope).thenReturn(const FxChainEnvelope());
+      when(looper.allOutputChains).thenReturn(const {});
+      when(looper.allTracksChainEnvelope).thenReturn(const FxChainEnvelope());
       when(looper.allMonitors).thenReturn(const {});
       when(() => looper.limiterEnabled).thenReturn(true);
       when(() => looper.limiterCeiling).thenReturn(0.99);
@@ -298,14 +786,14 @@ void main() {
           entries: [BuiltInEffect(type: TrackEffectType.reverb)],
         ),
       });
-      when(looper.masterChainEnvelope).thenReturn(
-        FxChainEnvelope(
+      when(looper.allOutputChains).thenReturn({
+        0: FxChainEnvelope(
           chainEnabled: false,
           entries: [
             BuiltInEffect(type: TrackEffectType.filter, enabled: false),
           ],
         ),
-      );
+      });
       when(looper.allMonitors).thenReturn(const {
         0: InputMonitor(input: 0, mode: MonitorMode.on, chainEnabled: false),
       });
@@ -322,10 +810,6 @@ void main() {
         (chains.trackChains.single.effects.single as le.BuiltInEffect).type,
         le.TrackEffectType.reverb,
       );
-      expect(chains.masterChainEnabled, isFalse);
-      final master = chains.masterEffects.single as le.BuiltInEffect;
-      expect(master.type, le.TrackEffectType.filter);
-      expect(master.enabled, isFalse);
     });
 
     test('reads the real master-limiter state, even for an empty rig', () {
@@ -350,6 +834,7 @@ void main() {
       outputMask: 0x3,
       inputChannel: index,
       layers: [SessionLayer(file: file)],
+      history: TrackHistory.none,
     );
 
     Session sessionWith(List<SessionTrack> tracks) => Session(
@@ -359,10 +844,9 @@ void main() {
       tracks: tracks,
     );
 
-    test('decodes chains in BOTH wire formats: legacy bare array and the '
-        'FX v3 envelope (R15)', () {
+    test('maps bare-array FX payloads and current chain envelopes', () {
       final pcm = Float32List.fromList([1, 1, 1, 1]);
-      final legacy = encodeTrackEffects([
+      final bare = encodeTrackEffects([
         BuiltInEffect(type: TrackEffectType.drive),
       ]);
       final envelope = encodeFxChain(
@@ -378,6 +862,8 @@ void main() {
           baseLengthFrames: 4,
           tracks: [
             SessionTrack(
+              fadeAmount: 1,
+              reversed: false,
               channel: 0,
               multiple: 1,
               lengthFrames: 4,
@@ -385,12 +871,12 @@ void main() {
             ),
           ],
           laneChains: [
-            SessionLaneChain(channel: 0, lane: 0, encoded: legacy),
+            SessionLaneChain(channel: 0, lane: 0, encoded: bare),
           ],
           monitors: [
             SessionMonitor(
               input: 0,
-              enabled: true,
+              mode: 'on',
               outputMask: 0x3,
               volume: 1,
               muted: false,
@@ -414,6 +900,101 @@ void main() {
       );
     });
 
+    test("the session's own defaults reach the rig, not just the per-track "
+        'overrides', () {
+      // A track whose override is null follows the DEFAULT. Carrying the
+      // overrides across a load without the default they override leaves that
+      // track on whatever the app was last set to.
+      final rig = rigFromBundle((
+        session: const Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [],
+          recordTiming: RecordTiming.quarter,
+          overdubDecay: 40,
+          loopBars: 7,
+        ),
+        laneStems: const {},
+      ));
+
+      expect(rig.recordTiming, RecordTiming.quarter);
+      expect(rig.overdubDecay, 40);
+      expect(rig.loopBars, 7);
+      expect(rig.loopBeats, 28);
+      expect(rig.gridBeats, 28);
+    });
+
+    test('the recorded pair, the spans and both Audio & tempo vectors reach '
+        'the rig (#1179)', () {
+      final pcm = Float32List(4);
+      final rig = rigFromBundle((
+        session: const Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 6,
+          tempoBpm: 80,
+          tempoSource: TempoSource.manual,
+          recordedTempoBpm: 120,
+          recordedLengthFrames: 4,
+          defaultFollowTempo: false,
+          trackFollowTempoOverrides: {0: true},
+          defaultPitchMode: PitchMode.followsSpeed,
+          trackPitchModeOverrides: {0: PitchMode.unchanged},
+          tracks: [
+            SessionTrack(
+              channel: 0,
+              multiple: 1,
+              lengthFrames: 4,
+              fadeAmount: 1,
+              reversed: false,
+              spanFrames: 6,
+              lanes: [
+                SessionLane(
+                  lane: 0,
+                  volume: 1,
+                  muted: false,
+                  outputMask: 3,
+                  inputChannel: 0,
+                  layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                  history: TrackHistory.none,
+                ),
+              ],
+            ),
+          ],
+        ),
+        laneStems: {
+          (0, 0): [pcm],
+        },
+      ));
+      expect(rig.recordedTempoBpm, 120);
+      expect(rig.recordedLengthFrames, 4);
+      expect(rig.retimed, isTrue);
+      expect(rig.tracks.single.spanFrames, 6);
+      expect(rig.defaultFollowTempo, isFalse);
+      expect(rig.trackFollowTempoOverrides, {0: true});
+      expect(rig.defaultPitchMode, PitchMode.followsSpeed);
+      expect(rig.trackPitchModeOverrides, {0: PitchMode.unchanged});
+    });
+
+    test("a manifest that names no defaults still carries the model's own, "
+        'so a load RESETS rather than inherits', () {
+      // The same posture the FX stages take: a fact the manifest does not
+      // describe is reset on apply, never left as whatever the live rig had.
+      final rig = rigFromBundle((
+        session: const Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [],
+        ),
+        laneStems: const {},
+      ));
+
+      expect(rig.recordTiming, RecordTiming.immediately);
+      expect(rig.overdubDecay, 0);
+    });
+
     Session sessionWithMonitor(SessionMonitor monitor) => Session(
       sampleRate: 48000,
       channels: 1,
@@ -431,7 +1012,6 @@ void main() {
         session: sessionWithMonitor(
           const SessionMonitor(
             input: 0,
-            enabled: true,
             mode: 'auto',
             outputMask: 0x3,
             volume: 1,
@@ -445,16 +1025,13 @@ void main() {
       expect(rig.monitors.single.mode, MonitorMode.auto);
     });
 
-    test('a v6 monitor still restores what its boolean said', () {
-      for (final (enabled, expected) in [
-        (true, MonitorMode.on),
-        (false, MonitorMode.off),
-      ]) {
-        final rig = rigFromBundle((
+    test('an unknown current-schema monitor mode is rejected', () {
+      expect(
+        () => rigFromBundle((
           session: sessionWithMonitor(
-            SessionMonitor(
+            const SessionMonitor(
               input: 0,
-              enabled: enabled,
+              mode: 'sidechain-from-2027',
               outputMask: 0x3,
               volume: 1,
               muted: false,
@@ -462,61 +1039,9 @@ void main() {
             ),
           ),
           laneStems: const {},
-        ));
-
-        // `on`, not `auto`: it is what the bundle was heard as, and guessing
-        // `auto` would make a monitor that played unconditionally start
-        // following the arm.
-        expect(rig.monitors.single.mode, expected);
-      }
-    });
-
-    test('the name wins when the two disagree', () {
-      // Unreachable from this build's writer, which derives one from the
-      // other — but the precedence is the whole design: the name carries
-      // strictly more than the boolean, so it decides.
-      for (final (enabled, mode, expected) in [
-        (false, 'auto', MonitorMode.auto),
-        (true, 'off', MonitorMode.off),
-      ]) {
-        final rig = rigFromBundle((
-          session: sessionWithMonitor(
-            SessionMonitor(
-              input: 0,
-              enabled: enabled,
-              mode: mode,
-              outputMask: 0x3,
-              volume: 1,
-              muted: false,
-              encoded: '',
-            ),
-          ),
-          laneStems: const {},
-        ));
-
-        expect(rig.monitors.single.mode, expected);
-      }
-    });
-
-    test('a gate name this build does not know falls back, never to off', () {
-      final rig = rigFromBundle((
-        session: sessionWithMonitor(
-          const SessionMonitor(
-            input: 0,
-            enabled: true,
-            mode: 'sidechain-from-2027',
-            outputMask: 0x3,
-            volume: 1,
-            muted: false,
-            encoded: '',
-          ),
-        ),
-        laneStems: const {},
-      ));
-
-      // A gate written by a future build is not a deliberate disable — the
-      // same reading the settings restore takes.
-      expect(rig.monitors.single.mode, MonitorMode.on);
+        )),
+        throwsFormatException,
+      );
     });
 
     test('decodes the v5 BUS stages into the rig, chain flags included', () {
@@ -528,6 +1053,8 @@ void main() {
           baseLengthFrames: 4,
           tracks: [
             SessionTrack(
+              fadeAmount: 1,
+              reversed: false,
               channel: 0,
               multiple: 1,
               lengthFrames: 4,
@@ -545,11 +1072,16 @@ void main() {
               ),
             ),
           ],
-          masterChain: encodeFxChain(
-            FxChainEnvelope(
-              entries: [BuiltInEffect(type: TrackEffectType.filter)],
+          outputChains: [
+            SessionOutputChain(
+              bus: 0,
+              encoded: encodeFxChain(
+                FxChainEnvelope(
+                  entries: [BuiltInEffect(type: TrackEffectType.filter)],
+                ),
+              ),
             ),
-          ),
+          ],
         ),
         laneStems: {
           (0, 0): [pcm],
@@ -564,58 +1096,65 @@ void main() {
         (track.entries.single as BuiltInEffect).type,
         TrackEffectType.reverb,
       );
-      expect(rig.masterChain.chainEnabled, isTrue);
+      expect(rig.outputChains[0]!.chainEnabled, isTrue);
       expect(
-        (rig.masterChain.entries.single as BuiltInEffect).type,
+        (rig.outputChains[0]!.entries.single as BuiltInEffect).type,
         TrackEffectType.filter,
       );
     });
 
-    test('a v4 bundle (no bus-stage fields at all) yields empty bus stages, '
-        'every level enabled — the presence-keyed migration [R15]', () {
-      final pcm = Float32List.fromList([1, 1, 1, 1]);
-      final bundle = (
-        session: Session(
-          sampleRate: 48000,
-          channels: 1,
-          baseLengthFrames: 4,
-          tracks: [
-            SessionTrack(
-              channel: 0,
-              multiple: 1,
-              lengthFrames: 4,
-              lanes: [lane(0, 'track0_lane0_L0.wav')],
-            ),
-          ],
-          // A v4 manifest's Loop chain: the bare entries array, no envelope.
-          laneChains: [
-            SessionLaneChain(
-              channel: 0,
-              lane: 0,
-              encoded: encodeTrackEffects([
-                BuiltInEffect(type: TrackEffectType.drive),
-              ]),
-            ),
-          ],
-        ),
-        laneStems: {
-          (0, 0): [pcm],
-        },
-      );
+    test(
+      'a current Session with omitted bus chains maps empty stages '
+      'and FX defaults',
+      () {
+        final pcm = Float32List.fromList([1, 1, 1, 1]);
+        final bundle = (
+          session: Session(
+            sampleRate: 48000,
+            channels: 1,
+            baseLengthFrames: 4,
+            tracks: [
+              SessionTrack(
+                fadeAmount: 1,
+                reversed: false,
+                channel: 0,
+                multiple: 1,
+                lengthFrames: 4,
+                lanes: [lane(0, 'track0_lane0_L0.wav')],
+              ),
+            ],
+            // The FX decoder handles bare-array payloads independently of
+            // the schema-8 manifest reader.
+            laneChains: [
+              SessionLaneChain(
+                channel: 0,
+                lane: 0,
+                encoded: encodeTrackEffects([
+                  BuiltInEffect(type: TrackEffectType.drive),
+                ]),
+              ),
+            ],
+          ),
+          laneStems: {
+            (0, 0): [pcm],
+          },
+        );
 
-      final rig = rigFromBundle(bundle);
+        final rig = rigFromBundle(bundle);
 
-      expect(rig.trackChains, isEmpty);
-      expect(rig.masterChain, const FxChainEnvelope());
-      // The lane it DID describe loads enabled at both levels, with no
-      // inheritance marker — and no slot ids yet (the repository mints those).
-      final loop = rig.laneChains[(0, 0)]!;
-      expect(loop.chainEnabled, isTrue);
-      expect(loop.meta, isNull);
-      final loopFx = loop.entries.single as BuiltInEffect;
-      expect(loopFx.enabled, isTrue);
-      expect(loopFx.slotId, isNull);
-    });
+        expect(rig.trackChains, isEmpty);
+        expect(rig.outputChains, isEmpty);
+        // The lane it DID describe loads enabled at both levels, with no
+        // inheritance marker — and no slot ids yet (the repository mints
+        // those).
+        final loop = rig.laneChains[(0, 0)]!;
+        expect(loop.chainEnabled, isTrue);
+        expect(loop.meta, isNull);
+        final loopFx = loop.entries.single as BuiltInEffect;
+        expect(loopFx.enabled, isTrue);
+        expect(loopFx.slotId, isNull);
+      },
+    );
 
     test('maps every lane that has decoded audio', () {
       final l0 = Float32List.fromList([1, 1, 1, 1]);
@@ -623,6 +1162,8 @@ void main() {
       final bundle = (
         session: sessionWith([
           SessionTrack(
+            fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
@@ -645,17 +1186,49 @@ void main() {
       expect(rig.tracks.single.lanes[1].livePcm, l1);
     });
 
+    test("carries each track's playback direction to the rig", () {
+      final pcm = Float32List.fromList([1, 2, 3, 4]);
+      final bundle = (
+        session: sessionWith([
+          for (final (channel, reversed) in [(0, true), (1, false)])
+            SessionTrack(
+              fadeAmount: 1,
+              reversed: reversed,
+              channel: channel,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track${channel}_lane0_L0.wav')],
+            ),
+        ]),
+        laneStems: {
+          (0, 0): [pcm],
+          (1, 0): [pcm],
+        },
+      );
+      final rig = rigFromBundle(bundle);
+      expect(
+        [for (final t in rig.tracks) (t.channel, t.reversed)],
+        [
+          (0, true),
+          (1, false),
+        ],
+      );
+    });
+
     test('maps a multi-lane track with per-lane overdub history', () {
       // Two lanes, each a 3-layer stack (undo 1, live, redo 1) — the per-lane
-      // layer zip must keep each lane's ordered layers + undo/redo counts.
+      // layer zip must keep each lane's ordered layers, history and counts.
+      const history = TrackHistory([
+        HistoryEntry(HistoryKind.processed),
+        HistoryEntry(HistoryKind.layer),
+      ], undoCount: 1);
       SessionLane historyLane(int index, List<String> files) => SessionLane(
         lane: index,
         volume: 1,
         muted: false,
         outputMask: 0x3,
         inputChannel: index,
-        undoCount: 1,
-        redoCount: 1,
+        history: history,
         layers: [for (final f in files) SessionLayer(file: f)],
       );
       final l0 = [
@@ -671,6 +1244,8 @@ void main() {
       final bundle = (
         session: sessionWith([
           SessionTrack(
+            fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 1,
@@ -687,6 +1262,7 @@ void main() {
       final lanes = rig.tracks.single.lanes;
       expect(lanes, hasLength(2));
       expect(lanes[0].layers, l0);
+      expect(lanes[0].history, history);
       expect(lanes[0].undoCount, 1);
       expect(lanes[0].redoCount, 1);
       expect(lanes[0].liveIndex, 1);
@@ -695,124 +1271,70 @@ void main() {
       expect(lanes[1].livePcm, l1[1]);
     });
 
-    test('carries the track length preset (A6) through to the rig', () {
-      final l0 = Float32List.fromList([1, 1, 1, 1]);
+    test('keeps settings for recorded, empty, and dropped-audio tracks', () {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
       final bundle = (
-        session: sessionWith([
-          SessionTrack(
-            channel: 0,
-            multiple: 1,
-            lengthFrames: 4,
-            lengthPresetBars: 4,
-            lanes: [lane(0, 'track0_lane0_L0.wav')],
-          ),
-          SessionTrack(
-            channel: 1,
-            multiple: 1,
-            lengthFrames: 4,
-            // AUTO (0, the default) round-trips too, not just a set value.
-            lanes: [lane(0, 'track1_lane0_L0.wav')],
-          ),
-        ]),
+        session: Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          looperMode: LooperMode.band,
+          primaryTrack: 0,
+          recordTiming: RecordTiming.quarter,
+          overdubDecay: 30,
+          defaultOneShot: true,
+          trackRecordTimingOverrides: const {
+            0: RecordTiming.quarter,
+            2: RecordTiming.bar,
+          },
+          trackOverdubDecayOverrides: const {0: 30, 2: 0},
+          trackOneShotOverrides: const {0: true, 2: false},
+          trackLengthPresetOverrides: const {0: 4, 2: 8},
+          tracks: [
+            SessionTrack(
+              fadeAmount: 1,
+              reversed: false,
+              channel: 0,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track0_lane0_L0.wav')],
+            ),
+            SessionTrack(
+              fadeAmount: 1,
+              reversed: false,
+              channel: 2,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track2_lane0_L0.wav')],
+            ),
+          ],
+        ),
         laneStems: {
-          (0, 0): [l0],
-          (1, 0): [l0],
+          (0, 0): [pcm],
         },
       );
-
       final rig = rigFromBundle(bundle);
-      expect(rig.tracks, hasLength(2));
-      expect(rig.tracks[0].lengthPresetBars, 4);
-      expect(rig.tracks[1].lengthPresetBars, 0);
+      expect(rig.tracks.single.channel, 0);
+      expect(rig.looperMode, LooperMode.band);
+      expect(rig.primaryTrack, 0);
+      expect(rig.defaultOneShot, isTrue);
+      expect(rig.trackRecordTimingOverrides, {
+        0: RecordTiming.quarter,
+        2: RecordTiming.bar,
+      });
+      expect(rig.trackOverdubDecayOverrides, {0: 30, 2: 0});
+      expect(rig.trackOneShotOverrides, {0: true, 2: false});
+      expect(rig.trackLengthPresetOverrides, {0: 4, 2: 8});
+      expect(rig.trackOneShotOverrides.containsKey(1), isFalse);
     });
-
-    test(
-      'carries the looper mode, primary track, and per-track one-shot '
-      '(B5c) through to the rig',
-      () {
-        final l0 = Float32List.fromList([1, 1, 1, 1]);
-        final bundle = (
-          session: Session(
-            sampleRate: 48000,
-            channels: 1,
-            baseLengthFrames: 4,
-            looperMode: LooperMode.band,
-            primaryTrack: 1,
-            tracks: [
-              SessionTrack(
-                channel: 0,
-                multiple: 1,
-                lengthFrames: 4,
-                oneShot: true,
-                lanes: [lane(0, 'track0_lane0_L0.wav')],
-              ),
-              SessionTrack(
-                channel: 1,
-                multiple: 1,
-                lengthFrames: 4,
-                // Off (the default) round-trips too, not just a set value.
-                lanes: [lane(0, 'track1_lane0_L0.wav')],
-              ),
-            ],
-          ),
-          laneStems: {
-            (0, 0): [l0],
-            (1, 0): [l0],
-          },
-        );
-
-        final rig = rigFromBundle(bundle);
-        expect(rig.looperMode, LooperMode.band);
-        expect(rig.primaryTrack, 1);
-        expect(rig.tracks, hasLength(2));
-        expect(rig.tracks[0].oneShot, isTrue);
-        expect(rig.tracks[1].oneShot, isFalse);
-      },
-    );
-
-    test(
-      'carries a One Shot flag pre-armed on a CONTENT-LESS channel through '
-      'to the rig via the session-level set (independent review of #295): '
-      'channel 2 has no SessionTrack at all (never recorded onto), so its '
-      'flag only reaches the rig through Session.oneShotChannels, not '
-      'through any SessionRigTrack',
-      () {
-        final l0 = Float32List.fromList([1, 1, 1, 1]);
-        final bundle = (
-          session: Session(
-            sampleRate: 48000,
-            channels: 1,
-            baseLengthFrames: 4,
-            // Channel 2 is deliberately absent from `tracks` — it holds no
-            // content — yet its One Shot flag is armed at session level.
-            oneShotChannels: const [0, 2],
-            tracks: [
-              SessionTrack(
-                channel: 0,
-                multiple: 1,
-                lengthFrames: 4,
-                oneShot: true,
-                lanes: [lane(0, 'track0_lane0_L0.wav')],
-              ),
-            ],
-          ),
-          laneStems: {
-            (0, 0): [l0],
-          },
-        );
-
-        final rig = rigFromBundle(bundle);
-
-        expect(rig.tracks, hasLength(1));
-        expect(rig.oneShotChannels, {0, 2});
-      },
-    );
 
     test('drops a lane whose PCM is missing but keeps its siblings', () {
       final l0 = Float32List.fromList([1, 1, 1, 1]);
       final bundle = (
         session: sessionWith([
           SessionTrack(
+            fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
@@ -838,12 +1360,16 @@ void main() {
       final bundle = (
         session: sessionWith([
           SessionTrack(
+            fadeAmount: 1,
+            reversed: false,
             channel: 0,
             multiple: 1,
             lengthFrames: 4,
             lanes: [lane(0, 'track0_lane0_L0.wav')],
           ),
           SessionTrack(
+            fadeAmount: 1,
+            reversed: false,
             channel: 1,
             multiple: 1,
             lengthFrames: 4,
@@ -861,6 +1387,238 @@ void main() {
       final rig = rigFromBundle(bundle);
       expect(rig.tracks, hasLength(1));
       expect(rig.tracks.single.channel, 0);
+    });
+  });
+
+  group('New loop (plan D9)', () {
+    String chain(TrackEffectType type) =>
+        encodeFxChain(FxChainEnvelope(entries: [BuiltInEffect(type: type)]));
+
+    // Every field away from its default, every override map included, so a
+    // field New loop forgot to carry reads its default and differs.
+    final full = Session(
+      name: 'Evening loop',
+      sampleRate: 44100,
+      channels: 2,
+      baseLengthFrames: 96000,
+      tracks: const [
+        SessionTrack(
+          channel: 2,
+          multiple: 2,
+          lengthFrames: 96000,
+          fadeAmount: 0.5,
+          reversed: true,
+          lanes: [
+            SessionLane(
+              lane: 0,
+              volume: 0.8,
+              muted: true,
+              outputMask: 0x3,
+              inputChannel: 1,
+              layers: [SessionLayer(file: 'track2_lane0_L0.wav')],
+              history: TrackHistory.none,
+            ),
+          ],
+        ),
+      ],
+      laneChains: [
+        SessionLaneChain(
+          channel: 2,
+          lane: 0,
+          encoded: chain(TrackEffectType.drive),
+        ),
+      ],
+      monitors: [
+        SessionMonitor(
+          input: 1,
+          mode: 'on',
+          outputMask: 0x3,
+          volume: 0.7,
+          muted: true,
+          encoded: chain(TrackEffectType.reverb),
+        ),
+      ],
+      trackChains: [
+        SessionTrackChain(channel: 3, encoded: chain(TrackEffectType.delay)),
+      ],
+      outputChains: [
+        SessionOutputChain(bus: 1, encoded: chain(TrackEffectType.drive)),
+      ],
+      allTracksChain: chain(TrackEffectType.reverb),
+      tempoBpm: 96,
+      tempoSource: TempoSource.tapped,
+      tsNum: 7,
+      tsDen: 8,
+      quantizeDiv: GridDivision.half,
+      loopBars: 4,
+      recordTiming: RecordTiming.bar,
+      overdubDecay: 30,
+      clickMode: ClickMode.rec,
+      clickOutputMask: 0x4,
+      clickVolume: 0.5,
+      countInBars: 2,
+      looperMode: LooperMode.sync,
+      primaryTrack: 2,
+      defaultOneShot: true,
+      defaultLengthPresetBars: 8,
+      defaultFadeDurationMs: 2000,
+      trackFadeDurationOverrides: const {1: 6000},
+      trackRecordTimingOverrides: const {2: RecordTiming.loopStart},
+      trackOverdubDecayOverrides: const {3: 50},
+      trackOneShotOverrides: const {4: true},
+      trackLengthPresetOverrides: const {5: 2},
+      trackLevels: const {0: 0.5},
+      trackPans: const {1: -0.25},
+      laneInputs: const {(1, 0): 2},
+      laneOutputs: const {(1, 0): 1},
+      laneCounts: const {1: 2},
+      syncTempo: false,
+      recDub: true,
+      autoRecord: true,
+      defaultMultiple: 2,
+      pedalBindings: 'remap',
+      inputSetup: const SessionInputSetup(
+        trimDb: {0: 3},
+        pan: {0: 0.5},
+        pairs: {0: 1},
+      ),
+      outputSetup: const SessionOutputSetup(level: {0: 0.5}),
+      backing: const SessionBacking(level: 0.5, pan: 0.25, outputMask: 0x3),
+      clickPan: -0.5,
+      recordedTempoBpm: 90,
+      recordedLengthFrames: 96000,
+      defaultFollowTempo: false,
+      trackFollowTempoOverrides: const {1: true},
+      defaultPitchMode: PitchMode.followsSpeed,
+      trackPitchModeOverrides: const {2: PitchMode.unchanged},
+    );
+
+    test('the source session sets every manifest field away from its '
+        'default', () {
+      // A field added to Session shows up here first: name it in this
+      // list, set it away from its default above, and write its New loop
+      // fate into Session.forNewLoop.
+      final source = full.toJson();
+      expect(source.keys.toSet(), {
+        'version',
+        'name',
+        'sampleRate',
+        'channels',
+        'baseLengthFrames',
+        'tracks',
+        'laneChains',
+        'monitors',
+        'trackChains',
+        'outputChains',
+        'allTracksChain',
+        'tempoBpm',
+        'tempoSource',
+        'tsNum',
+        'tsDen',
+        'quantizeDiv',
+        'loopBars',
+        'loopBeats',
+        'recordTiming',
+        'overdubDecay',
+        'clickMode',
+        'clickOutputMask',
+        'clickVolume',
+        'countInBars',
+        'looperMode',
+        'primaryTrack',
+        'defaultOneShot',
+        'defaultLengthPresetBars',
+        'defaultFadeDurationMs',
+        'trackFadeDurationOverrides',
+        'trackRecordTimingOverrides',
+        'trackOverdubDecayOverrides',
+        'trackOneShotOverrides',
+        'trackLengthPresetOverrides',
+        'trackPans',
+        'trackLevels',
+        'laneInputs',
+        'laneOutputs',
+        'laneCounts',
+        'syncTempo',
+        'recDub',
+        'autoRecord',
+        'defaultMultiple',
+        'pedalBindings',
+        'inputSetup',
+        'outputSetup',
+        'backing',
+        'clickPan',
+        'recordedTempoBpm',
+        'recordedLengthFrames',
+        'defaultFollowTempo',
+        'trackFollowTempoOverrides',
+        'defaultPitchMode',
+        'trackPitchModeOverrides',
+      });
+      final defaults = const Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: [],
+      ).toJson();
+      for (final key in source.keys.where((k) => k != 'version')) {
+        expect(
+          jsonEncode(source[key]),
+          isNot(jsonEncode(defaults[key])),
+          reason: '$key is at its default',
+        );
+      }
+    });
+
+    test('keeps every field and drops exactly the tracks, the grid, the '
+        'crown, the recorded tempo and length, and the name', () {
+      final source = full.toJson();
+      final expected = {
+        for (final entry in source.entries)
+          if (entry.key != 'name') entry.key: entry.value,
+        'tracks': <Object?>[],
+        'baseLengthFrames': 0,
+        'loopBars': 0,
+        'loopBeats': 0,
+        'primaryTrack': -1,
+        'recordedTempoBpm': 0.0,
+        'recordedLengthFrames': 0,
+      };
+
+      expect(
+        jsonEncode(full.forNewLoop().toJson()),
+        jsonEncode(expected),
+      );
+    });
+
+    test('rigForNewLoop is the empty rig with every setting and chain', () {
+      final rig = rigForNewLoop(full);
+
+      expect(rig.tracks, isEmpty);
+      expect(rig.baseLengthFrames, 0);
+      expect(rig.loopBars, 0);
+      expect(rig.primaryTrack, -1);
+      // The rest is what an Open of the same session applies.
+      final opened = rigFromBundle((session: full, laneStems: const {}));
+      expect(rig.tempoBpm, 96);
+      expect(rig.tempoSource, opened.tempoSource);
+      expect((rig.tsNum, rig.tsDen), (7, 8));
+      expect(rig.looperMode, LooperMode.sync);
+      expect(rig.recordTiming, opened.recordTiming);
+      expect(rig.clickMode, ClickMode.rec);
+      expect(rig.countInBars, 2);
+      expect(rig.trackLevels, opened.trackLevels);
+      expect(rig.trackPans, opened.trackPans);
+      expect(rig.laneInputs, opened.laneInputs);
+      expect(rig.laneOutputs, opened.laneOutputs);
+      expect(rig.laneCounts, opened.laneCounts);
+      expect(rig.inputSetup.trimDb, {0: 3});
+      expect(rig.outputSetup, opened.outputSetup);
+      expect(rig.laneChains.keys, [(2, 0)]);
+      expect(rig.monitors.single.input, 1);
+      expect(rig.trackChains.keys, [3]);
+      expect(rig.outputChains.keys, [1]);
+      expect(rig.allTracksChain, opened.allTracksChain);
     });
   });
 }

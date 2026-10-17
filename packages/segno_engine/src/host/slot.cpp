@@ -348,6 +348,15 @@ int32_t le_plugin_param_set(le_plugin_slot* slot, uint32_t id, double value) {
   return LE_OK;
 }
 
+int32_t le_plugin_slot_prepare_param(le_plugin_slot* slot, uint32_t id,
+                                       double value) {
+  if (!slot || slot->ready.load(std::memory_order_acquire)) return LE_ERR_INVALID;
+  const uint32_t tail = slot->paramTail.load(std::memory_order_relaxed);
+  const uint32_t next = (tail + 1) & (kParamRing - 1);
+  if (next == slot->paramHead.load(std::memory_order_acquire)) return LE_ERR_INVALID;
+  return le_plugin_param_set(slot, id, value);
+}
+
 int32_t le_plugin_param_value_text(le_plugin_slot* slot, uint32_t id,
                                    double value, char* out, int32_t out_size) {
   if (!slot || !out || out_size <= 0) return LE_ERR_INVALID;

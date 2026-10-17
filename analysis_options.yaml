@@ -7,7 +7,6 @@ analyzer:
     - build/**
     - ios/**
     - macos/**
-    - linux/**
 linter:
   rules:
     public_member_api_docs: false

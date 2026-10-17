@@ -1,10 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/session/session_mapping.dart';
 import 'package:segno_engine/segno_engine.dart' show MockAudioEngine;
 import 'package:session_repository/session_repository.dart';
 
-/// The manifest-v5 migration invariants that only a full save → load → save
+/// The chain decoder and slot-id invariants that only a save → load → save
 /// cycle can prove (flow SC-6), exercised through the REAL bloc-layer mapping
 /// and a REAL `LooperRepository` — the mint-once slot-id rule lives at the
 /// repository's chain write boundary, so a mapping-only test cannot see it.
@@ -35,7 +36,7 @@ void main() {
       laneChains: chains.laneChains,
       monitors: chains.monitors,
       trackChains: chains.trackChains,
-      masterChain: chains.masterChain,
+      outputChains: chains.outputChains,
     ),
     laneStems: const {},
   );
@@ -46,12 +47,12 @@ void main() {
   );
 
   test(
-    'a v4 bundle loads with fresh slot ids minted ONCE, then save -> load -> '
+    'bare-array FX payloads mint slot ids once, then save -> load -> '
     'save is byte-idempotent across all four stages (flow SC-6)',
     () async {
-      // A v4 manifest: bare entries arrays (no envelope), no bus stages, and
-      // therefore no slot ids anywhere.
-      final v4 = (
+      // A current Session object carrying bare-array FX payloads. The manifest
+      // reader itself accepts only schema 9; this exercises the FX decoder.
+      final bareChains = (
         session: Session(
           sampleRate: 48000,
           channels: 1,
@@ -70,7 +71,7 @@ void main() {
           monitors: [
             SessionMonitor(
               input: 0,
-              enabled: true,
+              mode: 'on',
               outputMask: 0x3,
               volume: 1,
               muted: false,
@@ -83,32 +84,39 @@ void main() {
         laneStems: const <(int, int), List<Never>>{},
       );
 
-      await load(v4);
+      await load(bareChains);
 
-      // Mint-once, part 1: the legacy entries came back with stable ids.
+      // Mint-once, part 1: decoded entries came back with stable ids.
       final minted = [
         for (final fx in looper.laneEffects(0, 0)) fx.slotId,
       ];
       expect(minted, everyElement(isNotNull));
       expect(minted.toSet(), hasLength(2)); // unique within the session
 
-      // Stage the two bus chains the v4 manifest could not describe, one of
-      // them chain-disabled, so the round-trip below covers all four stages.
+      // Stage the two bus chains, one disabled, so the round-trip covers all
+      // four stages.
       looper
         ..setTrackEffects(
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.delay)],
         )
         ..setTrackChainEnabled(channel: 1, enabled: false)
-        ..setMasterEffects(
+        ..setOutputEffects(
+          bus: 0,
           effects: [BuiltInEffect(type: TrackEffectType.filter)],
         )
-        ..setMasterChainEnabled(enabled: false)
+        ..setOutputChainEnabled(bus: 0, enabled: false)
         ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
 
-      final first = chainsFromLooper(looper);
+      final first = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
       await load(bundleOf(first));
-      final second = chainsFromLooper(looper);
+      final second = chainsFromLooper(
+        looper,
+        projection: FxChainPersistence(looper: looper),
+      );
 
       // Mint-once, part 2: the ids that survived the reload are the SAME ones
       // — a re-mint per load would silently dangle every stored binding.
@@ -128,17 +136,20 @@ void main() {
         [for (final c in second.trackChains) (c.channel, c.encoded)],
         [for (final c in first.trackChains) (c.channel, c.encoded)],
       );
-      expect(second.masterChain, first.masterChain);
+      expect(
+        [for (final c in second.outputChains) (c.bus, c.encoded)],
+        [for (final c in first.outputChains) (c.bus, c.encoded)],
+      );
 
       // And the flags themselves survived, not just the bytes.
       expect(looper.laneChainEnabled(0, 0), isFalse);
       expect(looper.trackChainEnabled(1), isFalse);
-      expect(looper.masterChainEnabled, isFalse);
+      expect(looper.outputChainEnabled(0), isFalse);
     },
   );
 
   test(
-    'a v4 bundle load is FINGERPRINT-identical to the session that wrote it: '
+    'bare-array FX payload has the same audible fingerprint after decode: '
     'the enabled defaults fold as audible and slot ids are excluded from the '
     'fingerprint (flow SC-6)',
     () async {
@@ -146,9 +157,9 @@ void main() {
         BuiltInEffect(type: TrackEffectType.drive),
         BuiltInEffect(type: TrackEffectType.reverb, params: const [0.3, 0.7]),
       ];
-      // What a pre-FX-v3 build persisted, and the fingerprint of that chain
-      // computed with no enabled/slotId concept in sight.
-      final legacy = encodeTrackEffects(entries);
+      // The bare-array FX decoder assigns current defaults and slot ids while
+      // preserving the chain's audible fingerprint.
+      final bare = encodeTrackEffects(entries);
       final before = fxChainFingerprint(entries);
 
       await load((
@@ -158,7 +169,7 @@ void main() {
           baseLengthFrames: 0,
           tracks: const [],
           laneChains: [
-            SessionLaneChain(channel: 0, lane: 0, encoded: legacy),
+            SessionLaneChain(channel: 0, lane: 0, encoded: bare),
           ],
         ),
         laneStems: const {},

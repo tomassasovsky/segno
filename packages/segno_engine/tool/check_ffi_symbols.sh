@@ -15,12 +15,13 @@
 # app starts -- off a periodic timer, so it repeated for as long as each run
 # lasted -- from a bundle whose Dart half was newer than its .so half.
 # Nothing in the build had anything to say about it. This script is that voice.
+# (That entry point is le_volume_space since #1177.)
 #
 # Usage:
 #   check_ffi_symbols.sh <libsegno_engine.so> [bindings.dart]
 #
 #   <libsegno_engine.so>  The BUILT shared object that ships in the bundle,
-#                         e.g. build/linux/arm64/release/bundle/lib/libsegno_engine.so
+#                         e.g. build/appliance/bundle/lib/libsegno_engine.so
 #   [bindings.dart]       Defaults to the generated bindings in this package.
 #
 # Environment:
@@ -37,10 +38,9 @@ die() { echo "$SELF: error: $*" >&2; exit 1; }
 # --- Resolve inputs -----------------------------------------------------------
 so="${1:-}"
 [ -n "$so" ] || die "usage: $SELF <libsegno_engine.so> [bindings.dart]"
-# CI passes a glob (build/linux/*/debug/bundle/lib/libsegno_engine.so). If a
-# stale sibling arch directory makes it match twice, the second path would land
-# in $2 and be read as the bindings file -- a confusing failure a long way from
-# its cause. Name it here instead.
+# A glob that matches two libraries would put the second path in $2, where it
+# would be read as the bindings file -- a confusing failure a long way from its
+# cause. Name it here instead.
 [ "$#" -le 2 ] || die "expected at most 2 arguments, got $#: $*
   (a glob matching more than one library will do this)"
 [ -f "$so" ] || die "shared object not found: $so"

@@ -15,6 +15,8 @@ class WifiState extends Equatable {
     this.errorMessage,
     this.errorKind,
     this.failedSsid,
+    this.leftSsid,
+    this.internet,
   });
 
   /// Whether the appliance WiFi helper is available.
@@ -36,7 +38,7 @@ class WifiState extends Equatable {
   final String? connectingSsid;
 
   /// True while [connectingSsid] is a bounded re-activation after a
-  /// backend/transient failure, so the banner can say "retrying" instead of
+  /// backend/transient failure, so the page can say "retrying" instead of
   /// pretending this is a first attempt (#829).
   final bool retrying;
 
@@ -55,11 +57,43 @@ class WifiState extends Equatable {
   /// The SSID [errorMessage] is about.
   ///
   /// Tied to the error rather than kept beside it, so a stale SSID can never
-  /// outlive the message that named it — the failure banner says which network
-  /// refused, and a banner naming the wrong one is worse than no banner.
+  /// outlive the message that named it — a failure naming the wrong network
+  /// is worse than none.
   final String? failedSsid;
 
+  /// The network the musician left on purpose (Disconnect, or the radio
+  /// switch), which is therefore not [lostSsid]. Cleared by any connection.
+  final String? leftSsid;
+
+  /// The last internet check: the connection it was made over and whether the
+  /// internet answered. Null until one has run.
+  final ({String ssid, bool online})? internet;
+
+  /// The network the console dropped without being asked to: the saved
+  /// network that was active last, while the radio is on and nothing is
+  /// associated or joining. Null otherwise.
+  String? get lostSsid {
+    final last = status.lastSsid;
+    if (!supported || !status.enabled || status.connected) return null;
+    if (connectingSsid != null || last.isEmpty || last == leftSsid) {
+      return null;
+    }
+    return status.autoConnect.containsKey(last) ? last : null;
+  }
+
+  /// Whether the connection is up but the last check of it found no internet.
+  bool get noInternet {
+    final check = internet;
+    return status.connected &&
+        check != null &&
+        check.ssid == status.ssid &&
+        !check.online;
+  }
+
   /// Returns a copy with the given fields replaced.
+  ///
+  /// A status that is connected clears [leftSsid]: once the console is on a
+  /// network again, the next drop is a loss whatever came before.
   WifiState copyWith({
     bool? supported,
     WifiStatus? status,
@@ -72,24 +106,31 @@ class WifiState extends Equatable {
     String? errorMessage,
     WifiJoinErrorKind? errorKind,
     String? failedSsid,
+    String? leftSsid,
+    ({String ssid, bool online})? internet,
     bool clearError = false,
     bool clearConnectingSsid = false,
-  }) => WifiState(
-    supported: supported ?? this.supported,
-    status: status ?? this.status,
-    networks: networks ?? this.networks,
-    scanning: scanning ?? this.scanning,
-    busy: busy ?? this.busy,
-    connectingSsid: clearConnectingSsid
-        ? null
-        : (connectingSsid ?? this.connectingSsid),
-    // Retrying describes an in-flight join; it cannot outlive the marker.
-    retrying: !clearConnectingSsid && (retrying ?? this.retrying),
-    disconnecting: disconnecting ?? this.disconnecting,
-    errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
-    errorKind: clearError ? null : (errorKind ?? this.errorKind),
-    failedSsid: clearError ? null : (failedSsid ?? this.failedSsid),
-  );
+  }) {
+    final nextStatus = status ?? this.status;
+    return WifiState(
+      supported: supported ?? this.supported,
+      status: nextStatus,
+      networks: networks ?? this.networks,
+      scanning: scanning ?? this.scanning,
+      busy: busy ?? this.busy,
+      connectingSsid: clearConnectingSsid
+          ? null
+          : (connectingSsid ?? this.connectingSsid),
+      // Retrying describes an in-flight join; it cannot outlive the marker.
+      retrying: !clearConnectingSsid && (retrying ?? this.retrying),
+      disconnecting: disconnecting ?? this.disconnecting,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      errorKind: clearError ? null : (errorKind ?? this.errorKind),
+      failedSsid: clearError ? null : (failedSsid ?? this.failedSsid),
+      leftSsid: nextStatus.connected ? null : (leftSsid ?? this.leftSsid),
+      internet: internet ?? this.internet,
+    );
+  }
 
   @override
   List<Object?> get props => [
@@ -104,5 +145,7 @@ class WifiState extends Equatable {
     errorMessage,
     errorKind,
     failedSsid,
+    leftSsid,
+    internet,
   ];
 }

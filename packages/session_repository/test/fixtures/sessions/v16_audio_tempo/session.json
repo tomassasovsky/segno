@@ -1,0 +1,343 @@
+{
+  "version": 16,
+  "sampleRate": 48000,
+  "channels": 1,
+  "baseLengthFrames": 2400,
+  "tracks": [
+    {
+      "channel": 0,
+      "multiple": 1,
+      "lengthFrames": 2400,
+      "fadeAmount": 1.0,
+      "reversed": false,
+      "spanFrames": 0,
+      "lanes": [
+        {
+          "lane": 0,
+          "volume": 1.0,
+          "muted": false,
+          "outputMask": 3,
+          "inputChannel": 0,
+          "layers": [
+            {
+              "file": "track0_lane0_L0.wav"
+            },
+            {
+              "file": "track0_lane0_L1.wav"
+            },
+            {
+              "file": "track0_lane0_L2.wav"
+            }
+          ],
+          "history": [
+            {
+              "kind": "layer",
+              "skipped": 0
+            },
+            {
+              "kind": "layer",
+              "skipped": 0
+            }
+          ],
+          "undoCount": 2,
+          "redoCount": 0
+        }
+      ]
+    },
+    {
+      "channel": 1,
+      "multiple": 2,
+      "lengthFrames": 4800,
+      "fadeAmount": 1.0,
+      "reversed": true,
+      "spanFrames": 0,
+      "lanes": [
+        {
+          "lane": 0,
+          "volume": 0.5,
+          "muted": true,
+          "outputMask": 3,
+          "inputChannel": 0,
+          "layers": [
+            {
+              "file": "track1_lane0_L0.wav"
+            }
+          ],
+          "history": [],
+          "undoCount": 0,
+          "redoCount": 0
+        },
+        {
+          "lane": 1,
+          "volume": 1.5,
+          "muted": false,
+          "outputMask": 1,
+          "inputChannel": 1,
+          "layers": [
+            {
+              "file": "track1_lane1_L0.wav"
+            }
+          ],
+          "pan": 0.5,
+          "balance": 0.75,
+          "history": [],
+          "undoCount": 0,
+          "redoCount": 0
+        }
+      ]
+    },
+    {
+      "channel": 2,
+      "multiple": 1,
+      "lengthFrames": 2400,
+      "fadeAmount": 1.0,
+      "reversed": false,
+      "spanFrames": 0,
+      "lanes": [
+        {
+          "lane": 0,
+          "volume": 1.0,
+          "muted": false,
+          "outputMask": 3,
+          "inputChannel": 0,
+          "layers": [
+            {
+              "file": "track2_lane0_L0.wav"
+            },
+            {
+              "file": "track2_lane0_L1.wav"
+            }
+          ],
+          "history": [
+            {
+              "kind": "layer",
+              "skipped": 0
+            }
+          ],
+          "undoCount": 0,
+          "redoCount": 1
+        }
+      ]
+    },
+    {
+      "channel": 3,
+      "multiple": 1,
+      "lengthFrames": 2400,
+      "fadeAmount": 1.0,
+      "reversed": false,
+      "spanFrames": 2400,
+      "lanes": [
+        {
+          "lane": 0,
+          "volume": 1.0,
+          "muted": false,
+          "outputMask": 3,
+          "inputChannel": 0,
+          "layers": [
+            {
+              "file": "track3_lane0_L0.wav"
+            },
+            {
+              "file": "track3_lane0_L1.wav"
+            }
+          ],
+          "history": [
+            {
+              "kind": "peel",
+              "skipped": 0
+            }
+          ],
+          "undoCount": 1,
+          "redoCount": 0
+        }
+      ]
+    },
+    {
+      "channel": 4,
+      "multiple": 2,
+      "lengthFrames": 4800,
+      "fadeAmount": 1.0,
+      "reversed": false,
+      "spanFrames": 2400,
+      "lanes": [
+        {
+          "lane": 0,
+          "volume": 1.0,
+          "muted": false,
+          "outputMask": 3,
+          "inputChannel": 0,
+          "layers": [
+            {
+              "file": "track4_lane0_L0.wav"
+            },
+            {
+              "file": "track4_lane0_L1.wav"
+            },
+            {
+              "file": "track4_lane0_L2.wav"
+            }
+          ],
+          "history": [
+            {
+              "kind": "length",
+              "skipped": 0,
+              "start": 0
+            },
+            {
+              "kind": "length",
+              "skipped": 0,
+              "start": 2400
+            }
+          ],
+          "undoCount": 1,
+          "redoCount": 1
+        }
+      ]
+    }
+  ],
+  "laneChains": [
+    {
+      "channel": 0,
+      "lane": 0,
+      "encoded": "{\"chainEnabled\":true,\"entries\":[{\"type\":3,\"params\":[0.3,0.4,0.5,0.0],\"slotId\":\"204f9ee7-0\"},{\"type\":7,\"params\":[0.5,0.5,0.35,0.0],\"slotId\":\"204f9ee7-1\"}]}"
+    },
+    {
+      "channel": 3,
+      "lane": 1,
+      "encoded": "{\"chainEnabled\":false,\"entries\":[{\"type\":1,\"params\":[0.5,0.8,0.0,0.0],\"slotId\":\"204f9ee7-2\"}]}"
+    }
+  ],
+  "monitors": [
+    {
+      "input": 0,
+      "mode": "auto",
+      "outputMask": 3,
+      "volume": 0.9,
+      "muted": false,
+      "encoded": "{\"chainEnabled\":true,\"entries\":[{\"type\":6,\"params\":[0.45,0.5,0.35,0.0],\"slotId\":\"204f9ee7-5\"}]}"
+    },
+    {
+      "input": 1,
+      "mode": "on",
+      "outputMask": 2,
+      "volume": 0.75,
+      "muted": true,
+      "encoded": "{\"chainEnabled\":true,\"entries\":[]}"
+    }
+  ],
+  "trackChains": [
+    {
+      "channel": 1,
+      "encoded": "{\"chainEnabled\":true,\"entries\":[{\"type\":4,\"params\":[0.3,0.7,0.0,0.0],\"slotId\":\"204f9ee7-3\"}]}"
+    }
+  ],
+  "outputChains": [
+    {
+      "bus": 1,
+      "encoded": "{\"chainEnabled\":true,\"entries\":[{\"type\":2,\"params\":[0.5,0.2,0.0,0.0],\"slotId\":\"204f9ee7-4\"}]}"
+    }
+  ],
+  "allTracksChain": "{\"chainEnabled\":false,\"entries\":[{\"type\":1,\"params\":[0.5,0.8,0.0,0.0],\"slotId\":\"204f9ee7-2\"}]}",
+  "tempoBpm": 100.0,
+  "tempoSource": "manual",
+  "tsNum": 3,
+  "tsDen": 4,
+  "quantizeDiv": "bar",
+  "loopBars": 0,
+  "loopBeats": 2,
+  "recordTiming": "bar",
+  "overdubDecay": 20,
+  "clickMode": "rec",
+  "clickOutputMask": 2,
+  "clickVolume": 0.8,
+  "countInBars": 2,
+  "looperMode": "sync",
+  "primaryTrack": 0,
+  "defaultOneShot": false,
+  "defaultLengthPresetBars": 4,
+  "defaultFadeDurationMs": 6000,
+  "trackFadeDurationOverrides": {
+    "1": 2500
+  },
+  "trackRecordTimingOverrides": {
+    "2": "immediately"
+  },
+  "trackOverdubDecayOverrides": {
+    "1": 50
+  },
+  "trackOneShotOverrides": {
+    "2": true,
+    "5": true
+  },
+  "trackLengthPresetOverrides": {
+    "1": 2
+  },
+  "trackPans": {
+    "1": -0.25
+  },
+  "trackLevels": {
+    "1": 0.7
+  },
+  "laneInputs": {
+    "3.0": 1
+  },
+  "laneOutputs": {
+    "3.0": 2
+  },
+  "laneCounts": {
+    "3": 2
+  },
+  "syncTempo": false,
+  "recDub": true,
+  "autoRecord": true,
+  "defaultMultiple": 2,
+  "pedalBindings": "[{\"button\":\"track1\",\"bank\":0,\"target\":\"{\\\"stage\\\":\\\"loop\\\",\\\"index\\\":0,\\\"lane\\\":0}\",\"behavior\":\"toggle\"},{\"button\":\"track2\",\"bank\":0,\"target\":\"{\\\"stage\\\":\\\"master\\\",\\\"index\\\":0}\",\"behavior\":\"momentary\"}]",
+  "inputSetup": {
+    "trimDb": {
+      "0": -3.0
+    },
+    "pairs": {
+      "0": 0.2
+    }
+  },
+  "outputSetup": {
+    "level": {
+      "0": 0.8
+    },
+    "mono": {
+      "1": true
+    }
+  },
+  "backing": {
+    "prepared": [
+      {
+        "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "name": "Evening lights.wav"
+      },
+      {
+        "digest": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+        "name": "Count-in.mp3"
+      }
+    ],
+    "loaded": {
+      "digest": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+      "name": "Count-in.mp3"
+    },
+    "endMode": "next",
+    "level": 0.7,
+    "pan": -0.3,
+    "outputMask": 3
+  },
+  "clickPan": 0.4,
+  "recordedTempoBpm": 120.0,
+  "recordedLengthFrames": 1200,
+  "defaultFollowTempo": false,
+  "trackFollowTempoOverrides": {
+    "1": true,
+    "3": false
+  },
+  "defaultPitchMode": "followsSpeed",
+  "trackPitchModeOverrides": {
+    "2": "unchanged"
+  }
+}

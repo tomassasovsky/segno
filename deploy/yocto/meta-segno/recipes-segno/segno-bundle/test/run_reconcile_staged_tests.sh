@@ -39,6 +39,7 @@ run_reconcile() {
     SEGNO_STAGED_FILE="$work/state/ota-staged-version" \
     SEGNO_STAGED_BOOT_ID_FILE="$work/state/ota-staged-boot-id" \
     SEGNO_BOOT_ID_FILE="$work/boot_id" \
+    SEGNO_TRYBOOT_REQUESTED_FILE="$work/state/ota-tryboot-requested" \
         "$SHELL_UNDER_TEST" "$CTL" reconcile-staged 2>"$work/stderr"
 }
 
@@ -67,6 +68,7 @@ echo "0.6.0" > "$work/state/build-version"
 echo "0.7.0" > "$work/state/ota-staged-version"
 echo "boot-a" > "$work/state/ota-staged-boot-id"   # staged before the reboot
 echo "boot-b" > "$work/boot_id"                    # ...and we rebooted since
+: > "$work/state/ota-tryboot-requested"            # ...into the staged slot
 # No rauc anywhere on PATH on purpose: the health-gate rollback leaves the
 # inactive slot NOT bad, and the decision must not need RAUC at all.
 out=$(run_reconcile); rc=$?
@@ -74,6 +76,19 @@ check "exits 0" 0 "$rc"
 check "clears the stale marker" no "$(has_marker)"
 check "clears the boot-id record with it" no "$(has_boot_record)"
 check "names the reason" '{"cleared":true,"reason":"tryboot-not-taken"}' "$out"
+check "clears the tryboot request" no "$([ -e "$work/state/ota-tryboot-requested" ] && echo yes || echo no)"
+teardown
+
+echo "rebooted without trying the staged slot (Shut down, a power cut)"
+setup
+echo "0.6.0" > "$work/state/build-version"
+echo "0.7.0" > "$work/state/ota-staged-version"
+echo "boot-a" > "$work/state/ota-staged-boot-id"
+echo "boot-b" > "$work/boot_id"
+out=$(run_reconcile); rc=$?
+check "exits 0" 0 "$rc"
+check "clears the marker" no "$(has_marker)"
+check "is no rollback" '{"cleared":true,"reason":"not-applied"}' "$out"
 teardown
 
 # --- kept: the tryboot took, or has not happened yet ------------------------
@@ -117,7 +132,7 @@ echo "boot-b" > "$work/boot_id"
 out=$(run_reconcile); rc=$?
 check "exits 0" 0 "$rc"
 check "clears the legacy marker" no "$(has_marker)"
-check "names the same reason" '{"cleared":true,"reason":"tryboot-not-taken"}' "$out"
+check "names the same reason" '{"cleared":true,"reason":"not-applied"}' "$out"
 teardown
 
 # --- degenerate cells -------------------------------------------------------
@@ -198,6 +213,7 @@ SEGNO_STAGED_FILE="$work/state/ota-staged-version" \
 SEGNO_STAGED_BOOT_ID_FILE="$work/state/ota-staged-boot-id" \
 SEGNO_BOOT_ID_FILE="$work/boot_id" \
 SEGNO_PENDING_FLAG="$work/state/update-pending" \
+SEGNO_UPDATE_ATTEMPT_FILE="$work/state/update-attempt" \
 PATH="$work/bin:$PATH" \
     "$SHELL_UNDER_TEST" "$CTL" install >/dev/null 2>"$work/stderr"; rc=$?
 check "stages" 0 "$rc"

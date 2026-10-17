@@ -67,7 +67,8 @@ static const enum_pin BTN_PINS[] = {
   {"track3", PEDAL_BTN_TRACK3}, {"track4", PEDAL_BTN_TRACK4}, {"clear", PEDAL_BTN_CLEAR},
   {"bank", PEDAL_BTN_BANK}};
 static const enum_pin MODE_PINS[] = {
-  {"rec", PEDAL_MODE_REC}, {"play", PEDAL_MODE_PLAY}, {"fx", PEDAL_MODE_FX}};
+  {"rec", PEDAL_MODE_REC}, {"play", PEDAL_MODE_PLAY}, {"fx", PEDAL_MODE_FX},
+  {"custom", PEDAL_MODE_CUSTOM}};
 static const enum_pin LOOPER_PINS[] = {
   {"multi", PEDAL_LOOPER_MULTI}, {"sync", PEDAL_LOOPER_SYNC}, {"song", PEDAL_LOOPER_SONG},
   {"band", PEDAL_LOOPER_BAND}, {"free", PEDAL_LOOPER_FREE}};
@@ -160,6 +161,10 @@ static void check_fixture(const char *dir, const char *name) {
       CHECK(len == 1, "%s: bad encoder payload", name);
       m = pedal_link_encode_encoder((int8_t)payload[0], again);
       break;
+    case PEDAL_LINK_TYPE_ENCODER_BUTTON:
+      CHECK(len == 1 && payload[0] <= 1, "%s: bad encoder button payload", name);
+      m = pedal_link_encode_encoder_button(payload[0], again);
+      break;
     case PEDAL_LINK_TYPE_CTRL:
       CHECK(len == 4, "%s: ctrl with %u payload bytes, want 4", name, len);
       CHECK(payload[0] < PEDAL_CTRL_COUNT, "%s: ctrl jack %u out of range", name, payload[0]);
@@ -201,6 +206,10 @@ static void check_fixture(const char *dir, const char *name) {
     CHECK((int8_t)payload[0] == -3, "encoder_minus3: %d", (int8_t)payload[0]);
   } else if (strcmp(name, "encoder_plus1.bin") == 0) {
     CHECK((int8_t)payload[0] == 1, "encoder_plus1: %d", (int8_t)payload[0]);
+  } else if (strcmp(name, "encoder_button_down.bin") == 0) {
+    CHECK(payload[0] == 1, "encoder_button_down: %u", payload[0]);
+  } else if (strcmp(name, "encoder_button_up.bin") == 0) {
+    CHECK(payload[0] == 0, "encoder_button_up: %u", payload[0]);
   } else if (strcmp(name, "playing_bankb.bin") == 0) {
     CHECK(st.active_bank == 1 && st.selected_track == 6 && st.mode == PEDAL_MODE_PLAY &&
               st.global_color == PEDAL_GLOBAL_AMBER && st.looper_mode == PEDAL_LOOPER_SYNC &&
@@ -216,6 +225,30 @@ static void check_fixture(const char *dir, const char *name) {
               st.loop_length_micros == 0xFFFFFFFFu && st.track_leds[0] == PEDAL_LED_BLUE &&
               st.track_leds[1] == PEDAL_LED_OFF && st.selected_track == 2,
           "fx_mode: fields differ");
+  } else if (strcmp(name, "custom_mode_bankb.bin") == 0) {
+    CHECK(st.mode == PEDAL_MODE_CUSTOM && st.active_bank == 1 && st.selected_track == 5 &&
+              st.global_color == PEDAL_GLOBAL_AMBER && st.looper_mode == PEDAL_LOOPER_BAND &&
+              st.counting_in && st.loop_length_micros == 1234567u && st.master_gain == 128 &&
+              st.track_leds[1] == PEDAL_LED_RED && st.track_leds[5] == PEDAL_LED_BLUE &&
+              !st.goodbye && !st.clear_fade,
+          "custom_mode_bankb: fields differ");
+  } else if (strcmp(name, "song_queue_track2_127.bin") == 0) {
+    CHECK(st.looper_mode == PEDAL_LOOPER_SONG && st.mode == PEDAL_MODE_PLAY &&
+              st.queued_button == PEDAL_BTN_TRACK2 + 1 && st.queued_progress == 127 &&
+              st.track_leds[1] == PEDAL_LED_GREEN,
+          "song_queue_track2_127: fields differ");
+  } else if (strcmp(name, "song_queue_track4_254.bin") == 0) {
+    CHECK(st.queued_button == PEDAL_BTN_TRACK4 + 1 && st.queued_progress == 254 &&
+              st.active_bank == 1,
+          "song_queue_track4_254: fields differ");
+  } else if (strcmp(name, "song_queue_none.bin") == 0) {
+    CHECK(st.looper_mode == PEDAL_LOOPER_SONG && st.queued_button == 0 &&
+              st.queued_progress == 0,
+          "song_queue_none: fields differ");
+  } else if (strcmp(name, "dimmed.bin") == 0) {
+    CHECK(st.dimmed == 1 && st.global_color == PEDAL_GLOBAL_GREEN && st.active_button_mask == 1 &&
+              !st.counting_in && !st.goodbye,
+          "dimmed: fields differ");
   } else if (strcmp(name, "mode_counting_in.bin") == 0) {
     CHECK(st.counting_in == 1 && st.looper_mode == PEDAL_LOOPER_BAND && st.global_color == PEDAL_GLOBAL_RED,
           "mode_counting_in: fields differ");
@@ -284,9 +317,13 @@ static void check_rejections(void) {
   uint8_t *pl = sf + 3;
   pedal_state out;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 1, "blank state rejected");
-  pl[0] = 0x10;
+  pl[0] = 0x20;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 0, "reserved flag accepted");
   pl[0] = 0;
+  pl[1] = PEDAL_MODE_CUSTOM;
+  CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 1 &&
+            out.mode == PEDAL_MODE_CUSTOM,
+        "custom mode rejected");
   pl[1] = PEDAL_MODE_COUNT;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 0, "bad mode accepted");
   pl[1] = 0;
@@ -294,6 +331,67 @@ static void check_rejections(void) {
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN, &out) == 0, "bad LED accepted");
   pl[13] = 0;
   CHECK(pedal_link_decode_state(pl, PEDAL_LINK_STATE_LEN - 1, &out) == 0, "short payload accepted");
+}
+
+/* RING_BRIDGE is the Pi tool's, not the app's, so no Dart fixture covers it:
+ * pin its bytes here. */
+static void check_ring_bridge(void) {
+  uint8_t frame[PEDAL_LINK_MAX_FRAME];
+  const size_t n = pedal_link_encode_ring_bridge(frame);
+  const uint8_t want[6] = {0xA5, 0x12, 0x02, 'R', 'B', 0x12 ^ 0x02 ^ 'R' ^ 'B'};
+  CHECK(n == 6 && memcmp(frame, want, 6) == 0, "ring bridge frame drifted");
+  uint8_t type, len, payload[PEDAL_LINK_MAX_PAYLOAD];
+  CHECK(parse_all(frame, n, &type, payload, &len, NULL) == 1 && type == PEDAL_LINK_TYPE_RING_BRIDGE &&
+            len == 2 && payload[0] == 'R' && payload[1] == 'B',
+        "ring bridge frame does not parse");
+}
+
+static void check_physical_state(void) {
+  const uint8_t p[53] = {0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,255,
+    0,128,255,165,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,
+    18,19,20,21,22,23,254,253,252,1,2,10,200};
+  pedal_state state;
+  CHECK(PEDAL_LINK_PROTOCOL_VERSION == 11 && PEDAL_LINK_STATE_LEN == 53,
+        "wire reservation changed");
+  CHECK(pedal_link_decode_state(p,53,&state),"literal RGB state refused");
+  CHECK(state.active_button_mask == 0x201 && state.pedal_colors[0].g == 128 &&
+        state.pedal_colors[1].r == 165 && state.pedal_colors[9].b == 252,
+        "literal RGB/mask positions changed");
+  CHECK(state.queued_button == PEDAL_BTN_BANK + 1 && state.queued_progress == 200,
+        "literal queue positions changed");
+  uint8_t encoded[PEDAL_LINK_MAX_FRAME];
+  CHECK(pedal_link_encode_state(&state,encoded)==57 && !memcmp(encoded+3,p,53),
+        "literal state encoding differs");
+  /* The queue: a button past the last, progress 255 (a full pill is never
+   * drawn from a queue) and progress without a button are each refused, by
+   * the decoder and by the encoder. */
+  const uint8_t queues[][2] = {{PEDAL_BTN_COUNT + 1, 0}, {1, 255}, {0, 1}};
+  for (size_t i = 0; i < sizeof(queues) / sizeof(*queues); ++i) {
+    uint8_t q[53]; memcpy(q,p,53);
+    q[51] = queues[i][0]; q[52] = queues[i][1];
+    pedal_state before; memset(&before,0x5a,sizeof(before)); state=before;
+    CHECK(!pedal_link_decode_state(q,53,&state),"bad queue accepted");
+    CHECK(!memcmp(&state,&before,sizeof(state)),"queue refusal mutated output");
+    pedal_state good;
+    CHECK(pedal_link_decode_state(p,53,&good),"literal state refused");
+    good.queued_button = queues[i][0]; good.queued_progress = queues[i][1];
+    CHECK(pedal_link_encode_state(&good,encoded)==0,"bad queue encoded");
+  }
+  uint8_t bad[54]; memcpy(bad,p,53); bad[53]=0;
+  for (unsigned bit=2; bit<8; ++bit) {
+    bad[50]=(uint8_t)(1u<<bit);
+    pedal_state before; memset(&before,0x5a,sizeof(before));
+    state=before;
+    CHECK(!pedal_link_decode_state(bad,53,&state),"reserved mask accepted");
+    CHECK(!memcmp(&state,&before,sizeof(state)),"refusal mutated output");
+  }
+  bad[50]=2;
+  const uint8_t lengths[]={0,19,21,49,50,51,52,54};
+  for (size_t i=0;i<sizeof(lengths);++i) {
+    pedal_state before; memset(&before,0x5a,sizeof(before)); state=before;
+    CHECK(!pedal_link_decode_state(bad,lengths[i],&state),"wrong length accepted");
+    CHECK(!memcmp(&state,&before,sizeof(state)),"length refusal mutated output");
+  }
 }
 
 int main(int argc, char **argv) {
@@ -324,6 +422,8 @@ int main(int argc, char **argv) {
           TABLES[t].table, g_enum_seen[t], TABLES[t].count);
   }
   check_rejections();
+  check_physical_state();
+  check_ring_bridge();
   if (g_failures) {
     fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

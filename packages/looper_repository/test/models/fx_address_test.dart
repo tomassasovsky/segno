@@ -3,12 +3,13 @@ import 'package:looper_repository/looper_repository.dart';
 
 void main() {
   group('FxAddress', () {
-    test('round-trips JSON for all four stages', () {
+    test('round-trips JSON for every stage', () {
       const addresses = [
         FxAddress(stage: FxStage.input, index: 3),
         FxAddress(stage: FxStage.loop, index: 1, lane: 2),
         FxAddress(stage: FxStage.track, index: 5),
-        FxAddress(stage: FxStage.master),
+        FxAddress(stage: FxStage.allTracks),
+        FxAddress(stage: FxStage.output, index: 1),
       ];
       for (final address in addresses) {
         expect(FxAddress.fromJson(address.toJson()), address);
@@ -21,8 +22,12 @@ void main() {
       // The pinned wire form parts 6/7 persist: fixed key order, enum name.
       expect(loop.canonicalString(), '{"stage":"loop","index":1,"lane":2}');
       expect(
-        const FxAddress(stage: FxStage.master).canonicalString(),
-        '{"stage":"master","index":0}',
+        const FxAddress(stage: FxStage.allTracks).canonicalString(),
+        '{"stage":"allTracks","index":0}',
+      );
+      expect(
+        const FxAddress(stage: FxStage.output, index: 1).canonicalString(),
+        '{"stage":"output","index":1}',
       );
       // Byte-stable: equal addresses always encode identically, so string
       // equality is target identity.
@@ -53,23 +58,62 @@ void main() {
 
     test('unknown or missing stage decodes to null, as does bad JSON', () {
       expect(FxAddress.fromJson(const {'stage': 'sidechain'}), isNull);
+      // The retired four-stage `master` among them: a binding saved against
+      // it goes inert rather than retargeting itself at a destination its
+      // author never chose.
+      expect(FxAddress.fromJson(const {'stage': 'master'}), isNull);
       expect(FxAddress.fromJson(const {'index': 1}), isNull);
       expect(FxAddress.tryParse('not json'), isNull);
       expect(FxAddress.tryParse('[1,2]'), isNull);
     });
 
-    test('wrong-TYPED fields never throw — corrupt persisted bindings decode '
-        'to null or safe defaults, not a TypeError', () {
-      // The corrupt shapes parts 6/7 can feed across package boundaries.
-      expect(FxAddress.tryParse('{"stage":3,"index":0}'), isNull);
-      expect(FxAddress.fromJson(const {'stage': 3}), isNull);
+    test(
+      'wrong-typed and fractional coordinates reject without retargeting',
+      () {
+        // The corrupt shapes parts 6/7 can feed across package boundaries.
+        expect(FxAddress.tryParse('{"stage":3,"index":0}'), isNull);
+        expect(FxAddress.fromJson(const {'stage': 3}), isNull);
+        expect(
+          FxAddress.fromJson(const {'stage': 'track', 'index': 'four'}),
+          isNull,
+        );
+        expect(
+          FxAddress.fromJson(const {'stage': 'loop', 'index': 1, 'lane': 'x'}),
+          isNull,
+        );
+        expect(
+          FxAddress.fromJson(const {'stage': 'track', 'index': 0.5}),
+          isNull,
+        );
+        expect(
+          FxAddress.fromJson(const {'stage': 'loop', 'index': 1, 'lane': 0.5}),
+          isNull,
+        );
+      },
+    );
+
+    test('stage coordinates reject aliases but allow absent rig targets', () {
+      for (final raw in [
+        {'stage': 'loop', 'index': 1},
+        {'stage': 'input', 'index': 1, 'lane': 0},
+        {'stage': 'track', 'index': 1, 'lane': 0},
+        {'stage': 'allTracks', 'index': 1},
+        {'stage': 'allTracks', 'index': 0, 'lane': 0},
+        {'stage': 'output', 'index': 1, 'lane': 0},
+      ]) {
+        expect(FxAddress.fromJson(raw), isNull);
+      }
       expect(
-        FxAddress.fromJson(const {'stage': 'track', 'index': 'four'}),
-        const FxAddress(stage: FxStage.track),
+        FxAddress.fromJson(const {'stage': 'loop', 'index': 99, 'lane': 7}),
+        const FxAddress(stage: FxStage.loop, index: 99, lane: 7),
       );
       expect(
-        FxAddress.fromJson(const {'stage': 'loop', 'index': 1, 'lane': 'x'}),
-        const FxAddress(stage: FxStage.loop, index: 1),
+        FxAddress.fromJson(const {'stage': 'track', 'index': 999}),
+        const FxAddress(stage: FxStage.track, index: 999),
+      );
+      expect(
+        const FxAddress(stage: FxStage.loop).isStructurallyValid,
+        isFalse,
       );
     });
 

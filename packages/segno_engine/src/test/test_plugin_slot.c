@@ -437,6 +437,12 @@ static void test_plugin_state(void) {
   le_plugin_slot_destroy(slot);
 }
 
+/* Positional lifecycle harness: structural recipes are exercised by the full
+ * engine recipe suite, so none can be pending in this isolated host test. */
+int le_fx_edit_pending(le_engine* e, int owner, int ch, int lane) {
+  (void)e; (void)owner; (void)ch; (void)lane; return 0;
+}
+
 int main(void) {
   test_adapter_latency();
   test_enable_bypass_and_reenable();

@@ -1,0 +1,22 @@
+{
+  "base": "45ec78fb8b2b5e2e118b910677c172646ca4f761",
+  "reviewer": "One independent non-author reviewer performs five quality roles and complete bug review; separate adversarial probes",
+  "paths": {
+    "firmware/console_board/console_board.ino": "faea936675260d18e2cad0942cfb1712bb291f503af816cdf1ff62d87c8a42a6",
+    "firmware/console_board/pedal_link.h": "3e47a9c3a94838c32bcdb01630862c84d9e1d0f19182377998bec18e8ee68fe2",
+    "firmware/test/stubs/Adafruit_NeoPixel.h": "4f50d67603a28ada11601d1b24e86cc94d70b26f0668a891e82fd11a50b0752b",
+    "firmware/test/test_console_ctrl.cpp": "f52a2f4f203e31f00e5f0ec59525040c81eb191db61966165770481287761531",
+    "firmware/test/test_pedal_link.c": "8caab299ed04cc6135d213943ca1d34b834375ecf61fafae9d68c80b687a02ab",
+    "lib/pedal/view/pedal_plate.dart": "613fe93b2b5b68ede5c251ebbdf016111e600f52b60405fd08af2bfb86aeedc4",
+    "packages/pedal_repository/lib/src/pedal_link_codec.dart": "63579d6bf0def82af984485f323366006a094a2393462a3508df4bd35eb1c802",
+    "packages/pedal_repository/lib/src/pedal_mode.dart": "bccd286c48f77ef219968527cc9f865e20c21bb932c0d2e3c2768069aba8cdf1",
+    "packages/pedal_repository/test/fixtures/hello.bin": "31e1f437db679698549180c352c7e920e87f96ccf454419b108c7b4ce6f6b3c5",
+    "packages/pedal_repository/test/fixtures/custom_mode_bankb.bin": "d5d6f78f64fdc198ad180a16d21c907919755f18b026d78b688f176e6c3efc4c",
+    "packages/pedal_repository/test/fixtures/enum_mode_custom.bin": "d1949d560667222705836a197730b496dad5ee81eeb1ee286684556ef9787c78",
+    "packages/pedal_repository/test/helpers/golden_frames.dart": "3a1689e9af95438cc7842e311fd18c5ab2a3972104baff2c09bb5b84f05cef2d",
+    "packages/pedal_repository/test/pedal_link_codec_test.dart": "205af32567bd56821a71e7d4503384b783aee9401f61ea22c44b93efdbac2805",
+    "packages/pedal_repository/test/pedal_repository_test.dart": "6202f01657d120a712134e17828de8c85ee90fb0e9964b56c8f2f137455d7645",
+    "test/pedal/view/pedal_plate_test.dart": "914dab2fba5ace28d290b43f60961eaf1099d3a867fe9882517d89fe39faa7f8"
+  },
+  "fingerprint": "1969ff20d13e9144b6b3c65196dd425d189f0a80728e94d69cfc37f04a9e024a"
+}

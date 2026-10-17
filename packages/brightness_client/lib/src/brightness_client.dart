@@ -1,10 +1,14 @@
 /// I/O boundary for appliance display brightness (`segno-brightness-ctl`).
+///
+/// Every call names the display by its DRM connector (`HDMI-A-1`), so a
+/// change reaches that panel and no other.
 abstract class BrightnessClient {
-  /// Whether DDC/CI brightness control is available.
-  Future<bool> isSupported();
+  /// Whether the panel on [connector] takes brightness over DDC/CI.
+  Future<bool> isSupported(String connector);
 
-  /// Sets brightness in `0..1` (no-op when unsupported).
-  Future<void> set(double value);
+  /// Sets the panel on [connector] to [value] in `0..1` (no-op when
+  /// unsupported).
+  Future<void> set(String connector, double value);
 }
 
 /// No-op client used on desktop / when the helper is absent.
@@ -13,8 +17,8 @@ class UnsupportedBrightnessClient implements BrightnessClient {
   const UnsupportedBrightnessClient();
 
   @override
-  Future<bool> isSupported() async => false;
+  Future<bool> isSupported(String connector) async => false;
 
   @override
-  Future<void> set(double value) async {}
+  Future<void> set(String connector, double value) async {}
 }

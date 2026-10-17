@@ -131,10 +131,10 @@ void main() {
       );
 
       test(
-        'the highest scanned input (kMaxMonitoredInputs-1) is migrated',
+        'the highest scanned input (kMaxChannels-1) is migrated',
         () async {
           await settings.saveMonitorInput(
-            kMaxMonitoredInputs - 1,
+            kMaxChannels - 1,
             enabled: true,
             outputMask: 0x1,
           );
@@ -142,11 +142,11 @@ void main() {
           await runMonitorMigration(settings);
 
           expect(
-            await settings.loadMonitorInputMode(kMaxMonitoredInputs - 1),
+            await settings.loadMonitorInputMode(kMaxChannels - 1),
             'on',
           );
           expect(
-            await settings.loadMonitorOutput(kMaxMonitoredInputs - 1),
+            await settings.loadMonitorOutput(kMaxChannels - 1),
             0x1,
           );
         },

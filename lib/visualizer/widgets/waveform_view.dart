@@ -5,7 +5,9 @@ import 'package:segno/theme/theme.dart';
 
 /// Paints a mirrored, centered loop waveform from peak [samples] (index 0 =
 /// loop start, each in `0..1`) with a white playhead bar at [progress]
-/// (`0..1`). The stroke colour comes from the active [LooperTheme]'s waveform
+/// (`0..1`), and — when [bars] is set — the bar ruler of the accepted stage:
+/// a faint line at every bar with its number in the bottom-left corner of
+/// the bar. The stroke colour comes from the active [LooperTheme]'s waveform
 /// table, keyed by [state]. Repaints on a new list or progress is supplied.
 class WaveformView extends StatelessWidget {
   /// Creates a [WaveformView].
@@ -13,8 +15,8 @@ class WaveformView extends StatelessWidget {
     required this.samples,
     required this.state,
     this.progress = 0,
+    this.bars = 0,
     this.semanticLabel,
-    this.selectedTrack,
     super.key,
   });
 
@@ -24,8 +26,11 @@ class WaveformView extends StatelessWidget {
   /// Playhead position in `0..1`; the white bar is hidden when `<= 0`.
   final double progress;
 
-  /// The transport state the stroke colour speaks for — the [selectedTrack]'s,
-  /// so the colour and the name label describe the same track. Required: the
+  /// Whole bars across the loop, for the ruler; `0` draws no ruler (no tempo
+  /// grid counts them, or nothing is recorded).
+  final int bars;
+
+  /// The transport state the stroke colour speaks for. Required: the
   /// waveform is part of the transport legend, so there is no such thing as
   /// "the waveform colour" without a state to resolve it against.
   final LooperMeterState state;
@@ -36,13 +41,10 @@ class WaveformView extends StatelessWidget {
   /// resolved string, since this widget can run in a window without l10n).
   final String? semanticLabel;
 
-  /// The name of the selected track.
-  final String? selectedTrack;
-
   @override
   Widget build(BuildContext context) {
-    final looper = Theme.of(context).extension<LooperTheme>();
     final theme = Theme.of(context);
+    final looper = theme.extension<LooperTheme>();
     // Paint the themed backdrop here rather than leaving it to each caller: the
     // state colours carry alpha, so what sits behind them decides what they
     // actually render as — and the contrast floors in `test/theme/` are
@@ -56,30 +58,39 @@ class WaveformView extends StatelessWidget {
       painter: WaveformPainter(
         samples: samples,
         progress: progress,
+        bars: bars,
         color: looper?.waveformColor(state) ?? Colors.tealAccent,
         background: background,
       ),
       size: Size.infinite,
     );
-    // if (semanticLabel == null) return paint;
+    // The ruler is its own layer over the wave (its faint lines stay visible
+    // across the bars, as they were when one painter drew both): the
+    // playhead repaints the wave every poll, and the ruler's bar labels are
+    // laid-out text that must not be re-shaped at frame rate for a fact (the
+    // bar count) that changes once per take.
+    final ruler = bars > 0
+        ? RepaintBoundary(
+            child: CustomPaint(
+              key: const Key('waveform_view_ruler'),
+              painter: BarRulerPainter(
+                bars: bars,
+                color: surface?.textMuted ?? Colors.grey,
+              ),
+              size: Size.infinite,
+            ),
+          )
+        : null;
     return Semantics(
       label: semanticLabel,
       value: '${(progress.clamp(0.0, 1.0) * 100).round()}%',
       child: ColoredBox(
         color: background,
         child: Stack(
+          fit: StackFit.expand,
           children: [
-            paint,
-            if (selectedTrack != null)
-              Align(
-                alignment: Alignment.topCenter,
-                child: AppText(
-                  selectedTrack!,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: surface?.textPrimary ?? Colors.white,
-                  ),
-                ),
-              ),
+            RepaintBoundary(child: paint),
+            ?ruler,
           ],
         ),
       ),
@@ -95,6 +106,7 @@ class WaveformPainter extends CustomPainter {
     required this.color,
     required this.background,
     this.progress = 0,
+    this.bars = 0,
   });
 
   /// Loop waveform peaks, index 0 = loop start, each in `0..1`.
@@ -103,6 +115,10 @@ class WaveformPainter extends CustomPainter {
   /// Playhead position in `0..1`.
   final double progress;
 
+  /// Whole bars across the loop; `> 0` leaves [rulerHeight] free at the
+  /// bottom for the [BarRulerPainter] layer over this one.
+  final int bars;
+
   /// Waveform color.
   final Color color;
 
@@ -110,10 +126,16 @@ class WaveformPainter extends CustomPainter {
   /// the bars — see [paint].
   final Color background;
 
+  /// The ruler's reserved strip under the waveform, for the bar numbers.
+  static const double rulerHeight = 28;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (size.width <= 0 || size.height <= 0) return;
-    final midY = size.height / 2;
+    final ruler = bars > 0;
+    final waveHeight = ruler ? size.height - rulerHeight : size.height;
+    if (waveHeight <= 0) return;
+    final midY = waveHeight / 2;
 
     // A faint baseline so the surface reads as "ready" even with no audio.
     canvas.drawRect(
@@ -147,11 +169,11 @@ class WaveformPainter extends CustomPainter {
       // stays a crisp 2px.
       canvas
         ..drawRect(
-          Rect.fromLTWH(x - 2, 0, 4, size.height),
+          Rect.fromLTWH(x - 2, 0, 4, waveHeight),
           Paint()..color = background,
         )
         ..drawRect(
-          Rect.fromLTWH(x - 1, 0, 2, size.height),
+          Rect.fromLTWH(x - 1, 0, 2, waveHeight),
           Paint()..color = Colors.white,
         );
     }
@@ -161,6 +183,47 @@ class WaveformPainter extends CustomPainter {
   bool shouldRepaint(WaveformPainter oldDelegate) =>
       !identical(oldDelegate.samples, samples) ||
       oldDelegate.progress != progress ||
+      oldDelegate.bars != bars ||
       oldDelegate.color != color ||
       oldDelegate.background != background;
+}
+
+/// The bar ruler over the wave: one faint line per bar across the full
+/// height and the bar number in the strip the wave leaves free at the bottom
+/// ([WaveformPainter.rulerHeight]). Painted in its own layer, so the wave's
+/// per-poll playhead repaint never re-shapes these labels.
+class BarRulerPainter extends CustomPainter {
+  /// Creates a [BarRulerPainter] for [bars] whole bars.
+  BarRulerPainter({required this.bars, required this.color});
+
+  /// Whole bars across the loop; `0` paints nothing.
+  final int bars;
+
+  /// The label colour.
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (bars <= 0 || size.width <= 0 || size.height <= 0) return;
+    final line = Paint()..color = Colors.white.withValues(alpha: 0.09);
+    final style = TextStyle(
+      fontFamily: SurfaceTheme.monoFont,
+      fontSize: 18,
+      height: 1,
+      color: color,
+    );
+    for (var bar = 0; bar < bars; bar++) {
+      final x = bar / bars * size.width;
+      canvas.drawRect(Rect.fromLTWH(x, 0, 1, size.height), line);
+      final label = TextPainter(
+        text: TextSpan(text: '${bar + 1}', style: style),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(canvas, Offset(x + 5, size.height - label.height));
+    }
+  }
+
+  @override
+  bool shouldRepaint(BarRulerPainter oldDelegate) =>
+      oldDelegate.bars != bars || oldDelegate.color != color;
 }

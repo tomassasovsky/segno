@@ -1,0 +1,14 @@
+{
+  "section": "GNTYj",
+  "name": "Native implementation / Shared Record length / M3.14",
+  "penSha256": "21c3d6c04144240ec197a0684b5ffe7aceabffb006ef618bd2e36675d2dd197e",
+  "layout": "New section copied through the Pen API; four references in two rows. Full section visually inspected and bounds visitor reported no overflow. Save cleared Edited state and changed the on-disk hash.",
+  "nativeUI": "Actual development app: External Button 1 > Add control > Loop controls > Defaults > Loop length began Auto/Auto. Held 32 was drafted; Cancel preserved original Pan/Click mappings. Loop length Defaults retained Auto; fixed Track 8 was locked in Multi. Final hot reload verified the disabled Multi lock label fits and full accessibility text remains present. Left the app on Tracks without saving test changes.",
+  "screenshots": {
+    "test/screenshots/goldens/midi_controls_record_length_range.png": "378b379b4146cebc9ce36624f0403ad5e51bd0b92bfb9952ea348914429ddcf3",
+    "test/screenshots/goldens/external_pedals_record_length_held_released.png": "5dc15f5b8659230cbc6c9642de8c0d73371dbc5146bf52abd36a693ec80bf42f",
+    "test/screenshots/goldens/loop_settings_length_custom.png": "fb8bc73fe2a1eba57fbd2b19d7a7e730fdc3268441a18521fae41db6ffce1ccf",
+    "test/screenshots/goldens/click_recovery_power_off.png": "0d98a565abee2fc9740f9f891b886d00738ec7c8062f02756c9150fa958fe29a"
+  },
+  "reused": "Existing Custom length and generic shutdown recovery references; two new author-only mapping renders. Physical controls and appliance halt remain separate."
+}

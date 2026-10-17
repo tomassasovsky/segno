@@ -24,13 +24,14 @@ class FakeConsoleFactsClient implements ConsoleFactsClient {
   /// schedules is not fixed.
   FakeConsoleFactsClient({
     this.latency = const Duration(milliseconds: 220),
-    bool exportVolumeMounted = true,
-  }) : _exportVolume = exportVolumeMounted ? '/media/usb0' : '';
+    this.bluetoothPairings = 0,
+  });
 
   /// How long each answer pretends to take.
   final Duration latency;
 
-  final String _exportVolume;
+  /// What [retiredBluetoothPairings] answers.
+  final int bluetoothPairings;
 
   /// Captures younger than this are kept by [deleteCapturesOlderThan] at the
   /// 30-day setting the face offers — so the delete has something left to
@@ -68,7 +69,8 @@ class FakeConsoleFactsClient implements ConsoleFactsClient {
       name: 'VAMP 16',
       serial: 'VMP-16-0042',
       systemImage: 'Yocto scarthgap · kernel 6.12-rt',
-      panel: '16″ 1920×1080 · touch',
+      panels: ['Segno 15.6', 'Segno 7'],
+      lastFlashed: ConsoleBoardFlash(firmware: '1.4', protocol: 8),
     );
   }
 
@@ -85,11 +87,5 @@ class FakeConsoleFactsClient implements ConsoleFactsClient {
   }
 
   @override
-  Future<String> exportDestination() async {
-    await _wait();
-    return _exportVolume;
-  }
-
-  @override
-  Future<void> exportEverything(String destination) => _wait();
+  Future<int> retiredBluetoothPairings() async => bluetoothPairings;
 }

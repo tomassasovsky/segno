@@ -64582,9 +64582,12 @@ MA_API ma_result ma_decoder_init_memory(const void* pData, size_t dataSize, cons
             The backend was initialized successfully, but for some reason post-initialization failed. This is most likely
             due to an out of memory error. We're going to abort with an error here and not try to recover.
             */
-            if (pDecoder->pBackendVTable != NULL && pDecoder->pBackendVTable->onUninit != NULL) {
-                pDecoder->pBackendVTable->onUninit(pDecoder->pBackendUserData, &pDecoder->pBackend, &pDecoder->allocationCallbacks);
-            }
+            /*
+            SEGNO PATCH (#1200 Part 2 review H1): ma_decoder__postinit has already uninitialized the decoder,
+            backend included, on this failure. Upstream calls onUninit a second time here, with the address of
+            the pBackend field instead of its value, so ma_free ran on a stack or struct address and aborted the
+            process (a WAV with 255 or 256 channels reached it). Nothing is left to release.
+            */
 
             return result;
         }
@@ -65202,9 +65205,12 @@ MA_API ma_result ma_decoder_init_file(const char* pFilePath, const ma_decoder_co
             The backend was initialized successfully, but for some reason post-initialization failed. This is most likely
             due to an out of memory error. We're going to abort with an error here and not try to recover.
             */
-            if (pDecoder->pBackendVTable != NULL && pDecoder->pBackendVTable->onUninit != NULL) {
-                pDecoder->pBackendVTable->onUninit(pDecoder->pBackendUserData, &pDecoder->pBackend, &pDecoder->allocationCallbacks);
-            }
+            /*
+            SEGNO PATCH (#1200 Part 2 review H1): ma_decoder__postinit has already uninitialized the decoder,
+            backend included, on this failure. Upstream calls onUninit a second time here, with the address of
+            the pBackend field instead of its value, so ma_free ran on a stack or struct address and aborted the
+            process (a WAV with 255 or 256 channels reached it). Nothing is left to release.
+            */
 
             return result;
         }
@@ -65352,9 +65358,12 @@ MA_API ma_result ma_decoder_init_file_w(const wchar_t* pFilePath, const ma_decod
             The backend was initialized successfully, but for some reason post-initialization failed. This is most likely
             due to an out of memory error. We're going to abort with an error here and not try to recover.
             */
-            if (pDecoder->pBackendVTable != NULL && pDecoder->pBackendVTable->onUninit != NULL) {
-                pDecoder->pBackendVTable->onUninit(pDecoder->pBackendUserData, &pDecoder->pBackend, &pDecoder->allocationCallbacks);
-            }
+            /*
+            SEGNO PATCH (#1200 Part 2 review H1): ma_decoder__postinit has already uninitialized the decoder,
+            backend included, on this failure. Upstream calls onUninit a second time here, with the address of
+            the pBackend field instead of its value, so ma_free ran on a stack or struct address and aborted the
+            process (a WAV with 255 or 256 channels reached it). Nothing is left to release.
+            */
 
             return result;
         }

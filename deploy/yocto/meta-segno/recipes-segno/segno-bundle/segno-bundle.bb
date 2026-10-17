@@ -1,13 +1,15 @@
-SUMMARY = "Prebuilt Segno Flutter GTK bundle (installed as-is; NOT built from source)"
-DESCRIPTION = "Installs the exact aarch64 Flutter GTK bundle produced by \
-deploy/rpi/build/build-arm64-bundle.sh into /opt/segno, plus a Wayland launcher \
-and a systemd unit that runs it under weston. See docs/plan Tier 3a §Phase 2."
+SUMMARY = "Prebuilt Segno Flutter bundle (installed as-is; NOT built from source)"
+DESCRIPTION = "Installs the aarch64 app bundle built by deploy/rpi/build \
+(the AOT snapshot, its assets and the audio engine) into /opt/segno, plus the \
+launcher and systemd unit that run it on ivi-homescreen, and the appliance's \
+host helpers. See #1318 and #1330."
 # CLOSED: a prebuilt binary we install verbatim — no in-tree license file to
 # checksum here (the app's licensing lives in the main repo, not this recipe).
 LICENSE = "CLOSED"
 
-# Path to the prebuilt bundle dir (contains 'segno', libflutter_linux_gtk.so,
-# libsegno_engine.so, data/). Defaults to deploy/yocto/prebuilt/bundle relative to
+# Path to the prebuilt bundle dir (build/appliance/bundle from deploy/rpi/build:
+# data/flutter_assets, lib/libapp.so, lib/libsegno_engine.so,
+# flutter-version.json). Defaults to deploy/yocto/prebuilt/bundle relative to
 # this recipe (resolves inside the build container regardless of mount point);
 # override via SEGNO_BUNDLE_DIR in kas/local.conf to point elsewhere.
 SEGNO_BUNDLE_DIR ?= "${THISDIR}/../../../prebuilt/bundle"
@@ -22,9 +24,15 @@ SEGNO_BUILD_VERSION ?= "0.0.0"
 # silently poll production (which has no manifests yet).
 SEGNO_UPDATE_CHANNEL ?= "production"
 
+# The engine commit the bundle must have been built against.
+require recipes-graphics/flutter-engine/flutter-engine-version.inc
+
 SRC_URI = "file://segno.service \
+           file://segno-screen-power \
+           file://segno-screen-power.service \
+           file://30-segno-screen-power.conf \
            file://segno-kiosk-launch \
-           file://segno-wait-wayland \
+           file://homescreen.toml \
            file://segno-runtime.conf \
            file://segno-rtirq.service \
            file://segno-rtirq \
@@ -41,25 +49,19 @@ SRC_URI = "file://segno.service \
            file://segno-nm-persist.service \
            file://segno-ssh-persist \
            file://segno-ssh-persist.service \
-           file://segno-bt-persist \
-           file://segno-bt-persist.service \
            file://segno-mark-good \
            file://segno-mark-good.service \
            file://dropbear-segno.conf \
-           file://segno-bt-ctl \
            file://segno-brightness-ctl \
            file://segno-touch-ctl \
-           file://segno-touch-calibration-helper \
            file://segno-touch-persist \
            file://segno-touch-persist.service \
-           file://segno-touch-apply.path \
-           file://segno-touch-apply.service \
-           file://97-segno-touch-output.rules \
            file://99-segno-wifi.conf \
            file://segno-wifi-regdom \
            file://segno-wifi-regdom.service \
            file://segno-wifi-retry \
            file://segno-wifi-retry.service \
+           file://segno-wifi-dispatch \
            file://iwd-main.conf \
            file://segno-iwd-tame \
            file://segno-iwd-tame.service \
@@ -73,7 +75,12 @@ SRC_URI = "file://segno.service \
            file://segno-log-check \
            file://segno-log-check.service \
            file://var-volatile-log-journal.mount \
-           file://var-lib-systemd-coredump.mount"
+           file://var-lib-systemd-coredump.mount \
+           file://segno-usb-ctl \
+           file://segno-usb-mount@.service \
+           file://segno-usb-eject.path \
+           file://segno-usb-eject.service \
+           file://98-segno-usb-storage.rules"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
@@ -84,14 +91,16 @@ INHIBIT_PACKAGE_STRIP = "1"
 INHIBIT_SYSROOT_STRIP = "1"
 # Prebuilt binaries: skip already-stripped/arch/textrel QA, and file-rdeps too —
 # the auto shlib scan can't map every SONAME for a binary we didn't compile. The
-# actual libs still land in the image via the RDEPENDS below (the GTK stack).
+# actual libs still land in the image via the RDEPENDS below.
 INSANE_SKIP:${PN} += "already-stripped ldflags arch textrel file-rdeps"
 
 # Contains target ELF/.so, so it is machine-specific, not allarch.
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
-# Runtime libs the GTK embedder + native engine link against, named explicitly so
-# they're guaranteed in the image (hard `=`, so keep everything ON this line).
+# Runtime deps, named explicitly so they're guaranteed in the image (hard `=`).
+# ivi-homescreen + flutter-engine-prebuilt: the embedder (installed as
+# /usr/bin/segno) and the engine it dlopens. It reads the libinput calibration
+# matrix segno-touch-ctl persists.
 # curl/jq/ca-certificates: the OTA client (segno-ota-check). rauc: the installer.
 # parted + e2fsprogs-resize2fs: segno-data-grow (expand /data to fill the SD card).
 # coreutils: the app's pedal link configures the pedal UART with stty.
@@ -101,20 +110,17 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # regulatory.bin the image has, or the /lib/firmware/regulatory.db it does not,
 # is answered on device: segno-wifi-regdom warns when the latter is missing.
 # networkmanager-nmcli: segno-wifi-ctl (NM owns wpa_supplicant via -wifi plugin).
-# bluez5: segno-bt-ctl. ddcutil: segno-brightness-ctl.
-# weston-examples: ships weston-touch-calibrator, which is what actually measures
-# the touchscreen (segno-touch-ctl only persists the result). core-image-weston
-# happens to pull it in today via packagegroup-core-weston — named here so a
-# future image trim can't silently remove the console's only way to recalibrate.
-RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
-                  fontconfig freetype glib-2.0 mesa alsa-lib libstdc++ \
+# ddcutil: segno-brightness-ctl. No BlueZ: Bluetooth was retired (#1199).
+# util-linux mount tools: the USB storage service.
+RDEPENDS:${PN} = "mesa alsa-lib libstdc++ \
                   curl jq ca-certificates rauc \
                   parted e2fsprogs-resize2fs \
                   networkmanager-nmcli networkmanager-wifi \
-                  bluez5 ddcutil \
+                  ddcutil \
                   iw \
-                  weston-examples \
-                  coreutils"
+                  util-linux-mount util-linux-umount util-linux-blkid util-linux-flock \
+                  coreutils python3-core python3-io python3-gpiod \
+                  ivi-homescreen flutter-engine-prebuilt"
 
 inherit systemd
 # App + rtirq oneshot + data-grow oneshot + the /boot(tryboot selector) and
@@ -123,9 +129,13 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via segno-update-ctl).
 # So segno-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount"
+SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-touch-persist.service segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount segno-usb-eject.path"
 
-FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-wayland ${bindir}/segno-rtirq \
+FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
+                ${sysconfdir}/segno/homescreen.toml \
+                ${bindir}/segno-screen-power \
+                ${systemd_system_unitdir}/segno-screen-power.service \
+                ${systemd_system_unitdir}/segno.service.d/30-segno-screen-power.conf \
                 ${bindir}/segno-data-grow \
                 ${bindir}/segno-ota-check \
                 ${bindir}/segno-update-ctl \
@@ -135,16 +145,18 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-way
                 ${bindir}/segno-wifi-retry \
                 ${bindir}/segno-iwd-tame \
                 ${bindir}/segno-ssh-persist \
-                ${bindir}/segno-bt-persist \
                 ${bindir}/segno-mark-good \
                 ${bindir}/segno-log-check \
-                ${bindir}/segno-bt-ctl \
                 ${bindir}/segno-brightness-ctl \
                 ${bindir}/segno-touch-ctl \
-                ${bindir}/segno-touch-calibration-helper \
                 ${bindir}/segno-touch-persist \
-                ${sysconfdir}/udev/rules.d/97-segno-touch-output.rules \
+                ${sysconfdir}/udev/rules.d/98-segno-usb-storage.rules \
+                ${bindir}/segno-usb-ctl \
+                ${systemd_system_unitdir}/segno-usb-mount@.service \
+                ${systemd_system_unitdir}/segno-usb-eject.path \
+                ${systemd_system_unitdir}/segno-usb-eject.service \
                 ${sysconfdir}/NetworkManager/conf.d/99-segno-wifi.conf \
+                ${sysconfdir}/NetworkManager/dispatcher.d/90-segno-wifi-retry \
                 ${sysconfdir}/systemd/system/dropbear@.service.d/segno.conf \
                 ${sysconfdir}/systemd/system/dropbearkey.service.d/segno.conf \
                 ${sysconfdir}/modprobe.d/brcmfmac.conf \
@@ -157,10 +169,7 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-way
                 ${systemd_system_unitdir}/segno-nm-persist.service \
                 ${systemd_system_unitdir}/segno-wifi-regdom.service \
                 ${systemd_system_unitdir}/segno-ssh-persist.service \
-                ${systemd_system_unitdir}/segno-bt-persist.service \
                 ${systemd_system_unitdir}/segno-touch-persist.service \
-                ${systemd_system_unitdir}/segno-touch-apply.path \
-                ${systemd_system_unitdir}/segno-touch-apply.service \
                 ${systemd_system_unitdir}/segno-mark-good.service \
                 ${systemd_system_unitdir}/segno-wifi-retry.service \
                 ${systemd_system_unitdir}/segno-iwd-tame.service \
@@ -182,28 +191,34 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-way
 python do_fetch:prepend() {
     if not d.getVar('SEGNO_BUNDLE_DIR'):
         bb.fatal("SEGNO_BUNDLE_DIR is unset. Point it at the prebuilt bundle dir "
-                 "(…/build/linux/arm64/release/bundle containing 'segno').")
+                 "(build/appliance/bundle from deploy/rpi/build).")
 }
 
 do_install() {
     bundle="${SEGNO_BUNDLE_DIR}"
-    if [ ! -x "${bundle}/segno" ]; then
-        bbfatal "No 'segno' binary under SEGNO_BUNDLE_DIR=${bundle}"
-    fi
-
-    install -d ${D}/opt/segno
-    # cp -R (not -a): preserve the executable bits but NOT the host uid/gid, then
-    # force root ownership — staged files must not carry the build user's uid
-    # (else do_package fails with "uid not found / host contamination").
-    cp -R "${bundle}/." ${D}/opt/segno/
+    segno_check_bundle_engine "${bundle}"
+    # What ivi-homescreen runs: the assets, the AOT snapshot and the audio
+    # engine. Its icudtl.dat comes from flutter-engine-prebuilt, matching the
+    # engine, and the config that names the two views from homescreen.toml.
+    install -d ${D}/opt/segno/data ${D}/opt/segno/lib
+    cp -R "${bundle}/data/flutter_assets" ${D}/opt/segno/data/
+    install -m 0755 "${bundle}/lib/libapp.so" "${bundle}/lib/libsegno_engine.so" \
+        ${D}/opt/segno/lib/
+    # cp -R keeps the host uid/gid; staged files must not carry the build
+    # user's uid (do_package fails with "host contamination").
     chown -R root:root ${D}/opt/segno
+    install -d ${D}${sysconfdir}/segno
+    install -m 0644 ${UNPACKDIR}/homescreen.toml ${D}${sysconfdir}/segno/homescreen.toml
 
     install -d ${D}${bindir}
     install -m 0755 ${UNPACKDIR}/segno-kiosk-launch ${D}${bindir}/segno-kiosk-launch
-    install -m 0755 ${UNPACKDIR}/segno-wait-wayland ${D}${bindir}/segno-wait-wayland
-
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/segno.service ${D}${systemd_system_unitdir}/segno.service
+
+    install -m 0755 ${UNPACKDIR}/segno-screen-power ${D}${bindir}/segno-screen-power
+    install -m 0644 ${UNPACKDIR}/segno-screen-power.service ${D}${systemd_system_unitdir}/segno-screen-power.service
+    install -d ${D}${systemd_system_unitdir}/segno.service.d
+    install -m 0644 ${UNPACKDIR}/30-segno-screen-power.conf ${D}${systemd_system_unitdir}/segno.service.d/30-segno-screen-power.conf
 
     # rtirq: oneshot that raises the USB (xhci) sound-card IRQ thread to SCHED_FIFO
     # (above the app's audio thread) so the interrupt delivering a period preempts
@@ -250,29 +265,35 @@ do_install() {
     install -m 0644 ${UNPACKDIR}/segno-ota-check.service ${D}${systemd_system_unitdir}/segno-ota-check.service
     install -m 0644 ${UNPACKDIR}/segno-ota-check.timer ${D}${systemd_system_unitdir}/segno-ota-check.timer
 
-    # Control Center host helpers (WiFi / Bluetooth / brightness) — Flutter
+    # Control Center host helpers (WiFi / brightness) — Flutter
     # shells out to these the same way it drives segno-update-ctl.
     install -m 0755 ${UNPACKDIR}/segno-wifi-ctl ${D}${bindir}/segno-wifi-ctl
-    install -m 0755 ${UNPACKDIR}/segno-bt-ctl ${D}${bindir}/segno-bt-ctl
     install -m 0755 ${UNPACKDIR}/segno-brightness-ctl ${D}${bindir}/segno-brightness-ctl
 
-    # Touchscreen calibration. weston-touch-calibrator does the measuring;
-    # weston hands the result to segno-touch-calibration-helper (wired up as
-    # `calibration_helper` in weston.ini), which forwards it to segno-touch-ctl.
-    # The matrix is stored on /data and replayed into a udev rule by
-    # segno-touch-persist at boot, so it survives an A/B rootfs update.
+    # Touchscreen calibration. The app measures it and stores it through
+    # segno-touch-ctl; the matrix is kept on /data and replayed into a udev
+    # rule by segno-touch-persist at boot, so it survives an A/B rootfs update.
+    # Which touchscreen drives which screen is homescreen.toml's touch_device.
     install -m 0755 ${UNPACKDIR}/segno-touch-ctl ${D}${bindir}/segno-touch-ctl
-    install -m 0755 ${UNPACKDIR}/segno-touch-calibration-helper ${D}${bindir}/segno-touch-calibration-helper
     install -m 0755 ${UNPACKDIR}/segno-touch-persist ${D}${bindir}/segno-touch-persist
     install -m 0644 ${UNPACKDIR}/segno-touch-persist.service ${D}${systemd_system_unitdir}/segno-touch-persist.service
-    install -m 0644 ${UNPACKDIR}/segno-touch-apply.path ${D}${systemd_system_unitdir}/segno-touch-apply.path
-    install -m 0644 ${UNPACKDIR}/segno-touch-apply.service ${D}${systemd_system_unitdir}/segno-touch-apply.service
 
-    # Static touchscreen -> output binding (WL_OUTPUT). Separate from the
-    # generated calibration rule, which is runtime state sourced from /data.
+    # Removable USB storage (#1177). udev hands each USB filesystem to the
+    # segno-usb-mount@ template, which mounts it and writes the JSON the app
+    # watches; the app ejects by dropping a request file that the .path unit
+    # serves. The template is started by udev and is deliberately NOT in
+    # SYSTEMD_SERVICE; the eject service is activated by its .path unit and
+    # has no [Install] section, so only the .path is enabled. util-linux
+    # mount/umount/blkid are RDEPENDS: the helper passes per-filesystem
+    # option strings and parses util-linux's error vocabulary, not busybox's.
+    # util-linux flock serialises the helper's verbs (parallel attaches).
+    install -m 0755 ${UNPACKDIR}/segno-usb-ctl ${D}${bindir}/segno-usb-ctl
+    install -m 0644 ${UNPACKDIR}/segno-usb-mount@.service ${D}${systemd_system_unitdir}/segno-usb-mount@.service
+    install -m 0644 ${UNPACKDIR}/segno-usb-eject.path ${D}${systemd_system_unitdir}/segno-usb-eject.path
+    install -m 0644 ${UNPACKDIR}/segno-usb-eject.service ${D}${systemd_system_unitdir}/segno-usb-eject.service
     install -d ${D}${sysconfdir}/udev/rules.d
-    install -m 0644 ${UNPACKDIR}/97-segno-touch-output.rules \
-        ${D}${sysconfdir}/udev/rules.d/97-segno-touch-output.rules
+    install -m 0644 ${UNPACKDIR}/98-segno-usb-storage.rules \
+        ${D}${sysconfdir}/udev/rules.d/98-segno-usb-storage.rules
 
     # NetworkManager appliance tweaks (WiFi join reliability on brcmfmac).
     # segno-nm-persist: mkdir /data/NetworkManager/system-connections before NM
@@ -289,6 +310,11 @@ do_install() {
     install -m 0755 ${UNPACKDIR}/segno-wifi-retry ${D}${bindir}/segno-wifi-retry
     install -m 0644 ${UNPACKDIR}/segno-wifi-retry.service \
         ${D}${systemd_system_unitdir}/segno-wifi-retry.service
+    # A runtime WiFi drop restarts the retry (#1337). NM runs dispatcher
+    # scripts only when root-owned and not group/world-writable.
+    install -d ${D}${sysconfdir}/NetworkManager/dispatcher.d
+    install -m 0755 ${UNPACKDIR}/segno-wifi-dispatch \
+        ${D}${sysconfdir}/NetworkManager/dispatcher.d/90-segno-wifi-retry
     install -d ${D}${sysconfdir}/iwd
     install -m 0644 ${UNPACKDIR}/iwd-main.conf ${D}${sysconfdir}/iwd/main.conf
     install -m 0755 ${UNPACKDIR}/segno-iwd-tame ${D}${bindir}/segno-iwd-tame
@@ -317,12 +343,6 @@ do_install() {
     # alongside iwd would recreate the two-supplicants bug this release exists
     # to remove — so mask it rather than trust that nothing activates it.
     ln -sf /dev/null ${D}${sysconfdir}/systemd/system/wpa_supplicant.service
-
-    # BlueZ has no keyfile.path equivalent, so segno-bt-persist bind-mounts
-    # /data/bluetooth over /var/lib/bluetooth before bluetoothd starts (#451).
-    install -m 0755 ${UNPACKDIR}/segno-bt-persist ${D}${bindir}/segno-bt-persist
-    install -m 0644 ${UNPACKDIR}/segno-bt-persist.service \
-        ${D}${systemd_system_unitdir}/segno-bt-persist.service
 
     # meta-rauc's own rauc-mark-good.service is condition-gated on a rauc.slot
     # kernel argument the Pi tryboot backend never sets, so it is skipped every
@@ -356,15 +376,33 @@ do_install() {
     printf '%s\n' "${SEGNO_UPDATE_CHANNEL}" > ${D}${sysconfdir}/segno/update-channel
     echo "${SEGNO_BUILD_VERSION}" > ${D}${sysconfdir}/segno/build-version
 
-    # tmpfiles.d rule that creates /run/user/1000 for the weston user at boot
-    # (no logind session makes it otherwise; weston crash-loops without it).
-    install -d ${D}${sysconfdir}/tmpfiles.d
+    # The runtime directories the USB storage service and the app share
+    # (/run/segno/usb, /run/media/segno), created at boot.
     install -m 0644 ${UNPACKDIR}/segno-runtime.conf ${D}${sysconfdir}/tmpfiles.d/segno-runtime.conf
 }
 
 # Rebuild when CI stamps a new version/channel (otherwise sstate can leave a
 # stale /etc/segno/* from a prior package).
-do_install[vardeps] += "SEGNO_BUILD_VERSION SEGNO_UPDATE_CHANNEL"
+do_install[vardeps] += "SEGNO_BUILD_VERSION SEGNO_UPDATE_CHANNEL FLUTTER_ENGINE_COMMIT"
+
+# The image runs the bundle's AOT snapshot (lib/libapp.so) on
+# flutter-engine-prebuilt's engine. A snapshot only loads on the exact engine
+# it was compiled for, and a
+# mismatch builds, installs and boots, then dies on the device before the first
+# frame. The build records `flutter --version --machine` in the bundle
+# (segno-build.sh), so compare the engine it names with the one this image
+# ships, here, where it costs seconds instead of a bench session.
+segno_check_bundle_engine() {
+    bundle="$1"
+    for f in data/flutter_assets lib/libapp.so lib/libsegno_engine.so flutter-version.json; do
+        [ -e "${bundle}/$f" ] || bbfatal "SEGNO_BUNDLE_DIR=${bundle} has no $f"
+    done
+    revision=$(sed -n 's/.*"engineRevision"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
+        "${bundle}/flutter-version.json")
+    if [ "$revision" != "${FLUTTER_ENGINE_COMMIT}" ]; then
+        bbfatal "The bundle was built on Flutter engine '$revision', but the image ships engine ${FLUTTER_ENGINE_COMMIT} (Flutter ${FLUTTER_ENGINE_VERSION}). Build the bundle with Flutter ${FLUTTER_ENGINE_VERSION}."
+    fi
+}
 # The prebuilt bundle is read from outside SRC_URI, so bitbake has to be told
 # it is an input or shared state would reuse a stale package. Today the
 # version stamp above happens to re-run this task on every release; this

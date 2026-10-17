@@ -1,0 +1,32 @@
+// Fixture generator for #1196 (not part of this commit's tree): a real
+// schema-1 bundle written by this commit's own SessionRepository.save.
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:loopy_engine/loopy_engine.dart';
+import 'package:session_repository/session_repository.dart';
+
+import 'helpers/fake_session_engine.dart';
+
+Float32List pcm(int frames, double value) =>
+    Float32List.fromList(List.filled(frames, value));
+
+String get out => Platform.environment['FIXTURE_OUT']!;
+
+SessionRepository repoFor(AudioEngine engine) => SessionRepository(
+  engine: engine,
+);
+
+void main() {
+  test('generate', () async {
+    final engine = FakeSessionEngine()
+      ..seedTrack(0, pcm(2400, 0.25))
+      ..seedTrack(1, pcm(4800, 0.5), multiple: 2, volume: 0.5, muted: true)
+      ..tempo = 96
+      ..quantize = QuantizeMode.beat
+      ..metronome = true
+      ..countIn = true;
+    await repoFor(engine).save('$out/v1_loopy_8547affe7');
+  });
+}

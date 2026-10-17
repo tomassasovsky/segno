@@ -25,19 +25,22 @@ echo "\$@" >> "$work/nmcli-args"
 case "\$*" in
     *"GENERAL.STATE device show"*) printf 'GENERAL.STATE:100 (connected)\n' ;;
     *"connection.autoconnect-priority connection show"*)
-        name=\$(printf '%s' "\$*" | awk '{print \$NF}')
+        id=\$(printf '%s' "\$*" | awk '{print \$NF}')
+        name=\${id#uuid-}
         for pair in \${PRIORITIES:-}; do
             case "\$pair" in "\$name="*) printf '%s\n' "\${pair#*=}"; exit 0 ;; esac
         done
         printf '0\n'
         ;;
-    *"-f 802-11-wireless.ssid "*|*"-g 802-11-wireless.ssid "*)
-        id=\$(printf '%s' "\$*" | awk '{print \$NF}')
-        name=\${id#uuid-}
-        printf '802-11-wireless.ssid:%s\n' "\$name"
+    *"802-11-wireless-security.psk connection show"*)
+        printf '%s\n' "\${STORED_PSK:-}"
         ;;
-    *"UUID,NAME,TYPE connection show"*)
-        for n in \${SAVED:-}; do printf 'uuid-%s:%s:802-11-wireless\n' "\$n" "\$n"; done
+    *"-g 802-11-wireless.ssid "*|*"-g connection.id "*)
+        id=\$(printf '%s' "\$*" | awk '{print \$NF}')
+        printf '%s\n' "\${id#uuid-}"
+        ;;
+    *"-t -f UUID,TYPE connection show"*)
+        for n in \${SAVED:-}; do printf 'uuid-%s:802-11-wireless\n' "\$n"; done
         ;;
     *"connection show"*)
         for n in \${SAVED:-}; do printf '%s:802-11-wireless\n' "\$n"; done
@@ -59,9 +62,10 @@ STUB
 
 teardown() { rm -rf "$work"; }
 
-run() { PATH="$work/bin:$PATH" SEGNO_JOURNALCTL="$work/bin/journalctl" \
+# The key, when a test passes one, goes on stdin the way the app sends it.
+run() { printf '%s' "${KEY:-}" | PATH="$work/bin:$PATH" SEGNO_JOURNALCTL="$work/bin/journalctl" \
     SAVED="${SAVED:-}" PRIORITIES="${PRIORITIES:-}" \
-    UP_RC="${UP_RC:-0}" \
+    UP_RC="${UP_RC:-0}" STORED_PSK="${STORED_PSK:-}" \
     sh "$CTL" "$@" >"$work/stdout" 2>"$work/stderr"; }
 
 check() {
@@ -101,14 +105,14 @@ teardown
 
 echo "the network the user just picked outranks the saved ones"
 setup
-SAVED="Cafe Studio" PRIORITIES="Cafe=100 Studio=101" run connect Cafe pw
+SAVED="Cafe Studio" PRIORITIES="Cafe=100 Studio=101" KEY=pw run connect Cafe
 check "one above the highest saved" yes \
     "$(grep -q 'autoconnect-priority 102' "$work/nmcli-args" && echo yes || echo no)"
 teardown
 
 echo "the first network ever saved uses the floor"
 setup
-SAVED="" PRIORITIES="" run connect Cafe pw
+SAVED="" PRIORITIES="" KEY=pw run connect Cafe
 check "uses the floor, still beating the wired -999" yes \
     "$(grep -q 'autoconnect-priority 100' "$work/nmcli-args" && echo yes || echo no)"
 teardown
@@ -124,9 +128,34 @@ check "activates the existing uuid" yes \
     "$(grep -q 'connection up uuid uuid-Cafe' "$work/nmcli-args" && echo yes || echo no)"
 teardown
 
+# After one failure NetworkManager's iwd backend asks secret agents for a NEW
+# key, and the console runs none: a plain up fails in milliseconds while the
+# key sits in the keyfile, and the owner had to re-type it (#1326).
+echo "joining a saved network without a password activates on its stored key"
+setup
+SAVED="Cafe" PRIORITIES="Cafe=100" STORED_PSK=stored run connect Cafe
+check "activates the existing uuid" yes \
+    "$(grep -q 'connection up uuid uuid-Cafe' "$work/nmcli-args" && echo yes || echo no)"
+check "hands the stored key over through passwd-file" yes \
+    "$(grep 'connection up uuid uuid-Cafe' "$work/nmcli-args" | grep -q 'passwd-file' && echo yes || echo no)"
+check "the key is never in argv" no \
+    "$(grep -q 'stored' "$work/nmcli-args" && echo yes || echo no)"
+check "does not rewrite the stored key" no \
+    "$(grep -q 'connection edit' "$work/nmcli-args" && echo yes || echo no)"
+teardown
+
+echo "joining a saved open network goes up without a passwd-file"
+setup
+SAVED="Cafe" PRIORITIES="Cafe=100" STORED_PSK= run connect Cafe
+check "activates the existing uuid" yes \
+    "$(grep -q 'connection up uuid uuid-Cafe' "$work/nmcli-args" && echo yes || echo no)"
+check "no passwd-file" no \
+    "$(grep -q 'passwd-file' "$work/nmcli-args" && echo yes || echo no)"
+teardown
+
 echo "joining a saved network with a new password still keeps the profile"
 setup
-SAVED="Cafe" PRIORITIES="Cafe=100" run connect Cafe pw
+SAVED="Cafe" PRIORITIES="Cafe=100" KEY=pw run connect Cafe
 check "does not delete the saved profile" no \
     "$(grep -q 'connection delete' "$work/nmcli-args" && echo yes || echo no)"
 check "activates the existing uuid" yes \
@@ -136,22 +165,22 @@ check "activates with passwd-file" yes \
 check "does not autoconnect before the psk" yes \
     "$(grep 'connection modify uuid uuid-Cafe connection.autoconnect no' "$work/nmcli-args" | grep -q . && echo yes || echo no)"
 check "persists the psk after a successful up" yes \
-    "$(grep 'connection modify' "$work/nmcli-args" | grep -q 'wifi-sec.psk' && echo yes || echo no)"
-check "enables autoconnect only with the psk" yes \
-    "$(grep 'connection modify' "$work/nmcli-args" | grep 'wifi-sec.psk' | grep -q 'autoconnect yes' && echo yes || echo no)"
+    "$(grep -q 'connection edit uuid uuid-Cafe' "$work/nmcli-args" && echo yes || echo no)"
+check "enables autoconnect only after the psk" yes \
+    "$(sed -n '/connection edit/,$p' "$work/nmcli-args" | grep 'connection modify' | grep -q 'autoconnect yes' && echo yes || echo no)"
 teardown
 
 echo "a new secured join does not autoconnect before the psk is stored"
 setup
-SAVED="" PRIORITIES="" run connect Cafe pw
+SAVED="" PRIORITIES="" KEY=pw run connect Cafe
 check "adds with autoconnect no" yes \
     "$(grep 'connection add' "$work/nmcli-args" | grep -q 'autoconnect no' && echo yes || echo no)"
 check "does not add with autoconnect yes" no \
     "$(grep 'connection add' "$work/nmcli-args" | grep -q 'autoconnect yes' && echo yes || echo no)"
 check "persists the psk after a successful up" yes \
-    "$(grep 'connection modify' "$work/nmcli-args" | grep -q 'wifi-sec.psk' && echo yes || echo no)"
-check "enables autoconnect only with the psk" yes \
-    "$(grep 'connection modify' "$work/nmcli-args" | grep 'wifi-sec.psk' | grep -q 'autoconnect yes' && echo yes || echo no)"
+    "$(grep -q 'connection edit uuid' "$work/nmcli-args" && echo yes || echo no)"
+check "enables autoconnect only after the psk" yes \
+    "$(sed -n '/connection edit/,$p' "$work/nmcli-args" | grep 'connection modify' | grep -q 'autoconnect yes' && echo yes || echo no)"
 teardown
 
 echo

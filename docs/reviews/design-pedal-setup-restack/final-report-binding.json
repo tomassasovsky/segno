@@ -1,0 +1,16 @@
+{
+  "verdict": "No unresolved actionable findings in complete intended M3.2 change",
+  "sourceFingerprint": "90293cd611fb26bab771611de108652d789ea5025d99a1cf2987ecc4598cba7b",
+  "reviewer": "One independent non-author reviewer; five explicit roles plus bug review; separate adversarial reviewer",
+  "sourcePathCount": 39,
+  "reports": {
+    "vgv-review.md": "65a3a6cc1ad46ee890440877a7f86d10ecdc1c144be587b325db19cb239dc440",
+    "architecture-review.md": "88ad7ce6de440c70beb2cdba35bd35f45f309a685b4cc6b2d7d4468e22568aa7",
+    "test-quality-review.md": "b95f8c8c63eea0ab87fd6195fd747facc0c7308e7de5e56dc13c21893309a811",
+    "code-simplicity-review.md": "891b1cd581e05ed4a9ab404ba888aacd96cae6dddae08ca0b49c60bef7e4a053",
+    "pr-readiness-review.md": "ed1b56475b120b56e1d23ac55e6ea437815a152f1c757a562122ff1234cc1155",
+    "bug-review.md": "135b3c9320bb62230f2af4c93c4a8a1ac1c9088b50fdd6e7bf88bb1c30ea99b8"
+  },
+  "publicationHeadBound": false,
+  "reportAmendment": "Coordinator replaced one spelling-only phrase: predeclared oracle \u2192 oracle defined in advance. Source and conclusions unchanged."
+}

@@ -21,6 +21,23 @@ String performanceSlug(DateTime timestamp) {
 /// with) needs no import of the repository class.
 const String reservedRecoveredDirName = 'recovered';
 
+final RegExp _slugTime = RegExp(
+  r'^(perf-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2}))(?:-\d+)?$',
+);
+
+/// The local time [performanceSlug] folded into [slug] (with or without its
+/// `-N` disambiguator), or null when [slug] is not one of its slugs or
+/// names no real time.
+DateTime? performanceSlugTime(String slug) {
+  final match = _slugTime.firstMatch(slug);
+  if (match == null) return null;
+  final f = [for (var i = 2; i <= 7; i++) int.parse(match.group(i)!)];
+  final time = DateTime(f[0], f[1], f[2], f[3], f[4], f[5]);
+  // DateTime rolls out-of-range fields over (month 13 is next January); a
+  // slug whose fields do not survive the round trip names no real time.
+  return performanceSlug(time) == match.group(1) ? time : null;
+}
+
 /// Folds [name] into a folder-safe capture slug for
 /// `PerformanceRepository.renameCapture` (D-NAME) — mirrors
 /// `session_repository`'s `sessionSlug` (this package can't import that one,

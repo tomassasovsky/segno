@@ -14,7 +14,12 @@ import 'package:equatable/equatable.dart';
 /// inferred from a zero [hz].
 class TunerReading extends Equatable {
   /// Creates a [TunerReading].
-  const TunerReading({this.hz = 0, this.confidence = 0, this.input = -1});
+  const TunerReading({
+    this.hz = 0,
+    this.confidence = 0,
+    this.input = -1,
+    this.muteMask = 0,
+  });
 
   /// The detected fundamental in Hz, or `0` when the armed input carries no
   /// pitch this frame. Always `0` while disarmed.
@@ -27,6 +32,10 @@ class TunerReading extends Equatable {
   /// The hardware input the tuner is armed on, or `-1` when disarmed.
   final int input;
 
+  /// The inputs whose live monitors the tuner is silencing (bit `c` = input
+  /// `c`), as the engine reports it; `0` while disarmed (#1229).
+  final int muteMask;
+
   /// Whether anything is listening at all.
   bool get isArmed => input >= 0;
 
@@ -34,5 +43,5 @@ class TunerReading extends Equatable {
   bool get hasPitch => hz > 0;
 
   @override
-  List<Object?> get props => [hz, confidence, input];
+  List<Object?> get props => [hz, confidence, input, muteMask];
 }

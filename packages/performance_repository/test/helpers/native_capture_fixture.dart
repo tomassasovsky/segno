@@ -38,12 +38,67 @@ void writeNativeSidecar(
   ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(json));
 }
 
-/// Writes [samples] as raw little-endian float32 bytes to [path] — the format
-/// `perf_drain.c` writes `master.pcm` / `input-<n>.pcm` in (no WAV header).
+/// Writes [samples] as raw little-endian float32 bytes to [path]: the
+/// `master.pcm` / `input-<n>.pcm` a capture from before #1198 left.
 void writeRawPcm(String path, Float32List samples) {
   final bytes = ByteData(samples.length * 4);
   for (var i = 0; i < samples.length; i++) {
     bytes.setFloat32(i * 4, samples[i], Endian.little);
   }
   File(path).writeAsBytesSync(bytes.buffer.asUint8List());
+}
+
+/// Writes an open part the way `perf_drain.c` leaves one when the process
+/// dies: the 84-byte header with its RIFF and data sizes still 0, then the
+/// float [samples] as written, plus [tornBytes] of an unfinished frame.
+void writeOpenPart(
+  String path,
+  Float32List samples, {
+  int channels = 2,
+  int stream = 0,
+  int index = 1,
+  int sampleRate = 48000,
+  int tornBytes = 0,
+}) {
+  final header = ByteData(84);
+  void tag(int at, String text) {
+    for (var i = 0; i < 4; i++) {
+      header.setUint8(at + i, text.codeUnitAt(i));
+    }
+  }
+
+  tag(0, 'RIFF');
+  tag(8, 'WAVE');
+  tag(12, 'fmt ');
+  header
+    ..setUint32(16, 16, Endian.little)
+    ..setUint16(20, 3, Endian.little)
+    ..setUint16(22, channels, Endian.little)
+    ..setUint32(24, sampleRate, Endian.little)
+    ..setUint32(28, sampleRate * channels * 4, Endian.little)
+    ..setUint16(32, channels * 4, Endian.little)
+    ..setUint16(34, 32, Endian.little);
+  tag(36, 'sgno');
+  header
+    ..setUint32(40, 32, Endian.little)
+    ..setUint16(60, stream, Endian.little)
+    ..setUint16(62, index, Endian.little);
+  tag(76, 'data');
+  final body = ByteData(samples.length * 4 + tornBytes);
+  for (var i = 0; i < samples.length; i++) {
+    body.setFloat32(i * 4, samples[i], Endian.little);
+  }
+  File(path).writeAsBytesSync([
+    ...header.buffer.asUint8List(),
+    ...body.buffer.asUint8List(),
+  ]);
+}
+
+/// The RIFF size (offset 4) and data size (offset 80) of the part at [path].
+(int riff, int data) partSizes(String path) {
+  final bytes = ByteData.sublistView(File(path).readAsBytesSync());
+  return (
+    bytes.getUint32(4, Endian.little),
+    bytes.getUint32(80, Endian.little),
+  );
 }

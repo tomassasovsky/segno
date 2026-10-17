@@ -39,7 +39,6 @@ class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
     try {
       final storage = await _client.storage();
       final facts = await _client.facts();
-      final destination = await _client.exportDestination();
       // Keyed off the serial, so a settings store carried to a second console
       // does not arrive claiming to be the first one.
       final given = facts.serial.isEmpty
@@ -51,7 +50,6 @@ class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
           status: ConsoleFactsStatus.ready,
           storage: storage,
           facts: facts,
-          exportDestination: destination,
           givenName: given ?? '',
         ),
       );
@@ -107,21 +105,5 @@ class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
       return;
     }
     if (!isClosed) emit(state.copyWith(givenName: trimmed));
-  }
-
-  /// Copies everything to the mounted export volume. No-op when there is
-  /// nowhere to export — the row that calls this is not tappable then, and
-  /// this repeats the check rather than trusting the caller's.
-  Future<void> exportEverything() async {
-    final destination = state.exportDestination;
-    if (destination.isEmpty) return;
-    emit(state.copyWith(busy: true, actionFailed: false));
-    try {
-      await _client.exportEverything(destination);
-      if (!isClosed) emit(state.copyWith(busy: false));
-    } on Object {
-      // Same rule as the delete: a refused write is not an unreadable disk.
-      if (!isClosed) emit(state.copyWith(busy: false, actionFailed: true));
-    }
   }
 }

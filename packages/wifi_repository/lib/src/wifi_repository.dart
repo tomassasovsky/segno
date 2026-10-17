@@ -27,7 +27,23 @@ class WifiRepository {
   /// Remove a saved network by [ssid].
   Future<void> forget(String ssid) => _client.forget(ssid);
 
-  /// Radio on/off — Control Center tap toggle.
+  /// Radio on/off.
   Future<void> setEnabled({required bool enabled}) =>
       _client.setEnabled(enabled: enabled);
+
+  /// Whether the saved network [ssid] is joined on its own.
+  Future<void> setAutoConnect(String ssid, {required bool enabled}) =>
+      _client.setAutoConnect(ssid, enabled: enabled);
+
+  /// Stores [psk] as the saved network [ssid]'s key without joining it.
+  Future<void> changePassword(String ssid, String psk) =>
+      _client.changePassword(ssid, psk);
+
+  /// Whether the internet answers over the current link.
+  Future<bool> checkConnectivity() => _client.checkConnectivity();
+
+  /// Holds the appliance's background reconnect after a WiFi drop while
+  /// [hold] is true (see [WifiClient.holdReconnects]).
+  Future<void> holdReconnects({required bool hold}) =>
+      _client.holdReconnects(hold: hold);
 }

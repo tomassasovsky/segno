@@ -1,0 +1,110 @@
+{
+  "version": 6,
+  "sampleRate": 48000,
+  "channels": 1,
+  "baseLengthFrames": 2400,
+  "tracks": [
+    {
+      "channel": 0,
+      "multiple": 1,
+      "lengthFrames": 2400,
+      "lanes": [
+        {
+          "lane": 0,
+          "volume": 1.0,
+          "muted": false,
+          "outputMask": 3,
+          "inputChannel": 0,
+          "layers": [
+            {
+              "file": "track0_lane0_L0.wav"
+            },
+            {
+              "file": "track0_lane0_L1.wav"
+            }
+          ],
+          "undoCount": 1,
+          "redoCount": 0
+        }
+      ],
+      "lengthPresetBars": 0,
+      "oneShot": false
+    },
+    {
+      "channel": 1,
+      "multiple": 2,
+      "lengthFrames": 4800,
+      "lanes": [
+        {
+          "lane": 0,
+          "volume": 0.5,
+          "muted": true,
+          "outputMask": 3,
+          "inputChannel": 0,
+          "layers": [
+            {
+              "file": "track1_lane0_L0.wav"
+            }
+          ],
+          "undoCount": 0,
+          "redoCount": 0
+        },
+        {
+          "lane": 1,
+          "volume": 1.5,
+          "muted": false,
+          "outputMask": 1,
+          "inputChannel": 1,
+          "layers": [
+            {
+              "file": "track1_lane1_L0.wav"
+            }
+          ],
+          "undoCount": 0,
+          "redoCount": 0
+        }
+      ],
+      "lengthPresetBars": 0,
+      "oneShot": true
+    }
+  ],
+  "laneChains": [
+    {
+      "channel": 0,
+      "lane": 0,
+      "encoded": "[{\"type\":3,\"params\":[0.35,0.35,0.35,0.0]}]"
+    }
+  ],
+  "monitors": [
+    {
+      "input": 0,
+      "enabled": true,
+      "outputMask": 3,
+      "volume": 1.5,
+      "muted": false,
+      "encoded": "[{\"type\":7,\"params\":[0.5,0.5,0.35,0.0]}]"
+    }
+  ],
+  "trackChains": [
+    {
+      "channel": 1,
+      "encoded": "{\"chainEnabled\":true,\"entries\":[{\"type\":4,\"params\":[0.3,0.7,0.0,0.0],\"slotId\":\"204f9ee7-3\"}]}"
+    }
+  ],
+  "masterChain": "{\"chainEnabled\":true,\"entries\":[{\"type\":2,\"params\":[0.5,0.2,0.0,0.0],\"slotId\":\"204f9ee7-4\"}]}",
+  "tempoBpm": 110.0,
+  "tempoSource": "manual",
+  "tsNum": 3,
+  "tsDen": 4,
+  "quantizeDiv": "bar",
+  "clickMode": "rec",
+  "clickOutputMask": 2,
+  "clickVolume": 1.0,
+  "countInBars": 2,
+  "looperMode": "sync",
+  "primaryTrack": 0,
+  "oneShotChannels": [
+    1
+  ],
+  "pedalBindings": "[{\"button\":\"track1\",\"bank\":0,\"target\":\"{\\\"stage\\\":\\\"loop\\\",\\\"index\\\":0,\\\"lane\\\":0}\",\"behavior\":\"toggle\"},{\"button\":\"track2\",\"bank\":0,\"target\":\"{\\\"stage\\\":\\\"master\\\",\\\"index\\\":0}\",\"behavior\":\"momentary\"}]"
+}

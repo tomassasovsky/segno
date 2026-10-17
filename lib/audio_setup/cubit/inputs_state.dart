@@ -4,7 +4,11 @@ part of 'inputs_cubit.dart';
 /// called.
 class InputsState extends Equatable {
   /// Creates an [InputsState].
-  const InputsState({this.device = '', this.names = const {}});
+  const InputsState({
+    this.device = '',
+    this.names = const {},
+    this.lifetime = 0,
+  });
 
   /// How many sockets a device change probes for stored names.
   ///
@@ -23,6 +27,9 @@ class InputsState extends Equatable {
   /// **absent** rather than empty, so "has a name" is a fact this map carries
   /// rather than one every reader re-derives.
   final Map<int, String> names;
+
+  /// Identity of this uninterrupted device opening.
+  final int lifetime;
 
   /// Whether hardware [input] has been given a name.
   bool isNamed(int input) => (names[input] ?? '').isNotEmpty;
@@ -43,8 +50,12 @@ class InputsState extends Equatable {
 
   /// Returns a copy with the given overrides.
   InputsState copyWith({String? device, Map<int, String>? names}) =>
-      InputsState(device: device ?? this.device, names: names ?? this.names);
+      InputsState(
+        device: device ?? this.device,
+        names: names ?? this.names,
+        lifetime: lifetime,
+      );
 
   @override
-  List<Object?> get props => [device, names];
+  List<Object?> get props => [device, names, lifetime];
 }

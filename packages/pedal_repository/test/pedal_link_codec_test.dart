@@ -22,6 +22,46 @@ void main() {
       );
     });
 
+    test('the encoder push switch is one 0/1 byte', () {
+      expect(
+        PedalLinkCodec.encode(const EncoderButtonMessage(pressed: true)),
+        [0xA5, 0x05, 0x01, 0x01, 0x05 ^ 0x01 ^ 0x01],
+      );
+      expect(
+        PedalLinkCodec.encode(const EncoderButtonMessage(pressed: false)),
+        [0xA5, 0x05, 0x01, 0x00, 0x05 ^ 0x01],
+      );
+      for (final pressed in [true, false]) {
+        final message = EncoderButtonMessage(pressed: pressed);
+        expect(PedalLinkParser().push(PedalLinkCodec.encode(message)), [
+          message,
+        ]);
+      }
+      expect(PedalLinkCodec.payloadLengthFor(0x05), 1);
+    });
+
+    test('rejects a malformed encoder push-switch payload', () {
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeEncoderButton, [2]),
+        isNull,
+      );
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeEncoderButton, []),
+        isNull,
+      );
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeEncoderButton, [1, 0]),
+        isNull,
+      );
+      // A checksum-valid frame with an out-of-range byte is dropped, counted.
+      final parser = PedalLinkParser();
+      expect(
+        parser.push([0xA5, 0x05, 0x01, 0x02, 0x05 ^ 0x01 ^ 0x02]),
+        isEmpty,
+      );
+      expect(parser.droppedFrames, 1);
+    });
+
     test('state payload round-trips every field', () {
       final frame = PedalStateFrame(
         globalColor: GlobalColor.amber,
@@ -54,6 +94,105 @@ void main() {
       expect(payload[18], 255);
     });
 
+    group('Song queue (#1077)', () {
+      test('carries the queued switch and its progress in bytes 51-52', () {
+        final frame = PedalStateFrame.blank().copyWith(
+          looperMode: PedalLooperMode.song,
+          activeButtonMask: 1 << PedalButton.track3.index,
+          queuedButton: PedalButton.track3,
+          queuedProgress: 200,
+        );
+        final payload = PedalLinkCodec.encodeStatePayload(frame);
+        expect(payload[51], PedalButton.track3.index + 1);
+        expect(payload[52], 200);
+        expect(PedalLinkCodec.decodeStatePayload(payload), frame);
+      });
+
+      test('no queue is two zero bytes', () {
+        final payload = PedalLinkCodec.encodeStatePayload(
+          PedalStateFrame.blank(),
+        );
+        expect(payload.sublist(51), [0, 0]);
+        final frame = PedalLinkCodec.decodeStatePayload(payload)!;
+        expect(frame.queuedButton, isNull);
+        expect(frame.queuedProgress, 0);
+      });
+
+      test('every switch round-trips, Bank included', () {
+        for (final button in PedalButton.values) {
+          final frame = PedalStateFrame.blank().copyWith(
+            queuedButton: button,
+            queuedProgress: 254,
+          );
+          expect(
+            PedalLinkCodec.decodeStatePayload(
+              PedalLinkCodec.encodeStatePayload(frame),
+            ),
+            frame,
+          );
+        }
+      });
+
+      test('refuses a switch past Bank, a full pill and a buttonless fill', () {
+        final payload = PedalLinkCodec.encodeStatePayload(
+          PedalStateFrame.blank(),
+        );
+        for (final (button, progress) in [
+          (PedalButton.values.length + 1, 0),
+          (1, 255),
+          (0, 1),
+        ]) {
+          expect(
+            PedalLinkCodec.decodeStatePayload(
+              List<int>.of(payload)
+                ..[51] = button
+                ..[52] = progress,
+            ),
+            isNull,
+          );
+        }
+        expect(
+          () => PedalStateFrame.blank().copyWith(queuedProgress: 1),
+          throwsArgumentError,
+        );
+        expect(
+          () => PedalStateFrame.blank().copyWith(
+            queuedButton: PedalButton.track1,
+            queuedProgress: 255,
+          ),
+          throwsArgumentError,
+        );
+      });
+    });
+
+    test('Custom is mode byte 3 in the 53-byte STATE', () {
+      final frame = PedalStateFrame.blank().copyWith(
+        mode: PedalMode.custom,
+        activeBank: 1,
+        selectedTrack: 5,
+        trackLeds: const [
+          PedalTrackLed.off,
+          PedalTrackLed.green,
+          PedalTrackLed.red,
+          PedalTrackLed.blue,
+          PedalTrackLed.off,
+          PedalTrackLed.blue,
+          PedalTrackLed.off,
+          PedalTrackLed.green,
+        ],
+      );
+      final payload = PedalLinkCodec.encodeStatePayload(frame);
+      expect(payload, hasLength(53));
+      expect(payload[1], 3);
+      expect(payload[4], 1);
+      expect(payload[5], 5);
+      expect(PedalLinkCodec.decodeStatePayload(payload), frame);
+      expect(
+        PedalLinkCodec.decodeStatePayload(List<int>.of(payload)..[1] = 4),
+        isNull,
+      );
+    });
+
     test('master gain is quantized to one byte', () {
       final frame = PedalStateFrame.blank().copyWith(masterGain: 0.5);
       final decoded = PedalLinkCodec.decodeStatePayload(
@@ -72,7 +211,7 @@ void main() {
 
       test('a reserved flag bit', () {
         expect(
-          PedalLinkCodec.decodeStatePayload([0x10, ...good.skip(1)]),
+          PedalLinkCodec.decodeStatePayload([0x20, ...good.skip(1)]),
           isNull,
         );
       });

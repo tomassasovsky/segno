@@ -39,6 +39,18 @@ final class EncoderMessage extends PedalLinkMessage {
   List<Object?> get props => [delta];
 }
 
+/// The encoder's push switch went down or came up (board → segno).
+final class EncoderButtonMessage extends PedalLinkMessage {
+  /// Creates an [EncoderButtonMessage].
+  const EncoderButtonMessage({required this.pressed});
+
+  /// `true` on press, `false` on release.
+  final bool pressed;
+
+  @override
+  List<Object?> get props => [pressed];
+}
+
 /// A CTRL jack reporting (board → segno): a footswitch edge, or an
 /// expression pedal's raw position.
 final class CtrlMessage extends PedalLinkMessage {
@@ -68,7 +80,7 @@ final class CtrlMessage extends PedalLinkMessage {
   final PedalCtrlKind kind;
 
   /// `0`..`255`: a switch sends the ends, an expression pedal its RAW
-  /// position — uncalibrated; see [PedalCtrlCalibration].
+  /// position; calibration belongs to the application setup.
   final int value;
 
   @override

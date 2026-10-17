@@ -1,20 +1,52 @@
-# Running Segno on a Raspberry Pi 5 (floor-console target)
+# Running Segno on the console (Raspberry Pi 5)
 
-Segno's Raspberry Pi 5 build is the same native Linux/GTK runner described in
-[RUNNING_ON_LINUX.md](RUNNING_ON_LINUX.md), compiled for `arm64`. Pi OS uses the
-same PipeWire → JACK → ALSA audio path, so **that doc is the source of truth for
-audio**; this doc covers only what is Pi-specific: building an `arm64` bundle,
-bringing it up on the device, and the two architecture decisions that gate the
-dual-display work in later parts (kiosk rendering target and Wayland compositor).
+The floor console is a Raspberry Pi 5 booting the Yocto image in
+[`deploy/yocto`](../deploy/yocto/README.md) from NVMe. It runs one program:
+[ivi-homescreen](https://github.com/toyota-connected/ivi-homescreen), installed
+as `/usr/bin/segno`, which draws both panels straight over DRM/KMS with one
+Flutter engine per screen. There is no compositor, no GTK and no Linux desktop
+build; macOS is the development host. The app bundle is built in a container
+([`deploy/rpi/README.md`](../deploy/rpi/README.md)), and the image installs it
+at `/opt/segno`.
 
-This is Part 1 of the floor-console effort. Its job is to de-risk the highest-cost
-unknowns **before** any panels or enclosure work begin.
+Why ivi-homescreen: after the #1318 bench it replaced the GTK runner under
+Weston, with lower idle CPU and memory and no per-frame CPU copy (owner's
+call, #1330). The numbers and the scope are in
+[`docs/plan/2026-10-14-ivi-only-appliance-plan.md`](plan/2026-10-14-ivi-only-appliance-plan.md).
 
-## Logs (appliance / Yocto kiosk)
+## How the app starts
 
-On the Yocto image the app writes a rotating logfile under the persistent data
-partition (`HOME=/data` → **`/data/log/segno.log`**). Stderr is also captured by
-systemd:
+`segno.service` runs `segno-kiosk-launch`, which sets `HOME=/data`, the ALSA
+settings and the RT environment, and starts `/usr/bin/segno` with
+`/etc/segno/homescreen.toml`. That file has one `[[view]]` per panel:
+
+| Screen | Panel | Connector | Notes |
+|---|---|---|---|
+| `main` | 15.6″ 1080p touch | `HDMI-A-1` | the stage and every page |
+| `readout` | 7″ 1024×600 touch | `HDMI-A-2` | `pixel_ratio = 1.6`; the selected-track readout |
+
+- **Roles.** Each engine learns its role from `--segno-screen=`. The two talk
+  through the Dart VM they share (`lib/visualizer/screen_link.dart`), and the
+  readout stays blank until the main screen shows it.
+- **Renderer.** Both views pass `--enable-impeller=false`: Impeller draws the
+  Material icon font as empty boxes on this stack (#897), so the engines use
+  Skia.
+- **Touch.** The readout's view names its touch controller with
+  `touch_device`; touch that matches no view goes to the main screen.
+- **No seat.** Both views set `no_seat = true` and open the DRM master and the
+  input devices themselves. `seatd` is installed with ivi-homescreen's libseat
+  but not enabled.
+- **A unit wired the other way round.** Swap the two `drm_connector` values in
+  `/etc/segno/homescreen.toml` and restart `segno.service`. The Displays page
+  reads the connectors from the same file, so brightness follows.
+
+`segno.service` restarts the app 3 s after it exits, and gives a stop 15 s
+before it aborts the process for a core dump.
+
+## Logs
+
+The app writes a rotating logfile under the persistent data partition
+(`HOME=/data` → **`/data/log/segno.log`**). Stderr goes to the journal:
 
 ```bash
 tail -f /data/log/segno.log
@@ -22,13 +54,40 @@ journalctl -u segno.service -b --no-pager
 journalctl -u segno.service -f
 ```
 
-## Persistent `/data` size (appliance)
+## Profiling
 
-The flashable WIC image seeds the `data` partition at **2 GiB** so the image
+For DevTools on the console, see
+[`deploy/rpi/README.md`](../deploy/rpi/README.md#profiling-the-ui-on-real-hardware).
+
+Every image also ships `segno-prof`, which samples a thread's stack from
+outside without stopping the app:
+
+```bash
+# Folded stacks, busiest first: 1000 samples, 10 ms apart. Pass the tid of
+# the thread to sample; the default is the main thread, which is idle under
+# ivi-homescreen. Each engine runs its Dart UI isolate on an io.flutter.ui
+# thread, the main screen's first.
+segno-prof stack $(pidof segno) <tid>
+```
+
+Only that thread is paused, for microseconds per sample, and it is attached
+only while a sample is taken.
+
+Experimental images also run `segno-profile.service`, which writes a CSV row
+of CPU per thread role (main, UI, raster, real-time), memory and load every
+minute to `/data/perf/metrics-<date>.csv`, and a stack profile of the main
+screen's UI thread every 15 minutes to `/data/perf/stacks-<time>.folded`. The
+CSV columns are explained at the top of `/usr/bin/segno-profile-recorder`.
+Experimental builds keep the Dart symbol table in `libapp.so`, so stack frames
+inside Dart code carry their function names; production builds are stripped.
+
+## Persistent `/data` size
+
+The flashable WIC image seeds the `data` partition at **2 GiB** so the image
 stays small. On first boot (and after an OTA that includes it) the
 `segno-data-grow` oneshot expands that partition — and its MBR extended
-container — to fill the rest of the SD card, then runs `resize2fs`. No reflash
-is required to claim a larger card: install the update, reboot, and check:
+container — to fill the rest of the drive, then runs `resize2fs`. No reflash
+is required to claim a larger drive: install the update, reboot, and check:
 
 ```bash
 df -h /data
@@ -44,37 +103,43 @@ The rear button is the Pi 5's own J2 PWR pads (console J8 → J9). It is not a
 GPIO and not `dtoverlay=gpio-shutdown`. The kernel exposes it as `gpio-keys`
 `KEY_POWER` on the input device named `pwr_button`.
 
-- **Short press.** The appliance app grabs that node (`EVIOCGRAB`) so Weston
-  does not also see `XF86PowerOff`. Empty console: skip confirm, show the
-  Plymouth lockup on every live display, darken the pedal, then
-  `segno-update-ctl poweroff` (`systemctl start poweroff.target` — this image
-  has no logind). Loops in RAM and idle: Save & power off / Power off without
-  saving / Keep playing. A take in flight (record, overdub, count-in,
-  punch-tail, performance capture): Keep playing only — stop the take, then
-  press again. A second press while that UI is up is ignored.
+- **Short press.** The app grabs that node (`EVIOCGRAB`), so the embedder's
+  own input handling does not also receive the key. Every press opens Power
+  options (the same card as Settings' Power row): "Playback will stop and your
+  session will be saved", the session name, and Cancel / Restart / Shut down.
+  Both actions run one path: stop the transport, flush settings, save the
+  session (Save As first if it has no name), wait for storage leases, then
+  `segno-update-ctl reboot` or `poweroff` (`systemctl start poweroff.target` —
+  this image has no logind), showing "Restarting" or "Safe to switch off" and
+  darkening the pedal. A failed save keeps Segno on ("Segno is staying on":
+  Stay on / Retry); there is no way to halt without saving. With an update
+  staged, the card says it installs during the restart, and Updates' Install
+  and restart goes through the same path. A take or transfer in flight
+  (record, overdub, count-in, punch-tail, performance capture, USB copy or
+  eject): Keep playing only — stop the take, then press again. A second press
+  while that UI is up is ignored.
 - **Long press (~5 s).** The PMIC's uninterceptable force-off. Use it if the
   UI is wedged. It does not flush, save, or show goodbye.
 
 A missing `pwr_button` node (dev image without the DT overlay): the app runs
 and the listener stays idle; long-press still force-offs.
 
-## Control Center (WiFi / Bluetooth / brightness)
+## Control Center (WiFi / brightness)
 
-Swipe down the settings tray on the main touchscreen. On the Yocto appliance
-these tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
+Swipe down the settings tray on the main touchscreen. On the appliance these
+tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
 
 | Helper | Role |
 |--------|------|
 | `/usr/bin/segno-wifi-ctl` | scan / join / disconnect / forget (`nmcli` / NetworkManager) |
-| `/usr/bin/segno-bt-ctl` | scan + discoverable / advertise (`bluetoothctl`) |
 | `/usr/bin/segno-brightness-ctl` | DDC/CI brightness via `ddcutil` VCP 0x10 |
-| `/usr/bin/segno-touch-ctl` | touchscreen calibration matrix (`status` / `get` / `set` / `reset`) |
+| `/usr/bin/segno-touch-ctl` | per-screen touchscreen calibration matrix (`get` / `try` / `set` / `reset` / `restore` / `apply`) |
 
 WiFi is owned by **NetworkManager** (eth0 + wlan*). `systemd-networkd` is
 masked on the appliance image so the two managers do not fight. The unit
 announces itself as **`segno`** on the router/AP client list and the SSH
 prompt (the image hostname, set in `deploy/yocto/kas-segno-common.yml`; older
-images announced the board name, e.g. `raspberrypi5`).
+images announced the board name, `raspberrypi5`).
 
 **On-device checklist** (after flashing an image that includes the helpers):
 
@@ -82,15 +147,9 @@ images announced the board name, e.g. `raspberrypi5`).
 # WiFi
 segno-wifi-ctl status
 segno-wifi-ctl scan
-segno-wifi-ctl connect 'YourSSID' 'your-psk'
+printf '%s\n' 'your-psk' | segno-wifi-ctl connect 'YourSSID'   # key on stdin, never argv
 ip -4 addr show wlan0
 segno-wifi-ctl disconnect
-
-# Bluetooth (discoverable from a phone; pairing not implemented yet)
-segno-bt-ctl status
-segno-bt-ctl discoverable on
-segno-bt-ctl advertise on
-segno-bt-ctl scan
 
 # Brightness (needs a DDC/CI-capable HDMI panel)
 segno-brightness-ctl supported
@@ -99,266 +158,122 @@ segno-brightness-ctl set 40
 segno-brightness-ctl set 80
 ```
 
-In the app: open the tray → WiFi (join a network) → Bluetooth (toggle
-discoverable / broadcast, run a scan) → drag brightness and confirm the panel
-dims. If `supported` is false for brightness, the slider still persists but
+In the app: Settings → Network (join a network) → Displays (drag brightness
+and confirm the panel dims). Bluetooth is retired (#1199): the image ships no
+BlueZ. If `supported` is false for brightness, the slider still persists but
 does not change the panel — note that for a gamma follow-up.
 
 ## Touchscreen calibration
 
-Weston does the measuring (`weston-touch-calibrator`, from `weston-examples`);
-Segno persists the result. The protocol is gated behind
-`[libinput] touchscreen_calibrator=true` in `weston.ini` — without it the
-calibrator starts and immediately fails to bind.
+The app measures it: Settings → Displays → Calibrate touch, once per screen.
+Tap each target; the app then applies the new calibration without storing it
+(`segno-touch-ctl try`) and starts a test with a countdown. Keep stores it
+(`set`); anything else puts the stored one back (`restore`). A calibration that
+was never kept is also gone after a power cycle, since only stored matrices
+are applied at boot.
+
+`segno-touch-ctl` stores one libinput matrix per screen at
+**`/data/touch/main`** and **`/data/touch/readout`**, on the persistent
+partition, because a RAUC A/B update replaces the whole rootfs and a matrix
+written into `/etc` is lost on the next OTA. From those files it writes
+`/etc/udev/rules.d/98-segno-touch-calibration.rules`, which matches each
+touchscreen by name: the readout's is the one whose name contains its
+`touch_device` in `homescreen.toml`, and every other touchscreen belongs to the
+main screen.
+
+libinput reads the matrix only when a device is added, so `try`, `set`,
+`reset` and `restore` remove and re-add that screen's touchscreen, and the app's libinput picks the
+new matrix up. At boot, `segno-touch-persist.service` runs `segno-touch-ctl
+apply` before `segno.service`, so the app opens its input devices already
+calibrated.
 
 ```bash
-# What weston thinks it has, and whether a matrix is applied.
-segno-touch-ctl status
-
-# List calibratable devices (each is reported with the output it is bound to).
-export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1
-weston-touch-calibrator -v
-
-# Calibrate: draws crosshairs on the panel, tap each one.
-weston-touch-calibrator -v '<device sys path from the list above>'
+segno-touch-ctl get main
+segno-touch-ctl get readout
+segno-touch-ctl reset readout    # undo a bad calibration
 ```
 
-Weston applies the matrix to the live session and hands it to
-`segno-touch-calibration-helper` (its `calibration_helper`), which stores it at
-**`/data/touch/calibration`** — on the persistent partition, because a RAUC A/B
-update replaces the whole rootfs and a matrix written into `/etc` is lost on the
-next OTA.
+## Audio interface
 
-Note the privilege split: `weston.service` runs `User=weston`, so the helper it
-invokes cannot write udev rules. It writes only the matrix file;
-`segno-touch-apply.path` notices that write and runs the root-side
-`segno-touch-ctl apply`, which regenerates
-`/etc/udev/rules.d/98-segno-touch-calibration.rules` and re-triggers input
-devices. `segno-touch-persist` replays the same thing at boot, ordered
-`Before=weston.service`.
+The image has no PipeWire, JACK or PulseAudio. The launcher sets
+`SEGNO_ALSA_ONLY=1`, so the engine opens the interface directly through ALSA
+and owns it while the app runs; its audio thread runs at real-time priority
+80.
 
-The touchscreen → output binding is separate, in
-`/etc/udev/rules.d/97-segno-touch-output.rules` (`WL_OUTPUT`). It matters on a
-two-panel unit: weston must know which output owns the touchscreen, and with no
-hint it picks a default — so taps can be scaled into the *other* panel's
-coordinate space, which looks like a dead touchscreen rather than a mapping bug.
-Change the connector name there if a unit is wired with the main panel on the
-other port.
+- **Select the interface as both input and output** in Settings → Audio.
+- **Latency calibration is per (device, sample rate, buffer).** Measure
+  round-trip latency *after* choosing the buffer, and measure again after
+  changing it. The measurement needs a physical out→in loopback cable.
+- **Channel count can depend on the sample rate.** USB interfaces switch
+  their USB alternate setting by rate: a Clarett+ 8Pre has 18 in / 20 out at 44.1/48 kHz, 14/16 at
+  88.2/96 kHz and 10/10 at 176.4/192 kHz.
 
-To undo a bad calibration: `segno-touch-ctl reset`.
+### Focusrite (Scarlett/Clarett) and the `scarlett2` driver
 
-## Decision 1 — Kiosk rendering target: **GTK-on-Wayland** (the Flutter Linux runner)
+There is no Focusrite Control on Linux. The `snd-usb-audio` **`scarlett2`**
+mixer controls routing instead, and the interface keeps that routing in its
+own flash, so a reset or another unit brings different defaults with it.
+Signal on the wrong output, or none, is usually this routing, not Segno: read
+it first.
 
-**Decision: ship the existing Flutter Linux GTK runner on Wayland. Do not use
-`flutter-pi`.**
+```bash
+amixer -c USB controls | grep -E 'Analogue Output|Mixer Input|PCM .* Capture'
+amixer -c USB get 'Analogue Output 01'
+```
 
-Rationale:
+- **Outputs** may be fed from an internal **Mix** rather than USB playback
+  (`Analogue Output 01 ← Mix A`), so app audio is missing until the output is
+  set to the PCM channel: `amixer -c USB cset numid=<n> "PCM 1"`.
+- **Capture** defaults are usually right (`PCM 01 ← Analogue 1`, …); check the
+  `PCM NN Capture Enum` controls.
+- **Monitor level, input gain and 48 V phantom power** are hardware controls on
+  most models. A weak input that the gain knob barely changes is the classic
+  sign of a condenser mic with 48 V off.
 
-- The waveform display is a **second OS window**, opened by
-  [`WaveformWindowService`](../lib/visualizer/waveform_window_service.dart:29) via
-  `desktop_multi_window`, with window placement controlled through
-  `window_manager`. Both packages assume a desktop windowing environment (GTK).
-- `flutter-pi` is lighter and boots straight to fullscreen on KMS/DRM, but it is a
-  single-window embedder with no `desktop_multi_window` / `window_manager`
-  support. Adopting it would mean reimplementing the second-window path, which
-  would invalidate the dual-display design that Parts 5–7 build on.
-- The GTK runner already forces the Skia renderer (Impeller mis-rasterizes the
-  Material icon font as "tofu") in
-  [`linux/runner/main.cc:15`](../linux/runner/main.cc) — no `flutter run` flag is
-  needed, and that fix carries to `arm64` unchanged.
+To check the input level without Segno, stop the app first, since it holds the
+device:
 
-The only argument for `flutter-pi` is performance/boot time; revisit it **only**
-if GTK-on-Wayland cannot hold the ~30 fps second-window push on a Pi 5, and only
-after a path exists to keep two windows working under it.
-
-> On-device status: **pending hardware.** The second-window open/control check is
-> in the verification checklist below.
-
-## Decision 2 — Wayland compositor: **labwc** (wlroots-based)
-
-**Decision: target `labwc`. Avoid Wayfire. `sway` is the fallback.**
-
-Rationale:
-
-- Part 5 pins the waveform window to a specific physical output by output name at
-  boot. That requires the compositor to expose the
-  `wlr-output-management-unstable-v1` protocol (the protocol `wlr-randr` and
-  `kanshi` speak). Without it there is no deterministic, scriptable way to map a
-  window to a named output.
-- `labwc` is **wlroots-based** and, as of the October 2024 Raspberry Pi OS
-  release, is the **default Wayland compositor across the Pi range, including the
-  Pi 5** (it replaced Wayfire). Being the OS default means it is the
-  best-supported, least-surprising target.
-- **Wayfire** (the previous Pi OS default) does not expose
-  `wlr-output-management`, so `wlr-randr`-based output pinning does not work on it
-  — it is explicitly avoided.
-- `sway` is also wlroots-based and supports `wlr-output-management`; it is the
-  fallback if a labwc-specific blocker appears.
-
-> On-device status: **pending hardware.** `wlr-output-management` exposure must be
-> confirmed with `wlr-randr` on the actual image (see checklist).
-
-## Building an `arm64` bundle
-
-CI builds this on every PR via the `build-linux-arm64` job in
-[`.github/workflows/main.yaml`](../.github/workflows/main.yaml) — a compile-only
-guard on a native `arm64` runner, mirroring the x86_64 `build-linux` job (no audio
-runs in CI). To build on a Pi 5 (Pi OS, `arm64`) directly:
-
-1. Install the GTK + audio build dependencies (same set as CI):
-
-   ```bash
-   sudo apt-get update
-   sudo apt-get install -y ninja-build libgtk-3-dev libglib2.0-dev \
-     libpango1.0-dev libasound2-dev clang cmake pkg-config
-   ```
-
-2. Install Flutter `3.47.x` (the version pinned across every build job) and enable
-   the Linux desktop:
-
-   ```bash
-   flutter config --enable-linux-desktop
-   flutter pub get
-   ```
-
-3. Build the development flavor (debug, compile-only — no `--flavor` on Linux, the
-   CMake desktop build has no flavored configs):
-
-   ```bash
-   flutter build linux --debug --target lib/main_development.dart
-   ```
-
-   The native engine builds as `libsegno_engine.so` and is bundled alongside the
-   `segno` binary. The Skia force in `main.cc` means icons render correctly with
-   no extra flags.
-
-For audio bring-up on the device (interface selection, JACK/PipeWire quantum,
-latency calibration) follow [RUNNING_ON_LINUX.md](RUNNING_ON_LINUX.md) verbatim —
-nothing changes on `arm64`.
-
-## Kiosk boot + dual-display
-
-The console boots straight into Segno full-screen across both panels (16″ main
-UI, 7″ waveform) under labwc, with no keyboard or mouse. The systemd unit,
-compositor config, and the deterministic output-pinning script live in
-[`deploy/rpi/`](../deploy/rpi/README.md) — follow that README to install them and
-to set your real connector names with `wlr-randr`.
-
-How the display edge cases are handled (all in [`run_segno.dart`](../lib/app/run_segno.dart)
-+ the app shell, so they are exercised in widget tests):
-
-- **Deterministic pinning.** `deploy/rpi/pin-displays.sh` pins each output by
-  connector name, so the 16″ and 7″ never swap across reboots. Verify the
-  mapping holds across **≥5 reboots** — that is the real acceptance gate.
-- **Second-window failure is visible.** If the waveform window does not become
-  ready, the app shows an operator banner instead of degrading to a dark screen
-  (`WaveformWindowService.open()` now returns readiness;
-  [`waveform_window_service.dart`](../lib/visualizer/waveform_window_service.dart)).
-- **Single-display fallback.** With only one display connected the app skips the
-  waveform window and shows a notice — no half-blank console.
-- **Per-display scale.** Set with `wlr-randr --scale` in `pin-displays.sh`; tune
-  per panel after the Part-6 HDMI-vs-DSI choice.
-
-## Power-cut resilience (read-only root + supervision)
-
-A stompable unit gets its power cut mid-set, so the appliance is hardened against
-it (config in [`deploy/rpi/`](../deploy/rpi/README.md)):
-
-- **App/compositor supervision.** The `segno-kiosk` systemd unit respawns the
-  whole kiosk on any crash (`Restart=always`, with a generous start-limit budget
-  for a keyboard-less unit). On relaunch the app cleans up any orphaned waveform
-  sub-window itself via `closeOrphanWindows()` in
-  [`run_segno.dart`](../lib/app/run_segno.dart) — no orphan window survives a
-  respawn.
-- **Read-only root + writable data partition.** `/` runs read-only (overlay), so
-  a power-cut can't corrupt the OS; app settings + sessions live on a separate
-  writable partition. Setup + the **≥20-cycle power-cut stress test** (the real
-  acceptance gate) are in [`deploy/rpi/overlayfs/README.md`](../deploy/rpi/overlayfs/README.md).
-- **Boot integrity check.** `start-kiosk.sh` runs `boot-integrity-check.sh`
-  before the UI: it fscks + mounts the writable partition, and on an
-  unrecoverable card shows a **"needs attention" screen** on the console instead
-  of a black display or a half-broken app.
-- **Durability scope.** The target is **no SD corruption**, *not* zero loop
-  loss — a read-only root protects the OS, not unsaved musical work. Live-loop
-  checkpoint/restore is a separate, product-wide concern.
-
-> Record the power-cut stress run (pass/fail per cycle, any fsck repairs) here
-> once verified on hardware.
-
-## Raspberry Pi 4 Model B (8GB) vs Pi 5
-
-The console targets a Pi 5, but the software is portable arm64 + standard
-peripherals and runs on a **Pi 4 Model B 8GB** with no code changes:
-
-- **Displays** — Pi 4 has 2× micro-HDMI; labwc/Wayland + `wlr-randr` run on it.
-- **LED driver** — the console board v2's own Pico 2, over the pedal link on
-  GPIO8/9. The PINS are Pi-model-agnostic; the UART is not: uart3 on a Pi 5
-  (`dtoverlay=uart3-pi5`), uart4 on a Pi 4 — a different dtoverlay and serial
-  device, same header pins. (GPIO14/15 carry MIDI on the console.)
-- **Caveats are performance, not compatibility.** The Pi 4 CPU is ~2–3× slower,
-  so the ≤10 ms audio round-trip target is tighter — expect to use a slightly
-  larger buffer (256→512 frames) for xrun-free operation — and a stompable
-  always-on unit needs **active cooling**. Use a USB 3.0 port for the interface.
-  Plugin (VST3/CLAP) hosting on the console would be where Pi 4 headroom gets
-  tight; the core loopstation is comfortable.
+```bash
+systemctl stop segno
+arecord -D hw:USB -c <channels> -r 48000 -f S32_LE -d 4 /data/in.wav
+systemctl start segno
+```
 
 ## Hardware (enclosure, protection, power, BOM)
 
 The console's hardware design lives under [`hardware/`](../hardware):
 
 - **BOM / shopping list:** [`hardware/segno_console_shopping_list.md`](../hardware/segno_console_shopping_list.md)
-  (Amazon-sourced, decision 2026-08-17) — Pi 5 + active cooler, 16″ touchscreen,
-  **7″ HDMI** display, USB interface, footswitches, EC11 encoder, WS2812
-  ring + indicator pills, the 20 V PD power chain, and the console board v2's
-  generated BOM (`hardware/kicad/fab/segno_console_board_bom.csv`).
+  (Amazon-sourced, decision 2026-08-17) — Pi 5 + active cooler, main
+  touchscreen, **7″ HDMI** display, USB interface, footswitches, EC11 encoder,
+  WS2812 ring + indicator pills, the 20 V PD power chain, and the console board
+  v2's generated BOM (`hardware/kicad/fab/segno_console_board_bom.csv`).
 - **Power/thermal budget + enclosure intent:**
   [`hardware/console/README.md`](../hardware/console/README.md) — the per-rail
   power budget and the active-cooling requirement.
 
 **7″ display decision: HDMI (not DSI).** Both screens are HDMI, so they
-enumerate as `HDMI-A-1` / `HDMI-A-2` and pin cleanly via `wlr-randr` (Part 5's
-`pin-displays.sh`), with no DSI compositor mapping. DSI's only gain — freeing a
-micro-HDMI — is moot here. Set the 7″ per-output `--scale` to taste.
+enumerate as `HDMI-A-1` / `HDMI-A-2` and `homescreen.toml` names each view's
+connector. DSI's only gain, freeing an HDMI port, is moot here.
 
-## On-device bring-up checklist (run on a Pi 5)
+## On-device checklist
 
-These cannot be verified in CI (no display, no audio). Tick them when the panels
-and a Pi 5 are available:
+These cannot be verified in CI (no display, no audio). Tick them on a
+console:
 
-- [ ] An `arm64` Segno bundle launches full-screen on the Pi 5 under labwc.
-- [ ] Material icons render correctly (not "tofu" boxes) — confirms the Skia path
-      in [`main.cc`](../linux/runner/main.cc) works on `arm64`.
-- [ ] The waveform second window opens and is controllable under GTK-on-Wayland
-      (`desktop_multi_window` + `window_manager` work on the device).
-- [ ] `wlr-randr` lists the connected outputs under labwc — confirms
-      `wlr-output-management` is exposed for the Part 5 output-name pinning:
-
-      ```bash
-      wlr-randr
-      ```
-
-      If this errors with "compositor doesn't support
-      wlr-output-management-unstable-v1", the image is running Wayfire — switch to
-      labwc (or sway) before proceeding.
-- [ ] Audio captures and plays back per [RUNNING_ON_LINUX.md](RUNNING_ON_LINUX.md)
-      with the chosen USB interface.
-- [ ] Cold boot lands on the app full-screen with **16″ = main UI, 7″ =
-      waveform**, with no keyboard/mouse (the `segno-kiosk` systemd unit).
-- [ ] The display mapping is stable across **≥5 reboots** (no output-naming
-      race) — adjust `deploy/rpi/pin-displays.sh` connector names if it flips.
-- [ ] Disconnecting the 7″ shows the single-display notice; a failed second
-      window shows the waveform-failed banner (no silent dark screen).
-- [ ] Both panels render at a usable scale (tune `--scale` per panel).
-- [ ] Killing the app → it respawns within the budget; no orphan waveform
-      window remains on the 7″.
-- [ ] **Hard power-cut ×20 mid-session → no SD corruption** (read-only root +
-      boot integrity check); record results above.
-- [ ] A corrupted writable partition boots to the "needs attention" screen, not
-      a black display.
-- [ ] **≤10 ms round-trip audio latency** re-measured on the chosen USB
-      interface + Pi 5 + PipeWire quantum (48 kHz / Pro Audio profile); record
-      the figure here.
-- [ ] **≥2 h thermal soak** (audio + dual-display + GPU, closed enclosure):
+- [ ] Cold boot lands on the app with **15.6″ = main UI, 7″ = readout**, with no
+      keyboard or mouse.
+- [ ] Material icons render correctly (not empty boxes) on both screens.
+- [ ] Touch on each panel lands on its own screen; both panels calibrate from
+      Settings → Displays, and the calibration survives a reboot.
+- [ ] The screen mapping is stable across **≥5 reboots**.
+- [ ] With the 7″ unplugged, the Displays page shows it as "Not connected".
+- [ ] Killing the app: `segno.service` restarts it and both screens come back.
+- [ ] **Hard power-cut ×20 mid-session:** the console boots back to the app
+      each time and `/data` mounts clean; record results here.
+- [ ] **≤10 ms round-trip audio latency** measured on the chosen USB interface
+      with a loopback cable; record the figure, rate and buffer here.
+- [ ] **≥2 h thermal soak** (audio + both screens + GPU, closed enclosure):
       `vcgencmd get_throttled` stays `0x0`, no xrun-rate regression; record
       results here.
 - [ ] **Re-run the ≥2 h audio soak on an image with the persistent journal**
@@ -368,108 +283,3 @@ and a Pi 5 are available:
       the persistent-journal change is wired but **not verified**
       (`autonomy:blocked-verify`).
 - [ ] Stompable footswitch panel survives stage-abuse testing.
-
-## Pi 4B validation pass (substitute gear: SD + monitor + TV)
-
-First **on-hardware** run of the floor-console stack (PRs #86–#93) — the labwc
-kiosk, `desktop_multi_window` dual-display, the `midi_client` pedal-in +
-`pedal_repository` LED-out path, and the miniaudio→JACK audio — none of which has
-run on a real device yet. It uses the gear on hand — a **Pi 4B**, an **SD card**,
-and a **PC monitor + TV** for the two panels — to validate the **Tier 2
-GTK-on-Wayland** stack (what ships today; no Yocto), **kiosk-first**, at a
-**functional-smoke** bar.
-
-This is a **delta** against the Pi 5 bring-up checklist above, not a replacement:
-the labwc / `wlr-randr` / overscan / single-display / reboot-stability checks are
-shared. Because it runs off an SD card on the slower Pi 4 CPU, the boot-time,
-NVMe, latency, and thermal gates are **not** representative — those stay Pi-5-only.
-Executing this pass is **hardware-gated**; record outcomes in the results table at
-the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh`
-(the Mac cannot build a Linux bundle natively; see
-[`deploy/rpi/README.md`](../deploy/rpi/README.md)).
-
-### Pre-flight (resolve before boot)
-
-- **Compositor = labwc, not Wayfire.** `raspi-config` → Advanced → Wayland →
-  **labwc**. As above, `wlr-randr` must list the outputs; if it errors with
-  "compositor doesn't support wlr-output-management-unstable-v1" the image is still
-  on Wayfire and output pinning will not work.
-- **`pipewire-jack` present, and launch via `pw-jack`.** Goal 3 needs Segno to
-  land on the **JACK** backend; the PulseAudio backend captures silence (see
-  [RUNNING_ON_LINUX.md](RUNNING_ON_LINUX.md)). Install `pipewire-jack`, and run the
-  binary under **`pw-jack`** (`pw-jack …/segno`) — without it the engine loads the
-  real `libjack`, finds no running `jackd`, and **hangs retrying** (`Cannot connect
-  to server socket … jack server is not running`). The kiosk `autostart` already
-  wraps the launch in `pw-jack`; confirm the app selects JACK, not "Monitor of …".
-- **Sample rate must match the interface, and use "Pro Audio".** Set the card's
-  profile to **Pro Audio** (raw channels, not `analog-surround`) and pick the app
-  **sample rate to match what the device actually runs** (check with `pw-top` — both
-  the interface and `dev.aquiles.segno` nodes should show the same RATE). A mismatch
-  (e.g. app @ 96 k, device @ 48 k) makes PipeWire insert a **resampler** that adds
-  latency and xruns (climbing `ERR` in `pw-top`). Pin the CPU governor to
-  `performance` to kill DVFS jitter.
-- **Power / USB (Pi 4 specifics).** Use a **powered USB hub** for the Focusrite —
-  the Pi 4's per-port current budget is tight — and the official **5V/3A** PSU
-  (`vcgencmd get_throttled` must read `0x0`).
-- **USB audio glitches are a Pi 4 bus-contention artifact (expected here).** The
-  Pi 4 funnels **all four USB-A ports through one shared USB2 hub**, so the audio
-  interface contends with every other USB device (wireless dongles). Under
-  contention — or at a small buffer — the kernel logs
-  `usb …: next package FIFO overflow` (see `dmesg`) and audio hiccups. Mitigations
-  that *do* help: a **larger buffer** (trade latency for stability — latency is a
-  non-goal here), and **taking devices off USB** — a powered hub adds *power* but
-  not *bandwidth*, so it does not fix this; the shipped console puts the
-  footswitches/encoder on the console board's UART link, leaving USB to the
-  interface.
-  On the **Pi 5** the redesigned USB (RP1, dedicated controllers) largely removes
-  this — another reason Pi 4B audio-timing is not representative.
-- **Connectors.** Pi 4 has 2× **micro-HDMI** → `HDMI-A-1` / `HDMI-A-2`. Set
-  `SEGNO_MAIN_OUTPUT` / `SEGNO_WAVE_OUTPUT` and the per-panel `--scale` in
-  [`deploy/rpi/pin-displays.sh`](../deploy/rpi/pin-displays.sh). On the **TV**,
-  turn **overscan** off ("Just Scan" / 1:1 in the TV's picture menu, or
-  `disable_overscan=1` in `config.txt`) or the UI edges are clipped.
-- **First-run device setup.** There is no transport chrome, so the device
-  pickers live in **Settings** (right-click, or press `S`). Bind the
-  **audio interface as both input and output @ 512 frames** (the console's
-  pedal board needs no binding: it announces itself over the link). These persist
-  across reboots (`tryAutoStartEngine` + hotplug reconnect). Settings must stay
-  reachable on the console: with the desktop build gone there is no non-console
-  bundle to fall back on for the first-run bind.
-
-### Goal 1 — Dual-display
-
-- **Procedure.** Boot the kiosk; the main UI should land on the monitor and the
-  waveform on the TV via `desktop_multi_window` + `pin-displays.sh`.
-- **Functional-smoke pass:** both outputs render; the mapping holds across **≥3
-  reboots**; unplugging the TV shows the single-display / waveform-failed banner
-  (not a dark half-screen).
-- **Isolate a failure:** confirm labwc is active; run the bundle by hand under a
-  manual labwc session; check that the three window plugins (`desktop_multi_window`,
-  `window_manager`, `screen_retriever`) load.
-
-### Goal 3 — Focusrite audio
-
-- **Procedure.** Select the Focusrite as **both input and output @ 512 frames**.
-- **Functional-smoke pass:** the input is **heard, not silent** (proves the JACK
-  backend + port pinning); a loop records, overdubs, and plays back **xrun-free**;
-  the channels land on the real interface (not a "Monitor of …" source).
-- **Isolate a failure:** `pw-record` / `arecord` to prove capture outside Segno;
-  verify `pipewire-jack` is installed and that Segno selected the JACK backend.
-
-### VST3 on the Pi (documented only — no hands-on test this pass)
-
-VST3 is answered on paper, not tested here: the host cross-compiles to `aarch64`;
-the ceiling is **`aarch64`-native plugin availability**; plugin editor GUIs need
-XWayland (Tier 2 / 3a) or run GUI-less (3b); and Pi 4 headroom is tight. The full
-answer is in the brainstorm's *"VST3 plugins on the Pi"* section
-([brainstorm](brainstorm/2026-07-22-rpi4b-hardware-validation-brainstorm-doc.md)).
-A small `aarch64` plugin spike (find/compile one plugin, host it headless) is a
-**follow-up issue**, not part of this pass.
-
-### Results (fill in on hardware)
-
-| Check | Result | Notes (buffer, xruns, reboots, quirks) |
-|---|---|---|
-| Goal 1 — Dual-display (monitor + TV) | ☐ pass ☐ fail | |
-| Goal 3 — Focusrite audio (in + out @ 512) | ☐ pass ☐ fail | |
-| `aarch64` bundle builds from the Mac | ☐ pass ☐ fail | `deploy/rpi/build/build-arm64-bundle.sh` |

@@ -26,42 +26,74 @@ void main() {
       expect(a.hashCode, const LooperState().hashCode);
     });
 
-    test('allOneShot is false on an empty rig, not vacuously true', () {
-      // `every` on an empty list is true, which is never what the rig-wide
-      // one-shot question means — a stopped engine reporting no tracks would
-      // otherwise answer "yes, all of them".
-      expect(const LooperState().allOneShot, isFalse);
-    });
-
-    test('allOneShot needs EVERY track, not just one', () {
-      expect(
-        const LooperState(
-          tracks: [Track(oneShot: true), Track(channel: 1)],
-        ).allOneShot,
-        isFalse,
-      );
-      expect(
-        const LooperState(
-          tracks: [Track(oneShot: true), Track(channel: 1, oneShot: true)],
-        ).allOneShot,
-        isTrue,
-      );
-    });
-
-    test('Master insert fields default and participate in equality', () {
+    test('output chain fields default and participate in equality', () {
       const state = LooperState();
-      expect(state.masterEffects, isEmpty);
-      expect(state.masterChainEnabled, isTrue);
+      expect(state.outputEffects(0), isEmpty);
+      expect(state.outputChainEnabled(0), isTrue);
 
-      expect(state, isNot(const LooperState(masterChainEnabled: false)));
+      expect(
+        state,
+        isNot(
+          const LooperState(
+            outputChains: {0: FxChainEnvelope(chainEnabled: false)},
+          ),
+        ),
+      );
       expect(
         state,
         isNot(
           LooperState(
-            masterEffects: [BuiltInEffect(type: TrackEffectType.reverb)],
+            outputChains: {
+              0: FxChainEnvelope(
+                entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+              ),
+            },
           ),
         ),
       );
+      // Keyed by destination: the same chain on another destination is a
+      // different rig, which is the whole reason this is a map.
+      expect(
+        const LooperState(
+          outputChains: {0: FxChainEnvelope(chainEnabled: false)},
+        ),
+        isNot(
+          const LooperState(
+            outputChains: {1: FxChainEnvelope(chainEnabled: false)},
+          ),
+        ),
+      );
+    });
+  });
+
+  group('songWaitingSection (#1077)', () {
+    LooperState rig({
+      LooperMode mode = LooperMode.song,
+      int queued = 1,
+      TrackState state = TrackState.stopped,
+      int length = 100,
+    }) => LooperState(
+      transport: TransportState(looperMode: mode, songQueuedTrack: queued),
+      tracks: [
+        const Track(state: TrackState.playing, lengthFrames: 100),
+        Track(channel: 1, state: state, lengthFrames: length),
+      ],
+    );
+
+    test('names a waiting section with a take', () {
+      expect(rig().songWaitingSection, 1);
+    });
+
+    test('is null outside Song, without a queue, out of range, on an empty '
+        'or a capturing track', () {
+      expect(rig(mode: LooperMode.multi).songWaitingSection, isNull);
+      expect(rig(queued: -1).songWaitingSection, isNull);
+      expect(rig(queued: 5).songWaitingSection, isNull);
+      expect(
+        rig(state: TrackState.empty, length: 0).songWaitingSection,
+        isNull,
+      );
+      expect(rig(state: TrackState.recording).songWaitingSection, isNull);
     });
   });
 }

@@ -68,8 +68,40 @@ public struct RecordingFile: Decodable, Identifiable, Hashable {
   public let bytes: Int64
   public let version: String
 
+  /// The part number of a main-recording part (`master-001.wav` is 1), the
+  /// layout appliances write since #1198; nil for any other file.
+  public var mainPart: Int? {
+    guard path.count == 14, path.hasPrefix("master-"), path.hasSuffix(".wav") else { return nil }
+    return Self.partNumber(path.dropFirst(7).prefix(3))
+  }
+
+  /// The input and part number of a live-input part (`input-0-001.wav` is
+  /// input 0, part 1); nil for any other file.
+  public var inputPart: (input: Int, part: Int)? {
+    guard path.hasPrefix("input-"), path.hasSuffix(".wav"), !path.contains("/") else { return nil }
+    let fields = path.dropFirst(6).dropLast(4).split(
+      separator: "-", omittingEmptySubsequences: false)
+    guard fields.count == 2, !fields[0].isEmpty,
+      fields[0].allSatisfy({ $0.isASCII && $0.isNumber }), let input = Int(fields[0]),
+      let part = Self.partNumber(fields[1])
+    else { return nil }
+    return (input, part)
+  }
+
+  /// Whether the file is (part of) the main recording.
+  public var isMain: Bool { path == "master.wav" || mainPart != nil }
+
+  private static func partNumber(_ digits: Substring) -> Int? {
+    guard digits.count == 3, digits.allSatisfy({ $0.isASCII && $0.isNumber }),
+      let value = Int(digits), value > 0
+    else { return nil }
+    return value
+  }
+
   public var role: String {
     if path == "master.wav" { return "Main recording" }
+    if let part = mainPart { return "Main recording · Part \(part)" }
+    if let input = inputPart { return "Live input \(input.input) · Part \(input.part)" }
     if path.hasPrefix("live-input-") { return "Live input · " + baseName }
     if path.hasPrefix("stems/dry/") { return "Dry track · " + baseName }
     if path == "stems/wet/master.wav" { return "Rendered track mix" }
@@ -86,9 +118,11 @@ public struct RecordingFile: Decodable, Identifiable, Hashable {
   }
 
   public func suggestedName(recording: Recording) -> String {
-    path == "master.wav"
-      ? recording.name + ".wav"
-      : recording.name + " — " + path.replacingOccurrences(of: "/", with: "-")
+    if path == "master.wav" { return recording.name + ".wav" }
+    if let part = mainPart {
+      return recording.name + " · Part " + String(format: "%03d", part) + ".wav"
+    }
+    return recording.name + " — " + path.replacingOccurrences(of: "/", with: "-")
   }
 }
 

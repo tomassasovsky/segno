@@ -28,7 +28,15 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 5: CTRL kind NONE -- the board can now say a jack is EMPTY (a plug pulled
+/* 11: STATE flags bit 4 is dimmed -- the console idled and the app dimmed the
+ * screens, so the board dims its LEDs too (#1349).
+ * 10: STATE53 -- the Song queue (#1077): which footswitch's pill fills, and
+ * how far, while a section waits for the playing one's next lap edge.
+ * 9: ENCODER_BUTTON (0x05) -- the encoder's push switch, press and release.
+ * 8: ten RGB hues and a ten-bit physical activity mask (STATE51).
+ * 7 is the separate Song/hardware branch (STATE21), not this format.
+ * 6: mode value 3 is CUSTOM, with the same STATE shape. 5: CTRL kind NONE --
+ * the board can now say a jack is EMPTY (a plug pulled
  * out, or the tip-normal contact on a switched jack), instead of reporting an
  * unplugged jack as a pedal at full toe. 4: CTRL (0x04) grew a contact byte
  * and reports an expression pedal's RAW position; calibration moved to segno.
@@ -36,7 +44,7 @@ extern "C" {
  * stopped tracking the loop. The board is flashed over SWD independently of
  * the app, so the two can drift; this is what makes that visible instead of
  * silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 5u
+#define PEDAL_LINK_PROTOCOL_VERSION 11u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -47,11 +55,20 @@ extern "C" {
  * adds a message type, never a hello byte. */
 #define PEDAL_LINK_TYPE_HELLO 0x03u    /* [protocol, fw major, fw minor] */
 #define PEDAL_LINK_TYPE_CTRL 0x04u     /* [jack, contact, kind, value] */
+#define PEDAL_LINK_TYPE_ENCODER_BUTTON 0x05u /* [pressed] */
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
+/* Pi -> board, from segno-ring-flash before the app starts, never from the
+ * app (PedalLinkCodec does not encode it): bridge this UART to the ring
+ * carrier's, so the Pi can update the ring XIAO (#1342, SegnoRing's
+ * ring_update.h). The payload is a fixed magic, so line noise that passes
+ * the checksum cannot enter the bridge. */
+#define PEDAL_LINK_TYPE_RING_BRIDGE 0x12u /* ['R', 'B'] */
+#define PEDAL_LINK_RING_BRIDGE_MAGIC0 0x52u
+#define PEDAL_LINK_RING_BRIDGE_MAGIC1 0x42u
 
-#define PEDAL_LINK_STATE_LEN 19u
-#define PEDAL_LINK_MAX_PAYLOAD 32u
+#define PEDAL_LINK_STATE_LEN 53u
+#define PEDAL_LINK_MAX_PAYLOAD PEDAL_LINK_STATE_LEN
 #define PEDAL_LINK_MAX_FRAME (4u + PEDAL_LINK_MAX_PAYLOAD)
 
 /* Liveness, both directions, derived from one cadence. The board sends HELLO
@@ -112,7 +129,13 @@ enum {
 };
 
 /* Enum wire values, mirroring the Dart enums' declaration order. */
-enum { PEDAL_MODE_REC = 0, PEDAL_MODE_PLAY, PEDAL_MODE_FX, PEDAL_MODE_COUNT };
+enum {
+  PEDAL_MODE_REC = 0,
+  PEDAL_MODE_PLAY,
+  PEDAL_MODE_FX,
+  PEDAL_MODE_CUSTOM,
+  PEDAL_MODE_COUNT
+};
 enum {
   PEDAL_LOOPER_MULTI = 0,
   PEDAL_LOOPER_SYNC,
@@ -133,18 +156,29 @@ enum { PEDAL_LED_OFF = 0, PEDAL_LED_GREEN, PEDAL_LED_RED, PEDAL_LED_BLUE, PEDAL_
 
 /* The decoded STATE payload. Byte layout (see PedalLinkCodec):
  *   0      flags: bit0 clear_fade, bit1 goodbye, bit2 performance_armed,
- *          bit3 counting_in (bits 4-7 reserved, must be zero)
+ *          bit3 counting_in, bit4 dimmed (bits 5-7 reserved, must be zero)
  *   1      mode          2 looper_mode   3 global_color
  *   4      active_bank   5 selected_track
  *   6..13  track_leds[0..7]
  *   14..17 loop_length_micros, uint32 little-endian
  *   18     master_gain, 0..255
+ *   19..48 ten RGB triples in PEDAL_BTN order
+ *   49..50 active_button_mask LE16; bits10..15 reserved zero
+ *   51     queued_button: 0 none, else the PEDAL_BTN value + 1
+ *   52     queued_progress: 0..254 of 255, 0 without a queued button
+ * The app picks the button (only a visible queued Song section has one) and
+ * lights it like any other; the board only fills that pill left to right by
+ * the progress. A full pill is never drawn from a queue: the engine ends the
+ * wait by starting the section, and the next frame carries no queue.
  */
+typedef struct pedal_color { uint8_t r, g, b; } pedal_color;
+
 typedef struct pedal_state {
   uint8_t clear_fade;
   uint8_t goodbye;
   uint8_t performance_armed;
   uint8_t counting_in;
+  uint8_t dimmed;
   uint8_t mode;
   uint8_t looper_mode;
   uint8_t global_color;
@@ -153,6 +187,10 @@ typedef struct pedal_state {
   uint8_t track_leds[PEDAL_TRACK_COUNT];
   uint32_t loop_length_micros;
   uint8_t master_gain;
+  pedal_color pedal_colors[PEDAL_BTN_COUNT];
+  uint16_t active_button_mask;
+  uint8_t queued_button;
+  uint8_t queued_progress;
 } pedal_state;
 
 /* Frame a payload. `out` must hold PEDAL_LINK_MAX_FRAME bytes. Returns the
@@ -161,14 +199,18 @@ size_t pedal_link_encode(uint8_t type, const uint8_t *payload, uint8_t len, uint
 
 size_t pedal_link_encode_button(uint8_t button, uint8_t pressed, uint8_t *out);
 size_t pedal_link_encode_encoder(int8_t delta, uint8_t *out);
+size_t pedal_link_encode_encoder_button(uint8_t pressed, uint8_t *out);
 size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out);
 size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t contact, uint8_t kind, uint8_t value,
                               uint8_t *out);
 size_t pedal_link_encode_state(const pedal_state *state, uint8_t *out);
+size_t pedal_link_encode_ring_bridge(uint8_t *out);
 
 /* Decode a STATE payload. Returns 1 on success, 0 for a wrong length, an
- * out-of-range enum, a reserved flag bit, an active_bank > 1 or a
- * selected_track >= PEDAL_TRACK_COUNT - the same rejections as the Dart side. */
+ * out-of-range enum, a reserved flag bit, an active_bank > 1, a
+ * selected_track >= PEDAL_TRACK_COUNT, a queued_button > PEDAL_BTN_COUNT, a
+ * queued_progress of 255 or a progress without a button - the same
+ * rejections as the Dart side. */
 int pedal_link_decode_state(const uint8_t *payload, uint8_t len, pedal_state *out);
 
 /* The payload length a message type carries, or -1 for a type this codec does

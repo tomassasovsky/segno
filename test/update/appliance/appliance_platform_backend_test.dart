@@ -9,14 +9,12 @@ class _FakeEnv implements ApplianceEnv {
     this.body,
     this.stageProgress = const [0.5, 1.0],
     this.stageError,
-    this.rebootError,
   }) : files = Map.of(files);
 
   final Map<String, String> files;
   final String? body;
   final List<double> stageProgress;
   final Object? stageError;
-  final Exception? rebootError;
 
   Uri? fetchedUrl;
   String? stagedVersionArg;
@@ -49,7 +47,6 @@ class _FakeEnv implements ApplianceEnv {
   @override
   Future<void> reboot() async {
     rebootCalls++;
-    if (rebootError != null) throw rebootError!;
   }
 
   int powerOffCalls = 0;
@@ -61,9 +58,27 @@ class _FakeEnv implements ApplianceEnv {
 
   int reconcileCalls = 0;
 
+  /// What reconcile-staged answers; it clears the staged marker whenever it
+  /// names a reason, as the helper does.
+  String? reconcileReason;
+
   @override
-  Future<void> reconcileStaged() async {
+  Future<String?> reconcileStaged() async {
     reconcileCalls++;
+    if (reconcileReason != null) files.remove(_staged);
+    return reconcileReason;
+  }
+
+  String? attempt;
+  int clearAttemptCalls = 0;
+
+  @override
+  Future<String?> updateAttempt() async => attempt;
+
+  @override
+  Future<void> clearUpdateAttempt() async {
+    clearAttemptCalls++;
+    attempt = null;
   }
 }
 
@@ -148,15 +163,10 @@ void main() {
         final b = backend(env);
         expect(await b.currentVersion(), Version.parse('0.2.0'));
         expect(await b.stagedVersion(), Version.parse('0.3.0'));
-        expect(env.reconcileCalls, 1);
+        // Reconciling is the startup recover's job, once, not every read's.
+        expect(env.reconcileCalls, 0);
       },
     );
-
-    test('stagedVersion reconciles before reading the marker', () async {
-      final env = _FakeEnv(files: {_staged: '0.3.0'});
-      await backend(env).stagedVersion();
-      expect(env.reconcileCalls, 1);
-    });
 
     test('parses a prerelease (experimental) semver', () async {
       final b = backend(_FakeEnv(files: {_version: '0.2.0-experimental.7'}));
@@ -167,6 +177,59 @@ void main() {
       final b = backend(_FakeEnv(files: {_version: 'x'}));
       expect(await b.currentVersion(), Version.none);
       expect(await b.stagedVersion(), Version.none);
+    });
+  });
+
+  group('recover', () {
+    test('a tryboot that did not take names the staged version that rolled '
+        'back, read before the reconcile cleared it', () async {
+      final env = _FakeEnv(files: {_version: '1.0.0', _staged: '1.1.0'})
+        ..reconcileReason = 'tryboot-not-taken';
+
+      final recovery = await backend(env).recover();
+
+      expect(recovery.rolledBack, Version.parse('1.1.0'));
+      expect(recovery.interrupted, isNull);
+      expect(env.reconcileCalls, 1);
+      expect(env.files.containsKey(_staged), isFalse);
+    });
+
+    test('already running the staged version is no rollback', () async {
+      final env = _FakeEnv(files: {_version: '1.1.0', _staged: '1.1.0'})
+        ..reconcileReason = 'already-running';
+
+      expect((await backend(env).recover()).rolledBack, isNull);
+    });
+
+    test('a kept marker is no rollback', () async {
+      final env = _FakeEnv(files: {_version: '1.0.0', _staged: '1.1.0'});
+
+      expect((await backend(env).recover()).rolledBack, isNull);
+      expect(env.files[_staged], '1.1.0');
+    });
+
+    test('reports the install that was cut off', () async {
+      final env = _FakeEnv(files: {_version: '1.0.0'})..attempt = '1.1.0';
+
+      expect(
+        (await backend(env).recover()).interrupted,
+        Version.parse('1.1.0'),
+      );
+    });
+
+    test('an unreadable attempt is none', () async {
+      final env = _FakeEnv(files: {_version: '1.0.0'})..attempt = 'garbage';
+
+      expect((await backend(env).recover()).interrupted, isNull);
+    });
+
+    test('clearInterrupted forgets the attempt through the helper', () async {
+      final env = _FakeEnv()..attempt = '1.1.0';
+
+      await backend(env).clearInterrupted();
+
+      expect(env.clearAttemptCalls, 1);
+      expect(env.attempt, isNull);
     });
   });
 
@@ -228,15 +291,15 @@ void main() {
       );
     });
 
-    test('applyAndRestart calls reboot', () async {
-      final env = _FakeEnv();
-      await backend(env).applyAndRestart();
-      expect(env.rebootCalls, 1);
-    });
-
-    test('applyAndRestart surfaces a reboot failure', () {
-      final env = _FakeEnv(rebootError: Exception('reboot denied'));
-      expect(backend(env).applyAndRestart(), throwsA(isA<Exception>()));
+    test('staging never reboots; the power flow owns the restart', () async {
+      final env = _FakeEnv(stageProgress: const [1.0]);
+      await backend(env)
+          .downloadAndStage(
+            UpdateManifest(version: Version.parse('0.7.0'), bundle: 'b.raucb'),
+          )
+          .drain<void>();
+      await backend(env).stagedVersion();
+      expect(env.rebootCalls, 0);
     });
   });
 }

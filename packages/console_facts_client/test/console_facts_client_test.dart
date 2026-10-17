@@ -32,8 +32,8 @@ void main() {
       expect(client.isSupported, isFalse);
       expect((await client.storage()).known, isFalse);
       expect(await client.facts(), ConsoleFacts.unknown);
-      expect(await client.exportDestination(), isEmpty);
       expect(await client.deleteCapturesOlderThan(30), 0);
+      expect(await client.retiredBluetoothPairings(), 0);
     });
   });
 
@@ -94,14 +94,6 @@ void main() {
       expect(await client.deleteCapturesOlderThan(30), 0);
     });
 
-    test('an unmounted export volume reports nowhere to export', () async {
-      final client = FakeConsoleFactsClient(
-        latency: Duration.zero,
-        exportVolumeMounted: false,
-      );
-      expect(await client.exportDestination(), isEmpty);
-    });
-
     test('it answers with the rig the mockups draw', () async {
       final facts = await FakeConsoleFactsClient(
         latency: Duration.zero,
@@ -151,7 +143,9 @@ void main() {
     }) => LocalConsoleFactsClient(
       sessionsRoot: () async => sessionsDir,
       capturesRoot: () async => capturesDir,
-      diskSpace: diskSpace,
+      diskSpace:
+          diskSpace ??
+          (_) async => const DiskSpace(totalBytes: 1 << 40, freeBytes: 1 << 39),
     );
 
     void seed(String dir, int bytes) {
@@ -177,46 +171,43 @@ void main() {
       expect(usage.systemBytes, 300000 - 13000);
     });
 
-    test('df targets the captures directory, i.e. the data volume', () async {
-      seed(sessionsDir, 1);
-      seed(capturesDir, 1);
+    test(
+      'the reading targets the captures directory, i.e. the data volume',
+      () async {
+        seed(sessionsDir, 1);
+        seed(capturesDir, 1);
+        String? measured;
+        final client = build(
+          diskSpace: (path) async {
+            measured = path;
+            return const DiskSpace(totalBytes: 10, freeBytes: 5);
+          },
+        );
+
+        await client.storage();
+
+        expect(measured, capturesDir);
+      },
+    );
+
+    test('a directory that does not exist yet sizes to 0, and the reader is '
+        'handed the nearest EXISTING ancestor', () async {
+      // Fresh install: neither sessions nor captures written yet. A statvfs on
+      // a missing path fails, so the client walks up to an ancestor that is
+      // there (the temp root here) before asking; the walk itself is 0.
       String? measured;
-      final client = build(
+      final usage = await build(
         diskSpace: (path) async {
           measured = path;
-          return const DiskSpace(totalBytes: 10, freeBytes: 5);
+          return const DiskSpace(totalBytes: 500, freeBytes: 500);
         },
-      );
-
-      await client.storage();
-
-      expect(measured, capturesDir);
-    });
-
-    test('free/total come straight from df on that path (real df)', () async {
-      seed(sessionsDir, 2048);
-      seed(capturesDir, 3072);
-      // No injected diskSpace: exercises the real `df` reader end to end, so a
-      // regression in the parse or the ancestor walk is caught here.
-      final usage = await build().storage();
-
-      expect(usage.known, isTrue);
-      expect(usage.sessionBytes, 2048);
-      expect(usage.captureBytes, 3072);
-      expect(usage.totalIsPlausible, isTrue);
-    });
-
-    test('a directory that does not exist yet sizes to 0', () async {
-      // Fresh install: neither sessions nor captures written yet. df still
-      // answers (it walks up to an existing ancestor), and the walk is 0.
-      final usage = await build(
-        diskSpace: (_) async =>
-            const DiskSpace(totalBytes: 500, freeBytes: 500),
       ).storage();
 
       expect(usage.known, isTrue);
       expect(usage.sessionBytes, 0);
       expect(usage.captureBytes, 0);
+      expect(measured, temp.path);
+      expect(Directory(measured!).existsSync(), isTrue);
     });
 
     test('system bytes clamp at 0 rather than going negative', () async {
@@ -241,74 +232,149 @@ void main() {
       expect(usage.known, isFalse);
     });
 
-    test('the disk is the only thing it answers; the rest stay unknown', () {
+    test('retention stays unanswered', () async {
       final client = build();
       expect(client.isSupported, isTrue);
-      expect(() async {
-        expect(await client.facts(), ConsoleFacts.unknown);
-        expect(await client.exportDestination(), isEmpty);
-        expect(await client.deleteCapturesOlderThan(30), 0);
-      }, returnsNormally);
+      expect(await client.deleteCapturesOlderThan(30), 0);
     });
   });
 
-  group('parseDfKP', () {
-    // Real `df -k -P` output has the header first and one filesystem per line;
-    // the parser reads total (1024-blocks) and available off the last line and
-    // scales to bytes. The live-df test above covers the happy path end to end;
-    // these pin the branches a running df would never hand you on demand.
+  group('LocalConsoleFactsClient.facts', () {
+    late Directory root;
 
-    test('parses a valid Linux df -k -P block', () {
-      const stdout =
-          'Filesystem     1024-blocks       Used Available '
-          'Capacity Mounted on\n'
-          '/dev/nvme0n1p7   940191048   64512000  827764736       8% /data\n';
+    setUp(() => root = Directory.systemTemp.createTempSync('console_facts'));
+    tearDown(() => root.deleteSync(recursive: true));
 
-      final space = parseDfKP(stdout);
+    LocalConsoleFactsClient build() => LocalConsoleFactsClient(
+      sessionsRoot: () async => root.path,
+      capturesRoot: () async => root.path,
+      diskSpace: (_) async => null,
+      factsRoot: root.path,
+    );
 
-      expect(space, isNotNull);
-      expect(space!.totalBytes, 940191048 * 1024);
-      expect(space.freeBytes, 827764736 * 1024);
+    void write(String path, Object content) {
+      final file = File('${root.path}/$path')
+        ..parent.createSync(recursive: true);
+      if (content is String) {
+        file.writeAsStringSync(content);
+      } else {
+        file.writeAsBytesSync(content as List<int>);
+      }
+    }
+
+    test('reads the serial, the image, both panels and the flash record', () {
+      write(kSerialNumberPath, '10000000abcd1234\x00');
+      write(kBuildVersionPath, '1.2.3\n');
+      // Written in reverse connector order, read back in connector order.
+      write('$kDrmPath/card1-HDMI-A-2/edid', edidNamed('Segno 7'));
+      write('$kDrmPath/card1-HDMI-A-1/edid', edidNamed('LG ULTRAFINE'));
+      // A connector with nothing plugged in has an empty EDID.
+      write('$kDrmPath/card1-DSI-1/edid', <int>[]);
+      write('$kDrmPath/card1/dev', '226:1');
+      write(kConsoleBoardRecordPath, 'firmware=1.4 protocol=3\n');
+
+      expect(
+        build().facts(),
+        completion(
+          const ConsoleFacts(
+            serial: '10000000abcd1234',
+            systemImage: '1.2.3',
+            panels: ['LG ULTRAFINE', 'Segno 7'],
+            lastFlashed: ConsoleBoardFlash(firmware: '1.4', protocol: 3),
+          ),
+        ),
+      );
     });
 
-    test('parses a macOS df -k -P block with its extra columns', () {
-      // macOS prints iused/ifree/%iused between Capacity and Mounted-on; the
-      // total/available columns are still 1 and 3, so the parse is unchanged.
-      const stdout =
-          'Filesystem 1024-blocks Used Available Capacity iused '
-          'ifree %iused Mounted on\n'
-          '/dev/disk3s5 1948455240 1082619684 801731620 58% 501 999 1% '
-          '/System/Volumes/Data\n';
-
-      final space = parseDfKP(stdout);
-
-      expect(space, isNotNull);
-      expect(space!.totalBytes, 1948455240 * 1024);
-      expect(space.freeBytes, 801731620 * 1024);
+    test('a missing file leaves its fact out', () async {
+      write(kBuildVersionPath, '1.2.3');
+      final facts = await build().facts();
+      expect(facts.serial, isEmpty);
+      expect(facts.systemImage, '1.2.3');
+      expect(facts.panels, isEmpty);
+      expect(facts.lastFlashed, isNull);
     });
 
-    test('a header-only output has no data line and is null', () {
-      const stdout =
-          'Filesystem 1024-blocks Used Available Capacity '
-          'Mounted on\n';
-      expect(parseDfKP(stdout), isNull);
+    test('nothing readable is the unknown console', () {
+      expect(build().facts(), completion(ConsoleFacts.unknown));
     });
 
-    test('empty output is null', () {
-      expect(parseDfKP(''), isNull);
+    test('a record without both fields is no record', () async {
+      write(kConsoleBoardRecordPath, 'firmware=1.4\n');
+      expect((await build().facts()).lastFlashed, isNull);
+      // An unparseable protocol is no record, and the rest still loads.
+      write(
+        kConsoleBoardRecordPath,
+        'firmware=1.4 protocol=99999999999999999999\n',
+      );
+      expect((await build().facts()).lastFlashed, isNull);
+    });
+  });
+
+  group('edidMonitorName', () {
+    test('reads the display-name descriptor', () {
+      expect(edidMonitorName(edidNamed('Segno 7')), 'Segno 7');
     });
 
-    test('a short data line (too few columns) is null', () {
-      const stdout = 'Filesystem 1024-blocks Used Available\n/dev/sda1 100\n';
-      expect(parseDfKP(stdout), isNull);
+    test('a block with no name descriptor names nothing', () {
+      expect(edidMonitorName(edidNamed(null)), isNull);
     });
 
-    test('non-numeric size fields are null, not a throw', () {
-      const stdout =
-          'Filesystem 1024-blocks Used Available Capacity '
-          'Mounted on\n'
-          '/dev/sda1 lots some plenty 8% /data\n';
-      expect(parseDfKP(stdout), isNull);
+    test('bytes that are not an EDID name nothing', () {
+      expect(edidMonitorName(List.filled(128, 0)), isNull);
+      expect(edidMonitorName(const [0, 255, 255]), isNull);
+    });
+  });
+
+  group('LocalConsoleFactsClient.retiredBluetoothPairings', () {
+    late Directory temp;
+
+    setUp(() {
+      temp = Directory.systemTemp.createTempSync('retired_bluetooth');
+    });
+    tearDown(() => temp.deleteSync(recursive: true));
+
+    LocalConsoleFactsClient build(String state) => LocalConsoleFactsClient(
+      sessionsRoot: () async => temp.path,
+      capturesRoot: () async => temp.path,
+      diskSpace: (_) async => null,
+      bluetoothState: state,
+    );
+
+    void record(String path) {
+      Directory(path).createSync(recursive: true);
+      File('$path/info').writeAsStringSync('[General]\n');
+    }
+
+    test('counts each device record under each adapter', () async {
+      final state = '${temp.path}/bluetooth';
+      record('$state/AA:BB:CC:DD:EE:FF/11:22:33:44:55:66');
+      record('$state/AA:BB:CC:DD:EE:FF/22:33:44:55:66:77');
+      record('$state/00:11:22:33:44:55/66:77:88:99:AA:BB');
+      // What BlueZ keeps beside the records is not a pairing.
+      Directory('$state/AA:BB:CC:DD:EE:FF/cache').createSync();
+      File('$state/AA:BB:CC:DD:EE:FF/settings').writeAsStringSync('');
+      Directory(
+        '$state/AA:BB:CC:DD:EE:FF/33:44:55:66:77:88',
+      ).createSync(); // no info file
+      expect(await build(state).retiredBluetoothPairings(), 3);
+    });
+
+    test('is 0 for an empty or missing tree', () async {
+      final state = '${temp.path}/bluetooth';
+      expect(await build(state).retiredBluetoothPairings(), 0);
+      Directory(state).createSync();
+      expect(await build(state).retiredBluetoothPairings(), 0);
+    });
+
+    test('ignores a device record outside an adapter directory', () async {
+      final state = '${temp.path}/bluetooth';
+      record('$state/not-an-adapter/11:22:33:44:55:66');
+      expect(await build(state).retiredBluetoothPairings(), 0);
+    });
+
+    test('defaults to the appliance data volume', () {
+      expect(kRetiredBluetoothState, '/data/bluetooth');
     });
   });
 
@@ -322,18 +388,30 @@ void main() {
       expect(kFakeConsoleFacts, isFalse);
       expect(Platform.isLinux || Platform.isMacOS, isTrue);
       expect(
-        createConsoleFactsClient(sessionsRoot: noRoot, capturesRoot: noRoot),
+        createConsoleFactsClient(
+          sessionsRoot: noRoot,
+          capturesRoot: noRoot,
+          diskSpace: (_) async => null,
+        ),
         isA<LocalConsoleFactsClient>(),
       );
     });
   });
 }
 
-extension on StorageUsage {
-  /// A real df reading: the volume has a size, and free never exceeds it.
-  bool get totalIsPlausible {
-    final total =
-        sessionBytes + captureBytes + pluginBytes + systemBytes + freeBytes;
-    return total > 0 && freeBytes <= total;
+/// A 128-byte EDID base block whose third descriptor names [name] (or which
+/// names nothing when [name] is null), the way a panel's firmware writes it.
+List<int> edidNamed(String? name) {
+  final edid = List<int>.filled(128, 0)
+    ..setAll(0, const [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00])
+    // The first descriptor is a detailed timing: a non-zero pixel clock.
+    ..[54] = 0x02
+    ..[55] = 0x3A
+    // A serial-number descriptor (tag 0xFF) that must not be read as a name.
+    ..setAll(72, [0, 0, 0, 0xFF, 0, ...'SN0001\n      '.codeUnits]);
+  if (name != null) {
+    final text = '$name\n'.padRight(13).codeUnits.take(13).toList();
+    edid.setAll(90, [0, 0, 0, 0xFC, 0, ...text]);
   }
+  return edid;
 }

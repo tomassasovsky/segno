@@ -4,17 +4,36 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart'
+    show EngineReopened, EngineStatus, LooperState, ReopenOutcome;
+import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
+import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/library/application/removable_volumes.dart';
+import 'package:segno/library/view/library_page.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
+import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:settings_repository/settings_repository.dart';
+import 'package:session_repository/session_repository.dart';
 
 import '../../helpers/helpers.dart';
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
+
+class _MockSessionCubit extends MockCubit<SessionState>
+    implements SessionCubit {}
+
+class _MockPedalRepository extends Mock implements PedalRepository {}
+
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
+
+class _MockSessionRepository extends Mock implements SessionRepository {}
 
 /// The device-lost coverage (#453), written against the persistent surface
 /// that replaces the D1 lost-toast. Only the AUDIO interface has a standing
@@ -30,7 +49,6 @@ void main() {
 
   late AppLocalizations l10n;
   late _MockAudioSetupCubit audioSetup;
-  late SettingsTrayCubit tray;
 
   setUpAll(() async {
     l10n = await AppLocalizations.delegate.load(const Locale('en'));
@@ -43,17 +61,12 @@ void main() {
       const Stream<AudioSetupState>.empty(),
       initialState: const AudioSetupState(),
     );
-    tray = SettingsTrayCubit(
-      settings: SettingsRepository(store: FakeKeyValueStore()),
-    );
-    addTearDown(tray.close);
   });
 
   Future<void> pump(WidgetTester tester) => tester.pumpApp(
     MultiBlocProvider(
       providers: [
         BlocProvider<AudioSetupCubit>.value(value: audioSetup),
-        BlocProvider<SettingsTrayCubit>.value(value: tray),
       ],
       child: const Scaffold(body: ConnectivityBanners()),
     ),
@@ -76,6 +89,164 @@ void main() {
     await pump(tester);
 
     expect(find.byKey(deviceKey), findsNothing);
+  });
+
+  group('material cleared on reconnect (#1140)', () {
+    const materialKey = Key('connectivity_banner_material');
+    const clearedState = AudioSetupState(
+      deviceConnectivity: DeviceConnectivity.restoredCleared,
+      connectivityDeviceName: 'Scarlett 2i2',
+      engineStatus: EngineStatus(
+        reopen: EngineReopened(
+          outcome: ReopenOutcome.clearedRate,
+          droppedTracks: 0,
+          previousSampleRate: 48000,
+          sampleRate: 44100,
+        ),
+      ),
+    );
+
+    testWidgets(
+      'holds a standing banner naming both rates with the Library action',
+      (tester) async {
+        whenListen(
+          audioSetup,
+          const Stream<AudioSetupState>.empty(),
+          initialState: clearedState,
+        );
+        await pump(tester);
+
+        expect(find.byKey(materialKey), findsOneWidget);
+        expect(find.byKey(deviceKey), findsNothing);
+        expect(
+          find.text(l10n.deviceRestoredClearedBanner(44100, 48000)),
+          findsOneWidget,
+        );
+        expect(find.text(l10n.stageLibrary), findsOneWidget);
+        await tester.pump(const Duration(seconds: 30));
+        expect(find.byKey(materialKey), findsOneWidget);
+        expect(find.byType(Dialog), findsNothing);
+        final s = surface(tester);
+        expect(decorationOf(tester, materialKey).color, s.recTint);
+      },
+    );
+
+    testWidgets('a cap mismatch names the limit, not rates', (tester) async {
+      whenListen(
+        audioSetup,
+        const Stream<AudioSetupState>.empty(),
+        initialState: const AudioSetupState(
+          deviceConnectivity: DeviceConnectivity.restoredCleared,
+          engineStatus: EngineStatus(
+            reopen: EngineReopened(
+              outcome: ReopenOutcome.clearedCap,
+              droppedTracks: 0,
+              previousSampleRate: 48000,
+              sampleRate: 48000,
+            ),
+          ),
+        ),
+      );
+      await pump(tester);
+      expect(find.text(l10n.deviceRestoredClearedCapBanner), findsOneWidget);
+    });
+
+    testWidgets(
+      'its action ends the notice and opens the Library',
+      (tester) async {
+        tester.view
+          ..physicalSize = const Size(1920, 1080)
+          ..devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(resetSegnoNavigatorForTest);
+        whenListen(
+          audioSetup,
+          const Stream<AudioSetupState>.empty(),
+          initialState: clearedState,
+        );
+        when(audioSetup.dismissReopenNotice).thenReturn(null);
+        final session = _MockSessionCubit();
+        final looper = _MockLooperBloc();
+        whenListen(
+          looper,
+          const Stream<LooperState>.empty(),
+          initialState: const LooperState(),
+        );
+        whenListen(
+          session,
+          const Stream<SessionState>.empty(),
+          initialState: const SessionState(),
+        );
+        when(session.refreshSessions).thenAnswer((_) async {});
+        final pedal = _MockPedalRepository();
+        when(
+          () => pedal.events,
+        ).thenAnswer((_) => const Stream<PedalEvent>.empty());
+        final sessions = _MockSessionRepository();
+        when(sessions.listFolders).thenAnswer((_) async => const []);
+        // The Library is a root-navigator route, so the providers sit above
+        // the app, as they do in `App`.
+        await tester.pumpWidget(
+          MultiRepositoryProvider(
+            providers: [
+              RepositoryProvider<PedalRepository>.value(value: pedal),
+              RepositoryProvider<SessionRepository>.value(value: sessions),
+              RepositoryProvider<GuardRegistry>.value(value: GuardRegistry()),
+              RepositoryProvider<RemovableVolumes>.value(
+                value: const InternalOnlyVolumes(),
+              ),
+            ],
+            child: MultiBlocProvider(
+              providers: [
+                BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+                BlocProvider<SessionCubit>.value(value: session),
+                // The app provides the looper above every route, the
+                // Library's included.
+                BlocProvider<LooperBloc>.value(value: looper),
+              ],
+              child: MaterialApp(
+                navigatorKey: segnoNavigatorKey,
+                theme: AppTheme.neon,
+                localizationsDelegates: AppLocalizations.localizationsDelegates,
+                supportedLocales: AppLocalizations.supportedLocales,
+                home: const Scaffold(body: ConnectivityBanners()),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(
+          find.byKey(const Key('connectivity_banner_material_action')),
+        );
+        await tester.pumpAndSettle();
+
+        verify(audioSetup.dismissReopenNotice).called(1);
+        verify(session.refreshSessions).called(1);
+        expect(find.byType(LibraryPage), findsOneWidget);
+      },
+    );
+
+    testWidgets('a partial retention is never a bar', (tester) async {
+      whenListen(
+        audioSetup,
+        const Stream<AudioSetupState>.empty(),
+        initialState: const AudioSetupState(
+          deviceConnectivity: DeviceConnectivity.restoredPartial,
+          engineStatus: EngineStatus(
+            reopen: EngineReopened(
+              outcome: ReopenOutcome.retainedPartial,
+              droppedTracks: 2,
+              previousSampleRate: 48000,
+              sampleRate: 48000,
+            ),
+          ),
+        ),
+      );
+      await pump(tester);
+      expect(find.byKey(materialKey), findsNothing);
+      expect(find.byKey(deviceKey), findsNothing);
+    });
   });
 
   testWidgets(
@@ -162,23 +333,5 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(deviceKey), findsNothing);
-  });
-
-  testWidgets('Open setup opens the tray at Audio / Device', (tester) async {
-    whenListen(
-      audioSetup,
-      const Stream<AudioSetupState>.empty(),
-      initialState: deviceLostState,
-    );
-    await pump(tester);
-
-    await tester.tap(
-      find.byKey(const Key('connectivity_banner_device_action')),
-    );
-    await tester.pump();
-
-    expect(tray.state.dragProgress, 1);
-    expect(tray.state.destination, SettingsTrayDestination.audio);
-    expect(tray.state.audioTab, AudioTab.device);
   });
 }

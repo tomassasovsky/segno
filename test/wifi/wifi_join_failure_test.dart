@@ -105,6 +105,22 @@ void main() {
       );
     });
 
+    test('the helper passes on NM wanting secrets, weighed by context', () {
+      const raw =
+          'segno-wifi-ctl: timed out waiting for association '
+          '(secrets were required)';
+      // A key typed moments ago: NM's dead end is about that key.
+      expect(
+        classifyWifiJoinFailure(raw: raw, interactive: true),
+        WifiJoinErrorKind.credentials,
+      );
+      // A saved network: the agent-less dead end of a backend failure.
+      expect(
+        classifyWifiJoinFailure(raw: raw, interactive: false),
+        WifiJoinErrorKind.transient,
+      );
+    });
+
     test('association timeouts are their own retryable kind', () {
       expect(
         classifyWifiJoinFailure(

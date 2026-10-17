@@ -23,8 +23,8 @@ assert match, "release collection step not found"
 collector = textwrap.dedent(match.group(1))
 version = "0.1.0-experimental.140"
 payload = b"current checked bundle"
-cases = [("raspberrypi4-64", "current"), ("raspberrypi5", "current"),
-         ("raspberrypi5", "missing"), ("raspberrypi5", "empty")]
+cases = [("raspberrypi5", "current"), ("raspberrypi5", "missing"),
+         ("raspberrypi5", "empty")]
 for machine, state in cases:
     with tempfile.TemporaryDirectory(prefix="segno-collection-") as temp:
         root = Path(temp)
@@ -52,6 +52,7 @@ for machine, state in cases:
             assert json.loads((output / "manifest.json").read_text()) == {
                 "version": version, "bundle": name, "channel": "experimental",
                 "sha256": hashlib.sha256(payload).hexdigest(),
+                "size": len(payload),
             }
         else:
             assert result.returncode != 0, (state, "stale bundle accepted")

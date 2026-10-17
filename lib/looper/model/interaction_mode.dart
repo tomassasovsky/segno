@@ -15,53 +15,62 @@ enum InteractionMode {
   /// action in this mode is mute toggling.
   mute,
 
-  /// Track presses toggle each track's Track-stage FX chain; the track LEDs
-  /// carry chain-enabled state (FX v3 part 5b).
+  /// The FX face (pen 10/03, #1229): every switch but MODE and Bank runs its
+  /// FX binding for the current bank, and an unbound track switch toggles
+  /// its own track's Track-stage chain; the LEDs carry what each drives.
   ///
-  /// Every one of the pedal's ten controls is explicitly defined here: the
-  /// bank's four track switches stomp Track chains, Stop is FX panic (all
-  /// chains off; long-press restores them), Bank / Mode / the encoder keep
-  /// their usual jobs, and Rec/Play, Undo and Clear are deliberately INERT —
-  /// a stray stomp must never erase the set.
-  fx;
+  /// Unbound Rec/Play, Stop, Undo and Clear are deliberately INERT — a stray
+  /// stomp must never erase the set. MODE is the face's Exit, back to the
+  /// mode FX was entered from; Bank pages, and its Hold arms performance
+  /// recording.
+  fx,
+
+  /// Every switch but MODE and BANK runs whatever the Pedals setup assigned
+  /// to it; an unassigned one does nothing at all (#763).
+  ///
+  /// The opposite of [fx] in one respect that matters: FX mode gives every
+  /// unbound control a contextual default, so a stray stomp there still
+  /// means something. Custom mode has no defaults to fall back to, which is
+  /// what "fully user-defined" costs — and is why an unassigned switch is
+  /// inert rather than guessing.
+  ///
+  /// MODE and BANK keep their jobs here as everywhere: MODE is the way out
+  /// and BANK is the way to the other four track switches, and the binding
+  /// model refuses to hold an assignment on either.
+  custom,
+
+  /// Foot-controlled track playback and live-input gain/mute.
+  mixer,
+
+  /// Foot-controlled independent track fades and their durations.
+  fade,
+
+  /// Foot-controlled per-track playback direction: each track pedal turns
+  /// its track around at the current position.
+  reverse,
+
+  /// Foot-controlled Peel: each track pedal removes its track's newest
+  /// overdub layer, recoverable through Undo.
+  peel,
+
+  /// The foot Tuner: the track pedals pick the input to tune, Stop mutes it,
+  /// Undo and Clear move the A4 reference (#1229). Never a boot mode.
+  tuner,
+
+  /// Foot-controlled Multiply (#1168, pen 16 screens 01-02): the track
+  /// pedals select a recorded track, Clear doubles it and Undo stays Undo;
+  /// Rec/Play keeps recording.
+  multiply,
+
+  /// Foot-controlled Divide (#1168, pen 16 screens 03-08): the track pedals
+  /// select a recorded track, Undo keeps its first half (hold for Undo) and
+  /// Clear its last half; Rec/Play keeps recording.
+  divide;
 
   /// The persisted token for this mode. Derived from the member name, so a
-  /// member rename changes what new saves write — [fromToken] must keep
-  /// accepting every token older builds ever wrote (see its legacy shim).
+  /// member rename changes the current stored identity.
   String get token => name;
 
-  /// The modes the system may BOOT into. [fx] is excluded on purpose: booting
-  /// into FX mode with no chains configured is a dead surface, so it is
-  /// reachable only by an explicit mode cycle (R12).
-  static const List<InteractionMode> bootDefaults = [record, mute];
-
-  /// Parses a persisted [token] back to a mode, defaulting to [record].
-  ///
-  /// `'play'` is the pre-rename legacy token for [mute]: this mode was named
-  /// `play` before the Sheeran-manual-aligned rename, and existing installs
-  /// have `'play'` stored under the `looper.default_mode` settings key. New
-  /// saves write `'mute'`. Never remove the shim without a stored-settings
-  /// migration.
-  ///
-  /// This parses EVERY mode, [fx] included; the boot-default path uses
-  /// [bootDefaultFromToken], which is the one that enforces R12.
-  static InteractionMode fromToken(String? token) {
-    if (token == 'play') return InteractionMode.mute;
-    return InteractionMode.values.firstWhere(
-      (m) => m.name == token,
-      orElse: () => InteractionMode.record,
-    );
-  }
-
-  /// Parses a persisted BOOT-DEFAULT [token]: [fromToken] with anything
-  /// outside [bootDefaults] coerced to [record].
-  ///
-  /// Defensive by design — no build ever writes `'fx'` under the default-mode
-  /// key (the settings picker does not offer it), so a stored `'fx'` means a
-  /// hand-edited or corrupted pref, and booting a dead surface is the one
-  /// outcome R12 forbids.
-  static InteractionMode bootDefaultFromToken(String? token) {
-    final mode = fromToken(token);
-    return bootDefaults.contains(mode) ? mode : InteractionMode.record;
-  }
+  /// Whether this is one of the two length surfaces, Multiply or Divide.
+  bool get isLength => this == multiply || this == divide;
 }

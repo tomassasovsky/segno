@@ -75,10 +75,13 @@
 #include <string.h>
 
 #include "audio_ring.h"      /* le_audio_ring_pop */
+#include "engine_digest.h"   /* le_sha256_ctx (each part's payload digest) */
+#include "engine_wav.h"      /* le_wav_writer (the one float WAV writer) */
 #include "engine_private.h"  /* le_engine, le_perf_capture,
                               * LE_MAX_MONITORED_INPUTS */
 #include "layer_staging_ring.h" /* le_layer_staging_ring_pop (retired-layer persistence) */
 #include "perf_log_ring.h"   /* le_perf_log_ring_pop (performance event log) */
+#include "perf_checkpoint.h" /* durable two-slot checkpoints (#1198 D4) */
 
 #if defined(_WIN32)
 #include <direct.h> /* _mkdir */
@@ -91,7 +94,7 @@
 #include <pthread.h>
 #include <sched.h>    /* SCHED_OTHER, sched_get_priority_min */
 #include <sys/stat.h> /* mkdir */
-#include <sys/statvfs.h> /* statvfs (le_perf_volume_free_bytes) */
+#include <sys/statvfs.h> /* statvfs (le_volume_space) */
 #include <time.h>     /* nanosleep */
 #include <unistd.h>   /* write, close */
 #if defined(__linux__)
@@ -107,7 +110,7 @@
                               * logged in the sidecar */
 #define LE_PD_PATH_MAX 960   /* capture_dir length; +32 headroom for filenames */
 #define LE_PD_FULL_PATH_MAX (LE_PD_PATH_MAX + 32)
-#define LE_PD_JSON_BUF 524288 /* generous for LE_PD_MAX_GAPS + LE_PD_MAX_LAYERS
+#define LE_PD_JSON_BUF 655360 /* generous for LE_PD_MAX_GAPS + LE_PD_MAX_LAYERS
                                * entries + fields (each layer entry runs to
                                * ~150 bytes; LE_PD_MAX_LAYERS of them is
                                * ~300KB at the current LE_MAX_TRACKS *
@@ -116,18 +119,29 @@
                                * ever isn't enough, rather than truncating
                                * silently or overrunning the buffer */
 #define LE_PD_SCRATCH_SAMPLES 2048 /* per-drain-cycle pop buffer, in samples */
+#define LE_PD_MAX_PARTS 512 /* sealed parts listed per take (all streams); at
+                             * the default part size that is a terabyte. A
+                             * take that would seal one more stops as a write
+                             * failure rather than leave a part unlisted. */
+#define LE_PD_HEADER_BYTES LE_PERF_PART_HEADER_BYTES
+#define LE_PD_FREE_SAMPLE_CYCLES 20 /* free-space re-read: every ~5 s */
+#define LE_PD_NO_LIMIT UINT64_MAX
 
-/* Free bytes on the volume holding `path` — segno_engine_api.h has the why,
- * including why the caller no longer shells out to `df` for it.
+/* Total and available bytes of the volume holding `path` — segno_engine_api.h
+ * has the why, including why no caller shells out to `df` for it.
  *
  * f_bavail, not f_bfree: the reserved blocks a filesystem keeps for root are
  * not room a capture may use, and reporting them would let a take arm onto a
- * volume it cannot actually fill. */
-int32_t le_perf_volume_free_bytes(const char* path, uint64_t* out_bytes) {
-  if (path == NULL || path[0] == '\0' || out_bytes == NULL) {
+ * volume it cannot actually fill. f_blocks is the whole volume, which is what
+ * the Storage page draws as "of N GB" next to the free figure. */
+int32_t le_volume_space(const char* path, uint64_t* out_total_bytes,
+                        uint64_t* out_free_bytes) {
+  if (path == NULL || path[0] == '\0' || out_total_bytes == NULL ||
+      out_free_bytes == NULL) {
     return LE_ERR_INVALID;
   }
-  *out_bytes = 0;
+  *out_total_bytes = 0;
+  *out_free_bytes = 0;
 #if defined(_WIN32)
   /* The W entry point, not the A one: `path` is UTF-8 (it comes from Dart), and
    * GetDiskFreeSpaceExA would read it in the active ANSI code page — every
@@ -139,14 +153,18 @@ int32_t le_perf_volume_free_bytes(const char* path, uint64_t* out_bytes) {
                                            (int)(sizeof(wide) / sizeof(wide[0])));
   if (wide_len <= 0) return LE_ERR_INVALID;
   ULARGE_INTEGER avail;
+  ULARGE_INTEGER total;
   avail.QuadPart = 0;
-  if (!GetDiskFreeSpaceExW(wide, &avail, NULL, NULL)) return LE_ERR_DEVICE;
-  *out_bytes = (uint64_t)avail.QuadPart;
+  total.QuadPart = 0;
+  if (!GetDiskFreeSpaceExW(wide, &avail, &total, NULL)) return LE_ERR_DEVICE;
+  *out_total_bytes = (uint64_t)total.QuadPart;
+  *out_free_bytes = (uint64_t)avail.QuadPart;
   return LE_OK;
 #else
   struct statvfs st;
   if (statvfs(path, &st) != 0) return LE_ERR_DEVICE;
-  *out_bytes = (uint64_t)st.f_bavail * (uint64_t)st.f_frsize;
+  *out_total_bytes = (uint64_t)st.f_blocks * (uint64_t)st.f_frsize;
+  *out_free_bytes = (uint64_t)st.f_bavail * (uint64_t)st.f_frsize;
   return LE_OK;
 #endif
 }
@@ -207,7 +225,7 @@ int32_t le_perf_volume_free_bytes(const char* path, uint64_t* out_bytes) {
  * cadence stretch and then applying nice/priority on none would be an
  * unargued double standard.
  *
- * The budget: le_perf_arm sizes master_ring for LE_PERF_CAPTURE_SECONDS (= 2 s)
+ * The budget: le_perf_arm sizes master_ring for LE_PERF_RING_SECONDS_DEFAULT (= 2 s on Internal)
  * and the cycle runs every LE_PD_FLUSH_MS (= 250 ms), so a cycle may stretch to
  * 8x its cadence before a ring the audio thread is still filling overruns and
  * le_pd_catch_up starts writing zero-filled silence into the take (#710). That
@@ -255,19 +273,39 @@ int32_t le_perf_volume_free_bytes(const char* path, uint64_t* out_bytes) {
 typedef HANDLE le_pd_thread_t;
 
 static void le_pd_drain_thread_main(void* arg);
+static void le_pd_checkpoint_thread_main(void* arg);
 
 static DWORD WINAPI le_pd_win_trampoline(LPVOID arg) {
   le_pd_drain_thread_main(arg);
   return 0;
 }
 
-static int le_pd_thread_start(le_pd_thread_t* out, void* arg) {
+static DWORD WINAPI le_pd_win_checkpoint_trampoline(LPVOID arg) {
+  le_pd_checkpoint_thread_main(arg);
+  return 0;
+}
+
+typedef LPTHREAD_START_ROUTINE le_pd_entry_t;
+#define LE_PD_DRAIN_ENTRY le_pd_win_trampoline
+#define LE_PD_CHECKPOINT_ENTRY le_pd_win_checkpoint_trampoline
+
+/* A lock held only to copy a few integers (the published progress) or to
+ * serialize checkpoint writes. */
+typedef SRWLOCK le_pd_mutex_t;
+static void le_pd_mutex_init(le_pd_mutex_t* m) { InitializeSRWLock(m); }
+static void le_pd_mutex_destroy(le_pd_mutex_t* m) { (void)m; }
+static void le_pd_mutex_lock(le_pd_mutex_t* m) { AcquireSRWLockExclusive(m); }
+static void le_pd_mutex_unlock(le_pd_mutex_t* m) {
+  ReleaseSRWLockExclusive(m);
+}
+
+static int le_pd_thread_start(le_pd_thread_t* out, le_pd_entry_t entry,
+                              void* arg) {
   /* CREATE_SUSPENDED so the priority really is set before the thread runs a
    * single instruction. Without it the drop would merely race the new thread,
    * and only the fact that the loop opens with a 10 ms sleep would make it
    * land in time — a coincidence, not a guarantee. */
-  *out = CreateThread(NULL, 0, le_pd_win_trampoline, arg, CREATE_SUSPENDED,
-                      NULL);
+  *out = CreateThread(NULL, 0, entry, arg, CREATE_SUSPENDED, NULL);
   if (*out == NULL) return 0;
   /* Best-effort: a refusal here costs the priority drop, not the capture. */
   (void)SetThreadPriority(*out, THREAD_PRIORITY_BELOW_NORMAL);
@@ -322,11 +360,29 @@ static int le_pd_mkdir_one(const char* path) {
 typedef pthread_t le_pd_thread_t;
 
 static void le_pd_drain_thread_main(void* arg);
+static void le_pd_checkpoint_thread_main(void* arg);
 
 static void* le_pd_posix_trampoline(void* arg) {
   le_pd_drain_thread_main(arg);
   return NULL;
 }
+
+static void* le_pd_posix_checkpoint_trampoline(void* arg) {
+  le_pd_checkpoint_thread_main(arg);
+  return NULL;
+}
+
+typedef void* (*le_pd_entry_t)(void*);
+#define LE_PD_DRAIN_ENTRY le_pd_posix_trampoline
+#define LE_PD_CHECKPOINT_ENTRY le_pd_posix_checkpoint_trampoline
+
+/* A lock held only to copy a few integers (the published progress) or to
+ * serialize checkpoint writes. */
+typedef pthread_mutex_t le_pd_mutex_t;
+static void le_pd_mutex_init(le_pd_mutex_t* m) { pthread_mutex_init(m, NULL); }
+static void le_pd_mutex_destroy(le_pd_mutex_t* m) { pthread_mutex_destroy(m); }
+static void le_pd_mutex_lock(le_pd_mutex_t* m) { pthread_mutex_lock(m); }
+static void le_pd_mutex_unlock(le_pd_mutex_t* m) { pthread_mutex_unlock(m); }
 
 static void le_pd_thread_lower_own_priority(void) {
 #if defined(__linux__)
@@ -383,10 +439,11 @@ static int le_pd_caller_is_realtime(void) {
   return 0;
 }
 
-static int le_pd_thread_start(le_pd_thread_t* out, void* arg) {
+static int le_pd_thread_start(le_pd_thread_t* out, le_pd_entry_t entry,
+                              void* arg) {
   pthread_attr_t attr;
   if (le_pd_thread_attr_init(&attr)) {
-    const int rc = pthread_create(out, &attr, le_pd_posix_trampoline, arg);
+    const int rc = pthread_create(out, &attr, entry, arg);
     pthread_attr_destroy(&attr);
     if (rc == 0) return 1;
     /* fell through: some hardened kernels refuse an explicit-sched create
@@ -401,7 +458,7 @@ static int le_pd_thread_start(le_pd_thread_t* out, void* arg) {
    * loudly (LE_ERR_DEVICE, unwound by the caller) instead of quietly
    * shipping a priority inversion into a capture. */
   if (le_pd_caller_is_realtime()) return 0;
-  return pthread_create(out, NULL, le_pd_posix_trampoline, arg) == 0;
+  return pthread_create(out, NULL, entry, arg) == 0;
 }
 
 static void le_pd_thread_join(le_pd_thread_t th) { pthread_join(th, NULL); }
@@ -455,7 +512,7 @@ static int le_pd_mkdir_one(const char* path) {
  * O_CLOEXEC is a small upgrade on it — the sidecar is rewritten four times a
  * second, so any Process.start from the Dart side landing in that window used
  * to inherit a writable descriptor onto the temp inode. It closes ONLY that
- * window, and it is the narrow one: master.pcm, events.log and every staged
+ * window, and it is the narrow one: the open parts, events.log and every staged
  * layer are still plain fopen(..., "wb") with no "e", so a child spawned any
  * time during a capture inherits those writable descriptors for as long as it
  * lives. Widening the close-on-exec discipline to the stdio streams is a
@@ -489,13 +546,13 @@ static void le_pd_fd_close(int fd) { (void)close(fd); }
  *   - The sidecar describes the PCM streams, which are only fflush'd (stdio
  *     buffer -> page cache) and never synced either. Syncing only the sidecar
  *     makes the pair INCONSISTENT: performance.json durably claiming
- *     capture_frames = N while master.pcm's last seconds are still page
+ *     capture_frames = N while the open part's last seconds are still page
  *     cache, so #679's salvage and daw_export lay out an arrangement past the
  *     audio. Un-synced, both sides lose the same tail and stay consistent.
  *   - On ext4 data=ordered an fsync here commits the journal transaction
- *     carrying master.pcm's block allocations too, so it would drag PCM
+ *     carrying the open part's block allocations too, so it would drag PCM
  *     writeback onto this cycle synchronously — and the capture rings hold
- *     only LE_PERF_CAPTURE_SECONDS. An SD garbage-collection stall past that
+ *     only LE_PERF_RING_SECONDS_DEFAULT. An SD garbage-collection stall past that
  *     inside one cycle overruns master_ring and writes zero-filled silence
  *     into the take: the exact #710 defect, re-manufactured.
  *
@@ -627,6 +684,24 @@ void le_perf_drain_set_mid_cycle_hook_for_test(void (*fn)(void*), void* ctx) {
   atomic_store_explicit(&g_pd_mid_cycle_hook, fn, memory_order_release);
 }
 
+/* Test-only: see le_perf_drain_set_volume_free_for_test (engine_internal.h).
+ * -1 reads the real volume. Read on the drain thread, written by the test
+ * thread before arming. */
+static _Atomic int64_t g_pd_volume_free = -1;
+
+/* Test-only: see le_perf_drain_set_free_sample_cycles_for_test. 0 is the
+ * production LE_PD_FREE_SAMPLE_CYCLES. */
+static _Atomic int g_pd_free_sample_cycles = 0;
+
+void le_perf_drain_set_free_sample_cycles_for_test(int cycles) {
+  atomic_store_explicit(&g_pd_free_sample_cycles, cycles < 0 ? 0 : cycles,
+                        memory_order_relaxed);
+}
+
+void le_perf_drain_set_volume_free_for_test(int64_t bytes) {
+  atomic_store_explicit(&g_pd_volume_free, bytes, memory_order_relaxed);
+}
+
 typedef struct le_pd_gap {
   uint64_t frame;
   uint64_t duration_frames;
@@ -645,6 +720,8 @@ typedef struct le_pd_gap {
  * layer_staging_ring.h and docs/design/performance-event-log-format.md). */
 typedef struct le_pd_layer_manifest_entry {
   int32_t channel;
+  int32_t kind;
+  uint32_t restore_id;
   int32_t slot;
   uint32_t generation;
   uint64_t frame;
@@ -653,20 +730,83 @@ typedef struct le_pd_layer_manifest_entry {
   char filename[64];
 } le_pd_layer_manifest_entry;
 
+/* One captured stream (the master, or one input), written as ordered parts.
+ * `f` is the open part; `written` counts every whole frame the stream holds
+ * across all its parts (the frame clock the zero-fill compares with elapsed);
+ * the part_* fields describe the open part only. */
 typedef struct le_pd_file {
-  FILE* f;
-  uint64_t written; /* frames written so far, in THIS file's own channel width */
+  /* The open part, through the engine's one float WAV writer (engine_wav.h).
+   * w.file is NULL when no part is open. The drain writes samples through
+   * its own budget seam and short-write accounting (le_pd_append) and credits
+   * the landed frames to the writer, which owns the header and the seal. */
+  le_wav_writer w;
+  uint64_t written;      /* frames in the whole stream, all parts */
+  int32_t stream;        /* 0 master, 1 + n input n */
+  int32_t channels;      /* the frame width */
+  int32_t part_index;    /* the open part's index, from 1 */
+  uint64_t part_frames;  /* whole frames in the open part */
+  uint64_t part_overs;   /* samples above full scale in the open part */
+  le_sha256_ctx sha;     /* the open part's payload so far */
 } le_pd_file;
+
+/* A sealed part, for the sidecar's `parts` list and the checkpoints. */
+typedef le_perf_sealed_part le_pd_sealed_part;
 
 struct le_perf_drain {
   le_engine* engine;
   le_pd_thread_t thread;
 
   _Atomic int running;       /* cleared by le_perf_drain_stop to end the loop */
-  _Atomic int disk_full;     /* 1 once a write failure self-stopped the thread */
+  /* 1 once the thread stopped the take itself; `stop_reason` says why. */
+  _Atomic int self_stopped;
   _Atomic int device_changed; /* 1 once le_perf_drain_stop(..., DEVICE_CHANGED) */
+  /* The thread's own stop (an le_perf_stop_reason, NONE until it stops),
+   * and the frame every stream ends at for a reserve or slow-storage stop
+   * (LE_PD_NO_LIMIT otherwise). Drain-thread only. */
+  int32_t stop_reason;
+  uint64_t stop_frame;
+
+  /* The reserve budget (#1198). `free_at_sample` is the volume's free bytes
+   * when last read and `bytes_at_sample` what the take had written by then;
+   * every byte written since comes off the budget until the next reading.
+   * `has_budget` is 0 for a take with no reserve, and while the volume cannot
+   * be read. Drain-thread only, except bytes_written's published copy. */
+  uint64_t reserve_bytes;
+  int has_budget;
+  uint64_t free_at_sample;
+  uint64_t bytes_at_sample;
+  uint64_t bytes_written;
+  int cycles_since_sample;
+  int layer_over_budget; /* a staged layer did not fit: stop at the reserve */
 
   char capture_dir[LE_PD_PATH_MAX];
+  char sidecar_dir[LE_PD_PATH_MAX]; /* where performance.json lives */
+  uint8_t take_id[16];
+  int64_t volume_generation;
+  uint64_t part_bytes;   /* the most one part file holds, header included */
+  int32_t ring_seconds;  /* what the arm granted, reported in the sidecar */
+  uint64_t overs;        /* samples above full scale, every stream, sealed parts */
+
+  le_pd_sealed_part sealed[LE_PD_MAX_PARTS];
+
+  /* Checkpoints (#1198 D4). The drain copies its flushed progress into
+   * `published` under `progress_lock` after every cycle; the checkpoint
+   * thread copies it out under the same lock, so neither waits on the other
+   * for more than a few integers. `write_lock` serializes whole checkpoints
+   * (the thread's and le_perf_checkpoint_now_for_test's). */
+  le_pd_mutex_t progress_lock;
+  le_pcp_progress published;
+  le_pd_mutex_t write_lock;
+  le_pcp_writer cp_writer;
+  le_pcp_take cp_take;
+  char mirror_dir[LE_PD_PATH_MAX];
+  char boot_id[64];
+  int32_t checkpoint_ms;
+  le_pd_thread_t cp_thread;
+  _Atomic int cp_stop; /* write a last checkpoint and exit */
+  _Atomic int cp_now;  /* write one as soon as possible */
+  uint64_t events_bytes; /* events.log bytes written */
+  int sealed_count;
 
   le_pd_file master_file;
   /* valid iff the matching input_mask bit is set */
@@ -683,6 +823,10 @@ struct le_perf_drain {
 
   le_pd_layer_manifest_entry layers[LE_PD_MAX_LAYERS];
   int layer_count;
+  /* Retired images that arrived after the manifest filled. They are dropped,
+   * not written: master/monitor capture continues, and the renderer fails
+   * any stem whose logged retire/restore has no manifest entry. */
+  uint32_t layers_dropped;
 
   /* The sidecar's build buffer, owned by the session and reused by every
    * cycle (#722). It was a per-cycle malloc(512 KB) + free; measurement (see
@@ -699,7 +843,50 @@ struct le_perf_drain {
 
 int le_perf_drain_self_stopped(struct le_perf_drain* drain) {
   if (drain == NULL) return 0;
-  return atomic_load_explicit(&drain->disk_full, memory_order_acquire);
+  return atomic_load_explicit(&drain->self_stopped, memory_order_acquire);
+}
+
+/* Counts `bytes` the take has put on its volume, and publishes the total. */
+static void le_pd_count_bytes(le_perf_drain* d, uint64_t bytes) {
+  d->bytes_written += bytes;
+  atomic_store_explicit(&d->engine->a_perf_bytes_written, d->bytes_written,
+                        memory_order_relaxed);
+}
+
+/* Re-reads the volume's free bytes and restarts the budget's count from
+ * here. A take without a reserve has no budget; so has one whose volume
+ * cannot be read, until a later reading succeeds. */
+static void le_pd_sample_free(le_perf_drain* d) {
+  d->cycles_since_sample = 0;
+  if (d->reserve_bytes == UINT64_MAX) {
+    d->has_budget = 0;
+    return;
+  }
+  const int64_t forced =
+      atomic_load_explicit(&g_pd_volume_free, memory_order_relaxed);
+  uint64_t total = 0;
+  uint64_t free_bytes = 0;
+  if (forced >= 0) {
+    free_bytes = (uint64_t)forced;
+  } else if (forced < -1 ||
+             le_volume_space(d->capture_dir, &total, &free_bytes) != LE_OK) {
+    d->has_budget = 0;
+    return;
+  }
+  d->has_budget = 1;
+  d->free_at_sample = free_bytes;
+  d->bytes_at_sample = d->bytes_written;
+}
+
+/* Bytes the take may still write before its reserve: the last reading less
+ * the reserve, the allowance and everything written since. */
+static uint64_t le_pd_budget(const le_perf_drain* d) {
+  const uint64_t spent = d->bytes_written - d->bytes_at_sample;
+  const uint64_t keep = d->reserve_bytes > UINT64_MAX - LE_PERF_ALLOWANCE_BYTES
+                            ? UINT64_MAX
+                            : d->reserve_bytes + LE_PERF_ALLOWANCE_BYTES;
+  if (keep > d->free_at_sample || spent > d->free_at_sample - keep) return 0;
+  return d->free_at_sample - keep - spent;
 }
 
 /* Low-level bounded write, reporting how many bytes ACTUALLY landed. Two
@@ -794,6 +981,20 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  *       "first RECORD_END while content-free" disarm proxy) were deleted with
  *       no fallback (AGENTS.md), so a pre-4 capture no longer has a supported
  *       phase anchor and renders correctly only if re-captured.
+ *   5 — applied Clear restoration and its state/phase/source-end facts
+ *       (322/323) reference capture-local immutable restored images.
+ *   6 — every callback-applied history image (Clear Undo, layer Undo/Redo,
+ *       Redo-from-empty) logs 322 at its exact application frame, so a
+ *       channel may carry several 322 facts and a reader switches images on
+ *       each; LE_CMD_UNDO_TO_EMPTY (39) is logged raw at its apply frame
+ *       (#1143).
+ *   7 — the direction fact LE_PLOG_REVERSE (324, #1162) and the Peel
+ *       admission record LE_PLOG_PEEL (325, #1164).
+ *   8 — assigned to pitch/time Speed (#1179 P2a, numbering ledger).
+ *   9 — LE_PLOG_LENGTH (326, #1168): a length edit or its Undo/Redo applied,
+ *       with the staged image the callback's 322 names at the same frame.
+ *       Version numbers are assigned in landing order: renumber if another
+ *       bump lands first.
  * Without the bump, "no 314 in this file" is indistinguishable from "the
  * writer did not know about 314". No reader in this repo gates on the field —
  * le_pr_load_log and daw_export's EventLogReader both check the magic and skip
@@ -803,7 +1004,10 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  * this codebase can reject. */
 static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
   static const char magic[4] = {'P', 'L', 'E', 'V'};
-  const uint32_t version = 4;
+  const uint32_t version = 12; /* 8: LE_PLOG_SPEED; 9: LE_PLOG_TRANSPOSE (#1179);
+                                 * 10: LE_PLOG_LENGTH (#1168);
+                                 * 11: LE_PLOG_HEAD_SPAN, LE_PLOG_RETIME;
+                                 * 12: LE_PLOG_SOURCE_LEN (#1179) */
   if (!le_pd_write(f, magic, sizeof(magic))) return 0;
   if (!le_pd_write(f, &version, sizeof(version))) return 0;
   if (!le_pd_write(f, &sample_rate, sizeof(sample_rate))) return 0;
@@ -811,9 +1015,9 @@ static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
 }
 
 /* Serializes one log entry into the fixed 28-byte on-disk record: frame,
- * code, then the union's raw 16 bytes taken directly from memory (every
- * le_command union arm is laid out as plain int32_t/float/uint32_t fields
- * with no arm exceeding 16 bytes, so this is a faithful, code-agnostic copy —
+ * code, then the compact primitive payload's 16 bytes. Admission explicitly
+ * extracts primitive fields from le_command; transaction batches never enter
+ * this ring. The compact payload has no padding after its code, so
  * the reader interprets those 16 bytes per the audited table's per-code arm
  * documentation, the same way apply_command does in-process). */
 static int le_pd_write_log_entry(FILE* f, const le_perf_log_entry* entry) {
@@ -831,10 +1035,12 @@ static int le_pd_write_log_entry(FILE* f, const le_perf_log_entry* entry) {
 /* Drains everything currently available from a perf-log ring (either
  * log_ring or log_ctrl_ring) into events.log, one entry at a time — these
  * rings carry one event per pop, unlike the bulk-sample le_audio_ring above. */
-static int le_pd_drain_log_ring(FILE* f, le_perf_log_ring* ring) {
+static int le_pd_drain_log_ring(le_perf_drain* d, le_perf_log_ring* ring) {
   le_perf_log_entry entry;
   while (le_perf_log_ring_pop(ring, &entry)) {
-    if (!le_pd_write_log_entry(f, &entry)) return 0;
+    if (!le_pd_write_log_entry(d->events_file, &entry)) return 0;
+    le_pd_count_bytes(d, LE_PD_EVENTS_ENTRY_BYTES);
+    d->events_bytes += LE_PD_EVENTS_ENTRY_BYTES;
   }
   return 1;
 }
@@ -852,10 +1058,31 @@ static int le_pd_drain_log_ring(FILE* f, le_perf_log_ring* ring) {
 static int le_pd_write_staged_layer(le_perf_drain* d,
                                     const le_staged_layer* entry) {
   char filename[64];
-  snprintf(filename, sizeof(filename), "layer-%d-%llu-%d.pcm", entry->channel,
-          (unsigned long long)entry->frame, entry->slot);
+  if (entry->kind == 1)
+    snprintf(filename, sizeof(filename), "restore-%d-%u.pcm", entry->channel, entry->restore_id);
+  else
+    snprintf(filename, sizeof(filename), "layer-%d-%llu-%d.pcm", entry->channel,
+             (unsigned long long)entry->frame, entry->slot);
   char path[LE_PD_FULL_PATH_MAX];
   snprintf(path, sizeof(path), "%s/%s", d->capture_dir, filename);
+
+  if (d->layer_count >= LE_PD_MAX_LAYERS) {
+    for (int32_t l = 0; l < entry->lane_count; ++l) free(entry->lane_pcm[l]);
+    d->layers_dropped++;
+    return 1;
+  }
+  /* A layer the reserve budget cannot pay for is not written: the take stops
+   * at the reserve now (le_pd_drain_cycle) rather than run the volume out
+   * and end as a failed write (#1198). Counted like any unpersisted layer. */
+  if (d->has_budget &&
+      (uint64_t)entry->frame_count * (uint64_t)entry->lane_count *
+              sizeof(float) >
+          le_pd_budget(d)) {
+    for (int32_t l = 0; l < entry->lane_count; ++l) free(entry->lane_pcm[l]);
+    d->layers_dropped++;
+    d->layer_over_budget = 1;
+    return 1;
+  }
 
   int ok = 1;
   FILE* f = fopen(path, "wb");
@@ -884,9 +1111,13 @@ static int le_pd_write_staged_layer(le_perf_drain* d,
 
   for (int32_t l = 0; l < entry->lane_count; ++l) free(entry->lane_pcm[l]);
 
-  if (ok && d->layer_count < LE_PD_MAX_LAYERS) {
+  if (ok) {
+    le_pd_count_bytes(d, (uint64_t)entry->frame_count *
+                             (uint64_t)entry->lane_count * sizeof(float));
     le_pd_layer_manifest_entry* m = &d->layers[d->layer_count];
     m->channel = entry->channel;
+    m->kind = entry->kind;
+    m->restore_id = entry->restore_id;
     m->slot = entry->slot;
     m->generation = entry->generation;
     m->frame = entry->frame;
@@ -950,7 +1181,7 @@ static uint64_t le_pd_whole_frames_landed(le_pd_file* pf, uint64_t landed,
   const uint64_t frame_bytes = (uint64_t)channels * sizeof(float);
   const uint64_t frames = landed / frame_bytes;
   const uint64_t torn = landed - frames * frame_bytes;
-  if (torn > 0) fseek(pf->f, -(long)torn, SEEK_CUR);
+  if (torn > 0) fseek(pf->w.file, -(long)torn, SEEK_CUR);
   pf->written += frames;
   return frames;
 }
@@ -965,30 +1196,188 @@ static uint64_t le_pd_whole_frames_landed(le_pd_file* pf, uint64_t landed,
  * is re-written; what IS retried is this function itself, on the drain
  * thread's unconditional final pass, and the catch-up that follows it pads
  * from `pf->written`. Leaving it behind the bytes already on disk is what made
- * master.pcm come out LONGER than `elapsed` by the residue — the same shape as
+ * the master stream come out LONGER than `elapsed` by the residue — the same shape as
  * the pad's own gap (#718), milder only because there is no whole gap to
  * duplicate here.
  *
  * Returns 0 on any write failure, short or refused, which self-stops the
  * capture — see le_pd_write_some for why a short write is not retried. */
-static int le_pd_drain_ring(le_pd_file* pf, le_audio_ring* ring, int channels,
-                           float* scratch, size_t scratch_samples) {
+/* ---- ordered float parts (#1198) ----
+ *
+ * Each stream is a sequence of parts `<stream>-NNN.wav`, each at most
+ * `part_bytes` long including its LE_PD_HEADER_BYTES header (the layout is
+ * documented above le_perf_target in segno_engine_api.h). A part is opened
+ * with zero sizes in its header, appended to in whole frames, and SEALED —
+ * sizes patched, payload digest and overs recorded — when the next frame
+ * needs a new part or the take ends. Sealing is lazy on purpose: a part that
+ * filled exactly as the take stopped is not followed by an empty one.
+ *
+ * Header writes and patches go straight to fwrite rather than through
+ * le_pd_write_some: the write-budget test seam models the PAYLOAD filling a
+ * disk, and every existing budget in the suite is a count of sample bytes. A
+ * header write that fails still fails the cycle like any other write. */
+
+static void le_pd_part_filename(int32_t stream, int32_t index, char* out,
+                                size_t cap) {
+  le_perf_part_filename(stream, index, out, cap);
+}
+
+/* The 32-byte `sgno` chunk: take id, stream, part index, 12 reserved zero
+ * bytes, little-endian (engine_wav.h writes it between `fmt ` and `data`,
+ * which puts the payload at LE_PD_HEADER_BYTES). */
+static void le_pd_sgno_chunk(const le_perf_drain* d, const le_pd_file* pf,
+                             uint8_t out[32]) {
+  memset(out, 0, 32);
+  memcpy(out, d->take_id, 16);
+  out[16] = (uint8_t)(pf->stream & 0xFF);
+  out[17] = (uint8_t)((pf->stream >> 8) & 0xFF);
+  out[18] = (uint8_t)(pf->part_index & 0xFF);
+  out[19] = (uint8_t)((pf->part_index >> 8) & 0xFF);
+}
+
+/* Frames one part of `pf` holds. */
+static uint64_t le_pd_part_capacity(const le_perf_drain* d,
+                                    const le_pd_file* pf) {
+  return (d->part_bytes - LE_PD_HEADER_BYTES) /
+         ((uint64_t)pf->channels * sizeof(float));
+}
+
+/* Opens `pf`'s next part and writes its header with zero sizes. */
+static int le_pd_open_part(le_perf_drain* d, le_pd_file* pf) {
+  pf->part_index++;
+  pf->part_frames = 0;
+  pf->part_overs = 0;
+  le_sha256_init(&pf->sha);
+  char name[64];
+  char path[LE_PD_FULL_PATH_MAX];
+  le_pd_part_filename(pf->stream, pf->part_index, name, sizeof(name));
+  snprintf(path, sizeof(path), "%s/%s", d->capture_dir, name);
+  uint8_t sgno[32];
+  le_pd_sgno_chunk(d, pf, sgno);
+  if (!le_wav_open(&pf->w, path, d->engine->sample_rate, pf->channels, "sgno",
+                   sgno, sizeof(sgno))) {
+    le_wav_abandon(&pf->w);
+    return 0;
+  }
+  le_pd_count_bytes(d, (uint64_t)pf->w.header_bytes);
+  return pf->w.header_bytes == LE_PD_HEADER_BYTES;
+}
+
+/* Seals `pf`'s open part through the writer (sizes patched, flushed,
+ * closed) and lists it with its digest and overs. le_pd_append keeps room
+ * in the list for every open part; should it ever be full, the part is
+ * left open (recovery measures it) rather than sealed and unlisted. Not synced here: durability is the checkpoint's job
+ * (plan D4, Part 4). */
+static int le_pd_seal_part(le_perf_drain* d, le_pd_file* pf) {
+  if (pf->w.file == NULL) return 0;
+  if (d->sealed_count >= LE_PD_MAX_PARTS) return 0; /* before sealing */
+  const int ok = le_wav_seal(&pf->w, 0);
+  le_pd_sealed_part* sp = &d->sealed[d->sealed_count];
+  sp->stream = pf->stream;
+  sp->index = pf->part_index;
+  sp->frames = pf->part_frames;
+  sp->overs = pf->part_overs;
+  le_sha256_final(&pf->sha, sp->sha256);
+  d->sealed_count++;
+  d->overs += pf->part_overs;
+  return ok;
+}
+
+/* The streams the take writes: the master and each captured input. */
+static int32_t le_pd_stream_count(const le_perf_drain* d) {
+  int32_t n = 1;
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    if (d->engine->perf.input_mask & (UINT64_C(1) << c)) n++;
+  }
+  return n;
+}
+
+/* Samples whose magnitude exceeds 1.0 — the master is tapped before the
+ * master gain and limiter, so a sum above full scale is real and is kept;
+ * this only counts it. NaN is not an over. */
+static uint64_t le_pd_count_overs(const float* samples, size_t n) {
+  uint64_t overs = 0;
+  for (size_t i = 0; i < n; ++i) {
+    if (samples[i] > 1.0f || samples[i] < -1.0f) overs++;
+  }
+  return overs;
+}
+
+/* Appends `frames` whole frames to `pf` — from `src`, or digital silence when
+ * `src` is NULL — rolling to a new part whenever the open one is full. Every
+ * frame that lands is digested and counted (le_pd_whole_frames_landed credits
+ * `pf->written` and rewinds a torn tail). Returns 0 on any failed write, open
+ * or seal; whatever landed before it stays credited. */
+static int le_pd_append(le_perf_drain* d, le_pd_file* pf, const float* src,
+                        uint64_t frames) {
+  static const float kZeros[1024] = {0};
+  const int channels = pf->channels;
+  const uint64_t capacity = le_pd_part_capacity(d, pf);
+  while (frames > 0) {
+    if (pf->w.file == NULL) return 0;
+    if (pf->part_frames >= capacity) {
+      /* Room must stay in the parts list for every stream's open part, which
+       * the final pass seals: a take that would outgrow it stops here, as a
+       * write failure, with every part on disk listed. */
+      if (d->sealed_count + le_pd_stream_count(d) >= LE_PD_MAX_PARTS) return 0;
+      if (!le_pd_seal_part(d, pf) || !le_pd_open_part(d, pf)) return 0;
+    }
+    uint64_t n = capacity - pf->part_frames;
+    if (n > frames) n = frames;
+    if (src == NULL) {
+      const uint64_t zero_frames = 1024 / (uint64_t)channels;
+      if (n > zero_frames) n = zero_frames;
+    }
+    const float* data = src != NULL ? src : kZeros;
+    const size_t want = (size_t)(n * (uint64_t)channels * sizeof(float));
+    const size_t got = le_pd_write_some(pf->w.file, data, want);
+    const uint64_t landed = le_pd_whole_frames_landed(pf, (uint64_t)got,
+                                                      channels);
+    const size_t landed_samples = (size_t)(landed * (uint64_t)channels);
+    if (landed > 0) {
+      le_sha256_update(&pf->sha, data, landed_samples * sizeof(float));
+      if (src != NULL) pf->part_overs += le_pd_count_overs(src, landed_samples);
+      pf->part_frames += landed;
+      le_wav_note_frames(&pf->w, landed);
+      le_pd_count_bytes(d, landed_samples * sizeof(float));
+    }
+    if (got != want) return 0;
+    if (src != NULL) src += landed_samples;
+    frames -= n;
+  }
+  return 1;
+}
+
+/* Drains everything currently available from `ring` into `pf`'s parts,
+ * looping until the ring reports less than a full scratch buffer.
+ *
+ * ADVANCES `pf->written` ON THE FAILURE PATH TOO, by whatever the short write
+ * landed (#790), through le_pd_append. The popped frames are gone from the
+ * ring either way, so no audio is re-written; what IS retried is this
+ * function itself, on the drain thread's unconditional final pass, and the
+ * catch-up that follows it pads from `pf->written`.
+ *
+ * Returns 0 on any write failure, short or refused, which self-stops the
+ * capture — see le_pd_write_some for why a short write is not retried. */
+static int le_pd_drain_ring(le_perf_drain* d, le_pd_file* pf,
+                            le_audio_ring* ring, float* scratch,
+                            size_t scratch_samples, uint64_t cap) {
+  const int channels = pf->channels;
   if (channels <= 0) return 1;
   const size_t max_frames = scratch_samples / (size_t)channels;
-  for (;;) {
+  /* Never past `cap` (#1198): what lies beyond it stays in the ring, for the
+   * next cycle or, once the take has stopped, for nobody. */
+  while (pf->written < cap) {
+    size_t want = max_frames;
+    if (cap - pf->written < (uint64_t)want) want = (size_t)(cap - pf->written);
     const size_t popped =
-        le_audio_ring_pop(ring, scratch, max_frames * (size_t)channels);
+        le_audio_ring_pop(ring, scratch, want * (size_t)channels);
     if (popped == 0) return 1;
-    const size_t bytes = popped * sizeof(float);
-    const size_t got = le_pd_write_some(pf->f, scratch, bytes);
-    const uint64_t frames =
-        le_pd_whole_frames_landed(pf, (uint64_t)got, channels);
-    if (got != bytes) return 0;
-    /* Past that return got == bytes, so `frames` IS popped/channels — the
-     * loop's "the ring had less than a full scratch buffer left" test, with no
-     * second division to keep in step with the first. */
-    if (frames < (uint64_t)max_frames) return 1;
+    const size_t frames = popped / (size_t)channels;
+    if (!le_pd_append(d, pf, scratch, (uint64_t)frames)) return 0;
+    if (frames < want) return 1;
   }
+  return 1;
 }
 
 /* THE ZERO-FILL (#710). Tops `pf` up to `elapsed` frames with digital silence
@@ -1024,7 +1413,7 @@ static int le_pd_drain_ring(le_pd_file* pf, le_audio_ring* ring, int channels,
  * boundary: it short-writes. The bytes before the short return are on disk and
  * cannot be taken back, so a cycle that abandons the whole span re-pads bytes
  * the file already has — the next cycle (and the unconditional final one) pad
- * from a `written` that is behind the real file length, and master.pcm ends
+ * from a `written` that is behind the real file length, and the stream ends
  * LONGER than `elapsed`. That is not a lost tail, it is a permanent offset:
  * every frame after the gap sits later in the file than its frame number says,
  * so #679's salvage and daw_export lay the whole remainder of the take out
@@ -1042,9 +1431,9 @@ static int le_pd_drain_ring(le_pd_file* pf, le_audio_ring* ring, int channels,
  * The gap LIST can still name a span the disk refused — position is
  * diagnostic. The total stays a count of silence genuinely on disk, which is
  * what the manifest documents it as. */
-static int le_pd_catch_up(le_perf_drain* d, le_pd_file* pf, int channels,
+static int le_pd_catch_up(le_perf_drain* d, le_pd_file* pf,
                           uint64_t elapsed) {
-  if (pf->written >= elapsed || channels <= 0) return 1;
+  if (pf->written >= elapsed || pf->channels <= 0) return 1;
   const uint64_t gap = elapsed - pf->written;
 
   if (d->gap_count < LE_PD_MAX_GAPS) {
@@ -1053,28 +1442,11 @@ static int le_pd_catch_up(le_perf_drain* d, le_pd_file* pf, int channels,
     d->gap_count++;
   }
 
-  static const float kZeros[1024] = {0};
-  uint64_t remaining = gap * (uint64_t)channels;
-  uint64_t padded_bytes = 0;
-  int ok = 1;
-  while (remaining > 0) {
-    const size_t chunk = remaining < 1024 ? (size_t)remaining : 1024;
-    const size_t want = chunk * sizeof(float);
-    const size_t got = le_pd_write_some(pf->f, kZeros, want);
-    padded_bytes += (uint64_t)got;
-    if (got != want) {
-      ok = 0; /* short or refused: whatever landed is still on disk */
-      break;
-    }
-    remaining -= chunk;
-  }
-
-  /* Credits `pf->written` as well as returning the count — on the success path
-   * that IS `pf->written = elapsed`, since every requested byte landed and
-   * padded_frames == gap exactly; it is an ADVANCE so the failure path is
-   * right too. */
-  const uint64_t padded_frames =
-      le_pd_whole_frames_landed(pf, padded_bytes, channels);
+  /* le_pd_append credits `pf->written` by exactly the frames that landed,
+   * success or failure, so the difference is the silence genuinely on disk. */
+  const uint64_t before = pf->written;
+  const int ok = le_pd_append(d, pf, NULL, gap);
+  const uint64_t padded_frames = pf->written - before;
   if (padded_frames > 0) {
     atomic_fetch_add_explicit(&d->engine->a_perf_zero_filled_frames,
                               padded_frames, memory_order_relaxed);
@@ -1131,7 +1503,7 @@ static void le_pd_json_escape(const char* in, char* out, size_t out_cap) {
  * ever reaches disk, so it must still be able to succeed after a PCM write
  * has already failed this same cycle.
  *
- * `report_disk_full` is an explicit parameter, not a read of d->disk_full:
+ * `report_disk_full` is an explicit parameter, not a read of d->self_stopped:
  * the caller (le_pd_drain_cycle) only sets that externally-observable atomic
  * AFTER this call returns, so a test polling it can never see "disk_full"
  * before the marker it implies has actually finished its remove()+rename()
@@ -1179,7 +1551,7 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
 
   int first = 1;
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (!(d->engine->perf.input_mask & (1u << c))) continue;
+    if (!(d->engine->perf.input_mask & (UINT64_C(1) << c))) continue;
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "%s%d",
                     first ? "" : ", ", c);
     first = 0;
@@ -1207,6 +1579,75 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
   if (off < 0 || off >= LE_PD_JSON_BUF) goto done; /* truncated */
   off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "],\n");
 
+  /* The take's identity and its ordered parts (#1198): every sealed part with
+   * its digest, then each stream's open part (no digest yet), stream by
+   * stream in index order — the order playback and export use them in. */
+  if (off < 0 || off >= LE_PD_JSON_BUF) goto done; /* truncated */
+  {
+    char take_hex[33];
+    for (int i = 0; i < 16; ++i) {
+      snprintf(take_hex + 2 * i, 3, "%02x", d->take_id[i]);
+    }
+    uint64_t overs = d->overs;
+    if (d->master_file.w.file != NULL) overs += d->master_file.part_overs;
+    for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+      if (d->monitor_file[c].w.file != NULL) overs += d->monitor_file[c].part_overs;
+    }
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                   "  \"take_id\": \"%s\",\n"
+                   "  \"encoding\": \"f32\",\n"
+                   "  \"volume_generation\": %lld,\n"
+                   "  \"ring_seconds\": %d,\n"
+                   "  \"overs\": %llu,\n"
+                   "  \"parts\": [",
+                   take_hex, (long long)d->volume_generation, d->ring_seconds,
+                   (unsigned long long)overs);
+  }
+  {
+    int first_part = 1;
+    for (int32_t k = -1; k < LE_MAX_MONITORED_INPUTS; ++k) {
+      const le_pd_file* pf = k < 0 ? &d->master_file : &d->monitor_file[k];
+      if (k >= 0 && !(d->engine->perf.input_mask & (UINT64_C(1) << k))) continue;
+      const uint64_t frame_bytes = (uint64_t)pf->channels * sizeof(float);
+      for (int i = 0; i < d->sealed_count && off >= 0 && off < LE_PD_JSON_BUF;
+           ++i) {
+        const le_pd_sealed_part* sp = &d->sealed[i];
+        if (sp->stream != pf->stream) continue;
+        char name[64];
+        char sha_hex[2 * LE_SHA256_BYTES + 1];
+        le_pd_part_filename(sp->stream, sp->index, name, sizeof(name));
+        for (int b = 0; b < LE_SHA256_BYTES; ++b) {
+          snprintf(sha_hex + 2 * b, 3, "%02x", sp->sha256[b]);
+        }
+        off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                       "%s{\"stream\": %d, \"index\": %d, \"file\": \"%s\", "
+                       "\"frames\": %llu, \"bytes\": %llu, \"overs\": %llu, "
+                       "\"sha256\": \"%s\"}",
+                       first_part ? "" : ", ", sp->stream, sp->index, name,
+                       (unsigned long long)sp->frames,
+                       (unsigned long long)(LE_PD_HEADER_BYTES +
+                                            sp->frames * frame_bytes),
+                       (unsigned long long)sp->overs, sha_hex);
+        first_part = 0;
+      }
+      if (pf->w.file != NULL && off >= 0 && off < LE_PD_JSON_BUF) {
+        char name[64];
+        le_pd_part_filename(pf->stream, pf->part_index, name, sizeof(name));
+        off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                       "%s{\"stream\": %d, \"index\": %d, \"file\": \"%s\", "
+                       "\"frames\": %llu, \"bytes\": %llu, \"overs\": %llu}",
+                       first_part ? "" : ", ", pf->stream, pf->part_index,
+                       name, (unsigned long long)pf->part_frames,
+                       (unsigned long long)(LE_PD_HEADER_BYTES +
+                                            pf->part_frames * frame_bytes),
+                       (unsigned long long)pf->part_overs);
+        first_part = 0;
+      }
+    }
+  }
+  if (off < 0 || off >= LE_PD_JSON_BUF) goto done; /* truncated */
+  off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "],\n");
+
   /* Retired-layer manifest (part 5, D-LAYER): every layer persisted so far
    * this session, so part 7's offline renderer can stitch overdub passes
    * without re-deriving anything from the pool (which may have long since
@@ -1223,17 +1664,45 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                    "%s{\"channel\": %d, \"slot\": %d, \"generation\": %u, "
                    "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": %d, "
-                   "\"filename\": \"%s\"}",
+                   "\"kind\": %d, \"restore_id\": %u, \"filename\": \"%s\"}",
                    i == 0 ? "" : ", ", m->channel, m->slot, m->generation,
                    (unsigned long long)m->frame, m->frame_count,
-                   m->lane_count, m->filename);
+                   m->lane_count, m->kind, m->restore_id, m->filename);
   }
   if (off < 0 || off >= LE_PD_JSON_BUF) goto done; /* truncated */
   off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "],\n");
-
-  if (report_disk_full) {
+  if (d->layers_dropped)
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
-                   "  \"stopped_early\": \"disk_full\",\n");
+                   "  \"layers_dropped\": %u,\n", d->layers_dropped);
+  /* Retired images the engine refused to stage (copy allocation failure or
+   * a full staging ring): their retires are logged but have no manifest
+   * entry, so the renderer must not treat them as complete either. */
+  const uint32_t layer_overruns = atomic_load_explicit(
+      &d->engine->a_perf_layer_overruns, memory_order_relaxed);
+  if (layer_overruns)
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                   "  \"layer_overruns\": %u,\n", layer_overruns);
+  /* The backing player (#1200) was playing and routed to the captured bus:
+   * master.pcm may hold audio the stems never reproduce (the backing is not
+   * perf-logged). A muted bus or a zero level still counts. */
+  if (atomic_load_explicit(&d->engine->a_perf_backing_blocks,
+                           memory_order_relaxed) != 0u)
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                   "  \"backing_in_master\": true,\n");
+
+  /* The thread's own stop first: it happened before any disarm could. */
+  const char* stopped_early = NULL;
+  if (d->stop_reason == LE_PERF_STOP_RESERVE_REACHED) {
+    stopped_early = "reserve_reached";
+  } else if (d->stop_reason == LE_PERF_STOP_SLOW_STORAGE) {
+    stopped_early = "slow_storage";
+  } else if (report_disk_full ||
+             d->stop_reason == LE_PERF_STOP_WRITE_FAILED) {
+    stopped_early = "disk_full";
+  }
+  if (stopped_early != NULL) {
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                   "  \"stopped_early\": \"%s\",\n", stopped_early);
   } else if (atomic_load_explicit(&d->device_changed, memory_order_acquire)) {
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                    "  \"stopped_early\": \"device_changed\",\n");
@@ -1247,9 +1716,9 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
     char tmp_path[LE_PD_FULL_PATH_MAX];
     char final_path[LE_PD_FULL_PATH_MAX];
     snprintf(tmp_path, sizeof(tmp_path), "%s/performance.json.tmp",
-            d->capture_dir);
+            d->sidecar_dir);
     snprintf(final_path, sizeof(final_path), "%s/performance.json",
-            d->capture_dir);
+            d->sidecar_dir);
 
     const int fd = le_pd_open_trunc(tmp_path);
     if (fd < 0) goto done;
@@ -1276,7 +1745,193 @@ done:
  * while there is something to report. Returns 0 if the PCM path failed (the
  * caller stops the thread — a partial pass is not retried mid-cycle) or the
  * sidecar write itself failed. */
-static int le_pd_drain_cycle(le_perf_drain* d) {
+/* The streams a take writes: the master, then each captured input. */
+static le_pd_file* le_pd_stream(le_perf_drain* d, int32_t k) {
+  if (k < 0) return &d->master_file;
+  if (!(d->engine->perf.input_mask & (UINT64_C(1) << k))) return NULL;
+  return &d->monitor_file[k];
+}
+
+/* Bytes taking stream `pf` from its frames to `to` costs: the samples, and
+ * the header of every part it would open (le_pd_append opens one only when
+ * the next frame needs it, so a full open part adds nothing by itself). */
+static uint64_t le_pd_cost_to(const le_perf_drain* d, const le_pd_file* pf,
+                              uint64_t to) {
+  if (to <= pf->written) return 0;
+  const uint64_t frames = to - pf->written;
+  const uint64_t capacity = le_pd_part_capacity(d, pf);
+  const uint64_t room = pf->w.file != NULL && pf->part_frames < capacity
+                            ? capacity - pf->part_frames
+                            : 0;
+  const uint64_t rest = frames > room ? frames - room : 0;
+  const uint64_t new_parts = (rest + capacity - 1) / capacity;
+  return frames * (uint64_t)pf->channels * sizeof(float) +
+         new_parts * LE_PD_HEADER_BYTES;
+}
+
+/* The last frame every stream can reach together within `budget` bytes: the
+ * C twin of RecordingFormat.remainingFramesTogether, counted in absolute
+ * frames because the streams can stand a block apart at a cycle's start. */
+static uint64_t le_pd_frames_within(le_perf_drain* d, uint64_t budget) {
+  uint64_t lowest = UINT64_MAX;
+  uint64_t highest = 0;
+  uint64_t frame_bytes = 0;
+  for (int32_t k = -1; k < LE_MAX_MONITORED_INPUTS; ++k) {
+    const le_pd_file* pf = le_pd_stream(d, k);
+    if (pf == NULL) continue;
+    if (pf->written < lowest) lowest = pf->written;
+    if (pf->written > highest) highest = pf->written;
+    frame_bytes += (uint64_t)pf->channels * sizeof(float);
+  }
+  if (frame_bytes == 0) return lowest;
+  /* Every frame past `highest` costs at least frame_bytes, so `hi` is out
+   * of reach and `lo` (which costs nothing) is not. */
+  uint64_t lo = lowest;
+  uint64_t hi = highest + budget / frame_bytes + 1;
+  while (lo + 1 < hi) {
+    const uint64_t mid = lo + (hi - lo) / 2;
+    uint64_t cost = 0;
+    for (int32_t k = -1; k < LE_MAX_MONITORED_INPUTS && cost <= budget; ++k) {
+      const le_pd_file* pf = le_pd_stream(d, k);
+      if (pf != NULL) cost += le_pd_cost_to(d, pf, mid);
+    }
+    if (cost <= budget) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
+}
+
+/* Whether every stream holds at least `frame` frames. With pops capped at
+ * `elapsed` they all hold exactly the same count; ">=" keeps a stream that
+ * somehow stood past the stop frame from holding the take open forever. */
+static int le_pd_all_streams_reached(le_perf_drain* d, uint64_t frame) {
+  for (int32_t k = -1; k < LE_MAX_MONITORED_INPUTS; ++k) {
+    const le_pd_file* pf = le_pd_stream(d, k);
+    if (pf != NULL && pf->written < frame) return 0;
+  }
+  return 1;
+}
+
+/* The fewest frames any stream holds. */
+static uint64_t le_pd_lowest_written(le_perf_drain* d) {
+  uint64_t lowest = UINT64_MAX;
+  for (int32_t k = -1; k < LE_MAX_MONITORED_INPUTS; ++k) {
+    const le_pd_file* pf = le_pd_stream(d, k);
+    if (pf != NULL && pf->written < lowest) lowest = pf->written;
+  }
+  return lowest == UINT64_MAX ? 0 : lowest;
+}
+
+/* Publishes the take's overs so far: every sealed part, and each open one. */
+static void le_pd_publish_overs(le_perf_drain* d) {
+  uint64_t overs = d->overs;
+  for (int32_t k = -1; k < LE_MAX_MONITORED_INPUTS; ++k) {
+    const le_pd_file* pf = le_pd_stream(d, k);
+    if (pf != NULL && pf->w.file != NULL) overs += pf->part_overs;
+  }
+  atomic_store_explicit(&d->engine->a_perf_overs, overs, memory_order_relaxed);
+}
+
+/* Publishes the thread's own stop: the engine's reason first (unless a
+ * disarm already set one), then the self-stopped flag the app polls. Only
+ * after the sidecar carrying the same reason is written. */
+static void le_pd_publish_stop(le_perf_drain* d) {
+  int32_t none = LE_PERF_STOP_NONE;
+  atomic_compare_exchange_strong_explicit(&d->engine->a_perf_stop_reason,
+                                          &none, d->stop_reason,
+                                          memory_order_relaxed,
+                                          memory_order_relaxed);
+  atomic_store_explicit(&d->self_stopped, 1, memory_order_release);
+}
+
+/* Publishes what this cycle flushed (#1198 D4): every stream's open part,
+ * how many sealed parts and layer files are final, events.log's length and
+ * the frames every stream holds. Only after the flush, so a checkpoint never
+ * names bytes still in a stdio buffer. Allocation-free: a struct copy under
+ * a lock held for nothing else. */
+static void le_pd_publish_progress(le_perf_drain* d) {
+  le_pcp_progress p;
+  memset(&p, 0, sizeof(p));
+  uint64_t frames = UINT64_MAX;
+  uint64_t overs = d->overs;
+  for (int32_t k = -1; k < LE_MAX_MONITORED_INPUTS; ++k) {
+    const le_pd_file* pf = le_pd_stream(d, k);
+    if (pf == NULL) continue;
+    le_pcp_stream* s = &p.streams[p.stream_count++];
+    s->stream = pf->stream;
+    s->channels = pf->channels;
+    if (pf->w.file != NULL) {
+      s->open_index = pf->part_index;
+      s->open_frames = pf->part_frames;
+      s->open_overs = pf->part_overs;
+      overs += pf->part_overs;
+    }
+    if (pf->written < frames) frames = pf->written;
+  }
+  p.sealed_count = d->sealed_count;
+  p.layer_count = d->layer_count;
+  p.events_bytes = d->events_bytes;
+  p.frames = frames == UINT64_MAX ? 0 : frames;
+  p.overs = overs;
+  le_pd_mutex_lock(&d->progress_lock);
+  d->published = p;
+  le_pd_mutex_unlock(&d->progress_lock);
+}
+
+/* One checkpoint of the latest published progress. Never on the drain
+ * thread. A failure leaves the other slot standing and is counted; the take
+ * goes on. */
+static int le_pd_checkpoint(le_perf_drain* d) {
+  le_pd_mutex_lock(&d->write_lock);
+  le_pcp_progress p;
+  le_pd_mutex_lock(&d->progress_lock);
+  p = d->published;
+  le_pd_mutex_unlock(&d->progress_lock);
+  const int ok = le_pcp_write(&d->cp_writer, &d->cp_take, &p);
+  le_pd_mutex_unlock(&d->write_lock);
+  if (!ok) {
+    atomic_fetch_add_explicit(&d->engine->a_perf_checkpoint_failures, 1u,
+                              memory_order_relaxed);
+  }
+  return ok;
+}
+
+/* The checkpoint thread: every `checkpoint_ms` (never, with 0), on request,
+ * and once more when the take stops. Polls like the drain thread, so a stop
+ * is never more than a poll away. */
+static void le_pd_checkpoint_thread_main(void* arg) {
+  le_perf_drain* d = (le_perf_drain*)arg;
+  le_pd_thread_lower_own_priority();
+  uint64_t next_ms = 0;
+  if (d->checkpoint_ms > 0 && le_pd_now_ms(&next_ms)) {
+    next_ms += (uint64_t)d->checkpoint_ms;
+  }
+  for (;;) {
+    le_pd_sleep_ms(LE_PD_POLL_MS);
+    const int stop = atomic_load_explicit(&d->cp_stop, memory_order_acquire);
+    const int now =
+        atomic_exchange_explicit(&d->cp_now, 0, memory_order_acq_rel);
+    int due = 0;
+    uint64_t now_ms = 0;
+    if (d->checkpoint_ms > 0 && le_pd_now_ms(&now_ms) && now_ms >= next_ms) {
+      due = 1;
+      next_ms += (uint64_t)d->checkpoint_ms;
+      if (next_ms <= now_ms) next_ms = now_ms + (uint64_t)d->checkpoint_ms;
+    }
+    if (stop || now || due) le_pd_checkpoint(d);
+    if (stop) return;
+  }
+}
+
+int le_perf_checkpoint_now_for_test(struct le_engine* engine) {
+  if (engine == NULL || engine->perf.drain == NULL) return 0;
+  return le_pd_checkpoint(engine->perf.drain);
+}
+
+static int le_pd_drain_cycle(le_perf_drain* d, int final) {
   le_engine* e = d->engine;
   float scratch[LE_PD_SCRATCH_SAMPLES];
   int ok = 1;
@@ -1322,16 +1977,82 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
    * counted into a_perf_frames before this load and never enqueued at all. */
   const uint64_t elapsed =
       atomic_load_explicit(&e->a_perf_frames, memory_order_acquire);
+  /* After the acquire above: a drop in any block counted in `elapsed` is
+   * visible here (the audio thread records it before that block's release
+   * add). A drop in a later block may or may not be; either is handled. */
+  const uint64_t first_drop = atomic_load_explicit(
+      &e->a_perf_first_drop_frame, memory_order_relaxed);
 
-  if (!le_pd_drain_ring(&d->master_file, &e->perf.master_ring,
-                       e->perf.master_channels, scratch,
-                       LE_PD_SCRATCH_SAMPLES)) {
+  const int sample_every =
+      atomic_load_explicit(&g_pd_free_sample_cycles, memory_order_relaxed);
+  if (!final && ++d->cycles_since_sample >=
+                    (sample_every > 0 ? sample_every : LE_PD_FREE_SAMPLE_CYCLES)) {
+    le_pd_sample_free(d);
+  }
+
+  /* Performance event log (part 3): drain both perf-log rings — the audio-
+   * thread-producer log_ring first, then the control-thread-producer
+   * log_ctrl_ring — and append every entry to events.log. Order between the
+   * two streams is a file-write-order interleaving, not a global frame sort
+   * (see docs/design/performance-event-log-format.md): each stream is
+   * monotonic in frame on its own, but a control-side param change and an
+   * audio-thread command from the same drain interval can land in either
+   * order in the file.
+   *
+   * Written before the audio, with the retired layers below (#1198): they
+   * come off the same reserve budget, so the frames the audio may still take
+   * are counted after them. */
+  if (!le_pd_drain_log_ring(d, &e->perf.log_ring)) ok = 0;
+  if (ok && !le_pd_drain_log_ring(d, &e->perf.log_ctrl_ring)) ok = 0;
+
+  /* Retired-layer persistence (part 5, D-LAYER): each staged layer is its
+   * own self-contained file (open, write, fclose — not a long-lived stream
+   * like the parts), so there is nothing to flush separately below: the
+   * fclose inside le_pd_write_staged_layer has already pushed every byte out
+   * of stdio and into the page cache before the manifest entry is recorded.
+   * That is the same guarantee le_pd_flush gives the long-lived streams —
+   * visible to other processes, NOT on the device. */
+  if (ok && !le_pd_drain_layer_staging(d)) ok = 0;
+
+  /* Where every stream must end (#1198): the frame a take already stopped
+   * at, the first frame a ring dropped, or the last frame the reserve
+   * budget pays for, whichever comes first. Nothing past it is written. */
+  uint64_t cap = d->stop_frame;
+  int32_t cap_reason = LE_PERF_STOP_NONE;
+  if (first_drop < cap) {
+    cap = first_drop;
+    cap_reason = LE_PERF_STOP_SLOW_STORAGE;
+  }
+  if (d->has_budget) {
+    const uint64_t affordable = le_pd_frames_within(d, le_pd_budget(d));
+    if (affordable < cap) {
+      cap = affordable;
+      cap_reason = LE_PERF_STOP_RESERVE_REACHED;
+    }
+  }
+  if (d->layer_over_budget) {
+    const uint64_t here = le_pd_lowest_written(d);
+    if (here < cap) {
+      cap = here;
+      cap_reason = LE_PERF_STOP_RESERVE_REACHED;
+    }
+  }
+
+  /* Never past `elapsed` this cycle either (#1198 review): a frame at or
+   * below it belongs to a counted block, whose drop the load above has seen;
+   * a frame past it may sit in one ring while another ring is dropping it
+   * right now. Left in the ring, it is read next cycle against a drop record
+   * that is then complete, so every stream ends each cycle at the same frame
+   * and a stop is always exact. */
+  const uint64_t pop_to = elapsed < cap ? elapsed : cap;
+  if (ok && !le_pd_drain_ring(d, &d->master_file, &e->perf.master_ring,
+                              scratch, LE_PD_SCRATCH_SAMPLES, pop_to)) {
     ok = 0;
   }
   for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (!(e->perf.input_mask & (1u << c))) continue;
-    if (!le_pd_drain_ring(&d->monitor_file[c], &e->perf.monitor_ring[c], 2,
-                         scratch, LE_PD_SCRATCH_SAMPLES)) {
+    if (!(e->perf.input_mask & (UINT64_C(1) << c))) continue;
+    if (!le_pd_drain_ring(d, &d->monitor_file[c], &e->perf.monitor_ring[c],
+                          scratch, LE_PD_SCRATCH_SAMPLES, pop_to)) {
       ok = 0;
     }
   }
@@ -1348,39 +2069,27 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
     }
   }
 
+  /* Silence fills only up to the cap: a dropped frame ends the take, it is
+   * never padded over (#1198). */
+  const uint64_t fill_to = elapsed < cap ? elapsed : cap;
   if (ok) {
-    if (!le_pd_catch_up(d, &d->master_file, e->perf.master_channels, elapsed)) {
+    if (!le_pd_catch_up(d, &d->master_file, fill_to)) {
       ok = 0;
     }
     for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
-      if (!(e->perf.input_mask & (1u << c))) continue;
-      if (!le_pd_catch_up(d, &d->monitor_file[c], 2, elapsed)) ok = 0;
+      if (!(e->perf.input_mask & (UINT64_C(1) << c))) continue;
+      if (!le_pd_catch_up(d, &d->monitor_file[c], fill_to)) ok = 0;
     }
   }
 
-  /* Performance event log (part 3): drain both perf-log rings — the audio-
-   * thread-producer log_ring first, then the control-thread-producer
-   * log_ctrl_ring — and append every entry to events.log. Order between the
-   * two streams is a file-write-order interleaving, not a global frame sort
-   * (see docs/design/performance-event-log-format.md): each stream is
-   * monotonic in frame on its own, but a control-side param change and an
-   * audio-thread command from the same drain interval can land in either
-   * order in the file. */
-  if (ok && !le_pd_drain_log_ring(d->events_file, &e->perf.log_ring)) ok = 0;
-  if (ok && !le_pd_drain_log_ring(d->events_file, &e->perf.log_ctrl_ring)) {
-    ok = 0;
+  /* The take stops once every stream holds exactly the cap. A cap past what
+   * the rings have shown so far (a drop or a budget end in a block not yet
+   * counted) waits for the next cycle. */
+  if (ok && d->stop_reason == LE_PERF_STOP_NONE &&
+      cap_reason != LE_PERF_STOP_NONE && le_pd_all_streams_reached(d, cap)) {
+    d->stop_reason = cap_reason;
+    d->stop_frame = cap;
   }
-
-  /* Retired-layer persistence (part 5, D-LAYER): each staged layer is its
-   * own self-contained file (open, write, fclose — not a long-lived stream
-   * like master.pcm), so there is nothing to flush separately below: the
-   * fclose inside le_pd_write_staged_layer has already pushed every byte out
-   * of stdio and into the page cache before the manifest entry is recorded.
-   * That is the same guarantee le_pd_flush gives the long-lived streams —
-   * visible to other processes, NOT on the device. No fsync is involved
-   * anywhere in this module, on either side (see the durability note above the
-   * sidecar's descriptor shims, and #727). */
-  if (ok && !le_pd_drain_layer_staging(d)) ok = 0;
 
   /* The PCM files stay open for the whole capture session (never closed
    * until disarm), so without an explicit flush here their buffered writes
@@ -1388,21 +2097,47 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
    * this very drain cycle's sidecar reporting a capture_frames count nothing
    * has actually reached disk for yet) until fclose. This is THE flush the
    * ~250 ms cadence documented in perf_drain.h refers to. */
-  if (ok && !le_pd_flush(d->master_file.f)) ok = 0;
+  if (ok && (d->master_file.w.file == NULL || !le_pd_flush(d->master_file.w.file))) {
+    ok = 0;
+  }
   for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (!(e->perf.input_mask & (1u << c))) continue;
-    if (!le_pd_flush(d->monitor_file[c].f)) ok = 0;
+    if (!(e->perf.input_mask & (UINT64_C(1) << c))) continue;
+    if (d->monitor_file[c].w.file == NULL || !le_pd_flush(d->monitor_file[c].w.file)) {
+      ok = 0;
+    }
   }
   if (ok && !le_pd_flush(d->events_file)) ok = 0;
 
+  /* The take's last pass seals every open part, so the final sidecar lists
+   * each one with its sizes, digest and overs — attempted even after a failed
+   * write, since a part that holds whole frames is still a part of the take.
+   * Its result counts like any other write. */
+  if (final) {
+    if (d->master_file.w.file != NULL && !le_pd_seal_part(d, &d->master_file)) {
+      ok = 0;
+    }
+    for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+      if (d->monitor_file[c].w.file == NULL) continue;
+      if (!le_pd_seal_part(d, &d->monitor_file[c])) ok = 0;
+    }
+  }
+
+  le_pd_publish_overs(d);
+  le_pd_publish_progress(d);
+
   /* Write the sidecar (with the disk_full marker, if this cycle just failed)
-   * BEFORE publishing d->disk_full — le_perf_drain_self_stopped
+   * BEFORE publishing d->self_stopped — le_perf_drain_self_stopped
    * lets a caller observe that flag while the thread is still alive (unlike
    * device_changed, only ever checked after a full join), so the store must
    * happen strictly after the marker it implies is already durably on disk,
    * never before. */
-  const int sidecar_ok = le_pd_write_sidecar(d, !ok, elapsed);
-  if (!ok) atomic_store_explicit(&d->disk_full, 1, memory_order_release);
+  if (!ok && d->stop_reason == LE_PERF_STOP_NONE) {
+    d->stop_reason = LE_PERF_STOP_WRITE_FAILED;
+  }
+  const int sidecar_ok =
+      le_pd_write_sidecar(d, !ok, elapsed < d->stop_frame ? elapsed
+                                                           : d->stop_frame);
+  if (d->stop_reason != LE_PERF_STOP_NONE) le_pd_publish_stop(d);
   return ok && sidecar_ok;
 }
 
@@ -1422,7 +2157,7 @@ static void le_pd_drain_thread_main(void* arg) {
    * is an expected outcome rather than an anomaly. Under the accumulator that
    * silently stretched the cadence: 25 polls of 30 ms is a 750 ms cycle that
    * still believes it ran at 250. The failure at the far end is #710's — more
-   * than LE_PERF_CAPTURE_SECONDS of audio piling into master_ring inside one
+   * than LE_PERF_RING_SECONDS_DEFAULT of audio piling into master_ring inside one
    * cycle, an overrun, and le_pd_catch_up padding the take with zero-filled
    * silence.
    *
@@ -1440,7 +2175,7 @@ static void le_pd_drain_thread_main(void* arg) {
    *     past, so the next cycle fires at the very next 10 ms poll. While the
    *     overrun persists, cycles run effectively back-to-back at poll
    *     granularity. That is deliberate for #710 — the rings hold only
-   *     LE_PERF_CAPTURE_SECONDS, and draining them promptly is what keeps
+   *     LE_PERF_RING_SECONDS_DEFAULT, and draining them promptly is what keeps
    *     zero-filled silence out of the take — but it is the wrong direction
    *     for load: combined with the priority drop, the worst case is more
    *     drain CPU exactly when the machine is busiest. The trade is taken
@@ -1470,75 +2205,145 @@ static void le_pd_drain_thread_main(void* arg) {
      * deadline is left untouched, so a clock that comes back resyncs it on the
      * next poll; a persistent failure degrades to one cycle per poll, which is
      * the expensive-but-correct direction, not a stall. */
-    if (!le_pd_drain_cycle(d)) {
-      atomic_store_explicit(&d->disk_full, 1, memory_order_release);
+    if (!le_pd_drain_cycle(d, 0)) {
+      if (d->stop_reason == LE_PERF_STOP_NONE) {
+        d->stop_reason = LE_PERF_STOP_WRITE_FAILED;
+      }
+      le_pd_publish_stop(d);
       break;
     }
+    /* The reserve or a dropped frame ended the take: every stream already
+     * holds its last frame, and the final pass below writes nothing past it. */
+    if (d->stop_reason != LE_PERF_STOP_NONE) break;
   }
 
   /* Final pass regardless of how we got here (a graceful stop request, or a
-   * disk-full self-stop above): best-effort drain + one last sidecar flush,
+   * self-stop above): best-effort drain + one last sidecar flush,
    * so the on-disk state reflects everything captured up to this moment.
    * Its own failure is not actionable — the thread is exiting either way. */
-  le_pd_drain_cycle(d);
+  le_pd_drain_cycle(d, 1);
+  /* Whatever ended the take, its last state is made durable now, not at the
+   * next interval: a self-stop can be followed by a crash before any
+   * disarm. */
+  atomic_store_explicit(&d->cp_now, 1, memory_order_release);
 }
 
-le_perf_drain* le_perf_drain_start(le_engine* engine, const char* capture_dir) {
-  if (engine == NULL || capture_dir == NULL || capture_dir[0] == '\0') {
+/* Closes every file `d` opened, without sealing (a start that failed half
+ * way: nothing was published, nothing is a take yet). */
+static void le_pd_close_all(le_perf_drain* d) {
+  if (d->events_file != NULL) fclose(d->events_file);
+  le_wav_abandon(&d->master_file.w);
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    le_wav_abandon(&d->monitor_file[c].w);
+  }
+}
+
+le_perf_drain* le_perf_drain_start(le_engine* engine,
+                                   const le_perf_target* target,
+                                   int32_t ring_seconds) {
+  if (engine == NULL || target == NULL || target->capture_dir == NULL ||
+      target->capture_dir[0] == '\0') {
     return NULL;
   }
-  if (strlen(capture_dir) >= sizeof(((le_perf_drain*)0)->capture_dir)) {
-    return NULL; /* reject rather than silently truncate into a wrong path */
+  const char* sidecar_dir =
+      target->live_sidecar_dir != NULL && target->live_sidecar_dir[0] != '\0'
+          ? target->live_sidecar_dir
+          : target->capture_dir;
+  /* Reject rather than silently truncate into a wrong path. */
+  const char* mirror_dir = target->mirror_dir != NULL ? target->mirror_dir : "";
+  if (strlen(target->capture_dir) >= LE_PD_PATH_MAX ||
+      strlen(sidecar_dir) >= LE_PD_PATH_MAX ||
+      strlen(mirror_dir) >= LE_PD_PATH_MAX || target->checkpoint_ms < 0) {
+    return NULL;
   }
-  if (!le_pd_mkdir_recursive(capture_dir)) return NULL;
+  if (mirror_dir[0] != '\0' && !le_pd_mkdir_recursive(mirror_dir)) {
+    return NULL;
+  }
+  if (!le_pd_mkdir_recursive(target->capture_dir)) return NULL;
+  if (sidecar_dir != target->capture_dir &&
+      !le_pd_mkdir_recursive(sidecar_dir)) {
+    return NULL;
+  }
 
   le_perf_drain* d = (le_perf_drain*)calloc(1, sizeof(le_perf_drain));
   if (d == NULL) return NULL;
   d->engine = engine;
-  snprintf(d->capture_dir, sizeof(d->capture_dir), "%s", capture_dir);
+  snprintf(d->capture_dir, sizeof(d->capture_dir), "%s", target->capture_dir);
+  snprintf(d->sidecar_dir, sizeof(d->sidecar_dir), "%s", sidecar_dir);
+  memcpy(d->take_id, target->take_id, sizeof(d->take_id));
+  d->volume_generation = target->volume_generation;
+  d->part_bytes =
+      target->part_bytes != 0 ? target->part_bytes : LE_PERF_PART_BYTES;
+  d->ring_seconds = ring_seconds;
+  d->stop_reason = LE_PERF_STOP_NONE;
+  d->stop_frame = LE_PD_NO_LIMIT;
+  d->reserve_bytes = target->reserve_bytes;
+  /* Read before the first header is written, so the budget counts every
+   * byte the take puts on the volume. */
+  le_pd_sample_free(d);
 
-  char path[LE_PD_FULL_PATH_MAX];
-  snprintf(path, sizeof(path), "%s/master.pcm", d->capture_dir);
-  d->master_file.f = fopen(path, "wb");
-  if (d->master_file.f == NULL) {
+  snprintf(d->mirror_dir, sizeof(d->mirror_dir), "%s", mirror_dir);
+  d->checkpoint_ms = target->checkpoint_ms;
+  le_pcp_read_boot_id(d->boot_id, sizeof(d->boot_id));
+  le_pd_mutex_init(&d->progress_lock);
+  le_pd_mutex_init(&d->write_lock);
+  d->cp_take.capture_dir = d->capture_dir;
+  d->cp_take.mirror_dir = d->mirror_dir;
+  d->cp_take.take_id = d->take_id;
+  d->cp_take.volume_generation = d->volume_generation;
+  d->cp_take.sample_rate = engine->sample_rate;
+  d->cp_take.boot_id = d->boot_id;
+  d->cp_take.sealed = d->sealed;
+  d->cp_take.layer_names = d->layers[0].filename;
+  d->cp_take.layer_stride = sizeof(d->layers[0]);
+  if (!le_pcp_writer_init(&d->cp_writer)) {
+    le_pcp_writer_free(&d->cp_writer);
+    le_pd_mutex_destroy(&d->progress_lock);
+    le_pd_mutex_destroy(&d->write_lock);
     free(d);
     return NULL;
   }
 
-  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (!(engine->perf.input_mask & (1u << c))) continue;
-    snprintf(path, sizeof(path), "%s/input-%d.pcm", d->capture_dir, c);
-    d->monitor_file[c].f = fopen(path, "wb");
-    if (d->monitor_file[c].f == NULL) {
-      fclose(d->master_file.f);
-      for (int32_t k = 0; k < c; ++k) {
-        if (d->monitor_file[k].f != NULL) fclose(d->monitor_file[k].f);
+  d->master_file.stream = 0;
+  d->master_file.channels = engine->perf.master_channels;
+  int ok = le_pd_open_part(d, &d->master_file);
+  for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
+    if (!(engine->perf.input_mask & (UINT64_C(1) << c))) continue;
+    d->monitor_file[c].stream = 1 + c;
+    d->monitor_file[c].channels = 2;
+    ok = le_pd_open_part(d, &d->monitor_file[c]);
+  }
+
+  if (ok) {
+    char path[LE_PD_FULL_PATH_MAX];
+    snprintf(path, sizeof(path), "%s/events.log", d->capture_dir);
+    d->events_file = fopen(path, "wb");
+    ok = d->events_file != NULL &&
+         le_pd_write_events_header(d->events_file, engine->sample_rate);
+    if (ok) {
+      le_pd_count_bytes(d, 12); /* "PLEV", version, sample rate */
+      d->events_bytes = 12;
+    }
+  }
+
+  if (ok) {
+    /* The opened parts and events.log are what the first checkpoint names. */
+    le_pd_publish_progress(d);
+    ok = le_pd_thread_start(&d->cp_thread, LE_PD_CHECKPOINT_ENTRY, d);
+    if (ok) {
+      atomic_store_explicit(&d->running, 1, memory_order_release);
+      if (!le_pd_thread_start(&d->thread, LE_PD_DRAIN_ENTRY, d)) {
+        atomic_store_explicit(&d->cp_stop, 1, memory_order_release);
+        le_pd_thread_join(d->cp_thread);
+        ok = 0;
       }
-      free(d);
-      return NULL;
     }
   }
-
-  snprintf(path, sizeof(path), "%s/events.log", d->capture_dir);
-  d->events_file = fopen(path, "wb");
-  if (d->events_file == NULL ||
-      !le_pd_write_events_header(d->events_file, engine->sample_rate)) {
-    if (d->events_file != NULL) fclose(d->events_file);
-    fclose(d->master_file.f);
-    for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-      if (d->monitor_file[c].f != NULL) fclose(d->monitor_file[c].f);
-    }
-    free(d);
-    return NULL;
-  }
-
-  atomic_store_explicit(&d->running, 1, memory_order_release);
-  if (!le_pd_thread_start(&d->thread, d)) {
-    fclose(d->events_file);
-    fclose(d->master_file.f);
-    for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-      if (d->monitor_file[c].f != NULL) fclose(d->monitor_file[c].f);
-    }
+  if (!ok) {
+    le_pd_close_all(d);
+    le_pcp_writer_free(&d->cp_writer);
+    le_pd_mutex_destroy(&d->progress_lock);
+    le_pd_mutex_destroy(&d->write_lock);
     free(d);
     return NULL;
   }
@@ -1547,17 +2352,32 @@ le_perf_drain* le_perf_drain_start(le_engine* engine, const char* capture_dir) {
 
 void le_perf_drain_stop(le_perf_drain* drain, le_perf_stop_reason reason) {
   if (drain == NULL) return;
-  if (!atomic_load_explicit(&drain->disk_full, memory_order_acquire) &&
+  if (!atomic_load_explicit(&drain->self_stopped, memory_order_acquire) &&
       reason == LE_PERF_STOP_DEVICE_CHANGED) {
     atomic_store_explicit(&drain->device_changed, 1, memory_order_release);
   }
   atomic_store_explicit(&drain->running, 0, memory_order_release);
   le_pd_thread_join(drain->thread);
+  /* The caller's reason, unless the thread already recorded its own (the
+   * final pass included: a frame dropped just before the disarm still ends
+   * the take there). */
+  int32_t none = LE_PERF_STOP_NONE;
+  atomic_compare_exchange_strong_explicit(&drain->engine->a_perf_stop_reason,
+                                          &none, (int32_t)reason,
+                                          memory_order_relaxed,
+                                          memory_order_relaxed);
 
-  if (drain->master_file.f != NULL) fclose(drain->master_file.f);
-  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (drain->monitor_file[c].f != NULL) fclose(drain->monitor_file[c].f);
-  }
-  if (drain->events_file != NULL) fclose(drain->events_file);
+  /* The last checkpoint, after the final pass sealed the parts: the thread
+   * writes it on its way out. */
+  atomic_store_explicit(&drain->cp_stop, 1, memory_order_release);
+  le_pd_thread_join(drain->cp_thread);
+
+  /* The final pass sealed (and closed) every part it could; whatever is
+   * still open here failed to seal and is closed as it stands — its header
+   * keeps zero sizes, which recovery reads as a part to be measured. */
+  le_pd_close_all(drain);
+  le_pcp_writer_free(&drain->cp_writer);
+  le_pd_mutex_destroy(&drain->progress_lock);
+  le_pd_mutex_destroy(&drain->write_lock);
   free(drain);
 }

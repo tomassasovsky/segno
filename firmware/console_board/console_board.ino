@@ -1,86 +1,96 @@
-// Segno console board v2 (#747) -- Pico 2 (RP2350) firmware.
+// Segno console board v3 (#1072) -- Pico 2 (RP2350) firmware.
 //
 // A PURE THIN CLIENT, like the pedal it replaces: it holds no looper state. It
-// renders the ring and the indicator pills from the last good STATE frame segno
-// pushes, and sends raw footswitch / encoder events. segno runs the behavior
-// machine and is the single source of truth.
+// renders the indicator pills from the last good STATE frame segno pushes,
+// forwards what the ring needs to the ring carrier's XIAO, and sends raw
+// footswitch / encoder / encoder-switch events. segno runs the behavior machine
+// and is the single source of truth.
+//
+// Ring: the encoder and its LED ring live on the ring carrier, run by its own
+// XIAO RP2350 (firmware/ring_board). The two talk over a private UART on
+// GP13 TX / GP14 RX (SegnoRing's ring_link.h): the Pico sends a five-byte ring
+// state, the XIAO sends cumulative encoder and button counters, and the Pico
+// turns those into the same ENCODER / ENCODER_BUTTON events the v2 board sent.
+// On the Pi's RING_BRIDGE message it bridges the two UARTs instead, so the Pi
+// can update the XIAO's firmware (SegnoRing's ring_update.h, #1342).
 //
 // Link: Serial1 = UART0, GP16 TX / GP17 RX -> the Pi's uart3 (GPIO8/9,
 // /dev/ttyAMA3), 115200 8N1. Wire format: pedal_link.h, shared byte for byte
 // with packages/pedal_repository and pinned by firmware/test/run_tests.sh.
 //
 // Half of several circuits on this board is firmware (#752): the footswitches
-// and the encoder have no external pull-ups on the Pico side (INPUT_PULLUP is
-// mandatory), a release edge is an RC of ~5-8 ms through the 100 nF debounce
-// caps, and GP23 high puts the module's SMPS in PWM mode for a quieter ADC.
+// have no external pull-ups on the Pico side (INPUT_PULLUP is mandatory), a
+// release edge is an RC of ~5-8 ms through the 100 nF debounce caps, and GP23
+// high puts the module's SMPS in PWM mode for a quieter ADC.
 //
-// Build: arduino-pico core (rp2040:rp2040:rpipico2) + Adafruit NeoPixel.
-//   arduino-cli compile --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir firmware/console_board/build
+// Build: arduino-pico core + NeoPixelBus (PIO/DMA pills); Adafruit NeoPixel
+// supplies the gamma tables only.
+//   arduino-cli compile --libraries firmware/libraries --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir firmware/console_board/build
 // Flash from the Pi over SWD: README.md.
 
 #include <Adafruit_NeoPixel.h>
+#include <NeoPixelBus.h>
+#include <SerialPIO.h>
 
 #include "pedal_link.h"
+#include "console_presence.h"
+#include <SegnoRing.h>
 
 // A colour before gamma; the .ino auto-prototypes need the type declared first.
 struct Rgb { uint8_t r, g, b; };
 
-static const uint8_t FW_MAJOR = 1;
-static const uint8_t FW_MINOR = 6;
+// Major 2: the v3 board (ring on its own XIAO). Same pedal-link protocol.
+// 2.1: the ring-update bridge. 2.2: pills and ring dim with the screens
+// (protocol 11, #1349).
+static const uint8_t FW_MAJOR = 2;
+static const uint8_t FW_MINOR = 2;
 
 // ---- pin map (console_board.py GPIO table) ---------------------------------
 static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
 static const uint8_t FSW_PIN[PEDAL_BTN_COUNT] = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
-static const uint8_t PIN_RING = 12, PIN_ENC_A = 13, PIN_ENC_B = 14, PIN_ENC_SW = 15;
+// The ring carrier's UART (J6 pins 3/4). R11/R12 pull both lines up to the
+// Pico's own 3V3, so the link idles high while the Pi is off.
+static const uint8_t PIN_RING_TX = 13, PIN_RING_RX = 14;
 static const uint8_t PIN_IND = 18;
 // The CTRL TRS jacks: tip on ADC0/ADC1 with a 10k pull-up, ring feeding 3V3
 // through 1k as the pot's top, sleeve to ground.
 static const uint8_t CTRL_PIN[PEDAL_CTRL_COUNT] = {26, 27};
 // The rings, sensed. On a two-switch pedal on one TRS plug (a BOSS FS-6's A&B
 // jack) the second switch shorts the ring to sleeve, which the tip's ADC can
-// never see. Board v2 has no trace for it: these are the expansion pads on J22
-// (GP20 / GP21, otherwise unused), reached by one wire from each jack's ring
-// pin. With the wire, the ring sits at ~3V (an expression pedal's pot top, or
-// an open jack) and drops to 0 when that switch closes. WITHOUT the wire the
-// internal pull-up holds the pin high and the ring simply never reports, so
-// an unmodified board loses nothing.
+// never see. Each jack's ring reaches these pins through R19/R20 (4.7k): it
+// sits at ~3V (an expression pedal's pot top, or an open jack) and drops to 0
+// when that switch closes.
 static const uint8_t CTRL_RING_PIN[PEDAL_CTRL_COUNT] = {20, 21};
-// Jack presence, from a switched jack's tip-normal contact (board v3, Neutrik
-// NJ6FD-V): the contact ties this pin to the tip -- 3V3 through 10k -- while
-// the jack is EMPTY, and opens the moment a plug goes in, so with the internal
-// pull-down the pin reads HIGH = empty, LOW = plugged. On board v2 these are
-// J22's unpopulated pads: they float, the pull-down wins, and every jack reads
-// "plugged" -- which is exactly the v2 behaviour, with the heuristics below
-// doing the rest. Present = LOW is chosen so that v2 needs no flag.
+// Jack presence, from the Neutrik NJ6FD-V's ring-normal contact through
+// R21/R22 (4.7k): the contact ties this pin to the jack's biased ring while
+// the jack is EMPTY and opens the moment a plug goes in, so with the internal
+// pull-down the pin reads HIGH = empty, LOW = plugged. Read through
+// console_presence.h, which keeps the pad's input buffer off between samples
+// (RP2350-E9).
 static const uint8_t CTRL_PRESENT_PIN[PEDAL_CTRL_COUNT] = {19, 22};
 static const uint8_t PIN_SMPS_PWM = 23;
 
 // ---- LEDs --------------------------------------------------------------------
-// The encoder's NeoPixel Ring 24 on J6 (O65.5 / O52.3, the fitted part). Its
-// WS2812 index order runs clockwise seen from the front of the panel, which is
-// the direction the sweep travels, so pixel index IS ring position — no
-// reversal (bench-verified 2026-09-03: reversing it ran the sweep backwards).
-static const uint16_t RING_N = 24;
-// The indicator pills on J7, one WS2812 puck each, chained in this order along
-// the faceplate. The first sits above footswitch 1 and is the mode indicator;
-// then the four active-bank tracks, the clear pill and the bank pill. Same map
-// the pedal this board replaces used (its LEDs 12..18).
-enum {
-  IND_MODE = 0,
-  IND_TRACK1,
-  IND_TRACK2,
-  IND_TRACK3,
-  IND_TRACK4,
-  IND_CLEAR,
-  IND_BANK,
-  IND_N
+// Ten eight-pixel pills on J24, in the owner-verified data-chain order.
+static const uint8_t PILL_PIXELS = 8, IND_N = PEDAL_BTN_COUNT * PILL_PIXELS;
+static const uint8_t PILL_BUTTON[PEDAL_BTN_COUNT] = {
+  PEDAL_BTN_TRACK4, PEDAL_BTN_TRACK3, PEDAL_BTN_TRACK2, PEDAL_BTN_TRACK1,
+  PEDAL_BTN_MODE, PEDAL_BTN_UNDO, PEDAL_BTN_STOP, PEDAL_BTN_REC_PLAY,
+  PEDAL_BTN_CLEAR, PEDAL_BTN_BANK
 };
-Adafruit_NeoPixel ring(RING_N, PIN_RING, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel ind(IND_N, PIN_IND, NEO_GRB + NEO_KHZ800);
-// Half of full, chosen on the unit against 64, 90, 180 and 255 (#1064): 64 read
-// dim through the diffusers and 180 up was too much. It also sets the power
-// budget -- every LED full white at 128 is ~2.8 A (hardware/segno_wiring.md).
-static const uint8_t LED_BRIGHTNESS = 128;
+static const uint8_t PILL_PEAK = 191;
+static const uint8_t PILL_WEIGHTS[PILL_PIXELS] = {38, 92, 201, 255, 255, 201, 92, 38};
+// Limit the whole pill chain to ~471 mA of color-channel current using the
+// conservative 20 mA/channel model. The ring now has its own supply branch and
+// its own budget on the ring carrier. This is a planning model, not measured
+// consumption.
+static const uint32_t PILL_CHANNEL_BUDGET = 6000;
+// DMA keeps interrupts available throughout the 80-pixel transfer.
+NeoPixelBus<NeoGrbFeature, Rp2040x4Pio1Ws2812xMethod> ind(IND_N, PIN_IND);
+
+static uint8_t pillPixelIndex(uint8_t group, uint8_t pixel) {
+  return group * PILL_PIXELS + (group < 8 ? PILL_PIXELS - 1 - pixel : pixel);
+}
 
 
 // ---- link ----------------------------------------------------------------------
@@ -95,16 +105,19 @@ static const unsigned long FRAME_TIMEOUT_MS = PEDAL_LINK_FRAME_TIMEOUT_MS;
 static pedal_link_parser g_parser;
 static pedal_state g_frame;
 static bool g_haveFrame = false;
-static bool g_frameDirty = false;  // a STATE (or timeout/goodbye) changed what to render
 static unsigned long g_lastFrameMs = 0;
 static unsigned long g_lastHelloMs = 0;
-// How long the ring shows the master level after the encoder moves it, before
-// it goes back to saying what the transport is doing. Armed with a flag rather
-// than a deadline in the future: a bare `millis() + N` compared against `now`
-// fires on its own initial value once millis() passes the halfway mark.
-static const unsigned long GAIN_SHOW_MS = 900;
-static unsigned long g_gainShownAt = 0;
-static bool g_gainArmed = false;
+
+// 2048: while bridging, a whole update chunk is copied the other way before
+// this buffer is drained again.
+SerialPIO ringLink(PIN_RING_TX, PIN_RING_RX, 2048);
+static ring_link::Parser g_ringParser;
+static ring_link::InputTracker g_ringInput;
+static unsigned long g_lastRingStateMs = 0;
+static bool g_ringButtonPressed = false;
+
+static void sendRingState();
+static void startBridge();
 
 static void sendFrame(const uint8_t *buf, size_t len) {
   LINK.write(buf, len);
@@ -120,26 +133,27 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
     case PEDAL_LINK_TYPE_STATE: {
       pedal_state decoded;
       if (pedal_link_decode_state(payload, len, &decoded)) {
-        // The encoder is the master volume and has no pill of its own, so the
-        // ring becomes the readout for a moment whenever the level moves.
-        if (g_haveFrame && decoded.master_gain != g_frame.master_gain) {
-          g_gainShownAt = millis();
-          g_gainArmed = true;
-        }
         g_frame = decoded;
         g_haveFrame = true;
-        g_frameDirty = true;
         g_lastFrameMs = millis();
+        sendRingState();  // the ring's gain arc and comet follow without delay
       }
       break;  // a malformed frame is dropped; the last good one is kept
     }
+    case PEDAL_LINK_TYPE_RING_BRIDGE:
+      if (len == 2 && payload[0] == PEDAL_LINK_RING_BRIDGE_MAGIC0 && payload[1] == PEDAL_LINK_RING_BRIDGE_MAGIC1)
+        startBridge();
+      break;
     default:
       break;
   }
 }
 
+static bool g_bridging = false;
+
 static void pollLink() {
-  while (LINK.available() > 0) {
+  // Stops at RING_BRIDGE: every byte after it belongs to the ring.
+  while (!g_bridging && LINK.available() > 0) {
     uint8_t type, len;
     const uint8_t *payload;
     if (pedal_link_parser_push(&g_parser, (uint8_t)LINK.read(), &type, &payload, &len)) {
@@ -173,73 +187,116 @@ static void pollButtons() {
   }
 }
 
-// The EC11's detent is at BOTH-HIGH (11). One click walks 11 -> 10 -> 00 -> 01
-// -> 11 one way and 11 -> 01 -> 00 -> 10 -> 11 the other, so the intermediate
-// state seen LAST before returning to the detent names the direction.
-//
-// Counting all four transitions instead does not survive this board: pushing
-// the two LED strips masks interrupts for about a millisecond every 20 ms, and
-// a detent turned during that window arrives as a two-step jump, which a
-// four-transition counter reads as no movement at all. It stalls forever
-// rather than merely lagging — the encoder worked with the panel dark and died
-// the moment segno started sending frames (bench, 2026-09-03). Remembering the
-// last intermediate state needs to see only ONE of the three, so a masked
-// window costs precision, never a whole click. Footswitches were never
-// affected: their 8 ms debounce outlives any push.
-//
-// Sampled from a pin-change interrupt AND from the loop, including either side
-// of the LED pushes: whichever sees the edge first records it, and the other
-// finds nothing to do.
-static const uint8_t ENC_DETENT = 3;      // both lines high, between clicks
-static volatile uint8_t g_encLast = ENC_DETENT;
-static volatile uint8_t g_encMark = 0;    // last intermediate state, 0 = none
-static volatile int8_t g_encDetents = 0;  // whole clicks the link still owes
+// ---- ring carrier -------------------------------------------------------------
+// The ring renders from five bytes: the activity colour, the master level and
+// three flags. The XIAO keeps its own animation clock, gain-arc timer and
+// frozen-comet colour, so this side only says what the app's frame means.
+static Rgb globalColor(uint8_t color);
 
-static void encoderSample() {
-  const uint8_t cur = (uint8_t)((digitalRead(PIN_ENC_A) << 1) | digitalRead(PIN_ENC_B));
-  if (cur == g_encLast) return;
-  g_encLast = cur;
-  if (cur == ENC_DETENT) {
-    // Saturate rather than wrap: a spin faster than the link drains is worth
-    // a lost click, never a reversed one.
-    if (g_encMark == 1 && g_encDetents < 127) g_encDetents++;
-    if (g_encMark == 2 && g_encDetents > -128) g_encDetents--;
-    g_encMark = 0;
-    return;
-  }
-  // 01 and 10 name a direction; 00 is the midpoint and names none, so it
-  // leaves the mark alone.
-  if (cur == 1 || cur == 2) g_encMark = cur;
+static ring_link::RingState ringStateFromFrame() {
+  ring_link::RingState state;
+  if (!g_haveFrame || g_frame.goodbye) return state;
+  const Rgb activity = globalColor(g_frame.global_color);
+  state.r = activity.r;
+  state.g = activity.g;
+  state.b = activity.b;
+  state.gain = g_frame.master_gain;
+  state.flags = ring_link::FLAG_LIVE;
+  // Blue is the record-armed hint, not transport activity: no comet for it.
+  if ((activity.r || activity.g || activity.b) && g_frame.global_color != PEDAL_GLOBAL_BLUE)
+    state.flags |= ring_link::FLAG_ACTIVE;
+  if (g_frame.loop_length_micros > 0) state.flags |= ring_link::FLAG_LOADED;
+  if (g_frame.dimmed) state.flags |= ring_link::FLAG_DIMMED;
+  return state;
 }
 
-// Samples from the main loop. The ISR can preempt any instruction of
-// encoderSample(), and the two share every variable it touches, so a
-// half-applied sample would race an ISR's: one click could be credited twice,
-// or the wrong way. Mask for the handful of instructions it takes.
-static void encoderSampleFromLoop() {
-  noInterrupts();
-  encoderSample();
-  interrupts();
+static void sendRingState() {
+  uint8_t payload[ring_link::STATE_LEN], packet[ring_link::MAX_FRAME];
+  ring_link::encodeState(ringStateFromFrame(), payload);
+  ringLink.write(packet, ring_link::encode(ring_link::STATE, payload, packet));
+  g_lastRingStateMs = millis();
 }
 
-// Drains whole clicks the sampler counted, one ENCODER message each.
-static void pollEncoder() {
-  encoderSampleFromLoop();
-  for (;;) {
-    // The common case by far is nothing owed; read it before masking.
-    if (!g_encDetents) return;
-    noInterrupts();
-    const int8_t owed = g_encDetents;
-    if (owed > 0) {
-      g_encDetents--;
-    } else if (owed < 0) {
-      g_encDetents++;
+static void sendEncoderButton(bool pressed) {
+  if (pressed == g_ringButtonPressed) return;
+  g_ringButtonPressed = pressed;
+  uint8_t buf[PEDAL_LINK_MAX_FRAME];
+  sendFrame(buf, pedal_link_encode_encoder_button(pressed ? 1 : 0, buf));
+}
+
+// One ENCODER message per click and one ENCODER_BUTTON per edge, as the v2
+// board sent from its own pins. A reset (the XIAO rebooted, or went quiet for
+// 500 ms) replays nothing: it only brings the button to its current state.
+static void pollRing() {
+  while (ringLink.available() > 0) {
+    uint8_t type;
+    const uint8_t *payload;
+    if (!g_ringParser.push((uint8_t)ringLink.read(), type, payload) ||
+        type != ring_link::INPUT_STATE) continue;
+    const ring_link::InputDelta change = g_ringInput.accept(payload, millis());
+    if (change.reset) {
+      sendEncoderButton(change.pressed);
+      continue;
     }
-    interrupts();
-    if (!owed) return;
-    uint8_t buf[PEDAL_LINK_MAX_FRAME];
-    sendFrame(buf, pedal_link_encode_encoder(owed > 0 ? 1 : -1, buf));
+    for (uint32_t edge = 0; edge < change.edges; ++edge) sendEncoderButton(!g_ringButtonPressed);
+    for (int32_t step = 0; step < (change.detents < 0 ? -change.detents : change.detents); ++step) {
+      uint8_t buf[PEDAL_LINK_MAX_FRAME];
+      sendFrame(buf, pedal_link_encode_encoder(change.detents > 0 ? 1 : -1, buf));
+    }
   }
+  if (g_ringInput.expire(millis())) sendEncoderButton(false);
+}
+
+// ---- ring-update bridge ---------------------------------------------------------
+// segno-ring-flash runs before the app. It sends RING_BRIDGE, then talks to the
+// XIAO through this board: every byte is copied between the Pi's UART and the
+// ring's, at the same 115200 baud, and nothing else runs. The Pi ends it with
+// a BRIDGE_END update frame, which this board spots in the Pi's stream (the
+// ring ignores it); if the Pi goes quiet instead, the bridge ends on its own.
+static const unsigned long BRIDGE_IDLE_MS = 5000;
+static unsigned long g_bridgeLastMs = 0;
+static uint8_t g_bridgeBody[8];  // BRIDGE_END and its CRC; anything longer is not it
+static ring_frame_parser g_bridgeParser;
+
+static void startBridge() {
+  g_bridging = true;
+  g_bridgeLastMs = millis();
+  ring_frame_parser_init(&g_bridgeParser, g_bridgeBody, sizeof(g_bridgeBody));
+  ind.ClearTo(RgbColor(0));
+  ind.Show();
+}
+
+static void endBridge() {
+  g_bridging = false;
+  pedal_link_parser_init(&g_parser);
+  g_ringParser = ring_link::Parser();
+  g_haveFrame = false;
+  sendRingState();
+  sendHello();
+  g_lastHelloMs = millis();
+}
+
+static void pumpBridge() {
+  const unsigned long now = millis();
+  while (LINK.available() > 0) {
+    const uint8_t byte = (uint8_t)LINK.read();
+    ringLink.write(&byte, 1);
+    g_bridgeLastMs = now;
+    size_t length = 0;
+    uint8_t type;
+    const uint8_t *payload;
+    size_t n;
+    if (ring_frame_parser_push(&g_bridgeParser, byte, &length) &&
+        ring_update_message(g_bridgeBody, length, &type, &payload, &n) && type == RING_UPDATE_BRIDGE_END) {
+      endBridge();
+      return;
+    }
+  }
+  while (ringLink.available() > 0) {
+    const uint8_t byte = (uint8_t)ringLink.read();
+    LINK.write(&byte, 1);
+  }
+  if (now - g_bridgeLastMs >= BRIDGE_IDLE_MS) endBridge();
 }
 
 // ---- CTRL jacks --------------------------------------------------------------
@@ -388,17 +445,16 @@ static void pollCtrlRing(uint8_t jack, unsigned long now) {
   }
 }
 
-// A switch reported closed cannot stay closed with nothing on the contact:
-// let go of it, so whatever it held down is released before the row goes.
-static void ctrlReleaseSwitch(uint8_t jack, uint8_t contact) {
+// A lost source is not a physical release gesture. Reset contact state
+// silently; the whole-jack NONE frame retires application obligations.
+static void ctrlResetSwitch(uint8_t jack, uint8_t contact) {
   g_ctrlSwitchRaw[jack][contact] = false;
-  if (!g_ctrlSwitchClosed[jack][contact]) return;
   g_ctrlSwitchClosed[jack][contact] = false;
-  sendCtrl(jack, contact, PEDAL_CTRL_KIND_SWITCH, 0);
+  g_ctrlSwitchSinceMs[jack][contact] = 0;
 }
 
 static void ctrlDetach(uint8_t jack) {
-  for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) ctrlReleaseSwitch(jack, c);
+  for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) ctrlResetSwitch(jack, c);
   if (g_ctrlKind[jack] != CTRL_NONE) {
     sendCtrl(jack, PEDAL_CTRL_TIP, PEDAL_CTRL_KIND_NONE, 0);
   }
@@ -416,8 +472,8 @@ static void pollCtrl() {
   g_ctrlLastSampleMs = now;
 
   for (uint8_t j = 0; j < PEDAL_CTRL_COUNT; j++) {
-    // Presence, debounced: the wire on a v3 jack, "always" on a v2 board.
-    const bool presentRaw = digitalRead(CTRL_PRESENT_PIN[j]) == LOW;
+    // Presence, debounced: the jack's ring-normal contact, read E9-safely.
+    const bool presentRaw = !console_presence_read(CTRL_PRESENT_PIN[j]);
     if (presentRaw != g_ctrlPresentRaw[j]) {
       g_ctrlPresentRaw[j] = presentRaw;
       g_ctrlPresentSinceMs[j] = now;
@@ -432,7 +488,9 @@ static void pollCtrl() {
         g_ctrlQuietUntilMs[j] = now + CTRL_SETTLE_MS;
       }
     }
-    if (!g_ctrlPresent[j]) continue;
+    // During presence debounce a pulled plug must not manufacture an 8 ms
+    // switch-open edge before the 50 ms lifetime boundary can be confirmed.
+    if (!presentRaw || !g_ctrlPresent[j]) continue;
 
     const uint16_t raw = ctrlSample(CTRL_PIN[j]);
     const uint16_t prev = g_ctrlRaw[j];
@@ -456,13 +514,13 @@ static void pollCtrl() {
     // time. The reclassification checks below still run once it is settled,
     // so swapping a pedal into this jack is still noticed.
     const bool known = g_ctrlKind[j] == CTRL_SWITCH;
-    if (known) {
+    if (known && !mid) {
       pollCtrlSwitch(j, PEDAL_CTRL_TIP, raw < CTRL_LOW, now);
       pollCtrlRing(j, now);
     }
     if ((long)(now - g_ctrlQuietUntilMs[j]) < 0) continue;
 
-    if (!known) pollCtrlRing(j, now);
+    if (!known && !mid) pollCtrlRing(j, now);
 
     // Mid-scale that HOLDS is a pot. A single mid-scale sample is a plug
     // passing through, and on a switch jack that used to be enough to
@@ -472,15 +530,15 @@ static void pollCtrl() {
       g_ctrlRailSinceMs[j] = 0;
       if (g_ctrlKind[j] != CTRL_EXPRESSION &&
           now - g_ctrlMidSinceMs[j] >= CTRL_SETTLE_MS) {
+        // Reclassification retires BOTH switch contacts before the first
+        // expression sample, including a jack identified by its ring alone.
+        if (g_ctrlKind[j] == CTRL_SWITCH) ctrlDetach(j);
+        else {
+          for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) ctrlResetSwitch(j, c);
+        }
         g_ctrlKind[j] = CTRL_EXPRESSION;
         g_ctrlHaveSent[j] = false;
         g_ctrlJumped[j] = false;
-        // A pot has no switch on either contact -- its ring is the supply and
-        // its tip is the wiper -- so let go of anything the plug's brush past
-        // those contacts was read as, rather than leave it held down.
-        for (uint8_t c = 0; c < PEDAL_CTRL_CONTACT_COUNT; c++) {
-          ctrlReleaseSwitch(j, c);
-        }
       }
     } else {
       g_ctrlMidSinceMs[j] = 0;
@@ -521,7 +579,7 @@ static void pollCtrl() {
     // 10k holding it at the rail. A jack that was NONE becomes a switch on
     // its first press, not on the plug's arrival: an open jack and an open
     // switch read the same, so there is nothing to say until it moves.
-    if (known) continue;  // polled above, before the settle gate
+    if (known || mid) continue;  // mid-scale is a classification candidate
     if (g_ctrlKind[j] == CTRL_NONE && raw >= CTRL_LOW) continue;
     if (g_ctrlKind[j] != CTRL_SWITCH && raw < CTRL_LOW) g_ctrlKind[j] = CTRL_SWITCH;
     if (g_ctrlKind[j] == CTRL_UNKNOWN) g_ctrlKind[j] = CTRL_SWITCH;
@@ -538,35 +596,6 @@ static void pollCtrl() {
 static uint32_t rgb(uint8_t r, uint8_t g, uint8_t b) {
   return Adafruit_NeoPixel::gamma32(Adafruit_NeoPixel::Color(r, g, b));
 }
-// `level` dims a colour. Gamma goes on the colour and on the level separately,
-// and the two multiply, rounded: scaling before gamma, or truncating, drops a
-// mixed colour's weaker channel to 0 first, so a fading yellow went red at the
-// dim end. For pure red, green and blue the result is the same as before.
-static uint32_t scaled(uint8_t r, uint8_t g, uint8_t b, uint8_t level) {
-  const uint16_t k = Adafruit_NeoPixel::gamma8(level);
-  const uint32_t c = rgb(r, g, b);
-  return Adafruit_NeoPixel::Color((uint8_t)((((c >> 16) & 0xFF) * k + 127) / 255),
-                                  (uint8_t)((((c >> 8) & 0xFF) * k + 127) / 255),
-                                  (uint8_t)(((c & 0xFF) * k + 127) / 255));
-}
-
-static Rgb ledColor(uint8_t led) {
-  switch (led) {
-    case PEDAL_LED_GREEN: return {0, 255, 0};
-    case PEDAL_LED_RED: return {255, 0, 0};
-    case PEDAL_LED_BLUE: return {0, 0, 255};
-    default: return {0, 0, 0};
-  }
-}
-// The mode pill's colour: rec red, play green, FX blue. Solid, always — this
-// pill means the interaction mode and nothing else.
-static Rgb modeColor(uint8_t mode) {
-  switch (mode) {
-    case PEDAL_MODE_PLAY: return {0, 255, 0};
-    case PEDAL_MODE_FX: return {0, 0, 255};
-    default: return {255, 0, 0};  // PEDAL_MODE_REC
-  }
-}
 static Rgb globalColor(uint8_t color) {
   switch (color) {
     case PEDAL_GLOBAL_GREEN: return {0, 255, 0};
@@ -579,151 +608,68 @@ static Rgb globalColor(uint8_t color) {
   }
 }
 
-// A comet travels the ring at a FIXED cadence — it says
-// "something is happening", in the activity colour, and deliberately does not
-// track the loop: one revolution per loop is unreadably slow at any musical
-// length, and the playhead is already on the screens (owner's call,
-// 2026-09-03).
-//
-// A Stop that leaves a loop loaded freezes the comet where it was. With nothing
-// loaded and nothing playing the ring breathes green so it reads as alive; the
-// breathe never reaches black, so an idle panel still shows the board is up.
-static const unsigned long RING_MS_PER_REV = 700;
-static const unsigned long BREATHE_MS = 1200;
-// The dimmest the breathe goes, as a fraction of full: never off.
-static const float BREATHE_FLOOR = 0.35f;
-// The comet's shape, picked on the unit against an even fade, a fast drop and
-// four steps (#1064): the tail trails 3/4 of a turn behind the head, stays
-// bright for most of it and drops at the end. It fades to a floor, not to
-// black, because gamma plus LED_BRIGHTNESS turn anything under ~25% level off,
-// and a fade to 0 looked half as long as it was. The last quarter stays dark.
-static const float COMET_TAIL = RING_N * 0.75f;  // LEDs, head included
-static const float COMET_FLOOR = 0.3f;
-static float g_ringPhase = 0.0f;  // comet head, 0..RING_N
-static unsigned long g_ringLastMs = 0;
-// What the ring buffer currently holds. One question, asked once: every branch
-// of renderRing() states which view it just painted, and the caller pushes the
-// strip only when that key changed. Per-branch latches were tried and each one
-// grew its own reset rule — the arc forgot to restore what it painted over,
-// and the dark branch forgot to repaint at all.
-enum RingView : uint8_t { RING_NONE = 0, RING_DARK, RING_ARC, RING_COMET, RING_BREATHE };
-static uint8_t g_ringView = RING_NONE;
-static uint8_t g_ringKeyA = 0;  // arc: lit pixels; comet: phase in whole pixels
-static uint8_t g_ringKeyB = 0;  // the colour that view was painted in
-// The colour the comet was last drawn in. A Stop freezes the comet but sends
-// GLOBAL_OFF, so the frame no longer says what colour to freeze it at; without
-// remembering it, restoring the comet paints it black.
-static Rgb g_cometColour = {0, 255, 0};
-
-// Draws the comet with its head at the current phase, in `c`.
-static void paintComet(Rgb c) {
-  for (uint16_t i = 0; i < RING_N; i++) {
-    // How far this pixel trails the head, in the direction of travel.
-    const float behind = fmodf(g_ringPhase - (float)i + (float)RING_N, (float)RING_N);
-    float b = 0.0f;
-    if (behind <= COMET_TAIL - 1.0f) {
-      const float x = behind / (COMET_TAIL - 1.0f);  // 0 at the head, 1 at the tail's end
-      b = COMET_FLOOR + (1.0f - COMET_FLOOR) * (1.0f - x * x);
-    } else if (behind < COMET_TAIL) {
-      b = COMET_FLOOR * (COMET_TAIL - behind);  // the tail's last pixel, fading out
-    } else if (behind > RING_N - 1.0f) {
-      b = behind - (RING_N - 1.0f);  // the pixel the head is moving onto, fading in
+// The app owns both activation and hue for every physical button. The MCU
+// only maps that snapshot to the fitted harness and applies optical limits.
+static bool renderIndicators() {
+  RgbColor desired[IND_N];
+  uint32_t channelTotal = 0;
+  for (uint8_t group = 0; group < PEDAL_BTN_COUNT; ++group) {
+    const uint8_t button = PILL_BUTTON[group];
+    Rgb color = {0, 0, 0};
+    bool queued = false;
+    if (g_haveFrame && !g_frame.goodbye &&
+        (g_frame.active_button_mask & (1u << button))) {
+      const pedal_color c = g_frame.pedal_colors[button];
+      color = {c.r, c.g, c.b};
+      queued = g_frame.queued_button == button + 1;
     }
-    ring.setPixelColor(i, scaled(c.r, c.g, c.b, (uint8_t)(b * 255.0f + 0.5f)));
+    // Preserve calibrated color ratios and the tested spatial curve, with no
+    // extra gamma/dimmer. The total-current budget only dims crowded patterns.
+    const uint32_t corrected = rgb(color.r, color.g, color.b);
+    for (uint8_t pixel = 0; pixel < PILL_PIXELS; ++pixel) {
+      uint8_t level = (uint8_t)(PILL_PEAK * PILL_WEIGHTS[pixel] / 255.0f + 0.5f);
+      if (queued) {
+        // A waiting Song section fills physical left to right by the app's
+        // progress. Nothing here can finish it: 254 leaves the last pixel
+        // short, and only the engine's handoff (a frame with no queue)
+        // lights the whole pill.
+        const int16_t coverage = g_frame.queued_progress * PILL_PIXELS - pixel * 255;
+        const uint16_t fill = coverage <= 0 ? 0 : coverage >= 255 ? 255 : coverage;
+        level = (uint8_t)((level * fill + 127) / 255);
+      }
+      const RgbColor value(
+          (uint8_t)((((corrected >> 16) & 255) * level + 127) / 255),
+          (uint8_t)((((corrected >> 8) & 255) * level + 127) / 255),
+          (uint8_t)(((corrected & 255) * level + 127) / 255));
+      desired[pillPixelIndex(group, pixel)] = value;
+      channelTotal += value.R + value.G + value.B;
+    }
   }
+  bool changed = false;
+  for (uint8_t pixel = 0; pixel < IND_N; ++pixel) {
+    RgbColor value = desired[pixel];
+    if (channelTotal > PILL_CHANNEL_BUDGET) {
+      value.R = (uint32_t)value.R * PILL_CHANNEL_BUDGET / channelTotal;
+      value.G = (uint32_t)value.G * PILL_CHANNEL_BUDGET / channelTotal;
+      value.B = (uint32_t)value.B * PILL_CHANNEL_BUDGET / channelTotal;
+    }
+    // Idle: the pills dim with the screens (#1349), after the budget so a
+    // crowded frame dims by the same share as a sparse one.
+    if (g_haveFrame && g_frame.dimmed) {
+      value.R = ring_link::dimChannel(value.R);
+      value.G = ring_link::dimChannel(value.G);
+      value.B = ring_link::dimChannel(value.B);
+    }
+    if (ind.GetPixelColor(pixel) != value) {
+      ind.SetPixelColor(pixel, value);
+      changed = true;
+    }
+  }
+  return changed;
 }
 
-// Returns whether the ring buffer changed and needs pushing.
-static bool renderRing() {
-  const unsigned long now = millis();
-  const unsigned long dt = now - g_ringLastMs;
-  g_ringLastMs = now;
-
-  // Records which view is now in the buffer; returns whether that is new.
-  auto settle = [](uint8_t view, uint8_t keyA, uint8_t keyB) -> bool {
-    const bool changed =
-        g_ringView != view || g_ringKeyA != keyA || g_ringKeyB != keyB;
-    g_ringView = view;
-    g_ringKeyA = keyA;
-    g_ringKeyB = keyB;
-    return changed;
-  };
-
-  if (!g_haveFrame || g_frame.goodbye) {
-    if (g_ringView == RING_DARK) return false;
-    ring.clear();
-    return settle(RING_DARK, 0, 0);
-  }
-  const Rgb activity = globalColor(g_frame.global_color);
-
-  // The master level, as a filled arc, for a moment after it changes. In the
-  // ring's own colours: the activity colour it is already showing, or the
-  // standby green it breathes when there is no activity to report. Elapsed
-  // form, so it is wrap-safe AND cannot fire on a stale deadline.
-  if (g_gainArmed && now - g_gainShownAt < GAIN_SHOW_MS) {
-    const bool coloured = activity.r || activity.g || activity.b;
-    const Rgb c = coloured ? activity : Rgb{0, 255, 0};
-    const uint8_t lit = (uint8_t)((g_frame.master_gain * RING_N + 254) / 255);
-    if (!settle(RING_ARC, lit, g_frame.global_color)) return false;
-    for (uint16_t i = 0; i < RING_N; i++) {
-      ring.setPixelColor(i, i < lit ? rgb(c.r, c.g, c.b) : 0);
-    }
-    return true;
-  }
-  g_gainArmed = false;
-
-  const bool active = (activity.r || activity.g || activity.b) && g_frame.global_color != PEDAL_GLOBAL_BLUE;
-  // A Stop with a loop still loaded freezes the comet where it was — in the
-  // colour it was playing in, which the frame no longer carries.
-  if (!active && g_frame.loop_length_micros > 0) {
-    if (!settle(RING_COMET, (uint8_t)g_ringPhase, PEDAL_GLOBAL_COUNT)) {
-      return false;
-    }
-    paintComet(g_cometColour);
-    return true;
-  }
-  if (!active) {  // standby: breathe green
-    const unsigned long p = now % BREATHE_MS;
-    const unsigned long half = BREATHE_MS / 2;
-    float t = (p < half) ? (p / (float)half) : (1.0f - (p - half) / (float)half);
-    t = t * t * (3.0f - 2.0f * t);
-    const uint8_t level =
-        (uint8_t)((BREATHE_FLOOR + (1.0f - BREATHE_FLOOR) * t) * 255.0f + 0.5f);
-    const uint32_t green = scaled(0, 255, 0, level);  // same for every pixel
-    for (uint16_t i = 0; i < RING_N; i++) ring.setPixelColor(i, green);
-    settle(RING_BREATHE, level, 0);
-    return true;  // it animates every tick
-  }
-  g_ringPhase =
-      fmodf(g_ringPhase + (float)dt / (float)RING_MS_PER_REV * (float)RING_N, (float)RING_N);
-  g_cometColour = activity;
-  settle(RING_COMET, (uint8_t)g_ringPhase, g_frame.global_color);
-  paintComet(activity);
-  return true;
-}
-
-// The pills only change with the frame; the caller pushes them when it did.
-static void renderIndicators() {
-  if (!g_haveFrame || g_frame.goodbye) {
-    ind.clear();
-    return;
-  }
-  // The active bank's four tracks, solid, from each track's LED state. Selection
-  // is not highlighted here; it lives on the screens.
-  const uint8_t base = g_frame.active_bank * 4;
-  for (uint8_t t = 0; t < 4; t++) {
-    const Rgb c = ledColor(g_frame.track_leds[base + t]);
-    ind.setPixelColor(IND_TRACK1 + t, rgb(c.r, c.g, c.b));
-  }
-  const Rgb m = modeColor(g_frame.mode);
-  ind.setPixelColor(IND_MODE, rgb(m.r, m.g, m.b));
-  ind.setPixelColor(IND_CLEAR, g_frame.clear_fade ? rgb(255, 0, 0) : 0);
-  ind.setPixelColor(IND_BANK, g_frame.active_bank == 1 ? rgb(0, 0, 80) : 0);
-}
-
-// show() is a blocking PIO push with interrupts masked (~30 us per pixel), so
-// a strip is pushed only when its buffer changed — plus once every REFRESH_MS
-// regardless, so a pixel that glitched still heals.
+// The 80-pixel chain uses DMA; unchanged frames are skipped, with a forced
+// refresh to heal a glitched LED.
 static const unsigned long RENDER_MS = 20;
 static const unsigned long REFRESH_MS = 250;
 static unsigned long g_lastRenderMs = 0;
@@ -742,12 +688,9 @@ void setup() {
   }
   for (uint8_t j = 0; j < PEDAL_CTRL_COUNT; j++) {
     pinMode(CTRL_PIN[j], INPUT);  // the board's own 10k biases the tip
-    // Pulled up INTERNALLY: unwired (an unmodified v2) it reads open forever
-    // and never reports; wired, ~3V from the jack overrides nothing.
     pinMode(CTRL_RING_PIN[j], INPUT_PULLUP);
-    // Pulled DOWN: a v3 switched jack drives it high only while empty; on
-    // a v2 board it floats on J22's pads and reads "plugged", as it should.
-    pinMode(CTRL_PRESENT_PIN[j], INPUT_PULLDOWN);
+    // Pulled down with the input buffer off between samples (RP2350-E9).
+    console_presence_begin(CTRL_PRESENT_PIN[j]);
     g_ctrlKind[j] = CTRL_UNKNOWN;
     g_ctrlRaw[j] = CTRL_MAX;
     g_ctrlSent[j] = 0;
@@ -766,33 +709,18 @@ void setup() {
     }
   }
   analogReadResolution(12);
-  pinMode(PIN_ENC_A, INPUT_PULLUP);
-  pinMode(PIN_ENC_B, INPUT_PULLUP);
-  pinMode(PIN_ENC_SW, INPUT_PULLUP);
-  g_encLast = (uint8_t)((digitalRead(PIN_ENC_A) << 1) | digitalRead(PIN_ENC_B));
-  attachInterrupt(digitalPinToInterrupt(PIN_ENC_A), encoderSample, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(PIN_ENC_B), encoderSample, CHANGE);
 
   LINK.setTX(PIN_LINK_TX);
   LINK.setRX(PIN_LINK_RX);
+  LINK.setFIFOSize(2048);  // room for two ring-update chunks while bridging
   LINK.begin(LINK_BAUD);
   pedal_link_parser_init(&g_parser);
 
-  ring.begin();
-  ring.setBrightness(LED_BRIGHTNESS);
-  ind.begin();
-  ind.setBrightness(LED_BRIGHTNESS);
-
-  // A brief green sweep so the panel visibly comes alive before segno's first frame.
-  for (uint16_t i = 0; i < RING_N; i++) {
-    ring.setPixelColor(i, rgb(0, 24, 0));
-    ring.show();
-    delay(12);
-  }
-  ring.clear();
-  ring.show();
-  ind.clear();
-  ind.show();
+  ringLink.begin(LINK_BAUD);
+  ind.Begin();
+  ind.ClearTo(RgbColor(0));
+  ind.Show();
+  sendRingState();  // dark until segno's first frame
 
   sendHello();
   g_lastHelloMs = millis();
@@ -800,8 +728,12 @@ void setup() {
 
 void loop() {
   pollLink();
+  if (g_bridging) {
+    pumpBridge();
+    return;
+  }
   pollButtons();
-  pollEncoder();
+  pollRing();
   pollCtrl();
 
   const unsigned long now = millis();
@@ -812,24 +744,16 @@ void loop() {
   }
   if (g_haveFrame && now - g_lastFrameMs > FRAME_TIMEOUT_MS) {
     g_haveFrame = false;
-    g_frameDirty = true;
+    sendRingState();
   }
+  if (now - g_lastRingStateMs >= ring_link::STATE_MS) sendRingState();
   if (now - g_lastRenderMs >= RENDER_MS) {
     g_lastRenderMs = now;
     const bool refresh = now - g_lastRefreshMs >= REFRESH_MS;
     if (refresh) g_lastRefreshMs = now;
-    const bool ringChanged = renderRing();
-    const bool frameChanged = g_frameDirty;
-    g_frameDirty = false;
-    if (frameChanged) renderIndicators();
-    // show() masks interrupts briefly: drain the link and sample the encoder
-    // either side of each push so a click turned across one cannot be lost.
-    pollLink();
-    encoderSampleFromLoop();
-    if (ringChanged || refresh) ring.show();
-    encoderSampleFromLoop();
-    if (frameChanged || refresh) ind.show();
-    encoderSampleFromLoop();
-    pollLink();
+    if (renderIndicators() || refresh) {
+      if (refresh) ind.Dirty();
+      ind.Show();
+    }
   }
 }

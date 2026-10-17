@@ -23,6 +23,7 @@
 #ifndef SEGNO_ENGINE_MIDI_BACKEND_H
 #define SEGNO_ENGINE_MIDI_BACKEND_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "segno_engine_api.h" /* le_midi (opaque), le_midi_info, le_result */
@@ -53,14 +54,44 @@ typedef struct le_midi_backend {
 
 /* ---- core services a backend calls (defined in midi.c) ---- */
 
-/* Producer side: parse one raw MIDI message and, if it is a Note On/Off or
- * Control Change, push it onto the handle's lock-free ring. Other messages
- * (SysEx / real-time / aftertouch / pitch-bend / program-change / data bytes)
- * are dropped and 0 is returned. Wait-free and allocation/lock/syscall free, so
+/* Producer side of the Dart ring: parse one raw MIDI message and, if it is a
+ * Note On/Off, Control Change or Program Change, push it onto the handle's
+ * lock-free ring. Other messages (SysEx / real-time / aftertouch / pitch-bend /
+ * pressure / data bytes) are dropped and 0 is returned. Backends call
+ * le_midi_input, which calls this. Wait-free and allocation/lock/syscall free, so
  * it is safe to call directly from an OS MIDI callback (incl. WinMM MidiInProc).
  * Returns 1 when a message was enqueued, 0 when dropped or the ring was full. */
 int le_midi_ring_push(le_midi* m, uint8_t status, uint8_t data1, uint8_t data2,
                       uint64_t ts_us);
+
+/* The one entry a backend calls per received message (#1228): the message goes
+ * to the bound engine port (le_midi_port.h) when its kind is one the engine
+ * consumes, stamped `t_ns` (CLOCK_MONOTONIC, the base of le_now_ns), and then
+ * to the Dart ring through le_midi_ring_push (Note, CC and Program only, with
+ * ts_us = t_ns / 1000). Wait-free; safe from any OS MIDI thread. */
+void le_midi_input(le_midi* m, uint8_t status, uint8_t data1, uint8_t data2,
+                   uint64_t t_ns);
+
+/* Splits a raw MIDI 1.0 byte stream (complete messages, no running status)
+ * into messages and hands each to le_midi_input with `t_ns`. Real-time bytes
+ * (0xF8-0xFF) are delivered where they appear, also between the bytes of
+ * another message or inside a SysEx, and skipped over; SysEx is skipped; a
+ * message cut short by a new status byte or the end of the buffer is
+ * dropped. Used by the CoreMIDI backend. */
+void le_midi_split(le_midi* m, const uint8_t* data, size_t len, uint64_t t_ns);
+
+/* Marks a gap on the bound engine port: the OS dropped messages before the
+ * backend could read them (ALSA's -ENOSPC input overrun). Safe from the
+ * backend's own thread. */
+void le_midi_input_gap(le_midi* m);
+
+/* Marks the bound engine port lost (the source device went away while the
+ * capture was open). Safe from the backend's own thread. */
+void le_midi_input_lost(le_midi* m);
+
+/* Records whether the backend's capture thread got real-time priority:
+ * 1 granted, -1 refused (see le_midi_priority_state). */
+void le_midi_set_priority_state(le_midi* m, int32_t state);
 
 /* Consumer side: pop every queued message and deliver each to the registered
  * callback (acquire-loaded; skipped once le_midi_close has nulled it). Call from

@@ -12,6 +12,8 @@ class WifiStatus extends Equatable {
     this.ssid = '',
     this.ip = '',
     this.signal = 0,
+    this.autoConnect = const {},
+    this.lastSsid = '',
   });
 
   /// Parses the helper's JSON status object.
@@ -22,6 +24,13 @@ class WifiStatus extends Equatable {
     ssid: '${json['ssid'] ?? ''}',
     ip: '${json['ip'] ?? ''}',
     signal: _asInt(json['signal']),
+    autoConnect: {
+      if (json['saved'] case final List<dynamic> saved)
+        for (final entry in saved)
+          if (entry case {'ssid': final String ssid} when ssid.isNotEmpty)
+            ssid: entry['autoconnect'] != false,
+    },
+    lastSsid: '${json['last'] ?? ''}',
   );
 
   /// Unsupported / unavailable placeholder.
@@ -49,8 +58,25 @@ class WifiStatus extends Equatable {
   /// RSSI / signal hint from wpa (more negative = weaker).
   final int signal;
 
+  /// Every saved network by SSID, with whether NetworkManager joins it on its
+  /// own (Connect automatically).
+  final Map<String, bool> autoConnect;
+
+  /// The saved network that was active most recently, or empty. While nothing
+  /// is associated this is the network the console lost.
+  final String lastSsid;
+
   @override
-  List<Object?> get props => [supported, enabled, connected, ssid, ip, signal];
+  List<Object?> get props => [
+    supported,
+    enabled,
+    connected,
+    ssid,
+    ip,
+    signal,
+    autoConnect,
+    lastSsid,
+  ];
 }
 
 /// One scanned network from `segno-wifi-ctl scan`.

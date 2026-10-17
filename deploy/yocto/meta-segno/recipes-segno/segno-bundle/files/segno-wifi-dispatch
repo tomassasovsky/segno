@@ -1,0 +1,14 @@
+#!/bin/sh
+# NetworkManager dispatcher hook: a WiFi drop while the console runs gets the
+# same retry as boot (#1337). NM blocks a profile after a failure it reads as
+# 'no-secrets' and never tries it again (#1326), so a router restart or a
+# short drop would otherwise leave the console offline until someone joins by
+# hand.
+#
+# Called as `<interface> <action>`. Only wlan0 going down matters; starting
+# the unit while it already runs is a no-op. The retry itself stands down for
+# a Disconnect by hand or the radio off, waits out a network switch, and holds
+# off while the app is performing.
+[ "$1" = "${SEGNO_WIFI_IFACE:-wlan0}" ] || exit 0
+[ "$2" = down ] || exit 0
+exec systemctl start --no-block segno-wifi-retry.service

@@ -26,11 +26,12 @@ confirm them.
       match and the loopback-exclusion (a "Loopback" input is hidden).
 - [ ] Confirm the exclusive-mode / fallback status row reflects reality.
 
-## 3. Secondary-window waveform visualizer (2nd display)
-- [ ] With a second display attached, open the waveform window (the toggle in Big
-      Picture settings / the `desktop_multi_window` sub-window).
-- [ ] **Pass:** the whole-loop output waveform renders with a moving playhead bar
-      and tracks the audio; it survives a device reconnect.
+## 3. Readout screen (the console's 7″)
+- [ ] On the console, the 7″ shows the readout: the selected track with its
+      waveform, drawn by the second engine (`readout` in `homescreen.toml`).
+- [ ] **Pass:** the waveform moves with the playhead and tracks the audio, the
+      readout follows track selection on the main screen, and it survives an
+      audio device reconnect.
 
 ---
 
@@ -47,5 +48,5 @@ paths themselves are unit-/integration-covered but never hardware-exercised.
   should be revised to ≤16 ms. Not a correctness bug.
 - **#3 waveform window: ⚠️ works, but should go full-screen on the 2nd monitor.**
   Addressed — the output window now detects a secondary display, moves onto it,
-  and fullscreens (windowed fallback when there's one screen). Needs a re-check
-  on the 2-monitor bench.
+  and fullscreens (windowed fallback when there's one screen). Superseded: the
+  readout is now the console's 7″ screen (#1330); see #3 above.

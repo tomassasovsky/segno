@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "sampleRate": 48000,
+  "channels": 1,
+  "baseLengthFrames": 2400,
+  "tempoBpm": 96.0,
+  "syncLoopToTempo": true,
+  "quantizeMode": "beat",
+  "metronomeOn": true,
+  "countInEnabled": true,
+  "tracks": [
+    {
+      "channel": 0,
+      "volume": 1.0,
+      "muted": false,
+      "multiple": 1,
+      "lengthFrames": 2400,
+      "stem": "track0.wav"
+    },
+    {
+      "channel": 1,
+      "volume": 0.5,
+      "muted": true,
+      "multiple": 2,
+      "lengthFrames": 4800,
+      "stem": "track1.wav"
+    }
+  ]
+}

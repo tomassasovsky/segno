@@ -137,7 +137,7 @@ rm -f "$work/bin/nmcli"
 PATH="$work/bin:/usr/bin:/bin" sh "$CTL" status >"$work/stdout" 2>"$work/stderr"
 check "status reports unsupported rather than improvising" yes \
     "$(grep -q '"supported":false' "$work/stdout" && echo yes || echo no)"
-PATH="$work/bin:/usr/bin:/bin" sh "$CTL" connect Studio pw \
+printf 'pw\n' | PATH="$work/bin:/usr/bin:/bin" sh "$CTL" connect Studio \
     >"$work/stdout" 2>"$work/stderr"; rc=$?
 check "connect fails loudly" 1 "$rc"
 check "names the missing piece" yes \

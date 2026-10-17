@@ -3,15 +3,14 @@ DESCRIPTION = "A script-based Plymouth theme: the segno mark — the Bravura gly
 (SMuFL U+E047), pre-rendered from smooth vectors; the wordmark was cut as \
 unreadable at splash size — centred on the console's near-black (#08080A) with \
 a determinate progress bar driven by the real boot progress. No text banners, \
-no Raspberry Pi rainbow. Shown from early boot until weston/segno takes the \
-display."
+no Raspberry Pi rainbow. Shown from early boot until the app takes the \
+display (segno.service waits for plymouth-quit-wait)."
 LICENSE = "CLOSED"
 
 SRC_URI = "file://segno.plymouth \
            file://segno.script \
            file://segno-lockup.png \
-           file://segno-bar-pixel.png \
-           file://weston-after-plymouth.conf"
+           file://segno-bar-pixel.png"
 
 RDEPENDS:${PN} = "plymouth"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
@@ -27,12 +26,7 @@ do_install() {
     # own plymouthd.conf leaves Theme= commented, so the symlink wins). Relative so
     # it resolves on-target.
     ln -sf segno/segno.plymouth ${D}${datadir}/plymouth/themes/default.plymouth
-
-    # weston waits for plymouth to release the DRM master before grabbing it.
-    install -d ${D}${systemd_system_unitdir}/weston.service.d
-    install -m 0644 ${UNPACKDIR}/weston-after-plymouth.conf ${D}${systemd_system_unitdir}/weston.service.d/10-after-plymouth.conf
 }
 
 FILES:${PN} = "${datadir}/plymouth/themes/segno \
-               ${datadir}/plymouth/themes/default.plymouth \
-               ${systemd_system_unitdir}/weston.service.d/10-after-plymouth.conf"
+               ${datadir}/plymouth/themes/default.plymouth"

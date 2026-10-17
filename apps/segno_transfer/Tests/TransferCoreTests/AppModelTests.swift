@@ -22,6 +22,8 @@ private final class FixtureRepository: RecordingRepository {
     return starts
   }
   var names: [String] = []
+  var catalogJSON =
+    #"{"recordings":[{"id":"first","name":"first","timestamp":"20260915120000","modified":0,"duration":60,"files":[{"path":"master.wav","bytes":100,"version":"one"},{"path":"loops/track1.wav","bytes":50,"version":"two"}]},{"id":"second","name":"second","timestamp":"20260915130000","modified":0,"duration":30,"files":[{"path":"master.wav","bytes":200,"version":"three"}]}],"unavailable":1}"#
   func read(
     recording: Recording, file: RecordingFile, offset: Int64, length: Int,
     connection: Connection, token: CancellationToken
@@ -35,9 +37,7 @@ private final class FixtureRepository: RecordingRepository {
     if failCatalog { throw TransferError.message("Appliance offline") }
     return try JSONDecoder().decode(
       RecordingCatalog.self,
-      from: Data(
-        #"{"recordings":[{"id":"first","name":"first","timestamp":"20260915120000","modified":0,"duration":60,"files":[{"path":"master.wav","bytes":100,"version":"one"},{"path":"loops/track1.wav","bytes":50,"version":"two"}]},{"id":"second","name":"second","timestamp":"20260915130000","modified":0,"duration":30,"files":[{"path":"master.wav","bytes":200,"version":"three"}]}],"unavailable":1}"#
-          .utf8))
+      from: Data(catalogJSON.utf8))
   }
   func download(
     recording: Recording, file: RecordingFile, name: String, destination: URL,
@@ -85,6 +85,38 @@ final class AppModelTests: XCTestCase {
     XCTAssertEqual(model.selection.first?.0.id, "second")
     XCTAssertEqual(model.selectionBytes, 200)
     XCTAssertTrue(model.status.contains("1 not ready"))
+  }
+
+  func testATakeRecordedInPartsSelectsEveryMainPart() async throws {
+    let (model, repository) = fixture()
+    repository.catalogJSON =
+      #"{"recordings":[{"id":"parts","name":"Set","timestamp":"20261006120000","modified":0,"duration":60,"files":[{"path":"master-001.wav","bytes":100,"version":"a"},{"path":"master-002.wav","bytes":40,"version":"b"},{"path":"input-0-001.wav","bytes":70,"version":"c"}]}],"unavailable":0}"#
+    model.connect()
+    try await waitUntilIdle(model)
+    XCTAssertEqual(model.selection.map(\.1.path), ["master-001.wav", "master-002.wav"])
+    XCTAssertEqual(model.selectionBytes, 140)
+    let recording = try XCTUnwrap(model.recordings.first)
+    XCTAssertEqual(
+      recording.files.map(\.role),
+      ["Main recording · Part 1", "Main recording · Part 2", "Live input 0 · Part 1"])
+    XCTAssertEqual(
+      recording.files.map { $0.suggestedName(recording: recording) },
+      ["Set · Part 001.wav", "Set · Part 002.wav", "Set — input-0-001.wav"])
+  }
+
+  func testOlderAppliancesStillListTheirSingleMainRecording() throws {
+    func recorded(_ path: String) throws -> RecordingFile {
+      try JSONDecoder().decode(
+        RecordingFile.self, from: Data(#"{"path":"\#(path)","bytes":1,"version":"v"}"#.utf8))
+    }
+    let file = try recorded("master.wav")
+    XCTAssertTrue(file.isMain)
+    XCTAssertEqual(file.role, "Main recording")
+    XCTAssertNil(file.mainPart)
+    for path in ["master-000.wav", "master-01.wav", "master-0001.wav", "loops/master-001.wav"] {
+      XCTAssertNil(try recorded(path).mainPart, path)
+    }
+    XCTAssertNil(try recorded("input-x-001.wav").inputPart)
   }
 
   func testChangingApplianceClearsCatalogAndSelection() async throws {

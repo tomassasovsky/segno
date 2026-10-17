@@ -11,7 +11,13 @@
 #   install   Download + verify + stage the newest published bundle to the
 #             INACTIVE A/B slot. Prints "PROGRESS <0-100>" lines on stdout for
 #             the UI, logs detail to stderr, and on success sets the staged +
-#             pending markers. Does NOT reboot.
+#             pending markers. Does NOT reboot. While it runs, the version
+#             is recorded in the attempt marker; a failure removes it, and a
+#             kill (power loss, a stopped service, the app's Cancel) leaves it
+#             so the next start can say the install was cut off.
+#   attempt   Print the install that was cut off, {"version":"<v>"}, or {}.
+#   clear-attempt
+#             Forget it (the app retried or dropped the cut-off install).
 #   reboot    Reboot into the staged slot (the user's explicit "Restart to apply").
 #             The reset MUST carry the tryboot argument. Staging arms the Pi's
 #             one-shot tryboot flag (RAUC's backend calls `vcmailbox 0x00038064
@@ -54,16 +60,51 @@ BOOT_ID_FILE="${SEGNO_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
 # missing /run is FATAL in a POSIX sh (`:` is a special builtin), `|| true` or
 # not — the test harness has no /run to point it at.
 PENDING_FLAG="${SEGNO_PENDING_FLAG:-/run/segno-update-pending}"
+# The install in progress, on /data so a power loss cannot take it with it.
+# Holds the version alone, like the staged marker.
+ATTEMPT_FILE="${SEGNO_UPDATE_ATTEMPT_FILE:-/data/segno/update-attempt}"
+# Written by `reboot` when it asks for the staged slot: a reboot without it
+# (Shut down, a power cut, a watchdog) never tried the staged build.
+TRYBOOT_FILE="${SEGNO_TRYBOOT_REQUESTED_FILE:-/data/.ota-tryboot-requested}"
 
 log() { echo "segno-update-ctl: $*" >&2; }
 progress() { echo "PROGRESS $1"; }
 
+# Set while the attempt marker belongs to a run that can still fail
+# cleanly; a failure exit then removes it.
+attempt_open=""
+# The download or rauc client running in the background, so a kill reaches
+# it rather than waiting out a 30-minute download.
+child=""
+
+# A failed install leaves no trace: its work dir and its attempt marker go.
+_on_exit() {
+    [ -z "${work:-}" ] || rm -rf "$work"
+    [ -z "$attempt_open" ] || rm -f "$ATTEMPT_FILE"
+}
+
 # `trap ... EXIT` never runs on an untrapped SIGTERM, so a killed install
 # would leave its work dir (and a whole staged bundle) in /tmp with nothing to
-# sweep it.
+# sweep it. A kill is not a failure, though: the attempt marker stays, so the
+# app can report the install as cut off.
 _on_terminate() {
+    attempt_open=""
+    # A TERM between the fork and `child=$!` still finds the job in $!.
+    [ -n "$child" ] || child=${!:-}
+    [ -z "$child" ] || kill "$child" 2>/dev/null || true
     [ -z "${work:-}" ] || rm -rf "$work"
     exit 143
+}
+
+# Runs "$@" in the background and waits for it. A trapped signal interrupts
+# `wait` at once, where a foreground command would hold the trap until it
+# finished.
+run_child() {
+    "$@" &
+    child=$!
+    if wait "$child"; then child=""; return 0; fi
+    child=""
+    return 1
 }
 
 # Prefer the Settings-written override on /data, then the image-baked marker.
@@ -125,10 +166,10 @@ do_install() {
     channel=$(resolve_channel)
     current=$(cat "$CUR_FILE" 2>/dev/null || echo "0.0.0")
 
-    work=$(mktemp -d /tmp/segno-update.XXXXXX)
+    work=$(mktemp -d "${TMPDIR:-/tmp}/segno-update.XXXXXX")
     # INT/TERM too: an EXIT trap alone never runs on an untrapped signal, and
     # a killed install would leave a whole staged bundle in /tmp.
-    trap 'rm -rf "$work"' EXIT
+    trap _on_exit EXIT
     trap _on_terminate INT TERM
     progress 0
 
@@ -145,9 +186,15 @@ do_install() {
         return 1
     fi
 
+    # Best-effort like the staged marker: an install that cannot record its
+    # attempt still installs, it just cannot be reported as cut off.
+    mkdir -p "$(dirname "$ATTEMPT_FILE")" 2>/dev/null || true
+    { printf '%s\n' "$version" > "$ATTEMPT_FILE"; } 2>/dev/null || true
+    attempt_open=1
+
     log "downloading v$version: $bundle"
     progress 5
-    if ! curl -fsSL --max-time 1800 -o "$work/$bundle" \
+    if ! run_child curl -fsSL --max-time 1800 -o "$work/$bundle" \
          "$BASE_URL/$channel/$bundle"; then
         log "bundle download failed"; return 1
     fi
@@ -169,24 +216,39 @@ do_install() {
     fifo="$work/rauc.fifo"
     mkfifo "$fifo"
     rauc install "$work/$bundle" >"$fifo" 2>&1 &
-    rauc_pid=$!
+    child=$!
     while IFS= read -r line; do
         pct=$(printf '%s' "$line" | sed -n 's/^ *\([0-9]\{1,3\}\)% .*/\1/p')
         [ -n "$pct" ] && progress $((40 + pct * 60 / 100))
         printf '%s\n' "$line" >&2
     done < "$fifo"
-    if ! wait "$rauc_pid"; then
+    if ! wait "$child"; then
+        child=""
         log "rauc install failed"; return 1
     fi
+    child=""
 
     echo "$version" > "$STAGED_FILE" 2>/dev/null || true
     record_staged_boot_id
     : > "$PENDING_FLAG" 2>/dev/null || true
+    # Staged: the attempt is over, and the staged marker speaks for it now.
+    rm -f "$ATTEMPT_FILE"
+    attempt_open=""
     progress 100
     log "staged v$version to the inactive slot; reboot to apply"
 }
 
-clear_staged_marker() { rm -f "$STAGED_FILE" "$STAGED_BOOT_FILE"; }
+clear_staged_marker() { rm -f "$STAGED_FILE" "$STAGED_BOOT_FILE" "$TRYBOOT_FILE"; }
+
+# The install that was cut off, as JSON for the app: {"version":"<v>"} or {}.
+do_attempt() {
+    version=$(tr -d '[:space:]' <"$ATTEMPT_FILE" 2>/dev/null || true)
+    if [ -n "$version" ]; then
+        printf '{"version":"%s"}\n' "$version"
+    else
+        echo '{}'
+    fi
+}
 
 # Whether the staged tryboot "took" is recorded directly (the boot id written
 # next to the marker at staging time) rather than inferred from RAUC's
@@ -225,9 +287,19 @@ do_reconcile_staged() {
     staged_boot=$(tr -d '[:space:]' <"$STAGED_BOOT_FILE" 2>/dev/null || true)
     booted=$(tr -d '[:space:]' <"$BOOT_ID_FILE" 2>/dev/null || true)
     if [ -n "$booted" ] && [ "$staged_boot" != "$booted" ]; then
+        if [ -e "$TRYBOOT_FILE" ]; then
+            clear_staged_marker
+            log "cleared staged=$staged (staged in a previous boot; tryboot did not take)"
+            echo '{"cleared":true,"reason":"tryboot-not-taken"}'
+            return 0
+        fi
+        # Rebooted without asking for the staged slot: nothing was tried, so
+        # no rollback to report. The marker goes all the same — the slot's
+        # contents are not vouched for across a reboot — and the build is
+        # offered again by the next check.
         clear_staged_marker
-        log "cleared staged=$staged (staged in a previous boot; tryboot did not take)"
-        echo '{"cleared":true,"reason":"tryboot-not-taken"}'
+        log "cleared staged=$staged (rebooted without trying it)"
+        echo '{"cleared":true,"reason":"not-applied"}'
         return 0
     fi
     echo '{"cleared":false}'
@@ -236,6 +308,8 @@ do_reconcile_staged() {
 case "${1:-}" in
     install)          do_install ;;
     reconcile-staged) do_reconcile_staged ;;
+    attempt)          do_attempt ;;
+    clear-attempt)    rm -f "$ATTEMPT_FILE" ;;
     reboot)
         # Tryboot only when an update is actually staged. The reboot argument
         # itself triggers the firmware's one-shot tryboot, and autoboot.txt
@@ -245,11 +319,14 @@ case "${1:-}" in
         # would commit it: a silent permanent downgrade with no install record.
         if [ -s "$STAGED_FILE" ]; then
             log "rebooting into the staged slot"
+            # What lets reconcile tell a tryboot that did not take from a
+            # reboot or power cut that never tried the staged slot.
+            : > "$TRYBOOT_FILE" 2>/dev/null || true
             exec systemctl reboot --reboot-argument="0 tryboot"
         fi
         log "no update staged; plain reboot"
         exec systemctl reboot
         ;;
     poweroff)         log "powering off"; exec systemctl start poweroff.target ;;
-    *)                log "usage: segno-update-ctl {install|reconcile-staged|reboot|poweroff}"; exit 2 ;;
+    *)                log "usage: segno-update-ctl {install|attempt|clear-attempt|reconcile-staged|reboot|poweroff}"; exit 2 ;;
 esac

@@ -4,10 +4,10 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 /// Wraps the app and supplies an on-screen keyboard whenever a text field takes
 /// focus on a build that has no physical one.
 ///
-/// The console runs weston's `kiosk-shell`, which — unlike `desktop-shell` —
-/// spawns no input panel, and the image ships no IME. So every `TextField` in
-/// the app (renaming a track, naming a session, a Wi-Fi password) is dead on
-/// that hardware unless the app draws its own keys.
+/// The console has no input method: ivi-homescreen brings no text-input panel
+/// and the image ships no IME. So every `TextField` in the app (renaming a
+/// track, naming a session, a Wi-Fi password) is dead on that hardware unless
+/// the app draws its own keys.
 ///
 /// It watches focus rather than wrapping fields, so no call site changes and
 /// every future field is covered for free. Focus arriving at a field opens it;

@@ -1,17 +1,22 @@
 import 'dart:io';
 
-import 'package:bluetooth_repository/bluetooth_repository.dart';
+import 'package:backing_repository/backing_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
-import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter/widgets.dart';
+import 'package:instrument_repository/instrument_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/audio_bootstrap.dart';
+import 'package:segno/app/font_licenses.dart';
+import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/monitor_migration.dart';
+import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/app/view/app.dart';
 import 'package:segno/bootstrap.dart';
 import 'package:segno/logging/app_log.dart';
@@ -20,11 +25,12 @@ import 'package:segno/session_directory.dart';
 import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:segno/update/update_backend.dart';
 import 'package:segno/visualizer/visualizer.dart';
-import 'package:segno/visualizer/waveform_window_args.dart';
-import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
+import 'package:touch_calibration_client/touch_calibration_client.dart';
 import 'package:update_repository/update_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 /// Shared entrypoint for every flavor: routes the secondary waveform window,
@@ -41,40 +47,43 @@ Future<void> runSegno(
   LooperRepository? repository,
   SessionRepository? sessionRepository,
   PerformanceRepository? performanceRepository,
+  GuardRegistry? guards,
+  BackingRepository? backingRepository,
+  InstrumentRepository? instrumentRepository,
   EngineConfig? startConfig,
 }) async {
   assert(
     (repository == null) == (sessionRepository == null) &&
-        (repository == null) == (performanceRepository == null),
-    'inject all three repositories together or none',
+        (repository == null) == (performanceRepository == null) &&
+        (repository == null) == (guards == null) &&
+        (repository == null) == (backingRepository == null),
+    'inject all four repositories and the guard table they share together, '
+    'or none',
   );
   WidgetsFlutterBinding.ensureInitialized();
+  // The engine's vendored native code (Signalsmith Stretch, RNNoise,
+  // miniaudio, VST3, CLAP) for System > About's open-source notices.
+  registerVendoredLicenses();
+  // And the typefaces bundled with the app (Arimo, Inter, JetBrains Mono).
+  registerFontLicenses();
 
-  final windowController = await WindowController.fromCurrentEngine();
-  if (WaveformWindowArgs.isWaveformWindow(windowController.arguments)) {
-    await runWaveformWindow(windowController);
+  // On the appliance ivi-homescreen runs one engine per screen and names each
+  // one's role in its Dart arguments (homescreen.toml). With no screen named
+  // (the macOS dev host) this is the main screen, with no Track display.
+  final screen = segnoScreenFrom(args);
+  if (screen == SegnoScreen.readout) {
+    await runReadoutScreen();
     return;
   }
 
   // Durable logfile under $HOME/log (→ /data/log on the appliance). Before
   // audio auto-start so open failures leave a breadcrumb, and AFTER the
-  // waveform-window branch above: that window is a second Flutter engine in
-  // this process, so it is a second ISOLATE with its own `AppLog` statics —
-  // two held handles and two byte counters on one file would each rotate the
+  // readout branch above: the readout is a second Flutter engine in this
+  // process, so it is a second ISOLATE with its own `AppLog` statics — two
+  // held handles and two byte counters on one file would each rotate the
   // other's out from under it. It keeps the stderr/journald mirror, which is
   // where its lines were read from anyway.
   await initAppLogging();
-
-  // Hot restart resets Dart state while native sub-windows survive.
-  await DesktopMultiWindowWaveformService.closeOrphanWindows();
-
-  await configureSegnoDesktopWindow();
-  // On a multi-display console the output waveform fills the secondary, so fill
-  // the primary with the control surface too. Single-monitor / dev runs keep a
-  // normal window. Toggle off any time with `F`.
-  await applyMainWindowFullscreen(
-    WidgetsBinding.instance.platformDispatcher.displays.length,
-  );
 
   // One engine instance, shared by the looper (which owns its lifecycle) and
   // the session repository (which only reads/writes its loop PCM). On the
@@ -83,36 +92,52 @@ Future<void> runSegno(
   final LooperRepository looper;
   final SessionRepository session;
   final PerformanceRepository performance;
+  // One guard table for the whole app (accepted behaviour 6.12): the
+  // repositories and the runtime's owners all check it at their commits.
+  final registry = guards ?? GuardRegistry();
+  final BackingRepository backing;
+  InstrumentRepository? instruments;
   if (repository == null ||
       sessionRepository == null ||
-      performanceRepository == null) {
+      performanceRepository == null ||
+      backingRepository == null) {
     final engine = createNativeAudioEngine();
     looper = LooperRepository(engine: engine);
     session = SessionRepository(
       engine: engine,
       sessionsRoot: defaultSessionsRoot,
+      guards: registry,
     );
     performance = PerformanceRepository(
       engine: engine,
       exportsRoot: defaultExportDirectory,
+      guards: registry,
+      reserveBytes: StorageRepository.internalReserveBytes,
+    );
+    final decoder = createNativeAudioDecoder();
+    backing = BackingRepository.forEngine(
+      engine,
+      decoder: decoder,
+      store: backingStoreFor(decoder),
+    );
+    // Instruments read the engine through the looper's poll (#1197).
+    instruments = InstrumentRepository(
+      engine: engine,
+      snapshots: looper.engineSnapshots,
     );
   } else {
     looper = repository;
     session = sessionRepository;
     performance = performanceRepository;
+    backing = backingRepository;
+    instruments = instrumentRepository;
   }
 
   // The native MIDI source feeds the controller pipeline; it is null when no
   // MIDI backend is available (e.g. the mock flavor), in which case the looper
-  // runs with no controller source. The waveform sub-window already returned
+  // runs with no controller source. The readout screen already returned
   // above, so it never opens MIDI.
   final midiSource = createNativeMidiSource();
-  // The push seam behind "Simulate input" (#519): a plain source in the same
-  // list as the real MIDI one, so a synthetic sweep/press is indistinguishable
-  // downstream and works with nothing plugged in. Owned by the repository — it
-  // is disposed when the repository disposes its sources — and handed to
-  // ControlCubit, which paces the synthetic sequence.
-  final simulatedControllerSource = SimulatedControllerSource();
   // The console board's pedal link: the Pi's uart3 to the board's Pico 2 on
   // the appliance (the link owns the device node, retries until the overlay
   // lands, and reports every state change to the log), or a board-less link
@@ -121,13 +146,11 @@ Future<void> runSegno(
       ? UartPedalLink(log: AppLog.info)
       : NoopPedalLink();
   final pedalRepository = PedalRepository(pedalLink, log: AppLog.info);
-  // The console's two CTRL jacks join the same pipeline as MIDI: a pedal in a
-  // jack is bound and learned exactly like a controller, so nothing about the
-  // binding model knows where a control came from.
+  // The repository owns source lifetimes and forwards exact console samples.
+  // Musical assignments consume the selected-device stream separately.
   final controllerRepository = ControllerRepository(
     sources: [
       ?midiSource,
-      simulatedControllerSource,
       ConsoleCtrlSource(pedalRepository),
     ],
   );
@@ -144,18 +167,44 @@ Future<void> runSegno(
           )
         : null,
   );
+  final mixSettings = MixSettingsCoordinator(
+    repository: looper,
+    persistence: SettingsMixPersistence(settings),
+    device: () => looper.state.status.deviceName,
+  );
   // In-app updates. The backend is inert until the appliance/desktop backends
   // are wired, so the update UI stays hidden on unsupported builds.
   final updates = UpdateRepository(backend: createPlatformUpdateBackend());
   final wifi = WifiRepository(client: createWifiClient());
-  final bluetooth = BluetoothRepository(client: createBluetoothClient());
   final brightness = createBrightnessClient();
   // The same directory resolvers the session and performance repositories are
   // wired with, so the real client's disk accounting measures the app's own
   // data volume (`/data` on the appliance) by construction (#656).
+  // Capacity comes from the engine's statvfs through the performance
+  // repository, never from a `df` subprocess (#806); the client's own type is
+  // filled from the engine's reading so the client stays engine-free (#1177).
   final consoleFacts = createConsoleFactsClient(
     sessionsRoot: defaultSessionsRoot,
     capturesRoot: defaultExportDirectory,
+    diskSpace: (path) async {
+      final space = performance.volumeSpace(path);
+      if (space == null) return null;
+      return DiskSpace(
+        totalBytes: space.totalBytes,
+        freeBytes: space.freeBytes,
+      );
+    },
+  );
+  // Where a write may go (#1177): Internal and the USB volumes the image's
+  // helper mounts and describes. Capacity is the same engine statvfs; the
+  // volumes arrive through an inotify watch, never a subprocess (#806).
+  // Registers itself with the table, so the table sees its leases and
+  // eject whichever registry the entrypoint passed (#1177).
+  final storage = StorageRepository(
+    client: createUsbStorageClient(),
+    exportsRoot: performance.exportsRoot,
+    volumeSpace: performance.volumeSpace,
+    guards: registry,
   );
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
@@ -186,6 +235,7 @@ Future<void> runSegno(
     final result = await tryAutoStartEngine(
       repository: looper,
       settings: settings,
+      mixSettings: mixSettings,
     );
     asioDrivers = result.asioDrivers;
     audioRecoveryConfig = result.recoveryConfig;
@@ -195,30 +245,37 @@ Future<void> runSegno(
     () => App(
       repository: looper,
       controllerRepository: controllerRepository,
-      simulatedControllerSource: simulatedControllerSource,
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
-      displayCount: () =>
-          WidgetsBinding.instance.platformDispatcher.displays.length,
       audioRecoveryConfig: audioRecoveryConfig,
       settings: settings,
-      waveformWindow: DesktopMultiWindowWaveformService(),
-      waveformWindowOpenDelay: Duration(
-        milliseconds:
-            int.tryParse(
-              Platform.environment['SEGNO_WAVEFORM_OPEN_DELAY_MS'] ?? '',
-            ) ??
-            0,
-      ),
+      mixSettings: mixSettings,
+      waveformWindow: screen == null
+          ? NoopWaveformWindowService()
+          : ScreenLinkWaveformService(),
       sessionRepository: session,
       performanceRepository: performance,
-      exportDirectory: defaultExportDirectory,
+      backingRepository: backing,
+      instrumentRepository: instruments,
       initialAsioDrivers: asioDrivers,
       updates: updates,
       wifi: wifi,
-      bluetooth: bluetooth,
       brightness: brightness,
+      displayOutputs: createDisplayOutputs(),
+      touchCalibration: createTouchCalibrationClient(),
       consoleFacts: consoleFacts,
+      cpuLoad: CpuLoadRepository.system(),
+      guards: registry,
+      storage: storage,
     ),
   );
 }
+
+/// The backing player's managed `Backing tracks` store under the exports
+/// root (#1200), copied into by the internal copier and validated by
+/// [decoder].
+BackingAssetStore backingStoreFor(AudioDecoder decoder) => BackingAssetStore(
+  root: defaultExportDirectory,
+  decoder: decoder,
+  copier: internalBackingCopier(defaultExportDirectory),
+);

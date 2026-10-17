@@ -3,17 +3,18 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:segno/tuner/pitch.dart';
 
 part 'tuner_state.dart';
 
-/// Drives the chromatic tuner face: which input it listens to, and what the
-/// engine is currently hearing on it.
+/// Owns the tuner reading: which input it is for, and what the engine is
+/// currently hearing on it, named against the stored A4 reference.
 ///
-/// **Arms on show, disarms on hide.** Detection is gated in the engine on the
-/// armed input, so a closed tuner costs one atomic load per audio block. That
-/// is the whole reason [arm] and [disarm] exist rather than the tuner simply
-/// running whenever the engine does.
+/// The input and the reference are appliance preferences in [TunerSettings];
+/// this cubit follows them. It never arms the engine: the foot Tuner mode
+/// does (Control, #1229), and a reading for any other input, or none, reads
+/// as nothing.
 ///
 /// The cubit holds the last confident reading for a short decay rather than
 /// following the engine frame for frame. A plucked string is periodic for a
@@ -21,15 +22,26 @@ part 'tuner_state.dart';
 /// snap back to "no signal" between picks — the reading is what the player
 /// last played, until it is old enough not to be.
 class TunerCubit extends Cubit<TunerState> {
-  /// Creates a [TunerCubit] following [repository].
-  TunerCubit({required LooperRepository repository})
-    : _repository = repository,
-      super(const TunerState()) {
+  /// Creates a [TunerCubit] following [repository] and [settings].
+  TunerCubit({
+    required LooperRepository repository,
+    required TunerSettings settings,
+  }) : _repository = repository,
+       _settings = settings,
+       super(
+         TunerState(
+           input: settings.live.input < 0 ? 0 : settings.live.input,
+           referenceHz: settings.live.referenceHz,
+         ),
+       ) {
     _subscription = _repository.looperState.listen(_onLooperState);
+    _settingsSubscription = _settings.changes.listen(_onPreferences);
   }
 
   final LooperRepository _repository;
+  final TunerSettings _settings;
   late final StreamSubscription<LooperState> _subscription;
+  late final StreamSubscription<TunerPreferences> _settingsSubscription;
 
   /// How long a confident reading survives without a fresh one.
   ///
@@ -51,29 +63,36 @@ class TunerCubit extends Cubit<TunerState> {
   /// forever, which is the one thing the hold exists to prevent.
   Timer? _holdTimer;
 
-  /// Selects the hardware [input] to listen to, arming it if the face is open.
-  void selectInput(int input) {
+  void _onPreferences(TunerPreferences preferences) {
+    if (isClosed) return;
+    if (preferences.referenceHz != state.referenceHz) {
+      // A held reading is renamed against the new reference at once.
+      final pitch = state.hz > 0
+          ? pitchFromHz(state.hz, reference: preferences.referenceHz.toDouble())
+          : null;
+      emit(
+        state.copyWith(
+          referenceHz: preferences.referenceHz,
+          pitch: pitch,
+          clearPitch: pitch == null,
+        ),
+      );
+    }
+    final status = _repository.state.status;
+    _follow(
+      _tunableInput(
+        preferences.input,
+        status.inputChannels,
+        status.excludedInputMask,
+      ),
+    );
+  }
+
+  /// Moves to [input]: the reading belonged to the input left behind.
+  void _follow(int input) {
     if (input == state.input) return;
     emit(state.copyWith(input: input, hz: 0, clearPitch: true));
     _cancelHold();
-    if (state.isOpen) _repository.setTunerInput(input: input);
-  }
-
-  /// Arms the engine on the selected input. Called when the face appears.
-  ///
-  /// Resolved against the rig on the way in rather than waiting for the first
-  /// projection: a stale or loopback selection would otherwise be analysed for
-  /// the frame in between, which is long enough to put a reading on screen.
-  void arm() {
-    if (state.isOpen) return;
-    final status = _repository.state.status;
-    final input = _tunableInput(
-      state.input,
-      status.inputChannels,
-      status.excludedInputMask,
-    );
-    emit(state.copyWith(isOpen: true, input: input));
-    _repository.setTunerInput(input: input);
   }
 
   /// The input to actually listen on: [wanted] when this rig has it and it is
@@ -90,8 +109,9 @@ class TunerCubit extends Cubit<TunerState> {
   /// channel — which is why this resolves rather than clamps.
   static int _tunableInput(int wanted, int channels, int excluded) {
     // Nothing known yet (no device open): leave the choice alone rather than
-    // resolving it against a rig that has not been reported.
-    if (channels <= 0) return wanted;
+    // resolving it against a rig that has not been reported. "The first
+    // available" is the first socket until the rig says otherwise.
+    if (channels <= 0) return wanted < 0 ? 0 : wanted;
     bool tunable(int input) =>
         input >= 0 && input < channels && excluded & (1 << input) == 0;
     if (tunable(wanted)) return wanted;
@@ -101,52 +121,40 @@ class TunerCubit extends Cubit<TunerState> {
     return -1;
   }
 
-  /// Disarms the engine. Called when the face leaves, so detection stops.
-  void disarm() {
-    if (!state.isOpen) return;
-    _repository.setTunerInput(input: -1);
-    emit(state.copyWith(isOpen: false, hz: 0, clearPitch: true));
-    _cancelHold();
-  }
-
   void _onLooperState(LooperState looper) {
     // Fold a selection this rig cannot tune onto one it can, the moment the
     // rig says so — see [_tunableInput] for what disqualifies a channel. `-1`
     // when there is nothing worth tuning at all, which disarms the engine
     // rather than leaving it on a loopback.
-    final channels = looper.status.inputChannels;
     final wanted = _tunableInput(
-      state.input,
-      channels,
+      _settings.live.input,
+      looper.status.inputChannels,
       looper.status.excludedInputMask,
     );
     if (wanted != state.input) {
-      // [selectInput] has already re-armed if the face is open, and this
-      // frame's reading belongs to the input we just left, so there is nothing
-      // here worth reading.
-      selectInput(wanted);
+      // This frame's reading belongs to the input we just left, so there is
+      // nothing here worth reading. The stored preference is untouched: the
+      // folded input is this rig's answer, not the player's choice.
+      _follow(wanted);
       return;
     }
 
-    if (!state.isOpen) return;
     final reading = looper.tuner;
 
     // Draw only what the engine heard on the input we are actually showing. A
     // snapshot polled between a tab tap and the engine consuming the switch
-    // still carries the PREVIOUS input's pitch, and drawing it under the new
-    // tab's label is a lie the reading itself can rule out.
+    // still carries the PREVIOUS input's pitch: it belongs to another input,
+    // so it is cleared at once rather than held as "no signal" (#1229).
     //
-    // The same mismatch is also the watchdog. Arming is fire-and-forget —
-    // [LooperRepository.setTunerInput] posts through a fixed-size command ring
-    // that a rig restore can fill — so both an arm and a SWITCH can be dropped,
-    // and nothing else would ever notice: [arm] ran once, on the way in, and
-    // [selectInput] only runs on a tap. Disagreement is the engine telling us
-    // the push did not land, whether it left the tuner disarmed (`-1`, which
-    // never matches a real input) or still listening to the input before this
-    // one, so push again. Idempotent, and the clamp above is what stops a
-    // selection the rig has not got from making this a push every frame.
+    // A disarmed tuner reports input -1, which never matches: closing the
+    // mode clears the reading. Nothing is pushed back on a mismatch: the
+    // foot Tuner owns arming, and every `setTunerInput` also clears its
+    // input mute (#1229, D12).
     if (reading.input != state.input) {
-      if (channels > 0) _repository.setTunerInput(input: state.input);
+      _cancelHold();
+      if (state.pitch != null || state.hz != 0 || state.isStale) {
+        emit(state.copyWith(hz: 0, clearPitch: true, isStale: false));
+      }
       return;
     }
 
@@ -155,7 +163,10 @@ class TunerCubit extends Cubit<TunerState> {
       emit(
         state.copyWith(
           hz: reading.hz,
-          pitch: pitchFromHz(reading.hz),
+          pitch: pitchFromHz(
+            reading.hz,
+            reference: state.referenceHz.toDouble(),
+          ),
           isStale: false,
         ),
       );
@@ -183,10 +194,9 @@ class TunerCubit extends Cubit<TunerState> {
 
   @override
   Future<void> close() {
-    // Never leave the engine analysing an input for a face that is gone.
-    if (state.isOpen) _repository.setTunerInput(input: -1);
     _cancelHold();
     unawaited(_subscription.cancel());
+    unawaited(_settingsSubscription.cancel());
     return super.close();
   }
 }

@@ -72,6 +72,15 @@ def wav_complete(path):
     return False
 
 
+# The main recording: one master.wav on appliances before #1198, ordered
+# master-001.wav, master-002.wav, ... parts after it.
+MAIN = re.compile(r"master(?:-\d{3})?\.wav")
+
+
+def is_main(path):
+    return MAIN.fullmatch(path) is not None
+
+
 def version(path):
     info = path.stat()
     return f"{info.st_dev}:{info.st_ino}:{info.st_size}:{info.st_mtime_ns}:{info.st_ctime_ns}"
@@ -89,7 +98,7 @@ def audio_files(directory):
                 continue
             files.append({"path": path.relative_to(directory).as_posix(),
                           "bytes": path.stat().st_size, "version": version(path)})
-    return sorted(files, key=lambda f: (f["path"] != "master.wav", f["path"]))
+    return sorted(files, key=lambda f: (not is_main(f["path"]), f["path"]))
 
 
 def catalog(root):
@@ -107,7 +116,7 @@ def catalog(root):
         try:
             manifest = read_manifest(directory)
             files = audio_files(directory)
-            if not any(f["path"] == "master.wav" for f in files):
+            if not any(f["path"] in ("master.wav", "master-001.wav") for f in files):
                 raise ValueError("Main recording is not ready.")
             rate = manifest.get("sample_rate", 0)
             frames = manifest.get("capture_frames", 0)

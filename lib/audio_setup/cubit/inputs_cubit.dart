@@ -1,8 +1,8 @@
-import 'dart:async';
-
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/audio_setup/application/port_aliases.dart';
+import 'package:segno/audio_setup/cubit/alias_rename_result.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'inputs_state.dart';
@@ -34,109 +34,46 @@ class InputsCubit extends Cubit<InputsState> {
   InputsCubit({
     required SettingsRepository settings,
     required LooperRepository repository,
-  }) : _settings = settings,
-       _repository = repository,
-       super(const InputsState()) {
-    _subscription = _repository.looperState.listen(
-      (looper) => unawaited(_followDevice(looper.status.deviceName)),
+  }) : super(const InputsState()) {
+    _aliases = PortAliases(
+      settings: settings,
+      repository: repository,
+      kind: PortAliasKind.input,
+      probeCeiling: InputsState.probeCeiling,
+      onChanged: (snapshot) => emit(
+        InputsState(
+          device: snapshot.device,
+          names: snapshot.names,
+          lifetime: snapshot.lifetime,
+        ),
+      ),
     );
-    unawaited(_followDevice(_repository.state.status.deviceName));
   }
 
-  final SettingsRepository _settings;
-  final LooperRepository _repository;
-  late final StreamSubscription<LooperState> _subscription;
+  late final PortAliases _aliases;
 
-  /// Sockets renamed while a load was in flight.
-  ///
-  /// The restore walks the sockets one await at a time, so a rename part-way
-  /// through would be overwritten by the list the walk started with. Recording
-  /// which sockets moved lets the restore land MERGED rather than be abandoned
-  /// — dropping it wholesale would lose every OTHER socket's persisted name.
-  final Set<int> _renamedDuringLoad = {};
-
-  /// Whether a load is currently walking the sockets.
-  bool _loading = false;
-
-  /// The device a rename belongs to RIGHT NOW.
-  ///
-  /// Set the moment a restore starts rather than when it finishes, because
-  /// [InputsState.device] cannot move until the walk has something to emit —
-  /// and a rename arriving mid-walk would otherwise be saved against the
-  /// device that is on its way out.
-  String _device = '';
-
-  /// Re-reads the names when the open device changes.
-  ///
-  /// Nothing to do while the engine reports no device: the names of the rig
-  /// that is about to open are not knowable yet, and clearing the list would
-  /// blank every chip for the length of a reopen. The state simply keeps the
-  /// outgoing device's names until the incoming one names itself.
-  Future<void> _followDevice(String device) async {
-    // Against [_device], which moves the moment a walk starts — NOT
-    // `state.device`, which cannot move until the walk has something to emit.
-    // Guarding on the state would let every tick during a walk start another
-    // one, and an early finisher would clear `_loading` while the rest ran.
-    if (device.isEmpty || device == _device) return;
-    await _restore(device);
+  /// Durably renames [input] for the current device opening.
+  Future<void> rename(
+    int input,
+    String name, {
+    int? expectedLifetime,
+    void Function(AliasRenameResult)? onResult,
+  }) async {
+    final result = await _aliases.rename(
+      input,
+      name,
+      expectedLifetime: expectedLifetime,
+    );
+    onResult?.call(result);
   }
 
-  Future<void> _restore(String device) async {
-    _device = device;
-    _loading = true;
-    _renamedDuringLoad.clear();
-    final names = <int, String>{};
-    for (var input = 0; input < InputsState.probeCeiling; input++) {
-      final saved = await _settings.loadInputName(device: device, input: input);
-      if (saved != null && saved.isNotEmpty) names[input] = saved;
-    }
-    _loading = false;
-    if (isClosed) return;
-    // A socket renamed while this was walking keeps the name the user just
-    // gave it; every other socket takes what was on disk.
-    for (final input in _renamedDuringLoad) {
-      final live = state.names[input];
-      if (live == null || live.isEmpty) {
-        names.remove(input);
-      } else {
-        names[input] = live;
-      }
-    }
-    _renamedDuringLoad.clear();
-    emit(InputsState(device: device, names: names));
-  }
-
-  /// Names hardware [input] on the open device, or hands the socket back its
-  /// ordinal when [name] trims to nothing.
-  ///
-  /// An empty name is a real answer here, unlike a track's: `AUDIO /
-  /// settings-rename` has no Clear button, only a backspace and Save, so
-  /// emptying the field IS how an input is un-named.
-  Future<void> rename(int input, String name) async {
-    final device = _device;
-    // Nothing to key the name to. Refused rather than stored against an empty
-    // device, which would be a name that reappears on whatever opens next.
-    if (device.isEmpty || input < 0) return;
-    final trimmed = name.trim();
-    if (trimmed == (state.names[input] ?? '')) return;
-    if (_loading) _renamedDuringLoad.add(input);
-    final names = {...state.names};
-    if (trimmed.isEmpty) {
-      names.remove(input);
-    } else {
-      names[input] = trimmed;
-    }
-    emit(state.copyWith(names: names));
-    if (trimmed.isEmpty) {
-      await _settings.clearInputName(device: device, input: input);
-      return;
-    }
-    await _settings.saveInputName(device: device, input: input, name: trimmed);
-  }
+  /// Re-reads one uncertain key before another edit may use it.
+  Future<void> retryAliasRecovery(int input) =>
+      _aliases.retryAliasRecovery(input);
 
   @override
-  Future<void> close() {
-    unawaited(_subscription.cancel());
-    return super.close();
+  Future<void> close() async {
+    await _aliases.close();
+    await super.close();
   }
 }

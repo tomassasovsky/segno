@@ -22,7 +22,6 @@ class _FakeBackend implements PlatformUpdateBackend {
 
   int fetchCount = 0;
   UpdateManifest? stagedArg;
-  int applyCount = 0;
 
   @override
   Future<void> setChannel(String channel) async {
@@ -34,6 +33,19 @@ class _FakeBackend implements PlatformUpdateBackend {
 
   @override
   Future<Version> stagedVersion() async => staged;
+
+  UpdateRecovery recovery = const UpdateRecovery();
+  int recoverCount = 0;
+  int clearInterruptedCount = 0;
+
+  @override
+  Future<UpdateRecovery> recover() async {
+    recoverCount++;
+    return recovery;
+  }
+
+  @override
+  Future<void> clearInterrupted() async => clearInterruptedCount++;
 
   @override
   Future<UpdateManifest?> fetchManifest() async {
@@ -47,9 +59,6 @@ class _FakeBackend implements PlatformUpdateBackend {
     yield 0.5;
     yield 1;
   }
-
-  @override
-  Future<void> applyAndRestart() async => applyCount++;
 }
 
 /// Builds a manifest with minor component [minor] (e.g. `_manifest(2)` ==
@@ -145,6 +154,38 @@ void main() {
       expect(await repo.stagedVersion(), Version(0, 6, 0));
     });
 
+    test('recover forwards what the backend read', () async {
+      final backend = _FakeBackend()
+        ..recovery = UpdateRecovery(
+          rolledBack: Version(0, 6, 0),
+          interrupted: Version(0, 7, 0),
+        );
+      final repo = UpdateRepository(backend: backend);
+
+      expect(
+        await repo.recover(),
+        UpdateRecovery(
+          rolledBack: Version(0, 6, 0),
+          interrupted: Version(0, 7, 0),
+        ),
+      );
+    });
+
+    test('recover never asks an unsupported backend', () async {
+      final backend = _FakeBackend(isSupported: false)
+        ..recovery = UpdateRecovery(interrupted: Version(0, 7, 0));
+      final repo = UpdateRepository(backend: backend);
+
+      expect(await repo.recover(), const UpdateRecovery());
+      expect(backend.recoverCount, 0);
+    });
+
+    test('clearInterrupted forwards to the backend', () async {
+      final backend = _FakeBackend();
+      await UpdateRepository(backend: backend).clearInterrupted();
+      expect(backend.clearInterruptedCount, 1);
+    });
+
     test(
       'downloadAndStage forwards the manifest and streams progress',
       () async {
@@ -157,11 +198,5 @@ void main() {
         expect(backend.stagedArg, _manifest(2));
       },
     );
-
-    test('applyAndRestart forwards to the backend', () async {
-      final backend = _FakeBackend();
-      await UpdateRepository(backend: backend).applyAndRestart();
-      expect(backend.applyCount, 1);
-    });
   });
 }

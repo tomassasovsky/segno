@@ -20,6 +20,11 @@ enum UpdatePhase {
   /// A newer build is fully staged and awaiting a restart to apply.
   staged,
 
+  /// An install was cut off (a crash, a power loss or a stopped service)
+  /// before it staged anything; see [UpdateState.interrupted]. The running
+  /// software is unchanged, and the player retries or drops it.
+  interrupted,
+
   /// The last operation failed; see [UpdateState.errorMessage].
   error,
 }
@@ -52,6 +57,8 @@ class UpdateState extends Equatable {
     this.dismissed = const {},
     this.errorMessage,
     this.failure,
+    this.interrupted,
+    this.rollback,
   });
 
   /// The current phase of the flow.
@@ -87,6 +94,13 @@ class UpdateState extends Equatable {
   /// What failed, when [phase] is [UpdatePhase.error].
   final UpdateFailure? failure;
 
+  /// The version whose install was cut off, in [UpdatePhase.interrupted].
+  final Version? interrupted;
+
+  /// A staged build that did not start, so the console went back to
+  /// `restored`; shown until dismissed, whatever the phase.
+  final ({Version attempted, Version restored})? rollback;
+
   /// Whether a newer build is currently on offer (available or staged).
   bool get hasUpdate => available != null;
 
@@ -97,7 +111,8 @@ class UpdateState extends Equatable {
 
   /// Copies this state, overriding the given fields. Set [clearAvailable] to
   /// drop the available manifest (there is no other way to null it), and
-  /// [clearError] to clear a previous error message.
+  /// [clearError] to clear a previous error message; [clearInterrupted] and
+  /// [clearRollback] drop those the same way.
   UpdateState copyWith({
     UpdatePhase? phase,
     bool? supported,
@@ -111,6 +126,10 @@ class UpdateState extends Equatable {
     String? errorMessage,
     UpdateFailure? failure,
     bool clearError = false,
+    Version? interrupted,
+    bool clearInterrupted = false,
+    ({Version attempted, Version restored})? rollback,
+    bool clearRollback = false,
   }) {
     return UpdateState(
       phase: phase ?? this.phase,
@@ -123,6 +142,8 @@ class UpdateState extends Equatable {
       dismissed: dismissed ?? this.dismissed,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       failure: clearError ? null : (failure ?? this.failure),
+      interrupted: clearInterrupted ? null : (interrupted ?? this.interrupted),
+      rollback: clearRollback ? null : (rollback ?? this.rollback),
     );
   }
 
@@ -138,5 +159,7 @@ class UpdateState extends Equatable {
     dismissed,
     errorMessage,
     failure,
+    interrupted,
+    rollback,
   ];
 }

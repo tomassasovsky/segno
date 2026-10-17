@@ -64,7 +64,9 @@ run_connect() {
     SEGNO_WIFI_NM_CONNECT_TIMEOUT=1 \
     SEGNO_WIFI_CONNECT_TIMEOUT=1 \
     PATH="$work/bin:$PATH" \
-        sh "$CTL" connect "SomeNetwork" "hunter2000" 2>"$work/stderr" >/dev/null
+        sh "$CTL" connect "SomeNetwork" 2>"$work/stderr" >/dev/null <<KEY
+hunter2000
+KEY
 }
 
 check() {
@@ -120,6 +122,9 @@ run_connect
 # not finish. #459 is what the other choice costs.
 check "does not blame the password" no "$(said 'wrong password')"
 check "reports the join as not completing" yes "$(said 'timed out waiting')"
+# The app knows whether a key was typed moments ago; it can only weigh NM's
+# dead end if it is told which one this was (#829).
+check "passes on that NM wanted secrets" yes "$(said 'secrets were required')"
 teardown
 
 echo "iwd reports a real key failure"

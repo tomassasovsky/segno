@@ -1,127 +1,251 @@
 #!/bin/sh
-# segno-wifi-retry -- give the saved WiFi network the second chance the boot
-# race denies it (#824).
+# segno-wifi-retry -- keep activating a saved WiFi network after boot, and
+# after a drop while the console runs, until one connects or the budget runs
+# out (#824, #963, #1326, #1337).
 #
-# At boot, iwd can autoconnect off its own store in the window before
-# NetworkManager asserts control of wlan0. NM then kicks iwd off and starts its
-# own activation, which lands inside iwd's teardown and fails -- and NM maps
-# that backend failure to 'no-secrets', the one failure class it never retries.
-# Result: a console with a perfectly good saved network sits offline until a
-# human opens the Network tab, and the UI's wrong-password framing teaches them
-# to destroy the evidence by re-typing the password.
+# At boot, the first activation can fail for reasons that have nothing to do
+# with the password: iwd autoconnecting off its own store (#824), an empty
+# scan cache (#963), or a handshake that times out while the AP is still
+# settling (#1326: status 16, "Connected BSS not in scan results"). NM maps
+# every one of them to 'no-secrets', blocks autoconnect, and never retries. A
+# console with a perfectly good saved network then sits offline until a human
+# opens the Network page.
 #
-# This oneshot is the mechanism-independent half of the fix: shortly after
-# boot, if wlan0 is disconnected and a saved WiFi profile exists, re-activate
-# it -- exactly the "human pokes it" action, minus the human. It does not
-# depend on WHY the first attempt failed, so it also covers whatever the next
-# race turns out to be. The root-cause work (sweeping iwd's store of stale
-# non-mirrored networks; honest error mapping in the UI) stays with #824.
+# A runtime drop gets the same treatment: the NetworkManager dispatcher hook
+# (segno-wifi-dispatch) starts this service when wlan0 goes down.
 #
-# Deliberately quiet and bounded: three attempts, then give up loudly (the
-# unit lands in systemctl --failed, and #810's persistent journal keeps the
-# whole story). Never touches profiles, never writes secrets, no-ops on a
-# console that is already online or has nothing saved.
+# This service is the mechanism-independent backstop: while wlan0 is
+# disconnected, activate a saved network the owner lets auto-join, with
+# backoff, until it connects or RETRY_FOR seconds have passed. It never writes
+# a profile. It stands down for good when the console is online, the radio is
+# off, the owner disconnected by hand, or nothing saved may auto-join.
 #
-# iwd's periodic scan is off (#824, DisablePeriodicScan) so NM's scan cache is
-# empty at T+8s. Activating into that fails at prepare in milliseconds and
-# burns the budget before any BSS exists (#963). Rescan, wait for the saved
-# SSID, then up.
+# Rules, each learned from a boot that stayed offline:
+#
+# - Activate on the stored key (segno-wifi-ctl activate, which hands it over
+#   through a passwd-file). NetworkManager's iwd backend gives iwd the stored
+#   PSK only until the profile has a recorded attempt. After one failure it
+#   asks secret agents for a NEW key (REQUEST_NEW in
+#   nm_device_iwd_agent_query), and a headless console runs none, so a plain
+#   `connection up` fails in milliseconds with "No agents were available"
+#   while the key sits in the keyfile (#1326).
+# - Never start an activation while one is in flight. The retry's own rescan
+#   lets NM auto-activate; a `connection up` on top of that aborts it
+#   (net.connman.iwd.Aborted) and throws away the attempt that would have
+#   worked (#1326).
+# - Rescan and wait for a saved SSID before `connection up`. iwd's periodic
+#   scan is off (DisablePeriodicScan), so the scan cache is empty at boot and
+#   an activation into it fails at prepare (#963).
+# - Prefer the newest saved network that is in range. The newest one overall
+#   may be at home while the console is at a venue whose network failed once
+#   and is now blocked from NM's own autoconnect.
+# - Hold off while the app is performing (#1337). A scan takes the radio
+#   off-channel, which must not happen mid-show. The app keeps HOLD_FILE,
+#   holding its PID, for as long as the music plays or records; while it
+#   stands, the retry makes no nmcli call at all, and the wait is added to
+#   the budget. A file whose process is gone was left by a crashed app and
+#   does not count.
+#
+# The owner's choices always win: auto-join off on a network (Network page)
+# keeps it out of the candidates, and a Disconnect (`nmcli device disconnect`
+# turns the device's autoconnect off until the next activation) ends the
+# retry.
 
 set -u
 
 TAG=segno-wifi-retry
-ATTEMPTS="${SEGNO_WIFI_RETRY_ATTEMPTS:-3}"
-SETTLE="${SEGNO_WIFI_RETRY_SETTLE:-8}"      # seconds after start before the first check
-BETWEEN="${SEGNO_WIFI_RETRY_BETWEEN:-5}"    # seconds between attempts
-SCAN_WAIT="${SEGNO_WIFI_RETRY_SCAN_WAIT:-16}"  # seconds to wait for the SSID after rescan
+SETTLE="${SEGNO_WIFI_RETRY_SETTLE:-8}"            # seconds after start before the first check
+RETRY_FOR="${SEGNO_WIFI_RETRY_FOR:-600}"          # total budget; covers a router booting with us after a power cut
+BACKOFF="${SEGNO_WIFI_RETRY_BACKOFF:-5}"          # first pause after a failed attempt; doubles
+BACKOFF_MAX="${SEGNO_WIFI_RETRY_BACKOFF_MAX:-60}" # longest pause between attempts
+POLL="${SEGNO_WIFI_RETRY_POLL:-2}"                # seconds between checks while NM is mid-activation
+SCAN_WAIT="${SEGNO_WIFI_RETRY_SCAN_WAIT:-16}"     # seconds to wait for a saved SSID after rescan
+UP_WAIT="${SEGNO_WIFI_RETRY_UP_WAIT:-20}"         # activation budget for one attempt
 IFACE="${SEGNO_WIFI_IFACE:-wlan0}"
+WIFI_CTL="${SEGNO_WIFI_CTL:-/usr/bin/segno-wifi-ctl}"
+HOLD_FILE="${SEGNO_WIFI_HOLD_FILE:-/run/segno/wifi-hold}"
+HOLD_POLL="${SEGNO_WIFI_RETRY_HOLD_POLL:-5}"      # seconds between checks while held
+TAB=$(printf '\t')
 
 log() { echo "$TAG: $*"; }
 
 command -v nmcli >/dev/null 2>&1 || { log "nmcli not present; nothing to do"; exit 0; }
 
 sleep "$SETTLE"
+deadline=$(( $(date +%s) + RETRY_FOR ))
 
-# The owner turned WiFi off? Their call wins -- three doomed attempts and a
-# permanently red unit every boot would fight the Control Center toggle.
-if [ "$(nmcli radio wifi 2>/dev/null)" = "disabled" ]; then
-  log "wifi radio is off; respecting it"
-  exit 0
-fi
+# wlan0's NM state word: connected, connecting, disconnected, unavailable, ...
+wifi_state() {
+  nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null \
+    | awk -F: -v dev="$IFACE" '$1 == dev && $2 == "wifi" { split($3, w, " "); print w[1]; exit }'
+}
 
-ssid_visible() {
-  ssid=$1
-  nmcli -t -f SSID device wifi list ifname "$IFACE" 2>/dev/null | grep -qxF "$ssid"
+in_flight() {
+  [ "$1" = connecting ] || [ "$1" = deactivating ]
+}
+
+# Saved WiFi profiles the owner lets auto-join, newest first, one
+# "uuid<TAB>ssid" per line, from a `UUID,TYPE,AUTOCONNECT,TIMESTAMP` listing.
+# UUIDs contain no colons, so nmcli's \:-escaping of names never enters the
+# split. TIMESTAMP is the last successful activation (NM resets it to 0 after
+# a failure), so the network the owner used last comes first.
+candidates() {
+  printf '%s\n' "$1" \
+    | awk -F: '$2 == "802-11-wireless" && $3 == "yes" { print $4 "\t" $1 }' \
+    | sort -rn | cut -f2 \
+    | while IFS= read -r u; do
+        printf '%s\t%s\n' "$u" \
+          "$(nmcli -e no -g 802-11-wireless.ssid connection show uuid "$u" 2>/dev/null)"
+      done
+}
+
+# The first candidate whose SSID is in the scan list, or nothing.
+first_in_range() {
+  visible=$(nmcli -t -e no -f SSID device wifi list ifname "$IFACE" 2>/dev/null)
+  printf '%s\n' "$1" | while IFS="$TAB" read -r u s; do
+    if [ -n "$s" ] && printf '%s\n' "$visible" | grep -qxF -- "$s"; then
+      printf '%s\t%s\n' "$u" "$s"
+      break
+    fi
+  done
 }
 
 # One rescan, then poll the list. iwd fills the list as that scan completes;
-# asking again every second would restart it. Not seeing the SSID is not a
-# reason to skip the up — hidden networks never appear here.
-wait_for_ssid() {
-  ssid=$1
+# asking again every second would restart it. Nothing in range is not a
+# reason to skip the up -- hidden networks never appear here -- so the newest
+# candidate is the fallback.
+pick() {
   nmcli device wifi rescan ifname "$IFACE" >/dev/null 2>&1 || true
-  if ssid_visible "$ssid"; then
-    return 0
-  fi
   waited=0
-  while [ "$waited" -lt "$SCAN_WAIT" ]; do
+  while :; do
+    picked=$(first_in_range "$1")
+    if [ -n "$picked" ]; then
+      printf '%s\n' "$picked"
+      return
+    fi
+    if [ "$waited" -ge "$SCAN_WAIT" ]; then
+      log "no saved network in the scan yet; trying the newest anyway" >&2
+      printf '%s\n' "$1" | head -1
+      return
+    fi
     sleep 1
     waited=$((waited + 1))
-    if ssid_visible "$ssid"; then
-      return 0
-    fi
   done
-  log "ssid not in scan yet; activating anyway"
 }
 
-for i in $(seq 1 "$ATTEMPTS"); do
-  # Already online on any WiFi device? Done.
-  if nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null \
-      | grep -q "^[^:]*:wifi:connected$"; then
-    log "wifi already connected; no retry needed"
+# Whether the app holds reconnects: the hold file names a live process.
+# `kill -0` asks the kernel without signalling; it answers for any PID to
+# root, which this service runs as.
+held() {
+  [ -f "$HOLD_FILE" ] || return 1
+  holder=$(cat "$HOLD_FILE" 2>/dev/null)
+  case "$holder" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$holder" 2>/dev/null
+}
+
+attempt=0
+waited_on_nm=no
+holding=no
+pause=$BACKOFF
+while :; do
+  if held; then
+    if [ "$holding" = no ]; then
+      log "performing; holding off"
+      holding=yes
+    fi
+    since=$(date +%s)
+    sleep "$HOLD_POLL"
+    deadline=$((deadline + $(date +%s) - since))
+    continue
+  fi
+  if [ "$holding" = yes ]; then
+    log "performance over; resuming"
+    holding=no
+  fi
+
+  # The owner turned WiFi off? Their call wins -- retrying into a disabled
+  # radio would fight the Control Center toggle.
+  if [ "$(nmcli radio wifi 2>/dev/null)" = "disabled" ]; then
+    log "wifi radio is off; respecting it"
     exit 0
   fi
 
-  # The most recently used saved WiFi profile, by UUID. UUIDs contain no
-  # colons, so nmcli's \:-escaping of names (which breaks awk -F: and quoting
-  # into `connection up`) never enters the picture. TIMESTAMP is the last
-  # successful activation, so a bench unit with several remembered networks
-  # retries the one the owner used last.
-  listing=$(nmcli -t -f UUID,TYPE,TIMESTAMP connection show 2>/dev/null)
-  if [ -z "$listing" ]; then
-    # NM briefly unresponsive is retryable -- do not mistake it for "nothing
-    # saved" and burn the whole budget on a clean exit.
-    log "attempt $i/$ATTEMPTS: NetworkManager not answering; will retry"
-    [ "$i" -lt "$ATTEMPTS" ] && sleep "$BETWEEN"
+  state=$(wifi_state)
+  if [ "$state" = connected ]; then
+    if [ "$attempt" -eq 0 ] && [ "$waited_on_nm" = no ]; then
+      log "wifi already connected; no retry needed"
+    else
+      log "wifi connected"
+    fi
+    exit 0
+  fi
+
+  # NM is mid-activation: its own autoconnect, or a Join from the Network
+  # page. Let it finish; whatever it ends in is the next check. It is not our
+  # attempt, so it does not advance the backoff.
+  if in_flight "$state"; then
+    waited_on_nm=yes
+    [ "$(date +%s)" -lt "$deadline" ] || break
+    sleep "$POLL"
     continue
   fi
 
-  uuid=$(printf "%s\n" "$listing" \
-    | awk -F: '$2 == "802-11-wireless" { print $3 "\t" $1 }' \
-    | sort -rn | head -1 | cut -f2)
-
-  if [ -z "$uuid" ]; then
-    log "no saved wifi profile; nothing to retry"
+  # A Disconnect from the Network page turns the device's autoconnect off
+  # until the next activation. Reconnecting would undo the owner's action.
+  # Checked after the in-flight wait: segno-wifi-ctl pauses the same flag for
+  # the length of a join (up_with_key), and that join reads as connecting.
+  if [ "$(nmcli -g GENERAL.AUTOCONNECT device show "$IFACE" 2>/dev/null)" = "no" ]; then
+    log "$IFACE was disconnected by hand; respecting it"
     exit 0
   fi
 
-  ssid=$(nmcli -g 802-11-wireless.ssid connection show uuid "$uuid" 2>/dev/null || true)
-  log "attempt $i/$ATTEMPTS: activating $uuid${ssid:+ ($ssid)}"
-  if [ -n "$ssid" ]; then
-    wait_for_ssid "$ssid"
+  listing=$(nmcli -t -f UUID,TYPE,AUTOCONNECT,TIMESTAMP connection show 2>/dev/null)
+  if [ -z "$listing" ]; then
+    # NM briefly unresponsive is retryable -- do not mistake it for "nothing
+    # saved" and give up on a clean exit.
+    log "NetworkManager not answering; will retry"
   else
-    nmcli device wifi rescan ifname "$IFACE" >/dev/null 2>&1 || true
+    cands=$(candidates "$listing")
+    if [ -z "$cands" ]; then
+      log "no saved wifi network may auto-join; nothing to retry"
+      exit 0
+    fi
+
+    picked=$(pick "$cands")
+    uuid=${picked%%"$TAB"*}
+    ssid=${picked#*"$TAB"}
+
+    # The rescan above is often what lets NM's own autoconnect fire. If it
+    # did, stepping on it is the abort this service must never cause: go
+    # back to waiting for it.
+    state=$(wifi_state)
+    if [ "$state" = connected ] || in_flight "$state"; then
+      waited_on_nm=yes
+      [ "$(date +%s)" -lt "$deadline" ] || break
+      continue
+    fi
+
+    # A performance may have started during the scan wait.
+    held && continue
+
+    attempt=$((attempt + 1))
+    log "attempt $attempt: activating $uuid${ssid:+ ($ssid)}"
+    # stdout is the helper's JSON; its stderr (nmcli's reason for a failure)
+    # goes to the journal, where the next offline boot will be read.
+    if "$WIFI_CTL" activate "$uuid" "$UP_WAIT" >/dev/null; then
+      log "$uuid activated on attempt $attempt"
+      exit 0
+    fi
   fi
-  # -w 20 bounds each attempt. Worst case with the scan wait:
-  # 8 + 3*(16+20) + 2*5 = 126 s, inside TimeoutStartSec=180 (nmcli's default
-  # 90 s wait was not: 8 + 3*90 + 2*5 = 288 s, and systemd would have killed
-  # attempt 2 mid-way).
-  if nmcli -w 20 connection up uuid "$uuid" >/dev/null 2>&1; then
-    log "$uuid activated on attempt $i"
-    exit 0
-  fi
-  [ "$i" -lt "$ATTEMPTS" ] && sleep "$BETWEEN"
+
+  now=$(date +%s)
+  [ "$now" -lt "$deadline" ] || break
+  left=$((deadline - now))
+  [ "$pause" -le "$left" ] || pause=$left
+  sleep "$pause"
+  pause=$((pause * 2))
+  [ "$pause" -le "$BACKOFF_MAX" ] || pause=$BACKOFF_MAX
 done
 
-log "gave up after $ATTEMPTS attempts"
+log "gave up after $attempt attempt(s) in ${RETRY_FOR}s"
 exit 1

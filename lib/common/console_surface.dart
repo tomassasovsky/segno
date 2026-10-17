@@ -1387,10 +1387,10 @@ class ConsoleDomainPanel<T> extends StatelessWidget {
 /// surface's own controls.
 ///
 /// The domain says its name **here**, not in a chrome bar above the tab strip.
-/// The rail is always on screen, so a chrome bar would be a second navigation
-/// surface, and a per-tab control (a rescan, a power switch) belongs to the
-/// tab rather than to the domain — which puts the tabs first and the title
-/// under them.
+/// The surrounding frame has its own Back, so a chrome bar would be a second
+/// navigation surface, and a per-tab control (a rescan, a power switch)
+/// belongs to the tab rather than to the domain — which puts the tabs first
+/// and the title under them.
 class ConsoleFaceHeader extends StatelessWidget {
   /// Creates a [ConsoleFaceHeader].
   const ConsoleFaceHeader({
@@ -3002,22 +3002,35 @@ Future<bool> showConsoleConfirmDialog(
                 ),
               ),
               const SizedBox(height: 19),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  ConsoleDialogButton(
-                    key: const Key('console_confirm_cancel'),
-                    label: l10n.consoleKeepIt,
-                    onPressed: () => Navigator.of(dialogContext).pop(false),
-                  ),
-                  const SizedBox(width: 10),
-                  ConsoleDialogButton(
-                    key: const Key('console_confirm_confirm'),
-                    label: confirmLabel,
-                    tone: ConsoleDialogTone.destructive,
-                    onPressed: () => Navigator.of(dialogContext).pop(true),
-                  ),
-                ],
+              // A Wrap, not a Row: a long confirm label ("Stop loops and
+              // switch") takes the next line instead of overflowing. Each
+              // button keeps its own width (a Wrap child would otherwise fill
+              // the line), so the ordinary pair still sits together at the
+              // right.
+              SizedBox(
+                width: double.infinity,
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    IntrinsicWidth(
+                      child: ConsoleDialogButton(
+                        key: const Key('console_confirm_cancel'),
+                        label: l10n.consoleKeepIt,
+                        onPressed: () => Navigator.of(dialogContext).pop(false),
+                      ),
+                    ),
+                    IntrinsicWidth(
+                      child: ConsoleDialogButton(
+                        key: const Key('console_confirm_confirm'),
+                        label: confirmLabel,
+                        tone: ConsoleDialogTone.destructive,
+                        onPressed: () => Navigator.of(dialogContext).pop(true),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -3345,6 +3358,11 @@ enum ConsoleDialogTone {
   /// warning amber, not the destructive red: nothing is destroyed, but the
   /// tap was intercepted and this is the button that lets it land.
   warning,
+
+  /// The one thing a card is for — Storage's Eject. Solid in the accent:
+  /// unlike [accent] it does commit something, and it sits beside a
+  /// [neutral] sibling (Browse) that must not read as its equal.
+  primary,
 }
 
 /// A 40px button at the foot of a panel or sheet.
@@ -3401,6 +3419,11 @@ class ConsoleDialogButton extends StatelessWidget {
         surface.warning,
         surface.background,
       ),
+      ConsoleDialogTone.primary => (
+        surface.accent,
+        surface.accent,
+        surface.onAccent,
+      ),
     };
     return FocusableTapTarget(
       onTap: onPressed,
@@ -3425,13 +3448,15 @@ class ConsoleDialogButton extends StatelessWidget {
               fontSize: 15,
               height: 1.2,
               leadingDistribution: TextLeadingDistribution.even,
-              // Both solid tones carry their weight; the outlined ones stay
-              // regular — the pen draws `Switch off` at 600 like `Delete`.
-              fontWeight:
-                  tone == ConsoleDialogTone.destructive ||
-                      tone == ConsoleDialogTone.warning
-                  ? FontWeight.w600
-                  : FontWeight.normal,
+              // The solid tones carry their weight; the outlined ones stay
+              // regular — the pen draws `Switch off` at 600 like `Delete`,
+              // and Storage's `Eject` at 700.
+              fontWeight: switch (tone) {
+                ConsoleDialogTone.primary => FontWeight.w700,
+                ConsoleDialogTone.destructive ||
+                ConsoleDialogTone.warning => FontWeight.w600,
+                _ => FontWeight.normal,
+              },
             ),
           ),
         ),
