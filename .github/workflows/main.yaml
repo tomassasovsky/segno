@@ -322,7 +322,7 @@ jobs:
         run: |
           set -eu
           arduino-cli core update-index --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-          arduino-cli core install rp2040:rp2040 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli core install rp2040:rp2040@6.0.0 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
           arduino-cli lib install "Adafruit NeoPixel@1.15.5" "NeoPixelBus by Makuna@2.8.4"
       - name: Compile the console board firmware
         run: |
@@ -335,6 +335,15 @@ jobs:
           set -eu
           arduino-cli compile --libraries firmware/libraries --fqbn rp2040:rp2040:seeed_xiao_rp2350 firmware/ring_board --output-dir ring-out
           test -s ring-out/ring_board.ino.uf2
+      # The update image (TBYB) and the USB install (not), with the core's
+      # picotool: a core whose image layout seal.py no longer understands
+      # fails here rather than on a ring.
+      - name: Seal the ring carrier firmware
+        run: |
+          set -eu
+          python3 -I firmware/ring_board/seal.py ring-out/ring_board.ino.bin ring-sealed
+          for f in ring_board.bin ring_board.uf2 partition_table.uf2 version; do test -s "ring-sealed/$f"; done
+          cat ring-sealed/version
 
   # The same engine/MIDI suites under AddressSanitizer (#227): the strongest
   # net for buffer-sizing bugs — the class that stays green through every
@@ -538,6 +547,8 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-console-board/test/run_console_flash_tests.sh
       - name: Run console-board flash record tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-console-board/test/run_flash_record_tests.sh
+      - name: Run ring-board flash tests
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-console-board/test/run_ring_flash_tests.sh
       # Twice: the appliance's /bin/sh is busybox ash, so the helper must hold
       # under a strict POSIX shell (dash) as well as bash.
       - name: Run usb-ctl tests (bash)

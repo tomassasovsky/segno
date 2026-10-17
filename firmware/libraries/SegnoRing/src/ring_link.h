@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "ring_frame.h"
+#include "ring_update.h"
+
 // The private UART between the console board's Pico (GP13 TX / GP14 RX) and the
 // ring carrier's XIAO RP2350 (D9 RX / D10 TX). SLIP framing (RFC 1055),
 // CRC-16/CCITT-FALSE, version 3.
@@ -12,12 +15,16 @@
 // change never needs the ring reflashed. INPUT_STATE carries the boot nonce, a
 // cumulative detent count and a cumulative button edge count (LE32 each):
 // counter snapshots recover dropped short presses as well as missing detents.
+// Framing is ring_frame.h's. Firmware updates share the wire on their own
+// channel (ring_update.h); the parser here skips those frames without
+// counting them as noise.
 namespace ring_link {
 constexpr uint8_t VERSION = 3, STATE = 1, INPUT_STATE = 2;
-constexpr uint8_t END = 0xc0, ESC = 0xdb, ESC_END = 0xdc, ESC_ESC = 0xdd;
+constexpr uint8_t END = RING_FRAME_END, ESC = RING_FRAME_ESC;
+constexpr uint8_t ESC_END = RING_FRAME_ESC_END, ESC_ESC = RING_FRAME_ESC_ESC;
 constexpr size_t STATE_LEN = 5, INPUT_LEN = 12;
 constexpr size_t MAX_PAYLOAD = INPUT_LEN, MAX_BODY = MAX_PAYLOAD + 4;
-constexpr size_t MAX_FRAME = MAX_BODY * 2 + 2;
+constexpr size_t MAX_FRAME = RING_FRAME_ENCODED_MAX(MAX_BODY - 2);
 constexpr uint32_t SNAPSHOT_MS = 20, STATE_MS = 100, TIMEOUT_MS = 500;
 
 // STATE flags. LIVE: the app is connected and has not said goodbye; without it
@@ -40,15 +47,7 @@ inline RingState decodeState(const uint8_t *p) {
   return s;
 }
 
-inline uint16_t crc16(const uint8_t *p, size_t length) {
-  uint16_t crc = 0xffff;
-  while (length--) {
-    crc ^= (uint16_t)*p++ << 8;
-    for (uint8_t i = 0; i < 8; ++i)
-      crc = (uint16_t)((crc << 1) ^ ((crc & 0x8000) ? 0x1021 : 0));
-  }
-  return crc;
-}
+inline uint16_t crc16(const uint8_t *p, size_t length) { return ring_frame_crc16(p, length); }
 inline size_t payloadLength(uint8_t type) {
   return type == STATE ? STATE_LEN : type == INPUT_STATE ? INPUT_LEN : 0;
 }
@@ -61,45 +60,35 @@ inline uint32_t get32(const uint8_t *p) {
 inline size_t encode(uint8_t type, const uint8_t *payload, uint8_t *out) {
   const size_t n = payloadLength(type);
   if (!n) return 0;
-  uint8_t body[MAX_BODY] = {VERSION, type};
+  uint8_t body[MAX_BODY - 2] = {VERSION, type};
   memcpy(body + 2, payload, n);
-  const uint16_t crc = crc16(body, n + 2);
-  body[n + 2] = (uint8_t)crc;
-  body[n + 3] = (uint8_t)(crc >> 8);
-  size_t cursor = 0;
-  out[cursor++] = END;
-  for (size_t i = 0; i < n + 4; ++i) {
-    if (body[i] == END || body[i] == ESC) {
-      out[cursor++] = ESC;
-      out[cursor++] = body[i] == END ? ESC_END : ESC_ESC;
-    } else out[cursor++] = body[i];
-  }
-  out[cursor++] = END;
-  return cursor;
+  return ring_frame_encode(body, n + 2, out);
 }
 
 struct Parser {
   uint8_t body[MAX_BODY] = {};
   size_t used = 0;
-  bool escape = false, rejected = false;
+  bool escape = false, rejected = false, update = false;
   uint32_t dropped = 0;
   bool push(uint8_t byte, uint8_t &type, const uint8_t *&payload) {
     if (byte == END) {
-      bool valid = !escape && !rejected && used >= 4 && body[0] == VERSION &&
+      bool valid = !update && !escape && !rejected && used >= 4 && body[0] == VERSION &&
                    payloadLength(body[1]) && used == payloadLength(body[1]) + 4;
       if (valid) valid = crc16(body, used - 2) == (uint16_t)(body[used - 2] | (uint16_t)body[used - 1] << 8);
       if (valid) { type = body[1]; payload = body + 2; }
-      else if (used || escape || rejected) ++dropped;
-      used = 0; escape = rejected = false;
+      else if (!update && (used || escape || rejected)) ++dropped;
+      used = 0; escape = rejected = update = false;
       return valid;
     }
-    if (rejected) return false;
+    if (update || rejected) return false;
     if (escape) {
       escape = false;
       if (byte == ESC_END) byte = END;
       else if (byte == ESC_ESC) byte = ESC;
       else { rejected = true; return false; }
     } else if (byte == ESC) { escape = true; return false; }
+    // An update-channel frame is someone else's message, not line noise.
+    if (used == 0 && byte == RING_UPDATE_CHANNEL) { update = true; return false; }
     if (used == MAX_BODY) { rejected = true; return false; }
     body[used++] = byte;
     return false;
