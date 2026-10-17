@@ -115,6 +115,22 @@ static void ringStateForwarding() {
   expectRingDark();
 }
 
+// Every HELLO is followed by the PD trigger's status (#1352). Nothing answers
+// on this bus, so the board reports the trigger as not read, with no contract.
+static void pdStatusFollowsHello() {
+  fake_arduino::sent.clear();
+  at(fake_arduino::now + PEDAL_LINK_HELLO_MS + 1);
+  uint8_t want[PEDAL_LINK_MAX_FRAME];
+  const size_t n = pedal_link_encode_pd_status(PEDAL_PD_PROFILE_NOT_READ, 0, 0, 0, 0, want);
+  bool found = false;
+  for (size_t i = 0; i + 1 < fake_arduino::sent.size(); ++i) {
+    if (fake_arduino::sent[i][1] != PEDAL_LINK_TYPE_HELLO) continue;
+    assert(fake_arduino::sent[i + 1] == std::vector<uint8_t>(want, want + n));
+    found = true;
+  }
+  assert(found);
+}
+
 // The Song queue (#1077): the queued switch's pill fills left to right by
 // the app's progress, in the colour and activity the app gave it. No local
 // clock moves it, and a queue never lights the whole pill.
@@ -283,5 +299,6 @@ int main() {
   for (unsigned group = 0; group < 10; ++group) assert(ind.shown[group*8+3]);
   songQueueFill();
   ringStateForwarding();
-  puts("Console v3 ten pills, Song queue fill and ring state: all physical groups, host activity, limits, dimming and lifecycle pass");
+  pdStatusFollowsHello();
+  puts("Console v3 ten pills, Song queue fill and ring state: all physical groups, host activity, limits, dimming, PD status and lifecycle pass");
 }

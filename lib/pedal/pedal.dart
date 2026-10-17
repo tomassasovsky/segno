@@ -3,3 +3,4 @@
 library;
 
 export 'cubit/pedal_cubit.dart';
+export 'power_supply_text.dart';
