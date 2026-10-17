@@ -128,7 +128,9 @@ Anything short of that leaves the previous firmware booting: power cut or
 unplugged J1 mid-transfer, a wrong digest, a hash the bootrom rejects, or a
 new image that never answers. `segno-ring-flash` exits 0 whatever happens,
 retries on the next boot, and stops after three failed attempts at one
-version, so an image the ring rejects does not slow every boot. An update
+version, so an image the ring rejects does not slow every boot. A transfer cut
+by the line counts too; to retry a held version, remove
+`/data/segno/ring-board/attempts` (the journal says so). An update
 takes about ten seconds at 115200 baud.
 
 `firmware/test/test_ring_board.cpp` runs this sketch on the host: the comet

@@ -7,6 +7,7 @@
  */
 #include "ring_flash.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -26,9 +27,13 @@ typedef struct {
   uint8_t major, minor, protocol, flags, partition;
 } hello;
 
-static void say(session *s, const char *format, int a, int b, int c, int d) {
+static void say(session *s, const char *format, ...) __attribute__((format(printf, 2, 3)));
+static void say(session *s, const char *format, ...) {
   char line[160];
-  snprintf(line, sizeof(line), format, a, b, c, d);
+  va_list args;
+  va_start(args, format);
+  vsnprintf(line, sizeof(line), format, args);
+  va_end(args);
   s->io->log(s->io->ctx, line);
 }
 
@@ -104,11 +109,11 @@ static int confirm(session *s) {
     const int status = request(s, RING_UPDATE_CONFIRM, NULL, 0, RING_FLASH_ACK_MS, NULL);
     if (status == RING_UPDATE_OK) return 1;
     if (status >= 0) {
-      say(s, "the ring refused to keep the new firmware (status %d)", status, 0, 0, 0);
+      say(s, "the ring refused to keep the new firmware (status %d)", status);
       return 0;
     }
   }
-  say(s, "no reply to CONFIRM", 0, 0, 0, 0);
+  say(s, "no reply to CONFIRM");
   return 0;
 }
 
@@ -128,7 +133,7 @@ static int transfer(session *s, const ring_flash_job *job) {
   memcpy(begin + 4, job->digest, RING_UPDATE_DIGEST_LEN);
   int status = retried(s, RING_UPDATE_BEGIN, begin, sizeof(begin), NULL);
   if (status != RING_UPDATE_OK) {
-    say(s, "the ring refused the update (status %d)", status, 0, 0, 0);
+    say(s, "the ring refused the update (status %d)", status);
     return 0;
   }
   uint8_t chunk[4 + RING_UPDATE_CHUNK];
@@ -139,7 +144,7 @@ static int transfer(session *s, const ring_flash_job *job) {
     uint32_t next = 0;
     status = retried(s, RING_UPDATE_DATA, chunk, 4 + n, &next);
     if (status != RING_UPDATE_OK || next != offset + n) {
-      say(s, "chunk at %d failed (status %d, ring expects %d)", (int)offset, status, (int)next, 0);
+      say(s, "chunk at %d failed (status %d, ring expects %d)", (int)offset, status, (int)next);
       return 0;
     }
     offset += n;
@@ -148,7 +153,7 @@ static int transfer(session *s, const ring_flash_job *job) {
   // settled by what the ring says after the reboot.
   status = request(s, RING_UPDATE_COMMIT, NULL, 0, RING_FLASH_COMMIT_MS, NULL);
   if (status > 0) {
-    say(s, "the ring did not accept the image (status %d)", status, 0, 0, 0);
+    say(s, "the ring did not accept the image (status %d)", status);
     return 0;
   }
   return 1;
@@ -168,20 +173,20 @@ ring_flash_outcome ring_flash_run(const ring_flash_io *io, const ring_flash_job 
   hello h;
   if (!query(&s, RING_FLASH_QUERY_MS, 1, &h)) {
     say(&s, "no answer through the console: its firmware predates the bridge, the ring's "
-            "predates the updater, or no ring is connected", 0, 0, 0, 0);
+            "predates the updater, or no ring is connected");
     return finish(&s, RING_FLASH_SILENT);
   }
   if (h.flags & RING_UPDATE_FLAG_NO_TABLE) {
-    say(&s, "the ring runs %d.%d without a partition table; install it once over USB", h.major, h.minor, 0, 0);
+    say(&s, "the ring runs %d.%d without a partition table; install it once over USB", h.major, h.minor);
     return finish(&s, RING_FLASH_NO_TABLE);
   }
   const int wanted = h.major == job->major && h.minor == job->minor;
   if (wanted && (h.flags & RING_UPDATE_FLAG_TRIAL)) {
-    say(&s, "the ring runs %d.%d on trial; confirming it", h.major, h.minor, 0, 0);
+    say(&s, "the ring runs %d.%d on trial; confirming it", h.major, h.minor);
     return finish(&s, confirm(&s) ? RING_FLASH_CONFIRMED : RING_FLASH_FAILED);
   }
   if (wanted) {
-    say(&s, "the ring runs firmware %d.%d; nothing to do", h.major, h.minor, 0, 0);
+    say(&s, "the ring runs firmware %d.%d; nothing to do", h.major, h.minor);
     return finish(&s, RING_FLASH_CURRENT);
   }
   if (h.flags & RING_UPDATE_FLAG_TRIAL) {
@@ -203,7 +208,7 @@ ring_flash_outcome ring_flash_run(const ring_flash_io *io, const ring_flash_job 
   // The ring reboots into the new image on trial and says HELLO from it.
   hello after;
   if (!query(&s, RING_FLASH_REBOOT_MS, 0, &after)) {
-    say(&s, "no answer after the reboot", 0, 0, 0, 0);
+    say(&s, "no answer after the reboot");
     return finish(&s, RING_FLASH_FAILED);
   }
   if (after.major != job->major || after.minor != job->minor || !(after.flags & RING_UPDATE_FLAG_TRIAL)) {
@@ -213,9 +218,9 @@ ring_flash_outcome ring_flash_run(const ring_flash_io *io, const ring_flash_job 
   }
   if (!confirm(&s)) return finish(&s, RING_FLASH_FAILED);
   if (!query(&s, RING_FLASH_QUERY_MS, 0, &after) || (after.flags & RING_UPDATE_FLAG_TRIAL)) {
-    say(&s, "the ring did not report the confirmed firmware", 0, 0, 0, 0);
+    say(&s, "the ring did not report the confirmed firmware");
     return finish(&s, RING_FLASH_FAILED);
   }
-  say(&s, "the ring now runs %d.%d", after.major, after.minor, 0, 0);
+  say(&s, "the ring now runs %d.%d", after.major, after.minor);
   return finish(&s, RING_FLASH_UPDATED);
 }

@@ -5,6 +5,7 @@
 // or on trial, a lost reply, a cut line followed by a clean retry, a wrong
 // digest, the bootrom rejecting the image, and the refusals.
 #include <cassert>
+#include <csignal>
 #include <cstdio>
 #include <new>
 #include <string>
@@ -285,9 +286,11 @@ void refusalsAndSilence() {
   reset(-1);  // installed without the partition table
   const Image img = image(9000, 10);
   assert(run(img, 1, 10) == RING_FLASH_NO_TABLE && world.attempts == 0);
+  assert(world.log.back().find("over USB") != std::string::npos);
 
   reset();
   assert(run(img, 1, 10, false) == RING_FLASH_HELD && world.attempts == 0 && fake_flash::erases == 0);
+  assert(world.log.back().find("not retrying") != std::string::npos);
 
   reset();
   world.consoleBridges = false;  // a console that predates the bridge
@@ -359,7 +362,13 @@ void theRingRefusesWhatItCannotDoSafely() {
 
 }  // namespace
 
+// A failed assertion shows what the engine said on the way.
+void dumpLog(int) {
+  for (const auto &line : world.log) std::fprintf(stderr, "  engine: %s\n", line.c_str());
+}
+
 int main() {
+  std::signal(SIGABRT, dumpLog);
   sha256KnownAnswer();
   currentRingCostsOneQuery();
   updatesAndThenUpdatesTheOtherPartition();

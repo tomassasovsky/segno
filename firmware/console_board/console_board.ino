@@ -107,7 +107,9 @@ static bool g_haveFrame = false;
 static unsigned long g_lastFrameMs = 0;
 static unsigned long g_lastHelloMs = 0;
 
-SerialPIO ringLink(PIN_RING_TX, PIN_RING_RX, 256);
+// 2048: while bridging, a whole update chunk is copied the other way before
+// this buffer is drained again.
+SerialPIO ringLink(PIN_RING_TX, PIN_RING_RX, 2048);
 static ring_link::Parser g_ringParser;
 static ring_link::InputTracker g_ringInput;
 static unsigned long g_lastRingStateMs = 0;

@@ -216,6 +216,11 @@ int main(void) {
   tcdrain(u.fd);
   close(u.fd);
 
+  if (outcome == RING_FLASH_HELD) {
+    // A cut line counts as much as a rejected image: say how to try again.
+    snprintf(line, sizeof(line), "remove %s to let the next boot try %s again", u.attempts_path, u.want);
+    log_line(line);
+  }
   if (outcome == RING_FLASH_CURRENT || outcome == RING_FLASH_UPDATED || outcome == RING_FLASH_CONFIRMED) {
     unlink(u.attempts_path);
     if (outcome != RING_FLASH_CURRENT) {
