@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -8,17 +9,34 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/idle_dim_cubit.dart';
+import 'package:segno/backing/cubit/backing_cubit.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/performance/performance.dart';
 
-/// Whether the music keeps both panels awake: the transport or a track
-/// playing, a track recording, or a performance recording running.
-bool idleKeepsAwake(LooperState looper, PerformanceRecorderState performance) =>
-    looper.transport.isRunning ||
+/// Whether the music keeps both panels awake: a count-in, a track playing or
+/// recording, a backing track playing, or a performance recording running.
+///
+/// Not `transport.isRunning`: that is the audio device being open, which on
+/// the appliance it always is, so it would keep the panels awake and hold
+/// the WiFi reconnect forever (#1337).
+bool idleKeepsAwake(
+  LooperState looper,
+  PerformanceRecorderState performance,
+  BackingPlayerState backing,
+) =>
+    looper.transport.countingIn ||
     looper.tracks.any(
       (track) => track.state == TrackState.playing || track.isCapturing,
     ) ||
+    backing.playing ||
     performance is PerformanceRecorderArmed;
+
+/// [idleKeepsAwake] for the app's current state.
+bool musicKeepsAwake(BuildContext context) => idleKeepsAwake(
+  context.read<LooperBloc>().state,
+  context.read<PerformanceRecorderCubit>().state,
+  context.read<BackingCubit>().state.backing.player,
+);
 
 /// Feeds the [IdleDimCubit] and carries its dim to the panels and the
 /// console's LEDs.
@@ -71,18 +89,19 @@ class _IdleDimHostState extends State<IdleDimHost> {
     if (mounted) context.read<IdleDimCubit>().activity();
   }
 
-  void _syncBusy() => context.read<IdleDimCubit>().setBusy(
-    busy: idleKeepsAwake(
-      context.read<LooperBloc>().state,
-      context.read<PerformanceRecorderCubit>().state,
-    ),
-  );
+  void _syncBusy() =>
+      context.read<IdleDimCubit>().setBusy(busy: musicKeepsAwake(context));
 
   @override
   Widget build(BuildContext context) => MultiBlocListener(
     listeners: [
       BlocListener<LooperBloc, LooperState>(listener: (_, _) => _syncBusy()),
       BlocListener<PerformanceRecorderCubit, PerformanceRecorderState>(
+        listener: (_, _) => _syncBusy(),
+      ),
+      BlocListener<BackingCubit, BackingCubitState>(
+        listenWhen: (previous, current) =>
+            previous.backing.player.playing != current.backing.player.playing,
         listener: (_, _) => _syncBusy(),
       ),
       BlocListener<IdleDimCubit, IdleDimState>(

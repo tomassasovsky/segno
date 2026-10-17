@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -7,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/appliance/wifi_reconnect_hold_host.dart';
+import 'package:segno/backing/cubit/backing_cubit.dart';
+import 'package:segno/backing/model/backing_state.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:wifi_repository/wifi_repository.dart';
@@ -17,9 +20,16 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit {}
 
+class _MockBackingCubit extends MockCubit<BackingCubitState>
+    implements BackingCubit {}
+
 class _MockWifiRepository extends Mock implements WifiRepository {}
 
-const _playing = LooperState(transport: TransportState(isRunning: true));
+const _open = LooperState(transport: TransportState(isRunning: true));
+const _playing = LooperState(
+  transport: TransportState(isRunning: true),
+  tracks: [Track(state: TrackState.playing)],
+);
 
 void main() {
   group('WifiReconnectHoldHost', () {
@@ -27,6 +37,8 @@ void main() {
     late StreamController<LooperState> looperStates;
     late _MockPerformanceRecorderCubit performance;
     late StreamController<PerformanceRecorderState> performanceStates;
+    late _MockBackingCubit backing;
+    late StreamController<BackingCubitState> backingStates;
     late _MockWifiRepository wifi;
     late List<bool> holds;
 
@@ -46,6 +58,13 @@ void main() {
         performanceStates.stream,
         initialState: const PerformanceRecorderIdle(),
       );
+      backing = _MockBackingCubit();
+      backingStates = StreamController<BackingCubitState>.broadcast();
+      whenListen(
+        backing,
+        backingStates.stream,
+        initialState: const BackingCubitState(backing: BackingState()),
+      );
       wifi = _MockWifiRepository();
       holds = [];
       when(
@@ -55,6 +74,7 @@ void main() {
       });
       addTearDown(looperStates.close);
       addTearDown(performanceStates.close);
+      addTearDown(backingStates.close);
 
       await tester.pumpWidget(
         RepositoryProvider<WifiRepository>.value(
@@ -63,6 +83,7 @@ void main() {
             providers: [
               BlocProvider<LooperBloc>.value(value: looper),
               BlocProvider<PerformanceRecorderCubit>.value(value: performance),
+              BlocProvider<BackingCubit>.value(value: backing),
             ],
             child: const WifiReconnectHoldHost(child: SizedBox()),
           ),
@@ -92,6 +113,28 @@ void main() {
       looperStates.add(const LooperState());
       await tester.pump();
       expect(holds, [false, true, false]);
+    });
+
+    testWidgets('an open audio device alone does not hold', (tester) async {
+      await pump(tester);
+      looperStates.add(_open);
+      await tester.pump();
+      expect(holds, [false]);
+    });
+
+    testWidgets('holds while a backing track plays on its own', (
+      tester,
+    ) async {
+      await pump(tester);
+      backingStates.add(
+        const BackingCubitState(
+          backing: BackingState(
+            player: BackingPlayerState(transport: BackingTransport.playing),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(holds, [false, true]);
     });
 
     testWidgets('holds while a performance recording is armed', (

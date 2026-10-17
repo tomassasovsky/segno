@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +13,8 @@ import 'package:pedal_repository/testing.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/appliance/idle_dim_host.dart';
+import 'package:segno/backing/cubit/backing_cubit.dart';
+import 'package:segno/backing/model/backing_state.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -24,8 +27,15 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit {}
 
+class _MockBackingCubit extends MockCubit<BackingCubitState>
+    implements BackingCubit {}
+
+const _quiet = BackingPlayerState();
+
+// The audio device is open on the appliance whether or not anything plays.
 const _playing = LooperState(
   transport: TransportState(isRunning: true),
+  tracks: [Track(state: TrackState.playing)],
 );
 
 void main() {
@@ -131,22 +141,33 @@ void main() {
     const idle = PerformanceRecorderIdle();
 
     test('a stopped rig does not', () {
-      expect(idleKeepsAwake(const LooperState(), idle), isFalse);
+      expect(idleKeepsAwake(const LooperState(), idle, _quiet), isFalse);
       expect(
         idleKeepsAwake(
           const LooperState(tracks: [Track(state: TrackState.stopped)]),
           idle,
+          _quiet,
         ),
         isFalse,
       );
-    });
-
-    test('the transport or a track playing does', () {
-      expect(idleKeepsAwake(_playing, idle), isTrue);
       expect(
         idleKeepsAwake(
-          const LooperState(tracks: [Track(state: TrackState.playing)]),
+          const LooperState(transport: TransportState(isRunning: true)),
           idle,
+          _quiet,
+        ),
+        isFalse,
+        reason: 'an open audio device is not music playing',
+      );
+    });
+
+    test('a count-in or a track playing does', () {
+      expect(idleKeepsAwake(_playing, idle, _quiet), isTrue);
+      expect(
+        idleKeepsAwake(
+          const LooperState(transport: TransportState(countingIn: true)),
+          idle,
+          _quiet,
         ),
         isTrue,
       );
@@ -155,11 +176,34 @@ void main() {
     test('a capture does', () {
       for (final state in [TrackState.recording, TrackState.overdubbing]) {
         expect(
-          idleKeepsAwake(LooperState(tracks: [Track(state: state)]), idle),
+          idleKeepsAwake(
+            LooperState(tracks: [Track(state: state)]),
+            idle,
+            _quiet,
+          ),
           isTrue,
           reason: state.name,
         );
       }
+    });
+
+    test('a backing track playing on its own does', () {
+      expect(
+        idleKeepsAwake(
+          const LooperState(),
+          idle,
+          const BackingPlayerState(transport: BackingTransport.playing),
+        ),
+        isTrue,
+      );
+      expect(
+        idleKeepsAwake(
+          const LooperState(),
+          idle,
+          const BackingPlayerState(transport: BackingTransport.paused),
+        ),
+        isFalse,
+      );
     });
 
     test('a performance recording does', () {
@@ -170,6 +214,7 @@ void main() {
             elapsed: Duration.zero,
             overrun: false,
           ),
+          _quiet,
         ),
         isTrue,
       );
@@ -182,6 +227,7 @@ void main() {
     late _MockLooperBloc looper;
     late StreamController<LooperState> looperStates;
     late _MockPerformanceRecorderCubit performance;
+    late _MockBackingCubit backing;
     late FakePedalLink link;
     late PedalRepository pedal;
     late int presses;
@@ -201,6 +247,12 @@ void main() {
         performance,
         const Stream<PerformanceRecorderState>.empty(),
         initialState: const PerformanceRecorderIdle(),
+      );
+      backing = _MockBackingCubit();
+      whenListen(
+        backing,
+        const Stream<BackingCubitState>.empty(),
+        initialState: const BackingCubitState(backing: BackingState()),
       );
       link = FakePedalLink();
       pedal = PedalRepository(link);
@@ -223,6 +275,7 @@ void main() {
               BlocProvider.value(value: brightness),
               BlocProvider<LooperBloc>.value(value: looper),
               BlocProvider<PerformanceRecorderCubit>.value(value: performance),
+              BlocProvider<BackingCubit>.value(value: backing),
             ],
             child: MaterialApp(
               builder: (context, child) => IdleDimHost(child: child!),

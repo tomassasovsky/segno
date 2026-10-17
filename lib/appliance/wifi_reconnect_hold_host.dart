@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/appliance/idle_dim_host.dart';
+import 'package:segno/backing/cubit/backing_cubit.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:wifi_repository/wifi_repository.dart';
@@ -47,10 +48,7 @@ class _WifiReconnectHoldHostState extends State<WifiReconnectHoldHost> {
   }
 
   void _sync() {
-    final hold = idleKeepsAwake(
-      context.read<LooperBloc>().state,
-      context.read<PerformanceRecorderCubit>().state,
-    );
+    final hold = musicKeepsAwake(context);
     if (hold == _held) return;
     _held = hold;
     _write(hold: hold);
@@ -67,6 +65,9 @@ class _WifiReconnectHoldHostState extends State<WifiReconnectHoldHost> {
     listeners: [
       BlocListener<LooperBloc, LooperState>(listener: (_, _) => _sync()),
       BlocListener<PerformanceRecorderCubit, PerformanceRecorderState>(
+        listener: (_, _) => _sync(),
+      ),
+      BlocListener<BackingCubit, BackingCubitState>(
         listener: (_, _) => _sync(),
       ),
     ],
