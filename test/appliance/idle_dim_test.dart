@@ -25,7 +25,7 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit {}
 
 const _playing = LooperState(
-  transport: TransportState(isRunning: true),
+  transport: TransportState(deviceRunning: true),
 );
 
 void main() {

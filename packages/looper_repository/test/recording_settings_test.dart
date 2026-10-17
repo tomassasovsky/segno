@@ -394,7 +394,7 @@ void main() {
         repository.startEngine(const EngineConfig()),
         EngineResult.invalid,
       );
-      expect(repository.sessionTransport.isRunning, isFalse);
+      expect(repository.sessionTransport.deviceRunning, isFalse);
       expect(repository.sessionTransport.defaultLengthPresetBars, 8);
       expect(repository.trackLengthPresetOverrides, {0: 0});
       audio
@@ -406,7 +406,7 @@ void main() {
       audio.commandsAreSettled = true;
       expect(await repository.settleLengthSettings(), EngineResult.invalid);
       expect(await failures, EngineResult.invalid);
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
       expect(repository.lengthRecoveryRequired, isTrue);
       expect(repository.lengthRestartIntent.defaultBars, 8);
       audio.publishLengthCommands = true;
@@ -437,7 +437,7 @@ void main() {
         EngineResult.notReady,
       );
       expect(await failures, EngineResult.notReady);
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
       expect(audio.calls.where((c) => c == 'stop'), isEmpty);
       expect(repository.sessionTransport.defaultLengthPresetBars, 4);
       audio

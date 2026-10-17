@@ -8,7 +8,7 @@ import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
 import 'package:looper_repository/src/models/tuner_reading.dart';
 import 'package:segno_engine/segno_engine.dart'
-    show LooperMode, PitchMode, SpeedFactor, TempoFollowState;
+    show LooperMode, PitchMode, SpeedFactor, TempoFollowState, TrackState;
 
 /// The single source of looper truth: transport, the tracks, and engine status,
 /// projected from one engine snapshot.
@@ -135,6 +135,14 @@ class LooperState extends Equatable {
 
   /// Whether any track holds recorded audio.
   bool get hasContent => tracks.any((t) => t.hasContent);
+
+  /// Whether music is moving: a track plays, records or overdubs. The
+  /// engine's loop clock advances exactly then and otherwise waits at the
+  /// loop top. Not [TransportState.deviceRunning], which only says the audio
+  /// device is open.
+  bool get isPlaying => tracks.any(
+    (t) => t.state == TrackState.playing || t.isCapturing,
+  );
 
   /// The Song section waiting for the playing one's next lap edge (#1077),
   /// or null: only in Song, only on a track that holds a take and is not

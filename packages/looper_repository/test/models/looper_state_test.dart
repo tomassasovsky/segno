@@ -3,6 +3,31 @@ import 'package:looper_repository/looper_repository.dart';
 
 void main() {
   group('LooperState', () {
+    test('isPlaying reads the tracks, not the open device', () {
+      const open = TransportState(deviceRunning: true);
+      expect(const LooperState(transport: open).isPlaying, isFalse);
+      expect(
+        const LooperState(
+          tracks: [Track(state: TrackState.stopped, lengthFrames: 10)],
+          transport: open,
+        ).isPlaying,
+        isFalse,
+      );
+      for (final state in const [
+        TrackState.playing,
+        TrackState.recording,
+        TrackState.overdubbing,
+      ]) {
+        expect(
+          LooperState(
+            tracks: [Track(state: state, lengthFrames: 10)],
+          ).isPlaying,
+          isTrue,
+          reason: '$state',
+        );
+      }
+    });
+
     test('defaults to all outputs enabled', () {
       const state = LooperState();
       expect(state.outputEnabledMask, 0xFFFFFFFF);

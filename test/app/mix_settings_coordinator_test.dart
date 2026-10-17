@@ -712,7 +712,7 @@ void main() {
       expect(persistence.durable, 'candidate 1 for rig A');
       expect(persistence.restores, 0);
       expect(audio.calls, isNot(contains('stop')));
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
       expect(coordinator.recoveryRequired, isTrue);
       expect(coordinator.stoppedForRecovery, isFalse);
       audio

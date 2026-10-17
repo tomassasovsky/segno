@@ -90,7 +90,7 @@ void main() {
     );
     clock.elapse(const Duration(milliseconds: 510));
     expect(repository.recordStartRecoveryRequired, isTrue);
-    expect(repository.sessionTransport.isRunning, isTrue);
+    expect(repository.sessionTransport.deviceRunning, isTrue);
     expect(engine.calls.where((call) => call == 'stop'), isEmpty);
     // An owed pair fences new takes but never playback.
     expect(repository.play(), isNot(EngineResult.notReady));
@@ -126,7 +126,7 @@ void main() {
     clock.flushMicrotasks();
     expect(result, EngineResult.invalid);
     expect(repository.recordStartRecoveryRequired, isFalse);
-    expect(repository.sessionTransport.isRunning, isTrue);
+    expect(repository.sessionTransport.deviceRunning, isTrue);
     expect(repository.recordStartSettings, (countInBars: 0, soundStart: false));
   });
 

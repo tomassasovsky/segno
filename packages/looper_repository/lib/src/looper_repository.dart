@@ -1562,7 +1562,7 @@ class LooperRepository {
     final live = _last?.transport;
     final useLiveTempo = _intendRunning && live != null && live.tempoBpm > 0;
     return TransportState(
-      isRunning: _intendRunning,
+      deviceRunning: _intendRunning,
       loopBars: live?.loopBars ?? 0,
       loopBeats: live?.loopBeats ?? 0,
       tempoBpm: useLiveTempo ? live.tempoBpm : _tempoBpm,
@@ -2391,7 +2391,7 @@ class LooperRepository {
       muteMask: s.tunerMuteMask,
     ),
     transport: TransportState(
-      isRunning: s.isRunning,
+      deviceRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
       masterPositionFrames: s.masterPositionFrames,
       tempoBpm: s.tempoBpm,

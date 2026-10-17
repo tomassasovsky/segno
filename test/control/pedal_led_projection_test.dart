@@ -9,7 +9,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 LooperState _looper(List<Track> overrides, {int masterLengthFrames = 48000}) =>
     LooperState(
       transport: TransportState(
-        isRunning: true,
+        deviceRunning: true,
         masterLengthFrames: masterLengthFrames,
       ),
       tracks: [

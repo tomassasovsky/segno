@@ -6,7 +6,10 @@ import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 LooperState _state(List<Track> overrides) => LooperState(
-  transport: const TransportState(isRunning: true, masterLengthFrames: 48000),
+  transport: const TransportState(
+    deviceRunning: true,
+    masterLengthFrames: 48000,
+  ),
   tracks: [
     for (var i = 0; i < 8; i++)
       overrides.firstWhere(

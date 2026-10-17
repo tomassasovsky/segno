@@ -23,7 +23,7 @@ class _MockRecordTimingControl extends Mock implements RecordTimingControl {}
 class _MockSettingsRepository extends Mock implements SettingsRepository {}
 
 const _playingState = LooperState(
-  transport: TransportState(isRunning: true, masterLengthFrames: 48000),
+  transport: TransportState(deviceRunning: true, masterLengthFrames: 48000),
   tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
 );
 

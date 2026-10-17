@@ -659,7 +659,7 @@ class SessionCubit extends Cubit<SessionState> {
     try {
       if (rig.tracks.isNotEmpty) {
         final live = _looper.state;
-        if (!live.transport.isRunning || !live.status.devicePresent) {
+        if (!live.transport.deviceRunning || !live.status.devicePresent) {
           throw StateError(
             'audio device must be running before session load',
           );

@@ -19,7 +19,7 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 
 class _MockWifiRepository extends Mock implements WifiRepository {}
 
-const _playing = LooperState(transport: TransportState(isRunning: true));
+const _playing = LooperState(transport: TransportState(deviceRunning: true));
 
 void main() {
   group('WifiReconnectHoldHost', () {

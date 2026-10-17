@@ -916,7 +916,7 @@ class _Harness {
   /// (test/session/session_fx_roundtrip_test.dart), which asserts this same
   /// cache == engine equality after a save → clear → load.
   String? fxFingerprintViolation() {
-    if (!looper.transport.isRunning) return null;
+    if (!looper.transport.deviceRunning) return null;
     for (var channel = 0; channel < looper.tracks.length; channel++) {
       final lanes = looper.tracks[channel].lanes.length;
       for (var lane = 0; lane < (lanes < 1 ? 1 : lanes); lane++) {

@@ -919,7 +919,7 @@ void main() {
         ..['tempo.count_in_bars'] = 2
         ..['looper.auto_record'] = true;
       await runtime.start();
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
       expect(runtime.tempo.recordStartOwner.ready, isFalse);
       await expectLater(
         runtime.prepareShutdown(retry: false),
@@ -936,7 +936,7 @@ void main() {
         'for shutdown', () async {
       store.values['tempo.click_mode'] = 9;
       await runtime.start();
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
       expect(engine.stopCalls, 0);
       expect(runtime.tempo.clickModeOwner.ready, isFalse);
       await expectLater(

@@ -931,7 +931,7 @@ void main() {
             settings: settings,
           );
           expect(result.started, isFalse);
-          expect(repository.state.transport.isRunning, isFalse);
+          expect(repository.state.transport.deviceRunning, isFalse);
         });
       }
     });

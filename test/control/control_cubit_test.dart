@@ -91,7 +91,7 @@ LooperState _stateWith(
   double songQueueProgress = 0,
 }) => LooperState(
   transport: TransportState(
-    isRunning: true,
+    deviceRunning: true,
     masterLengthFrames: masterLengthFrames,
     masterPositionFrames: masterPositionFrames,
     countingIn: countingIn,

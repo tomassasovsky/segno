@@ -8,7 +8,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 
 LooperState _state(List<Track> overrides) => LooperState(
   transport: const TransportState(
-    isRunning: true,
+    deviceRunning: true,
     masterLengthFrames: 48000,
     loopBars: 2,
   ),
@@ -239,7 +239,7 @@ void main() {
     final halved = projectFootLength(
       const LooperState(
         transport: TransportState(
-          isRunning: true,
+          deviceRunning: true,
           masterLengthFrames: 48000,
           loopBeats: 2,
         ),

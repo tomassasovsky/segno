@@ -389,7 +389,7 @@ class SettingsOwner<V extends Object, C> {
   /// Lets admitted work finish, then closes the streams.
   Future<void> close() => _closeFuture ??= _close();
 
-  bool get _running => _repository.sessionTransport.isRunning;
+  bool get _running => _repository.sessionTransport.deviceRunning;
 
   Future<void> _close() async {
     _closing = true;

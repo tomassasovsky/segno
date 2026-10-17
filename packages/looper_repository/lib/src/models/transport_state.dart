@@ -10,7 +10,7 @@ import 'package:segno_engine/segno_engine.dart';
 class TransportState extends Equatable {
   /// Creates a [TransportState].
   const TransportState({
-    this.isRunning = false,
+    this.deviceRunning = false,
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.tempoBpm = 0,
@@ -44,7 +44,11 @@ class TransportState extends Equatable {
   });
 
   /// Whether the audio device is open and processing.
-  final bool isRunning;
+  ///
+  /// Not whether music is playing: the appliance opens the device at boot
+  /// and keeps it open, so this holds for its whole uptime. For playing,
+  /// read the tracks (`LooperState.isPlaying`).
+  final bool deviceRunning;
 
   /// Master loop length in frames; `0` before the first loop is finalized.
   final int masterLengthFrames;
@@ -175,7 +179,7 @@ class TransportState extends Equatable {
 
   @override
   List<Object?> get props => [
-    isRunning,
+    deviceRunning,
     masterLengthFrames,
     masterPositionFrames,
     tempoBpm,
