@@ -165,6 +165,17 @@ void main() {
       );
     });
 
+    test('a count-in does', () {
+      expect(
+        idleKeepsAwake(
+          const LooperState(transport: TransportState(countingIn: true)),
+          idle,
+          _noBacking,
+        ),
+        isTrue,
+      );
+    });
+
     test('a track or the backing track playing does', () {
       expect(idleKeepsAwake(_playing, idle, _noBacking), isTrue);
       expect(idleKeepsAwake(const LooperState(), idle, _backingPlays), isTrue);

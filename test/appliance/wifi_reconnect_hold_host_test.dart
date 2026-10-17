@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -26,6 +27,11 @@ class _MockBackingCubit extends MockCubit<BackingCubitState>
 
 const _playing = LooperState(tracks: [Track(state: TrackState.playing)]);
 const _noBacking = BackingCubitState(backing: BackingState());
+const _backingPlays = BackingCubitState(
+  backing: BackingState(
+    player: BackingPlayerState(transport: BackingTransport.playing),
+  ),
+);
 
 void main() {
   group('WifiReconnectHoldHost', () {
@@ -34,6 +40,7 @@ void main() {
     late _MockPerformanceRecorderCubit performance;
     late StreamController<PerformanceRecorderState> performanceStates;
     late _MockWifiRepository wifi;
+    late StreamController<BackingCubitState> backingStates;
     late List<bool> holds;
 
     Future<void> pump(WidgetTester tester) async {
@@ -53,11 +60,9 @@ void main() {
         initialState: const PerformanceRecorderIdle(),
       );
       final backing = _MockBackingCubit();
-      whenListen(
-        backing,
-        const Stream<BackingCubitState>.empty(),
-        initialState: _noBacking,
-      );
+      backingStates = StreamController<BackingCubitState>.broadcast();
+      whenListen(backing, backingStates.stream, initialState: _noBacking);
+      addTearDown(backingStates.close);
       wifi = _MockWifiRepository();
       holds = [];
       when(
@@ -116,6 +121,22 @@ void main() {
       );
       await tester.pump();
       expect(holds, [false, true]);
+    });
+
+    testWidgets('holds while the backing track plays, and not for an open '
+        'audio device (#1354)', (tester) async {
+      await pump(tester);
+      looperStates.add(
+        const LooperState(transport: TransportState(isRunning: true)),
+      );
+      await tester.pump();
+      expect(holds, [false]);
+      backingStates.add(_backingPlays);
+      await tester.pump();
+      expect(holds, [false, true]);
+      backingStates.add(_noBacking);
+      await tester.pump();
+      expect(holds, [false, true, false]);
     });
 
     testWidgets('a write that fails does not stop the ones after it', (

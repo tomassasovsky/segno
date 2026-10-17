@@ -14,7 +14,8 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/performance/performance.dart';
 
 /// Whether the music keeps both panels awake: a track playing or recording,
-/// the backing track playing, or a performance recording running.
+/// a count-in, the backing track playing, or a performance recording
+/// running.
 ///
 /// Not `TransportState.isRunning`: that is the audio device being open, which
 /// on the appliance is always, so it held the panels awake forever (#1354).
@@ -23,6 +24,7 @@ bool idleKeepsAwake(
   PerformanceRecorderState performance,
   BackingCubitState backing,
 ) =>
+    looper.transport.countingIn ||
     looper.tracks.any(
       (track) => track.state == TrackState.playing || track.isCapturing,
     ) ||
