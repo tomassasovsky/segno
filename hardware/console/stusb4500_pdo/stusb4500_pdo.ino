@@ -1,6 +1,7 @@
 /*
   Segno console: program the SparkFun Power Delivery Board (STUSB4500, DEV-15801)
-  to request 20 V / 5 A from the USB-C PD inlet. See segno_wiring.md section 2.
+  to take 20 V at the most current the source offers there (5 A at most, 3 A at
+  least) from the USB-C PD inlet. See segno_wiring.md section 2.
 
   Shipped default asks 20 V at 1.0 A (20 W); the console draws ~59 W worst case.
 
@@ -67,7 +68,9 @@ void setup() {
                                     // would brown the Pi out on 5 V in, so refuse it outright
   usb.setExternalPower(0);          // no other power source in the console
   usb.setUsbCommCapable(0);         // power only, no USB data through the inlet
-  usb.setReqSrcCurrent(0);          // request OUR current (I_SNK_PDO), not the source's max
+  usb.setReqSrcCurrent(1);          // once a PDO matches, request the SOURCE's current at that
+                                    // voltage, not I_SNK_PDO: a 20 V / 4.7 A brick misses PDO3's
+                                    // 5 A, matches PDO2, and still contracts 4.7 A, not 3 A
 
   usb.write();                      // burn to NVM
   delay(100);

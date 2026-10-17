@@ -98,9 +98,9 @@ board's BOM.
       [B0CQ4VD2N2](https://www.amazon.com/dp/B0CQ4VD2N2) ×1 (100 W, 10 Gbps —
       the 10 Gbps grade matters: all 24 ways wired means CC reaches the trigger;
       charge-only couplers drop CC and nothing powers up)
-- [ ] **STUSB4500 PD trigger board** (SparkFun) ×1 — program the PDO to
-      **20 V / 5 A** before first power-up; the shipped default asks 20 V at
-      only 1 A
+- [ ] **STUSB4500 PD trigger board** (SparkFun) ×1 — program it with
+      `hardware/console/stusb4500_pdo` (20 V at the source's full current)
+      before first power-up; the shipped default asks 20 V at only 1 A
 - [ ] **20 V → 5 V buck** (eleUniverse 8–36 V→5 V 10 A IP67,
       [B0GGHN97TK](https://www.amazon.com/dp/B0GGHN97TK)) ×**2** — BUCK_PI and
       BUCK_AUX, split by rail, never paralleled (wiring doc §2)
