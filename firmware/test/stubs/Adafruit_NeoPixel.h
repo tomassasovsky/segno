@@ -21,6 +21,13 @@
 #define CHANGE 0
 #define NEO_GRB 0x52
 #define NEO_KHZ800 0
+// The Seeed XIAO RP2350 variant's pad aliases (ring_board.ino).
+#define D0 26
+#define D1 27
+#define D2 28
+#define D3 5
+#define D9 4
+#define D10 3
 
 namespace fake_arduino {
 inline unsigned long now = 0;
@@ -44,6 +51,11 @@ inline void interrupts() {}
 inline int digitalPinToInterrupt(int pin) { return pin; }
 inline void attachInterrupt(int, void (*)(), int) {}
 inline void delay(int duration) { fake_arduino::now += duration; }
+struct FakeRp2040 {
+  uint32_t nonce = 0x5e9a0001;
+  uint32_t hwrand32() { return nonce; }
+};
+inline FakeRp2040 rp2040;
 
 struct FakeSerial {
   void setTX(int) {}

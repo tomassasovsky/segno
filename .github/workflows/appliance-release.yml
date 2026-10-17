@@ -172,7 +172,7 @@ jobs:
       - name: Compile the firmware and record what it speaks
         run: |
           set -eu
-          arduino-cli compile --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir fw-out
+          arduino-cli compile --libraries firmware/libraries --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir fw-out
           mkdir -p console-board
           cp fw-out/console_board.ino.elf console-board/console_board.elf
 

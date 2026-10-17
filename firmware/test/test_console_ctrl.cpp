@@ -47,6 +47,9 @@ static void bootAt(uint16_t raw) {
   fake_arduino::sent.clear();
   fake_arduino::analog[CTRL_PIN[0]] = raw;
   fake_arduino::analog[CTRL_PIN[1]] = CTRL_MAX;
+  // Both jacks plugged: the ring-normal contact is open, the pull-down wins.
+  fake_arduino::digital[CTRL_PRESENT_PIN[0]] = LOW;
+  fake_arduino::digital[CTRL_PRESENT_PIN[1]] = LOW;
   g_ctrlLastSampleMs = 0;
   setup();
   advance(1000);
@@ -149,10 +152,26 @@ static void testReclassificationHasNoSyntheticRelease(bool ringOnly) {
         "NONE must precede expression even for ring-only prior switch");
 }
 
-// The encoder's push switch: one ENCODER_BUTTON frame per edge that holds for
-// DEBOUNCE_MS, nothing for a bounce shorter than that.
-static std::vector<uint8_t> encoderButtonEdges() {
-  std::vector<uint8_t> result;
+// The encoder lives on the ring carrier. Its cumulative snapshots become one
+// ENCODER frame per click and one ENCODER_BUTTON frame per edge, as the v2
+// board's own pins produced; a new session or a lapse replays nothing.
+static void snapshot(uint32_t session, uint32_t clicks, uint32_t edges) {
+  uint8_t payload[ring_link::INPUT_LEN], packet[ring_link::MAX_FRAME];
+  ring_link::put32(payload, session);
+  ring_link::put32(payload + 4, clicks);
+  ring_link::put32(payload + 8, edges);
+  const size_t size = ring_link::encode(ring_link::INPUT_STATE, payload, packet);
+  for (size_t i = 0; i < size; ++i) ringLink.received.push_back(packet[i]);
+  pollRing();
+}
+
+struct EncoderEvents {
+  std::vector<int8_t> clicks;
+  std::vector<uint8_t> button;
+};
+
+static EncoderEvents encoderEvents() {
+  EncoderEvents result;
   pedal_link_parser parser;
   pedal_link_parser_init(&parser);
   for (const auto &frame : fake_arduino::sent) {
@@ -160,34 +179,49 @@ static std::vector<uint8_t> encoderButtonEdges() {
       uint8_t type, length;
       const uint8_t *payload;
       if (!pedal_link_parser_push(&parser, byte, &type, &payload, &length)) continue;
-      if (type == PEDAL_LINK_TYPE_ENCODER_BUTTON) result.push_back(payload[0]);
+      if (type == PEDAL_LINK_TYPE_ENCODER) result.clicks.push_back((int8_t)payload[0]);
+      if (type == PEDAL_LINK_TYPE_ENCODER_BUTTON) result.button.push_back(payload[0]);
     }
   }
   CHECK(parser.dropped == 0, "the sketch must send valid frames");
   return result;
 }
 
-static void holdEncoderSwitch(int level, unsigned long duration) {
-  fake_arduino::digital[PIN_ENC_SW] = level;
-  for (unsigned long elapsed = 0; elapsed < duration; elapsed++) {
-    fake_arduino::now++;
-    pollEncoderButton();
-  }
-}
-
-static void testEncoderSwitchIsDebounced() {
+static void testRingSnapshotsBecomeEncoderEvents() {
   bootAt(CTRL_MAX);
-  holdEncoderSwitch(HIGH, 20);
-  CHECK(encoderButtonEdges().empty(), "an idle switch must stay quiet");
-  holdEncoderSwitch(LOW, 3);  // a bounce
-  holdEncoderSwitch(HIGH, 20);
-  CHECK(encoderButtonEdges().empty(), "a bounce shorter than the debounce must not report");
-  holdEncoderSwitch(LOW, DEBOUNCE_MS + 2);
-  holdEncoderSwitch(LOW, 200);
-  holdEncoderSwitch(HIGH, DEBOUNCE_MS + 2);
-  const auto edges = encoderButtonEdges();
-  CHECK(edges.size() == 2 && edges[0] == 1 && edges[1] == 0,
-        "a press and a release must each report once");
+  snapshot(7, 1000, 0);  // the first snapshot only sets the baseline
+  CHECK(encoderEvents().clicks.empty() && encoderEvents().button.empty(),
+        "a baseline must not replay the counters");
+  fake_arduino::now += 20;
+  snapshot(7, 1003, 0);
+  auto events = encoderEvents();
+  CHECK(events.clicks.size() == 3 && events.clicks[0] == 1 && events.clicks[2] == 1,
+        "three clockwise clicks must send three +1 frames");
+  fake_arduino::sent.clear();
+  fake_arduino::now += 20;
+  snapshot(7, 1001, 2);  // two back, and a press and release between snapshots
+  events = encoderEvents();
+  CHECK(events.clicks.size() == 2 && events.clicks[0] == -1 && events.clicks[1] == -1,
+        "counter-clockwise clicks must send -1 frames");
+  CHECK(events.button.size() == 2 && events.button[0] == 1 && events.button[1] == 0,
+        "a short press between snapshots must still report press and release");
+  fake_arduino::sent.clear();
+  fake_arduino::now += 20;
+  snapshot(7, 1001, 3);  // held
+  fake_arduino::now += 20;
+  snapshot(9, 50, 0);  // the XIAO rebooted while the button was held
+  events = encoderEvents();
+  CHECK(events.clicks.empty(), "a new session must not replay clicks");
+  CHECK(events.button.size() == 2 && events.button[0] == 1 && events.button[1] == 0,
+        "a reboot must release a held button, once");
+  fake_arduino::sent.clear();
+  fake_arduino::now += 20;
+  snapshot(9, 51, 1);
+  fake_arduino::now += ring_link::TIMEOUT_MS + 1;
+  pollRing();
+  events = encoderEvents();
+  CHECK(events.clicks.size() == 1 && events.button.size() == 2 && events.button[1] == 0,
+        "a silent ring must release a held button");
 }
 
 int main() {
@@ -198,6 +232,6 @@ int main() {
   testPresenceDetachHasNoSyntheticRelease();
   testReclassificationHasNoSyntheticRelease(false);
   testReclassificationHasNoSyntheticRelease(true);
-  testEncoderSwitchIsDebounced();
+  testRingSnapshotsBecomeEncoderEvents();
   std::puts("Console sketch CTRL tests: ALL PASSED");
 }
