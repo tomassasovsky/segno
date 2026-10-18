@@ -1,26 +1,29 @@
+<!-- cspell:words counterbore counterbores -->
 # Bench base for the console v3 electronics
 
-A printed base that holds the console v3 boards on the bench, off the table, with
-the leads between them short (#1358). It is a bench part, not an enclosure part.
+A printed base that holds the console v3 electronics on the bench, off the
+table, with the leads between them short (#1358). It is a bench part, not an
+enclosure part.
 
 ![top view](out/segno_bench_base_top.svg)
 
-Three tiles that join with dovetails. Assembled, they cover 198 x 218 mm; each
+Three tiles that join with dovetails. Assembled, they cover 198 x 272 mm; each
 tile fits an Ender 3 V3 bed (220 x 220) with room to spare.
 
 | tile | holds | size (mm) | PLA, 15 % infill |
 |---|---|---|---|
 | `console` | console board v3 (Pico 2) on four M3 standoffs, 10 mm up | 118 x 118 x 14 | ~18 g |
-| `ring` | ring carrier (XIAO RP2350) with the 34-LED cup, 22 mm up | 118 x 107 x 29 | ~18 g |
+| `pi` | Raspberry Pi 5 on its GeeekPi N07 NVMe board; the screen power board on four M3 standoffs, 12 mm up | 118 x 161 x 16 | ~23 g |
 | `power` | SparkFun STUSB4500 on four M3 standoffs, 8 mm up; both 20 V to 5 V bucks in corrals | 87 x 192 x 12 | ~21 g |
 
 ```
  back
- +-----------+------+
- |   ring    |      |   USB access is on the free edges:
- +-----------+ power|   the Pico's and the XIAO's on the left,
- |  console  |      |   the PD board's USB-C on the right.
- |           |      |
+ +-----------+
+ | Pi 5      |------+    Plugs go in from the free edges:
+ | screen    |      |    the Pi's HDMI and USB-C from the back,
+ | power     |power |    its USB and Ethernet from the left,
+ +-----------+      |    the Pico's USB from the left,
+ |  console  |      |    the PD board's USB-C from the right.
  +-----------+------+
  front (you)
 ```
@@ -32,68 +35,67 @@ top view above.
 ## Which boards it fits
 
 The V3 boards as soldered: the layouts on `codex/screen-power-board-1072`
-(PR #1080) at `c88389bf2`, the revision recorded in `board_geometry.json`. Against
-the layouts on master, the outlines and mounting holes of both boards are the
-same. Underneath, the ring carrier gains R5 (100k, r 15 to 26.5) and the ACZ11
-encoder's pads reach r 8.92 instead of the EC11's 8.87; the console board's
-deepest lead is now a JST-VH power header. The base clears both revisions.
+(PR #1080) at `c88389bf2`, the revision recorded in `board_geometry.json`. The
+console board's outline and mounting holes are the same as on master; its
+deepest lead is now a JST-VH power header. The screen power board is only on
+that branch (#1072, revision P).
 
 ## Where the numbers come from
 
-- **Board outlines, mounting holes, back-side parts and pads**:
+- **Console board and screen power board** (outlines, mounting holes, pads):
   `board_geometry.json`, written by `extract_boards.py` from
   `hardware/kicad/out_console/segno_console_board.kicad_pcb` and
-  `hardware/kicad/segno_pedal_ring.kicad_pcb` of that revision. Re-run it after
-  either layout changes. It reads the layouts out of git, at the revision the
-  JSON already records unless `--rev` names another, so a plain re-run cannot
-  quietly switch the base to whichever boards this branch happens to carry.
-- **Heights under the boards**: a `kicad-cli pcb export step` of the same two
-  layouts (ring carrier: C1 8.09, J1 7.09, C2-C5 5.19, XIAO 4.36, U2 3.77, D1 3.29,
-  R1-R5 2.59; console board: leads only, the JST-VH headers' 2.11 deepest, about 4
-  for an untrimmed pin), plus the owner's calipers: 8.5 under the ring carrier with
-  C1 bent over and lying down.
+  `hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb` of that
+  revision. Re-run it after either layout changes. It reads the layouts out of
+  git, at the revision the JSON already records unless `--rev` names another, so
+  a plain re-run cannot quietly switch the base to whichever boards this branch
+  happens to carry.
+- **What hangs under them**: `kicad-cli pcb export step` of the same layouts.
+  Neither board has a part on its back, only leads. On the console board the
+  deepest is a JST-VH header at 2.11 mm (about 4 untrimmed). On the screen power
+  board it is Q5's TO-220 leads, modelled untrimmed at 8.14 mm; the next is F1's
+  holder at 2.38.
+- **Raspberry Pi 5**: the official mechanical drawing, 85 x 56 with M2.5 holes
+  on a 58 x 49 rectangle (`PI_HOLES` in `../enclosure/segno_enclosure.py`).
+- **NVMe board**: the GeeekPi N07 (B0CWD266XR, 52Pi EP-0211) that the enclosure
+  stacks under the Pi (`PI_N07_H`). It is a bottom board on the Pi's own four
+  holes, HAT-sized, with the SSD on its top side under the Pi. Its kit has four
+  M2.5 x 6 pillars (its feet) and four 12+4 pillars (N07 to Pi).
 - **STUSB4500 board**: SparkFun's Eagle file
   (`sparkfun/Power_Delivery_Board-USB-C`, `Hardware/SparkFun_STUSB4500_USB-PD.brd`):
   35.56 x 33.02, four #4 holes (3.3 mm, take M3) 3.175 in from each corner.
 - **Bucks**: `BUCK_BODY` in `../enclosure/segno_enclosure.py`, 63.8 x 57.7 x 22.1
   including the ears.
-- **The cup's snap arms**: `strip_ring/console_ring.py` on the enclosure branches
-  (#1090): three arms 120 degrees apart. Two versions exist, 6 mm wide and 8 mm
-  wide (the snap-relief rework on `claude/console-ring-snap-reliefs-1075`); the
-  crown takes either.
 
-## How the ring carrier is held
+## How each board is held
 
-The ring carrier has no mounting holes, and the cup's three snap arms wrap its
-edge at whatever angle the cup was turned to. So the cradle supports the board in
-two places that are clear at every angle:
+- **Console board**: four M3 standoffs, 10 mm. Rear-panel loom (POWER, MIDI,
+  CTRL) to the back, footswitch row to the front, Pico USB to the left; J2, the
+  Pi ribbon, faces the Pi.
+- **Screen power board**: four M3 standoffs, 12 mm, enough for Q5's leads even
+  untrimmed. The bosses are 8 mm across, inside the board's 4.25 mm copper
+  keepout round each hole. Its holes are symmetric, so it goes on either way
+  round; all its cables leave upward.
+- **Raspberry Pi 5 + N07**: the N07 stands on the kit's own 6 mm pillars, and
+  each pillar sits on a 3 mm boss and is screwed from under the tile. The screw
+  head sits in a counterbore in the underside, so the tile still lies flat. The
+  Pi rides on the 12+4 pillars as the kit intends. It sits in the back-left
+  corner, turned so the USB-C and both micro-HDMI ports face the back edge and
+  the USB and Ethernet jacks face the left edge, each 3 mm in from it.
+  `PI 5: HDMI TO THE BACK` is engraved under it.
+- **STUSB4500**: four M3 standoffs, 8 mm, USB-C facing the right edge.
+- **Bucks**: corrals open in the middle of every side for the leads and the ears.
+  The ear spacing in the enclosure model is still provisional, so the base does
+  not drill for them.
 
-- **A tube under the encoder**, r 9.32 to 10.85: the ring of free board between
-  the encoder's pads (out to r 8.92) and the nearest other part (R2's courtyard at
-  r 10.85). It takes the push when the encoder switch is pressed.
-- **A crown of teeth round the rim.** Each tooth is a ledge under the board's edge
-  (r 39.4 to 40) and a post beside it, flush with the board's top face (from
-  r 40.3, so 0.3 mm of play round the board). The farthest-out part underneath is
-  C1 if it is bent straight outward (about r 39.0), then D1 (r 38.3), so even with
-  the board pushed against one side no part reaches a ledge. The cup's arms
-  (from r 40.4) sit wholly inside the posts' reach, and drop into the 10.9 mm gaps
-  between the teeth, which stops the board turning when the knob is twisted
-  (about 1.5 mm of play each way with the 8 mm arms). The teeth are on a 20-degree pitch and the arms are
-  120 degrees apart, so when one arm finds a gap all three do.
-
-Two teeth are left out on the left for the XIAO's USB-C. The opening is 56
-degrees wide against a 20-degree plug, so the plug fits at every position where
-the arms can seat. J1's lead goes out through any gap; there is 22 mm under the
-board for the plugged housing (about 11 mm) and the bend.
-
-`bench_base.py` refuses to export if any of this stops holding. It sweeps every
-part under the ring carrier round the centre and checks that the tile does not
-touch any of them.
+`bench_base.py` refuses to export a base where a standoff lands on a pad, a
+board hangs off its tile or crowds another, the leads reach the floor, a Pi
+port edge faces a seam, or a tile does not fit the bed.
 
 ## Print
 
 - **PLA**, 0.2 mm layers, 3 walls, 15 % infill. **No supports**: every tile prints
-  floor-down as exported, and the ledge undersides are 45 degrees.
+  floor-down as exported. The Pi screws' counterbores bridge over a 5.4 mm hole.
 - No brim needed; each tile sits flat on the bed (the repo's
   `../enclosure/_print_check.py` passes all three with nothing flagged).
 - The dovetails have 0.15 mm of clearance per side and a 0.3 mm relief at the
@@ -107,42 +109,26 @@ touch any of them.
 
 | what | qty | where |
 |---|---|---|
-| M3 heat-set insert, 5 long x 5 OD (the repo's standard, pilot 4.5) | 8 | the console board's 4 standoffs and the PD board's 4 |
-| M3 x 6 screw (pan or button head) | 8 | down through each board into its insert |
+| M3 heat-set insert, 5 long x 5 OD (the repo's standard, pilot 4.5) | 12 | console board, screen power board and PD board standoffs, 4 each |
+| M3 x 6 screw (pan or button head) | 12 | down through each of those boards into its insert |
+| M2.5 x 8 screw (pan or socket head) | 4 | up through the `pi` tile into the N07's 6 mm pillars, about 3 mm in (the 12+4 pillars' male ends take the top of each) |
 
-Nothing else. The ring carrier and the bucks are not screwed down: the ring sits
-in its crown, and each buck sits in a corral open in the middle of every side for
-its leads and ears. The bucks' ear spacing in the enclosure model is still
-provisional, so the base does not drill for them.
-
-Press the inserts in with the iron before joining the tiles, while each tile
-still lies flat.
+The N07's pillars and the Pi's 12+4 pillars come in the N07 kit. If yours has
+no 6 mm feet, any M2.5 x 6 female-female standoff does the same job. Press the
+inserts in with the iron before joining the tiles, while each tile still lies
+flat.
 
 ## Putting it together
 
-1. Press the eight inserts. Join the tiles: lower `ring` and `power` onto
+1. Press the twelve inserts. Join the tiles: lower `pi` and `power` onto
    `console` so the tabs drop into the sockets.
-2. Screw the console board to its standoffs: rear-panel loom (POWER, MIDI, CTRL)
-   to the back, the footswitch row to the front, the Pico's USB to the left.
-3. Screw the PD board to its standoffs with its USB-C facing the right edge.
-4. Drop the bucks into their corrals (`BUCK PI` at the front, `BUCK AUX` behind).
-5. Plug J1 into the ring carrier, then lower the carrier, cup up, into the crown
-   with the XIAO's USB-C pointing at the left opening (`XIAO USB` is engraved
-   there). Turn it a few degrees either way until the cup's arms drop between the
-   teeth and the board sits flat on the ledges. Route J1's lead out through the
-   nearest gap toward the console board's J6.
-
-## Things to check on the real parts
-
-- **C1's direction.** The check allows for C1 lying straight outward, reaching
-  r 39.0. If yours sticks out further, it will meet a tooth: turn the carrier by
-  one tooth so C1 sits in a gap.
-- **The fit in the crown** is 0.3 mm round the board. If your printer runs tight
-  and the carrier will not drop in, open `POST_R` a little and regenerate.
-- **Without the cup**, nothing stops the ring carrier turning. It still sits on
-  the tube and the ledges and the posts keep it from sliding off.
-- **The console board's leads.** 10 mm of air is plenty for untrimmed leads. If
-  you want to probe the back, the board comes off with four screws.
+2. Screw the console board, the screen power board and the PD board to their
+   standoffs.
+3. Build the Pi stack as the N07 kit says, with the 6 mm pillars as its feet.
+   Stand it on the four small bosses (USB-C and HDMI to the back) and screw it
+   down from under the tile with the M2.5 x 8 screws.
+4. Drop the bucks into their corrals (`BUCK PI` at the front, `BUCK AUX`
+   behind).
 
 ## Regenerate
 

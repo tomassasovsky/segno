@@ -2,49 +2,35 @@
 """
 Bench base for the Segno console v3 electronics (#1358). A bench part, not an
 enclosure part: it lifts the boards off the table so nothing under them shorts
-or snags, and keeps the leads between them short and tidy.
+or snags, and keeps the leads between them short.
 
 Three tiles that join with dovetails, each well inside an Ender 3 V3 bed
 (220 x 220):
 
-  A  console   the console board v3 (Pico 2) on four M3 standoffs
-  B  ring      the ring carrier (XIAO RP2350), on a tube and a crown of teeth
-  C  power     the SparkFun STUSB4500 PD trigger on four M3 standoffs and the
-               two 20 V -> 5 V bucks in corrals
+  console  the console board v3 (Pico 2) on four M3 standoffs
+  pi       the Raspberry Pi 5 on its N07 NVMe board, and the screen power board
+  power    the SparkFun STUSB4500 PD trigger on four M3 standoffs and the two
+           20 V -> 5 V bucks in corrals
 
     y (back)
-    ^  +-----------+------+
-    |  |  B ring   |  C   |    A and B are the boards column; C runs along
-    |  +-----------+ power|    their right edge. The free edges are where the
-    |  | A console |      |    USB plugs go: the Pico's on A's left, the XIAO's
-    |  |           |      |    on B's left, the PD board's USB-C on C's right.
+    ^  +-----------+
+    |  |  pi    PI |------+    The free edges are where the plugs go: the Pi's
+    |  |  screen   |      |    HDMI and USB-C to the back, its USB and Ethernet
+    |  |  power    |power |    to the left, the Pico's USB to the left, the PD
+    |  +-----------+      |    board's USB-C to the right.
+    |  | console   |      |
     |  +-----------+------+
     +-------------------------> x
 
 WHERE THE NUMBERS COME FROM
-    Board outlines, mounting holes, back-side courtyards and every through-hole
-    pad are read from board_geometry.json, which extract_boards.py writes from
-    the two KiCad layouts. Part heights under the boards are measured off a
-    kicad-cli STEP export of the same layouts (see HEIGHTS below) and the owner's
-    calipers. The PD board is SparkFun's own Eagle file; the bucks are the
-    enclosure model's BUCK_BODY.
-
-THE RING CARRIER HAS NO MOUNTING HOLES
-    It snap-mounts (ring_board.py). On the bench it wears the 34-LED cup, whose
-    three snap arms wrap its edge 120 degrees apart, at whatever angle the cup
-    was turned to. So the cradle cannot depend on the board's angle. It holds the
-    board in two places that are clear at EVERY angle:
-
-      a tube under the encoder, in the ring of free board between the encoder's
-          pads and the nearest other part (sized from the layout);
-      a crown of 18 teeth round the rim, each a ledge under the board's edge and
-          a post beside it. The cup's arms drop into the gaps between the teeth,
-          which stops the board turning when the knob is twisted; 18 teeth puts a
-          gap every 20 degrees, and 120 is a multiple of 20, so when one arm finds
-          a gap all three do.
-
-    Two teeth are left out on the free left edge for the XIAO's USB-C plug.
-    J1's lead leaves through any gap.
+    The console board's and the screen power board's outlines, mounting holes
+    and pads are read from board_geometry.json, which extract_boards.py writes
+    from their KiCad layouts. What hangs under them is measured off kicad-cli
+    STEP exports of the same layouts (see HEIGHTS below). The Pi 5 is the
+    official mechanical drawing (the same 58 x 49 hole rectangle as
+    segno_enclosure.PI_HOLES); the NVMe board is the GeeekPi N07 the enclosure
+    uses (PI_N07_H there). The PD board is SparkFun's own Eagle file; the bucks
+    are the enclosure model's BUCK_BODY.
 
 Outputs (./out): one STEP + STL per tile (print pose: floor on the bed), an
 assembly STEP with the boards as reference slabs, and an SVG top view.
@@ -61,7 +47,7 @@ import cadquery as cq
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "out")
 GEOM = json.load(open(os.path.join(HERE, "board_geometry.json")))
-CONSOLE, RING = GEOM["console"], GEOM["ring"]
+CONSOLE, SCREEN = GEOM["console"], GEOM["screen_power"]
 
 # ----------------------------------------------------------------------------
 # PRINTER AND HARDWARE
@@ -69,13 +55,14 @@ CONSOLE, RING = GEOM["console"], GEOM["ring"]
 BED = (220.0, 220.0)          # Ender 3 V3
 BED_MARGIN = 8.0              # left free on every side for the skirt and the clips
 FLOOR_T = 4.0                 # floor thickness; the dovetails are this tall too
-TILE_R = 4.0                  # tile corner radius on the free (non-seam) corners
+TILE_R = 4.0                  # radius on the tile corners that are not on a seam
 
 # M3 heat-set inserts, the repo's one size (MANUFACTURING.md: "M3 5x5 throughout,
 # pilots 4.5"). The screw goes in from above through the board.
 INSERT_PILOT_D = 4.5
 INSERT_PILOT_DEPTH = 6.0      # insert length + 1 for the melt
 BOSS_D = 9.0                  # 2.25 mm of wall around the pilot
+BOSS_PAD_CLR = 0.2            # boss top to the nearest pad other than its own hole's
 
 # Dovetails between tiles. They slide together vertically, so the tiles drop in.
 DT_NECK, DT_HEAD, DT_DEPTH = 8.0, 12.0, 7.0
@@ -85,77 +72,43 @@ SEAM_GAP = 0.1                # each tile stops this far short of a seam
 # ----------------------------------------------------------------------------
 # HEIGHTS UNDER THE BOARDS (mm below the PCB's back face)
 # ----------------------------------------------------------------------------
-# Heights come from kicad-cli STEP exports of the layouts board_geometry.json was
-# read from (its "revision"), 2026-10-17.
+# From kicad-cli STEP exports of the layouts board_geometry.json was read from
+# (its "revision"), 2026-10-18. Neither board has a part on its back; what hangs
+# under them is leads.
 #
-# Console board: every part is on the front. Its back carries only through-hole
-# leads; the deepest in the STEP export is the JST-VH power headers at 2.11, and
-# an untrimmed VH pin stands up to about 4 proud. 10 mm of air leaves room for a
-# probe tip.
+# Console board: the deepest is the JST-VH power headers at 2.11, and an
+# untrimmed VH pin stands up to about 4 proud.
 CONSOLE_BACK_DEPTH = 4.0
 CONSOLE_STANDOFF_H = 10.0     # floor top to the board's back face
+# Screen power board: Q5's TO-220 leads are modelled untrimmed at 8.14; the next
+# deepest is F1's fuse holder at 2.38.
+SCREEN_BACK_DEPTH = 8.2
+SCREEN_STANDOFF_H = 12.0
+SCREEN_BOSS_D = 8.0           # its holes have a 4.25 copper keepout (screen_power/README)
 
-# Ring carrier: C1 8.09, J1 7.09 unplugged, C2-C5 5.19, U1 (XIAO) 4.36, U2 3.77,
-# D1 3.29, R1-R5 2.59, the encoder's pins 2.41.
-# The owner's calipers: 8.5 with C1 bent over and lying on the board, a little
-# more at J1 with its lead plugged in. J1 is vertical on the back, so the lead
-# leaves it pointing at the floor and has to bend before it can run sideways.
-RING_BACK_DEPTH = 8.5         # measured, C1 lying down
-RING_J1_PLUGGED = 11.0        # J1 with the XHP housing in it (model 7.09 + the plug)
-RING_LEAD_BEND = 8.0          # room for 26 AWG crimped leads to turn horizontal
-RING_LIFT = 22.0              # floor top to the ring board's back face
-
-# C1 is bent over and lying on the board. Which way depends on who soldered it,
-# so it is checked as an annulus: its pads sit at r 25.2..27.1 and a 8 x 11.5
-# can laid straight outward with its lead bend ends at about r 39.
-RING_C1_REACH_R = 39.0
-
-# Per-part depth under the ring board, from the same STEP export, for the
-# interference check in check().
-RING_PART_DEPTH = {"C1": RING_BACK_DEPTH, "J1": RING_J1_PLUGGED, "C2": 5.19, "C3": 5.19,
-                   "C4": 5.19, "C5": 5.19, "U1": 4.36, "U2": 3.77, "D1": 3.29,
-                   "R1": 2.59, "R2": 2.59, "R3": 2.59, "R4": 2.59, "R5": 2.59}
-SOLDER_JOINT = 1.5            # a through-hole joint, under any pad
-
-# The cup's snap arms (strip_ring/console_ring.py on the enclosure line, #1090):
-# three at 120 degrees, from r 40.4 outward, hanging 1.5 under the board. Two
-# versions exist and either may be on the bench: 6.0 wide with the catch in to
-# r 39.0 (64d152b9e), and 8.0 wide with the catch in to r 39.4 (the snap-relief
-# rework, claude/console-ring-snap-reliefs-1075). The crown is sized for the
-# wider one; the catch radius does not matter, as the arms sit in the gaps.
-CUP_ARM_W = 8.0
-CUP_ARM_PITCH = 120.0
-CUP_ARM_OUT_R = 41.4          # arm's outer face at board level, both versions
-CUP_WALL_R = 40.28            # the cup wall's outer face; it stops 0.085 over the board
-
-# The tube under the encoder. Its walls sit in the free ring between the encoder's
-# pads (inside) and the nearest other pad or courtyard (outside), each kept
-# clear of them; the radii are worked out from the layout in ring_tube().
-TUBE_CLR = 0.4
-TUBE_MIN_WALL = 1.2           # three perimeters of a 0.4 nozzle
-
-# The crown. TEETH at a 20 degree pitch; each tooth TOOTH_W wide (tangential)
-# and, in section, a post from the floor to LIP_ABOVE over the board's front
-# face, with a ledge reaching in under the board's edge to LEDGE_R.
-TEETH = 18
-TOOTH_W = 3.0
-LEDGE_R = 39.4                # board support from here out to the edge (r 40)
-POST_R = 40.3                 # inner face of the posts: 0.3 of play round the board,
-                              # so the arms (from r 40.4) sit wholly inside the posts' reach
-CROWN_OUT_R = 44.5
-LIP_ABOVE = 0.0               # post top flush with the board's front face: the cup's
-                              # wall (r 40.28) comes down to 0.085 over it
-CROWN_BASE_H = 2.0            # ring tying the teeth together at the floor
-
-# The XIAO's USB-C, from ring_board.py: Seeed's footprint puts the shell 12.59
-# past the module centre, and the module sits on a radius with that end at the
-# rim. The plug comes in radially from there, under the board, so the crown
-# leaves out the teeth within USB_OPEN/2 of the free edge.
-XIAO_USB_REACH = 12.59
-USB_PLUG_HALF_W = 7.0         # half the plug overmold's width, plus slack
-USB_PLUG_DEPTH = 8.0          # overmold, below the board's back face
-USB_OPEN = 30.0
-USB_ANGLE = 180.0             # global: the free left edge of tile B
+# ----------------------------------------------------------------------------
+# THE RASPBERRY PI 5 AND ITS NVMe BOARD
+# ----------------------------------------------------------------------------
+# Raspberry Pi 5, official mechanical drawing: 85 x 56, M2.5 holes 3.5 in from
+# the edge without the USB and Ethernet jacks, 58 x 49 apart. Frame: origin at
+# the corner by the PCIe connector, x along the 85 edge toward the USB and
+# Ethernet jacks, y up from the edge with USB-C and both micro-HDMI ports.
+PI_W, PI_H = 85.0, 56.0
+PI_HOLES = [(3.5, 3.5), (61.5, 3.5), (3.5, 52.5), (61.5, 52.5)]
+# The GeeekPi N07 (B0CWD266XR, 52Pi EP-0211) the appliance boots from: a
+# bottom board on the same four holes, HAT-sized (65 x 56.5), with the SSD on
+# its top side between it and the Pi. It stands on the kit's four 6 mm M2.5
+# pillars; the base screws into those from below, so the kit's own feet set the
+# air under it and nothing on the N07's back has to be known.
+N07_W, N07_H = 65.0, 56.5
+N07_FOOT_H = 6.0              # the kit's M2.5 x 6 pillars
+N07_TO_PI = 12.0              # the kit's M2.5 12+4 pillars, N07 top to Pi bottom
+PI_BOSS_D, PI_BOSS_H = 7.0, 3.0
+PI_SCREW_D = 2.8              # M2.5 clearance through the boss and the floor
+PI_HEAD_D, PI_HEAD_H = 5.4, 2.2   # counterbore from the bed face for the screw head:
+                                  # an M2.5 x 8 then reaches 3.2 into a 6 mm foot, under
+                                  # the 12+4 pillar's male end coming down into it
+PI_EDGE_GAP = 3.0             # Pi's port edges in from the tile's free edges
 
 # ----------------------------------------------------------------------------
 # THE POWER BOARDS
@@ -182,44 +135,45 @@ CORRAL_T, CORRAL_H, CORRAL_GAP = 2.4, 6.0, 24.0
 # ----------------------------------------------------------------------------
 # LAYOUT (global frame: x right, y away from you, z up from the bed)
 # ----------------------------------------------------------------------------
-COL_W = 118.0                 # the boards column, tiles A and B
-A_D, B_D = 118.0, 100.0       # tile depths
+COL_W = 118.0                 # the left column: console and pi tiles
+A_D, B_D = 118.0, 154.0       # their depths
 C_W, C_D = 80.0, 192.0        # power tile
 
 TILES = {
     "console": (0.0, 0.0, COL_W, A_D),
-    "ring":    (0.0, A_D, COL_W, A_D + B_D),
+    "pi":      (0.0, A_D, COL_W, A_D + B_D),
     "power":   (COL_W, 0.0, COL_W + C_W, C_D),
 }
 
-# Console board: centred on tile A, KiCad's top edge (the rear-panel loom: POWER,
-# MIDI, CTRL) to the back and the footswitch row to the front, so the Pico's
-# USB end (left) faces the free left edge.
+# Console board: centred on its tile, KiCad's top edge (the rear-panel loom:
+# POWER, MIDI, CTRL) to the back and the footswitch row to the front, so the
+# Pico's USB end (left) faces the free left edge and J2 (the Pi ribbon) the Pi.
 CONSOLE_X0 = (COL_W - CONSOLE["outline"]["w"]) / 2.0
 CONSOLE_Y0 = (A_D - CONSOLE["outline"]["h"]) / 2.0
 
-# Ring carrier: centred on tile B. Its angle is set when it is put down, with
-# the XIAO's USB-C pointing at the gap in the crown on the free left edge.
-RING_C = (COL_W / 2.0, A_D + B_D / 2.0)
+# Pi: in the back-left corner of its tile, turned 180 degrees, so the USB-C and
+# micro-HDMI edge faces the back and the USB and Ethernet end the left.
+PI_ROT = 180.0
+PI_C = (PI_EDGE_GAP + PI_W / 2.0, A_D + B_D - PI_EDGE_GAP - PI_H / 2.0)
 
-# Power tile: the two bricks long-side across, then the PD board turned so its
+# Screen power board: in front of the Pi, KiCad's top edge to the back like the
+# console board. Its cables all leave its headers upward.
+SCREEN_X0 = (COL_W - SCREEN["outline"]["w"]) / 2.0
+SCREEN_Y0 = A_D + 7.0
+
+# Power tile: the two bricks long side across, then the PD board turned so its
 # USB-C faces the free right edge.
 BUCK_CENTRES = {"BUCK PI": (COL_W + C_W / 2.0, 38.0),
                 "BUCK AUX": (COL_W + C_W / 2.0, 110.0)}
 PD_ROT = 180.0
 PD_C = (COL_W + C_W - 4.0 - PD_W / 2.0, 168.0)
 
-# Tile corners that are not on a seam, rounded.
-ROUND = {"console": [(0.0, 0.0)],
-         "ring": [(0.0, A_D + B_D), (COL_W, A_D + B_D)],
-         "power": [(COL_W + C_W, 0.0), (COL_W + C_W, C_D)]}
-
 # Dovetails: (tile carrying the tab, tile with the socket, seam, position along it)
-JOINTS = [("ring", "console", ("y", A_D), 30.0),
-          ("ring", "console", ("y", A_D), 88.0),
+JOINTS = [("pi", "console", ("y", A_D), 30.0),
+          ("pi", "console", ("y", A_D), 88.0),
           ("power", "console", ("x", COL_W), 30.0),
           ("power", "console", ("x", COL_W), 88.0),
-          ("power", "ring", ("x", COL_W), 155.0)]
+          ("power", "pi", ("x", COL_W), 155.0)]
 
 
 # ----------------------------------------------------------------------------
@@ -230,21 +184,26 @@ def console_xy(u, v):
     return CONSOLE_X0 + u, CONSOLE_Y0 + CONSOLE["outline"]["h"] - v
 
 
-def _ring_radii(box):
-    """(nearest, farthest) distance from the ring board's centre to a KiCad box."""
-    r = RING["outline"]["w"] / 2.0
-    x0, y0, x1, y1 = box[0] - r, box[1] - r, box[2] - r, box[3] - r
-    nx, ny = min(max(0.0, x0), x1), min(max(0.0, y0), y1)
-    return (math.hypot(nx, ny),
-            max(math.hypot(x, y) for x in (x0, x1) for y in (y0, y1)))
+def screen_xy(u, v):
+    """Screen power board KiCad (u, v), y down -> global (x, y)."""
+    return SCREEN_X0 + u, SCREEN_Y0 + SCREEN["outline"]["h"] - v
+
+
+def _turned(c, w, h, rot, px, py):
+    a = math.radians(rot)
+    dx, dy = px - w / 2.0, py - h / 2.0
+    return (c[0] + dx * math.cos(a) - dy * math.sin(a),
+            c[1] + dx * math.sin(a) + dy * math.cos(a))
+
+
+def pi_xy(px, py):
+    """Pi frame (see PI_W) -> global."""
+    return _turned(PI_C, PI_W, PI_H, PI_ROT, px, py)
 
 
 def pd_xy(px, py):
     """PD board Eagle frame (y up, origin bottom-left) -> global."""
-    a = math.radians(PD_ROT)
-    dx, dy = px - PD_W / 2.0, py - PD_H / 2.0
-    return (PD_C[0] + dx * math.cos(a) - dy * math.sin(a),
-            PD_C[1] + dx * math.sin(a) + dy * math.cos(a))
+    return _turned(PD_C, PD_W, PD_H, PD_ROT, px, py)
 
 
 def _box_dist(x, y, box):
@@ -254,47 +213,63 @@ def _box_dist(x, y, box):
     return math.hypot(dx, dy)
 
 
-# ----------------------------------------------------------------------------
-# the ring carrier's cradle
-# ----------------------------------------------------------------------------
-def ring_tube():
-    """(inner, outer) radius of the tube under the encoder, from the layout."""
-    enc = max(_ring_radii(p["box"])[1] for p in RING["pth_pads"] if p["ref"] == "ENC1")
-    # A courtyard already carries its own margin round the part, so the tube may
-    # meet it; a pad gets TUBE_CLR for the solder fillet.
-    rest = [_ring_radii(p["box"])[0] - TUBE_CLR for p in RING["pth_pads"] if p["ref"] != "ENC1"]
-    rest += [_ring_radii(p["courtyard"])[0] for p in RING["back_parts"]]
-    ri, ro = enc + TUBE_CLR, min(rest)
-    assert ro - ri >= TUBE_MIN_WALL, (
-        f"TUBE: only {ro - ri:.2f} mm between the encoder's pads (r {enc:.2f}) and "
-        f"the nearest part (r {min(rest):.2f})")
-    return ri, ro
+def _bbox(points):
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    return min(xs), min(ys), max(xs), max(ys)
 
 
-def crown_angles():
-    """Global angles of the teeth that are fitted."""
-    pitch = 360.0 / TEETH
-    out = []
-    for i in range(TEETH):
-        a = (i + 0.5) * pitch   # half a pitch off: the USB edge falls between two teeth
-        if abs((a - USB_ANGLE + 180.0) % 360.0 - 180.0) > USB_OPEN / 2.0:
-            out.append(a)
+def footprints():
+    """Each board's outline in global (x0, y0, x1, y1); the bucks' corrals."""
+    cw, ch = CONSOLE["outline"]["w"], CONSOLE["outline"]["h"]
+    sw, sh = SCREEN["outline"]["w"], SCREEN["outline"]["h"]
+    hw = BUCK_BODY[0] / 2 + BUCK_CLR + CORRAL_T
+    hh = BUCK_BODY[1] / 2 + BUCK_CLR + CORRAL_T
+    return {
+        "console": (CONSOLE_X0, CONSOLE_Y0, CONSOLE_X0 + cw, CONSOLE_Y0 + ch),
+        "screen power": (SCREEN_X0, SCREEN_Y0, SCREEN_X0 + sw, SCREEN_Y0 + sh),
+        "pi": _bbox([pi_xy(0, 0), pi_xy(PI_W, PI_H)]),
+        "pd": _bbox([pd_xy(0, 0), pd_xy(PD_W, PD_H)]),
+        **{name: (cx - hw, cy - hh, cx + hw, cy + hh)
+           for name, (cx, cy) in BUCK_CENTRES.items()},
+    }
+
+
+# ----------------------------------------------------------------------------
+# tiles
+# ----------------------------------------------------------------------------
+def _touches(name, x, y):
+    """True if (x, y) lies on or in a tile other than `name`."""
+    return any(x0 <= x <= x1 and y0 <= y <= y1
+               for other, (x0, y0, x1, y1) in TILES.items() if other != name)
+
+
+def _seams(name):
+    """The edges of a tile that another tile shares, worked out from TILES."""
+    x0, y0, x1, y1 = TILES[name]
+    out = set()
+    for other, (ox0, oy0, ox1, oy1) in TILES.items():
+        if other == name:
+            continue
+        ys = min(y1, oy1) - max(y0, oy0) > 0
+        xs = min(x1, ox1) - max(x0, ox0) > 0
+        out |= {k for k, hit in (("x0", ys and ox1 == x0), ("x1", ys and ox0 == x1),
+                                 ("y0", xs and oy1 == y0), ("y1", xs and oy0 == y1)) if hit}
     return out
 
 
-# ----------------------------------------------------------------------------
-# geometry
-# ----------------------------------------------------------------------------
-def _cyl(x, y, d, z0, h):
-    return cq.Workplane("XY").workplane(offset=z0).center(x, y).circle(d / 2.0).extrude(h)
-
-
-def _boss(x, y, h, d=BOSS_D):
-    """A standoff with a heat-set insert pilot in its top."""
-    b = _cyl(x, y, d, FLOOR_T - 0.01, h + 0.01)
-    b = b.faces(">Z").edges().chamfer(0.4)
-    return b.cut(_cyl(x, y, INSERT_PILOT_D, FLOOR_T + h - INSERT_PILOT_DEPTH,
-                      INSERT_PILOT_DEPTH + 0.1))
+def _plate(name):
+    x0, y0, x1, y1 = TILES[name]
+    seams = _seams(name)
+    g = {k: SEAM_GAP if k in seams else 0.0 for k in ("x0", "x1", "y0", "y1")}
+    gx0, gx1, gy0, gy1 = x0 + g["x0"], x1 - g["x1"], y0 + g["y0"], y1 - g["y1"]
+    p = (cq.Workplane("XY").center((gx0 + gx1) / 2.0, (gy0 + gy1) / 2.0)
+         .rect(gx1 - gx0, gy1 - gy0).extrude(FLOOR_T))
+    # Round the corners no other tile meets.
+    for (cx, cy), (rx, ry) in (((gx0, gy0), (x0, y0)), ((gx1, gy0), (x1, y0)),
+                               ((gx1, gy1), (x1, y1)), ((gx0, gy1), (x0, y1))):
+        if not _touches(name, rx, ry):
+            p = p.edges(cq.selectors.NearestToPointSelector((cx, cy, FLOOR_T / 2.0))).fillet(TILE_R)
+    return p
 
 
 def _dovetail(seam, at, sign, grow=0.0):
@@ -312,19 +287,28 @@ def _dovetail(seam, at, sign, grow=0.0):
     return cq.Workplane("XY").workplane(offset=z0).polyline(poly).close().extrude(h)
 
 
-# Which tile edges are seams, and which corners are free and get rounded.
-SEAMS = {"console": ("x1", "y1"), "ring": ("y0", "x1"), "power": ("x0",)}
+# ----------------------------------------------------------------------------
+# features
+# ----------------------------------------------------------------------------
+def _cyl(x, y, d, z0, h):
+    return cq.Workplane("XY").workplane(offset=z0).center(x, y).circle(d / 2.0).extrude(h)
 
 
-def _plate(name):
-    x0, y0, x1, y1 = TILES[name]
-    g = {k: SEAM_GAP if k in SEAMS[name] else 0.0 for k in ("x0", "x1", "y0", "y1")}
-    gx0, gx1, gy0, gy1 = x0 + g["x0"], x1 - g["x1"], y0 + g["y0"], y1 - g["y1"]
-    p = (cq.Workplane("XY").center((gx0 + gx1) / 2.0, (gy0 + gy1) / 2.0)
-         .rect(gx1 - gx0, gy1 - gy0).extrude(FLOOR_T))
-    for cx, cy in ROUND[name]:
-        p = p.edges(cq.selectors.NearestToPointSelector((cx, cy, FLOOR_T / 2.0))).fillet(TILE_R)
-    return p
+def _boss(x, y, h, d=BOSS_D):
+    """A standoff with a heat-set insert pilot in its top."""
+    b = _cyl(x, y, d, FLOOR_T - 0.01, h + 0.01)
+    b = b.faces(">Z").edges().chamfer(0.4)
+    return b.cut(_cyl(x, y, INSERT_PILOT_D, FLOOR_T + h - INSERT_PILOT_DEPTH,
+                      INSERT_PILOT_DEPTH + 0.1))
+
+
+def _pi_boss(x, y):
+    """A short boss under one of the N07's pillars, and what to cut for it: a
+    screw hole through the boss and the floor, counterbored on the underside."""
+    add = _cyl(x, y, PI_BOSS_D, FLOOR_T - 0.01, PI_BOSS_H + 0.01)
+    cut = _cyl(x, y, PI_SCREW_D, -1.0, FLOOR_T + PI_BOSS_H + 2.0).union(
+        _cyl(x, y, PI_HEAD_D, -1.0, PI_HEAD_H + 1.0))
+    return add, cut
 
 
 def _text(solid, txt, x, y, size, angle=0.0):
@@ -336,81 +320,45 @@ def _text(solid, txt, x, y, size, angle=0.0):
     return solid.cut(t)
 
 
-def console_features():
-    h = CONSOLE_STANDOFF_H
-    parts = [_boss(*console_xy(hl["x"], hl["y"]), h) for hl in CONSOLE["holes"]]
-    return parts
-
-
-def _sector(profile, deg_c, width_mm, r_ref):
-    """Revolve an (r, z) profile through width_mm (at r_ref) centred on deg_c,
-    about the ring's centre."""
-    span = math.degrees(width_mm / r_ref)
-    return (cq.Workplane("XZ").polyline(profile).close()
-            .revolve(span, (0, 0, 0), (0, 1, 0))
-            .rotate((0, 0, 0), (0, 0, 1), deg_c - span / 2.0)
-            .translate((RING_C[0], RING_C[1], 0)))
-
-
-def ring_features():
-    z_back = FLOOR_T + RING_LIFT
-    z_front = z_back + RING["thickness"]
-    ri, ro = ring_tube()
-    tube = (cq.Workplane("XY").workplane(offset=FLOOR_T - 0.01).center(*RING_C)
-            .circle(ro).circle(ri).extrude(RING_LIFT + 0.01))
-    foot = (cq.Workplane("XY").workplane(offset=FLOOR_T - 0.01).center(*RING_C)
-            .circle(ro + 3.0).circle(ri).extrude(3.0))
-    parts = [tube.union(foot)]
-    base = (cq.Workplane("XY").workplane(offset=FLOOR_T - 0.01).center(*RING_C)
-            .circle(CROWN_OUT_R).circle(LEDGE_R).extrude(CROWN_BASE_H + 0.01))
-    # the base ring is left out at the USB opening too, so the plug's cable lies flat
-    span = USB_OPEN - math.degrees(TOOTH_W / CROWN_OUT_R)
-    base = base.cut(_sector([(LEDGE_R - 1, FLOOR_T - 1), (CROWN_OUT_R + 1, FLOOR_T - 1),
-                             (CROWN_OUT_R + 1, FLOOR_T + 5), (LEDGE_R - 1, FLOOR_T + 5)],
-                            USB_ANGLE, math.radians(span) * CROWN_OUT_R, CROWN_OUT_R))
-    parts.append(base)
-    # Tooth section: post from the floor to over the board, ledge in under the
-    # board's edge, its underside at 45 degrees so it prints without support.
-    ledge_t = 0.4
-    tooth = [(POST_R, FLOOR_T), (CROWN_OUT_R, FLOOR_T), (CROWN_OUT_R, z_front + LIP_ABOVE),
-             (POST_R, z_front + LIP_ABOVE), (POST_R, z_back), (LEDGE_R, z_back),
-             (LEDGE_R, z_back - ledge_t), (POST_R, z_back - ledge_t - (POST_R - LEDGE_R))]
-    r_mid = (LEDGE_R + CROWN_OUT_R) / 2.0
-    for a in crown_angles():
-        parts.append(_sector(tooth, a, TOOTH_W, r_mid))
-    return parts
-
-
-def power_features():
-    parts = []
+def features():
+    """{tile: ([solids to add], [solids to cut])}"""
+    out = {name: ([], []) for name in TILES}
+    for hl in CONSOLE["holes"]:
+        out["console"][0].append(_boss(*console_xy(hl["x"], hl["y"]), CONSOLE_STANDOFF_H))
+    for hl in SCREEN["holes"]:
+        out["pi"][0].append(_boss(*screen_xy(hl["x"], hl["y"]), SCREEN_STANDOFF_H, SCREEN_BOSS_D))
+    for px, py in PI_HOLES:
+        add, cut = _pi_boss(*pi_xy(px, py))
+        out["pi"][0].append(add)
+        out["pi"][1].append(cut)
     for px, py in PD_HOLES:
-        parts.append(_boss(*pd_xy(px, py), PD_STANDOFF_H, PD_BOSS_D))
+        out["power"][0].append(_boss(*pd_xy(px, py), PD_STANDOFF_H, PD_BOSS_D))
     iw, ih = BUCK_BODY[0] + 2 * BUCK_CLR, BUCK_BODY[1] + 2 * BUCK_CLR
     for cx, cy in BUCK_CENTRES.values():
-        ring_ = (cq.Workplane("XY").workplane(offset=FLOOR_T - 0.01).center(cx, cy)
-                 .rect(iw + 2 * CORRAL_T, ih + 2 * CORRAL_T).rect(iw, ih)
-                 .extrude(CORRAL_H + 0.01))
-        cut = (cq.Workplane("XY").workplane(offset=FLOOR_T).center(cx, cy)
-               .rect(CORRAL_GAP, ih + 4 * CORRAL_T).extrude(CORRAL_H + 1)
-               .union(cq.Workplane("XY").workplane(offset=FLOOR_T).center(cx, cy)
-                      .rect(iw + 4 * CORRAL_T, CORRAL_GAP).extrude(CORRAL_H + 1)))
-        parts.append(ring_.cut(cut))
-    return parts
+        corral = (cq.Workplane("XY").workplane(offset=FLOOR_T - 0.01).center(cx, cy)
+                  .rect(iw + 2 * CORRAL_T, ih + 2 * CORRAL_T).rect(iw, ih)
+                  .extrude(CORRAL_H + 0.01))
+        gaps = (cq.Workplane("XY").workplane(offset=FLOOR_T).center(cx, cy)
+                .rect(CORRAL_GAP, ih + 4 * CORRAL_T).extrude(CORRAL_H + 1)
+                .union(cq.Workplane("XY").workplane(offset=FLOOR_T).center(cx, cy)
+                       .rect(iw + 4 * CORRAL_T, CORRAL_GAP).extrude(CORRAL_H + 1)))
+        out["power"][0].append(corral.cut(gaps))
+    return out
 
 
 def build():
     """The three tiles, as {name: solid}, in their assembled positions."""
-    feats = {"console": console_features(), "ring": ring_features(),
-             "power": power_features()}
+    feats = features()
     tiles = {}
     for name in TILES:
         t = _plate(name)
-        for f in feats[name]:
+        for f in feats[name][0]:
             t = t.union(f)
+        for f in feats[name][1]:
+            t = t.cut(f)
         tiles[name] = t
     for tab, sock, seam, at in JOINTS:
         axis, s = seam
-        x0, y0, _, _ = TILES[sock]
         # the tab grows from its own tile into the socket tile
         sign = -1 if (axis == "y" and TILES[tab][1] >= s) or \
                      (axis == "x" and TILES[tab][0] >= s) else 1
@@ -423,8 +371,10 @@ def build():
     # Labels, engraved 0.6 into the floor top.
     tiles["console"] = _text(tiles["console"], "SEGNO CONSOLE V3", COL_W / 2.0,
                              CONSOLE_Y0 / 2.0, 5.0)
-    tiles["ring"] = _text(tiles["ring"], "XIAO USB", RING_C[0] - CROWN_OUT_R - 3.0,
-                          RING_C[1], 3.2, 90.0)
+    sx, sy = screen_xy(SCREEN["outline"]["w"] / 2.0, SCREEN["outline"]["h"] / 2.0)
+    tiles["pi"] = _text(tiles["pi"], "SCREEN POWER", sx, sy, 5.0)
+    px, py = pi_xy(PI_W / 2.0, PI_H / 2.0)
+    tiles["pi"] = _text(tiles["pi"], "PI 5: HDMI TO THE BACK", px, py, 3.5)
     for label, (cx, cy) in BUCK_CENTRES.items():
         tiles["power"] = _text(tiles["power"], label, cx, cy, 6.0)
     px, py = pd_xy(PD_W / 2.0, PD_H / 2.0)
@@ -435,45 +385,18 @@ def build():
 # ----------------------------------------------------------------------------
 # checks
 # ----------------------------------------------------------------------------
-def _annulus(r0, r1, z0, z1):
-    return (cq.Workplane("XY").workplane(offset=z0).center(*RING_C)
-            .circle(max(r1, r0 + 0.01)).circle(max(r0, 0.001)).extrude(z1 - z0))
-
-
-def ring_keepout_solids():
-    """What must stay empty round the ring carrier, as solids. The board can sit
-    at any angle, so every part is swept round the centre into the annulus it
-    could occupy: its courtyard to its depth, its solder joints, C1 lying, and
-    the cup's catches under the edge. The USB-C plug is fixed in the opening."""
-    z_back = FLOOR_T + RING_LIFT
-    out = []
-    for p in RING["back_parts"]:
-        r0, r1 = _ring_radii(p["courtyard"])
-        if p["ref"] == "C1":
-            r1 = max(r1, RING_C1_REACH_R)
-        depth = RING_PART_DEPTH.get(p["ref"])
-        assert depth, f"RING: no depth for {p['ref']}; measure it and add it to RING_PART_DEPTH"
-        out.append((p["ref"], _annulus(r0, r1, z_back - depth, z_back)))
-    # Solder joints all have the same depth, so their annuli merge into a few.
-    spans = sorted(_ring_radii(pd["box"]) for pd in RING["pth_pads"])
-    merged = [list(spans[0])]
-    for r0, r1 in spans[1:]:
-        if r0 <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], r1)
-        else:
-            merged.append([r0, r1])
-    for r0, r1 in merged:
-        out.append((f"solder joints r {r0:.1f}..{r1:.1f}",
-                    _annulus(r0, r1, z_back - SOLDER_JOINT, z_back)))
-    u1 = next(p for p in RING["back_parts"] if p["ref"] == "U1")
-    r = RING["outline"]["w"] / 2.0
-    usb_r = math.hypot(u1["x"] - r, u1["y"] - r) + XIAO_USB_REACH
-    a = math.radians(USB_ANGLE)
-    plug = (cq.Workplane("XY").workplane(offset=z_back - USB_PLUG_DEPTH)
-            .center(RING_C[0] + math.cos(a) * (usb_r + 15.0), RING_C[1] + math.sin(a) * (usb_r + 15.0))
-            .rect(30.0, 2 * USB_PLUG_HALF_W).extrude(USB_PLUG_DEPTH))
-    out.append(("USB-C plug", plug))
-    return out
+def _check_bosses(board, boss_d, standoff_h, back_depth):
+    """A board's standoffs touch no pad but their own hole's, and lift the
+    board clear of its leads."""
+    name = board["source"].split("/")[-1]
+    assert standoff_h >= back_depth + 3.0, f"{name}: the leads reach the floor"
+    for hl in board["holes"]:
+        for pd in board["pth_pads"]:
+            if pd["ref"] == hl["ref"]:
+                continue
+            d = _box_dist(hl["x"], hl["y"], pd["box"])
+            assert d > boss_d / 2.0 + BOSS_PAD_CLR, (
+                f"{name}: the {hl['ref']} standoff lands {d:.2f} from {pd['ref']}.{pd['pad']}")
 
 
 def check(tiles):
@@ -488,88 +411,72 @@ def check(tiles):
             f"{BED_MARGIN} mm of margin")
         msgs.append(f"{name:8s} {bb.xlen:6.1f} x {bb.ylen:6.1f} x {bb.zlen:5.1f}")
 
-    # Console: the standoff tops touch nothing but their own hole's pad, and the
-    # leads clear the floor.
-    assert CONSOLE_STANDOFF_H >= CONSOLE_BACK_DEPTH + 3.0, "CONSOLE: leads reach the floor"
-    for hl in CONSOLE["holes"]:
-        for pd in CONSOLE["pth_pads"]:
-            if pd["ref"] == hl["ref"]:
-                continue
-            d = _box_dist(hl["x"], hl["y"], pd["box"])
-            assert d > BOSS_D / 2.0 + 0.3, (
-                f"CONSOLE: the {hl['ref']} standoff lands {d:.2f} from {pd['ref']}.{pd['pad']}")
-    for hl in CONSOLE["holes"]:
-        x, y = console_xy(hl["x"], hl["y"])
-        x0, y0, x1, y1 = TILES["console"]
-        assert x0 + BOSS_D / 2 < x < x1 - BOSS_D / 2 and y0 + BOSS_D / 2 < y < y1 - BOSS_D / 2
-
-    # Ring: depth, the tube, the crown against the cup's arms, the USB opening.
-    assert RING_LIFT >= RING_BACK_DEPTH + 3.0, "RING: C1 reaches the floor"
-    assert RING_LIFT >= RING_J1_PLUGGED + RING_LEAD_BEND, "RING: no room for J1's lead to bend"
-    for nm, solid in ring_keepout_solids():
-        v = tiles["ring"].intersect(solid.val()).Volume()
-        assert v < 1e-3, f"RING: the ring tile runs {v:.2f} mm3 into {nm}"
-    pitch = 360.0 / TEETH
-    assert abs(CUP_ARM_PITCH / pitch - round(CUP_ARM_PITCH / pitch)) < 1e-9, (
-        "RING: the arms' pitch is not a multiple of the teeth's, so they cannot all seat")
-    r_arm = LEDGE_R               # the narrowest place an arm's catch can meet a tooth
-    gap = math.radians(pitch) * r_arm - TOOTH_W * r_arm / ((LEDGE_R + CROWN_OUT_R) / 2.0)
-    assert gap >= CUP_ARM_W + 1.0, f"RING: a {gap:.2f} gap between teeth does not take a {CUP_ARM_W} arm"
-    assert POST_R > RING["outline"]["w"] / 2.0 and POST_R < CUP_ARM_OUT_R, (
-        "RING: the posts must clear the board edge and reach in past the arms' outer face")
-    # The interference check above has the board centred; it can also slide
-    # `slop` toward any tooth. Nothing under it may then reach a ledge, C1 lying
-    # outward included, and every arm must still overlap the posts radially.
-    edge = max([_ring_radii(p["courtyard"])[1] for p in RING["back_parts"]] + [RING_C1_REACH_R])
-    slop = POST_R - RING["outline"]["w"] / 2.0
-    assert edge + slop < LEDGE_R, f"RING: a part at r {edge:.2f} can slide onto a ledge"
-    overlap = CUP_ARM_OUT_R - (POST_R + slop)
-    assert overlap >= 0.6, f"RING: an arm can slide to {overlap:.2f} of overlap with the posts"
-    assert POST_R > CUP_WALL_R or LIP_ABOVE <= 0.085, "RING: the posts' tops hit the cup wall"
-    # The opening must pass the plug at every angle the arms can seat at, i.e.
-    # anywhere within half a pitch either way.
-    fitted = crown_angles()
-    lo = max(a for a in fitted if a < USB_ANGLE)
-    hi = min(a for a in fitted if a > USB_ANGLE)
-    half_tooth = math.degrees(TOOTH_W / 2.0 / POST_R)
-    clear = (hi - lo) - 2 * half_tooth
-    plug = 2 * math.degrees(math.asin(USB_PLUG_HALF_W / POST_R))
-    assert clear - plug >= pitch, (
-        f"RING: the {clear:.1f} deg opening leaves the {plug:.1f} deg plug no room to turn a pitch")
-    ri, ro = ring_tube()
-    msgs.append(f"ring tube r {ri:.2f}..{ro:.2f}, {len(fitted)} teeth, arm gap {gap:.2f}, "
-                f"USB opening {clear:.1f} deg for a {plug:.1f} deg plug")
-
-    # Power: the bosses sit inside the PD outline's ears, the corrals clear each other.
+    _check_bosses(CONSOLE, BOSS_D, CONSOLE_STANDOFF_H, CONSOLE_BACK_DEPTH)
+    _check_bosses(SCREEN, SCREEN_BOSS_D, SCREEN_STANDOFF_H, SCREEN_BACK_DEPTH)
     for px, py in PD_HOLES:
         assert 0 < px < PD_W and 0 < py < PD_H
+
+    # Every board on the tile it is meant for, none overlapping another, with
+    # room between them.
+    home = {"console": "console", "screen power": "pi", "pi": "pi", "pd": "power",
+            "BUCK PI": "power", "BUCK AUX": "power"}
+    fps = footprints()
+    for name, (x0, y0, x1, y1) in fps.items():
+        tx0, ty0, tx1, ty1 = TILES[home[name]]
+        assert tx0 + 1.0 <= x0 and x1 <= tx1 - 1.0 and ty0 + 1.0 <= y0 and y1 <= ty1 - 1.0, (
+            f"{name} hangs off its tile")
+    names = list(fps)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            ax0, ay0, ax1, ay1 = fps[a]
+            bx0, by0, bx1, by1 = fps[b]
+            gap = max(bx0 - ax1, ax0 - bx1, by0 - ay1, ay0 - by1)
+            assert gap >= 4.0, f"{a} and {b} are {gap:.1f} apart"
+    # The N07 sits under the Pi on the same holes, inside its outline.
+    assert N07_W <= PI_W and N07_H <= PI_H + 0.5
+
+    # The Pi's ports face free edges: USB-C and HDMI (its y = 0 edge) and USB
+    # and Ethernet (its x = PI_W edge) each within PI_EDGE_GAP of a tile edge no
+    # other tile shares.
+    tx0, ty0, tx1, ty1 = TILES["pi"]
+    seams = _seams("pi")
+    for nm, (ax, ay), (bx, by) in (("USB-C and HDMI", (0, 0), (PI_W, 0)),
+                                   ("USB and Ethernet", (PI_W, 0), (PI_W, PI_H))):
+        (gx0, gy0), (gx1, gy1) = pi_xy(ax, ay), pi_xy(bx, by)
+        edges = {"x0": abs(gx0 - tx0) + abs(gx1 - tx0), "x1": abs(gx0 - tx1) + abs(gx1 - tx1),
+                 "y0": abs(gy0 - ty0) + abs(gy1 - ty0), "y1": abs(gy0 - ty1) + abs(gy1 - ty1)}
+        k = min(edges, key=edges.get)
+        assert edges[k] <= 2 * PI_EDGE_GAP + 1e-6 and k not in seams, (
+            f"PI: the {nm} edge does not face a free edge of its tile")
+
     (_, y1), (_, y2) = BUCK_CENTRES.values()
     assert abs(y2 - y1) >= BUCK_BODY[1] + 2 * (BUCK_CLR + CORRAL_T) + 4.0, "POWER: corrals overlap"
-    pd_y0 = min(pd_xy(*h)[1] for h in PD_HOLES) - PD_BOSS_D / 2.0
-    assert pd_y0 > y2 + BUCK_BODY[1] / 2 + BUCK_CLR + CORRAL_T + 4.0, "POWER: PD board on the buck"
     return msgs
 
 
 # ----------------------------------------------------------------------------
 # export
 # ----------------------------------------------------------------------------
+def _slab(x0, y0, x1, y1, z, t=1.6):
+    return (cq.Workplane("XY").workplane(offset=z).center((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+            .rect(x1 - x0, y1 - y0).extrude(t))
+
+
 def _reference_boards():
-    z_c = FLOOR_T + CONSOLE_STANDOFF_H
-    w, h = CONSOLE["outline"]["w"], CONSOLE["outline"]["h"]
-    console = (cq.Workplane("XY").workplane(offset=z_c)
-               .center(CONSOLE_X0 + w / 2.0, CONSOLE_Y0 + h / 2.0)
-               .rect(w, h).extrude(CONSOLE["thickness"]))
-    for hl in CONSOLE["holes"]:
-        x, y = console_xy(hl["x"], hl["y"])
-        console = console.cut(_cyl(x, y, hl["drill"], z_c - 1, 4))
-    ring = _cyl(*RING_C, RING["outline"]["w"], FLOOR_T + RING_LIFT, RING["thickness"])
-    pd = (cq.Workplane("XY").workplane(offset=FLOOR_T + PD_STANDOFF_H).center(*PD_C)
-          .rect(PD_W, PD_H).extrude(1.6))
-    bucks = [cq.Workplane("XY").workplane(offset=FLOOR_T).center(cx, cy)
-             .rect(BUCK_BODY[0], BUCK_BODY[1]).extrude(BUCK_BODY[2]).val()
+    fps = footprints()
+    pi_foot = FLOOR_T + PI_BOSS_H + N07_FOOT_H
+    n07 = _bbox([pi_xy(0, 0), pi_xy(N07_W, N07_H)])
+    bucks = [_slab(cx - BUCK_BODY[0] / 2, cy - BUCK_BODY[1] / 2, cx + BUCK_BODY[0] / 2,
+                   cy + BUCK_BODY[1] / 2, FLOOR_T, BUCK_BODY[2]).val()
              for cx, cy in BUCK_CENTRES.values()]
-    return {"console_board_v3": console.val(), "ring_carrier": ring.val(),
-            "stusb4500_pd": pd.val(), "bucks": cq.Compound.makeCompound(bucks)}
+    return {
+        "console_board_v3": _slab(*fps["console"], FLOOR_T + CONSOLE_STANDOFF_H).val(),
+        "screen_power": _slab(*fps["screen power"], FLOOR_T + SCREEN_STANDOFF_H).val(),
+        "n07_nvme": _slab(*n07, pi_foot).val(),
+        "raspberry_pi_5": _slab(*fps["pi"], pi_foot + 1.6 + N07_TO_PI).val(),
+        "stusb4500_pd": _slab(*fps["pd"], FLOOR_T + PD_STANDOFF_H).val(),
+        "bucks": cq.Compound.makeCompound(bucks),
+    }
 
 
 def _svg(shape, path, w=720, h=640):
@@ -586,7 +493,7 @@ def _svg(shape, path, w=720, h=640):
 def export(tiles):
     os.makedirs(OUT, exist_ok=True)
     asm = cq.Assembly(name="segno_bench_base")
-    colours = {"console": "gray30", "ring": "gray40", "power": "gray50"}
+    colours = {"console": "gray30", "pi": "gray40", "power": "gray50"}
     for name, s in tiles.items():
         base = os.path.join(OUT, f"segno_bench_base_{name}")
         bb = s.BoundingBox()
@@ -605,7 +512,7 @@ def export(tiles):
         if f.endswith(".step"):
             p = os.path.join(OUT, f)
             txt = open(p).read().splitlines()
-            open(p, "w").write("\n".join(l.rstrip() for l in txt) + "\n")
+            open(p, "w").write("\n".join(line.rstrip() for line in txt) + "\n")
     print(f"wrote {len(tiles)} tiles (STEP + STL), the assembly and a top view in {OUT}")
 
 

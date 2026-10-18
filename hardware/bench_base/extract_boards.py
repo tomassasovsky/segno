@@ -1,4 +1,4 @@
-"""Read the two Segno boards' mechanical data out of their KiCad layouts (#1358).
+"""Read the Segno boards' mechanical data out of their KiCad layouts (#1358).
 
 Writes board_geometry.json next to this file. bench_base.py reads that file, so
 the base is built from the same layouts that went to the fab, not from numbers
@@ -30,8 +30,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BOARDS = {
     # The console board v3 deliverable (routed, DRC-clean), see console_board_pcb.py.
     "console": os.path.join("out_console", "segno_console_board.kicad_pcb"),
-    # The ring carrier: XIAO RP2350, encoder, ring pads, see ring_board.py.
-    "ring": "segno_pedal_ring.kicad_pcb",
+    # The screen power and touch switch (#1072), the routed hand layout.
+    "screen_power": os.path.join("screen_power", "hand", "screen_power_hand.kicad_pcb"),
 }
 T = pcbnew.ToMM
 
