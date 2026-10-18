@@ -95,8 +95,11 @@ def main():
                                   "one board_geometry.json already records)")
     rev = ap.parse_args().rev
     if rev is None:
-        with open(dst) as fh:
-            rev = json.load(fh)["revision"]
+        try:
+            with open(dst) as fh:
+                rev = json.load(fh)["revision"]
+        except (OSError, ValueError, KeyError):
+            ap.error(f"{os.path.basename(dst)} has no revision to re-read; pass --rev")
     sha = _git("rev-parse", "--short=9", f"{rev}^{{commit}}").strip()
     data = {"revision": sha}
     with tempfile.TemporaryDirectory() as tmp:

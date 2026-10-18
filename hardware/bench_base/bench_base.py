@@ -96,18 +96,17 @@ SCREEN_BOSS_D = 8.0           # its holes have a 4.25 copper keepout (screen_pow
 PI_W, PI_H = 85.0, 56.0
 PI_HOLES = [(3.5, 3.5), (61.5, 3.5), (3.5, 52.5), (61.5, 52.5)]
 # The GeeekPi N07 (B0CWD266XR, 52Pi EP-0211) the appliance boots from: a
-# bottom board on the same four holes, HAT-sized (65 x 56.5), with the SSD on
-# its top side between it and the Pi. It stands on the kit's four 6 mm M2.5
-# pillars; the base screws into those from below, so the kit's own feet set the
-# air under it and nothing on the N07's back has to be known.
+# bottom board on the same four holes, HAT-sized (65 x 56.5). The enclosure
+# stacks it riser -> N07 -> 6 mm M2.5 male/female extender -> Pi (PI_N07_H in
+# segno_enclosure.py), the extender's male end threading down through the N07
+# into the riser. Here the bosses are those risers: each carries an M2.5
+# heat-set insert, with the pilot running on below it so a male end longer than
+# the insert (the N07 kit's 12+4 pillars, or a 6+6 extender) still goes home.
 N07_W, N07_H = 65.0, 56.5
-N07_FOOT_H = 6.0              # the kit's M2.5 x 6 pillars
-N07_TO_PI = 12.0              # the kit's M2.5 12+4 pillars, N07 top to Pi bottom
-PI_BOSS_D, PI_BOSS_H = 7.0, 3.0
-PI_SCREW_D = 2.8              # M2.5 clearance through the boss and the floor
-PI_HEAD_D, PI_HEAD_H = 5.4, 2.2   # counterbore from the bed face for the screw head:
-                                  # an M2.5 x 8 then reaches 3.2 into a 6 mm foot, under
-                                  # the 12+4 pillar's male end coming down into it
+N07_TO_PI = 6.0               # the enclosure's 6 mm male/female extender
+PI_BOSS_D, PI_BOSS_H = 7.0, 10.0  # air under the N07, as under the console board
+PI_INSERT_D = 3.2             # pilot for an M2.5 x 4 heat-set insert (3.5 OD)
+PI_PILOT_DEPTH = 8.0          # insert 4 + room for up to 6 mm of male thread past the N07
 PI_EDGE_GAP = 3.0             # Pi's port edges in from the tile's free edges
 
 # ----------------------------------------------------------------------------
@@ -237,9 +236,12 @@ def footprints():
 # ----------------------------------------------------------------------------
 # tiles
 # ----------------------------------------------------------------------------
+EPS = 1e-6
+
+
 def _touches(name, x, y):
     """True if (x, y) lies on or in a tile other than `name`."""
-    return any(x0 <= x <= x1 and y0 <= y <= y1
+    return any(x0 - EPS <= x <= x1 + EPS and y0 - EPS <= y <= y1 + EPS
                for other, (x0, y0, x1, y1) in TILES.items() if other != name)
 
 
@@ -250,10 +252,11 @@ def _seams(name):
     for other, (ox0, oy0, ox1, oy1) in TILES.items():
         if other == name:
             continue
-        ys = min(y1, oy1) - max(y0, oy0) > 0
-        xs = min(x1, ox1) - max(x0, ox0) > 0
-        out |= {k for k, hit in (("x0", ys and ox1 == x0), ("x1", ys and ox0 == x1),
-                                 ("y0", xs and oy1 == y0), ("y1", xs and oy0 == y1)) if hit}
+        ys = min(y1, oy1) - max(y0, oy0) > EPS
+        xs = min(x1, ox1) - max(x0, ox0) > EPS
+        out |= {k for k, hit in (("x0", ys and abs(ox1 - x0) < EPS), ("x1", ys and abs(ox0 - x1) < EPS),
+                                 ("y0", xs and abs(oy1 - y0) < EPS), ("y1", xs and abs(oy0 - y1) < EPS))
+                if hit}
     return out
 
 
@@ -303,12 +306,11 @@ def _boss(x, y, h, d=BOSS_D):
 
 
 def _pi_boss(x, y):
-    """A short boss under one of the N07's pillars, and what to cut for it: a
-    screw hole through the boss and the floor, counterbored on the underside."""
-    add = _cyl(x, y, PI_BOSS_D, FLOOR_T - 0.01, PI_BOSS_H + 0.01)
-    cut = _cyl(x, y, PI_SCREW_D, -1.0, FLOOR_T + PI_BOSS_H + 2.0).union(
-        _cyl(x, y, PI_HEAD_D, -1.0, PI_HEAD_H + 1.0))
-    return add, cut
+    """A riser under one of the N07's holes, with an M2.5 insert pilot."""
+    b = _cyl(x, y, PI_BOSS_D, FLOOR_T - 0.01, PI_BOSS_H + 0.01)
+    b = b.faces(">Z").edges().chamfer(0.4)
+    return b.cut(_cyl(x, y, PI_INSERT_D, FLOOR_T + PI_BOSS_H - PI_PILOT_DEPTH,
+                      PI_PILOT_DEPTH + 0.1))
 
 
 def _text(solid, txt, x, y, size, angle=0.0):
@@ -321,18 +323,16 @@ def _text(solid, txt, x, y, size, angle=0.0):
 
 
 def features():
-    """{tile: ([solids to add], [solids to cut])}"""
-    out = {name: ([], []) for name in TILES}
+    """{tile: [solids to add to it]}"""
+    out = {name: [] for name in TILES}
     for hl in CONSOLE["holes"]:
-        out["console"][0].append(_boss(*console_xy(hl["x"], hl["y"]), CONSOLE_STANDOFF_H))
+        out["console"].append(_boss(*console_xy(hl["x"], hl["y"]), CONSOLE_STANDOFF_H))
     for hl in SCREEN["holes"]:
-        out["pi"][0].append(_boss(*screen_xy(hl["x"], hl["y"]), SCREEN_STANDOFF_H, SCREEN_BOSS_D))
+        out["pi"].append(_boss(*screen_xy(hl["x"], hl["y"]), SCREEN_STANDOFF_H, SCREEN_BOSS_D))
     for px, py in PI_HOLES:
-        add, cut = _pi_boss(*pi_xy(px, py))
-        out["pi"][0].append(add)
-        out["pi"][1].append(cut)
+        out["pi"].append(_pi_boss(*pi_xy(px, py)))
     for px, py in PD_HOLES:
-        out["power"][0].append(_boss(*pd_xy(px, py), PD_STANDOFF_H, PD_BOSS_D))
+        out["power"].append(_boss(*pd_xy(px, py), PD_STANDOFF_H, PD_BOSS_D))
     iw, ih = BUCK_BODY[0] + 2 * BUCK_CLR, BUCK_BODY[1] + 2 * BUCK_CLR
     for cx, cy in BUCK_CENTRES.values():
         corral = (cq.Workplane("XY").workplane(offset=FLOOR_T - 0.01).center(cx, cy)
@@ -342,7 +342,7 @@ def features():
                 .rect(CORRAL_GAP, ih + 4 * CORRAL_T).extrude(CORRAL_H + 1)
                 .union(cq.Workplane("XY").workplane(offset=FLOOR_T).center(cx, cy)
                        .rect(iw + 4 * CORRAL_T, CORRAL_GAP).extrude(CORRAL_H + 1)))
-        out["power"][0].append(corral.cut(gaps))
+        out["power"].append(corral.cut(gaps))
     return out
 
 
@@ -352,10 +352,8 @@ def build():
     tiles = {}
     for name in TILES:
         t = _plate(name)
-        for f in feats[name][0]:
+        for f in feats[name]:
             t = t.union(f)
-        for f in feats[name][1]:
-            t = t.cut(f)
         tiles[name] = t
     for tab, sock, seam, at in JOINTS:
         axis, s = seam
@@ -432,8 +430,10 @@ def check(tiles):
             bx0, by0, bx1, by1 = fps[b]
             gap = max(bx0 - ax1, ax0 - bx1, by0 - ay1, ay0 - by1)
             assert gap >= 4.0, f"{a} and {b} are {gap:.1f} apart"
-    # The N07 sits under the Pi on the same holes, inside its outline.
+    # The N07 sits under the Pi on the same holes, inside its outline, and the
+    # riser keeps a wall round its insert.
     assert N07_W <= PI_W and N07_H <= PI_H + 0.5
+    assert PI_BOSS_D - PI_INSERT_D >= 3.0 and PI_PILOT_DEPTH < PI_BOSS_H + FLOOR_T - 1.0
 
     # The Pi's ports face free edges: USB-C and HDMI (its y = 0 edge) and USB
     # and Ethernet (its x = PI_W edge) each within PI_EDGE_GAP of a tile edge no
@@ -464,7 +464,7 @@ def _slab(x0, y0, x1, y1, z, t=1.6):
 
 def _reference_boards():
     fps = footprints()
-    pi_foot = FLOOR_T + PI_BOSS_H + N07_FOOT_H
+    pi_foot = FLOOR_T + PI_BOSS_H
     n07 = _bbox([pi_xy(0, 0), pi_xy(N07_W, N07_H)])
     bucks = [_slab(cx - BUCK_BODY[0] / 2, cy - BUCK_BODY[1] / 2, cx + BUCK_BODY[0] / 2,
                    cy + BUCK_BODY[1] / 2, FLOOR_T, BUCK_BODY[2]).val()

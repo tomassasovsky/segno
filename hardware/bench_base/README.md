@@ -1,4 +1,3 @@
-<!-- cspell:words counterbore counterbores -->
 # Bench base for the console v3 electronics
 
 A printed base that holds the console v3 electronics on the bench, off the
@@ -13,7 +12,7 @@ tile fits an Ender 3 V3 bed (220 x 220) with room to spare.
 | tile | holds | size (mm) | PLA, 15 % infill |
 |---|---|---|---|
 | `console` | console board v3 (Pico 2) on four M3 standoffs, 10 mm up | 118 x 118 x 14 | ~18 g |
-| `pi` | Raspberry Pi 5 on its GeeekPi N07 NVMe board; the screen power board on four M3 standoffs, 12 mm up | 118 x 161 x 16 | ~23 g |
+| `pi` | Raspberry Pi 5 on its GeeekPi N07 NVMe board, on four M2.5 risers 10 mm up; the screen power board on four M3 standoffs, 12 mm up | 118 x 161 x 16 | ~23 g |
 | `power` | SparkFun STUSB4500 on four M3 standoffs, 8 mm up; both 20 V to 5 V bucks in corrals | 87 x 192 x 12 | ~21 g |
 
 ```
@@ -58,9 +57,10 @@ that branch (#1072, revision P).
 - **Raspberry Pi 5**: the official mechanical drawing, 85 x 56 with M2.5 holes
   on a 58 x 49 rectangle (`PI_HOLES` in `../enclosure/segno_enclosure.py`).
 - **NVMe board**: the GeeekPi N07 (B0CWD266XR, 52Pi EP-0211) that the enclosure
-  stacks under the Pi (`PI_N07_H`). It is a bottom board on the Pi's own four
-  holes, HAT-sized, with the SSD on its top side under the Pi. Its kit has four
-  M2.5 x 6 pillars (its feet) and four 12+4 pillars (N07 to Pi).
+  stacks under the Pi. It is a bottom board on the Pi's own four holes,
+  HAT-sized. The enclosure's stack is riser, N07, 6 mm M2.5 male/female
+  extender, Pi (`PI_N07_H` and the stack notes in `segno_enclosure.py`), with each
+  extender's male end threading down through the N07 into the riser.
 - **STUSB4500 board**: SparkFun's Eagle file
   (`sparkfun/Power_Delivery_Board-USB-C`, `Hardware/SparkFun_STUSB4500_USB-PD.brd`):
   35.56 x 33.02, four #4 holes (3.3 mm, take M3) 3.175 in from each corner.
@@ -76,11 +76,12 @@ that branch (#1072, revision P).
   untrimmed. The bosses are 8 mm across, inside the board's 4.25 mm copper
   keepout round each hole. Its holes are symmetric, so it goes on either way
   round; all its cables leave upward.
-- **Raspberry Pi 5 + N07**: the N07 stands on the kit's own 6 mm pillars, and
-  each pillar sits on a 3 mm boss and is screwed from under the tile. The screw
-  head sits in a counterbore in the underside, so the tile still lies flat. The
-  Pi rides on the 12+4 pillars as the kit intends. It sits in the back-left
-  corner, turned so the USB-C and both micro-HDMI ports face the back edge and
+- **Raspberry Pi 5 + N07**: the four bosses are the enclosure's risers, 10 mm
+  tall, each with an M2.5 heat-set insert. The male ends of the pillars that
+  join the N07 to the Pi go down through the N07 into them, as in the
+  enclosure. The pilot runs on 4 mm below the insert, so a 6 mm male end (a 6+6
+  extender) goes home as well as the N07 kit's 12+4 pillars. The Pi sits in the
+  back-left corner, turned so the USB-C and both micro-HDMI ports face the back edge and
   the USB and Ethernet jacks face the left edge, each 3 mm in from it.
   `PI 5: HDMI TO THE BACK` is engraved under it.
 - **STUSB4500**: four M3 standoffs, 8 mm, USB-C facing the right edge.
@@ -95,7 +96,7 @@ port edge faces a seam, or a tile does not fit the bed.
 ## Print
 
 - **PLA**, 0.2 mm layers, 3 walls, 15 % infill. **No supports**: every tile prints
-  floor-down as exported. The Pi screws' counterbores bridge over a 5.4 mm hole.
+  floor-down as exported.
 - No brim needed; each tile sits flat on the bed (the repo's
   `../enclosure/_print_check.py` passes all three with nothing flagged).
 - The dovetails have 0.15 mm of clearance per side and a 0.3 mm relief at the
@@ -111,22 +112,20 @@ port edge faces a seam, or a tile does not fit the bed.
 |---|---|---|
 | M3 heat-set insert, 5 long x 5 OD (the repo's standard, pilot 4.5) | 12 | console board, screen power board and PD board standoffs, 4 each |
 | M3 x 6 screw (pan or button head) | 12 | down through each of those boards into its insert |
-| M2.5 x 8 screw (pan or socket head) | 4 | up through the `pi` tile into the N07's 6 mm pillars, about 3 mm in (the 12+4 pillars' male ends take the top of each) |
+| M2.5 heat-set insert, 4 long x 3.5 OD (pilot 3.2) | 4 | the Pi risers |
 
-The N07's pillars and the Pi's 12+4 pillars come in the N07 kit. If yours has
-no 6 mm feet, any M2.5 x 6 female-female standoff does the same job. Press the
-inserts in with the iron before joining the tiles, while each tile still lies
-flat.
+The pillars between the N07 and the Pi are the ones already in your Pi stack
+(6 mm M/F extenders, or the N07 kit's 12+4 pillars). Press the inserts in with
+the iron before joining the tiles, while each tile still lies flat.
 
 ## Putting it together
 
-1. Press the twelve inserts. Join the tiles: lower `pi` and `power` onto
+1. Press the sixteen inserts. Join the tiles: lower `pi` and `power` onto
    `console` so the tabs drop into the sockets.
 2. Screw the console board, the screen power board and the PD board to their
    standoffs.
-3. Build the Pi stack as the N07 kit says, with the 6 mm pillars as its feet.
-   Stand it on the four small bosses (USB-C and HDMI to the back) and screw it
-   down from under the tile with the M2.5 x 8 screws.
+3. Thread the N07-to-Pi pillars' male ends down through the N07 into the four
+   Pi risers (USB-C and HDMI to the back), then put the Pi on top as usual.
 4. Drop the bucks into their corrals (`BUCK PI` at the front, `BUCK AUX`
    behind).
 
