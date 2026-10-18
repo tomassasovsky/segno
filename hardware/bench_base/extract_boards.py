@@ -6,23 +6,28 @@ copied by hand. Re-run after either board's layout changes.
 
 Run with KiCad's own Python, the one that has pcbnew (from the repo root):
     /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 \
-        hardware/bench_base/extract_boards.py
+        hardware/bench_base/extract_boards.py [--kicad DIR]
+
+--kicad points at another checkout's hardware/kicad, for when the boards on the
+bench were built from a branch other than this one. The JSON records which
+commit the layouts came from.
 
 Frame: board-local millimetres, origin at the top-left of the Edge.Cuts outline,
 x right, y DOWN (KiCad's own). bench_base.py flips y.
 """
+import argparse
 import json
 import os
+import subprocess
 
 import pcbnew
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-KICAD = os.path.join(HERE, "..", "kicad")
 BOARDS = {
     # The console board v3 deliverable (routed, DRC-clean), see console_board_pcb.py.
-    "console": os.path.join(KICAD, "out_console", "segno_console_board.kicad_pcb"),
-    # The ring carrier: XIAO RP2350, EC11, Ring 24 pads, see ring_board.py.
-    "ring": os.path.join(KICAD, "segno_pedal_ring.kicad_pcb"),
+    "console": os.path.join("out_console", "segno_console_board.kicad_pcb"),
+    # The ring carrier: XIAO RP2350, encoder, ring pads, see ring_board.py.
+    "ring": "segno_pedal_ring.kicad_pcb",
 }
 T = pcbnew.ToMM
 
@@ -32,7 +37,7 @@ def _box(bb, ox, oy):
             round(T(bb.GetRight()) - ox, 3), round(T(bb.GetBottom()) - oy, 3)]
 
 
-def extract(path):
+def extract(path, kicad):
     b = pcbnew.LoadBoard(path)
     # The edge bounding box includes half the Edge.Cuts line width on each side.
     edge_w = max((d.GetWidth() for d in b.GetDrawings()
@@ -43,7 +48,7 @@ def extract(path):
     shapes = [d.SHAPE_T_asString() for d in b.GetDrawings()
               if d.GetLayerName() == "Edge.Cuts"]
     out = {
-        "source": os.path.relpath(path, os.path.join(HERE, "..", "..")),
+        "source": "hardware/kicad/" + os.path.relpath(path, kicad),
         "outline": {"kind": "circle" if shapes == ["S_CIRCLE"] else "rect",
                     "w": round(w, 3), "h": round(h, 3)},
         "thickness": round(T(b.GetDesignSettings().GetBoardThickness()), 3),
@@ -74,13 +79,30 @@ def extract(path):
     return out
 
 
+def _revision(kicad):
+    def git(*a):
+        return subprocess.run(["git", "-C", kicad, *a], capture_output=True,
+                              text=True, check=True).stdout.strip()
+    sha = git("rev-parse", "--short=9", "HEAD")
+    dirty = git("status", "--porcelain", "--", ".")
+    return sha + (" (with uncommitted changes)" if dirty else "")
+
+
 def main():
-    data = {name: extract(path) for name, path in BOARDS.items()}
+    ap = argparse.ArgumentParser(description="board_geometry.json from the KiCad layouts")
+    ap.add_argument("--kicad", default=os.path.join(HERE, "..", "kicad"),
+                    help="the hardware/kicad directory to read (default: this checkout's)")
+    kicad = os.path.abspath(ap.parse_args().kicad)
+    data = {"revision": _revision(kicad)}
+    data.update({name: extract(os.path.join(kicad, path), kicad) for name, path in BOARDS.items()})
     dst = os.path.join(HERE, "board_geometry.json")
     with open(dst, "w") as fh:
         # One hole, part or pad per line, so a layout change reads as a short diff.
         fh.write("{\n")
         for i, (name, d) in enumerate(data.items()):
+            if not isinstance(d, dict):
+                fh.write(f' "{name}": {json.dumps(d)},\n')
+                continue
             fh.write(f' "{name}": {{\n')
             keys = list(d)
             for k in keys:
@@ -94,7 +116,10 @@ def main():
             fh.write(" }" + ("," if i < len(data) - 1 else "") + "\n")
         fh.write("}")
         fh.write("\n")
+    print(f"layouts at {data['revision']}")
     for name, d in data.items():
+        if not isinstance(d, dict):
+            continue
         print(f"{name}: {d['outline']['kind']} {d['outline']['w']} x {d['outline']['h']}, "
               f"{len(d['holes'])} holes, {len(d['back_parts'])} back-side parts, "
               f"{len(d['pth_pads'])} pads")

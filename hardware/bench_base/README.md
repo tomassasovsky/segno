@@ -29,24 +29,37 @@ Files in `out/`: one `.stl` (print) and `.step` (CAD) per tile, already in print
 pose, `segno_bench_base_assembly.step` with the boards as reference slabs, and the
 top view above.
 
+## Which boards it fits
+
+The V3 boards as soldered: the layouts on `codex/screen-power-board-1072`
+(PR #1080) at `c88389bf2`, the revision recorded in `board_geometry.json`. Against
+the layouts on master, the outlines and mounting holes of both boards are the
+same. Underneath, the ring carrier gains R5 (100k, r 15 to 26.5) and the ACZ11
+encoder's pads reach r 8.92 instead of the EC11's 8.87; the console board's
+deepest lead is now a JST-VH power header. The base clears both revisions.
+
 ## Where the numbers come from
 
 - **Board outlines, mounting holes, back-side parts and pads**:
   `board_geometry.json`, written by `extract_boards.py` from
-  `../kicad/out_console/segno_console_board.kicad_pcb` and
-  `../kicad/segno_pedal_ring.kicad_pcb`. Re-run it after either layout changes.
+  `hardware/kicad/out_console/segno_console_board.kicad_pcb` and
+  `hardware/kicad/segno_pedal_ring.kicad_pcb` of that revision. Re-run it after
+  either layout changes; `--kicad` points it at another checkout's
+  `hardware/kicad`.
 - **Heights under the boards**: a `kicad-cli pcb export step` of the same two
-  layouts (ring carrier: C1 8.09, J1 7.09, C2-C5 5.19, XIAO 4.36, U2 3.77, D1 3.29;
-  console board: leads only, 1.81 modelled, 3.4 for an untrimmed JST-XH pin), plus
-  the owner's calipers: 8.5 under the ring carrier with C1 bent over and lying down.
+  layouts (ring carrier: C1 8.09, J1 7.09, C2-C5 5.19, XIAO 4.36, U2 3.77, D1 3.29,
+  R1-R5 2.59; console board: leads only, the JST-VH headers' 2.11 deepest, about 4
+  for an untrimmed pin), plus the owner's calipers: 8.5 under the ring carrier with
+  C1 bent over and lying down.
 - **STUSB4500 board**: SparkFun's Eagle file
   (`sparkfun/Power_Delivery_Board-USB-C`, `Hardware/SparkFun_STUSB4500_USB-PD.brd`):
   35.56 x 33.02, four #4 holes (3.3 mm, take M3) 3.175 in from each corner.
 - **Bucks**: `BUCK_BODY` in `../enclosure/segno_enclosure.py`, 63.8 x 57.7 x 22.1
   including the ears.
-- **The cup's snap arms**: `strip_ring/console_ring.py` on the enclosure branch
-  (#1090): three arms 120 degrees apart, 6 mm wide, out to r 41.4, with catches
-  that reach in to r 39.0 under the board.
+- **The cup's snap arms**: `strip_ring/console_ring.py` on the enclosure branches
+  (#1090): three arms 120 degrees apart. Two versions exist, 6 mm wide and 8 mm
+  wide (the snap-relief rework on `claude/console-ring-snap-reliefs-1075`); the
+  crown takes either.
 
 ## How the ring carrier is held
 
@@ -54,18 +67,18 @@ The ring carrier has no mounting holes, and the cup's three snap arms wrap its
 edge at whatever angle the cup was turned to. So the cradle supports the board in
 two places that are clear at every angle:
 
-- **A tube under the encoder**, r 9.27 to 10.85: the ring of free board between
-  the EC11's pads (out to r 8.87) and the nearest other part (R2's courtyard at
+- **A tube under the encoder**, r 9.32 to 10.85: the ring of free board between
+  the encoder's pads (out to r 8.92) and the nearest other part (R2's courtyard at
   r 10.85). It takes the push when the encoder switch is pressed.
 - **A crown of teeth round the rim.** Each tooth is a ledge under the board's edge
   (r 39.3 to 40) and a post beside it (from r 40.6, so 0.6 mm of play round the
   board). The deepest part near the rim is D1, out to r 38.3, so no part reaches a
-  ledge at any angle. The cup's arms drop into the 7.8 mm gaps between the teeth,
-  which stops the board turning when the knob is twisted. The teeth are on a
-  15-degree pitch and the arms are 120 degrees apart, so when one arm finds a gap
-  all three do.
+  ledge at any angle. The cup's arms drop into the 11.3 mm gaps between the teeth,
+  which stops the board turning when the knob is twisted (about 1.6 mm of play
+  each way with the 8 mm arms). The teeth are on a 20-degree pitch and the arms are
+  120 degrees apart, so when one arm finds a gap all three do.
 
-Three teeth are left out on the left for the XIAO's USB-C. The opening is 56
+Two teeth are left out on the left for the XIAO's USB-C. The opening is 56
 degrees wide against a 20-degree plug, so the plug fits at every position where
 the arms can seat. J1's lead goes out through any gap; there is 22 mm under the
 board for the plugged housing (about 11 mm) and the bend.

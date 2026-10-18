@@ -35,15 +35,15 @@ THE RING CARRIER HAS NO MOUNTING HOLES
     was turned to. So the cradle cannot depend on the board's angle. It holds the
     board in two places that are clear at EVERY angle:
 
-      a tube under the encoder, in the ring of free board between the EC11's
+      a tube under the encoder, in the ring of free board between the encoder's
           pads and the nearest other part (sized from the layout);
-      a crown of 24 teeth round the rim, each a ledge under the board's edge and
+      a crown of 18 teeth round the rim, each a ledge under the board's edge and
           a post beside it. The cup's arms drop into the gaps between the teeth,
-          which stops the board turning when the knob is twisted; 24 teeth puts a
-          gap every 15 degrees, and 120 is a multiple of 15, so when one arm finds
+          which stops the board turning when the knob is twisted; 18 teeth puts a
+          gap every 20 degrees, and 120 is a multiple of 20, so when one arm finds
           a gap all three do.
 
-    Three teeth are left out on the free left edge for the XIAO's USB-C plug.
+    Two teeth are left out on the free left edge for the XIAO's USB-C plug.
     J1's lead leaves through any gap.
 
 Outputs (./out): one STEP + STL per tile (print pose: floor on the bed), an
@@ -85,14 +85,18 @@ SEAM_GAP = 0.1                # each tile stops this far short of a seam
 # ----------------------------------------------------------------------------
 # HEIGHTS UNDER THE BOARDS (mm below the PCB's back face)
 # ----------------------------------------------------------------------------
+# Heights come from kicad-cli STEP exports of the layouts board_geometry.json was
+# read from (its "revision"), 2026-10-17.
+#
 # Console board: every part is on the front. Its back carries only through-hole
-# leads; the deepest in the STEP export is the JST-XH pins at 1.81, and an
-# untrimmed XH pin stands 3.4 proud. 10 mm of air leaves room for a probe tip.
-CONSOLE_BACK_DEPTH = 3.4
+# leads; the deepest in the STEP export is the JST-VH power headers at 2.11, and
+# an untrimmed VH pin stands up to about 4 proud. 10 mm of air leaves room for a
+# probe tip.
+CONSOLE_BACK_DEPTH = 4.0
 CONSOLE_STANDOFF_H = 10.0     # floor top to the board's back face
 
-# Ring carrier, from the STEP export (kicad-cli pcb export step, 2026-10-17):
-# C1 8.09, J1 7.09 unplugged, C2-C5 5.19, U1 (XIAO) 4.36, U2 3.77, D1 3.29.
+# Ring carrier: C1 8.09, J1 7.09 unplugged, C2-C5 5.19, U1 (XIAO) 4.36, U2 3.77,
+# D1 3.29, R1-R5 2.59, the encoder's pins 2.41.
 # The owner's calipers: 8.5 with C1 bent over and lying on the board, a little
 # more at J1 with its lead plugged in. J1 is vertical on the back, so the lead
 # leaves it pointing at the floor and has to bend before it can run sideways.
@@ -110,27 +114,29 @@ RING_C1_REACH_R = 39.0
 # interference check in check().
 RING_PART_DEPTH = {"C1": RING_BACK_DEPTH, "J1": RING_J1_PLUGGED, "C2": 5.19, "C3": 5.19,
                    "C4": 5.19, "C5": 5.19, "U1": 4.36, "U2": 3.77, "D1": 3.29,
-                   "R1": 2.59, "R2": 2.59, "R3": 2.59, "R4": 2.59}
+                   "R1": 2.59, "R2": 2.59, "R3": 2.59, "R4": 2.59, "R5": 2.59}
 SOLDER_JOINT = 1.5            # a through-hole joint, under any pad
 
 # The cup's snap arms (strip_ring/console_ring.py on the enclosure line, #1090):
-# three at 120 degrees, 6.0 wide, from r 40.4 out to r 41.42, and the catch
-# reaches in to r 39.0 and hangs 1.5 under the board.
-CUP_ARM_W = 6.0
+# three at 120 degrees, from r 40.4 outward, hanging 1.5 under the board. Two
+# versions exist and either may be on the bench: 6.0 wide with the catch in to
+# r 39.0 (64d152b9e), and 8.0 wide with the catch in to r 39.4 (the snap-relief
+# rework, claude/console-ring-snap-reliefs-1075). The crown is sized for the
+# wider one; the catch radius does not matter, as the arms sit in the gaps.
+CUP_ARM_W = 8.0
 CUP_ARM_PITCH = 120.0
-CUP_ARM_OUT_R = 41.42
-CUP_CATCH_R = 39.0
+CUP_ARM_OUT_R = 41.4          # arm's outer face at board level, both versions
 
-# The tube under the encoder. Its walls sit in the free ring between the EC11's
+# The tube under the encoder. Its walls sit in the free ring between the encoder's
 # pads (inside) and the nearest other pad or courtyard (outside), each kept
 # clear of them; the radii are worked out from the layout in ring_tube().
 TUBE_CLR = 0.4
 TUBE_MIN_WALL = 1.2           # three perimeters of a 0.4 nozzle
 
-# The crown. TEETH at a 15 degree pitch; each tooth TOOTH_W wide (tangential)
+# The crown. TEETH at a 20 degree pitch; each tooth TOOTH_W wide (tangential)
 # and, in section, a post from the floor to LIP_ABOVE over the board's front
 # face, with a ledge reaching in under the board's edge to LEDGE_R.
-TEETH = 24
+TEETH = 18
 TOOTH_W = 3.0
 LEDGE_R = 39.3                # board support from here out to the edge (r 40)
 POST_R = 40.6                 # inner face of the posts: 0.6 of play round the board
@@ -145,7 +151,7 @@ CROWN_BASE_H = 2.0            # ring tying the teeth together at the floor
 XIAO_USB_REACH = 12.59
 USB_PLUG_HALF_W = 7.0         # half the plug overmold's width, plus slack
 USB_PLUG_DEPTH = 8.0          # overmold, below the board's back face
-USB_OPEN = 45.0
+USB_OPEN = 30.0
 USB_ANGLE = 180.0             # global: the free left edge of tile B
 
 # ----------------------------------------------------------------------------
@@ -267,7 +273,7 @@ def crown_angles():
     pitch = 360.0 / TEETH
     out = []
     for i in range(TEETH):
-        a = i * pitch
+        a = (i + 0.5) * pitch   # half a pitch off: the USB edge falls between two teeth
         if abs((a - USB_ANGLE + 180.0) % 360.0 - 180.0) > USB_OPEN / 2.0:
             out.append(a)
     return out
@@ -495,12 +501,11 @@ def check(tiles):
     pitch = 360.0 / TEETH
     assert abs(CUP_ARM_PITCH / pitch - round(CUP_ARM_PITCH / pitch)) < 1e-9, (
         "RING: the arms' pitch is not a multiple of the teeth's, so they cannot all seat")
-    r_arm = CUP_ARM_OUT_R - 0.5
+    r_arm = POST_R
     gap = math.radians(pitch) * r_arm - TOOTH_W * r_arm / ((LEDGE_R + CROWN_OUT_R) / 2.0)
     assert gap >= CUP_ARM_W + 1.0, f"RING: a {gap:.2f} gap between teeth does not take a {CUP_ARM_W} arm"
-    assert LEDGE_R > CUP_CATCH_R, "RING: the ledges reach under the cup's catches"
     assert POST_R > RING["outline"]["w"] / 2.0 and POST_R < CUP_ARM_OUT_R, (
-        "RING: the posts must clear the board edge and overlap the arms' reach")
+        "RING: the posts must clear the board edge and reach in past the arms' outer face")
     edge = max(_ring_radii(p["courtyard"])[1] for p in RING["back_parts"])
     slop = POST_R - RING["outline"]["w"] / 2.0
     assert edge + slop < LEDGE_R, f"RING: a part at r {edge:.2f} can slide onto a ledge"
