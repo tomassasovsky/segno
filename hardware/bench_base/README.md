@@ -44,8 +44,9 @@ deepest lead is now a JST-VH power header. The base clears both revisions.
   `board_geometry.json`, written by `extract_boards.py` from
   `hardware/kicad/out_console/segno_console_board.kicad_pcb` and
   `hardware/kicad/segno_pedal_ring.kicad_pcb` of that revision. Re-run it after
-  either layout changes; `--kicad` points it at another checkout's
-  `hardware/kicad`.
+  either layout changes. It reads the layouts out of git, at the revision the
+  JSON already records unless `--rev` names another, so a plain re-run cannot
+  quietly switch the base to whichever boards this branch happens to carry.
 - **Heights under the boards**: a `kicad-cli pcb export step` of the same two
   layouts (ring carrier: C1 8.09, J1 7.09, C2-C5 5.19, XIAO 4.36, U2 3.77, D1 3.29,
   R1-R5 2.59; console board: leads only, the JST-VH headers' 2.11 deepest, about 4
@@ -71,11 +72,13 @@ two places that are clear at every angle:
   the encoder's pads (out to r 8.92) and the nearest other part (R2's courtyard at
   r 10.85). It takes the push when the encoder switch is pressed.
 - **A crown of teeth round the rim.** Each tooth is a ledge under the board's edge
-  (r 39.3 to 40) and a post beside it (from r 40.6, so 0.6 mm of play round the
-  board). The deepest part near the rim is D1, out to r 38.3, so no part reaches a
-  ledge at any angle. The cup's arms drop into the 11.3 mm gaps between the teeth,
-  which stops the board turning when the knob is twisted (about 1.6 mm of play
-  each way with the 8 mm arms). The teeth are on a 20-degree pitch and the arms are
+  (r 39.4 to 40) and a post beside it, flush with the board's top face (from
+  r 40.3, so 0.3 mm of play round the board). The farthest-out part underneath is
+  C1 if it is bent straight outward (about r 39.0), then D1 (r 38.3), so even with
+  the board pushed against one side no part reaches a ledge. The cup's arms
+  (from r 40.4) sit wholly inside the posts' reach, and drop into the 10.9 mm gaps
+  between the teeth, which stops the board turning when the knob is twisted
+  (about 1.5 mm of play each way with the 8 mm arms). The teeth are on a 20-degree pitch and the arms are
   120 degrees apart, so when one arm finds a gap all three do.
 
 Two teeth are left out on the left for the XIAO's USB-C. The opening is 56
@@ -132,8 +135,10 @@ still lies flat.
 ## Things to check on the real parts
 
 - **C1's direction.** The check allows for C1 lying straight outward, reaching
-  r 39.0. If yours sticks out past the board's edge, it will meet a tooth: turn
-  the carrier by one tooth so C1 sits in a gap.
+  r 39.0. If yours sticks out further, it will meet a tooth: turn the carrier by
+  one tooth so C1 sits in a gap.
+- **The fit in the crown** is 0.3 mm round the board. If your printer runs tight
+  and the carrier will not drop in, open `POST_R` a little and regenerate.
 - **Without the cup**, nothing stops the ring carrier turning. It still sits on
   the tube and the ledges and the posts keep it from sliding off.
 - **The console board's leads.** 10 mm of air is plenty for untrimmed leads. If
@@ -142,7 +147,7 @@ still lies flat.
 ## Regenerate
 
 ```bash
-/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 extract_boards.py   # only after a layout change
+/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 extract_boards.py --rev <commit>   # only for another board revision
 ../enclosure/.venv/bin/python bench_base.py
 ```
 

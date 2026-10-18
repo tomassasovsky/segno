@@ -6,11 +6,13 @@ copied by hand. Re-run after either board's layout changes.
 
 Run with KiCad's own Python, the one that has pcbnew (from the repo root):
     /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 \
-        hardware/bench_base/extract_boards.py [--kicad DIR]
+        hardware/bench_base/extract_boards.py [--rev REV]
 
---kicad points at another checkout's hardware/kicad, for when the boards on the
-bench were built from a branch other than this one. The JSON records which
-commit the layouts came from.
+The layouts are read out of git at REV, not from the working tree, because the
+boards on the bench need not match this branch: the V3 boards were soldered
+from codex/screen-power-board-1072. With no --rev it re-reads the revision the
+current board_geometry.json records, so a plain re-run reproduces it; pass
+--rev to move the base to another board revision.
 
 Frame: board-local millimetres, origin at the top-left of the Edge.Cuts outline,
 x right, y DOWN (KiCad's own). bench_base.py flips y.
@@ -19,10 +21,12 @@ import argparse
 import json
 import os
 import subprocess
+import tempfile
 
 import pcbnew
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# Paths relative to hardware/kicad at the revision being read.
 BOARDS = {
     # The console board v3 deliverable (routed, DRC-clean), see console_board_pcb.py.
     "console": os.path.join("out_console", "segno_console_board.kicad_pcb"),
@@ -37,7 +41,7 @@ def _box(bb, ox, oy):
             round(T(bb.GetRight()) - ox, 3), round(T(bb.GetBottom()) - oy, 3)]
 
 
-def extract(path, kicad):
+def extract(path, source):
     b = pcbnew.LoadBoard(path)
     # The edge bounding box includes half the Edge.Cuts line width on each side.
     edge_w = max((d.GetWidth() for d in b.GetDrawings()
@@ -48,7 +52,7 @@ def extract(path, kicad):
     shapes = [d.SHAPE_T_asString() for d in b.GetDrawings()
               if d.GetLayerName() == "Edge.Cuts"]
     out = {
-        "source": "hardware/kicad/" + os.path.relpath(path, kicad),
+        "source": source,
         "outline": {"kind": "circle" if shapes == ["S_CIRCLE"] else "rect",
                     "w": round(w, 3), "h": round(h, 3)},
         "thickness": round(T(b.GetDesignSettings().GetBoardThickness()), 3),
@@ -79,23 +83,29 @@ def extract(path, kicad):
     return out
 
 
-def _revision(kicad):
-    def git(*a):
-        return subprocess.run(["git", "-C", kicad, *a], capture_output=True,
-                              text=True, check=True).stdout.strip()
-    sha = git("rev-parse", "--short=9", "HEAD")
-    dirty = git("status", "--porcelain", "--", ".")
-    return sha + (" (with uncommitted changes)" if dirty else "")
+def _git(*a):
+    return subprocess.run(["git", "-C", HERE, *a], capture_output=True,
+                          text=True, check=True).stdout
 
 
 def main():
-    ap = argparse.ArgumentParser(description="board_geometry.json from the KiCad layouts")
-    ap.add_argument("--kicad", default=os.path.join(HERE, "..", "kicad"),
-                    help="the hardware/kicad directory to read (default: this checkout's)")
-    kicad = os.path.abspath(ap.parse_args().kicad)
-    data = {"revision": _revision(kicad)}
-    data.update({name: extract(os.path.join(kicad, path), kicad) for name, path in BOARDS.items()})
     dst = os.path.join(HERE, "board_geometry.json")
+    ap = argparse.ArgumentParser(description="board_geometry.json from the KiCad layouts")
+    ap.add_argument("--rev", help="git revision to read the layouts from (default: the "
+                                  "one board_geometry.json already records)")
+    rev = ap.parse_args().rev
+    if rev is None:
+        with open(dst) as fh:
+            rev = json.load(fh)["revision"]
+    sha = _git("rev-parse", "--short=9", f"{rev}^{{commit}}").strip()
+    data = {"revision": sha}
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, path in BOARDS.items():
+            src = f"hardware/kicad/{path}"
+            local = os.path.join(tmp, os.path.basename(path))
+            with open(local, "w") as fh:
+                fh.write(_git("show", f"{sha}:{src}"))
+            data[name] = extract(local, src)
     with open(dst, "w") as fh:
         # One hole, part or pad per line, so a layout change reads as a short diff.
         fh.write("{\n")

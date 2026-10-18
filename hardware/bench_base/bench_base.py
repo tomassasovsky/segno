@@ -126,6 +126,7 @@ SOLDER_JOINT = 1.5            # a through-hole joint, under any pad
 CUP_ARM_W = 8.0
 CUP_ARM_PITCH = 120.0
 CUP_ARM_OUT_R = 41.4          # arm's outer face at board level, both versions
+CUP_WALL_R = 40.28            # the cup wall's outer face; it stops 0.085 over the board
 
 # The tube under the encoder. Its walls sit in the free ring between the encoder's
 # pads (inside) and the nearest other pad or courtyard (outside), each kept
@@ -138,10 +139,12 @@ TUBE_MIN_WALL = 1.2           # three perimeters of a 0.4 nozzle
 # face, with a ledge reaching in under the board's edge to LEDGE_R.
 TEETH = 18
 TOOTH_W = 3.0
-LEDGE_R = 39.3                # board support from here out to the edge (r 40)
-POST_R = 40.6                 # inner face of the posts: 0.6 of play round the board
+LEDGE_R = 39.4                # board support from here out to the edge (r 40)
+POST_R = 40.3                 # inner face of the posts: 0.3 of play round the board,
+                              # so the arms (from r 40.4) sit wholly inside the posts' reach
 CROWN_OUT_R = 44.5
-LIP_ABOVE = 1.0
+LIP_ABOVE = 0.0               # post top flush with the board's front face: the cup's
+                              # wall (r 40.28) comes down to 0.085 over it
 CROWN_BASE_H = 2.0            # ring tying the teeth together at the floor
 
 # The XIAO's USB-C, from ring_board.py: Seeed's footprint puts the shell 12.59
@@ -451,9 +454,17 @@ def ring_keepout_solids():
         depth = RING_PART_DEPTH.get(p["ref"])
         assert depth, f"RING: no depth for {p['ref']}; measure it and add it to RING_PART_DEPTH"
         out.append((p["ref"], _annulus(r0, r1, z_back - depth, z_back)))
-    for pd in RING["pth_pads"]:
-        r0, r1 = _ring_radii(pd["box"])
-        out.append((f"{pd['ref']}.{pd['pad']}", _annulus(r0, r1, z_back - SOLDER_JOINT, z_back)))
+    # Solder joints all have the same depth, so their annuli merge into a few.
+    spans = sorted(_ring_radii(pd["box"]) for pd in RING["pth_pads"])
+    merged = [list(spans[0])]
+    for r0, r1 in spans[1:]:
+        if r0 <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], r1)
+        else:
+            merged.append([r0, r1])
+    for r0, r1 in merged:
+        out.append((f"solder joints r {r0:.1f}..{r1:.1f}",
+                    _annulus(r0, r1, z_back - SOLDER_JOINT, z_back)))
     u1 = next(p for p in RING["back_parts"] if p["ref"] == "U1")
     r = RING["outline"]["w"] / 2.0
     usb_r = math.hypot(u1["x"] - r, u1["y"] - r) + XIAO_USB_REACH
@@ -501,14 +512,20 @@ def check(tiles):
     pitch = 360.0 / TEETH
     assert abs(CUP_ARM_PITCH / pitch - round(CUP_ARM_PITCH / pitch)) < 1e-9, (
         "RING: the arms' pitch is not a multiple of the teeth's, so they cannot all seat")
-    r_arm = POST_R
+    r_arm = LEDGE_R               # the narrowest place an arm's catch can meet a tooth
     gap = math.radians(pitch) * r_arm - TOOTH_W * r_arm / ((LEDGE_R + CROWN_OUT_R) / 2.0)
     assert gap >= CUP_ARM_W + 1.0, f"RING: a {gap:.2f} gap between teeth does not take a {CUP_ARM_W} arm"
     assert POST_R > RING["outline"]["w"] / 2.0 and POST_R < CUP_ARM_OUT_R, (
         "RING: the posts must clear the board edge and reach in past the arms' outer face")
-    edge = max(_ring_radii(p["courtyard"])[1] for p in RING["back_parts"])
+    # The interference check above has the board centred; it can also slide
+    # `slop` toward any tooth. Nothing under it may then reach a ledge, C1 lying
+    # outward included, and every arm must still overlap the posts radially.
+    edge = max([_ring_radii(p["courtyard"])[1] for p in RING["back_parts"]] + [RING_C1_REACH_R])
     slop = POST_R - RING["outline"]["w"] / 2.0
     assert edge + slop < LEDGE_R, f"RING: a part at r {edge:.2f} can slide onto a ledge"
+    overlap = CUP_ARM_OUT_R - (POST_R + slop)
+    assert overlap >= 0.6, f"RING: an arm can slide to {overlap:.2f} of overlap with the posts"
+    assert POST_R > CUP_WALL_R or LIP_ABOVE <= 0.085, "RING: the posts' tops hit the cup wall"
     # The opening must pass the plug at every angle the arms can seat at, i.e.
     # anywhere within half a pitch either way.
     fitted = crown_angles()
