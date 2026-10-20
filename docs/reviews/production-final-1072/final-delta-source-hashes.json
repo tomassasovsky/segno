@@ -1,0 +1,434 @@
+{
+  "baseline": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
+  "files": {
+    "hardware/kicad/silkscreen.py": "312eb503bb86f75695ec26589957e48499781108cf5498d7d03c146fee7e2719",
+    "hardware/kicad/screen_power/check.py": "fd84970aa612c4c92a54384b8e7374c17933cced167163bd6e7258f2e0f68856",
+    "hardware/kicad/screen_power/pcb.py": "d2c42e706a54aed16f6d077c9925de53e6f4e1c0edad13fa62e5515d72937c30",
+    "hardware/kicad/screen_power/layout.py": "338dc53f2c6ea94017fd2f6272f90331f1997015075d2eddc7cfb9d541cac32c",
+    "hardware/kicad/screen_power/finish.py": "33df5afc8f50685a106a8d7b751833163f1604bb66b08c1ee21e465e36891de7",
+    "hardware/kicad/console_board_pcb.py": "ef4fa0ac661d9a22b2a06eeeea0ad09f1e89effa6fba9c332aa8aba8958e6084",
+    "hardware/kicad/route_ring_board.sh": "545391f2a572f10594b6ea45185a6149fb08de8bc9592a16ad7e7a7d5b1a144e",
+    "hardware/kicad/silk_art.py": "2032cd1abce8f8f3e625e9ced886739d74767cadd082ac16d0c3c678b92dfb26",
+    "hardware/kicad/out_console/console.placed.kicad_pro": "fc616d06d4fc74ee51f6faff37e49f9f9546a924413d06e7d35b469a05478b4d",
+    "hardware/kicad/out_console/segno_console_board.kicad_pro": "ef186ba534d8f84fc6d13dc2b43e756c10d027453cd4be2fd2d1c31cb21aab71",
+    "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pro": "7c1d7d080c6be1d59b356208051249e8192af8b31a7946a435ef9cd95a7b2727",
+    "hardware/kicad/screen_power/screen_power.pretty/Fuse_Littelfuse_251_P12.70mm.kicad_mod": "5cd7846fabf79a82b81e8503f8f203e5e40516b349994e894de65137ee79156f",
+    "hardware/kicad/screen_power/screen_power.pretty/Relay_DPDT_AXICOM_IMSeries_Pitch5.08mm_D0.90mm.kicad_mod": "03f2a2db83addf26f1d2de9c093092cd830871df07a22e9de8aa33b5ccecbc0e",
+    "hardware/kicad/screen_power/screen_power.pretty/TO-220-3_SUP70101EL.kicad_mod": "9a0eb2bca361f1dfe18d98bbb3e31cea11a32677c154518ec6cf85b90b29fccd",
+    "hardware/kicad/segno.pretty/ModuleMountPads_4.kicad_mod": "ea50a820859ddea9bd97202abc6485b77d11ee0ff161c2c20cecef4ed273abaa",
+    "hardware/kicad/segno.pretty/ModuleMountPads_Ring24.kicad_mod": "cff0cc13aa202eeb6b5964406368d51f88da3021e8c95c3c80a326854be64433",
+    "hardware/kicad/segno.pretty/RaspberryPi_Pico_SMD_or_THT_Debug.kicad_mod": "fd558a6e25e51bcc920736cc33b606ec64d3e984b76b6cde9028651a9bac844f",
+    "hardware/kicad/segno.pretty/WirePads_1x04.kicad_mod": "688cfcc9ca7a6bca6f5c295acdcc8f29e308671fa60248c482a82a5f685c9339",
+    "hardware/kicad/segno.pretty/XIAO_RP2350_SMD.kicad_mod": "76688f46c647042ac04967c5e6bad3e361673f2273afaefaa38ffda0805c8f16",
+    "hardware/kicad/segno_pedal_ring.kicad_pro": "3456b418153d33d43f116c0277a02e06db79987d20ab1fa57d3720961d570ad4",
+    "docs/PROGRESS.md": "93b074d1a06ec027270af929db6c71d1df17a86a533678a17202404621848ea2",
+    "hardware/MANUFACTURING.md": "a70e70cb8605d2ebac16c402054dd1e6870993102a56c6b3b5e8418dbab25c24",
+    "hardware/segno_wiring.md": "75a17f1a3d95017eac8b0310d242ad941b5ba394d457ba7143ca244034c3c2fc",
+    "hardware/segno_console_shopping_list.md": "043f8730f9909f22c748cc556f0207d39234bcd182ae4aecb1fb1b64a8fce663",
+    "hardware/kicad/RING_ASSEMBLY.md": "9a67e1f867aba346a9700ca991d021b47fa3b04008801a5d00e46c1d90dfc424",
+    "hardware/kicad/fab/segno_combined_bom_lcsc.csv": "afc366694c19ba4b18914278a0ce6a7ad42a11fa4d053096b4b0817c976c2b78",
+    "hardware/kicad/screen_power/README.md": "931f1ef0c8989de7fe8a3adeeee4816904f79ab90ed3cd85cad7a8a87a8b97a2",
+    "docs/reviews/production-final-1072/review.md": "7e9f7cfce511bd4b12c65cdb0d10984fca642db24640fd45d697659ceff7b90e"
+  },
+  "native_invariants": {
+    "baseline": "d32bca8b24c543b907ee1f104ebf8b04f6fa6947",
+    "boards": {
+      "hardware/kicad/screen_power/hand/screen_power_hand.kicad_pcb": {
+        "baseline_sha256": "3b00298277874b1018c55876766d4e771c1fca0e59393271a3e98df1743a80af",
+        "current_sha256": "b1e5dbb5c4a9eef5137f5dd339a685fe2ce0eac174362ba4df1bfdb6f668a123",
+        "equal": true,
+        "compared_groups": 1679,
+        "removed": [],
+        "added": [],
+        "changed": []
+      },
+      "hardware/kicad/out_console/segno_console_board.kicad_pcb": {
+        "baseline_sha256": "27e690947142c2a31af171c4e2fc82c74b66183d790098299b0fb33b412b75aa",
+        "current_sha256": "1c64edd2e49c9e40830d37f0e9b553fd5c57d28cba674f5d815e043c0f226199",
+        "equal": true,
+        "compared_groups": 3556,
+        "removed": [],
+        "added": [],
+        "changed": []
+      },
+      "hardware/kicad/segno_pedal_ring.kicad_pcb": {
+        "baseline_sha256": "188fd6ee4d395d1152fd5d840536ab0699a499cb50bf74539e2bb27273ddcbf2",
+        "current_sha256": "5ade14170d0280c922b7966e1f1d85d53a0e7ff9510e8342788400b7fe05d50b",
+        "equal": true,
+        "compared_groups": 590,
+        "removed": [],
+        "added": [],
+        "changed": []
+      }
+    }
+  },
+  "screen_replay": {
+    "sources": {
+      "hardware/kicad/screen_power/pcb.py": "d2c42e706a54aed16f6d077c9925de53e6f4e1c0edad13fa62e5515d72937c30",
+      "hardware/kicad/screen_power/layout.py": "338dc53f2c6ea94017fd2f6272f90331f1997015075d2eddc7cfb9d541cac32c",
+      "hardware/kicad/screen_power/finish.py": "33df5afc8f50685a106a8d7b751833163f1604bb66b08c1ee21e465e36891de7",
+      "hardware/kicad/silkscreen.py": "312eb503bb86f75695ec26589957e48499781108cf5498d7d03c146fee7e2719"
+    },
+    "source_unchanged": true,
+    "native_sha256": "b1e5dbb5c4a9eef5137f5dd339a685fe2ce0eac174362ba4df1bfdb6f668a123",
+    "footprint_inventory_equal": true,
+    "pose_pad_differences": [
+      "C102",
+      "C202",
+      "C2"
+    ],
+    "reference_differences": {
+      "C102": {
+        "source": [
+          "C102",
+          [
+            50000000,
+            28000000
+          ],
+          [
+            1000000,
+            1000000
+          ],
+          150000,
+          0.0,
+          true,
+          5,
+          false
+        ],
+        "native": [
+          "C102",
+          [
+            50000012,
+            28000000
+          ],
+          [
+            1000000,
+            1000000
+          ],
+          150000,
+          0.0,
+          true,
+          5,
+          false
+        ]
+      },
+      "H2": {
+        "source": [
+          "H2",
+          [
+            64000000,
+            -450000
+          ],
+          [
+            1000000,
+            1000000
+          ],
+          150000,
+          0.0,
+          false,
+          5,
+          false
+        ],
+        "native": [
+          "H2",
+          [
+            64000000,
+            -450000
+          ],
+          [
+            850000,
+            850000
+          ],
+          150000,
+          0.0,
+          false,
+          5,
+          false
+        ]
+      },
+      "C202": {
+        "source": [
+          "C202",
+          [
+            50000000,
+            53000000
+          ],
+          [
+            1000000,
+            1000000
+          ],
+          150000,
+          0.0,
+          true,
+          5,
+          false
+        ],
+        "native": [
+          "C202",
+          [
+            50000012,
+            53000000
+          ],
+          [
+            1000000,
+            1000000
+          ],
+          150000,
+          0.0,
+          true,
+          5,
+          false
+        ]
+      },
+      "H1": {
+        "source": [
+          "H1",
+          [
+            4000000,
+            -450000
+          ],
+          [
+            1000000,
+            1000000
+          ],
+          150000,
+          0.0,
+          false,
+          5,
+          false
+        ],
+        "native": [
+          "H1",
+          [
+            4000000,
+            -450000
+          ],
+          [
+            850000,
+            850000
+          ],
+          150000,
+          0.0,
+          false,
+          5,
+          false
+        ]
+      },
+      "H3": {
+        "source": [
+          "H3",
+          [
+            4000000,
+            67550000
+          ],
+          [
+            1000000,
+            1000000
+          ],
+          150000,
+          0.0,
+          false,
+          5,
+          false
+        ],
+        "native": [
+          "H3",
+          [
+            4000000,
+            67550000
+          ],
+          [
+            850000,
+            850000
+          ],
+          150000,
+          0.0,
+          false,
+          5,
+          false
+        ]
+      },
+      "H4": {
+        "source": [
+          "H4",
+          [
+            64000000,
+            67550000
+          ],
+          [
+            1000000,
+            1000000
+          ],
+          150000,
+          0.0,
+          false,
+          5,
+          false
+        ],
+        "native": [
+          "H4",
+          [
+            64000000,
+            67550000
+          ],
+          [
+            850000,
+            850000
+          ],
+          150000,
+          0.0,
+          false,
+          5,
+          false
+        ]
+      },
+      "C2": {
+        "source": [
+          "C2",
+          [
+            38000000,
+            16500000
+          ],
+          [
+            1000000,
+            1000000
+          ],
+          150000,
+          0.0,
+          true,
+          5,
+          false
+        ],
+        "native": [
+          "C2",
+          [
+            37999979,
+            16500000
+          ],
+          [
+            1000000,
+            1000000
+          ],
+          150000,
+          0.0,
+          true,
+          5,
+          false
+        ]
+      }
+    },
+    "outline_ink_differences": [
+      "C102",
+      "C202",
+      "C2"
+    ],
+    "board_label_parity": true
+  },
+  "helper_fixture": {
+    "helper_sha256": "312eb503bb86f75695ec26589957e48499781108cf5498d7d03c146fee7e2719",
+    "checker_sha256": "fd84970aa612c4c92a54384b8e7374c17933cced167163bd6e7258f2e0f68856",
+    "cases": [
+      {
+        "case": "good_gap",
+        "expected_failure": false,
+        "actual_errors": []
+      },
+      {
+        "case": "nonoverlapping_short_gap",
+        "expected_failure": true,
+        "actual_errors": [
+          {
+            "check": "silk_mask_clearance",
+            "detail": "U1: silkscreen is within 0.15 mm of U1.1's mask opening"
+          }
+        ]
+      },
+      {
+        "case": "other_footprint_mask",
+        "expected_failure": true,
+        "actual_errors": [
+          {
+            "check": "silk_mask_clearance",
+            "detail": "U2: silkscreen is within 0.15 mm of U1.1's mask opening"
+          }
+        ]
+      },
+      {
+        "case": "large_mask_expansion",
+        "expected_failure": true,
+        "actual_errors": [
+          {
+            "check": "silk_mask_clearance",
+            "detail": "U1: silkscreen is within 0.15 mm of U1.1's mask opening"
+          }
+        ]
+      },
+      {
+        "case": "zero_mask_expansion",
+        "expected_failure": false,
+        "actual_errors": []
+      },
+      {
+        "case": "actual_split_stroke",
+        "changed_strokes": 1,
+        "preserved_text_pad_copper_placement": true,
+        "mask_check_passed": true,
+        "second_run_unchanged": true
+      },
+      {
+        "case": "start_inside_mask",
+        "original_far_end_preserved": true,
+        "mask_check_passed": true,
+        "second_run_unchanged": true
+      },
+      {
+        "case": "console_final_native",
+        "source_sha256": "1c64edd2e49c9e40830d37f0e9b553fd5c57d28cba674f5d815e043c0f226199",
+        "changes": 0,
+        "graphics_preserved": true,
+        "mask_check_passed": true,
+        "file_bytes_unchanged": true
+      },
+      {
+        "case": "ring_final_native",
+        "source_sha256": "5ade14170d0280c922b7966e1f1d85d53a0e7ff9510e8342788400b7fe05d50b",
+        "changes": 13,
+        "graphics_preserved": true,
+        "mask_check_passed": true,
+        "file_bytes_unchanged": true
+      },
+      {
+        "case": "screen_final_native",
+        "source_sha256": "b1e5dbb5c4a9eef5137f5dd339a685fe2ce0eac174362ba4df1bfdb6f668a123",
+        "changes": 33,
+        "graphics_preserved": true,
+        "mask_check_passed": true,
+        "file_bytes_unchanged": true
+      }
+    ],
+    "passed": true
+  },
+  "console_guard_followup": {
+    "source_sha256": "ef4fa0ac661d9a22b2a06eeeea0ad09f1e89effa6fba9c332aa8aba8958e6084",
+    "all_negative_controls": 15,
+    "expected_gates_pass": true,
+    "routed_native_guard_pass": true
+  },
+  "star_harness_document_sha256": {
+    "hardware/segno_wiring.md": "7180d1151a9e970105e45f40eccbc8a86e3aea0e89b86e068cf01ec2aead1878",
+    "hardware/kicad/RING_ASSEMBLY.md": "9005a029436d94fabdd91b6a479b1da038898a734737e6c482c2269594a9ec87",
+    "hardware/MANUFACTURING.md": "02bce3091f07cd6ef8d72aa3676f891cff7f190497c4c7bcbfca68724a22afe0",
+    "hardware/segno_console_shopping_list.md": "d5daa14f557ee06d517591f9a612518c7be6fca0d71f11368c3cfe837968962b",
+    "hardware/kicad/fab/segno_combined_bom_lcsc.csv": "580dbb365cbe8b6d84131ff3abf5b2d5eb9661987ba9df1885169d242bb6497b",
+    "docs/reviews/production-final-1072/review.md": "fe1b04640813047110ecf0c761d036c454acedb2c9f98f8d3fc6af93e7e86955",
+    "docs/reviews/production-final-1072/system-power-console-ring-review.md": "1ef38b821a4bb735b1d4ef278bf7bb9d3339fc575911b9e277669459364a4600"
+  },
+  "star_harness_topology_review": "No actionable finding; numerical margins conditional on separately reviewed stated bounds, no physical qualification.",
+  "star_harness_final_trunk": {
+    "max_one_way_mm": 600,
+    "awg": 16,
+    "branch_max_one_way_mm": 50,
+    "branch_awg": 22,
+    "result": "No actionable topology or assembly-instruction finding; exact voltage calculation belongs to independent thermal review."
+  }
+}

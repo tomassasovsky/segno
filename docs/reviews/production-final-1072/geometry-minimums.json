@@ -1,0 +1,164 @@
+{
+  "screen": {
+    "outline_bounds_mm": [
+      0.0,
+      0.0,
+      68.0,
+      76.0
+    ],
+    "outline_valid": true,
+    "outline_polygons": 1,
+    "min_hole_edge_gaps": {
+      "pad-pad": {
+        "gap_mm": 1.141686,
+        "a": "Q4.1",
+        "b": "Q4.2"
+      },
+      "via-involved": {
+        "gap_mm": 0.44173142288814526,
+        "a": "F101.1",
+        "b": "via"
+      }
+    },
+    "F.Cu": {
+      "minimum_copper_to_board_edge_mm": 0.5004999999999998,
+      "minimum_foreign_copper_gap_mm": 0.1908600000000007,
+      "closest_foreign_nets": [
+        "SWITCHED_5V",
+        "GND"
+      ],
+      "min_foreign_hole_copper_gap_mm": 0.4449999999999932,
+      "closest_foreign_hole": [
+        "via",
+        "via",
+        true
+      ],
+      "net_regions": 38,
+      "copper_area_mm2": 4382.837673090487
+    },
+    "B.Cu": {
+      "minimum_copper_to_board_edge_mm": 0.5004999999999998,
+      "minimum_foreign_copper_gap_mm": 0.1599999999999966,
+      "closest_foreign_nets": [
+        "S2_UP_N",
+        "S2_UP_P"
+      ],
+      "min_foreign_hole_copper_gap_mm": 0.4538429999999991,
+      "closest_foreign_hole": [
+        "Q3.2",
+        "pad",
+        true
+      ],
+      "net_regions": 38,
+      "copper_area_mm2": 3778.920295075007
+    }
+  },
+  "console": {
+    "outline_bounds_mm": [
+      100.0,
+      60.0,
+      199.5,
+      159.5
+    ],
+    "outline_valid": true,
+    "outline_polygons": 1,
+    "min_hole_edge_gaps": {
+      "pad-pad": {
+        "gap_mm": 1.021010465234885,
+        "a": "J1.",
+        "b": "J1."
+      },
+      "via-involved": {
+        "gap_mm": 0.5999999999999943,
+        "a": "via",
+        "b": "via"
+      }
+    },
+    "F.Cu": {
+      "minimum_copper_to_board_edge_mm": 0.49856675416162444,
+      "minimum_foreign_copper_gap_mm": 0.22475385591631147,
+      "closest_foreign_nets": [
+        "IND_DATA",
+        "LINK_RX"
+      ],
+      "min_foreign_hole_copper_gap_mm": 0.2505000000000024,
+      "closest_foreign_hole": [
+        "J1.",
+        "pad",
+        false
+      ],
+      "net_regions": 84,
+      "copper_area_mm2": 8146.307439371085
+    },
+    "B.Cu": {
+      "minimum_copper_to_board_edge_mm": 0.49856675416162444,
+      "minimum_foreign_copper_gap_mm": 0.2032617453804488,
+      "closest_foreign_nets": [
+        "LINK_RX_PI",
+        "SWCLK"
+      ],
+      "min_foreign_hole_copper_gap_mm": 0.2505000000000024,
+      "closest_foreign_hole": [
+        "J1.",
+        "pad",
+        false
+      ],
+      "net_regions": 84,
+      "copper_area_mm2": 8159.495354028827
+    }
+  },
+  "ring": {
+    "outline_bounds_mm": [
+      -4.002493,
+      -4.001246,
+      76.0,
+      76.001246
+    ],
+    "outline_valid": true,
+    "outline_polygons": 1,
+    "min_hole_edge_gaps": {
+      "pad-pad": {
+        "gap_mm": 1.2415439999999975,
+        "a": "ENC1.A",
+        "b": "ENC1.C"
+      },
+      "via-involved": {
+        "gap_mm": 0.3071067811865483,
+        "a": "via",
+        "b": "via"
+      }
+    },
+    "F.Cu": {
+      "minimum_copper_to_board_edge_mm": 0.5476397078572206,
+      "minimum_foreign_copper_gap_mm": 0.24354778840663216,
+      "closest_foreign_nets": [
+        "+5V_LED",
+        "RING_DATA"
+      ],
+      "min_foreign_hole_copper_gap_mm": 0.5500000000000007,
+      "closest_foreign_hole": [
+        "via",
+        "via",
+        true
+      ],
+      "net_regions": 18,
+      "copper_area_mm2": 4509.065333933192
+    },
+    "B.Cu": {
+      "minimum_copper_to_board_edge_mm": 0.5476392121334972,
+      "minimum_foreign_copper_gap_mm": 0.2260742977249075,
+      "closest_foreign_nets": [
+        "RING_DOUT",
+        "RING_DATA_3V3"
+      ],
+      "min_foreign_hole_copper_gap_mm": 0.4252176920499552,
+      "closest_foreign_hole": [
+        "via",
+        "via",
+        true
+      ],
+      "net_regions": 23,
+      "copper_area_mm2": 4327.390374214685
+    }
+  }
+}

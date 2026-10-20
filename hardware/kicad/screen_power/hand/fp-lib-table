@@ -1,0 +1,6 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "screen_power") (type "KiCad")
+    (uri "${KIPRJMOD}/../screen_power.pretty")
+    (options "") (descr "Segno screen-power project footprints"))
+)
