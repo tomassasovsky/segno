@@ -498,7 +498,8 @@ enum {
  * would make every page of a cap-sized buffer resident (#906). Nothing here
  * prefaults: the audio thread may write the slot only after
  * le_track_prefault_capture or a shadow post has. Defined in engine.c. */
-int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames);
+int le_lane_ensure_slot(le_engine* e, le_lane* ln, int32_t slot,
+                        int32_t frames);
 
 /* Faults in the first LE_PREFAULT_HEAD_SECONDS of pool slot [slot]
  * (engine_prefault.h): what a take can write before the background
@@ -508,10 +509,10 @@ void le_lane_prefault_head(le_lane* ln, int32_t slot, int32_t sample_rate);
 /* Frees the lane's standby shadow (engine_private.h). The caller first drops
  * any prefaulter job on it (le_prefault_forget) unless the prefaulter is
  * already cleared or shut down. Control thread. */
-void le_lane_release_standby(le_lane_spares* sp);
+void le_lane_release_standby(le_engine* e, le_lane_spares* sp);
 
 /* Frees the lane's untouched zero spare (engine_private.h). Control thread. */
-void le_lane_release_zero_spare(le_lane_spares* sp);
+void le_lane_release_zero_spare(le_engine* e, le_lane_spares* sp);
 
 /* The spares of lane [ln] of [e] (le_engine.spares). */
 static inline le_lane_spares* le_lane_spares_of(le_engine* e, const le_lane* ln) {
@@ -542,7 +543,16 @@ void le_collect_retired(le_engine* e, int all);
  * (never the live slot). No-op when the slot is unallocated or already at or
  * below `frames`; a failed allocation keeps the oversized buffer. Defined in
  * engine.c. */
-void le_lane_shrink_slot(le_lane* ln, int32_t slot, int32_t frames);
+void le_lane_shrink_slot(le_engine* e, le_lane* ln, int32_t slot,
+                         int32_t frames);
+
+/* Frees a lane audio buffer (a pool slot, a standby, a spare) that the
+ * callback can no longer reach: drops its prefault jobs first, waiting out a
+ * chunk in flight (le_prefault_forget), so the background prefaulter never
+ * faults, and locks, whatever is mapped at that address next. Every such
+ * free goes through here; a buffer the callback may still hold is retired
+ * instead (le_retire_buffer). NULL-safe. */
+void le_free_audio_buffer(le_engine* e, float* buf);
 
 /* ---- Per-input conditioning stage (input conditioning, S1) ----
  * Defined in engine_cond.c. le_cond_seed_defaults runs on the CONTROL thread

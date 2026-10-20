@@ -339,7 +339,7 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
   int32_t want =
       ((frames + LE_LAYER_QUANTUM - 1) / LE_LAYER_QUANTUM) * LE_LAYER_QUANTUM;
   if (want > engine->max_loop_frames) want = engine->max_loop_frames;
-  const int got = le_lane_ensure_slot(ln, ordinal, want);
+  const int got = le_lane_ensure_slot(engine, ln, ordinal, want);
   if (got == LE_SLOT_FAILED) return LE_ERR_INVALID;
   le_forget_slot_images(engine, channel); /* #1143: slot content redefined */
   memcpy(ln->pool[ordinal], pcm, (size_t)frames * sizeof(float));

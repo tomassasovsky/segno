@@ -102,7 +102,8 @@ void le_track_set_len(le_track* t, int32_t len) {
  * slot outside live/stacks/outstanding) — but with mappings a violation of
  * that invariant is a SIGSEGV rather than stale samples, so the window is not
  * left open either. */
-int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
+int le_lane_ensure_slot(le_engine* e, le_lane* ln, int32_t slot,
+                        int32_t frames) {
   if (frames <= 0) return LE_SLOT_FAILED;
   if (ln->pool[slot] != NULL && ln->pool_cap[slot] >= frames) {
     return LE_SLOT_REUSED;
@@ -111,8 +112,14 @@ int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
   float* old = ln->pool[slot];
   ln->pool[slot] = fresh;
   ln->pool_cap[slot] = fresh != NULL ? frames : 0;
-  le_rt_free(old);
+  le_free_audio_buffer(e, old);
   return fresh != NULL ? LE_SLOT_FRESH : LE_SLOT_FAILED;
+}
+
+void le_free_audio_buffer(le_engine* e, float* buf) {
+  if (buf == NULL) return;
+  le_prefault_forget(e, buf);
+  le_rt_free(buf);
 }
 
 void le_lane_prefault_head(le_lane* ln, int32_t slot, int32_t sample_rate) {
@@ -123,15 +130,15 @@ void le_lane_prefault_head(le_lane* ln, int32_t slot, int32_t sample_rate) {
   le_rt_prefault(ln->pool[slot], (size_t)head * sizeof(float));
 }
 
-void le_lane_release_standby(le_lane_spares* sp) {
-  le_rt_free(sp->standby);
+void le_lane_release_standby(le_engine* e, le_lane_spares* sp) {
+  le_free_audio_buffer(e, sp->standby);
   sp->standby = NULL;
   sp->standby_cap = 0;
   store_i32(&sp->a_standby_ready, 0);
 }
 
-void le_lane_release_zero_spare(le_lane_spares* sp) {
-  le_rt_free(sp->zero_spare);
+void le_lane_release_zero_spare(le_engine* e, le_lane_spares* sp) {
+  le_free_audio_buffer(e, sp->zero_spare);
   sp->zero_spare = NULL;
   sp->zero_spare_cap = 0;
 }
@@ -182,7 +189,8 @@ void le_retire_buffer(le_engine* e, float* buf) {
  * The copy writes every page of the new buffer, so it is resident from here.
  * The shorter cap is stored before the new pointer, so a plain interleaving
  * never pairs the new short buffer with the old long cap. */
-void le_lane_shrink_slot(le_lane* ln, int32_t slot, int32_t frames) {
+void le_lane_shrink_slot(le_engine* e, le_lane* ln, int32_t slot,
+                         int32_t frames) {
   if (frames <= 0 || ln->pool[slot] == NULL) return;
   if (ln->pool_cap[slot] <= frames) return;
   const size_t bytes = (size_t)frames * sizeof(float);
@@ -192,7 +200,7 @@ void le_lane_shrink_slot(le_lane* ln, int32_t slot, int32_t frames) {
   memcpy(p, old, bytes);
   ln->pool_cap[slot] = frames;
   ln->pool[slot] = p;
-  le_rt_free(old);
+  le_free_audio_buffer(e, old);
 }
 
 /* Lowest set bit of `mask` as a channel index, or -1 when no bit is set. Used to
@@ -582,12 +590,12 @@ static int le_engine_reset_material(le_engine* engine,
       le_lane* ln = &tr->lanes[l];
       /* Free any buffers from a previous configuration. */
       for (int i = 0; i < LE_POOL_SLOTS; ++i) {
-        le_rt_free(ln->pool[i]);
+        le_free_audio_buffer(engine, ln->pool[i]);
         ln->pool[i] = NULL;
         ln->pool_cap[i] = 0;
       }
-      le_lane_release_standby(&engine->spares[t][l]);
-      le_lane_release_zero_spare(&engine->spares[t][l]);
+      le_lane_release_standby(engine, &engine->spares[t][l]);
+      le_lane_release_zero_spare(engine, &engine->spares[t][l]);
       ln->image_gain = 1.0f;
       ln->image_pan = 0.0f;
       store_i32(&ln->a_live, 0);
@@ -598,7 +606,9 @@ static int le_engine_reset_material(le_engine* engine,
      * full recording cap (further lanes' buffers and all undo snapshots
      * allocate lazily, undo layers at the loop-length quantum). No page of it
      * is touched until a take is about to start (le_track_prefault_capture). */
-    if (!le_lane_ensure_slot(&tr->lanes[0], 0, max_loop_frames)) return 0;
+    if (!le_lane_ensure_slot(engine, &tr->lanes[0], 0, max_loop_frames)) {
+      return 0;
+    }
     /* Free mode (B2b): each track's own clock resets alongside the master's —
      * a fresh configure/session must never carry a stale established length
      * from a previous run into the first Free-mode recording. */
@@ -1486,10 +1496,10 @@ void le_engine_destroy(le_engine* engine) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &engine->tracks[t].lanes[l];
       for (int i = 0; i < LE_POOL_SLOTS; ++i) {
-        le_rt_free(ln->pool[i]);
+        le_free_audio_buffer(engine, ln->pool[i]);
       }
-      le_rt_free(engine->spares[t][l].standby);
-      le_rt_free(engine->spares[t][l].zero_spare);
+      le_free_audio_buffer(engine, engine->spares[t][l].standby);
+      le_free_audio_buffer(engine, engine->spares[t][l].zero_spare);
       for (int s = 0; s < LE_FX_MAX; ++s) {
         le_fx_free_delay(&ln->fx, s);
         le_fx_free_octaver(&ln->fx, s);

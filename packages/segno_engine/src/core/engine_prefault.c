@@ -1,11 +1,14 @@
 /*
  * engine_prefault.c — the background prefaulter (engine_prefault.h).
  *
- * One thread per engine, started by the first job. It runs at the default
+ * One thread per engine, started at configure. It runs at the default
  * time-sharing policy: it only ever has to outrun a write head moving at one
- * second of audio per second. Jobs sit in a fixed table under one mutex,
- * which the thread holds while it faults a bounded chunk in, so a control
- * thread that forgets a buffer before freeing it waits at most one chunk.
+ * second of audio per second. Jobs sit in a fixed table under one mutex; the
+ * thread releases it while it faults a chunk in, and names the buffer it is
+ * faulting meanwhile (busy_buf). le_prefault_forget drops a buffer's jobs and
+ * then waits until that buffer is not the one being faulted, so once it
+ * returns nothing faults that range again, and the caller may unmap it: the
+ * wait is at most one chunk. A new job wakes the thread at once.
  */
 #include "engine_prefault.h"
 
@@ -28,12 +31,19 @@
 #define LE_PREFAULT_IDLE_PASSES 100
 #define LE_PREFAULT_PERIOD_NS 20000000L
 
+/* A job faults [start, cap) in, ascending from start, or with [desc]
+ * descending from cap; [done] is the edge reached so far (ascending: the
+ * first frame not yet in; descending: the last frame in, so cap until the
+ * first chunk). A follow job (channel >= 0) is ascending, and its end moves
+ * with the capture (le_follow_target), bounded by cap. */
 typedef struct le_prefault_job {
   uint64_t id;
   float* buf;
-  int32_t channel; /* -1: fault the whole buffer in, no track to follow */
+  int32_t channel; /* -1: a fixed range, no track to follow */
+  int32_t start;   /* frames */
   int32_t cap;     /* frames */
-  int32_t done;    /* frames faulted in from the start */
+  int32_t done;    /* frames */
+  int32_t desc;
   int32_t idle;    /* passes without a capture, for follow jobs */
   _Atomic int32_t* ready;
 } le_prefault_job;
@@ -41,7 +51,9 @@ typedef struct le_prefault_job {
 struct le_prefaulter {
   pthread_t thread;
   pthread_mutex_t mu;
-  pthread_cond_t cv;
+  pthread_cond_t cv;      /* wakes the thread: a new job, or shutdown */
+  pthread_cond_t idle_cv; /* busy_buf cleared, for le_prefault_forget */
+  const float* busy_buf;  /* the buffer being faulted, mutex released */
   int running;
   int stop;
   int njobs;
@@ -77,17 +89,41 @@ static int32_t le_follow_target(le_engine* e, const le_prefault_job* j) {
   return target < j->cap ? (int32_t)target : j->cap;
 }
 
-/* One pass, entered and left with the mutex held. The faulting itself runs
- * with the mutex released, so a control thread adding or forgetting a job
- * never waits for it (a buffer freed meanwhile costs nothing: the faulting
- * is kernel-side, le_rt_prefault_can_run_concurrently). Returns 1 when some
- * job still has work. */
+static le_prefault_job* le_prefault_find(struct le_prefaulter* p,
+                                         uint64_t id) {
+  for (int i = 0; i < p->njobs; ++i) {
+    if (p->jobs[i].id == id) return &p->jobs[i];
+  }
+  return NULL;
+}
+
+static int le_job_full(const le_prefault_job* j) {
+  return j->desc ? j->done <= j->start : j->done >= j->cap;
+}
+
+/* One pass, entered and left with the mutex held: one chunk per job. Each
+ * chunk is faulted with the mutex released and its buffer named in busy_buf,
+ * and only if its job is still queued when its turn comes, so a buffer
+ * forgotten meanwhile is never touched again (le_prefault_forget). Returns 1
+ * when some job still has work. */
 static int le_prefault_pass(le_engine* e, struct le_prefaulter* p) {
   le_prefault_work work[LE_PREFAULT_JOBS];
   int nwork = 0;
   int more = 0;
+  const int32_t max = (int32_t)(LE_PREFAULT_CHUNK_BYTES / sizeof(float));
   for (int i = 0; i < p->njobs; ++i) {
     le_prefault_job* j = &p->jobs[i];
+    if (j->desc) {
+      if (j->done <= j->start) continue;
+      int32_t frames = j->done - j->start;
+      if (frames > max) {
+        frames = max;
+        more = 1;
+      }
+      work[nwork++] =
+          (le_prefault_work){j->id, j->buf, j->done - frames, frames};
+      continue;
+    }
     int32_t target = j->cap;
     if (j->channel >= 0) {
       target = le_follow_target(e, j);
@@ -95,30 +131,32 @@ static int le_prefault_pass(le_engine* e, struct le_prefaulter* p) {
     }
     if (target <= j->done) continue;
     int32_t frames = target - j->done;
-    const int32_t max = (int32_t)(LE_PREFAULT_CHUNK_BYTES / sizeof(float));
     if (frames > max) {
       frames = max;
       more = 1;
     }
     work[nwork++] = (le_prefault_work){j->id, j->buf, j->done, frames};
   }
-  pthread_mutex_unlock(&p->mu);
   for (int k = 0; k < nwork; ++k) {
+    if (le_prefault_find(p, work[k].id) == NULL) continue; /* forgotten */
+    p->busy_buf = work[k].buf;
+    pthread_mutex_unlock(&p->mu);
     le_rt_prefault(work[k].buf + work[k].from,
                    (size_t)work[k].frames * sizeof(float));
-  }
-  pthread_mutex_lock(&p->mu);
-  for (int k = 0; k < nwork; ++k) {
-    for (int i = 0; i < p->njobs; ++i) {
-      le_prefault_job* j = &p->jobs[i];
-      if (j->id == work[k].id && j->done == work[k].from) {
-        j->done += work[k].frames;
-      }
+    pthread_mutex_lock(&p->mu);
+    p->busy_buf = NULL;
+    pthread_cond_broadcast(&p->idle_cv);
+    le_prefault_job* j = le_prefault_find(p, work[k].id);
+    if (j == NULL) continue;
+    if (j->desc) {
+      j->done = work[k].from;
+    } else if (j->done == work[k].from) {
+      j->done += work[k].frames;
     }
   }
   for (int i = 0; i < p->njobs;) {
     le_prefault_job* j = &p->jobs[i];
-    const int full = j->done >= j->cap;
+    const int full = le_job_full(j);
     if (full || (j->channel >= 0 && j->idle > LE_PREFAULT_IDLE_PASSES)) {
       if (full && j->ready != NULL) {
         atomic_store_explicit(j->ready, 1, memory_order_release);
@@ -136,9 +174,8 @@ static void* le_prefault_main(void* arg) {
   struct le_prefaulter* p = e->prefaulter;
   pthread_mutex_lock(&p->mu);
   while (!p->stop) {
-    /* Woken only by shutdown: adding a job never signals, so a take start
-     * pays no wakeup. The 20 ms period is far inside the head and lead a
-     * job is given (engine_prefault.h). */
+    /* Woken by a new job or by shutdown, else every 20 ms: a follow job's
+     * target moves with its capture, and nothing signals that. */
     if (p->njobs > 0 && le_prefault_pass(e, p)) continue; /* behind: again */
 #if defined(__APPLE__)
     /* Darwin has no pthread_condattr_setclock; its relative wait is measured
@@ -167,6 +204,7 @@ static struct le_prefaulter* le_prefaulter_get(le_engine* e) {
       (struct le_prefaulter*)calloc(1, sizeof(struct le_prefaulter));
   if (p == NULL) return NULL;
   pthread_mutex_init(&p->mu, NULL);
+  pthread_cond_init(&p->idle_cv, NULL);
   /* Timed waits on the monotonic clock, so a wall-clock step (NTP at boot)
    * never stretches or skips the 20 ms period. */
 #if defined(__APPLE__)
@@ -182,40 +220,59 @@ static struct le_prefaulter* le_prefaulter_get(le_engine* e) {
   return p;
 }
 
+/* The whole of [job]'s range now, on the calling thread. */
+static void le_prefault_job_now(const le_prefault_job* job) {
+  le_rt_prefault(job->buf + job->start,
+                 (size_t)(job->cap - job->start) * sizeof(float));
+  if (job->ready != NULL) {
+    atomic_store_explicit(job->ready, 1, memory_order_release);
+  }
+}
+
 static void le_prefault_add(le_engine* e, le_prefault_job job) {
-  struct le_prefaulter* p = le_prefaulter_get(e);
-  if (p == NULL) { /* no table: do it now */
-    le_rt_prefault(job.buf + job.done,
-                   (size_t)(job.cap - job.done) * sizeof(float));
-    if (job.ready != NULL) atomic_store_explicit(job.ready, 1, memory_order_release);
+  if (job.start >= job.cap) {
+    if (job.ready != NULL) {
+      atomic_store_explicit(job.ready, 1, memory_order_release);
+    }
     return;
   }
+  if (!le_rt_prefault_can_run_concurrently()) {
+    le_prefault_job_now(&job); /* no kernel-side faulting: here and now */
+    return;
+  }
+  struct le_prefaulter* p = le_prefaulter_get(e);
+  if (p == NULL) { /* no table: do it now */
+    le_prefault_job_now(&job);
+    return;
+  }
+  job.done = job.desc ? job.cap : job.start;
   pthread_mutex_lock(&p->mu);
-  int slot = -1;
-  /* One job per (buffer, kind): a take over a loop gives one buffer a follow
-   * job (from the playhead on) and a fill job (the part before it). */
+  /* The same range of the same buffer queued twice keeps the first one's
+   * progress. Different ranges of one buffer are separate jobs: a take over
+   * a loop gives its slot a follow job (from the playhead on) and a fill job
+   * (the part before it). A freed buffer's jobs are gone before it is
+   * unmapped (le_prefault_forget), so an address reused by a new buffer
+   * never inherits them. */
   for (int i = 0; i < p->njobs; ++i) {
-    if (p->jobs[i].buf != job.buf || p->jobs[i].channel != job.channel) continue;
-    if (p->jobs[i].cap == job.cap) {
-      pthread_mutex_unlock(&p->mu); /* already queued: keep its progress */
+    const le_prefault_job* q = &p->jobs[i];
+    if (q->buf == job.buf && q->channel == job.channel &&
+        q->start == job.start && q->cap == job.cap && q->desc == job.desc) {
+      pthread_mutex_unlock(&p->mu);
       return;
     }
-    slot = i; /* a new shape: replace */
   }
-  if (slot < 0 && p->njobs < LE_PREFAULT_JOBS) slot = p->njobs++;
-  if (slot < 0) {
+  if (p->njobs == LE_PREFAULT_JOBS) {
     pthread_mutex_unlock(&p->mu);
-    le_rt_prefault(job.buf + job.done,
-                   (size_t)(job.cap - job.done) * sizeof(float));
-    if (job.ready != NULL) atomic_store_explicit(job.ready, 1, memory_order_release);
+    le_prefault_job_now(&job);
     return;
   }
   job.id = ++p->next_id;
-  p->jobs[slot] = job;
+  p->jobs[p->njobs++] = job;
   if (!p->running) {
     p->running = pthread_create(&p->thread, NULL, le_prefault_main, e) == 0;
   }
   const int running = p->running;
+  pthread_cond_signal(&p->cv); /* start on it now, not at the next period */
   pthread_mutex_unlock(&p->mu);
   if (!running) le_prefault_tick(e); /* no thread: one synchronous pass */
 }
@@ -224,25 +281,23 @@ void le_prefault_follow(le_engine* e, int32_t channel, float* buf,
                         int32_t cap_frames, int32_t done_frames) {
   if (e == NULL || buf == NULL || cap_frames <= 0) return;
   if (done_frames < 0) done_frames = 0;
-  if (done_frames >= cap_frames) return;
-  if (!le_rt_prefault_can_run_concurrently()) {
-    le_rt_prefault(buf + done_frames,
-                   (size_t)(cap_frames - done_frames) * sizeof(float));
-    return;
-  }
-  le_prefault_add(e, (le_prefault_job){0, buf, channel, cap_frames,
-                                       done_frames, 0, NULL});
+  le_prefault_add(e, (le_prefault_job){0, buf, channel, done_frames,
+                                       cap_frames, 0, 0, 0, NULL});
+}
+
+void le_prefault_range(le_engine* e, float* buf, int32_t from, int32_t to,
+                       int descending) {
+  if (e == NULL || buf == NULL) return;
+  if (from < 0) from = 0;
+  if (to <= from) return;
+  le_prefault_add(e, (le_prefault_job){0, buf, -1, from, to, 0,
+                                       descending != 0, 0, NULL});
 }
 
 void le_prefault_buffer(le_engine* e, float* buf, int32_t frames,
                         _Atomic int32_t* ready) {
   if (e == NULL || buf == NULL || frames <= 0) return;
-  if (!le_rt_prefault_can_run_concurrently()) {
-    le_rt_prefault(buf, (size_t)frames * sizeof(float));
-    if (ready != NULL) atomic_store_explicit(ready, 1, memory_order_release);
-    return;
-  }
-  le_prefault_add(e, (le_prefault_job){0, buf, -1, frames, 0, 0, ready});
+  le_prefault_add(e, (le_prefault_job){0, buf, -1, 0, frames, 0, 0, 0, ready});
 }
 
 void le_prefault_start(le_engine* e) {
@@ -283,14 +338,20 @@ void le_prefault_forget(le_engine* e, const float* buf) {
       ++i;
     }
   }
+  /* A chunk of it may be being faulted right now, with the mutex released:
+   * wait that one out (le_prefault_pass checks its job is still queued
+   * before every chunk, so it starts no other). */
+  while (p->busy_buf == buf) pthread_cond_wait(&p->idle_cv, &p->mu);
   pthread_mutex_unlock(&p->mu);
 }
 
 void le_prefault_clear(le_engine* e) {
   if (e == NULL || e->prefaulter == NULL) return;
-  pthread_mutex_lock(&e->prefaulter->mu);
-  e->prefaulter->njobs = 0;
-  pthread_mutex_unlock(&e->prefaulter->mu);
+  struct le_prefaulter* p = e->prefaulter;
+  pthread_mutex_lock(&p->mu);
+  p->njobs = 0;
+  while (p->busy_buf != NULL) pthread_cond_wait(&p->idle_cv, &p->mu);
+  pthread_mutex_unlock(&p->mu);
 }
 
 void le_prefault_shutdown(le_engine* e) {
@@ -305,6 +366,7 @@ void le_prefault_shutdown(le_engine* e) {
   if (running) pthread_join(p->thread, NULL);
   pthread_mutex_destroy(&p->mu);
   pthread_cond_destroy(&p->cv);
+  pthread_cond_destroy(&p->idle_cv);
   free(p);
   e->prefaulter = NULL;
 }

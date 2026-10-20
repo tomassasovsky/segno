@@ -34,6 +34,7 @@
 #define LE_RT_FAULT_TESTS 1
 #include <signal.h>       /* SIGCHLD for the raw clone */
 #include <sys/mman.h>     /* mincore, mmap for the shielded stack */
+#include <sys/prctl.h>    /* PR_SET_THP_DISABLE */
 #include <sys/resource.h> /* getrusage(RUSAGE_THREAD) */
 #include <sys/syscall.h>  /* SYS_clone, SYS_exit_group */
 #include <sys/wait.h>     /* waitpid */
@@ -764,6 +765,118 @@ static void test_standbys_stay_in_budget(void) {
   le_engine_destroy(e);
 }
 
+/* A take over a loop pressed in its last 20 ms with a fixed multiple of 1:
+ * its write head wraps to frame 0 within the second, into a zeroed slot no
+ * page of which was touched. The wrapped part is faulted in on the press,
+ * not left to the background, and the take then runs in real time against
+ * the real prefaulter thread. THP is off for the run: a huge page around
+ * the slot's header page would make frame 0 resident by itself. */
+static void test_take_pressed_at_the_loop_end_wraps_faulted_in(void) {
+  printf("test_take_pressed_at_the_loop_end_wraps_faulted_in\n");
+  CHECK(prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0) == 0);
+  const int32_t rate = 96000;
+  const int sec_blocks = rate / RT_BLOCK;
+  const int32_t loop = 10 * rate;
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, rate, 2, 2, rate * 60) == LE_OK);
+  CHECK(set_lane_count_and_publish(e, 1, 2) == LE_OK);
+  CHECK(le_engine_set_track_multiple(e, 1, 1) == LE_OK);
+  rt_audio_thread a;
+  CHECK(rt_audio_start(&a, e));
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  for (int sec = 0; sec < 10; ++sec) {
+    le_prefault_tick(e);
+    rt_run(&a, sec_blocks, 0.3f);
+  }
+  CHECK(le_engine_record(e, 0) == LE_OK); /* a 10 s loop */
+  rt_run(&a, sec_blocks, 0.0f);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s); /* a poll: the zero spares are made */
+  CHECK(load_i32(&e->a_master_len) == loop);
+  const int32_t late = loop - rate / 50; /* 20 ms before the loop end */
+  int32_t p = load_i32(&e->a_master_pos);
+  if (p > late) {
+    rt_run(&a, (loop - p) / RT_BLOCK + 1, 0.0f);
+    p = load_i32(&e->a_master_pos);
+  }
+  rt_run(&a, (late - p) / RT_BLOCK, 0.0f);
+  p = load_i32(&e->a_master_pos);
+  CHECK(p >= late - RT_BLOCK && p < loop);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* immediate, at the playhead */
+  const size_t head = (size_t)rate * LE_PREFAULT_HEAD_SECONDS;
+  const size_t past = (size_t)p + head - (size_t)loop; /* past the wrap */
+  for (int l = 0; l < 2; ++l) {
+    const float* b = e->tracks[1].lanes[l].pool[0];
+    CHECK(rt_resident_pages(b, past * sizeof(float)) ==
+          rt_pages(b, past * sizeof(float)));
+  }
+  rt_run_paced(&a, 3 * sec_blocks, 0.25f, rate); /* the real thread only */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  rt_run(&a, sec_blocks, 0.0f);
+  rt_audio_stop(&a);
+  printf("  pressed %d ms before the loop end: %ld blocks, %ld faults on the "
+         "audio thread (worst block %ld)\n", (int)((loop - p) * 1000 / rate),
+         a.blocks_run, a.faults, a.worst_block);
+  CHECK(a.faults == 0);
+  le_engine_destroy(e);
+  CHECK(prctl(PR_SET_THP_DISABLE, 0, 0, 0, 0) == 0);
+}
+
+/* A freed lane buffer is never faulted again: a slot with a background job
+ * on it is regrown (le_lane_ensure_slot frees the old buffer) while the
+ * thread works on it, and a new mapping placed where the old one was is
+ * still untouched a while later. Before every free went through
+ * le_free_audio_buffer the job outlived the buffer, and the thread faulted,
+ * and locked, whatever was mapped there next. THP is off for the run, so a
+ * fault touches one page, not a huge one. */
+static void test_freed_buffer_is_never_faulted_again(void) {
+  printf("test_freed_buffer_is_never_faulted_again\n");
+  CHECK(prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0) == 0);
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 2, 2, 48000 * 10) == LE_OK);
+  le_lane* ln = &e->tracks[0].lanes[0];
+  const int slot = LE_POOL_SLOTS - 1; /* not live, not posted */
+  const int32_t frames = 64 << 18;   /* 64 MB */
+  int reused = 0;
+  for (int round = 0; round < 4; ++round) {
+    CHECK(le_lane_ensure_slot(e, ln, slot, frames + round * 2) == LE_SLOT_FRESH);
+    float* b = ln->pool[slot];
+    le_prefault_buffer(e, b, frames, NULL);
+    struct timespec ms = {0, 1000000L}; /* the thread is into it by now */
+    nanosleep(&ms, NULL);
+    CHECK(le_lane_ensure_slot(e, ln, slot, frames + round * 2 + 1) ==
+          LE_SLOT_FRESH); /* maps the new one, then frees b */
+    const size_t total = (size_t)frames * sizeof(float) + ((size_t)1 << 20);
+    unsigned char* m = (unsigned char*)mmap(NULL, total, PROT_READ | PROT_WRITE,
+                                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    CHECK(m != MAP_FAILED);
+    if (m == MAP_FAILED) break;
+    const unsigned char* bb = (const unsigned char*)b;
+    reused += bb >= m && bb < m + total;
+    struct timespec wait = {0, 50000000L};
+    nanosleep(&wait, NULL);
+    CHECK(rt_resident_pages(m, total) == 0);
+    munmap(m, total);
+  }
+  printf("  4 rounds, the freed address mapped again in %d\n", reused);
+  le_engine_destroy(e);
+  CHECK(prctl(PR_SET_THP_DISABLE, 0, 0, 0, 0) == 0);
+}
+
+/* A backend miniaudio does not drive from a worker thread of its own (JACK)
+ * leaves device.thread zero; the stack preparation at device open must skip
+ * it, where pthread_getattr_np(0) would crash. */
+static void test_device_open_skips_a_backend_without_a_thread(void) {
+  printf("test_device_open_skips_a_backend_without_a_thread\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 2, 2, 48000 * 10) == LE_OK);
+  CHECK(e->device.thread == (ma_thread)0);
+  e->device_initialised = 1; /* as after an asynchronous backend's init */
+  le_platform_after_device_open(e);
+  e->device_initialised = 0;
+  le_engine_destroy(e);
+}
+
 /* The engine counts every glibc fork() of the process (#1367). Run with no
  * harness thread alive: a glibc fork child would trip over its stack. */
 static void test_engine_counts_forks(void) {
@@ -793,6 +906,9 @@ static void run_rt_memory_tests(void) {
   test_long_take_is_followed_by_the_prefaulter();
   test_late_take_is_walked_from_the_playhead();
   test_standbys_stay_in_budget();
+  test_take_pressed_at_the_loop_end_wraps_faulted_in();
+  test_freed_buffer_is_never_faulted_again();
+  test_device_open_skips_a_backend_without_a_thread();
   test_engine_counts_forks();
 #endif
 }
