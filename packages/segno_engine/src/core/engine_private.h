@@ -1046,6 +1046,14 @@ typedef struct le_track {
   int32_t dub_vseg; /* the remaining trajectory from start + count */
   int32_t dub_draining;       /* post-punch-out bulk completion in progress */
   int32_t dub_retire_slot;    /* retired slot awaiting evt-ring space (-1 none) */
+  /* #730, rec/dub: a take that stopped short of its loop and continued into
+   * this session's dub keeps its tail unfaded in the live slot (the dub
+   * continues it), but the session's first undo layer is the take alone,
+   * followed by silence, so that layer's tail still needs the fade. One past
+   * the tail's last sample, or 0 for none. Set by finalize_new_track, applied
+   * when the first pass retires (or at a stop, or a reopen revert), and
+   * cleared by every new session. */
+  int32_t dub_tail_end;
   uint32_t dub_gen_audio; /* audio-side mirror of dub_generation: both sides
                            * bump exactly once per applied CLEAR, so they agree
                            * without sharing a variable */
@@ -2296,12 +2304,22 @@ struct le_engine {
 
   /* Master peak limiter, applied post-gain to the additive mix so the summed
    * output (many tracks + overdub layers + monitoring) cannot hard-clip in the
-   * driver. Feed-forward, no lookahead: instant attack (clamp this frame to the
-   * ceiling) + smooth release. OFF by default so the deterministic native tests
-   * see the raw mix; the app enables it. ceiling is float bits in (0,1]. */
+   * driver. Feed-forward, no lookahead: a ~50 ms peak hold, ~2 ms smoothed
+   * attack with a brickwall clamp at the ceiling, ~50 ms release (#725;
+   * master_bus_frame). OFF by
+   * default so the deterministic native tests see the raw mix; the app
+   * enables it. ceiling is float bits in (0,1]. */
   _Atomic int32_t a_limiter_enabled;
   _Atomic uint32_t a_limiter_ceiling_bits;
   float lim_gain; /* audio-thread-local smoothed gain reduction (1 = no cut) */
+  /* The limiter's peak hold (#725), audio-thread-local: the lowest target gain
+   * seen in the current hold window and in the previous one, and the frames
+   * counted into the current window. The gain follows the lower of the two,
+   * so it holds through the troughs between a waveform's peaks instead of
+   * releasing there. All three rest at 1 / 1 / 0. */
+  float lim_hold_cur;
+  float lim_hold_prev;
+  int32_t lim_hold_count;
 
   /* Overdub feedback: the existing loop content at the write head is scaled by
    * this before the new input is layered in, so stacked overdubs can't grow

@@ -1101,6 +1101,9 @@ void le_engine_reopen_file_retired(le_engine* engine, uint32_t drop_mask) {
       t->dub_retire_slot = -1;
     }
     if (t->dub_slot >= 0 && t->dub_len > 0 && t->dub_count >= t->dub_len) {
+      /* A frozen complete FIRST pass of a rec/dub continuation still owes
+       * its image's tail fade (#730; a no-op otherwise). */
+      le_dub_fade_image_tail(engine, t, t->dub_slot);
       le_reopen_file_slot(engine, ch, t->dub_slot);
       t->dub_slot = -1;
     }
