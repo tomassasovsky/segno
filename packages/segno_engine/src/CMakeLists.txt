@@ -127,7 +127,6 @@ add_library(segno_engine SHARED
   # Linux is the appliance; macOS remains only as a development host.
   platform/engine_linux.c
   platform/engine_apple.c
-  platform/engine_watch_forks.c  # Linux: counts and logs every fork() (#1367)
   # ---- midi/: native USB MIDI seam (le_midi_backend.h) ----
   # midi.c is the portable core (ring + parser + FFI surface, no OS MIDI
   # headers); both backend TUs are OS-guarded like the platform seam.

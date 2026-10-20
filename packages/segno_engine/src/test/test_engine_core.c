@@ -45,8 +45,6 @@
 #include <sys/socket.h> /* socket/bind/listen/accept */
 #include <sys/un.h>     /* struct sockaddr_un */
 #include <unistd.h>     /* close, unlink, getpid */
-#include <spawn.h>      /* posix_spawnp (fork watch test, #1367) */
-#include <sys/wait.h>   /* waitpid (fork watch test) */
 #endif
 
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
@@ -425,29 +423,6 @@ static void test_audio_ring_alloc_owns_fork_safe_storage(void) {
   le_audio_ring_release(&ring); /* idempotent: teardown paths call it blind */
   le_audio_ring_release(NULL);
 }
-
-#if defined(__linux__)
-/* Loading the engine installs the fork watch (#1367): every fork() of the
- * process is counted, and posix_spawn, which does not copy the page tables,
- * is not. */
-static void test_fork_watch_counts_forks_not_spawns(void) {
-  printf("test_fork_watch_counts_forks_not_spawns\n");
-  const uint64_t before = le_platform_fork_count();
-
-  const pid_t child = fork();
-  if (child == 0) _exit(0);
-  CHECK(child > 0);
-  int status = 0;
-  CHECK(waitpid(child, &status, 0) == child);
-  CHECK(le_platform_fork_count() == before + 1);
-
-  pid_t spawned = 0;
-  char* argv[] = {(char*)"true", NULL};
-  CHECK(posix_spawnp(&spawned, "true", NULL, NULL, argv, environ) == 0);
-  CHECK(waitpid(spawned, &status, 0) == spawned);
-  CHECK(le_platform_fork_count() == before + 1);
-}
-#endif
 
 static void test_engine_lifecycle_without_device(void) {
   printf("test_engine_lifecycle_without_device\n");
@@ -36390,9 +36365,6 @@ int main(void) {
   test_audio_ring_reports_full();
   test_audio_ring_wraps_around();
   test_audio_ring_alloc_owns_fork_safe_storage();
-#if defined(__linux__)
-  test_fork_watch_counts_forks_not_spawns();
-#endif
   test_engine_lifecycle_without_device();
   test_null_safety();
   test_loop_clock();

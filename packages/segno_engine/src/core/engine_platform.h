@@ -75,15 +75,6 @@ void le_platform_after_device_start(le_engine* engine, const le_config* config);
  * artifacts. No-op elsewhere. */
 void le_platform_after_device_open(le_engine* engine);
 
-/* The fork watch (#1367). On Linux, loading the engine library installs a
- * pthread_atfork prepare handler that counts every fork() of the process and
- * writes one stderr line per fork (the journal, on the appliance). A fork
- * copies the app's page tables and stalls the audio thread for milliseconds.
- * The app itself starts its helpers with posix_spawn, which runs no atfork
- * handler, so every line names a fork from a dependency. This returns the
- * forks counted so far; 0 elsewhere, where there is no watch. */
-uint64_t le_platform_fork_count(void);
-
 /* Called from le_engine_stop and le_engine_destroy. Linux restores PipeWire's
  * dynamic quantum (force-quantum 0). No-op elsewhere. */
 void le_platform_on_engine_teardown(void);
