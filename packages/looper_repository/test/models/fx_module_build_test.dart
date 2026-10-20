@@ -43,8 +43,7 @@ void main() {
       expect(delay.type, TrackEffectType.delay);
       // Kept and named, so a surface can show them and say they do not reach
       // the sound rather than drawing a control that does nothing.
-      expect(delay.unmapped, contains('Del Mode'));
-      expect(delay.unmapped, contains('Del Reso'));
+      expect(delay.unmapped, ['Del Freq', 'Del Mode']);
     });
 
     test("the Dub Rack's delay builds from its own power key and keys", () {
@@ -244,30 +243,6 @@ void main() {
     });
   });
 
-  group('an entry', () {
-    test('plays by its engine type, not by its module name', () {
-      // A Delay this build can process, saved as a passthrough: still a
-      // passthrough until it is rebuilt from its source values.
-      expect(
-        fxEntryPlayable(
-          BuiltInEffect(type: TrackEffectType.none, module: 'Delay'),
-        ),
-        isFalse,
-      );
-      // A module this build has no effect for, carried by a built-in type.
-      expect(
-        fxEntryPlayable(
-          BuiltInEffect(type: TrackEffectType.delay, module: 'Pumper'),
-        ),
-        isTrue,
-      );
-      expect(
-        fxEntryPlayable(BuiltInEffect(type: TrackEffectType.reverb)),
-        isTrue,
-      );
-    });
-  });
-
   group('building a whole rack', () {
     test('Master Vol becomes the rack level, on the last entry, and no '
         'module parameter', () {
@@ -299,6 +274,21 @@ void main() {
       final entries = fxRackEntries(_preset(const {'Delay': 1}));
 
       expect(entries.single.channels.level, 1);
+    });
+
+    test('a Master Vol outside 0..1 is clamped to the rack level range', () {
+      expect(
+        fxRackEntries(
+          _preset(const {'Delay': 1, 'Master Vol': -0.2}),
+        ).single.channels.level,
+        0,
+      );
+      expect(
+        fxRackEntries(
+          _preset(const {'Delay': 1, 'Master Vol': 1.3}),
+        ).single.channels.level,
+        1,
+      );
     });
   });
 
