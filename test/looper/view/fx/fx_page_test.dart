@@ -210,10 +210,13 @@ void main() {
   setUpAll(() {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));
     registerFallbackValue(MonitorMode.off);
+    registerFallbackValue(const FxAddress(stage: FxStage.track));
+    registerFallbackValue(<String>{});
   });
 
   late _MockLooperBloc bloc;
   late _MockLooperRepository repository;
+  late _MockControlCubit control;
   late SettingsRepository settings;
   late StreamController<int> monitorChanges;
   late StreamController<int> monitorParams;
@@ -574,8 +577,11 @@ void main() {
     await outputs.rename(0, 'Main output');
     await outputs.rename(1, 'Monitor output');
     await tracks.rename(0, 'drums');
-    final control = _MockControlCubit();
+    control = _MockControlCubit();
     when(() => control.state).thenReturn(controlState);
+    when(
+      () => control.removeFxAssignments(any(), any()),
+    ).thenAnswer((_) async {});
 
     await tester.pumpWidget(
       // Saving a preset confirms with a toast, which needs the app's own
@@ -2161,13 +2167,14 @@ void main() {
       expect(find.text(l10n.fxReAddRackBody(1)), findsOneWidget);
       await tapKey(tester, 'console_confirm_cancel');
 
-      // Kept: nothing was written.
+      // Kept: nothing was written, and no assignment was touched.
       verifyNever(
         () => repository.setTrackEffects(
           channel: 0,
           effects: any(named: 'effects'),
         ),
       );
+      verifyNever(() => control.removeFxAssignments(any(), any()));
     });
 
     testWidgets('confirmed, it replaces the rack in place with new pedals', (
@@ -2193,6 +2200,13 @@ void main() {
         ),
         isTrue,
       );
+      // The old pedals' assignments are removed, as the dialog said.
+      verify(
+        () => control.removeFxAssignments(
+          const FxAddress(stage: FxStage.track),
+          {'old-0', 'old-1', 'old-2'},
+        ),
+      ).called(1);
     });
 
     testWidgets('with no assignments to it, it is replaced without asking', (
@@ -2209,6 +2223,7 @@ void main() {
       final written = lastTrackWrite();
       expect(written, hasLength(withRack.tracks.first.effects.length));
       expect(fxChainGroups(written).last.rack!.id, isNot('old-rack'));
+      verifyNever(() => control.removeFxAssignments(any(), any()));
     });
   });
 }

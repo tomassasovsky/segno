@@ -19,6 +19,7 @@ import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/external_control_writer.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
+import 'package:segno/control/binding/fx_assignments.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/midi_edit.dart';
@@ -3530,6 +3531,33 @@ class ControlCubit extends Cubit<ControlState> {
     emit(state.copyWith(globalBindings: next));
     _storeFxStopNotice();
     await _settings.savePedalBindings(next.encode());
+  }
+
+  /// Removes every MIDI and pedal assignment to the effects [slotIds] of the
+  /// chain at [address] (the ones `fxAssignmentsTo` counts) and saves each
+  /// store that changed: the MIDI mappings, the global and session pedal
+  /// bindings, and the external pedal setup.
+  ///
+  /// What re-adding a rack promises when the player confirms it: the old
+  /// rack's effects are gone, so their assignments go with them. The session
+  /// set is saved with the session, like any other session edit.
+  Future<void> removeFxAssignments(
+    FxAddress address,
+    Set<String> slotIds,
+  ) async {
+    final cleaned = fxWithoutAssignmentsTo(state, address, slotIds);
+    if (cleaned.session != state.sessionBindings) {
+      applySessionBindings(cleaned.session);
+    }
+    await setGlobalBindings(cleaned.global);
+    if (cleaned.external != state.pedalSetup.external) {
+      await setPedalSetup(
+        state.pedalSetup.copyWith(external: cleaned.external),
+      );
+    }
+    await removeMidiControls(
+      (key) => fxMidiKeyNamesEffect(key, address, slotIds),
+    );
   }
 
   /// Stores the FX notice decision once it is known to be shown, so a later

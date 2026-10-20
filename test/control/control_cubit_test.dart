@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -11,6 +12,9 @@ import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
+import 'package:segno/control/binding/external_expression.dart';
+import 'package:segno/control/binding/external_pedal.dart';
+import 'package:segno/control/binding/fx_assignments.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_fx.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
@@ -388,6 +392,82 @@ void main() {
       await looperStates.close();
       performance.dispose();
       tempDir.deleteSync(recursive: true);
+    });
+
+    test('removeFxAssignments removes and saves every assignment to the '
+        'effects, and only those', () async {
+      const address = FxAddress(stage: FxStage.track);
+      const slot = FxSlotTarget(address: address, slotId: 'gone');
+      const param = FxParamTarget(address: address, slotId: 'gone', param: 0);
+      const chain = FxChainTarget(address);
+      const track1 = PedalBindingKey(button: PedalButton.track1, bank: 0);
+      const track2 = PedalBindingKey(button: PedalButton.track2, bank: 0);
+      await cubit.setGlobalBindings(
+        PedalBindingSet([
+          PedalBinding(key: track1, target: slot.canonicalString()),
+          PedalBinding(key: track2, target: chain.canonicalString()),
+        ]),
+      );
+      cubit.applySessionBindings(
+        PedalBindingSet([
+          PedalBinding(key: track1, target: slot.canonicalString()),
+        ]),
+      );
+      await cubit.setPedalSetup(
+        cubit.state.pedalSetup.copyWith(
+          external: ExternalPedalSetup(
+            jacks: {
+              PedalCtrlJack.ctrl2: ExternalJackSetup(
+                type: ExternalJackType.expression,
+                expression: ExternalExpressionSetup(
+                  mappings: [ExpressionMapping(target: param)],
+                ),
+              ),
+            },
+          ),
+        ),
+      );
+      final owner = Object();
+      cubit.beginMidiEdit(device: 'knobs', owner: owner);
+      final saved = await cubit.saveMidiMapping(
+        MidiMapping(
+          id: 'draft',
+          source: MidiSource(
+            device: 'knobs',
+            kind: ControllerSourceKind.midiCc,
+            number: 7,
+          ),
+          behavior: MidiBehavior.continuous,
+          controls: [
+            MidiParameterControl(key: param.canonicalString(), low: 0, high: 1),
+          ],
+        ),
+        owner: owner,
+        create: true,
+      );
+      cubit.endMidiEdit(owner);
+      expect(saved.saved, isTrue);
+      expect(fxAssignmentsTo(cubit.state, address, {'gone'}), 4);
+
+      await cubit.removeFxAssignments(address, {'gone'});
+
+      expect(fxAssignmentsTo(cubit.state, address, {'gone'}), 0);
+      expect(cubit.state.globalBindings.bindings.single.decodeTarget(), chain);
+      expect(cubit.state.sessionBindings.isEmpty, isTrue);
+      expect(cubit.state.midiMappings.mappings, isEmpty);
+      // The jack keeps its type; only the mapping goes.
+      final jack = cubit.state.pedalSetup.external.forJack(PedalCtrlJack.ctrl2);
+      expect(jack.type, ExternalJackType.expression);
+      expect(jack.expression.mappings, isEmpty);
+      // Saved, not only shown.
+      expect(
+        PedalBindingSet.decode((await settings.loadPedalBindings())!),
+        cubit.state.globalBindings,
+      );
+      final midi =
+          jsonDecode((await settings.loadMidiConfiguration())!)
+              as Map<String, dynamic>;
+      expect(midi['mappings'], isEmpty);
     });
 
     group('mode', () {

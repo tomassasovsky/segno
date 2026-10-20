@@ -645,14 +645,12 @@ class _FxViewState extends State<FxView> {
         : null;
     if (choice is FxRackChoice && sameRack != null) {
       // The same factory rack again replaces the one built from it. Its
-      // modules get new identities, so an assignment to the old ones stops
-      // working: asked first when there are any, and silent when there are
-      // none.
-      final count = fxAssignmentsTo(
-        context.read<ControlCubit>().state,
-        address,
-        {for (final fx in sameRack.entries) ?fx.slotId},
-      );
+      // modules get new identities, so the assignments to the old ones are
+      // removed with them: asked first when there are any, and silent when
+      // there are none.
+      final control = context.read<ControlCubit>();
+      final oldSlots = {for (final fx in sameRack.entries) ?fx.slotId};
+      final count = fxAssignmentsTo(control.state, address, oldSlots);
       if (count > 0) {
         final l10n = context.l10n;
         final confirmed = await showConsoleConfirmDialog(
@@ -668,6 +666,11 @@ class _FxViewState extends State<FxView> {
         sameRack.rack!.id,
         choice,
       );
+      // Whatever the page does next, the old effects are gone once the
+      // replacement is committed, so their assignments go now.
+      if (count > 0 && _committed(result)) {
+        await control.removeFxAssignments(address, oldSlots);
+      }
     } else {
       result = await selection.appendChoice(destination, choice);
     }
