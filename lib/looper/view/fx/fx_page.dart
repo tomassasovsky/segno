@@ -639,7 +639,7 @@ class _FxViewState extends State<FxView> {
         (route?.isCurrent ?? false) &&
         selection.state.destination == destination &&
         bloc.hasMixGeneration(generation);
-    final FxEditResult result;
+    FxEditResult result;
     final sameRack = choice is FxRackChoice
         ? fxRackFromPreset(_entriesOf(context, address), choice.preset.id)
         : null;
@@ -667,9 +667,17 @@ class _FxViewState extends State<FxView> {
         choice,
       );
       // Whatever the page does next, the old effects are gone once the
-      // replacement is committed, so their assignments go now.
-      if (count > 0 && _committed(result)) {
-        await control.removeFxAssignments(address, oldSlots);
+      // replacement is committed, even when the player has moved on, so
+      // their assignments go now. A store that cannot save is reported with
+      // the edit's own unsaved notice.
+      if (count > 0 && result.committed) {
+        final removed = await control.removeFxAssignments(address, oldSlots);
+        if (!removed && result.status == FxEditStatus.applied) {
+          result = FxEditResult(FxEditStatus.unsaved, groupId: result.groupId);
+        } else if (!removed && result.status == FxEditStatus.stale && mounted) {
+          // A stale result shows nothing below, so the failure is shown here.
+          _notifyEditResult(context, const FxEditResult(FxEditStatus.unsaved));
+        }
       }
     } else {
       result = await selection.appendChoice(destination, choice);
