@@ -1,0 +1,30 @@
+{
+  "console": {
+    "native_sha256": "9b9854170d005b1721c22a0b0e70114da0d0ab5ff08946c4cbfc255fc76b46c0",
+    "connected_pads": 206,
+    "footprint_and_pad_geometry_unchanged": true,
+    "copper_layers": 2,
+    "width_mm": 1.7,
+    "load_a": 2.64,
+    "length_mm": 93.95315292925758,
+    "via_count": 4,
+    "via_drill_mm": 0.5,
+    "ipc2221_10c_at_20pct_width_loss_a": 2.9888779708322897,
+    "supply_trace_resistance_ohm_at_20c": 0.02763328027331106,
+    "supply_trace_drop_v_at_design_load": 0.0729518599215412
+  },
+  "ring": {
+    "native_sha256": "c14247f8c6ecf4498af8158de2b28fd5a9f19a3dc75e795a232f1a032a9c7be1",
+    "connected_pads": 63,
+    "footprint_and_pad_geometry_unchanged": true,
+    "copper_layers": 2,
+    "width_mm": 1.5,
+    "load_a": 2.44,
+    "length_mm": 22.638427124746194,
+    "return_via_count": 3,
+    "return_via_drill_mm": 0.4,
+    "ipc2221_10c_at_20pct_width_loss_a": 2.7295991795550663,
+    "supply_trace_resistance_ohm_at_20c": 0.0075461423749154,
+    "supply_trace_drop_v_at_design_load": 0.018412587394793577
+  }
+}
