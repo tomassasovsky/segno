@@ -25,6 +25,22 @@ MidiMapping _knob(String id, int number, ControlValueTarget target) =>
       ],
     );
 
+/// [state] with each store cleaned by its own removal API, the way
+/// `ControlCubit.removeFxAssignments` cleans them.
+ControlState _cleaned(ControlState state, FxAddress address, Set<String> ids) {
+  bool names(Object? target) => fxTargetNamesEffect(target, address, ids);
+  return state.copyWith(
+    midiMappings: state.midiMappings.withoutControls(
+      (key) => fxMidiKeyNamesEffect(key, address, ids),
+    ),
+    globalBindings: state.globalBindings.withoutTargets(names),
+    sessionBindings: state.sessionBindings.withoutTargets(names),
+    pedalSetup: state.pedalSetup.copyWith(
+      external: state.pedalSetup.external.withoutTargets(names),
+    ),
+  );
+}
+
 void main() {
   group('fxAssignmentsTo', () {
     test('is zero when nothing points at the effects', () {
@@ -106,20 +122,14 @@ void main() {
       expect(fxAssignmentsTo(state, _other, {'b'}), 1);
 
       // Removing them leaves none, and leaves everything else alone.
-      final cleaned = fxWithoutAssignmentsTo(state, _track, {'a', 'b'});
-      final after = state.copyWith(
-        midiMappings: cleaned.midi,
-        globalBindings: cleaned.global,
-        sessionBindings: cleaned.session,
-        pedalSetup: state.pedalSetup.copyWith(external: cleaned.external),
-      );
+      final after = _cleaned(state, _track, {'a', 'b'});
       expect(fxAssignmentsTo(after, _track, {'a', 'b'}), 0);
-      expect(cleaned.midi.mappings.map((m) => m.id), ['two']);
+      expect(after.midiMappings.mappings.map((m) => m.id), ['two']);
       expect(fxAssignmentsTo(after, _other, {'b'}), 1);
-      expect(cleaned.global.bindings.map((b) => b.key.button), [
+      expect(after.globalBindings.bindings.map((b) => b.key.button), [
         PedalButton.track2,
       ]);
-      expect(cleaned.session.isEmpty, isTrue);
+      expect(after.sessionBindings.isEmpty, isTrue);
     });
 
     test('a binding whose press names the effects goes whole, and its '
@@ -139,10 +149,7 @@ void main() {
       // A binding needs a press, so the hold cannot stay behind: both go,
       // and the dialog's count says two.
       expect(fxAssignmentsTo(state, _track, {'a'}), 2);
-      expect(
-        fxWithoutAssignmentsTo(state, _track, {'a'}).global.isEmpty,
-        isTrue,
-      );
+      expect(_cleaned(state, _track, {'a'}).globalBindings.isEmpty, isTrue);
     });
 
     test('a binding whose hold alone names the effects keeps its press', () {
@@ -159,11 +166,11 @@ void main() {
       );
 
       expect(fxAssignmentsTo(state, _track, {'a'}), 1);
-      final binding = fxWithoutAssignmentsTo(
+      final binding = _cleaned(
         state,
         _track,
         {'a'},
-      ).global.bindings.single;
+      ).globalBindings.bindings.single;
       expect(binding.decodeTarget(), chain);
       expect(binding.hasHold, isFalse);
     });
