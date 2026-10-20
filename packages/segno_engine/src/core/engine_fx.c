@@ -286,10 +286,24 @@ int le_psola_detect(const float* x, int n, int sr, float* out_period,
   return le_psola_detect_band(x, n, sr, 60, 1000, out_period, out_voiced);
 }
 
-int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
-                         float* out_period, float* out_voiced) {
-  *out_period = 0.0f;
-  *out_voiced = 0.0f;
+/* ---- Resumable YIN pass (see le_yin_pass in engine_private.h) --------------
+ *
+ * The three steps below ARE le_psola_detect_band, split at the two points a
+ * caller can pause at: before the difference function and after it. The
+ * octaver runs all three back to back (it needs the answer inside the same
+ * grain); the tuner runs le_yin_step a slice at a time across callbacks. The
+ * arithmetic is byte-identical either way, which is the whole point of the
+ * split — there is no second copy of the detector to keep in step. */
+
+int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
+                 int max_hz, float* dp, int dp_cap) {
+  p->x = x;
+  p->dp = dp;
+  p->tau = 1;
+  p->cum = 0.0;
+  p->minlag = 0;
+  p->maxlag = 0;
+  p->integ = 0;
   if (min_hz <= 0 || max_hz <= min_hz) return 0;
   int minlag = sr / max_hz;
   if (minlag < 2) minlag = 2;
@@ -297,6 +311,7 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
   if (maxlag > LE_PSOLA_MAXLAG) maxlag = LE_PSOLA_MAXLAG;
   if (maxlag > n / 2) maxlag = n / 2;
   if (maxlag <= minlag) return 0;
+  if (dp_cap < maxlag + 1) return 0;
   const int integ = n - maxlag; /* difference-function integration length */
 
   /* Silence floor: never run the detector on the noise floor (avoids reporting a
@@ -305,18 +320,54 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
   for (int i = 0; i < integ; ++i) energy += (double)x[i] * (double)x[i];
   if (energy < (double)integ * 1e-7) return 0;
 
-  /* Difference function d(tau), then its cumulative-mean normalization d'(tau). */
-  float dp[LE_PSOLA_MAXLAG + 1];
+  p->minlag = minlag;
+  p->maxlag = maxlag;
+  p->integ = integ;
   dp[0] = 1.0f;
-  double cum = 0.0;
-  for (int tau = 1; tau <= maxlag; ++tau) {
+  return 1;
+}
+
+int le_yin_step(le_yin_pass* p, long budget) {
+  /* Difference function d(tau), then its cumulative-mean normalization d'(tau).
+   * One whole lag always runs, however small the budget: a caller whose budget
+   * is under one integration length must still make progress, or the pass
+   * stalls forever. One lag is bounded by n/2 inner iterations. */
+  while (p->tau <= p->maxlag) {
     double sum = 0.0;
-    for (int i = 0; i < integ; ++i) {
-      const float diff = x[i] - x[i + tau];
+    const int tau = p->tau;
+    for (int i = 0; i < p->integ; ++i) {
+      const float diff = p->x[i] - p->x[i + tau];
       sum += (double)diff * (double)diff;
     }
-    cum += sum;
-    dp[tau] = cum > 0.0 ? (float)(sum * (double)tau / cum) : 1.0f;
+    p->cum += sum;
+    p->dp[tau] = p->cum > 0.0 ? (float)(sum * (double)tau / p->cum) : 1.0f;
+    ++p->tau;
+    if (budget >= 0) {
+      budget -= p->integ;
+      if (budget <= 0) break;
+    }
+  }
+  return p->tau > p->maxlag;
+}
+
+int le_yin_finish(const le_yin_pass* p, float* out_period, float* out_voiced) {
+  const float* dp = p->dp;
+  const int minlag = p->minlag;
+  const int maxlag = p->maxlag;
+
+  /* A rejected le_yin_begin leaves minlag == maxlag == 0 and never writes
+   * dp[0], but le_yin_step still reports "done" (tau 1 > maxlag 0). A caller
+   * that ignores le_yin_begin's return would land here and read dp[0]
+   * uninitialised, yielding a garbage period at conf = 1 - garbage. The
+   * symmetric misuse -- finishing before le_yin_step has reported done --
+   * reads dp[tau..maxlag] uninitialised for the same result, so tau is
+   * checked here too. Both callers are correct today; le_yin_* is published in
+   * engine_fx.h now, so the failed states answer "no pitch" themselves rather
+   * than depending on every future caller. */
+  if (minlag < 2 || maxlag <= minlag || p->tau <= maxlag) {
+    *out_period = 0.0f;
+    *out_voiced = 0.0f;
+    return 0;
   }
 
   /* First dip below the absolute threshold, walked down to its local minimum;
@@ -356,6 +407,22 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
   *out_period = period;
   *out_voiced = conf;
   return conf > 0.5f ? 1 : 0;
+}
+
+int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
+                         float* out_period, float* out_voiced) {
+  *out_period = 0.0f;
+  *out_voiced = 0.0f;
+  float dp[LE_PSOLA_MAXLAG + 1];
+  const int dp_cap = (int)(sizeof(dp) / sizeof(dp[0]));
+  le_yin_pass p;
+  if (!le_yin_begin(&p, x, n, sr, min_hz, max_hz, dp, dp_cap)) return 0;
+  /* Unbounded: the octaver needs the answer now. A negative budget always
+   * completes, so the check can only ever pass -- it is here so the one-shot
+   * path states the precondition le_yin_finish relies on rather than assuming
+   * it. */
+  if (!le_yin_step(&p, -1)) return 0;
+  return le_yin_finish(&p, out_period, out_voiced);
 }
 
 /* Added latency (frames) of the active octaver. Single source of truth, read in
@@ -634,6 +701,22 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     le_pv_reset_runtime(o);
   }
   le_fx_clear_reverb(fx, slot);
+  /* A retyped slot has no tail to drain: a stale budget would let the next
+   * re-enable edge skip its clean reset and read the old type's ring. */
+  fx->enable_drain[slot] = 0;
+  fx->enable_quiet[slot] = 0;
+}
+
+/* Zeroes chain slot [slot]'s delay rings (both channels, [cap] floats each)
+ * when allocated: the audio-thread half of "start clean" that
+ * le_fx_entry_reset leaves out. Shared by the settled-bypass re-enable edge
+ * and Cut all sound; one ring is cap floats, so callers decide the spacing. */
+void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap) {
+  for (int chan = 0; chan < 2; ++chan) {
+    if (fx->delay[slot][chan] != NULL) {
+      memset(fx->delay[slot][chan], 0, (size_t)cap * sizeof(float));
+    }
+  }
 }
 
 /* Seeds chain slot [slot]'s enable-crossfade runtime SETTLED at enabled, so a
@@ -641,12 +724,15 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
  * fade in on first use. Every standalone le_fx_state owner calls this after
  * creating/zeroing its state: le_lane_reset / le_monitor_input_reset, the
  * offline render (perf_render), the VST3 plugin processors, and the test
- * harnesses. Deliberately NOT part of le_fx_entry_reset: a type change must
- * not touch an in-flight enable ramp. */
+ * harnesses. Deliberately NOT part of le_fx_entry_reset, which touches only
+ * the DRAIN half of the runtime (a retyped slot has no tail to drain) and
+ * leaves an in-flight enable ramp alone. */
 void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
   fx->enable_mix[slot] = 1.0f;
   fx->enable_target[slot] = 1;
   fx->enable_warmup[slot] = 0;
+  fx->enable_drain[slot] = 0;
+  fx->enable_quiet[slot] = 0;
 }
 
 /* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.
@@ -660,10 +746,18 @@ void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
  * re-enters through the clean re-enable path. Enabled slots are deliberately
  * left alone: their state persisting across a gap is the pre-existing
  * behavior for engaged effects. */
+int le_fx_enable_settled_bypassed(const le_fx_state* fx, int slot) {
+  return fx->enable_mix[slot] == 0.0f && fx->enable_target[slot] == 0 &&
+         fx->enable_warmup[slot] == 0 && fx->enable_drain[slot] == 0 &&
+         fx->enable_quiet[slot] == 0;
+}
+
 void le_fx_enable_force_bypass(le_fx_state* fx, int slot) {
   fx->enable_mix[slot] = 0.0f;
   fx->enable_target[slot] = 0;
   fx->enable_warmup[slot] = 0;
+  fx->enable_drain[slot] = 0; /* a slot nobody processes cannot drain */
+  fx->enable_quiet[slot] = 0;
 }
 
 /* Frees a chain slot's octaver phase-vocoder heap buffers (both channels) and
@@ -1017,6 +1111,15 @@ static const le_fx_vtable LE_FX[] = {
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
+/* Whether a bypassed slot of [type] drains its tail rather than crossfading
+ * out: a ring-owning type with no reported latency (delay, echo, reverb).
+ * Everything else — memoryless kernels, the latency-bearing octaver, hosted
+ * plugins — crossfades (see fx_apply_chain's doc). */
+int le_fx_type_drains(int32_t type) {
+  return type > LE_FX_NONE && type < LE_FX_TYPE_COUNT &&
+         LE_FX[type].prepare != NULL && LE_FX[type].latency == NULL;
+}
+
 /* Applies a chain to one stereo sample, in chain order, carrying the (l, r) pair
  * in place. The chain is stageless: every active entry processes both channels.
  * [count] is the active chain length; [types]/[params]/[enabled] are the
@@ -1032,12 +1135,27 @@ static const le_fx_vtable LE_FX[] = {
  * skipped.
  *
  * Enable crossfade: each slot tracks its effective bit in enable_target and
- * ramps enable_mix linearly over ~LE_FX_ENABLE_RAMP_MS on a transition. While
- * ramping OUT the slot keeps processing and its wet output — tail included —
- * fades into the dry signal; once settled at 0 the slot is skipped entirely,
- * the same shape as the LE_FX_NONE skip, so a bypassed slot is bit-exact
- * passthrough by construction (D-BITEXACT) and a bypassed tail never spills
- * [B7]. On the re-enable edge from a settled bypass, a BUILT-IN slot starts
+ * ramps enable_mix linearly over ~LE_FX_ENABLE_RAMP_MS on a transition.
+ * enable_mix scales the slot's FEED: the output is dry * (1 - mix) plus the
+ * effect run on dry * mix, so a settled enabled slot is the effect verbatim
+ * and a ramp hands the new audio from the effect to the dry path. Bypass
+ * (slice 3b; accepted: "bypass sends new audio dry and drains old wet
+ * tails"): once the feed has ramped to silence the slot keeps running on
+ * that silence and its tail — whatever the effect still holds — sums onto
+ * the dry signal until it has stayed under LE_FX_DRAIN_FLOOR for
+ * a whole delay-ring horizon (at least LE_FX_DRAIN_QUIET_MS); then the slot is
+ * skipped entirely, the same shape as the LE_FX_NONE skip, so a settled
+ * bypassed slot is bit-exact passthrough by construction (D-BITEXACT). Only
+ * a ring-owning type with no reported latency drains (le_fx_type_drains:
+ * delay, echo, reverb — linear, so the feed ramp is the output ramp, and the
+ * tail is what the rings hold). Everything else crossfades out over the
+ * ramp on the full feed (dry * (1 - mix) + wet * mix) and settles with no
+ * drain: a memoryless drive has no tail and its small-signal gain would
+ * make a scaled feed overshoot both endpoints; a latency-bearing slot (the
+ * octaver) holds a delayed copy of the dry signal, which summed onto the
+ * direct path would double the audio for the latency window; a hosted
+ * plugin owns its tail and has no reset seam.
+ * On the re-enable edge from a settled bypass, a BUILT-IN slot starts
  * clean: le_fx_entry_reset, plus — for a ring-owning type only — its
  * delay-ring content zeroed, so stale integrators or ring content never
  * sound. A latency-bearing slot (the octaver) is then WARMED for its
@@ -1060,23 +1178,32 @@ static const le_fx_vtable LE_FX[] = {
  * A slot the chain does NOT process cannot advance this state machine; the
  * per-buffer snapshots settle such slots to bypass while their effective bit
  * is 0 (le_fx_enable_force_bypass), so gaps never strand a ramp. */
-void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
+void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
-                    const int32_t* enabled) {
+                    const int32_t* enabled, int gain_at, float gain) {
   float xl = *l;
   float xr = *r;
   if (fx->enable_clear_cooldown > 0) fx->enable_clear_cooldown--;
   for (int s = 0; s < count; ++s) {
+    if (s == gain_at) { xl *= gain; xr *= gain; }
     const int32_t ty = types[s];
     if (ty > LE_FX_NONE && ty < LE_FX_TYPE_COUNT && LE_FX[ty].process) {
+      /* Plugin installation can replace a draining built-in without a ring
+       * command. Its obsolete tail state belongs to this callback, never
+       * to the concurrent installer. Plugins use crossfade, not drain. */
+      if (ty == LE_FX_PLUGIN) {
+        fx->enable_drain[s] = 0;
+        fx->enable_quiet[s] = 0;
+      }
       const int32_t want = enabled == NULL || enabled[s] != 0;
       if (want != fx->enable_target[s]) {
-        if (want && fx->enable_mix[s] <= 0.0f) {
+        if (want && fx->enable_mix[s] <= 0.0f && fx->enable_drain[s] == 0) {
           /* Re-enable edge from a SETTLED bypass: start clean so nothing
-           * stale ever sounds. A re-enable that lands mid-fade-out keeps the
-           * state instead — the slot never stopped processing, so nothing is
-           * stale, and resetting would discontinue a still-audible tail.
+           * stale ever sounds. A re-enable that lands mid-fade-out or
+           * mid-drain keeps the state instead — the slot never stopped
+           * processing, so nothing is stale, and resetting would
+           * discontinue a still-audible tail.
            * Only ring-OWNING types (vtable `prepare` non-NULL) pay the ring
            * clear, and those are spaced by the cooldown: a deferred slot
            * simply stays bypassed and retries next sample. */
@@ -1086,17 +1213,19 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
           if (needs_clear && fx->enable_clear_cooldown > 0) continue;
           le_fx_entry_reset(fx, s);
           if (needs_clear) {
-            for (int chan = 0; chan < 2; ++chan) {
-              if (fx->delay[s][chan] != NULL) {
-                memset(fx->delay[s][chan], 0, (size_t)cap * sizeof(float));
-              }
-            }
+            le_fx_entry_clear_rings(fx, s, cap);
             fx->enable_clear_cooldown = LE_FX_ENABLE_CLEAR_SPACING;
           }
           fx->enable_warmup[s] = le_fx_added_latency(fx, s, ty);
         } else if (!want) {
           fx->enable_warmup[s] = 0; /* an aborted warmup never resumes */
+          /* Bypass edge: mark the tail draining once the feed has
+           * ramped to silence; none for a latency-bearing slot, which
+           * crossfades out instead (see above). */
+          fx->enable_drain[s] = le_fx_type_drains(ty) ? 1 : 0;
+          fx->enable_quiet[s] = 0;
         }
+        if (want) fx->enable_drain[s] = 0; /* fed again: nothing to drain */
         fx->enable_target[s] = want;
       }
       if (want && fx->enable_warmup[s] > 0) {
@@ -1122,17 +1251,47 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
           if (mix > 1.0f) mix = 1.0f;
           fx->enable_mix[s] = mix;
         }
-      } else {
-        if (mix <= 0.0f) continue; /* settled bypassed: skip (D-BITEXACT) */
+      } else if (mix > 0.0f) {
         const float step =
             sr > 0 ? 1000.0f / ((float)LE_FX_ENABLE_RAMP_MS * (float)sr)
                    : 1.0f;
         mix -= step;
         if (mix < 0.0f) mix = 0.0f;
         fx->enable_mix[s] = mix;
+      } else if (fx->enable_drain[s] <= 0) {
+        continue; /* settled bypassed, tail drained: skip (D-BITEXACT) */
       }
-      float wl = xl;
-      float wr = xr;
+      /* The feed: the whole dry signal while settled enabled (and always for
+       * a crossfading type), a scaled copy while a draining type ramps,
+       * exact silence while it drains.
+       *
+       * Channel handling (slice 3e) rides the FEED, not the dry: the entry's
+       * input choice decides what its effects are handed, and the untouched
+       * (xl, xr) stays the dry side of the crossfade — so a bypassed entry
+       * passes the signal through exactly as it arrived, choice and all. */
+      const int fades = mix < 1.0f && !le_fx_type_drains(ty);
+      float il = xl;
+      float ir = xr;
+      if (fx->chan_any) {
+        switch (fx->chan[s].in_mode) {
+          case LE_FX_CHAN_IN_LEFT:
+            ir = il;
+            break;
+          case LE_FX_CHAN_IN_RIGHT:
+            il = ir;
+            break;
+          case LE_FX_CHAN_IN_MONO: {
+            const float mid = 0.5f * (il + ir);
+            il = mid;
+            ir = mid;
+            break;
+          }
+          default:
+            break;
+        }
+      }
+      float wl = mix >= 1.0f || fades ? il : il * mix;
+      float wr = mix >= 1.0f || fades ? ir : ir * mix;
       LE_FX[ty].process(fx, s, sr, cap, &wl, &wr, params[s]);
       /* Sanitize a plugin slot's output before it re-enters the chain (D-RT).
        * Built-ins are already bounded, so only the plugin row pays this. */
@@ -1140,18 +1299,65 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
         wl = fx_sanitize(wl);
         wr = fx_sanitize(wr);
       }
+      /* The entry's output choice and then its level, both AFTER its effects
+       * (the accepted design's order). Stereo keeps what the effects made and
+       * the gains are a balance; Mono averages them and the gains place the
+       * result. Applied to the wet only, so the crossfade below still blends
+       * against the untouched dry — and a tail draining out of a bypassed
+       * entry keeps the level it was heard at. */
+      if (fx->chan_any) {
+        const le_fx_chan* c = &fx->chan[s];
+        if (c->out_mode == LE_FX_CHAN_OUT_MONO) {
+          const float mid = 0.5f * (wl + wr);
+          wl = mid;
+          wr = mid;
+        }
+        wl *= c->gl * c->level;
+        wr *= c->gr * c->level;
+      }
       if (mix >= 1.0f) {
         /* Settled wet: verbatim, not via the crossfade arithmetic. */
         xl = wl;
         xr = wr;
-      } else {
+      } else if (fades) {
         xl = xl * (1.0f - mix) + wl * mix;
         xr = xr * (1.0f - mix) + wr * mix;
+      } else {
+        xl = xl * (1.0f - mix) + wl;
+        xr = xr * (1.0f - mix) + wr;
+        if (mix <= 0.0f) {
+          /* Draining: (wl, wr) is the tail alone. A full memory horizon
+           * below the floor settles the slot. */
+          const float al = fabsf(wl);
+          const float ar = fabsf(wr);
+          const float mag = al > ar ? al : ar;
+          if (mag < LE_FX_DRAIN_FLOOR) {
+            fx->enable_quiet[s]++;
+          } else {
+            fx->enable_quiet[s] = 0;
+          }
+          /* A quiet gap shorter than the whole delay memory says nothing
+           * about a pending sparse echo. Observe a complete ring horizon,
+           * with no arbitrary lifetime cutoff for audible feedback tails. */
+          const int32_t minimum = sr > 0 ? (sr * LE_FX_DRAIN_QUIET_MS) / 1000 : 1;
+          const int32_t quiet_n = cap > minimum ? cap : minimum;
+          if (fx->enable_quiet[s] >= quiet_n) {
+            fx->enable_drain[s] = 0;
+          }
+        }
       }
     }
   }
+  if (gain_at == count) { xl *= gain; xr *= gain; }
   *l = xl;
   *r = xr;
+}
+
+void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
+                    int count, const int32_t* types,
+                    const float params[LE_FX_MAX][LE_FX_PARAMS],
+                    const int32_t* enabled) {
+  fx_apply_chain_with_gain(fx, sr, cap, l, r, count, types, params, enabled, 0, 1);
 }
 
 int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type) {

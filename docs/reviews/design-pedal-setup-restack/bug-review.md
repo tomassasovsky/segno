@@ -1,0 +1,15 @@
+# Bug-focused review — final M3.2
+
+Base: `da0c1f70d9815f68f9f5bb43e16f36de01a0b365`. The complete 39-path M3.2 manifest is `final-hashes.json`, fingerprint `90293cd611fb26bab771611de108652d789ea5025d99a1cf2987ecc4598cba7b`. Final file hashes were reconciled with no drift. One independent non-author reviewer performed these five roles and the bug review; a separate independent reviewer executed the adversarial probes. This reviewer authored no M3.2 product or test code and ran no duplicate broad tests or native builds. Prior native/package authorship is outside this delta.
+
+No unresolved actionable findings in the complete intended M3.2 delta. Candidate review is complete for the bound files; later source changes require reconciliation.
+
+The accepted owner contracts and an oracle defined in advance were read before implementation expectations. Review traced added dispatch, deleted capabilities, callers, persistence failures, startup ordering, saved identity and M3.1 admission/release ownership. Confirmed source repairs retain physical performance recording; suppress Track Hold in Mute without suppressing Record Hold; resolve new Hold targets at firing; freeze caller-owned custom maps; gate editing on shared initial load; close the Stage tray; and preserve active captures and pending arms through directional Arm overdub.
+
+Four separately reproduced adversarial failures are closed: write-then-throw durable divergence, an unpolled active capture being cycled off, a pending arm being cancelled, and malformed explicit Hold becoming default overdub. The final two unchanged real-pump regressions pass at ControlCubit `5d3ed184eda9641e2da389855424e023179e48407d735dc16f2c6fecf50189c4`; final runtime sources match before/after. Earlier cases carry explicit unchanged-mechanism amendments rather than a false single-head run claim.
+
+Failure recovery remains truthful when rollback itself is refused: live configuration stays authoritative, persistent warning survives Cancel/navigation, and a deliberate confirmed Save repairs storage. Corrupt raw bytes remain untouched until explicit replacement; configurable gestures stay inert meanwhile. Fixed immediate controls retain their behavior.
+
+Nine changed golden images were independently viewed, including the unavailable warning moved into the clear space between pedal rows. Group labels, fixed disabling, raised hit bounds and paired fields are reconciled. Root's Mac journey independently from CI exercised opening, editing, Cancel, durable restart, grouped/fixed selection and Stage, but remains author-run evidence.
+
+This slice delivers Setup Tracks. Custom editing and the accepted Mode Hold → Custom default remain explicitly assigned to the actual runtime slice, PR #1030. Current Hold → FX and Bank Hold performance recording preserve working capabilities. Retained Custom data does not imply delivered Custom execution. Host tests and desktop journeys do not prove physical pedal timing, electrical behavior or appliance ergonomics.

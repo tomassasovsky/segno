@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[tracking] Substantive work (feature/multi-step/multi-session) needs a GitHub issue with stage:* + autonomy:* labels; new session with no ticket must create one. PRs need Closes #N; ready-to-merge only when CI is green AND /code-review is clean. Trivial one-liners skip the issue. Contract: docs/TRACKING.md'"
+            "command": "echo '[tracking] Substantive work (feature/multi-step/multi-session) needs a GitHub issue with stage:* + autonomy:* labels. Run the AGENTS.md session bootstrap first: list open issues and PRs and reuse an issue that already covers the scope; open a new one only when none does. PRs need Closes #N (stacked parts: Refs #N); ready-to-merge only when CI is green AND /code-review is clean. Trivial one-liners skip the issue. Contract: docs/TRACKING.md'"
           }
         ]
       }
@@ -27,6 +27,17 @@
           {
             "type": "command",
             "command": "echo '[build-test gotchas, re-injected after compaction] Dart tests: /Users/Tomas/development/flutter/bin/flutter test (bare flutter test / dart test are hook-blocked; very_good MCP test tool broken). Native engine tests: bash packages/segno_engine/src/test/run_native_tests.sh. After touching src/segno_engine_api.h: dart run ffigen --config ffigen.yaml && dart format lib/src/generated/segno_engine_bindings.dart (from packages/segno_engine). macOS run/build needs --flavor development -t lib/main_development.dart. Full list: docs/PROGRESS.md \"How to build / test\".'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-push.sh"
           }
         ]
       }

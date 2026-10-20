@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:pedal_repository/src/pedal_button.dart';
 import 'package:pedal_repository/src/pedal_ctrl.dart';
+import 'package:pedal_repository/src/pedal_power.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
 /// One message on the pedal link, in either direction.
@@ -39,6 +40,18 @@ final class EncoderMessage extends PedalLinkMessage {
   List<Object?> get props => [delta];
 }
 
+/// The encoder's push switch went down or came up (board → segno).
+final class EncoderButtonMessage extends PedalLinkMessage {
+  /// Creates an [EncoderButtonMessage].
+  const EncoderButtonMessage({required this.pressed});
+
+  /// `true` on press, `false` on release.
+  final bool pressed;
+
+  @override
+  List<Object?> get props => [pressed];
+}
+
 /// A CTRL jack reporting (board → segno): a footswitch edge, or an
 /// expression pedal's raw position.
 final class CtrlMessage extends PedalLinkMessage {
@@ -68,7 +81,7 @@ final class CtrlMessage extends PedalLinkMessage {
   final PedalCtrlKind kind;
 
   /// `0`..`255`: a switch sends the ends, an expression pedal its RAW
-  /// position — uncalibrated; see [PedalCtrlCalibration].
+  /// position; calibration belongs to the application setup.
   final int value;
 
   @override
@@ -100,6 +113,19 @@ final class HelloMessage extends PedalLinkMessage {
 
   @override
   List<Object?> get props => [protocolVersion, firmwareMajor, firmwareMinor];
+}
+
+/// The USB-C supply's contract and the PD trigger's profile (board → segno),
+/// once a second after the hello.
+final class PdStatusMessage extends PedalLinkMessage {
+  /// Creates a [PdStatusMessage].
+  const PdStatusMessage(this.supply);
+
+  /// What the board read from the trigger.
+  final PedalPowerSupply supply;
+
+  @override
+  List<Object?> get props => [supply];
 }
 
 /// Everything the board renders (segno → board).

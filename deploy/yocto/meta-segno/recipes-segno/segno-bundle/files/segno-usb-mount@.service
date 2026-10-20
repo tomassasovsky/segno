@@ -1,0 +1,22 @@
+# Mounts one USB filesystem for the lifetime of its device (#1177).
+#
+# Started by udev through SYSTEMD_WANTS (98-segno-usb-storage.rules), never
+# enabled: the instance name is the kernel name (sda1). BindsTo= the device
+# unit, so unplugging the drive stops this unit and ExecStop runs `detach`,
+# which clears any stale mount and deletes the volume's JSON. `detach` exits 0
+# when nothing is mounted any more (the user ejected first), so the unit never
+# lands in `systemctl --failed`.
+#
+# No PrivateMounts/ProtectSystem/PrivateTmp/MountFlags here or on
+# segno.service: the mount has to be made in the root mount namespace, which
+# is the one the app reads /run/media/segno in.
+[Unit]
+Description=Segno: mount USB volume /dev/%I
+BindsTo=dev-%i.device
+After=dev-%i.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/segno-usb-ctl attach %I
+ExecStop=/usr/bin/segno-usb-ctl detach %I
