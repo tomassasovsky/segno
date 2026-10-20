@@ -64,7 +64,7 @@ dependencies:
     path: packages/touch_calibration_client
   update_repository:
     path: packages/update_repository
-  url_launcher: ^6.3.0
+  url_launcher: ^6.3.3
   usb_storage_client:
     path: packages/usb_storage_client
   wifi_repository:
