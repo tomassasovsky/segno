@@ -23,7 +23,7 @@ class _MockRecordTimingControl extends Mock implements RecordTimingControl {}
 class _MockSettingsRepository extends Mock implements SettingsRepository {}
 
 const _playingState = LooperState(
-  transport: TransportState(isRunning: true, masterLengthFrames: 48000),
+  transport: TransportState(deviceRunning: true, masterLengthFrames: 48000),
   tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
 );
 
@@ -49,6 +49,7 @@ void main() {
 
   setUp(() {
     repository = _MockLooperRepository();
+    when(() => repository.meters).thenReturn(const MeterLevels());
     recordLength = _MockRecordLengthControl();
     recordTiming = _MockRecordTimingControl();
     when(
@@ -97,6 +98,13 @@ void main() {
     when(() => repository.oneShotRecoveryRequired).thenReturn(false);
     when(
       () => repository.oneShotFailures,
+    ).thenAnswer((_) => const Stream<EngineResult>.empty());
+    // Audio & tempo (#1179): owners PlaybackSettings builds beside Loop/Once.
+    when(
+      () => repository.followTempoFailures,
+    ).thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(
+      () => repository.pitchModeFailures,
     ).thenAnswer((_) => const Stream<EngineResult>.empty());
     when(
       () => repository.settleOneShot(),
@@ -3002,6 +3010,103 @@ void main() {
     verify: (_) {
       verify(() => repository.play()).called(1);
       verify(() => repository.play(channel: 1)).called(1);
+      verifyNever(() => repository.play(channel: 2));
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed starts only the first audible section in Song '
+    '(#1077)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(looperMode: LooperMode.song),
+      tracks: [
+        Track(),
+        Track(
+          channel: 1,
+          lengthFrames: 100,
+          state: TrackState.stopped,
+          muted: true,
+        ),
+        Track(channel: 2, lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 3, lengthFrames: 100, state: TrackState.stopped),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verify(() => repository.play(channel: 2)).called(1);
+      verifyNever(() => repository.play());
+      verifyNever(() => repository.play(channel: 1));
+      verifyNever(() => repository.play(channel: 3));
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed starts the section that played last in Song '
+    '(#1077)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(
+        looperMode: LooperMode.song,
+        songLastSection: 3,
+      ),
+      tracks: [
+        Track(lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 1, lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 2, lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 3, lengthFrames: 100, state: TrackState.stopped),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verify(() => repository.play(channel: 3)).called(1);
+      verifyNever(() => repository.play());
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed passes over a muted last section in Song (#1077)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(
+        looperMode: LooperMode.song,
+        songLastSection: 1,
+      ),
+      tracks: [
+        Track(lengthFrames: 100, state: TrackState.stopped),
+        Track(
+          channel: 1,
+          lengthFrames: 100,
+          state: TrackState.stopped,
+          muted: true,
+        ),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verify(() => repository.play()).called(1);
+      verifyNever(() => repository.play(channel: 1));
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed falls back to the first audible section when the '
+    'last one has no take (#1077)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      transport: TransportState(
+        looperMode: LooperMode.song,
+        songLastSection: 2,
+      ),
+      tracks: [
+        Track(lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 1, lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 2), // cleared
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verify(() => repository.play()).called(1);
       verifyNever(() => repository.play(channel: 2));
     },
   );

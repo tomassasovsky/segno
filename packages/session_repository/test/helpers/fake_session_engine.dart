@@ -17,6 +17,9 @@ class _FakeLane {
 
 class _FakeTrack {
   TrackState state = TrackState.empty;
+
+  /// The content revision; every seed is a write and bumps it.
+  int audioRev = 0;
   int multiple = 1;
   int lengthFrames = 0;
 
@@ -34,6 +37,9 @@ class _FakeTrack {
   List<HistoryEntry> history = const [];
   bool solo = false;
   bool reversed = false;
+
+  /// The span a retime left on the take (#1179); 0 is the clock in force.
+  int spanFrames = 0;
   final List<_FakeLane> lanes = [_FakeLane()];
 
   int get liveIndex => undoCount;
@@ -48,8 +54,60 @@ class _FakeTrack {
 /// A stateful in-memory [AudioEngine] that models the looper state, settings,
 /// and per-track PCM closely enough to exercise the session repository's
 /// save/load without the native engine.
-class FakeSessionEngine implements AudioEngine {
+class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
   FakeSessionEngine({this.channels = 1, this.sampleRate = 48000});
+
+  // The audition voice (#1178): records what it was asked to play.
+
+  /// The files [auditionStartFile] was handed, in order.
+  final List<String> auditioned = [];
+
+  /// What [auditionStartFile] answers.
+  AuditionStart auditionAnswer = const AuditionStart(
+    result: EngineResult.ok,
+    frames: 48000,
+    sourceRate: 48000,
+  );
+
+  /// What [auditionState] reports.
+  AuditionState auditionNow = const AuditionState();
+
+  /// How many times [auditionStop] was called.
+  int auditionStops = 0;
+
+  /// The files [filePeaks] was asked for.
+  final List<({String path, int buckets})> peakReads = [];
+
+  /// What [filePeaks] answers.
+  Float32List? peaksAnswer;
+
+  @override
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    bool Function()? stillWanted,
+  }) async {
+    auditioned.add(path);
+    stillWantedChecks.add(stillWanted);
+    return auditionAnswer;
+  }
+
+  /// The `stillWanted` check each start was given.
+  final List<bool Function()?> stillWantedChecks = [];
+
+  @override
+  EngineResult auditionStop() {
+    auditionStops++;
+    return EngineResult.ok;
+  }
+
+  @override
+  AuditionState auditionState() => auditionNow;
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async {
+    peakReads.add((path: path, buckets: buckets));
+    return peaksAnswer;
+  }
 
   @override
   OutputFxSnapshot outputFxSnapshot({required int bus}) =>
@@ -63,6 +121,10 @@ class FakeSessionEngine implements AudioEngine {
   final List<_FakeTrack> _tracks = List.generate(8, (_) => _FakeTrack());
   int masterLength = 0;
   int mixRevision = 0;
+
+  /// The published grid (#1168): whole bars, and the beats it holds.
+  int loopBars = 0;
+  int loopBeats = 0;
 
   /// The session-level looper mode reported by [snapshot] (B5c). Mutable so a
   /// test can seed a non-default mode before calling
@@ -91,6 +153,10 @@ class FakeSessionEngine implements AudioEngine {
   // rather than trusting it by inspection. Defaults mirror
   // `EngineSnapshot`'s own tempo-free defaults.
   double tempoBpm = 0;
+
+  /// The recorded pair a retime keeps (#1179); 0/0 with none.
+  double recordedTempoBpm = 0;
+  int recordedLengthFrames = 0;
   TempoSource tempoSource = TempoSource.none;
   int tsNum = 4;
   int tsDen = 4;
@@ -127,6 +193,7 @@ class FakeSessionEngine implements AudioEngine {
       ..redoDepth = 0
       ..publishedUndoDepth = null
       ..history = const [];
+    track.audioRev++;
     track.lanes[0]
       ..layers = [pcm]
       ..volume = volume
@@ -167,6 +234,7 @@ class FakeSessionEngine implements AudioEngine {
             undoDepth + redoDepth,
             const HistoryEntry(HistoryKind.layer),
           );
+    track.audioRev++;
     track.lanes[0]
       ..layers = List.of(layers)
       ..volume = volume
@@ -187,6 +255,7 @@ class FakeSessionEngine implements AudioEngine {
     int? inputChannel,
   }) {
     final track = _tracks[channel];
+    track.audioRev++;
     while (track.lanes.length <= lane) {
       track.lanes.add(_FakeLane());
     }
@@ -197,6 +266,10 @@ class FakeSessionEngine implements AudioEngine {
       ..outputMask = outputMask
       ..inputChannel = inputChannel ?? lane;
   }
+
+  @override
+  int trackAudioRev(int channel) =>
+      channel < 0 || channel >= _tracks.length ? 0 : _tracks[channel].audioRev;
 
   @override
   CallbackTelemetry callbackTelemetry() => CallbackTelemetry.empty;
@@ -217,8 +290,12 @@ class FakeSessionEngine implements AudioEngine {
     latencyState: LatencyState.idle,
     measuredLatencyMs: -1,
     masterLengthFrames: masterLength,
+    loopBars: loopBars,
+    loopBeats: loopBeats,
     mixRevision: mixRevision,
     tempoBpm: tempoBpm,
+    recordedTempoBpm: recordedTempoBpm,
+    recordedLengthFrames: recordedLengthFrames,
     tempoSource: tempoSource,
     tsNum: tsNum,
     tsDen: tsDen,
@@ -249,6 +326,7 @@ class FakeSessionEngine implements AudioEngine {
           layerInFlight: i == 0 && _consumeInFlightPoll(),
           solo: t.solo,
           reversed: t.reversed,
+          spanFrames: t.spanFrames,
           lanes: [
             for (final lane in t.lanes)
               LaneSnapshot(
@@ -283,8 +361,13 @@ class FakeSessionEngine implements AudioEngine {
     return Float32List.fromList(track.liveOf(lane));
   }
 
+  /// How many layers have been exported, so a test can tell a read that
+  /// copies audio from one that does not.
+  int exportedLayers = 0;
+
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) {
+    exportedLayers++;
     final track = _tracks[channel];
     if (lane < 0 || lane >= track.lanes.length) return Float32List(0);
     final layers = track.lanes[lane].layers;
@@ -295,6 +378,12 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult importTrack(int channel, Float32List pcm) =>
       importTrackLane(channel, 0, pcm);
+
+  @override
+  EngineResult importSpan(int channel, int spanFrames) => EngineResult.ok;
+
+  /// Leaves [span] on track [channel]'s take, as a retime does (#1179).
+  void seedSpan(int channel, int span) => _tracks[channel].spanFrames = span;
 
   @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) {
@@ -327,11 +416,19 @@ class FakeSessionEngine implements AudioEngine {
   );
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) =>
-      EngineResult.ok;
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) => EngineResult.ok;
+
+  /// Puts track [channel] in [state] without touching its audio, as a
+  /// transport press or a punch-in does.
+  void setTrackState(int channel, TrackState state) =>
+      _tracks[channel].state = state;
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     if (baseFrames <= 0) return EngineResult.invalid;
     masterLength = baseFrames;
     for (final track in _tracks) {
@@ -524,10 +621,42 @@ class FakeSessionEngine implements AudioEngine {
       (result: EngineResult.invalid, request: 0);
 
   @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) => (result: EngineResult.invalid, request: 0);
+
+  @override
   RequestAdmission installReverse({
     required int channel,
     required bool reversed,
   }) => (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setSpeed(SpeedFactor factor) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) =>
+      (result: EngineResult.invalid, request: 0);
 
   @override
   EngineResult? readRequestResult(int request) => EngineResult.invalid;
@@ -607,6 +736,46 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult setClickMode(ClickMode mode) => EngineResult.ok;
   @override
   EngineResult setClickOutput(int mask) => EngineResult.ok;
+  // The backing player (#1200) is not this fake's concern: every call is
+  // accepted and nothing is loaded.
+  @override
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item}) =>
+      EngineResult.ok;
+
+  @override
+  EngineResult backingClear() => EngineResult.ok;
+
+  @override
+  EngineResult backingTransport(BackingTransportOp op) => EngineResult.ok;
+
+  @override
+  EngineResult backingSeek(int frame) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingEnd(BackingEnd mode) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingOutput(int mask) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingLevel(double gain) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingPan(double pan) => EngineResult.ok;
+
+  @override
+  EngineResult setClickPan(double pan) => EngineResult.ok;
+
+  @override
+  BackingState backingState() => const BackingState();
+
   @override
   EngineResult setClickVolume(double volume) => EngineResult.ok;
   @override
@@ -899,12 +1068,9 @@ class FakeSessionEngine implements AudioEngine {
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult perfArm(String captureDir) => EngineResult.ok;
+  EngineResult perfArm(PerfTarget target) => EngineResult.ok;
   @override
   EngineResult perfDisarm() => EngineResult.ok;
-
-  @override
-  bool syncDirectory(String path) => path.isNotEmpty;
 
   @override
   VolumeSpace? volumeSpace(String path) => freeBytes == null
@@ -925,6 +1091,25 @@ class FakeSessionEngine implements AudioEngine {
   List<PerformanceRenderTrackStatus> renderTrackStatuses() => const [];
   @override
   EngineResult renderCancel() => EngineResult.ok;
+
+  // ---- shared render recipe (#1202): not modelled by this fake ----
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, plan: null);
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, job: 0);
+
+  @override
+  RenderJobStatus? pollRender(int job) => null;
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) => null;
+
+  @override
+  EngineResult cancelRender(int job) => EngineResult.invalid;
   @override
   EngineResult scanBegin({bool rescan = false}) => EngineResult.ok;
   @override

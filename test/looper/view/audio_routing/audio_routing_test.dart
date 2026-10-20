@@ -12,6 +12,8 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
+import 'package:segno/backing/cubit/backing_mix_cubit.dart';
+import 'package:segno/backing/model/backing_mix.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -43,7 +45,6 @@ const _rig = LooperState(
     inputChannels: 4,
     outputChannels: 4,
   ),
-  inputPeaks: [0, 0, 0, 0],
   // Two destinations: outputs 1-2 and outputs 3-4.
   outputBusCount: 2,
 );
@@ -106,6 +107,12 @@ void main() {
     addTearDown(monitorChanges.close);
     addTearDown(monitorParams.close);
     when(() => repository.looperState).thenAnswer((_) => states.stream);
+    // Live levels reach the meters apart from the state (#1301): silence
+    // unless a test sets them.
+    when(() => repository.meters).thenReturn(const MeterLevels());
+    when(
+      () => repository.meterLevels,
+    ).thenAnswer((_) => const Stream<MeterLevels>.empty());
     when(
       () => repository.mixSettingsFailures,
     ).thenAnswer((_) => const Stream.empty());
@@ -156,11 +163,13 @@ void main() {
 
   Future<void> pump(
     WidgetTester tester, {
+    Size size = const Size(1920, 1080),
     LooperState state = _rig,
     Widget home = const AudioRoutingPage(),
+    BackingMixCubit? backingMix,
   }) async {
     tester.view
-      ..physicalSize = const Size(1920, 1080)
+      ..physicalSize = size
       ..devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -200,6 +209,7 @@ void main() {
             BlocProvider.value(value: outputs),
             BlocProvider.value(value: monitors),
             BlocProvider.value(value: tempo),
+            if (backingMix != null) BlocProvider.value(value: backingMix),
           ],
           child: MaterialApp(
             navigatorKey: segnoNavigatorKey,
@@ -364,10 +374,11 @@ void main() {
     expect(find.byType(LoopSlider), findsNothing);
   });
 
-  testWidgets('Recording inputs checks the jacks the scoped track records, '
+  testWidgets('Recording input badges fit their cards on the compact display '
       'and scoping to another track shows that track instead', (tester) async {
     await pump(
       tester,
+      size: const Size(1024, 600),
       state: _rig.copyWithLanes(const [Lane(inputChannel: 1)]),
     );
     await openRecord(tester);
@@ -379,6 +390,25 @@ void main() {
     // Track 0 records input 1; track 1's input 3 is not this track's.
     expect(cardSelected(tester, 1), isTrue);
     expect(cardSelected(tester, 3), isFalse);
+
+    for (final input in [0, 1]) {
+      final card = find.byKey(Key('routing_record_card_$input'));
+      final badge = find.descendant(
+        of: card,
+        matching: find.byType(RoutingCheck),
+      );
+      final cardRect = tester.getRect(card);
+      final badgeRect = tester.getRect(badge);
+      final scale = cardRect.width / 360;
+      expect(
+        cardRect.right - badgeRect.right,
+        greaterThanOrEqualTo(26 * scale),
+      );
+      expect(
+        badgeRect.right,
+        lessThanOrEqualTo(tester.view.physicalSize.width),
+      );
+    }
 
     await tester.tap(find.byKey(const Key('routing_track_1')));
     await tester.pump();
@@ -557,6 +587,52 @@ void main() {
     verify(() => repository.setClickOutput(0x3)).called(1);
   });
 
+  testWidgets('Backing & click routes the backing track through its own '
+      'owner and leaves the click where it was (#1200)', (tester) async {
+    final mix = _MockBackingMix();
+    final masks = StreamController<BackingMixState>.broadcast();
+    addTearDown(masks.close);
+    whenListen(
+      mix,
+      masks.stream,
+      initialState: const BackingMixState(mixReady: true, clickPanReady: true),
+    );
+    await pump(tester, backingMix: mix);
+    await openOutputs(tester);
+    final l10n = l10nOf(tester);
+    await tester.tap(find.byKey(const Key('routing_kind_players')));
+    await tester.pump();
+    expect(find.text(l10n.routingSourceBacking), findsOneWidget);
+    expect(find.text(l10n.routingSourceClick), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('routing_source_backing')));
+    await tester.pump();
+    expect(destinationSelected(tester, 0), isFalse);
+    await tester.tap(find.byKey(const Key('routing_destination_0')));
+    await tester.pump();
+    verify(() => mix.setOutput(0x3)).called(1);
+    verifyNever(() => repository.setClickOutput(any()));
+    // The owner's accepted mask is what the card draws.
+    masks.add(
+      const BackingMixState(
+        mix: BackingMix(outputMask: 0x3),
+        mixReady: true,
+        clickPanReady: true,
+      ),
+    );
+    await tester.pump();
+    expect(destinationSelected(tester, 0), isTrue);
+
+    // The click keeps its own route.
+    await tester.tap(find.byKey(const Key('routing_source_click')));
+    await tester.pump();
+    expect(destinationSelected(tester, 0), isFalse);
+    await tester.tap(find.byKey(const Key('routing_destination_0')));
+    await tester.pump();
+    verify(() => repository.setClickOutput(0x3)).called(1);
+    verifyNever(() => mix.setOutput(any()));
+  });
+
   testWidgets('Hear live belongs to the live inputs and to no other kind', (
     tester,
   ) async {
@@ -727,13 +803,10 @@ void main() {
   testWidgets("the meters read the destination's own jacks", (tester) async {
     // Outputs 1-4 at four different peaks: the master hears the first pair
     // and the second destination the second.
-    await pump(
-      tester,
-      state: _rig.copyWithOutput(
-        const OutputBus(),
-        peaks: const [1, 0.5, 0.25, 0.125],
-      ),
+    when(() => repository.meters).thenReturn(
+      const MeterLevels(outputPeaks: [1, 0.5, 0.25, 0.125]),
     );
+    await pump(tester, state: _rig.copyWithOutput(const OutputBus()));
     await openOutputSetup(tester);
     final l10n = l10nOf(tester);
 
@@ -748,12 +821,12 @@ void main() {
 
   testWidgets('a muted destination meters silence, whatever the engine last '
       'reported', (tester) async {
+    when(
+      () => repository.meters,
+    ).thenReturn(const MeterLevels(outputPeaks: [1, 1, 0, 0]));
     await pump(
       tester,
-      state: _rig.copyWithOutput(
-        const OutputBus(muted: true),
-        peaks: const [1, 1, 0, 0],
-      ),
+      state: _rig.copyWithOutput(const OutputBus(muted: true)),
     );
     await openOutputSetup(tester);
     final l10n = l10nOf(tester);
@@ -1311,17 +1384,11 @@ Future<void> openRecord(WidgetTester tester) async {
 }
 
 extension on LooperState {
-  /// [_rig] with the master destination set to [bus] and the given jack
-  /// [peaks].
-  LooperState copyWithOutput(
-    OutputBus bus, {
-    List<double> peaks = const [0, 0, 0, 0],
-  }) => LooperState(
+  /// [_rig] with the master destination set to [bus].
+  LooperState copyWithOutput(OutputBus bus) => LooperState(
     tracks: tracks,
     status: status,
-    inputPeaks: inputPeaks,
     outputBusCount: outputBusCount,
-    outputPeaks: peaks,
     outputSetup: OutputSetup(buses: {kMasterOutputBus: bus}),
   );
 
@@ -1341,7 +1408,6 @@ extension on LooperState {
             inputChannels: inputs,
             outputChannels: status.outputChannels,
           ),
-    inputPeaks: inputPeaks,
     outputBusCount: outputBusCount,
   );
 
@@ -1356,7 +1422,6 @@ extension on LooperState {
           inputChannels: inputs,
           outputChannels: outputs,
         ),
-        inputPeaks: inputPeaks,
         outputBusCount: (outputs + 1) ~/ 2,
       );
 
@@ -1364,7 +1429,6 @@ extension on LooperState {
   LooperState copyWithInputSetup(InputSetup setup) => LooperState(
     tracks: tracks,
     status: status,
-    inputPeaks: inputPeaks,
     outputBusCount: outputBusCount,
     inputSetup: setup,
   );
@@ -1379,7 +1443,6 @@ extension on LooperState {
       inputChannels: inputs,
       outputChannels: status.outputChannels,
     ),
-    inputPeaks: inputPeaks,
     outputBusCount: outputBusCount,
   );
 
@@ -1393,7 +1456,6 @@ extension on LooperState {
       Track(channel: 1),
     ],
     status: status,
-    inputPeaks: inputPeaks,
     outputBusCount: outputBusCount,
   );
 
@@ -1408,6 +1470,8 @@ extension on LooperState {
       outputChannels: status.outputChannels,
       inputClipMask: 1 << input,
     ),
-    inputPeaks: inputPeaks,
   );
 }
+
+class _MockBackingMix extends MockCubit<BackingMixState>
+    implements BackingMixCubit {}

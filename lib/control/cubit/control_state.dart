@@ -22,9 +22,29 @@ class ControlState extends Equatable {
     this.footMixerFailure = 0,
     this.footFade = const FootFadeSelection(),
     this.footFadeFailure = 0,
+    this.footFadeRefusedEmpty = 0,
     this.footReverseFailure = 0,
+    this.footReverseRefusedEmpty = 0,
     this.footPeelFailure = 0,
     this.footPeelRefusal = FootPeelRefusal.failed,
+    this.customLit = const <PedalButton, bool>{},
+    this.assignedActionFailure = 0,
+    this.assignedActionRefusal,
+    this.assignedActionLowDisk = false,
+    this.footTuner = const FootTunerSelection(),
+    this.tunerPreferences = const TunerPreferences(),
+    this.footTunerFailure = 0,
+    this.footTunerRefusal = FootTunerRefusal.armFailed,
+    this.tunerDefaultSeeded = false,
+    this.pendingHolds = const <PedalButton>{},
+    this.holdThreshold = const Duration(milliseconds: 800),
+    this.footFxFailure = 0,
+    this.footFxRefusal = FootFxRefusal.unavailable,
+    this.fxSwitches = const <PedalButton, FxSwitchReading>{},
+    this.fxStopChangeNotice = false,
+    this.footLengthFailure = 0,
+    this.footLengthRefusal = FootLengthRefusal.failed,
+    this.footLengthOutcome = FootLengthOutcome.none,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -123,9 +143,17 @@ class ControlState extends Equatable {
   /// track, notifies the current flow once.
   final int footFadeFailure;
 
+  /// How many empty tracks the latest refused Fade was aimed at when every
+  /// one of its targets was empty (an assigned Fade); 0 for any other
+  /// refusal. The notice names the empty track instead of a retry.
+  final int footFadeRefusedEmpty;
+
   /// Each refused Reverse gesture, and each assigned Reverse that reached
   /// no track, notifies the current flow once.
   final int footReverseFailure;
+
+  /// The same as [footFadeRefusedEmpty], for Reverse.
+  final int footReverseRefusedEmpty;
 
   /// Each refused Peel press notifies the current flow once; the notice
   /// reads [footPeelRefusal].
@@ -133,6 +161,85 @@ class ControlState extends Equatable {
 
   /// Why the latest refused Peel press removed nothing.
   final FootPeelRefusal footPeelRefusal;
+
+  /// Which switches the Custom face draws lit: exactly the switch LEDs the
+  /// cubit projects in Custom mode, published so the face cannot disagree
+  /// with the plate (#1229). Empty outside Custom mode. Derived by the cubit
+  /// on every projection, never edited.
+  final Map<PedalButton, bool> customLit;
+
+  /// Each refused assigned action (a Custom switch, a CTRL switch or a MIDI
+  /// control) that has no notice of its own notifies once; the notice names
+  /// [assignedActionRefusal] (#1229, notice policy rule 3).
+  final int assignedActionFailure;
+
+  /// The action the latest [assignedActionFailure] refused.
+  final ControlAction? assignedActionRefusal;
+
+  /// Whether the latest [assignedActionFailure] was a Record performance
+  /// refused for want of disk room, which says so in the recorder's words.
+  final bool assignedActionLowDisk;
+
+  /// The foot Tuner's transient page and mute while the mode is up (#1229).
+  /// Reset on every Tuner entry; never stored.
+  final FootTunerSelection footTuner;
+
+  /// The stored tuner preferences (A4 reference, input), mirrored from
+  /// `TunerSettings` so the Tuner face projects from one state. Derived,
+  /// never edited here.
+  final TunerPreferences tunerPreferences;
+
+  /// Each refused foot Tuner press notifies once; the notice reads
+  /// [footTunerRefusal].
+  final int footTunerFailure;
+
+  /// Why the latest refused foot Tuner press changed nothing.
+  final FootTunerRefusal footTunerRefusal;
+
+  /// Set once when this boot added `Hold · Tuner` to Custom pedal 2 (#1229,
+  /// D11), so the app can say where the Tuner is.
+  final bool tunerDefaultSeeded;
+
+  /// The pedals whose Hold is armed and not yet settled: the hold has neither
+  /// fired, nor been released into its tap, nor been cancelled (#1229, the
+  /// Pending Hold cue). Only the fact is published, never an instant: a face
+  /// times its progress bar from its own ticker against [holdThreshold], so
+  /// a wall-clock step (no RTC, NTP after boot) cannot move it.
+  final Set<PedalButton> pendingHolds;
+
+  /// How long a contact must last to become a Hold — the loaded pedal
+  /// long-press threshold every gesture uses.
+  final Duration holdThreshold;
+
+  /// Each refused FX-mode stomp notifies once; the notice reads
+  /// [footFxRefusal] (#1229).
+  final int footFxFailure;
+
+  /// Why the latest refused FX-mode stomp changed nothing.
+  final FootFxRefusal footFxRefusal;
+
+  /// What each BOUND switch's target reads in FX mode, the same values the
+  /// LEDs project, published so the FX face cannot disagree with the plate
+  /// (#1229). Empty outside FX mode. Derived by the cubit on every
+  /// projection, never edited; it rides here only so a surface can render it.
+  final Map<PedalButton, FxSwitchReading> fxSwitches;
+
+  /// Set once, at the first FX-mode entry on an install that has not been
+  /// told, so the app can say that Stop no longer switches every track's
+  /// effects off in FX mode (#1229). Never cleared.
+  final bool fxStopChangeNotice;
+
+  /// Each Multiply / Divide that changed nothing on a recorded track, from
+  /// the surface or an assigned action in any mode, notifies the current
+  /// flow once (#1168); the notice reads [footLengthRefusal].
+  final int footLengthFailure;
+
+  /// Why the latest refused Multiply / Divide changed nothing.
+  final FootLengthRefusal footLengthRefusal;
+
+  /// The latest Multiply or Divide the surface made on this visit, for the
+  /// length panel's outcome line; [FootLengthOutcome.none] outside a visit.
+  final FootLengthOutcome footLengthOutcome;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -247,9 +354,29 @@ class ControlState extends Equatable {
     int? footMixerFailure,
     FootFadeSelection? footFade,
     int? footFadeFailure,
+    int? footFadeRefusedEmpty,
     int? footReverseFailure,
+    int? footReverseRefusedEmpty,
     int? footPeelFailure,
     FootPeelRefusal? footPeelRefusal,
+    Map<PedalButton, bool>? customLit,
+    int? assignedActionFailure,
+    ControlAction? assignedActionRefusal,
+    bool? assignedActionLowDisk,
+    FootTunerSelection? footTuner,
+    TunerPreferences? tunerPreferences,
+    int? footTunerFailure,
+    FootTunerRefusal? footTunerRefusal,
+    bool? tunerDefaultSeeded,
+    Set<PedalButton>? pendingHolds,
+    Duration? holdThreshold,
+    int? footFxFailure,
+    FootFxRefusal? footFxRefusal,
+    Map<PedalButton, FxSwitchReading>? fxSwitches,
+    bool? fxStopChangeNotice,
+    int? footLengthFailure,
+    FootLengthRefusal? footLengthRefusal,
+    FootLengthOutcome? footLengthOutcome,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -282,9 +409,30 @@ class ControlState extends Equatable {
     footMixerFailure: footMixerFailure ?? this.footMixerFailure,
     footFade: footFade ?? this.footFade,
     footFadeFailure: footFadeFailure ?? this.footFadeFailure,
+    footFadeRefusedEmpty: footFadeRefusedEmpty ?? this.footFadeRefusedEmpty,
     footReverseFailure: footReverseFailure ?? this.footReverseFailure,
+    footReverseRefusedEmpty:
+        footReverseRefusedEmpty ?? this.footReverseRefusedEmpty,
     footPeelFailure: footPeelFailure ?? this.footPeelFailure,
     footPeelRefusal: footPeelRefusal ?? this.footPeelRefusal,
+    customLit: customLit ?? this.customLit,
+    assignedActionFailure: assignedActionFailure ?? this.assignedActionFailure,
+    assignedActionRefusal: assignedActionRefusal ?? this.assignedActionRefusal,
+    assignedActionLowDisk: assignedActionLowDisk ?? this.assignedActionLowDisk,
+    footTuner: footTuner ?? this.footTuner,
+    tunerPreferences: tunerPreferences ?? this.tunerPreferences,
+    footTunerFailure: footTunerFailure ?? this.footTunerFailure,
+    footTunerRefusal: footTunerRefusal ?? this.footTunerRefusal,
+    tunerDefaultSeeded: tunerDefaultSeeded ?? this.tunerDefaultSeeded,
+    pendingHolds: pendingHolds ?? this.pendingHolds,
+    holdThreshold: holdThreshold ?? this.holdThreshold,
+    footFxFailure: footFxFailure ?? this.footFxFailure,
+    footFxRefusal: footFxRefusal ?? this.footFxRefusal,
+    fxSwitches: fxSwitches ?? this.fxSwitches,
+    fxStopChangeNotice: fxStopChangeNotice ?? this.fxStopChangeNotice,
+    footLengthFailure: footLengthFailure ?? this.footLengthFailure,
+    footLengthRefusal: footLengthRefusal ?? this.footLengthRefusal,
+    footLengthOutcome: footLengthOutcome ?? this.footLengthOutcome,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -319,9 +467,29 @@ class ControlState extends Equatable {
     footMixerFailure,
     footFade,
     footFadeFailure,
+    footFadeRefusedEmpty,
     footReverseFailure,
+    footReverseRefusedEmpty,
     footPeelFailure,
     footPeelRefusal,
+    customLit,
+    assignedActionFailure,
+    assignedActionRefusal,
+    assignedActionLowDisk,
+    footTuner,
+    tunerPreferences,
+    footTunerFailure,
+    footTunerRefusal,
+    tunerDefaultSeeded,
+    pendingHolds,
+    holdThreshold,
+    footFxFailure,
+    footFxRefusal,
+    fxSwitches,
+    fxStopChangeNotice,
+    footLengthFailure,
+    footLengthRefusal,
+    footLengthOutcome,
     cursor,
     activeBank,
     excluded,

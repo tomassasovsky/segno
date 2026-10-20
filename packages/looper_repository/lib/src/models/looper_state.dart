@@ -7,6 +7,8 @@ import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
 import 'package:looper_repository/src/models/tuner_reading.dart';
+import 'package:segno_engine/segno_engine.dart'
+    show LooperMode, PitchMode, SpeedFactor, TempoFollowState, TrackState;
 
 /// The single source of looper truth: transport, the tracks, and engine status,
 /// projected from one engine snapshot.
@@ -25,13 +27,16 @@ class LooperState extends Equatable {
     this.outputSetup = const OutputSetup(),
     this.outputBusCount = 0,
     this.tailResetRev = 0,
-    this.inputPeaks = const [],
-    this.monitorPeaks = const [],
-    this.outputPeaks = const [],
     this.laneInputs = const {},
     this.laneOutputs = const {},
     this.laneCounts = const {},
     this.recordingInputLocks = const {},
+    this.speed = SpeedFactor.normal,
+    this.transposeBypass = false,
+    this.recordedTempoBpm = 0,
+    this.tempoFollow = TempoFollowState.free,
+    this.defaultFollowTempo = false,
+    this.defaultPitchMode = PitchMode.unchanged,
   });
 
   /// Master loop transport.
@@ -81,18 +86,6 @@ class LooperState extends Equatable {
   /// Advances once per Cut all sound the engine applied.
   final int tailResetRev;
 
-  /// Each hardware input's raw block peak, `0..1`, one entry per channel the
-  /// device has (before conditioning and trim). Live.
-  final List<double> inputPeaks;
-
-  /// What each input's monitor sends to the outputs, per channel the device
-  /// has (`0` while it is off or muted). Live.
-  final List<double> monitorPeaks;
-
-  /// Each hardware output's block peak after the master gain and limiter,
-  /// per channel the device has. Live.
-  final List<double> outputPeaks;
-
   /// Confirmed future source choices, including inactive slots.
   final Map<(int, int), int> laneInputs;
 
@@ -104,6 +97,27 @@ class LooperState extends Equatable {
 
   /// Tracks fenced by accepted record requests or active capture.
   final Set<int> recordingInputLocks;
+
+  /// The global Speed every recorded track plays at (#1179), as the engine
+  /// published it. [SpeedFactor.normal] until a request lands.
+  final SpeedFactor speed;
+
+  /// Whether Transpose is bypassed globally (#1179): every track plays dry,
+  /// its stored pitch kept in `Track.transpose`.
+  final bool transposeBypass;
+
+  /// The tempo the takes were recorded at (#1179), 0 with no material.
+  final double recordedTempoBpm;
+
+  /// What a song-tempo change does now, and why not when it is locked.
+  final TempoFollowState tempoFollow;
+
+  /// The Follow tempo default every track inherits (#1179): the
+  /// repository's accepted setting, `Track.followTempoOverride` beside it.
+  final bool defaultFollowTempo;
+
+  /// The Pitch default every track inherits (#1179).
+  final PitchMode defaultPitchMode;
 
   /// Output destination [bus]'s configured entries.
   List<TrackEffect> outputEffects(int bus) =>
@@ -122,6 +136,28 @@ class LooperState extends Equatable {
   /// Whether any track holds recorded audio.
   bool get hasContent => tracks.any((t) => t.hasContent);
 
+  /// Whether music is moving: a track plays, records or overdubs. The
+  /// engine's loop clock advances exactly then and otherwise waits at the
+  /// loop top. Not [TransportState.deviceRunning], which only says the audio
+  /// device is open.
+  bool get isPlaying => tracks.any(
+    (t) => t.state == TrackState.playing || t.isCapturing,
+  );
+
+  /// The Song section waiting for the playing one's next lap edge (#1077),
+  /// or null: only in Song, only on a track that holds a take and is not
+  /// capturing. The one rule the pedal projection and the stage both read.
+  int? get songWaitingSection {
+    final queued = transport.songQueuedTrack;
+    if (transport.looperMode != LooperMode.song ||
+        queued < 0 ||
+        queued >= tracks.length) {
+      return null;
+    }
+    final track = tracks[queued];
+    return track.hasContent && !track.isCapturing ? queued : null;
+  }
+
   @override
   List<Object?> get props => [
     transport,
@@ -136,12 +172,15 @@ class LooperState extends Equatable {
     outputSetup,
     outputBusCount,
     tailResetRev,
-    inputPeaks,
-    monitorPeaks,
-    outputPeaks,
     laneInputs,
     laneOutputs,
     laneCounts,
     recordingInputLocks,
+    speed,
+    transposeBypass,
+    recordedTempoBpm,
+    tempoFollow,
+    defaultFollowTempo,
+    defaultPitchMode,
   ];
 }

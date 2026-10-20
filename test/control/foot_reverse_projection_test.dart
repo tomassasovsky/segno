@@ -6,7 +6,10 @@ import 'package:segno/control/model/foot_reverse.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 LooperState _state(List<Track> overrides) => LooperState(
-  transport: const TransportState(isRunning: true, masterLengthFrames: 48000),
+  transport: const TransportState(
+    deviceRunning: true,
+    masterLengthFrames: 48000,
+  ),
   tracks: [
     for (var i = 0; i < 8; i++)
       overrides.firstWhere(
@@ -65,11 +68,11 @@ void main() {
           (1 << PedalButton.clear.index),
       0,
     );
-    // A slot-less pedal lights only for its accepted contact.
+    // A slot-less pedal lights only while held.
     final pressed = projectFrame(
       looper,
       overlay,
-      acceptedContacts: {PedalButton.stop},
+      pressed: {PedalButton.stop},
     );
     expect(pressed.activeButtonMask & (1 << PedalButton.stop.index), isNonZero);
   });
@@ -92,6 +95,12 @@ void main() {
           pending: true,
         ),
         Track(channel: 5, state: TrackState.playing, lengthFrames: 48000),
+        Track(
+          channel: 6,
+          state: TrackState.playing,
+          lengthFrames: 48000,
+          pendingLaunch: PendingLaunchAction.play,
+        ),
       ]),
       bank: 1,
     );
@@ -105,6 +114,9 @@ void main() {
     // Overdubbing and a pending arm keep the real direction, but are busy.
     expect(track(3), _track(3, recorded: true, busy: true, reversed: true));
     expect(track(4), _track(4, recorded: true, busy: true, reversed: false));
+    // A Count-in launch is pending: the engine refuses the toggle, so the
+    // track reads busy (#1209 delta review, D2).
+    expect(track(6), _track(6, recorded: true, busy: true, reversed: false));
   });
 }
 

@@ -11,8 +11,8 @@ import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
-import 'package:segno/control/binding/pedal_palette.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/model/foot_fx.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -86,12 +86,18 @@ LooperState _stateWith(
   int masterPositionFrames = 0,
   int sampleRate = 48000,
   bool countingIn = false,
+  LooperMode looperMode = LooperMode.multi,
+  int songQueuedTrack = -1,
+  double songQueueProgress = 0,
 }) => LooperState(
   transport: TransportState(
-    isRunning: true,
+    deviceRunning: true,
     masterLengthFrames: masterLengthFrames,
     masterPositionFrames: masterPositionFrames,
     countingIn: countingIn,
+    looperMode: looperMode,
+    songQueuedTrack: songQueuedTrack,
+    songQueueProgress: songQueueProgress,
   ),
   tracks: tracks,
   status: EngineStatus(sampleRate: sampleRate),
@@ -170,10 +176,14 @@ void main() {
     void setEngine(
       List<Track> tracks, {
       int masterPositionFrames = 0,
+      LooperMode looperMode = LooperMode.multi,
+      int songQueuedTrack = -1,
     }) {
       final state = _stateWith(
         tracks,
         masterPositionFrames: masterPositionFrames,
+        looperMode: looperMode,
+        songQueuedTrack: songQueuedTrack,
       );
       when(() => looper.state).thenReturn(state);
       looperStates.add(state);
@@ -183,6 +193,7 @@ void main() {
       takeIsLocked = false;
       looper = _MockLooperRepository();
       when(() => looper.sessionRevision).thenReturn(0);
+      when(() => looper.refusalNotices).thenReturn(0);
       when(() => looper.mixGeneration).thenReturn(0);
       when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
       when(() => looper.laneCount(any())).thenReturn(1);
@@ -449,6 +460,81 @@ void main() {
           expect(await settings.takeRetiredDefaultInteractionMode(), isNull);
         });
       }
+
+      // An install that was set up before this build: a stored pedal setup,
+      // bindings or boot default.
+      final upgrades = <String, Future<void> Function()>{
+        'pedal setup': () => settings.savePedalSetup(
+          const PedalSetup().encode(),
+        ),
+        'bindings': () => settings.savePedalBindings(
+          PedalBindingSet(const []).encode(),
+        ),
+        'boot default': () => setupStore.setString(
+          'looper.default_mode',
+          'record',
+        ),
+      };
+      for (final MapEntry(key: what, value: store) in upgrades.entries) {
+        test(
+          'the first FX entry after an upgrade with a stored $what says '
+          'once that Stop no longer sweeps the track chains (#1229)',
+          () async {
+            await store();
+            await cubit.load();
+            expect(cubit.state.fxStopChangeNotice, isFalse);
+            cubit.setMode(InteractionMode.fx);
+            expect(cubit.state.fxStopChangeNotice, isTrue);
+            await pumpEventQueue();
+            expect(await settings.loadFxStopChangeNoticeShown(), isTrue);
+          },
+        );
+      }
+
+      // A fresh install: never told, and boot writes nothing; the decision
+      // is stored before anything could make a later boot read it as an
+      // upgrade (#1229 review L1).
+      final freshStores = <String, Future<void> Function(ControlCubit)>{
+        'its first FX entry': (cubit) async =>
+            cubit.setMode(InteractionMode.fx),
+        'a pedal setup save': (cubit) => cubit.setPedalSetup(
+          const PedalSetup(modeHold: InteractionMode.mixer),
+        ),
+        'a bindings save': (cubit) => cubit.setGlobalBindings(
+          PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+              target: const FxChainTarget(
+                FxAddress(stage: FxStage.track),
+              ).canonicalString(),
+            ),
+          ]),
+        ),
+      };
+      for (final MapEntry(key: what, value: act) in freshStores.entries) {
+        test('a fresh install never hears about the old Stop, and stores '
+            'that at $what', () async {
+          await cubit.load();
+          await pumpEventQueue();
+          expect(
+            await settings.loadFxStopChangeNoticeShown(),
+            isFalse,
+            reason: 'boot writes nothing',
+          );
+          await act(cubit);
+          await pumpEventQueue();
+          expect(await settings.loadFxStopChangeNoticeShown(), isTrue);
+          cubit.setMode(InteractionMode.fx);
+          expect(cubit.state.fxStopChangeNotice, isFalse);
+        });
+      }
+
+      test('an install already told hears nothing on FX entry', () async {
+        await settings.saveFxStopChangeNoticeShown();
+        await cubit.load();
+        cubit.setMode(InteractionMode.fx);
+        expect(cubit.state.fxStopChangeNotice, isFalse);
+      });
 
       test('no stored default boots Record with no notice', () async {
         await cubit.load();
@@ -978,20 +1064,22 @@ void main() {
           await pumpEventQueue();
           final held = transport.lastFrame!;
           expect(held.isLit(PedalButton.undo), isTrue);
+          const cyan = PedalColor(0, 200, 220);
           final next = cubit.state.pedalSetup.copyWith(
-            palette: const PedalPalette().withChoice(
-              PedalButton.undo,
-              const BuiltInPaletteEntry(PedalPaletteColor.cyan),
+            leds: const PedalLedMap().withColor(
+              InteractionMode.record,
+              PedalLedGroup.undo,
+              PedalLedState.pressed,
+              cyan,
             ),
           );
           await cubit.setPedalSetup(next);
           final recolored = transport.lastFrame!;
           expect(recolored.isLit(PedalButton.undo), isTrue);
           expect(recolored.activeButtonMask, held.activeButtonMask);
-          expect(
-            recolored.colorFor(PedalButton.undo),
-            PedalPaletteColor.cyan.color,
-          );
+          // The held Undo takes the saved pressed colour at once.
+          expect(held.colorFor(PedalButton.undo), ledWhite);
+          expect(recolored.colorFor(PedalButton.undo), cyan);
           expect(await settings.loadPedalSetup(), next.encode());
           transport.press(PedalButton.undo, down: false);
           await pumpEventQueue();
@@ -1007,16 +1095,18 @@ void main() {
         await expectLater(
           cubit.setPedalSetup(
             cubit.state.pedalSetup.copyWith(
-              palette: const PedalPalette().withChoice(
-                PedalButton.undo,
-                const BuiltInPaletteEntry(PedalPaletteColor.red),
+              leds: const PedalLedMap().withColor(
+                InteractionMode.record,
+                PedalLedGroup.undo,
+                PedalLedState.pressed,
+                ledRed,
               ),
             ),
           ),
           throwsException,
         );
         expect(transport.lastFrame, held);
-        expect(cubit.state.pedalSetup.palette, const PedalPalette());
+        expect(cubit.state.pedalSetup.leds, const PedalLedMap());
         transport.press(PedalButton.undo, down: false);
         await pumpEventQueue();
       });
@@ -1028,9 +1118,11 @@ void main() {
           await pumpEventQueue();
           await cubit.setPedalSetup(
             cubit.state.pedalSetup.copyWith(
-              palette: const PedalPalette().withChoice(
-                PedalButton.mode,
-                const BuiltInPaletteEntry(PedalPaletteColor.blue),
+              leds: const PedalLedMap().withColor(
+                InteractionMode.record,
+                PedalLedGroup.mode,
+                PedalLedState.current,
+                ledBlue,
               ),
             ),
           );
@@ -1047,9 +1139,11 @@ void main() {
           cubit.setMode(InteractionMode.fx);
           await cubit.setPedalSetup(
             cubit.state.pedalSetup.copyWith(
-              palette: cubit.state.pedalSetup.palette.withChoice(
-                PedalButton.mode,
-                const BuiltInPaletteEntry(PedalPaletteColor.amber),
+              leds: cubit.state.pedalSetup.leds.withColor(
+                InteractionMode.fx,
+                PedalLedGroup.mode,
+                PedalLedState.pressed,
+                ledYellow,
               ),
             ),
           );
@@ -1383,7 +1477,7 @@ void main() {
         expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.off);
       });
 
-      test('refused Custom Record/Play never lights its contact', () async {
+      test('refused Custom Record/Play lights only while held', () async {
         await assign(
           PedalButton.stop,
           const ControlGesturePair(
@@ -1400,12 +1494,14 @@ void main() {
         verify(
           () => looper.record(channel: any(named: 'channel')),
         ).called(1);
-        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+        // Every press lights at once, refused or not; release darkens it.
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
         transport.press(PedalButton.stop, down: false);
         await pumpEventQueue();
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
       });
 
-      test('refused Custom Clear All keeps its contact dark', () async {
+      test('refused Custom Clear All lights only while held', () async {
         await assign(
           PedalButton.stop,
           const ControlGesturePair(
@@ -1423,13 +1519,14 @@ void main() {
         await pumpEventQueue();
 
         verify(() => looper.clearAll([0])).called(1);
-        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
         transport.press(PedalButton.stop, down: false);
         await pumpEventQueue();
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
       });
 
       test(
-        'normal Stop lights only on admission and clears on link loss',
+        'normal Stop lights while held, refused or not; link loss clears it',
         () async {
           setEngine(
             _tracksWith(const [
@@ -1445,9 +1542,10 @@ void main() {
           ).thenReturn(EngineResult.notReady);
           transport.press(PedalButton.stop, down: true);
           await pumpEventQueue();
-          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
           transport.press(PedalButton.stop, down: false);
           await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
 
           when(
             () => looper.setMute(
@@ -1473,7 +1571,7 @@ void main() {
         },
       );
 
-      test('Mute Stop refusal leaves its contact dark', () async {
+      test('Mute Stop refusal lights only while held', () async {
         setEngine(
           _tracksWith(const [
             Track(state: TrackState.playing, lengthFrames: 48000),
@@ -1488,45 +1586,25 @@ void main() {
         verify(
           () => looper.stopTrack(channel: any(named: 'channel')),
         ).called(1);
-        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
-        transport.press(PedalButton.stop, down: false);
-        await pumpEventQueue();
-      });
-
-      test('FX Stop contact follows accepted panic admission', () async {
-        trackChains[0] = [BuiltInEffect(type: TrackEffectType.drive)];
-        cubit.setMode(InteractionMode.fx);
-        transport.press(PedalButton.stop, down: true);
-        await pumpEventQueue();
-        verify(
-          () => looper.setTrackChainEnabled(channel: 0, enabled: false),
-        ).called(1);
         expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
         transport.press(PedalButton.stop, down: false);
         await pumpEventQueue();
         expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
-
-        chainEnabled.clear();
-        when(
-          () => looper.setTrackChainEnabled(channel: 0, enabled: false),
-        ).thenReturn(EngineResult.notReady);
-        transport.press(PedalButton.stop, down: true);
-        await pumpEventQueue();
-        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
-        transport.press(PedalButton.stop, down: false);
-        await pumpEventQueue();
       });
 
       test(
-        'FX Stop Hold lights an accepted restore after idle panic',
+        'an unbound FX Stop does nothing but still lights while held',
         () async {
-          chainEnabled[0] = false;
+          trackChains[0] = [BuiltInEffect(type: TrackEffectType.drive)];
           cubit.setMode(InteractionMode.fx);
           transport.press(PedalButton.stop, down: true);
           await pumpEventQueue();
-          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
-          await Future<void>.delayed(const Duration(milliseconds: 850));
-          await pumpEventQueue();
+          verifyNever(
+            () => looper.setTrackChainEnabled(
+              channel: any(named: 'channel'),
+              enabled: any(named: 'enabled'),
+            ),
+          );
           expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
           transport.press(PedalButton.stop, down: false);
           await pumpEventQueue();
@@ -1555,22 +1633,23 @@ void main() {
         setEngine(_tracksWith(const [Track(channel: 1, muted: true)]));
         await pumpEventQueue();
         expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);
+        const violet = PedalColor(177, 154, 250);
         await cubit.setPedalSetup(
           cubit.state.pedalSetup.copyWith(
-            palette: const PedalPalette().withChoice(
-              PedalButton.track1,
-              const BuiltInPaletteEntry(PedalPaletteColor.violet),
+            leds: const PedalLedMap().withCustomColor(
+              const PedalBindingKey(button: PedalButton.track1, bank: 0),
+              PedalLedState.lit,
+              violet,
             ),
           ),
         );
         expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);
-        expect(
-          transport.lastFrame?.colorFor(PedalButton.track1),
-          PedalPaletteColor.violet.color,
-        );
+        // Held, the pedal shows its pressed colour; released, its own.
+        expect(transport.lastFrame?.colorFor(PedalButton.track1), ledWhite);
         transport.press(PedalButton.track1, down: false);
         await pumpEventQueue();
         expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.blue);
+        expect(transport.lastFrame?.colorFor(PedalButton.track1), violet);
       });
 
       test(
@@ -1685,85 +1764,67 @@ void main() {
         },
       );
 
-      test('Stop is FX panic: every Track chain off', () async {
-        trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
-        trackChains[5] = [BuiltInEffect(type: TrackEffectType.reverb)];
-
-        await stomp(PedalButton.stop);
-
-        for (final channel in [1, 5]) {
-          verify(
-            () => looper.setTrackChainEnabled(channel: channel, enabled: false),
-          ).called(1);
-        }
-      });
-
-      test('FX panic leaves a track with NO chain alone — a bypass persisted '
-          'for an empty chain would silently mute the effects added to that '
-          'track later, and the boot restore replays it forever', () async {
+      test('an unbound Stop is INERT in FX mode, tap and hold alike (pen '
+          '10/03, #1229)', () async {
         trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
 
         await stomp(PedalButton.stop);
+        await hold(PedalButton.stop);
 
-        expect(chainEnabled, {1: false}, reason: 'only the real chain flips');
-        for (final channel in [0, 2, 3, 4, 5, 6, 7]) {
-          verifyNever(
-            () => looper.setTrackChainEnabled(channel: channel, enabled: false),
-          );
-          expect(await settings.loadTrackFxChain(channel), isNull);
-        }
+        verifyNever(
+          () => looper.setTrackChainEnabled(
+            channel: any(named: 'channel'),
+            enabled: any(named: 'enabled'),
+          ),
+        );
+        expect(chainEnabled, isEmpty);
+        expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
       });
 
-      test('the FX panic fires on the PRESS, so a synthetic release (the '
-          'plate releasing a held switch as it leaves the tree) cannot '
-          'bypass anything on its own', () async {
+      test('stop() in FX mode changes no chain (#1229)', () async {
         trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
-
-        // Press only — no release yet.
-        transport.press(PedalButton.stop, down: true);
-        await pumpEventQueue();
-        expect(chainEnabled[1], isFalse, reason: 'panic landed on the press');
-
-        // A release on its own is inert: it only retires the pending hold.
-        chainEnabled.clear();
-        transport.press(PedalButton.stop, down: false);
+        cubit.stop();
         await pumpEventQueue();
         expect(chainEnabled, isEmpty);
       });
 
-      test('a Stop LONG-PRESS follows the panic with a restore', () async {
+      test('Track FX off and Track FX on run from any assigned control, '
+          'and off leaves a track with NO chain alone', () async {
         trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
-
-        await hold(PedalButton.stop);
-
-        // The press panicked, the hold restored — landing on the state the
-        // restore promises regardless of what the pattern was before.
-        verify(
-          () => looper.setTrackChainEnabled(channel: 1, enabled: false),
-        ).called(1);
-        verify(
-          () => looper.setTrackChainEnabled(channel: 1, enabled: true),
-        ).called(1);
-        expect(chainEnabled[1], isTrue);
-      });
-
-      test('a Stop hold that leaves FX mode before the threshold does not '
-          'restore from a mode with no chain LEDs', () async {
-        trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
-
-        transport.press(PedalButton.stop, down: true);
-        await pumpEventQueue();
-        expect(chainEnabled[1], isFalse); // the press panicked
-
-        cubit.setMode(InteractionMode.record); // foot leaves FX mid-hold
-        await Future<void>.delayed(const Duration(milliseconds: 850));
-        transport.press(PedalButton.stop, down: false);
-        await pumpEventQueue();
-
-        verifyNever(
-          () => looper.setTrackChainEnabled(channel: 1, enabled: true),
+        trackChains[5] = [BuiltInEffect(type: TrackEffectType.reverb)];
+        // A stale bypass on a chain-less track, the state "on" exists to cure.
+        chainEnabled[2] = false;
+        await cubit.setPedalSetup(
+          cubit.state.pedalSetup
+              .withCustom(
+                PedalButton.stop,
+                bank: 0,
+                pair: const ControlGesturePair(
+                  press: CommandAction(ControlCommand.trackFxOff),
+                ),
+              )
+              .withCustom(
+                PedalButton.undo,
+                bank: 0,
+                pair: const ControlGesturePair(
+                  press: CommandAction(ControlCommand.trackFxOn),
+                ),
+              ),
         );
-        expect(chainEnabled[1], isFalse);
+        cubit.setMode(InteractionMode.custom);
+
+        await stomp(PedalButton.stop);
+        // A bypass persisted for an empty chain would silently mute the
+        // effects added to that track later: only the real chains flip.
+        expect(chainEnabled, {1: false, 2: false, 5: false});
+        for (final channel in [0, 2, 3, 4, 6, 7]) {
+          expect(await settings.loadTrackFxChain(channel), isNull);
+        }
+
+        await stomp(PedalButton.undo);
+        // On is "all on", the empties included: a chain-less track can carry
+        // a stale bypass this is the cure for.
+        expect(chainEnabled, {1: true, 2: true, 5: true});
       });
 
       test(
@@ -1824,18 +1885,30 @@ void main() {
       });
 
       test('the encoder still drives master gain', () async {
-        transport.turn(4);
+        // EncoderNavigation routes a stage turn here (#1276).
+        cubit.encoderTurned(4);
         await pumpEventQueue();
         verify(() => looper.setMasterGain(any())).called(1);
       });
 
-      test('MODE Hold exits the FX door without arming performance', () async {
+      test('a MODE hold only exits the FX door, on contact, without arming '
+          'performance', () async {
         await hold(PedalButton.mode);
-        expect(cubit.state.mode, InteractionMode.custom);
+        expect(cubit.state.mode, InteractionMode.record);
         expect(performance.armedDirectory, isNull);
       });
 
-      test('a MODE Press from FX enters its assigned Mute mode', () async {
+      test('MODE is the FX face Exit: back to the mode FX was entered '
+          'from, on contact (pen 10/03)', () async {
+        transport.press(PedalButton.mode, down: true);
+        await pumpEventQueue();
+        expect(cubit.state.mode, InteractionMode.record);
+        transport.press(PedalButton.mode, down: false);
+        await pumpEventQueue();
+
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..setMode(InteractionMode.fx);
         await stomp(PedalButton.mode);
         expect(cubit.state.mode, InteractionMode.mute);
       });
@@ -1852,15 +1925,27 @@ void main() {
         );
       });
 
-      test('a panic over already-disabled chains writes nothing twice', () {
-        trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
-        cubit
-          ..panicTrackChains()
-          ..panicTrackChains();
-        verify(
-          () => looper.setTrackChainEnabled(channel: 1, enabled: false),
-        ).called(1);
-      });
+      test(
+        'Track FX off over already-disabled chains writes nothing twice',
+        () async {
+          trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
+          await cubit.setPedalSetup(
+            cubit.state.pedalSetup.withCustom(
+              PedalButton.stop,
+              bank: 0,
+              pair: const ControlGesturePair(
+                press: CommandAction(ControlCommand.trackFxOff),
+              ),
+            ),
+          );
+          cubit.setMode(InteractionMode.custom);
+          await stomp(PedalButton.stop);
+          await stomp(PedalButton.stop);
+          verify(
+            () => looper.setTrackChainEnabled(channel: 1, enabled: false),
+          ).called(1);
+        },
+      );
     });
 
     group('cursor / bank', () {
@@ -1927,7 +2012,7 @@ void main() {
       });
 
       test(
-        'a refused Record press with no retry owed keeps its contact dark',
+        'a refused Record press with no retry owed lights only while held',
         () async {
           when(
             () => looper.record(channel: any(named: 'channel')),
@@ -1935,9 +2020,10 @@ void main() {
 
           transport.press(PedalButton.recPlay, down: true);
           await pumpEventQueue();
-          expect(transport.lastFrame?.isLit(PedalButton.recPlay), isFalse);
+          expect(transport.lastFrame?.isLit(PedalButton.recPlay), isTrue);
           transport.press(PedalButton.recPlay, down: false);
           await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.recPlay), isFalse);
         },
       );
 
@@ -2599,6 +2685,356 @@ void main() {
       });
     });
 
+    group('Song sections in Mute mode (#1077)', () {
+      final sections = _tracksWith(const [
+        Track(state: TrackState.playing, lengthFrames: 48000),
+        Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+        Track(channel: 5, state: TrackState.stopped, lengthFrames: 48000),
+      ]);
+
+      test('a section press is a Play request; the engine queues, cancels '
+          'and replaces', () {
+        setEngine(sections, looperMode: LooperMode.song);
+        cubit.setMode(InteractionMode.mute);
+        final overlay = cubit.state;
+        cubit.trackPressed(1);
+        verify(() => looper.play(channel: 1)).called(1);
+        setEngine(sections, looperMode: LooperMode.song, songQueuedTrack: 1);
+        cubit.trackPressed(1); // the engine cancels the waiting target
+        verify(() => looper.play(channel: 1)).called(1);
+        cubit.trackPressed(5); // the engine replaces it
+        verify(() => looper.play(channel: 5)).called(1);
+        cubit.trackPressed(0); // the playing source cancels the request
+        verify(() => looper.play()).called(1);
+        verifyNever(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        );
+        verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+        expect(cubit.state.excluded, overlay.excluded);
+        expect(cubit.state.parkedResume, overlay.parkedResume);
+      });
+
+      test('a press while a take is captured leaves the mute alone', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.recording),
+            Track(
+              channel: 1,
+              state: TrackState.stopped,
+              lengthFrames: 48000,
+              muted: true,
+            ),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..trackPressed(1);
+        verifyNever(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        );
+        verifyNever(() => looper.play(channel: any(named: 'channel')));
+      });
+
+      test('Record mode asks for a muted stopped section like Mute mode', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(
+              channel: 1,
+              state: TrackState.stopped,
+              lengthFrames: 48000,
+              muted: true,
+            ),
+            Track(channel: 2, state: TrackState.recording),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..selectTrack(1)
+          ..recPlay();
+        // A take runs on track 3: the request would be refused, so the mute
+        // stays as it is and nothing is asked.
+        verifyNever(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        );
+        verifyNever(() => looper.play(channel: any(named: 'channel')));
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(
+              channel: 1,
+              state: TrackState.stopped,
+              lengthFrames: 48000,
+              muted: true,
+            ),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit.recPlay();
+        verifyInOrder([
+          () => looper.setMute(muted: false, channel: 1),
+          () => looper.play(channel: 1),
+        ]);
+      });
+
+      test('an empty track asks for nothing', () {
+        setEngine(sections, looperMode: LooperMode.song);
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..trackPressed(2);
+        verifyNever(() => looper.play(channel: any(named: 'channel')));
+      });
+
+      test('unmutes a stopped muted target before asking for it', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000, muted: true),
+            Track(
+              channel: 5,
+              state: TrackState.stopped,
+              lengthFrames: 48000,
+              muted: true,
+            ),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..trackPressed(5);
+        verifyInOrder([
+          () => looper.setMute(muted: false, channel: 5),
+          () => looper.play(channel: 5),
+        ]);
+        // A press on the muted playing section only brings it back into the
+        // mix: a Play would also drop the section waiting to follow it.
+        cubit.trackPressed(0);
+        verify(() => looper.setMute(muted: false)).called(1);
+        verifyNever(() => looper.play());
+      });
+
+      test('Rec/Play while a section plays never asks for another', () {
+        setEngine(sections, looperMode: LooperMode.song);
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..recPlay();
+        verifyNever(() => looper.play(channel: any(named: 'channel')));
+        setEngine(sections, looperMode: LooperMode.song, songQueuedTrack: 5);
+        cubit.recPlay();
+        verifyNever(() => looper.play(channel: any(named: 'channel')));
+      });
+
+      test('Stop stops the playing section and the one that waits', () {
+        setEngine(sections, looperMode: LooperMode.song, songQueuedTrack: 1);
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..stop();
+        verify(() => looper.stopTrack()).called(1);
+        verify(() => looper.stopTrack(channel: 1)).called(1);
+        verifyNever(() => looper.stopTrack(channel: 5));
+        expect(cubit.state.parkedResume, {0});
+      });
+
+      test('Stop stops a section the engine started after the last poll', () {
+        final parked = _tracksWith(const [
+          Track(state: TrackState.stopped, lengthFrames: 48000),
+          Track(channel: 5, state: TrackState.stopped, lengthFrames: 48000),
+        ]);
+        setEngine(parked, looperMode: LooperMode.song);
+        cubit.setMode(InteractionMode.mute);
+        when(() => looper.state).thenReturn(
+          _stateWith(
+            _tracksWith(const [
+              Track(state: TrackState.stopped, lengthFrames: 48000),
+              Track(
+                channel: 5,
+                state: TrackState.playing,
+                lengthFrames: 48000,
+              ),
+            ]),
+            looperMode: LooperMode.song,
+          ),
+        );
+        cubit.stop();
+        verify(() => looper.stopTrack(channel: 5)).called(1);
+        verifyNever(() => looper.stopTrack());
+        expect(cubit.state.parkedResume, {5});
+      });
+
+      test('Stop latches the section the engine plays now, even when the '
+          'handoff landed after the last poll', () {
+        setEngine(sections, looperMode: LooperMode.song, songQueuedTrack: 1);
+        cubit.setMode(InteractionMode.mute);
+        // The engine handed off to section 1; the cubit has not polled yet.
+        when(() => looper.state).thenReturn(
+          _stateWith(
+            _tracksWith(const [
+              Track(state: TrackState.stopped, lengthFrames: 48000),
+              Track(
+                channel: 1,
+                state: TrackState.playing,
+                lengthFrames: 48000,
+              ),
+              Track(
+                channel: 5,
+                state: TrackState.stopped,
+                lengthFrames: 48000,
+              ),
+            ]),
+            looperMode: LooperMode.song,
+          ),
+        );
+        cubit.stop();
+        verify(() => looper.stopTrack()).called(1);
+        verify(() => looper.stopTrack(channel: 1)).called(1);
+        verifyNever(() => looper.stopTrack(channel: 5));
+        expect(cubit.state.parkedResume, {1});
+      });
+
+      test('a parked Stop sends nothing', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 5, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..stop();
+        verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+      });
+
+      test(
+        'entering Mute keeps the section a Stop in another mode latched',
+        () {
+          final playing = _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 2, state: TrackState.playing, lengthFrames: 48000),
+          ]);
+          setEngine(playing, looperMode: LooperMode.song);
+          cubit
+            ..setMode(InteractionMode.fade)
+            ..stop();
+          expect(cubit.state.parkedResume, {2});
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.stopped, lengthFrames: 48000),
+              Track(channel: 2, state: TrackState.stopped, lengthFrames: 48000),
+            ]),
+            looperMode: LooperMode.song,
+          );
+          cubit
+            ..setMode(InteractionMode.mute)
+            ..recPlay();
+          verify(() => looper.play(channel: 2)).called(1);
+          verifyNever(() => looper.play());
+        },
+      );
+
+      test('Stop then Rec/Play starts only the section that was playing', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 5, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..stop();
+        expect(cubit.state.parkedResume, {5});
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 5, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit.recPlay();
+        verify(() => looper.play(channel: 5)).called(1);
+        verifyNever(() => looper.play());
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 5, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        expect(cubit.state.parkedResume, isEmpty);
+      });
+
+      test('parked with nothing latched starts the selected section, else the '
+          'first', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+            Track(channel: 5, state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+          looperMode: LooperMode.song,
+        );
+        cubit
+          ..selectTrack(5)
+          ..setMode(InteractionMode.mute)
+          ..recPlay();
+        verify(() => looper.play(channel: 5)).called(1);
+        verifyNever(() => looper.play());
+        cubit
+          ..setMode(InteractionMode.record)
+          ..selectTrack(3)
+          ..setMode(InteractionMode.mute)
+          ..recPlay();
+        verify(() => looper.play()).called(1);
+      });
+
+      test('a bank B switch asks for its own section', () async {
+        setEngine(sections, looperMode: LooperMode.song);
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..browseBank(1);
+        transport.press(PedalButton.track2, down: true);
+        await pumpEventQueue();
+        verify(() => looper.play(channel: 5)).called(1);
+        verifyNever(() => looper.play(channel: 1));
+      });
+
+      test('the pedal frame fills the waiting section on the plate', () async {
+        setEngine(sections, looperMode: LooperMode.song);
+        cubit.setMode(InteractionMode.mute);
+        final state = _stateWith(
+          sections,
+          looperMode: LooperMode.song,
+          songQueuedTrack: 1,
+          songQueueProgress: 0.25,
+        );
+        when(() => looper.state).thenReturn(state);
+        looperStates.add(state);
+        await pumpEventQueue();
+        final frame = transport.lastFrame!;
+        expect(frame.queuedButton, PedalButton.track2);
+        expect(frame.queuedProgress, 63);
+        expect(frame.isLit(PedalButton.track2), isTrue);
+      });
+
+      test('Multi keeps its mute and resume meaning', () {
+        setEngine(sections);
+        cubit
+          ..setMode(InteractionMode.mute)
+          ..trackPressed(1);
+        verify(() => looper.setMute(muted: false, channel: 1)).called(1);
+        verify(() => looper.play(channel: 1)).called(1);
+      });
+    });
+
     group('clearAll', () {
       test(
         'wipes content AND redo-able tracks, unmuting and persisting',
@@ -3089,7 +3525,7 @@ void main() {
       });
 
       test('the encoder drives the master gain', () async {
-        transport.turn(-8); // -8 detents
+        cubit.encoderTurned(-8); // -8 detents, routed by EncoderNavigation
         await pumpEventQueue();
         verify(() => looper.setMasterGain(any())).called(1);
       });
@@ -3746,16 +4182,17 @@ void main() {
             expect(cubit.state.activeBank, 1);
             expect(chainEnabled.containsKey(3), isFalse);
 
+            // MODE is the FX face's Exit (pen 10/03): a binding never
+            // shadows it.
             await stomp(PedalButton.mode);
-            expect(cubit.state.mode, InteractionMode.mute);
+            expect(cubit.state.mode, InteractionMode.record);
           },
         );
       });
 
-      group('long-press system gestures survive a remap (B12)', () {
-        test('a bound Stop runs its binding on the press but KEEPS the '
-            "restore-all hold — the panic's only undo must stay reachable "
-            'whatever the user mapped', () async {
+      group('bound transport switches in FX mode (#1229)', () {
+        test('a bound Stop runs only its binding: no panic on the press and '
+            'no restore on the hold', () async {
           trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
           await cubit.setGlobalBindings(
             PedalBindingSet([bind(PedalButton.stop)]),
@@ -3767,28 +4204,161 @@ void main() {
 
           await Future<void>.delayed(const Duration(milliseconds: 850));
           await release(PedalButton.stop);
-
-          // The hold restored every Track chain, the one the binding had just
-          // bypassed included. Channel 1 was never bypassed (the binding took
-          // the press instead of the panic), so the sweep skips it as a no-op
-          // rather than writing a flag it already holds.
-          expect(chainEnabled[3], isTrue, reason: 'the hold restored it');
+          expect(chainEnabled[3], isFalse, reason: 'no restore-all hold');
           expect(chainEnabled.containsKey(1), isFalse);
         });
 
-        test(
-          'MODE Hold still enters Custom despite an attempted remap',
-          () async {
-            await cubit.setGlobalBindings(
-              PedalBindingSet([bind(PedalButton.mode)]),
-            );
-            await press(PedalButton.mode);
-            await Future<void>.delayed(const Duration(milliseconds: 850));
-            await release(PedalButton.mode);
-            expect(cubit.state.mode, InteractionMode.custom);
-            expect(performance.armedDirectory, isNull);
-          },
-        );
+        test('bound Rec/Play, Stop, Undo and Clear light for what their '
+            'binding drives, and their face reads the same', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              bind(PedalButton.recPlay),
+              bind(PedalButton.clear),
+            ]),
+          );
+          await pumpEventQueue();
+          // chain 3 starts enabled: both bound switches are lit; the unbound
+          // Stop and Undo are dark.
+          expect(transport.lastFrame?.isLit(PedalButton.recPlay), isTrue);
+          expect(transport.lastFrame?.isLit(PedalButton.clear), isTrue);
+          expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
+          expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
+          expect(
+            cubit.state.fxSwitches[PedalButton.recPlay],
+            (lit: true, stale: false),
+          );
+
+          await stomp(PedalButton.recPlay);
+          expect(chainEnabled[3], isFalse);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.recPlay), isFalse);
+          expect(transport.lastFrame?.isLit(PedalButton.clear), isFalse);
+          expect(
+            cubit.state.fxSwitches[PedalButton.clear],
+            (lit: false, stale: false),
+          );
+        });
+
+        test('a stale binding is refused with one notice and lights '
+            'nothing', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              bind(
+                PedalButton.undo,
+                target: const FxChainTarget(
+                  FxAddress(stage: FxStage.output, index: 9),
+                ),
+              ),
+            ]),
+          );
+          await pumpEventQueue();
+          expect(
+            cubit.state.fxSwitches[PedalButton.undo],
+            (lit: false, stale: true),
+          );
+          final before = cubit.state.footFxFailure;
+          await stomp(PedalButton.undo);
+          expect(cubit.state.footFxFailure, before + 1);
+          expect(cubit.state.footFxRefusal, FootFxRefusal.unavailable);
+          expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
+        });
+
+        test('a refused write is reported as a failure', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.recPlay)]),
+          );
+          when(
+            () => looper.setTrackChainEnabled(
+              channel: 3,
+              enabled: any(named: 'enabled'),
+            ),
+          ).thenReturn(EngineResult.notReady);
+          final before = cubit.state.footFxFailure;
+          await stomp(PedalButton.recPlay);
+          expect(cubit.state.footFxFailure, before + 1);
+          expect(cubit.state.footFxRefusal, FootFxRefusal.failed);
+        });
+
+        test('an on-screen contact runs a binding and a cancelled one '
+            'still restores a held momentary', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              bind(PedalButton.track1, bank: 0),
+              bind(PedalButton.clear, behavior: BindingBehavior.momentary),
+            ]),
+          );
+          final tap = Object();
+          cubit
+            ..footFxPressed(PedalButton.track1, tap)
+            ..footFxReleased(PedalButton.track1, tap);
+          await pumpEventQueue();
+          expect(chainEnabled[3], isFalse, reason: 'the toggle ran');
+
+          final held = Object();
+          cubit.footFxPressed(PedalButton.clear, held);
+          await pumpEventQueue();
+          expect(chainEnabled[3], isTrue, reason: 'held on');
+          expect(
+            cubit.state.fxSwitches[PedalButton.clear],
+            (lit: true, stale: false),
+          );
+          cubit.footFxCancelled(PedalButton.clear, held);
+          await pumpEventQueue();
+          expect(chainEnabled[3], isFalse, reason: 'restored, never stranded');
+          expect(
+            cubit.state.fxSwitches[PedalButton.clear],
+            (lit: false, stale: false),
+          );
+        });
+
+        test('accessible activation toggles, skips a momentary, pages Bank '
+            'and exits by MODE', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              bind(PedalButton.track1, bank: 0),
+              bind(
+                PedalButton.track2,
+                bank: 0,
+                behavior: BindingBehavior.momentary,
+              ),
+            ]),
+          );
+          cubit.activateFootFxPedal(PedalButton.track2);
+          expect(chainEnabled.containsKey(3), isFalse);
+          cubit.activateFootFxPedal(PedalButton.track1);
+          expect(chainEnabled[3], isFalse);
+          // An unbound track switch toggles its own chain.
+          cubit.activateFootFxPedal(PedalButton.track3);
+          expect(chainEnabled[2], isFalse);
+          cubit.activateFootFxPedal(PedalButton.bank);
+          expect(cubit.state.activeBank, 1);
+          cubit.activateFootFxPedal(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.record);
+          // Outside FX mode it does nothing.
+          cubit.activateFootFxPedal(PedalButton.bank);
+          expect(cubit.state.activeBank, 1);
+        });
+
+        test('fxSwitches is empty outside FX mode', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.recPlay)]),
+          );
+          expect(cubit.state.fxSwitches, isNotEmpty);
+          cubit.setMode(InteractionMode.record);
+          expect(cubit.state.fxSwitches, isEmpty);
+        });
+
+        test('MODE exits on contact despite an attempted remap', () async {
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.mode)]),
+          );
+          await press(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.record);
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          await release(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.record);
+          expect(performance.armedDirectory, isNull);
+        });
       });
 
       group('momentary (B1)', () {
@@ -4165,21 +4735,67 @@ void main() {
     });
 
     group('frame projection (frames out via PedalRepository)', () {
-      test('normal Undo lights only for accepted physical contact', () async {
-        setEngine(_emptyTracks());
-        transport.press(PedalButton.undo, down: true);
-        await pumpEventQueue();
-        expect(transport.lastFrame?.isLit(PedalButton.undo), isTrue);
-        transport.press(PedalButton.undo, down: false);
-        await pumpEventQueue();
-        expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
+      test(
+        'normal Undo lights while held; a take-locked press is ignored',
+        () async {
+          setEngine(_emptyTracks());
+          transport.press(PedalButton.undo, down: true);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.undo), isTrue);
+          transport.press(PedalButton.undo, down: false);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
 
-        takeIsLocked = true;
-        transport.press(PedalButton.undo, down: true);
+          takeIsLocked = true;
+          transport.press(PedalButton.undo, down: true);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
+          transport.press(PedalButton.undo, down: false);
+          await pumpEventQueue();
+        },
+      );
+
+      test('every press lights its pedal in the frame the press itself '
+          'pushes, MODE included, before any engine answer', () async {
+        setEngine(_emptyTracks());
         await pumpEventQueue();
-        expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
-        transport.press(PedalButton.undo, down: false);
+        for (final mode in [
+          InteractionMode.record,
+          InteractionMode.mute,
+          InteractionMode.fx,
+          InteractionMode.custom,
+          InteractionMode.peel,
+        ]) {
+          cubit.setMode(mode);
+          // MODE last: its press leaves the mode (on release, or on contact
+          // in FX and Custom), and the held switch still shows first.
+          for (final button in [
+            PedalButton.undo,
+            PedalButton.clear,
+            PedalButton.track3,
+            PedalButton.mode,
+          ]) {
+            transport.press(button, down: true);
+            await pumpEventQueue();
+            final held = transport.lastFrame!;
+            expect(held.isLit(button), isTrue, reason: '$mode $button');
+            expect(
+              held.colorFor(button),
+              // Clear keeps the red it always lit while held; a Custom
+              // assignment's own pressed colour defaults to white.
+              button == PedalButton.clear && mode != InteractionMode.custom
+                  ? ledRed
+                  : ledWhite,
+              reason: '$mode $button',
+            );
+            transport.press(button, down: false);
+            await pumpEventQueue();
+          }
+        }
+        // MODE is always lit; its press is told apart by the flash colour.
+        cubit.setMode(InteractionMode.record);
         await pumpEventQueue();
+        expect(transport.lastFrame!.colorFor(PedalButton.mode), ledRed);
       });
 
       test('pushes an encoded frame to the pedal link', () async {
@@ -4208,7 +4824,7 @@ void main() {
         transport.sent.clear();
 
         // -8 detents at step 1/64 -> gain 0.875 (the pedal renders this).
-        transport.turn(-8);
+        cubit.encoderTurned(-8);
         await pumpEventQueue();
 
         expect(transport.sent, isNotEmpty);
@@ -4298,15 +4914,20 @@ void main() {
         );
       });
 
-      test('Clear on an empty rig leaves its LED dark', () async {
-        setEngine(_emptyTracks());
-        transport.press(PedalButton.clear, down: true);
-        await pumpEventQueue();
-        expect(transport.lastFrame?.clearFadeActive, isFalse);
-        expect(transport.lastFrame?.isLit(PedalButton.clear), isFalse);
-        transport.press(PedalButton.clear, down: false);
-        await pumpEventQueue();
-      });
+      test(
+        'Clear on an empty rig fades nothing but lights while held',
+        () async {
+          setEngine(_emptyTracks());
+          transport.press(PedalButton.clear, down: true);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.clearFadeActive, isFalse);
+          expect(transport.lastFrame?.isLit(PedalButton.clear), isTrue);
+          expect(transport.lastFrame?.colorFor(PedalButton.clear), ledRed);
+          transport.press(PedalButton.clear, down: false);
+          await pumpEventQueue();
+          expect(transport.lastFrame?.isLit(PedalButton.clear), isFalse);
+        },
+      );
 
       test(
         'global_color carries the ring activity color (recording = red)',

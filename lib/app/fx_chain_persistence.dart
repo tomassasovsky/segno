@@ -165,7 +165,9 @@ class FxChainPersistence {
     chains[allTracks] = encoded(allTracks, _looper.allTracksChainEnvelope());
 
     final inputs = <int, _SessionBootMonitor>{};
-    for (var input = 0; input < kMaxMonitoredInputs; input++) {
+    // Hardware inputs; instrument sources (#1197) persist with their
+    // instrument in a later part.
+    for (var input = 0; input < kMaxChannels; input++) {
       final monitor = monitors[input] ?? InputMonitor(input: input);
       final address = FxAddress(stage: FxStage.input, index: input);
       inputs[input] = _SessionBootMonitor(

@@ -5,28 +5,49 @@ class PedalState extends Equatable {
   const PedalState({
     this.status = PedalLinkStatus.disconnected,
     this.firmwareVersion,
+    this.protocolVersion,
     this.frame,
     this.ctrl = const {},
+    this.powerSupply,
   });
   final PedalLinkStatus status;
   final String? firmwareVersion;
+
+  /// The link protocol the board's hello names, or null while it is quiet.
+  final int? protocolVersion;
   final PedalStateFrame? frame;
   final Map<PedalCtrlInput, PedalCtrlReading> ctrl;
+
+  /// What the console's USB-C supply negotiated, while the board reports it.
+  final PedalPowerSupply? powerSupply;
   PedalState copyWith({
     PedalLinkStatus? status,
     PedalStateFrame? frame,
     String? Function()? firmwareVersion,
+    int? Function()? protocolVersion,
     Map<PedalCtrlInput, PedalCtrlReading>? ctrl,
+    PedalPowerSupply? Function()? powerSupply,
   }) => PedalState(
     status: status ?? this.status,
     frame: frame ?? this.frame,
     firmwareVersion: firmwareVersion != null
         ? firmwareVersion()
         : this.firmwareVersion,
+    protocolVersion: protocolVersion != null
+        ? protocolVersion()
+        : this.protocolVersion,
     ctrl: ctrl ?? this.ctrl,
+    powerSupply: powerSupply != null ? powerSupply() : this.powerSupply,
   );
   @override
-  List<Object?> get props => [status, firmwareVersion, frame, ctrl];
+  List<Object?> get props => [
+    status,
+    firmwareVersion,
+    protocolVersion,
+    frame,
+    ctrl,
+    powerSupply,
+  ];
 }
 
 /// What a CTRL control last reported.

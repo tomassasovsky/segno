@@ -29,6 +29,7 @@
 
 #include "audio_ring.h"  /* le_audio_ring_alloc/release (capture rings) */
 #include "engine_cache.h" /* le_cache_tick (wet-cache scheduler heartbeat) */
+#include "engine_render.h" /* le_render_take (Bounce, #1202) */
 #include "engine_restore.h" /* le_restore_tick + le_restore_commit_layer (#697) */
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
@@ -149,6 +150,8 @@ static int track_select_slot(le_track* t, int undo_count, int redo_count,
   const int live = load_i32(&t->lanes[0].a_live);
   for (int i = 0; i < LE_POOL_SLOTS; ++i) {
     if (i == live) continue;
+    /* A Bounce in flight (#1202) holds two slots no stack names yet. */
+    if (t->bounce_pin[0] == i + 1 || t->bounce_pin[1] == i + 1) continue;
     int used = 0;
     for (int k = 0; k < undo_count && !used; ++k) {
       if (t->undo_stack[k].slot == i) used = 1;
@@ -159,11 +162,17 @@ static int track_select_slot(le_track* t, int undo_count, int redo_count,
     for (int k = 0; k < outstanding_count && !used; ++k) {
       if (t->outstanding_slots[k] == i) used = 1;
     }
-    if (!used) return i;
+    if (!used) {
+      /* Handed out for new PCM: no key names it any more (a_src_key). */
+      atomic_store_explicit(&t->a_slot_key[i], 0u, memory_order_relaxed);
+      return i;
+    }
   }
   for (int e = 0; e < undo_count; ++e) {
     if (t->undo_stack[e].kind == LE_HIST_CLEAR) continue;
     *evict = e;
+    atomic_store_explicit(&t->a_slot_key[t->undo_stack[e].slot], 0u,
+                          memory_order_relaxed);
     return t->undo_stack[e].slot;
   }
   return -1;
@@ -349,7 +358,7 @@ static void le_undo_swap(le_engine* engine, le_track* t) {
      * a restoration swap as PROCESSED rather than as a peelable layer. */
     (void)le_redo_push(t, le_hist_kind_entry(top.kind, live, 0));
   }
-  le_publish_live_image(engine, t, top.slot, id); /* [R1] undo swap */
+  le_publish_live_image(engine, t, top.slot, id, 1); /* [R1] undo swap */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
 }
@@ -375,7 +384,7 @@ static void le_peel_apply(le_engine* engine, le_track* t, int idx,
   }
   t->undo_stack[t->undo_count - 1] =
       le_hist_kind_entry(LE_HIST_PEEL, live, skipped);
-  le_publish_live_image(engine, t, target, id); /* [R1] peel swap */
+  le_publish_live_image(engine, t, target, id, 1); /* [R1] peel swap */
 }
 
 /* #595: drops every lane's recoverable flag once NOTHING on this track can
@@ -458,7 +467,8 @@ int32_t le_restore_commit_layer(le_engine* engine, int32_t channel,
    * started since. */
   const int32_t est = le_effective_state(t);
   if (est != LE_TRACK_PLAYING && est != LE_TRACK_STOPPED) return LE_ERR_INVALID;
-  if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
+  if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire) ||
+      t->length_pending) {
     return LE_ERR_INVALID;
   }
   /* [B5]: the take must not have moved since the worker copied it. */
@@ -510,7 +520,7 @@ int32_t le_restore_commit_layer(le_engine* engine, int32_t channel,
    * motion (invalidating and re-rendering the wet cache). Image 0 (#1143):
    * processed material has no staged copy, so a running capture's stem fails
    * truthfully at this swap (323/0) instead of replaying the raw take. */
-  le_publish_live_image(engine, t, slot, 0);
+  le_publish_live_image(engine, t, slot, 0, 0);
   return LE_OK;
 }
 
@@ -588,6 +598,15 @@ static int32_t le_effective_master_len(le_engine* engine, le_track* t) {
  * grid or records over one (a record behind a queued restore of the only
  * take). */
 static int32_t le_rig_effective_master_len(le_engine* engine) {
+  /* A posted re-clock (#1168) moves a nonzero master too: measure behind it. */
+  for (int32_t c = 0; c < engine->track_count; ++c) {
+    le_track* o = &engine->tracks[c];
+    if (o->length_pending && o->pending_master_len > 0 &&
+        o->state_cmds_posted >
+            atomic_load_explicit(&o->a_state_acks, memory_order_acquire)) {
+      return o->pending_master_len;
+    }
+  }
   const int32_t wire = load_i32(&engine->a_master_len);
   if (wire > 0) return wire;
   for (int32_t c = 0; c < engine->track_count; ++c) {
@@ -635,7 +654,20 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
   le_track* t = &engine->tracks[channel];
   while (t->queued_undo > 0) {
     t->queued_undo--;
+    /* A Bounce is undone whole, by le_engine_bounce_recover only (#1202). */
+    if (t->undo_count > 0 &&
+        t->undo_stack[t->undo_count - 1].kind == LE_HIST_BOUNCE) {
+      break;
+    }
     if (t->undo_count > 0) {
+      /* A length edit is undone by a command, never from the drain: the
+       * next explicit tap undoes it (#1168). This tap and the rest did
+       * nothing, which the host reports. */
+      if (t->undo_stack[t->undo_count - 1].kind == LE_HIST_LENGTH) {
+        atomic_fetch_add_explicit(&t->a_length_history_refusals, 1u,
+                                  memory_order_relaxed);
+        break;
+      }
       le_undo_swap(engine, t);
       continue;
     }
@@ -918,6 +950,12 @@ static void le_collect_clear(le_engine* engine, le_track* t) {
   }
 }
 
+/* Length edits (#1168), defined with their admission below. */
+static void le_length_collect(le_engine* e, le_track* t);
+static int32_t le_length_history(le_engine* e, int32_t ch, int redo);
+static int32_t le_length_fit_ctl(le_engine* e, int32_t ch, int32_t len,
+                                 le_length_fit* fit);
+
 void le_engine_drain_events(le_engine* engine) {
   le_fx_recipe_collect(engine, 0);
   if (engine == NULL) return;
@@ -925,6 +963,7 @@ void le_engine_drain_events(le_engine* engine) {
   while (le_ring_pop(&engine->evt_ring, &evt)) {
     le_handle_event(engine, &evt, 1);
   }
+  le_bounce_collect(engine);
   /* Queued undo taps apply once their track's flight flag clears. The audio
    * thread pushes the final retire event BEFORE clearing the flag (the push is
    * the release), so after an acquire-load reads 0 one more pop pass is
@@ -944,6 +983,7 @@ void le_engine_drain_events(le_engine* engine) {
    * to the merge, the same coherent behaviour as spare starvation. */
   for (int32_t ch = 0; ch < engine->track_count; ++ch) {
     le_track* t = &engine->tracks[ch];
+    le_length_collect(engine, t);
     le_collect_clear(engine, t);
     /* A depth held back while a restore was in flight: publish it now that
      * the audio thread has applied the state (see le_publish_undo_depth). */
@@ -1043,6 +1083,7 @@ void le_engine_reopen_file_retired(le_engine* engine, uint32_t drop_mask) {
   for (int32_t ch = 0; ch < engine->track_count; ++ch) {
     le_track* t = &engine->tracks[ch];
     if (drop_mask & (1u << ch)) continue; /* dropped whole by the settle */
+    le_length_collect(engine, t); /* an applied edit's entry (#1168) */
     /* A Clear that applied in its last block but whose report was never
      * collected: complete its restore point now, while the mailbox and
      * clear_cmd_ack are intact (the runtime reset zeroes both). */
@@ -1402,8 +1443,10 @@ int le_mix_valid(const le_engine* e, const le_mix_settings* mix) {
   if ((mix->solo_mask & ~tracks) || (mix->solo_values & ~mix->solo_mask)) return 0;
   for (int i = 0; i < LE_MAX_TRACKS * LE_MAX_LANES; ++i) {
     const uint64_t bit = UINT64_C(1) << i;
+    /* Any source is accepted, an empty instrument slot included (it renders
+     * silence): one entry never refuses the batch (#1197, review H4). */
     if ((mix->routing_input_mask & bit) &&
-        (mix->lane_input[i] < -1 || mix->lane_input[i] >= LE_MAX_CHANNELS)) return 0;
+        (mix->lane_input[i] < -1 || mix->lane_input[i] >= LE_MAX_SOURCES)) return 0;
     if (((mix->lane_mask | mix->image_mask | mix->routing_input_mask |
           mix->routing_output_mask) & bit) &&
         i / LE_MAX_LANES >= e->track_count) return 0;
@@ -1414,10 +1457,13 @@ int le_mix_valid(const le_engine* e, const le_mix_settings* mix) {
         (!le_mix_float(mix->image_gain[i], 0, 1) ||
          !le_mix_float(mix->image_pan[i], -1, 1))) return 0;
   }
-  for (int i = 0; i < LE_MAX_CHANNELS; ++i) {
-    if ((mix->monitor_mask & (1u << i)) &&
+  if (mix->monitor_mask >> LE_MAX_SOURCES) return 0;
+  for (int i = 0; i < LE_MAX_SOURCES; ++i) {
+    if ((mix->monitor_mask & (UINT64_C(1) << i)) &&
         (!le_mix_float(mix->monitor_gain[i], 0, LE_MAX_GAIN) ||
          !le_mix_float(mix->monitor_pan[i], -1, 1))) return 0;
+  }
+  for (int i = 0; i < LE_MAX_CHANNELS; ++i) {
     if ((mix->trim_mask & (1u << i)) &&
         !le_mix_float(mix->input_trim[i], 0, LE_MAX_INPUT_TRIM)) return 0;
   }
@@ -1620,6 +1666,7 @@ static int32_t le_record_preflight(le_engine* e, int channel,
   if (channel < 0 || channel >= e->track_count ||
       (image && !le_image_valid(e, channel, image))) return LE_ERR_INVALID;
   le_engine_drain_events(e);
+  if (e->tracks[channel].bounce_inflight) return LE_ERR_NOT_READY; /* #1202 */
   const le_record_admission kind = le_classify_record(e, channel);
   if (kind == LE_RECORD_REFUSE) return LE_ERR_INVALID;
   if (kind == LE_RECORD_ACQUIRE && e->record_start_command >
@@ -1632,8 +1679,11 @@ static int32_t le_record_preflight(le_engine* e, int channel,
     int source = 0;
     for (int l = 0; l < le_lanes_active(&e->tracks[channel]); ++l) {
       const int input = load_i32(&e->tracks[channel].lanes[l].a_input_channel);
-      if (input >= 0 && input < e->in_channels && input < 32 &&
+      if (input >= 0 && input < e->in_channels && input < LE_MAX_CHANNELS &&
           !(excluded & (1u << input))) source = 1;
+      /* An instrument slot with a patch is a usable source (#1197). */
+      if (input >= LE_INSTRUMENT_SOURCE_BASE && input < LE_MAX_SOURCES &&
+          e->inst_patch_requested[input - LE_INSTRUMENT_SOURCE_BASE] >= 0) source = 1;
     }
     if (!source) return LE_ERR_INVALID;
   }
@@ -1668,6 +1718,8 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
                                 const le_record_image* image) {
   const int32_t admission = le_record_preflight(engine, channel, image);
   if (admission != LE_OK) return admission;
+  /* Shadows sized now would serve the old length (#1168). */
+  if (engine->tracks[channel].length_pending) return LE_ERR_NOT_READY;
   if (le_launch_cancellable(&engine->tracks[channel])) {
     /* Keep cancellation intent even if an earlier pair command removes the
      * countdown before this command drains. Never reinterpret it as acquire. */
@@ -1703,6 +1755,35 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
       !(engine->armed[channel] && load_i32(&t->a_pending)) &&
       !load_i32(&t->a_pending_launch)) {
     return LE_ERR_REVERSED;
+  }
+  /* Capture is unavailable while Speed is not 1x (#1179): a record or
+   * punch-in that would start now, or once the posted Speed requests land,
+   * is refused before any preparation. Finishing a capture or cancelling an
+   * arm or launch is not a capture start and passes. */
+  if ((st == LE_TRACK_EMPTY || st == LE_TRACK_PLAYING ||
+       st == LE_TRACK_STOPPED) &&
+      !le_effective_speed_one(engine) &&
+      !(engine->armed[channel] && load_i32(&t->a_pending)) &&
+      !load_i32(&t->a_pending_launch)) {
+    return LE_ERR_TRANSFORMED;
+  }
+  /* ...and a punch-in on a transposed track (#1179 Part 3a), the Reverse
+   * rule: the new layer would be heard at true pitch, then transposed. */
+  if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) &&
+      le_effective_transposed(engine, t) &&
+      !(engine->armed[channel] && load_i32(&t->a_pending)) &&
+      !load_i32(&t->a_pending_launch)) {
+    return LE_ERR_TRANSFORMED;
+  }
+  /* ...and a punch-in on a take a retime moved off its span (#1179 Part
+   * 4a): what it would lay down is not what it plays. The callback drops a
+   * press that a retime still in flight overtakes. */
+  const int32_t span_clock = load_i32(&t->a_span_clock);
+  if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && span_clock > 0 &&
+      span_clock != load_i32(&engine->a_master_len) &&
+      !(engine->armed[channel] && load_i32(&t->a_pending)) &&
+      !load_i32(&t->a_pending_launch)) {
+    return LE_ERR_TRANSFORMED;
   }
   /* The track's length (k * base) — all lanes share it, so lane 0 is canonical.
    * Kept coherent with the effective state: the undo-to-empty / redo-from-empty
@@ -2138,6 +2219,9 @@ static int32_t le_clear_track(le_engine* engine, int32_t channel,
   }
   le_engine_drain_events(engine);
   le_track* t = &engine->tracks[channel];
+  /* Its entry would file above the Clear point (#1168). */
+  if (t->length_pending) return LE_ERR_NOT_READY;
+  if (t->bounce_inflight) return LE_ERR_NOT_READY; /* #1202 */
   /* An undoable nonempty Clear must never silently become destructive when
    * history cannot hold its point. Layer slots plus the pinned live slot bound
    * ordinary reachable history below this limit, including pending retirements. */
@@ -2218,7 +2302,20 @@ int32_t le_engine_history_mode_gate(le_engine* engine, uint32_t channels,
   for (int32_t c = 0; c < engine->track_count; ++c) {
     if (!(channels & (1u << c))) continue;
     le_track* t = &engine->tracks[c];
-    if (t->clear_restore_pending || t->cancel_pending) return LE_ERR_NOT_READY;
+    if (t->clear_restore_pending || t->cancel_pending || t->length_pending) {
+      return LE_ERR_NOT_READY;
+    }
+    /* A LENGTH entry (#1168) is judged by the length edits' own verdict,
+     * which also knows when the track re-clocks the rig. */
+    const le_hist_entry* top =
+        redo ? (t->redo_count > 0 ? &t->redo_stack[t->redo_count - 1] : NULL)
+             : (t->undo_count > 0 ? &t->undo_stack[t->undo_count - 1] : NULL);
+    if (top != NULL && top->kind == LE_HIST_LENGTH) {
+      le_length_fit fit;
+      const int32_t rc = le_length_fit_ctl(engine, c, top->len, &fit);
+      if (rc != LE_OK) return rc;
+      continue;
+    }
     if ((!redo && le_history_is_cleared(t)) ||
         (redo && t->redo_count > 0 &&
          t->redo_stack[t->redo_count - 1].kind != LE_HIST_CLEAR &&
@@ -2302,8 +2399,21 @@ int32_t le_engine_history_mode_gate(le_engine* engine, uint32_t channels,
     if (base <= 0) {
       base = saved_base > 0 ? saved_base : restored;
     }
+    /* While a retime is in force (#1179 Part 4a: the running master is not
+     * the recorded one) a take laid down at the recorded tempo spans the
+     * recorded master, not the retimed one. */
+    const int32_t master = load_i32(&engine->a_master_len);
+    const int32_t rec = load_i32(&engine->a_rec_master_len);
+    /* With no master left (the last take cleared after a retime, 4a H1)
+     * the saved base is the retimed clock when it is the length the last
+     * retime produced; the reference survives the all-empty reset for
+     * exactly this restore. */
+    const int32_t retime = load_i32(&engine->a_retime_len);
+    const int retimed = rec > 0 && rec != base &&
+                        (master > 0 ? base == master : base == retime);
     for (int32_t other = 0; other < engine->track_count; ++other) {
-      if (!le_mode_span_fits(mode, base, lengths[other])) {
+      if (!le_mode_span_fits(mode, base, lengths[other]) &&
+          !(retimed && le_mode_span_fits(mode, rec, lengths[other]))) {
         return LE_ERR_MODE_MISMATCH;
       }
     }
@@ -2384,7 +2494,7 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   t->undo_count--;
   /* Cannot fail: one entry off the undo stack for the one added here. */
   (void)le_redo_push(t, e);
-  le_publish_live_image(engine, t, e.slot, image_id); /* [R1] clear-restore */
+  le_publish_live_image(engine, t, e.slot, image_id, 0); /* [R1] clear-restore */
   /* Leftover armed shadows may be sized for a different loop; the audio thread
    * drops them when the command applies (same reclaim rule as redo-from-empty:
    * an EMPTY track has no layer in flight, so no retire event can be
@@ -2433,7 +2543,10 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   le_engine_drain_events(engine);
   le_track* t = &engine->tracks[channel];
   if (load_i32(&t->a_pending_launch)) return le_engine_cancel_arm(engine, channel);
-  if (t->clear_restore_pending || t->cancel_pending) return LE_ERR_NOT_READY;
+  if (t->clear_restore_pending || t->cancel_pending || t->length_pending ||
+      t->bounce_inflight) {
+    return LE_ERR_NOT_READY;
+  }
   const int32_t st = le_effective_state(t);
   if (st == LE_TRACK_OVERDUBBING) {
     /* Accepted design (slice 2): undo mid-pass removes the pass. Punch out
@@ -2489,6 +2602,15 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
    * layer. Checked before the layer path: the layers beneath the mark are the
    * erased take's, and they only become peelable again once it is restored. */
   if (le_history_is_cleared(t)) return le_restore_clear(engine, channel);
+  if (t->undo_count > 0 &&
+      t->undo_stack[t->undo_count - 1].kind == LE_HIST_LENGTH) {
+    return le_length_history(engine, channel, 0);
+  }
+  /* A Bounce is undone whole, by le_engine_bounce_recover only (#1202). */
+  if (t->undo_count > 0 &&
+      t->undo_stack[t->undo_count - 1].kind == LE_HIST_BOUNCE) {
+    return LE_ERR_INVALID;
+  }
   if (t->undo_count > 0) {
     le_undo_swap(engine, t);
     le_plog_push_ctrl(engine,
@@ -2555,7 +2677,10 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   le_engine_drain_events(engine);
   le_track* t = &engine->tracks[channel];
-  if (t->clear_restore_pending || t->cancel_pending) return LE_ERR_NOT_READY;
+  if (t->clear_restore_pending || t->cancel_pending || t->length_pending ||
+      t->bounce_inflight) {
+    return LE_ERR_NOT_READY;
+  }
   const int32_t st = le_effective_state(t);
   if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) {
     return LE_ERR_INVALID;
@@ -2564,6 +2689,10 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
     return LE_ERR_INVALID; /* a fresh dub is in flight: nothing to redo */
   }
   if (t->redo_count == 0) return LE_ERR_INVALID;
+  /* A Bounce is redone whole, by le_engine_bounce_recover only (#1202). */
+  if (t->redo_stack[t->redo_count - 1].kind == LE_HIST_BOUNCE) {
+    return LE_ERR_INVALID;
+  }
   /* Redo of a restored clear: re-apply the clear the undo took back. It rides
    * the same undoable path, so the restore point returns to the undo stack and
    * the pair stays symmetric under repeated undo/redo. */
@@ -2606,7 +2735,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
       return LE_ERR_INVALID;
     }
     t->redo_count--;
-    le_publish_live_image(engine, t, next, image_id); /* [R1] redo-from-empty */
+    le_publish_live_image(engine, t, next, image_id, 0); /* [R1] redo-from-empty */
     t->empty_len = 0;
     /* Leftover armed shadows may be sized for a different loop; the audio
      * thread drops them when the command applies. Same no-in-flight argument
@@ -2620,6 +2749,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
     return LE_OK;
   }
   const le_hist_entry top = t->redo_stack[t->redo_count - 1];
+  if (top.kind == LE_HIST_LENGTH) return le_length_history(engine, channel, 1);
   if (top.kind == LE_HIST_PEEL) {
     /* Redo of an undone Peel (#1164): run the Peel motion again, keeping the
      * rest of the redo branch. By construction the LAYER it re-consumes is the
@@ -2641,7 +2771,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
   /* The kind rides along: a PROCESSED entry undone and redone stays PROCESSED. */
   t->undo_stack[t->undo_count++] =
       le_hist_kind_entry(top.kind, load_i32(&t->lanes[0].a_live), 0);
-  le_publish_live_image(engine, t, top.slot, image_id); /* [R1] redo swap */
+  le_publish_live_image(engine, t, top.slot, image_id, 1); /* [R1] redo swap */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
   le_plog_push_ctrl(engine,
@@ -2665,7 +2795,7 @@ int32_t le_engine_peel(le_engine* engine, int32_t channel) {
    * any pending state command, cancel or Clear report is refused untouched,
    * and the host shows the refusal as an unlit LED. */
   if (load_i32(&t->a_pending_launch) || t->clear_restore_pending ||
-      t->cancel_pending) {
+      t->cancel_pending || t->bounce_inflight) {
     return LE_ERR_NOT_READY;
   }
   const int32_t st = le_effective_state(t);
@@ -2801,6 +2931,407 @@ int32_t le_engine_toggle_reverse(le_engine* e, int32_t channel,
 int32_t le_engine_install_reverse(le_engine* e, int32_t channel,
                                   int32_t reversed, uint64_t* request) {
   return le_reverse_admit(e, channel, 1, reversed, request);
+}
+
+/* Speed admission (#1179): see le_engine_set_speed's contract. Refused while
+ * any track captures, is armed or launching, or a count-in runs, by the
+ * effective state, so a request never races a capture into existence; the
+ * callback rechecks (le_speed_change_safe). */
+int32_t le_engine_set_speed(le_engine* e, int32_t numer, int32_t denom,
+                            uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request) return LE_ERR_INVALID;
+  const int valid = (numer == 1 && denom == 2) ||
+      (denom == 1 && (numer == 1 || numer == 2 || numer == 4 || numer == 8));
+  if (!valid) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  if (load_i32(&e->a_counting_in)) return LE_ERR_NOT_READY;
+  int material = 0;
+  for (int c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    const int32_t st = le_effective_state(t);
+    if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+        load_i32(&t->a_pending) || e->armed[c] ||
+        load_i32(&t->a_pending_launch)) return LE_ERR_NOT_READY;
+    if (st != LE_TRACK_EMPTY) material = 1;
+  }
+  /* An empty loop has no speed (plan decision 26): nothing to play at a
+   * factor, as Reverse and Transpose refuse an empty track. */
+  if (!material) return LE_ERR_INVALID;
+  le_command cmd = {.code = LE_CMD_SET_SPEED, .speed = {0, numer, denom}};
+  const int32_t result = le_request_admit(e, &cmd, &cmd.speed.slot, request);
+  if (result != LE_OK) return result;
+  e->speed_pending_one = numer == denom;
+  e->speed_posted++;
+  return LE_OK;
+}
+
+/* Transpose admission (#1179 Part 3a): Reverse's per-track rules, and the
+ * predicted pitch kept for the Record guard (a step clamps like the
+ * callback, whose receipt reports the limit). */
+static int32_t le_transpose_admit(le_engine* e, int32_t channel, int install,
+                                  int32_t semitones, uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  if (channel < 0 || channel >= e->track_count) return LE_ERR_INVALID;
+  if (install ? semitones < -12 || semitones > 12
+              : semitones != 1 && semitones != -1) return LE_ERR_INVALID;
+  le_track* t = &e->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+      (!install && st == LE_TRACK_EMPTY)) return LE_ERR_INVALID;
+  if (load_i32(&t->a_pending) || e->armed[channel] ||
+      load_i32(&t->a_pending_launch)) return LE_ERR_NOT_READY;
+  const int32_t from =
+      t->transpose_posted >
+              atomic_load_explicit(&t->a_transpose_applied, memory_order_acquire)
+          ? t->transpose_pending
+          : load_i32(&t->a_transpose_st);
+  int32_t predicted = install ? semitones : from + semitones;
+  if (predicted < -12 || predicted > 12) predicted = from;
+  le_command cmd = {.code = LE_CMD_TRANSPOSE,
+                    .transpose = {channel, 0, install, semitones}};
+  const int32_t result =
+      le_request_admit(e, &cmd, &cmd.transpose.slot, request);
+  if (result != LE_OK) return result;
+  t->transpose_pending = predicted;
+  t->transpose_posted++;
+  return LE_OK;
+}
+
+int32_t le_engine_transpose_step(le_engine* e, int32_t channel, int32_t delta,
+                                 uint64_t* request) {
+  return le_transpose_admit(e, channel, 0, delta, request);
+}
+
+int32_t le_engine_install_transpose(le_engine* e, int32_t channel,
+                                    int32_t semitones, uint64_t* request) {
+  return le_transpose_admit(e, channel, 1, semitones, request);
+}
+
+/* Follow tempo (#1179 Part 4a): see le_engine_set_follow_tempo's contract.
+ * A setting, admitted whenever configured; the callback re-derives every
+ * affected head. */
+int32_t le_engine_set_follow_tempo(le_engine* e, int32_t channel,
+                                   int32_t value, uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request || channel < -1 || channel >= e->track_count ||
+      value < (channel < 0 ? 0 : -1) || value > 1) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  le_command cmd = {.code = LE_CMD_SET_FOLLOW_TEMPO,
+                    .follow = {channel, 0, value}};
+  return le_request_admit(e, &cmd, &cmd.follow.slot, request);
+}
+
+/* Pitch across a retime (#1179 Part 4a-ii): see le_engine_set_pitch_mode's
+ * contract. A setting, admitted whenever configured, like Follow tempo. */
+int32_t le_engine_set_pitch_mode(le_engine* e, int32_t channel, int32_t value,
+                                 uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request || channel < -1 || channel >= e->track_count ||
+      value < (channel < 0 ? 0 : -1) || value > 1) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  le_command cmd = {.code = LE_CMD_SET_PITCH_MODE,
+                    .follow = {channel, 0, value}};
+  return le_request_admit(e, &cmd, &cmd.follow.slot, request);
+}
+
+int32_t le_engine_set_transpose_bypass(le_engine* e, int32_t on,
+                                       uint64_t* request) {
+  if (request) *request = 0;
+  if (!e || !request) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) return LE_ERR_NOT_RUNNING;
+  le_command cmd = {.code = LE_CMD_TRANSPOSE_BYPASS,
+                    .transpose = {-1, 0, 1, on != 0}};
+  const int32_t result =
+      le_request_admit(e, &cmd, &cmd.transpose.slot, request);
+  if (result != LE_OK) return result;
+  e->bypass_pending = on != 0;
+  e->bypass_posted++;
+  return LE_OK;
+}
+
+/* ---- length edits (#1168) ----
+ * Double, First half and Last half build the new image here, on the control
+ * thread, from the live image of a track that is not writing (the
+ * le_restore_commit_layer precedent); LE_CMD_SET_LENGTH then swaps image,
+ * length and clock in one callback drain, and the drain files the history
+ * entry once the callback acknowledges (le_length_collect). Undo and Redo of a
+ * LENGTH entry ride the same command, so every length change of a playing
+ * track lands at a block boundary. */
+
+/* Why a length motion on [ch] must wait (NOT_READY): something writes or is
+ * about to (an arm or launch would fire into shadows sized for the old
+ * length), or a posted command could still change the verdict. */
+static int le_length_busy(le_engine* e, int32_t ch) {
+  le_track* t = &e->tracks[ch];
+  return t->length_pending ||
+         t->state_cmds_posted >
+             atomic_load_explicit(&t->a_state_acks, memory_order_acquire) ||
+         atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire) ||
+         t->clear_restore_pending || t->cancel_pending || t->queued_undo > 0 ||
+         t->dub_punch_out_posted || e->armed[ch] || load_i32(&t->a_pending) ||
+         le_launch_cancellable(t) ||
+         e->clock_commands_posted !=
+             atomic_load_explicit(&e->a_clock_commands_applied,
+                                  memory_order_acquire) ||
+         e->lane_growth_command >
+             atomic_load_explicit(&e->a_commands_published,
+                                  memory_order_acquire);
+}
+
+/* The verdict for a new length `len` on [ch] from control's effective view
+ * (le_length_fit_check). A re-clock also moves the grid every sibling arm,
+ * launch or Count-in waits on, so it waits for them. */
+static int32_t le_length_fit_ctl(le_engine* e, int32_t ch, int32_t len,
+                                 le_length_fit* fit) {
+  int others = 0;
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    if (c != ch && le_effective_state(&e->tracks[c]) != LE_TRACK_EMPTY) {
+      others = 1;
+    }
+  }
+  const int32_t rc = le_length_fit_check(
+      load_i32(&e->a_looper_mode), le_rig_effective_master_len(e),
+      load_i32(&e->a_loop_beats), others, load_i32(&e->a_primary_track) == ch,
+      len, e->max_loop_frames, fit);
+  if (rc != LE_OK || fit->reclock == 0) return rc;
+  if (load_i32(&e->a_counting_in)) return LE_ERR_NOT_READY;
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    if (c != ch && (e->armed[c] || load_i32(&e->tracks[c].a_pending) ||
+                    le_launch_cancellable(&e->tracks[c]))) {
+      return LE_ERR_NOT_READY;
+    }
+  }
+  return LE_OK;
+}
+
+/* Posts LE_CMD_SET_LENGTH publishing `slot` at `len` through the playhead map
+ * `start`, staging the image first (#1143: the callback names it at the frame
+ * it first mixes it). Push-then-mutate: only an accepted post marks the state
+ * command whose ack le_length_collect waits for, and `file` is what it then
+ * files for `op`. */
+static int32_t le_length_post(le_engine* e, int32_t ch, int32_t slot,
+                              int32_t len, int32_t start,
+                              const le_length_fit* fit, int32_t op,
+                              le_hist_entry file, uint32_t audio_rev,
+                              uint64_t* request) {
+  le_track* t = &e->tracks[ch];
+  const int32_t st = le_effective_state(t);
+  const uint32_t image_id = le_stage_source_image(e, ch, slot, len);
+  le_command cmd = {.code = LE_CMD_SET_LENGTH,
+                    .length = {ch, -1, slot, len, fit->multiple, fit->divisor,
+                               fit->reclock, start, image_id, audio_rev}};
+  const int32_t rc = request
+      ? le_request_admit(e, &cmd, &cmd.length.receipt, request)
+      : le_push_cmd(e, cmd);
+  if (rc != LE_OK) return rc;
+  le_mark_state_cmd(t, st);
+  t->pending_len = len;
+  t->pending_master_len = fit->reclock;
+  t->length_pending = slot + 1;
+  t->length_op = op;
+  t->length_ack = t->state_cmds_posted;
+  t->length_file = file;
+  return LE_OK;
+}
+
+/* Writes the edited image of [t]'s live slot into `slot` on every active lane
+ * (its buffers already hold `len` frames). Double repeats the image; a half
+ * copies its region in place and folds its new wrap with the material it
+ * omits — the continuation of the last kept frame, which is the next region
+ * for First half and the already folded head for Last half — under the seam's
+ * threshold (len >= 2F). */
+static void le_length_build(le_engine* e, le_track* t, int32_t slot,
+                            int32_t edit, int32_t old_len, int32_t len) {
+  const int32_t live = load_i32(&t->lanes[0].a_live);
+  const int32_t F = (e->sample_rate > 0 ? e->sample_rate : 48000) / 100;
+  for (int32_t l = 0; l < le_lanes_active(t); ++l) {
+    le_lane* ln = &t->lanes[l];
+    float* dst = ln->pool[slot];
+    const float* src = ln->pool[live];
+    if (src == NULL) {
+      memset(dst, 0, (size_t)len * sizeof(float));
+    } else if (edit == LE_LENGTH_DOUBLE) {
+      memcpy(dst, src, (size_t)old_len * sizeof(float));
+      memcpy(dst + old_len, src, (size_t)old_len * sizeof(float));
+    } else {
+      const int32_t from = edit == LE_LENGTH_LAST_HALF ? old_len - len : 0;
+      memcpy(dst, src + from, (size_t)len * sizeof(float));
+      if (F > 0 && len >= 2 * F) {
+        le_seam_fold_head(dst, edit == LE_LENGTH_LAST_HALF ? src : src + len,
+                          F);
+      }
+    }
+  }
+}
+
+int32_t le_engine_edit_length(le_engine* e, int32_t channel, int32_t edit,
+                              uint64_t* request) {
+  if (request) *request = 0;
+  if (e == NULL || request == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&e->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= e->track_count || edit < LE_LENGTH_DOUBLE ||
+      edit > LE_LENGTH_LAST_HALF) return LE_ERR_INVALID;
+  le_engine_drain_events(e);
+  le_track* t = &e->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  const int32_t old_len = load_i32(&t->lanes[0].a_len);
+  if ((st != LE_TRACK_PLAYING && st != LE_TRACK_STOPPED) || old_len <= 0 ||
+      (edit != LE_LENGTH_DOUBLE && old_len < 2)) return LE_ERR_INVALID;
+  if (le_length_busy(e, channel)) return LE_ERR_NOT_READY;
+  /* The image is read from the live slot: not while the callback may still
+   * write it (a seam fold, a punch tail; its end-of-block view). The payload
+   * names the revision read, so a write that slips in before the callback
+   * applies the edit refuses it there. */
+  if (!atomic_load_explicit(&t->a_cache_source_readable,
+                            memory_order_acquire)) return LE_ERR_NOT_READY;
+  const uint32_t audio_rev =
+      atomic_load_explicit(&t->a_audio_rev, memory_order_acquire);
+  const int32_t half = (old_len + 1) / 2;
+  const int32_t len = edit != LE_LENGTH_DOUBLE ? half
+      : old_len > INT32_MAX / 2 ? INT32_MAX : 2 * old_len;
+  const int32_t start = edit == LE_LENGTH_LAST_HALF ? old_len - half : 0;
+  le_length_fit fit;
+  const int32_t rc = le_length_fit_ctl(e, channel, len, &fit);
+  if (rc != LE_OK) return rc;
+  /* Everything that can refuse the post is checked before the first change:
+   * a free receipt, room in the ring (control is its only producer) and a
+   * pin for the new slot. */
+  int free_receipt = 0;
+  for (int i = 0; i < LE_RING_CAPACITY && !free_receipt; ++i) {
+    if (!e->receipts[i].request) free_receipt = 1;
+  }
+  const size_t tail = atomic_load_explicit(&e->ring.tail, memory_order_relaxed);
+  const size_t head = atomic_load_explicit(&e->ring.head, memory_order_acquire);
+  if (!free_receipt || tail - head >= e->ring.capacity - 1 ||
+      t->outstanding_count >= 4 || e->next_request == UINT64_MAX) {
+    return LE_ERR_NOT_READY;
+  }
+  /* Allocate every lane's buffer before the selection may evict the oldest
+   * evictable entry, so an out-of-memory refusal changes nothing. */
+  int evict;
+  const int32_t slot = track_select_slot(t, t->undo_count, t->redo_count,
+                                         t->outstanding_count, &evict);
+  if (slot < 0) return LE_ERR_CAPACITY;
+  const int32_t want = le_layer_slot_frames(e, len);
+  const int32_t lanes = le_lanes_active(t);
+  float* fresh[LE_MAX_LANES] = {0};
+  for (int32_t l = 0; l < lanes; ++l) {
+    if (t->lanes[l].pool[slot] != NULL && t->lanes[l].pool_cap[slot] >= want) {
+      continue;
+    }
+    fresh[l] = (float*)calloc((size_t)want, sizeof(float));
+    if (fresh[l] != NULL) continue;
+    for (int32_t k = 0; k < l; ++k) free(fresh[k]);
+    return LE_ERR_INVALID;
+  }
+  if (track_acquire_slot(t) != slot) { /* the same pure selection, applied */
+    for (int32_t l = 0; l < lanes; ++l) free(fresh[l]);
+    return LE_ERR_INVALID;
+  }
+  for (int32_t l = 0; l < lanes; ++l) {
+    if (fresh[l] == NULL) continue;
+    free(t->lanes[l].pool[slot]);
+    t->lanes[l].pool[slot] = fresh[l];
+    t->lanes[l].pool_cap[slot] = want;
+  }
+  le_length_build(e, t, slot, edit, old_len, len);
+  le_hist_entry file =
+      le_hist_kind_entry(LE_HIST_LENGTH, load_i32(&t->lanes[0].a_live), 0);
+  file.len = old_len;
+  file.start = -start; /* the inverse map, for its Undo */
+  const int32_t posted = le_length_post(e, channel, slot, len, start, &fit, 0,
+                                        file, audio_rev, request);
+  if (posted != LE_OK) return posted;
+  t->outstanding_slots[t->outstanding_count++] = slot; /* pinned until filed */
+  return LE_OK;
+}
+
+/* Undo (redo == 0) or Redo of the LENGTH entry on top of that stack: the same
+ * command, re-applying the entry's image, length and playhead map. The
+ * synchronous result is the post (as Undo to empty and Clear restore), and
+ * the caller reports it: a refusal here is never counted in
+ * length_history_refusals (#1168 review M1). A full command ring is refused
+ * up front as LE_ERR_NOT_READY, as the edit itself is, so the tap is reported
+ * as "wait" rather than as the push's LE_ERR_INVALID, which no caller
+ * reports. */
+static int32_t le_length_history(le_engine* e, int32_t ch, int redo) {
+  le_track* t = &e->tracks[ch];
+  if (le_length_busy(e, ch)) return LE_ERR_NOT_READY;
+  const size_t tail = atomic_load_explicit(&e->ring.tail, memory_order_relaxed);
+  const size_t head = atomic_load_explicit(&e->ring.head, memory_order_acquire);
+  if (tail - head >= e->ring.capacity - 1) return LE_ERR_NOT_READY;
+  const le_hist_entry top = redo ? t->redo_stack[t->redo_count - 1]
+                                 : t->undo_stack[t->undo_count - 1];
+  le_length_fit fit;
+  const int32_t rc = le_length_fit_ctl(e, ch, top.len, &fit);
+  if (rc != LE_OK) return rc;
+  le_hist_entry file =
+      le_hist_kind_entry(LE_HIST_LENGTH, load_i32(&t->lanes[0].a_live), 0);
+  file.len = load_i32(&t->lanes[0].a_len);
+  file.start = -top.start;
+  return le_length_post(
+      e, ch, top.slot, top.len, top.start, &fit, redo ? 2 : 1, file,
+      atomic_load_explicit(&t->a_audio_rev, memory_order_acquire), NULL);
+}
+
+/* Counts an Undo or Redo tap on a length edit that did nothing where its
+ * caller could not see it, for the host to report
+ * (le_track_snapshot.length_history_refusals): a tap posted as LE_OK that the
+ * callback then refused, or queued taps that stopped at the edit. A refusal
+ * returned to the tap itself is NOT counted: the caller already reports that
+ * result, and one tap must raise one notice (#1168 review M1). */
+static void le_length_history_refused(le_track* t) {
+  atomic_fetch_add_explicit(&t->a_length_history_refusals, 1u,
+                            memory_order_relaxed);
+}
+
+/* Files a length motion once the callback acknowledged it (control thread,
+ * from the event drain). Accepted: the callback dropped the old-length armed
+ * shadows, so nothing outstanding is held any more; the replaced image moves
+ * to the other stack (an edit retires Redo, §2.10) and is shrunk to its own
+ * length. Refused: only the edit's pinned slot is released. */
+static void le_length_collect(le_engine* e, le_track* t) {
+  if (!t->length_pending ||
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire) <
+          t->length_ack) return;
+  const int32_t slot = t->length_pending - 1;
+  t->length_pending = 0;
+  if (load_i32(&t->a_length_result) != LE_OK) {
+    /* An Undo or Redo the rig no longer fits: posted as OK, so say so now. */
+    if (t->length_op != 0) le_length_history_refused(t);
+    for (int k = 0; t->length_op == 0 && k < t->outstanding_count; ++k) {
+      if (t->outstanding_slots[k] != slot) continue;
+      t->outstanding_slots[k] = t->outstanding_slots[--t->outstanding_count];
+      break;
+    }
+    return;
+  }
+  t->outstanding_count = 0;
+  const le_hist_entry f = t->length_file;
+  for (int32_t l = 0; l < le_lanes_active(t); ++l) {
+    le_lane_shrink_slot(&t->lanes[l], f.slot, le_layer_slot_frames(e, f.len));
+  }
+  const int32_t ch = (int32_t)(t - e->tracks);
+  if (t->length_op == 1) {
+    t->undo_count--;
+    (void)le_redo_push(t, f);
+    le_plog_push_ctrl(e, (le_command){.code = LE_PLOG_UNDO, .arg_i = ch});
+  } else {
+    if (t->length_op == 2) {
+      t->redo_count--;
+      le_plog_push_ctrl(e, (le_command){.code = LE_PLOG_REDO, .arg_i = ch});
+    } else {
+      le_clear_redo(t);
+    }
+    if (t->undo_count < LE_POOL_SLOTS) t->undo_stack[t->undo_count++] = f;
+  }
+  le_publish_undo_depth(t);
+  store_i32(&t->a_redo_depth, t->redo_count);
 }
 
 int32_t le_engine_toggle_fade(le_engine* e, int32_t channel, float seconds,
@@ -2989,9 +3520,27 @@ int32_t le_engine_finalize_take(le_engine* engine, int32_t channel) {
  * (apply_command), the only side that owns track states — a locked command is
  * accepted by these wrappers and dropped there. */
 
+/* The clock source as the control thread must assume it (#1228): the one the
+ * latest accepted le_engine_set_clock_sync asked for while that call is still
+ * queued, else the one the audio thread applied (a refused call leaves the
+ * applied source in force). The callback rechecks the applied source, so a
+ * tempo setter queued before the source changed cannot slip in either way. */
+static int32_t le_clock_source_effective(le_engine* engine) {
+  if (engine->clock_sync_posted !=
+      atomic_load_explicit(&engine->a_clock_receipt, memory_order_acquire)) {
+    return engine->clock_source_requested;
+  }
+  return load_i32(&engine->a_clock_source);
+}
+
+static int le_clock_external_requested(le_engine* engine) {
+  return engine != NULL && le_clock_source_effective(engine) >= 0;
+}
+
 int32_t le_engine_set_tempo(le_engine* engine, float bpm) {
   /* Clamped to 30..300 by the audio thread on apply (matching the old stack's
    * observable clamp-on-read behaviour). */
+  if (le_clock_external_requested(engine)) return LE_ERR_EXTERNAL_CLOCK;
   return le_push(engine, LE_CMD_SET_TEMPO, 0, bpm);
 }
 
@@ -3001,6 +3550,9 @@ int32_t le_engine_restore_tempo(le_engine* engine, float bpm, int32_t source) {
   }
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
+  }
+  if (source != LE_TEMPO_SOURCE_NONE && le_clock_external_requested(engine)) {
+    return LE_ERR_EXTERNAL_CLOCK;
   }
   if (load_i32(&engine->a_counting_in) ||
       engine->clock_commands_posted !=
@@ -3030,6 +3582,7 @@ int32_t le_engine_set_time_signature(le_engine* engine, int32_t num,
 }
 
 int32_t le_engine_tap_tempo(le_engine* engine) {
+  if (le_clock_external_requested(engine)) return LE_ERR_EXTERNAL_CLOCK;
   return le_push(engine, LE_CMD_TAP_TEMPO, 0, 0.0f);
 }
 
@@ -3061,13 +3614,24 @@ int32_t le_engine_set_sync_tempo(le_engine* engine, int32_t on) {
  *
  * Returns the channel, or -1 when nothing is recorded; *out_len carries its
  * length and is 0 in that case. */
+static int32_t le_ctl_mode_base_excluding(le_engine* engine, int32_t mode,
+                                          uint32_t exclude, int32_t* out_len);
 static int32_t le_ctl_mode_base(le_engine* engine, int32_t mode,
                                 int32_t* out_len) {
+  return le_ctl_mode_base_excluding(engine, mode, 0, out_len);
+}
+
+/* The same pick over every track but those in `exclude` (#1202: a Bounce
+ * destination is measured against the rig it joins, not the take it
+ * replaces). */
+static int32_t le_ctl_mode_base_excluding(le_engine* engine, int32_t mode,
+                                          uint32_t exclude, int32_t* out_len) {
   *out_len = 0;
   if (mode == LE_LOOPER_MODE_MULTI) {
     int32_t best = -1;
     int32_t best_len = 0;
     for (int32_t c = 0; c < engine->track_count; ++c) {
+      if (exclude & (1u << c)) continue;
       const int32_t len = le_effective_len(&engine->tracks[c]);
       if (len <= 0) continue;
       if (best < 0 || len < best_len) {
@@ -3079,7 +3643,8 @@ static int32_t le_ctl_mode_base(le_engine* engine, int32_t mode,
     return best;
   }
   const int32_t crowned = load_i32(&engine->a_primary_track);
-  if (crowned >= 0 && crowned < engine->track_count) {
+  if (crowned >= 0 && crowned < engine->track_count &&
+      !(exclude & (1u << crowned))) {
     const int32_t len = le_effective_len(&engine->tracks[crowned]);
     if (len > 0) {
       *out_len = len;
@@ -3087,6 +3652,7 @@ static int32_t le_ctl_mode_base(le_engine* engine, int32_t mode,
     }
   }
   for (int32_t c = 0; c < engine->track_count; ++c) {
+    if (exclude & (1u << c)) continue;
     const int32_t len = le_effective_len(&engine->tracks[c]);
     if (len > 0) {
       *out_len = len;
@@ -3310,12 +3876,53 @@ int32_t le_engine_detach_midi_input(le_engine* engine, int32_t port) {
 /* ---- MIDI clock (Phase C/E, D15; see segno_engine_api.h's MIDI-clock
  * section) ---- */
 
-int32_t le_engine_set_clock_mode(le_engine* engine, int32_t mode) {
-  /* RECEIVE is Phase E's clock follower — stub the tri-state field now (so
-   * that part can reuse it without a breaking rename) but reject it here,
-   * same as any value outside the enum. */
-  if (mode != LE_CLOCK_OFF && mode != LE_CLOCK_SEND) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_CLOCK_MODE, mode, 0.0f);
+int32_t le_engine_set_clock_send(le_engine* engine, int32_t enabled) {
+  if (engine == NULL || (enabled != 0 && enabled != 1)) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_CLOCK_SEND, enabled, 0.0f);
+}
+
+/* Whether the rig is in the middle of a take, as far as the control thread
+ * can see: a count-in, a capture, an arm or a queued start (#1228: the clock
+ * source cannot change under a take). */
+static int le_clock_sync_blocked(le_engine* engine) {
+  if (load_i32(&engine->a_counting_in)) return 1;
+  for (int32_t c = 0; c < engine->track_count; ++c) {
+    le_track* t = &engine->tracks[c];
+    const int32_t state = le_effective_state(t);
+    if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING ||
+        engine->armed[c] || load_i32(&t->a_pending)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+int32_t le_engine_set_clock_sync(le_engine* engine, int32_t source_port,
+                                 int32_t follow_transport,
+                                 int32_t loss_policy) {
+  if (engine == NULL || source_port < -1 || source_port >= LE_MAX_MIDI_PORTS ||
+      (follow_transport != 0 && follow_transport != 1) ||
+      (loss_policy != LE_CLOCK_LOSS_KEEP_PLAYING &&
+       loss_policy != LE_CLOCK_LOSS_STOP_LOOPS)) {
+    return LE_ERR_INVALID;
+  }
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (source_port != le_clock_source_effective(engine) &&
+      le_clock_sync_blocked(engine)) {
+    return LE_ERR_SYNC_LOCKED;
+  }
+  le_command cmd = {.code = LE_CMD_SET_CLOCK_SYNC};
+  cmd.clock_sync.port = source_port;
+  cmd.clock_sync.follow_transport = follow_transport;
+  cmd.clock_sync.loss_policy = loss_policy;
+  cmd.clock_sync.sequence = engine->clock_sync_posted + 1u;
+  const int32_t rc = le_push_cmd(engine, cmd);
+  if (rc != LE_OK) return rc;
+  engine->clock_sync_posted++;
+  engine->clock_source_requested = source_port;
+  return LE_OK;
 }
 
 /* ---- click + count-in (A2; see segno_engine_api.h's click section) ---- */
@@ -3849,14 +4456,14 @@ int32_t le_engine_set_monitor_input_fx_chain_enabled(le_engine* engine,
 int32_t le_engine_set_input_conditioning(le_engine* engine, int32_t input,
                                          int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_CHANNELS) return LE_ERR_INVALID;
   return le_push(engine, LE_CMD_SET_INPUT_COND, input, enabled ? 1.0f : 0.0f);
 }
 
 int32_t le_engine_set_input_conditioning_param(le_engine* engine, int32_t input,
                                                int32_t param, float value) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_CHANNELS) return LE_ERR_INVALID;
   if (param < LE_COND_HPF_HZ || param > LE_COND_EXP_RELEASE_MS) {
     return LE_ERR_INVALID;
   }
@@ -4542,12 +5149,34 @@ static size_t le_perf_next_pow2(size_t n) {
 }
 
 /* Ring capacity in SAMPLES for `channels` at `sample_rate`: at least
- * LE_PERF_CAPTURE_SECONDS of audio, rounded up to the power of two
- * le_audio_ring requires. */
-static size_t le_perf_ring_capacity(int32_t channels, int32_t sample_rate) {
-  const size_t want =
-      (size_t)channels * (size_t)sample_rate * LE_PERF_CAPTURE_SECONDS;
+ * `seconds` of audio, rounded up to the power of two le_audio_ring requires. */
+static size_t le_perf_ring_capacity(int32_t channels, int32_t sample_rate,
+                                    int32_t seconds) {
+  const size_t want = (size_t)channels * (size_t)sample_rate * (size_t)seconds;
   return le_perf_next_pow2(want < 2 ? 2 : want);
+}
+
+/* The ring seconds an arm grants (#1198): the requested seconds (at most
+ * LE_PERF_RING_SECONDS_MAX, checked by the caller), lowered one at a time —
+ * never below LE_PERF_RING_SECONDS_DEFAULT — until every ring of
+ * the take together fits LE_PERF_RING_BYTES_MAX. A take on a removable volume
+ * asks for more than the default to ride out flash stalls; with many captured
+ * inputs at a high rate the cap keeps arm from allocating (and prefaulting)
+ * hundreds of megabytes. */
+static int32_t le_perf_ring_seconds_granted(int32_t requested,
+                                            int32_t master_channels,
+                                            int32_t stereo_inputs,
+                                            int32_t sample_rate) {
+  int32_t seconds = requested;
+  while (seconds > LE_PERF_RING_SECONDS_DEFAULT) {
+    const size_t samples =
+        le_perf_ring_capacity(master_channels, sample_rate, seconds) +
+        (size_t)stereo_inputs *
+            le_perf_ring_capacity(2, sample_rate, seconds);
+    if (samples * sizeof(float) <= (size_t)LE_PERF_RING_BYTES_MAX) break;
+    seconds--;
+  }
+  return seconds;
 }
 
 /* The first one or two ENABLED output channels, in ascending index order — the
@@ -4583,17 +5212,28 @@ int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]) {
 /* Frees every ring allocated by an arm attempt that never reached the audio
  * thread (the command was never pushed, or push failed) — plain control-thread
  * cleanup, not a quiescent teardown, since nothing was published. */
-static void le_perf_free_unpublished(le_engine* e, uint32_t monitors_done) {
+static void le_perf_free_unpublished(le_engine* e, uint64_t monitors_done) {
   le_audio_ring_release(&e->perf.master_ring);
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (monitors_done & (1u << c)) {
+    if (monitors_done & (UINT64_C(1) << c)) {
       le_audio_ring_release(&e->perf.monitor_ring[c]);
     }
   }
 }
 
-int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
-  if (engine == NULL || capture_dir == NULL || capture_dir[0] == '\0') {
+int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
+  if (engine == NULL || target == NULL || target->capture_dir == NULL ||
+      target->capture_dir[0] == '\0' || target->ring_seconds < 0 ||
+      target->ring_seconds > LE_PERF_RING_SECONDS_MAX ||
+      target->checkpoint_ms < 0) {
+    return LE_ERR_INVALID;
+  }
+  /* A part must hold at least one stereo frame after its header, and its
+   * RIFF size (file size - 8) must fit 32 bits. */
+  if (target->part_bytes != 0 &&
+      (target->part_bytes <
+           (uint64_t)LE_PERF_PART_HEADER_BYTES + 2u * sizeof(float) ||
+       target->part_bytes > 0xFFFFFFFFull + 8u)) {
     return LE_ERR_INVALID;
   }
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
@@ -4614,16 +5254,6 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   if (found == 0) return LE_ERR_INVALID; /* nothing enabled to capture */
 
   const int32_t sr = engine->sample_rate > 0 ? engine->sample_rate : 48000;
-  const size_t master_cap = le_perf_ring_capacity(found, sr);
-  if (!le_audio_ring_alloc(&engine->perf.master_ring, master_cap)) {
-    return LE_ERR_INVALID;
-  }
-  engine->perf.master_channels = found;
-  engine->perf.master_out_ch[0] = out_ch[0];
-  engine->perf.master_out_ch[1] = out_ch[1];
-  /* The capture policy is frozen per take (accepted design): the flag as it
-   * stands at arm, read by the audio thread through this plain field. */
-  engine->perf.follow_output = load_i32(&engine->a_perf_follow_output);
 
   /* The monitor capture set is frozen at arm: whichever inputs are enabled
    * right now, and no others — an input enabled later is logged, not tapped
@@ -4639,19 +5269,51 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
    * nothing counted the padding; now that a zero-fill raises the capture's
    * glitch flag, it would light the warning on every single capture and drown
    * the real signal. An input that does not exist is not a captured input. */
-  uint32_t input_mask = 0;
+  /* Instrument sources (#1197) are captured like inputs when monitored and
+   * their slot has a patch: the audio thread fills them every block. */
+  uint64_t wanted_inputs = 0;
+  int32_t input_count = 0;
   const int32_t monitor_ch_limit =
-      (engine->in_channels > 0 && engine->in_channels < LE_MAX_MONITORED_INPUTS)
+      (engine->in_channels > 0 && engine->in_channels < LE_MAX_CHANNELS)
           ? engine->in_channels
-          : LE_MAX_MONITORED_INPUTS;
-  const size_t monitor_cap = le_perf_ring_capacity(2, sr);
-  for (int32_t c = 0; c < monitor_ch_limit; ++c) {
+          : LE_MAX_CHANNELS;
+  for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
+    if (c < LE_INSTRUMENT_SOURCE_BASE ? c >= monitor_ch_limit
+                                      : engine->inst_patch_requested
+                                                [c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
+      continue;
+    }
     if (!load_i32(&engine->monitors[c].a_enabled)) continue;
+    wanted_inputs |= (UINT64_C(1) << c);
+    input_count++;
+  }
+  const int32_t ring_seconds = le_perf_ring_seconds_granted(
+      target->ring_seconds > 0 ? target->ring_seconds
+                               : LE_PERF_RING_SECONDS_DEFAULT,
+      found, input_count, sr);
+  atomic_store_explicit(&engine->a_perf_ring_seconds, ring_seconds,
+                        memory_order_relaxed);
+
+  const size_t master_cap = le_perf_ring_capacity(found, sr, ring_seconds);
+  if (!le_audio_ring_alloc(&engine->perf.master_ring, master_cap)) {
+    return LE_ERR_INVALID;
+  }
+  engine->perf.master_channels = found;
+  engine->perf.master_out_ch[0] = out_ch[0];
+  engine->perf.master_out_ch[1] = out_ch[1];
+  /* The capture policy is frozen per take (accepted design): the flag as it
+   * stands at arm, read by the audio thread through this plain field. */
+  engine->perf.follow_output = load_i32(&engine->a_perf_follow_output);
+
+  uint64_t input_mask = 0;
+  const size_t monitor_cap = le_perf_ring_capacity(2, sr, ring_seconds);
+  for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
+    if (!(wanted_inputs & (UINT64_C(1) << c))) continue;
     if (!le_audio_ring_alloc(&engine->perf.monitor_ring[c], monitor_cap)) {
       le_perf_free_unpublished(engine, input_mask);
       return LE_ERR_INVALID;
     }
-    input_mask |= (1u << c);
+    input_mask |= (UINT64_C(1) << c);
   }
   engine->perf.input_mask = input_mask;
 
@@ -4663,6 +5325,20 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   atomic_store_explicit(&engine->a_perf_log_ctrl_overruns, 0u,
                         memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_layer_overruns, 0u,
+                        memory_order_relaxed);
+  /* Take accounting (#1198). Safe before LE_CMD_PERF_ARM is pushed: the
+   * audio thread writes the first-drop frame only while armed, and the drain
+   * thread is not started yet. */
+  atomic_store_explicit(&engine->a_perf_stop_reason, LE_PERF_STOP_NONE,
+                        memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_bytes_written, 0u,
+                        memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_overs, 0u, memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_first_drop_frame, UINT64_MAX,
+                        memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_checkpoint_failures, 0u,
+                        memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_backing_blocks, 0u,
                         memory_order_relaxed);
   /* Reset both perf-log rings so a fresh session never sees a stale entry
    * left over from a previous one — safe here (before LE_CMD_PERF_ARM is
@@ -4696,7 +5372,7 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
    * finds empty rings until the audio thread begins producing. Arming without
    * a working drain thread would silently drop every captured frame, so a
    * failure here aborts the whole arm. */
-  engine->perf.drain = le_perf_drain_start(engine, capture_dir);
+  engine->perf.drain = le_perf_drain_start(engine, target, ring_seconds);
   if (engine->perf.drain == NULL) {
     le_perf_free_unpublished(engine, input_mask);
     engine->perf.input_mask = 0;
@@ -4843,7 +5519,7 @@ int32_t le_perf_disarm(le_engine* engine) {
 
   le_audio_ring_release(&engine->perf.master_ring);
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (engine->perf.input_mask & (1u << c)) {
+    if (engine->perf.input_mask & (UINT64_C(1) << c)) {
       le_audio_ring_release(&engine->perf.monitor_ring[c]);
     }
   }
@@ -4876,8 +5552,368 @@ int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
                                             float* out, int32_t max_frames) {
   if (engine == NULL || out == NULL || max_frames <= 0) return 0;
   if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return 0;
-  if (!(engine->perf.input_mask & (1u << input))) return 0;
+  if (!(engine->perf.input_mask & (UINT64_C(1) << input))) return 0;
   const size_t popped = le_audio_ring_pop(&engine->perf.monitor_ring[input],
                                           out, (size_t)max_frames * 2);
   return (int32_t)(popped / 2);
+}
+
+/* ---- Bounce (#1202, Part 4a) ---- */
+
+/* The busy rule every Bounce admission shares: nothing may be capturing,
+ * armed, launching, draining a layer, or waiting on another state command,
+ * clear report or bounce on [t]. Spare overdub shadows do not refuse it: the
+ * install drops them on the callback and le_bounce_collect reclaims them,
+ * as a Clear does. A content track must also be
+ * readable by the callback's own end-of-block verdict (no seam or punch
+ * tail), so the install can never meet a writer. */
+static int le_bounce_busy(le_engine* engine, int32_t channel) {
+  le_track* t = &engine->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) return 1;
+  if (t->bounce_inflight || t->clear_restore_pending || t->cancel_pending ||
+      t->queued_undo || engine->armed[channel] ||
+      load_i32(&t->a_pending) || load_i32(&t->a_pending_launch) ||
+      atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire) ||
+      t->state_cmds_posted >
+          atomic_load_explicit(&t->a_state_acks, memory_order_acquire) ||
+      engine->lane_growth_command >
+          atomic_load_explicit(&engine->a_commands_published,
+                               memory_order_acquire)) {
+    return 1;
+  }
+  return st != LE_TRACK_EMPTY && !le_cache_source_ready(engine, channel);
+}
+
+/* The lane count after `topology` applies. */
+static int32_t le_bounce_lanes_after(le_engine* engine, int32_t channel,
+                                     const le_mix_settings* topology) {
+  if (topology != NULL && (topology->lane_count_mask & (1u << channel))) {
+    return topology->lane_count[channel];
+  }
+  return le_lanes_active(&engine->tracks[channel]);
+}
+
+/* Validates and prepares the optional topology and the two chain bundles
+ * into [b]; LE_OK or the refusal, with nothing left prepared on failure. */
+static int32_t le_bounce_prepare(le_engine* engine, le_bounce_bundle* b,
+                                 const le_mix_settings* topology,
+                                 const le_fx_recipe* lane_fx,
+                                 int32_t lane_fx_count,
+                                 const le_fx_recipe* track_fx,
+                                 int32_t lanes_after) {
+  if (topology != NULL) {
+    if (!le_mix_valid(engine, topology)) return LE_ERR_INVALID;
+    const int32_t prepared = le_prepare_routing(engine, topology);
+    if (prepared != LE_OK) return prepared;
+    b->mix = *topology;
+    b->has_mix = 1;
+  }
+  b->lane_fx = le_fx_prepare_chains(engine, LE_FX_OWNER_LANE, b->channel,
+                                    lanes_after, lane_fx, lane_fx_count);
+  b->track_fx = le_fx_prepare_chains(engine, LE_FX_OWNER_TRACK, b->channel, 1,
+                                     track_fx, track_fx != NULL ? 1 : 0);
+  if (b->lane_fx == NULL || b->track_fx == NULL) {
+    le_fx_recipe_abandon(b->lane_fx);
+    le_fx_recipe_abandon(b->track_fx);
+    b->lane_fx = b->track_fx = NULL;
+    return LE_ERR_INVALID;
+  }
+  return LE_OK;
+}
+
+/* Posts [b] through the receipt table and, on acceptance, takes the track
+ * into its in-flight window. */
+static int32_t le_bounce_post(le_engine* engine, le_bounce_bundle* b,
+                              int32_t code, int32_t pin_a, int32_t pin_b,
+                              uint64_t* receipt) {
+  le_track* t = &engine->tracks[b->channel];
+  le_command cmd = {.code = code};
+  cmd.bounce.bundle = b;
+  const int32_t rc = le_request_admit(engine, &cmd, &cmd.bounce.slot, receipt);
+  if (rc != LE_OK) {
+    le_fx_recipe_abandon(b->lane_fx);
+    le_fx_recipe_abandon(b->track_fx);
+    free(b);
+    return rc;
+  }
+  le_fx_recipe_admitted(engine, b->lane_fx, 0);
+  le_fx_recipe_admitted(engine, b->track_fx, 0);
+  if (b->has_mix && b->mix.lane_count_mask) {
+    engine->lane_growth_command = engine->commands_posted;
+  }
+  t->bounce_inflight = b;
+  t->bounce_pin[0] = pin_a >= 0 ? pin_a + 1 : 0;
+  t->bounce_pin[1] = pin_b >= 0 ? pin_b + 1 : 0;
+  /* The bounced lanes hold material one Undo or Redo away from now on (plan
+   * 5.4, review H1 of Part 4a): a shrink below them (le_mix_valid) or the
+   * trailing-lane trim would otherwise drop a lane that a Redo regrows
+   * zeroed, losing the right channel. The latch is sticky until the track's
+   * whole history dies (le_track_drop_recoverable_if_dead). */
+  const int32_t lanes =
+      b->has_mix && (b->mix.lane_count_mask & (1u << b->channel))
+          ? b->mix.lane_count[b->channel]
+          : le_lanes_active(t);
+  for (int32_t l = 0; l < lanes && l < LE_MAX_LANES; ++l) {
+    store_i32(&t->lanes[l].a_recoverable, 1);
+  }
+  if (b->target.state == LE_TRACK_EMPTY) {
+    /* The Clear body runs on the callback: mirror its generation bump so a
+     * retire event from before it reads as stale. */
+    t->dub_generation++;
+    le_mark_empty_cmd(engine, t);
+  } else {
+    le_mark_state_cmd(t, b->target.state);
+    t->pending_len = b->target.len;
+    t->pending_master_len = b->reclock_to > 0
+                                ? b->reclock_to
+                                : le_effective_master_len(engine, t);
+  }
+  return LE_OK;
+}
+
+/* Files every collected Bounce outcome (control thread, each drain): the
+ * callback's `prev` becomes the history entry on the side the motion leaves.
+ * A refused install files nothing and releases its pins. */
+void le_bounce_collect(le_engine* engine) {
+  if (engine == NULL) return;
+  for (int32_t ch = 0; ch < engine->track_count; ++ch) {
+    le_track* t = &engine->tracks[ch];
+    le_bounce_bundle* b = t->bounce_inflight;
+    if (b == NULL) continue;
+    const int32_t result =
+        atomic_load_explicit(&b->a_result, memory_order_acquire);
+    if (result == 1) continue;
+    if (result == LE_OK) {
+      le_hist_entry prev = b->prev;
+      prev.kind = LE_HIST_BOUNCE;
+      prev.group_id = b->target.group_id;
+      if (b->op == LE_BOUNCE_UNDO) {
+        t->undo_count--;
+        (void)le_redo_push(t, prev);
+      } else {
+        if (b->op == LE_BOUNCE_REDO) {
+          t->redo_count--;
+        } else {
+          le_clear_redo(t); /* a new audio edit retires the Redo branch */
+        }
+        if (t->undo_count >= LE_POOL_SLOTS) {
+          /* Admission checked room, and every slot on the stack is a pool
+           * slot, so this cannot fill; if it ever did, the oldest step goes
+           * rather than a write past the stack. */
+          memmove(&t->undo_stack[0], &t->undo_stack[1],
+                  (size_t)(LE_POOL_SLOTS - 1) * sizeof(t->undo_stack[0]));
+          t->undo_count = LE_POOL_SLOTS - 1;
+        }
+        t->undo_stack[t->undo_count++] = prev;
+      }
+      le_publish_undo_depth(t);
+      store_i32(&t->a_redo_depth, t->redo_count);
+      /* The callback dropped the armed shadows with the install (sized for
+       * the old length); their slots return to the pool, and correctly
+       * sized spares arrive with the next dub session's replenish. Until
+       * the result is filed they stay outstanding, so nothing reuses a slot
+       * the callback may still hold. */
+      t->outstanding_count = 0;
+    }
+    t->bounce_inflight = NULL;
+    t->bounce_pin[0] = t->bounce_pin[1] = 0;
+    free(b);
+  }
+}
+
+void le_bounce_abandon_all(le_engine* engine) {
+  if (engine == NULL) return;
+  for (int32_t ch = 0; ch < LE_MAX_TRACKS; ++ch) {
+    le_track* t = &engine->tracks[ch];
+    /* A bundle the callback parked while a tail drained goes with it. */
+    t->bounce_parked = NULL;
+    /* Called with the audio thread stopped: a bundle still pending never
+     * applied and never will (the ring is reset or quiesced). */
+    if (t->bounce_inflight != NULL &&
+        atomic_load_explicit(&t->bounce_inflight->a_result,
+                             memory_order_acquire) != 1) {
+      le_bounce_collect(engine);
+      continue;
+    }
+    free(t->bounce_inflight);
+    t->bounce_inflight = NULL;
+    t->bounce_pin[0] = t->bounce_pin[1] = 0;
+  }
+}
+
+int32_t le_engine_bounce(le_engine* engine, const le_bounce_request* request,
+                         uint64_t* receipt) {
+  if (receipt) *receipt = 0;
+  if (engine == NULL || request == NULL || receipt == NULL) {
+    return LE_ERR_INVALID;
+  }
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  const int32_t ch = request->destination;
+  if (ch < 0 || ch >= engine->track_count) return LE_ERR_INVALID;
+  if (!request->keep_sources) return LE_ERR_UNSUPPORTED; /* Part 4b */
+  le_engine_drain_events(engine);
+  le_track* t = &engine->tracks[ch];
+  const float* pcm = NULL;
+  int32_t len = 0;
+  uint64_t i_ref = 0;
+  const int32_t taken = le_render_take(engine, request->job, &pcm, &len, &i_ref);
+  if (taken != LE_OK) return taken;
+  if (len <= 0 || len > engine->max_loop_frames) return LE_ERR_CAPACITY;
+  if (le_bounce_busy(engine, ch)) return LE_ERR_NOT_READY;
+  if (t->undo_count >= LE_POOL_SLOTS) return LE_ERR_NOT_READY;
+
+  /* Mode fit against the rig the destination joins. */
+  const int32_t mode = load_i32(&engine->a_looper_mode);
+  int32_t reclock_to = 0;
+  if (mode != LE_LOOPER_MODE_FREE && mode != LE_LOOPER_MODE_SONG) {
+    int32_t base = 0;
+    const int32_t base_ch =
+        le_ctl_mode_base_excluding(engine, mode, 1u << ch, &base);
+    if (base_ch >= 0) {
+      if (!le_mode_span_fits(mode, base, len)) return LE_ERR_MODE_MISMATCH;
+    } else {
+      const int32_t master = le_effective_master_len(engine, t);
+      if (master > 0 && !le_mode_span_fits(mode, master, len)) {
+        reclock_to = len; /* the sole content takes the master with it */
+      }
+    }
+  }
+
+  const int32_t lanes_after =
+      le_bounce_lanes_after(engine, ch, request->topology);
+  if (lanes_after < 2 || lanes_after > LE_MAX_LANES) return LE_ERR_INVALID;
+  le_bounce_bundle* b = (le_bounce_bundle*)calloc(1, sizeof(*b));
+  if (b == NULL) return LE_ERR_CAPACITY;
+  b->channel = ch;
+  b->op = LE_BOUNCE_APPLY;
+  atomic_store_explicit(&b->a_result, 1, memory_order_relaxed);
+  int32_t rc = le_bounce_prepare(engine, b, request->topology,
+                                 request->lane_fx, request->lane_fx_count,
+                                 request->track_fx, lanes_after);
+  if (rc != LE_OK) {
+    free(b);
+    return rc;
+  }
+  /* The incoming image: one slot, the pair on lanes 0 and 1, silence on the
+   * others (lanes share slot indices in lockstep). */
+  const int32_t slot = track_acquire_slot(t);
+  const int32_t want = le_layer_slot_frames(engine, len);
+  rc = slot < 0 ? LE_ERR_CAPACITY : LE_OK;
+  for (int32_t l = 0; rc == LE_OK && l < lanes_after; ++l) {
+    le_lane* ln = &t->lanes[l];
+    if (!le_lane_ensure_slot(ln, slot, want)) {
+      rc = LE_ERR_CAPACITY;
+      break;
+    }
+    float* dst = ln->pool[slot];
+    if (l < 2) {
+      for (int32_t f = 0; f < len; ++f) dst[f] = pcm[2 * f + l];
+    } else {
+      memset(dst, 0, (size_t)len * sizeof(float));
+    }
+  }
+  /* A lane the bounce adds plays and records nothing while Redo holds the
+   * bounce: after Undo it reads the replaced take's slot, which on a lane
+   * that did not exist then holds silence (plan 5.4). The lane is inactive
+   * until the callback applies the topology, so control writes it. */
+  const int32_t live0 = load_i32(&t->lanes[0].a_live);
+  const int32_t prev_len = le_effective_state(t) == LE_TRACK_EMPTY
+                               ? 0
+                               : load_i32(&t->lanes[0].a_len);
+  for (int32_t l = le_lanes_active(t); rc == LE_OK && prev_len > 0 &&
+                                       l < lanes_after; ++l) {
+    le_lane* ln = &t->lanes[l];
+    const int32_t frames = le_layer_slot_frames(engine, prev_len);
+    if (!le_lane_ensure_slot(ln, live0, frames)) {
+      rc = LE_ERR_CAPACITY;
+      break;
+    }
+    memset(ln->pool[live0], 0, (size_t)ln->pool_cap[live0] * sizeof(float));
+  }
+  if (rc != LE_OK) {
+    le_fx_recipe_abandon(b->lane_fx);
+    le_fx_recipe_abandon(b->track_fx);
+    free(b);
+    return rc;
+  }
+  if (engine->bounce_next_group == UINT32_MAX) engine->bounce_next_group = 0;
+  le_hist_entry g = {LE_HIST_BOUNCE, slot};
+  g.len = len;
+  g.state = LE_TRACK_STOPPED; /* Keep sources: the destination waits */
+  g.fade_amount = 1.0f;
+  g.start_iter = i_ref;
+  g.group_id = ++engine->bounce_next_group;
+  b->target = g;
+  b->reclock_to = reclock_to;
+  /* Staged before the push (#1143): the callback names this image at the
+   * first frame it mixes it. */
+  (void)le_stage_source_image(engine, ch, slot, len);
+  return le_bounce_post(engine, b, LE_CMD_BOUNCE, slot,
+                        load_i32(&t->lanes[0].a_live), receipt);
+}
+
+int32_t le_engine_bounce_recover(le_engine* engine,
+                                 const le_bounce_recover_request* request,
+                                 uint64_t* receipt) {
+  if (receipt) *receipt = 0;
+  if (engine == NULL || request == NULL || receipt == NULL) {
+    return LE_ERR_INVALID;
+  }
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  const int32_t ch = request->destination;
+  if (ch < 0 || ch >= engine->track_count) return LE_ERR_INVALID;
+  le_engine_drain_events(engine);
+  le_track* t = &engine->tracks[ch];
+  const int redo = request->redo != 0;
+  const int32_t count = redo ? t->redo_count : t->undo_count;
+  const le_hist_entry* stack = redo ? t->redo_stack : t->undo_stack;
+  if (count == 0 || stack[count - 1].kind != LE_HIST_BOUNCE) {
+    /* A Bounce further down: a newer edit sits on top of it (plain Undo or
+     * Redo takes that first), so the Bounce the caller remembers is no
+     * longer the track's newest step. */
+    for (int32_t i = 0; i < count; ++i) {
+      if (stack[i].kind == LE_HIST_BOUNCE) return LE_ERR_TRACKS_CHANGED;
+    }
+    return LE_ERR_INVALID;
+  }
+  if (le_bounce_busy(engine, ch)) return LE_ERR_NOT_READY;
+  if (!redo && t->redo_count >= LE_POOL_SLOTS) return LE_ERR_NOT_READY;
+  const le_hist_entry g = stack[count - 1];
+  /* The restored side must fit the rig as it is now. */
+  const int32_t mode = load_i32(&engine->a_looper_mode);
+  if (g.state != LE_TRACK_EMPTY && g.master_len == 0 &&
+      mode != LE_LOOPER_MODE_FREE && mode != LE_LOOPER_MODE_SONG) {
+    int32_t base = 0;
+    if (le_ctl_mode_base_excluding(engine, mode, 1u << ch, &base) >= 0 &&
+        !le_mode_span_fits(mode, base, g.len)) {
+      return LE_ERR_MODE_MISMATCH;
+    }
+  }
+  const int32_t lanes_after =
+      le_bounce_lanes_after(engine, ch, request->topology);
+  if (lanes_after < 1 || lanes_after > LE_MAX_LANES) return LE_ERR_INVALID;
+  le_bounce_bundle* b = (le_bounce_bundle*)calloc(1, sizeof(*b));
+  if (b == NULL) return LE_ERR_CAPACITY;
+  b->channel = ch;
+  b->op = redo ? LE_BOUNCE_REDO : LE_BOUNCE_UNDO;
+  b->target = g;
+  b->reclock_to = g.master_len;
+  atomic_store_explicit(&b->a_result, 1, memory_order_relaxed);
+  const int32_t rc = le_bounce_prepare(engine, b, request->topology,
+                                       request->lane_fx, request->lane_fx_count,
+                                       request->track_fx, lanes_after);
+  if (rc != LE_OK) {
+    free(b);
+    return rc;
+  }
+  if (g.state != LE_TRACK_EMPTY && g.slot >= 0) {
+    (void)le_stage_source_image(engine, ch, g.slot, g.len);
+  }
+  return le_bounce_post(engine, b, LE_CMD_BOUNCE_RECOVER, g.slot,
+                        load_i32(&t->lanes[0].a_live), receipt);
 }

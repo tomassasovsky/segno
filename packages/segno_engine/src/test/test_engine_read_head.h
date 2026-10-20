@@ -27,12 +27,14 @@ static void test_read_head_identity_is_exact(void) {
     CHECK(idx == (double)((pos + 123) % len));
     CHECK(le_head_sample(ramp, len, idx) == ramp[(pos + 123) % len]);
   }
-  /* the reversed coordinate of the Foot Reverse plan: (origin - pos) mod len */
-  const le_read_head rev = {1, (double)(len - 1), 1.0};
+  /* Reverse's coordinate (#1162): (origin - pos - 1) mod len, so a parked
+   * reversed head starts its lap at len - 1 */
+  const le_read_head rev = {1, 0.0, 1.0};
   for (int64_t pos = 0; pos < 200000; pos += 5) {
     const double idx = le_head_index(&rev, pos, len);
-    CHECK(idx == head_ref_mod((double)(len - 1) - (double)pos, len));
+    CHECK(idx == head_ref_mod(-1.0 - (double)pos, len));
   }
+  CHECK(le_head_index(&rev, 0, len) == (double)(len - 1));
   CHECK(le_head_index(&id, 5, 0) == 0.0); /* empty source reads index 0 */
   free(ramp);
 }
@@ -68,7 +70,7 @@ static void test_read_head_fractional_rates(void) {
     for (int64_t pos = 0; pos < len / n; ++pos) {
       const double idx = le_head_index(&h, pos, len);
       CHECK(idx == (double)(pos * n));
-      const float box = le_head_sample_decimated(ramp, len, idx, rates[r]);
+      const float box = le_head_sample_decimated(ramp, len, idx, rates[r], 0);
       const float mean = (float)(pos * n) + (float)(n - 1) / 2.0f;
       CHECK(fabsf(box - mean) < 1e-3f);
     }
@@ -77,7 +79,35 @@ static void test_read_head_fractional_rates(void) {
     CHECK(top == (double)(len - n));
     float expect = 0.0f;
     for (int32_t k = 0; k < n; ++k) expect += ramp[len - n + k];
-    CHECK(fabsf(le_head_sample_decimated(ramp, len, top, rates[r]) - expect / (float)n) < 1e-3f);
+    CHECK(fabsf(le_head_sample_decimated(ramp, len, top, rates[r], 0) - expect / (float)n) < 1e-3f);
+  }
+  /* a non-integer rate >= 2 interpolates between the boxes at floor(index)
+   * and the next index instead of snapping to whole samples (2.5x: a box of
+   * two, indices 0, 2.5, 5, 7.5 ...) */
+  {
+    const le_read_head h = {0, 0.0, 2.5};
+    for (int64_t pos = 0; pos < 300; ++pos) {
+      const double idx = le_head_index(&h, pos, len);
+      const double frac = idx - (double)(int64_t)idx;
+      const float lo = ramp[(int64_t)idx] + 0.5f; /* mean of i, i + 1 */
+      const float expect = lo + (float)frac; /* the box at i + 1 is lo + 1 */
+      CHECK(fabsf(le_head_read(ramp, len, &h, idx) - expect) < 1e-3f);
+    }
+    CHECK(fabsf(le_head_sample_decimated(ramp, len, 2.5, 2.5, 0) - 3.0f) < 1e-4f);
+  }
+  /* a reversed head boxes the samples it is moving toward, i - n + 1 .. i */
+  {
+    const le_read_head h = {1, 0.0, 4.0};
+    for (int64_t pos = 1; pos < 200; ++pos) {
+      const double idx = le_head_index(&h, pos, len);
+      const int64_t i = (int64_t)idx;
+      CHECK(idx == (double)i); /* integral at 4x from a parked origin */
+      const float expect = (float)i - 1.5f; /* mean of i-3 .. i */
+      if (i >= 3) CHECK(fabsf(le_head_read(ramp, len, &h, idx) - expect) < 1e-3f);
+    }
+    /* the backward box wraps below index 0 */
+    const float wrapped = (ramp[len - 2] + ramp[len - 1] + ramp[0] + ramp[1]) / 4.0f;
+    CHECK(fabsf(le_head_sample_decimated(ramp, len, 1.0, 4.0, 1) - wrapped) < 1e-3f);
   }
   /* tempo ratios: the index never leaves [0, len) and matches the reference */
   const double ratios[] = {0.75, 1.0 / 0.75, 1.0 / 3.0};
@@ -91,7 +121,7 @@ static void test_read_head_fractional_rates(void) {
   }
   /* decimation below 2 is the plain sample */
   const le_read_head slow = {0, 0.0, 1.5};
-  CHECK(le_head_sample_decimated(ramp, len, le_head_index(&slow, 3, len), 1.5) ==
+  CHECK(le_head_sample_decimated(ramp, len, le_head_index(&slow, 3, len), 1.5, 0) ==
         le_head_sample(ramp, len, 4.5));
 }
 

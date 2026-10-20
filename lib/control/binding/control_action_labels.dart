@@ -31,6 +31,17 @@ String controlActionLabel(
   ),
 };
 
+/// The second line of the one-time FX notice (#1229, D13): MODE now leaves
+/// FX mode, and the player's MODE assignment in [setup] runs only in the
+/// other modes.
+String footFxModeChangedText(AppLocalizations l10n, PedalSetup setup) {
+  final press = _modeLabel(l10n, setup.modePress);
+  final hold = setup.modeHold;
+  return hold == null
+      ? l10n.footFxModeChanged(press)
+      : l10n.footFxModeChangedHold(press, _modeLabel(l10n, hold));
+}
+
 /// What an unassigned gesture reads as.
 String controlActionNone(AppLocalizations l10n) => l10n.actionNone;
 
@@ -78,6 +89,9 @@ String _modeLabel(AppLocalizations l10n, InteractionMode mode) =>
       InteractionMode.fade => l10n.actionModeFade,
       InteractionMode.reverse => l10n.actionModeReverse,
       InteractionMode.peel => l10n.actionModePeel,
+      InteractionMode.tuner => l10n.actionModeTuner,
+      InteractionMode.multiply => l10n.actionModeMultiply,
+      InteractionMode.divide => l10n.actionModeDivide,
     };
 
 String _commandLabel(AppLocalizations l10n, ControlCommand command) =>
@@ -91,6 +105,8 @@ String _commandLabel(AppLocalizations l10n, ControlCommand command) =>
       ControlCommand.recordPerformance => l10n.actionRecordPerformance,
       ControlCommand.nextBank => l10n.actionNextBank,
       ControlCommand.tapTempo => l10n.actionTapTempo,
+      ControlCommand.trackFxOff => l10n.actionTrackFxOff,
+      ControlCommand.trackFxOn => l10n.actionTrackFxOn,
     };
 
 String _operationLabel(AppLocalizations l10n, TrackOperation operation) =>
@@ -103,6 +119,9 @@ String _operationLabel(AppLocalizations l10n, TrackOperation operation) =>
       TrackOperation.redo => l10n.actionOperationRedo,
       TrackOperation.reverse => l10n.actionOperationReverse,
       TrackOperation.peel => l10n.actionOperationPeel,
+      TrackOperation.multiply => l10n.actionOperationMultiply,
+      TrackOperation.divideFirstHalf => l10n.actionOperationDivideFirstHalf,
+      TrackOperation.divideLastHalf => l10n.actionOperationDivideLastHalf,
     };
 
 String _scopeLabel(

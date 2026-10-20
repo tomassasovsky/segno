@@ -41,10 +41,12 @@ class SessionLayer {
 ///
 /// [history] is the track's audio history (schema v12, #1164): the
 /// [undoCount] undo entries oldest first, then the [redoCount] redo entries
-/// newest-adjacent first, each with its kind. [layers] holds the images they
-/// name oldest→newest: one per undo entry, the live buffer at
-/// `layers[liveIndex]` (== [undoCount]), then one per redo entry except a
-/// Peel marker, which holds no image ([TrackHistory.imageCount]).
+/// newest-adjacent first, each with its kind and, for a length edit (schema
+/// v14, #1168), its playhead map. [layers] holds the images they name
+/// oldest→newest: one per undo entry, the live buffer at `layers[liveIndex]`
+/// (== [undoCount]), then one per redo entry except a Peel marker, which
+/// holds no image ([TrackHistory.imageCount]). A length edit's images differ
+/// in length from the live one ([TrackHistory.lengthMalformation]).
 @immutable
 class SessionLane {
   /// Creates a [SessionLane].
@@ -151,7 +153,11 @@ class SessionLane {
     if (balance != 1) 'balance': balance,
     'history': [
       for (final e in history.entries)
-        {'kind': e.kind.name, 'skipped': e.skipped},
+        {
+          'kind': e.kind.name,
+          'skipped': e.skipped,
+          if (e.kind == HistoryKind.length || e.start != 0) 'start': e.start,
+        },
     ],
     'undoCount': undoCount,
     'redoCount': redoCount,
@@ -199,6 +205,7 @@ class SessionTrack {
     required this.fadeAmount,
     required this.reversed,
     required this.lanes,
+    this.spanFrames = 0,
   });
 
   /// Projects a [SessionTrack] from a current-schema JSON map.
@@ -232,6 +239,10 @@ class SessionTrack {
         );
       }
     }
+    final span = json['spanFrames'];
+    if (span is! int || span < 0) {
+      throw const FormatException('invalid track span');
+    }
     return SessionTrack(
       channel: channel,
       multiple: (json['multiple'] as num).toInt(),
@@ -239,16 +250,19 @@ class SessionTrack {
       fadeAmount: amount.toDouble(),
       reversed: reversed,
       lanes: lanes,
+      spanFrames: span,
     );
   }
 
   /// Track channel index.
   final int channel;
 
-  /// Track length in whole base loops (`>= 1`).
+  /// Track length in whole base loops (`>= 1`); `1` for a Sync division.
   final int multiple;
 
-  /// Captured length in frames (`multiple` × the base length).
+  /// Captured length in frames: [multiple] × the base length, or base/2 or
+  /// base/4 for a Sync division (#1168). Informational: recall takes each
+  /// image's length from its WAV.
   final int lengthFrames;
 
   /// Captured Fade coefficient, recalled as a stationary amount.
@@ -261,6 +275,12 @@ class SessionTrack {
   /// The track's lanes, each with its own mix/routing and audio layers.
   final List<SessionLane> lanes;
 
+  /// The master length the take was laid down against when that is not
+  /// [Session.recordedLengthFrames] (#1179, schema 16): a take recorded
+  /// after a retime. 0 for a take on the recorded master. Recalled through
+  /// the engine's import span, so the take reads at its own ratio.
+  final int spanFrames;
+
   /// Serializes this track to a JSON map.
   Map<String, dynamic> toJson() => {
     'channel': channel,
@@ -268,6 +288,7 @@ class SessionTrack {
     'lengthFrames': lengthFrames,
     'fadeAmount': fadeAmount,
     'reversed': reversed,
+    'spanFrames': spanFrames,
     'lanes': [for (final l in lanes) l.toJson()],
   };
 
@@ -281,6 +302,7 @@ class SessionTrack {
           lengthFrames == other.lengthFrames &&
           fadeAmount == other.fadeAmount &&
           reversed == other.reversed &&
+          spanFrames == other.spanFrames &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -290,6 +312,7 @@ class SessionTrack {
     lengthFrames,
     fadeAmount,
     reversed,
+    spanFrames,
     Object.hashAll(lanes),
   );
 }
@@ -697,8 +720,179 @@ class SessionOutputSetup {
   );
 }
 
+/// One prepared backing file as a session names it (#1200 plan D9): the
+/// managed asset's content identity, `sha256:<64 hex>`, and its display name,
+/// so an item whose file is gone can still be named. Never matched by name.
+@immutable
+class SessionBackingItem {
+  /// Creates a [SessionBackingItem].
+  const SessionBackingItem({required this.digest, required this.name});
+
+  /// Reads exactly `{"digest", "name"}`; anything else is refused.
+  factory SessionBackingItem.fromJson(Object? json) {
+    if (json is! Map<String, dynamic> ||
+        json.length != 2 ||
+        json['digest'] is! String ||
+        json['name'] is! String) {
+      throw const FormatException('invalid backing item');
+    }
+    final item = SessionBackingItem(
+      digest: json['digest'] as String,
+      name: json['name'] as String,
+    );
+    if (!item.isValid) throw const FormatException('invalid backing item');
+    return item;
+  }
+
+  /// The asset's full SHA-256, `sha256:<64 lower-case hex>`.
+  final String digest;
+
+  /// The file's display name.
+  final String name;
+
+  static final RegExp _digest = RegExp(r'^sha256:[0-9a-f]{64}$');
+
+  /// A well-formed digest and a non-blank name.
+  bool get isValid => _digest.hasMatch(digest) && name.trim().isNotEmpty;
+
+  /// Serializes this item.
+  Map<String, dynamic> toJson() => {'digest': digest, 'name': name};
+
+  @override
+  bool operator ==(Object other) =>
+      other is SessionBackingItem &&
+      other.digest == digest &&
+      other.name == name;
+
+  @override
+  int get hashCode => Object.hash(digest, name);
+}
+
+/// The backing player's setup a session owns (#1200 plan D9, schema 15): the
+/// prepared order, the loaded item, `At end`, and the backing's level, pan
+/// and output channels. The files themselves are the appliance's. Playback
+/// is never saved: a recalled backing is loaded stopped at 0.
+///
+/// Always written, every key present; the current schema refuses a manifest
+/// without it.
+@immutable
+class SessionBacking {
+  /// Creates a [SessionBacking]; the defaults are an empty, silent player.
+  const SessionBacking({
+    this.prepared = const [],
+    this.loaded,
+    this.endMode = BackingEnd.stop,
+    this.level = 1,
+    this.pan = 0,
+    this.outputMask = 0,
+  });
+
+  /// Reads the current schema's block strictly: exactly the six keys, a
+  /// prepared list without repeated digests, and every value in range.
+  factory SessionBacking.fromJson(Object? json) {
+    const keys = {
+      'prepared',
+      'loaded',
+      'endMode',
+      'level',
+      'pan',
+      'outputMask',
+    };
+    if (json is! Map<String, dynamic> ||
+        json.length != keys.length ||
+        !json.keys.every(keys.contains)) {
+      throw const FormatException('invalid backing setup');
+    }
+    final prepared = json['prepared'];
+    final level = json['level'];
+    final pan = json['pan'];
+    final mask = json['outputMask'];
+    if (prepared is! List || level is! num || pan is! num || mask is! int) {
+      throw const FormatException('invalid backing setup');
+    }
+    final loaded = json['loaded'];
+    final backing = SessionBacking(
+      prepared: List.unmodifiable(prepared.map(SessionBackingItem.fromJson)),
+      loaded: loaded == null ? null : SessionBackingItem.fromJson(loaded),
+      endMode: _readEnum(json['endMode'], BackingEnd.values),
+      level: level.toDouble(),
+      pan: pan.toDouble(),
+      outputMask: mask,
+    );
+    if (!backing.isValid) throw const FormatException('invalid backing setup');
+    return backing;
+  }
+
+  /// The prepared order.
+  final List<SessionBackingItem> prepared;
+
+  /// The item the player held, or null. It need not be prepared: Remove from
+  /// prepared keeps the playing file.
+  final SessionBackingItem? loaded;
+
+  /// What happens at the loaded file's end.
+  final BackingEnd endMode;
+
+  /// Backing gain, `0..2`.
+  final double level;
+
+  /// Backing balance, `-1..1`.
+  final double pan;
+
+  /// The output channels the backing sounds on; 0 is none.
+  final int outputMask;
+
+  /// Unique prepared digests, valid items and values in range.
+  bool get isValid =>
+      prepared.every((item) => item.isValid) &&
+      prepared.map((item) => item.digest).toSet().length == prepared.length &&
+      (loaded?.isValid ?? true) &&
+      level.isFinite &&
+      level >= 0 &&
+      level <= 2 &&
+      pan.isFinite &&
+      pan >= -1 &&
+      pan <= 1 &&
+      outputMask >= 0 &&
+      outputMask <= 0xffffffff;
+
+  /// Serializes the block, every key present.
+  Map<String, dynamic> toJson() {
+    if (!isValid) throw const FormatException('invalid backing setup');
+    return {
+      'prepared': [for (final item in prepared) item.toJson()],
+      'loaded': loaded?.toJson(),
+      'endMode': endMode.name,
+      'level': level,
+      'pan': pan,
+      'outputMask': outputMask,
+    };
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is SessionBacking &&
+      _listEquals(prepared, other.prepared) &&
+      loaded == other.loaded &&
+      endMode == other.endMode &&
+      level == other.level &&
+      pan == other.pan &&
+      outputMask == other.outputMask;
+
+  @override
+  int get hashCode => Object.hash(
+    Object.hashAll(prepared),
+    loaded,
+    endMode,
+    level,
+    pan,
+    outputMask,
+  );
+}
+
 /// A saved Segno session, paired with per-lane, per-layer WAV files in a
-/// `.segno` bundle directory. Only the current schema 12 is accepted.
+/// `.segno` bundle directory. Only the current schema 15 is accepted; older
+/// ones convert first.
 ///
 /// Track settings are session-level maps, independent of audio entries.
 /// Missing entries inherit the session default; explicit values, including
@@ -728,6 +922,7 @@ class Session {
     this.tsDen = 4,
     this.quantizeDiv = GridDivision.off,
     this.loopBars = 0,
+    int? loopBeats,
     this.recordTiming = RecordTiming.immediately,
     this.overdubDecay = 0,
     this.clickMode = ClickMode.off,
@@ -756,7 +951,15 @@ class Session {
     this.pedalBindings = '',
     this.inputSetup = const SessionInputSetup(),
     this.outputSetup = const SessionOutputSetup(),
-  });
+    this.backing = const SessionBacking(),
+    this.clickPan = 0,
+    this.recordedTempoBpm = 0,
+    this.recordedLengthFrames = 0,
+    this.defaultFollowTempo = true,
+    this.trackFollowTempoOverrides = const {},
+    this.defaultPitchMode = PitchMode.unchanged,
+    this.trackPitchModeOverrides = const {},
+  }) : loopBeats = loopBeats ?? loopBars * tsNum;
 
   /// Projects a [Session] from a decoded JSON map.
   ///
@@ -773,6 +976,10 @@ class Session {
         supported: formatVersion,
       );
     }
+    final recorded = _readRecorded(
+      json['recordedTempoBpm'],
+      json['recordedLengthFrames'],
+    );
     return Session(
       name: _readName(json['name']),
       sampleRate: (json['sampleRate'] as num).toInt(),
@@ -802,6 +1009,7 @@ class Session {
       tsDen: (json['tsDen'] as num).toInt(),
       quantizeDiv: _readEnum(json['quantizeDiv'], GridDivision.values),
       loopBars: (json['loopBars'] as num).toInt(),
+      loopBeats: (json['loopBeats'] as num).toInt(),
       recordTiming: _readEnum(json['recordTiming'], RecordTiming.values),
       overdubDecay: (json['overdubDecay'] as num).toInt(),
       clickMode: _readEnum(json['clickMode'], ClickMode.values),
@@ -855,12 +1063,30 @@ class Session {
       outputSetup: SessionOutputSetup.fromJson(
         json['outputSetup'] as Map<String, dynamic>?,
       ),
+      backing: SessionBacking.fromJson(json['backing']),
+      clickPan: _readClickPan(json['clickPan']),
+      recordedTempoBpm: recorded.tempo,
+      recordedLengthFrames: recorded.length,
+      defaultFollowTempo: json['defaultFollowTempo'] as bool,
+      trackFollowTempoOverrides: _readTrackOverrides(
+        json['trackFollowTempoOverrides'] as Map<String, dynamic>,
+        (value) => value! as bool,
+      ),
+      defaultPitchMode: _readEnum(json['defaultPitchMode'], PitchMode.values),
+      trackPitchModeOverrides: _readTrackOverrides(
+        json['trackPitchModeOverrides'] as Map<String, dynamic>,
+        (value) => _readEnum(value, PitchMode.values),
+      ),
     );
   }
 
   /// The current manifest schema stores per-track settings (including each
-  /// track's playback direction since 13) and all FX stages.
-  static const int formatVersion = 13;
+  /// track's playback direction since 13), all FX stages, since 14
+  /// (#1168) length edits in a lane's history with their playhead maps
+  /// (`start`) and the grid in beats (`loopBeats`), since 15 (#1200) the
+  /// backing setup and the click's pan, and since 16 (#1179 Part 4b) the
+  /// recorded tempo, each take's span and the Audio & tempo settings.
+  static const int formatVersion = 16;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -924,8 +1150,16 @@ class Session {
   final GridDivision quantizeDiv;
 
   /// Exact saved relationship between the master loop and the musical grid.
-  /// Zero preserves an intentionally grid-free loop.
+  /// Zero preserves an intentionally grid-free loop, or one whose beats do
+  /// not make whole bars ([loopBeats]).
   final int loopBars;
+
+  /// The same grid in beats (denominator notes), the engine's own count
+  /// (schema 14, #1168): [loopBars] × [tsNum] for a whole-bar loop, or the
+  /// beats a Divide of a sole loop kept (2 for a halved bar of 4/4) with
+  /// [loopBars] zero. Defaults to the bars' beats when constructed without
+  /// it.
+  final int loopBeats;
 
   /// The session's default record timing (accepted design, slice 2b): the
   /// engine's quantize gate and [quantizeDiv] as the one setting they pair
@@ -1030,6 +1264,35 @@ class Session {
   /// recorded. Omitted from the manifest when it is the default setup.
   final SessionOutputSetup outputSetup;
 
+  /// The backing player's setup (schema 15, #1200).
+  final SessionBacking backing;
+
+  /// The click's balance, `-1..1` (schema 15, #1200 D6); 0 is centre.
+  final double clickPan;
+
+  /// The tempo the takes were laid down at and the master length it measured
+  /// (#1179, schema 16); both 0 when the takes are at [tempoBpm] on
+  /// [baseLengthFrames] or there is no grid. A recall commits the takes at
+  /// this pair and then retimes to [tempoBpm], which lands on
+  /// [baseLengthFrames].
+  final double recordedTempoBpm;
+
+  /// See [recordedTempoBpm].
+  final int recordedLengthFrames;
+
+  /// The Follow tempo default every track inherits (#1179, schema 16).
+  final bool defaultFollowTempo;
+
+  /// Explicit Follow tempo choices; missing tracks follow
+  /// [defaultFollowTempo].
+  final Map<int, bool> trackFollowTempoOverrides;
+
+  /// The Pitch default every following track inherits (#1179, schema 16).
+  final PitchMode defaultPitchMode;
+
+  /// Explicit Pitch choices; missing tracks follow [defaultPitchMode].
+  final Map<int, PitchMode> trackPitchModeOverrides;
+
   /// Explicit source choices retained for inactive lanes and empty tracks.
   final Map<(int, int), int> laneInputs;
 
@@ -1038,6 +1301,75 @@ class Session {
 
   /// Active lane counts, including tracks without recorded audio.
   final Map<int, int> laneCounts;
+
+  /// The session `New loop` starts from this one (plan D9): every recorded
+  /// thing goes and every setting stays.
+  ///
+  /// No [tracks], so no lane mix or history; [baseLengthFrames] and
+  /// [loopBars] 0, because an empty rig that kept a grid would lock the next
+  /// take's length; [primaryTrack] -1, because the crown goes with the
+  /// content; no [name], because the new loop takes its own. Every other
+  /// field is copied as it is (the recorded tempo and length go with the
+  /// takes): tempo, signature, mode, defaults and their
+  /// per-track overrides, click, count-in, Fade durations, levels, pans,
+  /// lane routing, input and output setup, all four chain stages, the
+  /// pedal remap, and the backing setup and click pan (#1200; New loop only
+  /// stops the backing, plan D9).
+  ///
+  /// Each field is named here on purpose, with no copy helper: a field added
+  /// to [Session] later reads its default until its New loop fate is written
+  /// into this constructor call, and the field-table test fails until it is.
+  Session forNewLoop() => Session(
+    sampleRate: sampleRate,
+    channels: channels,
+    baseLengthFrames: 0,
+    tracks: const [],
+    laneChains: laneChains,
+    monitors: monitors,
+    trackChains: trackChains,
+    outputChains: outputChains,
+    allTracksChain: allTracksChain,
+    tempoBpm: tempoBpm,
+    tempoSource: tempoSource,
+    tsNum: tsNum,
+    tsDen: tsDen,
+    quantizeDiv: quantizeDiv,
+    recordTiming: recordTiming,
+    overdubDecay: overdubDecay,
+    clickMode: clickMode,
+    clickOutputMask: clickOutputMask,
+    clickVolume: clickVolume,
+    countInBars: countInBars,
+    looperMode: looperMode,
+    defaultOneShot: defaultOneShot,
+    defaultLengthPresetBars: defaultLengthPresetBars,
+    defaultFadeDurationMs: defaultFadeDurationMs,
+    trackFadeDurationOverrides: trackFadeDurationOverrides,
+    trackRecordTimingOverrides: trackRecordTimingOverrides,
+    trackOverdubDecayOverrides: trackOverdubDecayOverrides,
+    trackOneShotOverrides: trackOneShotOverrides,
+    trackLengthPresetOverrides: trackLengthPresetOverrides,
+    trackLevels: trackLevels,
+    trackPans: trackPans,
+    laneInputs: laneInputs,
+    laneOutputs: laneOutputs,
+    laneCounts: laneCounts,
+    syncTempo: syncTempo,
+    recDub: recDub,
+    autoRecord: autoRecord,
+    defaultMultiple: defaultMultiple,
+    pedalBindings: pedalBindings,
+    inputSetup: inputSetup,
+    outputSetup: outputSetup,
+    backing: backing,
+    clickPan: clickPan,
+    // The recorded pair describes the takes, which New loop drops; Follow
+    // tempo and Pitch are settings and stay.
+    defaultFollowTempo: defaultFollowTempo,
+    trackFollowTempoOverrides: trackFollowTempoOverrides,
+    defaultPitchMode: defaultPitchMode,
+    trackPitchModeOverrides: trackPitchModeOverrides,
+  );
 
   /// Serializes this session manifest to a JSON map. Always writes the
   /// current [formatVersion].
@@ -1059,6 +1391,7 @@ class Session {
     'tsDen': tsDen,
     'quantizeDiv': quantizeDiv.name,
     'loopBars': loopBars,
+    'loopBeats': loopBeats,
     'recordTiming': recordTiming.name,
     'overdubDecay': overdubDecay,
     'clickMode': clickMode.name,
@@ -1107,6 +1440,20 @@ class Session {
     'pedalBindings': pedalBindings,
     if (!inputSetup.isEmpty) 'inputSetup': inputSetup.toJson(),
     if (!outputSetup.isEmpty) 'outputSetup': outputSetup.toJson(),
+    'backing': backing.toJson(),
+    'clickPan': clickPan,
+    'recordedTempoBpm': recordedTempoBpm,
+    'recordedLengthFrames': recordedLengthFrames,
+    'defaultFollowTempo': defaultFollowTempo,
+    'trackFollowTempoOverrides': {
+      for (final entry in trackFollowTempoOverrides.entries)
+        '${entry.key}': entry.value,
+    },
+    'defaultPitchMode': defaultPitchMode.name,
+    'trackPitchModeOverrides': {
+      for (final entry in trackPitchModeOverrides.entries)
+        '${entry.key}': entry.value.name,
+    },
   };
 
   @override
@@ -1124,6 +1471,7 @@ class Session {
           tsDen == other.tsDen &&
           quantizeDiv == other.quantizeDiv &&
           loopBars == other.loopBars &&
+          loopBeats == other.loopBeats &&
           recordTiming == other.recordTiming &&
           overdubDecay == other.overdubDecay &&
           clickMode == other.clickMode &&
@@ -1169,7 +1517,18 @@ class Session {
           _laneMapEquals(laneOutputs, other.laneOutputs) &&
           _mapEquals(laneCounts, other.laneCounts) &&
           inputSetup == other.inputSetup &&
-          outputSetup == other.outputSetup;
+          outputSetup == other.outputSetup &&
+          backing == other.backing &&
+          clickPan == other.clickPan &&
+          recordedTempoBpm == other.recordedTempoBpm &&
+          recordedLengthFrames == other.recordedLengthFrames &&
+          defaultFollowTempo == other.defaultFollowTempo &&
+          _mapEquals(
+            trackFollowTempoOverrides,
+            other.trackFollowTempoOverrides,
+          ) &&
+          defaultPitchMode == other.defaultPitchMode &&
+          _mapEquals(trackPitchModeOverrides, other.trackPitchModeOverrides);
 
   // hashAll, not hash: the field count passed v6's addition of
   // [pedalBindings], and `Object.hash` caps at 20 positional arguments.
@@ -1185,6 +1544,7 @@ class Session {
     tsDen,
     quantizeDiv,
     loopBars,
+    loopBeats,
     recordTiming,
     overdubDecay,
     clickMode,
@@ -1219,7 +1579,28 @@ class Session {
     _mapHash(laneCounts),
     inputSetup,
     outputSetup,
+    backing,
+    clickPan,
+    recordedTempoBpm,
+    recordedLengthFrames,
+    defaultFollowTempo,
+    _mapHash(trackFollowTempoOverrides),
+    defaultPitchMode,
+    _mapHash(trackPitchModeOverrides),
   ]);
+}
+
+/// The recorded pair (#1179): both 0, or a tempo the engine accepts with a
+/// positive length.
+({double tempo, int length}) _readRecorded(Object? tempo, Object? length) {
+  if (tempo is! num || length is! int || !tempo.isFinite || length < 0) {
+    throw const FormatException('invalid recorded tempo');
+  }
+  final none = tempo == 0 && length == 0;
+  if (!none && (tempo < 30 || tempo > 300 || length == 0)) {
+    throw const FormatException('invalid recorded tempo');
+  }
+  return (tempo: tempo.toDouble(), length: length);
 }
 
 /// A blank or non-string `name` reads as absent rather than failing the load:
@@ -1239,12 +1620,24 @@ T _readEnum<T extends Enum>(Object? raw, List<T> values) {
 }
 
 /// Decodes a lane's history entries: each exactly `{kind, skipped}` with a
-/// known kind name and an integer count.
+/// known kind name and an integer count, plus an integer `start` (the
+/// playhead map, #1168) where one is set.
 List<HistoryEntry> _readHistory(Object? raw) {
   if (raw is! List) throw const FormatException('lane history must be a list');
   return [
     for (final entry in raw)
       switch (entry) {
+        {
+          'kind': final String kind,
+          'skipped': final int skipped,
+          'start': final int start,
+        }
+            when entry.length == 3 =>
+          HistoryEntry(
+            _readEnum(kind, HistoryKind.values),
+            skipped: skipped,
+            start: start,
+          ),
         {'kind': final String kind, 'skipped': final int skipped}
             when entry.length == 2 =>
           HistoryEntry(_readEnum(kind, HistoryKind.values), skipped: skipped),
@@ -1304,6 +1697,14 @@ Map<int, T> _readTrackOverrides<T>(Object? json, T Function(Object?) decode) {
     throw const FormatException('invalid session track override');
   }
   return values;
+}
+
+/// The click's balance: a number in `-1..1`.
+double _readClickPan(Object? raw) {
+  if (raw is! num || !raw.isFinite || raw < -1 || raw > 1) {
+    throw const FormatException('invalid click pan');
+  }
+  return raw.toDouble();
 }
 
 /// Count-in is Off or 1, 2 or 4 bars.

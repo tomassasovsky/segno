@@ -129,7 +129,7 @@ void main() {
       await poll();
       await record.owner.flush();
       expect(repository.settledLooperMode, LooperMode.free);
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
       expect(bloc.state.transport.looperMode, LooperMode.free);
       expect(await settings.loadLooperMode(), LooperMode.free.code);
       repository
@@ -163,7 +163,7 @@ void main() {
       expect(await failure, EngineResult.invalid);
       await poll();
       // The replay owes the mode; audio keeps running.
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
       expect(repository.lengthRecoveryRequired, isTrue);
       expect(repository.lengthRestartIntent.mode, LooperMode.band);
       expect(await settings.loadLooperMode(), LooperMode.band.code);
@@ -172,7 +172,7 @@ void main() {
       expect((await record.owner.recover()).isOk, isTrue);
       expect(repository.lengthRecoveryRequired, isFalse);
       await poll();
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
       expect(engine.lastLooperMode, LooperMode.band);
       expect(bloc.state.transport.looperMode, LooperMode.band);
       expect(await settings.loadLooperMode(), LooperMode.band.code);

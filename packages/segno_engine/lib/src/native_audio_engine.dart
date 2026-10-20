@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'dart:ffi';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart';
 import 'package:segno_engine/src/audio_device.dart';
 import 'package:segno_engine/src/audio_engine.dart';
+import 'package:segno_engine/src/audition.dart';
+import 'package:segno_engine/src/backing.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_library.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
@@ -13,12 +17,17 @@ import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 import 'package:segno_engine/src/history_entry.dart';
 import 'package:segno_engine/src/input_conditioning_param.dart';
+import 'package:segno_engine/src/instruments.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
+import 'package:segno_engine/src/native_audio_decoder.dart';
 import 'package:segno_engine/src/output_fx_snapshot.dart';
+import 'package:segno_engine/src/perf_target.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
+import 'package:segno_engine/src/selected_render.dart';
+import 'package:segno_engine/src/synth_catalogue.dart';
 import 'package:segno_engine/src/track_effect.dart';
 import 'package:segno_engine/src/volume_space.dart';
 
@@ -793,6 +802,23 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) {
+    _checkAlive();
+    final request = calloc<Uint64>();
+    try {
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_edit_length(_engine, channel, edit.index, request),
+      );
+      return (result: result, request: request.value);
+    } finally {
+      calloc.free(request);
+    }
+  }
+
+  @override
   RequestAdmission installReverse({
     required int channel,
     required bool reversed,
@@ -813,6 +839,100 @@ class NativeAudioEngine implements AudioEngine {
       calloc.free(request);
     }
   }
+
+  @override
+  RequestAdmission setSpeed(SpeedFactor factor) {
+    _checkAlive();
+    final request = calloc<Uint64>();
+    try {
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_set_speed(
+          _engine,
+          factor.numer,
+          factor.denom,
+          request,
+        ),
+      );
+      return (result: result, request: request.value);
+    } finally {
+      calloc.free(request);
+    }
+  }
+
+  /// Posts one checked request through [post], which fills the request id.
+  RequestAdmission _admit(int Function(Pointer<Uint64> request) post) {
+    _checkAlive();
+    final request = calloc<Uint64>();
+    try {
+      final result = EngineResult.fromCode(post(request));
+      return (result: result, request: request.value);
+    } finally {
+      calloc.free(request);
+    }
+  }
+
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      _admit(
+        (request) => _bindings.le_engine_transpose_step(
+          _engine,
+          channel,
+          delta,
+          request,
+        ),
+      );
+
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => _admit(
+    (request) => _bindings.le_engine_install_transpose(
+      _engine,
+      channel,
+      semitones,
+      request,
+    ),
+  );
+
+  @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) {
+    if (channel == null && follow == null) {
+      return (result: EngineResult.invalid, request: 0);
+    }
+    return _admit(
+      (request) => _bindings.le_engine_set_follow_tempo(
+        _engine,
+        channel ?? -1,
+        follow == null ? -1 : (follow ? 1 : 0),
+        request,
+      ),
+    );
+  }
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) {
+    if (channel == null && mode == null) {
+      return (result: EngineResult.invalid, request: 0);
+    }
+    return _admit(
+      (request) => _bindings.le_engine_set_pitch_mode(
+        _engine,
+        channel ?? -1,
+        mode?.code ?? -1,
+        request,
+      ),
+    );
+  }
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) => _admit(
+    (request) => _bindings.le_engine_set_transpose_bypass(
+      _engine,
+      bypassed ? 1 : 0,
+      request,
+    ),
+  );
 
   @override
   EngineResult? readRequestResult(int request) {
@@ -1165,12 +1285,32 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  int trackAudioRev(int channel) {
+    _checkAlive();
+    return _bindings.le_engine_track_audio_rev(_engine, channel);
+  }
+
+  @override
   Float32List exportLayer(int channel, int lane, int ordinal) {
     _checkAlive();
-    // Every layer of a lane shares the loop length; get_lane reports it.
-    _bindings.le_engine_get_lane(_engine, channel, lane, _lanePtr);
-    final frames = _lanePtr.ref.length_frames;
-    if (frames <= 0) return Float32List(0);
+    // Each image has its own length (#1168): a zero-capacity call asks it.
+    final frames = _bindings.le_engine_export_layer(
+      _engine,
+      channel,
+      lane,
+      ordinal,
+      nullptr,
+      0,
+    );
+    // A slot shorter than its image is torn: fail the save at capture rather
+    // than write an empty layer the next read would refuse (#1168).
+    if (frames < 0) {
+      throw StateError(
+        'layer $ordinal of track $channel lane $lane is torn: '
+        '${EngineResult.fromCode(frames).name}',
+      );
+    }
+    if (frames == 0) return Float32List(0);
     final buf = calloc<Float>(frames);
     try {
       final n = _bindings.le_engine_export_layer(
@@ -1228,6 +1368,7 @@ class NativeAudioEngine implements AudioEngine {
         channel,
         empty,
         empty,
+        empty,
         0,
         undoCount,
       );
@@ -1235,12 +1376,14 @@ class NativeAudioEngine implements AudioEngine {
       if (count == 0) return TrackHistory(const [], undoCount: undoCount.value);
       final kinds = calloc<Int32>(count);
       final skipped = calloc<Int32>(count);
+      final starts = calloc<Int32>(count);
       try {
         final n = _bindings.le_engine_export_history(
           _engine,
           channel,
           kinds,
           skipped,
+          starts,
           count,
           undoCount,
         );
@@ -1250,14 +1393,19 @@ class NativeAudioEngine implements AudioEngine {
         return TrackHistory(
           [
             for (var i = 0; i < count; i++)
-              HistoryEntry(HistoryKind.values[kinds[i]], skipped: skipped[i]),
+              HistoryEntry(
+                HistoryKind.fromCode(kinds[i]) ?? HistoryKind.bounce,
+                skipped: skipped[i],
+                start: starts[i],
+              ),
           ],
           undoCount: undoCount.value,
         );
       } finally {
         calloc
           ..free(kinds)
-          ..free(skipped);
+          ..free(skipped)
+          ..free(starts);
       }
     } finally {
       calloc
@@ -1267,17 +1415,28 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) {
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) {
     _checkAlive();
     final entries = history.entries;
     final count = entries.length;
+    final images = imageLengths.length;
     // One element at least: the allocator refuses a zero-byte request.
     final kinds = calloc<Int32>(count == 0 ? 1 : count);
     final skipped = calloc<Int32>(count == 0 ? 1 : count);
+    final starts = calloc<Int32>(count == 0 ? 1 : count);
+    final lens = calloc<Int32>(images == 0 ? 1 : images);
     try {
       for (var i = 0; i < count; i++) {
-        kinds[i] = entries[i].kind.index;
+        kinds[i] = entries[i].kind.code;
         skipped[i] = entries[i].skipped;
+        starts[i] = entries[i].start;
+      }
+      for (var o = 0; o < images; o++) {
+        lens[o] = imageLengths[o];
       }
       return EngineResult.fromCode(
         _bindings.le_engine_finalize_history(
@@ -1285,22 +1444,35 @@ class NativeAudioEngine implements AudioEngine {
           channel,
           kinds,
           skipped,
+          starts,
           count,
           history.undoCount,
+          lens,
+          images,
         ),
       );
     } finally {
       calloc
         ..free(kinds)
-        ..free(skipped);
+        ..free(skipped)
+        ..free(starts)
+        ..free(lens);
     }
   }
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) {
+  EngineResult importSpan(int channel, int spanFrames) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_commit_session(_engine, baseFrames, loopBars),
+      _bindings.le_engine_import_span(_engine, channel, spanFrames),
+    );
+  }
+
+  @override
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_commit_session(_engine, baseFrames, loopBeats),
     );
   }
 
@@ -1800,6 +1972,144 @@ class NativeAudioEngine implements AudioEngine {
     return EngineResult.fromCode(
       _bindings.le_engine_set_click_volume(_engine, volume),
     );
+  }
+
+  // ---- backing player (#1200) ----
+
+  /// The native buffer behind [audio], or null when it is not a native
+  /// decode the caller still owns.
+  static Pointer<le_backing_buffer>? _ownedBuffer(DecodedAudio audio) {
+    final payload = audio.payload;
+    if (!audio.isOwned || payload is! NativeDecodedAudioPayload) return null;
+    return payload.buffer;
+  }
+
+  @override
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  }) {
+    _checkAlive();
+    final buffer = _ownedBuffer(audio);
+    if (buffer == null) return EngineResult.invalid;
+    final result = EngineResult.fromCode(
+      _bindings.le_engine_backing_load(_engine, buffer, item, play ? 1 : 0),
+    );
+    if (result.isOk) audio.markTransferred();
+    return result;
+  }
+
+  @override
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item}) {
+    _checkAlive();
+    if (audio == null) {
+      return EngineResult.fromCode(
+        _bindings.le_engine_backing_stage_next(_engine, nullptr, item),
+      );
+    }
+    final buffer = _ownedBuffer(audio);
+    if (buffer == null) return EngineResult.invalid;
+    final result = EngineResult.fromCode(
+      _bindings.le_engine_backing_stage_next(_engine, buffer, item),
+    );
+    if (result.isOk) audio.markTransferred();
+    return result;
+  }
+
+  @override
+  EngineResult backingClear() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_backing_clear(_engine));
+  }
+
+  @override
+  EngineResult backingTransport(BackingTransportOp op) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_transport(_engine, op.index),
+    );
+  }
+
+  @override
+  EngineResult backingSeek(int frame) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_seek(_engine, frame),
+    );
+  }
+
+  @override
+  EngineResult setBackingEnd(BackingEnd mode) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_set_end(_engine, mode.index),
+    );
+  }
+
+  @override
+  EngineResult setBackingOutput(int mask) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_set_output(_engine, mask),
+    );
+  }
+
+  @override
+  EngineResult setBackingLevel(double gain) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_set_level(_engine, gain),
+    );
+  }
+
+  @override
+  EngineResult setBackingPan(double pan) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_backing_set_pan(_engine, pan),
+    );
+  }
+
+  @override
+  EngineResult setClickPan(double pan) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_click_pan(_engine, pan),
+    );
+  }
+
+  @override
+  BackingState backingState() {
+    _checkAlive();
+    final out = calloc<le_backing_state>();
+    try {
+      if (!EngineResult.fromCode(
+        _bindings.le_engine_backing_state(_engine, out),
+      ).isOk) {
+        return const BackingState();
+      }
+      final s = out.ref;
+      return BackingState(
+        epoch: s.epoch,
+        item: s.item,
+        nextItem: s.next_item,
+        transport: BackingTransport.fromCode(s.transport),
+        position: s.position,
+        frames: s.frames,
+        endCount: s.end_count,
+        lastEnd: BackingEndEvent.fromCode(s.last_end),
+        endMode: BackingEnd.fromCode(s.end_mode),
+        outputMask: s.mask,
+        level: s.level,
+        pan: s.pan,
+        clickPan: s.click_pan,
+        owned: s.owned,
+        ownedBytes: s.owned_bytes,
+      );
+    } finally {
+      calloc.free(out);
+    }
   }
 
   @override
@@ -2321,14 +2631,33 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult perfArm(String captureDir) {
+  EngineResult perfArm(PerfTarget target) {
     _checkAlive();
-    final dirPtr = captureDir.toNativeUtf8();
+    final dirPtr = target.captureDir.toNativeUtf8();
+    final sidecar = target.liveSidecarDir;
+    final sidecarPtr = sidecar == null ? nullptr : sidecar.toNativeUtf8();
+    final mirror = target.mirrorDir;
+    final mirrorPtr = mirror == null ? nullptr : mirror.toNativeUtf8();
+    final native = calloc<le_perf_target>();
     try {
-      return EngineResult.fromCode(
-        _bindings.le_perf_arm(_engine, dirPtr.cast()),
-      );
+      native.ref
+        ..capture_dir = dirPtr.cast()
+        ..live_sidecar_dir = sidecarPtr.cast()
+        ..volume_generation = target.volumeGeneration
+        ..part_bytes = target.partBytes
+        ..ring_seconds = target.ringSeconds
+        // UINT64_MAX (all ones) is the native "no budget".
+        ..reserve_bytes = target.reserveBytes ?? -1
+        ..mirror_dir = mirrorPtr.cast()
+        ..checkpoint_ms = target.checkpointMs;
+      for (var i = 0; i < PerfTarget.takeIdBytes; i++) {
+        native.ref.take_id[i] = target.takeId[i];
+      }
+      return EngineResult.fromCode(_bindings.le_perf_arm(_engine, native));
     } finally {
+      calloc.free(native);
+      if (sidecarPtr != nullptr) malloc.free(sidecarPtr);
+      if (mirrorPtr != nullptr) malloc.free(mirrorPtr);
       malloc.free(dirPtr);
     }
   }
@@ -2370,17 +2699,6 @@ class NativeAudioEngine implements AudioEngine {
       calloc
         ..free(freePtr)
         ..free(totalPtr);
-      malloc.free(pathPtr);
-    }
-  }
-
-  @override
-  bool syncDirectory(String path) {
-    if (path.isEmpty) return false;
-    final pathPtr = path.toNativeUtf8();
-    try {
-      return EngineResult.fromCode(_bindings.le_sync_dir(pathPtr.cast())).isOk;
-    } finally {
       malloc.free(pathPtr);
     }
   }
@@ -2463,6 +2781,418 @@ class NativeAudioEngine implements AudioEngine {
   EngineResult renderCancel() {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_perf_render_cancel(_engine));
+  }
+
+  /// What [auditionStartFile] waits for before its one retry: longer than
+  /// one audio block, so the voice has handed back the preview before last.
+  /// A test that pumps the engine itself replaces it.
+  @visibleForTesting
+  Future<void> Function() auditionRetryWait = () =>
+      Future<void>.delayed(const Duration(milliseconds: 30));
+
+  /// Runs the audition's decode off the calling isolate ([Isolate.run]). A
+  /// test replaces it to see that every decode goes through it.
+  @visibleForTesting
+  OffIsolateRunner offIsolate = Isolate.run;
+
+  @override
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    bool Function()? stillWanted,
+  }) async {
+    _checkAlive();
+    final now = snapshot();
+    final rate = now.sampleRate;
+    if (rate <= 0) return const AuditionStart(result: EngineResult.notRunning);
+    // It plays on every enabled output (#1305): with none, nothing would
+    // sound, so it is refused before the decode.
+    final device = (1 << now.outputChannels) - 1;
+    if (now.outputEnabledMask & device == 0) {
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    // The decode reads and converts up to two minutes of audio: never on the
+    // calling (UI) isolate. The buffer crosses back as an address.
+    final decoded = await _decodeAuditionOffIsolate(
+      offIsolate,
+      path,
+      rate,
+      kAuditionMaxSeconds * rate,
+    );
+    if (decoded.code != 0) {
+      return AuditionStart(
+        result: EngineResult.fromCode(decoded.code),
+        sourceRate: decoded.sourceRate,
+      );
+    }
+    final buffer = Pointer<le_backing_buffer>.fromAddress(decoded.address);
+    if (_disposed) {
+      _bindings.le_backing_buffer_free(buffer);
+      return const AuditionStart(result: EngineResult.invalid);
+    }
+    bool withdrawn() => stillWanted != null && !stillWanted();
+    if (withdrawn()) {
+      _bindings.le_backing_buffer_free(buffer);
+      return const AuditionStart(result: EngineResult.invalid, cancelled: true);
+    }
+    var result = EngineResult.fromCode(
+      _bindings.le_engine_audition_start(_engine, buffer),
+    );
+    if (result == EngineResult.notReady) {
+      await auditionRetryWait();
+      if (!_disposed && withdrawn()) {
+        _bindings.le_backing_buffer_free(buffer);
+        return const AuditionStart(
+          result: EngineResult.invalid,
+          cancelled: true,
+        );
+      }
+      result = _disposed
+          ? EngineResult.invalid
+          : EngineResult.fromCode(
+              _bindings.le_engine_audition_start(_engine, buffer),
+            );
+    }
+    if (result != EngineResult.ok) {
+      // Refused: the buffer is still ours.
+      _bindings.le_backing_buffer_free(buffer);
+      return AuditionStart(result: result, sourceRate: decoded.sourceRate);
+    }
+    return AuditionStart(
+      result: result,
+      frames: decoded.frames,
+      rate: rate,
+      sourceRate: decoded.sourceRate,
+      truncated: decoded.truncated,
+    );
+  }
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async {
+    if (buckets <= 0) return null;
+    return Isolate.run(() => _filePeaks(path, buckets));
+  }
+
+  @override
+  EngineResult auditionStop() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_audition_stop(_engine));
+  }
+
+  @override
+  AuditionState auditionState() {
+    _checkAlive();
+    final out = calloc<le_audition_state>();
+    try {
+      if (_bindings.le_engine_audition_state(_engine, out) != 0) {
+        return const AuditionState();
+      }
+      final s = out.ref;
+      return AuditionState(
+        epoch: s.epoch,
+        frames: s.frames,
+        position: s.position,
+        outputs: s.outputs,
+      );
+    } finally {
+      calloc.free(out);
+    }
+  }
+
+  /// Fills a native request from [request]; the caller frees `path`.
+  void _fillRenderRequest(
+    Pointer<le_render_request> native,
+    RenderRequest request,
+    Pointer<Utf8> path,
+  ) {
+    native.ref
+      ..source_mask = request.sourceMask
+      ..length_bars = request.lengthBars ?? 0
+      ..tails = request.tails.index
+      ..mix_fx = request.mixFx ? 1 : 0
+      ..target = request.target.index
+      ..path = path.cast()
+      ..max_frames = request.maxFrames ?? 0;
+  }
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) {
+    _checkAlive();
+    final native = calloc<le_render_request>();
+    final plan = calloc<le_render_plan>();
+    final path = request.path == null ? nullptr : request.path!.toNativeUtf8();
+    try {
+      _fillRenderRequest(native, request, path);
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_render_measure(_engine, native, plan),
+      );
+      if (!result.isOk) return (result: result, plan: null);
+      final p = plan.ref;
+      return (
+        result: result,
+        plan: RenderPlan(
+          frames: p.frames,
+          method: RenderMethod.fromCode(p.method),
+          beatsMilli: p.beats_milli,
+          tempoSet: p.tempo_set != 0,
+          pluginTracks: renderTracksOfMask(p.plugin_mask),
+          fadedTracks: renderTracksOfMask(p.faded_mask),
+          pendingTracks: renderTracksOfMask(p.pending_mask),
+          onceCutTracks: renderTracksOfMask(p.once_cut_mask),
+        ),
+      );
+    } finally {
+      if (path != nullptr) malloc.free(path);
+      calloc
+        ..free(native)
+        ..free(plan);
+    }
+  }
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) {
+    _checkAlive();
+    final native = calloc<le_render_request>();
+    final job = calloc<Uint32>();
+    final path = request.path == null ? nullptr : request.path!.toNativeUtf8();
+    try {
+      _fillRenderRequest(native, request, path);
+      final result = EngineResult.fromCode(
+        _bindings.le_engine_render_begin(_engine, native, job),
+      );
+      return (result: result, job: result.isOk ? job.value : 0);
+    } finally {
+      if (path != nullptr) malloc.free(path);
+      calloc
+        ..free(native)
+        ..free(job);
+    }
+  }
+
+  @override
+  RenderJobStatus? pollRender(int job) {
+    _checkAlive();
+    final state = calloc<Int32>();
+    final permille = calloc<Int32>();
+    final result = calloc<Int32>();
+    try {
+      final rc = _bindings.le_engine_render_poll(
+        _engine,
+        job,
+        state,
+        permille,
+        result,
+      );
+      if (rc != 0) return null;
+      return RenderJobStatus(
+        state: RenderJobState.fromCode(state.value),
+        permille: permille.value,
+        failure: EngineResult.fromCode(result.value),
+      );
+    } finally {
+      calloc
+        ..free(state)
+        ..free(permille)
+        ..free(result);
+    }
+  }
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) {
+    _checkAlive();
+    if (maxFrames <= 0) return null;
+    final out = calloc<Float>(maxFrames * 2);
+    try {
+      final frames = _bindings.le_engine_render_copy(
+        _engine,
+        job,
+        out,
+        maxFrames,
+      );
+      if (frames < 0) return null;
+      return Float32List.fromList(out.asTypedList(frames * 2));
+    } finally {
+      calloc.free(out);
+    }
+  }
+
+  @override
+  EngineResult cancelRender(int job) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_render_cancel(_engine, job),
+    );
+  }
+
+  // ---- InstrumentHost (#1197) ----
+
+  /// The catalogue never changes for a build, so it is read once.
+  SynthCatalogue? _catalogue;
+
+  @override
+  SynthCatalogue synthCatalogue() =>
+      _catalogue ??= readSynthCatalogue(_bindings);
+
+  @override
+  EngineResult setInstrument({
+    required int slot,
+    required int? patch,
+    List<double>? params,
+  }) {
+    _checkAlive();
+    if (params != null && params.length != kSynthFamilyParams) {
+      return EngineResult.invalid;
+    }
+    final paramsPtr = params == null
+        ? nullptr
+        : calloc<Float>(kSynthFamilyParams);
+    try {
+      if (params != null) {
+        for (var p = 0; p < kSynthFamilyParams; p++) {
+          paramsPtr[p] = params[p];
+        }
+      }
+      return EngineResult.fromCode(
+        _bindings.le_engine_set_instrument(
+          _engine,
+          slot,
+          patch ?? -1,
+          paramsPtr,
+        ),
+      );
+    } finally {
+      if (paramsPtr != nullptr) calloc.free(paramsPtr);
+    }
+  }
+
+  @override
+  EngineResult setInstrumentParam({
+    required int slot,
+    required int param,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_instrument_param(_engine, slot, param, value),
+    );
+  }
+
+  @override
+  EngineResult setVoiceLimit(int limit) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_voice_limit(_engine, limit),
+    );
+  }
+
+  @override
+  EngineResult resetInstrument(int slot) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_reset_instrument(_engine, slot),
+    );
+  }
+
+  @override
+  EngineResult instrumentNoteOn({
+    required int slot,
+    required int origin,
+    required int note,
+    required int velocity,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_instrument_note_on(
+        _engine,
+        slot,
+        origin,
+        note,
+        velocity,
+      ),
+    );
+  }
+
+  @override
+  EngineResult instrumentChordOn({
+    required int slot,
+    required int origin,
+    required List<int> notes,
+    required int velocity,
+  }) {
+    _checkAlive();
+    if (notes.isEmpty || notes.length > kMaxChordNotes) {
+      return EngineResult.invalid;
+    }
+    final notesPtr = calloc<Int32>(notes.length);
+    try {
+      for (var n = 0; n < notes.length; n++) {
+        notesPtr[n] = notes[n];
+      }
+      return EngineResult.fromCode(
+        _bindings.le_engine_instrument_chord_on(
+          _engine,
+          slot,
+          origin,
+          notesPtr,
+          notes.length,
+          velocity,
+        ),
+      );
+    } finally {
+      calloc.free(notesPtr);
+    }
+  }
+
+  @override
+  EngineResult instrumentRelease(int origin) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_instrument_note_off(_engine, origin),
+    );
+  }
+
+  @override
+  EngineResult instrumentSustain({
+    required int slot,
+    required int origin,
+    required bool on,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_instrument_sustain(_engine, slot, origin, on ? 1 : 0),
+    );
+  }
+
+  @override
+  EngineResult setInstrumentRoutes(List<InstrumentRoute> routes) {
+    _checkAlive();
+    if (routes.length > kMaxInstruments) return EngineResult.invalid;
+    final table = calloc<le_inst_routes>();
+    try {
+      writeInstrumentRoutes(table.ref, routes);
+      return EngineResult.fromCode(
+        _bindings.le_engine_set_instrument_routes(_engine, table),
+      );
+    } finally {
+      calloc.free(table);
+    }
+  }
+
+  // ---- MidiInputSink ----
+
+  @override
+  EngineResult attachMidiInput(MidiCaptureHandle capture, {required int port}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_attach_midi_input(_engine, capture.pointer, port),
+    );
+  }
+
+  @override
+  EngineResult detachMidiInput(int port) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_detach_midi_input(_engine, port),
+    );
   }
 
   @override
@@ -2612,7 +3342,7 @@ class PumpedNativeEngine extends NativeAudioEngine {
   /// because the native side treats input/output as interleaved across the
   /// engine's configured channel counts (set in [start]); `input` is
   /// broadcast as a constant across every input channel.
-  void pump({int frames = 512, double input = 0}) {
+  void pump({int frames = 512, double input = 0, Float32List? output}) {
     _checkAlive();
     if (frames < 0) return;
     final inPtr = calloc<Float>(frames == 0 ? 1 : frames * _inputChannels);
@@ -2622,6 +3352,16 @@ class PumpedNativeEngine extends NativeAudioEngine {
         inPtr[i] = input;
       }
       _bindings.le_engine_process(_engine, outPtr, inPtr, frames);
+      // A test that reads what the engine played passes [output]: the block's
+      // interleaved frames, as many as fit.
+      if (output != null) {
+        final n = frames * _outputChannels;
+        output.setRange(
+          0,
+          n < output.length ? n : output.length,
+          outPtr.asTypedList(n == 0 ? 1 : n),
+        );
+      }
     } finally {
       calloc
         ..free(inPtr)
@@ -2660,4 +3400,170 @@ class _NativePluginSlotHandle implements PluginSlotHandle {
 
   @override
   int get hashCode => pointer.hashCode;
+}
+
+/// How [NativeAudioEngine.offIsolate] runs a computation: [Isolate.run]'s
+/// shape.
+typedef OffIsolateRunner =
+    Future<R> Function<R>(FutureOr<R> Function() computation);
+
+/// Runs [_decodeAudition] through [run]. A top-level function, so the
+/// closure sent to the isolate captures only these values and never the
+/// caller's scope (which may hold objects that cannot cross isolates).
+Future<({int code, int address, int frames, int sourceRate, bool truncated})>
+_decodeAuditionOffIsolate(
+  OffIsolateRunner run,
+  String path,
+  int rate,
+  int maxFrames,
+) => run(() => _decodeAudition(path, rate, maxFrames));
+
+/// Decodes at most [maxFrames] frames of the preview at [path] at [rate],
+/// a bounded read of the app's one decoder (`le_backing_decode_file`). Runs
+/// inside `Isolate.run`, so it opens the library itself and hands the buffer
+/// back as an address the caller owns.
+({int code, int address, int frames, int sourceRate, bool truncated})
+_decodeAudition(String path, int rate, int maxFrames) {
+  final bindings = SegnoEngineBindings(openSegnoEngineLibrary());
+  final out = calloc<Pointer<le_backing_buffer>>();
+  final info = calloc<le_backing_decode_info>();
+  final cPath = path.toNativeUtf8();
+  try {
+    final code = bindings.le_backing_decode_file(
+      cPath.cast(),
+      rate,
+      0,
+      maxFrames,
+      out,
+      info,
+    );
+    return (
+      code: code,
+      address: code == 0 ? out.value.address : 0,
+      frames: code == 0 ? bindings.le_backing_buffer_frames(out.value) : 0,
+      sourceRate: info.ref.source_rate,
+      truncated: info.ref.truncated != 0,
+    );
+  } finally {
+    calloc
+      ..free(out)
+      ..free(info);
+    malloc.free(cPath);
+  }
+}
+
+/// Streams the file at [path] through the decoder (`le_backing_probe_file`)
+/// and reads [buckets] peaks, keeping no PCM. Runs inside `Isolate.run`;
+/// null when the file does not decode.
+Float32List? _filePeaks(String path, int buckets) {
+  final bindings = SegnoEngineBindings(openSegnoEngineLibrary());
+  final info = calloc<le_backing_decode_info>();
+  final peaks = calloc<Float>(buckets);
+  final cPath = path.toNativeUtf8();
+  try {
+    if (bindings.le_backing_probe_file(cPath.cast(), info, peaks, buckets) !=
+        0) {
+      return null;
+    }
+    return Float32List.fromList(peaks.asTypedList(buckets));
+  } finally {
+    calloc
+      ..free(info)
+      ..free(peaks);
+    malloc.free(cPath);
+  }
+}
+
+/// Reads the engine's synthesis catalogue through [bindings]: pure reads of
+/// static tables, no engine handle.
+@visibleForTesting
+SynthCatalogue readSynthCatalogue(SegnoEngineBindings bindings) {
+  final patch = calloc<le_synth_patch_desc>();
+  final param = calloc<le_synth_param_desc>();
+  try {
+    final patches = <SynthPatch>[];
+    final count = bindings.le_synth_patch_count();
+    for (var i = 0; i < count; i++) {
+      if (bindings.le_synth_patch_info(i, patch) != 0) continue;
+      final family = SynthFamily.fromCode(patch.ref.family);
+      if (family == null) continue;
+      patches.add(
+        SynthPatch(
+          index: i,
+          id: readNativeString(patch.ref.id, capacity: LE_SYNTH_ID_CHARS),
+          family: family,
+          defaults: List.unmodifiable([
+            for (var p = 0; p < kSynthFamilyParams; p++) patch.ref.defaults[p],
+          ]),
+        ),
+      );
+    }
+    final params = <SynthFamily, List<SynthParamInfo>>{};
+    for (final family in SynthFamily.values) {
+      final infos = <SynthParamInfo>[];
+      for (var p = 0; p < kSynthFamilyParams; p++) {
+        if (bindings.le_synth_param_info(family.index, p, param) != 0) break;
+        final unit = SynthParamUnit.fromCode(param.ref.unit);
+        if (unit == null) break;
+        infos.add(
+          SynthParamInfo(
+            key: readNativeString(param.ref.key, capacity: LE_SYNTH_KEY_CHARS),
+            unit: unit,
+            atMin: param.ref.at_min,
+            atMax: param.ref.at_max,
+            exponential: param.ref.exponential != 0,
+          ),
+        );
+      }
+      if (infos.length == kSynthFamilyParams) {
+        params[family] = List.unmodifiable(infos);
+      }
+    }
+    return SynthCatalogue(
+      patches: List.unmodifiable(patches),
+      params: Map.unmodifiable(params),
+    );
+  } finally {
+    calloc
+      ..free(patch)
+      ..free(param);
+  }
+}
+
+/// Writes [routes] (one per slot; missing slots play no MIDI) into [table].
+/// The engine validates every field; out-of-range values are written as given
+/// so it refuses them rather than this silently clamping them.
+@visibleForTesting
+void writeInstrumentRoutes(le_inst_routes table, List<InstrumentRoute> routes) {
+  for (var k = 0; k < kMaxInstruments; k++) {
+    final route = k < routes.length ? routes[k] : InstrumentRoute.disabled;
+    final out = table.inst[k]
+      ..midi_enabled = route.midiEnabled ? 1 : 0
+      ..port = route.port
+      ..channel = route.channel
+      ..low = route.low
+      ..high = route.high
+      // More remaps than the table holds: an invalid count the engine refuses.
+      ..remap_count = route.remaps.length;
+    final remaps = route.remaps.length < kMaxInstrumentRemaps
+        ? route.remaps.length
+        : kMaxInstrumentRemaps;
+    for (var m = 0; m < remaps; m++) {
+      final remap = route.remaps[m];
+      final x = out.remaps[m]
+        ..port = remap.port
+        ..channel = remap.channel
+        ..kind = remap.kind == MidiRemapKind.note
+            ? LE_INST_REMAP_NOTE
+            : LE_INST_REMAP_CC
+        ..number = remap.number
+        ..count = remap.notes.length;
+      final notes = remap.notes.length < kMaxRemapNotes
+          ? remap.notes.length
+          : kMaxRemapNotes;
+      for (var n = 0; n < notes; n++) {
+        x.notes[n] = remap.notes[n];
+      }
+    }
+  }
 }

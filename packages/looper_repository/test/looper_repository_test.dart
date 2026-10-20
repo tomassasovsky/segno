@@ -362,6 +362,23 @@ void main() {
   LooperRepository buildRepo() =>
       LooperRepository(engine: engine, ticker: ticker.stream);
 
+  test('hands every polled snapshot to engineSnapshots, read once', () async {
+    engine.nextSnapshot = _playingSnapshot;
+    final repo = buildRepo();
+    addTearDown(repo.dispose);
+    final seen = <EngineSnapshot>[];
+    final snaps = repo.engineSnapshots.listen(seen.add);
+    addTearDown(snaps.cancel);
+    final sub = repo.looperState.listen((_) {});
+    addTearDown(sub.cancel);
+    await Future<void>.delayed(Duration.zero);
+    final calls = engine.snapshotCalls;
+    ticker.add(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, hasLength(2));
+    expect(engine.snapshotCalls, calls + 1, reason: 'no second engine read');
+  });
+
   group('lastState (the cached projection)', () {
     test("serves the poll's projection without walking the engine", () async {
       engine.nextSnapshot = _playingSnapshot;
@@ -455,7 +472,7 @@ void main() {
       // Nobody has listened, so nothing has polled and there is no cache. A
       // reader must still see the engine rather than an invented empty rig.
       expect(engine.snapshotCalls, 0);
-      expect(repo.lastState.transport.isRunning, isTrue);
+      expect(repo.lastState.transport.deviceRunning, isTrue);
       expect(engine.snapshotCalls, greaterThan(0));
     });
   });
@@ -607,7 +624,7 @@ void main() {
       final repo = buildRepo();
 
       final state = repo.state;
-      expect(state.transport.isRunning, isTrue);
+      expect(state.transport.deviceRunning, isTrue);
       expect(state.transport.masterLengthFrames, 96000);
       expect(state.transport.masterPositionFrames, 24000);
       expect(state.transport.progress, closeTo(0.25, 1e-6));
@@ -617,7 +634,6 @@ void main() {
       expect(state.track.volume, closeTo(1, 1e-6));
       expect(state.track.muted, isFalse);
       expect(state.track.lengthFrames, 96000);
-      expect(state.track.peak, closeTo(0.5, 1e-6));
       expect(state.track.canUndo, isTrue);
       expect(state.track.hasContent, isTrue);
       expect(state.track.inputMask, 0x2);
@@ -1607,6 +1623,38 @@ void main() {
       expect(track.multiple, 2);
       expect(track.isMultiple, isTrue);
       expect(track.lengthFrames, 96000);
+      expect(track.syncDivisor, 0);
+    });
+
+    test('projects a Sync division from the snapshot (#1168)', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        masterLengthFrames: 48000,
+        tracks: [
+          TrackSnapshot(
+            state: TrackState.playing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 12000,
+            undoDepth: 1,
+            rms: 0,
+            peak: 0,
+            syncDivisor: 4,
+          ),
+        ],
+      );
+      final track = buildRepo().state.tracks.first;
+      expect(track.syncDivisor, 4);
+      expect(track.multiple, 1);
     });
 
     test('initial snapshot projects an empty looper', () {
@@ -1815,30 +1863,58 @@ void main() {
 
   group('looperState stream', () {
     test(
-      'a peak-only poll reaches subscribers without changing steady facts',
+      'a level-only poll moves the meters and leaves the state alone',
       () async {
+        // Levels change on every poll while any signal flows; inside
+        // LooperState they rebuilt every surface at idle (#1301).
         engine.nextSnapshot = _playingAt(24000, peak: 0.1);
         final repo = buildRepo();
         addTearDown(repo.dispose);
-        final emitted = <LooperState>[];
-        final sub = repo.looperState.listen(emitted.add);
-        addTearDown(sub.cancel);
+        final states = <LooperState>[];
+        final levels = <MeterLevels>[];
+        final stateSub = repo.looperState.listen(states.add);
+        final levelSub = repo.meterLevels.listen(levels.add);
+        addTearDown(stateSub.cancel);
+        addTearDown(levelSub.cancel);
         await Future<void>.delayed(Duration.zero);
 
         engine.nextSnapshot = _playingAt(24000, peak: 0.9);
         ticker.add(null);
         await Future<void>.delayed(Duration.zero);
 
-        // The unchanged following poll is still suppressed.
+        // An unchanged following poll publishes nothing on either stream.
         ticker.add(null);
         await Future<void>.delayed(Duration.zero);
 
-        expect(emitted, hasLength(2));
-        expect(emitted.map((state) => state.track.peak), [0.1, 0.9]);
-        expect(emitted.last.transport, emitted.first.transport);
-        expect(emitted.last.track.steadyProps, emitted.first.track.steadyProps);
+        expect(states, hasLength(1));
+        expect(levels.map((l) => l.track(0).peak), [0.1, 0.9]);
+        expect(repo.meters.track(0).peak, 0.9);
       },
     );
+
+    test('meters carry the master, input, monitor and output levels', () async {
+      engine.nextSnapshot = _playingSnapshot.copyWith(
+        outputPeak: 0.5,
+        inputPeaks: [0.25, 0.125],
+        monitorPeaks: [0, 0.2],
+        outputPeaks: [0.5, 0.4, 0, 0],
+      );
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      final meters = repo.meters;
+      expect(meters.outputPeak, 0.5);
+      expect(meters.inputPeak(1), 0.125);
+      expect(meters.monitorPeak(1), 0.2);
+      expect(meters.monitorPeak(5), 0);
+      expect(meters.outputChannelPeak(1), 0.4);
+      // Out of range reads as silence rather than throwing.
+      expect(meters.inputPeak(7), 0);
+      expect(meters.track(99), TrackLevels.silent);
+    });
 
     test('emits a projected state on each tick, distinctly', () async {
       final repo = buildRepo();
@@ -4599,6 +4675,23 @@ void main() {
       expect(engine.conditioningEnabled[0], isTrue);
     });
 
+    test('conditioning refuses instrument sources, which have no stage', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(
+        repo.setInputConditioningEnabled(input: kMaxChannels, enabled: true),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setInputConditioningParam(
+          input: kMaxChannels,
+          param: InputConditioningParam.hpfHz,
+          value: 80,
+        ),
+        EngineResult.invalid,
+      );
+      expect(engine.conditioningEnabled, isNot(contains(kMaxChannels)));
+    });
+
     test('setInputConditioningParam forwards the code + real-unit value', () {
       buildRepo()
         ..startEngine(const EngineConfig())
@@ -6094,6 +6187,9 @@ void main() {
           countInBeatsLeft: 3,
           looperMode: LooperMode.band,
           primaryTrack: 2,
+          songQueuedTrack: 1,
+          songQueueProgress: 0.375,
+          songLastSection: 2,
           outputPeak: 0.5,
           // The crown only projects onto a track that holds a completed
           // take (see `resolvedPrimaryTrack`), so give the designated
@@ -6136,7 +6232,10 @@ void main() {
         expect(transport.countInBeatsLeft, 3);
         expect(transport.looperMode, LooperMode.band);
         expect(transport.primaryTrack, 2);
-        expect(transport.outputPeak, closeTo(0.5, 1e-9));
+        // The Song queue is the engine's own fact, carried as it is (#1077).
+        expect(transport.songQueuedTrack, 1);
+        expect(transport.songQueueProgress, 0.375);
+        expect(transport.songLastSection, 2);
       },
     );
 
@@ -6357,10 +6456,42 @@ void main() {
         );
         expect(engine.importedTracks[0], pcm);
         expect(engine.committedBaseFrames, 4);
+        expect(engine.committedLoopBeats, 0);
         expect(engine.laneVol[(0, 0)], 0.5);
         expect(engine.laneMute[(0, 0)], isTrue);
       },
     );
+
+    test('commits the grid in beats: whole bars times the signature, or '
+        'the saved beats of a sub-bar loop (#1168)', () async {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      for (final (rig, beats) in [
+        (
+          SessionRig(
+            baseLengthFrames: 4,
+            loopBars: 3,
+            tsNum: 7,
+            tsDen: 8,
+            tracks: [rigTrack(0, pcm)],
+          ),
+          21,
+        ),
+        (
+          SessionRig(
+            baseLengthFrames: 4,
+            loopBeats: 2,
+            tracks: [rigTrack(0, pcm)],
+          ),
+          2,
+        ),
+      ]) {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        await repo.applySession(rig, clearPollInterval: Duration.zero);
+        expect(engine.committedLoopBeats, beats);
+        await repo.dispose();
+      }
+    });
 
     test('fires rigReplaced once on a successful apply — the explicit seam '
         '(the cleared window is transient, so the projection alone cannot '
@@ -7337,6 +7468,49 @@ void main() {
         expect(engine.finalizedHistory[0], history);
       },
     );
+
+    test(
+      'finalizes length edits with every image at its own length (#1168)',
+      () async {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        final original = Float32List.fromList([1, 2, 3, 4]);
+        final doubled = Float32List.fromList([1, 2, 3, 4, 1, 2, 3, 4]);
+        const history = TrackHistory([
+          HistoryEntry(HistoryKind.length),
+          HistoryEntry(HistoryKind.length, start: 4),
+        ], undoCount: 1);
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              SessionRigTrack(
+                fadeAmount: 1,
+                reversed: false,
+                channel: 0,
+                lanes: [
+                  SessionRigLane(
+                    lane: 0,
+                    layers: [original, doubled, original],
+                    volume: 1,
+                    muted: false,
+                    outputMask: 0x3,
+                    inputChannel: 0,
+                    history: history,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.finalizedHistory[0], history);
+        expect(engine.finalizedLengths[0], [4, 8, 4]);
+      },
+    );
   });
 
   group('chain and monitor read accessors', () {
@@ -7597,7 +7771,7 @@ void main() {
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
         expect(await abandoned, EngineResult.notReady);
-        expect(repo.sessionTransport.isRunning, isTrue);
+        expect(repo.sessionTransport.deviceRunning, isTrue);
         engine.commandsAreSettled = true;
         expect(await repo.settleLengthSettings(), EngineResult.ok);
         expect(repo.sessionTransport.looperMode, LooperMode.free);
@@ -7892,7 +8066,7 @@ void main() {
         await Future<void>.delayed(Duration.zero);
         expect(reopenCount(), 0);
         expect(stopCount(), 0);
-        expect(repo.sessionTransport.isRunning, isTrue);
+        expect(repo.sessionTransport.deviceRunning, isTrue);
 
         // The fence lifts. The SAME device list now reopens — the refusal must
         // not have burned the one attempt this list gets.
@@ -8053,7 +8227,7 @@ void main() {
         reconnectTicker.add(null);
         await Future<void>.delayed(Duration.zero);
         expect(reopenCount(), 1);
-        expect(repo.sessionTransport.isRunning, isFalse);
+        expect(repo.sessionTransport.deviceRunning, isFalse);
         expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
 
         // The player re-applies: the start that opens the rig again still
@@ -9720,6 +9894,75 @@ void main() {
         TrackEffectType.echo,
       );
       expect(repo.laneChainInheritedFrom(0, 0), isEmpty);
+    });
+
+    test('a fresh take with the input chain off prints dry: the chain an '
+        'earlier take inherited does not carry over (#1306)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final changed = <(int, int)>[];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+      expect(repo.laneChainInheritedFrom(0, 0), [0]);
+
+      // The take is undone back to EMPTY (its chain stays for Redo), then
+      // the input's chain is switched off and a new take is recorded.
+      repo
+        ..undo()
+        ..setMonitorChainEnabled(input: 0, enabled: false)
+        ..onLaneChainChanged = ((c, l) => changed.add((c, l)))
+        ..record();
+
+      expect(engine.lastRecordImage!.laneFx[0]!.slots, isEmpty);
+      expect(engine.recipes[(FxOwner.lane, 0, 0)]!.slots, isEmpty);
+      expect(repo.laneEffects(0, 0), isEmpty);
+      expect(repo.laneChainInheritedFrom(0, 0), isEmpty);
+      expect(repo.laneChainEnabled(0, 0), isTrue);
+      expect(changed, [(0, 0)]);
+
+      // Switching the input's chain back on prints it again.
+      repo
+        ..setMonitorChainEnabled(input: 0, enabled: true)
+        ..record();
+      expect(
+        (repo.laneEffects(0, 0).single as BuiltInEffect).type,
+        TrackEffectType.delay,
+      );
+      expect(repo.laneChainInheritedFrom(0, 0), [0]);
+    });
+
+    test('a fresh take with an empty input chain also drops a previously '
+        'inherited chain, and Track FX stay (#1306)', () {
+      engine.nextSnapshot = emptyTrackSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+      final trackFx = repo.trackEffects(0);
+
+      repo
+        ..setMonitorEffects(input: 0, effects: const [])
+        ..record();
+
+      expect(repo.laneEffects(0, 0), isEmpty);
+      expect(repo.trackEffects(0), trackFx);
+      expect(
+        (repo.trackEffects(0).single as BuiltInEffect).type,
+        TrackEffectType.reverb,
+      );
     });
 
     test('overdub never re-inherits (A7): a record on a non-empty track '

@@ -510,7 +510,7 @@ void main() {
     final lane1 = Float32List.fromList(List<double>.filled(64, -0.25));
     expect(engine.importTrackLane(0, 0, lane0), EngineResult.ok);
     expect(engine.importTrackLane(0, 1, lane1), EngineResult.ok);
-    expect(engine.commitSession(64, loopBars: 0), EngineResult.ok);
+    expect(engine.commitSession(64, loopBeats: 0), EngineResult.ok);
     engine.pump(frames: 0);
 
     final s = engine.snapshot();
@@ -607,6 +607,9 @@ void main() {
     final l0 = engine.exportLayer(0, 0, 0);
     final l1 = engine.exportLayer(0, 0, 1);
     final l2 = engine.exportLayer(0, 0, 2);
+    // A refused size query (here an ordinal past the images; in a save, a
+    // slot shorter than its image) throws instead of exporting nothing.
+    expect(() => engine.exportLayer(0, 0, 3), throwsStateError);
     expect(l0, everyElement(closeTo(0.5, 1e-6)));
     expect(l1, everyElement(closeTo(0.75, 1e-6)));
     expect(l2, everyElement(closeTo(1.0, 1e-6)));
@@ -626,8 +629,15 @@ void main() {
     expect(engine.importLayer(0, 0, 0, l0), EngineResult.ok);
     expect(engine.importLayer(0, 0, 1, l1), EngineResult.ok);
     expect(engine.importLayer(0, 0, 2, l2), EngineResult.ok);
-    expect(engine.finalizeHistory(0, history), EngineResult.ok);
-    expect(engine.commitSession(256, loopBars: 0), EngineResult.ok);
+    expect(
+      engine.finalizeHistory(
+        0,
+        history,
+        imageLengths: [l0.length, l1.length, l2.length],
+      ),
+      EngineResult.ok,
+    );
+    expect(engine.commitSession(256, loopBeats: 0), EngineResult.ok);
     engine.pump(frames: 0);
 
     s = engine.snapshot();
@@ -666,6 +676,10 @@ void main() {
       );
 
       expect(engine.snapshot().isPerfArmed, isFalse);
+      // What the next arm would capture: the mono master (one enabled
+      // output), no monitored input.
+      expect(engine.snapshot().perfCaptureStreams, 1);
+      expect(engine.snapshot().perfCaptureFrameBytes, 4);
 
       // A real capture dir: arm now spawns a real drain thread that writes
       // real files there (part 2), so this must be a scratch temp dir, never
@@ -675,7 +689,24 @@ void main() {
       );
       addTearDown(() => captureDir.deleteSync(recursive: true));
 
-      expect(engine.perfArm(captureDir.path), EngineResult.ok);
+      // Every field of the target crosses FFI: the take id lands in the
+      // part's sgno chunk, the generation and ring seconds in the sidecar.
+      final takeId = Uint8List.fromList(List.generate(16, (i) => i));
+      expect(
+        engine.perfArm(
+          PerfTarget(
+            captureDir: captureDir.path,
+            takeId: takeId,
+            liveSidecarDir: '${captureDir.path}/live',
+            volumeGeneration: 7,
+            partBytes: 84 + 4 * 100, // mono master: 100 frames a part
+            ringSeconds: 3,
+            mirrorDir: '${captureDir.path}/mirror',
+            checkpointMs: 0, // only the final checkpoint
+          ),
+        ),
+        EngineResult.ok,
+      );
       engine.pump(frames: 0); // drain the arm command
       var s = engine.snapshot();
       expect(s.isPerfArmed, isTrue);
@@ -694,13 +725,90 @@ void main() {
       // wait needed.
       expect(engine.perfDisarm(), EngineResult.ok);
       engine.pump(frames: 0); // drain the disarm command (no device: no wait)
-      expect(engine.snapshot().isPerfArmed, isFalse);
+      s = engine.snapshot();
+      expect(s.isPerfArmed, isFalse);
+      // The trailing take-accounting fields (#1198) read where the header
+      // puts them: a disarmed take with no reserve and silent input.
+      expect(s.perfStopReason, PerfStopReason.disarm);
+      expect(s.perfOvers, 0);
 
+      final sidecar = File(
+        '${captureDir.path}/live/performance.json',
+      ).readAsStringSync();
+      expect(
+        sidecar,
+        contains('"take_id": "000102030405060708090a0b0c0d0e0f"'),
+      );
+      expect(sidecar, contains('"volume_generation": 7,'));
+      expect(sidecar, contains('"ring_seconds": 3,'));
+      // The final checkpoint lands in the take and, byte for byte, in the
+      // mirror (#1198 D4).
+      final slot = File('${captureDir.path}/checkpoint-a.json');
+      expect(slot.readAsStringSync(), contains('"frames": 256,'));
+      expect(
+        File('${captureDir.path}/mirror/checkpoint-a.json').readAsBytesSync(),
+        slot.readAsBytesSync(),
+      );
+      expect(engine.snapshot().perfFailedCheckpoints, 0);
+      expect(engine.snapshot().perfRingSeconds, 3);
       expect(
         File('${captureDir.path}/performance.json').existsSync(),
-        isTrue,
+        isFalse,
       );
-      expect(File('${captureDir.path}/master.pcm').existsSync(), isTrue);
+      // 256 frames in parts of at most 100 frames: 100, 100, 56.
+      final header = File(
+        '${captureDir.path}/master-003.wav',
+      ).readAsBytesSync().sublist(0, 84);
+      expect(header.sublist(44, 60), takeId);
+      expect(header[62], 3); // part index
+      expect(
+        File('${captureDir.path}/master-004.wav').existsSync(),
+        isFalse,
+      );
+    },
+    skip: skip,
+  );
+
+  test(
+    'a reserve larger than the volume stops the take at once, as '
+    'reserve_reached (#1198)',
+    () {
+      final engine = PumpedNativeEngine();
+      addTearDown(engine.dispose);
+      engine.start(
+        const EngineConfig(
+          sampleRate: 48000,
+          inputChannels: 1,
+          outputChannels: 1,
+          maxLoopFrames: 48000,
+        ),
+      );
+      final captureDir = Directory.systemTemp.createTempSync(
+        'segno_perf_reserve_test_',
+      );
+      addTearDown(() => captureDir.deleteSync(recursive: true));
+
+      expect(
+        engine.perfArm(
+          PerfTarget(
+            captureDir: captureDir.path,
+            takeId: Uint8List(16),
+            reserveBytes: 1 << 62, // more than any volume holds
+          ),
+        ),
+        EngineResult.ok,
+      );
+      engine
+        ..pump(frames: 0)
+        ..pump(frames: 256);
+      expect(engine.perfDisarm(), EngineResult.ok);
+
+      expect(engine.snapshot().perfStopReason, PerfStopReason.reserveReached);
+      expect(
+        File('${captureDir.path}/performance.json').readAsStringSync(),
+        contains('"stopped_early": "reserve_reached"'),
+      );
+      expect(File('${captureDir.path}/master-001.wav').lengthSync(), 84);
     },
     skip: skip,
   );

@@ -3,6 +3,31 @@ import 'package:looper_repository/looper_repository.dart';
 
 void main() {
   group('LooperState', () {
+    test('isPlaying reads the tracks, not the open device', () {
+      const open = TransportState(deviceRunning: true);
+      expect(const LooperState(transport: open).isPlaying, isFalse);
+      expect(
+        const LooperState(
+          tracks: [Track(state: TrackState.stopped, lengthFrames: 10)],
+          transport: open,
+        ).isPlaying,
+        isFalse,
+      );
+      for (final state in const [
+        TrackState.playing,
+        TrackState.recording,
+        TrackState.overdubbing,
+      ]) {
+        expect(
+          LooperState(
+            tracks: [Track(state: state, lengthFrames: 10)],
+          ).isPlaying,
+          isTrue,
+          reason: '$state',
+        );
+      }
+    });
+
     test('defaults to all outputs enabled', () {
       const state = LooperState();
       expect(state.outputEnabledMask, 0xFFFFFFFF);
@@ -63,6 +88,37 @@ void main() {
           ),
         ),
       );
+    });
+  });
+
+  group('songWaitingSection (#1077)', () {
+    LooperState rig({
+      LooperMode mode = LooperMode.song,
+      int queued = 1,
+      TrackState state = TrackState.stopped,
+      int length = 100,
+    }) => LooperState(
+      transport: TransportState(looperMode: mode, songQueuedTrack: queued),
+      tracks: [
+        const Track(state: TrackState.playing, lengthFrames: 100),
+        Track(channel: 1, state: state, lengthFrames: length),
+      ],
+    );
+
+    test('names a waiting section with a take', () {
+      expect(rig().songWaitingSection, 1);
+    });
+
+    test('is null outside Song, without a queue, out of range, on an empty '
+        'or a capturing track', () {
+      expect(rig(mode: LooperMode.multi).songWaitingSection, isNull);
+      expect(rig(queued: -1).songWaitingSection, isNull);
+      expect(rig(queued: 5).songWaitingSection, isNull);
+      expect(
+        rig(state: TrackState.empty, length: 0).songWaitingSection,
+        isNull,
+      );
+      expect(rig(state: TrackState.recording).songWaitingSection, isNull);
     });
   });
 }

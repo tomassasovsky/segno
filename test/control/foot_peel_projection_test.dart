@@ -6,7 +6,10 @@ import 'package:segno/control/model/foot_peel.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 LooperState _state(List<Track> overrides) => LooperState(
-  transport: const TransportState(isRunning: true, masterLengthFrames: 48000),
+  transport: const TransportState(
+    deviceRunning: true,
+    masterLengthFrames: 48000,
+  ),
   tracks: [
     for (var i = 0; i < 8; i++)
       overrides.firstWhere(
@@ -81,11 +84,11 @@ void main() {
           (1 << PedalButton.clear.index),
       0,
     );
-    // A slot-less pedal lights only for its accepted contact.
+    // A slot-less pedal lights only while held.
     final pressed = projectFrame(
       looper,
       overlay,
-      acceptedContacts: {PedalButton.stop},
+      pressed: {PedalButton.stop},
     );
     expect(pressed.activeButtonMask & (1 << PedalButton.stop.index), isNonZero);
   });

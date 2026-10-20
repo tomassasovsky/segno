@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -15,7 +16,6 @@ import 'package:segno/looper/view/shortcuts_help_sheet.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
-import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart'
     show SessionConversionChange;
 
@@ -125,6 +125,9 @@ class TracksCommands {
       InteractionMode.fade => l10n.actionModeFade,
       InteractionMode.reverse => l10n.actionModeReverse,
       InteractionMode.peel => l10n.actionModePeel,
+      InteractionMode.tuner => l10n.actionModeTuner,
+      InteractionMode.multiply => l10n.actionModeMultiply,
+      InteractionMode.divide => l10n.actionModeDivide,
     });
   }
 
@@ -166,7 +169,7 @@ class TracksCommands {
   /// beep) and dispatched to the looper; modifier combos other than undo/redo
   /// pass through to OS / menu shortcuts.
   ///
-  /// Every mode: `M` cycle mode · `S` settings · `G` signal · `F` fullscreen ·
+  /// Every mode: `M` cycle mode · `S` settings · `G` signal ·
   /// `Space` play/pause all · `C` clear all · `A` arm/disarm performance
   /// recording · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or `Shift+Z`) redo ·
   /// `Cmd/Ctrl+Shift+C` undo clear-all (whole-rig restore).
@@ -230,7 +233,9 @@ class TracksCommands {
     if (mode == InteractionMode.mixer ||
         mode == InteractionMode.fade ||
         mode == InteractionMode.reverse ||
-        mode == InteractionMode.peel) {
+        mode == InteractionMode.peel ||
+        mode == InteractionMode.tuner ||
+        mode.isLength) {
       if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.keyM) {
         overlay.setMode(InteractionMode.record);
         return KeyEventResult.handled;
@@ -256,10 +261,6 @@ class TracksCommands {
     }
     if (key == LogicalKeyboardKey.keyG) {
       unawaited(openFx());
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.keyF) {
-      unawaited(toggleSegnoFullScreen());
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.space) {
@@ -299,10 +300,12 @@ class TracksCommands {
     }
 
     // Number keys 1–8 select a track (auto-revealing its bank). In mute mode
-    // they also toggle mute on that track; in FX mode they toggle its
-    // Track-stage chain — the keyboard twin of the pedal's FX-mode track
-    // stomps, dispatched through the bloc so the on-screen path persists the
-    // chain envelope exactly as the FX dock does.
+    // they also toggle mute on that track; in FX mode they are the keyboard
+    // twin of the FX face's track switches: key N is switch ((N-1) % 4) + 1
+    // in bank (N-1) ~/ 4, and runs that switch's FX binding there (#1229
+    // review L2). An unbound switch toggles the track's own chain, dispatched
+    // through the bloc so it persists the chain envelope exactly as the FX
+    // dock does.
     final digit = _digitOf(key);
     if (digit != null) {
       final channel = digit - 1;
@@ -314,6 +317,13 @@ class TracksCommands {
           case InteractionMode.mute:
             bloc.add(LooperMuteToggled(channel));
           case InteractionMode.fx:
+            final button =
+                PedalButton.values[PedalButton.track1.index + channel % 4];
+            final bank = channel ~/ ControlState.tracksPerBank;
+            if (overlay.state.bindings.lookup(button, bank: bank) != null) {
+              overlay.activateFootFxPedal(button);
+              break;
+            }
             // The bloc resolves the flip against the repository's remembered
             // intent — deriving it here from the polled snapshot would read a
             // missing channel as "off" and dispatch enable forever.
@@ -323,6 +333,9 @@ class TracksCommands {
           case InteractionMode.fade:
           case InteractionMode.reverse:
           case InteractionMode.peel:
+          case InteractionMode.tuner:
+          case InteractionMode.multiply:
+          case InteractionMode.divide:
             break;
           case InteractionMode.custom:
             // Selection only: what a control does in Custom controls is
@@ -394,6 +407,8 @@ void showSessionOutcome(BuildContext context, SessionState state) {
         null => l10n.sessionLoaded,
         final notice => sessionConversionMessage(l10n, notice),
       },
+      // The stage's header names the new loop (19/06); no toast over it.
+      SessionOutcome.newLoop ||
       // The catalog outcomes happen in the Library, which shows its own
       // result; no SnackBar behind it.
       SessionOutcome.renamed ||
@@ -417,6 +432,10 @@ void showSessionOutcome(BuildContext context, SessionState state) {
       SessionError.saveFailed => l10n.librarySaveFailed,
       SessionError.currentSessionProtected => l10n.libraryDeleteCurrentRefused,
       SessionError.folderNotEmpty => l10n.libraryFolderNotEmpty,
+      SessionError.captureInProgress => l10n.libraryTakeStillRunning,
+      SessionError.newLoopNotSaved => l10n.sessionNewLoopNotSaved(
+        state.currentSessionName ?? '',
+      ),
       // nameCollision is answered inside the Library's name sheet; here it
       // falls back to the generic error. corruptLayers is a
       // rare corrupt/foreign-bundle refusal — the generic message (carrying the
@@ -457,11 +476,31 @@ void onPerformanceRecorderState(
     _showPerformanceLowDiskBlocked(context);
     return;
   }
+  if (state is PerformanceRecorderIdle && state.driveUnavailable) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('tracks_perfArmDriveUnavailable_snackbar'),
+          content: Semantics(
+            liveRegion: true,
+            child: AppText(context.l10n.perfArmDriveUnavailable),
+          ),
+        ),
+      );
+    return;
+  }
   // Refused at its commit by an operation in flight (#1198): a toast, since
   // nothing needs doing beyond waiting for it (the popup-severity rule).
   final refusedBy = state is PerformanceRecorderIdle ? state.refusedBy : null;
   if (refusedBy != null) {
     _showPerformanceArmRefused(context, refusedBy);
+    return;
+  }
+  // A take the boot salvage could not recover must not just vanish from
+  // view: say so; its files are kept (#1198).
+  if (state is PerformanceRecorderIdle && state.notRecovered > 0) {
+    _showPerformanceNotRecovered(context, state.notRecovered);
     return;
   }
   // Entering Rendering opens the dialog on its rendering face; entering
@@ -493,6 +532,20 @@ void _showPerformanceArmRefused(BuildContext context, GuardKind refusedBy) {
           child: AppText(
             l10n.perfArmRefused(l10n.operationBusy(refusedBy.name)),
           ),
+        ),
+      ),
+    );
+}
+
+void _showPerformanceNotRecovered(BuildContext context, int count) {
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(
+        key: const Key('tracks_perfNotRecovered_snackbar'),
+        content: Semantics(
+          liveRegion: true,
+          child: AppText(context.l10n.perfTakesNotRecovered(count)),
         ),
       ),
     );

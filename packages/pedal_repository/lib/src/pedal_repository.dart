@@ -5,6 +5,7 @@ import 'package:pedal_repository/src/pedal_event.dart';
 import 'package:pedal_repository/src/pedal_link.dart';
 import 'package:pedal_repository/src/pedal_link_codec.dart';
 import 'package:pedal_repository/src/pedal_link_message.dart';
+import 'package:pedal_repository/src/pedal_power.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
 /// Whether the console board is on the other end of the link.
@@ -37,7 +38,8 @@ enum PedalLinkStatus {
 /// sees traffic while segno runs. A frame identical to the last one is not
 /// sent again, so callers push freely.
 ///
-/// [status] and [firmwareVersion] are read off the last hello heard: there is
+/// [status], [firmwareVersion] and [protocolVersion] are read off the last
+/// hello heard: there is
 /// no separate status to keep in step with it.
 class PedalRepository {
   /// Creates a [PedalRepository] over [link].
@@ -78,6 +80,18 @@ class PedalRepository {
   /// The last hello heard, or `null` while the board is quiet.
   HelloMessage? _hello;
 
+  PedalPowerSupply? _powerSupply;
+  final StreamController<PedalPowerSupply?> _powerSupplyChanges =
+      StreamController<PedalPowerSupply?>.broadcast();
+
+  /// What the console's USB-C supply negotiated, from the board's last
+  /// PD_STATUS while it is connected; `null` otherwise.
+  PedalPowerSupply? get powerSupply => _powerSupply;
+
+  /// Changes to [powerSupply], including back to `null` when the board goes.
+  Stream<PedalPowerSupply?> get powerSupplyChanges =>
+      _powerSupplyChanges.stream;
+
   PedalStateFrame? _lastFrame;
   final StreamController<PedalStateFrame> _frames =
       StreamController<PedalStateFrame>.broadcast();
@@ -92,7 +106,8 @@ class PedalRepository {
   bool _goodbye = false;
   bool _disposed = false;
 
-  /// Decoded pedal inputs (button presses/releases, encoder detents).
+  /// Decoded pedal inputs (button presses/releases, encoder detents and
+  /// push-switch presses/releases).
   Stream<PedalEvent> get events => _events.stream;
 
   /// Link status transitions. Also fires, with the same status, when a
@@ -112,6 +127,11 @@ class PedalRepository {
   /// talking, or `null` while it is not.
   String? get firmwareVersion => _hello?.firmwareVersion;
 
+  /// The link protocol the board's hello names while it is talking, or
+  /// `null` while it is not. Reported even when it is not this build's
+  /// ([PedalLinkStatus.incompatible]): that is when it is worth reading.
+  int? get protocolVersion => _hello?.protocolVersion;
+
   /// Traffic is trusted only after a live, compatible hello. A stale or
   /// unknown button table could map a stomp onto Clear.
   bool get _connected => !_disposed && status == PedalLinkStatus.connected;
@@ -119,12 +139,27 @@ class PedalRepository {
   /// Sends [frame] to the board unless it is the frame already showing, and
   /// remembers it as the frame every later hello is answered with. Recorded
   /// but not sent until the board is [PedalLinkStatus.connected]; dropped
-  /// after [goodbye].
+  /// after [goodbye]. Every frame carries the current [setDimmed] state.
   void pushState(PedalStateFrame frame) {
-    if (_disposed || _goodbye || frame == _lastFrame) return;
-    _lastFrame = frame;
-    _frames.add(frame);
-    if (_connected) _link.send(StateMessage(frame));
+    final stamped = frame.dimmed == _dimmed
+        ? frame
+        : frame.copyWith(dimmed: _dimmed);
+    if (_disposed || _goodbye || stamped == _lastFrame) return;
+    _lastFrame = stamped;
+    _frames.add(stamped);
+    if (_connected) _link.send(StateMessage(stamped));
+  }
+
+  bool _dimmed = false;
+
+  /// Whether the console sat idle and the app dimmed the screens. The board
+  /// dims its LEDs with them (#1349): the current frame is sent again with
+  /// the flag, and every later frame carries it.
+  void setDimmed({required bool dimmed}) {
+    if (dimmed == _dimmed) return;
+    _dimmed = dimmed;
+    final last = _lastFrame;
+    if (last != null) pushState(last);
   }
 
   /// Darkens the console for a shutdown and holds the mark: from here on
@@ -158,9 +193,19 @@ class PedalRepository {
       case EncoderMessage(:final delta):
         if (!_connected) return;
         _emit(EncoderDelta(delta));
+      case EncoderButtonMessage(:final pressed):
+        if (!_connected) return;
+        _emit(
+          pressed
+              ? EncoderPressed(timestamp: _clock())
+              : EncoderReleased(timestamp: _clock()),
+        );
       case CtrlMessage(:final jack, :final contact, :final kind, :final value):
         if (!_connected) return;
         _onCtrl(jack, contact, kind, value);
+      case PdStatusMessage(:final supply):
+        if (!_connected) return;
+        _setPowerSupply(supply);
       case HelloMessage():
         _onHello(message);
       case StateMessage():
@@ -211,6 +256,14 @@ class PedalRepository {
     _hello = hello;
     _log?.call('pedal link: ${status.name} (${why()})');
     if (!_statusChanges.isClosed) _statusChanges.add(status);
+    if (status != PedalLinkStatus.connected) _setPowerSupply(null);
+  }
+
+  void _setPowerSupply(PedalPowerSupply? supply) {
+    if (supply == _powerSupply) return;
+    _powerSupply = supply;
+    if (supply != null) _log?.call('pedal link: power $supply');
+    if (!_powerSupplyChanges.isClosed) _powerSupplyChanges.add(supply);
   }
 
   void _emit(PedalEvent event) {
@@ -229,5 +282,6 @@ class PedalRepository {
     await _events.close();
     await _statusChanges.close();
     await _frames.close();
+    await _powerSupplyChanges.close();
   }
 }

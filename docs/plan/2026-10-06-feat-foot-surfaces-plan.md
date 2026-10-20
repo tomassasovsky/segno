@@ -1154,3 +1154,200 @@ human merge gate stays.
   analyze, Bloc lint and format clean. Mutations: 15 run, 14 killed; the
   survivor (not latching the notice flag in memory) only repeats a write of a
   flag already set, since the state field and its listener fire once.
+
+### Part 1 rebase (`59cb70b72`, on the trunk at `6eabf241d`)
+
+- Rebased for merge. `ControlState` keeps Peel P3's refusal fields beside
+  `pendingHolds` and `holdThreshold`; `_restore` keeps the trunk's
+  `retiredBootMode` and sets `holdThreshold`. Every `_armGesture` call on the
+  trunk already passes a `cue`. The test rig builds the recorder with the
+  trunk's `GuardRegistry`.
+- Verification: app suite 3476 passed, 56 skipped; analyze, Bloc lint and
+  format clean.
+
+### Part 2 review fixes (`13ed4750a`, on the trunk at `c4b5cf909`)
+
+- **M1.** The face selects an Equatable `FootFxProjection` from the looper,
+  so meter and playhead ticks do not redraw the pedals. The projection
+  carries the chains a binding and its Hold reach (`chainEntriesAt`), so the
+  names stay current without a whole-bloc watch.
+- **M2.** A pedal reads its chain's rack name (`TrackEffect.rack.name`); a
+  slot target reads its effect; a chain of several racks reads as the
+  pedal's slot (`FX A1`), or the binding's label on a switch that has no
+  slot. The FX goldens use the pen's racks and now match 10/03's titles.
+- **L1.** An install with no stored pedal setup, bindings or boot default is
+  treated as fresh and is never told about the old Stop. Boot writes
+  nothing; the decision is stored at the first FX entry or the first setup or
+  bindings save, so a later boot cannot read it as an upgrade.
+  - Limit: an upgraded install that never saved a pedal setup or binding
+    also reads as fresh, since nothing on disk says it used FX mode.
+  - Limit: an upgrade known only by its retired boot default (consumed at
+    boot) that reboots before entering FX loses the notice.
+- **L2.** Number keys 1 to 8 in FX run the matching track switch's binding,
+  bank B on 5 to 8 (pen 02 `FfZQI`). An unbound switch still toggles the
+  track's chain through the bloc.
+- **L3.** The one-time toast gets a second line: "MODE now leaves FX mode.
+  Its Mute and Hold · Custom still work in the other modes.", built from
+  the stored MODE pair. It is one notice for the one update (rule 4).
+- Verification: app suite 3474 passed, 56 skipped; settings_repository 204;
+  analyze, Bloc lint and format clean. Mutations on the fixes: 15 run, all
+  killed.
+
+### Part 3 (branch `claude/foot-surfaces-1229-p3`, `e708584a2`, on the trunk at `c4b5cf909`)
+
+- Built as planned: `projectFootCustom(ControlState)` and `FootCustomView`.
+  - The face reads `ControlState.customLit`, which `_pushProjected` publishes
+    from the same map it sends to the switch LEDs.
+  - The cubit gains `footCustomPressed/Released/Cancelled` and
+    `activateFootCustomPedal`.
+  - `Stop recording` shows while the recorder is armed.
+  - The header shows the elapsed time when recording.
+- **Refusals.** `_runAction` reports a refusal itself, because all three of
+  its callers are assignments (Custom, CTRL, MIDI).
+  - It skips Fade, Reverse and Peel (#1233's reporters) and Record
+    performance (the recorder's toast).
+  - It also reports when a refusal resolves later, such as a Solo the mix
+    turns away during a session change.
+  - An assignment this build cannot decode reports at the Custom early return
+    and at the MIDI parse. A CTRL `UnavailableAction` reaches `_runAction` and
+    reports there; the External path has no early return of its own.
+  - The toast names an undecodable assignment by its saved key ("future:thing
+    is unavailable right now."), so it does not say "Unavailable" twice.
+- **Departures:**
+  - Captions are the catalogue labels (`Selected track · Mute`), as this
+    part specifies, not the pen's short names (`Mute`). They wrap to two
+    lines (`PerformancePedal.titleMaxLines`); other faces keep one line, and
+    their goldens are unchanged.
+  - An assignment this build cannot run keeps its switch enabled with the
+    caption muted (`titleMuted`). A setup that could not load assigns
+    nothing, so every assignable switch is dimmed and inert.
+  - The recording indicator is the face's own pill (mark and `mm:ss`),
+    because the stage bar's light is private to it.
+  - The Pending Hold cue (Part 1) is not wired into this face: whichever of
+    #1247 and this part lands second passes `holdPending` here.
+- Verification: app suite 3490 passed, 56 skipped; analyze, Bloc lint and
+  format clean.
+  - Mutations: 20 run. Two first survived: the late (async) refusal
+    report, and a contact admitted outside Custom. Both now have tests and
+    are killed.
+  - Untested: the guard that drops a refusal whose Session was replaced
+    before it resolved.
+- Not verified: the hardware criterion (enter Custom with MODE Hold; each
+  assigned switch acts and the face matches the LEDs).
+
+### Part 5 (branch `claude/foot-surfaces-1229-p5`, `2cb34176d`, on the trunk at `c4b5cf909`)
+
+- Built as planned:
+  - `SettingsRepository` gains the reference (440 Hz, clamped to 420–460)
+    and the input (`-1` for the first available).
+  - `TunerSettings` owns both: one live value, written through, and a failed
+    write restores the previous value and completes false.
+  - `TunerCubit` names readings against the stored reference and follows the
+    stored input. A reading tagged with another input clears in the same
+    emit, and nothing is pushed back on a mismatch (P4 review L1).
+  - The pure foot model (`foot_tuner.dart`) and the stateless actions
+    (`foot_tuner_actions.dart`).
+- **Departures:**
+  - `TunerSettings` is a plain owner with a change stream, not the
+    `SettingsOwner` transaction `FadeSettings` uses. These are appliance
+    preferences with no Session image, controller claims or recovery state.
+  - With no device open, "first available" reads as input 1, as the old
+    default did.
+  - The actions return a `FootTunerRefusal` (`limit`, `saveFailed`,
+    `armFailed`) rather than a bare bool, so Part 6's notices name the cause.
+  - `nextPage` returns the new selection and the input to tune, because the
+    selection lives in `ControlState`.
+- Verification:
+  - App suite: 3482 passed, 56 skipped.
+  - `settings_repository`: 205 passed.
+  - analyze, Bloc lint and format clean.
+  - Mutations: 14 run, all killed.
+
+### Part 6 (branch `claude/foot-surfaces-1229-p6`, `4350826f8`, stacked on Part 5)
+
+- Built as planned:
+  - **Mode:** `InteractionMode.tuner` is added at every exhaustive site.
+  - **Control (`control_foot_tuner.dart`):**
+    - Arming: entry arms muted on the source's page. Control re-arms when
+      the source or the mute changes. Exit, any `setMode` and close disarm.
+    - Pedals: contact actions on the track pedals, Stop and Bank; holds on
+      Undo and Clear.
+    - Settings: `ControlState.tunerPreferences` mirrors `TunerSettings`.
+  - **LEDs:** each switch is lit or dark exactly as the face draws it.
+  - **Face:** `FootTunerView` draws pen 23/x. The face's Settings button
+    opens Settings (`openSegnoSettings`).
+  - **Tray:** `TunerTrayPanel`, its test and `SettingsTrayDestination.tuner`
+    are deleted. The tray's Tuner row now closes the tray and enters the
+    mode.
+  - **Default:** the one-shot `Hold · Tuner` default and its toast (D11).
+  - **Notices:** all three of §3's notices.
+- **Departures:**
+  - **Seeding is opt-in.** Only the app turns on the `Hold · Tuner` seeding
+    (`ControlCubit(seedTunerDefault: true)` from `AppRuntime`).
+    - Every other cubit leaves the setup alone. On by default, it changed the
+      Custom map and the store in about 70 existing tests that are about
+      other things.
+    - The app tests that assert exact store contents preset the flag.
+  - **Seeding order.** The seeding runs after the restore returns, since its
+    `setPedalSetup` waits for the load.
+  - **Fresh-install toast.** A fresh install also gets the toast: on the
+    default MODE pair, "hold MODE, then hold pedal 2" is true for it too.
+  - **Shared title options.** `PerformancePedal` gains Part 3's
+    `titleMuted` and `titleMaxLines`, copied byte for byte so the two parts
+    merge cleanly. Two-line input names wrap as 23/1 draws "Lead vocal /
+    microphone".
+  - **Removed strings.** The tray's tuner strings that nothing reads any
+    more are removed (`tunerCentsAndHz`, `tunerListening`, `tunerNoDevice`).
+  - **Test engine.** The fake engine's `setTunerInput` now clears the mute
+    mask, as the native command does (D12).
+  - **Pending Hold cue.** Part 1's cue is not wired into this face; whichever
+    of #1247 and this part lands second passes `holdPending`.
+- Verification:
+  - App suite: 3506 passed, 56 skipped.
+  - `settings_repository`: 206 passed.
+  - analyze, Bloc lint and format clean.
+  - No `TrayPanel` remains under `lib/tuner` or `test/tuner`.
+  - The #912 port is in the base.
+  - Six goldens are new (`foot_tuner_tune`, `_in_tune`, `_no_signal`,
+    `_monitoring`, `_18_inputs`, `_spanish`). `pedal_setup_picker.png`
+    gains the Tuner choice.
+  - Mutations: 22 run, all killed once four tests were tightened (no retry
+    after a refused arm, the Session-load guard, a cancelled hold, and leaving
+    by `setMode`).
+- Not verified:
+  - The two HARDWARE criteria: tuning on the device with the monitor silent,
+    and callback p99 on the Pi 5.
+  - Line coverage was not measured.
+
+### Part 3 review fixes (`3d89de67f`, rebased onto the trunk at `787d51db6`)
+
+- **M1. One notice per cause.** An assigned Record / Play refused with the
+  looper's own notice gets no generic one. This covers a needed recording
+  input, a reversed track and an owed mix.
+  - `LooperRepository.refusalNotices` counts the refusals it announces.
+  - The dispatcher reads it before and after a record action.
+  - A refusal the looper does not announce still gets the generic notice.
+- **M2. Refused performance arms.** An assigned Record performance the
+  engine refuses now gets the generic notice.
+  - With too little disk room, it is refused before the engine, with the
+    recorder's own words ("Not enough disk space to start a capture").
+  - A guard refusal keeps the recorder's toast.
+  - Widget tests assert both toasts.
+  - The pedal's MODE-hold arm is unchanged and still has no low-disk check
+    (trunk behaviour; noted for the Recording plan).
+- **L1. No raw keys.** An action this build cannot run reads
+  `Unavailable action` on the face, in its hint and in its notice ("This
+  control's action isn't available in this version. Reassign it."). The
+  saved key is never shown.
+- **L2. Wrapping.** A wrapped catalogue label keeps the separator on its
+  first line. The space before ` · ` is non-breaking.
+- Verification:
+  - App suite: 3546 passed, 57 skipped.
+  - `looper_repository`: 827 passed.
+  - analyze, Bloc lint and format clean.
+  - Mutations on the fixes: 10 run, all killed.
+- Parts 5 and 6 merge cleanly onto this trunk, so they were not rebased.
+  Part 6 conflicts with this part in `tracks_view.dart`, `tracks_view_test.dart`
+  and `tracks_screenshots_test.dart`. Both sides add a face branch, a
+  listener or tests beside each other there, so whichever lands second keeps
+  both.

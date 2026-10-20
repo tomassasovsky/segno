@@ -187,13 +187,126 @@ void main() {
       }
     });
 
-    test('the schema that carries direction is version 13', () {
-      expect(Session.formatVersion, 13);
+    test('direction is carried since version 13', () {
+      expect(Session.formatVersion, greaterThanOrEqualTo(13));
       final json = session.toJson()..['version'] = 11;
       expect(
         () => Session.fromJson(json),
         throwsA(isA<SessionUnsupportedVersion>()),
       );
+    });
+  });
+
+  group('Audio & tempo (#1179, schema 14)', () {
+    const retimed = Session(
+      sampleRate: 48000,
+      channels: 1,
+      baseLengthFrames: 2400,
+      tempoBpm: 100,
+      tempoSource: TempoSource.manual,
+      loopBars: 1,
+      recordedTempoBpm: 120,
+      recordedLengthFrames: 2000,
+      defaultFollowTempo: false,
+      trackFollowTempoOverrides: {1: true, 3: false},
+      defaultPitchMode: PitchMode.followsSpeed,
+      trackPitchModeOverrides: {2: PitchMode.unchanged},
+      tracks: [
+        SessionTrack(
+          channel: 0,
+          multiple: 1,
+          lengthFrames: 2400,
+          fadeAmount: 1,
+          reversed: false,
+          spanFrames: 2400,
+          lanes: [
+            SessionLane(
+              lane: 0,
+              volume: 1,
+              muted: false,
+              outputMask: 3,
+              inputChannel: 0,
+              layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+              history: TrackHistory.none,
+            ),
+          ],
+        ),
+      ],
+    );
+
+    test('round-trips the recorded pair, spans and both settings', () {
+      final json = jsonDecode(jsonEncode(retimed.toJson()));
+      final back = Session.fromJson(json as Map<String, dynamic>);
+      expect(back, retimed);
+      expect(back.recordedTempoBpm, 120);
+      expect(back.recordedLengthFrames, 2000);
+      expect(back.tracks.single.spanFrames, 2400);
+      expect(back.defaultFollowTempo, isFalse);
+      expect(back.trackFollowTempoOverrides, {1: true, 3: false});
+      expect(back.defaultPitchMode, PitchMode.followsSpeed);
+      expect(back.trackPitchModeOverrides, {2: PitchMode.unchanged});
+      expect(back.hashCode, retimed.hashCode);
+    });
+
+    test('defaults: Follow on, Pitch unchanged, no recorded pair', () {
+      const plain = Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: [],
+      );
+      final json = plain.toJson();
+      expect(json['defaultFollowTempo'], isTrue);
+      expect(json['defaultPitchMode'], 'unchanged');
+      expect(json['recordedTempoBpm'], 0);
+      expect(json['recordedLengthFrames'], 0);
+      expect(Session.fromJson(json), plain);
+    });
+
+    test('refuses malformed values at decode, field by field', () {
+      final good = retimed.toJson();
+      Map<String, dynamic> withTrack(Object? span) => {
+        ...good,
+        'tracks': [
+          {...(good['tracks'] as List).single as Map<String, dynamic>}
+            ..['spanFrames'] = span,
+        ],
+      };
+      for (final (key, bad) in <(String, Object?)>[
+        ('recordedTempoBpm', null),
+        ('recordedTempoBpm', 25),
+        ('recordedTempoBpm', 301),
+        ('recordedTempoBpm', double.nan),
+        ('recordedTempoBpm', 0), // a length without a tempo
+        ('recordedLengthFrames', null),
+        ('recordedLengthFrames', -1),
+        ('recordedLengthFrames', 0), // a tempo without a length
+        ('recordedLengthFrames', 2000.5),
+        ('defaultFollowTempo', null),
+        ('defaultFollowTempo', 'on'),
+        ('trackFollowTempoOverrides', null),
+        ('trackFollowTempoOverrides', {'8': true}),
+        ('trackFollowTempoOverrides', {'1': 'yes'}),
+        ('defaultPitchMode', null),
+        ('defaultPitchMode', 'sideways'),
+        ('trackPitchModeOverrides', null),
+        ('trackPitchModeOverrides', {'-1': 'unchanged'}),
+        ('trackPitchModeOverrides', {'1': 'sideways'}),
+      ]) {
+        expect(
+          () => Session.fromJson({...good, key: bad}),
+          throwsA(anyOf(isA<FormatException>(), isA<TypeError>())),
+          reason: '$key: $bad',
+        );
+      }
+      for (final bad in <Object?>[null, -1, 1.5, '0']) {
+        expect(
+          () => Session.fromJson(withTrack(bad)),
+          throwsFormatException,
+          reason: 'spanFrames: $bad',
+        );
+      }
+      expect(Session.fromJson(withTrack(0)).tracks.single.spanFrames, 0);
     });
   });
 
@@ -334,11 +447,134 @@ void main() {
       );
     });
 
-    test('serializes the manifest version (v13)', () {
+    test('serializes the manifest version (v16) and the grid in beats', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 13);
+      expect(json['version'], 16);
+      // Constructed with bars only, the beats are the bars' (#1168).
+      expect(json['loopBeats'], session.loopBars * session.tsNum);
       expect(json['baseLengthFrames'], 96000);
+    });
+
+    group('backing (schema 15, #1200)', () {
+      const a = SessionBackingItem(
+        digest:
+            'sha256:00112233445566778899aabbccddeeff'
+            '00112233445566778899aabbccddeeff',
+        name: 'Evening lights.wav',
+      );
+      const b = SessionBackingItem(
+        digest:
+            'sha256:ffeeddccbbaa99887766554433221100'
+            'ffeeddccbbaa99887766554433221100',
+        name: 'Count-in.mp3',
+      );
+      const backing = SessionBacking(
+        prepared: [a, b],
+        loaded: b,
+        endMode: BackingEnd.next,
+        level: 0.5,
+        pan: -0.25,
+        outputMask: 0xC,
+      );
+      final withBacking = Session.fromJson({
+        ...session.toJson(),
+        'backing': backing.toJson(),
+        'clickPan': 0.75,
+      });
+
+      test('round-trips every field, a loaded item outside the list too', () {
+        expect(withBacking.backing, backing);
+        expect(withBacking.clickPan, 0.75);
+        const outside = SessionBacking(prepared: [a], loaded: b);
+        expect(
+          Session.fromJson({
+            ...session.toJson(),
+            'backing': jsonDecode(jsonEncode(outside.toJson())),
+          }).backing,
+          outside,
+        );
+        expect(
+          Session.fromJson(
+            jsonDecode(jsonEncode(withBacking.toJson()))
+                as Map<String, dynamic>,
+          ),
+          withBacking,
+        );
+      });
+
+      test('the default is an empty, silent backing and a centred click', () {
+        final json = session.toJson();
+        expect(json['backing'], {
+          'prepared': <Object>[],
+          'loaded': null,
+          'endMode': 'stop',
+          'level': 1.0,
+          'pan': 0.0,
+          'outputMask': 0,
+        });
+        expect(json['clickPan'], 0.0);
+      });
+
+      test('the current schema refuses a missing backing or click pan', () {
+        final json = withBacking.toJson()..remove('backing');
+        expect(() => Session.fromJson(json), throwsFormatException);
+        final noPan = withBacking.toJson()..remove('clickPan');
+        expect(() => Session.fromJson(noPan), throwsFormatException);
+      });
+
+      test('refuses malformed items and values', () {
+        Map<String, dynamic> with_(Map<String, dynamic> edit) => {
+          ...withBacking.toJson(),
+          'backing': {...backing.toJson(), ...edit},
+        };
+        for (final bad in <Map<String, dynamic>>[
+          {
+            'prepared': [
+              {'digest': 'sha256:1234', 'name': 'x.wav'},
+            ],
+          },
+          {
+            'prepared': [
+              {'digest': a.digest.toUpperCase(), 'name': 'x.wav'},
+            ],
+          },
+          {
+            'prepared': [
+              {'digest': a.digest, 'name': ' '},
+            ],
+          },
+          {
+            'prepared': [
+              {'digest': a.digest, 'name': 'x.wav', 'extra': 1},
+            ],
+          },
+          {
+            'prepared': [a.toJson(), a.toJson()],
+          },
+          {'loaded': 'sha256:00'},
+          {'endMode': 'shuffle'},
+          {'level': 2.5},
+          {'level': -0.1},
+          {'pan': 1.5},
+          {'outputMask': -1},
+          {'outputMask': 0.5},
+          {'surprise': true},
+        ]) {
+          expect(
+            () => Session.fromJson(with_(bad)),
+            throwsFormatException,
+            reason: '$bad',
+          );
+        }
+        for (final pan in <Object>[1.01, -2, 'centre']) {
+          expect(
+            () => Session.fromJson({...withBacking.toJson(), 'clickPan': pan}),
+            throwsFormatException,
+            reason: '$pan',
+          );
+        }
+      });
     });
 
     test('schema 9 keeps output setup and all four nullable override maps', () {
@@ -983,6 +1219,26 @@ void main() {
         );
       });
 
+      test('round-trips length edits with their playhead maps (#1168)', () {
+        const lengthHistory = [
+          {'kind': 'length', 'skipped': 0, 'start': 0},
+          {'kind': 'layer', 'skipped': 0},
+          {'kind': 'length', 'skipped': 0, 'start': -96000},
+        ];
+        final json = withHistory(lengthHistory, undoCount: 2, layers: 4);
+        final lane = Session.fromJson(json).tracks.first.lanes.first;
+        expect(lane.history.entries, const [
+          HistoryEntry(HistoryKind.length),
+          HistoryEntry(HistoryKind.layer),
+          HistoryEntry(HistoryKind.length, start: -96000),
+        ]);
+        // A length edit always writes its map, even zero; others never do.
+        expect(
+          track0Lanes(Session.fromJson(json).toJson()).first['history'],
+          lengthHistory,
+        );
+      });
+
       test('a redo marker takes no image; an undo Peel takes one', () {
         // Treating the marker as an image (7 layers) is as corrupt as
         // dropping the undo Peel's image (5).
@@ -1003,6 +1259,8 @@ void main() {
           {'kind': 'layer', 'skipped': 0.5},
           {'kind': 1, 'skipped': 0},
           {'kind': 'layer', 'skipped': 0, 'slot': 3},
+          {'kind': 'length', 'skipped': 0, 'start': 0.5},
+          {'kind': 'length', 'skipped': 0, 'start': 0, 'slot': 3},
           'layer',
         ]) {
           final json = withHistory(
@@ -1028,6 +1286,14 @@ void main() {
           (
             [
               {'kind': 'clear', 'skipped': 0},
+            ],
+            1,
+            2,
+          ),
+          // A playhead map on a kind that has none (#1168).
+          (
+            [
+              {'kind': 'layer', 'skipped': 0, 'start': 4},
             ],
             1,
             2,
@@ -1198,6 +1464,32 @@ void main() {
           ),
         );
       });
+    });
+  });
+
+  group('forNewLoop', () {
+    test('drops the tracks, the grid, the crown and the name, and keeps '
+        'every other field', () {
+      final source = Session.fromJson({
+        ...session.toJson(),
+        'name': 'Evening loop',
+        'loopBars': 4,
+        'loopBeats': 24,
+        'primaryTrack': 0,
+        'tempoBpm': 96,
+        'tempoSource': 'manual',
+        'countInBars': 2,
+        'pedalBindings': 'remap',
+      });
+
+      final json = source.toJson()
+        ..remove('name')
+        ..['tracks'] = <Object?>[]
+        ..['baseLengthFrames'] = 0
+        ..['loopBars'] = 0
+        ..['loopBeats'] = 0
+        ..['primaryTrack'] = -1;
+      expect(jsonEncode(source.forNewLoop().toJson()), jsonEncode(json));
     });
   });
 }

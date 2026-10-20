@@ -13,20 +13,24 @@ class SystemBrightnessClient implements BrightnessClient {
   /// Path to the brightness helper.
   final String helperPath;
 
+  /// How long one helper call may take: a DDC transaction is well under a
+  /// second, and a hung bus must not hold the panel's level back for ever.
+  static const timeout = Duration(seconds: 10);
+
   bool get _helperPresent => File(helperPath).existsSync();
 
   @override
-  Future<bool> isSupported() async {
+  Future<bool> isSupported(String connector) async {
     if (!_helperPresent) return false;
-    final json = await _runJson(['supported']);
+    final json = await _runJson(['supported', '--connector', connector]);
     return json is Map && json['supported'] == true;
   }
 
   @override
-  Future<void> set(double value) async {
+  Future<void> set(String connector, double value) async {
     if (!_helperPresent) return;
     final pct = (value.clamp(0.0, 1.0) * 100).round();
-    await _run(['set', '$pct']);
+    await _run(['set', '$pct', '--connector', connector]);
   }
 
   Future<Object?> _runJson(List<String> args) async {
@@ -37,7 +41,7 @@ class SystemBrightnessClient implements BrightnessClient {
   }
 
   Future<ProcessResult> _run(List<String> args) async {
-    final result = await Process.run(helperPath, args);
+    final result = await Process.run(helperPath, args).timeout(timeout);
     if (result.exitCode != 0) {
       throw ProcessException(
         helperPath,

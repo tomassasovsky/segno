@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
 
@@ -45,6 +48,99 @@ void main() {
       expect(engine.snapshot().tracks, before.tracks);
     });
 
+    test(
+      'speed needs material the mock never holds, so capture stays open',
+      () {
+        expect(
+          engine.setSpeed(SpeedFactor.half).result,
+          EngineResult.notRunning,
+        );
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        final admitted = engine.setSpeed(SpeedFactor.half);
+        expect(admitted.result, EngineResult.invalid);
+        expect(admitted.request, 0);
+        expect(engine.snapshot().speed, SpeedFactor.normal);
+        expect(engine.record(), EngineResult.ok);
+      },
+    );
+
+    test(
+      'transpose needs material the mock lacks; its bypass is a global '
+      'request with a receipt',
+      () {
+        expect(
+          engine.transposeStep(channel: 0, delta: 1).result,
+          EngineResult.notRunning,
+        );
+        expect(
+          engine.setTransposeBypass(bypassed: true).result,
+          EngineResult.notRunning,
+        );
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        expect(
+          engine.transposeStep(channel: 0, delta: 1).result,
+          EngineResult.invalid,
+        );
+        expect(
+          engine.installTranspose(channel: 0, semitones: 3).result,
+          EngineResult.invalid,
+        );
+        final bypass = engine.setTransposeBypass(bypassed: true);
+        expect(bypass.result, EngineResult.ok);
+        expect(bypass.request, isNonZero);
+        expect(engine.readRequestResult(bypass.request), EngineResult.ok);
+        expect(engine.readRequestResult(bypass.request), EngineResult.invalid);
+        expect(engine.snapshot().transposeBypass, isTrue);
+        expect(engine.record(), EngineResult.ok); // nothing is transposed
+        engine.setTransposeBypass(bypassed: false);
+        expect(engine.snapshot().transposeBypass, isFalse);
+        engine.setTransposeBypass(bypassed: true);
+        expect(engine.stop(), EngineResult.ok);
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        // Configure resets it with the material.
+        expect(engine.snapshot().transposeBypass, isFalse);
+      },
+    );
+
+    test(
+      'follow tempo and pitch are settings with receipts that configure '
+      'resets',
+      () {
+        expect(
+          engine.setFollowTempo(follow: true).result,
+          EngineResult.notRunning,
+        );
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        expect(engine.setFollowTempo().result, EngineResult.invalid);
+        expect(engine.setPitchMode().result, EngineResult.invalid);
+        expect(
+          engine.setFollowTempo(channel: 99, follow: true).result,
+          EngineResult.invalid,
+        );
+        final follow = engine.setFollowTempo(follow: true);
+        expect(engine.readRequestResult(follow.request), EngineResult.ok);
+        engine
+          ..setFollowTempo(channel: 2, follow: false)
+          ..setPitchMode(mode: PitchMode.followsSpeed)
+          ..setPitchMode(channel: 1, mode: PitchMode.unchanged);
+        final s = engine.snapshot();
+        expect(s.followTempo, isTrue);
+        expect(s.pitchMode, PitchMode.followsSpeed);
+        expect(s.tracks[2].followTempoOverride, isFalse);
+        expect(s.tracks[1].pitchModeOverride, PitchMode.unchanged);
+        expect(s.tracks[0].followTempoOverride, isNull);
+        expect(s.tempoFollow, TempoFollowState.free); // no material
+        engine.setFollowTempo(channel: 2);
+        expect(engine.snapshot().tracks[2].followTempoOverride, isNull);
+        expect(engine.stop(), EngineResult.ok);
+        expect(engine.start(engine.defaultConfig), EngineResult.ok);
+        final fresh = engine.snapshot();
+        expect(fresh.followTempo, isFalse);
+        expect(fresh.pitchMode, PitchMode.unchanged);
+        expect(fresh.tracks[1].pitchModeOverride, isNull);
+      },
+    );
+
     test('peel is unavailable because the mock keeps no overdub layers', () {
       expect(engine.peel(), EngineResult.notRunning);
       expect(engine.start(engine.defaultConfig), EngineResult.ok);
@@ -54,14 +150,34 @@ void main() {
       expect(before.tracks.first.peelDepth, 0);
     });
 
+    test('a length edit is refused: the mock keeps no material', () {
+      expect(
+        engine.editLength(channel: 0, edit: LengthEdit.doubled),
+        (result: EngineResult.notRunning, request: 0),
+      );
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      for (final edit in LengthEdit.values) {
+        expect(
+          engine.editLength(channel: 0, edit: edit),
+          (result: EngineResult.invalid, request: 0),
+        );
+      }
+    });
+
     test('keeps no history to export; finalize needs a running engine', () {
       const history = TrackHistory([
         HistoryEntry(HistoryKind.layer),
       ], undoCount: 1);
       expect(engine.exportHistory(0), TrackHistory.none);
-      expect(engine.finalizeHistory(0, history), EngineResult.notRunning);
+      expect(
+        engine.finalizeHistory(0, history, imageLengths: const [8, 8]),
+        EngineResult.notRunning,
+      );
       expect(engine.start(engine.defaultConfig), EngineResult.ok);
-      expect(engine.finalizeHistory(0, history), EngineResult.ok);
+      expect(
+        engine.finalizeHistory(0, history, imageLengths: const [8, 8]),
+        EngineResult.ok,
+      );
       expect(engine.exportHistory(0), TrackHistory.none);
     });
 
@@ -416,12 +532,20 @@ void main() {
 
     group('performance recording capture', () {
       test('requires the engine to be running', () {
-        expect(engine.perfArm('test-capture'), EngineResult.notRunning);
+        expect(
+          engine.perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          ),
+          EngineResult.notRunning,
+        );
       });
 
       test('rejects an empty capture directory', () {
         engine.start(engine.defaultConfig);
-        expect(engine.perfArm(''), EngineResult.invalid);
+        expect(
+          engine.perfArm(PerfTarget(captureDir: '', takeId: Uint8List(16))),
+          EngineResult.invalid,
+        );
         expect(engine.snapshot().isPerfArmed, isFalse);
       });
 
@@ -429,10 +553,17 @@ void main() {
         engine.start(engine.defaultConfig);
         expect(engine.snapshot().isPerfArmed, isFalse);
 
-        expect(engine.perfArm('test-capture'), EngineResult.ok);
+        expect(
+          engine.perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          ),
+          EngineResult.ok,
+        );
         expect(engine.snapshot().isPerfArmed, isTrue);
         expect(
-          engine.perfArm('test-capture'),
+          engine.perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          ),
           EngineResult.ok,
         ); // already armed: no-op
 
@@ -446,7 +577,9 @@ void main() {
         expect(engine.snapshot().perfFrames, 0);
 
         engine
-          ..perfArm('test-capture')
+          ..perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          )
           ..snapshot(); // advances frames by one buffer
         expect(engine.snapshot().perfFrames, greaterThan(0));
 
@@ -459,7 +592,9 @@ void main() {
       test('the mock models no ring capacity: overruns stay 0', () {
         engine
           ..start(engine.defaultConfig)
-          ..perfArm('test-capture');
+          ..perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          );
         for (var i = 0; i < 5; i++) {
           engine.snapshot();
         }
@@ -469,7 +604,9 @@ void main() {
       test('a fresh start disarms and resets frames', () {
         engine
           ..start(engine.defaultConfig)
-          ..perfArm('test-capture')
+          ..perfArm(
+            PerfTarget(captureDir: 'test-capture', takeId: Uint8List(16)),
+          )
           ..snapshot()
           ..stop()
           ..start(engine.defaultConfig);
@@ -722,7 +859,10 @@ void main() {
         expect(engine.snapshot().perfFollowOutput, isFalse);
         expect(engine.setPerfFollowOutput(follow: true), EngineResult.ok);
         expect(engine.snapshot().perfFollowOutput, isTrue);
-        expect(engine.perfArm('take'), EngineResult.ok);
+        expect(
+          engine.perfArm(PerfTarget(captureDir: 'take', takeId: Uint8List(16))),
+          EngineResult.ok,
+        );
         engine.setPerfFollowOutput(follow: false); // too late for this take
         expect(engine.snapshot().perfFollowOutput, isTrue);
         engine.perfDisarm();
@@ -1299,6 +1439,103 @@ void main() {
 
     test('exportTrackLane returns an empty list (mock models no PCM)', () {
       expect(engine.exportTrackLane(0, 0), isEmpty);
+    });
+
+    test(
+      'the audition plays an existing file as one second until stopped',
+      () async {
+        expect(
+          (await engine.auditionStartFile('/absent.wav')).result,
+          EngineResult.notRunning,
+        );
+        engine.start(engine.defaultConfig);
+        expect(
+          (await engine.auditionStartFile('/absent.wav')).result,
+          EngineResult.invalid,
+        );
+        final dir = Directory.systemTemp.createTempSync('mock_audition');
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final file = File('${dir.path}/a.wav')..writeAsBytesSync([0]);
+        final started = await engine.auditionStartFile(file.path);
+        expect(started.result, EngineResult.ok);
+        expect(started.frames, 48000);
+        expect(started.rate, 48000);
+        expect(
+          (await engine.auditionStartFile(
+            file.path,
+            stillWanted: () => false,
+          )).cancelled,
+          isTrue,
+        );
+        expect(engine.auditionState().playing, isTrue);
+        expect(engine.auditionState().outputs, (1 << 20) - 1);
+        expect(engine.auditionStop(), EngineResult.ok);
+        expect(engine.auditionState().playing, isFalse);
+        expect(
+          await engine.filePeaks(file.path, buckets: 4),
+          [0, 0, 0, 0],
+        );
+        expect(
+          await engine.filePeaks('/absent.wav', buckets: 4),
+          isNull,
+        );
+      },
+    );
+
+    test('the audition voice lives as the native one does', () async {
+      engine.start(engine.defaultConfig);
+      final dir = Directory.systemTemp.createTempSync('mock_audition');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final file = File('${dir.path}/a.wav')..writeAsBytesSync([0]);
+      Future<void> play() async => expect(
+        (await engine.auditionStartFile(file.path)).result,
+        EngineResult.ok,
+      );
+
+      // It advances a block per snapshot and ends after its last frame.
+      await play();
+      final frames = engine.auditionState().frames;
+      engine.snapshot();
+      expect(engine.auditionState().position, greaterThan(0));
+      for (var i = 0; i < frames && engine.auditionState().playing; i++) {
+        engine.snapshot();
+      }
+      expect(engine.auditionState().playing, isFalse);
+
+      // A Cut sound ends it.
+      await play();
+      engine.cutSound();
+      expect(engine.auditionState().playing, isFalse);
+
+      // A performance arm ends it, and refuses a start while armed.
+      await play();
+      expect(
+        engine.perfArm(
+          PerfTarget(captureDir: dir.path, takeId: Uint8List(16)),
+        ),
+        EngineResult.ok,
+      );
+      expect(engine.auditionState().playing, isFalse);
+      expect(
+        (await engine.auditionStartFile(file.path)).result,
+        EngineResult.alreadyRunning,
+      );
+      expect(engine.perfDisarm(), EngineResult.ok);
+
+      // A stop and a start (a reconfigure) end it and bump the epoch.
+      await play();
+      final epoch = engine.auditionState().epoch;
+      expect(engine.stop(), EngineResult.ok);
+      expect(engine.auditionState().playing, isFalse);
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      expect(engine.auditionState().epoch, epoch + 1);
+
+      // So does a reopen.
+      await play();
+      expect(engine.stop(), EngineResult.ok);
+      expect(engine.reopen(engine.defaultConfig).result, EngineResult.ok);
+      expect(engine.auditionState().playing, isFalse);
+      expect(engine.auditionState().epoch, epoch + 2);
     });
   });
 }

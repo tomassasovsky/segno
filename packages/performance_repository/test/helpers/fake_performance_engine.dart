@@ -24,8 +24,41 @@ class _FakeTrack {
 /// models per-lane PCM/state closely enough to exercise arm/disarm/
 /// persistLiveLanes without the native engine, plus the perf-capture surface
 /// (armed flag, captureDir, forced result codes).
-class FakePerformanceEngine implements AudioEngine {
+class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
   FakePerformanceEngine({this.sampleRate = 48000});
+
+  // The audition voice (#1178): records what it was asked to play and
+  // answers peaks through [peaksOf].
+
+  /// Every file [auditionStartFile] was asked to play.
+  final List<String> auditionPaths = [];
+
+  /// Every `(path, buckets)` [filePeaks] was asked for.
+  final List<(String, int)> peaksRequests = [];
+
+  /// What [filePeaks] answers; null answers no peaks.
+  Float32List? Function(String path, int buckets)? peaksOf;
+
+  @override
+  Future<AuditionStart> auditionStartFile(
+    String path, {
+    bool Function()? stillWanted,
+  }) async {
+    auditionPaths.add(path);
+    return const AuditionStart(result: EngineResult.ok);
+  }
+
+  @override
+  EngineResult auditionStop() => EngineResult.ok;
+
+  @override
+  AuditionState auditionState() => const AuditionState();
+
+  @override
+  Future<Float32List?> filePeaks(String path, {required int buckets}) async {
+    peaksRequests.add((path, buckets));
+    return peaksOf?.call(path, buckets);
+  }
 
   final int sampleRate;
 
@@ -46,6 +79,9 @@ class FakePerformanceEngine implements AudioEngine {
   bool perfArmPending = false;
   void Function()? onPerfArmQueued;
   String? lastPerfCaptureDir;
+
+  /// The target of the most recent perfArm.
+  PerfTarget? lastPerfTarget;
   EngineResult perfArmResult = EngineResult.ok;
   EngineResult perfDisarmResult = EngineResult.ok;
   int perfArmCalls = 0;
@@ -59,6 +95,9 @@ class FakePerformanceEngine implements AudioEngine {
 
   /// Whether the drain thread reports it self-stopped on a failed write.
   bool perfStopped = false;
+
+  /// Why the take stopped, as the snapshot reports it (#1198).
+  PerfStopReason perfStopReason = PerfStopReason.none;
 
   /// Seeds track [channel] lane [lane] with settled [pcm] (state defaults to
   /// [TrackState.playing] — a settled, exportable lane).
@@ -139,6 +178,7 @@ class FakePerformanceEngine implements AudioEngine {
     perfOverruns: perfOverruns,
     perfZeroFilledFrames: perfZeroFilledFrames,
     perfStopped: perfStopped,
+    perfStopReason: perfStopReason,
     perfFollowOutput: perfArmed
         ? armedFollowOutput
         : (perfFollowOutput ?? false),
@@ -196,11 +236,17 @@ class FakePerformanceEngine implements AudioEngine {
   EngineResult importTrack(int channel, Float32List pcm) => EngineResult.ok;
 
   @override
+  EngineResult importSpan(int channel, int spanFrames) => EngineResult.ok;
+
+  @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       EngineResult.ok;
 
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
+
+  @override
+  int trackAudioRev(int channel) => 0;
 
   @override
   EngineResult importLayer(
@@ -214,15 +260,20 @@ class FakePerformanceEngine implements AudioEngine {
   TrackHistory exportHistory(int channel) => TrackHistory.none;
 
   @override
-  EngineResult finalizeHistory(int channel, TrackHistory history) =>
+  EngineResult finalizeHistory(
+    int channel,
+    TrackHistory history, {
+    required List<int> imageLengths,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult commitSession(int baseFrames, {required int loopBeats}) =>
       EngineResult.ok;
 
   @override
-  EngineResult commitSession(int baseFrames, {required int loopBars}) =>
-      EngineResult.ok;
-
-  @override
-  EngineResult perfArm(String captureDir) {
+  EngineResult perfArm(PerfTarget target) {
+    final captureDir = target.captureDir;
+    lastPerfTarget = target;
     perfArmCalls++;
     lastPerfCaptureDir = captureDir;
     if (!perfArmResult.isOk) return perfArmResult;
@@ -271,9 +322,6 @@ class FakePerformanceEngine implements AudioEngine {
     perfArmPending = false;
     return EngineResult.ok;
   }
-
-  @override
-  bool syncDirectory(String path) => path.isNotEmpty;
 
   @override
   VolumeSpace? volumeSpace(String path) => freeBytes == null
@@ -326,6 +374,25 @@ class FakePerformanceEngine implements AudioEngine {
     _renderStarted = false;
     return EngineResult.ok;
   }
+
+  // ---- shared render recipe (#1202): not modelled by this fake ----
+
+  @override
+  RenderMeasurement measureRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, plan: null);
+
+  @override
+  RenderAdmission beginRender(RenderRequest request) =>
+      (result: EngineResult.unsupported, job: 0);
+
+  @override
+  RenderJobStatus? pollRender(int job) => null;
+
+  @override
+  Float32List? copyRender(int job, {required int maxFrames}) => null;
+
+  @override
+  EngineResult cancelRender(int job) => EngineResult.invalid;
 
   // ---- unused by PerformanceRepository: inert defaults ----
   @override
@@ -408,10 +475,42 @@ class FakePerformanceEngine implements AudioEngine {
       (result: EngineResult.invalid, request: 0);
 
   @override
+  RequestAdmission editLength({
+    required int channel,
+    required LengthEdit edit,
+  }) => (result: EngineResult.invalid, request: 0);
+
+  @override
   RequestAdmission installReverse({
     required int channel,
     required bool reversed,
   }) => (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setSpeed(SpeedFactor factor) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission transposeStep({required int channel, required int delta}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission installTranspose({
+    required int channel,
+    required int semitones,
+  }) => (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setTransposeBypass({required bool bypassed}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setFollowTempo({int? channel, bool? follow}) =>
+      (result: EngineResult.invalid, request: 0);
+
+  @override
+  RequestAdmission setPitchMode({int? channel, PitchMode? mode}) =>
+      (result: EngineResult.invalid, request: 0);
 
   @override
   EngineResult? readRequestResult(int request) => EngineResult.invalid;
@@ -580,6 +679,46 @@ class FakePerformanceEngine implements AudioEngine {
   EngineResult setClickMode(ClickMode mode) => EngineResult.ok;
   @override
   EngineResult setClickOutput(int mask) => EngineResult.ok;
+  // The backing player (#1200) is not this fake's concern: every call is
+  // accepted and nothing is loaded.
+  @override
+  EngineResult backingLoad(
+    DecodedAudio audio, {
+    required int item,
+    required bool play,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult backingStageNext(DecodedAudio? audio, {required int item}) =>
+      EngineResult.ok;
+
+  @override
+  EngineResult backingClear() => EngineResult.ok;
+
+  @override
+  EngineResult backingTransport(BackingTransportOp op) => EngineResult.ok;
+
+  @override
+  EngineResult backingSeek(int frame) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingEnd(BackingEnd mode) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingOutput(int mask) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingLevel(double gain) => EngineResult.ok;
+
+  @override
+  EngineResult setBackingPan(double pan) => EngineResult.ok;
+
+  @override
+  EngineResult setClickPan(double pan) => EngineResult.ok;
+
+  @override
+  BackingState backingState() => const BackingState();
+
   @override
   EngineResult setClickVolume(double volume) => EngineResult.ok;
   @override

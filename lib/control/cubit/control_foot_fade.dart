@@ -16,9 +16,7 @@ extension _FootFadeControl on ControlCubit {
     }
     if (!_fadeEditable) return;
     if (role.immediate) {
-      if (_dispatchFadeAction(role.press, role.slot)) {
-        _acceptedContacts.add(button);
-      }
+      _dispatchFadeAction(role.press, role.slot);
       return;
     }
     // A pending track hold follows a bank change until it fires: the slot
@@ -31,6 +29,7 @@ extension _FootFadeControl on ControlCubit {
     _armGesture(
       _systemGesture(button) ??
           _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
+      cue: button,
       onTap: () => dispatch(role.press),
       onHold: () => dispatch(role.hold!),
     );
@@ -70,6 +69,11 @@ extension _FootFadeControl on ControlCubit {
         _looper.sessionRevision != session) {
       return;
     }
-    emit(state.copyWith(footFadeFailure: state.footFadeFailure + 1));
+    emit(
+      state.copyWith(
+        footFadeFailure: state.footFadeFailure + 1,
+        footFadeRefusedEmpty: 0,
+      ),
+    );
   }
 }

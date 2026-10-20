@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/backing/model/backing_mix.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/owned_value_control.dart';
+import 'package:segno/looper/application/backing_settings.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/model/click_mode.dart';
 import 'package:segno/looper/model/click_volume.dart';
@@ -17,6 +19,9 @@ import 'package:segno/looper/model/record_timing.dart';
 /// its lifetime alone.
 typedef _Origin = ({SettingLifetime lifetime, int revision});
 
+/// The backing owners' origin; null fields when the port has no backing.
+typedef _BackingOrigin = ({SettingLifetime? lifetime, int? revision});
+
 /// Every family's lifetime, in the order the targets are retired.
 typedef _Lifetimes = ({
   SettingLifetime decay,
@@ -27,6 +32,8 @@ typedef _Lifetimes = ({
   SettingLifetime recordStart,
   SettingLifetime fade,
   SettingLifetime clickVolume,
+  SettingLifetime? backingMix,
+  SettingLifetime? clickPan,
 });
 
 /// [OwnedValueControl] over the owned families' controller ports: the one
@@ -43,6 +50,7 @@ class OwnedValuePort implements OwnedValueControl {
     required RecordLengthControl recordLength,
     required RecordTimingControl recordTiming,
     required FadeSettings fade,
+    BackingSettings? backing,
   }) : _looper = looper,
        _clickVolume = clickVolume,
        _clickMode = clickMode,
@@ -51,7 +59,8 @@ class OwnedValuePort implements OwnedValueControl {
        _oneShot = oneShot,
        _recordLength = recordLength,
        _recordTiming = recordTiming,
-       _fade = fade;
+       _fade = fade,
+       _backing = backing;
 
   final LooperRepository _looper;
   final ClickVolumeControl _clickVolume;
@@ -63,6 +72,10 @@ class OwnedValuePort implements OwnedValueControl {
   final RecordTimingControl _recordTiming;
   final FadeSettings _fade;
 
+  /// The backing mix and click pan owners (#1200); without them the three
+  /// backing targets never resolve.
+  final BackingSettings? _backing;
+
   /// The families' accepted read models now.
   OwnedValueSnapshots get snapshots => OwnedValueSnapshots(
     clickVolume: _clickVolume.clickVolume,
@@ -73,6 +86,8 @@ class OwnedValuePort implements OwnedValueControl {
     recordLengthSnapshot: _recordLength.recordLengthSnapshot,
     recordTimingSnapshot: _recordTiming.recordTimingSnapshot,
     fadeDurations: _fade.needsRecovery ? null : _fade.live,
+    backingMix: _backing?.mixOwner.value,
+    clickPan: _backing?.clickPanOwner.value,
   );
 
   @override
@@ -124,7 +139,18 @@ class OwnedValuePort implements OwnedValueControl {
       lifetime: _fade.lifetime,
       revision: _fade.revision(channel),
     ),
+    BackingLevelTarget() => _mixOrigin(BackingMixField.level),
+    BackingPanTarget() => _mixOrigin(BackingMixField.pan),
+    ClickPanTarget() => (
+      lifetime: _backing?.clickPanOwner.lifetime,
+      revision: _backing?.clickPanOwner.revision,
+    ),
   };
+
+  Object _mixOrigin(BackingMixField field) => (
+    lifetime: _backing?.mixOwner.lifetime,
+    revision: _backing?.mixOwner.revisionOf(field),
+  );
 
   @override
   bool originCurrent(OwnedValueTarget target, Object origin) =>
@@ -213,6 +239,25 @@ class OwnedValuePort implements OwnedValueControl {
                   : target.toDomain(released),
             )
             .then((outcome) => outcome.isOk),
+      BackingLevelTarget() => _writeMix(
+        BackingMixField.level,
+        (mix, v) => mix.copyWith(level: v),
+        target.toDomain(value),
+        released == null ? null : target.toDomain(released),
+        origin,
+      ),
+      BackingPanTarget() => _writeMix(
+        BackingMixField.pan,
+        (mix, v) => mix.copyWith(pan: v),
+        target.toDomain(value),
+        released == null ? null : target.toDomain(released),
+        origin,
+      ),
+      ClickPanTarget() => _writeClickPan(
+        target.toDomain(value),
+        released == null ? null : target.toDomain(released),
+        origin,
+      ),
       FadeValueTarget() => _fade.setControllerDuration(
         target.channel,
         target.toDomain(value),
@@ -224,6 +269,43 @@ class OwnedValuePort implements OwnedValueControl {
       ),
     };
     return await accepted && originCurrent(target, origin);
+  }
+
+  Future<bool> _writeMix(
+    BackingMixField field,
+    BackingMix Function(BackingMix mix, double value) set,
+    double value,
+    double? released,
+    Object origin,
+  ) async {
+    final owner = _backing?.mixOwner;
+    if (owner == null) return false;
+    final (:lifetime, :revision) = origin as _BackingOrigin;
+    final outcome = await owner.updateController(
+      (live) => set(live, value),
+      address: field,
+      lifetime: lifetime!,
+      revision: revision,
+      released: released == null ? null : (held) => set(held, released),
+    );
+    return outcome.isOk;
+  }
+
+  Future<bool> _writeClickPan(
+    double value,
+    double? released,
+    Object origin,
+  ) async {
+    final owner = _backing?.clickPanOwner;
+    if (owner == null) return false;
+    final (:lifetime, :revision) = origin as _BackingOrigin;
+    final outcome = await owner.setController(
+      value,
+      lifetime: lifetime!,
+      revision: revision,
+      released: released,
+    );
+    return outcome.isOk;
   }
 
   @override
@@ -303,6 +385,30 @@ class OwnedValuePort implements OwnedValueControl {
             superseded: true,
           ),
         ),
+        if (_backing case final backing?) ...[
+          backing.mixOwner.ordinaryChanges.listen((change) {
+            final target = switch (change.address) {
+              BackingMixField.level => const BackingLevelTarget(),
+              BackingMixField.pan => const BackingPanTarget(),
+              _ => null,
+            };
+            if (target == null) return;
+            add(
+              target,
+              target is BackingLevelTarget
+                  ? target.fromDomain(change.value.level)
+                  : const BackingPanTarget().fromDomain(change.value.pan),
+              superseded: change.superseded,
+            );
+          }),
+          backing.clickPanOwner.ordinaryChanges.listen(
+            (change) => add(
+              const ClickPanTarget(),
+              const ClickPanTarget().fromDomain(change.value),
+              superseded: change.superseded,
+            ),
+          ),
+        ],
         _fade.ordinaryChanges.listen((change) {
           final target = change.channel == null
               ? const DefaultFadeTarget()
@@ -351,6 +457,8 @@ class OwnedValuePort implements OwnedValueControl {
     recordStart: _recordStart.recordStartLifetime,
     fade: _fade.lifetime,
     clickVolume: _clickVolume.clickVolumeLifetime,
+    backingMix: _backing?.mixOwner.lifetime,
+    clickPan: _backing?.clickPanOwner.lifetime,
   );
 
   /// Click volume's sources are reset as well, as before the port; the
@@ -373,6 +481,11 @@ class OwnedValuePort implements OwnedValueControl {
         if (before.recordStart != now.recordStart) const CountInValueTarget(),
         if (before.fade != now.fade)
           ...ownedValueTargets.whereType<FadeValueTarget>(),
+        if (before.backingMix != now.backingMix) ...const [
+          BackingLevelTarget(),
+          BackingPanTarget(),
+        ],
+        if (before.clickPan != now.clickPan) const ClickPanTarget(),
       ],
       invalidated: {
         if (before.clickVolume != now.clickVolume) const ClickVolumeTarget(),

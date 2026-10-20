@@ -16,9 +16,7 @@ extension _FootReverseControl on ControlCubit {
       return;
     }
     if (!_reverseEditable) return;
-    if (_dispatchReverseAction(role.press, role.slot)) {
-      _acceptedContacts.add(button);
-    }
+    _dispatchReverseAction(role.press, role.slot);
   }
 
   bool _dispatchReverseAction(FootReverseAction action, int? slot) {
@@ -49,6 +47,11 @@ extension _FootReverseControl on ControlCubit {
         _looper.sessionRevision != session) {
       return;
     }
-    emit(state.copyWith(footReverseFailure: state.footReverseFailure + 1));
+    emit(
+      state.copyWith(
+        footReverseFailure: state.footReverseFailure + 1,
+        footReverseRefusedEmpty: 0,
+      ),
+    );
   }
 }

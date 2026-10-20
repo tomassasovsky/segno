@@ -13,8 +13,8 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/app_runtime.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
-import 'package:segno/appliance/power_off/power_off_gate.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
@@ -23,8 +23,11 @@ import 'package:segno/session/session.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/fake_key_value_store.dart';
+import '../../helpers/test_backing.dart';
 import '../../helpers/test_mix_settings.dart';
 
 class _Store extends FakeKeyValueStore {
@@ -147,7 +150,16 @@ void main() {
           pedal: pedal,
           performance: performance,
           sessions: sessions,
+          storage: StorageRepository(
+            guards: GuardRegistry(),
+            client: const UnsupportedUsbStorageClient(),
+            exportsRoot: () async => directory.path,
+            volumeSpace: performance.volumeSpace,
+          ),
+          backing: testBackingRepository(),
           powerOff: () async => halts++,
+          reboot: () async => halts++,
+          storageSettled: () async {},
         );
         addTearDown(() async {
           store.refuse = false;
@@ -223,6 +235,9 @@ void main() {
             expect(saved.session.tracks, hasLength(1));
             expect(engine.snapshot().countInBars, held ? 2 : 0);
             printOnFailure('Both files checked; recalling');
+            // Opening the current session does nothing (plan Part 4), so
+            // recall goes through another current session.
+            await runtime.session.saveAs('Elsewhere');
             await runtime.session.open(await idOf('Held choice'));
             printOnFailure('Recall completed');
             expect(runtime.session.state.status, SessionStatus.success);
@@ -249,18 +264,18 @@ void main() {
             2,
           );
           store.refuse = true;
-          const snapshot = PowerOffSnapshot(anyHasContent: true);
+          const snapshot = PowerSnapshot(currentSessionName: 'set');
           runtime.power
             ..press(snapshot)
-            ..powerOffWithoutSaving(snapshot);
+            ..shutDown(snapshot, save: () async {});
           await _until(
-            () => runtime.power.state.phase == PowerOffPhase.flushFailed,
+            () => runtime.power.state.phase == PowerPhase.saveFailed,
             description: 'Shutdown must refuse failed release',
           );
           expect(halts, 0);
           expect(engine.snapshot().countInBars, 2);
           store.refuse = false;
-          runtime.power.retryPowerOff(snapshot);
+          runtime.power.retry(snapshot);
           await _until(
             () => halts == 1,
             description: 'Retry must halt after repair',

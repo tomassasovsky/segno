@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -10,6 +11,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
+import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -25,9 +27,10 @@ import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
-import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
+import 'package:segno/visualizer/visualizer.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:toastification/toastification.dart';
+import 'package:touch_calibration_client/touch_calibration_client.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -77,21 +80,36 @@ class CountingWifiClient extends UnsupportedWifiClient {
   }
 }
 
+/// The console's two outputs, pinned as the appliance pins them, with a
+/// presence a test can change.
+class FakeDisplayOutputs implements DisplayOutputs {
+  /// Each connector's presence; `null` is unknown.
+  final status = <String, bool?>{'HDMI-A-1': true, 'HDMI-A-2': true};
+
+  @override
+  Future<Map<String, String>> screenConnectors() async => const {
+    'main': 'HDMI-A-1',
+    'readout': 'HDMI-A-2',
+  };
+
+  @override
+  Future<bool?> isConnected(String connector) async => status[connector];
+}
+
 /// The providers the five destination pages read, mounted above a root
 /// navigator the way the app mounts them, so a test can open a page through
 /// the navigator functions and find it.
 class DestinationHarness {
-  /// Creates a harness with fresh settings, a stubbed audio cubit and a
-  /// counting Wi-Fi client.
-  DestinationHarness() {
+  /// Creates a harness with fresh settings (over [store], when a test needs
+  /// writes to fail), a stubbed audio cubit and a counting Wi-Fi client.
+  DestinationHarness({KeyValueStore? store})
+    : settings = SettingsRepository(store: store ?? FakeKeyValueStore()) {
     when(audio.beginDeviceScan).thenReturn(null);
     when(audio.endDeviceScan).thenReturn(null);
   }
 
   /// The settings store behind the real cubits.
-  final SettingsRepository settings = SettingsRepository(
-    store: FakeKeyValueStore(),
-  );
+  final SettingsRepository settings;
 
   /// The audio setup the Device page reads.
   final MockAudioSetupCubit audio = MockAudioSetupCubit();
@@ -102,6 +120,28 @@ class DestinationHarness {
   /// The brightness owner, real so a test can read what was saved.
   late DisplayBrightnessCubit brightness;
 
+  /// The idle dim owner, real so a test can read what was saved.
+  late IdleDimCubit idle;
+
+  /// The outputs the Displays page reads presence from.
+  final FakeDisplayOutputs outputs = FakeDisplayOutputs();
+
+  /// The touch calibration the Displays page offers. Unsupported unless a
+  /// test sets one before [pump].
+  TouchCalibrationClient touch = const UnsupportedTouchCalibrationClient();
+
+  /// The Track display link calibration draws its targets through.
+  WaveformWindowService link = NoopWaveformWindowService();
+
+  /// The waveform window preference the Displays page shows.
+  late MockWaveformWindowCubit waveform;
+
+  /// The high-contrast preference the Displays page shows.
+  late MockHighContrastCubit contrast;
+
+  /// The refresh rate the Displays page shows.
+  late MockRefreshRateCubit refresh;
+
   /// Mounts [home] under a root navigator that carries every provider the
   /// five destination pages read, the way the app provides them above its
   /// navigator.
@@ -110,6 +150,9 @@ class DestinationHarness {
     Widget home = const SizedBox.shrink(),
     AudioSetupState audioState = const AudioSetupState(),
     UpdateState updateState = const UpdateState(),
+    ConsoleFactsClient? factsClient,
+    PedalLink? pedalLink,
+    WaveformWindowState waveformState = const WaveformWindowState(),
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -152,26 +195,30 @@ class DestinationHarness {
       const Stream<UpdateState>.empty(),
       initialState: updateState,
     );
-    final waveform = MockWaveformWindowCubit();
+    waveform = MockWaveformWindowCubit();
     whenListen(
       waveform,
       const Stream<WaveformWindowState>.empty(),
-      initialState: const WaveformWindowState(),
+      initialState: waveformState,
     );
-    final contrast = MockHighContrastCubit();
+    contrast = MockHighContrastCubit();
     whenListen(contrast, const Stream<bool>.empty(), initialState: false);
-    final refresh = MockRefreshRateCubit();
+    refresh = MockRefreshRateCubit();
     whenListen(refresh, const Stream<int>.empty(), initialState: 60);
     brightness = DisplayBrightnessCubit(settings: settings);
+    idle = IdleDimCubit(settings: settings);
     final tracks = TracksCubit(settings: settings);
-    final pedal = PedalCubit(pedal: PedalRepository(NoopPedalLink()));
+    final pedal = PedalCubit(
+      pedal: PedalRepository(pedalLink ?? NoopPedalLink()),
+    );
     final facts = ConsoleFactsCubit(
-      client: FakeConsoleFactsClient(latency: Duration.zero),
+      client: factsClient ?? FakeConsoleFactsClient(latency: Duration.zero),
       settings: settings,
     );
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on
     // the binding's stream cancellation (flutter/flutter#139870).
     addTearDown(() => unawaited(brightness.close()));
+    addTearDown(() => unawaited(idle.close()));
     addTearDown(() => unawaited(tracks.close()));
     addTearDown(() => unawaited(pedal.close()));
     addTearDown(() => unawaited(facts.close()));
@@ -180,6 +227,9 @@ class DestinationHarness {
       MultiRepositoryProvider(
         providers: [
           RepositoryProvider.value(value: WifiRepository(client: wifi)),
+          RepositoryProvider<DisplayOutputs>.value(value: outputs),
+          RepositoryProvider<TouchCalibrationClient>.value(value: touch),
+          RepositoryProvider<WaveformWindowService>.value(value: link),
         ],
         child: MultiBlocProvider(
           providers: [
@@ -193,6 +243,7 @@ class DestinationHarness {
             BlocProvider<HighContrastCubit>.value(value: contrast),
             BlocProvider<RefreshRateCubit>.value(value: refresh),
             BlocProvider.value(value: brightness),
+            BlocProvider.value(value: idle),
             BlocProvider.value(value: tracks),
             BlocProvider.value(value: pedal),
             BlocProvider.value(value: facts),

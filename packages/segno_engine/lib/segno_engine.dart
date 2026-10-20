@@ -9,7 +9,9 @@ export 'src/audio_device.dart' show AudioDevice;
 export 'src/audio_engine.dart'
     show
         AudioEngine,
+        BackingControl,
         EffectsControl,
+        EngineAudition,
         EngineException,
         EngineLifecycle,
         EngineMetering,
@@ -17,16 +19,35 @@ export 'src/audio_engine.dart'
         EnginePluginHosting,
         EngineResult,
         EngineRouting,
+        EngineSelectedRender,
         InputConditioningControl,
+        InstrumentHost,
+        LengthEdit,
         LooperModeControl,
         LooperTransport,
         MasterBusControl,
+        MidiInputSink,
         MonitorControl,
         ReopenOutcome,
         ReopenResult,
         RequestAdmission,
         SessionIo,
         TempoControl;
+export 'src/audition.dart'
+    show AuditionStart, AuditionState, kAuditionMaxSeconds;
+export 'src/backing.dart'
+    show
+        AudioDecoder,
+        AudioFileInfo,
+        AudioProbe,
+        BackingEnd,
+        BackingEndEvent,
+        BackingState,
+        BackingTransport,
+        BackingTransportOp,
+        DecodedAudio,
+        DecodedAudioOwnership,
+        DecodedAudioPayload;
 export 'src/engine_config.dart' show AudioBackend, EngineConfig;
 export 'src/engine_snapshot.dart'
     show
@@ -41,12 +62,17 @@ export 'src/engine_snapshot.dart'
         LooperMode,
         LooperModeGate,
         PendingLaunchAction,
+        PerfStopReason,
+        PitchMode,
         RecordStartEditKind,
         RecordTiming,
+        SpeedFactor,
+        TempoFollowState,
         TempoSource,
         TrackRestoreState,
         TrackSnapshot,
         TrackState,
+        TransposePitch,
         XrunKind,
         kMaxChannels,
         kMaxLanes,
@@ -57,6 +83,21 @@ export 'src/fx_fingerprint.dart' show FxFingerprint;
 export 'src/fx_recipe.dart' show FxOwner, FxRecipe, FxRecipeSlot;
 export 'src/history_entry.dart' show HistoryEntry, HistoryKind, TrackHistory;
 export 'src/input_conditioning_param.dart' show InputConditioningParam;
+export 'src/instruments.dart'
+    show
+        InstrumentRemap,
+        InstrumentRoute,
+        InstrumentsSnapshot,
+        MidiCaptureHandle,
+        MidiInputSnapshot,
+        MidiRemapKind,
+        kInstrumentSourceBase,
+        kMaxChordNotes,
+        kMaxInstrumentRemaps,
+        kMaxInstruments,
+        kMaxMidiPorts,
+        kMaxRemapNotes,
+        kMaxVoiceLimit;
 export 'src/lane_cache.dart' show LaneCacheState;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/mix_settings.dart'
@@ -69,10 +110,13 @@ export 'src/mix_settings.dart'
         kInputTrimStepDb,
         kMaxInputTrimDb,
         kMinInputTrimDb;
+export 'src/mock_audio_decoder.dart' show MockAudioDecoder, MockAudioFile;
 export 'src/mock_audio_engine.dart' show MockAudioEngine, MockPluginSlotHandle;
+export 'src/native_audio_decoder.dart' show DecodeRunner, NativeAudioDecoder;
 export 'src/native_audio_engine.dart'
     show NativeAudioEngine, PumpedNativeEngine;
 export 'src/output_fx_snapshot.dart';
+export 'src/perf_target.dart' show PerfTarget;
 export 'src/performance_render_progress.dart'
     show PerformanceRenderProgress, PerformanceRenderTrackStatus;
 export 'src/plugin_descriptor.dart'
@@ -82,6 +126,20 @@ export 'src/plugin_descriptor.dart'
         PluginParamInfo,
         PluginScanProgress,
         PluginSlotHandle;
+export 'src/selected_render.dart'
+    show
+        RenderAdmission,
+        RenderJobState,
+        RenderJobStatus,
+        RenderMeasurement,
+        RenderMethod,
+        RenderPlan,
+        RenderRequest,
+        RenderTails,
+        RenderTarget,
+        renderTracksOfMask;
+export 'src/simulated_instruments.dart'
+    show SimulatedInstruments, SimulatedVoice;
 export 'src/storage_io.dart'
     show
         FileDigest,
@@ -90,7 +148,17 @@ export 'src/storage_io.dart'
         FileTruncated,
         FileUnreadable,
         NativeStorageIo,
+        RenameOutcome,
         StorageIo;
+export 'src/synth_catalogue.dart'
+    show
+        SynthCatalogue,
+        SynthFamily,
+        SynthParamInfo,
+        SynthParamUnit,
+        SynthPatch,
+        kSynthFamilyParams,
+        kSynthPatches;
 export 'src/track_effect.dart'
     show
         BuiltInEffect,

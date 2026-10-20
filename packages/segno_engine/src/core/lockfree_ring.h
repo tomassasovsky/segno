@@ -89,6 +89,10 @@ typedef struct le_command {
       uint32_t sequence;
       int32_t cancel_count_in; /* admission was an owned countdown cancellation */
     } clock;
+    struct { /* SET_CLOCK_SYNC (#1228): one complete sync vector. */
+      int32_t port, follow_transport, loss_policy;
+      uint32_t sequence;
+    } clock_sync;
     struct { /* SET_LENGTH_PRESETS / SET_LOOPER_MODE. count == 0 means a
               * mode-only command; bars are copied, never caller-owned pointers. */
       int32_t mode;
@@ -110,8 +114,63 @@ typedef struct le_command {
               * turn window the old head is still mixed over (0 = none). */
       int32_t channel, reversed, read_index, turn_frames;
     } reverse_log;
+    struct { /* LE_CMD_SET_SPEED (#1179): the factor numer/denom. */
+      int32_t slot, numer, denom;
+    } speed;
+    struct { /* LE_CMD_TRANSPOSE: install 0 steps by `semitones`, 1 sets it.
+              * LE_CMD_TRANSPOSE_BYPASS: `semitones` is the on flag. */
+      int32_t channel, slot, install, semitones;
+    } transpose;
+    struct { /* LE_PLOG_TRANSPOSE: stored and sounding pitch, the turn the
+              * swap mixes over and the exact index in Q32.32. */
+      int32_t channel;
+      int8_t stored, effective;
+      uint16_t turn_frames;
+      uint32_t index_lo, index_hi;
+    } transpose_log;
+    struct { /* LE_CMD_SET_FOLLOW_TEMPO (#1179 Part 4a): channel -1 sets the
+              * default (0/1), a track its override (-1 inherits). */
+      int32_t channel, slot, value;
+    } follow;
+    struct { /* LE_PLOG_HEAD_SPAN: the span a track's take plays over (0 =
+              * its own length), the turn window still mixing the old head
+              * and the exact index in Q32.32. */
+      int16_t channel;
+      uint16_t turn_frames;
+      int32_t play_len;
+      uint32_t index_lo, index_hi;
+    } span_log;
+    struct { /* LE_PLOG_RETIME: the song tempo and the master length and
+              * position it retimed the shared clock to. */
+      float bpm;
+      int32_t length, position, bars;
+    } retime_log;
+    struct { /* LE_PLOG_SPEED: a track's head rate as numer/denom, the
+              * equal-gain turn window the old head is still mixed over, and
+              * the exact index the callback reads at this frame in Q32.32
+              * (two words, so the payload stays 16 bytes and 4-aligned). */
+      int32_t channel;
+      uint8_t numer, denom;
+      uint16_t turn_frames;
+      uint32_t index_lo, index_hi;
+    } speed_log;
     le_mix_settings mix;
     struct le_prepared_fx* recipe;
+    struct { /* BACKING_LOAD / BACKING_STAGE_NEXT (#1200): an engine-owned
+              * buffer (registered before the push), the caller's token and,
+              * for LOAD, whether it starts playing. */
+      struct le_backing_buffer* buffer;
+      int32_t item, play;
+    } backing;
+    struct { /* LE_CMD_BOUNCE / _RECOVER (#1202): the bundle and its receipt. */
+      struct le_bounce_bundle* bundle;
+      int32_t slot;
+    } bounce;
+    struct { /* LE_CMD_RENDER_FREEZE (#1202): the engine-owned record, the job
+              * id it is for, and the sources to freeze. */
+      struct le_render_freeze* record;
+      uint32_t id, mask;
+    } render_freeze;
     struct {
       int32_t channel;
       uint32_t sequence;
@@ -127,8 +186,23 @@ typedef struct le_command {
       int32_t channel, slot, previous;
       uint32_t generation;
     } peel_log;
+    struct { /* LE_CMD_SET_LENGTH (#1168): publish `pool_slot` at `len` with
+              * this multiple/division (and master, when `reclock` > 0), the
+              * playhead mapped to (index - start) mod len. `receipt` is the
+              * request slot, -1 for Undo/Redo; `image_id` the staged image;
+              * `audio_rev` the track's a_audio_rev at admission. */
+      int32_t channel, receipt, pool_slot, len, multiple, divisor, reclock,
+          start;
+      uint32_t image_id;
+      uint32_t audio_rev; /* the content revision the image was read at */
+    } length;
+    struct { /* LE_PLOG_LENGTH (#1168): the slot now live at `len` frames and
+              * the image staged for it (0 = none). */
+      int32_t channel, slot, len;
+      uint32_t image_id;
+    } length_log;
     struct { /* COMMIT_SESSION: exact recorded span and musical bar count. */
-      int32_t base_frames, loop_bars;
+      int32_t base_frames, loop_beats;
     } session;
     struct {
       le_record_timing_settings settings;

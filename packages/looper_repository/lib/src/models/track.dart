@@ -30,8 +30,8 @@ enum ArmTrigger {
 ///
 /// The scalar [volume]/[muted]/[inputMask]/[outputMask] fields mirror lane 0
 /// so existing single-lane callers (the channel strip, the routing graph) keep
-/// working; full per-lane state lives in [lanes]. [peak] is the exception: it
-/// is the whole track's mixed level, not lane 0's (#655).
+/// working; full per-lane state lives in [lanes]. Live levels are not here:
+/// they arrive on `LooperRepository.meterLevels` (#1301).
 class Track extends Equatable {
   /// Creates a [Track].
   const Track({
@@ -40,18 +40,20 @@ class Track extends Equatable {
     this.volume = 1,
     this.fade = const FadeImage(),
     this.reversed = false,
+    this.transpose = (stored: 0, effective: 0),
+    this.followTempoOverride,
+    this.pitchModeOverride,
+    this.pitchEffectiveCents = 0,
     this.muted = false,
     this.pan = 0,
     this.solo = false,
-    this.peakL = 0,
-    this.peakR = 0,
     this.lengthFrames = 0,
-    this.peak = 0,
     this.undoDepth = 0,
     this.clearRestore = false,
     this.redoDepth = 0,
     this.peelDepth = 0,
     this.multiple = 1,
+    this.syncDivisor = 0,
     this.inputMask = 0x1,
     this.outputMask = 0x3,
     this.layerInFlight = false,
@@ -89,6 +91,29 @@ class Track extends Equatable {
   /// (`EngineResult.reversed`).
   final bool reversed;
 
+  /// The track's Transpose (#1179): `stored` is the pitch the player set,
+  /// `effective` the pitch sounding — 0 while the render is pending or
+  /// refused and while Transpose is bypassed (`LooperState.transposeBypass`),
+  /// so a face shows the wait instead of claiming a pitch. Stepped by
+  /// `LooperRepository.transposeTrack`; reset to 0 with the material. A track
+  /// with a stored pitch refuses punch-ins (`EngineResult.transformed`) unless
+  /// Transpose is bypassed, its render pending or not.
+  final TransposePitch transpose;
+
+  /// This track's Follow tempo override (#1179); null inherits
+  /// `LooperState.defaultFollowTempo`. The repository's accepted setting.
+  final bool? followTempoOverride;
+
+  /// This track's Pitch override (#1179); null inherits
+  /// `LooperState.defaultPitchMode`.
+  final PitchMode? pitchModeOverride;
+
+  /// The pitch a tempo retime puts on what the track sounds now, in cents
+  /// (#1179): 0 at its own tempo or once its time-stretched render plays;
+  /// the tempo ratio's shift while that render is pending, or with Pitch
+  /// following the speed. Speed and Transpose are not included.
+  final int pitchEffectiveCents;
+
   /// Whether the track is muted.
   final bool muted;
 
@@ -100,20 +125,8 @@ class Track extends Equatable {
   /// route. Independent of [muted].
   final bool solo;
 
-  /// The track's block peak per side after volume, pan and its chain, `0..1`
-  /// (the Mixer's meter). Live, like [peak].
-  final double peakL;
-
-  /// See [peakL].
-  final double peakR;
-
   /// Captured length in frames, including divisions and independent takes.
   final int lengthFrames;
-
-  /// Peak level of the track's mixed output for the most recent block, in
-  /// `0..1` — the one field that changes at the poll rate while audio flows.
-  /// Kept out of [steadyProps] for that reason.
-  final double peak;
 
   /// Available undo steps (overdub layers).
   ///
@@ -152,13 +165,15 @@ class Track extends Equatable {
   /// [progress] is the track's own progress. While recording it is the write
   /// head instead. `0` for an empty track.
   ///
-  /// Moves at the poll rate while the track plays, like [peak], and is kept
-  /// out of [steadyProps] for the same reason: the progress bar subscribes
-  /// to it in its own leaf.
+  /// Moves at the poll rate while the track plays, so it is kept out of
+  /// [steadyProps]: the progress bar subscribes to it in its own leaf.
   final int positionFrames;
 
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
+
+  /// A Sync/Band division of the base loop (`2` or `4`), else `0`.
+  final int syncDivisor;
 
   /// The DEFINING-recording length preset (A6, D17): `0` = AUTO, `1..64` =
   /// fixed N bars. Inert on a track that already has content; applies to the
@@ -274,49 +289,73 @@ class Track extends Equatable {
     required TransportState transport,
     required int sampleRate,
   }) {
-    if (!hasContent || state == TrackState.recording) return null;
-    final double framesPerBar;
-    if (transport.masterLengthFrames > 0 && transport.loopBars > 0) {
-      framesPerBar = transport.masterLengthFrames / transport.loopBars;
-    } else {
-      if (sampleRate <= 0 ||
-          transport.tempoSource == TempoSource.none ||
-          !transport.tempoBpm.isFinite ||
-          transport.tempoBpm <= 0 ||
-          transport.tsNum <= 0) {
-        return null;
-      }
-      framesPerBar = sampleRate * 60 * transport.tsNum / transport.tempoBpm;
-    }
-    final bars = lengthFrames / framesPerBar;
-    if (!bars.isFinite) return null;
-    final whole = bars.round();
-    return whole > 0 && (lengthFrames - whole * framesPerBar).abs() <= 1
-        ? whole
-        : null;
+    final perBeat = _framesPerBeat(transport, sampleRate);
+    if (perBeat == null || transport.tsNum <= 0) return null;
+    return _whole(perBeat * transport.tsNum);
   }
 
-  /// Everything in [props] EXCEPT the live [peak] level and [positionFrames].
+  /// Completed take length in whole beats (denominator notes), or `null`
+  /// without a known whole count, on the same grid as [wholeBars]. A Divide
+  /// of a sole 1-bar loop leaves 2 beats and no whole bar (#1168).
+  int? wholeBeats({
+    required TransportState transport,
+    required int sampleRate,
+  }) {
+    final perBeat = _framesPerBeat(transport, sampleRate);
+    return perBeat == null ? null : _whole(perBeat);
+  }
+
+  /// One beat in frames: the master grid's own when it exists, else the
+  /// nominal tempo's; null without either.
+  double? _framesPerBeat(TransportState transport, int sampleRate) {
+    if (!hasContent || state == TrackState.recording) return null;
+    if (transport.masterLengthFrames > 0 && transport.loopBeats > 0) {
+      return transport.masterLengthFrames / transport.loopBeats;
+    }
+    if (transport.masterLengthFrames > 0 &&
+        transport.loopBars > 0 &&
+        transport.tsNum > 0) {
+      return transport.masterLengthFrames /
+          (transport.loopBars * transport.tsNum);
+    }
+    if (sampleRate <= 0 ||
+        transport.tempoSource == TempoSource.none ||
+        !transport.tempoBpm.isFinite ||
+        transport.tempoBpm <= 0) {
+      return null;
+    }
+    return sampleRate * 60 / transport.tempoBpm;
+  }
+
+  /// [lengthFrames] in whole [unit]s within a frame of rounding, else null.
+  int? _whole(double unit) {
+    final count = lengthFrames / unit;
+    if (!count.isFinite) return null;
+    final whole = count.round();
+    return whole > 0 && (lengthFrames - whole * unit).abs() <= 1 ? whole : null;
+  }
+
+  /// Everything in [props] EXCEPT [positionFrames].
   ///
-  /// Those two are the fields that change at the poll rate on a track that is
-  /// merely playing, so they are the only ones that have to be subscribed at
-  /// meter granularity. A surface that draws the tile AROUND a meter compares
-  /// on
-  /// this, and subscribes to [peak] separately in the meter leaf itself, so a
-  /// moving level rebuilds the bar and nothing else (#646/#654/#832).
+  /// The playhead is the one field that changes at the poll rate on a track
+  /// that is merely playing, so it is the only one that has to be subscribed
+  /// at progress-bar granularity. A surface that draws the tile AROUND the
+  /// progress bar compares on this, so a moving playhead rebuilds the bar
+  /// and nothing else (#646/#654/#832). Levels are not part of [Track] at all
+  /// (#1301).
   ///
-  /// This is the ONLY sanctioned way to ignore a moving level. Anything that
-  /// wants a peak-insensitive comparison — a `context.select` projection, a
-  /// `buildWhen`, a push gate on the second screen — compares on this rather
-  /// than editing [props]; see the warning there.
+  /// This is the ONLY sanctioned way to ignore the moving playhead. Anything
+  /// that wants a playhead-insensitive comparison — a `context.select`
+  /// projection, a `buildWhen`, a push gate on the second screen — compares
+  /// on this rather than editing [props]; see the warning there.
   ///
   /// Listed out rather than derived from [props] so neither list is built
   /// twice per comparison (a `Track ==` is on the console's hot path). The
   /// two are locked to each other by a test — `props` is exactly this list
-  /// plus [peak] and [positionFrames] — so a field added to one cannot
-  /// silently miss the other.
+  /// plus [positionFrames] — so a field added to one cannot silently miss
+  /// the other.
   ///
-  /// "Steady" means steady against a moving LEVEL, and nothing more — two
+  /// "Steady" means steady against a moving PLAYHEAD, and nothing more — two
   /// other fields here move on their own, both deliberately left in:
   ///
   /// - A track that is RECORDING differs on every poll tick as [lengthFrames]
@@ -335,6 +374,10 @@ class Track extends Equatable {
     volume,
     fade,
     reversed,
+    transpose,
+    followTempoOverride,
+    pitchModeOverride,
+    pitchEffectiveCents,
     muted,
     pan,
     solo,
@@ -344,6 +387,7 @@ class Track extends Equatable {
     redoDepth,
     peelDepth,
     multiple,
+    syncDivisor,
     inputMask,
     outputMask,
     layerInFlight,
@@ -361,20 +405,15 @@ class Track extends Equatable {
     chainEnabled,
   ];
 
-  /// Value equality over every field, [peak] and [positionFrames] INCLUDED —
+  /// Value equality over every field, [positionFrames] INCLUDED —
   /// deliberately, and load-bearing.
   ///
-  /// **Do not remove [peak] (or [positionFrames]) from this list.** The meters
-  /// are fed through
-  /// `LooperState ==`: `LooperRepository`'s poll drops a projection equal to
-  /// the one before it (`if (next == _last) return`), so a field outside
-  /// equality is a field that never reaches the UI at all. Taking [peak] out
-  /// — tempting, because it is what makes a fresh `LooperState` arrive on
-  /// every poll tick and so defeats any gate written as
-  /// `identical(state, previous)` — would flatten all eight meters with no
-  /// error and no failing widget test: they would simply stop moving.
+  /// **Do not remove [positionFrames] from this list.** The progress bars are
+  /// fed through `LooperState ==`: `LooperRepository`'s poll drops a
+  /// projection equal to the one before it (`if (next == _last) return`), so
+  /// a field outside equality is a field that never reaches the UI at all.
   ///
-  /// A caller that needs to ignore the moving level compares [steadyProps]
+  /// A caller that needs to ignore the moving playhead compares [steadyProps]
   /// instead. Locked by the tests in `test/models/track_test.dart`.
   @override
   List<Object?> get props => [
@@ -383,6 +422,10 @@ class Track extends Equatable {
     volume,
     fade,
     reversed,
+    transpose,
+    followTempoOverride,
+    pitchModeOverride,
+    pitchEffectiveCents,
     muted,
     pan,
     solo,
@@ -392,6 +435,7 @@ class Track extends Equatable {
     redoDepth,
     peelDepth,
     multiple,
+    syncDivisor,
     inputMask,
     outputMask,
     layerInFlight,
@@ -407,9 +451,6 @@ class Track extends Equatable {
     lanes,
     effects,
     chainEnabled,
-    peak,
     positionFrames,
-    peakL,
-    peakR,
   ];
 }

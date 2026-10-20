@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:backing_repository/backing_repository.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -13,14 +14,17 @@ import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/app_runtime.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
-import 'package:segno/appliance/power_off/power_off_cubit.dart';
-import 'package:segno/appliance/power_off/power_off_gate.dart';
+import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/session/session.dart';
-import 'package:segno_engine/segno_engine.dart' show FxOwner, TrackSnapshot;
+import 'package:segno_engine/segno_engine.dart'
+    show FxOwner, MockAudioDecoder, MockAudioEngine, TrackSnapshot;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -79,6 +83,8 @@ class _ReadGateStore extends FakeKeyValueStore {
   }
 }
 
+const _named = PowerSnapshot(currentSessionName: 'set');
+
 void main() {
   late AppRuntime runtime;
   late FakeAudioEngine engine;
@@ -89,6 +95,7 @@ void main() {
   late SettingsRepository settings;
   late PerformanceRepository performance;
   late String exportsDirectory;
+  late _CountingBacking backing;
   var closeFailureExpected = false;
   var halts = 0;
 
@@ -112,6 +119,15 @@ void main() {
     when(() => sessions.bundlePathOf(any())).thenAnswer((_) async => '/test');
     when(sessions.listSessions).thenAnswer((_) async => []);
     when(sessions.newSessionId).thenAnswer((_) async => 'new');
+    registerFallbackValue(const SessionChains());
+    registerFallbackValue(const SessionSettings());
+    when(
+      () => sessions.fingerprint(
+        settings: any(named: 'settings'),
+        chains: any(named: 'chains'),
+        pedalBindings: any(named: 'pedalBindings'),
+      ),
+    ).thenReturn('fp');
     when(
       () => sessions.releaseSessionId(any()),
     ).thenAnswer((_) async {});
@@ -132,7 +148,16 @@ void main() {
       pedal: pedal,
       performance: performance,
       sessions: sessions,
+      storage: StorageRepository(
+        guards: GuardRegistry(),
+        client: const UnsupportedUsbStorageClient(),
+        exportsRoot: () async => '.',
+        volumeSpace: performance.volumeSpace,
+      ),
+      backing: backing = _CountingBacking(),
       powerOff: () async => halts++,
+      reboot: () async => halts++,
+      storageSettled: () async {},
     );
     addTearDown(() async {
       if (closeFailureExpected) {
@@ -145,6 +170,71 @@ void main() {
       await controllers.dispose();
       await repository.dispose();
     });
+  });
+
+  test('start takes the session baseline, so a fresh rig edited later is '
+      'kept on Open', () async {
+    await runtime.start();
+    // The rig changes after boot: an effect, say.
+    when(
+      () => sessions.fingerprint(
+        settings: any(named: 'settings'),
+        chains: any(named: 'chains'),
+        pedalBindings: any(named: 'pedalBindings'),
+      ),
+    ).thenReturn('edited');
+    when(
+      () => sessions.nextAutomaticName(any()),
+    ).thenAnswer((_) async => 'New loop 1');
+    when(() => sessions.releaseSessionId(any())).thenAnswer((_) async {});
+    when(
+      () => sessions.save(
+        any(),
+        chains: any(named: 'chains'),
+        settings: any(named: 'settings'),
+        pedalBindings: any(named: 'pedalBindings'),
+        name: any(named: 'name'),
+        captureStillValid: any(named: 'captureStillValid'),
+      ),
+    ).thenAnswer(
+      (_) async => const Session(
+        sampleRate: 48000,
+        channels: 1,
+        baseLengthFrames: 0,
+        tracks: [],
+      ),
+    );
+    // The target is read first and must pass (an Open the target refuses
+    // keeps the rig as it is, #1178 Part 5 lows); an empty one, so only the
+    // preservation is under test.
+    when(
+      () => sessions.open(any(), liveSettings: any(named: 'liveSettings')),
+    ).thenAnswer(
+      _opened(
+        (_) async => (
+          session: const Session(
+            sampleRate: 48000,
+            channels: 1,
+            baseLengthFrames: 0,
+            tracks: [],
+          ),
+          laneStems: const <(int, int), List<Float32List>>{},
+        ),
+      ),
+    );
+
+    await runtime.session.open('Incoming');
+
+    verify(
+      () => sessions.save(
+        any(),
+        chains: any(named: 'chains'),
+        settings: any(named: 'settings'),
+        pedalBindings: any(named: 'pedalBindings'),
+        name: 'New loop 1',
+        captureStillValid: any(named: 'captureStillValid'),
+      ),
+    ).called(1);
   });
 
   Future<(Future<void>, Completer<SessionBundle>)> holdSessionRead() async {
@@ -389,6 +479,22 @@ void main() {
     }
   });
 
+  test('an engine restart refreshes the backing, so its file reloads when '
+      'the interface comes back (#1200 review of P5, M1)', () async {
+    await pumpEventQueue();
+    final before = backing.refreshes;
+    repository.stopEngine();
+    await pumpEventQueue();
+    repository.startEngine(const EngineConfig());
+    await pumpEventQueue();
+    expect(backing.refreshes, greaterThan(before));
+    final settled = backing.refreshes;
+    // Nothing else moves it: an ordinary state change refreshes nothing.
+    repository.setMasterGain(0.5);
+    await pumpEventQueue();
+    expect(backing.refreshes, settled);
+  });
+
   test('stopped Session stays reserved through the real boot write', () async {
     engine.nextSnapshot = engine.nextSnapshot.copyWith(
       isRunning: true,
@@ -472,7 +578,7 @@ void main() {
   });
 
   test(
-    'close drains session before its controls and cuts encoder ingress',
+    'close drains session before its controls and refuses encoder edits',
     () async {
       await runtime.start();
       final (loading, read) = await holdSessionRead();
@@ -480,7 +586,7 @@ void main() {
       var closed = false;
       final closing = runtime.close().then((_) => closed = true);
       final secondClose = runtime.close();
-      link.turn(-16);
+      runtime.control.encoderTurned(-16);
       await pumpEventQueue();
       final gainWhileDraining = engine.lastMasterGain;
       final closedWhileDraining = closed;
@@ -502,9 +608,11 @@ void main() {
     'close cancels a pending halt before waiting for session storage',
     () async {
       await runtime.start();
-      runtime.power.press(const PowerOffSnapshot());
+      runtime.power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       await pumpEventQueue();
-      expect(runtime.power.state.phase, PowerOffPhase.goodbye);
+      expect(runtime.power.state.phase, PowerPhase.goodbye);
       final (loading, read) = await holdSessionRead();
       final closing = runtime.close();
       await Future<void>.delayed(const Duration(milliseconds: 2100));
@@ -523,13 +631,13 @@ void main() {
       runtime.control.encoderTurned(0);
       final (loading, read) = await holdSessionRead();
       final gain = engine.lastMasterGain!;
-      link.turn(-16);
+      runtime.control.encoderTurned(-16);
       await pumpEventQueue();
       final gainWhileLoading = engine.lastMasterGain;
       finishRead(read);
       await loading;
       expect(gainWhileLoading, gain);
-      link.turn(-16);
+      runtime.control.encoderTurned(-16);
       await pumpEventQueue();
       expect(engine.lastMasterGain, lessThan(gain));
     },
@@ -759,11 +867,13 @@ void main() {
       );
       expect(repository.mixRecoveryRequired, isTrue);
       expect(runtime.tempo.clickVolumeOwner.ready, isFalse);
-      runtime.power.press(const PowerOffSnapshot());
+      runtime.power
+        ..press(_named)
+        ..shutDown(_named, save: () async {});
       for (var i = 0; i < 200 && halts == 0; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
-      expect(runtime.power.state.phase, PowerOffPhase.goodbye);
+      expect(runtime.power.state.phase, PowerPhase.goodbye);
       expect(halts, 1);
       // The next start replays what storage holds.
       expect(store.values['tempo.click_volume'], 1.5);
@@ -809,7 +919,7 @@ void main() {
         ..['tempo.count_in_bars'] = 2
         ..['looper.auto_record'] = true;
       await runtime.start();
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
       expect(runtime.tempo.recordStartOwner.ready, isFalse);
       await expectLater(
         runtime.prepareShutdown(retry: false),
@@ -826,7 +936,7 @@ void main() {
         'for shutdown', () async {
       store.values['tempo.click_mode'] = 9;
       await runtime.start();
-      expect(repository.sessionTransport.isRunning, isTrue);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
       expect(engine.stopCalls, 0);
       expect(runtime.tempo.clickModeOwner.ready, isFalse);
       await expectLater(
@@ -856,3 +966,30 @@ Future<OpenedSession> Function(Invocation) _opened(
   FutureOr<SessionBundle> Function(Invocation) answer,
 ) =>
     (invocation) async => (bundle: await answer(invocation), conversion: null);
+
+/// A backing repository that counts refreshes.
+class _CountingBacking extends BackingRepository {
+  _CountingBacking() : this._(MockAudioEngine(), MockAudioDecoder());
+
+  _CountingBacking._(MockAudioEngine engine, MockAudioDecoder decoder)
+    : super(
+        engine: engine,
+        metering: engine,
+        decoder: decoder,
+        store: BackingAssetStore(
+          root: () async => Directory.systemTemp.path,
+          decoder: decoder,
+          copier: (source, relative) async => throw UnsupportedError('copy'),
+          digester: (path) async => null,
+          syncDirectory: (_) {},
+        ),
+      );
+
+  int refreshes = 0;
+
+  @override
+  void refresh() {
+    refreshes++;
+    super.refresh();
+  }
+}

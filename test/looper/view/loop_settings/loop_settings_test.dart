@@ -13,12 +13,10 @@ import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
-import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
-import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -37,7 +35,7 @@ const _rig = LooperState(
     Track(channel: 2),
   ],
   transport: TransportState(
-    isRunning: true,
+    deviceRunning: true,
     tempoBpm: 120,
     tempoSource: TempoSource.manual,
     masterLengthFrames: 96000,
@@ -62,6 +60,12 @@ void main() {
   late Map<int, int> confirmedTrackDecay;
   late bool confirmedOneShot;
   late Map<int, bool> confirmedTrackOneShot;
+  late bool confirmedFollow;
+  late Map<int, bool> confirmedTrackFollow;
+  late PitchMode confirmedPitch;
+  late Map<int, PitchMode> confirmedTrackPitch;
+  late bool followRecovery;
+  late int followRequests;
   late RecordTiming confirmedTiming;
   late GridDivision rememberedDivision;
   late Map<int, RecordTiming> confirmedTrackTiming;
@@ -80,6 +84,9 @@ void main() {
     registerFallbackValue(<int, RecordTiming>{});
     registerFallbackValue(ClickMode.off);
     registerFallbackValue(RecordStartEditKind.restore);
+    registerFallbackValue(PitchMode.unchanged);
+    registerFallbackValue(<int, bool>{});
+    registerFallbackValue(<int, PitchMode>{});
   });
 
   setUp(() {
@@ -99,6 +106,12 @@ void main() {
     confirmedTrackDecay = {};
     confirmedOneShot = false;
     confirmedTrackOneShot = {};
+    confirmedFollow = false;
+    confirmedTrackFollow = {};
+    confirmedPitch = PitchMode.unchanged;
+    confirmedTrackPitch = {};
+    followRecovery = false;
+    followRequests = 0;
     confirmedTiming = RecordTiming.immediately;
     rememberedDivision = GridDivision.off;
     confirmedTrackTiming = {};
@@ -150,6 +163,71 @@ void main() {
       confirmedOneShot = call.namedArguments[#defaultOneShot] as bool;
       confirmedTrackOneShot = Map.of(
         call.namedArguments[#trackOverrides] as Map<int, bool>,
+      );
+      return EngineResult.ok;
+    });
+
+    // Audio & tempo (#1179): the repository's accepted vectors.
+    when(
+      () => repository.defaultFollowTempo,
+    ).thenAnswer((_) => confirmedFollow);
+    when(
+      () => repository.trackFollowTempoOverrides,
+    ).thenAnswer((_) => Map.unmodifiable(confirmedTrackFollow));
+    when(
+      () => repository.followTempoRecoveryRequired,
+    ).thenAnswer((_) => followRecovery);
+    when(
+      () => repository.followTempoFailures,
+    ).thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(
+      () => repository.settleFollowTempo(),
+    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.followTempoRestartIntent).thenAnswer(
+      (_) => (
+        defaultFollow: confirmedFollow,
+        trackOverrides: Map<int, bool>.unmodifiable(confirmedTrackFollow),
+      ),
+    );
+    when(
+      () => repository.setFollowTempoSettings(
+        defaultFollow: any(named: 'defaultFollow'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      followRequests++;
+      confirmedFollow = call.namedArguments[#defaultFollow] as bool;
+      confirmedTrackFollow = Map.of(
+        call.namedArguments[#trackOverrides] as Map<int, bool>,
+      );
+      return EngineResult.ok;
+    });
+    when(() => repository.defaultPitchMode).thenAnswer((_) => confirmedPitch);
+    when(
+      () => repository.trackPitchModeOverrides,
+    ).thenAnswer((_) => Map.unmodifiable(confirmedTrackPitch));
+    when(() => repository.pitchModeRecoveryRequired).thenReturn(false);
+    when(
+      () => repository.pitchModeFailures,
+    ).thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(
+      () => repository.settlePitchMode(),
+    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.pitchModeRestartIntent).thenAnswer(
+      (_) => (
+        defaultMode: confirmedPitch,
+        trackOverrides: Map<int, PitchMode>.unmodifiable(confirmedTrackPitch),
+      ),
+    );
+    when(
+      () => repository.setPitchModeSettings(
+        defaultMode: any(named: 'defaultMode'),
+        trackOverrides: any(named: 'trackOverrides'),
+      ),
+    ).thenAnswer((call) {
+      confirmedPitch = call.namedArguments[#defaultMode] as PitchMode;
+      confirmedTrackPitch = Map.of(
+        call.namedArguments[#trackOverrides] as Map<int, PitchMode>,
       );
       return EngineResult.ok;
     });
@@ -508,13 +586,11 @@ void main() {
   late PlaybackOptionsCubit playback;
   late RecordTimingCubit timing;
   late TracksCubit tracks;
-  late SettingsTrayCubit tray;
 
   Future<void> pump(
     WidgetTester tester, {
     LooperState state = _rig,
     LoopSettingsPageId initial = LoopSettingsPageId.hub,
-    bool fromTray = false,
     ClickMode? savedClickMode,
     int? savedCountIn,
     bool loadRecordStart = true,
@@ -599,9 +675,6 @@ void main() {
     timing = RecordTimingCubit(settings: timingOwner);
     await timingOwner.load();
     tracks = TracksCubit(settings: settings);
-    tray = SettingsTrayCubit();
-    if (fromTray) tray.open();
-    addTearDown(tray.close);
     resetSegnoNavigatorForTest();
     final closeRecordOwner = options.close;
     addTearDown(() => unawaited(closeRecordOwner()));
@@ -624,39 +697,13 @@ void main() {
             BlocProvider.value(value: playback),
             BlocProvider.value(value: timing),
             BlocProvider.value(value: tracks),
-            BlocProvider.value(value: tray),
           ],
           child: MaterialApp(
             navigatorKey: segnoNavigatorKey,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
-            theme: fromTray
-                ? AppTheme.neon
-                : ThemeData(extensions: const [SurfaceTheme.dark]),
-            home: fromTray
-                ? Scaffold(
-                    body: Stack(
-                      children: [
-                        const SizedBox.expand(key: Key('test_tracks_stage')),
-                        BlocBuilder<SettingsTrayCubit, SettingsTrayState>(
-                          builder: (context, state) => state.dragProgress == 0
-                              ? const SizedBox.shrink()
-                              : ColoredBox(
-                                  key: const Key('test_tray_cover'),
-                                  color: Colors.black,
-                                  child: SizedBox(
-                                    width: 200,
-                                    height: 800,
-                                    child: TrayNavigationRail(
-                                      onBrightness: () {},
-                                    ),
-                                  ),
-                                ),
-                        ),
-                      ],
-                    ),
-                  )
-                : pageIdentity == null
+            theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+            home: pageIdentity == null
                 ? LoopSettingsPage(initial: initial)
                 : ValueListenableBuilder<Key>(
                     valueListenable: pageIdentity,
@@ -711,6 +758,35 @@ void main() {
     // Only the settle before admission: a refused admission awaits no
     // receipt.
     verify(() => repository.settleLengthSettings()).called(1);
+  });
+
+  testWidgets('capacity refusal explains how to raise the loop limit', (
+    tester,
+  ) async {
+    final failures = StreamController<EngineResult>.broadcast();
+    addTearDown(failures.close);
+    when(() => repository.lengthSettingsFailures).thenAnswer(
+      (_) => failures.stream,
+    );
+    when(() => repository.setDefaultLengthPreset(any())).thenAnswer((_) {
+      failures.add(EngineResult.capacity);
+      return EngineResult.capacity;
+    });
+    await pump(tester, initial: LoopSettingsPageId.length);
+    clearInteractions(repository);
+
+    await tester.tap(find.byKey(const Key('loop_length_bars')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(l10nOf(tester).loopLengthCapacityNotApplied('Auto')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(l10nOf(tester).loopLengthNotApplied('Auto')),
+      findsNothing,
+    );
+    expect(options.state.defaultLengthBars, 0);
   });
 
   for (final remount in [false, true]) {
@@ -878,28 +954,6 @@ void main() {
   });
 
   group('hub', () {
-    testWidgets('tray Loop entry: Back keeps tray, Stage reveals Tracks', (
-      tester,
-    ) async {
-      await pump(tester, fromTray: true);
-      expect(find.byKey(const Key('test_tray_cover')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('settingsTrayRail_loop')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('loop_settings_page_hub')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('loop_settings_back')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('test_tray_cover')), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('settingsTrayRail_loop')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('loop_settings_stage')));
-      await tester.pumpAndSettle();
-      expect(find.byType(LoopSettingsPage), findsNothing);
-      expect(find.byKey(const Key('test_tray_cover')), findsNothing);
-      expect(find.byKey(const Key('test_tracks_stage')), findsOneWidget);
-      expect(tray.state.dragProgress, 0);
-    });
-
     testWidgets('arrow focus and Enter open the next submenu', (tester) async {
       await pump(tester);
       final first = find.byKey(const Key('loop_hub_mode'));
@@ -1122,6 +1176,58 @@ void main() {
       expect(tempo.state.countInBars, 2);
       await tester.tap(find.byKey(const Key('loop_tempo_tap')));
       verify(repository.tapTempo).called(1);
+    });
+
+    Color beatColor(WidgetTester tester, int beat) {
+      final box = tester.widget<Container>(find.byKey(Key('loop_beat_$beat')));
+      return (box.decoration! as BoxDecoration).color!;
+    }
+
+    testWidgets('the beat strip lights the beat while a track plays', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        initial: LoopSettingsPageId.tempo,
+        state: LooperState(
+          tracks: _rig.tracks,
+          transport: const TransportState(
+            deviceRunning: true,
+            tempoBpm: 120,
+            tempoSource: TempoSource.manual,
+            masterLengthFrames: 96000,
+            currentBeat: 2,
+          ),
+        ),
+      );
+      expect(beatColor(tester, 2), SurfaceTheme.dark.accent);
+    });
+
+    testWidgets('a stopped loop on an open device lights no beat (#1356)', (
+      tester,
+    ) async {
+      // The appliance keeps the device open, and a stopped loop parks the
+      // engine's beat at the downbeat: neither means the music is moving.
+      await pump(
+        tester,
+        initial: LoopSettingsPageId.tempo,
+        state: const LooperState(
+          tracks: [
+            Track(state: TrackState.stopped, lengthFrames: 96000),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 96000),
+            Track(channel: 2),
+          ],
+          transport: TransportState(
+            deviceRunning: true,
+            tempoBpm: 120,
+            tempoSource: TempoSource.manual,
+            masterLengthFrames: 96000,
+          ),
+        ),
+      );
+      for (var beat = 0; beat < 4; beat++) {
+        expect(beatColor(tester, beat), SurfaceTheme.dark.control);
+      }
     });
 
     testWidgets('unknown count-in has no provisional bar selected', (
@@ -1854,6 +1960,54 @@ void main() {
       await tester.tap(find.byKey(const Key('loop_timing_quarter')));
       await tester.pumpAndSettle();
       expect(timing.state.defaultTiming, RecordTiming.immediately);
+      await tester.tap(find.byKey(const Key('loop_default_multiple_2')));
+      await tester.pumpAndSettle();
+      verifyNever(() => repository.setDefaultMultiple(multiple: 2));
+      expect(options.state.defaultMultiple, 0);
+    });
+
+    testWidgets('Defaults sets how long later tracks record; a track scope '
+        'does not offer it', (tester) async {
+      await pump(tester, initial: LoopSettingsPageId.length);
+      expect(find.byKey(const Key('loop_default_multiple')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('loop_default_multiple_2')));
+      await tester.pumpAndSettle();
+      verify(() => repository.setDefaultMultiple(multiple: 2)).called(1);
+      expect(options.state.defaultMultiple, 2);
+      expect(await settings.loadDefaultMultiple(), 2);
+
+      await tester.tap(find.byKey(const Key('loop_default_multiple_0')));
+      await tester.pumpAndSettle();
+      expect(options.state.defaultMultiple, 0);
+      // What ×2 is a multiple of is said beside the choices.
+      expect(
+        find.text(l10nOf(tester).loopDefaultMultipleNote),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('loop_scope_track_0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('loop_default_multiple')), findsNothing);
+    });
+
+    testWidgets('a capture keeps the later-tracks row inside the frame', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        state: const LooperState(
+          tracks: [Track(state: TrackState.recording, lengthFrames: 10)],
+        ),
+        initial: LoopSettingsPageId.length,
+      );
+      expect(find.byKey(const Key('loop_lock_banner')), findsOneWidget);
+      final row = tester.getRect(
+        find.byKey(const Key('loop_default_multiple')),
+      );
+      final note = tester.getRect(find.byKey(const Key('loop_timing_note')));
+      expect(row.bottom, lessThanOrEqualTo(1080));
+      expect(row.top, greaterThan(note.bottom));
     });
   });
 
@@ -1999,17 +2153,144 @@ void main() {
     });
   });
 
-  group('Audio & tempo', () {
-    testWidgets('reads out the recorded-speed state and takes no taps', (
+  group('Audio & tempo (#1179)', () {
+    testWidgets('nothing stored restores Follow on and Pitch unchanged '
+        '(07/04): no tags on Defaults, the On and Unchanged notes', (
       tester,
     ) async {
       await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
-      expect(find.text(l10n.loopAudioUnavailable), findsOneWidget);
+      expect(playback.state.followTempo?.defaultValue, isTrue);
+      expect(playback.state.pitchMode?.defaultValue, PitchMode.unchanged);
+      expect(find.text(l10n.loopAudioNoteOn), findsOneWidget);
+      expect(find.text(l10n.loopAudioNotePitchKept), findsOneWidget);
+      expect(find.text(l10n.loopOriginDefault), findsNothing);
+      expect(find.text(l10n.loopOriginCustom), findsNothing);
+      expect(
+        find.byKey(const Key('loop_audio_pitch_unchanged')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('loop_audio_follow_use_default')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('Defaults Off writes the default and turns Pitch into the '
+        'recorded-pitch readout; On brings the choice back', (tester) async {
+      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+      await tester.tap(find.byKey(const Key('loop_audio_follow_off')));
+      await tester.pumpAndSettle();
+      expect(confirmedFollow, isFalse);
+      expect(store.values['looper.default_follow_tempo'], isFalse);
       expect(find.text(l10n.loopAudioNoteOff), findsOneWidget);
+      expect(find.byKey(const Key('loop_audio_pitch_readout')), findsOneWidget);
+      expect(find.byKey(const Key('loop_audio_pitch_unchanged')), findsNothing);
+      expect(find.text(l10n.loopAudioNotePitchUnchanged), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_audio_follow_on')));
       await tester.pumpAndSettle();
-      expect(find.text(l10n.loopAudioNoteOff), findsOneWidget);
+      expect(confirmedFollow, isTrue);
+      expect(find.byKey(const Key('loop_audio_pitch_readout')), findsNothing);
+      expect(
+        find.byKey(const Key('loop_audio_pitch_unchanged')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a track inherits (Default tags), takes a Custom Pitch '
+        '(07/05) and Use default removes only its override', (tester) async {
+      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+      await tester.tap(find.byKey(const Key('loop_scope_track_2')));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.loopOriginDefault), findsNWidgets(2));
+      await tester.tap(find.byKey(const Key('loop_audio_pitch_follows')));
+      await tester.pumpAndSettle();
+      expect(confirmedTrackPitch, {2: PitchMode.followsSpeed});
+      expect(confirmedPitch, PitchMode.unchanged);
+      expect(store.values['track_pitch_follows_speed.2'], isTrue);
+      expect(find.text(l10n.loopAudioNotePitchFollows), findsOneWidget);
+      expect(find.text(l10n.loopOriginCustom), findsOneWidget);
+      await tester.tap(find.byKey(const Key('loop_audio_pitch_use_default')));
+      await tester.pumpAndSettle();
+      expect(confirmedTrackPitch, isEmpty);
+      expect(store.values.containsKey('track_pitch_follows_speed.2'), isFalse);
+      expect(find.text(l10n.loopAudioNotePitchKept), findsOneWidget);
+      expect(
+        find.byKey(const Key('loop_audio_pitch_use_default')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a track that keeps its recorded speed (07/06): Custom Off, '
+        'the readout, and Use default back to following', (tester) async {
+      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+      await tester.tap(find.byKey(const Key('loop_scope_track_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_audio_follow_off')));
+      await tester.pumpAndSettle();
+      expect(confirmedTrackFollow, {1: false});
+      expect(confirmedFollow, isTrue);
+      expect(store.values['track_follow_tempo.1'], isFalse);
+      expect(find.text(l10n.loopOriginCustom), findsOneWidget);
+      expect(find.byKey(const Key('loop_audio_pitch_readout')), findsOneWidget);
+      // Defaults still follow.
+      await tester.tap(find.byKey(const Key('loop_scope_defaults')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('loop_audio_pitch_readout')), findsNothing);
+      await tester.tap(find.byKey(const Key('loop_scope_track_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_audio_follow_use_default')));
+      await tester.pumpAndSettle();
+      expect(confirmedTrackFollow, isEmpty);
+      expect(find.byKey(const Key('loop_audio_pitch_readout')), findsNothing);
+    });
+
+    testWidgets('an owed Follow vector disables the choice: a tap requests '
+        'nothing', (tester) async {
+      followRecovery = true;
+      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await tester.pumpAndSettle();
+      expect(playback.state.followTempo, isNull);
+      final before = followRequests;
+      await tester.tap(find.byKey(const Key('loop_audio_follow_off')));
+      await tester.pumpAndSettle();
+      expect(followRequests, before);
+    });
+
+    testWidgets('the hub reads the defaults: Follow tempo · Same pitch, '
+        'then Recorded speed, then Pitch follows speed', (tester) async {
+      await pump(tester);
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+      String summary(String follow, String pitch) =>
+          l10n.loopSummaryPair(follow, pitch);
+      expect(
+        find.text(summary(l10n.loopSummaryFollowOn, l10n.loopSummaryPitchSame)),
+        findsOneWidget,
+      );
+      await playback.setPitchMode(mode: PitchMode.followsSpeed);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          summary(l10n.loopSummaryFollowOn, l10n.loopSummaryPitchFollows),
+        ),
+        findsOneWidget,
+      );
+      await playback.setFollowTempo(follow: false);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          summary(l10n.loopSummaryFollowOff, l10n.loopSummaryPitchSame),
+        ),
+        findsOneWidget,
+      );
     });
   });
 }

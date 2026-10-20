@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:controller_repository/controller_repository.dart';
+import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -115,6 +116,9 @@ void main() {
         MultiRepositoryProvider(
           providers: [
             RepositoryProvider.value(value: repository),
+            RepositoryProvider<CpuLoadRepository>.value(
+              value: const CpuLoadRepository.unsupported(),
+            ),
             RepositoryProvider.value(value: timing),
             RepositoryProvider.value(value: recordOptions),
             RepositoryProvider.value(value: tempo),
@@ -155,6 +159,9 @@ void main() {
               // readout selects a TransportClockCubit.
               BlocProvider<TransportClockCubit>(
                 create: (_) => TransportClockCubit(repository: repository),
+              ),
+              BlocProvider<OutputLevelCubit>(
+                create: (_) => OutputLevelCubit(repository: repository),
               ),
               BlocProvider<TracksCubit>(
                 create: (_) => TracksCubit(settings: settings),

@@ -52,8 +52,9 @@ class FootReverseTrack extends Equatable {
   /// Whether the track holds recorded material, which has a direction.
   final bool recorded;
 
-  /// Whether the track is writing or has an arm or launch pending: its
-  /// direction cannot change now, and a stomp is refused with a notice.
+  /// Whether the track is writing, or has an arm or a Count-in launch
+  /// pending: its direction cannot change now (the engine refuses both), and
+  /// a stomp is refused with a notice.
   final bool busy;
 
   /// Callback-published direction.
@@ -122,7 +123,9 @@ FootReverseProjection projectFootReverse(
     return FootReverseTrack(
       channel: channel,
       recorded: track?.hasContent ?? false,
-      busy: track != null && (track.isCapturing || track.pending),
+      busy:
+          track != null &&
+          (track.isCapturing || track.pending || track.pendingLaunch != null),
       reversed: track?.reversed ?? false,
     );
   }

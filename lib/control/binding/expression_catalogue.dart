@@ -267,6 +267,21 @@ class ExpressionDestination extends Equatable {
     group: l10n.fxEditorMasterTitle,
     control: l10n.expressionControlGain,
   ),
+  BackingLevelTarget() => (
+    destination: l10n.routingSourceBacking,
+    group: l10n.routingSourceBacking,
+    control: l10n.expressionControlVolume,
+  ),
+  BackingPanTarget() => (
+    destination: l10n.routingSourceBacking,
+    group: l10n.routingSourceBacking,
+    control: l10n.routingPan,
+  ),
+  ClickPanTarget() => (
+    destination: l10n.routingSourceClick,
+    group: l10n.routingSourceClick,
+    control: l10n.routingPan,
+  ),
   FxParamTarget(:final address, :final slotId, :final param) => (
     destination: fxStageLabel(l10n, trackNames, address),
     group:
@@ -463,10 +478,15 @@ String _addressLabel(
   ) => _placeOfAddress(FxAddress(stage: FxStage.input, index: input)),
   OutputLevelTarget(:final bus) || OutputBalanceTarget(:final bus) =>
     _placeOfAddress(FxAddress(stage: FxStage.output, index: bus)),
-  ClickVolumeTarget() => (
+  ClickVolumeTarget() || ClickPanTarget() => (
     id: 'click',
     kind: ExpressionDestinationKind.output,
     order: _clickOrder,
+  ),
+  BackingLevelTarget() || BackingPanTarget() => (
+    id: 'backing',
+    kind: ExpressionDestinationKind.output,
+    order: _backingOrder,
   ),
   ClickModeValueTarget() => (
     id: 'loop:defaults',
@@ -501,6 +521,7 @@ const int _inputOrder = 100000;
 const int _recordedOrder = 200000;
 const int _allTracksOrder = 290000;
 const int _outputOrder = 300000;
+const int _backingOrder = 370000;
 const int _clickOrder = 380000;
 const int _masterOrder = 390000;
 const int _loopControlsOrder = 400000;

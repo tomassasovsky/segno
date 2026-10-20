@@ -3,11 +3,11 @@ import 'dart:math' show ln10, log;
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/model/meter_scale.dart';
 import 'package:segno/theme/surface_theme.dart';
 
-/// The bottom of the shared meter scale, in dBFS: a peak at or below this
-/// draws no fill.
-const double kMeterFloorDb = -60;
+export 'package:segno/looper/model/meter_scale.dart'
+    show kClipPeak, kMeterFloorDb, meterPeak;
 
 /// Maps engine peak amplitude (`0..1`) to meter fill (`0..1`), linear in
 /// decibels over [kMeterFloorDb]..0 dBFS.
@@ -111,7 +111,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   final Map<LooperMeterState, Color> muteMeterColors;
 
   /// Icon color for the toolbar's unarmed/neutral icon buttons (Play/Stop
-  /// All, Clear All, Fullscreen, Signal, Settings, Session, and the
+  /// All, Clear All, Signal, Settings, Session, and the
   /// unarmed performance-record button).
   final Color toolbarIconColor;
 
@@ -128,7 +128,9 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
         InteractionMode.mixer ||
         InteractionMode.fade ||
         InteractionMode.reverse ||
-        InteractionMode.peel => muteMeterColors,
+        InteractionMode.peel ||
+        InteractionMode.tuner => muteMeterColors,
+        InteractionMode.multiply || InteractionMode.divide => muteMeterColors,
         InteractionMode.record => recordMeterColors,
       }[state] ??
       Colors.transparent;

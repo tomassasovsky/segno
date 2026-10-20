@@ -60,8 +60,9 @@ enum ControlActionGroup {
   /// The track pedals themselves, and the bank.
   tracks,
 
-  /// The eight FX pedal assignments. Empty until the FX-slot model lands;
-  /// FX activation is assigned on its own surface today.
+  /// Whole-rig FX commands. FX activation itself is assigned on its own
+  /// surface (Pedal assignments); this group holds the sweeps that used to
+  /// live on the FX-mode Stop (#1229).
   fx,
 
   /// Backing-track playback. Empty until the audio library part.
@@ -171,7 +172,16 @@ enum TrackOperation {
   reverse('reverse'),
 
   /// Remove the track's newest overdub layer; Undo puts it back.
-  peel('peel');
+  peel('peel'),
+
+  /// Double the track's length by repeating it: Multiply (#1168).
+  multiply('multiply'),
+
+  /// Keep the first half of the track: Divide (#1168).
+  divideFirstHalf('divide-first'),
+
+  /// Keep the last half of the track: Divide (#1168).
+  divideLastHalf('divide-last');
 
   const TrackOperation(this.token);
 
@@ -191,9 +201,17 @@ enum TrackOperation {
   /// Clear may not: erasing the whole rig is [ControlCommand.clearAll], ONE
   /// grouped edit with one undo, and eight separate clears would leave eight
   /// undo steps behind a single stomp. Peel may not for the same reason:
-  /// eight edits with eight undo steps behind one stomp.
-  bool get allowsAllTracks =>
-      this != TrackOperation.clear && this != TrackOperation.peel;
+  /// eight edits with eight undo steps behind one stomp. Neither may Multiply
+  /// and Divide: eight length edits behind one stomp leave eight undo steps
+  /// too, and most rigs would refuse several of them (#1168).
+  bool get allowsAllTracks => switch (this) {
+    TrackOperation.clear ||
+    TrackOperation.peel ||
+    TrackOperation.multiply ||
+    TrackOperation.divideFirstHalf ||
+    TrackOperation.divideLastHalf => false,
+    _ => true,
+  };
 }
 
 /// The whole-rig commands a control can drive.
@@ -221,6 +239,14 @@ enum ControlCommand {
 
   /// Set the tempo from successive taps.
   tapTempo('command:tap-tempo'),
+
+  /// Turn off every Track-stage chain that has effects — the former FX-mode
+  /// Stop panic, now assignable to any control (#1229).
+  trackFxOff('command:track-fx-off'),
+
+  /// Turn every Track-stage chain on, the empties included — the former
+  /// FX-mode Stop hold.
+  trackFxOn('command:track-fx-on'),
 
   /// Switch the track bank A / B.
   nextBank('bank:next');
@@ -357,6 +383,9 @@ final class ModeAction extends ControlAction {
     InteractionMode.fade => 'fade',
     InteractionMode.reverse => 'reverse',
     InteractionMode.peel => 'peel',
+    InteractionMode.tuner => 'tuner',
+    InteractionMode.multiply => 'multiply',
+    InteractionMode.divide => 'divide',
   };
 
   @override
@@ -383,6 +412,8 @@ final class CommandAction extends ControlAction {
   @override
   ControlActionGroup get group => switch (command) {
     ControlCommand.nextBank => ControlActionGroup.tracks,
+    ControlCommand.trackFxOff ||
+    ControlCommand.trackFxOn => ControlActionGroup.fx,
     _ => ControlActionGroup.transport,
   };
 
