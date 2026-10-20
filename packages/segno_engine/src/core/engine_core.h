@@ -500,6 +500,16 @@ enum {
  * le_track_prefault_capture or a shadow post has. Defined in engine.c. */
 int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames);
 
+/* Faults in the first LE_PREFAULT_HEAD_SECONDS of pool slot [slot]
+ * (engine_prefault.h): what a take can write before the background
+ * prefaulter takes over. Control thread; cheap when already present. */
+void le_lane_prefault_head(le_lane* ln, int32_t slot, int32_t sample_rate);
+
+/* Frees the lane's standby shadow (engine_private.h). The caller first drops
+ * any prefaulter job on it (le_prefault_forget) unless the prefaulter is
+ * already cleared or shut down. Control thread. */
+void le_lane_release_standby(le_lane* ln);
+
 /* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`
  * samples — the counterpart to le_lane_ensure_slot's grow-by-replace, for the
  * one case that must keep its content: a retired undo layer whose slot was

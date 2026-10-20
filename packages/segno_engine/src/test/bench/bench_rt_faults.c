@@ -1,7 +1,7 @@
 /*
- * bench_rt_faults.c — the on-device proof that the audio thread never faults
- * or misses a deadline while the process forks and the player records,
- * overdubs and toggles FX (#900, #906, #1367).
+ * bench_rt_faults.c — the on-device proof that the audio thread does not
+ * fault or miss a deadline while the player records, overdubs and toggles
+ * FX, and the measure of what a fork still costs it (#900, #906, #1367).
  *
  * NOT part of the test gate: it needs the console's real sound card, so it
  * runs on the appliance with segno.service stopped. Build it with
@@ -10,10 +10,11 @@
  * What it does, for --seconds of wall clock:
  *   - opens the device the way the app does (ALSA only, the callback thread on
  *     SCHED_FIFO 80), with an 8-track engine and a 60 s recording cap;
- *   - a forker thread starts /bin/true every --fork-ms with plain fork(), in
- *     the pattern Dart's Process.start uses (the child blocks on a pipe until
- *     the parent has registered it, then execs), so every fork copies the
- *     page tables and write-protects the whole process while the callback runs;
+ *   - with --fork-ms N, a forker thread starts /bin/true every N ms with plain
+ *     fork(), in the pattern Dart's Process.start uses (the child blocks on a
+ *     pipe until the parent has registered it, then execs), so every fork
+ *     copies the page tables and write-protects the whole process while the
+ *     callback runs. Off by default: the app does not fork (#1373);
  *   - the main thread plays the looper like a person: a fresh take on a track,
  *     its finalize, two overdub passes, a punch-out, FX enabled and disabled
  *     and retyped on its lanes and on the input monitor every --fx-ms, the
@@ -22,10 +23,18 @@
  *   - after a warm-up it samples the callback thread's own minflt/majflt from
  *     /proc/self/task/<tid>/stat, and the engine's callback telemetry.
  *
- * Expected, and the exit status: 0 page faults on the callback thread and 0
- * late periods (a period service longer than its deadline) over the whole
- * window. It prints both, with the worst service time, the xruns and the
- * number of forks. --fork-ms 0 runs the same performance with no forks.
+ * Expected, and the exit status:
+ *   - with no forks (the app as shipped): 0 page faults on the callback
+ *     thread and 0 late periods (a period service longer than its deadline);
+ *   - with forced forks (the backstop): at most --max-faults-per-fork faults
+ *     per fork on the callback thread (default 16). Not zero, by
+ *     construction: the callback's own stack cannot be fork-shielded, and
+ *     buffers inside miniaudio and alsa-lib are plain heap, so each fork costs
+ *     a few copy-on-write faults on those pages, and each can wait for the
+ *     page-table copy. Late periods are reported, not judged, here: no
+ *     shielding makes a fork free, which is why the app does not fork. The
+ *     engine's own buffers contribute nothing (the native fault test proves
+ *     that with a shielded stack: test_engine_rt_memory.h).
  */
 #define _GNU_SOURCE 1
 
@@ -48,6 +57,7 @@ typedef struct {
   double seconds;
   double warmup;
   int fork_ms;
+  int max_faults_per_fork;
   int fx_ms;
   int32_t rate;
   int32_t period;
@@ -214,6 +224,7 @@ static void perform_cycle(int track, int fx_ms) {
 static void usage(void) {
   fprintf(stderr,
           "usage: bench_rt_faults [--seconds N] [--warmup N] [--fork-ms N]\n"
+          "         [--max-faults-per-fork N]\n"
           "         [--fx-ms N] [--rate HZ] [--period FRAMES]\n"
           "         [--playback ID] [--capture ID] [--list]\n");
 }
@@ -234,7 +245,7 @@ static void list_devices(void) {
 }
 
 int main(int argc, char** argv) {
-  rt_opts o = {120.0, 5.0, 50, 500, 96000, 64, "", ""};
+  rt_opts o = {120.0, 5.0, 0, 16, 500, 96000, 64, "", ""};
   for (int i = 1; i < argc; ++i) {
     const char* a = argv[i];
     const char* v = i + 1 < argc ? argv[i + 1] : NULL;
@@ -248,6 +259,8 @@ int main(int argc, char** argv) {
       o.warmup = atof(v), ++i;
     } else if (v != NULL && strcmp(a, "--fork-ms") == 0) {
       o.fork_ms = atoi(v), ++i;
+    } else if (v != NULL && strcmp(a, "--max-faults-per-fork") == 0) {
+      o.max_faults_per_fork = atoi(v), ++i;
     } else if (v != NULL && strcmp(a, "--fx-ms") == 0) {
       o.fx_ms = atoi(v), ++i;
     } else if (v != NULL && strcmp(a, "--rate") == 0) {
@@ -302,6 +315,7 @@ int main(int argc, char** argv) {
 
   rt_task_stat st0 = {0}, st1 = {0};
   le_callback_telemetry t0, t1;
+  long forks0 = 0;
   int sampled = 0;
   const double t_start = now_s();
   int track = 0;
@@ -310,6 +324,7 @@ int main(int argc, char** argv) {
     if (!sampled && now_s() - t_start >= o.warmup) {
       read_task_stat(tid, &st0);
       le_engine_get_callback_telemetry(g_e, &t0);
+      forks0 = g_forks;
       sampled = 1;
     }
     perform_cycle(track, o.fx_ms);
@@ -336,7 +351,9 @@ int main(int argc, char** argv) {
     xruns += t1.session.xruns[k] - t0.session.xruns[k];
   printf("window: %.0f s after a %.0f s warm-up, %d-frame period (%u us)\n",
          o.seconds - o.warmup, o.warmup, (int)o.period, t1.budget_us);
-  printf("forks: %ld (engine counted %u)\n", g_forks, le_platform_fork_count());
+  const long forks = g_forks - forks0;
+  printf("forks in the window: %ld (engine counted %u in all)\n", forks,
+         le_platform_fork_count());
   printf("callback thread faults: %ld minor, %ld major\n",
          st1.minflt - st0.minflt, st1.majflt - st0.majflt);
   printf("periods: %llu, late: %llu, worst service since start %u us, "
@@ -344,9 +361,19 @@ int main(int argc, char** argv) {
          (unsigned long long)(t1.session.periods - t0.session.periods),
          (unsigned long long)late, t1.session.max_us,
          (unsigned long long)xruns);
-  const int ok = faults == 0 && late == 0;
-  printf("%s\n", ok ? "PASS: no fault and no late period on the callback"
-                    : "FAIL");
+  int ok;
+  if (forks == 0) {
+    ok = faults == 0 && late == 0;
+    printf("%s\n", ok ? "PASS: no fault and no late period on the callback"
+                      : "FAIL: the callback faulted or ran late");
+  } else {
+    const double per_fork = (double)faults / (double)forks;
+    ok = per_fork <= (double)o.max_faults_per_fork;
+    printf("faults per fork: %.2f (bound %d)\n%s\n", per_fork,
+           o.max_faults_per_fork,
+           ok ? "PASS: forks cost the callback only its stack and library pages"
+              : "FAIL: more faults per fork than the stack and libraries explain");
+  }
   le_engine_destroy(g_e);
   return ok ? 0 : 1;
 }

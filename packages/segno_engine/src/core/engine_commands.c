@@ -35,6 +35,7 @@
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
 #include "engine_private.h"
 #include "engine_internal.h"
+#include "engine_prefault.h" /* the background prefaulter (#900) */
 #include "layer_staging_ring.h" /* le_layer_staging_ring_push (retired-layer persistence) */
 #include "segno_engine_api.h"
 #include "perf_drain.h"     /* le_perf_drain_start/stop (capture-to-disk thread) */
@@ -229,32 +230,192 @@ static int32_t le_layer_slot_frames(const le_engine* engine, int32_t len) {
   return want > engine->max_loop_frames ? engine->max_loop_frames : want;
 }
 
-/* Faults in every page of lane [ln]'s pool slot [slot] for writing, on this
- * (control) thread, so the audio thread never takes a first-touch fault on it
- * (rt_alloc.h). Pool slots are allocated untouched, so this is the moment a
- * slot starts to cost memory: call it just before the command that lets the
- * audio thread write the slot, never earlier. */
-static void le_lane_prefault_slot(le_lane* ln, int slot) {
-  if (slot < 0 || ln->pool[slot] == NULL) return;
-  le_rt_prefault(ln->pool[slot], (size_t)ln->pool_cap[slot] * sizeof(float));
+/* ---- prefaulting what the audio thread writes (#900, rt_alloc.h) ----
+ *
+ * Pool slots are allocated without touching a page (#906), so each buffer is
+ * faulted in on this thread before the command that lets the audio thread
+ * write it, by the cheapest means that is still in time:
+ *
+ *   - a fresh take's live slot: the second of it the take writes first, now
+ *     (the head, in since the slot was created, for a take from the loop top;
+ *     the second at the playhead for a take over an existing loop), and the
+ *     background prefaulter follows the write head from there
+ *     (engine_prefault.h);
+ *   - a punch-in's live slot: nothing. The take that made the loop wrote all
+ *     of [0, loop length), and the callback has been reading it since;
+ *   - the shadow a punch-in arms at once: the lane's standby, faulted in in
+ *     the background while the track played; the spare after it: in the
+ *     background too, since it is first written a loop later;
+ *   - the cap-sized shadow pre-armed during a take: like the take itself;
+ *   - a shadow replenished during a running dub session: synchronously, on
+ *     the drain (usually a recycled slot, already resident). */
+
+static int32_t le_head_frames(const le_engine* e) {
+  return (e->sample_rate > 0 ? e->sample_rate : 48000) * LE_PREFAULT_HEAD_SECONDS;
 }
 
-/* Prefaults everything a capture about to start on [t] can write: the live
- * slot of every active lane (a take writes it from the first frame, up to the
- * recording cap) and every shadow slot already posted to the audio thread
- * (an overdub backs up into them). le_post_record_image calls it before any
- * RECORD or ARM it publishes, which covers every capture start: an immediate
- * take or punch-in, and a quantized, sound-triggered or clock-launched one,
- * whose start the callback fires later on its own. Shadows posted afterwards
- * are prefaulted where they are posted (le_post_dub_shadows,
- * le_prepare_image_punch_in). Pages already present cost a page-table walk. */
-static void le_track_prefault_capture(le_track* t) {
+/* Prefaults [0, frames) of lane [ln]'s slot [slot] now (bounded by its cap). */
+static void le_lane_prefault_slot(le_lane* ln, int slot, int32_t frames) {
+  if (slot < 0 || ln->pool[slot] == NULL) return;
+  if (frames > ln->pool_cap[slot]) frames = ln->pool_cap[slot];
+  if (frames > 0) le_rt_prefault(ln->pool[slot], (size_t)frames * sizeof(float));
+}
+
+/* A cap-sized buffer a capture will write from frame 0 at one second per
+ * second: the head now, the rest in the background ahead of the track. */
+static void le_lane_prefault_capture_buffer(le_engine* e, int32_t channel,
+                                            le_lane* ln, int slot) {
+  if (slot < 0 || ln->pool[slot] == NULL) return;
+  const int32_t head = le_head_frames(e);
+  le_lane_prefault_slot(ln, slot, head);
+  le_prefault_follow(e, channel, ln->pool[slot], ln->pool_cap[slot], head);
+}
+
+/* Prefaults what a fresh take about to start on [channel] writes. Called by
+ * le_post_record_image before any RECORD or ARM it publishes on an EMPTY
+ * track, which covers every take start: an immediate one, and a quantized,
+ * sound-triggered or clock-launched one that the callback fires later.
+ * [loop_top]: a quantized arm, which starts at frame 0. */
+static void le_track_prefault_take(le_engine* e, int32_t channel,
+                                   int loop_top) {
+  le_track* t = &e->tracks[channel];
+  const int32_t lanes = le_lanes_active(t);
+  const int32_t head = le_head_frames(e);
+  const int32_t master = load_i32(&e->a_master_len);
+  /* Over an existing loop the take starts at the playhead (a block of margin
+   * for the published position's lag); a sound-triggered one may fire there
+   * at once, and anywhere else only after the prefaulter has covered it. */
+  int32_t from = 0;
+  if (master > 0 && !loop_top) {
+    from = load_i32(&e->a_master_pos) - 4096;
+    if (from < 0) from = 0;
+  }
+  for (int32_t l = 0; l < lanes; ++l) {
+    le_lane* ln = &t->lanes[l];
+    const int live = load_i32(&ln->a_live);
+    if (ln->pool[live] == NULL) continue;
+    int32_t frames = head;
+    if (from > ln->pool_cap[live]) continue;
+    if (frames > ln->pool_cap[live] - from) frames = ln->pool_cap[live] - from;
+    le_rt_prefault(ln->pool[live] + from, (size_t)frames * sizeof(float));
+    le_prefault_follow(e, channel, ln->pool[live], ln->pool_cap[live],
+                       from == 0 ? frames : 0);
+  }
+}
+
+/* Moves lane [ln]'s standby into pool slot [slot] when it is fully faulted in
+ * and big enough, freeing what the slot held. Returns whether it did. */
+static int le_lane_take_standby(le_engine* e, le_lane* ln, int slot,
+                                int32_t want) {
+  if (ln->standby == NULL || ln->standby_cap < want ||
+      !atomic_load_explicit(&ln->a_standby_ready, memory_order_acquire)) {
+    return 0;
+  }
+  le_prefault_forget(e, ln->pool[slot]);
+  le_rt_free(ln->pool[slot]);
+  ln->pool[slot] = ln->standby;
+  ln->pool_cap[slot] = ln->standby_cap;
+  ln->standby = NULL;
+  ln->standby_cap = 0;
+  store_i32(&ln->a_standby_ready, 0);
+  return 1;
+}
+
+/* Prefaults a shadow slot about to be posted. [immediate]: armed for a
+ * punch-in now; [running]: replenished for a dub session already writing;
+ * [standby_mask]: lanes whose buffer is a standby, already faulted in. */
+static void le_prefault_shadow(le_engine* e, int32_t channel, int slot,
+                               int immediate, int running,
+                               uint32_t standby_mask) {
+  le_track* t = &e->tracks[channel];
   const int32_t lanes = le_lanes_active(t);
   for (int32_t l = 0; l < lanes; ++l) {
     le_lane* ln = &t->lanes[l];
-    le_lane_prefault_slot(ln, load_i32(&ln->a_live));
-    for (int i = 0; i < t->outstanding_count; ++i) {
-      le_lane_prefault_slot(ln, t->outstanding_slots[i]);
+    if (ln->pool[slot] == NULL || (standby_mask & (1u << l))) continue;
+    const int32_t cap = ln->pool_cap[slot];
+    if (cap >= e->max_loop_frames) {
+      le_lane_prefault_capture_buffer(e, channel, ln, slot); /* pre-arm */
+    } else if (immediate || running || cap <= le_head_frames(e)) {
+      le_lane_prefault_slot(ln, slot, cap);
+    } else {
+      le_prefault_buffer(e, ln->pool[slot], cap, NULL); /* a loop away */
+    }
+  }
+}
+
+/* Keeps every active lane of a track holding a take with a standby shadow of
+ * the loop's quantized length, faulted in in the background; frees the
+ * standbys of tracks without one and of inactive lanes. Drain cadence. */
+static void le_keep_standbys(le_engine* e, int32_t channel) {
+  le_track* t = &e->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  const int32_t len = le_track_settled_len(t);
+  const int has_take = len > 0 && (st == LE_TRACK_PLAYING ||
+                                   st == LE_TRACK_STOPPED ||
+                                   st == LE_TRACK_OVERDUBBING);
+  const int32_t want = has_take ? le_layer_slot_frames(e, len) : 0;
+  const int32_t lanes = le_lanes_active(t);
+  for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+    le_lane* ln = &t->lanes[l];
+    if (!has_take || l >= lanes) {
+      if (ln->standby != NULL) {
+        le_prefault_forget(e, ln->standby);
+        le_lane_release_standby(ln);
+      }
+      continue;
+    }
+    if (ln->standby != NULL && ln->standby_cap < want) {
+      le_prefault_forget(e, ln->standby);
+      le_lane_release_standby(ln);
+    }
+    if (ln->standby == NULL) {
+      ln->standby = (float*)le_rt_alloc((size_t)want * sizeof(float));
+      if (ln->standby == NULL) continue;
+      ln->standby_cap = want;
+      store_i32(&ln->a_standby_ready, 0);
+    }
+    if (!atomic_load_explicit(&ln->a_standby_ready, memory_order_acquire)) {
+      le_prefault_buffer(e, ln->standby, ln->standby_cap, &ln->a_standby_ready);
+    }
+  }
+}
+
+/* Frees the pool of every lane past the active count once the lane-count
+ * command that removed it has published (the callback no longer reads it)
+ * and nothing on it can come back (#595's a_recoverable), so memory a
+ * removed lane faulted in and locked does not stay locked (#900). */
+static void le_release_removed_lanes(le_engine* e) {
+  /* Once per lane-count command: the scan below is every slot of every
+   * inactive lane, too much for every drain. A lane skipped because it was
+   * still recoverable is freed by a later lane change or configure. */
+  if (e->lanes_released_at == e->lane_growth_command ||
+      e->lane_growth_command >
+          atomic_load_explicit(&e->a_commands_published, memory_order_acquire)) {
+    return;
+  }
+  e->lanes_released_at = e->lane_growth_command;
+  for (int32_t ch = 0; ch < e->track_count; ++ch) {
+    le_track* t = &e->tracks[ch];
+    /* History can name an inactive lane's slots: an undo or redo restores a
+     * topology (Bounce, Peel) together with the slots it played. Only a
+     * track with no history, nothing in flight and nothing posted can have
+     * its removed lanes freed. */
+    if (t->undo_count > 0 || t->redo_count > 0 || t->outstanding_count > 0 ||
+        t->clear_restore_pending || t->bounce_inflight != NULL ||
+        t->bounce_parked != NULL || t->length_pending ||
+        load_i32(&t->a_layer_in_flight)) {
+      continue;
+    }
+    for (int32_t l = le_lanes_active(t); l < LE_MAX_LANES; ++l) {
+      le_lane* ln = &t->lanes[l];
+      if (load_i32(&ln->a_recoverable)) continue;
+      for (int i = 0; i < LE_POOL_SLOTS; ++i) {
+        if (ln->pool[i] == NULL) continue;
+        le_prefault_forget(e, ln->pool[i]);
+        le_rt_free(ln->pool[i]);
+        ln->pool[i] = NULL;
+        ln->pool_cap[i] = 0;
+      }
     }
   }
 }
@@ -280,19 +441,29 @@ static void le_post_dub_shadows(le_engine* engine, int32_t channel,
   if (t->clear_restore_pending) return;
   const int32_t lanes = le_lanes_active(t);
   const int32_t want = le_layer_slot_frames(engine, le_track_settled_len(t));
+  const int running =
+      atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire) != 0;
+  const int recording = le_effective_state(t) == LE_TRACK_RECORDING;
   if (target > LE_DUB_SHADOWS) target = LE_DUB_SHADOWS;
   while (t->outstanding_count < target) {
     const int slot = track_acquire_slot(t);
     if (slot < 0) return; /* pool exhausted beyond eviction: skip boundaries */
+    /* The shadow a punch-in arms at once comes from the standby. */
+    const int immediate = !running && !recording && t->outstanding_count == 0;
     int ok = 1;
+    uint32_t standby_mask = 0;
     for (int32_t l = 0; l < lanes; ++l) {
-      if (!le_lane_ensure_slot(&t->lanes[l], slot, want)) {
+      le_lane* ln = &t->lanes[l];
+      if (immediate && (ln->pool[slot] == NULL || ln->pool_cap[slot] < want) &&
+          le_lane_take_standby(engine, ln, slot, want)) {
+        standby_mask |= 1u << l;
+      }
+      if (!le_lane_ensure_slot(ln, slot, want)) {
         ok = 0; /* OOM: do not post a torn slot */
       }
     }
     if (!ok) return;
-    /* The audio thread backs the pass up into it as soon as it arms it. */
-    for (int32_t l = 0; l < lanes; ++l) le_lane_prefault_slot(&t->lanes[l], slot);
+    le_prefault_shadow(engine, channel, slot, immediate, running, standby_mask);
     if (le_push_cmd(engine, (le_command){.code = LE_CMD_DUB_SHADOW,
                                          .lanei = {channel, 0, slot}}) !=
         LE_OK) {
@@ -997,6 +1168,8 @@ void le_engine_drain_events(le_engine* engine) {
     le_handle_event(engine, &evt, 1);
   }
   le_bounce_collect(engine);
+  le_release_removed_lanes(engine);
+  for (int32_t ch = 0; ch < engine->track_count; ++ch) le_keep_standbys(engine, ch);
   /* Queued undo taps apply once their track's flight flag clears. The audio
    * thread pushes the final retire event BEFORE clearing the flag (the push is
    * the release), so after an acquire-load reads 0 one more pop pass is
@@ -1165,8 +1338,23 @@ static void le_prepare_new_capture(le_engine* engine, le_track* t) {
      * loop-length-quantized snapshot slot into a_live. Grow-only-if-allocated:
      * a never-used lane stays lazily NULL (the audio thread's null guard
      * plays/records it as silence, unchanged). The track is EMPTY, so the
-     * audio thread never dereferences the slot while it regrows. */
+     * audio thread never dereferences the slot while it is replaced.
+     *
+     * Zeroed by replacing it with a fresh mapping rather than by memset: the
+     * kernel's zero pages cost nothing until written, where a memset of the
+     * cap faulted in all of it (23 MB at 96 kHz / 60 s) on the press. What the
+     * take writes is prefaulted from the playhead on (le_track_prefault_take
+     * and the background prefaulter). memset only if no mapping is left. */
     if (ln->pool[live] == NULL) continue;
+    float* fresh = (float*)le_rt_alloc(n * sizeof(float));
+    if (fresh != NULL) {
+      float* old = ln->pool[live];
+      ln->pool[live] = fresh;
+      ln->pool_cap[live] = engine->max_loop_frames;
+      le_prefault_forget(engine, old);
+      le_rt_free(old);
+      continue;
+    }
     if (!le_lane_ensure_slot(ln, live, engine->max_loop_frames)) continue;
     memset(ln->pool[live], 0, n * sizeof(float));
   }
@@ -1424,16 +1612,23 @@ static int le_prepare_image_punch_in(le_engine* e, int32_t channel) {
       t->undo_count--;
       break;
     }
+    const int immediate = t->outstanding_count == 0;
+    uint32_t standby_mask = 0;
     for (int l = 0; l < lanes; ++l) {
       if (!allocated[n][l]) continue;
       le_lane* ln = &t->lanes[l];
+      if (immediate && le_lane_take_standby(e, ln, slot, want)) {
+        le_rt_free(allocated[n][l]); /* the standby serves instead */
+        standby_mask |= 1u << l;
+        continue;
+      }
       le_rt_free(ln->pool[slot]);
       ln->pool[slot] = allocated[n][l];
       ln->pool_cap[slot] = want;
     }
     /* Capacity for ALL shadows plus the final action was proven before any
      * mutation. Shadows precede capture, even if the callback drains now. */
-    for (int l = 0; l < lanes; ++l) le_lane_prefault_slot(&t->lanes[l], slot);
+    le_prefault_shadow(e, channel, slot, immediate, 0, standby_mask);
     t->outstanding_slots[t->outstanding_count++] = slot;
     (void)le_push_cmd(e, (le_command){.code = LE_CMD_DUB_SHADOW,
                                     .lanei = {channel, 0, slot}});
@@ -1547,15 +1742,16 @@ static int le_prepare_routing(le_engine* e, const le_mix_settings* mix) {
          * starts (le_track_prefault_capture). */
         if (got == LE_SLOT_REUSED && !load_i32(&ln->a_recoverable))
           memset(ln->pool[live], 0, (size_t)e->max_loop_frames * sizeof(float));
-        /* On a track that already plays, the callback reads the new lane
-         * over the whole loop from its next block, and the first read of an
-         * untouched page faults in the zero page. Fault in the loop's length
-         * of it now; the rest of the cap waits for a take. */
+        /* A take can start on the lane at once: fault its head in. And on a
+         * track that already plays, the callback reads the new lane over the
+         * whole loop from its next block, where the first read of an
+         * untouched page would fault in the zero page: fault in the loop's
+         * length of it too. The rest of the cap waits for a take. */
         int32_t len = le_track_settled_len(t);
         const int32_t len0 = load_i32(&t->lanes[0].a_len);
         if (len0 > len) len = len0;
-        if (len > e->max_loop_frames) len = e->max_loop_frames;
-        if (len > 0) le_rt_prefault(ln->pool[live], (size_t)len * sizeof(float));
+        if (len < le_head_frames(e)) len = le_head_frames(e);
+        le_lane_prefault_slot(ln, live, len);
       }
     }
   }
@@ -1635,11 +1831,9 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
    * write before the command can reach the audio thread. */
   le_track* const t = &e->tracks[channel];
   const int32_t st = le_effective_state(t);
-  if (st != LE_TRACK_RECORDING && st != LE_TRACK_OVERDUBBING) {
-    le_track_prefault_capture(t);
-    for (int32_t l = 0; l < le_lanes_active(t); ++l) {
-      le_lane_prefault_slot(&t->lanes[l], fresh_shadow);
-    }
+  if (st == LE_TRACK_EMPTY) {
+    le_track_prefault_take(e, channel, action == LE_CMD_ARM && trigger == 0.0f);
+    if (fresh_shadow >= 0) le_prefault_shadow(e, channel, fresh_shadow, 0, 0, 0);
   }
   if (!image) return clocked ? le_post_clock_command(e, action, channel)
                             : le_push(e, action, channel, trigger);

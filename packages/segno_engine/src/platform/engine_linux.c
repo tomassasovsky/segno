@@ -13,6 +13,11 @@
  */
 #if defined(__linux__)
 
+/* pthread_getattr_np (the audio thread's stack, le_prepare_thread_stack). */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE 1
+#endif
+
 #include <dlfcn.h>
 #include <errno.h>
 #include <pthread.h>   /* pthread_setschedparam, pthread_once, pthread_atfork */
@@ -22,17 +27,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>     /* mlockall (le_platform_lock_memory) */
-#include <sys/resource.h> /* getrlimit(RLIMIT_MEMLOCK) */
+#include <sys/mman.h>     /* madvise for the code and stack prefault */
 #include <sys/stat.h>  /* stat() — probe /proc/asound/cardN pcm direction */
 #include <unistd.h>    /* sysconf(_SC_PAGESIZE) */
 
-#ifndef MCL_ONFAULT
-#define MCL_ONFAULT 4 /* kernel ABI; older libc headers lack the name */
+#include <sys/syscall.h> /* SYS_mlock2 */
+#ifndef MLOCK_ONFAULT
+#define MLOCK_ONFAULT 1 /* kernel ABI; older libc headers lack the name */
 #endif
 
 #include "engine_internal.h"  /* le_engine_process: a probe address in the engine */
 #include "engine_platform.h"  /* the seam */
+
+/* The top of the audio thread's stack that is faulted in and locked before the
+ * device starts: the same 256 KB data_callback prefaults (engine_miniaudio.c). */
+#define LE_RT_STACK_LOCK_BYTES ((size_t)256 * 1024)
+static void le_prepare_thread_stack(pthread_t thread, size_t bytes);
 #include "engine_private.h"   /* struct le_engine, enumerate_devices, store_i32;
                                * le_config / le_device_info / LE_MAX_CHANNELS /
                                * LE_OK + ma_backend arrive transitively */
@@ -854,8 +864,12 @@ void le_platform_after_device_open(le_engine* engine) {
    * while it is still idle, so it never runs its deadline-critical first reads
    * at normal priority (which overruns the capture at tiny buffers). */
   le_alsa_set_rt_priority(engine);
-  /* And map in the code it is about to run (engine_platform.h). */
+  /* And map in, and lock, the code it is about to run and the top of its
+   * stack (engine_platform.h). */
   le_platform_prefault_audio_code();
+  if (engine->device_initialised) {
+    le_prepare_thread_stack(engine->device.thread, LE_RT_STACK_LOCK_BYTES);
+  }
 }
 
 void le_platform_after_device_start(le_engine* engine, const le_config* config) {
@@ -868,59 +882,6 @@ void le_platform_after_device_start(le_engine* engine, const le_config* config) 
 void le_platform_on_engine_teardown(void) {
   if (le_alsa_only()) return; /* no PipeWire quantum was forced */
   le_pipewire_force_quantum(0); /* restore PipeWire's dynamic quantum */
-}
-
-/* Whether this process holds CAP_IPC_LOCK in its effective set, which exempts
- * it from RLIMIT_MEMLOCK. Read from /proc/self/status so no libcap is needed. */
-static int le_has_cap_ipc_lock(void) {
-  FILE* f = fopen("/proc/self/status", "r");
-  if (f == NULL) return 0;
-  char line[256];
-  unsigned long long eff = 0;
-  int found = 0;
-  while (fgets(line, sizeof(line), f) != NULL) {
-    if (sscanf(line, "CapEff: %llx", &eff) == 1) {
-      found = 1;
-      break;
-    }
-  }
-  fclose(f);
-  return found && (eff & (1ull << 14)) != 0; /* CAP_IPC_LOCK = 14 */
-}
-
-/* The two conditions under which MCL_FUTURE cannot make a later allocation
- * fail: a later mapping is refused only when it would push the locked total
- * past RLIMIT_MEMLOCK, and either there is no limit or the process is exempt
- * from it. Anywhere else (a desktop's default 8 MB) the call is skipped; the
- * engine runs exactly as it did before, without the lock. */
-static void le_lock_memory_once(void) {
-  struct rlimit lim;
-  const int unlimited =
-      getrlimit(RLIMIT_MEMLOCK, &lim) == 0 && lim.rlim_cur == RLIM_INFINITY;
-  if (!unlimited && !le_has_cap_ipc_lock()) {
-    fprintf(stderr,
-            "segno/rt: memory not locked: RLIMIT_MEMLOCK is limited and the "
-            "process lacks CAP_IPC_LOCK\n");
-    return;
-  }
-  /* MCL_ONFAULT is the difference between locking what is touched and
-   * committing every reservation in the address space (the Dart heap's, the
-   * untouched recording caps). Without it this is an OOM on the appliance, so
-   * a kernel that refuses it (pre-4.4) gets no lock rather than the
-   * pre-populating form. */
-  if (mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT) != 0) {
-    fprintf(stderr, "segno/rt: memory not locked: mlockall failed (errno %d)\n",
-            errno);
-    return;
-  }
-  fprintf(stderr,
-          "segno/rt: memory locked (mlockall MCL_CURRENT|MCL_FUTURE|"
-          "MCL_ONFAULT)\n");
-}
-
-void le_platform_lock_memory(void) {
-  static pthread_once_t once = PTHREAD_ONCE_INIT;
-  pthread_once(&once, le_lock_memory_once);
 }
 
 static _Atomic unsigned g_fork_count = 0;
@@ -961,6 +922,16 @@ unsigned le_platform_fork_count(void) {
 #define MADV_POPULATE_WRITE 23
 #endif
 
+/* Locks [lo, hi) on fault: pages that are in stay in, pages faulted in later
+ * stay in once they are. Only ranges the callback uses are ever locked, never
+ * the process: the Dart VM and glibc's arenas return memory with
+ * MADV_DONTNEED, which the kernel refuses on locked memory. Needs
+ * CAP_IPC_LOCK (the appliance runs as root) or room under RLIMIT_MEMLOCK;
+ * returns 0 when refused. */
+static int le_lock_range(uintptr_t lo, uintptr_t hi) {
+  return syscall(SYS_mlock2, (void*)lo, (size_t)(hi - lo), MLOCK_ONFAULT) == 0;
+}
+
 /* Maps every page of [lo, hi) in: read access for code and read-only data,
  * write access for a private writable segment (whose pages the callback may
  * write, such as libasound's state). Content-preserving either way. */
@@ -997,6 +968,8 @@ void le_platform_prefault_audio_code(void) {
    * app's plugin library, or a test binary. */
   const uintptr_t probe = (uintptr_t)&le_engine_process;
   char engine_path[256] = {0};
+  uintptr_t locked = 0;
+  int refused = 0;
   FILE* f = fopen("/proc/self/maps", "r");
   if (f == NULL) return;
   char line[512];
@@ -1022,8 +995,47 @@ void le_platform_prefault_audio_code(void) {
                        (engine_path[0] != '\0' && strcmp(path, engine_path) == 0);
     if (!wanted || perms[0] != 'r') continue; /* skip guard mappings */
     le_populate_range(lo, hi, perms[1] == 'w' && perms[3] == 'p');
+    if (le_lock_range(lo, hi)) {
+      locked += hi - lo;
+    } else {
+      refused = 1;
+    }
   }
   fclose(f);
+  static int reported = 0; /* once per process: device restarts repeat this */
+  if (!reported) {
+    reported = 1;
+    if (refused) {
+      fprintf(stderr, "segno/rt: audio code not locked (mlock2 errno %d); it "
+                      "can be reclaimed under memory pressure\n", errno);
+    } else {
+      fprintf(stderr, "segno/rt: audio code and data locked (%lu KB of the "
+                      "engine, libc, libm and libasound)\n",
+              (unsigned long)(locked >> 10));
+    }
+  }
+}
+
+/* Faults in and locks the top [bytes] of [thread]'s stack, from this thread,
+ * while that thread is idle. The callback's frames live there; locking them
+ * from the control thread keeps the mlock call (which takes mmap_lock) off
+ * the audio thread. */
+static void le_prepare_thread_stack(pthread_t thread, size_t bytes) {
+  pthread_attr_t attr;
+  if (pthread_getattr_np(thread, &attr) != 0) return;
+  void* base = NULL;
+  size_t size = 0;
+  if (pthread_attr_getstack(&attr, &base, &size) == 0 && base != NULL &&
+      size > 0) {
+    const long page = sysconf(_SC_PAGESIZE);
+    const uintptr_t mask = (uintptr_t)(page > 0 ? page : 4096) - 1u;
+    const uintptr_t top = ((uintptr_t)base + size) & ~mask;
+    if (bytes > size) bytes = size;
+    const uintptr_t lo = (top - bytes) & ~mask;
+    (void)madvise((void*)lo, top - lo, MADV_POPULATE_WRITE);
+    (void)le_lock_range(lo, top);
+  }
+  pthread_attr_destroy(&attr);
 }
 
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {

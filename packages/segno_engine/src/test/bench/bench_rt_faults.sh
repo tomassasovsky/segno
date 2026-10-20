@@ -9,11 +9,13 @@
 #
 # On the console, with the app stopped (the bench needs the sound card):
 #   systemctl stop segno.service
-#   ./bench_rt_faults --seconds 300                 # forks every 50 ms
+#   ./bench_rt_faults --seconds 300                 # the app as shipped: no forks
 #   ./bench_rt_faults --seconds 300 --period 32     # the 333 us deadline
-#   ./bench_rt_faults --seconds 120 --fork-ms 0     # the same, no forks
+#   ./bench_rt_faults --seconds 120 --fork-ms 50    # the backstop, forced forks
 #   systemctl start segno.service
-# Exit status 0 = no page fault and no late period on the callback thread.
+# Exit status 0: with no forks, no page fault and no late period on the
+# callback thread; with forks, at most --max-faults-per-fork (16) faults per
+# fork (its stack and alsa-lib/miniaudio pages; see bench_rt_faults.c).
 # --list prints the device ids for --playback / --capture.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."   # src/test/bench -> packages/segno_engine
