@@ -140,10 +140,8 @@ void le_platform_after_device_open(le_engine* engine) { (void)engine; }
 
 void le_platform_on_engine_teardown(void) {}
 
-/* macOS is a development host: no PREEMPT_RT kernel to defend, and wiring
- * memory there is a privileged per-region call, not a process-wide switch. */
-void le_platform_lock_memory(void) {}
-
+/* macOS is a development host: no PREEMPT_RT kernel to defend, and no fork
+ * shield or memory lock to apply (rt_alloc.c maps buffers the same way). */
 void le_platform_watch_forks(void) {}
 
 unsigned le_platform_fork_count(void) { return 0; }

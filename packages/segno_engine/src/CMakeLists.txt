@@ -94,6 +94,7 @@ add_library(segno_engine SHARED
   core/engine_decode.c       # the audio-file decoder + offline resampler (#1200)
   core/engine_audition.c     # Library audition voice control API (#1178)
   core/engine_instruments.c  # instrument slots, note rings, synth in the callback (#1197)
+  core/engine_prefault.c    # background prefaulter ahead of the write head (#900)
   # Offline loop-close restoration DSP (#697 S8) — pure TUs, no engine state;
   # consumed by the restore worker (engine_restore.c, S9). NOT matched by
   # run_native_tests.sh's engine*.c glob — they are listed explicitly there;

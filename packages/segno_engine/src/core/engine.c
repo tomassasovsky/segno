@@ -44,6 +44,7 @@
 #include "engine_internal.h"
 #include "engine_miniaudio.h"
 #include "engine_platform.h"
+#include "engine_prefault.h" /* the background prefaulter (#900) */
 #include "engine_private.h"
 #include "le_midi_clock.h" /* le_midi_clock_reset (C1 clock-send generator) */
 #include "lockfree_ring.h"
@@ -112,6 +113,21 @@ int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
   ln->pool_cap[slot] = fresh != NULL ? frames : 0;
   le_rt_free(old);
   return fresh != NULL ? LE_SLOT_FRESH : LE_SLOT_FAILED;
+}
+
+void le_lane_prefault_head(le_lane* ln, int32_t slot, int32_t sample_rate) {
+  if (slot < 0 || ln->pool[slot] == NULL) return;
+  int64_t head = (int64_t)(sample_rate > 0 ? sample_rate : 48000) *
+                 LE_PREFAULT_HEAD_SECONDS;
+  if (head > ln->pool_cap[slot]) head = ln->pool_cap[slot];
+  le_rt_prefault(ln->pool[slot], (size_t)head * sizeof(float));
+}
+
+void le_lane_release_standby(le_lane* ln) {
+  le_rt_free(ln->standby);
+  ln->standby = NULL;
+  ln->standby_cap = 0;
+  store_i32(&ln->a_standby_ready, 0);
 }
 
 /* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`
@@ -374,6 +390,10 @@ static void le_clamp_shape(int32_t* sample_rate, int32_t* input_channels,
   /* Default cap of 60 s/track bounds total memory across all tracks
    * (live + undo). Longer loops are configurable; stream-to-disk is deferred. */
   if (*max_loop_frames <= 0) *max_loop_frames = *sample_rate * 60;
+  /* ...and never more than LE_MAX_LOOP_SECONDS (the longest the app offers),
+   * so the memory a take can lock is bounded (#900). */
+  const int64_t most = (int64_t)*sample_rate * LE_MAX_LOOP_SECONDS;
+  if (*max_loop_frames > most) *max_loop_frames = (int32_t)most;
 }
 
 /* Joins every background worker and ends a performance capture BEFORE any
@@ -384,7 +404,9 @@ static void le_engine_quiesce_workers(le_engine* engine) {
    * every cache allocation BEFORE any pool buffer is freed or re-pointed —
    * the worker's enqueue copies read pool memory, and the entries' wet buffers
    * are about to lose their owner struct. Re-initialized by
-   * le_engine_reset_runtime once the pools are settled. */
+   * le_engine_reset_runtime once the pools are settled. The prefaulter goes
+   * first of all: its jobs name pool buffers and read track lengths. */
+  le_prefault_clear(engine);
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
@@ -521,6 +543,7 @@ static int le_engine_reset_material(le_engine* engine,
         ln->pool[i] = NULL;
         ln->pool_cap[i] = 0;
       }
+      le_lane_release_standby(ln);
       ln->image_gain = 1.0f;
       ln->image_pan = 0.0f;
       store_i32(&ln->a_live, 0);
@@ -718,6 +741,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   }
   atomic_store(&engine->a_mix_revision, 0);
   engine->lane_growth_command = 0;
+  engine->lanes_released_at = 0;
   engine->input_routing_command = 0;
   engine->clock_commands_posted = 0;
   atomic_store_explicit(&engine->a_clock_commands_applied, 0, memory_order_relaxed);
@@ -992,6 +1016,12 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   if (!le_engine_reset_material(engine, max_loop_frames)) return LE_ERR_INVALID;
   le_engine_reset_runtime(engine, sample_rate, input_channels,
                           output_channels, max_loop_frames);
+  /* A take can start writing lane 0 of any track at once: fault its head in
+   * now (engine_prefault.h). */
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    le_lane_prefault_head(&engine->tracks[t].lanes[0], 0, sample_rate);
+  }
+  le_prefault_start(engine); /* so no take start pays for the thread */
   return LE_OK;
 }
 
@@ -1242,9 +1272,8 @@ void le_engine_mark_device_lost(le_engine* engine) {
 }
 
 le_engine* le_engine_create(void) {
-  /* Before anything is allocated: lock the process's memory and count forks
-   * (engine_platform.h). Both are once per process. */
-  le_platform_lock_memory();
+  /* Count forks of the process from here on (engine_platform.h); once per
+   * process. */
   le_platform_watch_forks();
   /* The struct itself is written by the callback every block — the command,
    * event and perf-log rings live inside it — so it is fork-shielded and
@@ -1369,6 +1398,7 @@ void le_engine_destroy(le_engine* engine) {
   le_cache_shutdown(engine);
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
   le_restore_shutdown(engine); /* #697 S9: join before the pool frees below */
+  le_prefault_shutdown(engine); /* its jobs name the pool buffers below */
   le_backing_release(engine, 0); /* #1200: no audio thread any more */
   le_audition_release(engine);   /* #1178: likewise */
   le_render_destroy(engine); /* render recipe jobs (#1202): worker joined */
@@ -1378,6 +1408,7 @@ void le_engine_destroy(le_engine* engine) {
       for (int i = 0; i < LE_POOL_SLOTS; ++i) {
         le_rt_free(ln->pool[i]);
       }
+      le_rt_free(ln->standby);
       for (int s = 0; s < LE_FX_MAX; ++s) {
         le_fx_free_delay(&ln->fx, s);
         le_fx_free_octaver(&ln->fx, s);

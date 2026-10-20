@@ -164,6 +164,10 @@ extern "C" {
  * max_loop_frames (see le_lane_ensure_slot). */
 #define LE_LAYER_QUANTUM 48000
 
+/* The longest recording cap the engine accepts, in seconds at the device rate
+ * (the app offers up to 10 minutes). It bounds what a take can lock (#900). */
+#define LE_MAX_LOOP_SECONDS 600
+
 /* SAMPLES of live->shadow copy per track per BLOCK FRAME while a partially
  * backed-up overdub layer drains after punch-out (#906).
  *
@@ -570,6 +574,15 @@ typedef struct le_lane {
                                     * Undo layers are quantized to the track's
                                     * length; only a recording live slot needs
                                     * the full max_loop_frames. */
+  /* Control-thread-owned standby shadow (#900): a loop-length buffer kept
+   * faulted in by the background prefaulter (engine_prefault.h) while the
+   * track holds a take, so the shadow a punch-in arms at once never has to be
+   * faulted in on the press. a_standby_ready is set by the prefaulter when
+   * the whole buffer is in. Never seen by the audio thread until installed in
+   * a pool slot. */
+  float* standby;
+  int32_t standby_cap;
+  _Atomic int32_t a_standby_ready;
   _Atomic int32_t a_live;     /* pool index the audio thread plays/records */
   _Atomic int32_t a_len;      /* recorded length (== the track's length) */
   /* #595: 1 once THIS lane captured real audio that could still come back —
@@ -1838,6 +1851,8 @@ struct le_engine {
    * callback has prefaulted its stack (le_rt_prefault_stack). Cleared by the
    * control thread before each device start, while the thread is idle. */
   int rt_stack_ready;
+  /* The background prefaulter (engine_prefault.c); NULL until its first job. */
+  struct le_prefaulter* prefaulter;
 
   /* Snapshot, published as independent atomics. */
   _Atomic int32_t a_running;
@@ -2228,6 +2243,9 @@ struct le_engine {
    * a_commands_published releases it after the entire callback, on success
    * or refusal. Configure resets it with the command counters. */
   uint64_t lane_growth_command;
+  /* lane_growth_command as of the last pass that freed removed lanes' buffers
+   * (le_release_removed_lanes, #900). Control thread. */
+  uint64_t lanes_released_at;
   uint64_t input_routing_command; /* fresh Sound admission reads only applied routes */
   uint64_t fade_lifetime; /* control-owned; binds every Fade image install */
   /* Checked per-track requests with a callback verdict (Fade, Reverse): one

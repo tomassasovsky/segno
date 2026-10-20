@@ -57,7 +57,8 @@ static void data_callback(ma_device* device, void* output, const void* input,
   le_engine* e = (le_engine*)device->pUserData;
   /* Once per device start, before the first block: fault in the stack the
    * deepest callback path will use, so no later block takes a first-touch
-   * fault on a stack page (rt_alloc.h). mlockall keeps the pages after. */
+   * fault on a stack page (rt_alloc.h). engine_linux.c has locked the top of
+   * this stack before the start, so the pages stay. */
   if (!e->rt_stack_ready) {
     le_rt_prefault_stack(LE_RT_STACK_PREFAULT_BYTES);
     e->rt_stack_ready = 1;

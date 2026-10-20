@@ -27,6 +27,7 @@
 #ifndef SEGNO_TEST_ENGINE_RT_MEMORY_H
 #define SEGNO_TEST_ENGINE_RT_MEMORY_H
 
+#include "engine_prefault.h" /* le_prefault_tick, the head and lead */
 #include "rt_alloc.h"
 
 #if defined(__linux__) && !LE_RT_ALLOC_USES_HEAP
@@ -77,11 +78,50 @@ static void test_rt_alloc_contract(void) {
   CHECK(r != NULL && r[1023] == 0.0f);
   if (r != NULL) r[1023] = 1.0f;
   le_rt_free(r);
+
+  /* The arena: aligned, zeroed, bounded, reusable. */
+  le_rt_arena arena;
+  CHECK(le_rt_arena_init(&arena, 4096));
+  unsigned char* a1 = (unsigned char*)le_rt_arena_alloc(&arena, 100);
+  unsigned char* a2 = (unsigned char*)le_rt_arena_alloc(&arena, 100);
+  CHECK(a1 != NULL && a2 != NULL && a2 >= a1 + 100);
+  CHECK(((uintptr_t)a1 & 63u) == 0 && ((uintptr_t)a2 & 63u) == 0);
+  CHECK(le_rt_arena_alloc(&arena, 8192) == NULL); /* does not fit */
+  a1[0] = 7;
+  le_rt_arena_reset(&arena);
+  unsigned char* a3 = (unsigned char*)le_rt_arena_alloc(&arena, 16);
+  CHECK(a3 == a1 && a3[0] == 0); /* reused, and zeroed again */
+  le_rt_arena_release(&arena);
+  le_rt_arena_release(&arena); /* idempotent */
+  CHECK(le_rt_arena_alloc(&arena, 16) == NULL);
 }
 
 #if LE_RT_FAULT_TESTS
 
 /* ---- 2. memory policy (Linux, mapping path) ---- */
+
+/* Whether the smaps VmFlags of the mapping holding [addr] contain [flag]
+ * (" lf", " dc"...): 1 yes, 0 no, -1 not found. */
+static int smaps_vmflag(const void* addr, const char* flag) {
+  FILE* f = fopen("/proc/self/smaps", "r");
+  if (f == NULL) return -1;
+  char line[512];
+  int in_range = 0;
+  int found = -1;
+  const unsigned long want = (unsigned long)(uintptr_t)addr;
+  while (fgets(line, sizeof(line), f) != NULL) {
+    unsigned long lo = 0, hi = 0;
+    char perms[8];
+    if (sscanf(line, "%lx-%lx %7s", &lo, &hi, perms) == 3) {
+      in_range = want >= lo && want < hi;
+    } else if (in_range && strncmp(line, "VmFlags:", 8) == 0) {
+      found = strstr(line, flag) != NULL;
+      break;
+    }
+  }
+  fclose(f);
+  return found;
+}
 
 /* Resident pages of [p, p + bytes), by mincore. */
 static size_t rt_resident_pages(const void* p, size_t bytes) {
@@ -138,6 +178,13 @@ static void test_rt_alloc_touches_nothing_until_prefaulted(void) {
   CHECK(q != NULL && rt_resident_pages(q, n) == rt_pages(q, n));
   CHECK(smaps_mapping_is_dontcopy(q) == 1);
   le_rt_free(q);
+
+  /* A damaged header is refused, never unmapped at a guessed length. */
+  unsigned char* r = (unsigned char*)le_rt_alloc(4096);
+  CHECK(r != NULL);
+  r[-64] ^= 0xffu; /* the magic word */
+  CHECK(le_rt_size(r) == 0);
+  le_rt_free(r); /* reports and leaks */
 }
 
 /* Every engine-owned buffer the callback writes is its own DONTFORK mapping. */
@@ -170,38 +217,83 @@ static void test_engine_audio_buffers_are_fork_shielded(void) {
 static void test_lane_slots_cost_nothing_until_a_take(void) {
   printf("test_lane_slots_cost_nothing_until_a_take\n");
   le_engine* e = le_engine_create();
-  const int32_t cap = 96000 * 60; /* the appliance default: 60 s at 96 kHz */
-  CHECK(le_engine_configure(e, 96000, 8, 2, cap) == LE_OK);
+  const int32_t rate = 96000;
+  const int32_t cap = rate * 60; /* the appliance default: 60 s at 96 kHz */
+  CHECK(le_engine_configure(e, rate, 8, 2, cap) == LE_OK);
   const long rss0 = rt_rss_kb();
   for (int32_t t = 0; t < e->track_count; ++t) {
     CHECK(set_lane_count_and_publish(e, t, LE_MAX_LANES) == LE_OK);
   }
   const long rss1 = rt_rss_kb();
   const size_t slot_bytes = (size_t)cap * sizeof(float);
-  size_t touched = 0;
+  const size_t head_bytes =
+      (size_t)rate * LE_PREFAULT_HEAD_SECONDS * sizeof(float);
+  size_t worst = 0;
   for (int32_t t = 0; t < e->track_count; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       const float* b = e->tracks[t].lanes[l].pool[0];
       CHECK(b != NULL);
-      if (b != NULL) touched += rt_resident_pages(b, slot_bytes);
+      if (b == NULL) continue;
+      const size_t r = rt_resident_pages(b, slot_bytes);
+      if (r > worst) worst = r;
+      /* the head a take writes first is in */
+      CHECK(rt_resident_pages(b, head_bytes) == rt_pages(b, head_bytes));
     }
   }
-  /* At most the header page of each of the 64 slots. */
-  CHECK(touched <= (size_t)e->track_count * LE_MAX_LANES);
-  CHECK(rss1 - rss0 < 16 * 1024); /* was 64 x 23 MB = 1.4 GB */
+  /* The head and the header page, nothing more, of each of the 64 slots. */
+  CHECK(worst <= rt_pages(NULL, head_bytes) + 2);
+  CHECK(rss1 - rss0 < 32 * 1024); /* was 64 x 23 MB = 1.4 GB */
   printf("  %d tracks x %d lanes at 96 kHz / 60 s: RSS +%ld KB for %zu MB of "
          "slots\n", e->track_count, LE_MAX_LANES, rss1 - rss0,
          ((size_t)e->track_count * LE_MAX_LANES * slot_bytes) >> 20);
 
-  /* A take on track 0 prefaults all 8 of its live slots, and only those. */
+  /* A take hands its slots to the prefaulter, which stays a few seconds
+   * ahead of what has been recorded, not the whole cap. */
   CHECK(le_engine_record(e, 0) == LE_OK);
+  le_prefault_tick(e);
+  const size_t ahead_bytes =
+      (size_t)rate * (LE_PREFAULT_AHEAD_SECONDS + 1) * sizeof(float);
   for (int l = 0; l < LE_MAX_LANES; ++l) {
     const float* b = e->tracks[0].lanes[l].pool[0];
-    CHECK(rt_resident_pages(b, slot_bytes) == rt_pages(b, slot_bytes));
+    CHECK(rt_resident_pages(b, head_bytes) == rt_pages(b, head_bytes));
+    CHECK(rt_resident_pages(b, slot_bytes) <= rt_pages(b, ahead_bytes) + 2);
   }
-  CHECK(rt_resident_pages(e->tracks[1].lanes[0].pool[0], slot_bytes) <= 1);
-  printf("  after a take on track 0: RSS +%ld KB\n", rt_rss_kb() - rss0);
+  printf("  after a take starts on track 0: RSS +%ld KB\n", rt_rss_kb() - rss0);
   le_engine_destroy(e);
+}
+
+/* #900 item 7: the recording cap is bounded, and a removed lane's buffers are
+ * freed (and so unlocked) once the callback has stopped reading it. */
+static void test_cap_is_bounded_and_removed_lanes_are_freed(void) {
+  printf("test_cap_is_bounded_and_removed_lanes_are_freed\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 4, 2, INT32_MAX) == LE_OK);
+  CHECK(e->max_loop_frames == 48000 * LE_MAX_LOOP_SECONDS);
+  CHECK(le_engine_configure(e, 48000, 4, 2, 48000 * 4) == LE_OK);
+  CHECK(set_lane_count_and_publish(e, 0, 4) == LE_OK);
+  CHECK(e->tracks[0].lanes[3].pool[0] != NULL);
+  CHECK(set_lane_count_and_publish(e, 0, 2) == LE_OK);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s); /* the drain that frees them */
+  CHECK(e->tracks[0].lanes[2].pool[0] == NULL);
+  CHECK(e->tracks[0].lanes[3].pool[0] == NULL);
+  CHECK(e->tracks[0].lanes[1].pool[0] != NULL);
+  CHECK(set_lane_count_and_publish(e, 0, 4) == LE_OK); /* and they come back */
+  CHECK(e->tracks[0].lanes[3].pool[0] != NULL);
+  le_engine_destroy(e);
+}
+
+/* Each audio mapping is locked on fault, where the process may lock. */
+static void test_audio_buffers_are_locked(void) {
+  printf("test_audio_buffers_are_locked\n");
+  if (geteuid() != 0) {
+    printf("  (not root: mlock2 is bounded by RLIMIT_MEMLOCK; skipped)\n");
+    return;
+  }
+  float* p = (float*)le_rt_alloc((size_t)1 << 20);
+  CHECK(p != NULL);
+  CHECK(smaps_vmflag(p, " lf") == 1); /* VM_LOCKONFAULT */
+  le_rt_free(p);
 }
 
 /* ---- 3. the proof: page faults on the audio thread ---- */
@@ -475,6 +567,61 @@ static void test_audio_thread_takes_no_page_faults_across_forks(void) {
   CHECK(cfaults > 0);
 }
 
+/* A defining take much longer than the head its slot starts with, at the
+ * appliance rate and cap: the background prefaulter follows the write head,
+ * and the punch-in after it takes its armed shadow from the lane's standby.
+ * The harness runs faster than real time, so it lets the prefaulter catch up
+ * once per second of audio, as wall-clock time does on a device. */
+static void test_long_take_is_followed_by_the_prefaulter(void) {
+  printf("test_long_take_is_followed_by_the_prefaulter\n");
+  const int32_t rate = 96000;
+  const int sec_blocks = rate / RT_BLOCK;
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, rate, 2, 2, rate * 60) == LE_OK);
+  CHECK(set_lane_count_and_publish(e, 0, 2) == LE_OK);
+  rt_audio_thread a;
+  CHECK(rt_audio_start(&a, e));
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  for (int sec = 0; sec < 8; ++sec) {
+    le_prefault_tick(e);
+    rt_run(&a, sec_blocks, 0.3f);
+  }
+  CHECK(le_engine_record(e, 0) == LE_OK); /* an 8 s loop */
+  le_snapshot s;
+  for (int k = 0; k < 4; ++k) { /* polls: the standby is made and filled */
+    le_engine_get_snapshot(e, &s);
+    le_prefault_tick(e);
+    rt_run(&a, sec_blocks / 4, 0.0f);
+  }
+  CHECK(e->tracks[0].lanes[0].standby != NULL);
+  CHECK(atomic_load(&e->tracks[0].lanes[0].a_standby_ready) == 1);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+  CHECK(e->tracks[0].lanes[0].standby == NULL); /* it became the shadow */
+  for (int sec = 0; sec < 9; ++sec) {
+    le_engine_get_snapshot(e, &s);
+    le_prefault_tick(e);
+    rt_run(&a, sec_blocks, 0.2f);
+  }
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  rt_run(&a, sec_blocks + sec_blocks / 3, 0.0f); /* the playhead mid-loop */
+  /* An immediate take over the loop on track 1: it starts writing at the
+   * playhead, not at frame 0, into a slot just replaced by a fresh mapping. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  for (int sec = 0; sec < 10; ++sec) {
+    le_prefault_tick(e);
+    rt_run(&a, sec_blocks, 0.25f);
+  }
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  rt_run(&a, sec_blocks, 0.0f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  rt_audio_stop(&a);
+  printf("  %ld blocks: %ld faults on the audio thread (worst block %ld)\n",
+         a.blocks_run, a.faults, a.worst_block);
+  CHECK(a.faults == 0);
+  le_engine_destroy(e);
+}
+
 /* The engine counts every glibc fork() of the process (#1367). Run with no
  * harness thread alive: a glibc fork child would trip over its stack. */
 static void test_engine_counts_forks(void) {
@@ -497,8 +644,11 @@ static void run_rt_memory_tests(void) {
   test_rt_alloc_touches_nothing_until_prefaulted();
   test_engine_audio_buffers_are_fork_shielded();
   test_lane_slots_cost_nothing_until_a_take();
+  test_cap_is_bounded_and_removed_lanes_are_freed();
+  test_audio_buffers_are_locked();
   test_audio_thread_takes_no_page_faults();
   test_audio_thread_takes_no_page_faults_across_forks();
+  test_long_take_is_followed_by_the_prefaulter();
   test_engine_counts_forks();
 #endif
 }
