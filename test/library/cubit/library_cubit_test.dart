@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -335,76 +336,85 @@ void main() {
         listenPoll: const Duration(milliseconds: 1),
       );
 
-      Future<void> polls() => Future<void>.delayed(
-        const Duration(milliseconds: 30),
-      );
+      /// One Listen poll of a [fast] cubit.
+      const poll = Duration(milliseconds: 1);
+
+      /// Selects `s-a` and presses Listen on a fake clock, then runs [body]
+      /// there: the poll ticks exactly as often as [body] elapses time,
+      /// however loaded the machine is (#1366).
+      void listening(void Function(FakeAsync async, LibraryCubit cubit) body) {
+        fakeAsync((async) {
+          final cubit = fast();
+          unawaited(cubit.select('s-a'));
+          async.flushMicrotasks();
+          unawaited(cubit.listen());
+          async.flushMicrotasks();
+          body(async, cubit);
+          unawaited(cubit.close());
+          async.flushMicrotasks();
+        });
+      }
 
       test(
         "plays the selected session's preview and follows its progress",
-        () async {
+        () {
           reports = [
             const AuditionState(frames: 480000, position: 4800, outputs: 0x3),
           ];
-          final cubit = fast();
-          addTearDown(cubit.close);
-          await cubit.select('s-a');
+          listening((async, cubit) {
+            verify(
+              () => sessions.startAudition(
+                's-a',
+                stillWanted: any(named: 'stillWanted'),
+              ),
+            ).called(1);
+            expect(cubit.state.listen?.id, 's-a');
+            expect(cubit.state.listen?.frames, 480000);
+            expect(cubit.state.listen?.truncated, isTrue);
+            expect(cubit.state.listen?.sampleRate, 48000);
 
-          await cubit.listen();
-          verify(
-            () => sessions.startAudition(
-              's-a',
-              stillWanted: any(named: 'stillWanted'),
-            ),
-          ).called(1);
-          expect(cubit.state.listen?.id, 's-a');
-          expect(cubit.state.listen?.frames, 480000);
-          expect(cubit.state.listen?.truncated, isTrue);
-          expect(cubit.state.listen?.sampleRate, 48000);
-
-          await polls();
-          expect(cubit.state.listen?.position, 4800);
+            async.elapse(poll);
+            expect(cubit.state.listen?.position, 4800);
+          });
         },
       );
 
       test('ends when the engine no longer plays it: the end, a performance '
-          'arm or a device reopen', () async {
+          'arm or a device reopen', () {
         reports = [
           const AuditionState(frames: 480000, position: 4800, outputs: 0x3),
           const AuditionState(),
         ];
-        final cubit = fast();
-        addTearDown(cubit.close);
-        await cubit.select('s-a');
-        await cubit.listen();
+        listening((async, cubit) {
+          async.elapse(poll);
+          expect(cubit.state.listen?.position, 4800);
 
-        await polls();
-        expect(cubit.state.listen, isNull);
-        verifyNever(sessions.stopAudition);
+          async.elapse(poll);
+          expect(cubit.state.listen, isNull);
+          verifyNever(sessions.stopAudition);
+        });
       });
 
-      test('gives a start that has not landed a few polls', () async {
+      test('gives a start that has not landed a few polls', () {
         reports = [
           const AuditionState(),
           const AuditionState(),
           const AuditionState(frames: 480000, position: 64, outputs: 0x3),
         ];
-        final cubit = fast();
-        addTearDown(cubit.close);
-        await cubit.select('s-a');
-        await cubit.listen();
-
-        await polls();
-        expect(cubit.state.listen?.position, 64);
+        listening((async, cubit) {
+          async.elapse(poll * 3);
+          expect(cubit.state.listen?.position, 64);
+        });
       });
 
-      test('a preview never seen playing ends after five polls', () async {
-        final cubit = fast();
-        addTearDown(cubit.close);
-        await cubit.select('s-a');
-        await cubit.listen();
+      test('a preview never seen playing ends after five polls', () {
+        listening((async, cubit) {
+          async.elapse(poll * 4);
+          expect(cubit.state.listen, isNotNull);
 
-        await polls();
-        expect(cubit.state.listen, isNull);
+          async.elapse(poll);
+          expect(cubit.state.listen, isNull);
+        });
       });
 
       test('Listen again stops it', () async {
@@ -568,15 +578,15 @@ void main() {
       });
 
       test('a start never seen playing is withdrawn from the engine when '
-          'the cubit gives up on it', () async {
-        final cubit = fast();
-        addTearDown(cubit.close);
-        await cubit.select('s-a');
-        await cubit.listen();
+          'the cubit gives up on it', () {
+        listening((async, cubit) {
+          async.elapse(poll * 4);
+          verifyNever(sessions.stopAudition);
 
-        await polls();
-        expect(cubit.state.listen, isNull);
-        verify(sessions.stopAudition).called(1);
+          async.elapse(poll);
+          expect(cubit.state.listen, isNull);
+          verify(sessions.stopAudition).called(1);
+        });
       });
 
       test('dropping the selection ends Listen with it', () async {
