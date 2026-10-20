@@ -139,6 +139,48 @@ void main() {
       expect(a, isNot(equals(a.copyWith(type: TrackEffectType.drive))));
       expect(a, isNot(equals(a.copyWith(params: const [0.9, 0.2, 0.3]))));
     });
+
+    test('the preset id and source values round-trip and count in '
+        'equality', () {
+      final fx = BuiltInEffect(
+        type: TrackEffectType.none,
+        module: 'Smart tune',
+        presetId: 'preset-id',
+        source: const {'Smart Tune': 0, 'Mode': 1, 'Key': 3 / 11},
+      );
+
+      final decoded = BuiltInEffect.fromJson(
+        jsonDecode(jsonEncode(fx.toJson())) as Map<String, dynamic>,
+      );
+
+      expect(decoded, fx);
+      expect(decoded.hashCode, fx.hashCode);
+      expect(decoded.presetId, 'preset-id');
+      expect(decoded.source, {'Smart Tune': 0, 'Mode': 1, 'Key': 3 / 11});
+      expect(fx, isNot(equals(fx.copyWith(presetId: 'other'))));
+      expect(fx, isNot(equals(fx.copyWith(source: const {'Mode': 0}))));
+    });
+
+    test('an entry with no preset writes neither key and decodes to none', () {
+      final json = BuiltInEffect(type: TrackEffectType.drive).toJson();
+
+      expect(json.containsKey('presetId'), isFalse);
+      expect(json.containsKey('source'), isFalse);
+      final decoded = BuiltInEffect.fromJson(json);
+      expect(decoded.presetId, isNull);
+      expect(decoded.source, isEmpty);
+    });
+
+    test('a wrong-typed preset id or source value decodes to the default', () {
+      final decoded = BuiltInEffect.fromJson(const {
+        'type': 0,
+        'presetId': 7,
+        'source': {'Mode': 'one', 'Key': 0.5},
+      });
+
+      expect(decoded.presetId, isNull);
+      expect(decoded.source, {'Key': 0.5});
+    });
   });
 
   group('PluginEffect', () {
