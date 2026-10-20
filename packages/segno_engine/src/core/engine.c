@@ -130,6 +130,47 @@ void le_lane_release_standby(le_lane* ln) {
   store_i32(&ln->a_standby_ready, 0);
 }
 
+void le_lane_release_zero_spare(le_lane* ln) {
+  le_rt_free(ln->zero_spare);
+  ln->zero_spare = NULL;
+  ln->zero_spare_cap = 0;
+}
+
+void le_collect_retired(le_engine* e, int all) {
+  const uint64_t published =
+      atomic_load_explicit(&e->a_commands_published, memory_order_acquire);
+  int32_t kept = 0;
+  for (int32_t i = 0; i < e->retired_count; ++i) {
+    if (all || e->retired_ticket[i] <= published) {
+      le_rt_free(e->retired_buf[i]);
+    } else {
+      e->retired_buf[kept] = e->retired_buf[i];
+      e->retired_ticket[kept] = e->retired_ticket[i];
+      ++kept;
+    }
+  }
+  e->retired_count = kept;
+}
+
+void le_retire_buffer(le_engine* e, float* buf) {
+  if (buf == NULL) return;
+  le_prefault_forget(e, buf);
+  if (e->retired_count == LE_RETIRED_MAX) le_collect_retired(e, 0);
+  if (e->retired_count == LE_RETIRED_MAX) {
+    /* Nothing published since the table filled (no callback is running):
+     * then nothing can be reading these either. */
+    le_collect_retired(e, !atomic_load_explicit(&e->a_running,
+                                                memory_order_acquire));
+  }
+  if (e->retired_count == LE_RETIRED_MAX) {
+    le_rt_free(buf); /* never reached with a callback that keeps up */
+    return;
+  }
+  e->retired_buf[e->retired_count] = buf;
+  e->retired_ticket[e->retired_count] = e->commands_posted + 1;
+  ++e->retired_count;
+}
+
 /* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`
  * samples (the counterpart to le_lane_ensure_slot's grow-by-replace). Only the
  * control thread may call it, and only for a slot the audio thread no longer
@@ -407,6 +448,7 @@ static void le_engine_quiesce_workers(le_engine* engine) {
    * le_engine_reset_runtime once the pools are settled. The prefaulter goes
    * first of all: its jobs name pool buffers and read track lengths. */
   le_prefault_clear(engine);
+  le_collect_retired(engine, 1); /* the device is closed: nothing reads them */
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
@@ -544,6 +586,7 @@ static int le_engine_reset_material(le_engine* engine,
         ln->pool_cap[i] = 0;
       }
       le_lane_release_standby(ln);
+      le_lane_release_zero_spare(ln);
       ln->image_gain = 1.0f;
       ln->image_pan = 0.0f;
       store_i32(&ln->a_live, 0);
@@ -1399,6 +1442,7 @@ void le_engine_destroy(le_engine* engine) {
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
   le_restore_shutdown(engine); /* #697 S9: join before the pool frees below */
   le_prefault_shutdown(engine); /* its jobs name the pool buffers below */
+  le_collect_retired(engine, 1);
   le_backing_release(engine, 0); /* #1200: no audio thread any more */
   le_audition_release(engine);   /* #1178: likewise */
   le_render_destroy(engine); /* render recipe jobs (#1202): worker joined */
@@ -1409,6 +1453,7 @@ void le_engine_destroy(le_engine* engine) {
         le_rt_free(ln->pool[i]);
       }
       le_rt_free(ln->standby);
+      le_rt_free(ln->zero_spare);
       for (int s = 0; s < LE_FX_MAX; ++s) {
         le_fx_free_delay(&ln->fx, s);
         le_fx_free_octaver(&ln->fx, s);

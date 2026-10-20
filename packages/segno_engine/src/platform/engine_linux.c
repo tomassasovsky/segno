@@ -40,8 +40,11 @@
 #include "engine_platform.h"  /* the seam */
 
 /* The top of the audio thread's stack that is faulted in and locked before the
- * device starts: the same 256 KB data_callback prefaults (engine_miniaudio.c). */
-#define LE_RT_STACK_LOCK_BYTES ((size_t)256 * 1024)
+ * device starts. data_callback touches 256 KB below ITS frame
+ * (engine_miniaudio.c), and that frame sits under miniaudio's worker and
+ * thread-start frames, so the locked range reaches 64 KB further than the
+ * touched one, which keeps every touched page inside it. */
+#define LE_RT_STACK_LOCK_BYTES ((size_t)320 * 1024)
 static void le_prepare_thread_stack(pthread_t thread, size_t bytes);
 #include "engine_private.h"   /* struct le_engine, enumerate_devices, store_i32;
                                * le_config / le_device_info / LE_MAX_CHANNELS /

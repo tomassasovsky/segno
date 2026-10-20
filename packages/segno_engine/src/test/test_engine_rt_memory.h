@@ -622,6 +622,122 @@ static void test_long_take_is_followed_by_the_prefaulter(void) {
   le_engine_destroy(e);
 }
 
+/* Runs [blocks] callbacks on the audio thread at the device's own pace, so
+ * the background prefaulter races a real-time write head, not a test that
+ * waits for it. */
+static void rt_run_paced(rt_audio_thread* a, int blocks, float level,
+                         int32_t rate) {
+  const int chunk = rate / 10 / RT_BLOCK; /* 100 ms of audio */
+  for (int done = 0; done < blocks; done += chunk) {
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    rt_run(a, chunk, level);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    const long spent =
+        (t1.tv_sec - t0.tv_sec) * 1000000000L + (t1.tv_nsec - t0.tv_nsec);
+    const long due = 100000000L;
+    if (spent < due) {
+      struct timespec rest = {0, due - spent};
+      nanosleep(&rest, NULL);
+    }
+  }
+}
+
+/* A take over a long loop started late in it: the second at the playhead is
+ * faulted in on the press, the background walk starts right after it (not at
+ * frame 0, from where the write head would be long gone), and the frames
+ * before the playhead are a separate fill. Then the take runs at real-time
+ * pace against the real prefaulter thread, with no help from the test. */
+static void test_late_take_is_walked_from_the_playhead(void) {
+  printf("test_late_take_is_walked_from_the_playhead\n");
+  const int32_t rate = 96000;
+  const int sec_blocks = rate / RT_BLOCK;
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, rate, 2, 2, rate * 60) == LE_OK);
+  rt_audio_thread a;
+  CHECK(rt_audio_start(&a, e));
+  CHECK(le_engine_record(e, 0) == LE_OK); /* a 40 s loop, fast */
+  for (int sec = 0; sec < 40; ++sec) {
+    le_prefault_tick(e);
+    rt_run(&a, sec_blocks, 0.3f);
+  }
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  rt_run(&a, 35 * sec_blocks, 0.0f); /* the playhead at about 35 s */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s); /* a poll: the zero spares are made */
+  le_prefault_tick(e);
+  const int32_t p = load_i32(&e->a_master_pos);
+  CHECK(p > 30 * rate);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* immediate, at the playhead */
+  le_prefault_pass_for_test(e); /* one chunk per job */
+  const float* b = e->tracks[1].lanes[0].pool[0];
+  const size_t head = (size_t)rate * LE_PREFAULT_HEAD_SECONDS;
+  const size_t chunk = (size_t)1 << 20;
+  CHECK(rt_resident_pages(b + p, head * sizeof(float)) >=
+        rt_pages(b + p, head * sizeof(float)) - 2); /* on the press */
+  /* the walk's first chunk, which starts a second past the playhead (less
+   * the block of margin the press takes), wherever the playhead is */
+  CHECK(rt_resident_pages(b + p + head, chunk / 2) ==
+        rt_pages(b + p + head, chunk / 2));
+  /* The old live slot is retired, not unmapped, until a block publishes. */
+  CHECK(e->retired_count > 0);
+  rt_run_paced(&a, 3 * sec_blocks, 0.25f, rate); /* the real thread only */
+  le_engine_get_snapshot(e, &s);
+  CHECK(e->retired_count == 0);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  rt_run(&a, sec_blocks, 0.0f);
+  rt_audio_stop(&a);
+  printf("  %ld blocks: %ld faults on the audio thread (worst block %ld)\n",
+         a.blocks_run, a.faults, a.worst_block);
+  CHECK(a.faults == 0);
+  le_engine_destroy(e);
+}
+
+/* Standbys stay inside LE_STANDBY_BUDGET_BYTES: a track whose standbys would
+ * exceed it gets none (its punch-in takes the fresh path, and still does not
+ * fault), and an imported session, with no captures, keeps none. */
+static void test_standbys_stay_in_budget(void) {
+  printf("test_standbys_stay_in_budget\n");
+  const int32_t rate = 96000;
+  const int sec_blocks = rate / RT_BLOCK;
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, rate, 8, 2, rate * 60) == LE_OK);
+  CHECK(set_lane_count_and_publish(e, 0, 8) == LE_OK);
+  rt_audio_thread a;
+  CHECK(rt_audio_start(&a, e));
+  CHECK(le_engine_record(e, 0) == LE_OK); /* 8 lanes x 30 s = 92 MB > 64 MB */
+  for (int sec = 0; sec < 30; ++sec) {
+    le_prefault_tick(e);
+    rt_run(&a, sec_blocks, 0.3f);
+  }
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  le_snapshot s;
+  for (int k = 0; k < 3; ++k) {
+    rt_run(&a, sec_blocks / 4, 0.0f);
+    le_engine_get_snapshot(e, &s);
+    le_prefault_tick(e);
+  }
+  size_t held = 0;
+  for (int t = 0; t < LE_MAX_TRACKS; ++t)
+    for (int l = 0; l < LE_MAX_LANES; ++l)
+      held += (size_t)e->tracks[t].lanes[l].standby_cap * sizeof(float);
+  CHECK(held <= LE_STANDBY_BUDGET_BYTES);
+  CHECK(e->tracks[0].lanes[0].standby == NULL); /* over budget: none */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in on the fresh path */
+  for (int k = 0; k < 4; ++k) {
+    le_engine_get_snapshot(e, &s);
+    le_prefault_tick(e);
+    rt_run(&a, sec_blocks, 0.2f);
+  }
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  rt_run(&a, sec_blocks, 0.0f);
+  rt_audio_stop(&a);
+  printf("  standbys held: %zu KB; %ld blocks, %ld faults on the audio thread\n",
+         held >> 10, a.blocks_run, a.faults);
+  CHECK(a.faults == 0);
+  le_engine_destroy(e);
+}
+
 /* The engine counts every glibc fork() of the process (#1367). Run with no
  * harness thread alive: a glibc fork child would trip over its stack. */
 static void test_engine_counts_forks(void) {
@@ -649,6 +765,8 @@ static void run_rt_memory_tests(void) {
   test_audio_thread_takes_no_page_faults();
   test_audio_thread_takes_no_page_faults_across_forks();
   test_long_take_is_followed_by_the_prefaulter();
+  test_late_take_is_walked_from_the_playhead();
+  test_standbys_stay_in_budget();
   test_engine_counts_forks();
 #endif
 }

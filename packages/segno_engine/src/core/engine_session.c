@@ -19,6 +19,7 @@
 
 #include "engine_core.h"     /* le_push */
 #include "engine_private.h"  /* le_engine, le_track, le_lane, load/store_i32 */
+#include "rt_alloc.h"        /* le_rt_alloc: the imported live slot */
 #include "segno_engine_api.h"
 
 /* Sole control producer reserves room before changing imported material.
@@ -116,19 +117,21 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
   le_lane* ln = &t->lanes[lane];
   const int live = load_i32(&ln->a_live);
   /* The import target must hold the full cap (a later capture over it can
-   * grow to max_loop_frames, and the tail is zeroed to the cap below); undo
-   * may have left a quantized snapshot slot live. Track is EMPTY: safe. */
-  if (!le_lane_ensure_slot(ln, live, engine->max_loop_frames)) {
-    return LE_ERR_INVALID;
-  }
+   * grow to max_loop_frames) with zeros past the take; undo may have left a
+   * quantized snapshot slot live. A fresh mapping gives both: its tail is the
+   * kernel's zero pages, never touched, where a memset of [span, cap)
+   * faulted in and locked the whole cap (#900). The old buffer is retired,
+   * not unmapped (le_retire_buffer). Track is EMPTY. */
   const size_t span = (size_t)frames;
-  const size_t cap = (size_t)engine->max_loop_frames;
+  float* fresh = (float*)le_rt_alloc((size_t)engine->max_loop_frames *
+                                     sizeof(float));
+  if (fresh == NULL) return LE_ERR_INVALID;
   /* #1143: the live slot's PCM changes under a possibly staged identity. */
   le_forget_slot_images(engine, channel);
-  memcpy(ln->pool[live], pcm, span * sizeof(float));
-  if (span < cap) {
-    memset(ln->pool[live] + span, 0, (cap - span) * sizeof(float));
-  }
+  memcpy(fresh, pcm, span * sizeof(float));
+  le_retire_buffer(engine, ln->pool[live]);
+  ln->pool[live] = fresh;
+  ln->pool_cap[live] = engine->max_loop_frames;
   store_i32(&ln->a_len, frames);
   /* #595: imported content IS captured audio — the recoverable flag rides the
    * session round-trip (export only ever covers lanes that recorded, so this
@@ -336,10 +339,13 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
   int32_t want =
       ((frames + LE_LAYER_QUANTUM - 1) / LE_LAYER_QUANTUM) * LE_LAYER_QUANTUM;
   if (want > engine->max_loop_frames) want = engine->max_loop_frames;
-  if (!le_lane_ensure_slot(ln, ordinal, want)) return LE_ERR_INVALID;
+  const int got = le_lane_ensure_slot(ln, ordinal, want);
+  if (got == LE_SLOT_FAILED) return LE_ERR_INVALID;
   le_forget_slot_images(engine, channel); /* #1143: slot content redefined */
   memcpy(ln->pool[ordinal], pcm, (size_t)frames * sizeof(float));
-  if (frames < want) {
+  /* A fresh slot's tail is already zero, and untouched; only a reused one
+   * can hold an older image there. */
+  if (frames < want && got == LE_SLOT_REUSED) {
     memset(ln->pool[ordinal] + frames, 0,
            (size_t)(want - frames) * sizeof(float));
   }

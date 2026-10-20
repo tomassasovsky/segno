@@ -58,7 +58,7 @@
  * covered by the app not forking (#1373), and locked or prefaulted only where
  * noted:
  *   - the audio thread's own stack: it cannot be DONTFORK (glibc's fork child
- *     walks the thread descriptor at its top). Its top 256 KB is faulted in
+ *     walks the thread descriptor at its top). Its top 320 KB is faulted in
  *     and locked before the device starts (engine_linux.c);
  *   - buffers that libraries the callback calls into allocate themselves
  *     (miniaudio's duplex cache, alsa-lib's plug conversion buffers): plain

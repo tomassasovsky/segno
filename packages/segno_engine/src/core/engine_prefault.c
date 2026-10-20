@@ -18,8 +18,11 @@
 #include "rt_alloc.h"
 
 #define LE_PREFAULT_JOBS (LE_MAX_TRACKS * LE_MAX_LANES * 4)
-/* At most this much per job per pass, so a forget never waits long. */
-#define LE_PREFAULT_CHUNK_BYTES ((size_t)4 << 20)
+/* At most this much per job per pass. Each chunk holds mmap_lock for read
+ * while it populates, and a control thread's mmap or munmap (a take start
+ * replacing a slot) queues behind it for write, so the chunk bounds that
+ * wait: 1 MB populates in well under a millisecond. */
+#define LE_PREFAULT_CHUNK_BYTES ((size_t)1 << 20)
 /* A follow job outlives its capture by this many idle passes (2 s), so a
  * quantized or sound-triggered arm that has not fired yet keeps its job. */
 #define LE_PREFAULT_IDLE_PASSES 100
@@ -138,7 +141,7 @@ static void* le_prefault_main(void* arg) {
      * job is given (engine_prefault.h). */
     if (p->njobs > 0 && le_prefault_pass(e, p)) continue; /* behind: again */
     struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
+    clock_gettime(CLOCK_MONOTONIC, &ts); /* the condvar's clock */
     ts.tv_nsec += LE_PREFAULT_PERIOD_NS;
     if (ts.tv_nsec >= 1000000000L) {
       ts.tv_sec += 1;
@@ -157,7 +160,13 @@ static struct le_prefaulter* le_prefaulter_get(le_engine* e) {
       (struct le_prefaulter*)calloc(1, sizeof(struct le_prefaulter));
   if (p == NULL) return NULL;
   pthread_mutex_init(&p->mu, NULL);
-  pthread_cond_init(&p->cv, NULL);
+  /* Timed waits on the monotonic clock, so a wall-clock step (NTP at boot)
+   * never stretches or skips the 20 ms period. */
+  pthread_condattr_t ca;
+  pthread_condattr_init(&ca);
+  pthread_condattr_setclock(&ca, CLOCK_MONOTONIC);
+  pthread_cond_init(&p->cv, &ca);
+  pthread_condattr_destroy(&ca);
   e->prefaulter = p;
   return p;
 }
@@ -172,13 +181,15 @@ static void le_prefault_add(le_engine* e, le_prefault_job job) {
   }
   pthread_mutex_lock(&p->mu);
   int slot = -1;
+  /* One job per (buffer, kind): a take over a loop gives one buffer a follow
+   * job (from the playhead on) and a fill job (the part before it). */
   for (int i = 0; i < p->njobs; ++i) {
-    if (p->jobs[i].buf != job.buf) continue;
-    if (p->jobs[i].cap == job.cap && p->jobs[i].channel == job.channel) {
+    if (p->jobs[i].buf != job.buf || p->jobs[i].channel != job.channel) continue;
+    if (p->jobs[i].cap == job.cap) {
       pthread_mutex_unlock(&p->mu); /* already queued: keep its progress */
       return;
     }
-    slot = i; /* the same buffer, a new shape: replace */
+    slot = i; /* a new shape: replace */
   }
   if (slot < 0 && p->njobs < LE_PREFAULT_JOBS) slot = p->njobs++;
   if (slot < 0) {
@@ -232,6 +243,13 @@ void le_prefault_start(le_engine* e) {
     p->running = pthread_create(&p->thread, NULL, le_prefault_main, e) == 0;
   }
   pthread_mutex_unlock(&p->mu);
+}
+
+void le_prefault_pass_for_test(le_engine* e) {
+  if (e == NULL || e->prefaulter == NULL) return;
+  pthread_mutex_lock(&e->prefaulter->mu);
+  (void)le_prefault_pass(e, e->prefaulter);
+  pthread_mutex_unlock(&e->prefaulter->mu);
 }
 
 void le_prefault_tick(le_engine* e) {
