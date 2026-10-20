@@ -134,6 +134,57 @@ void main() {
       );
     });
 
+    testWidgets('an empty unnamed session says nothing will be saved, and '
+        'Restart reboots without saving', (tester) async {
+      final log = <String>[];
+      final cubit = _cubit(log: log);
+      addTearDown(cubit.close);
+      await _pump(
+        tester,
+        cubit,
+        snapshot: const PowerSnapshot(sessionHasContent: false),
+        save: () async => log.add('save'),
+      );
+
+      expect(
+        find.text(
+          'Playback will stop. This session is empty, so there is nothing '
+          'to save.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('will be saved'), findsNothing);
+      expect(find.textContaining('name it before it saves'), findsNothing);
+      expect(find.byKey(const Key('power_restart')), findsOneWidget);
+      expect(find.byKey(const Key('power_shut_down')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('power_restart')));
+      await tester.pump();
+      await tester.pump();
+      expect(log, ['reboot']);
+      expect(cubit.state.phase, PowerPhase.goodbye);
+    });
+
+    testWidgets('a named session that holds nothing keeps the save promise', (
+      tester,
+    ) async {
+      final cubit = _cubit();
+      addTearDown(cubit.close);
+      await _pump(
+        tester,
+        cubit,
+        snapshot: const PowerSnapshot(
+          currentSessionName: 'friday-set',
+          sessionHasContent: false,
+        ),
+      );
+      expect(
+        find.text('Playback will stop and your session will be saved.'),
+        findsOneWidget,
+      );
+      expect(find.text('friday-set'), findsOneWidget);
+    });
+
     testWidgets('a staged update adds the install line', (tester) async {
       final cubit = _cubit();
       addTearDown(cubit.close);

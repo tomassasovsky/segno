@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
+import 'package:segno/backing/model/backing_state.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/session/cubit/session_cubit.dart';
 
@@ -138,6 +139,40 @@ void main() {
       expect(read().transferInFlight, isFalse);
       expect(read(transfer: true).transferInFlight, isTrue);
       expect(read(transfer: true).takeInFlight, isFalse);
+    });
+
+    test('sessionHasContent: recorded audio, or a prepared or loaded '
+        'backing; an empty rig has none', () {
+      PowerSnapshot read({
+        LooperState looper = const LooperState(),
+        BackingState backing = const BackingState(),
+      }) => powerSnapshotOf(
+        looper: looper,
+        recorder: const PerformanceRecorderIdle(),
+        session: const SessionState(),
+        backing: backing,
+      );
+      const item = BackingItem(digest: 'abc', name: 'drums.wav');
+      expect(read().sessionHasContent, isFalse);
+      expect(
+        read(
+          looper: const LooperState(
+            tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+          ),
+        ).sessionHasContent,
+        isTrue,
+      );
+      expect(
+        read(
+          backing: const BackingState(prepared: [item]),
+        ).sessionHasContent,
+        isTrue,
+      );
+      expect(
+        read(backing: const BackingState(loaded: item)).sessionHasContent,
+        isTrue,
+      );
+      expect(const PowerSnapshot().sessionHasContent, isTrue);
     });
 
     test('maps currentSessionName', () {
