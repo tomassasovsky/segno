@@ -275,18 +275,20 @@ void main() {
 
     test('no two modules of one rack claim the same power key or parameter '
         'group', () {
-      final keys = <String, String>{};
-      for (final module in kFxModules) {
-        for (final key in module.enables) {
-          expect(
-            keys.containsKey(key),
-            isFalse,
-            reason: '$key claimed by both ${keys[key]} and ${module.name}',
-          );
-          keys[key] = module.name;
-        }
-      }
       for (final family in kFxFamilySlugs.keys) {
+        final keys = <String, String>{};
+        for (final module in kFxModules.where((m) => m.appearsIn(family))) {
+          for (final key in module.enables) {
+            expect(
+              keys.containsKey(key),
+              isFalse,
+              reason:
+                  '$key claimed by both ${keys[key]} and ${module.name} in '
+                  '$family',
+            );
+            keys[key] = module.name;
+          }
+        }
         final groups = <String, String>{};
         for (final module in kFxModules.where((m) => m.appearsIn(family))) {
           for (final group in module.groups) {
@@ -345,7 +347,7 @@ void main() {
           final prefix = key.split(' ').first;
           if (kFxUnclaimedGroups.contains(prefix)) continue;
           if (fxModulesOwning(key, preset.family).isNotEmpty) continue;
-          if (fxModuleFor(key) != null) continue;
+          if (fxModuleFor(key, preset.family) != null) continue;
           unaccounted.add(key);
         }
       }
@@ -407,7 +409,7 @@ void main() {
       expect(delay.enables, ['Delay']);
       expect(delay.groups, ['Del']);
 
-      expect(fxModuleFor('Delay')!.name, 'Delay');
+      expect(fxModuleFor('Delay', "Ed's Rack")!.name, 'Delay');
       expect(
         fxModulesOwning('Del Feedback', "Ed's Rack").map((m) => m.name),
         ['Delay'],
@@ -427,7 +429,7 @@ void main() {
     });
 
     test("the Dub Rack's delay is the dub delay, powered by `Dub Delay`", () {
-      expect(fxModuleFor('Dub Delay')!.name, 'Dub delay');
+      expect(fxModuleFor('Dub Delay', 'Dub Rack')!.name, 'Dub delay');
       expect(
         fxModulesOwning('Del Feedback', 'Dub Rack').map((m) => m.name),
         ['Dub delay'],
@@ -441,8 +443,8 @@ void main() {
     });
 
     test('`Para EQ` powers the parametric EQ of the Dub and Lo-Fi racks', () {
-      expect(fxModuleFor('Para EQ')!.name, 'Parametric EQ');
       for (final family in ['Dub Rack', 'Lo-Fi Rack']) {
+        expect(fxModuleFor('Para EQ', family)!.name, 'Parametric EQ');
         expect(
           fxModulesOwning('EQ Mid Q', family).map((m) => m.name),
           ['Parametric EQ'],
@@ -454,10 +456,38 @@ void main() {
       );
     });
 
-    test('`Smart Tune` powers Smart Tune, and `Mode` is a parameter', () {
-      expect(fxModuleFor('Smart Tune')!.name, 'Smart tune');
-      expect(fxModuleFor('Mode'), isNull);
+    test("the Rhythmic Rack's EQ is the parametric EQ, though `EQ` powers "
+        'it', () {
+      // Its controls are the parametric EQ's without the Q, and none of them
+      // is a four-band EQ's.
+      expect(fxModuleFor('EQ', 'Rhythmic Rack')!.name, 'Parametric EQ');
+      expect(
+        fxModulesOwning('EQ Mid Gain', 'Rhythmic Rack').map((m) => m.name),
+        ['Parametric EQ'],
+      );
+      expect(fxModuleFor('EQ', 'Drum Rack')!.name, 'Four-band EQ');
     });
+
+    test('`Smart Tune` powers Smart Tune, and `Mode` is a parameter', () {
+      expect(fxModuleFor('Smart Tune', 'Vocal Tuner Rack')!.name, 'Smart tune');
+      expect(fxModuleFor('Mode', 'Vocal Tuner Rack'), isNull);
+    });
+
+    test(
+      'Smart Tune and the Harmonizer belong to the Vocal Tuner Rack only',
+      () {
+        for (final family in kFxFamilySlugs.keys) {
+          if (family == 'Vocal Tuner Rack') continue;
+          expect(fxModulesOwning('Mode', family), isEmpty, reason: family);
+          expect(
+            fxModulesOwning('Voice 1 Vol', family),
+            isEmpty,
+            reason: family,
+          );
+          expect(fxModuleFor('Smart Tune', family), isNull, reason: family);
+        }
+      },
+    );
 
     test('Smart Tune and the Harmonizer both read the shared Vocal Tuner '
         'parameters', () {
@@ -520,7 +550,7 @@ void main() {
         'Degrade',
       ],
       'Rhythmic Rack': [
-        'Four-band EQ',
+        'Parametric EQ',
         'Low-pass filter',
         'Delay',
         'Reverb',
@@ -659,37 +689,55 @@ void main() {
       for (final row in kFxAddableEffects) {
         final module = fxModuleNamed(row.module);
         expect(module, isNotNull, reason: row.label);
-        final family = row.family;
-        if (family == null) continue;
-        expect(variants(module!), contains(family), reason: row.label);
+        expect(variants(module!), contains(row.family), reason: row.label);
       }
     });
 
-    test('a kind with one variant takes it; of the kinds with several, the '
-        'plan names the default for the EQs, delay and reverb only', () {
-      final undecided = <String>[];
-      final chosen = <String>[];
-      for (final row in kFxAddableEffects) {
-        final distinct = {
-          for (final keys in variants(fxModuleNamed(row.module)!).values)
-            (keys.toList()..sort()).join('|'),
-        };
-        if (distinct.length == 1) {
-          expect(row.family, isNotNull, reason: row.label);
-        } else if (row.family == null) {
-          undecided.add(row.label);
-        } else {
-          chosen.add(row.label);
-        }
-      }
-      expect(chosen, ['Delay', 'Four-band EQ', 'Reverb']);
-      expect(undecided, [
+    test('the pedals with several variants are the ones the plan and the '
+        'owner chose a default for', () {
+      final several = [
+        for (final row in kFxAddableEffects)
+          if ({
+                for (final keys in variants(fxModuleNamed(row.module)!).values)
+                  (keys.toList()..sort()).join('|'),
+              }.length >
+              1)
+            row.label,
+      ];
+      expect(several, [
+        'Compressor',
+        'Delay',
+        'Distortion',
+        'Doubler',
+        'Four-band EQ',
+        'Low-pass Filter',
+        'Modulation',
+        'Parametric EQ',
+        'Reverb',
+      ]);
+    });
+
+    test("the owner's five defaults expose the most controls of their "
+        'pedal', () {
+      for (final label in [
         'Compressor',
         'Distortion',
         'Doubler',
         'Low-pass Filter',
         'Modulation',
-      ]);
+      ]) {
+        final row = kFxAddableEffects.firstWhere((r) => r.label == label);
+        final all = variants(fxModuleNamed(row.module)!);
+        final chosen = all[row.family]!.length;
+        for (final entry in all.entries) {
+          if (entry.key == row.family) continue;
+          expect(
+            chosen,
+            greaterThan(entry.value.length),
+            reason: '$label: ${row.family} against ${entry.key}',
+          );
+        }
+      }
     });
 
     test('the plan-named defaults are the variants it describes', () {
@@ -697,6 +745,15 @@ void main() {
 
       // Ed's four-band EQ: all fourteen controls and its power key.
       expect(variants(module('Four-band EQ'))["Ed's Rack"], hasLength(15));
+      // The Dub Rack's parametric EQ, the same as the Lo-Fi Rack's.
+      expect(
+        variants(module('Parametric EQ'))['Dub Rack'],
+        variants(module('Parametric EQ'))['Lo-Fi Rack'],
+      );
+      expect(
+        variants(module('Parametric EQ'))['Dub Rack'],
+        contains('EQ Mid Q'),
+      );
       // The mode delay and the mode reverb with brightness.
       expect(variants(module('Delay'))["Ed's Rack"], {
         'Delay',
