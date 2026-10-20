@@ -27,9 +27,99 @@ extern "C" {
 
 /* --- Phase-vocoder octaver (LE_FX_OCTAVER, mode p3 < 0.5) tuning ------------- */
 #define LE_PV_N 1024             /* STFT window (power of two) */
-#define LE_PV_HOP 256            /* 4x overlap (HOP = N/4: the clean-PV minimum) */
+#define LE_PV_HOP 256            /* 4x overlap (HOP = N/4: the clean-PV minimum);
+                                  * a POWER OF TWO: le_pv_hop_phase masks with
+                                  * LE_PV_HOP - 1 */
 #define LE_PV_BINS (LE_PV_N / 2 + 1)
 #define LE_PV_LIFTER (LE_PV_N / 24) /* ~42: cepstral envelope lifter cutoff */
+
+/* Analysis-hop stagger (#915). Every octaver instance used to start its hop
+ * counter at 0, so all instances ran their four length-LE_PV_N FFTs on the
+ * same sample index, forever: at 64-frame blocks one callback in four ran
+ * every instance's FFTs. Measured on the console at 96 kHz / 64 frames, two
+ * synchronized stereo octavers missed the 667 us deadline on every heavy
+ * block.
+ *
+ * An instance's hop PHASE is one of four QUARTERS of the hop:
+ *
+ *     phase = LE_PV_STAGGER_QUARTER * ((owner quarter + slot) mod 4)
+ *
+ * and its heavy ticks (the PV frame, or PSOLA's YIN pass) fall on the engine
+ * frames c with (c + phase) mod LE_PV_HOP equal to 0 (#941). The hop is
+ * anchored to the engine's own frame count, not to the instant the instance
+ * was reset, so the spread holds for instances added at any time: one added
+ * to a second track long after the first keeps its quarter, and so does a
+ * slot a chain stomp re-enables late. With callbacks of a quarter's length
+ * (64 frames at the console's period), four instances on four quarters run
+ * their heavy ticks in four different callbacks:
+ *
+ *  - slots of one chain whose indexes differ mod 4, so any four consecutive
+ *    slots use all four;
+ *  - the same slot on tracks t .. t+3 (lane 0), on lanes l .. l+3 of one
+ *    track, on monitors c .. c+3, on output buses k .. k+3, and on all-tracks
+ *    instances k .. k+3.
+ *
+ * With four callbacks per hop, a fifth instance always shares one, and two
+ * axes cannot both be kept apart: slot s on track t + 1 shares a quarter
+ * with slot s + 1 on track t. Spreading the work does not reduce it; the hop
+ * split in the rack plan (#887, part 9) makes the cost independent of the
+ * phase. */
+#define LE_PV_STAGGER_QUARTER (LE_PV_HOP / 4)
+
+/* Whether [ent] may play from a lap that began at engine frame [top] (#941):
+ * always for a print without an octaver, and for one with an octaver only on
+ * the hop position it was rendered from. */
+static inline int le_wet_entry_hop_matches(const le_wet_entry* ent,
+                                           uint32_t top) {
+  return ent->hop_tag == 0 ||
+         ent->hop_tag == (top & (uint32_t)(LE_PV_HOP - 1)) + 1u;
+}
+
+static inline int32_t le_fx_hop_mask(uint32_t p) {
+  return (int32_t)(p & (uint32_t)(LE_PV_HOP - 1));
+}
+
+/* The base phase of an owner whose quarter is [q] (taken mod 4). */
+static inline int32_t le_fx_quarter_seed(uint32_t q) {
+  return (int32_t)((q & 3u) * (uint32_t)LE_PV_STAGGER_QUARTER);
+}
+
+/* The hop-stagger seed (le_fx_state::hop_seed) of track [track]'s lane
+ * [lane] (le_fx_bus_hop_seed: its bus). le_engine_create seeds
+ * every owner through these functions, and the OFFLINE renderers that stand
+ * in for a live owner (the wet cache, the render recipe, the performance stem
+ * render) copy the seed of the owner they reproduce: a different seed is a
+ * different phase-vocoder realization of the same octaver, which the cache
+ * would swap in at a loop top as a step (a click), and which a stem would
+ * export as something other than what was heard.
+ *
+ * Lane l of track t takes quarter t + l, so the same slot on consecutive
+ * tracks and on consecutive lanes spreads. The bus takes t + 2: with nine
+ * owners per track and four quarters something must share, and lane 0 and
+ * the bus are the pair a track most often uses together. The other kinds are
+ * offset so the first of each runs apart from track 0's lane 0 and bus:
+ * monitor c takes c + 1 (a live input's effects beside a loop's), output bus
+ * k takes k + 3. The all-tracks instances take k + 2, the one pairing left to
+ * share with a track bus, because a chain on every track at once and one on
+ * a single track's bus are the least likely to both hold pitch effects.
+ *
+ * Unsigned arithmetic, masked: perf_render's track index comes from a
+ * manifest on disk and is only checked for being non-negative. */
+static inline int32_t le_fx_lane_hop_seed(int32_t track, int32_t lane) {
+  return le_fx_quarter_seed((uint32_t)track + (uint32_t)lane);
+}
+static inline int32_t le_fx_bus_hop_seed(int32_t track) {
+  return le_fx_quarter_seed((uint32_t)track + 2u);
+}
+static inline int32_t le_fx_monitor_hop_seed(int32_t source) {
+  return le_fx_quarter_seed((uint32_t)source + 1u);
+}
+static inline int32_t le_fx_output_hop_seed(int32_t bus) {
+  return le_fx_quarter_seed((uint32_t)bus + 3u);
+}
+static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
+  return le_fx_quarter_seed((uint32_t)bus + 2u);
+}
 
 /* --- PSOLA octaver (mode p3 >= 0.5) tuning ---------------------------------- */
 #define LE_PSOLA_AHOP 256    /* re-run pitch detection every this many samples */
@@ -116,6 +206,28 @@ int le_fx_type_drains(int32_t type);
  * once after creating/zeroing a standalone le_fx_state (lane/monitor reset,
  * offline render, VST3 plugin processors, test harnesses). */
 void le_fx_enable_seed_settled(le_fx_state* fx, int slot);
+
+/* Settles slot [slot]'s enable crossfade at [effective]: settled wet when 1,
+ * settled bypass when 0. How an offline render (the wet cache, the render
+ * recipe, the stem render) starts each slot where the live owner holds it:
+ * a calloc'd zero state would fade the chain in at frame 0, and an enabled
+ * seed on a disabled slot would fade out an effect that was never heard. */
+void le_fx_enable_seed_at(le_fx_state* fx, int slot, int effective);
+
+/* Seeds slot [slot]'s OCTAVER runtime settled at [params]: the three param
+ * smoothers already at their targets and the mode crossfade already resolved
+ * onto the mode params[3] selects. The octaver's analogue of
+ * le_fx_enable_seed_settled, for an offline render standing in for a lane
+ * whose octaver has been running since before the capture: from
+ * le_fx_entry_reset's state the shift smoother ramps ~5 ms up from unison,
+ * and a PSOLA slot spends ~15 ms fading the wet leg out and ~15 ms back in
+ * before the mode flips, none of which the live lane was doing.
+ *
+ * The analysis-hop schedule needs no settling: it follows the clock the
+ * render sets (le_fx_state::clock), which reproduces the live one. Caller
+ * passes an octaver slot (no type check). Control thread / offline only,
+ * after le_fx_entry_reset. */
+void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
 
 /* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.
  * For a slot the chain will NOT process while its effective enabled bit is 0

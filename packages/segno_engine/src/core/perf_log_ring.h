@@ -165,7 +165,10 @@ typedef enum le_perf_log_code {
                                * sampled BEFORE lane capture (the #262 root
                                * cause); it also carries the loop iteration, so
                                * a multi-loop arm image's sub-cycle is no longer
-                               * ambiguous (#260). Exactly one per capture. */
+                               * ambiguous (#260). Exactly one per capture.
+                               * From events.log version 13 it also carries
+                               * fx_clock, the engine frame of capture frame 0
+                               * (#941). */
   LE_PLOG_TRANSPORT_HELD = 316, /* the shared transport became HELD mid-capture:
                                  * nothing is playing/recording/overdubbing, so
                                  * advance_transport_frame pins the loop clock
@@ -278,7 +281,7 @@ typedef struct le_log_command {
     struct { int32_t channel; uint32_t image_id; int32_t state, phase; } restore_log;
     struct { int32_t channel, slot, previous; uint32_t generation; } peel_log;
     struct { int32_t channel, slot, len; uint32_t image_id; } length_log;
-    struct { int32_t position, master_len, iteration; } perf_arm;
+    struct { int32_t position, master_len, iteration; uint32_t fx_clock; } perf_arm;
     struct { int32_t value; uint32_t sequence; } clock;
     struct { int32_t base_frames, loop_beats; } session;
   };
