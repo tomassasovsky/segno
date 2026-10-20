@@ -71,6 +71,27 @@ void main() {
       expect(entry.params[1], closeTo(0.6, 1e-9));
     });
 
+    test(
+      'of the add-an-effect rows, only the kinds this engine builds play',
+      () {
+        final playable = [
+          for (final row in kFxAddableEffects)
+            if (fxModuleBuild(fxModuleNamed(row.module)!).type != null)
+              row.label,
+        ];
+
+        expect(playable, [
+          'Delay',
+          'Distortion',
+          'Dub Delay',
+          'Low-pass Filter',
+          'Octaver',
+          'Overdrive',
+          'Reverb',
+        ]);
+      },
+    );
+
     test("the reverb's brightness is NOT wired into the engine's damping", () {
       final reverb = fxModuleBuild(_module('Reverb'));
 
