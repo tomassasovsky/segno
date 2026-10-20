@@ -508,10 +508,18 @@ void le_lane_prefault_head(le_lane* ln, int32_t slot, int32_t sample_rate);
 /* Frees the lane's standby shadow (engine_private.h). The caller first drops
  * any prefaulter job on it (le_prefault_forget) unless the prefaulter is
  * already cleared or shut down. Control thread. */
-void le_lane_release_standby(le_lane* ln);
+void le_lane_release_standby(le_lane_spares* sp);
 
 /* Frees the lane's untouched zero spare (engine_private.h). Control thread. */
-void le_lane_release_zero_spare(le_lane* ln);
+void le_lane_release_zero_spare(le_lane_spares* sp);
+
+/* The spares of lane [ln] of [e] (le_engine.spares). */
+static inline le_lane_spares* le_lane_spares_of(le_engine* e, const le_lane* ln) {
+  const size_t t = (size_t)((const char*)ln - (const char*)e->tracks) /
+                   sizeof(le_track);
+  const size_t l = (size_t)(ln - e->tracks[t].lanes);
+  return &e->spares[t][l];
+}
 
 /* Frees [buf], a pool buffer the callback may still name (it can be inside a
  * block that loaded it), once the next command this thread posts has

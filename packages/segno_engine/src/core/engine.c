@@ -123,17 +123,17 @@ void le_lane_prefault_head(le_lane* ln, int32_t slot, int32_t sample_rate) {
   le_rt_prefault(ln->pool[slot], (size_t)head * sizeof(float));
 }
 
-void le_lane_release_standby(le_lane* ln) {
-  le_rt_free(ln->standby);
-  ln->standby = NULL;
-  ln->standby_cap = 0;
-  store_i32(&ln->a_standby_ready, 0);
+void le_lane_release_standby(le_lane_spares* sp) {
+  le_rt_free(sp->standby);
+  sp->standby = NULL;
+  sp->standby_cap = 0;
+  store_i32(&sp->a_standby_ready, 0);
 }
 
-void le_lane_release_zero_spare(le_lane* ln) {
-  le_rt_free(ln->zero_spare);
-  ln->zero_spare = NULL;
-  ln->zero_spare_cap = 0;
+void le_lane_release_zero_spare(le_lane_spares* sp) {
+  le_rt_free(sp->zero_spare);
+  sp->zero_spare = NULL;
+  sp->zero_spare_cap = 0;
 }
 
 void le_collect_retired(le_engine* e, int all) {
@@ -586,8 +586,8 @@ static int le_engine_reset_material(le_engine* engine,
         ln->pool[i] = NULL;
         ln->pool_cap[i] = 0;
       }
-      le_lane_release_standby(ln);
-      le_lane_release_zero_spare(ln);
+      le_lane_release_standby(&engine->spares[t][l]);
+      le_lane_release_zero_spare(&engine->spares[t][l]);
       ln->image_gain = 1.0f;
       ln->image_pan = 0.0f;
       store_i32(&ln->a_live, 0);
@@ -1488,8 +1488,8 @@ void le_engine_destroy(le_engine* engine) {
       for (int i = 0; i < LE_POOL_SLOTS; ++i) {
         le_rt_free(ln->pool[i]);
       }
-      le_rt_free(ln->standby);
-      le_rt_free(ln->zero_spare);
+      le_rt_free(engine->spares[t][l].standby);
+      le_rt_free(engine->spares[t][l].zero_spare);
       for (int s = 0; s < LE_FX_MAX; ++s) {
         le_fx_free_delay(&ln->fx, s);
         le_fx_free_octaver(&ln->fx, s);
