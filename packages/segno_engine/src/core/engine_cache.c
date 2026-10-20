@@ -775,6 +775,22 @@ static int le_cache_copy_key_matches(le_engine* e, const le_cache_job* job) {
  * debounce [B2][B3], publish a retained match, or enqueue a render when the
  * gates allow. Every "don't cache" outcome degrades to live — never blocks
  * audio. */
+/* Whether a print of [types][0, count) over a loop of [len] frames could not
+ * equal live (#941). The octaver's hop is anchored to the engine clock, so on
+ * a loop that is not a whole number of hops it falls on different frames of
+ * the loop each lap: the live octaver output differs lap to lap, and a print
+ * of one lap would step at the loop top where it swaps in. Such a chain
+ * plays live. On a loop of whole hops every lap is the same, and the print
+ * equals live at whichever loop top it engages. */
+static int le_cache_hop_unprintable(const int32_t* types, int32_t count,
+                                    int32_t len) {
+  if (len <= 0 || len % LE_PV_HOP == 0) return 0;
+  for (int32_t s = 0; s < count; ++s) {
+    if (types[s] == LE_FX_OCTAVER) return 1;
+  }
+  return 0;
+}
+
 static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
                                    int64_t cap, int t, int l) {
   le_track* tr = &e->tracks[t];
@@ -824,6 +840,11 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   if (has_plugin) {
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason = LE_CACHE_REASON_PLUGIN;
+    return;
+  }
+  if (le_cache_hop_unprintable(types, count, load_i32(&ln->a_len))) {
+    lc->state = LE_CACHE_GAVE_UP;
+    lc->reason = LE_CACHE_REASON_HOP;
     return;
   }
   /* lc->reason is deliberately NOT cleared here: a RENDER_FAILED give-up
@@ -1040,6 +1061,11 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   if (has_plugin) {
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason = LE_CACHE_REASON_PLUGIN;
+    return;
+  }
+  if (le_cache_hop_unprintable(types, count, load_i32(&tr->lanes[0].a_len))) {
+    lc->state = LE_CACHE_GAVE_UP;
+    lc->reason = LE_CACHE_REASON_HOP;
     return;
   }
 

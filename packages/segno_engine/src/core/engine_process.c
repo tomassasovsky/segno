@@ -6601,8 +6601,10 @@ static inline void snapshot_lane_fx(
        * its effective bit is 0, settle it to bypass now so a processing gap
        * never strands a ramp mid-fade — resumption then always re-enters
        * through fx_apply_chain's clean settled-edge reset [B7]. Enabled
-       * slots keep their state (engaged effects have always persisted
-       * across gaps). Audio-thread write to audio-owned DSP state. */
+       * slots keep their state across gaps, except that an octaver whose
+       * hop counter fell off the engine clock restarts on its own schedule
+       * when it is next ticked (fx_octaver, #941). Audio-thread write to
+       * audio-owned DSP state. */
       for (int s = 0; s < LE_FX_MAX; ++s) {
         if (le_fx_enable_settled_bypassed(&ln->fx, s)) continue;
         const int unprocessed =
@@ -8323,6 +8325,7 @@ void le_engine_master_bus_frame_for_test(le_engine* e, float* out, uint32_t f,
   float out_peak_ch[LE_MAX_CHANNELS] = {0};
   master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
                    lim_release, out_sumsq, frame_out_peak, out_peak_ch);
+  atomic_fetch_add_explicit(&e->a_fx_frame, 1u, memory_order_relaxed);
 }
 
 /* ---- the real-time DSP core ---- */
@@ -9002,8 +9005,6 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * grid and count-in starts can publish another image inside this block. */
   e->capture_image_dirty = 0;
   for (uint32_t f = 0; f < frames; ++f) {
-    atomic_store_explicit(&e->a_fx_frame, e->fx_clock_base + f,
-                          memory_order_relaxed);
     e->perf.tap_frame = perf_frame_base + f;
     for (int t = 0; t < tc; ++t)
       e->tracks[t].fade_sample = le_fade_tick(&e->tracks[t].fade, sr);

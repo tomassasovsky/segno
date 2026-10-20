@@ -33364,7 +33364,8 @@ static void test_track_output_fx_lifecycle(void) {
  * at the next top the live chain's state equals the render's kept second pass
  * exactly (render-twice-keep-second), making the comparison near-bit-exact. */
 
-#define CACHE_LOOP 14000 /* > settle window, so publish lands in loop 1 */
+#define CACHE_LOOP 14080 /* > settle window, so publish lands in loop 1;
+                          * a whole number of octaver hops (#941) */
 /* The settle window in frames at the tests' 48 kHz, derived from the engine's
  * own constant (engine_cache.h) plus a margin, so a tuning change moves every
  * cache test with it. */
@@ -33632,6 +33633,28 @@ static void test_a_pre_channel_edit_drops_the_print(void) {
   drain(a);
   pump_frames(a, 0.0f, 256);
   CHECK(cache_engaged(a, 0, 0) == 0);
+  le_engine_destroy(a);
+}
+
+/* An octaver's hop is anchored to the engine clock (#941), so on a loop that
+ * is not a whole number of hops it lands on other frames of the loop each lap
+ * and no one lap's print can equal live. Such a lane stays live and says why;
+ * the same chain on a loop of whole hops prints (the parity sweep below). */
+static void test_cache_octaver_on_a_partial_hop_loop_stays_live(void) {
+  printf("test_cache_octaver_on_a_partial_hop_loop_stays_live\n");
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP - 80, 1.0f); /* 54.7 hops */
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_OCTAVER) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE + CACHE_LOOP);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.state == LE_CACHE_GAVE_UP);
+  CHECK(info.reason == LE_CACHE_REASON_HOP);
+  CHECK(info.renders == 0);
+  CHECK(info.engaged == 0);
   le_engine_destroy(a);
 }
 
@@ -34088,7 +34111,7 @@ static void test_cache_midrender_rev_bump_aborts(void) {
   le_engine* a = le_engine_create();
   le_engine_configure(a, 48000, 1, 1, 200000);
   le_engine_set_fx_cache_cap(a, LE_CACHE_DEFAULT_CAP_BYTES);
-  const int32_t len = 190000; /* long + heavy: the render outlives the test's
+  const int32_t len = 190208; /* long + heavy (whole octaver hops, #941): the render outlives the test's
                                * punch-in by orders of magnitude */
   le_engine_record(a, 0);
   pump_frames(a, 1.0f, len);
@@ -34163,7 +34186,7 @@ static void test_cache_destroy_during_active_render(void) {
     le_engine* a = le_engine_create();
     le_engine_configure(a, 48000, 1, 1, 200000);
     le_engine_set_fx_cache_cap(a, LE_CACHE_DEFAULT_CAP_BYTES);
-    const int32_t len = 190000; /* a long, heavy render */
+    const int32_t len = 190208; /* a long, heavy render, whole octaver hops */
     le_engine_record(a, 0);
     pump_frames(a, 1.0f, len);
     le_engine_record(a, 0);
@@ -37921,6 +37944,7 @@ int main(void) {
   test_a_post_edit_leaves_the_print_standing();
   test_a_pre_channel_edit_drops_the_print();
   test_cache_cached_matches_live_every_builtin();
+  test_cache_octaver_on_a_partial_hop_loop_stays_live();
   test_cache_cached_matches_live_multi_slot_chain();
   test_cache_volume_move_invalidates();
   test_cache_param_edit_falls_back_within_one_buffer();
