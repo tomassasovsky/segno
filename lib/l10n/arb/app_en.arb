@@ -3998,6 +3998,85 @@
     "@fxScaleUnverified": {
         "description": "Note under a control whose real-world units were never recovered."
     },
+    "fxValuePercent": "{percent}%",
+    "@fxValuePercent": {
+        "description": "A built-in effect parameter's value in whole percent.",
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "fxValueMs": "{milliseconds} ms",
+    "@fxValueMs": {
+        "description": "A built-in effect parameter's time in whole milliseconds, used at and above 100 ms.",
+        "placeholders": {
+            "milliseconds": {
+                "type": "int"
+            }
+        }
+    },
+    "fxValueMsFine": "{milliseconds} ms",
+    "@fxValueMsFine": {
+        "description": "A built-in effect parameter's time below 100 ms, with one decimal.",
+        "placeholders": {
+            "milliseconds": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueHz": "{hertz} Hz",
+    "@fxValueHz": {
+        "description": "A built-in effect parameter's frequency in whole hertz, used from 100 Hz up to 1000 Hz.",
+        "placeholders": {
+            "hertz": {
+                "type": "int"
+            }
+        }
+    },
+    "fxValueHzFine": "{hertz} Hz",
+    "@fxValueHzFine": {
+        "description": "A built-in effect parameter's frequency below 100 Hz, with one decimal.",
+        "placeholders": {
+            "hertz": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueKhz": "{kilohertz} kHz",
+    "@fxValueKhz": {
+        "description": "A built-in effect parameter's frequency at and above 1000 Hz, in kilohertz with one decimal.",
+        "placeholders": {
+            "kilohertz": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "fxValueTimes": "{factor}x",
+    "@fxValueTimes": {
+        "description": "A built-in effect parameter's gain factor with one decimal, such as the drive amount.",
+        "placeholders": {
+            "factor": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
     "fxPartOrdinal": "Part {number}",
     "@fxPartOrdinal": {
         "description": "A recorded part with no input to name it after.",
