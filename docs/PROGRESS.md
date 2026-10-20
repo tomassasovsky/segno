@@ -45,6 +45,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
 | #1270 | Device and appliance pages | plan | merge-gate | `claude/device-pages-plan-1270` |
 | #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
+| #1382 | Catalogue fixes for the Looper X racks (part 3 of #887) | build | merge-gate | `claude/fx-catalogue-1382` |
 
 ---
 
