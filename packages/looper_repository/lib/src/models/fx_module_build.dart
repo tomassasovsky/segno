@@ -137,6 +137,15 @@ const Map<String, FxModuleBuild> kFxModuleBuilds = {
   ),
 };
 
+/// Whether the chain entry [effect] processes sound on this build.
+///
+/// Read from the entry's engine type, never from its [BuiltInEffect.module]:
+/// an entry keeps the type it was built with, so a module that this build can
+/// process still plays nothing when its entry was saved as a passthrough, and
+/// only rebuilding it from its [BuiltInEffect.source] values changes that.
+bool fxEntryPlayable(BuiltInEffect effect) =>
+    effect.type != TrackEffectType.none;
+
 /// The source key that carries a rack's own level.
 const String kFxRackLevelKey = 'Master Vol';
 

@@ -279,7 +279,9 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
     final built = effect is BuiltInEffect ? effect : null;
     final name = fxPedalName(l10n, effect);
     final art = effect.module == null ? null : fxModuleArt(effect.module!);
-    final params = built?.type.params ?? const <FxParamInfo>[];
+    final params = built != null && fxEntryPlayable(built)
+        ? built.type.params
+        : const <FxParamInfo>[];
     return SizedBox(
       width: kFxPedalWidth,
       height: 650,
