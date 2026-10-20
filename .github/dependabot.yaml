@@ -1,10 +1,14 @@
 version: 2
 updates:
+  # Bumps go to the trunk, where all work lands; master only receives the
+  # trunk when it is released.
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "claude/segno-integration"
     schedule:
       interval: "daily"
   - package-ecosystem: "pub"
     directory: "/"
+    target-branch: "claude/segno-integration"
     schedule:
       interval: "daily"
