@@ -1,92 +1,6 @@
 import 'package:fx_catalogue/src/fx_family.dart';
 import 'package:fx_catalogue/src/fx_preset.dart';
 
-/// The kinds of effect the factory racks are built from.
-///
-/// The Looper X runs one generic DSP module per kind, and each rack exposes a
-/// subset of that module's parameters: its variant. Two pedals of one kind
-/// (the Delay and the Dub delay, the four-band and the parametric EQ) are two
-/// variants of it.
-enum FxKind {
-  /// Equalizer.
-  eq,
-
-  /// Compressor.
-  compressor,
-
-  /// Transient shaper.
-  transient,
-
-  /// High-pass filter with a gate.
-  hpGate,
-
-  /// Doubler.
-  doubler,
-
-  /// Chorus.
-  chorus,
-
-  /// Wah.
-  wah,
-
-  /// Overdrive.
-  overdrive,
-
-  /// Distortion.
-  distortion,
-
-  /// Vinyl simulation.
-  vinyl,
-
-  /// Sample-rate and filter degrader.
-  degrade,
-
-  /// Low-pass filter.
-  lpf,
-
-  /// Spring reverb.
-  spring,
-
-  /// The Dub Rack's dub reverb.
-  dubVerb,
-
-  /// The Dub Rack's ambience reverb.
-  ambVerb,
-
-  /// Pitch shifter.
-  pitchShift,
-
-  /// Delay.
-  delay,
-
-  /// Reverb.
-  reverb,
-
-  /// Amplifier with cabinet.
-  ampCab,
-
-  /// Modulation: chorus, phaser or flanger.
-  mod,
-
-  /// Slicer.
-  slicer,
-
-  /// Pumper.
-  pumper,
-
-  /// Whammy.
-  whammy,
-
-  /// Two-voice octaver.
-  dualOctaver,
-
-  /// Pitch correction.
-  smartTune,
-
-  /// Harmonizer.
-  harmonizer,
-}
-
 /// One pedal a factory rack can hold: how the source spells its power, which
 /// parameter groups belong to it, and which illustrations the catalogue
 /// carries for it.
@@ -107,7 +21,6 @@ class FxModule {
   /// Creates an [FxModule].
   const FxModule({
     required this.name,
-    required this.kind,
     required this.enables,
     required this.groups,
     required this.artwork,
@@ -117,9 +30,6 @@ class FxModule {
 
   /// The pedal's display name.
   final String name;
-
-  /// The kind of effect this pedal is.
-  final FxKind kind;
 
   /// The keys the source uses for this module's POWER, any one of which may
   /// appear in a given preset.
@@ -178,13 +88,16 @@ class FxModule {
   bool appearsIn(String family) => families?.contains(family) ?? true;
 }
 
-const Set<String> _paraEqFamilies = {'Dub Rack', 'Lo-Fi Rack'};
+const Set<String> _paraEqFamilies = {
+  'Dub Rack',
+  'Lo-Fi Rack',
+  'Rhythmic Rack',
+};
 
 const Set<String> _fourBandEqFamilies = {
   'Drum Rack',
   "Ed's Rack",
   'Guitar Rack',
-  'Rhythmic Rack',
   'Studio Rack',
   'Vocal Rack',
   'Vocal Tuner Rack',
@@ -202,6 +115,8 @@ const Set<String> _delayFamilies = {
   'Vocal Rack',
   'Vocal Tuner Rack',
 };
+
+const Set<String> _vocalTunerFamilies = {'Vocal Tuner Rack'};
 
 /// The Vocal Tuner parameters that both Smart Tune and the Harmonizer read.
 const List<String> _vocalTunerShared = [
@@ -235,7 +150,6 @@ const List<String> _vocalTunerShared = [
 const List<FxModule> kFxModules = [
   FxModule(
     name: 'Amp',
-    kind: FxKind.ampCab,
     enables: ['Amp'],
     // `Cab` is a value of the amp, not a module: it is space-free like a
     // power key but continuous, so it is a parameter that happens to be
@@ -245,28 +159,24 @@ const List<FxModule> kFxModules = [
   ),
   FxModule(
     name: 'Compressor',
-    kind: FxKind.compressor,
     enables: ['Comp', 'Compressor'],
     groups: ['Comp'],
     artwork: ['Compressor2', 'Compressor3', 'Compressor4'],
   ),
   FxModule(
     name: 'Overdrive',
-    kind: FxKind.overdrive,
     enables: ['OvDrive'],
     groups: ['OD'],
     artwork: ['Overdrive2'],
   ),
   FxModule(
     name: 'Distortion',
-    kind: FxKind.distortion,
     enables: ['Dist', 'Distort'],
     groups: ['Dist'],
     artwork: ['Distort1', 'Distort2'],
   ),
   FxModule(
     name: 'Four-band EQ',
-    kind: FxKind.eq,
     enables: ['EQ', 'EQ 4-Band'],
     groups: ['EQ'],
     artwork: ['EQ3', 'EQ4', 'EQ5', 'EQ8'],
@@ -274,10 +184,13 @@ const List<FxModule> kFxModules = [
   ),
   FxModule(
     name: 'Parametric EQ',
-    kind: FxKind.eq,
     // The Dub and Lo-Fi racks power their EQ with `Para EQ` and give it the
-    // same `EQ` prefix the four-band EQ uses elsewhere.
-    enables: ['Para EQ'],
+    // same `EQ` prefix the four-band EQ uses elsewhere. The Rhythmic Rack
+    // powers its EQ with `EQ`, the four-band EQ's power key, but its controls
+    // are the parametric EQ's (EQ Low Cut, EQ High Cut, EQ Mid Freq, EQ Mid
+    // Gain) without the Q, and it shares no control with any four-band EQ.
+    // The controls are what the pedal is, so it is this module.
+    enables: ['Para EQ', 'EQ'],
     groups: ['EQ'],
     // The binary's single-effect artwork list runs in effect-name order and
     // puts EQ5 between Overdrive2 and PitchShift2, where Parametric EQ falls.
@@ -286,56 +199,48 @@ const List<FxModule> kFxModules = [
   ),
   FxModule(
     name: 'Low-pass filter',
-    kind: FxKind.lpf,
     enables: ['LPF'],
     groups: ['LPF'],
     artwork: ['LPF2', 'LPF4'],
   ),
   FxModule(
     name: 'Wah',
-    kind: FxKind.wah,
     enables: ['Wah'],
     groups: ['Wah'],
     artwork: ['Wah1'],
   ),
   FxModule(
     name: 'Chorus',
-    kind: FxKind.chorus,
     enables: ['Chor'],
     groups: ['Chor'],
     artwork: ['Chorus3'],
   ),
   FxModule(
     name: 'Modulation',
-    kind: FxKind.mod,
     enables: ['Mod'],
     groups: ['Mod'],
     artwork: ['Mod3'],
   ),
   FxModule(
     name: 'Octaver',
-    kind: FxKind.dualOctaver,
     enables: ['Oct'],
     groups: ['Oct', 'Octave'],
     artwork: ['Octaver3'],
   ),
   FxModule(
     name: 'Pitch shift',
-    kind: FxKind.pitchShift,
     enables: ['Pitch'],
     groups: ['Pitch'],
     artwork: ['PitchShift2'],
   ),
   FxModule(
     name: 'Whammy',
-    kind: FxKind.whammy,
     enables: ['Whammy'],
     groups: ['Whammy'],
     artwork: ['Wham2'],
   ),
   FxModule(
     name: 'Delay',
-    kind: FxKind.delay,
     enables: ['Delay'],
     groups: ['Del'],
     artwork: ['Delay3', 'Delay4', 'Delay6'],
@@ -343,7 +248,6 @@ const List<FxModule> kFxModules = [
   ),
   FxModule(
     name: 'Dub delay',
-    kind: FxKind.delay,
     // The Dub Rack powers its delay with `Dub Delay` and gives it the same
     // `Del` prefix the plain delay uses elsewhere.
     enables: ['Dub Delay'],
@@ -356,21 +260,18 @@ const List<FxModule> kFxModules = [
   ),
   FxModule(
     name: 'Reverb',
-    kind: FxKind.reverb,
     enables: ['Reverb'],
     groups: ['Rev'],
     artwork: ['Reverb2', 'Reverb3', 'Reverb5'],
   ),
   FxModule(
     name: 'Spring reverb',
-    kind: FxKind.spring,
     enables: ['Spring'],
     groups: ['Spring'],
     artwork: ['SpringRev2'],
   ),
   FxModule(
     name: 'Ambience',
-    kind: FxKind.ambVerb,
     // The source spells the group three ways across the Dub Rack, including
     // one that differs only in case.
     enables: ['Amb-Verb'],
@@ -379,21 +280,18 @@ const List<FxModule> kFxModules = [
   ),
   FxModule(
     name: 'Dub reverb',
-    kind: FxKind.dubVerb,
     enables: ['Dub-Verb'],
     groups: ['Dub-Verb'],
     artwork: ['DubVerb2'],
   ),
   FxModule(
     name: 'Doubler',
-    kind: FxKind.doubler,
     enables: ['Doubler'],
     groups: ['Doubler'],
     artwork: ['Doubler1', 'Doubler2'],
   ),
   FxModule(
     name: 'High-pass gate',
-    kind: FxKind.hpGate,
     // Two power keys that are not alternatives of one another: `HP/Gate` is
     // the module's own, and `Highpass` reads as its frequency. Both are here
     // because both are space-free, and the test pins only the binary one.
@@ -403,50 +301,44 @@ const List<FxModule> kFxModules = [
   ),
   FxModule(
     name: 'Transient',
-    kind: FxKind.transient,
     enables: ['Transient'],
     groups: ['Attack', 'Sustain'],
     artwork: ['Transient3'],
   ),
   FxModule(
     name: 'Pumper',
-    kind: FxKind.pumper,
     enables: ['Pumper'],
     groups: ['Pumper'],
     artwork: ['Pumper2'],
   ),
   FxModule(
     name: 'Slicer',
-    kind: FxKind.slicer,
     enables: ['Slicer'],
     groups: ['Slic'],
     artwork: ['Slicer2'],
   ),
   FxModule(
     name: 'Vinyl',
-    kind: FxKind.vinyl,
     enables: ['Vinyl'],
     groups: ['Vinyl'],
     artwork: ['Vinyl4'],
   ),
   FxModule(
     name: 'Degrade',
-    kind: FxKind.degrade,
     enables: ['Degrade'],
     groups: ['Degrade'],
     artwork: ['Degrade3'],
   ),
   FxModule(
     name: 'Harmonizer',
-    kind: FxKind.harmonizer,
     enables: ['Harmonize'],
     groups: ['Harm', 'Voice', 'Lead', 'Low', 'Mid', 'High', 'Scale'],
     shared: _vocalTunerShared,
     artwork: ['Harmonise20'],
+    families: _vocalTunerFamilies,
   ),
   FxModule(
     name: 'Smart tune',
-    kind: FxKind.smartTune,
     enables: ['Smart Tune'],
     groups: [
       'Audio',
@@ -458,6 +350,7 @@ const List<FxModule> kFxModules = [
     ],
     shared: _vocalTunerShared,
     artwork: ['SmartTune2'],
+    families: _vocalTunerFamilies,
   ),
 ];
 
@@ -467,10 +360,10 @@ const List<FxModule> kFxModules = [
 /// AFTER the pedals and gives to the rack rather than to any of them.
 const Set<String> kFxUnclaimedGroups = {'Master'};
 
-/// The module whose power key is [key], or `null`.
-FxModule? fxModuleFor(String key) {
+/// The module of a [family] rack whose power key is [key], or `null`.
+FxModule? fxModuleFor(String key, String family) {
   for (final module in kFxModules) {
-    if (module.poweredBy(key)) return module;
+    if (module.appearsIn(family) && module.poweredBy(key)) return module;
   }
   return null;
 }
@@ -495,10 +388,14 @@ String? fxModuleArt(String name) {
   return fxStompAsset(artwork.first);
 }
 
-/// The modules of a [family] rack that read parameter [key], in table order.
+/// The modules of a [family] rack that own [key] as a parameter, in table
+/// order.
 ///
-/// Usually one. Two for a parameter in [FxModule.shared], and none for a power
-/// key or a key the table leaves unclaimed on purpose.
+/// Usually one, and two for a key in [FxModule.shared]. Ownership is by
+/// prefix, so a one-word power key whose word is also one of its module's
+/// groups (`Wah`, `Comp`, `LPF`) is owned by that module too; a power key
+/// spelled differently from its group (`Delay` for `Del`) and a key the table
+/// leaves unclaimed on purpose have no owner.
 List<FxModule> fxModulesOwning(String key, String family) => [
   for (final module in kFxModules)
     if (module.appearsIn(family) && module.owns(key)) module,
@@ -528,8 +425,8 @@ bool _names(FxPreset preset, FxModule module) {
 /// One effect the player can add to a rack on its own: a row of the pen's
 /// "Add an effect to a rack" screen (frame `Rv04K`).
 ///
-/// A row is a kind and its default variant. The variant is a pedal of the
-/// module table as one factory rack exposes it: [module] in a [family] rack.
+/// A row adds one pedal of the module table in its default variant: the
+/// [module] as the [family] rack exposes it.
 class FxAddableEffect {
   /// Creates an [FxAddableEffect].
   const FxAddableEffect({
@@ -544,9 +441,8 @@ class FxAddableEffect {
   /// The [FxModule.name] of the pedal the row adds.
   final String module;
 
-  /// The rack family whose [module] is the default variant, or `null` while
-  /// the kind has several variants and none has been chosen as the default.
-  final String? family;
+  /// The rack family whose [module] is the default variant.
+  final String family;
 }
 
 /// The 26 rows of the pen's "Add an effect to a rack" screen, in the pen's
@@ -554,20 +450,31 @@ class FxAddableEffect {
 ///
 /// Where a pedal has one variant, the row takes it; a pedal several racks
 /// carry with the same parameters names one of them. Where it has several,
-/// the accepted plan (#887) names the default: the four-band EQ is Ed's, the
-/// delay the mode delay (Ed's Rack carries it, as six other racks do) and the
-/// reverb the mode reverb with brightness (Ed's, as the Vocal and Vocal Tuner
-/// racks do). The compressor, distortion, doubler, low-pass filter and
-/// modulation have several variants and no default yet, so their
-/// [FxAddableEffect.family] is `null`.
+/// the accepted plan (#887) names the default for the EQs, the delay and the
+/// reverb: the four-band EQ is Ed's, the parametric EQ the Dub Rack's (the
+/// Lo-Fi Rack's is the same; the Rhythmic Rack's has no Q), the delay the
+/// mode delay (Ed's Rack carries it, as six other racks do) and the reverb
+/// the mode reverb with brightness (Ed's, as the Vocal and Vocal Tuner racks
+/// do). The owner chose the rest on #1382: the variant exposing the most
+/// controls, which is the compressor from Ed's Rack, the distortion from the
+/// Lo-Fi Rack, the doubler from the Dub Rack, the low-pass filter from the
+/// Rhythmic Rack and the modulation from the Guitar Rack.
 const List<FxAddableEffect> kFxAddableEffects = [
   FxAddableEffect(label: 'Amp', module: 'Amp', family: "Ed's Rack"),
   FxAddableEffect(label: 'Chorus', module: 'Chorus', family: "Ed's Rack"),
-  FxAddableEffect(label: 'Compressor', module: 'Compressor', family: null),
+  FxAddableEffect(
+    label: 'Compressor',
+    module: 'Compressor',
+    family: "Ed's Rack",
+  ),
   FxAddableEffect(label: 'Degrade', module: 'Degrade', family: 'Lo-Fi Rack'),
   FxAddableEffect(label: 'Delay', module: 'Delay', family: "Ed's Rack"),
-  FxAddableEffect(label: 'Distortion', module: 'Distortion', family: null),
-  FxAddableEffect(label: 'Doubler', module: 'Doubler', family: null),
+  FxAddableEffect(
+    label: 'Distortion',
+    module: 'Distortion',
+    family: 'Lo-Fi Rack',
+  ),
+  FxAddableEffect(label: 'Doubler', module: 'Doubler', family: 'Dub Rack'),
   FxAddableEffect(label: 'Dub Delay', module: 'Dub delay', family: 'Dub Rack'),
   FxAddableEffect(
     label: 'Four-band EQ',
@@ -587,9 +494,13 @@ const List<FxAddableEffect> kFxAddableEffects = [
   FxAddableEffect(
     label: 'Low-pass Filter',
     module: 'Low-pass filter',
-    family: null,
+    family: 'Rhythmic Rack',
   ),
-  FxAddableEffect(label: 'Modulation', module: 'Modulation', family: null),
+  FxAddableEffect(
+    label: 'Modulation',
+    module: 'Modulation',
+    family: 'Guitar Rack',
+  ),
   FxAddableEffect(label: 'Octaver', module: 'Octaver', family: "Ed's Rack"),
   FxAddableEffect(label: 'Overdrive', module: 'Overdrive', family: "Ed's Rack"),
   FxAddableEffect(
