@@ -1,17 +1,15 @@
-import 'package:controller_repository/controller_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/control/binding/control_availability.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
-import 'package:segno/control/binding/fx_chain_lookup.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/pedal/console_ctrl_source.dart';
 
 /// How a binding's target and its control are NAMED, in one place.
 ///
 /// Pure functions of the target and the localizations, so the same words reach
 /// the picker entry, the row, and the Semantics announcement — three spellings
 /// of one target would read as three different mappings. Shared by the pedal
-/// assignment screen (part 6b) and the MIDI-learn section (part 7), which is
+/// assignment screen and MIDI controls page, which is
 /// why they live next to the binding model rather than inside either feature.
 
 /// Names the chain at [address] — its stage and position.
@@ -32,12 +30,18 @@ String fxStageLabel(
   FxStage.input => l10n.pedalAssignStageInput(address.index + 1),
   FxStage.loop => l10n.pedalAssignStageLoop(
     l10n.trackName(trackNames, address.index),
-    address.lane ?? 0,
+    (address.lane ?? 0) + 1,
   ),
   FxStage.track => l10n.pedalAssignStageTrack(
     l10n.trackName(trackNames, address.index),
   ),
-  FxStage.master => l10n.pedalAssignStageMaster,
+  FxStage.allTracks => l10n.pedalAssignStageAllTracks,
+  // By destination ORDINAL, not by jack pair or by the rig's alias: this
+  // label has neither the device's channel count (which decides whether the
+  // last destination is a pair or a single jack) nor the rename map, and a
+  // binding row that guessed either would name a socket the interface may not
+  // have.
+  FxStage.output => l10n.pedalAssignStageOutput(address.index + 1),
 };
 
 /// Names a discrete (`enabled`-flipping) [target] — one whole chain, or one
@@ -72,14 +76,75 @@ String valueTargetLabel(
   TrackVolumeTarget(:final channel) => l10n.midiLearnTargetVolume(
     l10n.trackName(trackNames, channel),
   ),
+  LaneVolumeTarget(:final channel, :final lane) => _laneVolumeLabel(
+    l10n,
+    trackNames,
+    channel,
+    lane,
+  ),
+  MonitorVolumeTarget(:final input) =>
+    '${l10n.pedalAssignStageInput(input + 1)} · '
+        '${l10n.expressionControlVolume}',
+  TrackPanTarget(:final channel) =>
+    '${l10n.trackName(trackNames, channel)} · ${l10n.routingPan}',
+  InputPanTarget(:final input) =>
+    '${l10n.pedalAssignStageInput(input + 1)} · ${l10n.routingPan}',
+  PairBalanceTarget(:final input) =>
+    '${l10n.pedalAssignStageInput(input + 1)} / ${l10n.pedalAssignStageInput(input + 2)} · ${l10n.routingBalance}',
+  OutputLevelTarget(:final bus) =>
+    '${l10n.pedalAssignStageOutput(bus + 1)} · ${l10n.routingOutputLevel}',
+  OutputBalanceTarget(:final bus) =>
+    '${l10n.pedalAssignStageOutput(bus + 1)} · ${l10n.routingBalance}',
+  ClickVolumeTarget() => l10n.clickVolumeLabel,
+  ClickModeValueTarget() =>
+    '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopTempoHearClick}',
+  CountInValueTarget() =>
+    '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopTempoCountIn}',
+  DefaultDecayTarget() =>
+    '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopDecayLabel}',
+  TrackDecayTarget(:final channel) =>
+    '${l10n.trackName(trackNames, channel)} · ${l10n.loopDecayLabel}',
+  DefaultOneShotTarget() =>
+    '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopPlaybackLabel}',
+  TrackOneShotTarget(:final channel) =>
+    '${l10n.trackName(trackNames, channel)} · ${l10n.loopPlaybackLabel}',
+  DefaultRecordLengthTarget() =>
+    '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopLengthLabel}',
+  TrackRecordLengthTarget(:final channel) =>
+    '${l10n.trackName(trackNames, channel)} · ${l10n.loopLengthLabel}',
+  DefaultRecordTimingTarget() =>
+    '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopTimingLabel}',
+  TrackRecordTimingTarget(:final channel) =>
+    '${l10n.trackName(trackNames, channel)} · ${l10n.loopTimingLabel}',
+  DefaultFadeTarget() =>
+    '${l10n.expressionDestinationLoopDefaults} · ${l10n.fadeDurationLabel}',
+  TrackFadeTarget(:final channel) =>
+    '${l10n.trackName(trackNames, channel)} · ${l10n.fadeDurationLabel}',
   MasterGainTarget() => l10n.midiLearnTargetMaster,
+  BackingLevelTarget() => l10n.mixerBackingVolume,
+  BackingPanTarget() => l10n.mixerBackingPan,
+  ClickPanTarget() => l10n.mixerClickPan,
   FxParamTarget(:final address, :final slotId, :final param) =>
     l10n.midiLearnTargetParam(
       fxStageLabel(l10n, trackNames, address),
       slotId,
-      _paramLabel(looper, target) ?? '#$param',
+      fxParamName(looper, target) ?? '#$param',
     ),
 };
+
+String _laneVolumeLabel(
+  AppLocalizations l10n,
+  List<String> trackNames,
+  int channel,
+  int lane,
+) {
+  final stage = fxStageLabel(
+    l10n,
+    trackNames,
+    FxAddress(stage: FxStage.loop, index: channel, lane: lane),
+  );
+  return '$stage · ${l10n.expressionControlVolume}';
+}
 
 /// The display name of the effect sitting in [target]'s slot, or `null` when
 /// the slot is gone.
@@ -100,43 +165,17 @@ String? fxSlotName(LooperRepository looper, FxSlotTarget target) {
   return null;
 }
 
-/// Names the CONTROL a binding is keyed to — the CC/note number and the
-/// channel it was learned on.
-String controlLabel(AppLocalizations l10n, MappingTrigger trigger) {
-  // An omni trigger has no channel of its own; it is shown as channel 1, the
-  // one a user reading their controller's display would see first. Learned
-  // controller bindings always carry a channel, so this only covers a
-  // hand-written mapping.
-  final channel = (trigger.midiChannel ?? 0) + 1;
-  return switch (trigger.kind) {
-    ControllerSourceKind.midiCc => l10n.midiLearnCcControl(trigger.id, channel),
-    ControllerSourceKind.midiNote => l10n.midiLearnNoteControl(
-      trigger.id,
-      channel,
-    ),
-    // A CTRL jack has no channel — it is named by the jack it is plugged
-    // into, counted from one the way the panel labels them. A switch on the
-    // ring (the B of a two-switch pedal) is the jack's second switch.
-    ControllerSourceKind.consoleSwitch =>
-      trigger.id >= ConsoleCtrlSource.ringIdOffset
-          ? l10n.consoleCtrlRingSwitchControl(
-              trigger.id - ConsoleCtrlSource.ringIdOffset + 1,
-            )
-          : l10n.consoleCtrlSwitchControl(trigger.id + 1),
-    ControllerSourceKind.consoleExpression => l10n.consoleCtrlExpressionControl(
-      trigger.id + 1,
-    ),
-  };
-}
-
 /// The live label of the parameter [target] names, or `null` when the chain,
 /// the slot, or the parameter index is gone.
+///
+/// The parameter's own name, without the chain or the effect around it — what
+/// a picker already inside one effect's section has room for.
 ///
 /// Goes through the SAME [FxChainLookup] the resolvers use, so a label can
 /// never describe a chain the mapping does not actually resolve against — a
 /// lane-less Loop address names nothing here exactly as it writes nothing
 /// there (A9).
-String? _paramLabel(LooperRepository looper, FxParamTarget target) {
+String? fxParamName(LooperRepository looper, FxParamTarget target) {
   final entries = looper.chainEntriesAt(target.address);
   if (entries == null) return null;
   for (final fx in entries) {
@@ -148,3 +187,13 @@ String? _paramLabel(LooperRepository looper, FxParamTarget target) {
   }
   return null;
 }
+
+String? controlEditBlockLabel(AppLocalizations l10n, ControlEditBlock? block) =>
+    switch (block) {
+      ControlEditBlock.clickCapture => l10n.clickModeCaptureLocked,
+      ControlEditBlock.recordStartCapture => l10n.recordStartCaptureLocked,
+      ControlEditBlock.lengthCapture => l10n.recordLengthCaptureLocked,
+      ControlEditBlock.sharedLength => l10n.recordLengthSharedInMulti,
+      ControlEditBlock.timingCapture => l10n.recordTimingCaptureLocked,
+      null => null,
+    };

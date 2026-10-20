@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:wav_codec/wav_codec.dart';
@@ -47,13 +48,10 @@ class _GatedReadFile implements File {
   );
 }
 
-/// A [File] whose [readAsStringSync] throws — an `IOOverrides` hook modeling
-/// a recovered-at stamp the filesystem refuses to read, so a test can drive
-/// the prune's skip-and-continue branch deterministically. Only the members
-/// the prune touches on the stamp file are implemented; anything else is a
-/// test bug and throws.
-class _ThrowingStampFile implements File {
-  _ThrowingStampFile(this._inner);
+/// Fails the selected asynchronous write while leaving the earlier contents
+/// untouched, as a full disk or revoked export volume can do after native arm.
+class _FailWriteFile implements File {
+  _FailWriteFile(this._inner);
 
   final File _inner;
 
@@ -61,50 +59,82 @@ class _ThrowingStampFile implements File {
   bool existsSync() => _inner.existsSync();
 
   @override
-  String readAsStringSync({Encoding encoding = utf8}) =>
-      throw const FileSystemException('stamp unreadable');
+  void deleteSync({bool recursive = false}) =>
+      _inner.deleteSync(recursive: recursive);
+
+  @override
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) async {
+    await _inner.writeAsString('{"truncated":', flush: true);
+    throw const FileSystemException('arm snapshot write failed');
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
-    'not reached by _pruneRecovered on the stamp file: $invocation',
+    'not reached by arm snapshot write: $invocation',
   );
 }
 
-/// Writes [dir]'s recovered-at stamp as the salvage itself would, dated
-/// [at] — the fixture for aging recovered entries deterministically.
-void writeRecoveredStamp(String dir, DateTime at) {
-  File(
-    '$dir/${PerformanceRepository.recoveredAtStampName}',
-  ).writeAsStringSync(at.millisecondsSinceEpoch.toString());
+class _ThrowAfterArmEngine extends FakePerformanceEngine {
+  bool throwSnapshot = false;
+  bool throwOutputFx = false;
+  bool throwDisarmOnce = false;
+
+  @override
+  EngineSnapshot snapshot() {
+    if (throwSnapshot && perfArmed) throw StateError('snapshot unavailable');
+    return super.snapshot();
+  }
+
+  @override
+  OutputFxSnapshot outputFxSnapshot({required int bus}) {
+    if (throwOutputFx) throw StateError('output chain unavailable');
+    return super.outputFxSnapshot(bus: bus);
+  }
+
+  @override
+  EngineResult perfDisarm() {
+    if (throwDisarmOnce) {
+      throwDisarmOnce = false;
+      perfDisarmCalls++;
+      throw StateError('native cleanup unavailable');
+    }
+    return super.perfDisarm();
+  }
 }
 
-/// A [Directory] whose [listSync] throws — an `IOOverrides` hook modeling a
-/// recovered/ area the filesystem refuses to enumerate (fsck-damaged perms,
-/// a yanked exports volume), so a test can drive the prune's skip-the-area
-/// branch deterministically. [existsSync]/[createSync] delegate (the same
-/// path is legitimately touched by the salvage's move); anything else is a
-/// test bug and throws.
-class _ThrowingListDirectory implements Directory {
-  _ThrowingListDirectory(this._inner);
+/// A `performance.json` that reads normally and refuses to be rewritten —
+/// the finalize of a take whose disk filled at the end.
+class _ManifestWriteFails implements File {
+  _ManifestWriteFails(this._inner);
 
-  final Directory _inner;
+  final File _inner;
+
+  @override
+  String get path => _inner.path;
 
   @override
   bool existsSync() => _inner.existsSync();
 
   @override
-  List<FileSystemEntity> listSync({
-    bool recursive = false,
-    bool followLinks = true,
-  }) => throw const FileSystemException('unreadable directory');
+  Future<String> readAsString({Encoding encoding = utf8}) =>
+      _inner.readAsString(encoding: encoding);
 
   @override
-  void createSync({bool recursive = false}) =>
-      _inner.createSync(recursive: recursive);
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) async => throw const FileSystemException('No space left on device');
 
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
-    'not reached by boot recovery on the recovered dir: $invocation',
+    'not reached by finalize on the manifest: $invocation',
   );
 }
 
@@ -119,6 +149,7 @@ void main() {
     engine = FakePerformanceEngine();
     clock = DateTime(2026, 7, 6, 14, 30, 15);
     repo = PerformanceRepository(
+      guards: GuardRegistry(),
       engine: engine,
       exportsRoot: () async => '${tempDir.path}/exports',
       now: () => clock,
@@ -137,22 +168,230 @@ void main() {
     expect(await repo.exportsRoot(), '${tempDir.path}/exports');
   });
 
-  group('freeSpaceBytes (#806)', () {
+  group('volumeSpace (#806, #1177)', () {
     // A capture re-checks the volume it is filling. Asking the engine keeps
     // that a syscall; the `df` it replaced was a fork() of the whole app,
     // twelve times a minute, for the length of a take.
-    test('reports what the engine measured', () {
-      engine.freeBytes = 4096;
-      expect(repo.freeSpaceBytes('/data'), 4096);
+    test('reports what the engine measured, total and free', () {
+      engine
+        ..totalBytes = 65536
+        ..freeBytes = 4096;
+      expect(
+        repo.volumeSpace('/data'),
+        const VolumeSpace(totalBytes: 65536, freeBytes: 4096),
+      );
     });
 
     test('passes a platform that cannot answer straight through as null', () {
       engine.freeBytes = null;
-      expect(repo.freeSpaceBytes('/data'), isNull);
+      expect(repo.volumeSpace('/data'), isNull);
     });
   });
 
   group('arm', () {
+    test('passes the reserve to the engine, and none when not given '
+        '(#1198)', () async {
+      await repo.arm();
+      expect(engine.lastPerfTarget!.reserveBytes, isNull);
+      clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+      await repo.disarm();
+
+      final reserved = PerformanceRepository(
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock.add(const Duration(minutes: 1)),
+        guards: GuardRegistry(),
+        reserveBytes: 1000000000,
+      );
+      await reserved.arm();
+      expect(engine.lastPerfTarget!.reserveBytes, 1000000000);
+    });
+
+    test('a take on a USB drive keeps no reserve there (#1177)', () async {
+      final reserved = PerformanceRepository(
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+        guards: GuardRegistry(),
+        reserveBytes: 1000000000,
+      );
+      await reserved.arm(
+        root: '${tempDir.path}/usb/Segno/Performances',
+        scope: const GuardScope.removable(1),
+      );
+      expect(engine.lastPerfTarget!.reserveBytes, isNull);
+      expect(
+        reserved.minimumFreeBytesToArmAt(root: '${tempDir.path}/usb'),
+        reserved.minimumFreeBytesToArm - 1000000000,
+      );
+    });
+
+    test('a settled snapshot write failure keeps live capture owned until '
+        'the engine confirms a stop', () async {
+      var snapshotWrites = 0;
+      final testZone = Zone.current;
+      final failed = IOOverrides.runZoned(
+        () => repo.arm(),
+        createFile: (path) {
+          final real = testZone.run(() => File(path));
+          if (path.endsWith('/arm-snapshot.json.pending') &&
+              ++snapshotWrites == 1) {
+            return _FailWriteFile(real);
+          }
+          return real;
+        },
+      );
+      await expectLater(failed, throwsA(isA<FileSystemException>()));
+      expect(snapshotWrites, 1);
+      expect(engine.perfArmed, isTrue);
+      expect(repo.armedDirectory, engine.lastPerfCaptureDir);
+      expect(Directory(repo.armedDirectory!).existsSync(), isTrue);
+      expect(
+        File('${repo.armedDirectory}/arm-snapshot.json').existsSync(),
+        isFalse,
+      );
+      expect(
+        File('${repo.armedDirectory}/arm-snapshot.json.pending').existsSync(),
+        isFalse,
+      );
+
+      engine.perfDisarmResult = EngineResult.device;
+      expect(await repo.disarm(), EngineResult.device);
+      expect(repo.armedDirectory, engine.lastPerfCaptureDir);
+      expect(engine.perfArmed, isTrue);
+      expect(await repo.arm(), EngineResult.ok);
+      expect(engine.perfArmCalls, 1);
+
+      engine.perfDisarmResult = EngineResult.ok;
+      expect(await repo.disarm(), EngineResult.ok);
+      expect(engine.perfArmed, isFalse);
+    });
+
+    test('waits for the callback to acknowledge a queued arm before reading '
+        'its selected destination', () async {
+      final queued = Completer<void>();
+      engine
+        ..perfArmQueues = true
+        ..onPerfArmQueued = queued.complete
+        ..perfCaptureBusAtArm = 1;
+      final arming = repo.arm();
+      await queued.future.timeout(const Duration(seconds: 5));
+      expect(engine.perfArmPending, isTrue);
+      expect(repo.armedDirectory, engine.lastPerfCaptureDir);
+      expect(engine.perfArmed, isFalse);
+      engine.acknowledgePerfArm();
+
+      expect(await arming, EngineResult.ok);
+      final json =
+          jsonDecode(
+                File(
+                  '${repo.armedDirectory}/arm-snapshot.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(json['captureBus'], 1);
+      expect(json['captureMask'], 0xC);
+    });
+
+    test('a queued arm that never acknowledges is canceled and cannot '
+        'alias a later capture', () async {
+      engine.perfArmQueues = true;
+      expect(await repo.arm(), EngineResult.device);
+      final abandoned = engine.lastPerfCaptureDir!;
+      expect(engine.perfDisarmCalls, 1);
+      expect(engine.perfArmPending, isFalse);
+      expect(repo.armedDirectory, isNull);
+      expect(Directory(abandoned).existsSync(), isTrue);
+
+      engine.perfArmQueues = false;
+      expect(await repo.arm(), EngineResult.ok);
+      expect(repo.armedDirectory, isNot(abandoned));
+      expect(engine.lastPerfCaptureDir, repo.armedDirectory);
+    });
+
+    test('a post-arm snapshot exception stops capture and preserves its '
+        'directory', () async {
+      final broken = _ThrowAfterArmEngine()..throwSnapshot = true;
+      final localRepo = PerformanceRepository(
+        guards: GuardRegistry(),
+        engine: broken,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(localRepo.dispose);
+
+      await expectLater(localRepo.arm(), throwsStateError);
+      expect(broken.perfDisarmCalls, 1);
+      expect(broken.perfArmed, isFalse);
+      expect(localRepo.armedDirectory, isNull);
+      expect(Directory(broken.lastPerfCaptureDir!).existsSync(), isTrue);
+    });
+
+    test('a post-arm output-chain exception keeps ownership when stop is '
+        'refused, then disarms without inventing an arm snapshot', () async {
+      final broken = _ThrowAfterArmEngine()
+        ..throwOutputFx = true
+        ..perfDisarmResult = EngineResult.device;
+      final localRepo = PerformanceRepository(
+        guards: GuardRegistry(),
+        engine: broken,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(localRepo.dispose);
+
+      await expectLater(localRepo.arm(), throwsStateError);
+      final dir = broken.lastPerfCaptureDir!;
+      expect(localRepo.armedDirectory, dir);
+      expect(broken.perfArmed, isTrue);
+      expect(File('$dir/arm-snapshot.json').existsSync(), isFalse);
+      writeNativeSidecar(dir);
+
+      broken.perfDisarmResult = EngineResult.ok;
+      expect(await localRepo.disarmAndFinalize(), EngineResult.ok);
+      final manifest =
+          jsonDecode(File('$dir/performance.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(manifest.containsKey('armSnapshot'), isFalse);
+    });
+
+    test('a thrown native cleanup after post-arm getter failure retains '
+        'visible ownership for an immediate disarm retry', () async {
+      final broken = _ThrowAfterArmEngine()
+        ..throwOutputFx = true
+        ..throwDisarmOnce = true;
+      final localRepo = PerformanceRepository(
+        guards: GuardRegistry(),
+        engine: broken,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(localRepo.dispose);
+      final statuses = <PerformanceCaptureStatus>[];
+      final sub = localRepo.captureStatus.listen(statuses.add);
+      addTearDown(sub.cancel);
+
+      await expectLater(localRepo.arm(), throwsStateError);
+      await pumpEventQueue();
+      final dir = broken.lastPerfCaptureDir!;
+      expect(statuses.last, PerformanceCaptureStatus.armed);
+      expect(localRepo.armedDirectory, dir);
+      expect(broken.perfArmed, isTrue);
+      expect(broken.perfDisarmCalls, 1);
+      expect(File('$dir/arm-snapshot.json').existsSync(), isFalse);
+      expect(await localRepo.arm(), EngineResult.ok);
+      expect(broken.perfArmCalls, 1);
+
+      writeNativeSidecar(dir);
+      expect(await localRepo.disarm(), EngineResult.ok);
+      expect(broken.perfArmed, isFalse);
+      expect(localRepo.armedDirectory, isNull);
+      final manifest =
+          jsonDecode(File('$dir/performance.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(manifest.containsKey('armSnapshot'), isFalse);
+    });
+
     test('creates the slugged bundle directory and arms the engine', () async {
       final result = await repo.arm();
       expect(result, EngineResult.ok);
@@ -164,6 +403,193 @@ void main() {
       expect(engine.perfArmed, isTrue);
       expect(engine.lastPerfCaptureDir, repo.armedDirectory);
     });
+
+    test('a root puts this take under it, and the next arm without one '
+        'goes back to the exports root (#1177)', () async {
+      final usb = '${tempDir.path}/media/1-SEGNO_USB/Segno/Performances';
+      expect(await repo.arm(root: usb), EngineResult.ok);
+      expect(repo.armedDirectory, '$usb/perf-20260706-143015');
+      expect(Directory(repo.armedDirectory!).existsSync(), isTrue);
+      expect(engine.lastPerfCaptureDir, repo.armedDirectory);
+      await repo.disarmAndFinalize();
+
+      clock = clock.add(const Duration(minutes: 1));
+      expect(await repo.arm(), EngineResult.ok);
+      expect(repo.armedDirectory, startsWith('${tempDir.path}/exports/'));
+    });
+
+    test('setFollowOutput forwards the policy to the engine, and the arm '
+        "snapshot records the take's policy and destination 0's facts "
+        '(slice 3b)', () async {
+      expect(repo.setFollowOutput(follow: true), EngineResult.ok);
+      expect(engine.perfFollowOutput, isTrue);
+      engine
+        ..outputLevels = [0.5, 1]
+        ..outputMuted = [true, false];
+
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+      final armJson =
+          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(armJson['followOutput'], isTrue);
+      expect(armJson.containsKey('captureBus'), isFalse);
+      expect(armJson['outputLevel'], 0.5);
+      expect(armJson['outputMuted'], isTrue);
+    });
+
+    test('the arm snapshot records the destination the engine settles on '
+        'INSIDE the arm, not the one the pre-arm snapshot named', () async {
+      // The gate moves while this arm exports lanes and writes the manifest:
+      // the engine picks destination 1, so the manifest must say 1 and carry
+      // ITS facts, or the offline render replays the wrong level rides.
+      engine
+        ..perfCaptureBus = 0
+        ..perfCaptureBusAtArm = 1
+        ..outputLevels = [1, 0.25]
+        ..outputMuted = [true, false];
+
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+      final armJson =
+          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(armJson['captureBus'], 1);
+      expect(armJson['outputLevel'], 0.25);
+      expect(armJson.containsKey('outputMuted'), isFalse);
+    });
+
+    test(
+      'the take keeps the policy settled at arm after pre-arm I/O',
+      () async {
+        engine
+          ..perfFollowOutput = false
+          ..perfFollowOutputAtArm = true;
+        expect(await repo.arm(), EngineResult.ok);
+        final manifest =
+            jsonDecode(
+                  File(
+                    '${repo.armedDirectory}/arm-snapshot.json',
+                  ).readAsStringSync(),
+                )
+                as Map<String, dynamic>;
+        expect(manifest['followOutput'], isTrue);
+        engine.perfFollowOutput = false;
+        expect(engine.snapshot().perfFollowOutput, isTrue);
+        expect(PerformanceArmSnapshot.fromJson(manifest).followOutput, isTrue);
+      },
+    );
+
+    test(
+      'the arm snapshot stores the selected output chain and mask',
+      () async {
+        engine
+          ..perfCaptureBus = 0
+          ..perfCaptureBusAtArm = 1
+          ..perfOutputEnabledMask = 0xC;
+        engine.outputChains[0] = OutputFxSnapshot(
+          effects: [
+            OutputEffectSnapshot(
+              type: TrackEffectType.reverb.code,
+              params: TrackEffectType.reverb.defaultParams,
+            ),
+          ],
+        );
+        engine.outputChains[1] = OutputFxSnapshot(
+          effects: [
+            OutputEffectSnapshot(
+              type: TrackEffectType.drive.code,
+              params: TrackEffectType.drive.defaultParams,
+            ),
+          ],
+          chainEnabled: false,
+        );
+        expect(await repo.arm(), EngineResult.ok);
+        final manifest =
+            jsonDecode(
+                  File(
+                    '${repo.armedDirectory}/arm-snapshot.json',
+                  ).readAsStringSync(),
+                )
+                as Map<String, dynamic>;
+        expect(manifest['captureBus'], 1);
+        expect(manifest['captureMask'], 0xC);
+        expect(manifest['outputEnabledMask'], 0xC);
+        expect(manifest['outputChainEnabled'], isFalse);
+        final effects = manifest['outputEffects'] as List<dynamic>;
+        expect(
+          (effects.single as Map<String, dynamic>)['type'],
+          TrackEffectType.drive.code,
+        );
+      },
+    );
+
+    test('an engine with no captured destination refuses the arm', () async {
+      engine
+        ..perfCaptureBus = -1
+        ..perfCaptureBusAtArm = -1
+        ..outputLevels = const []
+        ..outputMuted = const [];
+
+      expect(await repo.arm(), EngineResult.invalid);
+      expect(repo.armedDirectory, isNull);
+      expect(engine.perfArmed, isFalse);
+    });
+
+    test(
+      'empty arm lanes preserve settings without PCM through finalize',
+      () async {
+        engine.seedLane(
+          0,
+          0,
+          Float32List(0),
+          trackState: TrackState.empty,
+          volume: 0.6,
+          laneVolume: 0.4,
+          lanePan: -0.5,
+          laneMuted: true,
+        );
+        final effect = BuiltInEffect(type: TrackEffectType.drive);
+        expect(
+          await repo.arm(
+            chains: PerformanceChains(
+              laneChains: [
+                PerformanceLaneChain(
+                  channel: 0,
+                  lane: 0,
+                  effects: [effect],
+                  chainEnabled: false,
+                ),
+              ],
+            ),
+          ),
+          EngineResult.ok,
+        );
+        final dir = repo.armedDirectory!;
+        expect(Directory('$dir/loops').existsSync(), isFalse);
+        writeNativeSidecar(dir, captureFrames: 128);
+        expect(await repo.disarmAndFinalize(), EngineResult.ok);
+        final manifest = PerformanceManifest.fromJson(
+          jsonDecode(File('$dir/performance.json').readAsStringSync())
+              as Map<String, dynamic>,
+        );
+        final track = manifest.armSnapshot!.tracks.single;
+        expect(track.state, TrackState.empty);
+        expect(track.volume, 0.6);
+        final lane = track.lanes.single;
+        expect(lane.lengthFrames, 0);
+        expect(lane.deferred, isTrue);
+        expect(lane.pcmFile, isNull);
+        expect(lane.volume, 0.4);
+        expect(lane.pan, -0.5);
+        expect(lane.muted, isTrue);
+        expect(lane.outputMask, 3);
+        expect(lane.effects.single.typeCode, TrackEffectType.drive.code);
+        expect(lane.chainEnabled, isFalse);
+        expect(manifest.disarmSnapshot!.tracks, isEmpty);
+        expect(Directory('$dir/loops').existsSync(), isFalse);
+      },
+    );
 
     test('writes the arm-time snapshot for every settled lane', () async {
       engine
@@ -194,6 +620,29 @@ void main() {
       );
       expect(decoded.samples, Float32List.fromList([1, 1, 1, 1]));
     });
+
+    test(
+      "captures each track's mute and solo flags in the arm manifest",
+      () async {
+        engine
+          ..seedLane(0, 0, Float32List.fromList([1, 1]), muted: true)
+          ..seedLane(1, 0, Float32List.fromList([1, 1]), solo: true);
+
+        await repo.arm();
+        final dir = repo.armedDirectory!;
+        final armSnapshot = PerformanceArmSnapshot.fromJson(
+          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+              as Map<String, dynamic>,
+        );
+
+        final track0 = armSnapshot.tracks.firstWhere((t) => t.channel == 0);
+        expect(track0.muted, isTrue);
+        expect(track0.solo, isFalse);
+        final track1 = armSnapshot.tracks.firstWhere((t) => t.channel == 1);
+        expect(track1.muted, isFalse);
+        expect(track1.solo, isTrue);
+      },
+    );
 
     test(
       'the arm-time manifest never carries takeId, even for a lane whose '
@@ -340,7 +789,17 @@ void main() {
       'writes the BUS stages and every chain-enabled flag into the '
       'arm-snapshot (R20/R3)',
       () async {
-        engine.seedLane(0, 0, Float32List.fromList([1, 1]));
+        engine
+          ..seedLane(0, 0, Float32List.fromList([1, 1]))
+          ..outputChain = OutputFxSnapshot(
+            effects: [
+              OutputEffectSnapshot(
+                type: TrackEffectType.filter.code,
+                params: TrackEffectType.filter.defaultParams,
+              ),
+            ],
+            chainEnabled: false,
+          );
 
         await repo.arm(
           chains: PerformanceChains(
@@ -370,8 +829,6 @@ void main() {
                 effects: [BuiltInEffect(type: TrackEffectType.drive)],
               ),
             ],
-            masterEffects: [BuiltInEffect(type: TrackEffectType.filter)],
-            masterChainEnabled: false,
           ),
         );
 
@@ -399,12 +856,12 @@ void main() {
           armSnapshot.trackChains.single.effects.single.typeCode,
           TrackEffectType.drive.code,
         );
-        // Master insert.
+        // The actual captured output destination.
         expect(
-          armSnapshot.masterEffects.single.typeCode,
+          armSnapshot.outputEffects.single.typeCode,
           TrackEffectType.filter.code,
         );
-        expect(armSnapshot.masterChainEnabled, isFalse);
+        expect(armSnapshot.outputChainEnabled, isFalse);
       },
     );
 
@@ -555,7 +1012,7 @@ void main() {
         final dir = '${tempDir.path}/exports/perf-crashed';
         Directory(dir).createSync(recursive: true);
         writeNativeSidecar(dir);
-        writeRawPcm('$dir/master.pcm', Float32List.fromList([0.1, 0.2]));
+        writeOpenPart('$dir/master-001.wav', Float32List.fromList([0.1, 0.2]));
 
         final recovery = repo.recoverCapture(dir);
         final result = await repo.arm();
@@ -578,7 +1035,10 @@ void main() {
         final crashed = '${tempDir.path}/exports/perf-crashed';
         Directory(crashed).createSync(recursive: true);
         writeNativeSidecar(crashed);
-        writeRawPcm('$crashed/master.pcm', Float32List.fromList([0.1, 0.2]));
+        writeOpenPart(
+          '$crashed/master-001.wav',
+          Float32List.fromList([0.1, 0.2]),
+        );
 
         // The salvage's finalize hands straight over to its render (exactly
         // the production handover), so the refusal window stays covered at
@@ -593,6 +1053,7 @@ void main() {
         // salvage provably enters the window AFTER arm's entry gate passed.
         final rootGate = Completer<String>();
         final gatedRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () => rootGate.future,
           now: () => clock,
@@ -634,6 +1095,7 @@ void main() {
         // engine's drain thread.
         final rootGate = Completer<String>();
         final gatedRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () => rootGate.future,
           now: () => clock,
@@ -670,7 +1132,7 @@ void main() {
         final dirA = '${tempDir.path}/exports/perf-crashed';
         Directory(dirA).createSync(recursive: true);
         writeNativeSidecar(dirA);
-        writeRawPcm('$dirA/master.pcm', Float32List.fromList([0.1, 0.2]));
+        writeOpenPart('$dirA/master-001.wav', Float32List.fromList([0.1, 0.2]));
 
         // dirB: armed live, then disarmed with NO sidecar on disk — the
         // documented early-return finalize, the fastest possible finisher.
@@ -730,17 +1192,46 @@ void main() {
         r.armedDirectory!,
         capturedInputs: const [0],
       );
-      writeRawPcm(
-        '${r.armedDirectory!}/master.pcm',
+      writeOpenPart(
+        '${r.armedDirectory!}/master-001.wav',
         Float32List.fromList([0.1, 0.2, 0.3, 0.4]),
+        tornBytes: 4,
       );
-      writeRawPcm(
-        '${r.armedDirectory!}/input-0.pcm',
+      writeOpenPart(
+        '${r.armedDirectory!}/input-0-001.wav',
         Float32List.fromList([0.5, 0.6, 0.7, 0.8]),
+        stream: 1,
       );
     }
 
-    test('converts master + captured-input raw PCM to WAV', () async {
+    test('a capture from before #1198 (raw PCM, no parts) still converts '
+        'to WAV, as it always did', () async {
+      await repo.arm();
+      clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+      final dir = repo.armedDirectory!;
+      writeNativeSidecar(dir, capturedInputs: const [0]);
+      writeRawPcm(
+        '$dir/master.pcm',
+        Float32List.fromList([0.1, 0.2, 0.3, 0.4]),
+      );
+      writeRawPcm('$dir/input-0.pcm', Float32List.fromList([0.5, 0.6]));
+
+      await repo.disarm();
+
+      final master = WavCodec.decodeFloat32(
+        File('$dir/master.wav').readAsBytesSync(),
+      );
+      expect(master.channels, 2);
+      expect(master.samples, Float32List.fromList([0.1, 0.2, 0.3, 0.4]));
+      final input = WavCodec.decodeFloat32(
+        File('$dir/live-input-0.wav').readAsBytesSync(),
+      );
+      expect(input.samples, Float32List.fromList([0.5, 0.6]));
+      expect(File('$dir/master.pcm').existsSync(), isTrue);
+    });
+
+    test('seals the open parts a crash left, dropping a torn frame, and '
+        'converts nothing (#1198)', () async {
       await armAndSeedNative(engine, repo);
       final dir = repo.armedDirectory!;
 
@@ -748,17 +1239,66 @@ void main() {
       expect(result, EngineResult.ok);
       expect(engine.perfArmed, isFalse);
 
-      final master = WavCodec.decodeFloat32(
-        File('$dir/master.wav').readAsBytesSync(),
+      // Two whole stereo frames: 16 data bytes, the torn 4 dropped.
+      expect(partSizes('$dir/master-001.wav'), (84 - 8 + 16, 16));
+      expect(File('$dir/master-001.wav').lengthSync(), 84 + 16);
+      expect(partSizes('$dir/input-0-001.wav'), (84 - 8 + 16, 16));
+      final payload = ByteData.sublistView(
+        File('$dir/master-001.wav').readAsBytesSync(),
+        84,
       );
-      expect(master.channels, 2);
-      expect(master.samples, Float32List.fromList([0.1, 0.2, 0.3, 0.4]));
+      expect(
+        [for (var i = 0; i < 4; i++) payload.getFloat32(i * 4, Endian.little)],
+        Float32List.fromList([0.1, 0.2, 0.3, 0.4]),
+      );
+      expect(File('$dir/master.wav').existsSync(), isFalse);
+      expect(File('$dir/live-input-0.wav').existsSync(), isFalse);
+    });
 
-      final input0 = WavCodec.decodeFloat32(
-        File('$dir/live-input-0.wav').readAsBytesSync(),
-      );
-      expect(input0.channels, 2);
-      expect(input0.samples, Float32List.fromList([0.5, 0.6, 0.7, 0.8]));
+    test(
+      'floors a mono part to whole mono frames, read from its header',
+      () async {
+        await repo.arm();
+        clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+        final dir = repo.armedDirectory!;
+        writeNativeSidecar(dir, masterChannels: 1);
+        writeOpenPart(
+          '$dir/master-001.wav',
+          Float32List.fromList([0.1, 0.2, 0.3]),
+          channels: 1,
+          tornBytes: 2,
+        );
+
+        await repo.disarm();
+
+        // Three mono frames: 12 bytes, not floored to stereo's 8.
+        expect(partSizes('$dir/master-001.wav'), (84 - 8 + 12, 12));
+        expect(File('$dir/master-001.wav').lengthSync(), 84 + 12);
+      },
+    );
+
+    test('leaves a sealed part and a file that is not a part alone', () async {
+      await repo.arm();
+      clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+      final dir = repo.armedDirectory!;
+      writeNativeSidecar(dir);
+      writeOpenPart('$dir/master-001.wav', Float32List.fromList([0.1, 0.2]));
+      // Sealed already: its sizes are what the drain patched.
+      File('$dir/master-001.wav').openSync(mode: FileMode.append)
+        ..setPositionSync(4)
+        ..writeFromSync([84, 0, 0, 0])
+        ..setPositionSync(80)
+        ..writeFromSync([8, 0, 0, 0])
+        ..setPositionSync(84 + 8)
+        ..writeFromSync([1, 2, 3])
+        ..closeSync();
+      writeOpenPart('$dir/notes-001.txt', Float32List.fromList([0.1]));
+
+      await repo.disarm();
+
+      expect(partSizes('$dir/master-001.wav'), (84, 8));
+      expect(File('$dir/master-001.wav').lengthSync(), 84 + 8 + 3);
+      expect(partSizes('$dir/notes-001.txt'), (0, 0));
     });
 
     test(
@@ -768,7 +1308,39 @@ void main() {
         await armAndSeedNative(engine, repo);
         final dir = repo.armedDirectory!;
 
+        final nativeFile = File('$dir/performance.json');
+        final native =
+            jsonDecode(nativeFile.readAsStringSync()) as Map<String, dynamic>;
+        final layers = [
+          {
+            'kind': 0,
+            'restore_id': 0,
+            'channel': 0,
+            'slot': 2,
+            'generation': 3,
+            'frame': 64,
+            'frame_count': 128,
+            'lane_count': 1,
+            'filename': 'layer-0-64-2.pcm',
+          },
+          {
+            'kind': 1,
+            'restore_id': 1,
+            'channel': 0,
+            'slot': 0,
+            'generation': 0,
+            'frame': 256,
+            'frame_count': 128,
+            'lane_count': 2,
+            'filename': 'restore-0-1.pcm',
+          },
+        ];
+        native['layers'] = layers;
+        nativeFile.writeAsStringSync(jsonEncode(native));
         await repo.disarm();
+        final finalized =
+            jsonDecode(nativeFile.readAsStringSync()) as Map<String, dynamic>;
+        expect(finalized['layers'], equals(layers));
 
         final manifest = PerformanceManifest.fromJson(
           jsonDecode(File('$dir/performance.json').readAsStringSync())
@@ -1093,6 +1665,20 @@ void main() {
       );
     });
 
+    test('never treats the backing store as a capture (#1200)', () async {
+      // The backing player's managed copies live in `Backing tracks/` under
+      // the same exports root; neither it nor an asset directory inside it
+      // carries a sidecar, so salvage must pass it by.
+      final root = Directory('${tempDir.path}/exports');
+      final asset = Directory('${root.path}/Backing tracks/0123456789abcdef')
+        ..createSync(recursive: true);
+      File('${asset.path}/info.json').writeAsStringSync('{}');
+      File('${asset.path}/Evening lights.wav').writeAsBytesSync([0, 1, 2]);
+
+      expect(await repo.findUnfinalized(), isEmpty);
+      expect(asset.existsSync(), isTrue);
+    });
+
     test('treats an unreadable (corrupt) sidecar as unfinalized', () async {
       final root = Directory('${tempDir.path}/exports');
       final corrupt = Directory('${root.path}/perf-corrupt')
@@ -1115,14 +1701,14 @@ void main() {
         final dir = Directory('${root.path}/perf-crashed')
           ..createSync(recursive: true);
         writeNativeSidecar(dir.path);
-        writeRawPcm(
-          '${dir.path}/master.pcm',
+        writeOpenPart(
+          '${dir.path}/master-001.wav',
           Float32List.fromList([0.25, 0.5]),
         );
 
         await repo.recoverCapture(dir.path);
 
-        expect(File('${dir.path}/master.wav').existsSync(), isTrue);
+        expect(partSizes('${dir.path}/master-001.wav'), (84 - 8 + 8, 8));
         final manifest =
             jsonDecode(File('${dir.path}/performance.json').readAsStringSync())
                 as Map<String, dynamic>;
@@ -1259,13 +1845,102 @@ void main() {
   });
 
   group('runBootRecovery (silent boot salvage, #679)', () {
-    /// A crashed capture: unfinalized sidecar plus raw master PCM, the same
-    /// fixture shape the recoverCapture tests use.
+    test('a crashed capture from before #1198 recovers with its WAV and is '
+        'never deleted afterwards', () async {
+      final dir = '${tempDir.path}/exports/perf-legacy';
+      Directory(dir).createSync(recursive: true);
+      writeNativeSidecar(dir);
+      writeRawPcm('$dir/master.pcm', Float32List.fromList([0.25, 0.5]));
+
+      await repo.runBootRecovery();
+      final recovered = '${tempDir.path}/exports/recovered/perf-legacy';
+      expect(File('$recovered/master.wav').existsSync(), isTrue);
+      expect(File('$recovered/master.pcm').existsSync(), isTrue);
+
+      clock = clock.add(const Duration(days: 400));
+      await repo.runBootRecovery();
+      expect(File('$recovered/master.wav').existsSync(), isTrue);
+    });
+
+    test('pre-#1198 captures too large to read whole (6 GB and 36 GB raw, as '
+        'found on an appliance) stay unfinalized in place, every file kept, '
+        'and are reported as not recovered', () async {
+      // Sparse files: the lengths are real, the disk holds almost nothing.
+      void sparse(String path, int length) {
+        File(path).openSync(mode: FileMode.write)
+          ..setPositionSync(length - 4)
+          ..writeFromSync([0, 0, 0, 0])
+          ..closeSync();
+      }
+
+      final sizes = {'perf-big': 6 << 30, 'perf-huge': 36 << 30};
+      for (final MapEntry(key: slug, value: length) in sizes.entries) {
+        final dir = '${tempDir.path}/exports/$slug';
+        Directory(dir).createSync(recursive: true);
+        writeNativeSidecar(dir, capturedInputs: const [0, 1]);
+        File('$dir/arm-snapshot.json').writeAsStringSync('{}');
+        for (final name in ['master', 'input-0', 'input-1']) {
+          sparse('$dir/$name.pcm', length);
+        }
+      }
+
+      await repo.runBootRecovery();
+
+      for (final MapEntry(key: slug, value: length) in sizes.entries) {
+        final dir = '${tempDir.path}/exports/$slug';
+        for (final name in ['master', 'input-0', 'input-1']) {
+          expect(File('$dir/$name.pcm').lengthSync(), length);
+        }
+        expect(File('$dir/master.wav').existsSync(), isFalse);
+        expect(File('$dir/arm-snapshot.json').existsSync(), isTrue);
+        expect(
+          Directory('${tempDir.path}/exports/recovered/$slug').existsSync(),
+          isFalse,
+        );
+      }
+      expect(
+        (await repo.findUnfinalized()).map((c) => c.slug).toSet(),
+        sizes.keys.toSet(),
+      );
+      expect(
+        repo.unrecoveredTakes.toSet(),
+        {for (final slug in sizes.keys) '${tempDir.path}/exports/$slug'},
+      );
+    });
+
+    test('a raw file just past the bound is left for Part 8, just under it '
+        'converts', () async {
+      final under = '${tempDir.path}/exports/perf-under';
+      final over = '${tempDir.path}/exports/perf-over';
+      for (final dir in [under, over]) {
+        Directory(dir).createSync(recursive: true);
+        writeNativeSidecar(dir);
+      }
+      writeRawPcm('$under/master.pcm', Float32List.fromList([0.25, 0.5]));
+      File('$over/master.pcm').openSync(mode: FileMode.write)
+        ..setPositionSync(PerformanceRepository.legacyConvertMaxBytes)
+        ..writeFromSync([0, 0, 0, 0])
+        ..closeSync();
+
+      await repo.runBootRecovery();
+
+      expect(
+        File(
+          '${tempDir.path}/exports/recovered/perf-under/master.wav',
+        ).existsSync(),
+        isTrue,
+      );
+      expect(Directory(over).existsSync(), isTrue);
+      expect(repo.unrecoveredTakes, [over]);
+    });
+
+    /// A crashed capture: unfinalized sidecar plus an open master part, the
+    /// same fixture shape the recoverCapture tests use.
     String seedCrashed(String slug) {
       final dir = '${tempDir.path}/exports/$slug';
       Directory(dir).createSync(recursive: true);
       writeNativeSidecar(dir);
-      writeRawPcm('$dir/master.pcm', Float32List.fromList([0.1, 0.2]));
+      writeOpenPart('$dir/master-001.wav', Float32List.fromList([0.1, 0.2]));
       return dir;
     }
 
@@ -1280,9 +1955,9 @@ void main() {
         final recovered = '${tempDir.path}/exports/recovered/perf-crashed';
         expect(Directory(crashed).existsSync(), isFalse);
         expect(
-          File('$recovered/master.wav').existsSync(),
-          isTrue,
-          reason: 'the salvage converts the raw PCM to usable audio',
+          partSizes('$recovered/master-001.wav'),
+          (84 - 8 + 8, 8),
+          reason: 'the salvage seals the open part so the take plays',
         );
         final manifest =
             jsonDecode(File('$recovered/performance.json').readAsStringSync())
@@ -1325,31 +2000,25 @@ void main() {
     });
 
     test(
-      'prunes recovered entries older than recoveredRetention and keeps '
-      'fresh ones',
+      'never deletes a recovered take, however long ago it landed — '
+      'recovered audio is kept until the user removes it',
       () async {
         final recoveredRoot = '${tempDir.path}/exports/recovered';
         final old = '$recoveredRoot/perf-old';
-        final fresh = '$recoveredRoot/perf-fresh';
         Directory(old).createSync(recursive: true);
-        Directory(fresh).createSync(recursive: true);
         writeNativeSidecar(old, finalized: true);
-        writeNativeSidecar(fresh, finalized: true);
-        // Age is the recovered-at stamp's contents (landing time); the
-        // injected clock is "now". One entry past the window, one
-        // comfortably inside it.
-        writeRecoveredStamp(
-          old,
-          clock.subtract(
-            PerformanceRepository.recoveredRetention + const Duration(days: 1),
-          ),
+        File(
+          '$old/${PerformanceRepository.recoveredAtStampName}',
+        ).writeAsStringSync(
+          clock
+              .subtract(const Duration(days: 3650))
+              .millisecondsSinceEpoch
+              .toString(),
         );
-        writeRecoveredStamp(fresh, clock.subtract(const Duration(days: 1)));
 
         await repo.runBootRecovery();
 
-        expect(Directory(old).existsSync(), isFalse);
-        expect(Directory(fresh).existsSync(), isTrue);
+        expect(Directory(old).existsSync(), isTrue);
       },
     );
 
@@ -1383,9 +2052,8 @@ void main() {
       'the next boot, without crashing',
       () async {
         final dir = seedCrashed('perf-crashed');
-        // A directory squatting on the finalize's WAV target: the PCM
-        // conversion's writeAsBytes fails on it.
-        Directory('$dir/master.wav').createSync();
+        // A directory named like a part: sealing it fails to open it.
+        Directory('$dir/master-002.wav').createSync();
 
         await repo.runBootRecovery();
 
@@ -1410,6 +2078,7 @@ void main() {
           progressPercent: 10,
         );
         final pollingRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
           now: () => clock,
@@ -1494,6 +2163,7 @@ void main() {
         final rootGate = Completer<String>();
         var rootCalls = 0;
         final gatedRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () {
             rootCalls++;
@@ -1540,9 +2210,9 @@ void main() {
       'escapes as an unhandled error (#679 r2)',
       () async {
         final bad = seedCrashed('perf-a-bad');
-        // A directory squatting on the finalize's WAV target: this
-        // capture's salvage throws mid-finalize.
-        Directory('$bad/master.wav').createSync();
+        // A directory named like a part: this capture's salvage throws
+        // mid-finalize.
+        Directory('$bad/master-002.wav').createSync();
         seedCrashed('perf-b-good');
 
         // Deterministic regardless of listSync order: an unguarded loop
@@ -1571,6 +2241,7 @@ void main() {
           progressPercent: 10,
         );
         final timingRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
           now: () => clock,
@@ -1633,6 +2304,7 @@ void main() {
           progressPercent: 10,
         );
         final timingRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
           now: () => clock,
@@ -1698,40 +2370,6 @@ void main() {
     );
 
     test(
-      'an unreadable recovered/ area skips the prune whole without taking '
-      'the rest of boot recovery down (#679 r3)',
-      () async {
-        final recoveredRoot = '${tempDir.path}/exports/recovered';
-        Directory(recoveredRoot).createSync(recursive: true);
-        final crashed = seedCrashed('perf-crashed');
-
-        final testZone = Zone.current;
-        await IOOverrides.runZoned(
-          () => repo.runBootRecovery(),
-          createDirectory: (path) {
-            // Real directories must be constructed outside the override
-            // zone, or the Directory() factory would re-enter this callback
-            // forever.
-            final real = testZone.run(() => Directory(path));
-            return path == recoveredRoot ? _ThrowingListDirectory(real) : real;
-          },
-        );
-
-        expect(
-          Directory(crashed).existsSync(),
-          isFalse,
-          reason:
-              'the crashed capture still recovered — a broken prune must '
-              'not abort the boot',
-        );
-        expect(
-          Directory('$recoveredRoot/perf-crashed').existsSync(),
-          isTrue,
-        );
-      },
-    );
-
-    test(
       'sweeps a finalized bundle stranded with its recovery marker into '
       'recovered/, and never touches an unmarked finished take (#679 r2)',
       () async {
@@ -1774,6 +2412,7 @@ void main() {
       'to recover, and no unhandled error out of the unawaited call',
       () async {
         final brokenRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => throw const FileSystemException('gone'),
           now: () => clock,
@@ -1785,11 +2424,12 @@ void main() {
     );
 
     test(
-      'survives the boot scan itself failing after prune/sweep already ran '
+      'survives the boot scan itself failing after the sweep already ran '
       '(the root resolves once, then the volume goes away)',
       () async {
         var rootCalls = 0;
         final flakyRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async {
             rootCalls++;
@@ -1807,7 +2447,7 @@ void main() {
           rootCalls,
           2,
           reason:
-              'prune/sweep consumed the first resolution; the scan '
+              'the sweep consumed the first resolution; the scan '
               're-resolved, failed, and was contained',
         );
       },
@@ -1835,130 +2475,6 @@ void main() {
             '$stranded/${PerformanceRepository.recoveryMarkerName}',
           ).existsSync(),
           isTrue,
-        );
-      },
-    );
-
-    test(
-      'prune never deletes an entry without the recovered-at stamp — '
-      'neither a sidecar-less squatter nor a user-dragged finished take '
-      "(sidecar and all) is the salvage's to age out (#679 r5, r6)",
-      () async {
-        final recoveredRoot = '${tempDir.path}/exports/recovered';
-        // A take's insides squatting the area: subdirectories with audio,
-        // no sidecar, no stamp.
-        final squatter = '$recoveredRoot/loops';
-        Directory(squatter).createSync(recursive: true);
-        File('$squatter/track0-lane0.wav').writeAsStringSync('audio');
-        // A finished take a user dragged in by hand: a full capture bundle,
-        // sidecar included — everything but the salvage's own stamp. Shape
-        // says "capture"; only provenance says "ours to prune".
-        final dragged = '$recoveredRoot/my-best-take';
-        Directory(dragged).createSync(recursive: true);
-        writeNativeSidecar(dragged, finalized: true);
-        // An old genuine recovery alongside them, proving the prune itself
-        // still ran and the unstamped entries were skipped, not the whole
-        // area.
-        final old = '$recoveredRoot/perf-old';
-        Directory(old).createSync(recursive: true);
-        writeNativeSidecar(old, finalized: true);
-        writeRecoveredStamp(
-          old,
-          clock.subtract(
-            PerformanceRepository.recoveredRetention + const Duration(days: 1),
-          ),
-        );
-
-        await repo.runBootRecovery();
-
-        expect(
-          Directory(squatter).existsSync(),
-          isTrue,
-          reason: 'no stamp means the salvage never moved it here',
-        );
-        expect(File('$squatter/track0-lane0.wav').existsSync(), isTrue);
-        expect(
-          Directory(dragged).existsSync(),
-          isTrue,
-          reason:
-              'a sidecar proves "is a capture bundle", not provenance — '
-              'the dragged-in take survives pruning forever',
-        );
-        expect(Directory(old).existsSync(), isFalse);
-      },
-    );
-
-    test(
-      'an unparsable recovered-at stamp yields no age to act on — the '
-      'entry survives, its prunable sibling still goes (#679 r6)',
-      () async {
-        final recoveredRoot = '${tempDir.path}/exports/recovered';
-        final garbled = '$recoveredRoot/perf-garbled';
-        final old = '$recoveredRoot/perf-old';
-        Directory(garbled).createSync(recursive: true);
-        Directory(old).createSync(recursive: true);
-        writeNativeSidecar(garbled, finalized: true);
-        writeNativeSidecar(old, finalized: true);
-        File(
-          '$garbled/${PerformanceRepository.recoveredAtStampName}',
-        ).writeAsStringSync('not a number');
-        writeRecoveredStamp(
-          old,
-          clock.subtract(
-            PerformanceRepository.recoveredRetention + const Duration(days: 1),
-          ),
-        );
-
-        await repo.runBootRecovery();
-
-        expect(Directory(garbled).existsSync(), isTrue);
-        expect(Directory(old).existsSync(), isFalse);
-      },
-    );
-
-    test(
-      'an entry whose stamp the filesystem refuses to read is skipped by '
-      'the prune — its prunable sibling still goes, and boot does not crash',
-      () async {
-        final recoveredRoot = '${tempDir.path}/exports/recovered';
-        final unreadable = '$recoveredRoot/perf-unreadable';
-        final old = '$recoveredRoot/perf-old';
-        Directory(unreadable).createSync(recursive: true);
-        Directory(old).createSync(recursive: true);
-        writeNativeSidecar(unreadable, finalized: true);
-        writeNativeSidecar(old, finalized: true);
-        // Both entries are old enough to prune; only the readable one may
-        // actually go.
-        final oldStamp = clock.subtract(
-          PerformanceRepository.recoveredRetention + const Duration(days: 1),
-        );
-        writeRecoveredStamp(unreadable, oldStamp);
-        writeRecoveredStamp(old, oldStamp);
-
-        final testZone = Zone.current;
-        await IOOverrides.runZoned(
-          () => repo.runBootRecovery(),
-          createFile: (path) {
-            // Real files must be constructed outside the override zone, or
-            // the File() factory would re-enter this callback forever.
-            final real = testZone.run(() => File(path));
-            return path ==
-                    '$unreadable/'
-                        '${PerformanceRepository.recoveredAtStampName}'
-                ? _ThrowingStampFile(real)
-                : real;
-          },
-        );
-
-        expect(
-          Directory(unreadable).existsSync(),
-          isTrue,
-          reason: 'an unreadable stamp is skipped, never guessed at',
-        );
-        expect(
-          Directory(old).existsSync(),
-          isFalse,
-          reason: 'the loop continued past the failure to its sibling',
         );
       },
     );
@@ -1992,6 +2508,7 @@ void main() {
       "resolved, mirroring runBootRecovery's own no-op on that boot",
       () async {
         final brokenRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => throw const FileSystemException('gone'),
           now: () => clock,
@@ -2013,6 +2530,7 @@ void main() {
         // restarts, since arm() latches _armedDir for the process lifetime.
         engine.seedLane(0, 0, Float32List.fromList([1, 1]));
         final sessionRepo = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
           now: () => clock,
@@ -2030,6 +2548,7 @@ void main() {
           progressPercent: 10,
         );
         final boot1 = PerformanceRepository(
+          guards: GuardRegistry(),
           engine: engine,
           exportsRoot: () async => '${tempDir.path}/exports',
           now: () => clock,
@@ -2070,30 +2589,10 @@ void main() {
     );
 
     test(
-      'never prunes an entry whose stamp predates the sanity floor — an '
-      'RTC-less boot writes near-epoch stamps that a later-corrected clock '
-      'would misread as decades of age (#679 r2)',
-      () async {
-        final nearEpoch = '${tempDir.path}/exports/recovered/perf-preclock';
-        Directory(nearEpoch).createSync(recursive: true);
-        writeNativeSidecar(nearEpoch, finalized: true);
-        writeRecoveredStamp(nearEpoch, DateTime.utc(1970, 1, 2));
-
-        await repo.runBootRecovery();
-
-        expect(
-          Directory(nearEpoch).existsSync(),
-          isTrue,
-          reason: 'a clearly-wrong timestamp must never justify a delete',
-        );
-      },
-    );
-
-    test(
       'the recovered-at stamp is written on the SOURCE before the rename — '
       'a move that dies mid-way leaves the stamp with the bundle, and the '
-      'retry re-stamps at ITS landing, so retention runs from arrival, '
-      'never from a month-old first attempt (#679 r6)',
+      'retry re-stamps at ITS landing, so the stamp records the arrival, '
+      'never a month-old first attempt (#679 r6)',
       () async {
         // Boot 1: the move fails after the stamp (a file squatting where
         // recovered/ must go) — the crash-window simulation.
@@ -2134,25 +2633,13 @@ void main() {
             '$moved/${PerformanceRepository.recoveredAtStampName}',
           ).readAsStringSync(),
           boot2Clock.millisecondsSinceEpoch.toString(),
-          reason: 'the landing re-stamps: retention runs from arrival',
+          reason: 'the landing re-stamps: the stamp records the arrival',
         );
 
-        // Boot 3, a day later: well inside the window measured from
-        // landing — 41 days from the first attempt must not count.
-        clock = clock.add(const Duration(days: 1));
+        // Later boots keep it: recovered audio is never deleted.
+        clock = clock.add(const Duration(days: 400));
         await repo.runBootRecovery();
-        expect(
-          Directory(moved).existsSync(),
-          isTrue,
-          reason: 'full retention from landing, not from the first attempt',
-        );
-
-        // And once the window HAS elapsed from landing, it goes.
-        clock = boot2Clock.add(
-          PerformanceRepository.recoveredRetention + const Duration(days: 1),
-        );
-        await repo.runBootRecovery();
-        expect(Directory(moved).existsSync(), isFalse);
+        expect(Directory(moved).existsSync(), isTrue);
       },
     );
 
@@ -2182,10 +2669,12 @@ void main() {
 
   group('captureProgress', () {
     test('reads zero/false when not armed', () {
-      expect(
-        repo.captureProgress,
-        (elapsed: Duration.zero, overrun: false, selfStopped: false),
-      );
+      expect(repo.captureProgress, (
+        elapsed: Duration.zero,
+        overrun: false,
+        selfStopped: false,
+        stopReason: PerfStopReason.none,
+      ));
     });
 
     test('reads elapsed time and overrun from the engine snapshot', () {
@@ -2208,6 +2697,16 @@ void main() {
         ..perfZeroFilledFrames = 128;
 
       expect(repo.captureProgress.overrun, isTrue);
+    });
+
+    test('carries why the engine stopped the take (#1198)', () {
+      engine
+        ..perfStopped = true
+        ..perfStopReason = PerfStopReason.slowStorage;
+
+      final progress = repo.captureProgress;
+      expect(progress.selfStopped, isTrue);
+      expect(progress.stopReason, PerfStopReason.slowStorage);
     });
   });
 
@@ -2258,7 +2757,7 @@ void main() {
     test(
       'refuses the reserved name "recovered" — case-insensitively, since a '
       'case-insensitive exports volume would make the renamed take BE the '
-      'salvage area, pruned by retention and adopted by future salvages '
+      'salvage area, adopted by future salvages '
       '(#679 r5)',
       () async {
         final dir = Directory('${root.path}/perf-a')
@@ -2309,5 +2808,163 @@ void main() {
         );
       },
     );
+  });
+
+  group('capture guard (#1198)', () {
+    late GuardRegistry guards;
+    late PerformanceRepository guarded;
+
+    setUp(() {
+      guards = GuardRegistry();
+      guarded = PerformanceRepository(
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+        guards: guards,
+      );
+    });
+
+    tearDown(() => guarded.dispose());
+
+    List<GuardKind> blockingDeviceChange() => [
+      for (final op in guards.blockers(
+        GuardKind.deviceChange,
+        const GuardScope.internal(),
+      ))
+        op.kind,
+    ];
+
+    test('a take on a volume holds its guard there: an eject of that '
+        'volume is refused, one of another is not', () async {
+      await guarded.arm(
+        root: '${tempDir.path}/usb',
+        scope: const GuardScope.removable(3),
+      );
+      expect(guarded.armedDirectory, isNotNull);
+
+      expect(
+        guards.blockers(GuardKind.eject, const GuardScope.removable(3)),
+        [
+          const ActiveOperation(
+            kind: GuardKind.capture,
+            scope: GuardScope.removable(3),
+            purpose: PerformanceRepository.capturePurpose,
+          ),
+        ],
+      );
+      expect(
+        guards.blockers(GuardKind.eject, const GuardScope.removable(4)),
+        isEmpty,
+      );
+      await guarded.disarmAndFinalize();
+    });
+
+    /// What the table holds while the finalize is under way: read as soon
+    /// as the engine has been disarmed, when the finalize is waiting on its
+    /// first file read.
+    Future<List<GuardKind>> activeWhileFinalizing() async {
+      final disarms = engine.perfDisarmCalls;
+      final done = guarded.disarmAndFinalize();
+      while (engine.perfDisarmCalls == disarms) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final kinds = [for (final op in guards.active) op.kind];
+      await done;
+      expect(guards.active, isEmpty);
+      return kinds;
+    }
+
+    test('a take on a drive holds its guard through the finalize, which '
+        'writes to that drive (#1177)', () async {
+      await guarded.arm(
+        root: '${tempDir.path}/usb',
+        scope: const GuardScope.removable(3),
+      );
+      expect(await activeWhileFinalizing(), [GuardKind.capture]);
+    });
+
+    test('a take on Internal lets its guard go before the finalize', () async {
+      await guarded.arm();
+      expect(await activeWhileFinalizing(), isEmpty);
+    });
+
+    test('arm is refused at its commit while a device change is in '
+        'flight, and says so', () async {
+      final change = guards.enter(
+        GuardKind.deviceChange,
+        const GuardScope.internal(),
+        purpose: 'audio apply',
+      );
+      final refusals = <GuardRefused>[];
+      final sub = guarded.armRefusals.listen(refusals.add);
+      addTearDown(sub.cancel);
+
+      expect(await guarded.arm(), EngineResult.ok);
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.perfArmCalls, 0);
+      expect(guarded.armedDirectory, isNull);
+      expect(
+        Directory('${tempDir.path}/exports/perf-20260706-143015').existsSync(),
+        isFalse,
+      );
+      expect(refusals.single.wants, GuardKind.capture);
+      expect(refusals.single.blockers.single.purpose, 'audio apply');
+
+      change.release();
+      expect(await guarded.arm(), EngineResult.ok);
+      expect(engine.perfArmCalls, 1);
+    });
+
+    test('a take holds the guard until it is finalized', () async {
+      expect(await guarded.arm(), EngineResult.ok);
+      expect(blockingDeviceChange(), [GuardKind.capture]);
+      expect(
+        guards.active.single.purpose,
+        PerformanceRepository.capturePurpose,
+      );
+
+      engine.perfDisarmResult = EngineResult.device;
+      expect(await guarded.disarmAndFinalize(), EngineResult.device);
+      expect(blockingDeviceChange(), [GuardKind.capture]);
+
+      engine.perfDisarmResult = EngineResult.ok;
+      expect(await guarded.disarmAndFinalize(), EngineResult.ok);
+      expect(blockingDeviceChange(), isEmpty);
+    });
+
+    test('a finalize that throws after the engine disarmed still releases '
+        'the guard', () async {
+      expect(await guarded.arm(), EngineResult.ok);
+      writeNativeSidecar(guarded.armedDirectory!);
+      final testZone = Zone.current;
+      await expectLater(
+        IOOverrides.runZoned(
+          guarded.disarmAndFinalize,
+          createFile: (path) {
+            final real = testZone.run(() => File(path));
+            return path.endsWith('/performance.json')
+                ? _ManifestWriteFails(real)
+                : real;
+          },
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(engine.perfDisarmCalls, 1);
+      expect(guards.active, isEmpty);
+    });
+
+    test('an arm the engine refuses releases the guard', () async {
+      engine.perfArmResult = EngineResult.device;
+      expect(await guarded.arm(), EngineResult.device);
+      expect(guards.active, isEmpty);
+    });
+
+    test('an arm that never acknowledges releases the guard once '
+        'cancelled', () async {
+      engine.perfArmQueues = true;
+      expect(await guarded.arm(), EngineResult.device);
+      expect(guarded.armedDirectory, isNull);
+      expect(guards.active, isEmpty);
+    });
   });
 }

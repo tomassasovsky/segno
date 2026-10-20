@@ -1,15 +1,21 @@
-SUMMARY = "The console board's firmware, and the boot-time check that applies it"
+SUMMARY = "The console board's and ring carrier's firmware, and the boot-time checks that apply them"
 DESCRIPTION = "Ships the RP2350 firmware built from this same commit, the SWD \
 config that reaches it through the Pi's GPIO, and a marker naming the firmware \
 version and link protocol the app expects. A oneshot before segno.service \
 flashes the board when it is not already running them, so the two halves of a \
-build cannot ship out of step and a field unit needs no laptop to be repaired."
+build cannot ship out of step and a field unit needs no laptop to be repaired. \
+The ring carrier's XIAO has no SWD path: a second oneshot updates it through \
+the console board's UART bridge, on trial, so a failed update leaves its \
+previous firmware booting (#1342)."
 LICENSE = "CLOSED"
 
 # The compiled firmware, handed over by CI the way the app bundle is; override
 # for a local build. Kept out of the recipe's own SRC_URI because it is a build
 # artifact of firmware/console_board, not a source file.
 SEGNO_CONSOLE_FW_DIR ?= "${THISDIR}/../../../prebuilt/console-board"
+# The sealed ring image and its marker (firmware/ring_board/seal.py), handed
+# over in the same CI artifact.
+SEGNO_RING_FW_DIR ?= "${SEGNO_CONSOLE_FW_DIR}/ring-board"
 
 # Bitbake must be TOLD these files are inputs. do_install reads them from a
 # directory outside SRC_URI, so without this the task's signature never
@@ -19,15 +25,33 @@ SEGNO_CONSOLE_FW_DIR ?= "${THISDIR}/../../../prebuilt/console-board"
 # dark: the app refuses to drive a board it cannot trust. The workflow reads
 # the firmware back out of the finished rootfs to make sure.
 do_install[file-checksums] += "${SEGNO_CONSOLE_FW_DIR}/console_board.elf:True \
-                               ${SEGNO_CONSOLE_FW_DIR}/version:True"
+                               ${SEGNO_CONSOLE_FW_DIR}/version:True \
+                               ${SEGNO_RING_FW_DIR}/ring_board.bin:True \
+                               ${SEGNO_RING_FW_DIR}/version:True"
+
+# segno-ring-flash speaks the console's pedal link (to start the bridge) and
+# the ring's update protocol, so it compiles the firmware's own headers.
+FIRMWARE_DIR = "${THISDIR}/../../../../../firmware"
+FILESEXTRAPATHS:prepend := "${FIRMWARE_DIR}/console_board:${FIRMWARE_DIR}/libraries/SegnoRing/src:"
 
 SRC_URI = "file://segno-console-flash \
            file://segno-console-flash.service \
-           file://pi5-swd.cfg"
+           file://pi5-swd.cfg \
+           file://segno-ring-flash.c \
+           file://segno-ring-flash.service \
+           file://ring_flash.c \
+           file://ring_flash.h \
+           file://pedal_link.c \
+           file://pedal_link.h \
+           file://ring_frame.h \
+           file://ring_update.h"
+
+# Local files only: they unpack straight into UNPACKDIR.
+S = "${UNPACKDIR}"
 
 inherit systemd
 
-SYSTEMD_SERVICE:${PN} = "segno-console-flash.service"
+SYSTEMD_SERVICE:${PN} = "segno-console-flash.service segno-ring-flash.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 # segno-openocd does the flashing; raspi-utils' pinctrl sets the SWDIO pull-up
@@ -50,6 +74,11 @@ python () {
                  "holding console_board.elf built from firmware/console_board.")
 }
 
+do_compile() {
+    ${CC} ${CFLAGS} ${LDFLAGS} -std=gnu11 -Wall -Wextra -I${S} \
+        -o ${B}/segno-ring-flash ${S}/segno-ring-flash.c ${S}/ring_flash.c ${S}/pedal_link.c
+}
+
 do_install() {
     fw="${SEGNO_CONSOLE_FW_DIR}"
     if [ ! -f "$fw/console_board.elf" ]; then
@@ -65,11 +94,22 @@ do_install() {
     # firmware/console_board/pedal_link.h.
     install -m 0644 "$fw/version" ${D}${libdir}/segno/console-board/version
 
+    ring="${SEGNO_RING_FW_DIR}"
+    if [ ! -f "$ring/ring_board.bin" ] || [ ! -f "$ring/version" ]; then
+        bbfatal "No ring_board.bin and version under SEGNO_RING_FW_DIR=$ring"
+    fi
+    install -d ${D}${libdir}/segno/ring-board
+    install -m 0644 "$ring/ring_board.bin" ${D}${libdir}/segno/ring-board/ring_board.bin
+    install -m 0644 "$ring/version" ${D}${libdir}/segno/ring-board/version
+
     install -d ${D}${bindir}
     install -m 0755 ${UNPACKDIR}/segno-console-flash ${D}${bindir}/segno-console-flash
+    install -m 0755 ${B}/segno-ring-flash ${D}${bindir}/segno-ring-flash
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/segno-console-flash.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/segno-ring-flash.service ${D}${systemd_system_unitdir}/
 }
 
-FILES:${PN} += "${libdir}/segno/console-board ${bindir}/segno-console-flash"
+FILES:${PN} += "${libdir}/segno/console-board ${libdir}/segno/ring-board \
+                ${bindir}/segno-console-flash ${bindir}/segno-ring-flash"

@@ -1,0 +1,14 @@
+{
+  "sourceManifestSha256": "3ee64ba84a5d341bc6b3d3a4dd5e7f684b4de63c0ff4d9941d4ba87d3ca991e1",
+  "sourceDrift": [],
+  "unresolvedActionableFindings": 0,
+  "rolesPerformed": "five explicit sequential role passes by one non-author reviewer; separate independent behavioral reviewer",
+  "reports": {
+    "vgv-review.md": "156537413180fd36272c455e5e053c0d69904b5a2d9a83359b1139a29c1fa0ce",
+    "architecture-review.md": "6202d828ed8f9bb6121e6a421b9f7f8228a9c0237cc867975dfa090e053b8b8f",
+    "test-quality-review.md": "99d2cdad3ed3d68bb55b73abb2e3c6cff97e498562aa60ad770155d466c7b5b7",
+    "code-simplicity-review.md": "4fc1bff24999283074bca1da7f037912618ad745db225284af3e21552d6915fa",
+    "pr-readiness-review.md": "c7e73ba3b9809bee339cfb067db0637320d10acce37ce11103dfd76fdee30c0f",
+    "bug-review.md": "602ae3eb3d8f6fe976c609fb6f6ebe8cab9dabd9f729da0deb56d006707c7ad9"
+  }
+}

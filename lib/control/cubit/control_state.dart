@@ -13,8 +13,38 @@ class ControlState extends Equatable {
   /// Creates a [ControlState].
   const ControlState({
     this.mode = InteractionMode.record,
-    this.defaultMode = InteractionMode.record,
-    this.modeSwitchStyle = ModeSwitchStyle.cycleThree,
+    this.retiredBootMode,
+    this.pedalSetup = const PedalSetup(),
+    this.pedalSetupUnavailable = false,
+    this.pedalSetupPersistenceUncertain = false,
+    this.pedalSetupRuntimeUnsaved = false,
+    this.footMixer = const FootMixerSelection(),
+    this.footMixerFailure = 0,
+    this.footFade = const FootFadeSelection(),
+    this.footFadeFailure = 0,
+    this.footFadeRefusedEmpty = 0,
+    this.footReverseFailure = 0,
+    this.footReverseRefusedEmpty = 0,
+    this.footPeelFailure = 0,
+    this.footPeelRefusal = FootPeelRefusal.failed,
+    this.customLit = const <PedalButton, bool>{},
+    this.assignedActionFailure = 0,
+    this.assignedActionRefusal,
+    this.assignedActionLowDisk = false,
+    this.footTuner = const FootTunerSelection(),
+    this.tunerPreferences = const TunerPreferences(),
+    this.footTunerFailure = 0,
+    this.footTunerRefusal = FootTunerRefusal.armFailed,
+    this.tunerDefaultSeeded = false,
+    this.pendingHolds = const <PedalButton>{},
+    this.holdThreshold = const Duration(milliseconds: 800),
+    this.footFxFailure = 0,
+    this.footFxRefusal = FootFxRefusal.unavailable,
+    this.fxSwitches = const <PedalButton, FxSwitchReading>{},
+    this.fxStopChangeNotice = false,
+    this.footLengthFailure = 0,
+    this.footLengthRefusal = FootLengthRefusal.failed,
+    this.footLengthOutcome = FootLengthOutcome.none,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -22,10 +52,45 @@ class ControlState extends Equatable {
     this.globalBindings = PedalBindingSet.empty,
     this.sessionBindings = PedalBindingSet.empty,
     this.heldMomentary = const <PedalBindingKey>{},
-    this.controllerBindings = ControllerBindingSet.empty,
-    this.controllerLearn,
     this.clearAllPulse = 0,
+    this.midiMappings = MidiMappingSet.empty,
+    this.midiControlEnabled = true,
+    this.midiLoaded = false,
+    this.midiUnavailable = false,
+    this.midiPersistenceUncertain = false,
+    this.midiRemotePaused = false,
+    this.midiEdit,
+    this.midiSaveError,
+    this.midiLevels = const {},
   });
+
+  /// Confirmed mappings; malformed storage remains unavailable until repair.
+  final MidiMappingSet midiMappings;
+
+  /// Confirmed durable Remote preference.
+  final bool midiControlEnabled;
+
+  /// Whether the initial MIDI configuration read completed.
+  final bool midiLoaded;
+
+  /// Explicit saved MIDI bytes could not be decoded.
+  final bool midiUnavailable;
+
+  /// A refused write could not verify exact rollback.
+  final bool midiPersistenceUncertain;
+
+  /// Live safety pause after Remote Off, including a refused disable Save.
+  final bool midiRemotePaused;
+
+  /// Current edit owner and its scoped Learn capture.
+  final MidiEdit? midiEdit;
+
+  /// Last durable mutation error; remains visible until confirmed repair.
+  final String? midiSaveError;
+
+  /// Complete readings projected for the editor, cleared on source
+  /// invalidation.
+  final Map<MidiSource, MidiControlEvent> midiLevels;
 
   /// Tracks per bank.
   static const int tracksPerBank = 4;
@@ -38,16 +103,143 @@ class ControlState extends Equatable {
   /// explicit mode actions (clear-all counts: a whole-rig reset → record).
   final InteractionMode mode;
 
-  /// The persisted mode the system boots into.
-  final InteractionMode defaultMode;
+  /// The mode an earlier build booted into instead of Record, once, at the
+  /// first start since the boot-default setting was retired; null otherwise.
+  ///
+  /// Set only by the boot restore, never cleared: it exists so the app can
+  /// say once that the console now starts in Record.
+  final InteractionMode? retiredBootMode;
 
-  /// How the MODE footswitch reaches the three interaction modes (#632): the
-  /// original three-stop tap cycle (the default), or a Record ↔ Mute tap
-  /// cycle with FX behind the MODE hold. Per-rig, persisted under
-  /// `pedal.mode_switch_style` and restored at boot. Invalidation rule: only
-  /// an explicit edit ([ControlCubit.setModeSwitchStyle]) writes it — engine
-  /// truth never can.
-  final ModeSwitchStyle modeSwitchStyle;
+  /// The built-in footswitch setup: what MODE's press and hold reach, what a
+  /// Record / Play or track hold adds, and the Custom-controls map.
+  ///
+  /// Per-rig, persisted under `pedal.setup` and restored at boot.
+  /// Static assignment changes are explicit edits. Accepted external toggle
+  /// intent also updates this envelope after confirmed durable persistence;
+  /// it does not invalidate configured gestures.
+  final PedalSetup pedalSetup;
+
+  /// Explicit saved setup was malformed. Configurable pedal gestures stay
+  /// inert until a confirmed Save replaces those bytes deliberately.
+  final bool pedalSetupUnavailable;
+
+  /// A failed Save could not restore its exact durable checkpoint. The live
+  /// setup remains authoritative until a confirmed Save repairs storage.
+  final bool pedalSetupPersistenceUncertain;
+
+  /// Accepted external toggle intent has not yet been durably saved.
+  final bool pedalSetupRuntimeUnsaved;
+
+  /// Transient Mixer selection; never changes the normal cursor or bank.
+  final FootMixerSelection footMixer;
+
+  /// Repeated failed Mixer mute actions notify the current flow once each.
+  final int footMixerFailure;
+
+  /// Transient Fade time selection; the visible bank is [activeBank].
+  final FootFadeSelection footFade;
+
+  /// Each refused Fade gesture, and each assigned Fade that reached no
+  /// track, notifies the current flow once.
+  final int footFadeFailure;
+
+  /// How many empty tracks the latest refused Fade was aimed at when every
+  /// one of its targets was empty (an assigned Fade); 0 for any other
+  /// refusal. The notice names the empty track instead of a retry.
+  final int footFadeRefusedEmpty;
+
+  /// Each refused Reverse gesture, and each assigned Reverse that reached
+  /// no track, notifies the current flow once.
+  final int footReverseFailure;
+
+  /// The same as [footFadeRefusedEmpty], for Reverse.
+  final int footReverseRefusedEmpty;
+
+  /// Each refused Peel press notifies the current flow once; the notice
+  /// reads [footPeelRefusal].
+  final int footPeelFailure;
+
+  /// Why the latest refused Peel press removed nothing.
+  final FootPeelRefusal footPeelRefusal;
+
+  /// Which switches the Custom face draws lit: exactly the switch LEDs the
+  /// cubit projects in Custom mode, published so the face cannot disagree
+  /// with the plate (#1229). Empty outside Custom mode. Derived by the cubit
+  /// on every projection, never edited.
+  final Map<PedalButton, bool> customLit;
+
+  /// Each refused assigned action (a Custom switch, a CTRL switch or a MIDI
+  /// control) that has no notice of its own notifies once; the notice names
+  /// [assignedActionRefusal] (#1229, notice policy rule 3).
+  final int assignedActionFailure;
+
+  /// The action the latest [assignedActionFailure] refused.
+  final ControlAction? assignedActionRefusal;
+
+  /// Whether the latest [assignedActionFailure] was a Record performance
+  /// refused for want of disk room, which says so in the recorder's words.
+  final bool assignedActionLowDisk;
+
+  /// The foot Tuner's transient page and mute while the mode is up (#1229).
+  /// Reset on every Tuner entry; never stored.
+  final FootTunerSelection footTuner;
+
+  /// The stored tuner preferences (A4 reference, input), mirrored from
+  /// `TunerSettings` so the Tuner face projects from one state. Derived,
+  /// never edited here.
+  final TunerPreferences tunerPreferences;
+
+  /// Each refused foot Tuner press notifies once; the notice reads
+  /// [footTunerRefusal].
+  final int footTunerFailure;
+
+  /// Why the latest refused foot Tuner press changed nothing.
+  final FootTunerRefusal footTunerRefusal;
+
+  /// Set once when this boot added `Hold · Tuner` to Custom pedal 2 (#1229,
+  /// D11), so the app can say where the Tuner is.
+  final bool tunerDefaultSeeded;
+
+  /// The pedals whose Hold is armed and not yet settled: the hold has neither
+  /// fired, nor been released into its tap, nor been cancelled (#1229, the
+  /// Pending Hold cue). Only the fact is published, never an instant: a face
+  /// times its progress bar from its own ticker against [holdThreshold], so
+  /// a wall-clock step (no RTC, NTP after boot) cannot move it.
+  final Set<PedalButton> pendingHolds;
+
+  /// How long a contact must last to become a Hold — the loaded pedal
+  /// long-press threshold every gesture uses.
+  final Duration holdThreshold;
+
+  /// Each refused FX-mode stomp notifies once; the notice reads
+  /// [footFxRefusal] (#1229).
+  final int footFxFailure;
+
+  /// Why the latest refused FX-mode stomp changed nothing.
+  final FootFxRefusal footFxRefusal;
+
+  /// What each BOUND switch's target reads in FX mode, the same values the
+  /// LEDs project, published so the FX face cannot disagree with the plate
+  /// (#1229). Empty outside FX mode. Derived by the cubit on every
+  /// projection, never edited; it rides here only so a surface can render it.
+  final Map<PedalButton, FxSwitchReading> fxSwitches;
+
+  /// Set once, at the first FX-mode entry on an install that has not been
+  /// told, so the app can say that Stop no longer switches every track's
+  /// effects off in FX mode (#1229). Never cleared.
+  final bool fxStopChangeNotice;
+
+  /// Each Multiply / Divide that changed nothing on a recorded track, from
+  /// the surface or an assigned action in any mode, notifies the current
+  /// flow once (#1168); the notice reads [footLengthRefusal].
+  final int footLengthFailure;
+
+  /// Why the latest refused Multiply / Divide changed nothing.
+  final FootLengthRefusal footLengthRefusal;
+
+  /// The latest Multiply or Divide the surface made on this visit, for the
+  /// length panel's outcome line; [FootLengthOutcome.none] outside a visit.
+  final FootLengthOutcome footLengthOutcome;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -101,21 +293,6 @@ class ControlState extends Equatable {
   /// rule: emptied at the single release-all point (B1) and on each release.
   final Set<PedalBindingKey> heldMomentary;
 
-  /// The external-MIDI mapping set (part 7), restored from the global
-  /// `controller.mappings` settings blob at boot and edited by the MIDI-learn
-  /// settings section.
-  ///
-  /// GLOBAL-ONLY (R19): no session carries a copy, because expression hardware
-  /// belongs to the rig rather than the song. Invalidation rule: same as the
-  /// pedal remap — only an explicit edit writes it, and a target that no
-  /// longer exists goes INERT rather than being dropped.
-  final ControllerBindingSet controllerBindings;
-
-  /// The MIDI-learn capture in progress, or `null` when nothing is listening.
-  /// Invalidation rule: cleared when the capture applies, is cancelled, or
-  /// times out — never by engine truth.
-  final ControllerLearn? controllerLearn;
-
   /// A monotonic pulse bumped each time a [ControlCubit.clearAll] leaves at
   /// least one track holding a clear restore point. NOT stored intent — an
   /// emitted-once cue a surface listens for (the tracks view's post-clear-all
@@ -168,8 +345,38 @@ class ControlState extends Equatable {
   /// Returns a copy with the given fields replaced.
   ControlState copyWith({
     InteractionMode? mode,
-    InteractionMode? defaultMode,
-    ModeSwitchStyle? modeSwitchStyle,
+    InteractionMode? retiredBootMode,
+    PedalSetup? pedalSetup,
+    bool? pedalSetupUnavailable,
+    bool? pedalSetupPersistenceUncertain,
+    bool? pedalSetupRuntimeUnsaved,
+    FootMixerSelection? footMixer,
+    int? footMixerFailure,
+    FootFadeSelection? footFade,
+    int? footFadeFailure,
+    int? footFadeRefusedEmpty,
+    int? footReverseFailure,
+    int? footReverseRefusedEmpty,
+    int? footPeelFailure,
+    FootPeelRefusal? footPeelRefusal,
+    Map<PedalButton, bool>? customLit,
+    int? assignedActionFailure,
+    ControlAction? assignedActionRefusal,
+    bool? assignedActionLowDisk,
+    FootTunerSelection? footTuner,
+    TunerPreferences? tunerPreferences,
+    int? footTunerFailure,
+    FootTunerRefusal? footTunerRefusal,
+    bool? tunerDefaultSeeded,
+    Set<PedalButton>? pendingHolds,
+    Duration? holdThreshold,
+    int? footFxFailure,
+    FootFxRefusal? footFxRefusal,
+    Map<PedalButton, FxSwitchReading>? fxSwitches,
+    bool? fxStopChangeNotice,
+    int? footLengthFailure,
+    FootLengthRefusal? footLengthRefusal,
+    FootLengthOutcome? footLengthOutcome,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,
@@ -177,14 +384,55 @@ class ControlState extends Equatable {
     PedalBindingSet? globalBindings,
     PedalBindingSet? sessionBindings,
     Set<PedalBindingKey>? heldMomentary,
-    ControllerBindingSet? controllerBindings,
-    ControllerLearn? controllerLearn,
-    bool clearControllerLearn = false,
     int? clearAllPulse,
+    MidiMappingSet? midiMappings,
+    bool? midiControlEnabled,
+    bool? midiLoaded,
+    bool? midiUnavailable,
+    bool? midiPersistenceUncertain,
+    bool? midiRemotePaused,
+    MidiEdit? midiEdit,
+    bool clearMidiEdit = false,
+    String? midiSaveError,
+    bool clearMidiSaveError = false,
+    Map<MidiSource, MidiControlEvent>? midiLevels,
   }) => ControlState(
     mode: mode ?? this.mode,
-    defaultMode: defaultMode ?? this.defaultMode,
-    modeSwitchStyle: modeSwitchStyle ?? this.modeSwitchStyle,
+    retiredBootMode: retiredBootMode ?? this.retiredBootMode,
+    pedalSetup: pedalSetup ?? this.pedalSetup,
+    pedalSetupUnavailable: pedalSetupUnavailable ?? this.pedalSetupUnavailable,
+    pedalSetupRuntimeUnsaved:
+        pedalSetupRuntimeUnsaved ?? this.pedalSetupRuntimeUnsaved,
+    pedalSetupPersistenceUncertain:
+        pedalSetupPersistenceUncertain ?? this.pedalSetupPersistenceUncertain,
+    footMixer: footMixer ?? this.footMixer,
+    footMixerFailure: footMixerFailure ?? this.footMixerFailure,
+    footFade: footFade ?? this.footFade,
+    footFadeFailure: footFadeFailure ?? this.footFadeFailure,
+    footFadeRefusedEmpty: footFadeRefusedEmpty ?? this.footFadeRefusedEmpty,
+    footReverseFailure: footReverseFailure ?? this.footReverseFailure,
+    footReverseRefusedEmpty:
+        footReverseRefusedEmpty ?? this.footReverseRefusedEmpty,
+    footPeelFailure: footPeelFailure ?? this.footPeelFailure,
+    footPeelRefusal: footPeelRefusal ?? this.footPeelRefusal,
+    customLit: customLit ?? this.customLit,
+    assignedActionFailure: assignedActionFailure ?? this.assignedActionFailure,
+    assignedActionRefusal: assignedActionRefusal ?? this.assignedActionRefusal,
+    assignedActionLowDisk: assignedActionLowDisk ?? this.assignedActionLowDisk,
+    footTuner: footTuner ?? this.footTuner,
+    tunerPreferences: tunerPreferences ?? this.tunerPreferences,
+    footTunerFailure: footTunerFailure ?? this.footTunerFailure,
+    footTunerRefusal: footTunerRefusal ?? this.footTunerRefusal,
+    tunerDefaultSeeded: tunerDefaultSeeded ?? this.tunerDefaultSeeded,
+    pendingHolds: pendingHolds ?? this.pendingHolds,
+    holdThreshold: holdThreshold ?? this.holdThreshold,
+    footFxFailure: footFxFailure ?? this.footFxFailure,
+    footFxRefusal: footFxRefusal ?? this.footFxRefusal,
+    fxSwitches: fxSwitches ?? this.fxSwitches,
+    fxStopChangeNotice: fxStopChangeNotice ?? this.fxStopChangeNotice,
+    footLengthFailure: footLengthFailure ?? this.footLengthFailure,
+    footLengthRefusal: footLengthRefusal ?? this.footLengthRefusal,
+    footLengthOutcome: footLengthOutcome ?? this.footLengthOutcome,
     cursor: cursor ?? this.cursor,
     activeBank: activeBank ?? this.activeBank,
     excluded: excluded ?? this.excluded,
@@ -192,20 +440,56 @@ class ControlState extends Equatable {
     globalBindings: globalBindings ?? this.globalBindings,
     sessionBindings: sessionBindings ?? this.sessionBindings,
     heldMomentary: heldMomentary ?? this.heldMomentary,
-    controllerBindings: controllerBindings ?? this.controllerBindings,
-    // `clearControllerLearn` exists because a capture ENDING is a real edit:
-    // `??` alone could never write the null that "nothing is listening" is.
-    controllerLearn: clearControllerLearn
-        ? null
-        : controllerLearn ?? this.controllerLearn,
     clearAllPulse: clearAllPulse ?? this.clearAllPulse,
+    midiMappings: midiMappings ?? this.midiMappings,
+    midiControlEnabled: midiControlEnabled ?? this.midiControlEnabled,
+    midiLoaded: midiLoaded ?? this.midiLoaded,
+    midiUnavailable: midiUnavailable ?? this.midiUnavailable,
+    midiPersistenceUncertain:
+        midiPersistenceUncertain ?? this.midiPersistenceUncertain,
+    midiRemotePaused: midiRemotePaused ?? this.midiRemotePaused,
+    midiEdit: clearMidiEdit ? null : midiEdit ?? this.midiEdit,
+    midiSaveError: clearMidiSaveError
+        ? null
+        : midiSaveError ?? this.midiSaveError,
+    midiLevels: midiLevels ?? this.midiLevels,
   );
 
   @override
   List<Object?> get props => [
     mode,
-    defaultMode,
-    modeSwitchStyle,
+    retiredBootMode,
+    pedalSetup,
+    pedalSetupUnavailable,
+    pedalSetupPersistenceUncertain,
+    pedalSetupRuntimeUnsaved,
+    footMixer,
+    footMixerFailure,
+    footFade,
+    footFadeFailure,
+    footFadeRefusedEmpty,
+    footReverseFailure,
+    footReverseRefusedEmpty,
+    footPeelFailure,
+    footPeelRefusal,
+    customLit,
+    assignedActionFailure,
+    assignedActionRefusal,
+    assignedActionLowDisk,
+    footTuner,
+    tunerPreferences,
+    footTunerFailure,
+    footTunerRefusal,
+    tunerDefaultSeeded,
+    pendingHolds,
+    holdThreshold,
+    footFxFailure,
+    footFxRefusal,
+    fxSwitches,
+    fxStopChangeNotice,
+    footLengthFailure,
+    footLengthRefusal,
+    footLengthOutcome,
     cursor,
     activeBank,
     excluded,
@@ -213,8 +497,15 @@ class ControlState extends Equatable {
     globalBindings,
     sessionBindings,
     heldMomentary,
-    controllerBindings,
-    controllerLearn,
     clearAllPulse,
+    midiMappings,
+    midiControlEnabled,
+    midiLoaded,
+    midiUnavailable,
+    midiPersistenceUncertain,
+    midiRemotePaused,
+    midiEdit,
+    midiSaveError,
+    midiLevels,
   ];
 }

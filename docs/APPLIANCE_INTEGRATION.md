@@ -65,25 +65,25 @@ flash an appliance. Release 137 remains the device reference until a separate
 release and hardware-validation task records a newer installed build.
 
 Software checks cover the Dart application and affected packages, the native
-firmware contract and sketch behavior, appliance shell helpers, and the Linux
-builds in CI. Local screenshot comparisons had the same 52 failing tests on
+firmware contract and sketch behavior, appliance shell helpers, and the
+appliance bundle build in CI. Local screenshot comparisons had the same 52 failing tests on
 the unmodified master baseline; their results must stay separate from the
 functional checks and remote CI.
 
 ## Startup readiness and release inspection
 
-The narrowed #982 work retains the startup mitigation from
-`7adfb722250078ab40c54274a39bf3b5e4ab43c7` on current master. It uses the boot
-archive and install hook delivered by #990; it does not add the old branch's
-alternate boot-image extraction or post-install hook.
+The narrowed #982 work used the boot archive and install hook delivered by
+#990; it did not add the old branch's alternate boot-image extraction or
+post-install hook. Its startup mitigation for #970 (from
+`7adfb722250078ab40c54274a39bf3b5e4ab43c7`) waited for Weston and was removed
+with it (#1330).
 
-Before starting the app, `segno-wait-wayland` requires a UNIX socket with the
-same inode across an 800 ms settle interval. A missing or replaced socket
-keeps startup waiting; exhaustion fails the launcher so systemd retries after
-three seconds. The launcher also sets `SEGNO_WAVEFORM_OPEN_DELAY_MS=750` to
-space creation of the secondary native view after the main view mounts.
-The app honors the current preference when the delay ends and cancels a
-pending open when its owner unmounts.
+The app is ivi-homescreen, installed as `/usr/bin/segno`, drawing both screens
+over DRM/KMS with no compositor (#1330). `segno-kiosk-launch` starts it with
+`/etc/segno/homescreen.toml`, which puts one Flutter engine on each output and
+names its role with `--segno-screen=`; the two engines talk over the screen link
+(`lib/visualizer/screen_link.dart`), and the readout waits blank until the main
+screen shows it.
 
 The bundle recipe inspects the signed artifact before deployment, using the
 pinned Yocto-native RAUC, archive tools and jq. Native RAUC enables JSON
@@ -95,17 +95,15 @@ This inspects the artifact rather than inferring its contents from the recipe.
 Collection requires the exact versioned bundle filename and fails if it is
 missing or empty. Signature trust remains the appliance's install-time check.
 
-Local behavior checks use real UNIX sockets, a sandboxed launch block,
-widget tests, and valid/invalid RAUC metadata. Linux CI additionally creates
+Local behavior checks use widget tests and valid/invalid RAUC metadata. Linux CI additionally creates
 signed test bundles and verifies that a rootfs-only bundle is rejected.
 Run the shell suites with:
 
 ```sh
-bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wayland_wait_tests.sh
 bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_slots_tests.sh
 ```
 
-These checks do not establish compositor/EGL readiness, either screen's
-behavior after a Weston restart, or an installed update's boot/rollback
-behavior. Those remain device checks under #970 and the appliance integration
-boundary above. No operating-system migration is included.
+These checks do not establish DRM/EGL readiness, either screen's behavior
+after `segno.service` restarts, or an installed update's boot/rollback
+behavior. Those remain device checks under the appliance integration boundary
+above. No operating-system migration is included.
