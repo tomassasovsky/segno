@@ -25,8 +25,7 @@
  *      the audio thread has touched stays in RAM until the buffer is freed.
  *      Only the engine's own memory is locked, never the process: the Dart VM
  *      and glibc's arenas hand memory back with MADV_DONTNEED, which the
- *      kernel refuses on locked memory. Each mapping also has transparent
- *      huge pages off, so khugepaged never collapses it under the callback.
+ *      kernel refuses on locked memory.
  *
  * WHEN TO PREFAULT is the caller's decision, because it costs memory and
  * control-thread time for nothing until the buffer is used:

@@ -79,13 +79,12 @@ static void le_rt_advise(void* base, size_t total) {
 #if defined(__linux__) && !LE_RT_ALLOC_USES_HEAP
   static int shield_warned = 0; /* a race prints a line twice: harmless */
   static int lock_warned = 0;
-  /* No transparent huge pages, for two reasons. khugepaged collapses small
-   * pages into a huge one in the background by unmapping the range under
-   * mmap_lock, and an audio-thread write meanwhile faults and waits for it.
-   * And with THP set to "always" the header write would fault in a whole huge
-   * page (2 MB, or 32 MB on a 16 KB-page kernel), so an untouched lane slot
-   * would not stay untouched. Refused only by a kernel without THP. */
-  (void)madvise(base, total, MADV_NOHUGEPAGE);
+  /* Transparent huge pages are left to the system's policy. Turning them off
+   * here cost the 64-lane mixer about 8% where THP is "always" (TLB and
+   * prefetch reach over 64 streams), and only the fork case needed anything
+   * from this mapping. Where THP is "always", a touched slot rounds up to
+   * whole huge pages, so the appliance runs THP "madvise" (the kernel
+   * default) and the on-device check confirms it. */
   /* fork() skips the mapping and never write-protects it (rt_alloc.h, 1). A
    * forced refusal is silent, so a test never consumes the one line a genuine
    * refusal owns. */

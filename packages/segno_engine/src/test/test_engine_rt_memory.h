@@ -148,6 +148,28 @@ static size_t rt_pages(const void* p, size_t bytes) {
   return (hi - lo) / page;
 }
 
+/* The pages one fault can bring in beyond the faulting page: a huge page's
+ * worth when transparent huge pages are "always" (the allocator leaves THP to
+ * system policy, and a fault in a huge-page-aligned extent then fills all of
+ * it), 0 otherwise. The bounds below are page-exact without THP and widen by
+ * this per touched extent with it. */
+static size_t rt_thp_pages(void) {
+  FILE* f = fopen("/sys/kernel/mm/transparent_hugepage/enabled", "r");
+  if (f == NULL) return 0;
+  char mode[128] = {0};
+  const int got = fgets(mode, sizeof(mode), f) != NULL;
+  fclose(f);
+  if (!got || strstr(mode, "[always]") == NULL) return 0;
+  size_t huge = (size_t)2 << 20;
+  f = fopen("/sys/kernel/mm/transparent_hugepage/hpage_pmd_size", "r");
+  if (f != NULL) {
+    unsigned long v = 0;
+    if (fscanf(f, "%lu", &v) == 1 && v > 0) huge = (size_t)v;
+    fclose(f);
+  }
+  return huge / (size_t)sysconf(_SC_PAGESIZE);
+}
+
 /* VmRSS of this process, in KB (0 when unreadable). */
 static long rt_rss_kb(void) {
   FILE* f = fopen("/proc/self/status", "r");
@@ -167,7 +189,7 @@ static void test_rt_alloc_touches_nothing_until_prefaulted(void) {
   float* p = (float*)le_rt_alloc(n);
   CHECK(p != NULL);
   /* Only the header's page has been written. */
-  CHECK(rt_resident_pages(p, n) <= 1);
+  CHECK(rt_resident_pages(p, n) <= 1 + rt_thp_pages());
   CHECK(smaps_mapping_is_dontcopy(p) == 1); /* fork() skips it */
   le_rt_prefault(p, n);
   CHECK(rt_resident_pages(p, n) == rt_pages(p, n));
@@ -241,8 +263,11 @@ static void test_lane_slots_cost_nothing_until_a_take(void) {
     }
   }
   /* The head and the header page, nothing more, of each of the 64 slots. */
-  CHECK(worst <= rt_pages(NULL, head_bytes) + 2);
-  CHECK(rss1 - rss0 < 32 * 1024); /* was 64 x 23 MB = 1.4 GB */
+  const size_t thp = rt_thp_pages();
+  CHECK(worst <= rt_pages(NULL, head_bytes) + 2 + 2 * thp);
+  /* was 64 x 23 MB = 1.4 GB */
+  CHECK(rss1 - rss0 <
+        32 * 1024 + (long)(64 * 2 * thp * (size_t)sysconf(_SC_PAGESIZE) / 1024));
   printf("  %d tracks x %d lanes at 96 kHz / 60 s: RSS +%ld KB for %zu MB of "
          "slots\n", e->track_count, LE_MAX_LANES, rss1 - rss0,
          ((size_t)e->track_count * LE_MAX_LANES * slot_bytes) >> 20);
@@ -256,7 +281,8 @@ static void test_lane_slots_cost_nothing_until_a_take(void) {
   for (int l = 0; l < LE_MAX_LANES; ++l) {
     const float* b = e->tracks[0].lanes[l].pool[0];
     CHECK(rt_resident_pages(b, head_bytes) == rt_pages(b, head_bytes));
-    CHECK(rt_resident_pages(b, slot_bytes) <= rt_pages(b, ahead_bytes) + 2);
+    CHECK(rt_resident_pages(b, slot_bytes) <=
+          rt_pages(b, ahead_bytes) + 2 + 2 * thp);
   }
   printf("  after a take starts on track 0: RSS +%ld KB\n", rt_rss_kb() - rss0);
   le_engine_destroy(e);
@@ -593,10 +619,10 @@ static void test_long_take_is_followed_by_the_prefaulter(void) {
     le_prefault_tick(e);
     rt_run(&a, sec_blocks / 4, 0.0f);
   }
-  CHECK(e->tracks[0].lanes[0].standby != NULL);
-  CHECK(atomic_load(&e->tracks[0].lanes[0].a_standby_ready) == 1);
+  CHECK(e->spares[0][0].standby != NULL);
+  CHECK(atomic_load(&e->spares[0][0].a_standby_ready) == 1);
   CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
-  CHECK(e->tracks[0].lanes[0].standby == NULL); /* it became the shadow */
+  CHECK(e->spares[0][0].standby == NULL); /* it became the shadow */
   for (int sec = 0; sec < 9; ++sec) {
     le_engine_get_snapshot(e, &s);
     le_prefault_tick(e);
@@ -720,9 +746,9 @@ static void test_standbys_stay_in_budget(void) {
   size_t held = 0;
   for (int t = 0; t < LE_MAX_TRACKS; ++t)
     for (int l = 0; l < LE_MAX_LANES; ++l)
-      held += (size_t)e->tracks[t].lanes[l].standby_cap * sizeof(float);
+      held += (size_t)e->spares[t][l].standby_cap * sizeof(float);
   CHECK(held <= LE_STANDBY_BUDGET_BYTES);
-  CHECK(e->tracks[0].lanes[0].standby == NULL); /* over budget: none */
+  CHECK(e->spares[0][0].standby == NULL); /* over budget: none */
   CHECK(le_engine_record(e, 0) == LE_OK); /* punch in on the fresh path */
   for (int k = 0; k < 4; ++k) {
     le_engine_get_snapshot(e, &s);

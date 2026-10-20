@@ -140,6 +140,12 @@ static void* le_prefault_main(void* arg) {
      * pays no wakeup. The 20 ms period is far inside the head and lead a
      * job is given (engine_prefault.h). */
     if (p->njobs > 0 && le_prefault_pass(e, p)) continue; /* behind: again */
+#if defined(__APPLE__)
+    /* Darwin has no pthread_condattr_setclock; its relative wait is measured
+     * on a monotonic clock already. */
+    const struct timespec rel = {0, LE_PREFAULT_PERIOD_NS};
+    pthread_cond_timedwait_relative_np(&p->cv, &p->mu, &rel);
+#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts); /* the condvar's clock */
     ts.tv_nsec += LE_PREFAULT_PERIOD_NS;
@@ -148,6 +154,7 @@ static void* le_prefault_main(void* arg) {
       ts.tv_nsec -= 1000000000L;
     }
     pthread_cond_timedwait(&p->cv, &p->mu, &ts);
+#endif
   }
   pthread_mutex_unlock(&p->mu);
   return NULL;
@@ -162,11 +169,15 @@ static struct le_prefaulter* le_prefaulter_get(le_engine* e) {
   pthread_mutex_init(&p->mu, NULL);
   /* Timed waits on the monotonic clock, so a wall-clock step (NTP at boot)
    * never stretches or skips the 20 ms period. */
+#if defined(__APPLE__)
+  pthread_cond_init(&p->cv, NULL); /* le_prefault_main waits relative */
+#else
   pthread_condattr_t ca;
   pthread_condattr_init(&ca);
   pthread_condattr_setclock(&ca, CLOCK_MONOTONIC);
   pthread_cond_init(&p->cv, &ca);
   pthread_condattr_destroy(&ca);
+#endif
   e->prefaulter = p;
   return p;
 }

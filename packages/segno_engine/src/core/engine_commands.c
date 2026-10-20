@@ -312,17 +312,18 @@ static void le_track_prefault_take(le_engine* e, int32_t channel,
  * and big enough, freeing what the slot held. Returns whether it did. */
 static int le_lane_take_standby(le_engine* e, le_lane* ln, int slot,
                                 int32_t want) {
-  if (ln->standby == NULL || ln->standby_cap < want ||
-      !atomic_load_explicit(&ln->a_standby_ready, memory_order_acquire)) {
+  le_lane_spares* sp = le_lane_spares_of(e, ln);
+  if (sp->standby == NULL || sp->standby_cap < want ||
+      !atomic_load_explicit(&sp->a_standby_ready, memory_order_acquire)) {
     return 0;
   }
   le_prefault_forget(e, ln->pool[slot]);
   le_rt_free(ln->pool[slot]);
-  ln->pool[slot] = ln->standby;
-  ln->pool_cap[slot] = ln->standby_cap;
-  ln->standby = NULL;
-  ln->standby_cap = 0;
-  store_i32(&ln->a_standby_ready, 0);
+  ln->pool[slot] = sp->standby;
+  ln->pool_cap[slot] = sp->standby_cap;
+  sp->standby = NULL;
+  sp->standby_cap = 0;
+  store_i32(&sp->a_standby_ready, 0);
   return 1;
 }
 
@@ -362,7 +363,7 @@ static void le_keep_standbys(le_engine* e) {
   for (int i = 1; i < n; ++i) { /* most recent capture first */
     const int c = order[i];
     int j = i;
-    while (j > 0 && e->tracks[order[j - 1]].capture_seq < e->tracks[c].capture_seq) {
+    while (j > 0 && e->capture_seq[order[j - 1]] < e->capture_seq[c]) {
       order[j] = order[j - 1];
       --j;
     }
@@ -374,7 +375,7 @@ static void le_keep_standbys(le_engine* e) {
     le_track* t = &e->tracks[ch];
     const int32_t st = le_effective_state(t);
     const int32_t len = le_track_settled_len(t);
-    const int has_take = t->capture_seq > 0 && len > 0 &&
+    const int has_take = e->capture_seq[ch] > 0 && len > 0 &&
                          (st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED ||
                           st == LE_TRACK_OVERDUBBING);
     const int32_t want = has_take ? le_layer_slot_frames(e, len) : 0;
@@ -383,23 +384,23 @@ static void le_keep_standbys(le_engine* e) {
     const int keep = has_take && used + need <= LE_STANDBY_BUDGET_BYTES;
     if (keep) used += need;
     for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
-      le_lane* ln = &t->lanes[l];
+      le_lane_spares* sp = &e->spares[ch][l];
       if (!keep || l >= lanes ||
-          (ln->standby != NULL && ln->standby_cap < want)) {
-        if (ln->standby != NULL) {
-          le_prefault_forget(e, ln->standby);
-          le_lane_release_standby(ln);
+          (sp->standby != NULL && sp->standby_cap < want)) {
+        if (sp->standby != NULL) {
+          le_prefault_forget(e, sp->standby);
+          le_lane_release_standby(sp);
         }
         if (!keep || l >= lanes) continue;
       }
-      if (ln->standby == NULL) {
-        ln->standby = (float*)le_rt_alloc((size_t)want * sizeof(float));
-        if (ln->standby == NULL) continue;
-        ln->standby_cap = want;
-        store_i32(&ln->a_standby_ready, 0);
+      if (sp->standby == NULL) {
+        sp->standby = (float*)le_rt_alloc((size_t)want * sizeof(float));
+        if (sp->standby == NULL) continue;
+        sp->standby_cap = want;
+        store_i32(&sp->a_standby_ready, 0);
       }
-      if (!atomic_load_explicit(&ln->a_standby_ready, memory_order_acquire)) {
-        le_prefault_buffer(e, ln->standby, ln->standby_cap, &ln->a_standby_ready);
+      if (!atomic_load_explicit(&sp->a_standby_ready, memory_order_acquire)) {
+        le_prefault_buffer(e, sp->standby, sp->standby_cap, &sp->a_standby_ready);
       }
     }
   }
@@ -415,16 +416,16 @@ static void le_keep_zero_spares(le_engine* e) {
     const int empty = le_effective_state(t) == LE_TRACK_EMPTY;
     const int32_t lanes = le_lanes_active(t);
     for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
-      le_lane* ln = &t->lanes[l];
+      le_lane_spares* sp = &e->spares[ch][l];
       const int want = empty && l < lanes;
-      if (ln->zero_spare != NULL &&
-          (!want || ln->zero_spare_cap != e->max_loop_frames)) {
-        le_lane_release_zero_spare(ln);
+      if (sp->zero_spare != NULL &&
+          (!want || sp->zero_spare_cap != e->max_loop_frames)) {
+        le_lane_release_zero_spare(sp);
       }
-      if (want && ln->zero_spare == NULL) {
-        ln->zero_spare = (float*)le_rt_alloc((size_t)e->max_loop_frames *
+      if (want && sp->zero_spare == NULL) {
+        sp->zero_spare = (float*)le_rt_alloc((size_t)e->max_loop_frames *
                                              sizeof(float));
-        ln->zero_spare_cap = ln->zero_spare != NULL ? e->max_loop_frames : 0;
+        sp->zero_spare_cap = sp->zero_spare != NULL ? e->max_loop_frames : 0;
       }
     }
   }
@@ -433,10 +434,11 @@ static void le_keep_zero_spares(le_engine* e) {
 /* A zeroed, cap-sized buffer for lane [ln]'s live slot: its zero spare when
  * there is one, else a fresh mapping. NULL on failure. */
 static float* le_lane_take_zeroed_cap(le_engine* e, le_lane* ln) {
-  if (ln->zero_spare != NULL && ln->zero_spare_cap == e->max_loop_frames) {
-    float* p = ln->zero_spare;
-    ln->zero_spare = NULL;
-    ln->zero_spare_cap = 0;
+  le_lane_spares* sp = le_lane_spares_of(e, ln);
+  if (sp->zero_spare != NULL && sp->zero_spare_cap == e->max_loop_frames) {
+    float* p = sp->zero_spare;
+    sp->zero_spare = NULL;
+    sp->zero_spare_cap = 0;
     return p;
   }
   return (float*)le_rt_alloc((size_t)e->max_loop_frames * sizeof(float));
@@ -1908,7 +1910,7 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
   le_track* const t = &e->tracks[channel];
   const int32_t st = le_effective_state(t);
   if (st != LE_TRACK_RECORDING && st != LE_TRACK_OVERDUBBING) {
-    t->capture_seq = ++e->capture_seq_next; /* le_keep_standbys' recency */
+    e->capture_seq[channel] = ++e->capture_seq_next; /* le_keep_standbys */
   }
   if (st == LE_TRACK_EMPTY) {
     le_track_prefault_take(e, channel, action == LE_CMD_ARM && trigger == 0.0f);
