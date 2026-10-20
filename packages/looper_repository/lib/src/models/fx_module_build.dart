@@ -182,5 +182,13 @@ BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
     // build for it. A module with no engine effect becomes a passthrough
     // entry, and this is what still says which pedal it is.
     module: module.name,
+    presetId: preset.id,
+    // Every value the preset gives this module — its power key, its own
+    // parameters and the ones it shares with another module — so a later
+    // build can rebuild the module from what was loaded.
+    source: {
+      for (final e in preset.params.entries)
+        if (module.poweredBy(e.key) || module.owns(e.key)) e.key: e.value,
+    },
   );
 }

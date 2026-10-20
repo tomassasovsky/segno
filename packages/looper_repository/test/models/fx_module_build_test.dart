@@ -157,6 +157,61 @@ void main() {
       expect(entry.enabled, isTrue);
     });
 
+    test("keeps the preset's id and every value it gives the module, "
+        'including the ones this build drops', () {
+      final entry = fxModuleEntry(
+        _module('Delay'),
+        _preset(const {
+          'Delay': 1,
+          'Del Time': 0.42,
+          'Del Mode': 0.545,
+          'Rev Mix': 0.05,
+        }),
+      );
+
+      expect(entry.presetId, 'ed53e7b8-a878-4907-8c61-f529eaa3d5d0');
+      // `Del Mode` has no engine parameter and is kept anyway; `Rev Mix` is
+      // the reverb's, so it is not this entry's.
+      expect(entry.source, {'Delay': 1, 'Del Time': 0.42, 'Del Mode': 0.545});
+      expect(decodeTrackEffects(encodeTrackEffects([entry])).single, entry);
+    });
+
+    test('carries the shared Vocal Tuner keys to both Smart Tune and the '
+        'Harmonizer', () {
+      // Vocal Tuner Rack / Midi Harm Mid, trimmed: Smart Tune is off, and
+      // the Harmonizer still reads the shared keys.
+      const preset = FxPreset(
+        family: 'Vocal Tuner Rack',
+        name: 'Midi Harm Mid',
+        id: 'midi-harm',
+        type: 7,
+        params: {
+          'Smart Tune': 0,
+          'Harmonize': 1,
+          'Mode': 0,
+          'Auto Source': 1,
+          'Key': 0,
+          'Scale Type': 1 / 13,
+          'Speed': 0.4,
+          'Voice 1 Vol': 0.7,
+        },
+      );
+      const shared = {
+        'Mode': 0,
+        'Auto Source': 1,
+        'Key': 0,
+        'Scale Type': 1 / 13,
+      };
+
+      final tune = fxModuleEntry(_module('Smart tune'), preset);
+      final harm = fxModuleEntry(_module('Harmonizer'), preset);
+
+      expect(tune.enabled, isFalse);
+      expect(tune.source, {'Smart Tune': 0, ...shared, 'Speed': 0.4});
+      expect(harm.enabled, isTrue);
+      expect(harm.source, {'Harmonize': 1, ...shared, 'Voice 1 Vol': 0.7});
+    });
+
     test('an out-of-range preset value is clamped rather than pushed on', () {
       final entry = fxModuleEntry(
         _module('Delay'),
